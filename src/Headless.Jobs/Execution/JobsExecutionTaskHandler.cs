@@ -1510,8 +1510,10 @@ internal sealed class JobsExecutionTaskHandler
     /// </summary>
     private async Task<bool> _TryRenewLeaseAsync(JobExecutionState context, CancellationToken renewalLoopToken)
     {
-        // Bound the renewal DB call to one cadence so a hung store can't block the loop past the lease deadline.
-        using var timeoutCts = new CancellationTokenSource(_leaseRenewalInterval, _timeProvider);
+        // Bound the renewal DB call to one cadence so a hung store can't block the loop past the lease deadline. The
+        // bound is an I/O timeout, so it runs on the system clock; only the renewal cadence follows the registered
+        // clock, and a host clock that never advances must not turn a hung store into a lease nobody renews.
+        using var timeoutCts = new CancellationTokenSource(_leaseRenewalInterval, TimeProvider.System);
         using var renewalCts = CancellationTokenSource.CreateLinkedTokenSource(renewalLoopToken, timeoutCts.Token);
 
         try

@@ -3095,7 +3095,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
         var occurrence = query
             // Only recent/upcoming tasks (not heavily overdue)
-            .Where(x => _CanAcquireCronOccurrence(x) && x.ExecutionTime >= mainSchedulerThreshold)
+            .Where(x => _CanPeekCronOccurrence(x, now.UtcDateTime) && x.ExecutionTime >= mainSchedulerThreshold)
             .OrderBy(x => x.ExecutionTime)
             .FirstOrDefault();
 
@@ -4200,6 +4200,17 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 || occurrence.LockedUntil == null
                 || occurrence.LockedUntil <= now.UtcDateTime
             );
+    }
+
+    private bool _CanPeekCronOccurrence(CronJobOccurrenceEntity<TCronJob> occurrence, DateTime now)
+    {
+        // Mirror EF WhereCanPeekUsingDatabaseClock: the acquire predicate without its owner arm, so an occurrence this
+        // node already dispatched is not re-claimed and admitted again on every poll while it waits for a worker.
+        return _cronJobs.TryGetValue(occurrence.CronJobId, out var definition)
+            && !definition.IsPaused
+            && _runFilter.Allows(occurrence.Function)
+            && (occurrence.Status == JobStatus.Idle || occurrence.Status == JobStatus.Queued)
+            && (occurrence.LockedUntil == null || occurrence.LockedUntil <= now);
     }
 
     private object _GetCronDefinitionLock(Guid cronJobId)

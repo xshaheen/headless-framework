@@ -7,6 +7,7 @@ using Headless.Jobs;
 using Headless.Jobs.JobsThreadPool;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
 
@@ -39,6 +40,33 @@ public sealed class JobsTaskSchedulerTests : TestBase
         startedOnThreadPool.Should().BeTrue();
         contextBeforeAwait.Should().BeNull();
         contextAfterAwait.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task wait_for_running_tasks_polls_on_real_time_when_the_app_clock_stands_still()
+    {
+        // The drain poll is a wait for running work, not a schedule a test drives, so it must not stall on a
+        // registered clock that never advances: the host's stop would otherwise run out its whole budget.
+        var timeProvider = new FakeTimeProvider();
+        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 1, timeProvider: timeProvider);
+        var running = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        await scheduler.QueueAsync(
+            async _ =>
+            {
+                running.TrySetResult();
+                await release.Task;
+            },
+            JobPriority.Normal,
+            AbortToken
+        );
+        await running.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+
+        var drained = scheduler.WaitForRunningTasksAsync();
+        release.TrySetResult();
+
+        (await drained.WaitAsync(TimeSpan.FromSeconds(10), AbortToken)).Should().BeTrue();
     }
 
     [Fact]
