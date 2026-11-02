@@ -1,6 +1,6 @@
 # Headless.SourceGenerators.Shared
 
-Internal infrastructure shared by the Headless incremental source generators (`Headless.Jobs.SourceGenerator` and `Headless.Generator.Primitives`). It is not a package and has no project file: each generator imports `Headless.SourceGenerators.Shared.props`, which
+Internal infrastructure shared by the Headless incremental source generators (`Headless.Jobs.SourceGenerator`, `Headless.Messaging.SourceGenerator`, and `Headless.Generator.Primitives`). It is not a package and has no project file: each generator imports `Headless.SourceGenerators.Shared.props`, which
 
 - sets the Roslyn-component and packaging properties every generator package needs, references the Roslyn packages, and packs the generator under `analyzers/dotnet/cs` with the `lib/netstandard2.0/_._` marker;
 - compiles these files into the generator as `internal` types in the `Headless.SourceGenerators` namespace, plus the netstandard2.0 language polyfills in `Polyfills.cs`.
@@ -20,6 +20,7 @@ The compiler does not resolve an analyzer's NuGet dependencies. A shared assembl
 | `DiagnosticInfo` | Value-equal diagnostic computed in a cached step and materialized only when reported. |
 | `DiagnosticReporting.RegisterDiagnosticsOutput` | Reports `DiagnosticInfo` values against the live compilation's trees so `#pragma` suppression works. |
 | `HandlerIdentity` | The shared `owner.name` identity rule for handler declarations: at most 200 UTF-16 code units, non-empty `.`-separated segments, no surrounding whitespace or control characters. |
+| `NamespaceName` | Maps an assembly name to a valid C# namespace, one segment at a time: invalid characters become `_`, a leading digit gets a `_` prefix, and a keyword is escaped with `@`. Every generator that emits into an assembly-named namespace uses it. |
 | `SourceCodeBuilder` | Fluent writer that emits final-layout source with automatic brace indentation and a fixed `\n` line terminator, so output is identical on every build machine. Generator-specific helpers belong in that generator as extension methods. |
 
 ## Pipeline rules for a generator built on this

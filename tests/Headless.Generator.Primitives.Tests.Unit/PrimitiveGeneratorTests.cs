@@ -36,7 +36,8 @@ public sealed class PrimitiveGeneratorTests
             .ToArray();
 
         ids.Should().OnlyHaveUniqueItems();
-        ids.Should().BeEquivalentTo("HF1000", "HF1001", "HF1002", "HF1012", "HF1013", "HF1015", "HF1016");
+        ids.Should()
+            .BeEquivalentTo("HF1000", "HF1001", "HF1002", "HF1004", "HF1005", "HF1012", "HF1013", "HF1015", "HF1016");
     }
 
     [Fact]

@@ -167,7 +167,10 @@ Roslyn source generator for creating strongly-typed domain primitives.
 
 - Roslyn incremental source generator
 - Emits unique `HF1000`-series diagnostics for invalid primitive declarations; legacy `AL` diagnostic IDs are no longer emitted.
-- Generates for types implementing `IPrimitive<T>`
+- Generates for types implementing `IPrimitive<T>` that are declared directly in a namespace, including the global namespace, and are not generic (`HF1004`, `HF1005`)
+- Converters go in the `<Namespace>.Converters` namespace beside the primitive (`Converters` for a primitive in the global namespace). The EF Core and Dapper registration helpers (`AddPrimitivePropertyConversions`, `AddPrimitivesDapperTypeHandlers`) go in `<AssemblyName>.Converters.Extensions`, with the assembly name mapped to a valid namespace the way the Messaging and Jobs generators map it (`My-App` gives `My_App.Converters.Extensions`). Two primitives may share a simple name in different namespaces.
+- The Dapper handler's `SetValue` binds the underlying value. Its `Parse` accepts the wider integer and floating-point types a provider may return (for example `short` for a `byte` primitive on PostgreSQL) when the value fits the underlying type, bounds included, and throws `InvalidCastException` otherwise
+- A primitive implements `IConvertible` only when its underlying type does, so `Guid`, `DateTimeOffset`, and `TimeSpan` primitives do not
 - Auto-generated code:
   - Constructors and factory methods
   - `IEquatable<T>`, `IComparable<T>` implementations
@@ -186,6 +189,8 @@ Primitive generator diagnostics use the framework-wide `HF` prefix. Existing sup
 | <a id="hf1000"></a>`HF1000` | Error | The generator threw an exception; the message carries it. | Report it as a generator bug with the message. |
 | <a id="hf1001"></a>`HF1001` | Error | The primitive wraps a type the generator does not support, such as a custom class or a nullable value type. Nothing is generated for it. | Wrap a string, `Guid`, `bool`, `char`, numeric, or date and time type, or another primitive. |
 | <a id="hf1002"></a>`HF1002` | Error | The primitive is not declared `partial`. | Add `partial` to the declaration. |
+| <a id="hf1004"></a>`HF1004` | Error | The primitive is declared inside another type. Nothing is generated for it. | Move the declaration directly into a namespace. |
+| <a id="hf1005"></a>`HF1005` | Error | The primitive declares type parameters. Nothing is generated for it. | Remove the type parameters, or declare one primitive per closed type. |
 | <a id="hf1012"></a>`HF1012` | Error | `[SerializationFormat]` is on a primitive that does not wrap `DateTime`, `DateTimeOffset`, `DateOnly`, `TimeOnly`, or `TimeSpan`. The format is ignored. | Remove the attribute, or wrap a date or time type. |
 | <a id="hf1013"></a>`HF1013` | Error | `[SupportedOperations]` is on a primitive that does not wrap a numeric type. The attribute is ignored. | Remove the attribute. |
 | <a id="hf1015"></a>`HF1015` | Warning | A class primitive wraps a value type. | Declare the primitive as a `struct`. |

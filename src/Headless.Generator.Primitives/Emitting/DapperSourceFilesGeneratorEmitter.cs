@@ -14,24 +14,12 @@ internal static class DapperSourceFilesGeneratorEmitter
 
     private static string _CreateHelperNamespaceName(string assemblyName)
     {
-        var ns = string.Join(".", assemblyName.Split('.').Select(s => char.IsDigit(s[0]) ? '_' + s : s));
-
-        return $"{ns}.Converters.Extensions";
+        return $"{NamespaceName.From(assemblyName)}.Converters.Extensions";
     }
 
     private static string _CreateHandlerClassName(string className)
     {
         return $"{className}DapperTypeHandler";
-    }
-
-    private static string _CreateConverterNamespaceName(string containingNamespace)
-    {
-        return $"{containingNamespace}.Converters";
-    }
-
-    private static string _CreateHandlerFileName(string className)
-    {
-        return $"{_CreateHandlerClassName(className)}.g.cs";
     }
 
     /// <summary>Processes the Dapper converter for the specified generator data and source production context.</summary>
@@ -49,7 +37,7 @@ internal static class DapperSourceFilesGeneratorEmitter
             AbstractionConstants.Namespace,
         ]);
 
-        builder.AppendNamespace(_CreateConverterNamespaceName(data.Namespace));
+        builder.AppendNamespace(data.ConvertersNamespace);
         builder.AppendSummary($"Dapper TypeHandler for <see cref = \"{data.ClassName}\"/>");
 
         builder.AppendClass(
@@ -67,10 +55,11 @@ internal static class DapperSourceFilesGeneratorEmitter
                 $"public override void SetValue({TypeNames.IDbDataParameter} parameter, {parameterTypeName} value)"
             )
             .OpenBracket()
+            // Bind the underlying value: the provider cannot bind the primitive itself.
             .AppendLine(
                 data.IsValueType
-                    ? "parameter.Value = value.GetUnderlyingPrimitiveType();"
-                    : "parameter.Value = value?.GetUnderlyingPrimitiveType();"
+                    ? $"parameter.Value = ({data.PrimitiveTypeFriendlyName})value;"
+                    : $"parameter.Value = value is null ? null : ({data.PrimitiveTypeFriendlyName})value;"
             )
             .CloseBracket()
             .NewLine();
@@ -84,11 +73,11 @@ internal static class DapperSourceFilesGeneratorEmitter
 
         ReadOnlySpan<string> switchCases = data.UnderlyingType switch
         {
-            PrimitiveUnderlyingType.String => [$"string stringValue => new {data.ClassName}(stringValue),"],
+            PrimitiveUnderlyingType.String => [$"string stringValue => new {data.ClassName}(stringValue)"],
             PrimitiveUnderlyingType.Guid =>
             [
-                $"{TypeNames.Guid} guidValue => new {data.ClassName}(guidValue),",
-                $"string stringValue when !string.IsNullOrEmpty(stringValue) && {TypeNames.Guid}.TryParse(stringValue, {StaticValues.InvariantCulture}, out var result) => new {data.ClassName}(result),",
+                $"{TypeNames.Guid} guidValue => new {data.ClassName}(guidValue)",
+                $"string stringValue when !string.IsNullOrEmpty(stringValue) && {TypeNames.Guid}.TryParse(stringValue, {StaticValues.InvariantCulture}, out var result) => new {data.ClassName}(result)",
             ],
             PrimitiveUnderlyingType.Boolean =>
             [
@@ -98,18 +87,18 @@ internal static class DapperSourceFilesGeneratorEmitter
             PrimitiveUnderlyingType.Byte =>
             [
                 $"byte byteValue => new {data.ClassName}(byteValue)",
-                $"short shortValue and < byte.MaxValue and > byte.MinValue => new {data.ClassName}((byte)shortValue)",
-                $"int intValue and < byte.MaxValue and > byte.MinValue => new {data.ClassName}((byte)intValue)",
-                $"long longValue and < byte.MaxValue and > byte.MinValue => new {data.ClassName}((byte)longValue)",
+                $"short shortValue and <= byte.MaxValue and >= byte.MinValue => new {data.ClassName}((byte)shortValue)",
+                $"int intValue and <= byte.MaxValue and >= byte.MinValue => new {data.ClassName}((byte)intValue)",
+                $"long longValue and <= byte.MaxValue and >= byte.MinValue => new {data.ClassName}((byte)longValue)",
                 $"string stringValue when !string.IsNullOrEmpty(stringValue) && byte.TryParse(stringValue, {StaticValues.InvariantCulture}, out var result) => new {data.ClassName}(result)",
             ],
             PrimitiveUnderlyingType.Int16 =>
             [
                 $"byte byteValue => new {data.ClassName}(byteValue)",
                 $"short shortValue => new {data.ClassName}(shortValue)",
-                $"int intValue and < short.MaxValue and > short.MinValue => new {data.ClassName}((short)intValue)",
-                $"long longValue and < short.MaxValue and > short.MinValue => new {data.ClassName}((short)longValue)",
-                $"decimal decimalValue and < short.MaxValue and > short.MinValue => new {data.ClassName}((short)decimalValue)",
+                $"int intValue and <= short.MaxValue and >= short.MinValue => new {data.ClassName}((short)intValue)",
+                $"long longValue and <= short.MaxValue and >= short.MinValue => new {data.ClassName}((short)longValue)",
+                $"decimal decimalValue and <= short.MaxValue and >= short.MinValue => new {data.ClassName}((short)decimalValue)",
                 $"string stringValue when !string.IsNullOrEmpty(stringValue) && short.TryParse(stringValue, {StaticValues.InvariantCulture}, out var result) => new {data.ClassName}(result)",
             ],
             PrimitiveUnderlyingType.Int32 =>
@@ -117,8 +106,8 @@ internal static class DapperSourceFilesGeneratorEmitter
                 $"byte byteValue => new {data.ClassName}(byteValue)",
                 $"int intValue => new {data.ClassName}(intValue)",
                 $"short shortValue => new {data.ClassName}(shortValue)",
-                $"long longValue and < int.MaxValue and > int.MinValue => new {data.ClassName}((int)longValue)",
-                $"decimal decimalValue and < int.MaxValue and > int.MinValue => new {data.ClassName}((int)decimalValue)",
+                $"long longValue and <= int.MaxValue and >= int.MinValue => new {data.ClassName}((int)longValue)",
+                $"decimal decimalValue and <= int.MaxValue and >= int.MinValue => new {data.ClassName}((int)decimalValue)",
                 $"string stringValue when !string.IsNullOrEmpty(stringValue) && int.TryParse(stringValue, {StaticValues.InvariantCulture}, out var result) => new {data.ClassName}(result)",
             ],
             PrimitiveUnderlyingType.Int64 =>
@@ -127,13 +116,13 @@ internal static class DapperSourceFilesGeneratorEmitter
                 $"long longValue => new {data.ClassName}(longValue)",
                 $"int intValue => new {data.ClassName}(intValue)",
                 $"short shortValue => new {data.ClassName}(shortValue)",
-                $"decimal decimalValue and < long.MaxValue and > long.MinValue => new {data.ClassName}((long)decimalValue)",
-                $"string stringValue when !string.IsNullOrEmpty(stringValue) && long.TryParse(stringValue, c out var result) => new {data.ClassName}(result)",
+                $"decimal decimalValue and <= long.MaxValue and >= long.MinValue => new {data.ClassName}((long)decimalValue)",
+                $"string stringValue when !string.IsNullOrEmpty(stringValue) && long.TryParse(stringValue, {StaticValues.InvariantCulture}, out var result) => new {data.ClassName}(result)",
             ],
             PrimitiveUnderlyingType.Single =>
             [
                 $"float floatValue => new {data.ClassName}(floatValue)",
-                $"double doubleValue and > float.MinValue and < float.MaxValue => new {data.ClassName}((float)doubleValue)",
+                $"double doubleValue and >= float.MinValue and <= float.MaxValue => new {data.ClassName}((float)doubleValue)",
                 $"byte byteValue => new {data.ClassName}(byteValue)",
                 $"short shortValue => new {data.ClassName}(shortValue)",
                 $"long longValue => new {data.ClassName}(longValue)",
@@ -183,12 +172,13 @@ internal static class DapperSourceFilesGeneratorEmitter
                 $"{TypeNames.TimeSpan} timeSpan => new {data.ClassName}(timeSpan)",
                 $"string stringValue when !string.IsNullOrEmpty(stringValue) && {TypeNames.TimeSpan}.TryParse(stringValue, {StaticValues.InvariantCulture}, out var result) => new {data.ClassName}(result)",
             ],
-            _ => [$"{data.PrimitiveTypeFriendlyName} primitiveValue => new {data.ClassName}(primitiveValue),"],
+            _ => [$"{data.PrimitiveTypeFriendlyName} primitiveValue => new {data.ClassName}(primitiveValue)"],
         };
 
-        foreach (var line in switchCases)
+        // Each arm is written without its separator so a new arm cannot forget it; the comma is added here.
+        foreach (var arm in switchCases)
         {
-            builder.AppendLine(line);
+            builder.AppendLine(arm + ",");
         }
 
         builder.AppendLine(
@@ -199,7 +189,10 @@ internal static class DapperSourceFilesGeneratorEmitter
         builder.CloseBracket(); // end Parse method
         builder.CloseBracket(); // end class
 
-        context.AddSource(_CreateHandlerFileName(data.ClassName), builder.ToString());
+        context.AddSource(
+            GeneratorData.HintName($"{data.ConvertersNamespace}.{_CreateHandlerClassName(data.ClassName)}"),
+            builder.ToString()
+        );
     }
 
     /// <summary>Generates the dapper type handlers add all helpers.</summary>
@@ -214,10 +207,8 @@ internal static class DapperSourceFilesGeneratorEmitter
 
         builder.AppendSourceHeader("Primitives Generator");
 
-        builder.AppendUsings([
-            .. types.ConvertAll(x => x.Namespace),
-            .. types.ConvertAll(x => _CreateConverterNamespaceName(x.Namespace)),
-        ]);
+        // Handlers are referenced by full name: primitives that share a simple name in different namespaces would
+        // make an imported short name ambiguous.
 
         if (addAssemblyAttribute)
         {
@@ -241,7 +232,9 @@ internal static class DapperSourceFilesGeneratorEmitter
 
         foreach (var data in types)
         {
-            builder.Append($"global::Dapper.SqlMapper.AddTypeMap(new {_CreateHandlerClassName(data.ClassName)}());");
+            builder.AppendLine(
+                $"global::Dapper.SqlMapper.AddTypeHandler(new global::{data.ConvertersNamespace}.{_CreateHandlerClassName(data.ClassName)}());"
+            );
         }
 
         builder.CloseBracket(); // end method
