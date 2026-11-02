@@ -49,6 +49,54 @@ public sealed class MonitoringEndpointTests : TestBase
     }
 
     [Fact]
+    public async Task should_share_one_storage_query_when_stats_polled_again_within_the_cache_window()
+    {
+        // given
+        var stats = new StatisticsView { PublishedSucceeded = 100, ReceivedFailed = 7 };
+        _monitoringApi.GetStatisticsAsync(Arg.Any<CancellationToken>()).Returns(ValueTask.FromResult(stats));
+        _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
+
+        await using var app = _CreateTestApp(_dataStorage);
+        await app.StartAsync(AbortToken);
+        using var client = app.GetTestClient();
+
+        // when
+        var first = await client.GetStringAsync("/api/stats", AbortToken);
+        var second = await client.GetStringAsync("/api/stats", AbortToken);
+
+        // then: one storage query, bound to the request so an abandoned poll stops it, serves both polls
+        await _monitoringApi.Received(1).GetStatisticsAsync(Arg.Is<CancellationToken>(t => t.CanBeCanceled));
+        second.Should().Be(first);
+        second.Should().Contain("\"publishedSucceeded\":100").And.Contain("\"receivedFailed\":7");
+        stats.Subscribers.Should().Be(0, "the per-request counts must not be written into the cached snapshot");
+    }
+
+    [Fact]
+    public async Task should_bind_message_list_query_to_the_request_when_listing_published()
+    {
+        // given
+        _monitoringApi
+            .GetMessagesAsync(Arg.Any<MessageQuery>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(new IndexPage<MessageView>([], 0, 20, 0)));
+        _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
+
+        await using var app = _CreateTestApp(_dataStorage);
+        await app.StartAsync(AbortToken);
+        using var client = app.GetTestClient();
+
+        // when
+        var published = await client.GetAsync("/api/published/succeeded", AbortToken);
+        var received = await client.GetAsync("/api/received/succeeded", AbortToken);
+
+        // then
+        published.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+        received.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+        await _monitoringApi
+            .Received(2)
+            .GetMessagesAsync(Arg.Any<MessageQuery>(), Arg.Is<CancellationToken>(t => t.CanBeCanceled));
+    }
+
+    [Fact]
     public async Task should_return_bounded_read_only_unknown_lane_diagnostics()
     {
         // given

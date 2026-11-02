@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using k8s;
 using k8s.Models;
 using Microsoft.Extensions.Logging;
@@ -13,10 +14,51 @@ namespace Headless.Messaging.Dashboard.K8s;
 /// <c>headless.messaging.*</c> labels on each service.
 /// </summary>
 public class K8sNodeDiscoveryProvider(ILoggerFactory logger, MessagingDashboardCache cache, K8sDiscoveryOptions options)
-    : INodeDiscoveryProvider
+    : INodeDiscoveryProvider,
+        IDisposable
 {
     private const string _TagPrefix = "headless.messaging";
     private readonly ILogger<K8sNodeDiscoveryProvider> _logger = logger.CreateLogger<K8sNodeDiscoveryProvider>();
+    private readonly Lock _clientLock = new();
+
+    // One client for the provider's lifetime: each Kubernetes client owns its own HTTP handler, so a client per call
+    // pays a new connection and TLS handshake on every stats refresh and gateway lookup. Created on first use so a
+    // bad client configuration still fails inside the call that reports it, as before.
+    private Kubernetes? _client;
+    private bool _disposed;
+
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        Dispose(disposing: true);
+        GC.SuppressFinalize(this);
+    }
+
+    /// <summary>Releases the Kubernetes client this provider holds.</summary>
+    /// <param name="disposing"><see langword="true"/> when called from <see cref="Dispose()"/>.</param>
+    protected virtual void Dispose(bool disposing)
+    {
+        if (!disposing)
+        {
+            return;
+        }
+
+        lock (_clientLock)
+        {
+            _disposed = true;
+            _client?.Dispose();
+            _client = null;
+        }
+    }
+
+    private Kubernetes _GetClient()
+    {
+        lock (_clientLock)
+        {
+            Ensure.NotDisposed(_disposed, this);
+            return _client ??= new Kubernetes(options.K8sClientConfig);
+        }
+    }
 
     public async Task<Node?> GetNodeAsync(
         string nodeName,
@@ -32,8 +74,7 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, MessagingDashboardC
 
         try
         {
-            using var client = new Kubernetes(options.K8sClientConfig);
-            var service = await client
+            var service = await _GetClient()
                 .CoreV1.ReadNamespacedServiceAsync(nodeName, resolvedNamespace, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
 
@@ -104,8 +145,7 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, MessagingDashboardC
             return [];
         }
 
-        using var client = new Kubernetes(options.K8sClientConfig);
-        var services = await client
+        var services = await _GetClient()
             .CoreV1.ListNamespacedServiceAsync(resolvedNamespace, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 

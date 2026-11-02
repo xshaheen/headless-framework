@@ -2349,7 +2349,7 @@ Configured through `MessagingDashboardOptionsBuilder` inside `UseDashboard(...)`
 | `WithCustomAuth(validator)` | — | Custom `(token, services) => bool` validation. |
 | `WithSessionTimeout(minutes)` | `60` | Auth session lifetime. |
 | `SetBasePath(path)` | `/messaging` | Dashboard URL path. |
-| `SetStatsPollingInterval(ms)` | `2000` | How often the overview polls `/stats` and the real-time metrics; a non-positive value falls back to 2000. |
+| `SetStatsPollingInterval(ms)` | `2000` | How often the overview polls `/stats` and the real-time metrics; a non-positive value falls back to 2000. Each node caches the storage counts behind `/stats` for 5 seconds and shares them across every open tab, so a shorter interval does not refresh those counts faster. |
 | `SetCorsPolicy(builder)` | none | CORS policy for cross-origin access. |
 
 ### Runtime behavior
@@ -2603,7 +2603,7 @@ Configure AWS region, service URLs, and credentials through `AmazonSqsMessagingO
 
 | Option | Default | Effect |
 | --- | --- | --- |
-| `AutoProvision` | `true` | Creates SNS topics, SQS queues, the queue access policy, and raw-delivery SNS-to-SQS subscriptions on first use. With `false`, queues are looked up with `sqs:GetQueueUrl` and topics with `sns:ListTopics`, and nothing is created, subscribed, or given a policy. Every topic, queue, and subscription must then exist before the host starts, and each Bus subscription must enable raw message delivery. A missing queue fails consumer startup naming the queue lookup; a missing topic fails the send. |
+| `AutoProvision` | `true` | Creates SNS topics, SQS queues, the queue access policy, and raw-delivery SNS-to-SQS subscriptions on first use. With `false`, queues are looked up with `sqs:GetQueueUrl` and topics with `sns:ListTopics`, and nothing is created, subscribed, or given a policy. Every topic, queue, and subscription must then exist before the host starts, and each Bus subscription must enable raw message delivery. A missing queue fails consumer startup naming the queue lookup; a missing topic fails the send, and sends to it fail without a new `sns:ListTopics` lookup for 30 seconds after each miss, so a topic provisioned while the host runs is found within that window. |
 | `VisibilityTimeout` | 30 s | Sent on every receive, so the queue's own default does not apply. Whole seconds from 1 second to 12 hours. |
 | `ReceiveWaitTime` | 5 s | SQS long-poll wait per receive. Whole seconds from 0 to 20. |
 
