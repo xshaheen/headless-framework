@@ -11,6 +11,7 @@ using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 using Tests.Helpers;
 
 #pragma warning disable MA0015 // Specify the parameter name in ArgumentException
@@ -58,7 +59,8 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         ISubscribeInvoker invoker,
         IDataStorage storage,
         MessagingOptions options,
-        ICircuitBreakerStateManager? circuitBreaker = null
+        ICircuitBreakerStateManager? circuitBreaker = null,
+        TimeProvider? timeProvider = null
     )
     {
         storage
@@ -107,7 +109,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             provider,
             storage,
             invoker,
-            TimeProvider.System,
+            timeProvider ?? TimeProvider.System,
             logger,
             Options.Create(options),
             circuitBreaker
@@ -600,6 +602,45 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         message.Retries.Should().Be(0, "a matched fail rule skips the remaining retries");
         exhausted.Should().ContainSingle();
         exhausted[0].Exception.GetBaseException().Should().BeOfType<InvalidOperationException>();
+    }
+
+    [Fact]
+    public async Task should_cut_off_a_hung_on_exhausted_callback_on_the_backoff_clock_while_the_app_clock_is_frozen()
+    {
+        // given a frozen app clock, the default real back-off clock, and a callback that never returns
+        var storage = Substitute.For<IDataStorage>();
+        var invoker = _AlwaysThrowing(new ArgumentException("invalid param"), out _);
+        var callbackEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var hung = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var options = new MessagingOptions
+        {
+            RetryPolicy =
+            {
+                OnExhaustedTimeout = TimeSpan.FromMilliseconds(50),
+                OnExhausted = (_, _) =>
+                {
+                    callbackEntered.TrySetResult();
+                    return hung.Task;
+                },
+            },
+        };
+        var executor = _CreateExecutor(invoker, storage, options, timeProvider: new FakeTimeProvider());
+        var message = _CreateMediumMessage();
+
+        try
+        {
+            // when a permanent failure ends the row as exhausted
+            var execute = executor.ExecuteAsync(message, _EmptyScope, _CreateDescriptor(_Policy(3, 5)), AbortToken);
+            await callbackEntered.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+            // then the attempt finishes once the timeout passes in real time
+            var result = await execute.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+            result.Succeeded.Should().BeFalse();
+        }
+        finally
+        {
+            hung.TrySetResult();
+        }
     }
 
     [Fact]

@@ -96,26 +96,65 @@ public sealed class BootstrapperTests : TestBase
     }
 
     [Fact]
-    public async Task synchronous_dispose_should_not_wait_for_async_processor_cleanup()
+    public async Task synchronous_dispose_should_wait_for_async_processor_cleanup()
     {
+        // given a started bootstrapper whose processor is slow to stop
         await using var processor = new BlockingDisposeProcessingServer();
         await using var provider = _CreateProvider(beforeMessaging: processor);
         var bootstrapper = provider.GetRequiredService<IBootstrapper>();
-
         await bootstrapper.BootstrapAsync(AbortToken);
 
+        // when
         var disposeTask = Task.Run(() => ((IDisposable)bootstrapper).Dispose(), AbortToken);
         await processor.WaitUntilDisposeStartedAsync(AbortToken);
+        var returnedBeforeTeardown = disposeTask.IsCompleted;
+        processor.ReleaseDispose();
+        await disposeTask.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
-        try
+        // then
+        returnedBeforeTeardown.Should().BeFalse("synchronous dispose must wait for the processor teardown");
+        bootstrapper.IsStarted.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task synchronous_dispose_should_log_a_teardown_failure_instead_of_throwing()
+    {
+        // given a started bootstrapper whose processor fails to stop
+        var failure = new InvalidOperationException("stop boom");
+        var errors = new List<(EventId EventId, Exception? Exception)>();
+        await using var processor = new FailingStopProcessingServer(failure);
+        var provider = _CreateProvider(
+            beforeMessaging: processor,
+            extraSetup: services =>
+                services.AddLogging(builder => builder.AddProvider(new ExceptionCapturingLoggerProvider(errors)))
+        );
+        var bootstrapper = provider.GetRequiredService<IBootstrapper>();
+        await bootstrapper.BootstrapAsync(AbortToken);
+
+        // when
+        var dispose = () => ((IDisposable)bootstrapper).Dispose();
+
+        // then
+        dispose.Should().NotThrow();
+        List<(EventId EventId, Exception? Exception)> snapshot;
+        lock (errors)
         {
-            await disposeTask.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+            snapshot = [.. errors];
         }
-        finally
-        {
-            processor.ReleaseDispose();
-            await disposeTask.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
-        }
+
+        snapshot
+            .Should()
+            .Contain(
+                entry =>
+                    entry.EventId.Id == 87
+                    && entry.Exception is AggregateException
+                    && ((AggregateException)entry.Exception).Flatten().InnerExceptions.Contains(failure),
+                "the shutdown failure must reach the log when the synchronous caller cannot observe it"
+            );
+
+        // Shutdown is one shared idempotent operation, so disposing the provider observes the same failure.
+        var disposeProvider = async () => await provider.DisposeAsync();
+        await disposeProvider.Should().ThrowAsync<AggregateException>();
     }
 
     [Fact]
@@ -887,6 +926,45 @@ public sealed class BootstrapperTests : TestBase
         public void ReleaseDrain()
         {
             _stopRelease.TrySetResult();
+        }
+    }
+
+    private sealed class ExceptionCapturingLoggerProvider(List<(EventId EventId, Exception? Exception)> log)
+        : ILoggerProvider
+    {
+        public ILogger CreateLogger(string categoryName)
+        {
+            return new ExceptionCapturingLogger(log);
+        }
+
+        public void Dispose() { }
+
+        private sealed class ExceptionCapturingLogger(List<(EventId EventId, Exception? Exception)> log) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull
+            {
+                return null;
+            }
+
+            public bool IsEnabled(LogLevel logLevel)
+            {
+                return logLevel >= LogLevel.Error;
+            }
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter
+            )
+            {
+                lock (log)
+                {
+                    log.Add((eventId, exception));
+                }
+            }
         }
     }
 
