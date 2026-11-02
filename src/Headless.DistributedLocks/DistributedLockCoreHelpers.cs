@@ -18,6 +18,54 @@ internal static class DistributedLockCoreHelpers
 {
     public static PublishOptions ReleaseSignalPublishOptions { get; } = new() { DeliveryMode = DeliveryMode.Direct };
 
+    /// <summary>
+    /// Sends the release wake-up without making the release wait for the broker. The signal is a best-effort hint
+    /// whose loss waiters already absorb with their backoff poll, so awaiting it only added a broker round trip to
+    /// every release. A failure, synchronous or later, is logged and never surfaces to the releasing caller.
+    /// </summary>
+    public static void PublishReleaseSignal(IBus bus, ILogger logger, string resource, string leaseId)
+    {
+        Task<PublishReceipt> publish;
+
+        try
+        {
+            // The caller's token is not passed: the publish outlives the call, so a token cancelled or disposed after
+            // the release returned must not decide whether the wake-up goes out.
+            publish = bus.PublishAsync(
+                new DistributedLockReleased(resource, leaseId),
+                ReleaseSignalPublishOptions,
+                CancellationToken.None
+            );
+        }
+        catch (Exception exception)
+        {
+            logger.LogLockReleasePublishFailed(exception, resource, leaseId);
+            return;
+        }
+
+        if (publish.IsCompleted)
+        {
+            if (publish.IsFaulted)
+            {
+                logger.LogLockReleasePublishFailed(publish.Exception.GetBaseException(), resource, leaseId);
+            }
+
+            return;
+        }
+
+        _ = publish.ContinueWith(
+            static (task, state) =>
+            {
+                var (logger, resource, leaseId) = ((ILogger, string, string))state!;
+                logger.LogLockReleasePublishFailed(task.Exception!.GetBaseException(), resource, leaseId);
+            },
+            (logger, resource, leaseId),
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default
+        );
+    }
+
     private static readonly TimeSpan _MinRetryDelay = TimeSpan.FromMilliseconds(50);
     private static readonly TimeSpan _MaxRetryDelay = TimeSpan.FromSeconds(3);
 

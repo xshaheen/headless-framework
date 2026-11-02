@@ -2018,6 +2018,26 @@ public sealed class RedisCache(
     /// </summary>
     private async ValueTask<DateTime?> _ResolveNewestMarkerAsync(IReadOnlyCollection<string>? tags)
     {
+        var (newestMs, removeMs) = await _ResolveMarkersMsAsync(tags).ConfigureAwait(false);
+
+        if (removeMs > newestMs)
+        {
+            newestMs = removeMs;
+        }
+
+        return newestMs == _MarkerAbsent ? null : RedisCacheEntryFrame.FromUnixTimeMilliseconds(newestMs);
+    }
+
+    /// <summary>
+    /// Resolves the newest clear-generation + per-tag marker and, separately, the remove-generation marker, from the
+    /// local marker cache plus one bulk read of every stale marker. They stay apart because the factory-store read
+    /// treats them differently: the remove marker is a hard miss, while a clear/tag marker demotes the entry to a
+    /// still-servable fail-safe reserve.
+    /// </summary>
+    private async ValueTask<(long ClearAndTagMs, long RemoveMs)> _ResolveMarkersMsAsync(
+        IReadOnlyCollection<string>? tags
+    )
+    {
         // Direct reads: the remove-generation marker (logical FlushAsync) also makes an entry a miss, alongside
         // the clear- and per-tag markers (all compared on every read, tagged or not). Every marker key is known
         // up front, so all stale ones are fetched in one bulk read below instead of sequential clear GET, tag
@@ -2125,143 +2145,7 @@ public sealed class RedisCache(
             }
         }
 
-        if (removeMs > newestMs)
-        {
-            newestMs = removeMs;
-        }
-
-        return newestMs == _MarkerAbsent ? null : RedisCacheEntryFrame.FromUnixTimeMilliseconds(newestMs);
-    }
-
-    /// <summary>
-    /// Resolves the newest CLEAR-generation + per-tag marker, EXCLUDING the remove-generation marker. The
-    /// coordinator demote path uses this: a clear/tag-invalidated entry demotes to a still-servable fail-safe
-    /// reserve, whereas the remove marker (resolved separately by the caller) is a hard miss with no reserve — so
-    /// the coordinator resolves the remove marker once for its hard-miss check and this for the demote check,
-    /// instead of resolving the remove marker twice.
-    /// </summary>
-    private async ValueTask<DateTime?> _ResolveClearAndTagMarkerAsync(IReadOnlyCollection<string>? tags)
-    {
-        var newestMs = await _ResolveClearAndTagMarkerMsAsync(tags).ConfigureAwait(false);
-        return newestMs == _MarkerAbsent ? null : RedisCacheEntryFrame.FromUnixTimeMilliseconds(newestMs);
-    }
-
-    private async ValueTask<long> _ResolveClearAndTagMarkerMsAsync(IReadOnlyCollection<string>? tags)
-    {
-        var newestMs = await _ResolveClearMarkerAsync().ConfigureAwait(false);
-
-        if (tags is { Count: > 0 })
-        {
-            var tagMs = await _ResolveTagMarkersAsync(tags).ConfigureAwait(false);
-
-            if (tagMs > newestMs)
-            {
-                newestMs = tagMs;
-            }
-        }
-
-        return newestMs;
-    }
-
-    private async ValueTask<long> _ResolveClearMarkerAsync()
-    {
-        var fetchedTicks = Interlocked.Read(ref _clearMarkerFetchedTicks);
-
-        if (_MarkerIsFresh(fetchedTicks))
-        {
-            return Interlocked.Read(ref _clearMarkerMs);
-        }
-
-        var value = await _database
-            .StringGetAsync((RedisKey)_GetClearMarkerKey(), cacheOptions.ReadMode)
-            .ConfigureAwait(false);
-        var ms = _ParseMarkerMs(value);
-
-        // Raise-only (mirrors SeedClearMarker): a stale durable read — e.g. a lagging replica — must not
-        // lower a newer clear generation a backplane push already seeded. Surface the raised max so this read
-        // does not under-invalidate either.
-        _clearMarkerMs.InterlockedRaiseTo(ms);
-        Interlocked.Exchange(ref _clearMarkerFetchedTicks, _StopwatchTicks());
-        return Interlocked.Read(ref _clearMarkerMs);
-    }
-
-    private async ValueTask<long> _ResolveRemoveMarkerAsync()
-    {
-        var fetchedTicks = Interlocked.Read(ref _removeMarkerFetchedTicks);
-
-        if (_MarkerIsFresh(fetchedTicks))
-        {
-            return Interlocked.Read(ref _removeMarkerMs);
-        }
-
-        var value = await _database
-            .StringGetAsync((RedisKey)_GetRemoveMarkerKey(), cacheOptions.ReadMode)
-            .ConfigureAwait(false);
-        var ms = _ParseMarkerMs(value);
-
-        // Raise-only (mirrors SeedRemoveMarker): a stale durable read — e.g. a lagging replica — must not
-        // lower a newer remove generation a backplane push already seeded. Surface the raised max so this read
-        // does not under-invalidate either.
-        _removeMarkerMs.InterlockedRaiseTo(ms);
-        Interlocked.Exchange(ref _removeMarkerFetchedTicks, _StopwatchTicks());
-        return Interlocked.Read(ref _removeMarkerMs);
-    }
-
-    private async ValueTask<long> _ResolveTagMarkersAsync(IReadOnlyCollection<string> tags)
-    {
-        // Collect tags whose cached marker is stale/missing; batch-fetch them in one MGET.
-        List<string>? stale = null;
-        var newestMs = _MarkerAbsent;
-
-        foreach (var tag in tags)
-        {
-            if (_markerCache.TryGetValue(tag, out var cached) && _MarkerIsFresh(cached.FetchedTicks))
-            {
-                if (cached.MarkerMs > newestMs)
-                {
-                    newestMs = cached.MarkerMs;
-                }
-            }
-            else
-            {
-                (stale ??= []).Add(tag);
-            }
-        }
-
-        if (stale is not null)
-        {
-            var markerKeys = new RedisKey[stale.Count];
-
-            for (var i = 0; i < stale.Count; i++)
-            {
-                markerKeys[i] = _GetTagMarkerKey(stale[i]);
-            }
-
-            var values = await _BulkStringGetOrderedAsync(markerKeys).ConfigureAwait(false);
-            var fetchedTicks = _StopwatchTicks();
-
-            for (var i = 0; i < stale.Count; i++)
-            {
-                var ms = _ParseMarkerMs(values[i]);
-
-                // Raise-only (mirrors SeedTagMarker): a stale durable read must not lower a newer per-tag marker
-                // a backplane push already seeded. FetchedTicks is still refreshed so the freshness window holds.
-                var (markerMs, _) = _RaiseTagMarker(stale[i], ms, fetchedTicks);
-
-                if (markerMs > newestMs)
-                {
-                    newestMs = markerMs;
-                }
-            }
-
-            // Prune only when a fetch actually happened (mirrors _PrefetchTagMarkersAsync's gating): an all-fresh
-            // resolve has nothing new to prune, and fetches recur at least once per refresh window — the same
-            // cadence the prune throttle enforces — so gating here skips the per-read throttle check without
-            // delaying eviction beyond a window.
-            _PruneMarkerCacheIfDue();
-        }
-
-        return newestMs;
+        return (newestMs, removeMs);
     }
 
     private static long _ParseMarkerMs(RedisValue value)
@@ -2328,7 +2212,7 @@ public sealed class RedisCache(
     /// newer, always refreshing the freshness stamp to <paramref name="fetchedTicks"/>. Raise-only: a stale durable
     /// read or a backplane push can never lower a newer marker this node already observed; the freshness stamp is
     /// refreshed in both branches so the refresh window holds. Returns the resolved (post-raise) entry. Shared by
-    /// <see cref="SeedTagMarker"/>, <see cref="_ResolveTagMarkersAsync"/>, and <see cref="_PrefetchTagMarkersAsync"/>
+    /// <see cref="SeedTagMarker"/>, <see cref="_ResolveMarkersMsAsync"/>, and <see cref="_PrefetchTagMarkersAsync"/>
     /// so the raise-only invariant lives in exactly one place.
     /// </summary>
     private (long MarkerMs, long FetchedTicks) _RaiseTagMarker(string tag, long markerMs, long fetchedTicks)
@@ -3340,8 +3224,6 @@ public sealed class RedisCache(
                 return CacheStoreEntry<T>.NotFound;
             }
 
-            var value = frame.IsNull ? default : _DeserializeValueSegment<T>(frame.ValueSegment);
-
             // For sliding entries the embedded logical timestamp goes stale after a metadata-only re-arm
             // (KeyExpire bumps the key TTL but does not rewrite the frame), so reporting it would make the
             // coordinator treat a live, recently-touched key as logically expired and spuriously re-run the
@@ -3350,23 +3232,28 @@ public sealed class RedisCache(
             var logicalExpiresAt = frame.SlidingExpiration.HasValue ? null : frame.LogicalExpiresAt;
             var slidingExpiration = frame.SlidingExpiration;
 
-            // Remove-generation (logical FlushAsync): a hard miss with NO fail-safe reserve — distinct from the
-            // clear/tag markers below, which demote to a still-servable reserve. Checked first so a removed entry
-            // never surfaces as a stale candidate the coordinator could serve.
-            var removeMs = await _ResolveRemoveMarkerAsync().ConfigureAwait(false);
+            // Every stale marker (remove, clear, tags) comes back from one bulk read, kept apart because they
+            // mean different things here.
+            var (clearAndTagMs, removeMs) = await _ResolveMarkersMsAsync(frame.Tags).ConfigureAwait(false);
             var removeMarker =
                 removeMs == _MarkerAbsent ? (DateTime?)null : RedisCacheEntryFrame.FromUnixTimeMilliseconds(removeMs);
 
+            // Remove-generation (logical FlushAsync): a hard miss with NO fail-safe reserve — distinct from the
+            // clear/tag markers below, which demote to a still-servable reserve. Checked first, and before the value
+            // is deserialized, so a removed entry never surfaces as a stale candidate the coordinator could serve.
             if (CacheTagInvalidation.IsInvalidated(frame.CreatedAt, removeMarker))
             {
                 return CacheStoreEntry<T>.NotFound;
             }
 
+            var value = frame.IsNull ? default : _DeserializeValueSegment<T>(frame.ValueSegment);
+
             // Family-2 logical tag/clear invalidation: demote the entry to logically-expired-but-physically-
             // present so the coordinator re-runs the factory but can still serve this reserve stale on failure.
-            // Uses the clear+tag resolver (NOT _ResolveNewestMarkerAsync) so the remove marker — already resolved
-            // for the hard-miss check above — is not resolved a second time on this path.
-            var newestMarker = await _ResolveClearAndTagMarkerAsync(frame.Tags).ConfigureAwait(false);
+            var newestMarker =
+                clearAndTagMs == _MarkerAbsent
+                    ? (DateTime?)null
+                    : RedisCacheEntryFrame.FromUnixTimeMilliseconds(clearAndTagMs);
 
             if (CacheTagInvalidation.IsInvalidated(frame.CreatedAt, newestMarker))
             {

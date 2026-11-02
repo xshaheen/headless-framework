@@ -467,7 +467,7 @@ public sealed class DistributedSemaphoreProviderTests : TestBase
         );
 
         // when — run release and advance time past the dispose timeout
-        var releaseTask = provider.ReleaseAsync("resource", "slot-lease", AbortToken);
+        var releaseTask = provider.ReleaseAsync("resource", "slot-lease");
 
         for (var i = 0; i < 10; i++)
         {
