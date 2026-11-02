@@ -26,6 +26,7 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
     private static readonly TimeSpan _WorkerFaultRestartDelay = TimeSpan.FromMilliseconds(100);
     private static readonly TimeSpan _MaxWorkerFaultRestartDelay = TimeSpan.FromSeconds(30);
     private const int _MaxConsecutiveWorkerFaults = 5;
+    private static readonly TimeSpan _ShutdownBound = TimeSpan.FromSeconds(5);
 
     // Worker queues for work stealing
     private readonly WorkerQueue[] _workerQueues;
@@ -338,7 +339,10 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
                 waitCount = 0;
             }
 
-            await _timeProvider.Delay(TimeSpan.FromMilliseconds(10), cancellationToken).ConfigureAwait(false);
+            // A back-off while the pool drains its queue, not a schedule: it waits real time so a registered clock
+            // that never advances cannot stall admission.
+            await Task.Delay(TimeSpan.FromMilliseconds(10), TimeProvider.System, cancellationToken)
+                .ConfigureAwait(false);
         }
     }
 
@@ -456,8 +460,12 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
             {
                 try
                 {
-                    await _timeProvider
-                        .Delay(_GetWorkerFaultRestartDelay(consecutiveFaults), _shutdownCts.Token)
+                    // A retry back-off rides out a fault, so it waits real time rather than the registered clock.
+                    await Task.Delay(
+                            _GetWorkerFaultRestartDelay(consecutiveFaults),
+                            TimeProvider.System,
+                            _shutdownCts.Token
+                        )
                         .ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (_shutdownCts.IsCancellationRequested || _disposed)
@@ -986,17 +994,20 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
     /// </summary>
     public async Task<bool> WaitForRunningTasksAsync(TimeSpan? timeout = null)
     {
-        var deadline = timeout.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.Add(timeout.Value) : DateTime.MaxValue;
+        // The drain bound and its poll wait for running work, so both run on the system clock, matching the host
+        // stop budget that calls this; a registered clock that never advances must not stall a shutdown.
+        var started = TimeProvider.System.GetTimestamp();
 
         // A long-running admission still waiting for a slot holds a claimed row it must hand back while draining.
         while (_totalQueuedTasks > 0 || _activeTasks > 0 || _pendingLongRunningAdmissions > 0)
         {
-            if (_timeProvider.GetUtcNow().UtcDateTime > deadline)
+            if (timeout.HasValue && TimeProvider.System.GetElapsedTime(started) > timeout.Value)
             {
                 return false; // Timeout
             }
 
-            await _timeProvider.Delay(TimeSpan.FromMilliseconds(10), CancellationToken.None).ConfigureAwait(false);
+            await Task.Delay(TimeSpan.FromMilliseconds(10), TimeProvider.System, CancellationToken.None)
+                .ConfigureAwait(false);
         }
 
         return true;
@@ -1017,7 +1028,8 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
         _disposed = true;
         _isFrozen = true; // Prevent new tasks
         await _shutdownCts.CancelAsync().ConfigureAwait(false);
-        var shutdownDeadline = _timeProvider.GetUtcNow() + TimeSpan.FromSeconds(5);
+        // The disposal bound waits for workers to stop, so it runs on the system clock like the drain above.
+        var shutdownStarted = TimeProvider.System.GetTimestamp();
 
         Task[] workerTasks;
         lock (_workerSlotsLock)
@@ -1041,11 +1053,11 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
 
         try
         {
-            var remaining = shutdownDeadline - _timeProvider.GetUtcNow();
+            var remaining = _ShutdownBound - TimeProvider.System.GetElapsedTime(shutdownStarted);
             if (remaining > TimeSpan.Zero)
             {
                 await Task.WhenAll(workerTasks)
-                    .WaitAsync(remaining, _timeProvider, CancellationToken.None)
+                    .WaitAsync(remaining, TimeProvider.System, CancellationToken.None)
                     .ConfigureAwait(false);
             }
         }
@@ -1054,9 +1066,10 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
             // Preserve bounded shutdown when user work ignores cancellation.
         }
 
-        while (_activeTasks > 0 && _timeProvider.GetUtcNow() < shutdownDeadline)
+        while (_activeTasks > 0 && TimeProvider.System.GetElapsedTime(shutdownStarted) < _ShutdownBound)
         {
-            await _timeProvider.Delay(TimeSpan.FromMilliseconds(10), CancellationToken.None).ConfigureAwait(false);
+            await Task.Delay(TimeSpan.FromMilliseconds(10), TimeProvider.System, CancellationToken.None)
+                .ConfigureAwait(false);
         }
 
         _notifyDebounce.Dispose();

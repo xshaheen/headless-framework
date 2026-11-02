@@ -186,6 +186,78 @@ public abstract class JobsPeekConformanceTests<TFixture>(TFixture fixture) : Tes
         }
     }
 
+    /// <summary>
+    /// The stored cron-occurrence peek follows the time-job rule: an occurrence this node holds is <c>Queued</c> under
+    /// its own lease while it waits for a worker or a concurrency slot, and peeking it again made every scheduler poll
+    /// re-claim it and queue one more admission. An occurrence whose foreign lease lapsed is free, so the peek returns it.
+    /// </summary>
+    public virtual async Task cron_occurrence_peek_skips_an_occurrence_this_node_holds_and_returns_one_whose_foreign_lease_lapsed()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("peek-cron-owner");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            host.Services.GetRequiredService<IJobsOwnerIdentity>().TryGetStampOwner(out var owner).Should().BeTrue();
+
+            var heldDefinitionId = Guid.NewGuid();
+            var lapsedDefinitionId = Guid.NewGuid();
+            await fixture.SeedCronJobAsync(
+                heldDefinitionId,
+                "peek-cron-held",
+                "0 0 * * * *",
+                NodeDeathPolicy.Retry,
+                ct
+            );
+            await fixture.SeedCronJobAsync(
+                lapsedDefinitionId,
+                "peek-cron-lapsed",
+                "0 0 * * * *",
+                NodeDeathPolicy.Retry,
+                ct
+            );
+
+            // The peek window is bounded on the node clock and the lease on the store clock; minutes of margin keep
+            // both readings unambiguous whatever the container's offset from the host.
+            var now = DateTime.UtcNow;
+            var heldId = Guid.NewGuid();
+            var lapsedId = Guid.NewGuid();
+            await fixture.SeedCronOccurrenceAsync(
+                heldId,
+                heldDefinitionId,
+                (int)JobStatus.Queued,
+                owner,
+                NodeDeathPolicy.Retry,
+                lockedUntil: now.AddMinutes(5),
+                executionTime: now.AddSeconds(30),
+                ct
+            );
+            await fixture.SeedCronOccurrenceAsync(
+                lapsedId,
+                lapsedDefinitionId,
+                (int)JobStatus.Queued,
+                "foreign@1",
+                NodeDeathPolicy.Retry,
+                lockedUntil: now.AddMinutes(-5),
+                executionTime: now.AddSeconds(31),
+                ct
+            );
+
+            var peek = await persistence.GetEarliestAvailableCronOccurrenceAsync([], ct);
+
+            peek.Should().NotBeNull();
+            peek.Id.Should().Be(lapsedId);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
     private async Task _SetExecutionTimeOnStoreClockAsync(Guid[] ids, int offsetSeconds, CancellationToken ct)
     {
         var parameters = ids.Select((_, index) => $"@id{index}").ToArray();
