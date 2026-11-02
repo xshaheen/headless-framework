@@ -102,7 +102,15 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
         var clock = new SteppableClock();
         var retryPlanned = new RetryPlannedSignal();
         var probe = new StopProbe(StopProbeMode.Fail);
-        using var host = _BuildHost(probe, timeProvider: clock, exceptionHandler: retryPlanned);
+        // The stop budget runs on the real clock while the test steps its own; the default 2 s budget can run out
+        // before a loaded runner writes the parked row, leaving it InProgress, so give the stop room to finish.
+        using var host = _BuildHost(
+            probe,
+            stopBudget: TimeSpan.FromSeconds(20),
+            hostShutdownTimeout: TimeSpan.FromSeconds(30),
+            timeProvider: clock,
+            exceptionHandler: retryPlanned
+        );
         await host.StartAsync(AbortToken);
         var id = await _Scheduler(host).EnqueueAsync<StopJob>(o => o.WithRetries(2).WithRetryIntervals(60), AbortToken);
         await retryPlanned.Observed.WaitAsync(_WaitBudget, AbortToken);
