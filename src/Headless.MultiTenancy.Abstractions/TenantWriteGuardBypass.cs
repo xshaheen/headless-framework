@@ -3,12 +3,22 @@
 namespace Headless.MultiTenancy;
 
 /// <summary>AsyncLocal-backed tenant write guard bypass.</summary>
-internal sealed class TenantWriteGuardBypass : ITenantWriteGuardBypass
+/// <remarks>
+/// Register one instance per host as a singleton. The bypass state lives in an instance field, so two
+/// instances do not see each other's scopes: a store that resolves a different instance from the one the
+/// caller used would still guard the write. <c>AddHeadlessTenancy</c> and <c>AddHeadlessDbContextServices</c>
+/// both register it with <c>TryAddSingleton</c>; a store outside those paths registers it the same way.
+/// </remarks>
+[PublicAPI]
+public sealed class TenantWriteGuardBypass : ITenantWriteGuardBypass
 {
     private readonly AsyncLocal<BypassState?> _state = new();
 
+    /// <inheritdoc/>
     public bool IsActive => _state.Value?.IsActive == true;
 
+    /// <inheritdoc/>
+    [MustDisposeResource]
     public IDisposable BeginBypass()
     {
         var state = _state.Value;
