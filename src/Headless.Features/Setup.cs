@@ -198,11 +198,13 @@ public static class SetupFeatures
         );
 
         services.TryAddSingleton<IFeatureValueProviderManager, FeatureValueProviderManager>();
-        services.TryAddTransient<IFeatureManager, FeatureManager>();
+        // A singleton like the permission and setting managers: every dependency is one, and the authorization
+        // handler below would otherwise build a new manager for every authorized request.
+        services.TryAddSingleton<IFeatureManager, FeatureManager>();
 
         // unit.Features: the enlisted writes, resolved by the unit of work from this container. A unit-of-work feature
-        // must be a singleton, which FeatureManager can be (every dependency is one); a separate registration, so a
-        // host that replaces IFeatureManager keeps the framework's enlisted path.
+        // must be a singleton; a separate registration, so a host that replaces IFeatureManager keeps the framework's
+        // enlisted path.
         services.AddUnitOfWork();
         services.TryAddSingleton<IUnitOfWorkFeatures, FeatureManager>();
 
@@ -216,8 +218,9 @@ public static class SetupFeatures
         services.AddSingleton<IMethodInvocationFeatureCheckerService, MethodInvocationFeatureCheckerService>();
 
         // [RequiresFeature] is authorization data, so this handler is the gate: no HTTP-specific registration
-        // exists to forget. Transient because IFeatureManager is transient; TryAddEnumerable keeps one handler.
-        services.TryAddEnumerable(ServiceDescriptor.Transient<IAuthorizationHandler, FeatureRequirementHandler>());
+        // exists to forget. A singleton over the singleton IFeatureManager, so a replacement manager must be one too;
+        // TryAddEnumerable keeps one handler.
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IAuthorizationHandler, FeatureRequirementHandler>());
 
         // Registers the authorization services the handler runs under, and lets WebApplication add the
         // authorization middleware on its own when the host never calls UseAuthorization(). TryAdd-only, so a

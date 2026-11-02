@@ -179,10 +179,13 @@ public static class SetupPermissions
         /*
          * You need to provide a storage implementation for `IPermissionGrantRecordRepository`
          */
-        services.AddSingleton<ICache<PermissionGrantCacheItem>>(sp => new ScopedCache<PermissionGrantCacheItem>(
-            sp.GetRequiredService<ICache>(),
-            () => $"t:{sp.GetRequiredService<ICurrentTenant>().Id}"
-        ));
+        // ICurrentTenant is a singleton over the ambient tenant, so it is resolved once rather than for every key.
+        services.AddSingleton<ICache<PermissionGrantCacheItem>>(sp =>
+        {
+            var scope = new PermissionGrantCacheScope(sp.GetRequiredService<ICurrentTenant>());
+
+            return new ScopedCache<PermissionGrantCacheItem>(sp.GetRequiredService<ICache>(), scope.Get);
+        });
 
         // The requirement is the root ICache the tenant-scoped wrapper above delegates to, not
         // ICache<PermissionGrantCacheItem> — that closed generic is registered right here, so probing it
@@ -202,8 +205,8 @@ public static class SetupPermissions
         services.AddUnitOfWork();
         services.TryAddSingleton<IUnitOfWorkPermissions, PermissionManager>();
 
+        // One handler for both requirement types, so a combined policy reads every named permission in one call.
         services.AddSingleton<IAuthorizationHandler, PermissionRequirementHandler>();
-        services.AddSingleton<IAuthorizationHandler, PermissionsRequirementHandler>();
 
         // The requirement handlers and the client-config builder evaluate through IAuthorizationService, which a
         // worker host would otherwise lack. AddAuthorizationCore is TryAdd-only, so a host's own registrations win.
