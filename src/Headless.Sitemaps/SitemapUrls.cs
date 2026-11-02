@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Runtime.CompilerServices;
 using System.Xml;
+using Headless.Checks;
 
 namespace Headless.Sitemaps;
 
@@ -13,76 +13,75 @@ namespace Headless.Sitemaps;
 public static class SitemapUrls
 {
     /// <summary>
-    /// Generate one or more sitemap files, splitting into separate files when the URL count exceeds
-    /// <see cref="SitemapConstants.MaxSitemapUrls"/>.
+    /// Generates sitemap files of at most <see cref="SitemapConstants.MaxSitemapUrls"/> URLs each and hands
+    /// every one to <paramref name="onShard"/> as soon as it fills, so memory holds at most one shard's URL
+    /// references and no shard XML unless the callback buffers it.
     /// </summary>
-    /// <param name="sitemapUrls">The collection of sitemap URLs to write.</param>
-    /// <param name="cancellationToken">A token to cancel the operation.</param>
-    /// <returns>A read-only list of generated sitemap streams.</returns>
-    /// <remarks>
-    /// Each returned stream is rewound to its start (<see cref="Stream.Position"/> is <c>0</c>) and is
-    /// owned by the caller, who must dispose it. This eagerly buffers every shard in memory.
-    /// For very large sites, prefer <see cref="WriteEachAsync"/>, which yields shards lazily so the
-    /// caller can flush and dispose each one before the next is built.
-    /// </remarks>
-    public static async Task<IReadOnlyList<Stream>> WriteAsync(
-        this IReadOnlyCollection<SitemapUrl> sitemapUrls,
+    /// <param name="sitemapUrls">The sitemap URLs to write, enumerated once.</param>
+    /// <param name="onShard">
+    /// Called once per shard, in order. Write the shard with <see cref="SitemapShard.WriteToAsync"/> before the
+    /// returned task completes: the shard's URL buffer is reused for the next shard after that.
+    /// </param>
+    /// <param name="cancellationToken">A token to cancel the operation; it is also passed to <paramref name="onShard"/>.</param>
+    /// <returns>The number of shards written, for building the sitemap index. <c>0</c> for an empty input.</returns>
+    /// <remarks>An exception thrown by <paramref name="onShard"/> stops enumeration and propagates.</remarks>
+    public static async Task<int> WriteAsync(
+        this IEnumerable<SitemapUrl> sitemapUrls,
+        Func<SitemapShard, CancellationToken, ValueTask> onShard,
         CancellationToken cancellationToken = default
     )
     {
-        var streams = new List<Stream>();
+        Argument.IsNotNull(sitemapUrls);
+        Argument.IsNotNull(onShard);
 
-        await foreach (var stream in sitemapUrls.WriteEachAsync(cancellationToken).ConfigureAwait(false))
-        {
-            streams.Add(stream);
-        }
+        var capacity = sitemapUrls.TryGetNonEnumeratedCount(out var count)
+            ? Math.Min(count, SitemapConstants.MaxSitemapUrls)
+            : 0;
 
-        return streams;
-    }
-
-    /// <summary>
-    /// Lazily generate sitemap files, splitting into separate files when the URL count exceeds
-    /// <see cref="SitemapConstants.MaxSitemapUrls"/>.
-    /// </summary>
-    /// <param name="sitemapUrls">The collection of sitemap URLs to write.</param>
-    /// <param name="cancellationToken">A token to cancel the operation.</param>
-    /// <returns>An asynchronous sequence of generated sitemap streams.</returns>
-    /// <remarks>
-    /// Each yielded stream is rewound to its start (<see cref="Stream.Position"/> is <c>0</c>); the
-    /// caller owns it and should dispose it before requesting the next.
-    /// </remarks>
-    public static async IAsyncEnumerable<MemoryStream> WriteEachAsync(
-        this IReadOnlyCollection<SitemapUrl> sitemapUrls,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default
-    )
-    {
-        // Shard by walking the collection once into a reusable list, instead of the old
-        // Select-index + GroupBy chain that allocated an anonymous object per URL and a grouping per shard.
-        var shard = new List<SitemapUrl>(Math.Min(sitemapUrls.Count, SitemapConstants.MaxSitemapUrls));
+        var sharder = new Sharder(onShard, capacity);
 
         foreach (var url in sitemapUrls)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
-            if (shard.Count == SitemapConstants.MaxSitemapUrls)
-            {
-                var full = new MemoryStream();
-                await shard.WriteToAsync(full, cancellationToken).ConfigureAwait(false);
-                full.Position = 0;
-                yield return full;
-                shard.Clear();
-            }
-
-            shard.Add(url);
+            await sharder.AddAsync(url, cancellationToken).ConfigureAwait(false);
         }
 
-        if (shard.Count > 0)
+        return await sharder.CompleteAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Generates sitemap files of at most <see cref="SitemapConstants.MaxSitemapUrls"/> URLs each from an
+    /// asynchronous source, such as a streamed database query, and hands every one to <paramref name="onShard"/>
+    /// as soon as it fills, so memory holds at most one shard's URL references.
+    /// </summary>
+    /// <param name="sitemapUrls">The sitemap URLs to write, enumerated once.</param>
+    /// <param name="onShard">
+    /// Called once per shard, in order. Write the shard with <see cref="SitemapShard.WriteToAsync"/> before the
+    /// returned task completes: the shard's URL buffer is reused for the next shard after that.
+    /// </param>
+    /// <param name="cancellationToken">
+    /// A token to cancel the operation; it is passed to the source enumerator and to <paramref name="onShard"/>.
+    /// </param>
+    /// <returns>The number of shards written, for building the sitemap index. <c>0</c> for an empty input.</returns>
+    /// <remarks>An exception thrown by <paramref name="onShard"/> stops enumeration and propagates.</remarks>
+    public static async Task<int> WriteAsync(
+        this IAsyncEnumerable<SitemapUrl> sitemapUrls,
+        Func<SitemapShard, CancellationToken, ValueTask> onShard,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(sitemapUrls);
+        Argument.IsNotNull(onShard);
+
+        var sharder = new Sharder(onShard, capacity: 0);
+
+        await foreach (var url in sitemapUrls.WithCancellation(cancellationToken).ConfigureAwait(false))
         {
-            var stream = new MemoryStream();
-            await shard.WriteToAsync(stream, cancellationToken).ConfigureAwait(false);
-            stream.Position = 0;
-            yield return stream;
+            cancellationToken.ThrowIfCancellationRequested();
+            await sharder.AddAsync(url, cancellationToken).ConfigureAwait(false);
         }
+
+        return await sharder.CompleteAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>Writes a sitemap file into the stream.</summary>
@@ -158,6 +157,50 @@ public static class SitemapUrls
     }
 
     #region Helpers
+
+    // Holds the sharding state both WriteAsync overloads share, so the sync and async sources differ only in
+    // how they enumerate. One List is reused across shards: that is what bounds memory to one shard.
+    private sealed class Sharder(Func<SitemapShard, CancellationToken, ValueTask> onShard, int capacity)
+    {
+        private readonly List<SitemapUrl> _buffer = new(capacity);
+        private int _shardCount;
+
+        public ValueTask AddAsync(SitemapUrl url, CancellationToken cancellationToken)
+        {
+            _buffer.Add(url);
+
+            return _buffer.Count == SitemapConstants.MaxSitemapUrls
+                ? _FlushAsync(cancellationToken)
+                : ValueTask.CompletedTask;
+        }
+
+        public async ValueTask<int> CompleteAsync(CancellationToken cancellationToken)
+        {
+            if (_buffer.Count > 0)
+            {
+                await _FlushAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            return _shardCount;
+        }
+
+        private async ValueTask _FlushAsync(CancellationToken cancellationToken)
+        {
+            var shard = new SitemapShard(_shardCount, _buffer);
+
+            try
+            {
+                await onShard(shard, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                shard.Invalidate();
+            }
+
+            _shardCount++;
+            _buffer.Clear();
+        }
+    }
 
     private static async Task _WriteUrlNodeAsync(
         XmlWriter writer,
