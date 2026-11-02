@@ -5,6 +5,7 @@ using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
+using Npgsql;
 
 namespace Tests;
 
@@ -61,6 +62,57 @@ public sealed class RelationalDatabaseIdentityTests : TestBase
         _IsSameDatabase(new FakeConnection("localhost", "orders"), new OtherFakeConnection("localhost", "orders"))
             .Should()
             .BeFalse();
+    }
+
+    // Npgsql reports an empty DataSource for an unopened multi-host connection and the reached host once opened; an
+    // unopened single-host connection reports that host in the same format, so it stands in for an opened candidate.
+    [Theory]
+    [InlineData("Host=pg1,pg2;Port=5432;Database=orders", "Host=pg2;Port=5432;Database=orders")]
+    [InlineData("Host=pg1,pg2;Port=5432;Database=orders", "Host=PG1;Port=5432;Database=orders")]
+    [InlineData("Server=pg1, pg2;Database=orders", "Host=pg2;Database=orders")]
+    [InlineData("Host=pg1:5433,pg2;Port=5432;Database=orders", "Host=pg1;Port=5433;Database=orders")]
+    [InlineData("Host=localhost,pg2;Port=5432;Database=orders", "Host=127.0.0.1;Port=5432;Database=orders")]
+    [InlineData("Host=pg1,pg2;Port=5432;Database=orders", "Host=pg2,pg1;Port=5432;Database=orders")]
+    public void should_match_when_the_candidate_reaches_a_listed_host_of_a_multi_host_source(
+        string configured,
+        string candidate
+    )
+    {
+        _IsSameNpgsqlDatabase(configured, candidate).Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("Host=pg1,pg2;Port=5432;Database=orders", "Host=pg3;Port=5432;Database=orders")]
+    [InlineData("Host=pg1,pg2;Port=5432;Database=orders", "Host=pg1;Port=5433;Database=orders")]
+    [InlineData("Host=pg1:5433,pg2;Port=5432;Database=orders", "Host=pg1;Port=5432;Database=orders")]
+    [InlineData("Host=pg1,pg2;Port=5432;Database=orders", "Host=pg2;Port=5432;Database=billing")]
+    [InlineData("Host=pg1,pg2;Port=5432;Database=orders", "Host=pg1,pg3;Port=5432;Database=orders")]
+    [InlineData("Host=pg1;Port=5432;Database=orders", "Host=pg1,pg2;Port=5432;Database=orders")]
+    public void should_refuse_when_the_candidate_can_reach_a_host_the_multi_host_source_does_not_list(
+        string configured,
+        string candidate
+    )
+    {
+        _IsSameNpgsqlDatabase(configured, candidate).Should().BeFalse();
+    }
+
+    [Fact]
+    public void should_refuse_when_a_connection_reports_no_data_source_and_has_no_provider_factory()
+    {
+        _IsSameDatabase(
+                new FakeConnection("", "orders") { ConnectionString = "Host=pg1,pg2" },
+                new FakeConnection("pg1", "orders")
+            )
+            .Should()
+            .BeFalse();
+    }
+
+    private static bool _IsSameNpgsqlDatabase(string configured, string candidate)
+    {
+        using var configuredConnection = new NpgsqlConnection(configured);
+        using var candidateConnection = new NpgsqlConnection(candidate);
+
+        return RelationalDatabaseIdentity.IsSameDatabase(configuredConnection, candidateConnection);
     }
 
     private static bool _IsSameDatabase(FakeConnection configured, FakeConnection candidate)
