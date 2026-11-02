@@ -50,6 +50,32 @@ public sealed class InMemoryLeaseStoreTests : TestBase
     }
 
     [Fact]
+    public async Task should_not_end_a_lease_earlier_than_its_grant_when_the_wall_clock_steps_back_inside_one_unit()
+    {
+        // given — one unit grants a lease, then the wall clock steps back before the same unit renews it
+        var start = new DateTimeOffset(2026, 9, 26, 12, 0, 0, TimeSpan.Zero);
+        var clock = new FakeTimeProvider(start);
+        await using var services = _CreateServices(clock);
+        var factory = services.GetRequiredService<IUnitOfWorkFactory>();
+
+        // when
+        LeaseGrantResult granted;
+        LeaseRenewalResult renewed;
+
+        await using (var unit = await factory.BeginAsync(cancellationToken: AbortToken))
+        {
+            granted = await unit.Leases.GrantAsync("job", "order-1", _Duration, AbortToken);
+            clock.AdjustTime(start - TimeSpan.FromSeconds(5));
+            renewed = await unit.Leases.RenewAsync(granted.Lease!, _Duration, AbortToken);
+            await unit.CompleteAsync(AbortToken);
+        }
+
+        // then — the renewal decides on the grant's instant, not the earlier one the clock stepped back to
+        granted.ExpiresAt.Should().Be(start + _Duration);
+        renewed.Should().Be(new LeaseRenewalResult(LeaseRenewalStatus.Renewed, start + _Duration));
+    }
+
+    [Fact]
     public async Task should_sweep_a_lease_once_the_injected_clock_passes_its_expiry()
     {
         // given
