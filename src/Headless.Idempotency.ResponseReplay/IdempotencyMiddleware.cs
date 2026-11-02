@@ -393,7 +393,11 @@ internal sealed partial class IdempotencyMiddleware(
         );
 
         var originalBody = context.Response.Body;
-        await using var captureStream = new CaptureStream(originalBody, options.MaxBodySizeForHashing);
+        await using var captureStream = new CaptureStream(
+            originalBody,
+            options.MaxBodySizeForHashing,
+            context.Response.Headers
+        );
         context.Response.Body = captureStream;
 
         using var renewalStop = new CancellationTokenSource();
@@ -411,6 +415,19 @@ internal sealed partial class IdempotencyMiddleware(
             await renewal.ConfigureAwait(false);
             await _ReleaseAsync(context, admission, request.Key, options, rethrowOnFailure: false)
                 .ConfigureAwait(false);
+
+            // The handler's fence (or recovery point) found that another attempt owns the key now: the same conflict an
+            // in-flight admission reports, so it gets the same 409 instead of surfacing as an unhandled 500. The handler
+            // rolled its unit back, and a retry is admitted, waits, or replays like any other concurrent request.
+            if (handlerEx is StaleAdmissionException && !context.Response.HasStarted)
+            {
+                LogHandlerAdmissionStale(request.Key);
+                context.Response.Clear();
+                var pd = problemDetailsCreator.Conflict(IdempotencyMessageDescriber.InFlight());
+                await Results.Problem(pd).ExecuteAsync(context).ConfigureAwait(false);
+                return;
+            }
+
             throw;
         }
 
@@ -433,10 +450,34 @@ internal sealed partial class IdempotencyMiddleware(
         var capturedHeaders = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
         foreach (var header in context.Response.Headers)
         {
-            if (options.ReplayHeaderAllowlist.Contains(header.Key))
+            if (!options.ReplayHeaderAllowlist.Contains(header.Key))
             {
-                capturedHeaders[header.Key] = header.Value.ToArray()!;
+                continue;
             }
+
+            var values = header.Value;
+
+            // Store the coding of the captured bytes, not the response's final label: response compression that wraps
+            // this middleware labels the shared headers but encodes after the capture, so its Content-Encoding would
+            // sit beside plain bytes. Left off, the replay goes through that compressor again, which encodes it for
+            // whatever the retry accepts.
+            if (
+                captureStream.Forwarded
+                && string.Equals(
+                    header.Key,
+                    Microsoft.Net.Http.Headers.HeaderNames.ContentEncoding,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            {
+                values = captureStream.ContentEncodingOfCapture;
+                if (StringValues.IsNullOrEmpty(values))
+                {
+                    continue;
+                }
+            }
+
+            capturedHeaders[header.Key] = values.ToArray()!;
         }
 
         // The frame is assembled in a pooled writer and handed over as one exact-size array: CompleteAsync's
@@ -901,4 +942,11 @@ internal sealed partial class IdempotencyMiddleware(
     )]
     // ReSharper disable once InconsistentNaming
     private partial void LogHandlerThrew(string idempotencyKey, Exception exception);
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Idempotency handler for key {IdempotencyKey} lost its admission to another attempt; answered 409"
+    )]
+    // ReSharper disable once InconsistentNaming
+    private partial void LogHandlerAdmissionStale(string idempotencyKey);
 }

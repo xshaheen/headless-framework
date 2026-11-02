@@ -1150,7 +1150,7 @@ Adapter that backs ASP.NET Core's `IOutputCacheStore` with a named Headless cach
 
 ### Design constraints
 
-This package provides only the **store**. The consumer still calls `services.AddOutputCache()` and declares output-cache policies — vary-by, expiration strategy — and tags via `[OutputCache(Tags = "...")]` on controllers or `.CacheOutput(p => p.Tag("..."))` on minimal APIs. Policy stays ASP.NET's concern; this adapter changes only where entries live and how tag eviction propagates.
+This package provides only the **store**. The consumer still calls `services.AddOutputCache()` and declares output-cache policies — vary-by, expiration strategy — and tags via `[OutputCache(Tags = "...")]` on controllers or `.CacheOutput(p => p.Tag("..."))` on minimal APIs. Policy stays ASP.NET's concern; this adapter changes only where entries live and how tag eviction propagates. One exception comes from tenancy, not this package: with tenant catalog resolution on, the resolved tenant joins every output-cache key, whichever store backs it (see [Multi-tenancy](multi-tenancy.md#hardening-the-pre-auth-path)).
 
 It is a separate package from `Headless.Caching.Bcl` because an `IOutputCacheStore` references the ASP.NET shared framework (`Microsoft.AspNetCore.App`). Keeping it out of the framework-agnostic BCL adapter means a non-web consumer of `IDistributedCache` never pulls an ASP.NET dependency.
 
