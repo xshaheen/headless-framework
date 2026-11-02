@@ -159,7 +159,7 @@ public sealed class CashInTransaction
     public CashInTransactionBillingData? BillingData { get; init; }
 
     [JsonExtensionData]
-    public IDictionary<string, object?>? ExtensionData { get; }
+    public IDictionary<string, object?>? ExtensionData { get; set; }
 
     public bool IsCard()
     {

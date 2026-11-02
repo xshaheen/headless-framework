@@ -106,6 +106,6 @@ public sealed class CashInOrder
     }
 
     [JsonExtensionData]
-    public IDictionary<string, object?> ExtensionData { get; } =
+    public IDictionary<string, object?> ExtensionData { get; set; } =
         new Dictionary<string, object?>(StringComparer.Ordinal);
 }

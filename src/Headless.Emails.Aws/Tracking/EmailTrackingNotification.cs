@@ -64,6 +64,6 @@ public sealed record EmailTrackingNotification
 
     /// <summary>Captures any fields SES adds to the record that are not modeled above.</summary>
     [JsonExtensionData]
-    public IDictionary<string, object?> ExtensionData { get; } =
+    public IDictionary<string, object?> ExtensionData { get; set; } =
         new Dictionary<string, object?>(StringComparer.Ordinal);
 }
