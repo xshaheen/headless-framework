@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using Couchbase;
@@ -74,36 +75,83 @@ public static class CouchbaseBucketContextInitializer
 
     private static Action<CouchbaseBucketContext, string?> _CreateInitializeAction(Type childContextType)
     {
+        // Reflection, attribute reads, and the document-set constructor lookup run once per context type; each
+        // context creation then only joins names and calls the compiled assigners.
+        var documentSets = _GetContextProperties(childContextType)
+            .Select(property => new DocumentSetAssigner(
+                property.ScopeName,
+                property.CollectionName,
+                property.ScopeName + "_" + property.CollectionName,
+                _CompileAssigner(childContextType, property)
+            ))
+            .ToArray();
+
         return (context, mainScope) =>
         {
-            foreach (var property in _GetContextProperties(childContextType))
+            foreach (var documentSet in documentSets)
             {
-                var (propertyScope, propertyCollection) = _GetCollectionName(property.Info);
-
-                string scope;
-                string collection;
-
                 if (mainScope is not null) // Multi-tenant per scope
                 {
-                    scope = mainScope;
-                    collection = propertyScope + "_" + propertyCollection;
+                    documentSet.Assign(context, mainScope, documentSet.FlattenedCollection);
                 }
                 else
                 {
-                    scope = propertyScope;
-                    collection = propertyCollection;
+                    documentSet.Assign(context, documentSet.Scope, documentSet.Collection);
                 }
-
-                // Create an instance of Document<T> with the correct scope and collection
-                var documentSet = Activator.CreateInstance(
-                    _DocumentSetType.MakeGenericType(property.DocumentType),
-                    [context, scope, collection]
-                );
-
-                property.Info.SetValue(context, documentSet);
             }
         };
     }
+
+    /// <summary>
+    /// Compiles <c>context.Property = new DocumentSet&lt;T&gt;(context, scope, collection)</c> for one document-set
+    /// property.
+    /// </summary>
+    private static Action<CouchbaseBucketContext, string, string> _CompileAssigner(
+        Type contextType,
+        DocumentInformation property
+    )
+    {
+        var documentSetType = _DocumentSetType.MakeGenericType(property.DocumentType);
+
+        var constructor =
+            documentSetType.GetConstructor([typeof(BucketContext), typeof(string), typeof(string)])
+            ?? throw new InvalidOperationException(
+                $"Could not find the (BucketContext, string, string) constructor of {documentSetType}."
+            );
+
+        var contextParameter = Expression.Parameter(typeof(CouchbaseBucketContext), "context");
+        var scopeParameter = Expression.Parameter(typeof(string), "scope");
+        var collectionParameter = Expression.Parameter(typeof(string), "collection");
+
+        var body = Expression.Assign(
+            Expression.Property(Expression.Convert(contextParameter, contextType), property.Info),
+            Expression.Convert(
+                Expression.New(
+                    constructor,
+                    Expression.Convert(contextParameter, typeof(BucketContext)),
+                    scopeParameter,
+                    collectionParameter
+                ),
+                property.Info.PropertyType
+            )
+        );
+
+        return Expression
+            .Lambda<Action<CouchbaseBucketContext, string, string>>(
+                body,
+                contextParameter,
+                scopeParameter,
+                collectionParameter
+            )
+            .Compile();
+    }
+
+    private sealed record DocumentSetAssigner(
+        string Scope,
+        string Collection,
+        string FlattenedCollection,
+        Action<CouchbaseBucketContext, string, string> Assign
+    );
 
     #endregion
 

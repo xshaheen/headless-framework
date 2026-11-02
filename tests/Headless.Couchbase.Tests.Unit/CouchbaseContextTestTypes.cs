@@ -46,6 +46,16 @@ internal sealed class InvalidAttributeBucketContext(
     public IDocumentSet<TestDocument> Documents { get; set; } = null!;
 }
 
+internal sealed class BlankCollectionBucketContext(
+    IBucket bucket,
+    Transactions transactions,
+    ILogger<CouchbaseBucketContext> logger
+) : CouchbaseBucketContext(bucket, transactions, logger)
+{
+    [CouchbaseCollection("sales", " ")]
+    public IDocumentSet<TestDocument> Documents { get; set; } = null!;
+}
+
 public sealed class TestDocument : Entity<string>
 {
     public string? Value { get; init; }

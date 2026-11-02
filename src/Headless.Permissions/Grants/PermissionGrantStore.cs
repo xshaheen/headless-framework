@@ -3,6 +3,7 @@
 using Headless.Caching;
 using Headless.Checks;
 using Headless.MultiTenancy;
+using Headless.Threading;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -20,6 +21,12 @@ public sealed class PermissionGrantStore(
 ) : IPermissionGrantStore
 {
     private readonly TimeSpan _cacheExpiration = managementOptions.Value.GrantCacheExpiration;
+
+    // Concurrent misses for one provider key share one load: the first caller reads the repository and fills the
+    // cache, and the others re-read the cache it filled. A waiter only ever uses what the cache holds for its own key,
+    // so the lock decides ordering, never results. Static, so the store needs no disposal; distinct stores and keys
+    // merely share the striped lock table.
+    private static readonly KeyedAsyncLock _LoadLock = new();
 
     private static void _EnsureKey(string? providerName, string? providerKey, string? name = null)
     {
@@ -103,16 +110,22 @@ public sealed class PermissionGrantStore(
         // One cache read across every (name, key) pair, then one repository read for the misses: the shape
         // this replaces, one IsGrantedAsync call per key, cost one cache round-trip per target, and one
         // repository load per target with any miss.
-        var distinctNames = names.ToHashSet(StringComparer.Ordinal);
-        var distinctKeys = providerKeys.ToHashSet(StringComparer.Ordinal);
+        string[] distinctNames = [.. names.ToHashSet(StringComparer.Ordinal)];
+        string[] distinctKeys = [.. providerKeys.ToHashSet(StringComparer.Ordinal)];
 
-        var cacheKeys = new List<string>(distinctNames.Count * distinctKeys.Count);
+        // Each key is formatted once and read back by position, (key index * name count + name index), in the
+        // miss grouping and the result passes below.
+        var cacheKeys = new string[distinctNames.Length * distinctKeys.Length];
 
-        foreach (var providerKey in distinctKeys)
+        for (var k = 0; k < distinctKeys.Length; k++)
         {
-            foreach (var name in distinctNames)
+            for (var n = 0; n < distinctNames.Length; n++)
             {
-                cacheKeys.Add(PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey));
+                cacheKeys[(k * distinctNames.Length) + n] = PermissionGrantCacheItem.CalculateCacheKey(
+                    distinctNames[n],
+                    providerName,
+                    distinctKeys[k]
+                );
             }
         }
 
@@ -123,13 +136,13 @@ public sealed class PermissionGrantStore(
         // Misses grouped per provider key, so the repository load can name the exact names that key lacks.
         var missedByKey = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
 
-        foreach (var providerKey in distinctKeys)
+        for (var k = 0; k < distinctKeys.Length; k++)
         {
-            foreach (var name in distinctNames)
-            {
-                var cacheKey = PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey);
+            var providerKey = distinctKeys[k];
 
-                if (cacheItemsMap.TryGetValue(cacheKey, out var item) && item.HasValue)
+            for (var n = 0; n < distinctNames.Length; n++)
+            {
+                if (cacheItemsMap.TryGetValue(cacheKeys[(k * distinctNames.Length) + n], out var item) && item.HasValue)
                 {
                     continue;
                 }
@@ -140,7 +153,7 @@ public sealed class PermissionGrantStore(
                     missedByKey[providerKey] = missedNames;
                 }
 
-                _ = missedNames.Add(name);
+                _ = missedNames.Add(distinctNames[n]);
             }
         }
 
@@ -150,18 +163,19 @@ public sealed class PermissionGrantStore(
                 : await _CacheSomeForKeysAsync(missedByKey, providerName, cancellationToken).ConfigureAwait(false);
 
         var result = new Dictionary<string, Dictionary<string, PermissionGrantStatus>>(
-            distinctKeys.Count,
+            distinctKeys.Length,
             StringComparer.Ordinal
         );
 
-        foreach (var providerKey in distinctKeys)
+        for (var k = 0; k < distinctKeys.Length; k++)
         {
-            var statuses = new Dictionary<string, PermissionGrantStatus>(distinctNames.Count, StringComparer.Ordinal);
-            result[providerKey] = statuses;
+            var statuses = new Dictionary<string, PermissionGrantStatus>(distinctNames.Length, StringComparer.Ordinal);
+            result[distinctKeys[k]] = statuses;
 
-            foreach (var name in distinctNames)
+            for (var n = 0; n < distinctNames.Length; n++)
             {
-                var cacheKey = PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey);
+                var name = distinctNames[n];
+                var cacheKey = cacheKeys[(k * distinctNames.Length) + n];
                 var item =
                     newCacheItems.GetValueOrDefault(cacheKey)
                     ?? (cacheItemsMap.TryGetValue(cacheKey, out var cached) && cached.HasValue ? cached.Value : null);
@@ -774,6 +788,22 @@ public sealed class PermissionGrantStore(
         CancellationToken cancellationToken
     )
     {
+        using var loadLock = await _LoadLock
+            .LockAsync($"{providerName}\n{providerKey}", cancellationToken)
+            .ConfigureAwait(false);
+
+        var cached = await cache
+            .GetAsync(
+                PermissionGrantCacheItem.CalculateCacheKey(permissionToFind, providerName, providerKey),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (cached.HasValue)
+        {
+            return PermissionGrantStatus.From(cached.Value?.IsGranted);
+        }
+
         var statuses = await _CacheAllAsync(providerName, providerKey, cancellationToken).ConfigureAwait(false);
 
         return statuses.TryGetValue(permissionToFind, out var isGranted)

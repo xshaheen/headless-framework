@@ -169,7 +169,7 @@ internal sealed class EfAuditChangeCapture(
 
         foreach (var metadata in properties)
         {
-            var property = entry.Property(metadata.Name);
+            var property = entry.Property(metadata);
 
             if (property.IsTemporary)
             {
@@ -586,8 +586,7 @@ internal sealed class EfAuditChangeCapture(
 
             var entityType = $"{ownerType.FullName}.{ownedType.Name}";
 
-            var ownerKeyValues = ownership.Properties.Select(p => entry.Property(p.Name).CurrentValue).ToArray();
-            return (entityType, _FormatEntityId(ownerKeyValues));
+            return (entityType, _FormatEntityId(entry, ownership.Properties));
         }
 
         var key = entry.Metadata.FindPrimaryKey();
@@ -597,24 +596,31 @@ internal sealed class EfAuditChangeCapture(
             return (entry.Metadata.ClrType.FullName, null);
         }
 
-        var values = key.Properties.Select(p => entry.Property(p.Name).CurrentValue).ToArray();
-
-        return (entry.Metadata.ClrType.FullName, _FormatEntityId(values));
+        return (entry.Metadata.ClrType.FullName, _FormatEntityId(entry, key.Properties));
     }
 
-    private static string? _FormatEntityId(object?[] values)
+    // Runs once per audited entry, so the common single-column key reads its one value without building arrays, and
+    // every read goes through the property metadata instead of a by-name lookup.
+    private static string? _FormatEntityId(EntityEntry entry, IReadOnlyList<IProperty> properties)
     {
-        if (values.Length == 0)
+        if (properties.Count == 0)
         {
             return null;
         }
 
-        if (values.Length == 1)
+        if (properties.Count == 1)
         {
-            return values[0]?.ToString();
+            return entry.Property(properties[0]).CurrentValue?.ToString();
         }
 
-        return JsonSerializer.Serialize(values.Select(static value => value?.ToString()).ToArray());
+        var values = new string?[properties.Count];
+
+        for (var i = 0; i < values.Length; i++)
+        {
+            values[i] = entry.Property(properties[i]).CurrentValue?.ToString();
+        }
+
+        return JsonSerializer.Serialize(values);
     }
 
     /// <summary>Annotation-derived audit policy for one entity type, memoized on its metadata instance.</summary>

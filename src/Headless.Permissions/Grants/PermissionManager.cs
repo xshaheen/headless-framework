@@ -375,6 +375,67 @@ public sealed class PermissionManager(
 
     #region Helpers
 
+    /// <summary>Asks every matching provider once, returning the results in provider order.</summary>
+    /// <remarks>
+    /// The built-in user and role providers only read the singleton grant store, whose cache and repository serve
+    /// concurrent callers, so they run together: with a distributed cache the check then costs one round trip instead
+    /// of one per provider. Any other provider may share a scoped, single-threaded service, so a chain that has one
+    /// keeps the sequential walk.
+    /// </remarks>
+    private async Task<List<(string ProviderName, MultiplePermissionGrantStatusResult Grants)>> _CheckProvidersAsync(
+        List<PermissionDefinition> permissions,
+        ICurrentUser currentUser,
+        string? providerName,
+        CancellationToken cancellationToken
+    )
+    {
+        var providers = new List<IPermissionGrantProvider>();
+        var allBuiltIn = true;
+
+        foreach (var provider in grantProviderManager.ValueProviders)
+        {
+            if (providerName is not null && !string.Equals(provider.Name, providerName, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            providers.Add(provider);
+            allBuiltIn &= provider is UserPermissionGrantProvider or RolePermissionGrantProvider;
+        }
+
+        var results = new List<(string ProviderName, MultiplePermissionGrantStatusResult Grants)>(providers.Count);
+
+        if (allBuiltIn && providers.Count > 1)
+        {
+            var checks = new Task<MultiplePermissionGrantStatusResult>[providers.Count];
+
+            for (var i = 0; i < providers.Count; i++)
+            {
+                checks[i] = providers[i].CheckAsync(permissions, currentUser, cancellationToken);
+            }
+
+            var grants = await Task.WhenAll(checks).ConfigureAwait(false);
+
+            for (var i = 0; i < providers.Count; i++)
+            {
+                results.Add((providers[i].Name, grants[i]));
+            }
+
+            return results;
+        }
+
+        foreach (var provider in providers)
+        {
+            var providerGrants = await provider
+                .CheckAsync(permissions, currentUser, cancellationToken)
+                .ConfigureAwait(false);
+
+            results.Add((provider.Name, providerGrants));
+        }
+
+        return results;
+    }
+
     private async Task<List<GrantedPermissionResult>> _CoreGetOrDefaultAsync(
         IReadOnlyCollection<PermissionDefinition> permissions,
         ICurrentUser currentUser,
@@ -409,21 +470,13 @@ public sealed class PermissionManager(
         // Evaluate each matching provider exactly once - CheckAsync typically fans out to the distributed
         // grant cache (per role for the role provider), so the denial and grant passes below share these
         // results instead of doubling those round-trips per authorization check.
-        var providerGrantsList = new List<(string ProviderName, MultiplePermissionGrantStatusResult Grants)>();
-
-        foreach (var provider in grantProviderManager.ValueProviders)
-        {
-            if (providerName is not null && !string.Equals(provider.Name, providerName, StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            var providerGrants = await provider
-                .CheckAsync(checkNeededPermissions, currentUser, cancellationToken)
-                .ConfigureAwait(false);
-
-            providerGrantsList.Add((provider.Name, providerGrants));
-        }
+        var providerGrantsList = await _CheckProvidersAsync(
+                checkNeededPermissions,
+                currentUser,
+                providerName,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
 
         // First pass: check for explicit denials (Prohibited)
         // AWS IAM-style: explicit deny overrides all grants

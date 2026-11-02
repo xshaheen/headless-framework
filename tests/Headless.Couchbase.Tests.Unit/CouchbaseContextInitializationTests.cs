@@ -85,6 +85,47 @@ public sealed class CouchbaseContextInitializationTests : TestBase
     }
 
     [Fact]
+    public void should_reject_blank_collection_name()
+    {
+        var (provider, bucket, transactions) = _CreateDependencies();
+        using var providerLifetime = provider;
+        var act = () =>
+            CouchbaseBucketContextInitializer.Initialize<BlankCollectionBucketContext>(
+                provider,
+                bucket,
+                transactions,
+                defaultScopeName: null
+            );
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*Invalid Collection on Documents*");
+    }
+
+    [Fact]
+    public void should_reuse_the_compiled_initializer_for_every_context_of_a_type()
+    {
+        var (provider, bucket, transactions) = _CreateDependencies();
+        using var providerLifetime = provider;
+
+        var first = CouchbaseBucketContextInitializer.Initialize<TestBucketContext>(
+            provider,
+            bucket,
+            transactions,
+            defaultScopeName: "tenant-a"
+        );
+        var second = CouchbaseBucketContextInitializer.Initialize<TestBucketContext>(
+            provider,
+            bucket,
+            transactions,
+            defaultScopeName: null
+        );
+
+        // Each context gets its own document sets, built from the cached per-type mapping with its own scope.
+        second.Orders.Should().NotBeSameAs(first.Orders);
+        _GetMapping(first.Orders).Should().Be(("tenant-a", "sales_orders"));
+        _GetMapping(second.Orders).Should().Be(("sales", "orders"));
+    }
+
+    [Fact]
     public async Task should_open_bucket_and_initialize_context_through_provider()
     {
         var clusterProvider = Substitute.For<ICouchbaseClustersProvider>();
