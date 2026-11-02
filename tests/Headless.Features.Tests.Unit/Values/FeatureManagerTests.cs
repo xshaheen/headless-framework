@@ -165,6 +165,7 @@ public sealed class FeatureManagerTests : TestBase
                     && m.ProviderKey == "key1"
                     && m.OriginHostName == "prod/orders-7d"
                 ),
+                Arg.Is<PublishOptions>(static options => options.IsSystemMessage),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -195,6 +196,7 @@ public sealed class FeatureManagerTests : TestBase
                     && m.ProviderName == "Provider1"
                     && m.ProviderKey == "key1"
                 ),
+                Arg.Is<PublishOptions>(static options => options.IsSystemMessage),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -245,6 +247,7 @@ public sealed class FeatureManagerTests : TestBase
         await _bus.Received(1)
             .PublishAsync(
                 Arg.Is<FeatureChangedMessage>(static m => m.FeatureNames.Count == 1 && m.FeatureNames[0] == "Feature1"),
+                Arg.Is<PublishOptions>(static options => options.IsSystemMessage),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -259,7 +262,8 @@ public sealed class FeatureManagerTests : TestBase
         await _sut.DeleteAsync("Provider1", "key1", AbortToken);
 
         // then
-        await _bus.DidNotReceive().PublishAsync(Arg.Any<FeatureChangedMessage>(), Arg.Any<CancellationToken>());
+        await _bus.DidNotReceive()
+            .PublishAsync(Arg.Any<FeatureChangedMessage>(), Arg.Any<PublishOptions>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -309,7 +313,7 @@ public sealed class FeatureManagerTests : TestBase
         const string featureName = "TestFeature";
         var definition = new FeatureDefinition(featureName);
         _definitionManager.FindAsync(featureName, AbortToken).Returns(definition);
-        _bus.PublishAsync(Arg.Any<FeatureChangedMessage>(), Arg.Any<CancellationToken>())
+        _bus.PublishAsync(Arg.Any<FeatureChangedMessage>(), Arg.Any<PublishOptions>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("broker down"));
 
         // when
@@ -345,7 +349,7 @@ public sealed class FeatureManagerTests : TestBase
         _definitionManager.FindAsync(featureName, Arg.Any<CancellationToken>()).Returns(definition);
 
         using var cts = new CancellationTokenSource();
-        _bus.PublishAsync(Arg.Any<FeatureChangedMessage>(), Arg.Any<CancellationToken>())
+        _bus.PublishAsync(Arg.Any<FeatureChangedMessage>(), Arg.Any<PublishOptions>(), Arg.Any<CancellationToken>())
             .Returns<Task<PublishReceipt>>(async _ =>
             {
                 await cts.CancelAsync();
@@ -407,6 +411,7 @@ public sealed class FeatureManagerTests : TestBase
                     && m.ProviderName == "Provider1"
                     && m.ProviderKey == "key1"
                 ),
+                Arg.Is<PublishOptions>(static options => options.IsSystemMessage),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -433,7 +438,8 @@ public sealed class FeatureManagerTests : TestBase
                 Arg.Any<string?>(),
                 Arg.Any<CancellationToken>()
             );
-        await _bus.DidNotReceive().PublishAsync(Arg.Any<FeatureChangedMessage>(), Arg.Any<CancellationToken>());
+        await _bus.DidNotReceive()
+            .PublishAsync(Arg.Any<FeatureChangedMessage>(), Arg.Any<PublishOptions>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -460,7 +466,8 @@ public sealed class FeatureManagerTests : TestBase
                 Arg.Any<string?>(),
                 Arg.Any<CancellationToken>()
             );
-        await _bus.DidNotReceive().PublishAsync(Arg.Any<FeatureChangedMessage>(), Arg.Any<CancellationToken>());
+        await _bus.DidNotReceive()
+            .PublishAsync(Arg.Any<FeatureChangedMessage>(), Arg.Any<PublishOptions>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -519,7 +526,8 @@ public sealed class FeatureManagerTests : TestBase
                 Arg.Any<string?>(),
                 Arg.Any<CancellationToken>()
             );
-        await _bus.DidNotReceive().PublishAsync(Arg.Any<FeatureChangedMessage>(), Arg.Any<CancellationToken>());
+        await _bus.DidNotReceive()
+            .PublishAsync(Arg.Any<FeatureChangedMessage>(), Arg.Any<PublishOptions>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]

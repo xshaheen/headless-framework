@@ -948,6 +948,8 @@ using (currentTenant.Change(tenantId))
 
 Use `.RequireTenantOnPublish()` to require every publish to resolve a tenant identifier. When enabled, the publish wrapper checks `PublishOptions.TenantId` first, then falls back to the ambient `ICurrentTenant.Id`. If neither resolves a value, the publish fails with `Headless.MultiTenancy.MissingTenantContextException`. This is the messaging sibling of the EF write guard (#234) and the HTTP authorization requirement.
 
+Framework system messages are exempt: a publish marked `MessageOptions.IsSystemMessage = true` with no explicit and no ambient tenant goes out with no tenant header instead of failing. The framework marks its own host-level messages: HybridCache invalidations, so `ITenantCatalogCacheInvalidator` evictions and pre-authentication catalog lookups still reach peers; distributed lock release signals; and the Features, Settings, Permissions grant, and dynamic permission definition change announcements. The exemption never drops a tenant that exists: an ambient tenant is still stamped, and a system message that suppresses an existing ambient tenant is still rejected. Application messages leave the flag unset. See [Strict Publish Tenancy](messaging.md#strict-publish-tenancy).
+
 `MessagingOptions.TenantContextRequired` reports the configured state and has no public setter. It defaults to `false`. The raw-header integrity rules above (`ReservedTenantHeader`, `TenantIdMismatch`) always apply before the strict-tenancy fallback.
 
 To remediate a `MissingTenantContextException` from a background worker or `IHostedService`:

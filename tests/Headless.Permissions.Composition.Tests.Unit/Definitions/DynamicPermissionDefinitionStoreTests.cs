@@ -267,6 +267,7 @@ public sealed class DynamicPermissionDefinitionStoreTests : TestBase
                 Arg.Is<DynamicPermissionDefinitionsChanged>(message =>
                     message.Permissions.Count == 1 && message.Permissions.Contains(permissionName)
                 ),
+                Arg.Is<PublishOptions>(static options => options.IsSystemMessage),
                 Arg.Any<CancellationToken>()
             );
     }
