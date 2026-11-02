@@ -9,6 +9,11 @@ namespace Headless.Captcha;
 /// <summary>
 /// Verifies Google reCAPTCHA v3 tokens and provides score-based results.
 /// </summary>
+/// <remarks>
+/// <see cref="CaptchaVerifyResult.Success"/> is <see langword="true"/> only when Google accepts the token and it meets
+/// <see cref="ReCaptchaOptions.MinimumScore"/>, <see cref="ReCaptchaOptions.ExpectedAction"/>, and
+/// <see cref="ReCaptchaOptions.ExpectedHostName"/>.
+/// </remarks>
 [PublicAPI]
 public interface IReCaptchaV3Verifier : ICaptchaVerifier
 {
@@ -58,15 +63,41 @@ internal sealed class ReCaptchaSiteVerifyV3(
         if (!wire.Success)
         {
             logger?.LogReCaptchaFailure(wire);
+
+            return _Result(wire, success: false, wire.ErrorCodes);
         }
 
+        var policyFailures = ReCaptchaVerdictPolicy.Evaluate(
+            options,
+            wire.HostName,
+            wire.Action,
+            wire.Score,
+            isV3: true
+        );
+
+        if (policyFailures.Length > 0)
+        {
+            logger?.LogReCaptchaPolicyRejected(policyFailures, wire.Score, wire.Action, wire.HostName);
+
+            return _Result(wire, success: false, policyFailures);
+        }
+
+        return _Result(wire, success: true, wire.ErrorCodes);
+    }
+
+    private static ReCaptchaV3VerifyResult _Result(
+        ReCaptchaSiteVerifyV3Response wire,
+        bool success,
+        IReadOnlyList<string>? errorCodes
+    )
+    {
         return new ReCaptchaV3VerifyResult
         {
-            Success = wire.Success,
+            Success = success,
             ChallengeTimestamp = wire.ChallengeTimeStamp,
             HostName = wire.HostName,
             Action = wire.Action,
-            ErrorCodes = wire.ErrorCodes,
+            ErrorCodes = errorCodes,
             Score = wire.Score ?? 0f,
         };
     }

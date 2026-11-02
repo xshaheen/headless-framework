@@ -26,6 +26,7 @@ Install `Headless.Captcha.Abstractions` plus one or more provider packages. All 
 - Do not name a provider with a value under the `Headless.Captcha:` namespace — those are the framework's reserved `CaptchaConstants` keys. `CaptchaConstants.IsReservedProviderKey(name)` is the check; the builder throws `ArgumentException` for a reserved name and `InvalidOperationException` for a duplicate name.
 - `ICaptchaVerifier.VerifyAsync` throws `HttpRequestException` when the siteverify HTTP call is unsuccessful and `InvalidOperationException` when the response body cannot be deserialized. Always check `CaptchaVerifyResult.Success` before trusting the request; on failure read `ErrorCodes`. This is the deliberate opposite of `ISmsSender.SendAsync`, which *returns* a failed result (never throws) for the same class of transport failure: an unverifiable captcha challenge is treated as exceptional (a bug or outage the caller must not silently pass), whereas a rejected SMS send is ordinary data.
 - reCAPTCHA v3's `Score` (0.0–1.0) is exposed only on `ReCaptchaV3VerifyResult` via `IReCaptchaV3Verifier.VerifyAsync`. It has no Turnstile equivalent, so it lives off the base contract. Do not expect a score from `ICaptchaVerifier` or from Turnstile.
+- For reCAPTCHA, `Success` is the full verdict, not Google's raw `success`. Google's flag only says the token is valid for the site key: a bot gets a valid v3 token with a low score, and a token minted for one page's action verifies on any other. So a v3 result passes only when the score is at least `ReCaptchaOptions.MinimumScore` (default `0.5`), and, when set, the action equals `ExpectedAction` and the hostname equals `ExpectedHostName` (v2 checks the hostname only). A failed check sets `Success = false` and puts `score-too-low`, `action-mismatch`, or `hostname-mismatch` in `ErrorCodes` (`ReCaptchaError.ScoreTooLow` / `ActionMismatch` / `HostNameMismatch`). Set `ExpectedAction` on each v3 provider that guards one form, and register one named v3 provider per action when forms differ. Set `MinimumScore = 0` only when you apply your own policy to `Score`.
 - Turnstile-only data — `CData` and the Enterprise `Metadata` (`JsonElement?`) — is on `TurnstileVerifyResult` via `ITurnstileVerifier.VerifyAsync(TurnstileVerifyRequest, ...)`. Set `TurnstileVerifyRequest.IdempotencyKey` to re-verify the same token without a duplicate-token error.
 - The reCAPTCHA and Turnstile tag helpers read the **default** provider's options (the canonical `CaptchaConstants` key). They do not render a named provider's widget — if a provider must be both rendered via tag helpers and a default is needed, make it the default.
 - Bind provider options from configuration with the `IConfiguration` overload; the canonical section names are `Headless:Captcha:ReCaptchaV2`, `Headless:Captcha:ReCaptchaV3`, and `Headless:Captcha:Turnstile`.
@@ -58,7 +59,7 @@ Pick by the verdict shape you need and the privacy/UX trade-off you accept.
 | Provider | Use when | Avoid when | Trade-off |
 | --- | --- | --- | --- |
 | `Headless.Captcha.ReCaptcha` (v2) | You want an explicit, visible "I'm not a robot" checkbox or image challenge the user actively solves. | You need a frictionless, invisible flow, or you require a numeric risk score. | A visible challenge with user friction, but an unambiguous human-solved signal. Pass/fail only. |
-| `Headless.Captcha.ReCaptcha` (v3) | You want an invisible, score-based risk signal you act on yourself (e.g. block below a threshold, step up above it). | You need a hard pass/fail challenge with no policy logic, or you cannot accept Google as a dependency. | A numeric `Score` (0.0–1.0) with no user friction, but you own the threshold policy and the score is reCAPTCHA-only (not portable to other providers). |
+| `Headless.Captcha.ReCaptcha` (v3) | You want an invisible, score-based risk signal you act on yourself (e.g. block below a threshold, step up above it). | You need a hard pass/fail challenge with no policy logic, or you cannot accept Google as a dependency. | A numeric `Score` (0.0–1.0) with no user friction. The provider fails tokens below `MinimumScore` (default 0.5); a finer policy on `Score` is yours, and the score is reCAPTCHA-only (not portable to other providers). |
 | `Headless.Captcha.Turnstile` | You want a privacy-friendly, mostly invisible challenge with native token re-verification (`idempotency_key`) and optional `cdata`. | You specifically need a numeric risk score for your own policy logic. | Privacy-friendly pass/fail with `idempotency_key` and `cdata`, but no score — the verdict is the policy. |
 
 `Headless.Captcha.Abstractions` is not a provider; it defines `ICaptchaVerifier`, the request/result contracts, and `ICaptchaProvider` (the `AddHeadlessCaptcha` builder and its keyed resolver ship in `Headless.Captcha`, pulled in transitively by every provider package). Reference the abstractions from application code so call sites stay provider-agnostic, and add at least one provider package.
@@ -201,15 +202,15 @@ Google reCAPTCHA v2 (visible checkbox) and v3 (invisible score) verification plu
 - `setup.UseReCaptchaV2(...)` / `setup.UseReCaptchaV3(...)` - builder entry points, available as default variants on `HeadlessCaptchaSetupBuilder` and named variants on `HeadlessCaptchaInstanceBuilder` (added through `setup.AddNamed("name", i => i.UseReCaptchaV3(...))`). Each carries the overload trio in order: `IConfiguration`, `Action<ReCaptchaOptions>`, `Action<ReCaptchaOptions, IServiceProvider>`. `ReCaptchaOptions` is settable, so any overload works — bind the config section `Headless:Captcha:ReCaptchaV2` / `Headless:Captcha:ReCaptchaV3`, or set its properties inside the delegate.
 - `IReCaptchaV3Verifier : ICaptchaVerifier` - adds `new Task<ReCaptchaV3VerifyResult> VerifyAsync(CaptchaVerifyRequest, CancellationToken)`. Inject it to read the score; the base `ICaptchaVerifier` view returns pass/fail only.
 - reCAPTCHA v2 implements the plain `ICaptchaVerifier` (no provider-only data) — resolve it as `ICaptchaVerifier` (default unkeyed, or keyed by name / `CaptchaConstants.ReCaptchaV2Provider`).
-- `ReCaptchaV3VerifyResult : CaptchaVerifyResult` - adds `float Score` (0.0–1.0 on a successful verify; defaults to `0f` on failure — `Success` is authoritative for pass/fail).
-- `ReCaptchaError` enum and `ReCaptchaResultExtensions.ToReCaptchaErrors(this IReCaptchaVerifyResult)` - parse the raw `ErrorCodes` into the typed reCAPTCHA error enum.
+- `ReCaptchaV3VerifyResult : CaptchaVerifyResult` - adds `float Score` (0.0–1.0 when Google returns one; `0f` otherwise). `Score` is reported even when the score check fails it; `Success` is authoritative for pass/fail and already includes `MinimumScore`, `ExpectedAction`, and `ExpectedHostName`.
+- `ReCaptchaError` enum and `ReCaptchaResultExtensions.ToReCaptchaErrors(this IReCaptchaVerifyResult)` - parse the raw `ErrorCodes` into the typed reCAPTCHA error enum. `ScoreTooLow`, `ActionMismatch`, and `HostNameMismatch` come from this package's checks, not from Google.
 - `ICaptchaLanguageCodeProvider` (shared with Turnstile; default `CultureInfoCaptchaLanguageCodeProvider`) - supplies the `?hl=` language code appended to the script URL; defaults to the current UI culture.
 - Tag helpers: `<recaptcha-script-v2>`, `<recaptcha-div-v2>`, the `recaptcha-v2-*` attribute element helper, `<recaptcha-script-v3>`, and `<recaptcha-script-v3-js>`. They read the default provider's options under the matching canonical key.
 
 ### Design constraints
 
 - v2 and v3 are one package, two entry points. They share `ReCaptchaOptions` and the `recaptcha/api/siteverify` endpoint but register under distinct canonical keys (`ReCaptchaV2Provider` / `ReCaptchaV3Provider`) and ship distinct tag helpers, because v2 is a visible challenge and v3 is a score signal.
-- The score is on the v3 result only. v3 returns a per-request score with no user friction; that score has no equivalent in v2 or Turnstile, so it lives on `ReCaptchaV3VerifyResult` behind `IReCaptchaV3Verifier`. You own the threshold policy (for example, treat `Score < 0.5f` as suspicious).
+- The score is on the v3 result only. v3 returns a per-request score with no user friction; that score has no equivalent in v2 or Turnstile, so it lives on `ReCaptchaV3VerifyResult` behind `IReCaptchaV3Verifier`. The provider enforces `MinimumScore` itself, so `ICaptchaVerifier` callers get a score-aware verdict; read `Score` only for a finer policy, such as stepping up between two thresholds.
 - Breaking rename from `Headless.ReCaptcha`. The standalone `AddReCaptchaV2` / `AddReCaptchaV3` `IServiceCollection` entry points and the old `IReCaptchaSiteVerifyV2` / `IReCaptchaSiteVerifyV3` interfaces were removed (greenfield, no compat shim). Migrate to `AddHeadlessCaptcha(b => b.UseReCaptchaV2/V3(...))` and `IReCaptchaV3Verifier` / `ICaptchaVerifier`.
 
 ### Install
@@ -236,7 +237,9 @@ public sealed class LoginService(IReCaptchaV3Verifier verifier)
     {
         var result = await verifier.VerifyAsync(new CaptchaVerifyRequest { Response = token }, ct);
 
-        return result.Success && result.Score >= 0.5f;
+        // Success already requires MinimumScore (and ExpectedAction / ExpectedHostName when set).
+        // Read Score only for a finer policy, such as asking for a second factor below 0.7.
+        return result.Success;
     }
 }
 ```
@@ -259,9 +262,12 @@ Razor tag helpers (the widget/script for the default provider):
 options.VerifyBaseUrl = "https://www.google.com/"; // base URL of the reCAPTCHA API (default)
 options.SiteKey = "your-site-key"; // required — rendered into the client widget/script
 options.SiteSecret = "your-secret-key"; // required — used for server-side verification
+options.MinimumScore = 0.5f; // v3 only — lowest accepted score, 0.0–1.0 (default 0.5)
+options.ExpectedAction = "login"; // v3 only — the action the token must carry (default null: not checked)
+options.ExpectedHostName = "example.com"; // v2 and v3 — the host the challenge must be solved on (default null: not checked)
 ```
 
-Bound from `Headless:Captcha:ReCaptchaV2` / `Headless:Captcha:ReCaptchaV3` when using the `IConfiguration` overload. `ReCaptchaOptionsValidator` requires `SiteKey` and `SiteSecret` to be non-empty. `VerifyBaseUrl` requires HTTPS for external hosts, permits HTTP only for loopback development/test servers, and rejects userinfo; validation runs at startup.
+Bound from `Headless:Captcha:ReCaptchaV2` / `Headless:Captcha:ReCaptchaV3` when using the `IConfiguration` overload. `ReCaptchaOptionsValidator` requires `SiteKey` and `SiteSecret` to be non-empty, `MinimumScore` to be between 0 and 1, and `ExpectedAction` / `ExpectedHostName` to be `null` or non-blank. `VerifyBaseUrl` requires HTTPS for external hosts, permits HTTP only for loopback development/test servers, and rejects userinfo; validation runs at startup.
 
 ### Runtime behavior
 

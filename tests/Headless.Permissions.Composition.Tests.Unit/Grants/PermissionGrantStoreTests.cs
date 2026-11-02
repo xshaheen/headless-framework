@@ -436,13 +436,14 @@ public sealed class PermissionGrantStoreTests : TestBase
         var newId = Guid.NewGuid();
         const string tenantId = "tenant-1";
 
+        _currentTenant.Id.Returns(tenantId);
         _repository
             .FindAsync(permissionName, _ProviderName, _ProviderKey, AbortToken)
             .Returns((PermissionGrantRecord?)null);
         _guidGenerator.Create().Returns(newId);
 
         // when
-        await _sut.GrantAsync(permissionName, _ProviderName, _ProviderKey, tenantId, AbortToken);
+        await _sut.GrantAsync(permissionName, _ProviderName, _ProviderKey, AbortToken);
 
         // then
         await _repository
@@ -480,7 +481,7 @@ public sealed class PermissionGrantStoreTests : TestBase
         _guidGenerator.Create().Returns(newId);
 
         // when
-        await _sut.GrantAsync(permissionName, _ProviderName, _ProviderKey, "tenant-1", AbortToken);
+        await _sut.GrantAsync(permissionName, _ProviderName, _ProviderKey, AbortToken);
 
         // then
         await _repository.Received(1).DeleteAsync(deniedRecord, AbortToken);
@@ -536,6 +537,71 @@ public sealed class PermissionGrantStoreTests : TestBase
             );
     }
 
+    [Fact]
+    public async Task should_stamp_grant_with_the_current_tenant_it_looked_up_and_cached_under()
+    {
+        // given — the lookup and the cache are scoped to the current tenant, so the written record must be too
+        const string permissionName = "Users.Create";
+
+        _currentTenant.Id.Returns("tenant-a");
+        _repository
+            .FindAsync(permissionName, _ProviderName, _ProviderKey, AbortToken)
+            .Returns((PermissionGrantRecord?)null);
+        _guidGenerator.Create().Returns(Guid.NewGuid());
+
+        // when
+        await _sut.GrantAsync(permissionName, _ProviderName, _ProviderKey, cancellationToken: AbortToken);
+
+        // then
+        await _repository
+            .Received(1)
+            .InsertAsync(Arg.Is<PermissionGrantRecord>(static r => r.TenantId == "tenant-a"), AbortToken);
+    }
+
+    [Fact]
+    public async Task should_stamp_batch_grant_with_the_current_tenant()
+    {
+        // given
+        string[] permissionNames = ["Users.Create", "Users.Update"];
+
+        _currentTenant.Id.Returns("tenant-a");
+        _repository
+            .GetListAsync(Arg.Any<IReadOnlyCollection<string>>(), _ProviderName, _ProviderKey, AbortToken)
+            .Returns([new PermissionGrantRecord(Guid.NewGuid(), "Users.Update", _ProviderName, _ProviderKey, false)]);
+        _guidGenerator.Create().Returns(Guid.NewGuid());
+
+        // when
+        await _sut.GrantAsync(permissionNames, _ProviderName, _ProviderKey, cancellationToken: AbortToken);
+
+        // then — both the replaced denial and the new record carry the current tenant
+        await _repository
+            .Received(2)
+            .InsertManyAsync(
+                Arg.Is<IEnumerable<PermissionGrantRecord>>(static records =>
+                    records.All(static r => r.TenantId == "tenant-a")
+                ),
+                AbortToken
+            );
+    }
+
+    [Fact]
+    public async Task should_refuse_a_padded_current_tenant_before_touching_storage()
+    {
+        // given — SQL Server ignores trailing spaces, so a padded tenant id would share another tenant's rows
+        _currentTenant.Id.Returns("acme ");
+
+        // when
+        var single = async () => await _sut.GrantAsync("Users.Create", _ProviderName, _ProviderKey, AbortToken);
+        var batch = async () =>
+            await _sut.GrantAsync(["Users.Create", "Users.Delete"], _ProviderName, _ProviderKey, AbortToken);
+
+        // then
+        await single.Should().ThrowExactlyAsync<ArgumentException>();
+        await batch.Should().ThrowExactlyAsync<ArgumentException>();
+        _repository.ReceivedCalls().Should().BeEmpty();
+        _cache.ReceivedCalls().Should().BeEmpty();
+    }
+
     #endregion GrantAsync - Single
 
     #region GrantAsync - Batch
@@ -545,7 +611,6 @@ public sealed class PermissionGrantStoreTests : TestBase
     {
         // given
         string[] permissionNames = ["Users.Create", "Users.Update"];
-        const string tenantId = "tenant-1";
 
         _repository
             .GetListAsync(Arg.Any<IReadOnlyCollection<string>>(), _ProviderName, _ProviderKey, AbortToken)
@@ -553,7 +618,7 @@ public sealed class PermissionGrantStoreTests : TestBase
         _guidGenerator.Create().Returns(Guid.NewGuid());
 
         // when
-        await _sut.GrantAsync(permissionNames, _ProviderName, _ProviderKey, tenantId, AbortToken);
+        await _sut.GrantAsync(permissionNames, _ProviderName, _ProviderKey, AbortToken);
 
         // then
         await _repository
@@ -945,9 +1010,7 @@ public sealed class PermissionGrantStoreTests : TestBase
         "is-granted-many-provider-key",
         "get-all-grants",
         "grant-provider-key",
-        "grant-tenant-id",
         "grant-many-names",
-        "grant-many-tenant-id",
         "revoke-provider-key",
         "revoke-many-provider-key",
         "refresh-provider-key",
@@ -974,19 +1037,9 @@ public sealed class PermissionGrantStoreTests : TestBase
                 await _sut.IsGrantedAsync(["Users.Create", "Users.Delete"], _ProviderName, "admin ", AbortToken),
             "get-all-grants" => async () => await _sut.GetAllGrantsAsync(_ProviderName, "admin ", AbortToken),
             "grant-provider-key" => async () =>
-                await _sut.GrantAsync("Users.Create", _ProviderName, "admin ", null, AbortToken),
-            "grant-tenant-id" => async () =>
-                await _sut.GrantAsync("Users.Create", _ProviderName, _ProviderKey, "acme ", AbortToken),
+                await _sut.GrantAsync("Users.Create", _ProviderName, "admin ", AbortToken),
             "grant-many-names" => async () =>
-                await _sut.GrantAsync(["Users.Create", " Users.Delete"], _ProviderName, _ProviderKey, null, AbortToken),
-            "grant-many-tenant-id" => async () =>
-                await _sut.GrantAsync(
-                    ["Users.Create", "Users.Delete"],
-                    _ProviderName,
-                    _ProviderKey,
-                    "acme ",
-                    AbortToken
-                ),
+                await _sut.GrantAsync(["Users.Create", " Users.Delete"], _ProviderName, _ProviderKey, AbortToken),
             "revoke-provider-key" => async () =>
                 await _sut.RevokeAsync("Users.Create", _ProviderName, "admin ", AbortToken),
             "revoke-many-provider-key" => async () =>

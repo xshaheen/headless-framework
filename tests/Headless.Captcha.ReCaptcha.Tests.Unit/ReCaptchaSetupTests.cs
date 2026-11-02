@@ -106,6 +106,56 @@ public sealed class ReCaptchaSetupTests
         act.Should().Throw<OptionsValidationException>();
     }
 
+    [Fact]
+    public void minimum_score_defaults_to_google_suggested_threshold()
+    {
+        var services = new ServiceCollection();
+        services.AddHeadlessCaptcha(builder => builder.UseReCaptchaV3(_Section("ReCaptchaV3", key: "k", secret: "s")));
+
+        using var serviceProvider = services.BuildServiceProvider();
+
+        var options = serviceProvider
+            .GetRequiredService<IOptionsMonitor<ReCaptchaOptions>>()
+            .Get(CaptchaConstants.ReCaptchaV3Provider);
+
+        options.MinimumScore.Should().Be(0.5f);
+        options.ExpectedAction.Should().BeNull();
+        options.ExpectedHostName.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(-0.1f, null, null)]
+    [InlineData(1.1f, null, null)]
+    [InlineData(0.5f, "", null)]
+    [InlineData(0.5f, null, " ")]
+    public void invalid_verdict_policy_fails_options_validation(
+        float minimumScore,
+        string? expectedAction,
+        string? expectedHostName
+    )
+    {
+        var services = new ServiceCollection();
+        services.AddHeadlessCaptcha(builder =>
+            builder.UseReCaptchaV3(options =>
+            {
+                options.SiteKey = "k";
+                options.SiteSecret = "s";
+                options.MinimumScore = minimumScore;
+                options.ExpectedAction = expectedAction;
+                options.ExpectedHostName = expectedHostName;
+            })
+        );
+
+        using var serviceProvider = services.BuildServiceProvider();
+
+        var act = () =>
+            serviceProvider
+                .GetRequiredService<IOptionsMonitor<ReCaptchaOptions>>()
+                .Get(CaptchaConstants.ReCaptchaV3Provider);
+
+        act.Should().Throw<OptionsValidationException>();
+    }
+
     [Theory]
     [InlineData("not-a-url")]
     [InlineData("http://captcha.example.com/")]

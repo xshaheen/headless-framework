@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Context;
-using Headless.MultiTenancy;
 using Headless.UnitOfWork;
 
 namespace Headless.Permissions;
@@ -11,12 +10,11 @@ namespace Headless.Permissions;
 /// Subclasses implement <see cref="CheckAsync(IReadOnlyCollection{PermissionDefinition}, ICurrentUser, CancellationToken)"/>
 /// to translate the current principal into a provider key (user id, role name, etc.) and query the store.
 /// <see cref="SetAsync(PermissionDefinition, string, bool, CancellationToken)"/> routes to
-/// <see cref="IPermissionGrantStore.GrantAsync(string, string, string, string?, CancellationToken)"/> or
+/// <see cref="IPermissionGrantStore.GrantAsync(string, string, string, CancellationToken)"/> or
 /// <see cref="IPermissionGrantStore.RevokeAsync(string, string, string, CancellationToken)"/> based on
 /// <c>isGranted</c>.
 /// </summary>
-public abstract class StorePermissionGrantProvider(IPermissionGrantStore grantStore, ICurrentTenant currentTenant)
-    : IPermissionGrantProvider
+public abstract class StorePermissionGrantProvider(IPermissionGrantStore grantStore) : IPermissionGrantProvider
 {
     /// <inheritdoc/>
     public abstract string Name { get; }
@@ -47,7 +45,7 @@ public abstract class StorePermissionGrantProvider(IPermissionGrantStore grantSt
     )
     {
         return isGranted
-            ? grantStore.GrantAsync(permission.Name, Name, providerKey, currentTenant.Id, cancellationToken)
+            ? grantStore.GrantAsync(permission.Name, Name, providerKey, cancellationToken)
             : grantStore.RevokeAsync(permission.Name, Name, providerKey, cancellationToken);
     }
 
@@ -61,7 +59,7 @@ public abstract class StorePermissionGrantProvider(IPermissionGrantStore grantSt
         var names = permissions.Select(x => x.Name).ToArray();
 
         return isGranted
-            ? grantStore.GrantAsync(names, Name, providerKey, currentTenant.Id, cancellationToken)
+            ? grantStore.GrantAsync(names, Name, providerKey, cancellationToken)
             : grantStore.RevokeAsync(names, Name, providerKey, cancellationToken);
     }
 
@@ -77,7 +75,7 @@ public abstract class StorePermissionGrantProvider(IPermissionGrantStore grantSt
         var names = permissions.Select(x => x.Name).ToArray();
 
         return isGranted
-            ? grantStore.GrantEnlistedAsync(unitOfWork, names, Name, providerKey, currentTenant.Id, cancellationToken)
+            ? grantStore.GrantEnlistedAsync(unitOfWork, names, Name, providerKey, cancellationToken)
             : grantStore.RevokeEnlistedAsync(unitOfWork, names, Name, providerKey, cancellationToken);
     }
 }
