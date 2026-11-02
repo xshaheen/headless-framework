@@ -17,7 +17,7 @@
 [![GitHub Stars](https://img.shields.io/github/stars/xshaheen/headless-framework?style=social)](https://github.com/xshaheen/headless-framework)
 [![English](https://img.shields.io/badge/lang-English-2563EB?style=flat-square)](README.md)
 
-211 package &bull; نفس الـ setup في كل حتة &bull; بدّل أي provider بسطر واحد
+214 package &bull; نفس الـ setup في كل حتة &bull; بدّل أي provider بسطر واحد
 
 [ليه Headless](#ليه-headless) &bull; [ابدأ في 60 ثانية](#ابدأ-في-60-ثانية) &bull; [Setup واحد لكل المجالات](#setup-واحد-لكل-المجالات) &bull; [إيه اللي في الصندوق](#إيه-اللي-في-الصندوق) &bull; [فهرس الحزم](#فهرس-الحزم)
 
@@ -53,7 +53,7 @@ builder.Services.AddHeadlessCaching(setup => setup.UseRedis(...)); // production
 
 أي service أو repository أو handler بياخد `ICache` مش هيتأثر بالتعديل دا. ونفس الكلام على `IBlobStorage` بين S3 و Azure و Cloudflare R2 و FileSystem و Redis و SFTP، وعلى `IEmailSender` بين SES و Azure Communication Services و SMTP، وعلى الـ messaging بين 8 transports.
 
-**هتركّب 3 packages، مش 211.** الفهرس كبير عشان عدد الـ providers كبير. الخدمة اللي محتاجة caching بتركّب `Headless.Caching.Abstractions` و `Headless.Caching` وprovider واحد. والـ libraries بتاعة الـ domain والـ application بتعتمد على الـ Abstractions package لوحدها: `Headless.Caching.Abstractions` بتجرّ وراها package-ين بس، ومفيش فيهم أي dependency خارجية: `Headless.Checks` و `Headless.Primitives`.
+**هتركّب 3 packages، مش 214.** الفهرس كبير عشان عدد الـ providers كبير. الخدمة اللي محتاجة caching بتركّب `Headless.Caching.Abstractions` و `Headless.Caching` وprovider واحد. والـ libraries بتاعة الـ domain والـ application بتعتمد على الـ Abstractions package لوحدها: `Headless.Caching.Abstractions` بتجرّ وراها package-ين بس، ومفيش فيهم أي dependency خارجية: `Headless.Checks` و `Headless.Primitives`.
 
 **الـ tests مش محتاجة Docker عشان تبقى سريعة.** الـ caching والـ distributed locks والـ messaging فيهم in-memory providers؛ والـ emails والـ SMS والـ push notifications فيهم dev providers مش بتبعت حاجة؛ والـ blob storage بيشتغل على الـ file system المحلي. يعني الـ unit tests بتجرّب نفس الـ contract الحقيقي من غير containers. ولما تحتاج الـ backend الحقيقي، `Headless.Testing.Testcontainers` بتجهّزلك الـ fixtures. الـ repo نفسه ماشي على التقسيمة دي: 122 مشروع unit tests و 63 مشروع integration tests.
 
@@ -192,6 +192,7 @@ services.AddHeadless<Feature>(setup => setup.Use<Provider>(options => { ... }));
 | Distributed locks | `AddHeadlessDistributedLocks` | `UseInMemory`، `UseRedis`، `UsePostgreSql`، `UseSqlServer` |
 | Node membership | `AddHeadlessCoordination` | `UseRedis`، `UsePostgreSql`، `UseSqlServer` |
 | Sequences | `AddHeadlessSequences` | `UsePostgreSql`، `UseSqlServer` |
+| Arabic search | `AddHeadlessSearch` | `UsePostgreSql` |
 | Fencing (durable leases) | `AddHeadlessFencing` | `UsePostgreSql`، `UseSqlServer`، `UseInMemory` |
 | Idempotency | `AddHeadlessIdempotency` | `UsePostgreSql`، `UseSqlServer`، `UseInMemory`، `UseCache` |
 | Feature flags | `AddHeadlessFeatures` | `UseEntityFramework<TContext>`، `UsePostgreSql`، `UseSqlServer` |
@@ -292,7 +293,7 @@ packages الـ providers دي packages عادية على NuGet. عشان تضي
 </div>
 
 <details dir="rtl" align="right">
-<summary><strong>كل الـ 211 package، مرتّبة حسب الـ domain</strong> — اضغط للعرض</summary>
+<summary><strong>كل الـ 214 package، مرتّبة حسب الـ domain</strong> — اضغط للعرض</summary>
 
 ### API & Web
 
@@ -726,6 +727,16 @@ Connection factories للوصول لـ SQL خام لما تحتاج تنزل ت�
 | [Headless.Sql.PostgreSql](src/Headless.Sql.PostgreSql/README.md) | Connection factory لـ PostgreSQL، والـ helpers بتاعة الـ unit of work على `NpgsqlConnection` بالـ ADO الخام |
 | [Headless.Sql.SqlServer](src/Headless.Sql.SqlServer/README.md) | Connection factory لـ SQL Server، والـ helpers بتاعة الـ unit of work على `SqlConnection` بالـ ADO الخام |
 | [Headless.Sql.Sqlite](src/Headless.Sql.Sqlite/README.md) | Connection factory لـ SQLite، والـ helpers بتاعة الـ unit of work على `SqliteConnection` بالـ ADO الخام |
+
+### Search
+
+مفاتيح بحث عربي بتتجاهل كراسي الهمزة والتشكيل والتطويل والتاء المربوطة والألف المقصورة وأشكال الحروف الفارسية والأردية، وبيبنيها جدول rules واحد عليه version في الـ database وفي C# بنفس الطريقة.
+
+| Package | الوصف |
+|---------|-------|
+| [Headless.Search](src/Headless.Search/README.md) | الـ rules بتاعة البحث العربي بالـ versions، و`ArabicSearchNormalizer`، و`AddHeadlessSearch` |
+| [Headless.Search.PostgreSql](src/Headless.Search.PostgreSql/README.md) | الـ function الـ immutable `ar_norm_v1` كـ step في الـ schema runner، من غير dependency على EF Core |
+| [Headless.Search.PostgreSql.EntityFramework](src/Headless.Search.PostgreSql.EntityFramework/README.md) | Helpers لـ EF Core لمفاتيح بحث stored عليها trigram index، والـ function بتاعة الـ query |
 
 ### Testing
 

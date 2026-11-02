@@ -167,6 +167,9 @@ Headless.PushNotifications.Firebase
 Headless.RateLimiting
 Headless.Redis
 Headless.Reliability.Abstractions
+Headless.Search
+Headless.Search.PostgreSql
+Headless.Search.PostgreSql.EntityFramework
 Headless.Sequences
 Headless.Sequences.Abstractions
 Headless.Sequences.PostgreSql

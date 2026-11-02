@@ -1,0 +1,233 @@
+# Golden corpus for Arabic search rules V1: input<TAB>expected key, both checked by hand against the rule table.
+# Escapes: \uXXXX (UTF-16 code unit), \n, \t, \r, \\. Lines starting with # are comments; an empty expected is "".
+# Hamza seats and alef
+أحمد	احمد
+إبراهيم	ابراهيم
+آمنة	امنه
+ٱلله	الله
+مؤمن	مومن
+سؤال	سوال
+مسؤول	مسوول
+شاطئ	شاطي
+رئيس	رييس
+مسئول	مسيول
+هيئة	هييه
+قرآن	قران
+القرآن الكريم	القران الكريم
+الإمارات	الامارات
+أبو ظبي	ابو ظبي
+ء	ء
+جزء	جزء
+سماء	سماء
+# Teh marbuta and alef maksura fold in the key only
+فاطمة	فاطمه
+فاطمه	فاطمه
+مدرسة	مدرسه
+مكّة المكرّمة	مكه المكرمه
+مصطفى	مصطفي
+موسى	موسي
+عيسى	عيسي
+يحيى	يحيي
+على	علي
+# Thal stays distinct from dal
+ذكي	ذكي
+منذر	منذر
+# Tashkeel, tatweel, and Quranic marks are deleted inside words
+مُحَمَّد	محمد
+عَبْدُ الله	عبد الله
+بِسْمِ اللَّهِ الرَّحْمَنِ الرَّحِيمِ	بسم الله الرحمن الرحيم
+بِسْمِ اللَّـهِ الرَّحْمَـٰنِ الرَّحِيمِ	بسم الله الرحمن الرحيم
+ٱلْحَمْدُ لِلَّهِ	الحمد لله
+ذَٰلِكَ	ذلك
+الصَّلَوٰةَ	الصلوه
+قَالَۖ	قال
+محـــمد	محمد
+ـ
+# Persian, Urdu, Kurdish, and Maghrebi letters
+علی	علي
+کریم	كريم
+پاکستان	باكستان
+پاکستانی	باكستاني
+چای	جاي
+ژاله	زاله
+گل	كل
+ڳ	ك
+ڤيتامين	فيتامين
+اللہ	الله
+پھول	بهول
+ٹوپی	توبي
+ڈاکٹر	داكتر
+گاڑی	كاري
+کے	كي
+ۓ	ي
+میں	مين
+ڕۆژ	روز
+ئێوە	ييوه
+کوڵ	كول
+ڨاسم	قاسم
+ٮ	ب
+ٯ	ق
+ۻ	ض
+# Presentation forms, as copied out of PDFs
+\uFEE3\uFEA4\uFEE4\uFEAA	محمد
+\uFE83\uFEA3\uFEE4\uFEAA	احمد
+\uFED3\uFE8E\uFEC3\uFEE4\uFE94	فاطمه
+\uFB58	ب
+\uFB90	ك
+\uFBFE	ي
+م\uFE76	م
+\uFEFB	لا
+\uFEF7	لا
+\uFEF9	لا
+\uFEF5	لا
+\uFEFC	لا
+س\uFEFCم	سلام
+\uFDF2	الله
+عبد\uFDF2	عبدالله
+# Decomposed input folds like composed input
+ا\u0654حمد	احمد
+ا\u0655براهيم	ابراهيم
+ا\u0653منة	امنه
+و\u0654	و
+ي\u0654	ي
+e\u0301	e
+ه\u0654	ه
+# Digits
+١٢٣	123
+۱۲۳	123
+٠٩	09
+رقم ٤٥	رقم 45
+١٢٨	128
+This ١٢٨	this 128
+# Latin
+m	m
+Mahmoud	mahmoud
+ Mahmoud Shaheen	mahmoud shaheen
+ABC xyz	abc xyz
+crème brûlée	creme brulee
+Ærø	aero
+straße	strasse
+Œuvre	oeuvre
+Þór	thor
+Łódź	lodz
+Ñandú	nandu
+ÇAĞLAR	caglar
+İstanbul	istanbul
+# Real names: hamza seats, teh marbuta, and alef maksura together
+عائشة	عايشه
+عايشة	عايشه
+أسامة	اسامه
+إسماعيل	اسماعيل
+آدم	ادم
+مأمون	مامون
+رؤوف	رووف
+لؤي	لوي
+هناء	هناء
+وفاء	وفاء
+شيماء	شيماء
+زكريا	زكريا
+زكرياء	زكرياء
+مرتضى	مرتضي
+ليلى	ليلي
+سلمى	سلمي
+هدى	هدي
+جميلة	جميله
+حمزة	حمزه
+طه	طه
+سعيد	سعيد
+# Real names: compound names keep their spacing, so the spaced and joined spellings differ
+عبد الرحمن	عبد الرحمن
+عبدالرحمن	عبدالرحمن
+أبو بكر الصديق	ابو بكر الصديق
+ابن تيمية	ابن تيميه
+نور الهدى	نور الهدي
+أنس بن مالك	انس بن مالك
+خديجة بنت خويلد	خديجه بنت خويلد
+# Real names with full tashkeel
+فَاطِمَةُ	فاطمه
+عَلِيٌّ	علي
+إِبْرَاهِيمُ	ابراهيم
+يُوسُفَ	يوسف
+مَرْيَمَ	مريم
+عُثْمَانُ	عثمان
+# Persian names
+محمدرضا	محمدرضا
+فاطمه زهرا	فاطمه زهرا
+مهدی	مهدي
+زینب	زينب
+کوثر	كوثر
+نرگس	نركس
+پریسا	بريسا
+ژیلا	زيلا
+چنگیز	جنكيز
+شیرین	شيرين
+مصطفی	مصطفي
+حسین\u200Cعلی	حسينعلي
+# Urdu names
+عمران خان	عمران خان
+نواز شریف	نواز شريف
+بھٹو	بهتو
+چودھری	جودهري
+ثناء اللہ	ثناء الله
+شاہد	شاهد
+پرویز	برويز
+گیلانی	كيلاني
+رضوانہ	رضوانه
+ملک	ملك
+# Kurdish names
+شێرکۆ	شيركو
+هەڵەبجە	ههلهبجه
+ڕێبوار	ريبوار
+کوردستان	كوردستان
+# Maghrebi letters and Latin transliterations
+ڭناوة	كناوه
+Mohamed Ben Ali	mohamed ben ali
+Abdelkader	abdelkader
+Aïcha	aicha
+Hélène	helene
+Zoë	zoe
+Müller	muller
+Ahmed El-Sayed	ahmed el sayed
+# Scholarly transliteration: letters outside Latin Extended-A split words, so ʿ and ḥ become separators
+ʿAbd al-Raḥmān	abd al ra man
+# Names beside digits and brackets
+محمد ٢	محمد 2
+فاطمة (Fatima)	فاطمه fatima
+# Mixed scripts
+Ahmed أحمد	ahmed احمد
+أحمد123	احمد123
+J. أحمد	j احمد
+Al-Ahly	al ahly
+# Separators: every non-alphabet character splits words, and runs collapse
+x\u00A0y	x y
+x\u2003y	x y
+a\nb	a b
+a\tb	a b
+a\r\nb	a b
+عبد-الله	عبد الله
+O'Brien	o brien
+ابن_سينا	ابن سينا
+محمد،علي	محمد علي
+س؟	س
+  محمد  	محمد
+محمد   علي	محمد علي
+﴾محمد﴿	محمد
+۞
+؛
+?
+محمد 😀	محمد
+😀
+Иван
+Иван Ahmed	ahmed
+# Invisible formatting characters are deleted without a space
+عبد\u200Cالله	عبدالله
+مح\u200Bمد	محمد
+\u202Bمحمد\u202C	محمد
+\uFEFFمحمد	محمد
+soft\u00ADware	software
+\u2067محمد\u2069	محمد
+م\u061Cحمد	محمد
+# Empty and whitespace-only input
+ \n\n\r\n	
+\t	
+\u00A0	
