@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using Headless.Messaging;
 using Headless.Messaging.InMemory;
 using Headless.Testing.Tests;
@@ -356,14 +357,18 @@ public sealed class MemoryQueueTests : TestBase
         // when - subscribe same group to same messageName again
         await _consumerClient.SubscribeAsync(["messageName-1"], AbortToken);
 
-        var receivedMessages = new List<TransportMessage>();
-        var tcs = new TaskCompletionSource();
+        var receivedIds = new ConcurrentQueue<string>();
+        var sentinelReceived = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         _consumerClient.OnMessageCallback = async (msg, sender) =>
         {
-            receivedMessages.Add(msg);
+            receivedIds.Enqueue(msg.Id);
             await _consumerClient.CommitAsync(sender);
-            tcs.TrySetResult();
+
+            if (string.Equals(msg.Id, "sentinel", StringComparison.Ordinal))
+            {
+                sentinelReceived.TrySetResult();
+            }
         };
 
         using var cts = new CancellationTokenSource();
@@ -381,14 +386,16 @@ public sealed class MemoryQueueTests : TestBase
 
         await Task.Delay(50, AbortToken);
 
-        // Send one message
+        // A duplicate subscription would deliver msg-1 twice, and the client channel is FIFO, so any copy arrives
+        // before the sentinel sent after it; waiting for the sentinel gives a duplicate the time to show up.
         _queue.SendBus(_CreateTestMessage("msg-1", "messageName-1"));
+        _queue.SendBus(_CreateTestMessage("sentinel", "messageName-1"));
 
-        _ = await Task.WhenAny(tcs.Task, Task.Delay(5000, AbortToken));
+        await sentinelReceived.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         await cts.CancelAsync();
 
-        // then - should only receive one message, not duplicates
-        receivedMessages.Should().ContainSingle();
+        // then - one copy of msg-1, then the sentinel
+        receivedIds.Should().Equal("msg-1", "sentinel");
     }
 
     // -------------------------------------------------------------------------

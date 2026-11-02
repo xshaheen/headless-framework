@@ -19,18 +19,19 @@ public sealed class TenancyMessageDescriberTests
     [Fact]
     public void should_resolve_non_empty_localized_description_for_every_code_in_english_and_arabic()
     {
-        // given
-        var previousCulture = Messages.Culture;
+        // given: the UI culture, not the static Messages.Culture, which is process-wide and would hand its culture to
+        // every test in the module reading these messages at the same time
+        var previousCulture = CultureInfo.CurrentUICulture;
 
         try
         {
             foreach (var (describe, code) in _AllDescriptors)
             {
                 // when — invariant culture resolves the neutral (English) resource
-                Messages.Culture = CultureInfo.InvariantCulture;
+                CultureInfo.CurrentUICulture = CultureInfo.InvariantCulture;
                 var english = describe();
 
-                Messages.Culture = CultureInfo.GetCultureInfo("ar");
+                CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("ar");
                 var arabic = describe();
 
                 // then
@@ -47,7 +48,7 @@ public sealed class TenancyMessageDescriberTests
         }
         finally
         {
-            Messages.Culture = previousCulture;
+            CultureInfo.CurrentUICulture = previousCulture;
         }
     }
 }
