@@ -239,6 +239,28 @@ public sealed class AwsAutoProvisionTests : TestBase
     }
 
     [Fact]
+    public async Task should_not_look_up_a_missing_topic_again_when_sends_retry_soon_after()
+    {
+        // given: the topic is not provisioned yet, so the lookup finds nothing
+        _sns.FindTopicAsync("bus-orders").Returns((Topic?)null);
+        await using var transport = new AmazonSnsBusTransport(
+            Substitute.For<ILogger<AmazonSnsBusTransport>>(),
+            _Options(autoProvision: false)
+        );
+        _SetField(transport, "_snsClient", _sns);
+        _SetField(transport, "_topicArnMaps", new ConcurrentDictionary<string, string>(StringComparer.Ordinal));
+
+        // when
+        var first = await transport.SendAsync(_Message("orders"), AbortToken);
+        var second = await transport.SendAsync(_Message("orders"), AbortToken);
+
+        // then: both sends fail, and only the first one pays for the account-wide lookup
+        first.Succeeded.Should().BeFalse();
+        second.Succeeded.Should().BeFalse();
+        await _sns.Received(1).FindTopicAsync("bus-orders");
+    }
+
+    [Fact]
     public async Task should_look_up_a_queue_destination_instead_of_creating_it()
     {
         // given

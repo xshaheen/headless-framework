@@ -298,6 +298,32 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
 
         compositeKeyColumns.Should().BeEquivalentTo(["StatusName", "Added"], opts => opts.WithStrictOrdering());
 
+        // The dashboard counts filter on IntentType too; carrying it lets them read the index alone.
+        var includedColumns = (
+            await connection.QueryAsync<string>(
+                new CommandDefinition(
+                    """
+                    SELECT c.name
+                    FROM sys.indexes i
+                    INNER JOIN sys.tables t ON i.object_id = t.object_id
+                    INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
+                    INNER JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+                    INNER JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+                    WHERE s.name = @Schema AND t.name = @Table AND i.name = @IndexName AND ic.is_included_column = 1
+                    """,
+                    new
+                    {
+                        Schema = schema,
+                        Table = table,
+                        IndexName = $"IX_{table}_StatusName_Added",
+                    },
+                    cancellationToken: AbortToken
+                )
+            )
+        ).ToList();
+
+        includedColumns.Should().BeEquivalentTo(["IntentType"]);
+
         // cleanup
         await connection.ExecuteAsync(
             new CommandDefinition(TestMessagingSchema.DropSql(schema), cancellationToken: AbortToken)

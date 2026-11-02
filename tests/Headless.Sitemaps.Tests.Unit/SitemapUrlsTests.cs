@@ -329,78 +329,317 @@ public sealed class SitemapUrlsTests : SitemapTestBase
 
     #endregion
 
-    #region URL Splitting Tests (P1)
+    #region Sharded WriteAsync (P1)
 
     [Fact]
-    public async Task should_split_into_multiple_streams_when_exceeding_max()
+    public async Task should_write_one_shard_when_urls_fit_in_one_sitemap()
     {
-        // Create 50,001 URLs (just over the max)
-        var urls = Enumerable
-            .Range(0, SitemapConstants.MaxSitemapUrls + 1)
-            .Select(i => new SitemapUrl(new Uri($"https://example.com/page{i}")))
-            .ToList();
+        var urls = _CreateUrls(100);
 
-        var streams = await urls.WriteAsync(AbortToken);
+        var (count, shards) = await _CollectShardsAsync(urls);
 
-        streams.Should().HaveCount(2);
-        streams[0].Length.Should().BePositive();
-        streams[1].Length.Should().BePositive();
+        count.Should().Be(1);
+        shards.Should().ContainSingle();
+        shards[0].Index.Should().Be(0);
+        shards[0].Count.Should().Be(100);
+        Encoding.UTF8.GetString(shards[0].Bytes).Should().Contain("<loc>https://example.com/page0</loc>");
     }
 
     [Fact]
-    public async Task should_return_single_stream_for_small_url_list()
+    public async Task should_write_one_shard_when_url_count_equals_max()
     {
-        var urls = Enumerable
-            .Range(0, 100)
-            .Select(i => new SitemapUrl(new Uri($"https://example.com/page{i}")))
-            .ToList();
+        var urls = _CreateUrls(SitemapConstants.MaxSitemapUrls);
 
-        var streams = await urls.WriteAsync(AbortToken);
+        var (count, shards) = await _CollectShardsAsync(urls);
 
-        streams.Should().ContainSingle();
-    }
-
-    #endregion
-
-    #region Stream Output Contract (P1)
-
-    [Fact]
-    public async Task write_async_returns_rewound_readable_streams()
-    {
-        var urls = Enumerable
-            .Range(0, 10)
-            .Select(i => new SitemapUrl(new Uri($"https://example.com/page{i}")))
-            .ToList();
-
-        var streams = await urls.WriteAsync(AbortToken);
-
-        streams.Should().ContainSingle();
-        streams[0].Position.Should().Be(0);
-
-        using var reader = new StreamReader(streams[0], Encoding.UTF8);
-        var content = await reader.ReadToEndAsync(AbortToken);
-        content.Should().Contain("<loc>https://example.com/page0</loc>");
+        count.Should().Be(1);
+        shards.Should().ContainSingle();
+        shards[0].Count.Should().Be(SitemapConstants.MaxSitemapUrls);
     }
 
     [Fact]
-    public async Task write_each_async_yields_one_rewound_stream_per_shard()
+    public async Task should_split_into_two_shards_when_url_count_exceeds_max_by_one()
     {
-        var urls = Enumerable
-            .Range(0, SitemapConstants.MaxSitemapUrls + 1)
-            .Select(i => new SitemapUrl(new Uri($"https://example.com/page{i}")))
-            .ToList();
+        var urls = _CreateUrls(SitemapConstants.MaxSitemapUrls + 1);
 
-        var count = 0;
-
-        await foreach (var stream in urls.WriteEachAsync(AbortToken))
-        {
-            stream.Position.Should().Be(0);
-            stream.Length.Should().BePositive();
-            count++;
-            await stream.DisposeAsync();
-        }
+        var (count, shards) = await _CollectShardsAsync(urls);
 
         count.Should().Be(2);
+        shards.Select(s => s.Index).Should().Equal(0, 1);
+        shards.Select(s => s.Count).Should().Equal(SitemapConstants.MaxSitemapUrls, 1);
+
+        var last = Encoding.UTF8.GetString(shards[1].Bytes);
+        last.Should().Contain($"<loc>https://example.com/page{SitemapConstants.MaxSitemapUrls}</loc>");
+        last.Should().NotContain("<loc>https://example.com/page0</loc>");
+    }
+
+    [Fact]
+    public async Task should_write_shard_bytes_identical_to_write_to_async_on_the_same_slice()
+    {
+        var urls = _CreateMixedUrls();
+
+        var (_, shards) = await _CollectShardsAsync(urls);
+
+        shards.Should().HaveCount(2);
+        shards[0].Bytes.Should().Equal(await _WriteToBytesAsync([.. urls.Take(SitemapConstants.MaxSitemapUrls)]));
+        shards[1].Bytes.Should().Equal(await _WriteToBytesAsync([.. urls.Skip(SitemapConstants.MaxSitemapUrls)]));
+    }
+
+    [Fact]
+    public async Task should_declare_xhtml_and_image_namespaces_only_in_shards_that_need_them()
+    {
+        // The first shard holds plain URLs only; the second holds one URL with images and alternates.
+        var urls = _CreateUrls(SitemapConstants.MaxSitemapUrls);
+        urls.Add(_CreateRichUrl(SitemapConstants.MaxSitemapUrls));
+
+        var (_, shards) = await _CollectShardsAsync(urls);
+
+        var first = _ReadHeader(shards[0].Bytes);
+        first.Should().NotContain("xmlns:xhtml");
+        first.Should().NotContain("xmlns:image");
+
+        var second = _ReadHeader(shards[1].Bytes);
+        second.Should().Contain("xmlns:xhtml=\"http://www.w3.org/1999/xhtml\"");
+        second.Should().Contain("xmlns:image=\"http://www.google.com/schemas/sitemap-image/1.1\"");
+    }
+
+    [Fact]
+    public async Task should_write_the_same_shards_from_an_async_enumerable_as_from_an_enumerable()
+    {
+        var urls = _CreateMixedUrls();
+        var (expectedCount, expected) = await _CollectShardsAsync(urls);
+
+        var shards = new List<(int Index, int Count, byte[] Bytes)>();
+        var count = await _ToAsyncEnumerable(urls)
+            .WriteAsync(
+                async (shard, ct) => shards.Add((shard.Index, shard.Count, await _WriteShardAsync(shard, ct))),
+                AbortToken
+            );
+
+        count.Should().Be(expectedCount);
+        shards.Should().HaveCount(expected.Count);
+
+        for (var i = 0; i < shards.Count; i++)
+        {
+            shards[i].Index.Should().Be(expected[i].Index);
+            shards[i].Count.Should().Be(expected[i].Count);
+            shards[i].Bytes.Should().Equal(expected[i].Bytes);
+        }
+    }
+
+    [Fact]
+    public async Task should_not_call_on_shard_when_input_is_empty()
+    {
+        var calls = 0;
+
+        var count = await new List<SitemapUrl>().WriteAsync(
+            (_, _) =>
+            {
+                calls++;
+                return ValueTask.CompletedTask;
+            },
+            AbortToken
+        );
+
+        var asyncCount = await _ToAsyncEnumerable([])
+            .WriteAsync(
+                (_, _) =>
+                {
+                    calls++;
+                    return ValueTask.CompletedTask;
+                },
+                AbortToken
+            );
+
+        count.Should().Be(0);
+        asyncCount.Should().Be(0);
+        calls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_throw_when_shard_is_written_after_its_callback_returns()
+    {
+        SitemapShard? captured = null;
+
+        await _CreateUrls(10)
+            .WriteAsync(
+                (shard, _) =>
+                {
+                    captured = shard;
+                    return ValueTask.CompletedTask;
+                },
+                AbortToken
+            );
+
+        await using var stream = new MemoryStream();
+        var act = async () => await captured!.WriteToAsync(stream, AbortToken);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*shard 0 is no longer valid*");
+        stream.Length.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_propagate_on_shard_exception_and_stop_enumeration()
+    {
+        var enumerated = 0;
+        var calls = 0;
+
+        var urls = _CreateUrls((SitemapConstants.MaxSitemapUrls * 2) + 1)
+            .Select(url =>
+            {
+                enumerated++;
+                return url;
+            });
+
+        var act = async () =>
+            await urls.WriteAsync(
+                (_, _) =>
+                {
+                    calls++;
+                    throw new InvalidDataException("upload failed");
+                },
+                AbortToken
+            );
+
+        await act.Should().ThrowAsync<InvalidDataException>().WithMessage("upload failed");
+        calls.Should().Be(1);
+        enumerated.Should().Be(SitemapConstants.MaxSitemapUrls);
+    }
+
+    [Fact]
+    public async Task should_stop_between_urls_when_cancelled_by_a_shard_callback()
+    {
+        using var cts = new CancellationTokenSource();
+        var calls = 0;
+
+        var act = async () =>
+            await _CreateUrls(SitemapConstants.MaxSitemapUrls + 1)
+                .WriteAsync(
+                    async (_, _) =>
+                    {
+                        calls++;
+                        await cts.CancelAsync();
+                    },
+                    cts.Token
+                );
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        calls.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_not_call_on_shard_when_cancelled_before_start()
+    {
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+        var calls = 0;
+
+        var act = async () =>
+            await _ToAsyncEnumerable(_CreateUrls(10))
+                .WriteAsync(
+                    (_, _) =>
+                    {
+                        calls++;
+                        return ValueTask.CompletedTask;
+                    },
+                    cts.Token
+                );
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        calls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_throw_when_on_shard_is_null()
+    {
+        var act = async () => await _CreateUrls(1).WriteAsync(onShard: null!, AbortToken);
+
+        await act.Should().ThrowAsync<ArgumentNullException>();
+    }
+
+    private static List<SitemapUrl> _CreateUrls(int count)
+    {
+        return [.. Enumerable.Range(0, count).Select(i => new SitemapUrl(new Uri($"https://example.com/page{i}")))];
+    }
+
+    private static SitemapUrl _CreateRichUrl(int i)
+    {
+        return new SitemapUrl(
+            alternateLocations:
+            [
+                new() { Location = new Uri($"https://example.com/en/page{i}"), LanguageCode = "en" },
+                new() { Location = new Uri($"https://example.com/ar/page{i}"), LanguageCode = "ar" },
+            ],
+            options: new SitemapUrlOptions
+            {
+                Images = [new SitemapImage(new Uri($"https://example.com/image{i}.jpg"))],
+                Priority = 0.5f,
+                ChangeFrequency = ChangeFrequency.Weekly,
+                LastModified = new DateTime(2024, 1, 2),
+            }
+        );
+    }
+
+    // Two shards whose namespace needs differ: rich URLs are scattered through the first shard and the
+    // second shard is plain, so a per-shard declaration that leaked across shards would change the bytes.
+    private static List<SitemapUrl> _CreateMixedUrls()
+    {
+        return
+        [
+            .. Enumerable
+                .Range(0, SitemapConstants.MaxSitemapUrls + 3)
+                .Select(i =>
+                    i < SitemapConstants.MaxSitemapUrls && i % 10_000 == 0
+                        ? _CreateRichUrl(i)
+                        : new SitemapUrl(new Uri($"https://example.com/page{i}"))
+                ),
+        ];
+    }
+
+    private static async Task<(int Count, List<(int Index, int Count, byte[] Bytes)> Shards)> _CollectShardsAsync(
+        IEnumerable<SitemapUrl> urls
+    )
+    {
+        var shards = new List<(int Index, int Count, byte[] Bytes)>();
+
+        var count = await urls.WriteAsync(
+            async (shard, ct) => shards.Add((shard.Index, shard.Count, await _WriteShardAsync(shard, ct))),
+            AbortToken
+        );
+
+        return (count, shards);
+    }
+
+    private static async Task<byte[]> _WriteShardAsync(SitemapShard shard, CancellationToken cancellationToken)
+    {
+        await using var stream = new MemoryStream();
+        await shard.WriteToAsync(stream, cancellationToken);
+
+        return stream.ToArray();
+    }
+
+    private static async Task<byte[]> _WriteToBytesAsync(List<SitemapUrl> urls)
+    {
+        await using var stream = new MemoryStream();
+        await urls.WriteToAsync(stream, AbortToken);
+
+        return stream.ToArray();
+    }
+
+    private static string _ReadHeader(byte[] bytes)
+    {
+        var xml = Encoding.UTF8.GetString(bytes);
+
+        return xml[..xml.IndexOf("<url>", StringComparison.Ordinal)];
+    }
+
+    private static async IAsyncEnumerable<SitemapUrl> _ToAsyncEnumerable(IEnumerable<SitemapUrl> urls)
+    {
+        foreach (var url in urls)
+        {
+            await Task.Yield();
+            yield return url;
+        }
     }
 
     #endregion

@@ -88,33 +88,98 @@ internal sealed class FileSystemBlobStorage : IBlobStorage
             Directory.CreateDirectory(directory);
         }
 
-        var streamOptions = new FileStreamOptions
-        {
-            Mode = FileMode.Create,
-            Access = FileAccess.Write,
-            Share = FileShare.None,
-            Options = FileOptions.Asynchronous,
-        };
+        await _ReplaceBlobAsync(
+                fullPath,
+                async (contentTemp, sidecarTemp, ct) =>
+                {
+                    var streamOptions = new FileStreamOptions
+                    {
+                        Mode = FileMode.CreateNew,
+                        Access = FileAccess.Write,
+                        Share = FileShare.None,
+                        Options = FileOptions.Asynchronous,
+                    };
 
-        // Content-first write order: close the content file before writing the sidecar so a crash between
-        // the two leaves a blob with no sidecar (reads back as no metadata) rather than an orphan sidecar.
-        var fileStream = new FileStream(fullPath, streamOptions);
+                    var fileStream = new FileStream(contentTemp, streamOptions);
+
+                    try
+                    {
+                        if (content.CanSeek)
+                        {
+                            content.Position = 0;
+                        }
+
+                        await content.CopyToAsync(fileStream, ct).ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        await fileStream.DisposeAsync().ConfigureAwait(false);
+                    }
+
+                    await _WriteSidecarAsync(sidecarTemp, key, metadata, ct).ConfigureAwait(false);
+
+                    return true;
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Replaces the blob at <paramref name="fullPath"/> and its sidecar through temporary siblings that
+    /// <paramref name="writeAsync"/> fills; it returns whether it wrote a sidecar.
+    /// </summary>
+    /// <remarks>
+    /// Each temporary is renamed over its final path only after every write succeeded, so a fault or cancellation
+    /// midway leaves the previous blob and its metadata untouched, and a reader opens either the old file or the new
+    /// one, never a half-written file. The temporaries end in the sidecar suffix, so listings and deletes skip them.
+    /// </remarks>
+    private async ValueTask _ReplaceBlobAsync(
+        string fullPath,
+        Func<string, string, CancellationToken, ValueTask<bool>> writeAsync,
+        CancellationToken cancellationToken
+    )
+    {
+        var contentTemp = BlobStorageHelpers.BuildTempUploadPath(fullPath);
+        var sidecarTemp = BlobStorageHelpers.BuildTempUploadPath(fullPath);
 
         try
         {
-            if (content.CanSeek)
-            {
-                content.Position = 0;
-            }
+            var hasSidecar = await writeAsync(contentTemp, sidecarTemp, cancellationToken).ConfigureAwait(false);
+            var sidecarPath = fullPath + BlobStorageHelpers.SidecarSuffix;
 
-            await content.CopyToAsync(fileStream, cancellationToken).ConfigureAwait(false);
+            // Content first, then sidecar: a crash between the two renames pairs the new content with the old
+            // metadata, the same window the provider documents for a crash between the two writes.
+            File.Move(contentTemp, fullPath, overwrite: true);
+
+            if (hasSidecar)
+            {
+                File.Move(sidecarTemp, sidecarPath, overwrite: true);
+            }
+            else
+            {
+                // A blob replaced without metadata must not inherit the previous occupant's sidecar.
+                File.Delete(sidecarPath);
+            }
         }
         finally
         {
-            await fileStream.DisposeAsync().ConfigureAwait(false);
+            _DeleteTempFile(contentTemp);
+            _DeleteTempFile(sidecarTemp);
         }
+    }
 
-        await _WriteSidecarAsync(fullPath, key, metadata, cancellationToken).ConfigureAwait(false);
+    private void _DeleteTempFile(string path)
+    {
+        try
+        {
+            // A no-op after a successful rename: the file is no longer there.
+            File.Delete(path);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogFailedToDeleteTempFile(e, path);
+        }
     }
 
     public async ValueTask<IReadOnlyList<BlobBulkResult>> BulkUploadAsync(
@@ -202,8 +267,14 @@ internal sealed class FileSystemBlobStorage : IBlobStorage
 
         var count = 0;
         List<Exception>? failures = null;
+        var enumerationRoot = _FindEnumerationRoot(containerDirectory, prefix);
 
-        foreach (var file in Directory.EnumerateFiles(containerDirectory, "*", SearchOption.AllDirectories))
+        if (enumerationRoot is null)
+        {
+            return ValueTask.FromResult(0);
+        }
+
+        foreach (var file in Directory.EnumerateFiles(enumerationRoot, "*", SearchOption.AllDirectories))
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -276,7 +347,7 @@ internal sealed class FileSystemBlobStorage : IBlobStorage
 
     #region Move / Copy
 
-    public ValueTask<bool> CopyAsync(
+    public async ValueTask<bool> CopyAsync(
         BlobLocation source,
         BlobLocation destination,
         CancellationToken cancellationToken = default
@@ -289,15 +360,15 @@ internal sealed class FileSystemBlobStorage : IBlobStorage
 
         if (string.Equals(sourcePath, destinationPath, StringComparison.Ordinal))
         {
-            // A resolved self-copy is a no-op: opening destinationPath with FileMode.Create would truncate the source.
-            return ValueTask.FromResult(true);
+            // A resolved self-copy is a no-op: the blob already holds the content and metadata a copy would write.
+            return true;
         }
 
         _logger.LogCopyingFile(sourcePath, destinationPath);
 
         if (!File.Exists(sourcePath))
         {
-            return ValueTask.FromResult(false);
+            return false;
         }
 
         // Same data-plane rule as UploadAsync: never auto-create the top-level container. Without this guard the
@@ -316,23 +387,30 @@ internal sealed class FileSystemBlobStorage : IBlobStorage
             Directory.CreateDirectory(destinationDirectory);
         }
 
-        File.Copy(sourcePath, destinationPath, overwrite: true);
-
-        // The sidecar moves with the blob: copy it when present, otherwise drop a stale destination sidecar so an
-        // overwrite without source metadata cannot resurrect the destination's old metadata.
+        // The sidecar moves with the blob: copy it when present; otherwise the replace drops a stale destination
+        // sidecar so an overwrite without source metadata cannot resurrect the destination's old metadata.
         var sourceSidecar = sourcePath + BlobStorageHelpers.SidecarSuffix;
-        var destinationSidecar = destinationPath + BlobStorageHelpers.SidecarSuffix;
 
-        if (File.Exists(sourceSidecar))
-        {
-            File.Copy(sourceSidecar, destinationSidecar, overwrite: true);
-        }
-        else if (File.Exists(destinationSidecar))
-        {
-            File.Delete(destinationSidecar);
-        }
+        await _ReplaceBlobAsync(
+                destinationPath,
+                (contentTemp, sidecarTemp, _) =>
+                {
+                    File.Copy(sourcePath, contentTemp);
 
-        return ValueTask.FromResult(true);
+                    if (!File.Exists(sourceSidecar))
+                    {
+                        return ValueTask.FromResult(false);
+                    }
+
+                    File.Copy(sourceSidecar, sidecarTemp);
+
+                    return ValueTask.FromResult(true);
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return true;
     }
 
     public async ValueTask<bool> MoveAsync(
@@ -433,14 +511,16 @@ internal sealed class FileSystemBlobStorage : IBlobStorage
 
         try
         {
-            // Matches File.OpenRead's mode/access/share, but opens an async handle like the upload path: the returned
+            // Matches File.OpenRead's mode and access, but opens an async handle like the upload path: the returned
             // stream is consumed asynchronously (CopyToAsync into a response body or another provider). On Windows
             // this enables overlapped I/O instead of blocking thread-pool reads; on Unix it is a consistency no-op.
             var streamOptions = new FileStreamOptions
             {
                 Mode = FileMode.Open,
                 Access = FileAccess.Read,
-                Share = FileShare.Read,
+                // Delete sharing lets an upload rename its new content over this path while the stream is open
+                // (Windows refuses the replace otherwise); the stream keeps reading the content it opened.
+                Share = FileShare.Read | FileShare.Delete,
                 Options = FileOptions.Asynchronous,
             };
 
@@ -501,6 +581,12 @@ internal sealed class FileSystemBlobStorage : IBlobStorage
         }
 
         var startAfterKey = BlobStorageHelpers.DecodeContinuationToken(query.ContinuationToken);
+        var enumerationRoot = _FindEnumerationRoot(containerDirectory, prefix);
+
+        if (enumerationRoot is null)
+        {
+            return BlobPage.Empty;
+        }
 
         // Hold at most PageSize+1 entries in a sliding window (mirroring the SFTP provider) so memory stays
         // O(pageSize) regardless of how many blobs the container holds — a full window signals a further page remains.
@@ -515,7 +601,7 @@ internal sealed class FileSystemBlobStorage : IBlobStorage
 
         // DirectoryInfo enumeration yields FileInfo instances pre-populated from the directory scan, so the
         // page entries below need no second stat per file (Directory.EnumerateFiles + new FileInfo did).
-        var containerInfo = new DirectoryInfo(containerDirectory);
+        var containerInfo = new DirectoryInfo(enumerationRoot);
 
         foreach (var info in containerInfo.EnumerateFiles("*", SearchOption.AllDirectories))
         {
@@ -595,7 +681,7 @@ internal sealed class FileSystemBlobStorage : IBlobStorage
     #region Sidecar Metadata
 
     private async ValueTask _WriteSidecarAsync(
-        string blobFullPath,
+        string sidecarPath,
         string objectKey,
         IReadOnlyDictionary<string, string>? metadata,
         CancellationToken cancellationToken
@@ -606,7 +692,6 @@ internal sealed class FileSystemBlobStorage : IBlobStorage
         var sidecar = BlobStorageHelpers.BuildEffectiveMetadata(metadata, _timeProvider.GetUtcNow(), objectKey);
 
         var payload = _serializer.SerializeToBytes(sidecar)!;
-        var sidecarPath = blobFullPath + BlobStorageHelpers.SidecarSuffix;
 
         await File.WriteAllBytesAsync(sidecarPath, payload, cancellationToken).ConfigureAwait(false);
     }
@@ -674,6 +759,57 @@ internal sealed class FileSystemBlobStorage : IBlobStorage
             : fileFullName.Replace(containerDirectory, string.Empty, StringComparison.Ordinal);
 
         return key.Replace('\\', '/');
+    }
+
+    /// <summary>
+    /// Returns the deepest directory the <paramref name="prefix"/> implies, so listing and delete-by-prefix walk only
+    /// the subtree that can hold matching keys instead of the whole container; <see langword="null"/> when that
+    /// directory does not exist, meaning no key can match.
+    /// </summary>
+    private static string? _FindEnumerationRoot(string containerDirectory, string? prefix)
+    {
+        var prefixDirectory = BlobStorageHelpers.GetPrefixDirectory(prefix);
+
+        if (prefixDirectory.Length == 0)
+        {
+            return containerDirectory;
+        }
+
+        var segments = prefixDirectory[..^1].Split('/');
+
+        // An empty segment ("a//b/") has no directory of its own; keep the full walk and let the key filter decide.
+        if (Array.Exists(segments, static segment => segment.Length == 0))
+        {
+            return containerDirectory;
+        }
+
+        var current = containerDirectory;
+
+        foreach (var segment in segments)
+        {
+            // Match each segment ordinally against the real entry names rather than opening Path.Combine(current,
+            // segment): on a case-insensitive file system that would enter a differently-cased directory and report
+            // its keys in the prefix's casing, while keys are compared ordinally everywhere else.
+            string? next = null;
+
+            foreach (var directory in Directory.EnumerateDirectories(current))
+            {
+                if (string.Equals(Path.GetFileName(directory), segment, StringComparison.Ordinal))
+                {
+                    next = directory;
+                    break;
+                }
+            }
+
+            if (next is null)
+            {
+                return null;
+            }
+
+            current = next;
+        }
+
+        return current;
     }
 
     #endregion

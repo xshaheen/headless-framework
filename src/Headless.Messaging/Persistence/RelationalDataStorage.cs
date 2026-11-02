@@ -87,6 +87,13 @@ internal sealed partial class RelationalDataStorage
     private readonly string[] _changeStateSql;
     private readonly string _storePublishedSql;
     private readonly ReceivedStoreSql[] _storeReceivedSql;
+    private readonly string[] _reserveAttemptSql;
+    private readonly string[] _renewLeaseSql;
+    private readonly string[] _leaseSql;
+    private readonly string _deferReceivedRetrySql;
+    private readonly string[] _inboxRoutabilitySql;
+    private readonly string _admitInboxSql;
+    private readonly string[] _readInboxGenerationSql;
 
     public RelationalDataStorage(
         RelationalMessagingStorage storage,
@@ -145,6 +152,23 @@ internal sealed partial class RelationalDataStorage
             _RenderStoreReceived(hasExpiry: true, hasDue: false),
             _RenderStoreReceived(hasExpiry: true, hasDue: true),
         ];
+        _reserveAttemptSql = [_RenderReserveAttempt(received: false), _RenderReserveAttempt(received: true)];
+        _renewLeaseSql = [_RenderRenewLease(received: false), _RenderRenewLease(received: true)];
+        _leaseSql =
+        [
+            _RenderLease(received: false, reserve: false),
+            _RenderLease(received: false, reserve: true),
+            _RenderLease(received: true, reserve: false),
+            _RenderLease(received: true, reserve: true),
+        ];
+        _deferReceivedRetrySql = _RenderDeferReceivedRetry();
+        _inboxRoutabilitySql = [_RenderInboxRoutability(orphaned: false), _RenderInboxRoutability(orphaned: true)];
+        _admitInboxSql = _RenderAdmitInbox();
+        _readInboxGenerationSql =
+        [
+            _RenderReadInboxGeneration(withContent: false),
+            _RenderReadInboxGeneration(withContent: true),
+        ];
     }
 
     /// <summary>
@@ -202,8 +226,15 @@ internal sealed partial class RelationalDataStorage
             return DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.TransactionCompleted);
         }
 
-        using var configuredConnection = _storage.CreateConnection();
-        if (!RelationalDatabaseIdentity.IsSameDatabase(configuredConnection, connection))
+        // Every integration event of a save resolves against the same unit, so the identity check runs once per unit.
+        if (
+            !RelationalDatabaseIdentity.IsSameDatabase(
+                unitOfWork,
+                _storage,
+                static storage => storage.CreateConnection(),
+                connection
+            )
+        )
         {
             return DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.Database);
         }
@@ -294,6 +325,15 @@ internal sealed partial class RelationalDataStorage
         _dialect.AddParameter(command, "HasRetryDelay", SqlColumnType.Boolean, retryDelay.HasValue);
         _dialect.AddParameter(command, "KeepsLaterDue", SqlColumnType.Boolean, retryDelay?.KeepsLaterDue ?? false);
         _dialect.AddDuration(command, "RetryDelay", retryDelay?.Delay ?? TimeSpan.Zero);
+    }
+
+    /// <summary>
+    /// The envelope's stored form: the content the caller already serialized for <see cref="MediumMessage.Origin"/>
+    /// when it supplied one, otherwise a fresh serialization of it.
+    /// </summary>
+    private string _ContentOf(MediumMessage message)
+    {
+        return string.IsNullOrEmpty(message.Content) ? _serializer.Serialize(message.Origin) : message.Content;
     }
 
     /// <summary>

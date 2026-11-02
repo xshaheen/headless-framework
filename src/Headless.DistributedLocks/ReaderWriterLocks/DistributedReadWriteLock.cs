@@ -342,15 +342,13 @@ internal sealed class DistributedReadWriteLock(
     /// Polly pipeline and is bounded by <see cref="DistributedLockOptions.DisposeTimeout"/>; on
     /// timeout a warning is logged and the TTL acts as eventual cleanup. After storage release,
     /// any active lease monitor is disposed, and if a messaging bus is configured a
-    /// <see cref="DistributedLockReleased"/> message is published to wake waiters.
+    /// <see cref="DistributedLockReleased"/> message is published to wake waiters, without waiting
+    /// for the broker. Takes no cancellation token: the storage release always runs to completion so
+    /// disposal is not interrupted by caller cancellation, and the publish outlives the call.
     /// </summary>
     /// <param name="mode">Whether to release a read or write lease.</param>
     /// <param name="resource">The locked resource name.</param>
     /// <param name="leaseId">The lease identifier to release.</param>
-    /// <param name="cancellationToken">
-    /// Used only for the release-signal publish; the underlying storage release always uses
-    /// <see cref="CancellationToken.None"/> so disposal is not interrupted by caller cancellation.
-    /// </param>
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="resource"/> is <see langword="null"/> or whitespace,
     /// or when <paramref name="leaseId"/> is <see langword="null"/> or whitespace.
@@ -361,12 +359,7 @@ internal sealed class DistributedReadWriteLock(
     /// <exception cref="InvalidOperationException">
     /// Thrown when <paramref name="mode"/> is an unrecognized <see cref="ReaderWriterLockMode"/> value.
     /// </exception>
-    internal async Task ReleaseAsync(
-        ReaderWriterLockMode mode,
-        string resource,
-        string leaseId,
-        CancellationToken cancellationToken = default
-    )
+    internal async Task ReleaseAsync(ReaderWriterLockMode mode, string resource, string leaseId)
     {
         _ValidateResource(resource);
         Argument.IsNotNullOrWhiteSpace(leaseId);
@@ -436,21 +429,7 @@ internal sealed class DistributedReadWriteLock(
 
         if (_bus is not null)
         {
-            var released = new DistributedLockReleased(resource, leaseId);
-
-            try
-            {
-                await _bus.PublishAsync(
-                        released,
-                        DistributedLockCoreHelpers.ReleaseSignalPublishOptions,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
-            }
-            catch (Exception exception)
-            {
-                logger.LogLockReleasePublishFailed(exception, resource, leaseId);
-            }
+            DistributedLockCoreHelpers.PublishReleaseSignal(_bus, logger, resource, leaseId);
         }
     }
 

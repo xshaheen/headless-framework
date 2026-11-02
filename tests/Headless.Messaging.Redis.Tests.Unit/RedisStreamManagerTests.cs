@@ -5,6 +5,7 @@ using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
+using NSubstitute.ExceptionExtensions;
 using StackExchange.Redis;
 
 namespace Tests;
@@ -132,6 +133,7 @@ public sealed class RedisStreamManagerTests : TestBase
         // given
         var now = new DateTimeOffset(2026, 10, 9, 12, 0, 0, TimeSpan.Zero);
         var sut = _CreateSut(new FakeTimeProvider(now), options => options.StreamMaxAge = TimeSpan.FromHours(1));
+        _StreamHasGroups("orders-stream", 1);
         StreamAddOptions? sent = null;
         _mockDatabase
             .StreamAddAsync(
@@ -158,6 +160,7 @@ public sealed class RedisStreamManagerTests : TestBase
     {
         // given
         var sut = _CreateSut(new FakeTimeProvider(), options => options.StreamMaxAge = TimeSpan.Zero);
+        _StreamHasGroups("orders-stream", 1);
         StreamAddOptions? sent = null;
         _mockDatabase
             .StreamAddAsync(
@@ -390,16 +393,15 @@ public sealed class RedisStreamManagerTests : TestBase
     }
 
     [Fact]
-    public async Task should_skip_a_stream_without_reporting_a_failure_when_the_server_refuses_its_consumer_group()
+    public async Task should_report_a_failed_latest_read_when_the_server_refuses_the_consumer_group_of_every_stream()
     {
         // given a server that answers the group setup with an error of its own
-        _GivenConsumerGroupSetupFailsWith(
-            new RedisServerException(
-                RedisErrorKind.WrongType,
-                CommandFlags.None,
-                "WRONGTYPE Operation against a key holding the wrong kind of value"
-            )
+        var refusal = new RedisServerException(
+            RedisErrorKind.WrongType,
+            CommandFlags.None,
+            "WRONGTYPE Operation against a key holding the wrong kind of value"
         );
+        _GivenConsumerGroupSetupFailsWith(refusal);
         var sut = _CreateSut(new FakeTimeProvider());
         var outcomes = new List<Exception?>();
 
@@ -418,9 +420,51 @@ public sealed class RedisStreamManagerTests : TestBase
             .Should()
             .BeTrue();
 
-        // then the server was reached, so the read is no outage
-        outcomes.Should().Equal([null]);
+        // then a read that can consume nothing is no success, even though the server answered
+        outcomes.Should().Equal(refusal);
         enumerator.Current.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_read_the_other_streams_without_reporting_a_failure_when_the_server_refuses_one_consumer_group()
+    {
+        // given one stream whose group setup the server refuses, beside one that is fine
+        _mockDatabase
+            .KeyExistsAsync("refused-stream", Arg.Any<CommandFlags>())
+            .Returns(Task.FromException<bool>(_ServerException("NOPERM this user has no permissions")));
+        var sut = _CreateSut(new FakeTimeProvider());
+        var outcomes = new List<Exception?>();
+
+        await using var enumerator = sut.PollStreamsLatestMessagesAsync(
+                ["refused-stream", "orders-stream"],
+                "group",
+                "consumer",
+                TimeSpan.FromMinutes(1),
+                outcomes.Add,
+                AbortToken
+            )
+            .GetAsyncEnumerator(AbortToken);
+
+        // when
+        (await enumerator.MoveNextAsync())
+            .Should()
+            .BeTrue();
+
+        // then the readable stream is still consumed, so the read succeeds
+        outcomes.Should().Equal([null]);
+        await _mockDatabase
+            .Received(1)
+            .StreamReadGroupAsync(
+                Arg.Is<StreamPosition[]>(x => x.Length == 1 && x[0].Key == "orders-stream"),
+                Arg.Any<RedisValue>(),
+                Arg.Any<RedisValue>(),
+                Arg.Any<int?>(),
+                Arg.Any<bool>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<int?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CommandFlags>()
+            );
     }
 
     [Fact]
@@ -585,7 +629,7 @@ public sealed class RedisStreamManagerTests : TestBase
     }
 
     [Fact]
-    public async Task should_skip_the_stream_without_failing_the_read_when_the_server_rejects_the_group_check()
+    public async Task should_back_off_as_a_read_failure_when_the_server_rejects_the_only_group_check()
     {
         // given
         var timeProvider = new FakeTimeProvider();
@@ -610,9 +654,7 @@ public sealed class RedisStreamManagerTests : TestBase
         var secondPoll = enumerator.MoveNextAsync().AsTask();
         timeProvider.Advance(TimeSpan.FromSeconds(40));
 
-        // then - the server answered, so the broker is reachable and the loop keeps its normal cadence
-        secondPoll.IsCompleted.Should().BeFalse();
-        timeProvider.Advance(pollDelay);
+        // then - nothing can be consumed, so the loop backs off as after a failure instead of waiting the poll delay
         await secondPoll.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
     }
 
@@ -684,6 +726,134 @@ public sealed class RedisStreamManagerTests : TestBase
         // then
         reads.Should().Be(2);
         await _mockDatabase.Received(2).KeyExistsAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>());
+    }
+
+    [Fact]
+    public async Task should_trim_a_stream_no_consumer_group_reads_by_the_every_instance_age()
+    {
+        // given
+        var now = new DateTimeOffset(2026, 10, 9, 12, 0, 0, TimeSpan.Zero);
+        var sut = _CreateSut(
+            new FakeTimeProvider(now),
+            options => options.EveryInstanceStreamMaxAge = TimeSpan.FromMinutes(3)
+        );
+        _StreamHasGroups("cache-invalidation", 0);
+        var sent = _CaptureAddOptions();
+
+        // when
+        await sut.PublishAsync("cache-invalidation", [new("headers", "{}")], AbortToken);
+
+        // then
+        sent().MinId.Should().Be((RedisValue)$"{now.AddMinutes(-3).ToUnixTimeMilliseconds()}-0");
+        sent().Approximate.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_trim_an_absent_stream_by_the_every_instance_age()
+    {
+        // given
+        var now = new DateTimeOffset(2026, 10, 9, 12, 0, 0, TimeSpan.Zero);
+        var sut = _CreateSut(new FakeTimeProvider(now));
+        _mockDatabase
+            .StreamGroupInfoAsync("new-stream", Arg.Any<CommandFlags>())
+            .ThrowsAsync(_ServerException("ERR no such key"));
+        var sent = _CaptureAddOptions();
+
+        // when
+        await sut.PublishAsync("new-stream", [new("headers", "{}")], AbortToken);
+
+        // then
+        sent().MinId.Should().Be((RedisValue)$"{now.AddMinutes(-5).ToUnixTimeMilliseconds()}-0");
+    }
+
+    [Fact]
+    public async Task should_keep_the_stream_max_age_when_the_server_refuses_to_list_groups()
+    {
+        // given
+        var now = new DateTimeOffset(2026, 10, 9, 12, 0, 0, TimeSpan.Zero);
+        var sut = _CreateSut(new FakeTimeProvider(now), options => options.StreamMaxAge = TimeSpan.FromHours(1));
+        _mockDatabase
+            .StreamGroupInfoAsync("orders-stream", Arg.Any<CommandFlags>())
+            .ThrowsAsync(_ServerException("NOPERM this user has no permissions to run the 'xinfo' command"));
+        var sent = _CaptureAddOptions();
+
+        // when
+        await sut.PublishAsync("orders-stream", [new("headers", "{}")], AbortToken);
+
+        // then
+        sent().MinId.Should().Be((RedisValue)$"{now.AddHours(-1).ToUnixTimeMilliseconds()}-0");
+    }
+
+    [Fact]
+    public async Task should_list_groups_of_a_stream_with_a_group_once()
+    {
+        // given
+        var sut = _CreateSut(new FakeTimeProvider());
+        _StreamHasGroups("orders-stream", 2);
+        _CaptureAddOptions();
+
+        // when
+        await sut.PublishAsync("orders-stream", [new("headers", "{}")], AbortToken);
+        await sut.PublishAsync("orders-stream", [new("headers", "{}")], AbortToken);
+        await sut.PublishAsync("orders-stream", [new("headers", "{}")], AbortToken);
+
+        // then
+        await _mockDatabase.Received(1).StreamGroupInfoAsync("orders-stream", Arg.Any<CommandFlags>());
+    }
+
+    [Fact]
+    public async Task should_recheck_a_stream_without_a_group_after_half_the_every_instance_age()
+    {
+        // given
+        var now = new DateTimeOffset(2026, 10, 9, 12, 0, 0, TimeSpan.Zero);
+        var timeProvider = new FakeTimeProvider(now);
+        var sut = _CreateSut(
+            timeProvider,
+            options =>
+            {
+                options.EveryInstanceStreamMaxAge = TimeSpan.FromMinutes(4);
+                options.StreamMaxAge = TimeSpan.FromHours(1);
+            }
+        );
+        _StreamHasGroups("orders-stream", 0);
+        var sent = _CaptureAddOptions();
+
+        await sut.PublishAsync("orders-stream", [new("headers", "{}")], AbortToken);
+        timeProvider.Advance(TimeSpan.FromMinutes(1));
+        await sut.PublishAsync("orders-stream", [new("headers", "{}")], AbortToken);
+
+        // a consumer group is created meanwhile
+        _StreamHasGroups("orders-stream", 1);
+        timeProvider.Advance(TimeSpan.FromMinutes(1));
+
+        // when
+        await sut.PublishAsync("orders-stream", [new("headers", "{}")], AbortToken);
+
+        // then
+        await _mockDatabase.Received(2).StreamGroupInfoAsync("orders-stream", Arg.Any<CommandFlags>());
+        sent().MinId.Should().Be((RedisValue)$"{timeProvider.GetUtcNow().AddHours(-1).ToUnixTimeMilliseconds()}-0");
+    }
+
+    private void _StreamHasGroups(string stream, int count)
+    {
+        _mockDatabase
+            .StreamGroupInfoAsync(stream, Arg.Any<CommandFlags>())
+            .Returns(Task.FromResult(new StreamGroupInfo[count]));
+    }
+
+    private Func<StreamAddOptions> _CaptureAddOptions()
+    {
+        StreamAddOptions? sent = null;
+        _mockDatabase
+            .StreamAddAsync(
+                Arg.Any<RedisKey>(),
+                Arg.Any<NameValueEntry[]>(),
+                Arg.Do<StreamAddOptions>(options => sent = options),
+                Arg.Any<CommandFlags>()
+            )
+            .Returns(new RedisValue("1-0"));
+
+        return () => sent ?? throw new InvalidOperationException("Nothing was published.");
     }
 
     private static RedisServerException _ServerException(string message)

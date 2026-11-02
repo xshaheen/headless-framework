@@ -1,3 +1,10 @@
+### New Rules
+
+Rule ID | Category | Severity | Notes
+--------|----------|----------|--------------------
+HF1004  | Headless.Generator.Primitives | Error | A primitive must be declared directly in a namespace
+HF1005  | Headless.Generator.Primitives | Error | A primitive must not be generic
+
 ### Removed Rules
 
 Rule ID | Category | Severity | Notes

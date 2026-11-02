@@ -613,8 +613,8 @@ public sealed class DistributedLock(
     /// The storage release runs under <see cref="CancellationToken.None"/> (bounded by
     /// <see cref="DistributedLockOptions.DisposeTimeout"/>), so caller cancellation cannot abandon a
     /// half-completed release and strand the lock until its TTL — matching the reader-writer provider.
-    /// The release-signal publish uses <paramref name="cancellationToken"/>, but its failures (cancellation
-    /// included) are swallowed and waiters simply fall back to polling backoff. Consequently this
+    /// The release-signal publish is started before the method returns but not awaited, and its failures
+    /// are logged and swallowed; waiters that miss it fall back to polling backoff. Consequently this
     /// method never surfaces <see cref="OperationCanceledException"/>.
     /// </remarks>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="resource"/> or <paramref name="leaseId"/> is <see langword="null"/>.</exception>
@@ -703,22 +703,7 @@ public sealed class DistributedLock(
         // Publish notifies waiters immediately; if skipped, waiters retry via backoff.
         if (removed && _bus is not null)
         {
-            var distributedLockReleased = new DistributedLockReleased(resource, leaseId);
-
-            try
-            {
-                await _bus.PublishAsync(
-                        distributedLockReleased,
-                        DistributedLockCoreHelpers.ReleaseSignalPublishOptions,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                // Release already succeeded — do not rethrow. Waiters will fall back to polling backoff.
-                logger.LogLockReleasePublishFailed(ex, resource, leaseId);
-            }
+            DistributedLockCoreHelpers.PublishReleaseSignal(_bus, logger, resource, leaseId);
         }
 
         logger.LogReleaseReleased(resource, leaseId);

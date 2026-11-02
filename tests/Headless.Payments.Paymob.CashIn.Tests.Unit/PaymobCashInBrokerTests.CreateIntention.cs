@@ -44,7 +44,7 @@ public sealed partial class PaymobCashInBrokerTests
             Extras = new Dictionary<string, object>(StringComparer.Ordinal) { ["merchant_note"] = "vip" },
         };
 
-        var response = fixture.AutoFixture.Create<CashInCreateIntentionResponse>();
+        var response = CashInTestData.CreateIntentionResponse(Faker);
         var responseJson = JsonSerializer.Serialize(response);
 
         fixture

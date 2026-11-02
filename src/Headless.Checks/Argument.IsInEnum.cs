@@ -26,7 +26,7 @@ public static partial class Argument
     )
         where T : struct, Enum
     {
-        if (!Enum.IsDefined(argument) && !_IsValidFlagsCombination(typeof(T), _EnumToUInt64(argument)))
+        if (!Enum.IsDefined(argument) && !(EnumInfo<T>.IsFlags && _IsValidFlagsCombination<T>(_EnumToUInt64(argument))))
         {
             _ThrowForIsInEnum(argument, message, paramName);
         }
@@ -44,7 +44,13 @@ public static partial class Argument
     )
         where T : struct, Enum
     {
-        if (!Enum.IsDefined(typeof(T), argument) && !_IsValidFlagsCombination(typeof(T), unchecked((ulong)argument)))
+        // An int-backed enum is checked through the generic overload so the int is not boxed on every call; any
+        // other underlying type keeps the non-generic overload and its ArgumentException for a mismatched type.
+        var isDefined = EnumInfo<T>.IsInt32Backed
+            ? Enum.IsDefined(Unsafe.As<int, T>(ref argument))
+            : Enum.IsDefined(typeof(T), argument);
+
+        if (!isDefined && !_IsValidFlagsCombination<T>(unchecked((ulong)argument)))
         {
             _ThrowForIsInEnumInt<T>(argument, message, paramName);
         }
@@ -57,21 +63,34 @@ public static partial class Argument
     /// covered by the defined members of a <see cref="FlagsAttribute"/> enum. Non-flags enums always return false
     /// (their values must be exact members, validated separately by <see cref="Enum.IsDefined{T}(T)"/>).
     /// </summary>
-    private static bool _IsValidFlagsCombination(Type enumType, ulong bits)
+    private static bool _IsValidFlagsCombination<T>(ulong bits)
+        where T : struct, Enum
     {
-        if (bits == 0 || !enumType.IsDefined(typeof(FlagsAttribute), inherit: false))
+        return bits != 0 && EnumInfo<T>.IsFlags && (bits & ~EnumInfo<T>.DefinedMask) == 0;
+    }
+
+    // Computed once per enum type: the flags attribute and the defined-bits mask never change at run time, and
+    // reflecting over them on each guard call boxes every member.
+    private static class EnumInfo<T>
+        where T : struct, Enum
+    {
+        public static readonly bool IsFlags = typeof(T).IsDefined(typeof(FlagsAttribute), inherit: false);
+
+        public static readonly bool IsInt32Backed = Enum.GetUnderlyingType(typeof(T)) == typeof(int);
+
+        public static readonly ulong DefinedMask = _ComputeDefinedMask();
+
+        private static ulong _ComputeDefinedMask()
         {
-            return false;
+            ulong definedMask = 0;
+
+            foreach (var value in Enum.GetValuesAsUnderlyingType<T>())
+            {
+                definedMask |= _EnumToUInt64(value);
+            }
+
+            return definedMask;
         }
-
-        ulong definedMask = 0;
-
-        foreach (var value in Enum.GetValuesAsUnderlyingType(enumType))
-        {
-            definedMask |= _EnumToUInt64(value);
-        }
-
-        return (bits & ~definedMask) == 0;
     }
 
     private static ulong _EnumToUInt64(object value)

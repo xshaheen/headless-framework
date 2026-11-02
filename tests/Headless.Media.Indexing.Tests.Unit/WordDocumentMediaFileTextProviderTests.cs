@@ -1,3 +1,4 @@
+using System.Xml;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
@@ -55,6 +56,47 @@ public sealed class WordDocumentMediaFileTextProviderTests : TestBase
 
         // then
         result.Should().Be(expectedText);
+    }
+
+    [Fact]
+    public async Task should_refuse_a_document_part_that_inflates_past_the_part_limit()
+    {
+        // given: a body of 20 Mi repeated characters, which deflates to a few kilobytes, as a zip bomb does
+        await using var stream = _CreateWordDocumentWithRawBodyText(20 * 1024 * 1024);
+
+        // when
+        var act = async () => await _sut.GetTextAsync(stream, AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<XmlException>();
+    }
+
+    private static MemoryStream _CreateWordDocumentWithRawBodyText(int characters)
+    {
+        var stream = new MemoryStream();
+
+        using (var document = WordprocessingDocument.Create(stream, WordprocessingDocumentType.Document))
+        {
+            var mainPart = document.AddMainDocumentPart();
+
+            // Stream the XML straight into the part so the test never holds the inflated document in memory.
+            using var writer = new StreamWriter(mainPart.GetStream(FileMode.Create));
+            writer.Write(
+                "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body><w:p><w:r><w:t>"
+            );
+            var chunk = new string('A', 1024 * 1024);
+
+            for (var written = 0; written < characters; written += chunk.Length)
+            {
+                writer.Write(chunk);
+            }
+
+            writer.Write("</w:t></w:r></w:p></w:body></w:document>");
+        }
+
+        stream.Position = 0;
+
+        return stream;
     }
 
     private static MemoryStream _CreateEmptyWordDocument()

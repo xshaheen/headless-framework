@@ -17,6 +17,8 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     // drop (TryAdd) rather than block — a blocking Add would stall every publisher.
     private const int _MaxPendingMessages = 65_536;
 
+    private static readonly TimeSpan _ShutdownDrainTimeout = TimeSpan.FromSeconds(30);
+
     private readonly MemoryQueue _queue;
     private readonly string _groupId;
     private readonly MessageLane _lane;
@@ -27,13 +29,15 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
         new BoundedChannelOptions(_MaxPendingMessages) { FullMode = BoundedChannelFullMode.Wait }
     );
 
-    // A redelivery delay waits real time, as a broker's would; a test passes a clock to step through it.
+    // A redelivery delay and the shutdown drain wait real time, as a broker's would; a test passes a clock to step
+    // through them.
     private readonly TimeProvider _redeliveryClock;
 
     // Cancels the redelivery delays still pending when the client is disposed, so their timers do not outlive it.
     private readonly CancellationTokenSource _disposeCts = new();
 
     private readonly SemaphoreSlim _semaphore;
+    private readonly InFlightHandlerTracker _inFlightHandlers = new();
     private readonly ConsumerPauseGate _pauseGate = new();
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private int _disposed;
@@ -172,26 +176,37 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
             await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
             if (_groupConcurrent > 0)
             {
-                await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
-                _ObserveBackgroundFault(
-                    Task.Run(
-                        async () =>
+                try
+                {
+                    await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+                }
+                catch (ObjectDisposedException) when (Volatile.Read(ref _disposed) != 0)
+                {
+                    // Shut down while waiting for a slot: the delivery goes with the client.
+                    break;
+                }
+
+                var handler = Task.Run(
+                    async () =>
+                    {
+                        try
                         {
-                            try
-                            {
-                                // The delivery is the settlement token: a reject requeues it from there.
-                                await (
-                                    OnMessageCallback?.Invoke(delivery.Message, delivery) ?? Task.CompletedTask
-                                ).ConfigureAwait(false);
-                            }
-                            finally
-                            {
-                                _ReleaseSemaphore();
-                            }
-                        },
-                        CancellationToken.None // Ensure semaphore release even if cancellation is requested during handler execution
-                    )
+                            // The delivery is the settlement token: a reject requeues it from there.
+                            await (
+                                OnMessageCallback?.Invoke(delivery.Message, delivery) ?? Task.CompletedTask
+                            ).ConfigureAwait(false);
+                        }
+                        finally
+                        {
+                            _ReleaseSemaphore();
+                        }
+                    },
+                    CancellationToken.None // Ensure semaphore release even if cancellation is requested during handler execution
                 );
+
+                // Tracked so shutdown waits for the handler before it disposes the semaphore the handler releases.
+                _inFlightHandlers.Track(handler);
+                _ObserveBackgroundFault(handler);
             }
             else
             {
@@ -319,6 +334,10 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
             {
                 // Defensive: ignore over-release
             }
+            catch (ObjectDisposedException)
+            {
+                // A handler that outlived the shutdown drain finishes after the semaphore is gone.
+            }
         }
     }
 
@@ -358,10 +377,22 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     }
 
     /// <summary>
-    /// Disposes the consumer client and unsubscribes from the queue.
+    /// Disposes the consumer client and unsubscribes from the queue, waiting up to 30 seconds for running handlers.
     /// </summary>
     /// <returns>A value task representing the disposal</returns>
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
+    {
+        return ShutdownAsync(_ShutdownDrainTimeout);
+    }
+
+    /// <summary>
+    /// Stops taking messages, waits up to <paramref name="timeout"/> for running handlers to finish, then disposes the
+    /// client. Messages still pending in the client are dropped with it.
+    /// </summary>
+    /// <param name="timeout">How long to wait for running handlers.</param>
+    /// <param name="cancellationToken">Unused; the shutdown completes even when cancellation is requested.</param>
+    /// <returns>A value task representing the shutdown</returns>
+    public async ValueTask ShutdownAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
         {
@@ -369,10 +400,30 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
         }
 
         _pauseGate.Release();
-        _ready.TrySetCanceled();
-        _semaphore.Dispose();
+        _ready.TrySetCanceled(CancellationToken.None);
         _messageQueue.Writer.TryComplete();
         _queue.Unsubscribe(_lane, _groupId, this);
+
+        // Drain running handlers before disposing the semaphore they release. Bounded so a stuck handler cannot block
+        // shutdown; one that outlives the drain finishes against the disposed semaphore, which its release tolerates.
+        try
+        {
+            await _inFlightHandlers.DrainAsync(timeout, _redeliveryClock).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // Handler faults are already surfaced by _ObserveBackgroundFault; on a drain timeout or fault, log and
+            // proceed, because shutdown must never block or throw.
+            OnLogCallback?.Invoke(
+                new LogMessageEventArgs
+                {
+                    LogType = MqLogType.ExceptionReceived,
+                    Reason = $"Timed out or faulted draining in-flight in-memory handlers during shutdown: {ex}",
+                }
+            );
+        }
+
+        _semaphore.Dispose();
         await _disposeCts.CancelAsync().ConfigureAwait(false);
         _disposeCts.Dispose();
     }

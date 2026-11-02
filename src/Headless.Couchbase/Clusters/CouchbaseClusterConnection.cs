@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Couchbase;
-using Couchbase.Transactions;
+using Couchbase.Client.Transactions;
 
 namespace Headless.Couchbase.Clusters;
 

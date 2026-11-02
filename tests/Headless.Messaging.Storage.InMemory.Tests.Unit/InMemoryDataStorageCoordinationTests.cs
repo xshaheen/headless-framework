@@ -169,7 +169,12 @@ public sealed class InMemoryDataStorageCoordinationTests : TestBase
         TimeSpan? delay = null
     )
     {
-        var writer = new OutboxMessageWriter(storage, dispatcher, TimeProvider.System);
+        var writer = new OutboxMessageWriter(
+            storage,
+            dispatcher,
+            new JsonUtf8Serializer(Options.Create(new MessagingOptions())),
+            TimeProvider.System
+        );
         var request = _CreatePublishRequestFactory().Create(new CoordinatedMessage("value"), lane: MessageLane.Bus);
         var decision = DeliveryDecisionResolver.Resolve(
             MessageLane.Bus,

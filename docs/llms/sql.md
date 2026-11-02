@@ -68,7 +68,7 @@ public interface ISqlCurrentConnection : IAsyncDisposable
 }
 ```
 
-`Headless.Sql` provides `DefaultSqlCurrentConnection`, which lazily opens one connection per instance, protects concurrent callers with an `AsyncLock`, and re-opens if the connection drops. Register it as **scoped** — one instance per request/scope — so it is disposed at the end of each unit of work.
+`Headless.Sql` provides `DefaultSqlCurrentConnection`, which lazily opens one connection per instance, protects concurrent callers with an `AsyncLock`, and re-opens if the connection drops. Register it as **scoped** — one instance per request/scope — so it is disposed at the end of each unit of work. Disposing it disposes the connection in any state, including one that broke or was closed during the scope.
 
 ### Connection string checker
 
@@ -197,7 +197,7 @@ A relational store is written once against `ISqlDialect` (`Headless.Sql`), with 
 - **Custom autonomous loops.** `SqlAutonomousTransaction.RetryAsync` applies the same rule to an attempt that owns its own connection and transaction, such as an EF claim scope. The attempt receives a `SqlAutonomousAttempt` and calls `MarkCommitStarted()` immediately before it commits. An optional `onRetry` callback receives the fault and the number of the attempt about to run.
 - **Autonomous-call telemetry.** Every `RunAsync` and `RetryAsync` call, Jobs claims included, emits under `Headless.Sql` (`SqlDiagnostics.SourceName`); see [Store kit observability](#store-kit-observability).
 - **Portable values.** `SqlPortable.Truncate` truncates a duration to the microsecond every engine keeps. Key text is checked with `Argument.IsPortableKey` (`Headless.Checks`).
-- **Enlistment.** `RelationalEnlistment.RequireLive` and `RequireSameDatabase` (`Headless.UnitOfWork`) are the checks a store runs before writing inside a caller's unit of work.
+- **Enlistment.** `RelationalEnlistment.RequireLive` and `RequireSameDatabase` (`Headless.UnitOfWork`) are the checks a store runs before writing inside a caller's unit of work. The `RequireSameDatabase` overload that takes the unit and a configuration object remembers a match on the unit, so the database comparison runs once per unit rather than once per call.
 
 #### Store kit observability
 

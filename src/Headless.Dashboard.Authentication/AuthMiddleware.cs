@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 namespace Headless.Dashboard.Authentication;
 
 /// <summary>
-/// Authenticates requests to API endpoints, bypassing static files, negotiate, and auth endpoints.
+/// Authenticates requests under <c>/api/</c>, except the <c>/api/auth/info</c> and <c>/api/auth/validate</c> endpoints.
 /// </summary>
 /// <remarks>
 /// Add it with <c>UseMiddleware&lt;AuthMiddleware&gt;(authenticationName)</c>. It authenticates through the
@@ -29,8 +29,9 @@ public sealed class AuthMiddleware(RequestDelegate next, string authenticationNa
     public const string AuthenticatedKey = "auth.authenticated";
 
     /// <summary>
-    /// Processes the request, enforcing authentication on <c>/api/</c> endpoints while allowing
-    /// static files, SignalR negotiate, and auth endpoints without challenge.
+    /// Processes the request, enforcing authentication on every <c>/api/</c> path except <c>/api/auth/info</c> and
+    /// <c>/api/auth/validate</c>. Paths outside <c>/api/</c> (the SPA shell, static files, and the SignalR hub) pass
+    /// through untouched.
     /// </summary>
     /// <remarks>
     /// On success, sets <see cref="UsernameKey"/> and <see cref="AuthenticatedKey"/> in
@@ -45,18 +46,11 @@ public sealed class AuthMiddleware(RequestDelegate next, string authenticationNa
         // All comparisons below are case-insensitive, so the request path needs no lowercased copy per request.
         var path = context.Request.Path.Value ?? "";
 
-        // Skip authentication for:
-        // 1. Static files (handled by static files middleware)
-        // 2. SignalR negotiate endpoint (anonymous by design)
-        // 3. Auth validation endpoint (to avoid circular dependency)
-        if (_IsExcludedPath(path))
-        {
-            await next(context);
-            return;
-        }
-
-        // Only protect API endpoints
-        if (!path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase))
+        // Only API endpoints are protected here: the SPA shell, its static files, and the SignalR hub live outside
+        // /api/ (the hub authenticates itself). Inside /api/ only the two auth endpoints the login flow needs are
+        // anonymous; matching anything else by extension or substring would let a request such as /api/x/y.js reach
+        // a route parameter unauthenticated.
+        if (!path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase) || _IsAnonymousAuthEndpoint(path))
         {
             await next(context);
             return;
@@ -107,17 +101,9 @@ public sealed class AuthMiddleware(RequestDelegate next, string authenticationNa
             .Replace("\n", string.Empty, StringComparison.Ordinal);
     }
 
-    private static bool _IsExcludedPath(string path)
+    private static bool _IsAnonymousAuthEndpoint(string path)
     {
-        return path.Contains("/assets/", StringComparison.OrdinalIgnoreCase)
-            || path.EndsWith(".js", StringComparison.OrdinalIgnoreCase)
-            || path.EndsWith(".css", StringComparison.OrdinalIgnoreCase)
-            || path.EndsWith(".ico", StringComparison.OrdinalIgnoreCase)
-            || path.EndsWith(".png", StringComparison.OrdinalIgnoreCase)
-            || path.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase)
-            || path.EndsWith(".svg", StringComparison.OrdinalIgnoreCase)
-            || path.EndsWith("/negotiate", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(path, "/api/auth/validate", StringComparison.OrdinalIgnoreCase)
+        return string.Equals(path, "/api/auth/validate", StringComparison.OrdinalIgnoreCase)
             || string.Equals(path, "/api/auth/info", StringComparison.OrdinalIgnoreCase);
     }
 }

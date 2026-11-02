@@ -3,6 +3,7 @@
 using System.Globalization;
 using Headless.Checks;
 using Headless.UnitOfWork;
+using Headless.UnitOfWork.Internal;
 
 namespace Headless.Idempotency.InMemory;
 
@@ -270,15 +271,22 @@ internal sealed class InMemoryIdempotencyRecordStore(
 
         // No lock: the committed row is an immutable snapshot, so this never waits behind a unit that holds the key,
         // and a unit's uncommitted writes are invisible to it.
-        if (Table.Read(key) is not { } record || record.RetentionUntil <= timeProvider.GetUtcNow())
+        var now = timeProvider.GetUtcNow();
+
+        if (Table.Read(key) is not { } record || record.RetentionUntil <= now)
         {
             return ValueTask.FromResult(IdempotencyPeekStatus.Absent);
         }
 
+        if (record.Status == IdempotencyRecordStatus.Completed)
+        {
+            return ValueTask.FromResult(IdempotencyPeekStatus.Completed);
+        }
+
         return ValueTask.FromResult(
-            record.Status == IdempotencyRecordStatus.Completed
-                ? IdempotencyPeekStatus.Completed
-                : IdempotencyPeekStatus.Pending
+            record.Generation is not null && record.LeaseExpiresAt > now
+                ? IdempotencyPeekStatus.Pending
+                : IdempotencyPeekStatus.Released
         );
     }
 

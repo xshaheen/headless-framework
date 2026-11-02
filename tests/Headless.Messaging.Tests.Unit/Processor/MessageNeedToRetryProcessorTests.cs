@@ -509,7 +509,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     [InlineData(false, true)]
     [InlineData(true, false)]
     [InlineData(false, false)]
-    public async Task inbox_retry_should_route_by_stable_identity_only_when_fence_is_accepted(
+    public async Task inbox_retry_should_route_orphan_by_stable_identity_only_when_fence_is_accepted(
         bool accepted,
         bool orphanProbe
     )
@@ -517,6 +517,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var message = _CreateMessage("obsolete-consumer");
         message.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(1);
         message.Owner = "node-a";
+        message.IsInboxOrphaned = true;
         message.InboxKey = new InboxKey(
             TenantId: null,
             message.Origin.Id,
@@ -654,7 +655,55 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             )
             .Should()
             .Be(expectedRoutableRecoveries);
-        await storage.Received(1).ConfirmReceivedInboxRoutableAsync(message, CancellationToken.None);
+        await storage.Received(wasOrphaned ? 1 : 0).ConfirmReceivedInboxRoutableAsync(message, CancellationToken.None);
+        await dispatcher.Received(1).EnqueueToExecute(message, null, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task inbox_retry_should_dispatch_routable_row_without_confirming_it_when_it_is_not_orphaned()
+    {
+        var message = _CreateMessage("obsolete-consumer");
+        message.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(1);
+        message.Owner = "node-a";
+        message.InboxKey = new InboxKey(
+            TenantId: null,
+            message.Origin.Id,
+            MessageLane.Bus,
+            message.Origin.Name,
+            "v1",
+            "tests.retry.stable-consumer",
+            Generation: 0
+        );
+
+        var storage = Substitute.For<IDataStorage>();
+        _SetupReceivedMessages(storage, message);
+        var selector = Substitute.For<IConsumerServiceSelector>();
+        var descriptor = _CreateInboxDescriptor();
+        selector.SelectCandidates().Returns([descriptor]);
+        selector
+            .SelectBestCandidate("test.messageName", Arg.Any<IReadOnlyList<ConsumerExecutorDescriptor>>())
+            .Returns(descriptor);
+        var dispatcher = Substitute.For<IDispatcher>();
+        var sut = new MessageNeedToRetryProcessor(
+            Options.Create(new MessagingOptions()),
+            Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.Zero, AdaptivePolling = false }),
+            NullLogger<MessageNeedToRetryProcessor>.Instance,
+            dispatcher,
+            Substitute.For<IDistributedLock>(),
+            consumerResolver: new MethodMatcherCache(selector)
+        );
+        await using var context = _CreateContext(
+            new ServiceCollection().AddSingleton(storage).BuildServiceProvider(),
+            cancellationToken: AbortToken
+        );
+
+        await _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus);
+
+        // The dispatch's attempt reservation checks the lease and inbox attempt fence, so no confirm write runs first.
+        await storage
+            .DidNotReceive()
+            .ConfirmReceivedInboxRoutableAsync(Arg.Any<MediumMessage>(), Arg.Any<CancellationToken>());
+        message.Origin.GetConsumerIdentity().Should().Be("tests.retry.stable-consumer");
         await dispatcher.Received(1).EnqueueToExecute(message, null, Arg.Any<CancellationToken>());
     }
 

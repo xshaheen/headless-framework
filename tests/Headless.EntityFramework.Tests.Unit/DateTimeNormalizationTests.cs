@@ -39,6 +39,26 @@ public sealed class DateTimeNormalizationTests : TestBase
             .BeOfType<NormalizeDateTimeValueConverter>();
     }
 
+    [Fact]
+    public void should_normalize_date_time_properties_declared_on_an_owned_type()
+    {
+        var owned = _Model()
+            .FindEntityType(typeof(BaseEvent))!
+            .FindNavigation(nameof(BaseEvent.Window))!
+            .TargetEntityType;
+
+        owned
+            .FindProperty(nameof(DeliveryWindow.OpensAt))!
+            .GetValueConverter()
+            .Should()
+            .BeOfType<NormalizeDateTimeValueConverter>();
+        owned
+            .FindProperty(nameof(DeliveryWindow.ClosesAt))!
+            .GetValueConverter()
+            .Should()
+            .BeOfType<NullableNormalizeDateTimeValueConverter>();
+    }
+
     private static IModel _Model()
     {
         using var connection = new SqliteConnection("Data Source=:memory:");
@@ -52,6 +72,15 @@ public sealed class DateTimeNormalizationTests : TestBase
     public class BaseEvent : Entity<Guid>
     {
         public DateTime OccurredAt { get; set; }
+
+        public DeliveryWindow Window { get; set; } = new();
+    }
+
+    public sealed class DeliveryWindow
+    {
+        public DateTime OpensAt { get; set; }
+
+        public DateTime? ClosesAt { get; set; }
     }
 
     public sealed class DerivedEvent : BaseEvent
@@ -68,5 +97,11 @@ public sealed class DateTimeNormalizationTests : TestBase
         public DbSet<DerivedEvent> DerivedEvents => Set<DerivedEvent>();
 
         public override string DefaultSchema => "";
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+            modelBuilder.Entity<BaseEvent>().OwnsOne(x => x.Window);
+        }
     }
 }

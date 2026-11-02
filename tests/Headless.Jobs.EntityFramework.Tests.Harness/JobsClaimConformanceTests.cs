@@ -1388,6 +1388,96 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
         }
     }
 
+    /// <summary>
+    /// The per-definition daily counts aggregate in storage and count only that definition, over the same inclusive
+    /// UTC day window as the all-definitions overload.
+    /// </summary>
+    public virtual async Task cron_daily_status_counts_aggregate_in_storage_with_and_without_a_definition_filter()
+    {
+        var ct = AbortToken;
+        var capture = new DashboardSqlCapture();
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildInterceptedHost("dashboard-daily-counts", capture, TimeSpan.FromMinutes(5));
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var cronA = Guid.NewGuid();
+            var cronB = Guid.NewGuid();
+            var today = DateTime.UtcNow.Date;
+            await fixture.SeedCronJobAsync(cronA, "daily-a", "* * * * *", NodeDeathPolicy.Retry, ct);
+            await fixture.SeedCronJobAsync(cronB, "daily-b", "* * * * *", NodeDeathPolicy.Retry, ct);
+            (Guid CronId, JobStatus Status, DateTime At)[] seeded =
+            [
+                (cronA, JobStatus.Succeeded, today.AddHours(1)),
+                (cronA, JobStatus.Succeeded, today.AddHours(2)),
+                (cronA, JobStatus.Failed, today.AddDays(1).AddHours(23)),
+                // Past the inclusive end day, so neither overload counts it.
+                (cronA, JobStatus.Failed, today.AddDays(2)),
+                (cronB, JobStatus.Failed, today.AddHours(3)),
+            ];
+            foreach (var (cronId, status, at) in seeded)
+            {
+                await fixture.SeedCronOccurrenceAsync(
+                    Guid.NewGuid(),
+                    cronId,
+                    (int)status,
+                    null,
+                    NodeDeathPolicy.Retry,
+                    null,
+                    at,
+                    ct
+                );
+            }
+
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            capture.Clear();
+
+            var forDefinition = await persistence.GetCronOccurrenceDailyStatusCountsAsync(
+                cronA,
+                today,
+                today.AddDays(1),
+                ct
+            );
+            var forAll = await persistence.GetCronOccurrenceDailyStatusCountsAsync(today, today.AddDays(1), ct);
+
+            // The running host may materialize unleased occurrences of these definitions; it never settles them, so
+            // only the seeded terminal statuses are compared.
+            static bool seededStatus((DateTime Date, JobStatus Status, int Count) row) =>
+                row.Status is JobStatus.Succeeded or JobStatus.Failed;
+
+            forDefinition
+                .Where(seededStatus)
+                .Should()
+                .BeEquivalentTo([(today, JobStatus.Succeeded, 2), (today.AddDays(1), JobStatus.Failed, 1)]);
+            forAll
+                .Where(seededStatus)
+                .Should()
+                .BeEquivalentTo([
+                    (today, JobStatus.Succeeded, 2),
+                    (today, JobStatus.Failed, 1),
+                    (today.AddDays(1), JobStatus.Failed, 1),
+                ]);
+
+            // The host's background services may issue unrelated Jobs maintenance queries after Clear(); scope the
+            // assertion to the CronJobOccurrences aggregates.
+            var statements = capture
+                .Statements.Where(sql =>
+                    sql.Contains(fixture.JobsTable("CronJobOccurrences"), StringComparison.Ordinal)
+                    && sql.Contains("GROUP BY", StringComparison.OrdinalIgnoreCase)
+                )
+                .ToArray();
+            statements.Should().NotBeEmpty();
+            statements.Should().NotContain(sql => sql.Contains(" JOIN ", StringComparison.OrdinalIgnoreCase));
+            statements.Should().NotContain(sql => sql.Contains("request", StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
     public virtual async Task concurrent_missing_cron_occurrence_creation_is_deduplicated()
     {
         var ct = AbortToken;

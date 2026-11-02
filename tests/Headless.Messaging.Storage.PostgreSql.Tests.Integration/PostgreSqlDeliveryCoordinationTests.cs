@@ -55,13 +55,56 @@ public sealed class PostgreSqlDeliveryCoordinationTests(PostgreSqlTestFixture fi
         coordination.Mismatch.Should().Be(DeliveryCoordinationMismatch.Database);
     }
 
-    private async Task<DeliveryCoordination> _ResolveAsync(string configuredConnectionString)
+    [Fact]
+    public async Task should_accept_a_unit_when_the_configured_source_lists_several_hosts()
+    {
+        var coordination = await _ResolveAsync(fixture.MultiHostConnectionString);
+
+        coordination.Status.Should().Be(DeliveryCoordinationStatus.Compatible);
+    }
+
+    [Fact]
+    public async Task should_accept_a_multi_host_unit_when_the_configured_source_lists_the_same_hosts()
+    {
+        var coordination = await _ResolveAsync(fixture.MultiHostConnectionString, fixture.MultiHostConnectionString);
+
+        coordination.Status.Should().Be(DeliveryCoordinationStatus.Compatible);
+    }
+
+    [Fact]
+    public async Task should_refuse_a_unit_when_the_multi_host_source_names_another_database()
+    {
+        var builder = new NpgsqlConnectionStringBuilder(fixture.MultiHostConnectionString) { Database = "other_db" };
+
+        var coordination = await _ResolveAsync(builder.ConnectionString);
+
+        coordination.Status.Should().Be(DeliveryCoordinationStatus.Incompatible);
+        coordination.Mismatch.Should().Be(DeliveryCoordinationMismatch.Database);
+    }
+
+    [Fact]
+    public async Task should_refuse_a_unit_when_the_multi_host_source_does_not_list_the_reached_host()
+    {
+        var builder = new NpgsqlConnectionStringBuilder(fixture.ConnectionString) { Host = "pg1.invalid,pg2.invalid" };
+
+        var coordination = await _ResolveAsync(builder.ConnectionString);
+
+        coordination.Status.Should().Be(DeliveryCoordinationStatus.Incompatible);
+        coordination.Mismatch.Should().Be(DeliveryCoordinationMismatch.Database);
+    }
+
+    private async Task<DeliveryCoordination> _ResolveAsync(
+        string configuredConnectionString,
+        string? unitConnectionString = null
+    )
     {
         var services = new ServiceCollection();
         services.AddOptions();
         services.AddLogging();
         services.AddEntityFrameworkUnitOfWork();
-        services.AddDbContext<CoordinationDbContext>(options => options.UseNpgsql(fixture.ConnectionString));
+        services.AddDbContext<CoordinationDbContext>(options =>
+            options.UseNpgsql(unitConnectionString ?? fixture.ConnectionString)
+        );
         services.Configure<PostgreSqlOptions>(x => x.ConnectionString = configuredConnectionString);
         services.Configure<MessagingOptions>(x => x.Version = "v1");
         services.AddTestMessagingSchema();

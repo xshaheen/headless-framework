@@ -12,7 +12,11 @@ public abstract class RedisCacheTestBase(RedisCacheFixture fixture) : TestBase
 {
     protected RedisCacheFixture Fixture { get; } = fixture;
 
-    protected RedisCache CreateCache(string? keyPrefix = null, TimeSpan? tagMarkerRefreshWindow = null)
+    protected RedisCache CreateCache(
+        string? keyPrefix = null,
+        TimeSpan? tagMarkerRefreshWindow = null,
+        TimeProvider? timeProvider = null
+    )
     {
         var options = new RedisCacheOptions
         {
@@ -26,7 +30,13 @@ public abstract class RedisCacheTestBase(RedisCacheFixture fixture) : TestBase
         }
 
         var logger = LoggerFactory.CreateLogger<RedisCache>();
-        return new RedisCache(new SystemJsonSerializer(), TimeProvider.System, options, Fixture.ScriptsLoader, logger);
+        return new RedisCache(
+            new SystemJsonSerializer(),
+            timeProvider ?? TimeProvider.System,
+            options,
+            Fixture.ScriptsLoader,
+            logger
+        );
     }
 
     protected async Task FlushAsync()

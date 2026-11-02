@@ -9,9 +9,7 @@ namespace Tests;
 
 public sealed partial class PaymobCashInBrokerTests
 {
-    public static Fixture AutoFixture { get; } = new();
-
-    public static readonly TheoryData<int?> RequestPaymentKeyData = [default(int?), AutoFixture.Create<int>()];
+    public static readonly TheoryData<int?> RequestPaymentKeyData = [default(int?), 3_600];
 
     [Theory]
     [MemberData(nameof(RequestPaymentKeyData))]
@@ -20,12 +18,12 @@ public sealed partial class PaymobCashInBrokerTests
         // given
         var request = _GetPaymentKeyRequest(requestExpiration);
         var (authenticator, token) = _SetupGentAuthenticationToken();
-        var expiration = fixture.AutoFixture.Create<int>();
+        var expiration = Faker.Random.Int(1, 100_000);
         var config = fixture.CashInOptions with { ExpirationPeriod = expiration };
         fixture.OptionsAccessor.CurrentValue.Returns(config);
         var internalRequest = new CashInPaymentKeyInternalRequest(request, token, expiration);
         var internalRequestJson = JsonSerializer.Serialize(internalRequest);
-        var response = fixture.AutoFixture.Create<CashInPaymentKeyResponse>();
+        var response = CashInTestData.PaymentKeyResponse(Faker);
         var responseJson = JsonSerializer.Serialize(response);
 
         fixture
@@ -47,9 +45,9 @@ public sealed partial class PaymobCashInBrokerTests
     public async Task should_throw_http_request_exception_when_request_payment_key_not_success()
     {
         // given
-        var request = fixture.AutoFixture.Create<CashInPaymentKeyRequest>();
+        var request = _GetPaymentKeyRequest(Faker.Random.Int(1, 100_000));
         var (authenticator, _) = _SetupGentAuthenticationToken();
-        var body = fixture.AutoFixture.Create<string>();
+        var body = CashInTestData.Text(Faker);
 
         fixture
             .Server.Given(Request.Create().WithPath("/acceptance/payment_keys").UsingPost())
@@ -64,21 +62,8 @@ public sealed partial class PaymobCashInBrokerTests
         _ = await authenticator.Received(1).GetAuthenticationTokenAsync(AbortToken);
     }
 
-    private static CashInPaymentKeyRequest _GetPaymentKeyRequest(int? expiration)
+    private CashInPaymentKeyRequest _GetPaymentKeyRequest(int? expiration)
     {
-        return AutoFixture
-            .Build<CashInPaymentKeyRequest>()
-            .FromFactory(() =>
-                new CashInPaymentKeyRequest(
-                    integrationId: AutoFixture.Create<int>(),
-                    orderId: AutoFixture.Create<int>(),
-                    billingData: AutoFixture.Create<CashInBillingData>(),
-                    amountCents: AutoFixture.Create<int>(),
-                    currency: AutoFixture.Create<string>(),
-                    lockOrderWhenPaid: AutoFixture.Create<bool>(),
-                    expiration: expiration
-                )
-            )
-            .Create();
+        return CashInTestData.PaymentKeyRequest(Faker, expiration);
     }
 }

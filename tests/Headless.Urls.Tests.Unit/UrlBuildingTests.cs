@@ -500,4 +500,25 @@ public sealed class UrlBuildingTests
         var url = "http://www.mysite.com".SetQueryParam("x", new object?[] { 1, null });
         url.ToString().Should().Be("http://www.mysite.com?x=1");
     }
+
+    [Fact]
+    public void should_keep_percent_encoded_path_when_appending_segment_to_parsed_url()
+    {
+        var url = new Url("http://www.mysite.com/hi%20there").AppendPathSegment("a b");
+        url.ToString().Should().Be("http://www.mysite.com/hi%20there/a%20b");
+    }
+
+    [Fact]
+    public void should_keep_percent_encoded_segment_when_appending()
+    {
+        var url = "http://www.mysite.com".AppendPathSegment("caf%C3%A9 bar");
+        url.ToString().Should().Be("http://www.mysite.com/caf%C3%A9%20bar");
+    }
+
+    [Fact]
+    public void should_keep_percent_encoded_query_name_when_rendering()
+    {
+        var url = new Url("http://www.mysite.com/x?a%20b=1").SetQueryParam("c", "2");
+        url.ToString().Should().Be("http://www.mysite.com/x?a%20b=1&c=2");
+    }
 }

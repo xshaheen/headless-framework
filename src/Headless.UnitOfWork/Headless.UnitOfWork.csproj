@@ -6,6 +6,12 @@
     <RootNamespace>Headless.UnitOfWork</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Fencing.InMemory" />
+    <InternalsVisibleTo Include="Headless.Fencing.InMemory.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Fencing.Tests.Harness" />
+    <InternalsVisibleTo Include="Headless.Idempotency.InMemory" />
+    <InternalsVisibleTo Include="Headless.Idempotency.InMemory.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Idempotency.Tests.Harness" />
     <InternalsVisibleTo Include="Headless.Jobs.EntityFramework" />
     <InternalsVisibleTo Include="Headless.UnitOfWork.EntityFramework" />
     <InternalsVisibleTo Include="Headless.Sql.PostgreSql" />
@@ -23,5 +29,6 @@
   <ItemGroup>
     <ProjectReference Include="..\Headless.UnitOfWork.Abstractions\Headless.UnitOfWork.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
+    <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
   </ItemGroup>
 </Project>

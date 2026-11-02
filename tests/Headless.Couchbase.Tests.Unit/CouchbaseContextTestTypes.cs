@@ -3,9 +3,9 @@
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using Couchbase;
+using Couchbase.Client.Transactions;
+using Couchbase.Client.Transactions.Config;
 using Couchbase.Linq;
-using Couchbase.Transactions;
-using Couchbase.Transactions.Config;
 using Headless.Couchbase.Context;
 using Headless.Domain;
 using Microsoft.Extensions.Logging;
@@ -107,10 +107,15 @@ internal static class CouchbaseTestFactory
 
     public static Transactions CreateTransactions(ICluster cluster)
     {
-        var config = TransactionConfigBuilder
+        var config = TransactionsConfigBuilder
             .Create()
-            .CleanupLostAttempts(cleanupLostAttempts: false)
-            .CleanupClientAttempts(cleanupClientAttempts: false);
+            .CleanupConfig(
+                TransactionCleanupConfigBuilder
+                    .Create()
+                    .CleanupLostAttempts(cleanupLostAttempts: false)
+                    .CleanupClientAttempts(cleanupClientAttempts: false)
+                    .Build()
+            );
 
         return Transactions.Create(cluster, config);
     }

@@ -21,7 +21,11 @@ public sealed class JobsRetryOptions
     /// </summary>
     public Func<JobExhaustedContext, CancellationToken, Task>? OnExhausted { get; set; }
 
-    /// <summary>Gets or sets the maximum callback duration. Defaults to 30 seconds.</summary>
+    /// <summary>
+    /// Gets or sets the maximum duration of the <see cref="OnExhausted"/> callback and of each
+    /// <c>IJobExceptionHandler</c> invocation. Defaults to 30 seconds. The bound waits real time on the system clock,
+    /// not the registered <see cref="TimeProvider"/>, so a hung callback is cut off even when that clock never advances.
+    /// </summary>
     public TimeSpan OnExhaustedTimeout { get; set; } = TimeSpan.FromSeconds(30);
 }
 

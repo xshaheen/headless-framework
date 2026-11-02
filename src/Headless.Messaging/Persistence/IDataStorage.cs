@@ -45,6 +45,7 @@ public interface IDataStorage
     /// Atomically converges a complete received envelope on its logical inbox key before transport settlement.
     /// Only <see cref="InboxAdmissionDisposition.Winner"/> may be dispatched by the caller.
     /// </summary>
+    /// <remarks>A non-empty <see cref="MediumMessage.Content"/> is the envelope the caller already serialized for <see cref="MediumMessage.Origin"/> and is stored as it is; an empty one is serialized from the origin.</remarks>
     async ValueTask<InboxAdmissionResult> AdmitReceivedMessageAsync(
         string name,
         string consumerIdentity,
@@ -426,7 +427,7 @@ public interface IDataStorage
     /// Persists an outbound message envelope to the published table and returns the stored row with its assigned <c>StorageId</c>.
     /// </summary>
     /// <param name="name">The message name (topic or queue name) resolved at publish time.</param>
-    /// <param name="message">The message envelope to persist.</param>
+    /// <param name="message">The message envelope to persist. A non-empty <see cref="MediumMessage.Content"/> is the envelope the caller already serialized for <see cref="MediumMessage.Origin"/> and is stored as it is; an empty one is serialized from the origin.</param>
     /// <param name="transaction">
     /// Optional ambient relational transaction. When supplied, the insert participates in the caller's transaction.
     /// </param>
@@ -526,7 +527,7 @@ public interface IDataStorage
     /// </summary>
     /// <param name="name">The message name (topic or queue name) as received from the broker.</param>
     /// <param name="consumerIdentity">The identity of the consumer the message was delivered to; received rows are unique per message ID and consumer identity.</param>
-    /// <param name="message">The received message envelope to persist.</param>
+    /// <param name="message">The received message envelope to persist. A non-empty <see cref="MediumMessage.Content"/> is the envelope the caller already serialized for <see cref="MediumMessage.Origin"/> and is stored as it is; an empty one is serialized from the origin.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>The stored envelope with <c>StorageId</c> populated by the storage provider.</returns>
     ValueTask<MediumMessage> StoreReceivedMessageAsync(

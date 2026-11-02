@@ -182,7 +182,7 @@ public sealed class DistributedReadWriteLockTests : TestBase
         );
 
         // when — run release and advance time past the dispose timeout
-        var releaseTask = provider.ReleaseAsync(ReaderWriterLockMode.Write, "resource", "lease-1", AbortToken);
+        var releaseTask = provider.ReleaseAsync(ReaderWriterLockMode.Write, "resource", "lease-1");
 
         for (var i = 0; i < 10; i++)
         {
@@ -210,7 +210,7 @@ public sealed class DistributedReadWriteLockTests : TestBase
         var leaseId = Faker.Random.AlphaNumeric(10);
 
         // when
-        await provider.ReleaseAsync(ReaderWriterLockMode.Write, resource, leaseId, AbortToken);
+        await provider.ReleaseAsync(ReaderWriterLockMode.Write, resource, leaseId);
 
         // then
         await bus.Received(1)

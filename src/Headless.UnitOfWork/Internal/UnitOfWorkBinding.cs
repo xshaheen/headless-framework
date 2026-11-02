@@ -19,8 +19,8 @@ namespace Headless.UnitOfWork.Internal;
 /// <para>
 /// The abandon rolls the stale transaction back and, when the unit opened the connection, closes it. A caller
 /// that is already asynchronous uses <see cref="TryGetAsync" /> so that close has finished before it begins on
-/// the same connection; the synchronous <see cref="TryGet" /> backs the <c>UnitOfWork()</c> accessors and the
-/// save pipeline's lookup, where the abandon runs in the background because nothing begins on the key next.
+/// the same connection without blocking; the synchronous <see cref="TryGet" /> backs the <c>UnitOfWork()</c>
+/// accessors and the save pipeline's lookup, and blocks on the same abandon through the handle's synchronous dispose.
 /// </para>
 /// </remarks>
 internal sealed class UnitOfWorkBinding<TKey>
@@ -51,7 +51,7 @@ internal sealed class UnitOfWorkBinding<TKey>
     /// <summary>
     /// Gets the unit bound to <paramref name="key" /> when it is still <see cref="UnitOfWorkState.Active" /> and,
     /// for an owned unit, its transaction is still open; anything else is evicted, and an owned unit that
-    /// outlived its own transaction is abandoned in the background so a handle someone kept refuses further
+    /// outlived its own transaction is abandoned before this returns, so a handle someone kept refuses further
     /// registrations.
     /// </summary>
     public bool TryGet(TKey key, out IUnitOfWork unit)

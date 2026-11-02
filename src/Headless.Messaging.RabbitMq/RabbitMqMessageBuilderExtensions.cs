@@ -46,7 +46,8 @@ public sealed class RabbitMqConsumerConfigBuilder
     /// <summary>
     /// Overrides the RabbitMQ <c>basicQos</c> prefetch count for this consumer.
     /// Controls how many unacknowledged messages the broker delivers to the consumer at once.
-    /// When not set, the global channel prefetch configured in <c>RabbitMqMessagingOptions</c> is used.
+    /// When not set, <c>RabbitMqMessagingOptions.BasicQosOptions</c> applies, or, without it, four deliveries per
+    /// handler slot (<c>max(1, concurrency) * 4</c>).
     /// </summary>
     /// <param name="prefetchCount">The maximum number of unacknowledged messages to prefetch.</param>
     /// <returns>The same builder for chaining.</returns>

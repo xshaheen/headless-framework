@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Couchbase;
+using Couchbase.Client.Transactions;
 using Couchbase.Linq;
-using Couchbase.Transactions;
 using Headless.Couchbase.Clusters;
 using Headless.Couchbase.Context;
 using Headless.Couchbase.ContextProvider;

@@ -37,11 +37,9 @@ public static class HeadlessAsyncExExtensions
         CancellationToken cancellationToken = default
     )
     {
-        try
-        {
-            await resetEvent.WaitAsync(timeout, cancellationToken).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) { }
+        using var timeoutCancellationTokenSource = timeout.ToCancellationTokenSource(cancellationToken);
+        await _IgnoreCancellationAsync(resetEvent.WaitAsync(timeoutCancellationTokenSource.Token))
+            .ConfigureAwait(false);
     }
 
     /// <summary>Waits for the <paramref name="resetEvent"/> to be set, returning silently if the wait is cancelled.</summary>
@@ -49,13 +47,9 @@ public static class HeadlessAsyncExExtensions
     /// <param name="cancellationToken">A token that cancels the wait.</param>
     /// <returns>A task that completes when the event is set or the wait is cancelled.</returns>
     [DebuggerStepThrough]
-    public static async Task SafeWaitAsync(this AsyncAutoResetEvent resetEvent, CancellationToken cancellationToken)
+    public static Task SafeWaitAsync(this AsyncAutoResetEvent resetEvent, CancellationToken cancellationToken)
     {
-        try
-        {
-            await resetEvent.WaitAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) { }
+        return _IgnoreCancellationAsync(resetEvent.WaitAsync(cancellationToken));
     }
 
     /// <summary>Waits for the <paramref name="resetEvent"/> to be set, abandoning the wait after <paramref name="timeout"/> elapses.</summary>
@@ -87,11 +81,8 @@ public static class HeadlessAsyncExExtensions
         CancellationToken cancellationToken = default
     )
     {
-        try
-        {
-            await resetEvent.WaitAsync(timeout, cancellationToken).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) { }
+        using var cts = timeout.ToCancellationTokenSource(cancellationToken);
+        await _IgnoreCancellationAsync(resetEvent.WaitAsync(cts.Token)).ConfigureAwait(false);
     }
 
     /// <summary>Waits for the <paramref name="resetEvent"/> to be set, returning silently if the wait is cancelled.</summary>
@@ -99,13 +90,9 @@ public static class HeadlessAsyncExExtensions
     /// <param name="cancellationToken">A token that cancels the wait.</param>
     /// <returns>A task that completes when the event is set or the wait is cancelled.</returns>
     [DebuggerStepThrough]
-    public static async Task SafeWaitAsync(this AsyncManualResetEvent resetEvent, CancellationToken cancellationToken)
+    public static Task SafeWaitAsync(this AsyncManualResetEvent resetEvent, CancellationToken cancellationToken)
     {
-        try
-        {
-            await resetEvent.WaitAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) { }
+        return _IgnoreCancellationAsync(resetEvent.WaitAsync(cancellationToken));
     }
 
     /// <summary>
@@ -149,17 +136,13 @@ public static class HeadlessAsyncExExtensions
     /// <param name="cancellationToken">A token that cancels the wait before the timeout elapses.</param>
     /// <returns>A task that completes when the count reaches zero, the timeout elapses, or the wait is cancelled.</returns>
     [DebuggerStepThrough]
-    public static async Task SafeWaitAsync(
+    public static Task SafeWaitAsync(
         this AsyncCountdownEvent resetEvent,
         TimeSpan timeout,
         CancellationToken cancellationToken = default
     )
     {
-        try
-        {
-            await resetEvent.WaitAsync(timeout, timeProvider: null, cancellationToken).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) { }
+        return _IgnoreCancellationAsync(resetEvent.WaitAsync(timeout, timeProvider: null, cancellationToken));
     }
 
     /// <summary>Waits for the countdown <paramref name="resetEvent"/> to reach zero, returning silently if the wait is cancelled.</summary>
@@ -167,12 +150,21 @@ public static class HeadlessAsyncExExtensions
     /// <param name="cancellationToken">A token that cancels the wait.</param>
     /// <returns>A task that completes when the count reaches zero or the wait is cancelled.</returns>
     [DebuggerStepThrough]
-    public static async Task SafeWaitAsync(this AsyncCountdownEvent resetEvent, CancellationToken cancellationToken)
+    public static Task SafeWaitAsync(this AsyncCountdownEvent resetEvent, CancellationToken cancellationToken)
     {
-        try
+        return _IgnoreCancellationAsync(resetEvent.WaitAsync(cancellationToken));
+    }
+
+    // A timed-out wait is the normal outcome for polling callers, so observe cancellation without throwing:
+    // catching an OperationCanceledException costs a stack-trace capture and unwind on every timeout. A fault is
+    // still rethrown, keeping the contract that only cancellation is swallowed.
+    private static async Task _IgnoreCancellationAsync(Task task)
+    {
+        await task.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+
+        if (task.IsFaulted)
         {
-            await resetEvent.WaitAsync(cancellationToken).ConfigureAwait(false);
+            await task.ConfigureAwait(false);
         }
-        catch (OperationCanceledException) { }
     }
 }

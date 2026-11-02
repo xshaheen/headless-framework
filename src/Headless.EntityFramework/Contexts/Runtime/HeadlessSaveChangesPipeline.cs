@@ -94,7 +94,16 @@ internal sealed class HeadlessSaveChangesPipeline(
         // _ProcessEntries, so a single snapshot is correct for the audit capture too.
         var trackedEntries = _SnapshotEntries(context);
         var saveContext = _ProcessEntries(context, trackedEntries);
-        var auditEntries = auditPersistence.CaptureEntries(trackedEntries, saveContext);
+
+        // Adopts the unit a sibling context began over this context's connection, so the save runs inside that
+        // unit's transaction instead of beginning a second one on a connection that already has one.
+        _ = context.UnitOfWork();
+
+        var hasCurrentTransaction = context.Database.CurrentTransaction is not null;
+        var hasHandledDomainEvent = _HasHandledDomainEvent(saveContext);
+        var auditEntries = _CapturesAgainAfterDrain(saveContext, hasCurrentTransaction, hasHandledDomainEvent)
+            ? null
+            : auditPersistence.CaptureEntries(trackedEntries, saveContext);
 
         var state = new AsyncSaveState(
             context,
@@ -106,18 +115,14 @@ internal sealed class HeadlessSaveChangesPipeline(
             cancellationToken
         );
 
-        // Adopts the unit a sibling context began over this context's connection, so the save runs inside that
-        // unit's transaction instead of beginning a second one on a connection that already has one.
-        _ = context.UnitOfWork();
-
-        if (context.Database.CurrentTransaction is not null)
+        if (hasCurrentTransaction)
         {
             _EnsureUnitOfWorkOwnsCallerTransaction(context, saveContext);
 
             return await _ExecuteWithinCurrentTransactionAsync(state).ConfigureAwait(false);
         }
 
-        if (!_RequiresExplicitTransaction(auditEntries, saveContext))
+        if (!_RequiresExplicitTransaction(auditEntries, saveContext, hasHandledDomainEvent))
         {
             var result = await baseSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken).ConfigureAwait(false);
             _CompleteSuccessfulSave(context, saveContext, default, acceptAllChangesOnSuccess);
@@ -137,7 +142,15 @@ internal sealed class HeadlessSaveChangesPipeline(
     {
         var trackedEntries = _SnapshotEntries(context);
         var saveContext = _ProcessEntries(context, trackedEntries);
-        var auditEntries = auditPersistence.CaptureEntries(trackedEntries, saveContext);
+
+        // Same adoption as the async path.
+        _ = context.UnitOfWork();
+
+        var hasCurrentTransaction = context.Database.CurrentTransaction is not null;
+        var hasHandledDomainEvent = _HasHandledDomainEvent(saveContext);
+        var auditEntries = _CapturesAgainAfterDrain(saveContext, hasCurrentTransaction, hasHandledDomainEvent)
+            ? null
+            : auditPersistence.CaptureEntries(trackedEntries, saveContext);
 
         var state = new SaveState(
             context,
@@ -148,17 +161,14 @@ internal sealed class HeadlessSaveChangesPipeline(
             new StrongBox<bool>()
         );
 
-        // Same adoption as the async path.
-        _ = context.UnitOfWork();
-
-        if (context.Database.CurrentTransaction is not null)
+        if (hasCurrentTransaction)
         {
             _EnsureUnitOfWorkOwnsCallerTransaction(context, saveContext);
 
             return _ExecuteWithinCurrentTransaction(state);
         }
 
-        if (!_RequiresExplicitTransaction(auditEntries, saveContext))
+        if (!_RequiresExplicitTransaction(auditEntries, saveContext, hasHandledDomainEvent))
         {
             var result = baseSaveChanges(acceptAllChangesOnSuccess);
             _CompleteSuccessfulSave(context, saveContext, default, acceptAllChangesOnSuccess);
@@ -293,7 +303,17 @@ internal sealed class HeadlessSaveChangesPipeline(
                 throw;
             }
 
-            await unitOfWork.CompleteAsync(state.CancellationToken).ConfigureAwait(false);
+            try
+            {
+                await unitOfWork.CompleteAsync(state.CancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception drainFault) when (unitOfWork.State == UnitOfWorkState.Completed)
+            {
+                // The commit is durable and the tracker already accepted it; only an after-commit callback faulted.
+                // Throwing would report a failed save for committed rows and invite a retry that applies them twice,
+                // so the fault is logged, as RunAsync does for the same drain fault.
+                _logger.LogPostCommitDrainFaulted(drainFault);
+            }
 
             return saved;
         }
@@ -330,7 +350,15 @@ internal sealed class HeadlessSaveChangesPipeline(
                 throw;
             }
 
-            _RunBlocking(unitOfWork.CompleteAsync(CancellationToken.None));
+            try
+            {
+                _RunBlocking(unitOfWork.CompleteAsync(CancellationToken.None));
+            }
+            catch (Exception drainFault) when (unitOfWork.State == UnitOfWorkState.Completed)
+            {
+                // Same rule as the async twin: the commit is durable, so a callback fault is logged, not thrown.
+                _logger.LogPostCommitDrainFaulted(drainFault);
+            }
 
             return saved;
 #pragma warning restore AsyncFixer04
@@ -760,12 +788,35 @@ internal sealed class HeadlessSaveChangesPipeline(
 
     private static bool _RequiresExplicitTransaction(
         IReadOnlyList<AuditLogEntryData>? auditEntries,
-        HeadlessSaveEntryContext saveContext
+        HeadlessSaveEntryContext saveContext,
+        bool hasHandledDomainEvent
     )
     {
         return _HasAuditEntries(auditEntries)
             || saveContext.IntegrationEventEmitters.Count > 0
-            || _HasHandledDomainEvent(saveContext);
+            || hasHandledDomainEvent;
+    }
+
+    /// <summary>
+    /// Whether the save is certain to reach the transactional path and replace the audit entries there, so a capture
+    /// taken now would be discarded unread.
+    /// </summary>
+    /// <remarks>
+    /// A handled domain event forces a transaction, and dispatching it makes <see cref="_RecaptureAuditEntries"/>
+    /// capture again. A consumer processor makes it capture again on every transactional save, which a caller-owned
+    /// transaction or a pending integration event guarantees. Otherwise the first capture is either kept or decides
+    /// whether the save needs a transaction at all.
+    /// </remarks>
+    private bool _CapturesAgainAfterDrain(
+        HeadlessSaveEntryContext saveContext,
+        bool hasCurrentTransaction,
+        bool hasHandledDomainEvent
+    )
+    {
+        return hasHandledDomainEvent
+            || (
+                !_hasOnlyBuiltInProcessors && (hasCurrentTransaction || saveContext.IntegrationEventEmitters.Count > 0)
+            );
     }
 
     // A domain event without a handler has nothing to run inside the transaction; its emitter is cleared after the
@@ -914,4 +965,12 @@ internal static partial class HeadlessSaveChangesPipelineLog
         Message = "Rolling the save's unit of work back faulted during the exception path; rethrowing the original SaveChanges exception."
     )]
     internal static partial void LogUnitOfWorkRollbackFailed(this ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 3,
+        EventName = "HeadlessPostCommitDrainFaulted",
+        Level = LogLevel.Error,
+        Message = "An after-commit callback faulted after the save committed; the save's result is returned and the relay recovers any enlisted work."
+    )]
+    internal static partial void LogPostCommitDrainFaulted(this ILogger logger, Exception exception);
 }

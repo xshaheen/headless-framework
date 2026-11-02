@@ -4,8 +4,8 @@ using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using Couchbase;
+using Couchbase.Client.Transactions;
 using Couchbase.Linq;
-using Couchbase.Transactions;
 using Headless.Couchbase.Context;
 using Microsoft.Extensions.DependencyInjection;
 

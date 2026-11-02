@@ -351,7 +351,7 @@ internal sealed class DistributedSemaphoreProvider(
         return storage.ValidateAsync(_StorageResource(resource), leaseId, cancellationToken).AsTask();
     }
 
-    internal async Task ReleaseAsync(string resource, string leaseId, CancellationToken cancellationToken = default)
+    internal async Task ReleaseAsync(string resource, string leaseId)
     {
         _ValidateResource(resource);
         Argument.IsNotNullOrWhiteSpace(leaseId);
@@ -386,19 +386,7 @@ internal sealed class DistributedSemaphoreProvider(
 
         if (removed && _bus is not null)
         {
-            try
-            {
-                await _bus.PublishAsync(
-                        new DistributedLockReleased(resource, leaseId),
-                        DistributedLockCoreHelpers.ReleaseSignalPublishOptions,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
-            }
-            catch (Exception exception)
-            {
-                logger.LogLockReleasePublishFailed(exception, resource, leaseId);
-            }
+            DistributedLockCoreHelpers.PublishReleaseSignal(_bus, logger, resource, leaseId);
         }
     }
 

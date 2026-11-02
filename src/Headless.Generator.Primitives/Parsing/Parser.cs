@@ -15,6 +15,11 @@ namespace Headless.Generator.Primitives;
 
 internal static class Parser
 {
+    // Names emitted into source: a keyword segment such as `@event` keeps its escape, and no global:: prefix is
+    // added so the name also serves as a hint name.
+    private static readonly SymbolDisplayFormat _SourceNameFormat =
+        SymbolDisplayFormat.FullyQualifiedFormat.WithGlobalNamespaceStyle(SymbolDisplayGlobalNamespaceStyle.Omitted);
+
     /// <summary>Determines if a given syntax node is a valid target for code generation.</summary>
     /// <param name="syntaxNode">The syntax node to be evaluated.</param>
     /// <param name="ct">CancellationToken</param>
@@ -74,6 +79,26 @@ internal static class Parser
 
         var location = typeSyntax.Identifier.GetLocation();
         var diagnostics = new List<DiagnosticInfo>(2);
+
+        // The generator emits each primitive as a top-level partial type named by its simple name, so a nested or
+        // generic declaration would get an unrelated sibling type instead of its members. Report it and emit nothing.
+        if (symbol.ContainingType is not null)
+        {
+            diagnostics.Add(
+                DiagnosticInfo.Create(DiagnosticDescriptors.PrimitiveMustNotBeNested, location, symbol.Name)
+            );
+
+            return new PrimitiveParseResult(Info: null, diagnostics.ToEquatableArray());
+        }
+
+        if (symbol.IsGenericType)
+        {
+            diagnostics.Add(
+                DiagnosticInfo.Create(DiagnosticDescriptors.PrimitiveMustNotBeGeneric, location, symbol.Name)
+            );
+
+            return new PrimitiveParseResult(Info: null, diagnostics.ToEquatableArray());
+        }
 
         // Extract all data needed for emission
         var info = _ExtractPrimitiveTypeInfo(symbol, primitiveInterface, location, diagnostics, ct);
@@ -179,12 +204,7 @@ internal static class Parser
 
         // Extract parent primitives info
         var parentPrimitives = parentSymbols
-            .Select(p => new ParentPrimitiveInfo(
-                p.Name,
-                p.ContainingNamespace.ToDisplayString(),
-                p.GetFriendlyName(),
-                p.IsValueType
-            ))
+            .Select(p => new ParentPrimitiveInfo(p.Name, _NamespaceOf(p), p.GetFriendlyName(), p.IsValueType))
             .ToEquatableArray();
 
         // Extract all needed attributes in single pass using cheap Name property
@@ -296,8 +316,8 @@ internal static class Parser
 #pragma warning restore ERP022
 
         return new PrimitiveTypeInfo(
-            FullyQualifiedName: typeSymbol.ToDisplayString(),
-            Namespace: typeSymbol.ContainingNamespace.ToDisplayString(),
+            FullyQualifiedName: typeSymbol.ToDisplayString(_SourceNameFormat),
+            Namespace: _NamespaceOf(typeSymbol),
             ClassName: typeSymbol.Name,
             IsValueType: typeSymbol.IsValueType,
             IsRecord: typeSymbol.IsRecord,
@@ -305,7 +325,7 @@ internal static class Parser
             UnderlyingType: underlyingType,
             UnderlyingTypeFriendlyName: underlyingTypeSymbol.GetFriendlyName(),
             UnderlyingTypeIsValueType: underlyingTypeSymbol.IsValueType,
-            UnderlyingTypeNamespace: underlyingTypeSymbol.ContainingNamespace.ToDisplayString(),
+            UnderlyingTypeNamespace: _NamespaceOf(underlyingTypeSymbol),
             HasOverriddenHashCode: hasOverriddenHashCode,
             HasExplicitToStringMethod: hasExplicitToStringMethod,
             ParentPrimitives: parentPrimitives,
@@ -324,6 +344,17 @@ internal static class Parser
             UnderlyingImplementsIUtf8SpanFormattable: underlyingImplementsIUtf8SpanFormattable,
             XmlDocumentation: xmlDocumentation
         );
+    }
+
+    /// <summary>
+    /// The containing namespace's name, or empty for the global namespace, whose display string
+    /// (<c>&lt;global namespace&gt;</c>) is not valid in source.
+    /// </summary>
+    private static string _NamespaceOf(ISymbol symbol)
+    {
+        return symbol.ContainingNamespace is { IsGlobalNamespace: false } ns
+            ? ns.ToDisplayString(_SourceNameFormat)
+            : string.Empty;
     }
 
     private static DiagnosticInfo _UnsupportedUnderlyingType(

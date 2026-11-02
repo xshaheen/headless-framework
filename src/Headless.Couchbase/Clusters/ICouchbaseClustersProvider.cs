@@ -2,7 +2,7 @@
 
 using System.Collections.Concurrent;
 using Couchbase;
-using Couchbase.Transactions;
+using Couchbase.Client.Transactions;
 using Headless.Checks;
 using Microsoft.Extensions.Logging;
 using Nito.AsyncEx;

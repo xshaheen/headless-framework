@@ -869,9 +869,17 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// declared type</b> — this is a known wart in the current SPI shape; callers must null-check.
     /// </returns>
     /// <remarks>
+    /// The scheduler reads only scheduling fields from the result, so a provider may leave the occurrence's
+    /// <c>Request</c> payload unloaded; read it with <see cref="GetCronJobOccurrenceRequestAsync"/>.
     /// Heavily overdue occurrences are excluded here by design; they are recovered by
     /// <see cref="QueueTimedOutCronJobOccurrencesAsync"/>. The relational provider also returns
     /// <see langword="null"/> when coordination membership is not established.
+    /// <para>
+    /// The peek omits occurrences this node already holds under a live lease. A claimed occurrence stays
+    /// <c>Queued</c> until a worker starts it; peeking it again would re-claim it and admit it to the pool once per
+    /// scheduler poll. <see cref="QueueCronJobOccurrencesAsync"/> keeps accepting such rows, so a node can still
+    /// re-claim its own occurrences.
+    /// </para>
     /// </remarks>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task<CronJobOccurrenceEntity<TCronJob>> GetEarliestAvailableCronOccurrenceAsync(
@@ -1799,6 +1807,42 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     {
         var occurrences = await GetAllCronJobOccurrencesAsync(
                 x => x.ExecutionTime.Date >= startDate && x.ExecutionTime.Date <= endDate,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return occurrences
+            .GroupBy(x => new { x.ExecutionTime.Date, x.Status })
+            .Select(group => (group.Key.Date, group.Key.Status, group.Count()))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Returns per-(day, status) counts of one cron definition's occurrences whose execution time falls inside the
+    /// inclusive UTC date window, aggregated in storage — the dashboard's per-definition graph read.
+    /// </summary>
+    /// <param name="cronJobId">The cron definition whose occurrences are counted.</param>
+    /// <param name="startDate">First UTC calendar day included.</param>
+    /// <param name="endDate">Last UTC calendar day included (inclusive).</param>
+    /// <param name="cancellationToken">Token that aborts the query.</param>
+    /// <returns>
+    /// One entry per observed (date, status) pair; days and statuses with no rows are omitted, so callers zero-fill
+    /// their own date axis. Counts are per calendar day in UTC.
+    /// </returns>
+    /// <remarks>
+    /// Default interface method: the default projects through <see cref="GetAllCronJobOccurrencesAsync"/> and
+    /// groups client-side; providers that can express a <c>GROUP BY</c> should override it.
+    /// </remarks>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    async Task<IList<(DateTime Date, JobStatus Status, int Count)>> GetCronOccurrenceDailyStatusCountsAsync(
+        Guid cronJobId,
+        DateTime startDate,
+        DateTime endDate,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var occurrences = await GetAllCronJobOccurrencesAsync(
+                x => x.CronJobId == cronJobId && x.ExecutionTime.Date >= startDate && x.ExecutionTime.Date <= endDate,
                 cancellationToken
             )
             .ConfigureAwait(false);

@@ -190,8 +190,10 @@ public sealed class DefaultSqlCurrentConnectionTests : TestBase
         result.Should().BeSameAs(newConnection);
     }
 
-    [Fact]
-    public async Task should_handle_dispose_when_already_closed()
+    [Theory]
+    [InlineData(ConnectionState.Closed)]
+    [InlineData(ConnectionState.Broken)]
+    public async Task should_dispose_a_connection_that_left_the_open_state_during_the_scope(ConnectionState state)
     {
         // given
         var cancellationToken = AbortToken;
@@ -200,16 +202,17 @@ public sealed class DefaultSqlCurrentConnectionTests : TestBase
         connection.State.Returns(ConnectionState.Open);
         factory.CreateNewConnectionAsync(Arg.Any<CancellationToken>()).Returns(connection);
 
-        await using var sut = new DefaultSqlCurrentConnection(factory);
+        var sut = new DefaultSqlCurrentConnection(factory);
         _ = await sut.GetOpenConnectionAsync(cancellationToken);
 
-        // Change state to closed before dispose
-        connection.State.Returns(ConnectionState.Closed);
+        // The server dropped the session, or a caller closed the connection, before the scope ended.
+        connection.State.Returns(state);
 
-        // when/then - should not throw
-        var act = async () => await sut.DisposeAsync();
-        await act.Should().NotThrowAsync();
-        await connection.DidNotReceive().DisposeAsync();
+        // when
+        await sut.DisposeAsync();
+
+        // then
+        await connection.Received(1).DisposeAsync();
     }
 
     [Fact]

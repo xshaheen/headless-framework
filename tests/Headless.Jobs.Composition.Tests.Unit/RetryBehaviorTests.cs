@@ -627,6 +627,79 @@ public sealed class RetryBehaviorTests : TestBase
     }
 
     [Fact]
+    public async Task execute_task_async_cuts_off_a_hanging_exhausted_callback_when_the_app_clock_never_advances()
+    {
+        // given: a host whose registered clock is frozen. The callback bound guards against a hung callback, so it
+        // must elapse in real time; on the app clock it would never fire and the run would never finish.
+        var callbackTokenCancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var options = new JobsRetryOptions
+        {
+            OnExhaustedTimeout = TimeSpan.FromMilliseconds(20),
+            OnExhausted = (_, token) =>
+            {
+                token.Register(() => callbackTokenCancelled.TrySetResult());
+                return Task.Delay(Timeout.InfiniteTimeSpan, token);
+            },
+        };
+        var (handler, context, _, _) = _SetupRetryTestFixture(
+            [],
+            retries: 0,
+            retryOptions: options,
+            timeProvider: new FakeTimeProvider()
+        );
+
+        // when: the outer bound only turns a hang into a failure instead of a stuck test run
+        await handler
+            .ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken)
+            .WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
+
+        // then
+        context.Status.Should().Be(JobStatus.Failed);
+        callbackTokenCancelled.Task.IsCompleted.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task execute_task_async_cuts_off_a_hanging_exception_observer_when_the_app_clock_never_advances()
+    {
+        // given: a frozen registered clock and an observer that hangs on the per-retry path, where it runs inline
+        // before the retry; a bound on the app clock would stall the retry forever.
+        var observerTokenCancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var exceptionHandler = Substitute.For<Headless.Jobs.IJobExceptionHandler>();
+        exceptionHandler
+            .HandleExceptionAsync(
+                Arg.Any<Exception>(),
+                Arg.Any<Guid>(),
+                Arg.Any<JobType>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(async call =>
+            {
+                var token = call.Arg<CancellationToken>();
+                token.Register(() => observerTokenCancelled.TrySetResult());
+                await Task.Delay(Timeout.InfiniteTimeSpan, token);
+            });
+
+        var options = new JobsRetryOptions { OnExhaustedTimeout = TimeSpan.FromMilliseconds(20) };
+        var (handler, context, _, attempts) = _SetupRetryTestFixture(
+            [0],
+            retries: 1,
+            retryOptions: options,
+            configureServices: services => services.AddSingleton(exceptionHandler),
+            timeProvider: new FakeTimeProvider()
+        );
+
+        // when: the outer bound only turns a hang into a failure instead of a stuck test run
+        await handler
+            .ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken)
+            .WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
+
+        // then
+        attempts.Should().HaveCount(2);
+        context.Status.Should().Be(JobStatus.Failed);
+        observerTokenCancelled.Task.IsCompleted.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task execute_task_async_stamps_child_ownership_before_running_child_delegate()
     {
         var services = new ServiceCollection();
@@ -1296,6 +1369,98 @@ public sealed class RetryBehaviorTests : TestBase
 
         context.LeaseLost.Should().BeTrue();
         renewalCalls.Should().BeGreaterThanOrEqualTo(2);
+        await internalManager
+            .DidNotReceive()
+            .UpdateTickerAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task execute_task_async_renewal_deadline_runs_on_real_time_when_the_app_clock_stands_still()
+    {
+        // The renewal deadline bounds an I/O call, so it must wait real time. The registered clock only paces the
+        // renewal cadence: a host whose TimeProvider never advances past the first renewal tick must still see a hung
+        // store trip the deadline and cancel the job, instead of leaving it running behind a lease nobody renews.
+        var timeProvider = new FakeTimeProvider();
+        var services = new ServiceCollection();
+        var internalManager = Substitute.For<IInternalJobManager>();
+        var instrumentation = Substitute.For<IJobsInstrumentation>();
+        internalManager
+            .IsTimeJobCancellationRequestedAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<bool?>(false));
+        services.AddSingleton(internalManager);
+        services.AddSingleton(instrumentation);
+        var serviceProvider = services.BuildServiceProvider();
+
+        var renewalCalls = 0;
+        internalManager
+            .RenewLeaseAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                if (Interlocked.Increment(ref renewalCalls) == 1)
+                {
+                    return 1;
+                }
+
+                await Task.Delay(Timeout.Infinite, call.Arg<CancellationToken>());
+
+                return 1;
+            });
+
+        var handler = new JobsExecutionTaskHandler(
+            serviceProvider,
+            timeProvider,
+            instrumentation,
+            internalManager,
+            _EmptyRegistry,
+            new JobsExecutionCancellationRegistry(),
+            new SchedulerOptionsBuilder
+            {
+                LeaseDuration = TimeSpan.FromMinutes(5),
+                LeaseRenewalInterval = TimeSpan.FromMilliseconds(100),
+            },
+            NullLogger<JobsExecutionTaskHandler>.Instance,
+            new JobsFunctionTagBound(_EmptyRegistry)
+        );
+
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var context = new JobExecutionState
+        {
+            JobId = Guid.NewGuid(),
+            FunctionName = "LongJob",
+            Type = JobType.CronJobOccurrence,
+            ExecutionTime = DateTime.UtcNow,
+            RetryIntervals = [0],
+            Retries = 0,
+            RetryCount = 0,
+            Status = JobStatus.Idle,
+            CachedDelegate = async (_, _, ct) =>
+            {
+                started.TrySetResult();
+                await Task.Delay(Timeout.Infinite, ct);
+            },
+        };
+
+        // Cancelled on exit so a failing run does not leave the job parked for the rest of the suite.
+        using var runCts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        var execution = handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: runCts.Token);
+
+        try
+        {
+            await started.Task.WaitAsync(AbortToken);
+
+            // The renewal loop armed its cadence delay before the job started; one tick fires the second renewal,
+            // which hangs. The app clock never moves again.
+            timeProvider.Advance(TimeSpan.FromMilliseconds(100));
+
+            await execution.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+        }
+        finally
+        {
+            await runCts.CancelAsync();
+        }
+
+        context.LeaseLost.Should().BeTrue();
+        renewalCalls.Should().Be(2);
         await internalManager
             .DidNotReceive()
             .UpdateTickerAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>());

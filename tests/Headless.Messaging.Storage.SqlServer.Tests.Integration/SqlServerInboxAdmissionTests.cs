@@ -104,7 +104,9 @@ public sealed class SqlServerInboxAdmissionTests(SqlServerTestFixture fixture, I
                         """,
                         new
                         {
-                            ReadPrefix = "SELECT [Id],[Content],[IntentType],[Retries],[InlineAttempts]",
+                            // Both read-backs start with this prefix: the winner's leaves the payload out, and a
+                            // duplicate's appends it as the last column.
+                            ReadPrefix = "SELECT [Id],[IntentType],[Retries],[InlineAttempts]",
                             TableName = tableNames.GetReceivedTableName(),
                         },
                         cancellationToken: AbortToken
@@ -112,6 +114,16 @@ public sealed class SqlServerInboxAdmissionTests(SqlServerTestFixture fixture, I
                 )
             ).ToList();
             plans.Should().NotBeEmpty();
+            plans
+                .Should()
+                .Contain(
+                    entry => entry.Sql.Contains("[IsInboxOrphaned],[Content]", StringComparison.Ordinal),
+                    "the duplicate admissions above compile the read that returns the stored payload"
+                )
+                .And.Contain(
+                    entry => !entry.Sql.Contains("[IsInboxOrphaned],[Content]", StringComparison.Ordinal),
+                    "the winning admissions above compile the read that leaves the payload out"
+                );
             XNamespace showplan = "http://schemas.microsoft.com/sqlserver/2004/07/showplan";
             foreach (var (sql, plan) in plans)
             {

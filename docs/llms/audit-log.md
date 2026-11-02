@@ -270,7 +270,7 @@ Defines the property-level audit log contracts for tracking entity mutations and
 - `AuditLogQuery` — implements `IContinuationPageRequest`: filters (`Action` or `ActionPrefix`, `EntityType`, `EntityId`, `UserId`, `AccountId`, `TenantId`, `CorrelationId`, `From`, `To`), `Direction`, `Size` (default 100), and `ContinuationToken`.
 - `AuditLogSortDirection` — `NewestFirst` (default) or `OldestFirst`.
 - `AuditLogEntryData` — immutable record capturing all fields; `OldValues`/`NewValues` are `Dictionary<string, object?>`.
-- `IAuditLogStore` — storage abstraction called by the change-tracking pipeline; `Save`/`SaveAsync` take the saving `DbContext` and return `IAuditLogStoreEntry` handles. `AddsToSavingContext` (default `false`) must be `true` only for a store whose `Save` merely adds rows to the context without writing; only then may the pipeline call it before the entity save.
+- `IAuditLogStore` — storage abstraction called by the change-tracking pipeline; `Save`/`SaveAsync` take the saving `DbContext` and return `IAuditLogStoreEntry` handles. `AddsToSavingContext` (default `false`) must be `true` only for a store whose `Save` merely adds rows to the context without writing; only then may the pipeline call it before the entity save. For a store that adds rows to the context, entries whose ids come from store-generated keys are saved by a second base save that hides the already-saved entity changes; a store that writes its own rows (`AddsToSavingContext` `false`, the raw providers) is called once after the entity save, with no second base save.
 - `IAuditLogStoreEntry` — provider handle; orchestrator calls `DiscardPendingChanges()` on failure and `ReleaseAfterCommit()` after success. Both must be idempotent.
 - `IAuditChangeCapture` — scans ChangeTracker entries and produces `AuditLogEntryData` records, stamped from the `AuditCaptureContext` (actor, tenant, correlation, client IP and user agent, timestamp) the save pipeline passes.
 - `IAuditEntityIdResolver` — patches deferred entity IDs and temporary property values (store-generated keys, FKs to just-added principals) after `SaveChanges` assigns real keys. `RequiresDeferredResolution(entry)` (default `true`) lets a capture mark an entry complete so it can be saved with the entity change.
@@ -636,7 +636,7 @@ setup.UsePostgreSql((options, sp) =>
 - Registers the audit-log schema contribution; `resources provision` creates the table and indexes, and a host start verifies them.
 - Registers the shared relational writer from `Headless.AuditLog`, over the PostgreSQL dialect, as singleton.
 - Registers `IAuditLogStore` as scoped, and `IAuditLog<TContext>`, `IAuditLogWriter<TContext>`, and `IReadAuditLog<TContext>` as singletons, all from `Headless.AuditLog`.
-- Registers `IJsonSerializer`, `TimeProvider` (`TimeProvider.System`), `ICurrentTenant`, `ICurrentUser`, `ICorrelationIdProvider` as singletons if not already registered.
+- Registers `IJsonSerializer`, `TimeProvider` (`TimeProvider.System`), `ICurrentTenant`, `ICurrentUser`, `ICorrelationIdProvider` as singletons if not already registered. The `ICurrentTenant` and `ICurrentUser` fallbacks (`NullCurrentTenant`, `NullCurrentUser`) are registered by type, so `AddHeadless()` replaces them with the HTTP implementations in either call order.
 
 ---
 
@@ -729,4 +729,4 @@ setup.UseSqlServer((options, sp) =>
 - Registers the audit-log schema contribution; `resources provision` creates the table and indexes, and a host start verifies them.
 - Registers the shared relational writer from `Headless.AuditLog`, over the SQL Server dialect, as singleton.
 - Registers `IAuditLogStore` as scoped, and `IAuditLog<TContext>`, `IAuditLogWriter<TContext>`, and `IReadAuditLog<TContext>` as singletons, all from `Headless.AuditLog`.
-- Registers `IJsonSerializer`, `TimeProvider` (`TimeProvider.System`), `ICurrentTenant`, `ICurrentUser`, `ICorrelationIdProvider` as singletons if not already registered.
+- Registers `IJsonSerializer`, `TimeProvider` (`TimeProvider.System`), `ICurrentTenant`, `ICurrentUser`, `ICorrelationIdProvider` as singletons if not already registered. The `ICurrentTenant` and `ICurrentUser` fallbacks (`NullCurrentTenant`, `NullCurrentUser`) are registered by type, so `AddHeadless()` replaces them with the HTTP implementations in either call order.

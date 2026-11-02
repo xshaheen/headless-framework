@@ -310,6 +310,33 @@ public abstract class BlobStorageTestsBase : TestBase
             .BeEquivalentTo(shortIdPost);
     }
 
+    public virtual async Task failed_overwrite_keeps_the_previous_blob_and_metadata()
+    {
+        await using var storage = GetStorage();
+
+        await ResetAsync(storage);
+
+        var location = _Loc("kept", "report.txt");
+        var metadata = new Dictionary<string, string>(StringComparer.Ordinal) { ["version"] = "1" };
+
+        await using (var original = new MemoryStream("original"u8.ToArray()))
+        {
+            await storage.UploadAsync(location, original, metadata: metadata, cancellationToken: AbortToken);
+        }
+
+        // The replacement body yields some bytes and then faults, as a dropped client connection does.
+        await using var failing = new FaultingStream("partial replacement"u8.ToArray());
+        var act = async () => await storage.UploadAsync(location, failing, cancellationToken: AbortToken);
+
+        await act.Should().ThrowAsync<Exception>();
+        (await storage.GetBlobContentAsync(location, AbortToken)).Should().Be("original");
+        (await storage.GetBlobInfoAsync(location, AbortToken))!.Metadata.Should().Contain("version", "1");
+        (await storage.GetBlobsListAsync(Container, limit: 100))
+            .Select(blob => blob.BlobKey)
+            .Should()
+            .Equal("kept/report.txt");
+    }
+
     public virtual async Task can_concurrently_manage_files()
     {
         await using var storage = GetStorage();
@@ -1218,6 +1245,63 @@ public abstract class BlobStorageTestsBase : TestBase
     }
 
     #region Helpers
+
+    /// <summary>A non-seekable body that returns <paramref name="prefix"/> once, then throws <see cref="IOException"/>.</summary>
+    protected sealed class FaultingStream(byte[] prefix) : Stream
+    {
+        private bool _served;
+
+        public override bool CanRead => true;
+
+        public override bool CanSeek => false;
+
+        public override bool CanWrite => false;
+
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            return Read(buffer.AsSpan(offset, count));
+        }
+
+        public override int Read(Span<byte> buffer)
+        {
+            if (_served)
+            {
+                throw new IOException("The upload body faulted midway.");
+            }
+
+            _served = true;
+            var length = Math.Min(buffer.Length, prefix.Length);
+            prefix.AsSpan(0, length).CopyTo(buffer);
+
+            return length;
+        }
+
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            return ValueTask.FromResult(Read(buffer.Span));
+        }
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(Read(buffer.AsSpan(offset, count)));
+        }
+
+        public override void Flush() { }
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
 
     private async Task<IReadOnlyList<BlobInfo>> _GlobListAsync(IBlobStorage storage, string globPattern)
     {

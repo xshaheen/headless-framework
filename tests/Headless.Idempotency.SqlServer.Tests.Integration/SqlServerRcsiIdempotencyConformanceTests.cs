@@ -91,9 +91,9 @@ public sealed class SqlServerRcsiIdempotencyConformanceTests(SqlServerRcsiIdempo
     }
 
     [Fact]
-    public override Task should_peek_absent_pending_completed_and_respect_retention_and_tenant_scope()
+    public override Task should_peek_absent_pending_released_completed_and_respect_retention_and_tenant_scope()
     {
-        return base.should_peek_absent_pending_completed_and_respect_retention_and_tenant_scope();
+        return base.should_peek_absent_pending_released_completed_and_respect_retention_and_tenant_scope();
     }
 
     [Fact]

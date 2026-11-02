@@ -38,11 +38,15 @@ public sealed class PresentationDocumentMediaFileTextProvider : IMediaFileTextPr
     /// <exception cref="OperationCanceledException">
     /// Thrown when <paramref name="cancellationToken"/> is cancelled before extraction completes.
     /// </exception>
+    /// <exception cref="System.Xml.XmlException">
+    /// Thrown when a decompressed slide or presentation part exceeds 16 Mi characters, as a zip bomb does.
+    /// </exception>
+    /// <exception cref="InvalidDataException">Thrown when the extracted text exceeds 16 Mi characters.</exception>
     public Task<string> GetTextAsync(Stream fileStream, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        using var document = PresentationDocument.Open(fileStream, isEditable: false);
+        using var document = PresentationDocument.Open(fileStream, isEditable: false, MediaTextLimits.OpenXmlSettings);
         var ids = document.PresentationPart?.Presentation?.SlideIdList?.ChildElements;
 
         if (ids is null || ids.Value.Count == 0)
@@ -70,7 +74,8 @@ public sealed class PresentationDocumentMediaFileTextProvider : IMediaFileTextPr
 
             if (!string.IsNullOrEmpty(slideText))
             {
-                stringBuilder.AppendLine(slideText);
+                MediaTextLimits.AppendBounded(stringBuilder, slideText);
+                stringBuilder.AppendLine();
             }
         }
 

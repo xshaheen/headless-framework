@@ -189,12 +189,6 @@
         "resolved": "5.0.1",
         "contentHash": "uzofr/lI6d9kqNVPQHIWk6YmU7zNnI5cy6rA6HLDAdJ+g7w/sh7z7zc04c84vPkNKCmxCVPMeKP0DBCHPpb2pw=="
       },
-      "SerilogAnalyzer": {
-        "type": "Direct",
-        "requested": "[0.15.0, )",
-        "resolved": "0.15.0",
-        "contentHash": "sVpwfls4MfNnwIXLSGCgaUnV+c9kgJ8ia6GsyRcpd4Vs3gLogSDtSYBYrre2K2u/PNMo8GgG09RehwVnze70Tw=="
-      },
       "SmartAnalyzers.MultithreadingAnalyzer": {
         "type": "Direct",
         "requested": "[1.1.31, )",
@@ -1507,6 +1501,35 @@
           "Headless.Primitives": "[1.0.0, )"
         }
       },
+      "headless.captcha": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Captcha.Abstractions": "[1.0.0, )",
+          "Headless.Checks": "[1.0.0, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.13, )"
+        }
+      },
+      "headless.captcha.abstractions": {
+        "type": "Project"
+      },
+      "headless.captcha.recaptcha": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Captcha": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
+          "Headless.Http.Resilience": "[1.0.0, )",
+          "Headless.Urls": "[1.0.0, )"
+        }
+      },
+      "headless.captcha.turnstile": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Captcha": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
+          "Headless.Http.Resilience": "[1.0.0, )",
+          "Headless.Urls": "[1.0.0, )"
+        }
+      },
       "headless.checks": {
         "type": "Project"
       },
@@ -1625,6 +1648,41 @@
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Headless.Generator.Primitives.Abstractions": "[1.0.0, )"
+        }
+      },
+      "headless.pushnotifications": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.PushNotifications.Abstractions": "[1.0.0, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.13, )"
+        }
+      },
+      "headless.pushnotifications.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )"
+        }
+      },
+      "headless.pushnotifications.apns": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Hosting": "[1.0.0, )",
+          "Headless.Http.Resilience": "[1.0.0, )",
+          "Headless.PushNotifications": "[1.0.0, )",
+          "Microsoft.Extensions.Http.Resilience": "[10.11.0, )",
+          "Polly.Core": "[8.8.0, )"
+        }
+      },
+      "headless.pushnotifications.tests.harness": {
+        "type": "Project",
+        "dependencies": {
+          "AwesomeAssertions": "[9.6.0, )",
+          "AwesomeAssertions.Json": "[9.0.0, )",
+          "Bogus": "[35.6.5, )",
+          "Headless.PushNotifications.Abstractions": "[1.0.0, )",
+          "Headless.Testing": "[1.0.0, )",
+          "NSubstitute": "[6.2.0, )"
         }
       },
       "headless.serializer.abstractions": {

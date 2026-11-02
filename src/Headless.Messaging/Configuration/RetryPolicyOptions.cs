@@ -154,6 +154,9 @@ public sealed class RetryPolicyOptions
     /// and a <c>OnExhaustedTimedOut</c> log event is emitted. The orphaned callback continues
     /// running in the background but the dispatch loop is no longer blocked by it. Keep callbacks
     /// short and honor the supplied <see cref="CancellationToken"/> to avoid leaking resources.
+    /// The window runs on the messaging back-off clock (<see cref="MessagingOptions.BackoffClockServiceKey"/>,
+    /// <see cref="TimeProvider.System"/> by default), not the registered <see cref="TimeProvider"/>, so a frozen app
+    /// clock in a test does not keep a hung callback running forever.
     /// </remarks>
     public TimeSpan OnExhaustedTimeout { get; set; } = TimeSpan.FromSeconds(30);
 

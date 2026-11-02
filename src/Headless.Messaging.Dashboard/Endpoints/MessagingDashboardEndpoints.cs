@@ -21,6 +21,11 @@ public static partial class MessagingDashboardEndpoints
     internal const string PingHttpClientName = "Headless.Messaging.Dashboard.Ping";
     private const int _MaxPageSize = 200;
     private const int _MaxBulkActionSize = 500;
+    private const string _StatsCacheKey = "messaging.stats.storage";
+
+    // Longer than the default 2 s poll, so one tab reuses its own snapshot too, and short enough that the overview
+    // counts still read as live.
+    private static readonly TimeSpan _StatsCacheLifetime = TimeSpan.FromSeconds(5);
 
     // Inbox requests and responses share a wire contract independent of the hosting application's JSON settings.
     private static readonly JsonSerializerOptions _InboxJsonOptions = new(JsonSerializerDefaults.Web)
@@ -292,17 +297,35 @@ public static partial class MessagingDashboardEndpoints
 
     private static async Task<IResult> _Stats(IServiceProvider sp, HttpContext httpContext)
     {
-        var dataStorage = sp.GetRequiredService<IDataStorage>();
-        var monitoringApi = dataStorage.GetMonitoringApi();
+        var cache = sp.GetRequiredService<MessagingDashboardCache>();
 
-        var result = await monitoringApi.GetStatisticsAsync().ConfigureAwait(false);
+        // Every open overview tab polls this endpoint every few seconds, and the storage counts scan whole status
+        // partitions of the messaging tables. A short-lived shared snapshot lets all tabs on this node share one
+        // query per window instead of each tab paying for its own.
+        if (!cache.TryGetValue<StatisticsView>(_StatsCacheKey, out var storageStats) || storageStats is null)
+        {
+            var monitoringApi = sp.GetRequiredService<IDataStorage>().GetMonitoringApi();
+            storageStats = await monitoringApi.GetStatisticsAsync(httpContext.RequestAborted).ConfigureAwait(false);
+            cache.Set(_StatsCacheKey, storageStats, _StatsCacheLifetime);
+        }
+
+        // Copy, so the per-request subscriber and server counts never write into the shared cached snapshot.
+        var result = new StatisticsView
+        {
+            PublishedSucceeded = storageStats.PublishedSucceeded,
+            PublishedDelayed = storageStats.PublishedDelayed,
+            PublishedFailed = storageStats.PublishedFailed,
+            PublishedPendingRetry = storageStats.PublishedPendingRetry,
+            ReceivedSucceeded = storageStats.ReceivedSucceeded,
+            ReceivedFailed = storageStats.ReceivedFailed,
+            ReceivedPendingRetry = storageStats.ReceivedPendingRetry,
+        };
 
         // Set subscriber count
         var subscriberCache = sp.GetRequiredService<MethodMatcherCache>();
         result.Subscribers = subscriberCache.GetCandidatesBySubscriptionName().Sum(g => g.Value.Count);
 
         // Try to set server count from cache or discovery
-        var cache = sp.GetRequiredService<MessagingDashboardCache>();
         if (cache.TryGetValue<int>("messaging.nodes.count", out var count))
         {
             result.Servers = count;
@@ -792,6 +815,7 @@ public static partial class MessagingDashboardEndpoints
     private static async Task<IResult> _PublishedList(
         string status,
         IServiceProvider sp,
+        HttpContext httpContext,
         string? name = null,
         string? content = null,
         MessageLane? lane = null,
@@ -823,13 +847,14 @@ public static partial class MessagingDashboardEndpoints
             PageSize = pageSize,
         };
 
-        var result = await monitoringApi.GetMessagesAsync(queryDto).ConfigureAwait(false);
+        var result = await monitoringApi.GetMessagesAsync(queryDto, httpContext.RequestAborted).ConfigureAwait(false);
         return Results.Json(_MapMessagePage(result));
     }
 
     private static async Task<IResult> _ReceivedList(
         string status,
         IServiceProvider sp,
+        HttpContext httpContext,
         string? name = null,
         string? consumerIdentity = null,
         string? content = null,
@@ -863,7 +888,7 @@ public static partial class MessagingDashboardEndpoints
             PageSize = pageSize,
         };
 
-        var result = await monitoringApi.GetMessagesAsync(queryDto).ConfigureAwait(false);
+        var result = await monitoringApi.GetMessagesAsync(queryDto, httpContext.RequestAborted).ConfigureAwait(false);
         return Results.Json(_MapMessagePage(result));
     }
 

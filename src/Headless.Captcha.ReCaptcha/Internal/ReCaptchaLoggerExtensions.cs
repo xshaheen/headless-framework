@@ -40,4 +40,18 @@ internal static partial class ReCaptchaLoggerExtensions
         HttpStatusCode statusCode,
         string response
     );
+
+    [LoggerMessage(
+        EventId = 4,
+        EventName = "ReCaptchaPolicyRejected",
+        Level = LogLevel.Information,
+        Message = "[reCAPTCHA] valid token rejected by policy {Failures} (score {Score}, action {Action}, hostname {HostName})"
+    )]
+    internal static partial void LogReCaptchaPolicyRejected(
+        this ILogger logger,
+        string[] failures,
+        float? score,
+        string? action,
+        string? hostName
+    );
 }

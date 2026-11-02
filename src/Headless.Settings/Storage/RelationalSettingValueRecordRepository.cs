@@ -343,11 +343,19 @@ internal sealed class RelationalSettingValueRecordRepository(
             _Operation
         );
 
-        using var configured = _dialect.CreateConnection(options.ConnectionString);
-        RelationalEnlistment.RequireSameDatabase(configured, enlisted.Connection, _Owner, _Operation);
+        RelationalEnlistment.RequireSameDatabase(
+            unitOfWork,
+            this,
+            static repository => repository._CreateConfiguredConnection(),
+            enlisted.Connection,
+            _Owner,
+            _Operation
+        );
 
         return enlisted;
     }
+
+    private DbConnection _CreateConfiguredConnection() => _dialect.CreateConnection(options.ConnectionString);
 
     private (string Sql, Action<DbCommand> Bind) _ByNames(
         HashSet<string> names,
