@@ -33,7 +33,7 @@ public sealed partial class PaymobCashInBrokerTests
     public async Task should_throw_http_request_exception_when_create_pay_request_not_success(PayRequestKind kind)
     {
         // given
-        var body = fixture.AutoFixture.Create<string>();
+        var body = CashInTestData.Text(Faker);
 
         fixture.Server.Reset();
 
