@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.ComponentModel;
 using System.Reflection;
 using System.Text.Json.Serialization.Metadata;
 using Headless.Checks;
@@ -129,48 +128,42 @@ public static class HasExtraPropertiesExtensions
         /// Reads the property at <paramref name="name"/> and converts it to <typeparamref name="TProperty"/>,
         /// returning <paramref name="defaultValue"/> when the property is absent or <see langword="null"/>.
         /// </summary>
-        /// <typeparam name="TProperty">The primitive (or enum / <see cref="Guid"/>) type to convert the value to.</typeparam>
+        /// <remarks>
+        /// The stored value may have a different CLR type than the one written, because a bag loaded from JSON holds
+        /// what the JSON could express: strings for dates, times, <see cref="Guid"/> and <see cref="TimeSpan"/> values,
+        /// <see langword="long"/>, <see langword="decimal"/> or <see langword="double"/> for numbers, or
+        /// <see cref="System.Text.Json.JsonElement"/> values when deserialized without an inferring converter. Each is
+        /// converted with the invariant culture. A <see cref="DateTime"/> string keeps its kind (a <c>Z</c> suffix reads
+        /// back as UTC), a <see cref="DateTimeOffset"/> string without an offset is read as UTC, and enum names match
+        /// case-insensitively.
+        /// </remarks>
+        /// <typeparam name="TProperty">The primitive, <see cref="string"/>, <see cref="decimal"/>, <see cref="DateTime"/>, <see cref="DateTimeOffset"/>, <see cref="TimeSpan"/>, <see cref="Guid"/>, or enum type to convert the value to (optionally nullable).</typeparam>
         /// <param name="name">The property name to read.</param>
         /// <param name="defaultValue">The value returned when the property is missing or <see langword="null"/>.</param>
         /// <returns>The converted property value, or <paramref name="defaultValue"/>.</returns>
         /// <exception cref="InvalidOperationException">Thrown when <typeparamref name="TProperty"/> is not a supported primitive type.</exception>
         /// <exception cref="ArgumentException">Thrown when <typeparamref name="TProperty"/> is an enum and the stored value does not match a defined name or value.</exception>
         /// <exception cref="FormatException">Thrown when the stored value cannot be parsed into <typeparamref name="TProperty"/>.</exception>
-        [RequiresUnreferencedCode("Uses TypeDescriptor which is not compatible with trimming.")]
+        /// <exception cref="InvalidCastException">Thrown when the stored value's type cannot be converted to <typeparamref name="TProperty"/>.</exception>
         public TProperty? GetProperty<TProperty>(string name, TProperty? defaultValue = default)
         {
-            var value = source.GetProperty(name);
-            if (value == null)
+            var value = _Unwrap(source.GetProperty(name));
+
+            if (value is null)
             {
                 return defaultValue;
             }
 
-            if (typeof(TProperty).IsPrimitiveExtended(includeEnums: true))
+            if (!typeof(TProperty).IsPrimitiveExtended(includeEnums: true))
             {
-                var conversionType = typeof(TProperty);
-
-                if (conversionType.IsNullableValueType())
-                {
-                    conversionType = conversionType.GetGenericArguments()[0];
-                }
-
-                if (conversionType == typeof(Guid))
-                {
-                    return (TProperty)
-                        TypeDescriptor.GetConverter(conversionType).ConvertFromInvariantString(value.ToString()!)!;
-                }
-
-                if (conversionType.IsEnum)
-                {
-                    return (TProperty)Enum.Parse(conversionType, value.ToString()!);
-                }
-
-                return (TProperty)Convert.ChangeType(value, conversionType, CultureInfo.InvariantCulture);
+                throw new InvalidOperationException(
+                    "GetProperty<TProperty> does not support non-primitive types. Use non-generic GetProperty method and handle type casting manually."
+                );
             }
 
-            throw new InvalidOperationException(
-                "GetProperty<TProperty> does not support non-primitive types. Use non-generic GetProperty method and handle type casting manually."
-            );
+            var conversionType = Nullable.GetUnderlyingType(typeof(TProperty)) ?? typeof(TProperty);
+
+            return (TProperty)_ConvertTo(value, conversionType);
         }
 
         /// <summary>Reads the raw property value at <paramref name="name"/> without type conversion.</summary>
@@ -214,6 +207,91 @@ public static class HasExtraPropertiesExtensions
 
             return source.ExtraProperties.HasSameItems(other.ExtraProperties);
         }
+    }
+
+    private static object? _Unwrap(object? value)
+    {
+        if (value is not JsonElement element)
+        {
+            return value;
+        }
+
+        return element.ValueKind switch
+        {
+            JsonValueKind.String => element.GetString(),
+            // The raw text keeps every written digit; it is parsed into the requested numeric type below.
+            JsonValueKind.Number => element.GetRawText(),
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.Null or JsonValueKind.Undefined => null,
+            _ => element,
+        };
+    }
+
+    private static object _ConvertTo(object value, Type conversionType)
+    {
+        if (conversionType.IsInstanceOfType(value))
+        {
+            return value;
+        }
+
+        if (conversionType == typeof(string))
+        {
+            return Convert.ToString(value, CultureInfo.InvariantCulture)!;
+        }
+
+        if (conversionType.IsEnum)
+        {
+            // Name matching ignores case because JSON options commonly write enum names camelCase.
+            return value is string text
+                ? Enum.Parse(conversionType, text, ignoreCase: true)
+                : Enum.ToObject(conversionType, value);
+        }
+
+        if (value is string s)
+        {
+            return _Parse(s, conversionType);
+        }
+
+        if (conversionType == typeof(DateTimeOffset) && value is DateTime dateTime)
+        {
+            return new DateTimeOffset(dateTime);
+        }
+
+        return Convert.ChangeType(value, conversionType, CultureInfo.InvariantCulture);
+    }
+
+    private static object _Parse(string text, Type conversionType)
+    {
+        var culture = CultureInfo.InvariantCulture;
+
+        if (conversionType == typeof(Guid))
+        {
+            return Guid.Parse(text, culture);
+        }
+
+        if (conversionType == typeof(DateTime))
+        {
+            return DateTime.Parse(text, culture, DateTimeStyles.RoundtripKind);
+        }
+
+        if (conversionType == typeof(DateTimeOffset))
+        {
+            return DateTimeOffset.Parse(text, culture, DateTimeStyles.AssumeUniversal);
+        }
+
+        if (conversionType == typeof(TimeSpan))
+        {
+            return TimeSpan.Parse(text, culture);
+        }
+
+        if (conversionType == typeof(decimal))
+        {
+            // Convert.ToDecimal rejects exponent notation, which JSON numbers may use.
+            return decimal.Parse(text, NumberStyles.Float, culture);
+        }
+
+        return Convert.ChangeType(text, conversionType, culture);
     }
 
     extension<TSource>(TSource source)

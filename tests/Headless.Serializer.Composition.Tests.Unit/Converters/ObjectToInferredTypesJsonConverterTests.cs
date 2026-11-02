@@ -51,7 +51,7 @@ public sealed class ObjectToInferredTypesJsonConverterTests
     }
 
     [Fact]
-    public void should_convert_valid_double_value_successfully_when_object_to_types_converter()
+    public void should_convert_non_integer_number_to_decimal_when_object_to_types_converter()
     {
         // given
         const string json = "42.5";
@@ -60,27 +60,46 @@ public sealed class ObjectToInferredTypesJsonConverterTests
         var result = JsonSerializer.Deserialize<object>(json, _jsonOptions);
 
         // then
-        result.Should().Be(42.5);
+        result.Should().Be(42.5m);
     }
 
     [Fact]
-    public void should_convert_valid_datetime_successfully_when_object_to_types_converter()
+    public void should_keep_every_digit_of_a_decimal_when_object_to_types_converter()
     {
         // given
+        const string json = "12345678901234567.89";
+
+        // when
+        var result = JsonSerializer.Deserialize<object>(json, _jsonOptions);
+
+        // then
+        result.Should().Be(12345678901234567.89m);
+    }
+
+    [Theory]
+    [InlineData("1.5e300", 1.5e300)]
+    [InlineData("1.234e-27", 1.234e-27)]
+    [InlineData("5e-324", 5e-324)]
+    public void should_fall_back_to_double_when_decimal_cannot_hold_the_number(string json, double expected)
+    {
+        // when
+        var result = JsonSerializer.Deserialize<object>(json, _jsonOptions);
+
+        // then
+        result.Should().BeOfType<double>().Which.Should().Be(expected);
+    }
+
+    [Fact]
+    public void should_keep_date_like_string_as_string_when_object_to_types_converter()
+    {
+        // given - JSON has no date type, so a string that happens to look like a date stays the string it was
         const string json = "\"2024-01-01T12:00:00\"";
 
         // when
         var result = JsonSerializer.Deserialize<object>(json, _jsonOptions);
 
         // then
-        result.Should().BeOfType<DateTimeOffset>();
-        var dateTimeOffset = (DateTimeOffset)result;
-        dateTimeOffset.Year.Should().Be(2024);
-        dateTimeOffset.Month.Should().Be(1);
-        dateTimeOffset.Day.Should().Be(1);
-        dateTimeOffset.Hour.Should().Be(12);
-        dateTimeOffset.Minute.Should().Be(0);
-        dateTimeOffset.Second.Should().Be(0);
+        result.Should().Be("2024-01-01T12:00:00");
     }
 
     [Fact]
