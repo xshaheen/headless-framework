@@ -40,4 +40,10 @@ public sealed class SqlServerPeekTests(SqlServerJobsCoordinationFixture fixture)
     {
         return base.peek_skips_a_row_this_node_holds_and_returns_a_row_whose_foreign_lease_lapsed();
     }
+
+    [Fact]
+    public override Task cron_occurrence_peek_skips_an_occurrence_this_node_holds_and_returns_one_whose_foreign_lease_lapsed()
+    {
+        return base.cron_occurrence_peek_skips_an_occurrence_this_node_holds_and_returns_one_whose_foreign_lease_lapsed();
+    }
 }

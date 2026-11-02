@@ -3180,7 +3180,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
-        if (!OwnerIdentity.TryGetStampOwner(out var owner))
+        // A node without an owner identity cannot claim, so it has nothing to peek for.
+        if (!OwnerIdentity.TryGetStampOwner(out _))
         {
             return null!;
         }
@@ -3203,7 +3204,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .Where(x => !x.CronJob.IsPaused)
             .Where(x => x.ExecutionTime >= mainSchedulerThreshold) // Only items within the 1-second main scheduler window
             .WhereRunnable(RunFilter)
-            .WhereCanAcquireUsingDatabaseClock(owner)
+            .WhereCanPeekUsingDatabaseClock()
             .OrderBy(x => x.ExecutionTime)
             .Select(MappingExtensions.ForLatestQueuedCronJobOccurrence<CronJobOccurrenceEntity<TCronJob>, TCronJob>())
             .FirstOrDefaultAsync(cancellationToken)

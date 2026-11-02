@@ -872,6 +872,12 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// Heavily overdue occurrences are excluded here by design; they are recovered by
     /// <see cref="QueueTimedOutCronJobOccurrencesAsync"/>. The relational provider also returns
     /// <see langword="null"/> when coordination membership is not established.
+    /// <para>
+    /// The peek omits occurrences this node already holds under a live lease. A claimed occurrence stays
+    /// <c>Queued</c> until a worker starts it; peeking it again would re-claim it and admit it to the pool once per
+    /// scheduler poll. <see cref="QueueCronJobOccurrencesAsync"/> keeps accepting such rows, so a node can still
+    /// re-claim its own occurrences.
+    /// </para>
     /// </remarks>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task<CronJobOccurrenceEntity<TCronJob>> GetEarliestAvailableCronOccurrenceAsync(

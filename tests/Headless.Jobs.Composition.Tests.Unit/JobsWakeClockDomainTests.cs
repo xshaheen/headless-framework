@@ -154,6 +154,31 @@ public sealed class JobsWakeClockDomainTests : TestBase
     }
 
     [Fact]
+    public async Task cron_occurrence_peek_skips_an_occurrence_this_node_holds_and_returns_one_whose_foreign_lease_lapsed()
+    {
+        // An occurrence this node holds is Queued under its own lease while it waits for a worker or a concurrency
+        // slot. Peeking it again made every scheduler poll re-claim it and queue one more admission for it.
+        var (_, provider) = _CreateManager();
+        var heldDefinition = _CronDefinition();
+        var lapsedDefinition = _CronDefinition();
+        await provider.InsertCronJobsAsync([heldDefinition, lapsedDefinition], AbortToken);
+        var held = _CronOccurrence(heldDefinition.Id, _StoreNow.AddSeconds(1));
+        held.Status = JobStatus.Queued;
+        held.OwnerId = "node-a";
+        held.LockedUntil = _StoreNow.AddMinutes(5);
+        var lapsed = _CronOccurrence(lapsedDefinition.Id, _StoreNow.AddSeconds(2));
+        lapsed.Status = JobStatus.Queued;
+        lapsed.OwnerId = "node-b";
+        lapsed.LockedUntil = _StoreNow.AddMinutes(-1);
+        await provider.InsertCronJobOccurrencesAsync([held, lapsed], AbortToken);
+
+        var peek = await provider.GetEarliestAvailableCronOccurrenceAsync([], AbortToken);
+
+        peek.Should().NotBeNull();
+        peek.Id.Should().Be(lapsed.Id);
+    }
+
+    [Fact]
     public async Task the_planned_wake_is_recorded_in_the_store_domain()
     {
         // JobsSchedulerBackgroundService used to record `nodeNow + remaining`. With a store-derived remaining that
@@ -251,6 +276,22 @@ public sealed class JobsWakeClockDomainTests : TestBase
             CreatedAt = new DateTimeOffset(_StoreNow.AddMinutes(-5), TimeSpan.Zero),
             UpdatedAt = new DateTimeOffset(_StoreNow.AddMinutes(-5), TimeSpan.Zero),
             Request = [],
+        };
+
+    private static FakeCronJob _CronDefinition() =>
+        new()
+        {
+            Id = Guid.NewGuid(),
+            Function = "wake-domain-cron",
+            Expression = "0 0 * * * *",
+        };
+
+    private static CronJobOccurrenceEntity<FakeCronJob> _CronOccurrence(Guid cronJobId, DateTime executionTime) =>
+        new()
+        {
+            Id = Guid.NewGuid(),
+            CronJobId = cronJobId,
+            ExecutionTime = executionTime,
         };
 
     /// <summary>
