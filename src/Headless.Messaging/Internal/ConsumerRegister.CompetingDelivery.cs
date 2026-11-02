@@ -120,6 +120,9 @@ internal sealed partial class ConsumerRegister
             traceHandle = _TracingBefore(transportMessage, lane, _serverAddress);
 
             Message message;
+
+            // The body the accepted message was deserialized from; the stored envelope embeds it as it is.
+            ReadOnlyMemory<byte> messageBody = default;
             Exception? dispatchBypassException = null;
             string? exceptionInfo = null;
 
@@ -320,6 +323,7 @@ internal sealed partial class ConsumerRegister
                 else
                 {
                     message = receiveOutcome.Message!;
+                    messageBody = receiveOutcome.Body;
 
                     // The delivery continued to admission; the ring's copy-on-write headers/body
                     // (already reflected in the deserialized message) are what storage persists.
@@ -550,7 +554,7 @@ internal sealed partial class ConsumerRegister
                             {
                                 StorageId = Guid.Empty,
                                 Origin = message,
-                                Content = string.Empty,
+                                Content = _serializer.Serialize(message, messageBody),
                                 Lane = lane,
                             },
                             CancellationToken.None
@@ -576,6 +580,7 @@ internal sealed partial class ConsumerRegister
                 }
 
                 var contractVersion = message.Headers[Headers.ContractVersion]!;
+                var admittedContent = _serializer.Serialize(message, messageBody);
                 var admission = await _AdmitWithRetryAsync(
                         () =>
                             _storage.AdmitReceivedMessageAsync(
@@ -586,7 +591,7 @@ internal sealed partial class ConsumerRegister
                                 {
                                     StorageId = Guid.Empty,
                                     Origin = message,
-                                    Content = string.Empty,
+                                    Content = admittedContent,
                                     Lane = lane,
                                 },
                                 inboxRetention: executor.InboxRetention,

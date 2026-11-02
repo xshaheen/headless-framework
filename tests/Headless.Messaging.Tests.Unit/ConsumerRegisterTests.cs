@@ -618,6 +618,77 @@ public sealed class ConsumerRegisterTests : TestBase
     }
 
     [Fact]
+    public async Task inbox_admission_should_store_the_received_body_instead_of_reserializing_the_payload()
+    {
+        // given a durable consumer whose storage records what admission hands it
+        await using var client = new InboxConsumerClient();
+        var dispatcher = Substitute.For<IDispatcher>();
+        var storage = Substitute.For<Headless.Messaging.Persistence.IDataStorage>();
+        MediumMessage? admitted = null;
+        storage
+            .AdmitReceivedMessageAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<MediumMessage>(),
+                Arg.Any<long>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(call =>
+            {
+                admitted = call.ArgAt<MediumMessage>(3);
+                return ValueTask.FromResult(
+                    new Headless.Messaging.Persistence.InboxAdmissionResult(
+                        Headless.Messaging.Persistence.InboxAdmissionDisposition.Winner,
+                        admitted
+                    )
+                );
+            });
+
+        await using var provider = _CreateProvider(
+            configureMessaging: setup =>
+            {
+                setup.AddConsumer<BootstrapReadyConsumer>();
+            },
+            configureServices: services =>
+            {
+                services.ConfigureMessaging(messaging => messaging.Message<BootstrapReadyMessage>("ready-messageName"));
+                services.AddSingleton(dispatcher);
+                services.AddSingleton<BootstrapReadyConsumer>();
+            }
+        );
+        var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
+        var serializer = provider.GetRequiredService<Headless.Messaging.IMessageSerializer>();
+        _AttachInboxProcessor(provider, register, client, dispatcher, serializer, storage);
+
+        // and a producer body carrying a member the consumer type does not bind, which a re-serialization would drop
+        var origin = new Message(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [Headers.MessageId] = "inbox-raw-body",
+                [Headers.MessageName] = "ready-messageName",
+            },
+            new BootstrapReadyMessage()
+        );
+        var serialized = await serializer.SerializeToTransportMessageAsync(origin, AbortToken);
+        var body = """{ "ProducerOnly": 1 }"""u8.ToArray();
+        var transport = new TransportMessage(serialized.Headers, body);
+
+        // when
+        await client.OnMessageCallback!(transport, null);
+
+        // then
+        admitted.Should().NotBeNull();
+        var stored = serializer.Deserialize(admitted!.Content)!;
+        stored.Value.Should().BeOfType<JsonElement>().Which.GetRawText().Should().Be(Encoding.UTF8.GetString(body));
+        stored.Headers[Headers.MessageId].Should().Be("inbox-raw-body");
+        stored.Headers.Should().ContainKey(Headers.ExecutionInstanceId);
+        serializer.Deserialize(stored.Value!, typeof(BootstrapReadyMessage)).Should().Be(new BootstrapReadyMessage());
+        client.CommitCount.Should().Be(1);
+    }
+
+    [Fact]
     public async Task contract_version_mismatch_should_be_poisoned_before_deserialization()
     {
         await using var client = new InboxConsumerClient();

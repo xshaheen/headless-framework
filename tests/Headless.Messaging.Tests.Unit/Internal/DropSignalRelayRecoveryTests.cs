@@ -47,7 +47,12 @@ public sealed class DropSignalRelayRecoveryTests : TestBase
         await using var unitOfWork = new FakeUnitOfWork();
         var dispatcher = Substitute.For<IDispatcher>();
 
-        var writer = new OutboxMessageWriter(storage, dispatcher, TimeProvider.System);
+        var writer = new OutboxMessageWriter(
+            storage,
+            dispatcher,
+            new JsonUtf8Serializer(Options.Create(new MessagingOptions())),
+            TimeProvider.System
+        );
 
         // Stores the durable row in-transaction and buffers the accelerator dispatch on the unit of work.
         var request = _CreatePublishRequestFactory().Create(new RelayMessage("value"), lane: MessageLane.Bus);

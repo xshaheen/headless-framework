@@ -20,6 +20,7 @@ namespace Tests;
 /// deadline. Every attempt start checks it on the consumer host's clock and ends an expired message without running
 /// the consumer, firing the exhausted callback, or counting against the circuit; an operator replay drops the deadline.
 /// </summary>
+[Collection(RequestReplyCollection.Name)]
 public sealed class DeliverByAttemptTests : TestBase
 {
     [Theory]

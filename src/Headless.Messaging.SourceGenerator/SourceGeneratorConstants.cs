@@ -13,6 +13,7 @@ internal static class SourceGeneratorConstants
     public const string ConsumerLifecycleMetadataName = "Headless.Messaging.IConsumerLifecycle";
     public const string RequestClientMetadataName = "Headless.Messaging.IRequestClient";
     public const string ResponderMetadataAttributeName = "Headless.Messaging.ResponderMetadataAttribute";
+    public const string ResponderMetadataAttributeSimpleName = "ResponderMetadataAttribute";
     public const string RequestMethodName = "RequestAsync";
     public const string GetReplyMethodName = "GetReplyAsync";
 
