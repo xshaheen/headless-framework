@@ -1566,16 +1566,41 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         return [.. statusRows.OrderByDescending(x => x.LastSeen).Select(x => (x.Status, x.Count))];
     }
 
-    public async Task<IList<(DateTime Date, JobStatus Status, int Count)>> GetCronOccurrenceDailyStatusCountsAsync(
+    public Task<IList<(DateTime Date, JobStatus Status, int Count)>> GetCronOccurrenceDailyStatusCountsAsync(
         DateTime startDate,
         DateTime endDate,
         CancellationToken cancellationToken = default
+    )
+    {
+        return _GetCronOccurrenceDailyStatusCountsAsync(cronJobId: null, startDate, endDate, cancellationToken);
+    }
+
+    public Task<IList<(DateTime Date, JobStatus Status, int Count)>> GetCronOccurrenceDailyStatusCountsAsync(
+        Guid cronJobId,
+        DateTime startDate,
+        DateTime endDate,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return _GetCronOccurrenceDailyStatusCountsAsync(cronJobId, startDate, endDate, cancellationToken);
+    }
+
+    private async Task<IList<(DateTime Date, JobStatus Status, int Count)>> _GetCronOccurrenceDailyStatusCountsAsync(
+        Guid? cronJobId,
+        DateTime startDate,
+        DateTime endDate,
+        CancellationToken cancellationToken
     )
     {
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
         var occurrences = dbContext.Set<CronJobOccurrenceEntity<TCronJob>>().AsNoTracking();
+        if (cronJobId is { } definitionId)
+        {
+            occurrences = occurrences.Where(x => x.CronJobId == definitionId);
+        }
+
         // Half-open bound is the exact translation of the inclusive .Date window the dashboard used to pass as
         // a predicate, and keeps the range sargable against an execution-time index.
         var exclusiveEnd = endDate.AddDays(1);

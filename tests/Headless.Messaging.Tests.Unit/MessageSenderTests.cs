@@ -1818,6 +1818,49 @@ public sealed class MessageSenderTests : TestBase
     }
 
     [Fact]
+    public async Task should_cut_off_a_hung_on_exhausted_callback_on_the_backoff_clock_while_the_app_clock_is_frozen()
+    {
+        // given a frozen app clock, the default real back-off clock, and a callback that never returns
+        var storage = Substitute.For<IDataStorage>();
+        var serializer = Substitute.For<IMessageSerializer>();
+        var transport = Substitute.For<ITransport>();
+        var callbackEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var hung = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var options = new MessagingOptions
+        {
+            RetryPolicy =
+            {
+                RetryStrategy = TestRetryStrategies.ZeroDelay(2),
+                MaxPersistedRetries = 1,
+                OnExhaustedTimeout = TimeSpan.FromMilliseconds(50),
+                OnExhausted = (_, _) =>
+                {
+                    callbackEntered.TrySetResult();
+                    return hung.Task;
+                },
+            },
+        };
+        var sender = _CreateSender(storage, serializer, transport, options, timeProvider: new FakeTimeProvider());
+        var message = _CreateMediumMessage();
+        message.Retries = 3;
+
+        try
+        {
+            // when the over-cap row ends as exhausted
+            var send = sender.SendAsync(message);
+            await callbackEntered.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+            // then the send finishes once the timeout passes in real time
+            var result = await send.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+            result.Succeeded.Should().BeFalse();
+        }
+        finally
+        {
+            hung.TrySetResult();
+        }
+    }
+
+    [Fact]
     public async Task should_write_terminal_state_without_inline_backoff_when_over_cap_row_has_inline_budget_left()
     {
         // given — two inline retries remain and each would wait an hour on a clock the test never advances, so the

@@ -110,8 +110,9 @@ public sealed class RabbitMqMessagingOptions
     public Action<ConnectionFactory>? ConnectionFactoryOptions { get; set; }
 
     /// <summary>
-    /// Per-channel Quality-of-Service (prefetch) settings. When <see langword="null"/>, no
-    /// <c>basic.qos</c> is sent and the broker uses its own defaults.
+    /// Per-channel Quality-of-Service (prefetch) settings for consumers without their own <c>PrefetchCount</c>.
+    /// When <see langword="null"/>, each consumer prefetches four deliveries per handler slot
+    /// (<c>max(1, concurrency) * 4</c>).
     /// See <see href="https://www.rabbitmq.com/consumer-prefetch.html"/>.
     /// </summary>
     public BasicQos? BasicQosOptions { get; set; }

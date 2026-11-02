@@ -15,7 +15,9 @@ namespace Headless.Messaging.SourceGenerator.Emitting;
 /// </remarks>
 internal static class MessagingSourceEmitter
 {
-    /// <summary>The generated module's type name, in the namespace named after the assembly.</summary>
+    /// <summary>
+    /// The generated module's type name, in the namespace named after the assembly (see <see cref="NamespaceName.From"/>).
+    /// </summary>
     public const string ModuleClassName = "MessagingModule";
 
     private const string _ConsumeContext = "global::Headless.Messaging.ConsumeContext";
@@ -48,7 +50,7 @@ internal static class MessagingSourceEmitter
             writer.NewLine();
         }
 
-        writer.AppendLine($"namespace {model.AssemblyName}");
+        writer.AppendLine($"namespace {NamespaceName.From(model.AssemblyName)}");
         writer.OpenBracket();
         // Public so a module's entry point can name it in AddModule<T>(); the registration itself is an explicit
         // interface implementation, reachable only through that call, which runs it once per host.

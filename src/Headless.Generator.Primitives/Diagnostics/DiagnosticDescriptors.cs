@@ -61,6 +61,30 @@ internal static class DiagnosticDescriptors
         customTags: _CustomTags
     );
 
+    public static readonly DiagnosticDescriptor PrimitiveMustNotBeNested = new(
+        "HF1004",
+        _Resource("PrimitiveMustNotBeNestedTitle"),
+        _Resource("PrimitiveMustNotBeNestedMessage"),
+        _Category,
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: _Resource("PrimitiveMustNotBeNestedMessage"),
+        helpLinkUri: _HelpLinkBase + "hf1004",
+        customTags: _CustomTags
+    );
+
+    public static readonly DiagnosticDescriptor PrimitiveMustNotBeGeneric = new(
+        "HF1005",
+        _Resource("PrimitiveMustNotBeGenericTitle"),
+        _Resource("PrimitiveMustNotBeGenericMessage"),
+        _Category,
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: _Resource("PrimitiveMustNotBeGenericMessage"),
+        helpLinkUri: _HelpLinkBase + "hf1005",
+        customTags: _CustomTags
+    );
+
     public static readonly DiagnosticDescriptor SerializationFormatRequiresDateOrTime = new(
         "HF1012",
         _Resource("SerializationFormatRequiresDateOrTimeTitle"),

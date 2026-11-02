@@ -58,9 +58,13 @@ internal sealed class JobsNotificationHubSender : IJobsNotificationHubSender, ID
         await _hubContext.Clients.All.SendAsync("AddTimeJobsBatchNotification").ConfigureAwait(false);
     }
 
-    public async Task UpdateTimeJobNotifyAsync(object timeJob)
+    public Task UpdateTimeJobNotifyAsync(object timeJob)
     {
-        await _hubContext.Clients.All.SendAsync("UpdateTimeJobNotification", timeJob).ConfigureAwait(false);
+        // The dashboard reloads its list on this message and never reads the row, and the scheduler raises it once
+        // per claimed job, so it shares the debounced payload-free send instead of serializing and awaiting each row.
+        _ScheduleTimeJobUpdate();
+
+        return Task.CompletedTask;
     }
 
     public async Task RemoveTimeJobNotifyAsync(Guid id)
@@ -127,13 +131,18 @@ internal sealed class JobsNotificationHubSender : IJobsNotificationHubSender, ID
     public Task UpdateTimeJobFromExecutionState<TTimeJob>(JobExecutionState executionState)
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
     {
-        // Debounce high-frequency updates into a single notification
+        _ScheduleTimeJobUpdate();
+
+        return Task.CompletedTask;
+    }
+
+    // Debounce high-frequency updates into a single notification
+    private void _ScheduleTimeJobUpdate()
+    {
         if (Interlocked.Exchange(ref _hasPendingTimeJobUpdate, 1) == 0)
         {
             _timeJobUpdateTimer.Change(_TimeJobUpdateDebounce, Timeout.InfiniteTimeSpan);
         }
-
-        return Task.CompletedTask;
     }
 
     private void _TimeJobUpdateCallback(object? _)

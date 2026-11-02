@@ -13,6 +13,8 @@ internal sealed class AmazonSnsBusTransport(
     IOptions<AmazonSqsMessagingOptions> sqsOptionsAccessor
 ) : IBusTransport
 {
+    private const long _MissingTopicRetryMilliseconds = 30_000;
+
     private readonly ILogger _logger = logger;
     private readonly SemaphoreSlim _semaphore = new(1, 1);
     private IAmazonSimpleNotificationService? _snsClient;
@@ -21,6 +23,11 @@ internal sealed class AmazonSnsBusTransport(
     // One create per topic: concurrent first sends share it instead of each calling CreateTopic for the same name.
     // Lazy starts the create once even when GetOrAdd races; a failed create is removed so a later send retries.
     private readonly ConcurrentDictionary<string, Lazy<Task<string?>>> _topicCreations = new(StringComparer.Ordinal);
+
+    // A topic the lookup did not find, mapped to the tick count before which a send fails without looking again.
+    // With AutoProvision off the lookup pages through every topic in the account, so without this each retry of
+    // each message to a not-yet-provisioned topic repeats that full listing and can run into SNS throttling.
+    private readonly ConcurrentDictionary<string, long> _missingTopicRetryAt = new(StringComparer.Ordinal);
 
     // Set once DisposeAsync runs: a later send fails instead of reaching the broker.
     private int _disposed;
@@ -175,6 +182,12 @@ internal sealed class AmazonSnsBusTransport(
             return (true, topicArn);
         }
 
+        // Elapsed real time, not the app clock: this only spaces out lookups against SNS.
+        if (_missingTopicRetryAt.TryGetValue(topicName, out var retryAt) && Environment.TickCount64 < retryAt)
+        {
+            return (false, null);
+        }
+
         var creation = _topicCreations.GetOrAdd(
             topicName,
             static (name, state) => new Lazy<Task<string?>>(() => state._ResolveTopicAsync(name)),
@@ -196,6 +209,7 @@ internal sealed class AmazonSnsBusTransport(
 
         if (topicArn is null)
         {
+            _missingTopicRetryAt[topicName] = Environment.TickCount64 + _MissingTopicRetryMilliseconds;
             _topicCreations.TryRemove(KeyValuePair.Create(topicName, creation));
             return (false, null);
         }

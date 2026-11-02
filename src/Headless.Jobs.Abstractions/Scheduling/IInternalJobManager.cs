@@ -86,7 +86,11 @@ internal interface IInternalJobManager
     /// <summary>Reads the durable cancellation flag through the provider's current owner/status fence.</summary>
     Task<bool?> IsTimeJobCancellationRequestedAsync(Guid jobId, CancellationToken cancellationToken = default);
 
-    Task<T?> GetRequestAsync<T>(Guid jobId, JobType type, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Reads and deserializes the stored request of the job <paramref name="context"/> is executing, after checking
+    /// the context's function and contract version against this node's registry.
+    /// </summary>
+    Task<T?> GetRequestAsync<T>(JobContext context, CancellationToken cancellationToken = default);
     Task<JobExecutionState[]> RunTimedOutTickers(CancellationToken cancellationToken = default);
 
     /// <summary>Validates one seed owner's set and reconciles it through the persistence provider.</summary>

@@ -29,8 +29,22 @@ internal sealed class GeneratorData
     /// <summary>Parent primitive info for nested primitives.</summary>
     public required EquatableArray<ParentPrimitiveInfo> ParentPrimitives { get; init; }
 
-    /// <summary>The namespace containing the type.</summary>
+    /// <summary>The namespace containing the type; empty for the global namespace.</summary>
     public required string Namespace { get; init; }
+
+    /// <summary>The type's full name without the <c>global::</c> alias, such as <c>Billing.OrderId</c>.</summary>
+    public required string FullyQualifiedName { get; init; }
+
+    /// <summary>The namespace the converters for this type are generated in.</summary>
+    public string ConvertersNamespace => Namespace.Length == 0 ? "Converters" : Namespace + ".Converters";
+
+    /// <summary>
+    /// The hint name of a generated file, from the full name of the type it declares, so primitives that share a simple
+    /// name in different namespaces do not collide. Keyword escapes are dropped because a hint name may not contain
+    /// <c>@</c>.
+    /// </summary>
+    public static string HintName(string generatedTypeFullName) =>
+        generatedTypeFullName.Replace("@", string.Empty) + ".g.cs";
 
     /// <summary>The class name.</summary>
     public required string ClassName { get; init; }
@@ -145,7 +159,14 @@ internal sealed class GeneratorData
         var generateUtf8SpanFormattable =
             info.UnderlyingImplementsIUtf8SpanFormattable && !info.ImplementsIUtf8SpanFormattable;
 
-        var generateConvertibles = info.UnderlyingType != PrimitiveUnderlyingType.Guid;
+        // Guid, DateTimeOffset, and TimeSpan do not implement IConvertible, so there is nothing to forward to.
+        var generateConvertibles =
+            info.UnderlyingType
+            is not (
+                PrimitiveUnderlyingType.Guid
+                or PrimitiveUnderlyingType.DateTimeOffset
+                or PrimitiveUnderlyingType.TimeSpan
+            );
 
         // Extract string length validation if present
         (int, int)? stringLengthValidation = null;
@@ -170,6 +191,7 @@ internal sealed class GeneratorData
             PrimitiveTypeNamespace = info.UnderlyingTypeNamespace,
             ParentPrimitives = info.ParentPrimitives,
             Namespace = info.Namespace,
+            FullyQualifiedName = info.FullyQualifiedName,
             ClassName = info.ClassName,
             IsValueType = info.IsValueType,
             Modifiers = info.Modifiers,

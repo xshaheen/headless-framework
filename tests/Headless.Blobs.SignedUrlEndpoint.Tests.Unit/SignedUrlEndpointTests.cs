@@ -523,9 +523,10 @@ public sealed class SignedUrlEndpointTests : TestBase
     }
 
     [Fact]
-    public async Task should_delete_the_blob_when_upload_fails_partway()
+    public async Task should_keep_the_existing_blob_when_upload_fails()
     {
-        // given: a store whose write fails after it may already have created the blob.
+        // given: a store that refuses the write (a provider size check, a dropped connection) and keeps the blob
+        // already at that location, as every provider does on a failed upload.
         var inner = Substitute.For<IBlobStorage>();
         inner
             .UploadAsync(
@@ -559,6 +560,6 @@ public sealed class SignedUrlEndpointTests : TestBase
 
         // then: TestServer surfaces the rethrown exception to the client.
         await act.Should().ThrowAsync<IOException>();
-        await inner.Received(1).DeleteAsync(_Report, CancellationToken.None);
+        await inner.DidNotReceiveWithAnyArgs().DeleteAsync(default!, AbortToken);
     }
 }

@@ -102,9 +102,12 @@ internal static class RedisMessage
         {
             try
             {
+                // Parsed from the UTF-8 bytes Redis returned, not a decoded string: this runs once per consumed entry.
                 headers =
-                    JsonSerializer.Deserialize<Dictionary<string, string?>>(json: headersRaw!, _JsonOptions)
-                    ?? throw new JsonException("The Redis headers field is JSON null.");
+                    JsonSerializer.Deserialize<Dictionary<string, string?>>(
+                        ((ReadOnlyMemory<byte>)headersRaw).Span,
+                        _JsonOptions
+                    ) ?? throw new JsonException("The Redis headers field is JSON null.");
             }
             catch (Exception ex)
             {

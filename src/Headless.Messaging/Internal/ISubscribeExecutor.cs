@@ -1002,7 +1002,7 @@ internal sealed class SubscribeExecutor(
                     dispatchServices,
                     MessageType.Subscribe,
                     logger,
-                    timeProvider,
+                    _backoffClock,
                     cancellationToken
                 )
                 .ConfigureAwait(false);

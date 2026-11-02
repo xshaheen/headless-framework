@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Threading;
+
 namespace Headless.Caching;
 
 // Eager (proactive) refresh: a read past the entry's eager threshold detaches a single-flight refresh that
@@ -30,9 +32,7 @@ public sealed partial class FactoryCacheCoordinator
 
         // Zero-timeout dedup: the first reader past the eager point wins the per-key lock; everyone else
         // returns the still-fresh value untouched. Lock ownership transfers to the detached refresh.
-        var releaser = _keyedLock.TryLock(key);
-
-        if (releaser is null)
+        if (_keyedLock.TryLock(key) is not { } releaser)
         {
             return;
         }
@@ -46,7 +46,7 @@ public sealed partial class FactoryCacheCoordinator
         string key,
         Func<CacheFactoryContext<T>, CancellationToken, ValueTask<CacheFactoryResult<T>>> factory,
         CacheEntryOptions options,
-        IDisposable releaser
+        KeyedAsyncLock.Releaser releaser
     )
     {
         var ownsReleaser = true;
@@ -190,7 +190,7 @@ public sealed partial class FactoryCacheCoordinator
         CacheStoreEntry<T> sourceEntry,
         Func<CacheFactoryContext<T>, CancellationToken, ValueTask<CacheFactoryResult<T>>> factory,
         CacheEntryOptions options,
-        IDisposable releaser,
+        KeyedAsyncLock.Releaser releaser,
         IAsyncDisposable? distributedLease
     )
     {
@@ -229,7 +229,7 @@ public sealed partial class FactoryCacheCoordinator
         Task<CacheFactoryResult<T>> factoryTask,
         CancellationTokenSource internalCts,
         CacheEntryOptions options,
-        IDisposable releaser,
+        KeyedAsyncLock.Releaser releaser,
         IAsyncDisposable? distributedLease
     )
     {

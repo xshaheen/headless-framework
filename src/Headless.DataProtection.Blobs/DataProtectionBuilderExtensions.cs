@@ -2,6 +2,7 @@
 
 using Headless.Blobs;
 using Headless.Checks;
+using Headless.Hosting;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.DataProtection.KeyManagement;
 using Microsoft.Extensions.DependencyInjection;
@@ -22,21 +23,24 @@ public static class DataProtectionBuilderExtensions
     /// Optional logger factory passed to the repository; when <see langword="null"/>, logging is suppressed.
     /// </param>
     /// <param name="provisioning">
-    /// Pass <see cref="BlobContainerProvisioning.PreProvisioned"/> to acknowledge that the <c>DataProtection</c>
-    /// container was already provisioned out-of-band (portal, CLI, IaC), suppressing the configuration-time guardrail
+    /// Pass <see cref="BlobContainerProvisioning.PreProvisioned"/> to acknowledge that the key container was
+    /// already provisioned out-of-band (portal, CLI, IaC), suppressing the configuration-time guardrail
     /// for backends that require provisioning. Required for providers that deliberately ship no container manager,
     /// such as Cloudflare R2 (object-scoped tokens cannot create buckets). Ignored by backends whose
     /// <see cref="IBlobStorage.RequiresContainerProvisioning"/> is <see langword="false"/> (Redis).
     /// </param>
+    /// <param name="configure">
+    /// Optional configuration for <see cref="BlobStorageDataProtectionOptions"/>, such as the key container name.
+    /// </param>
     /// <returns>The <paramref name="builder"/> so that additional calls can be chained.</returns>
     /// <remarks>
-    /// <b>The <c>DataProtection</c> container is NOT ensured by this overload.</b> The blob data plane treats a
+    /// <b>The key container is NOT ensured by this overload.</b> The blob data plane treats a
     /// missing container as an error rather than auto-creating it, so on a fresh Azure/S3/file-system deployment the
     /// first key write fails unless the container already exists. This is enforced at configuration time: when
     /// <paramref name="storage"/> reports <see cref="IBlobStorage.RequiresContainerProvisioning"/> as
     /// <see langword="true"/>, this overload throws unless <paramref name="provisioning"/> acknowledges out-of-band
     /// provisioning. Prefer
-    /// <see cref="PersistKeysToBlobStorage(IDataProtectionBuilder, IBlobStorage, IBlobContainerManager, ILoggerFactory)"/>
+    /// <see cref="PersistKeysToBlobStorage(IDataProtectionBuilder, IBlobStorage, IBlobContainerManager, ILoggerFactory, Action{BlobStorageDataProtectionOptions})"/>
     /// which ensures the container before writes. Lazily-materializing backends (Redis) report
     /// <see cref="IBlobStorage.RequiresContainerProvisioning"/> as <see langword="false"/> and configure without any
     /// acknowledgment.
@@ -53,17 +57,14 @@ public static class DataProtectionBuilderExtensions
         this IDataProtectionBuilder builder,
         IBlobStorage storage,
         ILoggerFactory? loggerFactory = null,
-        BlobContainerProvisioning provisioning = BlobContainerProvisioning.Managed
+        BlobContainerProvisioning provisioning = BlobContainerProvisioning.Managed,
+        Action<BlobStorageDataProtectionOptions>? configure = null
     )
     {
         Argument.IsNotNull(storage);
         _EnsureProvisioningIsCovered(storage, containerManager: null, provisioning);
 
-        builder.Services.Configure<KeyManagementOptions>(options =>
-            options.XmlRepository = new BlobStorageDataProtectionXmlRepository(storage, loggerFactory)
-        );
-
-        return builder;
+        return builder._AddRepository(_ => (storage, null, loggerFactory), configure);
     }
 
     /// <summary>
@@ -72,9 +73,12 @@ public static class DataProtectionBuilderExtensions
     /// </summary>
     /// <param name="builder">The <see cref="IDataProtectionBuilder"/> to configure.</param>
     /// <param name="storage">The blob storage instance that will store the key XML files.</param>
-    /// <param name="containerManager">Container manager used to ensure the DataProtection container before writes.</param>
+    /// <param name="containerManager">Container manager used to ensure the key container before writes.</param>
     /// <param name="loggerFactory">
     /// Optional logger factory passed to the repository; when <see langword="null"/>, logging is suppressed.
+    /// </param>
+    /// <param name="configure">
+    /// Optional configuration for <see cref="BlobStorageDataProtectionOptions"/>, such as the key container name.
     /// </param>
     /// <returns>The <paramref name="builder"/> so that additional calls can be chained.</returns>
     /// <exception cref="ArgumentNullException">
@@ -85,19 +89,14 @@ public static class DataProtectionBuilderExtensions
         this IDataProtectionBuilder builder,
         IBlobStorage storage,
         IBlobContainerManager containerManager,
-        ILoggerFactory? loggerFactory = null
+        ILoggerFactory? loggerFactory = null,
+        Action<BlobStorageDataProtectionOptions>? configure = null
     )
     {
-        builder.Services.Configure<KeyManagementOptions>(options =>
-        {
-            options.XmlRepository = new BlobStorageDataProtectionXmlRepository(
-                storage,
-                containerManager,
-                loggerFactory
-            );
-        });
+        Argument.IsNotNull(storage);
+        Argument.IsNotNull(containerManager);
 
-        return builder;
+        return builder._AddRepository(_ => (storage, containerManager, loggerFactory), configure);
     }
 
     /// <summary>
@@ -115,10 +114,13 @@ public static class DataProtectionBuilderExtensions
     /// <see langword="null"/> the unkeyed <see cref="IBlobContainerManager"/> is resolved (or none, if unregistered).
     /// </param>
     /// <param name="provisioning">
-    /// Pass <see cref="BlobContainerProvisioning.PreProvisioned"/> to acknowledge that the <c>DataProtection</c>
-    /// container was already provisioned out-of-band (portal, CLI, IaC). Only consulted when the effective container
+    /// Pass <see cref="BlobContainerProvisioning.PreProvisioned"/> to acknowledge that the key container was
+    /// already provisioned out-of-band (portal, CLI, IaC). Only consulted when the effective container
     /// manager resolves to <see langword="null"/> and the resolved storage requires provisioning; see the
     /// <see cref="InvalidOperationException"/> remarks.
+    /// </param>
+    /// <param name="configure">
+    /// Optional configuration for <see cref="BlobStorageDataProtectionOptions"/>, such as the key container name.
     /// </param>
     /// <returns>The <paramref name="builder"/> so that additional calls can be chained.</returns>
     /// <exception cref="ArgumentNullException">
@@ -135,32 +137,30 @@ public static class DataProtectionBuilderExtensions
         this IDataProtectionBuilder builder,
         Func<IServiceProvider, IBlobStorage> storageFactory,
         Func<IServiceProvider, IBlobContainerManager?>? containerManagerFactory = null,
-        BlobContainerProvisioning provisioning = BlobContainerProvisioning.Managed
+        BlobContainerProvisioning provisioning = BlobContainerProvisioning.Managed,
+        Action<BlobStorageDataProtectionOptions>? configure = null
     )
     {
-        builder.Services.AddSingleton<IConfigureOptions<KeyManagementOptions>>(services =>
-        {
-            var storage = storageFactory.Invoke(services);
-            // Only fall back to the unkeyed manager when NO factory was supplied. When a factory is supplied its result
-            // is authoritative even if null (a keyed store whose manager resolves to null must not silently ensure the
-            // unkeyed default store's container — that mutates the wrong backend and still fails the keyed write).
-            var containerManager = containerManagerFactory is null
-                ? services.GetService<IBlobContainerManager>()
-                : containerManagerFactory.Invoke(services);
-            var loggerFactory = services.GetService<ILoggerFactory>();
+        Argument.IsNotNull(storageFactory);
 
-            _EnsureProvisioningIsCovered(storage, containerManager, provisioning);
+        return builder._AddRepository(
+            services =>
+            {
+                var storage = storageFactory.Invoke(services);
+                // Only fall back to the unkeyed manager when NO factory was supplied. When a factory is supplied its
+                // result is authoritative even if null (a keyed store whose manager resolves to null must not silently
+                // ensure the unkeyed default store's container — that mutates the wrong backend and still fails the
+                // keyed write).
+                var containerManager = containerManagerFactory is null
+                    ? services.GetService<IBlobContainerManager>()
+                    : containerManagerFactory.Invoke(services);
 
-            return new ConfigureOptions<KeyManagementOptions>(options =>
-                options.XmlRepository = new BlobStorageDataProtectionXmlRepository(
-                    storage,
-                    containerManager,
-                    loggerFactory
-                )
-            );
-        });
+                _EnsureProvisioningIsCovered(storage, containerManager, provisioning);
 
-        return builder;
+                return (storage, containerManager, services.GetService<ILoggerFactory>());
+            },
+            configure
+        );
     }
 
     /// <summary>
@@ -171,10 +171,13 @@ public static class DataProtectionBuilderExtensions
     /// <param name="builder">The <see cref="IDataProtectionBuilder"/> to configure.</param>
     /// <param name="serviceKey">The DI service key the blob storage (and its container manager) are registered under.</param>
     /// <param name="provisioning">
-    /// Pass <see cref="BlobContainerProvisioning.PreProvisioned"/> to acknowledge that the <c>DataProtection</c>
-    /// container was already provisioned out-of-band (portal, CLI, IaC). Only consulted when no keyed
+    /// Pass <see cref="BlobContainerProvisioning.PreProvisioned"/> to acknowledge that the key container was
+    /// already provisioned out-of-band (portal, CLI, IaC). Only consulted when no keyed
     /// <see cref="IBlobContainerManager"/> is registered under <paramref name="serviceKey"/> and the keyed storage
     /// requires provisioning; see the <see cref="InvalidOperationException"/> remarks.
+    /// </param>
+    /// <param name="configure">
+    /// Optional configuration for <see cref="BlobStorageDataProtectionOptions"/>, such as the key container name.
     /// </param>
     /// <returns>The <paramref name="builder"/> so that additional calls can be chained.</returns>
     /// <remarks>
@@ -196,27 +199,24 @@ public static class DataProtectionBuilderExtensions
     public static IDataProtectionBuilder PersistKeysToBlobStorage(
         this IDataProtectionBuilder builder,
         object serviceKey,
-        BlobContainerProvisioning provisioning = BlobContainerProvisioning.Managed
+        BlobContainerProvisioning provisioning = BlobContainerProvisioning.Managed,
+        Action<BlobStorageDataProtectionOptions>? configure = null
     )
     {
-        builder.Services.AddSingleton<IConfigureOptions<KeyManagementOptions>>(services =>
-        {
-            var storage = services.GetRequiredKeyedService<IBlobStorage>(serviceKey);
-            var containerManager = services.GetKeyedService<IBlobContainerManager>(serviceKey);
-            var loggerFactory = services.GetService<ILoggerFactory>();
+        Argument.IsNotNull(serviceKey);
 
-            _EnsureProvisioningIsCovered(storage, containerManager, provisioning);
+        return builder._AddRepository(
+            services =>
+            {
+                var storage = services.GetRequiredKeyedService<IBlobStorage>(serviceKey);
+                var containerManager = services.GetKeyedService<IBlobContainerManager>(serviceKey);
 
-            return new ConfigureOptions<KeyManagementOptions>(options =>
-                options.XmlRepository = new BlobStorageDataProtectionXmlRepository(
-                    storage,
-                    containerManager,
-                    loggerFactory
-                )
-            );
-        });
+                _EnsureProvisioningIsCovered(storage, containerManager, provisioning);
 
-        return builder;
+                return (storage, containerManager, services.GetService<ILoggerFactory>());
+            },
+            configure
+        );
     }
 
     /// <summary>
@@ -225,10 +225,13 @@ public static class DataProtectionBuilderExtensions
     /// </summary>
     /// <param name="builder">The <see cref="IDataProtectionBuilder"/> to configure.</param>
     /// <param name="provisioning">
-    /// Pass <see cref="BlobContainerProvisioning.PreProvisioned"/> to acknowledge that the <c>DataProtection</c>
-    /// container was already provisioned out-of-band (portal, CLI, IaC). Only consulted when no unkeyed
+    /// Pass <see cref="BlobContainerProvisioning.PreProvisioned"/> to acknowledge that the key container was
+    /// already provisioned out-of-band (portal, CLI, IaC). Only consulted when no unkeyed
     /// <see cref="IBlobContainerManager"/> is registered and the resolved storage requires provisioning; see the
     /// <see cref="InvalidOperationException"/> remarks.
+    /// </param>
+    /// <param name="configure">
+    /// Optional configuration for <see cref="BlobStorageDataProtectionOptions"/>, such as the key container name.
     /// </param>
     /// <returns>The <paramref name="builder"/> so that additional calls can be chained.</returns>
     /// <remarks>
@@ -245,22 +248,54 @@ public static class DataProtectionBuilderExtensions
     /// </exception>
     public static IDataProtectionBuilder PersistKeysToBlobStorage(
         this IDataProtectionBuilder builder,
-        BlobContainerProvisioning provisioning = BlobContainerProvisioning.Managed
+        BlobContainerProvisioning provisioning = BlobContainerProvisioning.Managed,
+        Action<BlobStorageDataProtectionOptions>? configure = null
     )
     {
+        return builder._AddRepository(
+            services =>
+            {
+                var storage = services.GetRequiredService<IBlobStorage>();
+                var containerManager = services.GetService<IBlobContainerManager>();
+
+                _EnsureProvisioningIsCovered(storage, containerManager, provisioning);
+
+                return (storage, containerManager, services.GetService<ILoggerFactory>());
+            },
+            configure
+        );
+    }
+
+    /// <summary>
+    /// Registers <see cref="BlobStorageDataProtectionOptions"/> and the blob-backed key repository. The repository is
+    /// built when <see cref="KeyManagementOptions"/> is first materialized, so it reads the configured container name
+    /// (and resolves its storage) from the application's container rather than at registration time.
+    /// </summary>
+    private static IDataProtectionBuilder _AddRepository(
+        this IDataProtectionBuilder builder,
+        Func<IServiceProvider, (IBlobStorage Storage, IBlobContainerManager? Manager, ILoggerFactory? Logger)> resolve,
+        Action<BlobStorageDataProtectionOptions>? configure
+    )
+    {
+        Argument.IsNotNull(builder);
+
+        builder.Services.Configure<BlobStorageDataProtectionOptions, BlobStorageDataProtectionOptionsValidator>(
+            configure ?? (static _ => { })
+        );
+
         builder.Services.AddSingleton<IConfigureOptions<KeyManagementOptions>>(services =>
         {
-            var storage = services.GetRequiredService<IBlobStorage>();
-            var containerManager = services.GetService<IBlobContainerManager>();
-            var loggerFactory = services.GetService<ILoggerFactory>();
-
-            _EnsureProvisioningIsCovered(storage, containerManager, provisioning);
+            var (storage, containerManager, loggerFactory) = resolve(services);
+            var containerName = services
+                .GetRequiredService<IOptions<BlobStorageDataProtectionOptions>>()
+                .Value.ContainerName;
 
             return new ConfigureOptions<KeyManagementOptions>(options =>
                 options.XmlRepository = new BlobStorageDataProtectionXmlRepository(
                     storage,
                     containerManager,
-                    loggerFactory
+                    loggerFactory,
+                    containerName
                 )
             );
         });
@@ -270,7 +305,7 @@ public static class DataProtectionBuilderExtensions
 
     /// <summary>
     /// Config-time guardrail: a repository whose effective container manager is <see langword="null"/> can never
-    /// ensure the <c>DataProtection</c> container, so when the backend also demands a provisioned container the first
+    /// ensure the key container, so when the backend also demands a provisioned container the first
     /// key write is guaranteed to fail at runtime. Surface that misconfiguration here — at configuration time for
     /// instance overloads, at first resolution for DI paths — unless the caller explicitly acknowledged out-of-band
     /// provisioning. A present manager (ensures before writes) or a lazy backend (never needs provisioning) passes.
@@ -291,7 +326,7 @@ public static class DataProtectionBuilderExtensions
         }
 
         throw new InvalidOperationException(
-            $"PersistKeysToBlobStorage: the '{BlobStorageDataProtectionXmlRepository.ContainerName}' container cannot "
+            "PersistKeysToBlobStorage: the data-protection key container cannot "
                 + "be ensured because no IBlobContainerManager is available, and the configured storage "
                 + $"('{storage.GetType().Name}') requires containers to be provisioned before data-plane writes "
                 + "(IBlobStorage.RequiresContainerProvisioning is true) — the first data-protection key write would "

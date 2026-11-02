@@ -104,6 +104,23 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             && functionContext.Status == JobStatus.InProgress;
     }
 
+    // A start transition fences each row on its id, the claim owner, and Queued, and leaves the owner in place unless
+    // it also releases the lock, so when it moved as many rows as distinct ids were asked for, every id took it.
+    // Answering from the count saves the read back, which the admission path otherwise pays once per job.
+    private static bool _TookEveryRow(
+        JobExecutionState functionContext,
+        int affected,
+        Guid[] ids,
+        out Guid[] distinctIds
+    )
+    {
+        distinctIds = ids.Length == 1 ? ids : [.. ids.Distinct()];
+
+        return _StartsExecution(functionContext)
+            && !functionContext.PropertiesToUpdate.Contains(nameof(JobExecutionState.ReleaseLock))
+            && affected == distinctIds.Length;
+    }
+
     #region Core_Time_Ticker_Methods
 
     public IAsyncEnumerable<TimeJobEntity> QueueTimeJobsAsync(
@@ -326,6 +343,11 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             return [];
         }
 
+        if (_TookEveryRow(functionContext, affected, timeJobIds, out var distinctIds))
+        {
+            return distinctIds;
+        }
+
         var updated = dbContext
             .Set<TTimeJob>()
             .AsNoTracking()
@@ -380,11 +402,16 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         // absolute time a lagging node set near its own now, and any relative stamp on a provider without a statement
         // clock, which falls back to the host clock. Without it, such a row whose immediate acquire failed would wait
         // for the sweep instead of the scheduler that immediate dispatch woke for it. Where the two windows overlap
-        // the sweep, the claim's compare-and-swap still lets only one of them take the row.
+        // the sweep, the claim's compare-and-swap still lets only one of them take the row. The earlier bound is
+        // written as one lower bound rather than an OR of two, so the store can start its ordered execution-time index
+        // scan at the window instead of filtering every older row on the way there.
         var nodeWindowStart = TimeProvider.GetUtcNow().UtcDateTime.AddSeconds(-1);
         var baseQuery = peekable
             .Where(x => x.ExecutionTime != null)
-            .Where(x => x.ExecutionTime >= DateTime.UtcNow.AddSeconds(-1) || x.ExecutionTime >= nodeWindowStart)
+            .Where(x =>
+                x.ExecutionTime
+                >= (DateTime.UtcNow.AddSeconds(-1) < nodeWindowStart ? DateTime.UtcNow.AddSeconds(-1) : nodeWindowStart)
+            )
             .WhereRunnable(RunFilter)
             .WhereCanPeekUsingDatabaseClock()
             // A timed descendant surfaces here as its own candidate (excluded from the in-tree walk); the
@@ -3195,7 +3222,6 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         var occurrence = await dbContext
             .Set<CronJobOccurrenceEntity<TCronJob>>()
             .AsNoTracking()
-            .Include(x => x.CronJob)
             // An empty id set searches every definition, per the interface contract and the in-memory provider. The
             // scheduler relies on that: it no longer enumerates all definitions to build this filter, so passing the
             // full id set would reintroduce exactly the load-everything read the projection path removed. The
@@ -3225,7 +3251,6 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         var request = await dbContext
             .Set<CronJobOccurrenceEntity<TCronJob>>()
             .AsNoTracking()
-            .Include(x => x.CronJob)
             .Where(x => x.Id == jobId)
             .Select(x => x.Request)
             .FirstOrDefaultAsync(cancellationToken)
@@ -3254,10 +3279,6 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             return [];
         }
 
-        await using var dbContext = await DbContextFactory
-            .CreateDbContextAsync(cancellationToken)
-            .ConfigureAwait(false);
-
         // Starting execution fences every definition against a concurrent pause, so the fence and the transition
         // share one transaction; any other unified update is a single autocommit statement.
         var affected = startsExecution
@@ -3285,11 +3306,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                     cancellationToken
                 )
                 .ConfigureAwait(false)
-            : await dbContext
-                .Set<CronJobOccurrenceEntity<TCronJob>>()
-                .Where(x => ((IEnumerable<Guid>)cronOccurrenceIds).Contains(x.Id))
-                .WhereOwnedBy(owner)
-                .ExecuteUpdateAsync(setter => setter.UpdateCronJobOccurrence(functionContext), cancellationToken)
+            : await _UpdateOwnedCronOccurrencesAsync(cronOccurrenceIds, functionContext, owner, cancellationToken)
                 .ConfigureAwait(false);
 
         if (affected == 0)
@@ -3297,6 +3314,14 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             return [];
         }
 
+        if (_TookEveryRow(functionContext, affected, cronOccurrenceIds, out var distinctIds))
+        {
+            return distinctIds;
+        }
+
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
         var updated = dbContext
             .Set<CronJobOccurrenceEntity<TCronJob>>()
             .AsNoTracking()
@@ -3309,6 +3334,25 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         }
 
         return await updated.Select(x => x.Id).ToArrayAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<int> _UpdateOwnedCronOccurrencesAsync(
+        Guid[] cronOccurrenceIds,
+        JobExecutionState functionContext,
+        string owner,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return await dbContext
+            .Set<CronJobOccurrenceEntity<TCronJob>>()
+            .Where(x => ((IEnumerable<Guid>)cronOccurrenceIds).Contains(x.Id))
+            .WhereOwnedBy(owner)
+            .ExecuteUpdateAsync(setter => setter.UpdateCronJobOccurrence(functionContext), cancellationToken)
+            .ConfigureAwait(false);
     }
 
     // The Queued→InProgress transition of a unified update: locks each definition that is not paused, then moves only

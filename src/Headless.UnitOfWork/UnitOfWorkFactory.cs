@@ -183,9 +183,9 @@ internal sealed partial class UnitOfWorkFactory(
     }
 
     /// <summary>
-    /// Disposes a handle without a completion verb: the claim is synchronous; the rollback and the drain run
-    /// observed in the background so neither a synchronous disposer nor an async one blocks on the drain's
-    /// unit-state disposal (a captured SynchronizationContext could otherwise deadlock).
+    /// Disposes a handle without a completion verb: the claim is synchronous, and the rollback and the drain finish
+    /// before the dispose returns, because the caller usually reuses the same context or connection right after it.
+    /// They run on the thread pool, so a captured SynchronizationContext cannot deadlock the blocking wait.
     /// </summary>
     internal void Dispose(Internal.UnitOfWork unit)
     {
@@ -197,7 +197,11 @@ internal sealed partial class UnitOfWorkFactory(
         }
 
         _WarnForgottenCompletion(unit.Resource);
-        _RunBackground(() => _RollBackAndDrainAsync(unit, claim, failure, propagateFaults: false).AsTask());
+
+        // Faults are logged inside, as for DisposeAsync, so the blocking wait never throws.
+        Task.Run(() => _RollBackAndDrainAsync(unit, claim, failure, propagateFaults: false).AsTask())
+            .GetAwaiter()
+            .GetResult();
     }
 
     /// <summary>
@@ -260,15 +264,6 @@ internal sealed partial class UnitOfWorkFactory(
         // The rollback fault (or the implicit dispose) is the outcome; a drain fault must not replace it.
         await _DrainFailedQuietlyAsync(claim, failure).ConfigureAwait(false);
         rollbackFault?.Throw();
-    }
-
-    private void _RunBackground(Func<Task> work)
-    {
-        BackgroundFault.Observe(
-            Task.Run(work),
-            Logger,
-            static (logger, exception) => LogBackgroundDrainFaulted(logger, exception.InnerException)
-        );
     }
 
     private async ValueTask _DrainFailedQuietlyAsync(

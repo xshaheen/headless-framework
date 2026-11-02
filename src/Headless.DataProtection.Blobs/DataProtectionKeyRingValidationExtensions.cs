@@ -42,7 +42,7 @@ public static class DataProtectionKeyRingValidationExtensions
     /// <para>
     /// In BOTH modes (unless <see cref="DataProtectionKeyRingValidationOptions.ProbeWritePath"/> is disabled), write
     /// access is verified with a real write: a reserved sentinel blob is uploaded to and deleted from the
-    /// <c>DataProtection</c> container through the same ensure + retry pipeline the key writes use. Without it, a
+    /// key container through the same ensure + retry pipeline the key writes use. Without it, a
     /// valid existing key means the round-trip performs no write and lost write permission stays hidden until
     /// rotation day.
     /// </para>

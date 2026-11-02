@@ -8,16 +8,6 @@
         "resolved": "2.1.0",
         "contentHash": "OOHNlH7GF39qk0Pv4cIQWA99hUh3nujDgGE2nADPpw88lD7s2qwlxEhuJIBfstC8ng3B1yY6SQy2JW/tddlMAQ=="
       },
-      "AutoFixture": {
-        "type": "Direct",
-        "requested": "[5.0.0-rc.1, )",
-        "resolved": "5.0.0-rc.1",
-        "contentHash": "pZZ3co8BQOwuLJ/IEmpfjV/vz0qxiY9+UZOaE7MSw4+AxULCMmGiiqX8DVi7+WlfTZRIXDAxGrI0/oWBiJEn3g==",
-        "dependencies": {
-          "Fare": "[2.2.2, 3.0.0)",
-          "System.ComponentModel.Annotations": "5.0.0"
-        }
-      },
       "AwesomeAssertions": {
         "type": "Direct",
         "requested": "[9.6.0, )",
@@ -202,12 +192,6 @@
         "resolved": "5.0.1",
         "contentHash": "uzofr/lI6d9kqNVPQHIWk6YmU7zNnI5cy6rA6HLDAdJ+g7w/sh7z7zc04c84vPkNKCmxCVPMeKP0DBCHPpb2pw=="
       },
-      "SerilogAnalyzer": {
-        "type": "Direct",
-        "requested": "[0.15.0, )",
-        "resolved": "0.15.0",
-        "contentHash": "sVpwfls4MfNnwIXLSGCgaUnV+c9kgJ8ia6GsyRcpd4Vs3gLogSDtSYBYrre2K2u/PNMo8GgG09RehwVnze70Tw=="
-      },
       "SmartAnalyzers.MultithreadingAnalyzer": {
         "type": "Direct",
         "requested": "[1.1.31, )",
@@ -254,8 +238,8 @@
       },
       "Fare": {
         "type": "Transitive",
-        "resolved": "2.2.2",
-        "contentHash": "DSwNX78zWZtgI7F5O+llezBtZxX9Fp/yr2jZJ4WxBEAdm7gI3wsO+/a/E54QusBAF9z8icv9bmyfWEwKlWdaTg=="
+        "resolved": "2.2.1",
+        "contentHash": "21XZo/yuXK1k0EUhdLnjgRD4n0HQYmPFchV6uaORcRc65rasZ1vdm2dmJXPBKZiIBztRRYRmmg/B76W721VWkA=="
       },
       "GraphQL": {
         "type": "Transitive",
@@ -1250,11 +1234,6 @@
         "type": "Transitive",
         "resolved": "0.3.0",
         "contentHash": "OfzmxQMK4eBzmobph43p1NsLTgVAC3XGTcvQS0odhsdL6uS7UsFzBMK6S9mAfIijZdLW4q98aZ3dtTOeTaQo6Q=="
-      },
-      "System.ComponentModel.Annotations": {
-        "type": "Transitive",
-        "resolved": "5.0.0",
-        "contentHash": "dMkqfy2el8A8/I76n2Hi1oBFEbG1SfxD2l5nhwXV3XjlnOmwxJlQbYpJH4W51odnU9sARCSAgv7S3CyAFMkpYg=="
       },
       "System.Diagnostics.EventLog": {
         "type": "Transitive",

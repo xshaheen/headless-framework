@@ -132,20 +132,33 @@ internal sealed class SftpClientPool : IDisposable
         if (_disposed || !client.IsConnected)
         {
             _DisposeClient(client);
-            _maxConnections.Release();
+            _ReleaseSlot();
             return;
         }
 
         if (!_idle.Writer.TryWrite(client))
         {
-            // Pool full, dispose excess
+            // Pool full (or completed by a concurrent dispose), dispose excess
             _logger.LogPoolFullDisposingExcess();
             _DisposeClient(client);
-            _maxConnections.Release();
+            _ReleaseSlot();
         }
         else
         {
             _logger.LogReturnedClientToPool();
+        }
+    }
+
+    private void _ReleaseSlot()
+    {
+        try
+        {
+            _maxConnections.Release();
+        }
+        catch (ObjectDisposedException)
+        {
+            // The pool was disposed while this client was checked out, so there is no slot left to return. A stream
+            // disposed during host shutdown lands here and must not throw out of its own Dispose.
         }
     }
 

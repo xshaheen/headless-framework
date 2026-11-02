@@ -23,10 +23,11 @@ public sealed class ReCaptchaOptions
     /// <summary>
     /// Gets or sets the lowest reCAPTCHA v3 score, between 0.0 and 1.0, that verification accepts. A valid token whose
     /// score is lower, or that carries no score, fails with <see cref="ReCaptchaError.ScoreTooLow"/>. Defaults to
-    /// <c>0.5</c>, Google's suggested starting threshold. Set <c>0</c> to accept every valid token and apply your own
-    /// policy to <see cref="ReCaptchaV3VerifyResult.Score"/>. reCAPTCHA v2 ignores it.
+    /// <c>0</c>, which accepts every valid token that carries a score: score distributions differ per site, so the
+    /// threshold is the site's decision. Google suggests <c>0.5</c> as a starting point; read
+    /// <see cref="ReCaptchaV3VerifyResult.Score"/> to tune it before you enforce one. reCAPTCHA v2 ignores it.
     /// </summary>
-    public float MinimumScore { get; set; } = 0.5f;
+    public float MinimumScore { get; set; }
 
     /// <summary>
     /// Gets or sets the reCAPTCHA v3 action the client token must carry, compared ordinally. A valid token minted for

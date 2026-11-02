@@ -69,6 +69,37 @@ public sealed class GeneratedSourceCompilationTests
         diagnostics.Should().NotContain(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
     }
 
+    [Theory]
+    [InlineData("Orders-Api", "Orders_Api.MessagingModule")]
+    [InlineData("2024.Billing", "_2024.Billing.MessagingModule")]
+    [InlineData("Orders.class", "Orders.class.MessagingModule")]
+    public void should_compile_when_the_assembly_name_is_not_a_valid_namespace(string assemblyName, string moduleName)
+    {
+        // given
+        const string source = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Headless.Messaging;
+
+            namespace Orders;
+
+            public sealed record Payload(int Id);
+
+            [QueueConsumer("orders.payload")]
+            public sealed class PayloadConsumer : IConsume<Payload>
+            {
+                public ValueTask ConsumeAsync(ConsumeContext<Payload> context, CancellationToken cancellationToken) => default;
+            }
+            """;
+
+        // when
+        GeneratorTestHelper.Run(assemblyName, source, [], out var diagnostics, out var compilation);
+
+        // then
+        diagnostics.Should().NotContain(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        compilation.GetTypeByMetadataName(moduleName).Should().NotBeNull();
+    }
+
     [Fact]
     public void should_compile_the_failure_policy_factory_of_every_competing_consumer()
     {

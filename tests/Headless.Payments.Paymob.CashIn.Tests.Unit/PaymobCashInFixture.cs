@@ -12,7 +12,6 @@ public sealed class PaymobCashInFixture : IDisposable
     {
         Server = WireMockServer.Start();
         HttpClient = new HttpClient();
-        AutoFixture.Register(() => JsonSerializer.Deserialize<object?>("null"));
 
         CashInOptions = new PaymobCashInOptions
         {
@@ -30,8 +29,6 @@ public sealed class PaymobCashInFixture : IDisposable
         HttpClientFactory = Substitute.For<IHttpClientFactory>();
         HttpClientFactory.CreateClient(Arg.Any<string>()).Returns(HttpClient);
     }
-
-    public Fixture AutoFixture { get; } = new();
 
     public WireMockServer Server { get; }
 

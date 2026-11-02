@@ -8,7 +8,7 @@ public enum KeyRingCheck
 {
     /// <summary>
     /// Default: the host stays unready until the validation succeeds. A failure keeps the <c>warmup</c> readiness
-    /// check <c>Unhealthy</c> with an actionable message naming the <c>DataProtection</c> container and the
+    /// check <c>Unhealthy</c> with an actionable message naming the key container and the
     /// provisioning or manager remediation, and the validation is retried until the store works. Use this so an
     /// orchestrator sends no traffic to a node whose key store is broken.
     /// </summary>

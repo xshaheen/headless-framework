@@ -16,8 +16,8 @@ public sealed partial class PaymobCashInAuthenticatorTests : TestBase
         // given - Paymob responses routinely carry fields not present in the model;
         // they must land in [JsonExtensionData] instead of failing deserialization
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        var apiKey = fixture.AutoFixture.Create<string>();
-        var token = fixture.AutoFixture.Create<string>();
+        var apiKey = CashInTestData.Text(Faker);
+        var token = CashInTestData.Text(Faker);
         var config = fixture.CashInOptions with { ApiKey = apiKey };
         fixture.OptionsAccessor.CurrentValue.Returns(config);
         var request = new CashInAuthenticationTokenRequest { ApiKey = apiKey };

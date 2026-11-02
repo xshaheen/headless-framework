@@ -325,14 +325,14 @@ public sealed partial class FactoryCacheCoordinator(
             }
         }
 
-        var releaser =
+        var acquired =
             remainingLockTimeout == Timeout.InfiniteTimeSpan || remainingLockTimeout > TimeSpan.Zero
                 ? await _keyedLock
                     .LockAsync(key, remainingLockTimeout, _timeProvider, cancellationToken)
                     .ConfigureAwait(false)
                 : null;
 
-        if (releaser is null)
+        if (acquired is not { } releaser)
         {
             // With a stale reserve the wait is the soft timeout and we serve stale; without one it is LockTimeout
             // and _ToCacheValue(NotFound) degrades to a miss (NoValue).

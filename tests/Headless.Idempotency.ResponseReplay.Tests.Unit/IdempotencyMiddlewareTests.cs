@@ -644,6 +644,38 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
     }
 
     [Fact]
+    public async Task should_take_the_key_once_the_peek_reports_it_released_before_the_holders_lease_ends()
+    {
+        var operations = CreateAdmittingOperations();
+        AdmitReturns(
+            operations,
+            InFlight,
+            key => Admitted(key, IdempotencyFingerprint.Compute("x"), isTakeover: false)
+        );
+        PeekReturns(operations, IdempotencyPeekStatus.Pending, IdempotencyPeekStatus.Released);
+        var middleware = CreateMiddleware(
+            options: Monitor(_WaitAndReplay(TimeSpan.FromSeconds(10))),
+            operations: operations,
+            timeProvider: TimeProvider.System
+        );
+        var handlerRan = false;
+
+        await middleware.InvokeAsync(
+            CreateContext(idempotencyKey: "k1"),
+            ctx =>
+            {
+                handlerRan = true;
+                ctx.Response.StatusCode = 201;
+                return Task.CompletedTask;
+            }
+        );
+
+        handlerRan.Should().BeTrue("a released key is free, so the waiter runs the request instead of timing out");
+        AdmittedKeys(operations).Should().HaveCount(2, "the released peek triggers the one re-admission");
+        CallCount(operations, nameof(IIdempotentOperations.PeekAsync)).Should().Be(2);
+    }
+
+    [Fact]
     public async Task should_admit_directly_without_peeking_once_the_holders_lease_may_have_expired()
     {
         var operations = Substitute.For<IIdempotentOperations>();

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;
 
@@ -12,6 +13,10 @@ internal sealed class PulsarTransport(
 ) : IBusTransport, IQueueTransport
 {
     private readonly ILogger _logger = logger;
+
+    // Physical topic per message name: the lane is fixed per transport, and building the name allocates several
+    // strings, so it is built once per name instead of on every publish.
+    private readonly ConcurrentDictionary<string, string> _topics = new(StringComparer.Ordinal);
 
     // Set once DisposeAsync runs: a later send fails instead of reaching the broker.
     private int _disposed;
@@ -31,7 +36,9 @@ internal sealed class PulsarTransport(
 
             var key = PulsarRoutingAffinity.Mapping.ResolveKey(message);
             var producer = await connectionFactory
-                .CreateProducerAsync(PulsarPhysicalAddress.Topic(lane, message.Name))
+                .CreateProducerAsync(
+                    _topics.GetOrAdd(message.Name, static (name, l) => PulsarPhysicalAddress.Topic(l, name), lane)
+                )
                 .ConfigureAwait(false);
             var headerDic = new Dictionary<string, string?>(message.Headers, StringComparer.Ordinal);
             var pulsarMessage = producer.NewMessage(TransportBody.ToArray(message.Body), key, headerDic);

@@ -14,24 +14,12 @@ internal static class EntityFrameworkValueConverterSourceFilesGeneratorEmitter
 
     private static string _CreateHelperNamespaceName(string assemblyName)
     {
-        var ns = string.Join(".", assemblyName.Split('.').Select(s => char.IsDigit(s[0]) ? '_' + s : s));
-
-        return $"{ns}.Converters.Extensions";
+        return $"{NamespaceName.From(assemblyName)}.Converters.Extensions";
     }
 
     private static string _CreateConverterClassName(string className)
     {
         return $"{className}ValueConverter";
-    }
-
-    private static string _CreateConverterNamespaceName(string containingNamespace)
-    {
-        return $"{containingNamespace}.Converters";
-    }
-
-    private static string _CreateConverterFileName(string className)
-    {
-        return $"{_CreateConverterClassName(className)}.g.cs";
     }
 
     /// <summary>Processes the Entity Framework value converter for the specified generator data and source production context.</summary>
@@ -49,7 +37,7 @@ internal static class EntityFrameworkValueConverterSourceFilesGeneratorEmitter
             "Microsoft.EntityFrameworkCore.Storage.ValueConversion",
         ]);
 
-        builder.AppendNamespace(_CreateConverterNamespaceName(data.Namespace));
+        builder.AppendNamespace(data.ConvertersNamespace);
 
         var converterName = _CreateConverterClassName(data.ClassName);
 
@@ -70,7 +58,7 @@ internal static class EntityFrameworkValueConverterSourceFilesGeneratorEmitter
 
         builder.CloseBracket();
 
-        context.AddSource(_CreateConverterFileName(data.ClassName), builder.ToString());
+        context.AddSource(GeneratorData.HintName($"{data.ConvertersNamespace}.{converterName}"), builder.ToString());
     }
 
     /// <summary>Generates the value converters add all helpers.</summary>
@@ -85,11 +73,9 @@ internal static class EntityFrameworkValueConverterSourceFilesGeneratorEmitter
 
         builder.AppendSourceHeader("Primitives Generator");
 
-        builder.AppendUsings([
-            .. types.ConvertAll(x => x.Namespace),
-            .. types.ConvertAll(x => _CreateConverterNamespaceName(x.Namespace)),
-            "Microsoft.EntityFrameworkCore",
-        ]);
+        // Types are referenced by full name: primitives that share a simple name in different namespaces would make
+        // an imported short name ambiguous.
+        builder.AppendUsings(["Microsoft.EntityFrameworkCore"]);
 
         if (addAssemblyAttribute)
         {
@@ -121,12 +107,9 @@ internal static class EntityFrameworkValueConverterSourceFilesGeneratorEmitter
 
         foreach (var data in types)
         {
-            builder
-                .Append("configurationBuilder.Properties<")
-                .Append(data.ClassName)
-                .Append(">().HaveConversion<")
-                .Append(data.ClassName)
-                .AppendLine("ValueConverter>();");
+            builder.AppendLine(
+                $"configurationBuilder.Properties<global::{data.FullyQualifiedName}>().HaveConversion<global::{data.ConvertersNamespace}.{_CreateConverterClassName(data.ClassName)}>();"
+            );
         }
 
         builder.AppendLine("return configurationBuilder;");

@@ -209,10 +209,12 @@ internal static class SqlServerMessagingSchemaContribution
 
             -- #508 — ([StatusName],[Added]) serves BOTH the dashboard hourly-timeline query
             -- (WHERE StatusName=@p AND Added BETWEEN … — a StatusName seek + Added range scan) and the
-            -- per-status COUNT_BIGs in GetStatisticsAsync via its [StatusName] prefix. The step creates
-            -- the final schema directly; it does not carry migration DDL for superseded indexes.
+            -- per-status COUNT_BIGs in GetStatisticsAsync via its [StatusName] prefix. Every dashboard count
+            -- and page also filters on [IntentType], so INCLUDE carries it and those counts read the index
+            -- alone instead of a key lookup per row. The step creates the final schema directly; it does not
+            -- carry migration DDL for superseded indexes.
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_StatusName_Added' AND object_id = OBJECT_ID(N'{received}'))
-                CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_StatusName_Added] ON {received} ([StatusName] ASC, [Added] ASC);
+                CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_StatusName_Added] ON {received} ([StatusName] ASC, [Added] ASC) INCLUDE ([IntentType]);
 
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_Version_NextRetryAt' AND object_id = OBJECT_ID(N'{received}'))
                 CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_Version_NextRetryAt] ON {received} ([Version] ASC,[IntentType] ASC,[NextRetryAt] ASC) INCLUDE ([Retries],[LockedUntil]) WHERE [NextRetryAt] IS NOT NULL;
@@ -335,7 +337,7 @@ internal static class SqlServerMessagingSchemaContribution
 
             -- #508 — see the received-table note above; create the final dashboard timeline/statistics index.
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{publishedPrefix}_StatusName_Added' AND object_id = OBJECT_ID(N'{published}'))
-                CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_StatusName_Added] ON {published} ([StatusName] ASC, [Added] ASC);
+                CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_StatusName_Added] ON {published} ([StatusName] ASC, [Added] ASC) INCLUDE ([IntentType]);
 
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{publishedPrefix}_Version_NextRetryAt' AND object_id = OBJECT_ID(N'{published}'))
                 CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_Version_NextRetryAt] ON {published} ([Version] ASC,[IntentType] ASC,[NextRetryAt] ASC) INCLUDE ([Retries],[LockedUntil]) WHERE [NextRetryAt] IS NOT NULL;

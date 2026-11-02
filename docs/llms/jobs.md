@@ -1512,8 +1512,8 @@ The dashboard exposes operational endpoints that can create, update, delete, run
 Cron-occurrence graph selection remains history-derived: it first chooses the same inclusive UTC date window from
 distinct occurrence dates, then zero-fills gaps. `IJobPersistenceProvider.GetCronOccurrenceGraphStatusCountsAsync`,
 `GetTimeJobStatusCountsAsync`, `GetTimeJobDailyStatusCountsAsync`, `GetTimeJobLockedOwnerCountsAsync`,
-`GetCronOccurrenceStatusCountsAsync`, `GetCronOccurrenceDailyStatusCountsAsync`, and
-`GetCronOccurrenceLockedOwnerCountsAsync` are additive and have default interface implementations for third-party
+`GetCronOccurrenceStatusCountsAsync`, both `GetCronOccurrenceDailyStatusCountsAsync` overloads (all definitions, and
+one definition by `cronJobId` for its per-definition graph), and `GetCronOccurrenceLockedOwnerCountsAsync` are additive and have default interface implementations for third-party
 providers. A custom durable provider should override them so status counts, owner counts, and date/status
 aggregations happen in storage; otherwise the default implementations preserve behavior by projecting through the
 existing list APIs.
@@ -1586,7 +1586,7 @@ Roslyn incremental source generator that eliminates reflection and manual job re
 
 - **Versioned descriptors**: `JobAttribute.ContractVersion` (default `"1"`) is emitted into assembly metadata and immutable runtime descriptors. The identity and version stay stable through CLR class renames and source/reference reordering. Duplicate identities remain invalid even when their versions differ; versioning does not create a second dispatch registry.
 - **Zero reflection**: all dispatch delegates are generated as strongly-typed lambdas.
-- **Explicit registration**: the generated file (`JobsModule.g.cs`) declares `<AssemblyName>.JobsModule`, and nothing is registered until a host calls `AddModule<…JobsModule>()`. There is no module initializer and no runtime assembly loading. An assembly that declares no `[Job]` class or middleware gets no module.
+- **Explicit registration**: the generated file (`JobsModule.g.cs`) declares `<AssemblyName>.JobsModule`, and nothing is registered until a host calls `AddModule<…JobsModule>()`. An assembly name that is not a valid C# namespace is mapped one `.`-separated segment at a time: a character that cannot appear in an identifier becomes `_`, a segment that starts with a digit gets a `_` prefix, an empty segment becomes `_`, and a C# keyword is escaped with `@`. So `Orders-Api` gives `Orders_Api.JobsModule` (the same name MSBuild gives `RootNamespace`), `2024.Billing` gives `_2024.Billing.JobsModule`, and `Orders.class` gives `Orders.@class.JobsModule`. There is no module initializer and no runtime assembly loading. An assembly that declares no `[Job]` class or middleware gets no module.
 - **Descriptor indexes**: generates delegate-free descriptors for every job; the host registry exposes frozen indexes by identity, by argument `Type`, and by job class.
 - **Type safety**: compile-time validation of the job class shape (`IJob` / `IJob<TArgs>`, accessibility, nesting), the identity, the cron expression, and every attribute value.
 - **Construction through DI**: the typed invoker builds the job class with `ActivatorUtilities.CreateInstance` from the run's scope, so the container selects the constructor (`[ActivatorUtilitiesConstructor]` picks one of several) and resolves its parameters, including `[FromKeyedServices]`.
@@ -2122,7 +2122,7 @@ A terminal run stays `Failed`; there is no dead-letter status. Requeue it with `
 
 #### Global Exception Handler
 
-`HandleExceptionAsync` fires once per failed attempt — after each attempt's durable retry state is persisted (and once more at final failure) — not only once per job. Use it for per-attempt side effects (alerting, metrics, log sinks); use `JobsRetryOptions.OnExhausted` for the once-only notification when the run fails terminally. Each handler invocation is bounded by `OnExhaustedTimeout`; a hanging handler is logged and orphaned so it cannot stall retry progression. Callbacks run only after the terminal write affected a row, are bounded by `OnExhaustedTimeout`, and are caught, so a throwing or hanging handler cannot change or delay the stored status, and a run whose terminal write lost the fence (a peer already reclaimed the row) invokes none.
+`HandleExceptionAsync` fires once per failed attempt — after each attempt's durable retry state is persisted (and once more at final failure) — not only once per job. Use it for per-attempt side effects (alerting, metrics, log sinks); use `JobsRetryOptions.OnExhausted` for the once-only notification when the run fails terminally. Each handler invocation is bounded by `OnExhaustedTimeout`; a hanging handler is logged and orphaned so it cannot stall retry progression. The bound, for handlers and the `OnExhausted` callback alike, waits real time on the system clock rather than the registered `TimeProvider`, so a host or test whose clock never advances still cuts off a hung handler. Callbacks run only after the terminal write affected a row, are bounded by `OnExhaustedTimeout`, and are caught, so a throwing or hanging handler cannot change or delay the stored status, and a run whose terminal write lost the fence (a peer already reclaimed the row) invokes none.
 
 ```csharp
 public sealed class MyJobExceptionHandler(ILogger<MyJobExceptionHandler> logger)
