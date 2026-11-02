@@ -1095,7 +1095,7 @@ Every device send starts one `apns.send` activity (`ActivityKind.Client`) tagged
 
 #### Retry policy
 
-The provider registers the standard `Microsoft.Extensions.Http.Resilience` handler on its HTTP client (named `Headless:Apns`, or `Headless:Apns:{name}` for a named instance), with these changes:
+The provider derives its HTTP client's pipeline (named `Headless:Apns`, or `Headless:Apns:{name}` for a named instance) from `OutboundEffect.Unsafe` with `AddEffectResilienceHandler` (`Headless.Http.Resilience`). That call first removes any resilience handler the host added to every client (for example `AddHeadless()` service defaults), so the rules below hold in any host instead of running inside a stock outer retry. The pipeline is the standard `Microsoft.Extensions.Http.Resilience` handler with these changes:
 
 - Retries only an `HttpRequestException` whose `HttpRequestError` is `ConnectionError`, `NameResolutionError`, or `SecureConnectionError` (the request never reached APNs), at most 2 times. A connection lost after the request was sent is not retried: APNs does not deduplicate, so a resend could deliver the notification twice.
 - Never retries an HTTP 5xx. It becomes a `Failure`, because Apple asks senders to wait about 15 minutes before retrying one; retry it from your own queue or job.

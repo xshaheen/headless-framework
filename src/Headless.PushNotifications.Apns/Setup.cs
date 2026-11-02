@@ -2,6 +2,7 @@
 
 using System.Net;
 using Headless.Checks;
+using Headless.Http.Resilience;
 using Headless.PushNotifications.Apns;
 using Headless.PushNotifications.Apns.Internal;
 using Microsoft.Extensions.Configuration;
@@ -273,7 +274,13 @@ public static class SetupApnsPushNotifications
             .SetHandlerLifetime(Timeout.InfiniteTimeSpan)
             // The factory's default loggers write the request URI, which carries the raw device token.
             .RemoveAllLoggers()
-            .AddStandardResilienceHandler(options => _ConfigureResilience(options, configureResilience));
+            // A push is delivered at most once per send: APNs does not deduplicate, so the pipeline is derived from
+            // the Unsafe effect. Deriving it also removes a host-wide default handler, whose stock retry would
+            // otherwise wrap this one and replay sends, retry 429 and 5xx, and count 429 in its own breaker.
+            .AddEffectResilienceHandler(
+                OutboundEffect.Unsafe,
+                configureResilience: options => _ConfigureResilience(options, configureResilience)
+            );
 
         // Channel management lives on its own host and port, so it gets its own client; it shares the primary
         // handler's authentication, proxy, and connection bound, and the same resilience rules.
@@ -296,7 +303,10 @@ public static class SetupApnsPushNotifications
             )
             .SetHandlerLifetime(Timeout.InfiniteTimeSpan)
             .RemoveAllLoggers()
-            .AddStandardResilienceHandler(options => _ConfigureResilience(options, configureResilience));
+            .AddEffectResilienceHandler(
+                OutboundEffect.Unsafe,
+                configureResilience: options => _ConfigureResilience(options, configureResilience)
+            );
 
         // One instance serves both service types, so the typed and shared paths share its HTTP client, provider
         // token, and options.
@@ -339,6 +349,8 @@ public static class SetupApnsPushNotifications
     )
     {
         options.Retry.MaxRetryAttempts = 2;
+        // Replaces the Unsafe effect's method-based opt-out with a narrower rule that holds for every method: only a
+        // fault proven to precede the send is retried, so no retry can deliver a push twice.
         // The default predicate also retries every 429, but APNs' TooManyRequests throttles one device token, so a
         // retry would spend its backoff on a token that is still throttled. It also retries 5xx within seconds, but
         // Apple asks senders to wait about 15 minutes before retrying one, so a 5xx is returned as a failure for the

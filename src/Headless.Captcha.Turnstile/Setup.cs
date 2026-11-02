@@ -1,10 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Http.Resilience;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -108,8 +108,10 @@ public static class SetupTurnstile
                     client.BaseAddress = new Uri(options.VerifyBaseUrl);
                 }
             )
-            // Turnstile tokens are single-use — disable retry on POST to avoid replaying them.
-            .AddStandardResilienceHandler(options => options.Retry.DisableForUnsafeHttpMethods());
+            // Turnstile tokens are single-use: a re-sent verify POST fails as a duplicate even when the first one
+            // passed. The pipeline is derived from the declared effect, so a host-wide default handler cannot
+            // re-enable retry around it.
+            .AddEffectResilienceHandler(OutboundEffect.Unsafe);
 
         services.AddKeyedSingleton<ITurnstileVerifier>(
             name,
