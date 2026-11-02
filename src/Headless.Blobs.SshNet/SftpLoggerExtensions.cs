@@ -17,14 +17,6 @@ internal static partial class SftpLoggerExtensions
     internal static partial void LogAcquiredPooledClient(this ILogger logger);
 
     [LoggerMessage(
-        EventId = 2,
-        EventName = "AcquiredPooledClientAfterWait",
-        Level = LogLevel.Trace,
-        Message = "Acquired pooled SFTP client after wait"
-    )]
-    internal static partial void LogAcquiredPooledClientAfterWait(this ILogger logger);
-
-    [LoggerMessage(
         EventId = 3,
         EventName = "PoolFullDisposingExcess",
         Level = LogLevel.Trace,

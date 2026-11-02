@@ -496,9 +496,16 @@ internal sealed class AzureBlobStorage(
             var download = await blobClient
                 .DownloadStreamingAsync(cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
-            var metadata = BlobStorageHelpers.ToUserMetadata(_ToMetadata(download.Value.Details.Metadata));
+            var details = download.Value.Details;
+            var metadata = BlobStorageHelpers.ToUserMetadata(_ToMetadata(details.Metadata));
 
-            return new(download.Value.Content, location.Path, metadata);
+            return new(
+                download.Value.Content,
+                location.Path,
+                metadata,
+                details.ContentLength,
+                string.IsNullOrEmpty(details.ContentType) ? null : details.ContentType
+            );
         }
         catch (RequestFailedException e)
             when (e.ErrorCode == BlobErrorCode.BlobNotFound || e.ErrorCode == BlobErrorCode.ContainerNotFound)

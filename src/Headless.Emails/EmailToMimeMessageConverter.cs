@@ -21,8 +21,9 @@ internal static class EmailToMimeMessageConverter
     /// A fully populated <see cref="MimeMessage"/>. The caller is responsible for disposing it.
     /// </returns>
     /// <remarks>
-    /// Attachments are streamed asynchronously from their backing memory. When construction throws, the
-    /// partially built <see cref="MimeMessage"/> is disposed before the exception propagates.
+    /// A binary attachment's part reads the caller's memory when the message is written, so that memory must stay
+    /// unchanged until then; text and message attachments are copied in. When construction throws, the partially
+    /// built <see cref="MimeMessage"/> is disposed before the exception propagates.
     /// </remarks>
     public static async Task<MimeMessage> ConvertToMimeMessageAsync(
         this SendSingleEmailRequest request,
@@ -83,25 +84,39 @@ internal static class EmailToMimeMessageConverter
 
         foreach (var requestAttachment in request.Attachments)
         {
-            await using var fileStream = _OpenAttachmentStream(requestAttachment.File);
+            cancellationToken.ThrowIfCancellationRequested();
 
-            if (requestAttachment.ContentType is { Length: > 0 } contentType)
+            var contentType = ContentType.Parse(
+                requestAttachment.ContentType is { Length: > 0 } explicitType
+                    ? explicitType
+                    : EmailAttachmentContentType.Resolve(requestAttachment.Name)
+            );
+
+            if (contentType.IsMimeType("text", "*") || contentType.IsMimeType("message", "*"))
             {
+                // MimeKit parses a message attachment and picks a text attachment's charset and encoding from its
+                // content, which needs its own loaded copy, so those keep the collection's loading path.
+                await using var fileStream = _OpenAttachmentStream(requestAttachment.File);
+
                 await emailBuilder
-                    .Attachments.AddAsync(
-                        requestAttachment.Name,
-                        fileStream,
-                        ContentType.Parse(contentType),
-                        cancellationToken
-                    )
+                    .Attachments.AddAsync(requestAttachment.Name, fileStream, contentType, cancellationToken)
                     .ConfigureAwait(false);
+
+                continue;
             }
-            else
-            {
-                await emailBuilder
-                    .Attachments.AddAsync(requestAttachment.Name, fileStream, cancellationToken)
-                    .ConfigureAwait(false);
-            }
+
+            // A binary attachment is base64 in practice, so naming the encoding up front lets the part read the
+            // caller's bytes at write time instead of MimeKit copying them into its own buffer and scanning that copy
+            // to choose the same encoding. The message owns the stream and disposes it with the part.
+            emailBuilder.Attachments.Add(
+                new MimePart(contentType)
+                {
+                    Content = new MimeContent(_OpenAttachmentStream(requestAttachment.File)),
+                    ContentDisposition = new ContentDisposition(ContentDisposition.Attachment),
+                    ContentTransferEncoding = ContentEncoding.Base64,
+                    FileName = requestAttachment.Name,
+                }
+            );
         }
 
         message.Body = emailBuilder.ToMessageBody();
@@ -109,15 +124,20 @@ internal static class EmailToMimeMessageConverter
 
     /// <summary>
     /// Exposes an attachment's bytes as a stream for MimeKit to read. When the memory is array-backed (the
-    /// normal case) the array is wrapped read-only rather than copied: MimeKit copies the content into its
-    /// own buffer while building the MIME part, so an extra per-attachment, per-send copy of the whole
-    /// payload buys nothing.
+    /// normal case) the array is wrapped read-only rather than copied, so a binary attachment is encoded
+    /// straight from the caller's bytes when the message is written.
     /// </summary>
     private static MemoryStream _OpenAttachmentStream(ReadOnlyMemory<byte> file)
     {
         if (MemoryMarshal.TryGetArray(file, out var segment) && segment.Array is not null)
         {
-            return new MemoryStream(segment.Array, segment.Offset, segment.Count, writable: false);
+            return new MemoryStream(
+                segment.Array,
+                segment.Offset,
+                segment.Count,
+                writable: false,
+                publiclyVisible: true
+            );
         }
 
         // Not array-backed (native or otherwise unmanaged memory): there is no array to wrap, so copy.
