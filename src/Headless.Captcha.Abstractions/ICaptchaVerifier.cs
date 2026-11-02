@@ -7,8 +7,9 @@ namespace Headless.Captcha;
 /// </summary>
 /// <remarks>
 /// A returned <see cref="CaptchaVerifyResult"/> represents a completed verification, where
-/// <see cref="CaptchaVerifyResult.Success"/> indicates token validity. Remote transport failures or malformed responses
-/// throw exceptions rather than returning failed results.
+/// <see cref="CaptchaVerifyResult.Success"/> is the pass/fail verdict: the provider accepted the token and it met every
+/// check the provider is configured with, such as a reCAPTCHA v3 minimum score. Remote transport failures or malformed
+/// responses throw exceptions rather than returning failed results.
 /// </remarks>
 [PublicAPI]
 public interface ICaptchaVerifier

@@ -13,7 +13,10 @@ namespace Headless.Captcha;
 [PublicAPI]
 public class CaptchaVerifyResult
 {
-    /// <summary>Gets a value indicating whether the token is a valid CAPTCHA response for this site.</summary>
+    /// <summary>
+    /// Gets a value indicating whether the token passed: the provider accepted it and it met the provider's configured
+    /// checks.
+    /// </summary>
     public bool Success { get; init; }
 
     /// <summary>Gets the timestamp when the challenge loaded, when returned by the provider.</summary>
