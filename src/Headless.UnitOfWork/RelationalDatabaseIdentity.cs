@@ -18,13 +18,17 @@ namespace Headless.UnitOfWork;
 /// ignored, and the loopback spellings
 /// (<c>localhost</c>, <c>127.0.0.1</c>, <c>::1</c>, <c>[::1]</c>, <c>.</c>, <c>(local)</c>) name the same host.
 /// Ports, instance names, and database names are compared exactly; any other difference is a refusal, which
-/// fails loudly and names the mismatch.
+/// fails loudly and names the mismatch. A connection whose host list names several hosts (Npgsql <c>Host=pg1,pg2</c>)
+/// stands for each listed host, and the candidate must reach only hosts the configured connection lists.
 /// </remarks>
 [PublicAPI]
 [EditorBrowsable(EditorBrowsableState.Never)]
 public static class RelationalDatabaseIdentity
 {
     private const string _Loopback = "localhost";
+
+    // Npgsql's key for its host list; its builder resolves the "Server" synonym to it.
+    private const string _HostKey = "Host";
 
     private static readonly string[] _LoopbackAliases = ["localhost", "127.0.0.1", "[::1]", "::1", "(local)", "."];
 
@@ -53,10 +57,82 @@ public static class RelationalDatabaseIdentity
             return false;
         }
 
-        var configuredSource = NormalizeDataSource(configured.DataSource);
+        var configuredSources = _DataSources(configured);
+        if (configuredSources.Count == 0)
+        {
+            return false;
+        }
 
-        return configuredSource.Length > 0
-            && string.Equals(configuredSource, NormalizeDataSource(candidate.DataSource), StringComparison.Ordinal);
+        var candidateSources = _DataSources(candidate);
+
+        // Every host the candidate can reach must be one the participant is configured for: an opened multi-host
+        // connection names the one host it reached, which must be in the configured list.
+        return candidateSources.Count > 0 && candidateSources.IsSubsetOf(configuredSources);
+    }
+
+    /// <summary>
+    /// The normalized data sources <paramref name="connection" /> can reach: its own <see cref="DbConnection.DataSource" />,
+    /// or, when the provider reports none because the connection lists several hosts, one entry per listed host.
+    /// </summary>
+    /// <remarks>
+    /// Npgsql reports an empty data source for an unopened connection whose <c>Host</c> lists several hosts
+    /// (<c>Host=pg1,pg2</c>), and the host it reached once opened. Each listed host is expanded into a single-host
+    /// connection through the provider's own factory, so its data source keeps the provider's format, with an
+    /// inline port (<c>pg1:5433</c>) or the shared <c>Port</c>. The listed hosts are taken to serve one database: a
+    /// multi-host source is a set of replicas or failover peers of the same database name.
+    /// </remarks>
+    private static HashSet<string> _DataSources(DbConnection connection)
+    {
+        var sources = new HashSet<string>(StringComparer.Ordinal);
+        var source = NormalizeDataSource(connection.DataSource);
+        if (source.Length > 0)
+        {
+            sources.Add(source);
+            return sources;
+        }
+
+        var factory = DbProviderFactories.GetFactory(connection);
+        var builder = factory?.CreateConnectionStringBuilder();
+        if (factory is null || builder is null || string.IsNullOrEmpty(connection.ConnectionString))
+        {
+            return sources;
+        }
+
+        builder.ConnectionString = connection.ConnectionString;
+        if (
+            !builder.TryGetValue(_HostKey, out var value)
+            || value is not string hosts
+            || !hosts.Contains(',', StringComparison.Ordinal)
+        )
+        {
+            return sources;
+        }
+
+        foreach (var host in hosts.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            builder[_HostKey] = host;
+            using var single = factory.CreateConnection();
+            if (single is null)
+            {
+                sources.Clear();
+                return sources;
+            }
+
+            single.ConnectionString = builder.ConnectionString;
+            var hostSource = NormalizeDataSource(single.DataSource);
+
+            // A listed host the provider cannot name cannot be compared; refuse the whole list rather than guess what the
+            // remaining hosts say about the configuration.
+            if (hostSource.Length == 0)
+            {
+                sources.Clear();
+                return sources;
+            }
+
+            sources.Add(hostSource);
+        }
+
+        return sources;
     }
 
     /// <summary>
