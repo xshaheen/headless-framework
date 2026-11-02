@@ -12,7 +12,7 @@ namespace Headless.Features;
 public abstract class StoreFeatureValueProvider(IFeatureValueStore store) : IFeatureValueProvider
 {
     /// <summary>Gets the underlying feature value store used for persistence.</summary>
-    protected IFeatureValueStore Store { get; } = store;
+    protected internal IFeatureValueStore Store { get; } = store;
 
     /// <inheritdoc/>
     public abstract string Name { get; }
@@ -153,6 +153,12 @@ public abstract class StoreFeatureValueProvider(IFeatureValueStore store) : IFea
     )
     {
         return Store.DeleteEnlistedAsync(unitOfWork, Name, NormalizeProviderKey(providerKey), cancellationToken);
+    }
+
+    /// <summary>The key the default reads use for <paramref name="providerKey"/>.</summary>
+    internal string? ResolveProviderKey(string? providerKey)
+    {
+        return NormalizeProviderKey(providerKey);
     }
 
     /// <summary>Transforms the caller-supplied <paramref name="providerKey"/> before passing it to the store. Returns <paramref name="providerKey"/> unchanged by default.</summary>
