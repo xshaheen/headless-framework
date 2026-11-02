@@ -13,8 +13,21 @@ namespace Tests.Fakes
 
 namespace Microsoft.Data.SqlClient
 {
-    /// <summary>Stands in for SqlClient's <c>SqlException</c>; the handler reads its public <c>Number</c> by name.</summary>
-    internal sealed class SqlException(int number) : System.Data.Common.DbException("provider error")
+    /// <summary>
+    /// Stands in for SqlClient's <c>SqlException</c>; the classifier reads its public <c>Number</c> and <c>Errors</c>
+    /// by name. Like the real one, <c>Number</c> is the first error's.
+    /// </summary>
+    internal sealed class SqlException(int number, params int[] furtherNumbers)
+        : System.Data.Common.DbException("provider error")
+    {
+        public int Number { get; } = number;
+
+        public IReadOnlyList<SqlError> Errors { get; } =
+        [new SqlError(number), .. furtherNumbers.Select(n => new SqlError(n))];
+    }
+
+    /// <summary>One error of a fake <see cref="SqlException" />.</summary>
+    internal sealed class SqlError(int number)
     {
         public int Number { get; } = number;
     }

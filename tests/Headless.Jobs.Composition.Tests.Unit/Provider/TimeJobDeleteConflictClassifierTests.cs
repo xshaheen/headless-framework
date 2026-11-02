@@ -51,7 +51,7 @@ public sealed class TimeJobDeleteConflictClassifierTests : TestBase
     [InlineData(3960)]
     public void should_retry_sql_server_tree_delete_conflicts(int number)
     {
-        var exception = new FakeDbException(number: number);
+        var exception = SqlClientExceptions.Create(number);
 
         var result = JobsTreeDeleteConflicts.IsRetryableTreeDeleteFailure(
             _SqlServerProvider,
@@ -64,9 +64,41 @@ public sealed class TimeJobDeleteConflictClassifierTests : TestBase
     }
 
     [Fact]
+    public void should_retry_sql_server_foreign_key_conflict_that_is_not_the_first_error()
+    {
+        // SqlClient's Number is the first error only; the conflict reported behind another error still counts.
+        var exception = SqlClientExceptions.Create(3621, 547);
+
+        var result = JobsTreeDeleteConflicts.IsRetryableTreeDeleteFailure(
+            _SqlServerProvider,
+            exception,
+            commitStarted: false,
+            CancellationToken.None
+        );
+
+        result.Should().BeTrue();
+    }
+
+    [Fact]
+    public void should_not_read_sql_server_numbers_from_another_drivers_exception()
+    {
+        // A number means nothing outside SqlClient: MySQL reports a lock-wait timeout as 1205.
+        var exception = new FakeDbException(number: 547);
+
+        var result = JobsTreeDeleteConflicts.IsRetryableTreeDeleteFailure(
+            _SqlServerProvider,
+            exception,
+            commitStarted: false,
+            CancellationToken.None
+        );
+
+        result.Should().BeFalse();
+    }
+
+    [Fact]
     public void should_not_retry_sql_server_unique_constraint_violation()
     {
-        var exception = new FakeDbException(number: 2627);
+        var exception = SqlClientExceptions.Create(2627);
 
         var result = JobsTreeDeleteConflicts.IsRetryableTreeDeleteFailure(
             _SqlServerProvider,
