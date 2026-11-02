@@ -1744,7 +1744,9 @@ var info = new FailedInfo
 
 ## Distributed Lock Integration
 
-`MessagingOptions.UseStorageLock` (default `false`) enables `IDistributedLock`-backed mutual exclusion in `MessageNeedToRetryProcessor`. When `true`, each Published/Received × Bus/Queue quadrant acquires its own named lock before its pickup. No quadrant's lease, contention, or cadence gates another quadrant.
+`MessagingOptions.UseStorageLock` (default `false`) enables `IDistributedLock`-backed mutual exclusion in `MessageNeedToRetryProcessor`. When `true`, each Published/Received × Bus/Queue quadrant acquires its own named lock before its pickup, so only one replica claims that quadrant per tick. No quadrant's lease, contention, or cadence gates another quadrant.
+
+The retry claim does not need it. On PostgreSQL and SQL Server one claim statement selects due rows with `FOR UPDATE … SKIP LOCKED` (`UPDLOCK, READPAST` on SQL Server) and stamps their `LockedUntil` lease and `Owner` as it returns them, so two replicas claiming at once take disjoint batches and never the same row; the in-memory storage runs in one process. The lock makes replicas take turns instead: on a backlog, one batch per quadrant per tick drains instead of one per replica.
 
 Use `MessagingBuilder.UseDistributedLock(...)` to wire the provider. Calling this method implicitly sets `UseStorageLock = true`:
 
@@ -1765,13 +1767,13 @@ Messaging keeps its lock provider under an **internal keyed-DI key** (`"headless
 
 - Per-row `LockedUntil` (re-stamped to `DispatchTimeout` when each publish/consume attempt is reserved, and renewed while the attempt runs — see [Storage clock and leases](#storage-clock-and-leases)) is the storage concurrency primitive. `NextRetryAt` is scheduling state that PostgreSQL and SQL Server compare against the database clock. They independently compare lease expiry and stamp the next `LockedUntil` from one database-clock snapshot inside the same atomic claim command; no separate clock query is added per polling tick. It reduces concurrent dispatch of the same row and works whether or not the distributed lock is enabled, but delivery is still at-least-once under crash, broker redelivery, and broker-accept/storage-mark races.
 - Dead-owner recovery is a separate **always-on acceleration primitive**, independent of this lock (see [Dead-owner recovery](#dead-owner-recovery)). With a real `INodeMembership` a recovery bridge reclaims rows owned by `Dead` incarnations and pulls `LockedUntil` back to now; without Coordination, `Owner` remains `null` and rows recover at the normal `LockedUntil` floor.
-- Each distributed lock is a **quadrant-scoped pickup mutex**, not a correctness requirement. It lets one replica scan that direction/lane backlog while the other three quadrants continue independently.
-- Disabling `UseStorageLock` does not change the at-least-once delivery contract. It introduces wasted pickup work on contended backlogs. If an acquired retry lock's `LostToken` fires (EventId 79), no new pickup starts under an already-lost lease; any in-flight dispatch remains governed by the per-row `LockedUntil` lease.
+- Each distributed lock is a **quadrant-scoped pickup mutex**, not a correctness requirement and not needed for exclusion: the claim statement already keeps replicas off each other's rows. It only limits each quadrant to one replica's claim per tick, while the other three quadrants continue independently.
+- Every retry-lock acquire tries once (`AcquireTimeout = TimeSpan.Zero`) and nothing ever waits on these locks, so the processor acquires them with `NotifyWaitersOnRelease = false`: releasing a retry lock sends no lock-release broadcast to the other instances.
+- Disabling `UseStorageLock` does not change the at-least-once delivery contract or let two replicas claim the same row. Without it, every replica runs each quadrant's claim every tick and, on a backlog, each claims its own disjoint batch. If an acquired retry lock's `LostToken` fires (EventId 79), no new pickup starts under an already-lost lease; any in-flight dispatch remains governed by the per-row `LockedUntil` lease.
 
 ### When to enable
 
-- Multi-replica deployment where many retry pickups would otherwise contend. Each tick on each replica scans the same backlog table; the distributed lock makes only one replica do the scan per tick.
-- Pickup queries that are expensive (large backlog, complex filter, secondary indexes scanned). Even at two replicas, halving the pickup load is observable.
+Leave it off unless the claim statement itself is the measured cost. Enable it only when many replicas run an expensive retry claim (a large table where the due-row scan reads many leased or not-yet-due rows) and you accept slower backlog drain in exchange for one claim per quadrant per tick across the fleet.
 - Operationally noisy retries without it: lots of "0 messages picked up" log lines from sibling replicas competing for the same backlog.
 
 ### When to skip
@@ -1850,8 +1852,8 @@ The always-on `DeadOwnerRecoveryBridge` logs failures under its own category, `H
 
 ### Pros and cons
 
-- **Pros:** less wasted pickup work, cleaner logs at scale, halves backlog scan load per added replica.
-- **Cons:** extra lock-store round trip per tick, extra dependency, more EventIds to monitor (79 for lease loss, 81-84 for acquire failures).
+- **Pros:** one retry claim per quadrant per tick across the fleet instead of one per replica, which bounds claim-scan load on the database as replicas are added.
+- **Cons:** replicas take turns, so a backlog drains one batch per quadrant per tick instead of one per replica; each tick adds an acquire and a release round trip to the lock store plus a lease-monitor timer while held, on an idle fleet too; a lock-store dependency and its outages (acquire failures skip that quadrant's pickup); more EventIds to monitor (79 for lease loss, 81-84 for acquire failures).
 
 ---
 

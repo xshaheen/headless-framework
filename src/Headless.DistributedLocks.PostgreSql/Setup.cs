@@ -25,18 +25,39 @@ public static class SetupDistributedLocksPostgreSql
     extension(HeadlessDistributedLocksSetupBuilder setup)
     {
         /// <summary>
-        /// Configures PostgreSQL storage with the connection registered by <c>AddPostgreSqlSql</c>, so one
-        /// connection string serves every feature that shares the database.
+        /// Configures PostgreSQL storage on the application's connection: the container's
+        /// <see cref="NpgsqlDataSource"/> when one is registered, otherwise the connection registered by
+        /// <c>AddPostgreSqlSql</c>, so locks share the pool every other feature on that database uses.
         /// </summary>
         /// <returns>The setup builder for chaining.</returns>
         /// <remarks>
-        /// Options resolution throws <see cref="InvalidOperationException"/> when <c>AddPostgreSqlSql</c> was not
-        /// called or registered another provider's connection.
+        /// <para>
+        /// Neither path builds a provider-owned pool or applies <see cref="PostgreSqlDistributedLockOptions.KeepAlive"/>:
+        /// set <c>Keepalive</c> on the application's connection string or data source to have a silently dropped lock
+        /// holder surface faster. The active connection monitor detects a dead holder either way.
+        /// </para>
+        /// <para>
+        /// Options resolution throws <see cref="InvalidOperationException"/> when no <see cref="NpgsqlDataSource"/> is
+        /// registered and <c>AddPostgreSqlSql</c> was not called or registered another provider's connection.
+        /// </para>
         /// </remarks>
         public HeadlessDistributedLocksSetupBuilder UsePostgreSql()
         {
             return setup.UsePostgreSql(
-                (options, services) => options.ConnectionString = services.GetPostgreSqlConnectionString()
+                static (options, services) =>
+                {
+                    // The application's own data source wins, so locks draw from the pool (and the settings) the
+                    // application already configured instead of opening a second one against the same server.
+                    if (services.GetService<NpgsqlDataSource>() is { } dataSource)
+                    {
+                        options.DataSource = dataSource;
+
+                        return;
+                    }
+
+                    options.ConnectionString = services.GetPostgreSqlConnectionString();
+                    options.UseSharedConnectionPool = true;
+                }
             );
         }
 
@@ -182,13 +203,10 @@ public static class SetupDistributedLocksPostgreSql
         services.TryAddSingleton(TimeProvider.System);
         services.AddHeadlessGuidGenerator();
 
-        // Build the data source once and share it across its consumers (storage, release signal,
-        // schema runner) so a connection-string configuration produces a single pool rather than
-        // one each. The owner wrapper centralizes disposal: an injected DataSource is consumer-owned and
-        // never disposed, while a connection-string-built one is owned and disposed on container
-        // teardown. Consumers inject the NpgsqlDataSource directly and must not dispose it.
+        // One connection source shared by storage, release signal, and schema runner, so a configuration produces a
+        // single pool rather than one each. It is deliberately not registered as NpgsqlDataSource: that service is the
+        // application's, and the parameterless UsePostgreSql() reads it.
         services.TryAddSingleton<PostgresLockDataSource>();
-        services.TryAddSingleton(sp => sp.GetRequiredService<PostgresLockDataSource>().DataSource);
 
         services.TryAddSingleton<PostgresConnectionScopedLockStorage>();
         services.TryAddSingleton<IConnectionScopedLockStorage>(sp =>
@@ -200,7 +218,7 @@ public static class SetupDistributedLocksPostgreSql
         services.AddHeadlessSchemaContribution(sp =>
             PostgreSqlDistributedLocksSchemaContribution.Create(
                 sp.GetRequiredService<IOptions<DistributedLocksStorageOptions>>().Value,
-                sp.GetRequiredService<NpgsqlDataSource>()
+                sp.GetRequiredService<PostgresLockDataSource>()
             )
         );
         // The unit-of-work feature behind unit.TransactionLocks; resolved by GetFeature on a host that also registered

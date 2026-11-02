@@ -157,6 +157,25 @@ internal static class DistributedLockCoreHelpers
     }
 
     /// <summary>
+    /// Allows skipping the release wake-up only on a try-once acquire: a caller that waits implies the resource has
+    /// waiters, and they would then fall back to polling.
+    /// </summary>
+    public static void ValidateReleaseNotification(DistributedLockAcquireOptions? options)
+    {
+        if (options?.NotifyWaitersOnRelease != false)
+        {
+            return;
+        }
+
+        Argument.IsTrue(
+            options!.AcquireTimeout == TimeSpan.Zero,
+            $"{nameof(DistributedLockAcquireOptions.NotifyWaitersOnRelease)} = false requires "
+                + $"{nameof(DistributedLockAcquireOptions.AcquireTimeout)} = TimeSpan.Zero.",
+            paramName: nameof(options)
+        );
+    }
+
+    /// <summary>
     /// Exponential backoff with jitter: 50ms, 100ms, 200ms, ..., capped at 3s, with ±25% jitter to
     /// avoid a thundering herd of waiters retrying in lockstep.
     /// </summary>

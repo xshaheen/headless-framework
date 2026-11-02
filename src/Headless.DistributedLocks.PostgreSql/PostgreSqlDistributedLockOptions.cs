@@ -76,6 +76,13 @@ public sealed class PostgreSqlDistributedLockOptions
     /// faster, while the monitor is the authoritative active death check.
     /// </remarks>
     public TimeSpan KeepAlive { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// Set by the parameterless <c>UsePostgreSql()</c> when it takes the <c>AddPostgreSqlSql</c> connection string:
+    /// the lock then opens plain connections on Npgsql's pool for that string, which the other features on it already
+    /// share, instead of building a second pool, and leaves the string (and its KeepAlive) as the application set it.
+    /// </summary>
+    internal bool UseSharedConnectionPool { get; set; }
 }
 
 internal sealed class PostgreSqlDistributedLockOptionsValidator : AbstractValidator<PostgreSqlDistributedLockOptions>

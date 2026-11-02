@@ -11,7 +11,7 @@ packages: Coordination.Abstractions, Coordination, Coordination.Sql, Coordinatio
 
 Use Coordination when a distributed consumer needs to know which process incarnation is alive. It supplies `INodeMembership` for register, heartbeat, leave, live-node reads, full liveness snapshots, and lifecycle events. Consumers stamp `NodeIdentity` (`node@incarnation`) on their own rows; Coordination does not store ownership.
 
-Concrete consumer: the `Headless.Jobs` durable (operational-store) path resolves `INodeMembership` to stamp `node@incarnation` ownership on job rows, drives dead-node recovery from `NodeLeft` events plus a periodic reconcile, and requires a registered provider (see `docs/llms/jobs.md`).
+Concrete consumer: the `Headless.Jobs` durable (operational-store) path resolves `INodeMembership` to stamp `node@incarnation` ownership on job rows, drives dead-node recovery from `NodeLeft` events plus a periodic reconcile, and requires a registered provider (see `docs/llms/jobs.md`). Each feature's dead-owner reconcile reuses the liveness snapshot the heartbeat last read when that read started within one `HeartbeatInterval` (and within the reconcile interval), so a healthy host adds no liveness read per reconcile tick; it reads the store only when the heartbeat has not read one that recently.
 
 The store is the temporal authority. PostgreSQL uses `clock_timestamp()`, SQL Server uses `SYSUTCDATETIME()`, and Redis uses `TIME` inside Lua. Application clocks do not classify another node as Alive, Suspected, or Dead.
 
