@@ -12,7 +12,8 @@
     Name="_HeadlessAddResourceReaperFixture"
     BeforeTargets="GetAssemblyAttributes"
     DependsOnTargets="ResolveAssemblyReferences"
-    Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('$(MSBuildProjectName)', '\.Tests\.(Integration|Chaos)$'))">
+    Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('$(MSBuildProjectName)', '\.Tests\.(Integration|Chaos)$'))"
+  >
     <ItemGroup Condition="'@(ReferencePath->AnyHaveMetadataValue('Filename', 'Headless.Testing.Testcontainers'))' == 'true'">
       <AssemblyAttribute Include="Xunit.AssemblyFixtureAttribute">
         <_Parameter1>typeof(Headless.Testing.Testcontainers.HeadlessResourceReaperFixture)</_Parameter1>
