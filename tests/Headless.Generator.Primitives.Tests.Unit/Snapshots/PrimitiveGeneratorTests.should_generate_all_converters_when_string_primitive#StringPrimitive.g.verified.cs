@@ -228,7 +228,7 @@ public sealed partial class StringPrimitive : global::System.IEquatable<StringPr
 
     /// <inheritdoc/>
     [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-    public static StringPrimitive Parse(string s, global::System.IFormatProvider? provider) => Parse(s.AsSpan(), provider);
+    public static StringPrimitive Parse(string s, global::System.IFormatProvider? provider) => s ?? string.Empty;
 
     /// <inheritdoc/>
     public static bool TryParse(global::System.ReadOnlySpan<char> s, global::System.IFormatProvider? provider, [MaybeNullWhen(false)] out StringPrimitive result)
@@ -244,7 +244,16 @@ public sealed partial class StringPrimitive : global::System.IEquatable<StringPr
     }
 
     /// <inheritdoc/>
-    public static bool TryParse([NotNullWhen(true)] string? s, global::System.IFormatProvider? provider, [MaybeNullWhen(false)] out StringPrimitive result) => TryParse(s is null ? [] : s.AsSpan(), provider, out result);
+    public static bool TryParse([NotNullWhen(true)] string? s, global::System.IFormatProvider? provider, [MaybeNullWhen(false)] out StringPrimitive result)
+    {
+        if (string.IsNullOrEmpty(s))
+        {
+            result = default;
+            return false;
+        }
+
+        return StringPrimitive.TryCreate(s, out result);
+    }
 
     #endregion
 
