@@ -4,4 +4,4 @@
 # same change that removes a wait, so the gain is kept.
 Headless.Messaging.Tests.Unit 41
 Headless.Messaging.InMemory.Tests.Unit 38
-Headless.Messaging.Tests.Harness 23
+Headless.Messaging.Tests.Harness 24

@@ -87,7 +87,13 @@ internal sealed class NatsTransport(
 
             if (ack.Seq == 0)
             {
-                return _FailNoStream(message.Name, subject, "was not acknowledged by any stream (seq=0)", inner: null);
+                return _FailNoStream(
+                    message.Name,
+                    subject,
+                    "was not acknowledged by any stream (seq=0)",
+                    inner: null,
+                    streamMissingConfirmed: true
+                );
             }
 
             if (logger.IsEnabled(LogLevel.Debug))
@@ -105,12 +111,14 @@ internal sealed class NatsTransport(
         }
         catch (NatsJSPublishNoResponseException ex)
         {
-            // NATS.Net retries a publish no stream answers, then throws this rather than returning a seq=0 ack.
+            // NATS.Net retries a publish no stream answers, then throws this rather than returning a seq=0 ack. A lost
+            // or late acknowledgement ends the same way, so the message cannot claim the stream is gone.
             return _FailNoStream(
                 message.Name,
                 subject ?? NatsPhysicalAddress.Subject(lane, message.Name),
-                "got no response from any stream",
-                ex
+                "got no acknowledgement: no stream captures the subject, or the acknowledgement was lost or late",
+                ex,
+                streamMissingConfirmed: false
             );
         }
         catch (Exception ex)
@@ -175,15 +183,25 @@ internal sealed class NatsTransport(
 
     // The stream was deleted or changed after this process ensured it, so forget the ensure: the next publish of the
     // message provisions the stream again instead of failing until the process restarts.
-    private OperateResult _FailNoStream(string messageName, string subject, string outcome, Exception? inner)
+    private OperateResult _FailNoStream(
+        string messageName,
+        string subject,
+        string outcome,
+        Exception? inner,
+        bool streamMissingConfirmed
+    )
     {
+        // Forgotten either way: re-ensuring a stream that still exists costs one broker round trip.
         streamProvisioner.ForgetPublished(lane, messageName);
 
+        var streamName = streamProvisioner.StreamName(lane, messageName);
         var message =
             $"NATS JetStream publish to subject '{subject}' {outcome}; "
             + (
                 streamProvisioner.IsEnabled
-                    ? $"stream '{streamProvisioner.StreamName(lane, messageName)}' no longer captures the subject; the next publish provisions it again."
+                    ? streamMissingConfirmed
+                        ? $"stream '{streamName}' no longer captures the subject; the next publish provisions it again."
+                        : $"the next publish checks that stream '{streamName}' still captures the subject and provisions it again if not."
                     : $"StreamProvisioning is Disabled, so a JetStream stream (Headless would name it '{streamProvisioner.StreamName(lane, messageName)}') must be configured outside the application to capture this subject."
             );
 
