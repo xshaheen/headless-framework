@@ -681,6 +681,8 @@ public sealed class InMemoryConsumerClientTests : TestBase
         var lockObj = new Lock();
         const int messageCount = 10;
         var tcs = new TaskCompletionSource();
+        // Handlers hold here, so the in-flight count can reach the concurrency limit no matter how fast each runs.
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         client.OnMessageCallback = async (_, sender) =>
         {
@@ -693,7 +695,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
                 }
             }
 
-            await Task.Delay(50, AbortToken); // Simulate work
+            await release.Task.WaitAsync(AbortToken);
 
             lock (lockObj)
             {
@@ -729,14 +731,22 @@ public sealed class InMemoryConsumerClientTests : TestBase
             queue.SendBus(_CreateTestMessage($"msg-{i}", "concurrent-messageName"));
         }
 
-        // Wait for processing
+        // Wait until the limit is in flight, then let every handler finish
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+
+        while (Volatile.Read(ref currentConcurrent) < concurrency && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(10, AbortToken);
+        }
+
+        release.SetResult();
         _ = await Task.WhenAny(tcs.Task, Task.Delay(30000, AbortToken));
         await cts.CancelAsync();
         await client.DisposeAsync();
 
         // then
         processedCount.Should().Be(messageCount);
-        maxConcurrent.Should().BeGreaterThanOrEqualTo(1);
+        maxConcurrent.Should().Be(concurrency, "the client runs up to its concurrency limit at once, and no more");
     }
 
     [Fact]

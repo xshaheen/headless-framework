@@ -789,13 +789,14 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
             AbortToken
         );
 
-        // Wait for messages to be processed or timeout
-        _ = await Task.WhenAny(tcs.Task, Task.Delay(TimeSpan.FromSeconds(4), AbortToken));
+        // Wait for every message; a cap check over no handled messages proves nothing.
+        var processedAll = await Task.WhenAny(tcs.Task, Task.Delay(TimeSpan.FromSeconds(4), AbortToken)) == tcs.Task;
         await cts.CancelAsync();
         await listeningTask;
 
         // then - max concurrent should not exceed concurrency limit
-        maxConcurrent.Should().BeLessThanOrEqualTo(concurrencyLimit);
+        processedAll.Should().BeTrue("all four messages must be handled within the listening window");
+        maxConcurrent.Should().BeInRange(1, concurrencyLimit);
     }
 
     [Fact]

@@ -218,12 +218,21 @@ public sealed class CloudflareR2BlobStorageTests : BlobStorageTestsBase
             cancellationToken: AbortToken
         );
 
-        await Task.Delay(TimeSpan.FromSeconds(3), AbortToken);
-
+        // R2 checks expiry on its own clock against a signing time taken from this runner's clock, so a runner that
+        // is a few seconds ahead sees the URL live past its nominal expiry. Poll until it is denied, within a bound
+        // far above any sane skew and far below "never expires".
         using var http = new HttpClient();
-        var response = await http.GetAsync(url, AbortToken);
+        var started = TimeProvider.System.GetTimestamp();
+        bool denied;
 
-        response.IsSuccessStatusCode.Should().BeFalse();
+        do
+        {
+            await Task.Delay(TimeSpan.FromSeconds(1), AbortToken);
+            using var response = await http.GetAsync(url, AbortToken);
+            denied = !response.IsSuccessStatusCode;
+        } while (!denied && TimeProvider.System.GetElapsedTime(started) < TimeSpan.FromSeconds(30));
+
+        denied.Should().BeTrue("a presigned URL must stop working shortly after it expires");
     }
 
     #endregion

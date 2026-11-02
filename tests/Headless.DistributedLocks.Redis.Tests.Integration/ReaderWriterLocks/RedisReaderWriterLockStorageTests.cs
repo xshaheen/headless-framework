@@ -463,13 +463,20 @@ public sealed class RedisReaderWriterLockStorageTests(RedisTestFixture fixture) 
         );
         (await fixture.ReaderWriterLockStorage.ValidateReadAsync(resource, readerId, AbortToken)).Should().BeTrue();
 
-        // when - wait past the TTL.
-        await Task.Delay(TimeSpan.FromSeconds(2), AbortToken);
+        // when - the acquire script gives the readers HASH a key TTL of twice the lease (2 s here), and Redis drops
+        // the key only once that passes on its own clock; a fixed wait of the same length races the expiry, so poll
+        // with a deadline well past it.
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(15);
+        var stillValid = true;
+
+        while (stillValid && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(100), AbortToken);
+            stillValid = await fixture.ReaderWriterLockStorage.ValidateReadAsync(resource, readerId, AbortToken);
+        }
 
         // then
-        (await fixture.ReaderWriterLockStorage.ValidateReadAsync(resource, readerId, AbortToken))
-            .Should()
-            .BeFalse();
+        stillValid.Should().BeFalse("Redis must drop the readers HASH once its key TTL passes");
         (await fixture.ReaderWriterLockStorage.GetReaderCountAsync(resource, AbortToken)).Should().Be(0);
     }
 

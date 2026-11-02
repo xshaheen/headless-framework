@@ -87,6 +87,20 @@ public sealed class ResourceStartupCheckTests : TestBase
 
         // when
         await host.StartAsync(AbortToken);
+
+        // The bounded wait below tests only the cancellation message, so let the background check record its error
+        // first; on a starved thread pool it may not run inside the bound.
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+
+        while (
+            (await _CheckWarmupAsync(host.Services)).Exception?.Message.Contains("last error", StringComparison.Ordinal)
+                != true
+            && DateTime.UtcNow < deadline
+        )
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(10), AbortToken);
+        }
+
         using var bounded = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
         bounded.CancelAfter(TimeSpan.FromSeconds(2));
         var wait = () => host.Services.WaitForWarmupAsync(bounded.Token);

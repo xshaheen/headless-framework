@@ -335,6 +335,14 @@ internal sealed class RedisConsumerClient(
                         return;
                     }
 
+                    // CancelAsync marks the stop at once but cancels the linked read token from a later callback, so
+                    // a batch read before shutdown could still reach the handler. The entry stays pending in the
+                    // group, and the claim pass of another consumer delivers it.
+                    if (_stopReading.IsCancellationRequested)
+                    {
+                        return;
+                    }
+
                     if (concurrency > 0)
                     {
                         await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
