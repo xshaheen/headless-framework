@@ -226,8 +226,15 @@ internal sealed partial class RelationalDataStorage
             return DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.TransactionCompleted);
         }
 
-        using var configuredConnection = _storage.CreateConnection();
-        if (!RelationalDatabaseIdentity.IsSameDatabase(configuredConnection, connection))
+        // Every integration event of a save resolves against the same unit, so the identity check runs once per unit.
+        if (
+            !RelationalDatabaseIdentity.IsSameDatabase(
+                unitOfWork,
+                _storage,
+                static storage => storage.CreateConnection(),
+                connection
+            )
+        )
         {
             return DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.Database);
         }
