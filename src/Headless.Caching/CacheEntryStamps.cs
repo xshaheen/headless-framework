@@ -41,25 +41,29 @@ public readonly record struct CacheEntryStamps(
         // jitter is Zero, so effectiveDuration == options.Duration and behavior is unchanged.
         var effectiveDuration =
             options.JitterMaxDuration > TimeSpan.Zero
-                ? options.Duration + TimeSpan.FromTicks(_GetRandomTicks(options.JitterMaxDuration))
+                ? _SaturatingAdd(options.Duration, TimeSpan.FromTicks(_GetRandomTicks(options.JitterMaxDuration)))
                 : options.Duration;
 
-        var logicalExpiresAt = now.Add(effectiveDuration);
+        // Saturating: TimeSpan.MaxValue is the "never expire" duration the providers accept, and DateTime.Add
+        // throws instead of clamping at DateTime.MaxValue.
+        var logicalExpiresAt = now.SafeAdd(effectiveDuration);
         var physicalDuration = options.IsFailSafeEnabled
             ? _Max(effectiveDuration, options.FailSafeMaxDuration)
             : effectiveDuration;
-        var physicalExpiresAt = now.Add(physicalDuration);
+        var physicalExpiresAt = now.SafeAdd(physicalDuration);
 
         if (options.SlidingExpiration is { } slidingExpiration)
         {
-            logicalExpiresAt = _Min(now.Add(slidingExpiration), physicalExpiresAt);
+            logicalExpiresAt = _Min(now.SafeAdd(slidingExpiration), physicalExpiresAt);
         }
 
         DateTime? eagerRefreshAt = null;
 
         if (options.EagerRefreshThreshold is { } eagerRefreshThreshold)
         {
-            eagerRefreshAt = now.AddTicks((long)(effectiveDuration.Ticks * (double)eagerRefreshThreshold));
+            eagerRefreshAt = now.SafeAdd(
+                TimeSpan.FromTicks((long)(effectiveDuration.Ticks * (double)eagerRefreshThreshold))
+            );
         }
 
         return new CacheEntryStamps(logicalExpiresAt, physicalExpiresAt, eagerRefreshAt, CreatedAt: now);
@@ -180,6 +184,12 @@ public readonly record struct CacheEntryStamps(
         }
 
         Argument.IsPositive(timeout, paramName: paramName);
+    }
+
+    // Both operands are non-negative here (a positive Duration and a non-negative jitter).
+    private static TimeSpan _SaturatingAdd(TimeSpan left, TimeSpan right)
+    {
+        return left > TimeSpan.MaxValue - right ? TimeSpan.MaxValue : left + right;
     }
 
     private static TimeSpan _Max(TimeSpan left, TimeSpan right)

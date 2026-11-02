@@ -126,9 +126,9 @@ public sealed class RedisCacheScriptLoadingTests : TestBase
         // when
         await warmup.WarmUpAsync(AbortToken);
 
-        // then - the seven scripts the cache runs, loaded once for both instances on this one Redis
+        // then - the eight scripts the cache runs, loaded once for both instances on this one Redis
         warmup.GatesReadiness.Should().BeFalse();
-        (await _CachedScriptCountAsync()).Should().Be(7);
+        (await _CachedScriptCountAsync()).Should().Be(8);
     }
 
     private async Task<long> _CachedScriptCountAsync()

@@ -4,6 +4,7 @@ using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Text;
 using Headless.Caching.Scripts;
 using Headless.Checks;
 using Headless.Redis;
@@ -52,6 +53,13 @@ public sealed class RedisCache(
     // Caps the per-hash-slot commands a cluster bulk call keeps in flight. Sending every slot at once on a huge
     // call queues enough work behind the multiplexer to hit command timeouts.
     private const int _MaxInFlightSlotCommands = 16;
+
+    // Bounds how often TryInsertAsync retries when writers keep replacing or removing a key it judged logically
+    // absent; past it the insert reports the key present, which an insert-if-absent caller already handles.
+    private const int _MaxInsertOverDeadEntryAttempts = 3;
+
+    // Redis glob metacharacters (stringmatchlen): '\\' escapes the next character, so each is matched literally.
+    private static readonly SearchValues<char> _GlobSpecialCharacters = SearchValues.Create("*?[]\\");
 
     /// <summary>
     /// Reserved namespace segment for Family-2 per-tag invalidation markers: each tag's last-invalidation
@@ -423,7 +431,93 @@ public sealed class RedisCache(
         Argument.IsPositive(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
-        return await _SetInternalAsync(_GetKey(key), value, expiration, When.NotExists).ConfigureAwait(false);
+        var redisKey = _GetKey(key);
+
+        for (var attempt = 1; ; attempt++)
+        {
+            if (await _SetInternalAsync(redisKey, value, expiration, When.NotExists).ConfigureAwait(false))
+            {
+                return true;
+            }
+
+            // SET NX refuses any physically present key, but a logical clear, flush, or tag removal, and a logical
+            // expiry inside the fail-safe reserve, leave keys every read already reports as absent. Insert-if-absent
+            // must agree with those reads, so such an entry is overwritten, and only while it still holds the exact
+            // bytes judged dead: a live entry another writer stores in between wins.
+            var current = await _database.StringGetAsync(redisKey).ConfigureAwait(false);
+
+            if (current.IsNull)
+            {
+                // Removed between the two calls: the next SET NX decides.
+                if (attempt < _MaxInsertOverDeadEntryAttempts)
+                {
+                    continue;
+                }
+
+                return false;
+            }
+
+            if (await _IsLogicallyPresentAsync((ReadOnlyMemory<byte>)current).ConfigureAwait(false))
+            {
+                return false;
+            }
+
+            if (
+                await _OverwriteIfUnchangedAsync(redisKey, current, value, expiration, cancellationToken)
+                    .ConfigureAwait(false)
+            )
+            {
+                return true;
+            }
+
+            if (attempt >= _MaxInsertOverDeadEntryAttempts)
+            {
+                // Writers keep racing on the key; reporting it present is the safe answer for insert-if-absent.
+                return false;
+            }
+        }
+    }
+
+    private async ValueTask<bool> _OverwriteIfUnchangedAsync<T>(
+        RedisKey redisKey,
+        RedisValue current,
+        T? value,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken
+    )
+    {
+        var now = timeProvider.GetUtcNow();
+        var expiresAt = _GetExpirationDateTime(_NormalizeExpiration(expiration), now);
+
+        // #580 zero-concat write: the using scope extends past the EVALSHA await because the pooled payload
+        // buffer backs the outgoing value until the command is written to the socket.
+        using var framed = _EncodeFramedWrite(
+            value,
+            isNull: value is null,
+            logicalExpiresAt: expiresAt,
+            physicalExpiresAt: expiresAt,
+            slidingExpiration: null,
+            createdAt: now.UtcDateTime
+        );
+
+        var expiresMs = _GetExpirationMilliseconds(expiration, now);
+
+        var redisResult = await scriptsLoader
+            .EvaluateAsync(
+                _database,
+                CacheOverwriteIfUnchangedScriptDefinition.Instance,
+                new
+                {
+                    key = redisKey,
+                    current,
+                    value = framed.Value,
+                    expires = expiresMs ?? RedisValue.EmptyString,
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return (int)redisResult > 0;
     }
 
     public async ValueTask<bool> TryReplaceAsync<T>(
@@ -437,7 +531,15 @@ public sealed class RedisCache(
         Argument.IsPositive(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
-        return await _SetInternalAsync(_GetKey(key), value, expiration, When.Exists).ConfigureAwait(false);
+        var redisKey = _GetKey(key);
+
+        // SET XX alone would replace an entry every read already reports as absent (logically cleared or expired).
+        if (!await _KeyIsLogicallyPresentAsync(redisKey).ConfigureAwait(false))
+        {
+            return false;
+        }
+
+        return await _SetInternalAsync(redisKey, value, expiration, When.Exists).ConfigureAwait(false);
     }
 
     public async ValueTask<bool> TryReplaceIfEqualAsync<T>(
@@ -455,6 +557,13 @@ public sealed class RedisCache(
         if (expiration is { Ticks: <= 0 })
         {
             await RemoveAsync(key, cancellationToken).ConfigureAwait(false);
+            return false;
+        }
+
+        // The script compares only the value segment, so it cannot see a clear, flush, or tag marker, or a logical
+        // expiry: an entry every read reports absent must not match the expected value.
+        if (!await _KeyIsLogicallyPresentAsync(_GetKey(key)).ConfigureAwait(false))
+        {
             return false;
         }
 
@@ -1126,8 +1235,7 @@ public sealed class RedisCache(
         cancellationToken.ThrowIfCancellationRequested();
 
         const int chunkSize = 2500;
-        var prefixedPrefix = _GetKey(prefix);
-        var pattern = $"{prefixedPrefix}*";
+        var pattern = _PrefixPattern(prefix);
         var stripLength = _keyPrefix.Length;
         var keys = new List<string>();
 
@@ -1202,7 +1310,7 @@ public sealed class RedisCache(
         if (usePrefix)
         {
             const int chunkSize = 2500;
-            var pattern = $"{_GetKey(prefix)}*";
+            var pattern = _PrefixPattern(prefix);
 
             foreach (var endpoint in endpoints)
             {
@@ -1562,6 +1670,12 @@ public sealed class RedisCache(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
+        // The script compares only the value segment; an entry every read reports absent must not match.
+        if (!await _KeyIsLogicallyPresentAsync(_GetKey(key)).ConfigureAwait(false))
+        {
+            return false;
+        }
+
         var expectedValue = _ToRedisValue(expected);
         var redisResult = await scriptsLoader
             .EvaluateAsync(
@@ -1673,7 +1787,7 @@ public sealed class RedisCache(
         Argument.IsNotNullOrEmpty(prefix);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var removed = await _RemoveByPatternAsync($"{_GetKey(prefix)}*", cancellationToken).ConfigureAwait(false);
+        var removed = await _RemoveByPatternAsync(_PrefixPattern(prefix), cancellationToken).ConfigureAwait(false);
 
         CachingMetrics.RecordWrite(_cacheName, CachingMetrics.OperationRemoveByPrefix, CachingMetrics.TierL2, removed);
         _coordinator.EventsHub.OnRemoveByPrefix(prefix, (int)removed);
@@ -1919,6 +2033,34 @@ public sealed class RedisCache(
     #endregion
 
     #region Helpers
+
+    /// <summary>
+    /// The SCAN MATCH pattern for every key under <paramref name="prefix" />. The prefix is matched literally: a
+    /// tenant id or caller prefix holding <c>* ? [ ] \</c> would otherwise widen the match to other keys.
+    /// </summary>
+    private string _PrefixPattern(string prefix)
+    {
+        var literal = _GetKey(prefix);
+
+        if (literal.AsSpan().IndexOfAny(_GlobSpecialCharacters) < 0)
+        {
+            return literal + "*";
+        }
+
+        var builder = new StringBuilder(literal.Length + 8);
+
+        foreach (var c in literal)
+        {
+            if (_GlobSpecialCharacters.Contains(c))
+            {
+                builder.Append('\\');
+            }
+
+            builder.Append(c);
+        }
+
+        return builder.Append('*').ToString();
+    }
 
     private string _GetKey(string key)
     {
@@ -3429,32 +3571,47 @@ public sealed class RedisCache(
 
         try
         {
-            var frame = RedisCacheEntryFrame.DecodeMemory(lease.Memory);
-
-            if (!frame.IsFramed)
-            {
-                return true;
-            }
-
-            var now = timeProvider.GetUtcNow().UtcDateTime;
-
-            if (
-                _IsExpired(frame.PhysicalExpiresAt, now)
-                || (!frame.SlidingExpiration.HasValue && _IsExpired(frame.LogicalExpiresAt, now))
-            )
-            {
-                return false;
-            }
-
-            // Family-2: a tag/clear-invalidated entry is logically absent for direct reads (Exists), even though
-            // its physical reserve survives for fail-safe serving.
-            var newestMarker = await _ResolveNewestMarkerAsync(frame.Tags).ConfigureAwait(false);
-            return !CacheTagInvalidation.IsInvalidated(frame.CreatedAt, newestMarker);
+            return await _IsLogicallyPresentAsync(lease.Memory).ConfigureAwait(false);
         }
         finally
         {
             lease.Dispose();
         }
+    }
+
+    private async ValueTask<bool> _IsLogicallyPresentAsync(ReadOnlyMemory<byte> raw)
+    {
+        var frame = RedisCacheEntryFrame.DecodeMemory(raw);
+
+        if (!frame.IsFramed)
+        {
+            return true;
+        }
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+
+        if (
+            _IsExpired(frame.PhysicalExpiresAt, now)
+            || (!frame.SlidingExpiration.HasValue && _IsExpired(frame.LogicalExpiresAt, now))
+        )
+        {
+            return false;
+        }
+
+        // Family-2: a tag/clear-invalidated entry is logically absent for direct reads (Exists) and for the
+        // conditional writes, even though its physical reserve survives for fail-safe serving.
+        var newestMarker = await _ResolveNewestMarkerAsync(frame.Tags).ConfigureAwait(false);
+        return !CacheTagInvalidation.IsInvalidated(frame.CreatedAt, newestMarker);
+    }
+
+    /// <summary>
+    /// Whether the key holds an entry every read would serve. A conditional write reads this from the primary first,
+    /// because the key can still be physically present after a logical clear, flush, tag removal, or logical expiry.
+    /// </summary>
+    private async ValueTask<bool> _KeyIsLogicallyPresentAsync(RedisKey redisKey)
+    {
+        var lease = await _database.StringGetLeaseAsync(redisKey).ConfigureAwait(false);
+        return await _LeaseIsLogicallyPresentAsync(lease).ConfigureAwait(false);
     }
 
     private ValueTask<long?> _TryRearmSlidingEntryAsync(
