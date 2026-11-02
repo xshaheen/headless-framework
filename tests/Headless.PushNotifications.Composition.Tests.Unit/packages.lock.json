@@ -606,6 +606,13 @@
           "OpenTelemetry.Api": "[1.20.1, )"
         }
       },
+      "headless.http.resilience": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Microsoft.Extensions.Http.Resilience": "[10.11.0, )"
+        }
+      },
       "headless.primitives": {
         "type": "Project",
         "dependencies": {
@@ -631,6 +638,7 @@
         "type": "Project",
         "dependencies": {
           "Headless.Hosting": "[1.0.0, )",
+          "Headless.Http.Resilience": "[1.0.0, )",
           "Headless.PushNotifications": "[1.0.0, )",
           "Microsoft.Extensions.Http.Resilience": "[10.11.0, )",
           "Polly.Core": "[8.8.0, )"

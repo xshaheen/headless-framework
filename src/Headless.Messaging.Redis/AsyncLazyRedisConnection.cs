@@ -97,7 +97,7 @@ internal sealed class AsyncLazyRedisConnection(
 }
 
 /// <summary>
-/// Wraps an established <c>IConnectionMultiplexer</c> with a capacity counter and owns its lifetime.
+/// Wraps an established <c>IConnectionMultiplexer</c> and owns its lifetime.
 /// </summary>
 internal sealed class RedisConnection(IConnectionMultiplexer connection) : IDisposable
 {
@@ -105,12 +105,6 @@ internal sealed class RedisConnection(IConnectionMultiplexer connection) : IDisp
 
     /// <summary>The underlying StackExchange.Redis connection multiplexer.</summary>
     public IConnectionMultiplexer Connection { get; } = Argument.IsNotNull(connection);
-
-    /// <summary>
-    /// The number of outstanding (in-flight) commands on this connection, used by the pool
-    /// to select the least-loaded connection.
-    /// </summary>
-    public long ConnectionCapacity => Connection.GetCounters().TotalOutstanding;
 
     /// <inheritdoc/>
     public void Dispose()

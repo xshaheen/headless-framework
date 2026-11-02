@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Caching;
 using Headless.Checks;
 using Headless.Context;
 using Headless.Messaging;
@@ -724,11 +725,20 @@ public sealed class SettingManager(
             providers = providers.TakeWhile(c => string.Equals(c.Name, providerName, StringComparison.Ordinal));
         }
 
-        foreach (var provider in providers)
+        var chain = providers.ToArray();
+        var cached = unitOfWork is null
+            ? await _ReadCachedChainAsync(chain, settingName, providerName, providerKey, cancellationToken)
+                .ConfigureAwait(false)
+            : null;
+
+        for (var i = 0; i < chain.Length; i++)
         {
+            var provider = chain[i];
             var pk = string.Equals(provider.Name, providerName, StringComparison.Ordinal) ? providerKey : null;
-            var value = unitOfWork is null
-                ? await provider.GetOrDefaultAsync(definition, pk, cancellationToken).ConfigureAwait(false)
+            var value =
+                cached?[i].HasValue == true ? cached[i].Value?.Value
+                : unitOfWork is null
+                    ? await provider.GetOrDefaultAsync(definition, pk, cancellationToken).ConfigureAwait(false)
                 : await provider
                     .GetOrDefaultEnlistedAsync(unitOfWork, definition, pk, cancellationToken)
                     .ConfigureAwait(false);
@@ -749,6 +759,72 @@ public sealed class SettingManager(
         }
 
         return new SettingValue(settingName, Value: null, Provider: null);
+    }
+
+    /// <summary>
+    /// Reads the cached entry of every store-backed provider in <paramref name="chain"/> in one cache call, indexed
+    /// like the chain; <see langword="null"/> when fewer than two providers read the default store's cache.
+    /// </summary>
+    /// <remarks>
+    /// With a distributed cache each provider read is a network round trip, and the walk would otherwise make one per
+    /// provider (user, then tenant, then global) for a setting set at none of them. A hit is what the provider's own
+    /// read returns, so the walk keeps its order and results and calls a provider only for a miss.
+    /// </remarks>
+    private static async Task<CacheValue<SettingValueCacheItem>[]?> _ReadCachedChainAsync(
+        ISettingValueReadProvider[] chain,
+        string settingName,
+        string? providerName,
+        string? providerKey,
+        CancellationToken cancellationToken
+    )
+    {
+        SettingValueStore? sharedStore = null;
+        string?[]? cacheKeys = null;
+        var count = 0;
+
+        for (var i = 0; i < chain.Length; i++)
+        {
+            if (chain[i] is not StoreSettingValueProvider { Store: SettingValueStore store } storeProvider)
+            {
+                continue;
+            }
+
+            if (sharedStore is not null && !ReferenceEquals(sharedStore, store))
+            {
+                return null;
+            }
+
+            sharedStore = store;
+            var pk = string.Equals(storeProvider.Name, providerName, StringComparison.Ordinal) ? providerKey : null;
+            cacheKeys ??= new string?[chain.Length];
+            cacheKeys[i] = SettingValueCacheItem.CalculateCacheKey(
+                settingName,
+                storeProvider.Name,
+                storeProvider.ResolveProviderKey(pk)
+            );
+            count++;
+        }
+
+        if (sharedStore is null || cacheKeys is null || count < 2)
+        {
+            return null;
+        }
+
+        var entries = await sharedStore
+            .GetCachedAsync(cacheKeys.OfType<string>(), cancellationToken)
+            .ConfigureAwait(false);
+
+        var result = new CacheValue<SettingValueCacheItem>[chain.Length];
+
+        for (var i = 0; i < cacheKeys.Length; i++)
+        {
+            if (cacheKeys[i] is { } cacheKey && entries.TryGetValue(cacheKey, out var entry))
+            {
+                result[i] = entry;
+            }
+        }
+
+        return result;
     }
 }
 

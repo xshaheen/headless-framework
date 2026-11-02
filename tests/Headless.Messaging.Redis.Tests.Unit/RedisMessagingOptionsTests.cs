@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Net;
 using System.Reflection;
 using Headless.Messaging.Redis;
 using Headless.Testing.Tests;
@@ -37,13 +38,30 @@ public sealed class RedisMessagingOptionsTests : TestBase
     }
 
     [Fact]
-    public void should_have_default_connection_pool_size_of_ten()
+    public void should_default_to_one_connection_and_a_short_every_instance_stream_age()
     {
         // when
         var options = new RedisMessagingOptions();
 
         // then
-        options.ConnectionPoolSize.Should().Be(10);
+        options.ConnectionPoolSize.Should().Be(1);
+        options.ConnectionMultiplexer.Should().BeNull();
+        options.EveryInstanceStreamMaxAge.Should().Be(TimeSpan.FromMinutes(5));
+    }
+
+    [Fact]
+    public void should_return_endpoints_of_a_shared_multiplexer()
+    {
+        // given
+        var multiplexer = Substitute.For<IConnectionMultiplexer>();
+        multiplexer.GetEndPoints(Arg.Any<bool>()).Returns([new DnsEndPoint("shared.example.com", 6379)]);
+        var options = new RedisMessagingOptions { ConnectionMultiplexer = multiplexer };
+
+        // when
+        var endpoint = _GetEndpoint(options);
+
+        // then
+        endpoint.Should().Be("shared.example.com:6379");
     }
 
     [Fact]
@@ -238,6 +256,35 @@ public sealed class RedisMessagingOptionsTests : TestBase
         var result = new RedisMessagingOptionsValidator().Validate(options);
 
         result.IsValid.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(119)]
+    public void should_fail_when_every_instance_stream_max_age_is_below_two_minutes(int seconds)
+    {
+        var options = new RedisMessagingOptions { EveryInstanceStreamMaxAge = TimeSpan.FromSeconds(seconds) };
+
+        var result = new RedisMessagingOptionsValidator().Validate(options);
+
+        result
+            .Errors.Should()
+            .ContainSingle(e => e.PropertyName == nameof(RedisMessagingOptions.EveryInstanceStreamMaxAge));
+    }
+
+    [Fact]
+    public void should_fail_when_both_configuration_and_a_shared_multiplexer_are_set()
+    {
+        var options = new RedisMessagingOptions
+        {
+            Configuration = ConfigurationOptions.Parse("localhost:6379"),
+            ConnectionMultiplexer = Substitute.For<IConnectionMultiplexer>(),
+        };
+
+        var result = new RedisMessagingOptionsValidator().Validate(options);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle(e => e.ErrorMessage.Contains("not both", StringComparison.Ordinal));
     }
 
     private static string _GetEndpoint(RedisMessagingOptions options)

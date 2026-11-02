@@ -1,12 +1,16 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless;
+using Headless.Caching;
 using Headless.Context;
 using Headless.Messaging;
 using Headless.MultiTenancy;
+using Headless.Primitives;
 using Headless.Settings;
 using Headless.Settings.Resources;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NSubstitute.ExceptionExtensions;
 using Tests.Fakes;
 
@@ -1225,6 +1229,124 @@ public sealed class SettingManagerTests : TestBase
         // then
         await _valueStore.Received(1).DeleteAsync("Setting1", providerName, providerKey, AbortToken);
         await _valueStore.Received(1).DeleteAsync("Setting2", providerName, providerKey, AbortToken);
+    }
+
+    #endregion
+
+    #region Store provider chain
+
+    [Fact]
+    public async Task should_read_every_store_provider_in_one_cache_call_when_all_are_cached()
+    {
+        // given
+        const string settingName = "TestSetting";
+        var (sut, cache) = _CreateStoreChain(out var userKey, out var tenantKey, out var globalKey);
+
+        cache
+            .GetAllAsync(Arg.Any<IEnumerable<string>>(), AbortToken)
+            .Returns(
+                new Dictionary<string, CacheValue<SettingValueCacheItem>>(StringComparer.Ordinal)
+                {
+                    [userKey] = new(new SettingValueCacheItem(null), hasValue: true),
+                    [tenantKey] = new(new SettingValueCacheItem(null), hasValue: true),
+                    [globalKey] = new(new SettingValueCacheItem("global-value"), hasValue: true),
+                }
+            );
+
+        // when
+        var result = await sut.GetAsync(settingName, cancellationToken: AbortToken);
+
+        // then
+        result.Value.Should().Be("global-value");
+        result.Provider.Should().Be(new SettingValueProvider(GlobalSettingValueProvider.ProviderName, null));
+        await cache
+            .Received(1)
+            .GetAllAsync(
+                Arg.Is<IEnumerable<string>>(keys => keys.SequenceEqual(new[] { userKey, tenantKey, globalKey })),
+                AbortToken
+            );
+        await cache.DidNotReceiveWithAnyArgs().GetAsync(default!, AbortToken);
+    }
+
+    [Fact]
+    public async Task should_ask_the_provider_when_its_cached_entry_is_missing()
+    {
+        // given
+        const string settingName = "TestSetting";
+        var (sut, cache) = _CreateStoreChain(out var userKey, out var tenantKey, out var globalKey);
+
+        cache
+            .GetAllAsync(Arg.Any<IEnumerable<string>>(), AbortToken)
+            .Returns(
+                new Dictionary<string, CacheValue<SettingValueCacheItem>>(StringComparer.Ordinal)
+                {
+                    [userKey] = CacheValue<SettingValueCacheItem>.NoValue,
+                    [tenantKey] = new(new SettingValueCacheItem(null), hasValue: true),
+                    [globalKey] = new(new SettingValueCacheItem("global-value"), hasValue: true),
+                }
+            );
+        cache
+            .GetAsync(userKey, AbortToken)
+            .Returns(new CacheValue<SettingValueCacheItem>(new SettingValueCacheItem("user-value"), hasValue: true));
+
+        // when
+        var result = await sut.GetAsync(settingName, cancellationToken: AbortToken);
+
+        // then
+        result.Value.Should().Be("user-value");
+        result.Provider.Should().Be(new SettingValueProvider(UserSettingValueProvider.ProviderName, null));
+        await cache.Received(1).GetAsync(userKey, AbortToken);
+    }
+
+    private (SettingManager Sut, ICache<SettingValueCacheItem> Cache) _CreateStoreChain(
+        out string userKey,
+        out string tenantKey,
+        out string globalKey
+    )
+    {
+        const string settingName = "TestSetting";
+        var cache = Substitute.For<ICache<SettingValueCacheItem>>();
+        var store = new SettingValueStore(
+            Substitute.For<ISettingValueRecordRepository>(),
+            _definitionManager,
+            Substitute.For<IGuidGenerator>(),
+            cache,
+            Options.Create(new SettingManagementOptions()),
+            NullLogger<SettingValueStore>.Instance
+        );
+
+        var user = Substitute.For<ICurrentUser>();
+        user.UserId.Returns(new UserId("user-1"));
+        var tenant = Substitute.For<ICurrentTenant>();
+        tenant.Id.Returns("tenant-1");
+
+        _definitionManager.FindAsync(settingName, AbortToken).Returns(new SettingDefinition(settingName));
+        _valueProviderManager.Providers.Returns([
+            new UserSettingValueProvider(store, user),
+            new TenantSettingValueProvider(store, tenant),
+            new GlobalSettingValueProvider(store),
+        ]);
+
+        userKey = SettingValueCacheItem.CalculateCacheKey(settingName, UserSettingValueProvider.ProviderName, "user-1");
+        tenantKey = SettingValueCacheItem.CalculateCacheKey(
+            settingName,
+            TenantSettingValueProvider.ProviderName,
+            "tenant-1"
+        );
+        globalKey = SettingValueCacheItem.CalculateCacheKey(settingName, GlobalSettingValueProvider.ProviderName, null);
+
+        var sut = new SettingManager(
+            _definitionManager,
+            store,
+            _valueProviderManager,
+            _encryptionService,
+            new DefaultSettingErrorsDescriptor(),
+            _hostIdentity,
+            tenant,
+            _bus
+        );
+
+        return (sut, cache);
     }
 
     #endregion
