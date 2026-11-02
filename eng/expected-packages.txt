@@ -63,6 +63,12 @@ Headless.Emails.Aws
 Headless.Emails.Azure
 Headless.Emails.Dev
 Headless.Emails.Mailkit
+Headless.Encryption
+Headless.Encryption.Abstractions
+Headless.Encryption.AzureKeyVault
+Headless.Encryption.EntityFramework
+Headless.Encryption.PostgreSql
+Headless.Encryption.SqlServer
 Headless.EntityFramework
 Headless.EntityFramework.Messaging
 Headless.EntityFramework.Primitives
@@ -82,6 +88,9 @@ Headless.Fencing.Sqlite
 Headless.FluentValidation
 Headless.Generator.Primitives
 Headless.Generator.Primitives.Abstractions
+Headless.Hashing
+Headless.Hashing.Abstractions
+Headless.Hashing.Argon2
 Headless.Hosting
 Headless.Http.Resilience
 Headless.Idempotency
@@ -157,9 +166,9 @@ Headless.PushNotifications.Firebase
 Headless.RateLimiting
 Headless.Redis
 Headless.Reliability.Abstractions
-Headless.Security
-Headless.Security.Abstractions
-Headless.Security.Argon2
+Headless.Search
+Headless.Search.PostgreSql
+Headless.Search.PostgreSql.EntityFramework
 Headless.Sequences
 Headless.Sequences.Abstractions
 Headless.Sequences.PostgreSql

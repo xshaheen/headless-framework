@@ -18,7 +18,7 @@
     <ProjectReference Include="..\..\src\Headless.DistributedLocks.Redis\Headless.DistributedLocks.Redis.csproj" />
     <ProjectReference Include="..\..\src\Headless.EntityFramework\Headless.EntityFramework.csproj" />
     <ProjectReference Include="..\..\src\Headless.Settings.Storage.EntityFramework\Headless.Settings.Storage.EntityFramework.csproj" />
-    <ProjectReference Include="..\..\src\Headless.Security\Headless.Security.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Encryption.PostgreSql\Headless.Encryption.PostgreSql.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing.Testcontainers\Headless.Testing.Testcontainers.csproj" />
   </ItemGroup>

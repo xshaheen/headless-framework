@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Hosting;
-using Headless.Security;
 using Headless.Settings;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -11,18 +10,6 @@ namespace Tests.Setup;
 
 public sealed class SettingsStorageOptionsTests
 {
-    // AddHeadlessSettings auto-registers the management core, which requires IStringEncryptionService.
-    private static ServiceCollection _CreateServicesWithEncryption()
-    {
-        var services = new ServiceCollection();
-        services.AddStringEncryptionService(options =>
-        {
-            options.DefaultPassPhrase = "TestPassPhrase123456";
-            options.DefaultSalt = [.. "TestSalt"u8];
-        });
-        return services;
-    }
-
     [Theory]
     [InlineData("", "SettingValues", "SettingDefinitions")]
     [InlineData("settings", "", "SettingDefinitions")]
@@ -37,7 +24,7 @@ public sealed class SettingsStorageOptionsTests
     )
     {
         // given
-        var services = _CreateServicesWithEncryption();
+        var services = new ServiceCollection();
         services.AddHeadlessSettings(setup =>
         {
             setup.ConfigureStorage(options =>
@@ -62,7 +49,7 @@ public sealed class SettingsStorageOptionsTests
     public void should_accept_storage_options_when_all_fields_are_non_blank()
     {
         // given
-        var services = _CreateServicesWithEncryption();
+        var services = new ServiceCollection();
         services.AddHeadlessSettings(setup =>
         {
             setup.ConfigureStorage(options =>
@@ -90,7 +77,7 @@ public sealed class SettingsStorageOptionsTests
     public void should_accept_storage_options_when_left_at_defaults()
     {
         // given
-        var services = _CreateServicesWithEncryption();
+        var services = new ServiceCollection();
         services.AddHeadlessSettings(setup => setup.UseEntityFramework<OptionsTestDbContext>());
         using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<SettingsStorageOptions>>();
@@ -184,7 +171,7 @@ public sealed class SettingsStorageOptionsTests
 
     private static ServiceCollection _ServicesWithTableNames(string values, string definitions)
     {
-        var services = _CreateServicesWithEncryption();
+        var services = new ServiceCollection();
         services.AddHeadlessSettings(setup =>
         {
             setup.ConfigureStorage(options =>
@@ -202,7 +189,7 @@ public sealed class SettingsStorageOptionsTests
     public void should_reject_multiple_storage_provider_registrations()
     {
         // given
-        var services = _CreateServicesWithEncryption();
+        var services = new ServiceCollection();
         services.AddHeadlessSettings(setup => setup.UseEntityFramework<OptionsTestDbContext>());
 
         // when

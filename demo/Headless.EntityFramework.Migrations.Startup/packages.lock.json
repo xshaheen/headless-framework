@@ -378,7 +378,6 @@
           "Headless.Context": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.OpenApi": "[1.0.0, )",
-          "Headless.Security": "[1.0.0, )",
           "Microsoft.AspNetCore.OpenApi": "[10.0.13, )",
           "Microsoft.Extensions.Http.Resilience": "[10.11.0, )",
           "Microsoft.Extensions.ServiceDiscovery": "[10.11.0, )",
@@ -479,6 +478,12 @@
         "dependencies": {
           "Headless.Domain": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )"
+        }
+      },
+      "headless.encryption.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )"
         }
       },
       "headless.entityframework": {
@@ -707,21 +712,6 @@
           "Headless.Checks": "[1.0.0, )"
         }
       },
-      "headless.security": {
-        "type": "Project",
-        "dependencies": {
-          "FluentValidation": "[12.2.0, )",
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.Hosting": "[1.0.0, )",
-          "Headless.Security.Abstractions": "[1.0.0, )"
-        }
-      },
-      "headless.security.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )"
-        }
-      },
       "headless.serializer.abstractions": {
         "type": "Project"
       },
@@ -740,11 +730,11 @@
           "Headless.Context.Abstractions": "[1.0.0, )",
           "Headless.DistributedLocks.Abstractions": "[1.0.0, )",
           "Headless.Domain": "[1.0.0, )",
+          "Headless.Encryption.Abstractions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Messaging.Abstractions": "[1.0.0, )",
           "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
           "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
-          "Headless.Security.Abstractions": "[1.0.0, )",
           "Headless.Settings.Abstractions": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
           "Headless.UnitOfWork": "[1.0.0, )"

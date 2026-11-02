@@ -2,7 +2,6 @@
 
 using Headless.Caching;
 using Headless.Hosting;
-using Headless.Security;
 using Headless.Settings;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
@@ -33,8 +32,6 @@ public sealed class EfSettingValueRecordRepositoryUnitOfWorkTests : TestBase
 
         var services = new ServiceCollection();
         services.AddLogging();
-        // AddHeadlessSettings requires it at registration; these tests never encrypt.
-        services.AddSingleton(Substitute.For<IStringEncryptionService>());
         services.AddDbContextFactory<SettingsDbContext>(options => options.UseSqlite(connectionString));
         services.AddHeadlessSettings(setup => setup.UseEntityFramework<SettingsDbContext>());
         services.AddSingleton(_cache);

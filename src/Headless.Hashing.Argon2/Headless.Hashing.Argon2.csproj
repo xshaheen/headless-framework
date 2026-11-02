@@ -1,0 +1,17 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>Argon2id secret hashing for Headless.Hashing, backed by libsodium through NSec.</Description>
+    <PackageTags>headless;hashing;argon2;argon2id;password-hashing;dotnet</PackageTags>
+    <RootNamespace>Headless.Hashing</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Hashing.Argon2.Tests.Unit" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Hashing\Headless.Hashing.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="NSec.Cryptography" />
+  </ItemGroup>
+</Project>

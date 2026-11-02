@@ -55,6 +55,7 @@ Package READMEs are discovery pages. They explain why a package exists and link 
 | React when a setting, feature, or permission grant changes instead of polling | [Settings](settings.md), [Features](features.md), [Permissions](permissions.md) — each has a "Reacting to a change" section |
 | Record entity changes or explicit audit events | [Audit Log](audit-log.md) |
 | Issue per-tenant consecutive numbers (receipts, invoices, case numbers), gap-free when audited | [Sequences](sequences.md) |
+| Search Arabic names and text so hamza, tashkeel, teh marbuta, alef maksura, and Persian or Urdu spellings match, through a PostgreSQL trigram index | [Search](search.md) |
 | Grant a durable, cross-process lease that fences a stale or zombie attempt's writes; hand work to an external executor | [Fencing](fencing.md) |
 | Admit a keyed operation once across retries, processes, or executors, and replay its stored result; replay HTTP responses for `Idempotency-Key` retries | [Idempotency](idempotency.md) |
 
@@ -89,7 +90,8 @@ Package READMEs are discovery pages. They explain why a package exists and link 
 | --- | --- |
 | Use guards, DDD entities, or local domain events | [Core](core.md) |
 | Use current-user, locale, time-zone, correlation, cancellation, or host-identity services | [Context](context.md) |
-| Encrypt strings, build a blind index, or hash and verify secrets (PINs, API-key secrets, recovery codes, passwords outside Identity) | [Security](security.md) |
+| Encrypt personal data per field under per-tenant keys, find rows by an encrypted value through a blind index, rotate data or key-encryption keys, or crypto-shred a tenant | [Encryption](encryption.md) |
+| Hash and verify secrets (PINs, API-key secrets, recovery codes, passwords outside Identity) | [Hashing](hashing.md) |
 | Find a primitive, result type, collection helper, concurrency helper, IO helper, or URL builder | [Extensions and Primitives](extensions.md) |
 | Serialize JSON or MessagePack behind `ISerializer` | [Serialization](serialization.md) |
 | Configure Serilog defaults | [Logging](logging.md) |

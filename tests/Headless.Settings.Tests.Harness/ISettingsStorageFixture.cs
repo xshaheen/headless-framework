@@ -3,7 +3,6 @@
 using System.Data.Common;
 using Headless.Caching;
 using Headless.Hosting;
-using Headless.Security;
 using Headless.Settings;
 using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
@@ -90,15 +89,6 @@ public static class SettingsStorageFixtureExtensions
     {
         var builder = Host.CreateApplicationBuilder();
         builder.Services.AddSingleton(TimeProvider.System);
-        // AddHeadlessSettings registers the management core, which requires IStringEncryptionService.
-        builder.Configuration.AddInMemoryCollection([
-            new KeyValuePair<string, string?>("Headless:StringEncryption:DefaultPassPhrase", "TestPassPhrase123456"),
-            new KeyValuePair<string, string?>("Headless:StringEncryption:InitVectorBytes", "VGVzdElWMDEyMzQ1Njc4OQ=="),
-            new KeyValuePair<string, string?>("Headless:StringEncryption:DefaultSalt", "VGVzdFNhbHQ="),
-        ]);
-        builder.Services.AddStringEncryptionService(
-            builder.Configuration.GetRequiredSection("Headless:StringEncryption")
-        );
         // The value store caches every read, and the host refuses to start without a registered cache.
         builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
         builder.Services.AddHeadlessSettings(setup =>

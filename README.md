@@ -14,7 +14,7 @@
 
 [اللغة: العربية](README.ar.md)
 
-204 packages &bull; One setup grammar &bull; Swap any provider in one line
+213 packages &bull; One setup grammar &bull; Swap any provider in one line
 
 [Why Headless](#why-headless) &bull; [60-second start](#60-second-start) &bull; [One grammar, every domain](#one-grammar-every-domain) &bull; [What is in the box](#what-is-in-the-box) &bull; [Package catalog](#package-catalog)
 
@@ -44,7 +44,7 @@ builder.Services.AddHeadlessCaching(setup => setup.UseRedis(...)); // production
 
 Every service, repository, and handler that injects `ICache` is untouched by that edit. The same holds for `IBlobStorage` across S3, Azure, Cloudflare R2, the file system, Redis, and SFTP; for `IEmailSender` across SES, Azure Communication Services, and SMTP; and for messaging across eight transports.
 
-**You install three packages, not 204.** The catalog is large because the provider matrix is large. A service that needs caching installs `Headless.Caching.Abstractions`, `Headless.Caching`, and one provider. Domain and application libraries reference the abstraction package alone. `Headless.Caching.Abstractions` pulls in two packages with no third-party dependencies: `Headless.Checks` and `Headless.Primitives`.
+**You install three packages, not 213.** The catalog is large because the provider matrix is large. A service that needs caching installs `Headless.Caching.Abstractions`, `Headless.Caching`, and one provider. Domain and application libraries reference the abstraction package alone. `Headless.Caching.Abstractions` pulls in two packages with no third-party dependencies: `Headless.Checks` and `Headless.Primitives`.
 
 **Tests do not need Docker to be fast.** Caching, distributed locks, and messaging ship in-memory providers; email, SMS, and push notifications ship dev providers that send nothing; blob storage runs against the local file system. Unit tests exercise the real contract with no containers. When you want the real backend, `Headless.Testing.Testcontainers` supplies the fixtures. The repository itself runs 122 unit-test projects and 63 integration-test projects on that split.
 
@@ -163,9 +163,11 @@ services.AddHeadless<Feature>(setup => setup.Use<Provider>(options => { ... }));
 | Distributed locks | `AddHeadlessDistributedLocks` | `UseInMemory`, `UseRedis`, `UsePostgreSql`, `UseSqlServer` |
 | Node membership | `AddHeadlessCoordination` | `UseRedis`, `UsePostgreSql`, `UseSqlServer` |
 | Sequences | `AddHeadlessSequences` | `UsePostgreSql`, `UseSqlServer` |
+| Arabic search | `AddHeadlessSearch` | `UsePostgreSql` |
 | Fencing (durable leases) | `AddHeadlessFencing` | `UsePostgreSql`, `UseSqlServer`, `UseInMemory` |
 | Idempotency | `AddHeadlessIdempotency` | `UsePostgreSql`, `UseSqlServer`, `UseInMemory`, `UseCache` |
 | Feature flags | `AddHeadlessFeatures` | `UseEntityFramework<TContext>`, `UsePostgreSql`, `UseSqlServer` |
+| Field encryption | `AddHeadlessEncryption` | Key store: `UsePostgreSql`, `UseSqlServer`. Key-encryption key: `UseLocalKey`, `UseAzureKeyVault` |
 | Dynamic settings | `AddHeadlessSettings` | `UseEntityFramework<TContext>`, `UsePostgreSql`, `UseSqlServer` |
 | Permissions | `AddHeadlessPermissions` | `UseEntityFramework<TContext>`, `UsePostgreSql`, `UseSqlServer` |
 | Audit log | `AddHeadlessAuditLog` | `UseEntityFramework<TContext>`, `UsePostgreSql`, `UseSqlServer` |
@@ -252,7 +254,7 @@ Provider packages are ordinary NuGet packages. To add a custom backend, implemen
 ## Package catalog
 
 <details>
-<summary><strong>All 204 packages, grouped by domain</strong> — expand to browse</summary>
+<summary><strong>All 213 packages, grouped by domain</strong> — expand to browse</summary>
 
 ### API & Web
 
@@ -280,9 +282,9 @@ Foundational building blocks shared across the framework — domain primitives, 
 | [Headless.Extensions](src/Headless.Extensions/README.md) | Core primitives and utilities |
 | [Headless.Context.Abstractions](src/Headless.Context.Abstractions/README.md) | Ambient-context contracts: current user, principal, locale, time zone, correlation, cancellation, host identity |
 | [Headless.Context](src/Headless.Context/README.md) | Ambient-context implementations and `AddHeadlessHostIdentity()` setup |
-| [Headless.Security.Abstractions](src/Headless.Security.Abstractions/README.md) | Security contracts and options |
-| [Headless.Security](src/Headless.Security/README.md) | String encryption, lookup hashing, and secret hashing (PBKDF2) services |
-| [Headless.Security.Argon2](src/Headless.Security.Argon2/README.md) | Argon2id secret hashing, the default `ISecretHasher` algorithm |
+| [Headless.Hashing.Abstractions](src/Headless.Hashing.Abstractions/README.md) | Secret-hashing contracts and options |
+| [Headless.Hashing](src/Headless.Hashing/README.md) | Secret hashing (PBKDF2) services |
+| [Headless.Hashing.Argon2](src/Headless.Hashing.Argon2/README.md) | Argon2id secret hashing, the default `ISecretHasher` algorithm |
 | [Headless.Checks](src/Headless.Checks/README.md) | Guard clauses and argument validation |
 | [Headless.Domain](src/Headless.Domain/README.md) | Domain entities and events |
 | [Headless.Domain.EventDispatcher](src/Headless.Domain.EventDispatcher/README.md) | DI-based `IDomainEventDispatcher` that runs in-process domain event handlers |
@@ -358,6 +360,19 @@ Transactional and marketing email through one interface.
 | [Headless.Emails.Azure](src/Headless.Emails.Azure/README.md) | Azure Communication Services email provider |
 | [Headless.Emails.Dev](src/Headless.Emails.Dev/README.md) | Development email provider |
 | [Headless.Emails.Mailkit](src/Headless.Emails.Mailkit/README.md) | MailKit SMTP provider |
+
+### Encryption
+
+Field-level envelope encryption for personal data: per-tenant data keys wrapped by a key-encryption key, values bound to their tenant and column, key rotation, and crypto-shredding.
+
+| Package | Description |
+|---------|-------------|
+| [Headless.Encryption.Abstractions](src/Headless.Encryption.Abstractions/README.md) | `IFieldEncryptor`, the `EncryptedValue` frame, `IDataKeyManager`, and the provider interfaces |
+| [Headless.Encryption](src/Headless.Encryption/README.md) | Registration, AES-256-GCM under HKDF subkeys, the key cache, and the local key-encryption key |
+| [Headless.Encryption.AzureKeyVault](src/Headless.Encryption.AzureKeyVault/README.md) | Azure Key Vault key-encryption key with RSA-OAEP-256 |
+| [Headless.Encryption.EntityFramework](src/Headless.Encryption.EntityFramework/README.md) | Maps `EncryptedValue` properties to binary columns in EF Core |
+| [Headless.Encryption.PostgreSql](src/Headless.Encryption.PostgreSql/README.md) | PostgreSQL store for the wrapped data keys |
+| [Headless.Encryption.SqlServer](src/Headless.Encryption.SqlServer/README.md) | SQL Server store for the wrapped data keys |
 
 ### Feature Management
 
@@ -672,6 +687,16 @@ Connection factories for raw SQL access when you need to drop below the ORM.
 | [Headless.Sql.PostgreSql](src/Headless.Sql.PostgreSql/README.md) | PostgreSQL connection factory and raw-ADO `NpgsqlConnection` unit-of-work helpers |
 | [Headless.Sql.SqlServer](src/Headless.Sql.SqlServer/README.md) | SQL Server connection factory and raw-ADO `SqlConnection` unit-of-work helpers |
 | [Headless.Sql.Sqlite](src/Headless.Sql.Sqlite/README.md) | SQLite connection factory and raw-ADO `SqliteConnection` unit-of-work helpers |
+
+### Search
+
+Arabic search keys that ignore hamza seats, tashkeel, tatweel, teh marbuta and alef maksura, and Persian or Urdu letter variants, built by one versioned rule table in both the database and C#.
+
+| Package | Description |
+|---------|-------------|
+| [Headless.Search](src/Headless.Search/README.md) | The versioned Arabic search rules, `ArabicSearchNormalizer`, and `AddHeadlessSearch` |
+| [Headless.Search.PostgreSql](src/Headless.Search.PostgreSql/README.md) | The immutable `ar_norm_v1` function as a schema-runner step, with no EF Core dependency |
+| [Headless.Search.PostgreSql.EntityFramework](src/Headless.Search.PostgreSql.EntityFramework/README.md) | EF Core helpers for stored, trigram-indexed search keys and the query function |
 
 ### Testing
 
