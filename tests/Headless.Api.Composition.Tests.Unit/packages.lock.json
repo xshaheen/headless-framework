@@ -1501,6 +1501,35 @@
           "Headless.Primitives": "[1.0.0, )"
         }
       },
+      "headless.captcha": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Captcha.Abstractions": "[1.0.0, )",
+          "Headless.Checks": "[1.0.0, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.13, )"
+        }
+      },
+      "headless.captcha.abstractions": {
+        "type": "Project"
+      },
+      "headless.captcha.recaptcha": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Captcha": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
+          "Headless.Http.Resilience": "[1.0.0, )",
+          "Headless.Urls": "[1.0.0, )"
+        }
+      },
+      "headless.captcha.turnstile": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Captcha": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
+          "Headless.Http.Resilience": "[1.0.0, )",
+          "Headless.Urls": "[1.0.0, )"
+        }
+      },
       "headless.checks": {
         "type": "Project"
       },
@@ -1619,6 +1648,41 @@
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Headless.Generator.Primitives.Abstractions": "[1.0.0, )"
+        }
+      },
+      "headless.pushnotifications": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.PushNotifications.Abstractions": "[1.0.0, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.13, )"
+        }
+      },
+      "headless.pushnotifications.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )"
+        }
+      },
+      "headless.pushnotifications.apns": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Hosting": "[1.0.0, )",
+          "Headless.Http.Resilience": "[1.0.0, )",
+          "Headless.PushNotifications": "[1.0.0, )",
+          "Microsoft.Extensions.Http.Resilience": "[10.11.0, )",
+          "Polly.Core": "[8.8.0, )"
+        }
+      },
+      "headless.pushnotifications.tests.harness": {
+        "type": "Project",
+        "dependencies": {
+          "AwesomeAssertions": "[9.6.0, )",
+          "AwesomeAssertions.Json": "[9.0.0, )",
+          "Bogus": "[35.6.5, )",
+          "Headless.PushNotifications.Abstractions": "[1.0.0, )",
+          "Headless.Testing": "[1.0.0, )",
+          "NSubstitute": "[6.2.0, )"
         }
       },
       "headless.serializer.abstractions": {
