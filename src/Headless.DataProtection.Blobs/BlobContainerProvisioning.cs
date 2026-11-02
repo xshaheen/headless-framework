@@ -3,7 +3,7 @@
 namespace Headless.DataProtection;
 
 /// <summary>
-/// How the <c>DataProtection</c> key container is expected to come into existence when persisting data-protection
+/// How the data-protection key container is expected to come into existence when persisting data-protection
 /// keys to blob storage. A dedicated enum (rather than a <see langword="bool"/> flag) so the acknowledgment can never
 /// collide with the <c>object serviceKey</c> overload of <c>PersistKeysToBlobStorage</c> during overload resolution.
 /// </summary>

@@ -29,7 +29,13 @@ public sealed class DataProtectionKeyRingHealthCheckTests : TestBase
         // then: healthy via the definitive write probe — the sentinel was uploaded AND deleted, and the
         // existence API was never consulted.
         result.Status.Should().Be(HealthStatus.Healthy);
-        result.Description.Should().Be(DataProtectionKeyRingHealthCheck.WriteProbeHealthyDescription);
+        result
+            .Description.Should()
+            .Be(
+                DataProtectionKeyRingHealthCheck.WriteProbeHealthyDescription(
+                    BlobStorageDataProtectionOptions.DefaultContainerName
+                )
+            );
         await _AssertSentinelUploadedAndDeletedAsync(storage);
         await manager.DidNotReceive().ContainerExistsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
@@ -41,7 +47,7 @@ public sealed class DataProtectionKeyRingHealthCheckTests : TestBase
         var storage = Substitute.For<IBlobStorage>();
         var manager = Substitute.For<IBlobContainerManager>();
         manager
-            .ContainerExistsAsync(BlobStorageDataProtectionXmlRepository.ContainerName, Arg.Any<CancellationToken>())
+            .ContainerExistsAsync(BlobStorageDataProtectionOptions.DefaultContainerName, Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult(true));
         var (check, context) = _CreateCheck(storage, manager, KeyRingProbeStyle.ContainerExistence);
 
@@ -51,7 +57,13 @@ public sealed class DataProtectionKeyRingHealthCheckTests : TestBase
         // then: healthy via the existence probe — the description names which probe ran, and the cheap
         // manager path never fell through to the sentinel write probe.
         result.Status.Should().Be(HealthStatus.Healthy);
-        result.Description.Should().Be(DataProtectionKeyRingHealthCheck.ExistenceProbeHealthyDescription);
+        result
+            .Description.Should()
+            .Be(
+                DataProtectionKeyRingHealthCheck.ExistenceProbeHealthyDescription(
+                    BlobStorageDataProtectionOptions.DefaultContainerName
+                )
+            );
         storage.ReceivedCalls().Should().BeEmpty("the existence probe must not touch the storage");
     }
 
@@ -72,7 +84,7 @@ public sealed class DataProtectionKeyRingHealthCheckTests : TestBase
             .Returns(_ => throw new NotSupportedException("Simulated lost write access"));
         var manager = Substitute.For<IBlobContainerManager>();
         manager
-            .ContainerExistsAsync(BlobStorageDataProtectionXmlRepository.ContainerName, Arg.Any<CancellationToken>())
+            .ContainerExistsAsync(BlobStorageDataProtectionOptions.DefaultContainerName, Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult(true));
         var (check, context) = _CreateCheck(storage, manager, KeyRingProbeStyle.ContainerExistence);
 
@@ -81,7 +93,13 @@ public sealed class DataProtectionKeyRingHealthCheckTests : TestBase
 
         // then
         result.Status.Should().Be(HealthStatus.Healthy);
-        result.Description.Should().Be(DataProtectionKeyRingHealthCheck.ExistenceProbeHealthyDescription);
+        result
+            .Description.Should()
+            .Be(
+                DataProtectionKeyRingHealthCheck.ExistenceProbeHealthyDescription(
+                    BlobStorageDataProtectionOptions.DefaultContainerName
+                )
+            );
     }
 
     [Fact]
@@ -92,7 +110,7 @@ public sealed class DataProtectionKeyRingHealthCheckTests : TestBase
         var storage = Substitute.For<IBlobStorage>();
         var manager = Substitute.For<IBlobContainerManager>();
         manager
-            .ContainerExistsAsync(BlobStorageDataProtectionXmlRepository.ContainerName, Arg.Any<CancellationToken>())
+            .ContainerExistsAsync(BlobStorageDataProtectionOptions.DefaultContainerName, Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult(false));
         var (check, context) = _CreateCheck(storage, manager, KeyRingProbeStyle.ContainerExistence);
 
@@ -101,7 +119,13 @@ public sealed class DataProtectionKeyRingHealthCheckTests : TestBase
 
         // then
         result.Status.Should().Be(HealthStatus.Unhealthy);
-        result.Description.Should().Be(DataProtectionKeyRingHealthCheck.ContainerMissingDescription);
+        result
+            .Description.Should()
+            .Be(
+                DataProtectionKeyRingHealthCheck.ContainerMissingDescription(
+                    BlobStorageDataProtectionOptions.DefaultContainerName
+                )
+            );
         result.Description.Should().Contain("key rotation will fail");
     }
 
@@ -113,7 +137,7 @@ public sealed class DataProtectionKeyRingHealthCheckTests : TestBase
         var storage = Substitute.For<IBlobStorage>();
         var manager = Substitute.For<IBlobContainerManager>();
         manager
-            .ContainerExistsAsync(BlobStorageDataProtectionXmlRepository.ContainerName, Arg.Any<CancellationToken>())
+            .ContainerExistsAsync(BlobStorageDataProtectionOptions.DefaultContainerName, Arg.Any<CancellationToken>())
             .Returns(_ => ValueTask.FromException<bool>(backendFailure));
         var (check, context) = _CreateCheck(storage, manager, KeyRingProbeStyle.ContainerExistence);
 
@@ -122,7 +146,13 @@ public sealed class DataProtectionKeyRingHealthCheckTests : TestBase
 
         // then: the backend exception is surfaced on the result, not thrown out of the check.
         result.Status.Should().Be(HealthStatus.Unhealthy);
-        result.Description.Should().Be(DataProtectionKeyRingHealthCheck.ExistenceProbeFailedDescription);
+        result
+            .Description.Should()
+            .Be(
+                DataProtectionKeyRingHealthCheck.ExistenceProbeFailedDescription(
+                    BlobStorageDataProtectionOptions.DefaultContainerName
+                )
+            );
         result.Exception.Should().BeSameAs(backendFailure);
     }
 
@@ -140,7 +170,13 @@ public sealed class DataProtectionKeyRingHealthCheckTests : TestBase
 
         // then: healthy via the write probe, with a description noting the fallback.
         result.Status.Should().Be(HealthStatus.Healthy);
-        result.Description.Should().Be(DataProtectionKeyRingHealthCheck.ExistenceFallbackHealthyDescription);
+        result
+            .Description.Should()
+            .Be(
+                DataProtectionKeyRingHealthCheck.ExistenceFallbackHealthyDescription(
+                    BlobStorageDataProtectionOptions.DefaultContainerName
+                )
+            );
         await _AssertSentinelUploadedAndDeletedAsync(storage);
     }
 
@@ -158,7 +194,13 @@ public sealed class DataProtectionKeyRingHealthCheckTests : TestBase
         // then: healthy via the write probe (distinct description from the existence probe), and the sentinel
         // was uploaded AND deleted so it does not accumulate.
         result.Status.Should().Be(HealthStatus.Healthy);
-        result.Description.Should().Be(DataProtectionKeyRingHealthCheck.WriteProbeHealthyDescription);
+        result
+            .Description.Should()
+            .Be(
+                DataProtectionKeyRingHealthCheck.WriteProbeHealthyDescription(
+                    BlobStorageDataProtectionOptions.DefaultContainerName
+                )
+            );
         await _AssertSentinelUploadedAndDeletedAsync(storage);
     }
 
@@ -183,7 +225,13 @@ public sealed class DataProtectionKeyRingHealthCheckTests : TestBase
 
         // then: the probe's contextual wrap (naming the container and remediation) is surfaced on the result.
         result.Status.Should().Be(HealthStatus.Unhealthy);
-        result.Description.Should().Be(DataProtectionKeyRingHealthCheck.WriteProbeFailedDescription);
+        result
+            .Description.Should()
+            .Be(
+                DataProtectionKeyRingHealthCheck.WriteProbeFailedDescription(
+                    BlobStorageDataProtectionOptions.DefaultContainerName
+                )
+            );
         result
             .Exception.Should()
             .BeOfType<InvalidOperationException>()
@@ -281,7 +329,7 @@ public sealed class DataProtectionKeyRingHealthCheckTests : TestBase
         var storage = Substitute.For<IBlobStorage>();
         var manager = Substitute.For<IBlobContainerManager>();
         manager
-            .ContainerExistsAsync(BlobStorageDataProtectionXmlRepository.ContainerName, Arg.Any<CancellationToken>())
+            .ContainerExistsAsync(BlobStorageDataProtectionOptions.DefaultContainerName, Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult(true));
         services.AddDataProtection().PersistKeysToBlobStorage(storage, manager);
         services.AddHealthChecks().AddDataProtectionKeyRing(probeStyle: KeyRingProbeStyle.ContainerExistence);
@@ -295,7 +343,13 @@ public sealed class DataProtectionKeyRingHealthCheckTests : TestBase
         var result = await check.CheckHealthAsync(new HealthCheckContext { Registration = registration }, AbortToken);
 
         // then: the existence probe ran (not the default write probe).
-        result.Description.Should().Be(DataProtectionKeyRingHealthCheck.ExistenceProbeHealthyDescription);
+        result
+            .Description.Should()
+            .Be(
+                DataProtectionKeyRingHealthCheck.ExistenceProbeHealthyDescription(
+                    BlobStorageDataProtectionOptions.DefaultContainerName
+                )
+            );
         storage.ReceivedCalls().Should().BeEmpty();
     }
 
@@ -319,7 +373,13 @@ public sealed class DataProtectionKeyRingHealthCheckTests : TestBase
         // then
         var entry = report.Entries.Should().ContainKey(DataProtectionHealthChecksExtensions.DefaultName).WhoseValue;
         entry.Status.Should().Be(HealthStatus.Healthy);
-        entry.Description.Should().Be(DataProtectionKeyRingHealthCheck.WriteProbeHealthyDescription);
+        entry
+            .Description.Should()
+            .Be(
+                DataProtectionKeyRingHealthCheck.WriteProbeHealthyDescription(
+                    BlobStorageDataProtectionOptions.DefaultContainerName
+                )
+            );
     }
 
     #region Helper Methods

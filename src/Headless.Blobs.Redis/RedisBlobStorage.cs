@@ -21,7 +21,10 @@ namespace Headless.Blobs.Redis;
 /// info hash (<c>blob-info/{container}/</c>) holding the serialized <see cref="BlobInfo"/> (created/modified/size and
 /// metadata) for the same field name. Every operation routes its <see cref="BlobLocation"/> / <see cref="BlobQuery"/>
 /// through <see cref="BlobLocationResolver"/> so the backend (container, key) is validated and normalized in one place.
-/// All mutating operations (upload, delete, move, copy) use Lua scripts so the two hashes stay consistent, and a Polly
+/// Both keys carry the container as a Redis hash tag, so they share one Redis Cluster slot. All mutating operations
+/// (upload, delete, move, copy) use Lua scripts so the two hashes stay consistent. A move or copy between containers
+/// whose hashes sit in different cluster slots cannot run as one script, so it reads the source in one script and
+/// writes the destination in another; a cross-slot move is therefore copy-then-delete, not atomic. A Polly
 /// retry pipeline retries transient <see cref="RedisConnectionException"/>/timeout errors with exponential back-off and
 /// jitter.
 /// <para>
@@ -95,6 +98,31 @@ internal sealed class RedisBlobStorage : IBlobStorage
         local infoDeleted = redis.call('HDEL', KEYS[2], ARGV[1])
         if blobDeleted == 1 or infoDeleted == 1 then return 1 end
         return 0
+        """;
+
+    // Lua script for the source half of a cross-slot move/copy: reads blob+info in one consistent snapshot.
+    // KEYS[1] = source blob hash, KEYS[2] = source info hash; ARGV[1] = source field name.
+    // Returns nil when the source does not exist, else { blobData, infoData-or-nil }.
+    private const string _ReadScript = """
+        local blobData = redis.call('HGET', KEYS[1], ARGV[1])
+        if not blobData then return nil end
+        return { blobData, redis.call('HGET', KEYS[2], ARGV[1]) }
+        """;
+
+    // Lua script for the destination half of a cross-slot move/copy.
+    // KEYS[1] = dest blob hash, KEYS[2] = dest info hash
+    // ARGV[1] = dest field name, ARGV[2] = blob data, ARGV[3] = info data ('' when the source had none),
+    // ARGV[4] = '1' to refuse an occupied destination (move), '0' to overwrite (copy).
+    // Returns 1 on success, -1 when the destination is occupied and ARGV[4] is '1'.
+    private const string _WriteScript = """
+        if ARGV[4] == '1' and redis.call('HEXISTS', KEYS[1], ARGV[1]) == 1 then return -1 end
+        redis.call('HSET', KEYS[1], ARGV[1], ARGV[2])
+        if ARGV[3] == '' then
+            redis.call('HDEL', KEYS[2], ARGV[1])
+        else
+            redis.call('HSET', KEYS[2], ARGV[1], ARGV[3])
+        end
+        return 1
         """;
 
     // Lua HSCAN so the scan is routed by the hash key (cluster-safe) and we get explicit, single-page cursor control.
@@ -479,10 +507,20 @@ internal sealed class RedisBlobStorage : IBlobStorage
 
         try
         {
-            // Redis performs the copy-then-delete atomically inside one Lua script, which is strictly stronger than
-            // the contract's "non-atomic, best-effort rollback" promise. The script rejects an occupied destination
-            // (never overwrites): it returns 1 on success, 0 when the source is missing, -1 when the destination is
-            // occupied — both 0 and -1 surface as false.
+            if (!_SameSlot(srcBlobsHash, dstBlobsHash))
+            {
+                return await _MoveAcrossSlotsAsync(
+                        (srcBlobsHash, srcInfoHash, srcKey),
+                        (dstBlobsHash, dstInfoHash, dstKey),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
+
+            // Within one slot, Redis performs the copy-then-delete atomically inside one Lua script, which is strictly
+            // stronger than the contract's "non-atomic, best-effort rollback" promise. The script rejects an occupied
+            // destination (never overwrites): it returns 1 on success, 0 when the source is missing, -1 when the
+            // destination is occupied — both 0 and -1 surface as false.
             var result = await _retryPipeline
                 .ExecuteAsync(
                     async _ =>
@@ -529,6 +567,17 @@ internal sealed class RedisBlobStorage : IBlobStorage
 
         try
         {
+            if (!_SameSlot(srcBlobsHash, dstBlobsHash))
+            {
+                return await _CopyAcrossSlotsAsync(
+                        (srcBlobsHash, srcInfoHash, srcKey),
+                        (dstBlobsHash, dstInfoHash, dstKey),
+                        refuseOccupied: false,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
+
             var result = await _retryPipeline
                 .ExecuteAsync(
                     async _ =>
@@ -551,6 +600,106 @@ internal sealed class RedisBlobStorage : IBlobStorage
 
             throw;
         }
+    }
+
+    // Both hashes of one container share a hash tag, so comparing the content hashes compares the containers' slots.
+    // On a standalone server every key reports the same (absent) slot, so the atomic single-script path always runs.
+    private bool _SameSlot(string srcBlobsHash, string dstBlobsHash)
+    {
+        return string.Equals(srcBlobsHash, dstBlobsHash, StringComparison.Ordinal)
+            || _options.ConnectionMultiplexer.HashSlot(srcBlobsHash)
+                == _options.ConnectionMultiplexer.HashSlot(dstBlobsHash);
+    }
+
+    private async Task<bool> _MoveAcrossSlotsAsync(
+        (string BlobsHash, string InfoHash, string Key) source,
+        (string BlobsHash, string InfoHash, string Key) destination,
+        CancellationToken cancellationToken
+    )
+    {
+        return await BlobStorageHelpers
+            .MoveViaCopyThenDeleteAsync(
+                destinationExistsAsync: ct => _HashExistsAsync(destination.BlobsHash, destination.Key, ct),
+                // The write refuses an occupied destination itself, so a writer that lands between the existence
+                // check and the copy is never overwritten.
+                copyAsync: async ct =>
+                    await _CopyAcrossSlotsAsync(source, destination, refuseOccupied: true, ct).ConfigureAwait(false),
+                deleteSourceAsync: async ct =>
+                    await _DeleteResolvedAsync(source.BlobsHash, source.InfoHash, source.Key, ct).ConfigureAwait(false),
+                sourceExistsAsync: ct => _HashExistsAsync(source.BlobsHash, source.Key, ct),
+                // MoveAsync logs the delete failure when the helper rethrows it, so the rollback logs only its own.
+                rollbackDestinationAsync: async _ =>
+                {
+                    try
+                    {
+                        await _DeleteResolvedAsync(
+                                destination.BlobsHash,
+                                destination.InfoHash,
+                                destination.Key,
+                                CancellationToken.None
+                            )
+                            .ConfigureAwait(false);
+                    }
+                    catch (Exception rollbackException)
+                    {
+                        _logger.LogFailedToRollbackDestination(rollbackException, destination.Key);
+                    }
+                },
+                logDestinationKeptSourceGone: e => _logger.LogMoveKeptDestinationSourceGone(e, source.Key),
+                logSourceCheckFailed: e => _logger.LogMoveSourceCheckFailed(e, source.Key),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    private async Task<bool> _CopyAcrossSlotsAsync(
+        (string BlobsHash, string InfoHash, string Key) source,
+        (string BlobsHash, string InfoHash, string Key) destination,
+        bool refuseOccupied,
+        CancellationToken cancellationToken
+    )
+    {
+        var read = await _retryPipeline
+            .ExecuteAsync(
+                async _ =>
+                    await Database
+                        .ScriptEvaluateAsync(_ReadScript, [source.BlobsHash, source.InfoHash], [source.Key])
+                        .ConfigureAwait(false),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (read.IsNull)
+        {
+            return false;
+        }
+
+        var parts = (RedisResult[])read!;
+        var blobData = (byte[])parts[0]!;
+        var infoData = parts[1].IsNull ? [] : (byte[])parts[1]!;
+
+        var result = await _retryPipeline
+            .ExecuteAsync(
+                async _ =>
+                    await Database
+                        .ScriptEvaluateAsync(
+                            _WriteScript,
+                            [destination.BlobsHash, destination.InfoHash],
+                            [destination.Key, blobData, infoData, refuseOccupied ? "1" : "0"]
+                        )
+                        .ConfigureAwait(false),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return (int)result == 1;
+    }
+
+    private async ValueTask<bool> _HashExistsAsync(string hash, string key, CancellationToken cancellationToken)
+    {
+        return await _retryPipeline
+            .ExecuteAsync(async _ => await Database.HashExistsAsync(hash, key).ConfigureAwait(false), cancellationToken)
+            .ConfigureAwait(false);
     }
 
     #endregion
@@ -818,7 +967,7 @@ internal sealed class RedisBlobStorage : IBlobStorage
     private (string BlobsHash, string InfoHash, string Key) _Resolve(BlobLocation location)
     {
         var (container, key) = BlobLocationResolver.Resolve(location, _normalizer);
-        var (blobsHash, infoHash) = _BuildHashKeys(container);
+        var (blobsHash, infoHash) = RedisBlobKeys.Build(container);
 
         return (blobsHash, infoHash, key);
     }
@@ -826,17 +975,9 @@ internal sealed class RedisBlobStorage : IBlobStorage
     private (string BlobsHash, string InfoHash, string? Prefix) _ResolveQuery(BlobQuery query)
     {
         var (container, prefix) = BlobLocationResolver.ResolveQuery(query, _normalizer);
-        var (blobsHash, infoHash) = _BuildHashKeys(container);
+        var (blobsHash, infoHash) = RedisBlobKeys.Build(container);
 
         return (blobsHash, infoHash, prefix);
-    }
-
-    private static (string BlobsHash, string InfoHash) _BuildHashKeys(string normalizedContainer)
-    {
-        var blobsHash = normalizedContainer.EnsureEndsWith('/');
-        var infoHash = ("blob-info/" + normalizedContainer).EnsureEndsWith('/');
-
-        return (blobsHash, infoHash);
     }
 
     #endregion
@@ -1021,4 +1162,32 @@ internal static partial class RedisBlobStorageLog
         Message = "Retrying Redis operation (attempt {Attempt}) after {Delay:g}"
     )]
     internal static partial void LogRedisRetry(this ILogger logger, int attempt, TimeSpan delay, Exception? exception);
+
+    [LoggerMessage(
+        EventId = 15,
+        EventName = "FailedToRollbackDestination",
+        Level = LogLevel.Error,
+        Message = "Failed to roll back the copy at {Path} after a failed move; the blob now exists at both locations"
+    )]
+    internal static partial void LogFailedToRollbackDestination(this ILogger logger, Exception exception, string path);
+
+    [LoggerMessage(
+        EventId = 16,
+        EventName = "MoveKeptDestinationSourceGone",
+        Level = LogLevel.Warning,
+        Message = "Deleting the move source {Path} failed after it was already removed; the destination copy is kept"
+    )]
+    internal static partial void LogMoveKeptDestinationSourceGone(
+        this ILogger logger,
+        Exception exception,
+        string path
+    );
+
+    [LoggerMessage(
+        EventId = 17,
+        EventName = "MoveSourceCheckFailed",
+        Level = LogLevel.Error,
+        Message = "Could not check the move source {Path} after its delete failed; the destination copy is kept"
+    )]
+    internal static partial void LogMoveSourceCheckFailed(this ILogger logger, Exception exception, string path);
 }

@@ -5,6 +5,7 @@ using Headless.Blobs.Internal;
 using Headless.Blobs.Redis;
 using Headless.Serializer;
 using Microsoft.Extensions.Options;
+using StackExchange.Redis;
 
 namespace Tests;
 
@@ -95,6 +96,12 @@ public sealed class RedisBlobStorageTests(RedisBlobStorageFixture fixture) : Blo
     public override Task can_save_over_existing_stored_content()
     {
         return base.can_save_over_existing_stored_content();
+    }
+
+    [Fact]
+    public override Task failed_overwrite_keeps_the_previous_blob_and_metadata()
+    {
+        return base.failed_overwrite_keeps_the_previous_blob_and_metadata();
     }
 
     [Fact]
@@ -193,8 +200,8 @@ public sealed class RedisBlobStorageTests(RedisBlobStorageFixture fixture) : Blo
         await using var storage = GetStorage();
 
         var container = $"rawclear{Guid.NewGuid():N}";
-        var blobsHash = container + "/";
-        var infoHash = "blob-info/" + container + "/";
+        var blobsHash = "{" + container + "}/";
+        var infoHash = "blob-info/{" + container + "}/";
         const string rawField = "out-of-band" + BlobStorageHelpers.SidecarSuffix;
 
         // A framework-written blob plus a raw, backend-legal but BlobLocation-illegal field written natively into
@@ -477,6 +484,106 @@ public sealed class RedisBlobStorageTests(RedisBlobStorageFixture fixture) : Blo
                 cancellationToken: AbortToken
             );
         await act.Should().NotThrowAsync();
+    }
+
+    #endregion
+
+    #region Cross-slot move / copy
+
+    [Fact]
+    public async Task should_move_between_containers_when_their_cluster_slots_differ()
+    {
+        // given
+        await using var storage = _CreateCrossSlotStorage();
+        var source = new BlobLocation($"inbox{Guid.NewGuid():N}", "a.txt");
+        var destination = new BlobLocation($"archive{Guid.NewGuid():N}", "a.txt");
+        var metadata = new Dictionary<string, string>(StringComparer.Ordinal) { ["owner"] = "ops" };
+        await using (var content = new MemoryStream("payload"u8.ToArray()))
+        {
+            await storage.UploadAsync(source, content, metadata: metadata, cancellationToken: AbortToken);
+        }
+
+        // when
+        var moved = await storage.MoveAsync(source, destination, AbortToken);
+
+        // then
+        moved.Should().BeTrue();
+        (await storage.ExistsAsync(source, AbortToken)).Should().BeFalse();
+        (await storage.GetBlobContentAsync(destination, AbortToken)).Should().Be("payload");
+        var info = await storage.GetBlobInfoAsync(destination, AbortToken);
+        info!.Metadata.Should().Contain("owner", "ops");
+    }
+
+    [Fact]
+    public async Task should_refuse_a_cross_slot_move_onto_an_occupied_destination()
+    {
+        // given
+        await using var storage = _CreateCrossSlotStorage();
+        var source = new BlobLocation($"inbox{Guid.NewGuid():N}", "a.txt");
+        var destination = new BlobLocation($"archive{Guid.NewGuid():N}", "a.txt");
+        await storage.UploadContentAsync(source, "new", AbortToken);
+        await storage.UploadContentAsync(destination, "old", AbortToken);
+
+        // when
+        var moved = await storage.MoveAsync(source, destination, AbortToken);
+
+        // then
+        moved.Should().BeFalse();
+        (await storage.GetBlobContentAsync(source, AbortToken)).Should().Be("new");
+        (await storage.GetBlobContentAsync(destination, AbortToken)).Should().Be("old");
+    }
+
+    [Fact]
+    public async Task should_copy_between_containers_when_their_cluster_slots_differ()
+    {
+        // given
+        await using var storage = _CreateCrossSlotStorage();
+        var source = new BlobLocation($"inbox{Guid.NewGuid():N}", "a.txt");
+        var destination = new BlobLocation($"archive{Guid.NewGuid():N}", "a.txt");
+        await storage.UploadContentAsync(source, "payload", AbortToken);
+        await storage.UploadContentAsync(destination, "old", AbortToken);
+
+        // when
+        var copied = await storage.CopyAsync(source, destination, AbortToken);
+        var missing = await storage.CopyAsync(new BlobLocation(source.Container, "none.txt"), destination, AbortToken);
+
+        // then
+        copied.Should().BeTrue();
+        missing.Should().BeFalse();
+        (await storage.GetBlobContentAsync(source, AbortToken)).Should().Be("payload");
+        (await storage.GetBlobContentAsync(destination, AbortToken)).Should().Be("payload");
+    }
+
+    /// <summary>
+    /// A storage on the real server whose multiplexer reports a distinct cluster slot per container, so move and copy
+    /// between containers take the per-slot path a Redis Cluster forces.
+    /// </summary>
+    private RedisBlobStorage _CreateCrossSlotStorage()
+    {
+        var multiplexer = Substitute.For<IConnectionMultiplexer>();
+        var database = fixture.ConnectionMultiplexer.GetDatabase();
+        multiplexer.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(database);
+        multiplexer
+            .HashSlot(Arg.Any<RedisKey>())
+            .Returns(call => StringComparer.Ordinal.GetHashCode(_HashTag(call.ArgAt<RedisKey>(0))));
+
+        return new RedisBlobStorage(
+            new OptionsWrapper<RedisBlobStorageOptions>(
+                new RedisBlobStorageOptions { ConnectionMultiplexer = multiplexer }
+            ),
+            new SystemJsonSerializer(),
+            new CrossOsNamingNormalizer(),
+            TimeProvider.System
+        );
+    }
+
+    private static string _HashTag(RedisKey key)
+    {
+        var value = key.ToString();
+        var open = value.IndexOf('{', StringComparison.Ordinal);
+        var close = value.IndexOf('}', open + 1);
+
+        return value[(open + 1)..close];
     }
 
     #endregion

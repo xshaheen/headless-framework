@@ -287,4 +287,12 @@ internal static partial class SftpLoggerExtensions
         Message = "Could not verify move source {Path} after its delete faulted; skipping the destination rollback (both copies may remain)"
     )]
     internal static partial void LogMoveSourceCheckFailed(this ILogger logger, Exception exception, string path);
+
+    [LoggerMessage(
+        EventId = 35,
+        EventName = "FailedToDeleteTempFile",
+        Level = LogLevel.Warning,
+        Message = "Could not delete the temporary upload file {Path}; it is hidden from listings but takes disk space"
+    )]
+    internal static partial void LogFailedToDeleteTempFile(this ILogger logger, Exception exception, string path);
 }

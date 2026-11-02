@@ -56,8 +56,8 @@ internal sealed class RedisBlobContainerManager(
 
         var (blobsHash, infoHash) = _BuildHashKeys(container);
 
-        // Drop both backing hashes. Two single-key deletes (rather than a multi-key one) keep this cluster-safe: the
-        // content and info hashes live in different key slots. KeyDelete returns true only when the key existed.
+        // Drop both backing hashes. KeyDelete returns true only when the key existed, so two single-key deletes report
+        // whether either hash was there.
         var blobsDeleted = await Database.KeyDeleteAsync(blobsHash).ConfigureAwait(false);
         var infoDeleted = await Database.KeyDeleteAsync(infoHash).ConfigureAwait(false);
 
@@ -66,11 +66,7 @@ internal sealed class RedisBlobContainerManager(
 
     private (string BlobsHash, string InfoHash) _BuildHashKeys(string container)
     {
-        var normalized = _ValidateContainer(container);
-        var blobsHash = normalized.EnsureEndsWith('/');
-        var infoHash = ("blob-info/" + normalized).EnsureEndsWith('/');
-
-        return (blobsHash, infoHash);
+        return RedisBlobKeys.Build(_ValidateContainer(container));
     }
 
     private string _ValidateContainer(string container)
