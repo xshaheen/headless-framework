@@ -115,7 +115,7 @@ public sealed class HybridCacheDistributedResilienceTests : TestBase
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("origin unavailable");
         factoryCalls.Should().Be(1);
         l2.ReadAttempts.Should()
-            .Be(2, "the coordinator performs the normal under-lock re-check before running the factory");
+            .Be(1, "no other caller held the per-key lock, so the coordinator skips the under-lock re-check");
     }
 
     [Fact]

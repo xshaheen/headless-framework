@@ -6,6 +6,7 @@ using Headless.RateLimiting;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using NSubstitute;
 
 namespace Tests;
 
@@ -52,6 +53,35 @@ public sealed class AttemptLimiterCacheSelectionTests : TestBase
         var fallback = provider.GetRequiredService<ICache>();
         (await fallback.ExistsAsync(result.ResetToken!, AbortToken)).Should().BeTrue();
         (await named.ExistsAsync(result.ResetToken!, AbortToken)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_count_in_the_remote_tier_when_cache_name_is_null_and_a_remote_tier_is_registered()
+    {
+        // given - a hybrid-style host: the default ICache is a different instance from the registered remote tier
+        var remote = Substitute.For<IRemoteCache>();
+        remote
+            .IncrementAsync(Arg.Any<string>(), 1L, Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(1L));
+        using var defaultCache = new InMemoryCache(TimeProvider.System, new InMemoryCacheOptions());
+        var services = new ServiceCollection();
+        services.AddSingleton<ICache>(defaultCache);
+        services.AddSingleton(remote);
+        services.AddAttemptLimiter(options => options.SubjectKey = _SubjectKey);
+        await using var provider = services.BuildServiceProvider();
+        await _StartAsync(provider);
+
+        // when
+        var result = await provider
+            .GetRequiredService<IAttemptLimiter>()
+            .AcquireAsync("otp-delivery", "+201000000000", _Quota, AbortToken);
+
+        // then - the counter skips the hybrid's local tier and its invalidation broadcast
+        result.Count.Should().Be(1);
+        await remote
+            .Received(1)
+            .IncrementAsync(result.ResetToken!, 1L, Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+        (await defaultCache.ExistsAsync(result.ResetToken!, AbortToken)).Should().BeFalse();
     }
 
     [Fact]
