@@ -15,7 +15,8 @@ namespace Headless.DataProtection;
 /// <summary>An <see cref="IXmlRepository"/> implementation that persists ASP.NET Core Data Protection keys as XML blobs in an <see cref="IBlobStorage"/> backend.</summary>
 /// <remarks>
 /// <para>
-/// Keys are stored under a <c>DataProtection</c> container as individual <c>*.xml</c> files.
+/// Keys are stored as individual <c>*.xml</c> files under <see cref="ContainerName"/> (by default
+/// <see cref="BlobStorageDataProtectionOptions.DefaultContainerName"/>).
 /// On <see cref="GetAllElements"/>, every blob in that container is enumerated except the reserved
 /// <see cref="WriteProbeBlobName"/> sentinel; blobs that cannot be
 /// downloaded (e.g. deleted between the listing and the read) are silently skipped.
@@ -30,16 +31,13 @@ namespace Headless.DataProtection;
 /// back-off and jitter. The container ensure (when an <see cref="IBlobContainerManager"/> is wired) runs inside the
 /// same resilience pipeline as the upload, so transient ensure failures are retried under the same predicate.
 /// When the write terminally fails (retries exhausted or a non-retried exception), the failure is wrapped in an
-/// <see cref="InvalidOperationException"/> naming the <c>DataProtection</c> container, whether the ensure ran, and
+/// <see cref="InvalidOperationException"/> naming the container, whether the ensure ran, and
 /// the remediation — with the original exception preserved as the inner exception.
 /// </para>
 /// <para>Instances of this type are thread-safe.</para>
 /// </remarks>
 internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
 {
-    /// <summary>The top-level container all data-protection key XML blobs live in.</summary>
-    internal const string ContainerName = "DataProtection";
-
     /// <summary>
     /// Reserved name of the sentinel blob written by <see cref="ProbeWriteAccessAsync"/>. Never part of the key
     /// ring: <see cref="GetAllElements"/> explicitly filters it out, so a crash between the probe's upload and
@@ -81,14 +79,18 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
     /// <param name="storage">The blob storage backend to read and write key XML files.</param>
     /// <param name="containerManager">Optional container manager used to ensure the DataProtection container before writing.</param>
     /// <param name="loggerFactory">Optional logger factory; when <see langword="null"/>, a no-op logger is used.</param>
+    /// <param name="containerName">The top-level container that holds the key XML blobs.</param>
     /// <exception cref="ArgumentNullException"><paramref name="storage"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="containerName"/> is empty or whitespace.</exception>
     public BlobStorageDataProtectionXmlRepository(
         IBlobStorage storage,
         IBlobContainerManager? containerManager,
-        ILoggerFactory? loggerFactory = null
+        ILoggerFactory? loggerFactory = null,
+        string containerName = BlobStorageDataProtectionOptions.DefaultContainerName
     )
     {
         Argument.IsNotNull(storage);
+        ContainerName = Argument.IsNotNullOrWhiteSpace(containerName);
 
         // The key ring is one host-level secret shared by every tenant. On a scoped store (tenant scoping), the first
         // key read or write would otherwise land inside whichever tenant's request touched data protection first, or
@@ -104,6 +106,9 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
     /// and the sentinel write probe (no manager).
     /// </summary>
     internal IBlobContainerManager? ContainerManager { get; }
+
+    /// <summary>The top-level container all data-protection key XML blobs live in.</summary>
+    internal string ContainerName { get; }
 
     /// <inheritdoc />
     /// <remarks>Sync-over-async: <see cref="IXmlRepository"/> is a synchronous interface; <see cref="Async.RunSync"/> bridges to the async implementation.</remarks>
@@ -302,7 +307,7 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
     }
 
     /// <summary>
-    /// Verifies write access to the <c>DataProtection</c> container by uploading and deleting a reserved sentinel
+    /// Verifies write access to the key container by uploading and deleting a reserved sentinel
     /// blob (<see cref="WriteProbeBlobName"/>) through the exact ensure + resilience pipeline the key writes use.
     /// This is how key-ring validation exercises the write path even when the key ring already holds a valid key —
     /// a state in which the protect/unprotect round-trip performs no write and lost write permission would

@@ -88,33 +88,63 @@ internal sealed class FileSystemBlobStorage : IBlobStorage
             Directory.CreateDirectory(directory);
         }
 
-        var streamOptions = new FileStreamOptions
-        {
-            Mode = FileMode.Create,
-            Access = FileAccess.Write,
-            Share = FileShare.None,
-            Options = FileOptions.Asynchronous,
-        };
-
-        // Content-first write order: close the content file before writing the sidecar so a crash between
-        // the two leaves a blob with no sidecar (reads back as no metadata) rather than an orphan sidecar.
-        var fileStream = new FileStream(fullPath, streamOptions);
+        // Write the content and the sidecar to temporary siblings, then rename each over its final path. A fault or
+        // cancellation while the body streams leaves the previous blob and its metadata untouched, and a reader
+        // opens either the old file or the new one, never a half-written file.
+        var contentTemp = BlobStorageHelpers.BuildTempUploadPath(fullPath);
+        var sidecarTemp = BlobStorageHelpers.BuildTempUploadPath(fullPath);
 
         try
         {
-            if (content.CanSeek)
+            var streamOptions = new FileStreamOptions
             {
-                content.Position = 0;
+                Mode = FileMode.CreateNew,
+                Access = FileAccess.Write,
+                Share = FileShare.None,
+                Options = FileOptions.Asynchronous,
+            };
+
+            var fileStream = new FileStream(contentTemp, streamOptions);
+
+            try
+            {
+                if (content.CanSeek)
+                {
+                    content.Position = 0;
+                }
+
+                await content.CopyToAsync(fileStream, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                await fileStream.DisposeAsync().ConfigureAwait(false);
             }
 
-            await content.CopyToAsync(fileStream, cancellationToken).ConfigureAwait(false);
+            await _WriteSidecarAsync(sidecarTemp, key, metadata, cancellationToken).ConfigureAwait(false);
+
+            // Content first, then sidecar: a crash between the two renames pairs the new content with the old
+            // metadata, the same window the provider documents for a crash between the two writes.
+            File.Move(contentTemp, fullPath, overwrite: true);
+            File.Move(sidecarTemp, fullPath + BlobStorageHelpers.SidecarSuffix, overwrite: true);
         }
         finally
         {
-            await fileStream.DisposeAsync().ConfigureAwait(false);
+            _DeleteTempFile(contentTemp);
+            _DeleteTempFile(sidecarTemp);
         }
+    }
 
-        await _WriteSidecarAsync(fullPath, key, metadata, cancellationToken).ConfigureAwait(false);
+    private void _DeleteTempFile(string path)
+    {
+        try
+        {
+            // A no-op after a successful rename: the file is no longer there.
+            File.Delete(path);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogFailedToDeleteTempFile(e, path);
+        }
     }
 
     public async ValueTask<IReadOnlyList<BlobBulkResult>> BulkUploadAsync(
@@ -433,14 +463,16 @@ internal sealed class FileSystemBlobStorage : IBlobStorage
 
         try
         {
-            // Matches File.OpenRead's mode/access/share, but opens an async handle like the upload path: the returned
+            // Matches File.OpenRead's mode and access, but opens an async handle like the upload path: the returned
             // stream is consumed asynchronously (CopyToAsync into a response body or another provider). On Windows
             // this enables overlapped I/O instead of blocking thread-pool reads; on Unix it is a consistency no-op.
             var streamOptions = new FileStreamOptions
             {
                 Mode = FileMode.Open,
                 Access = FileAccess.Read,
-                Share = FileShare.Read,
+                // Delete sharing lets an upload rename its new content over this path while the stream is open
+                // (Windows refuses the replace otherwise); the stream keeps reading the content it opened.
+                Share = FileShare.Read | FileShare.Delete,
                 Options = FileOptions.Asynchronous,
             };
 
@@ -595,7 +627,7 @@ internal sealed class FileSystemBlobStorage : IBlobStorage
     #region Sidecar Metadata
 
     private async ValueTask _WriteSidecarAsync(
-        string blobFullPath,
+        string sidecarPath,
         string objectKey,
         IReadOnlyDictionary<string, string>? metadata,
         CancellationToken cancellationToken
@@ -606,7 +638,6 @@ internal sealed class FileSystemBlobStorage : IBlobStorage
         var sidecar = BlobStorageHelpers.BuildEffectiveMetadata(metadata, _timeProvider.GetUtcNow(), objectKey);
 
         var payload = _serializer.SerializeToBytes(sidecar)!;
-        var sidecarPath = blobFullPath + BlobStorageHelpers.SidecarSuffix;
 
         await File.WriteAllBytesAsync(sidecarPath, payload, cancellationToken).ConfigureAwait(false);
     }

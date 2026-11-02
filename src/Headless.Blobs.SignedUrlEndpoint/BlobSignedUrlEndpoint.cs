@@ -5,7 +5,6 @@ using Headless.IO;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Microsoft.Net.Http.Headers;
 
 namespace Headless.Blobs;
@@ -65,12 +64,7 @@ internal static class BlobSignedUrlEndpoint
         );
     }
 
-    public static async Task<IResult> UploadAsync(
-        string token,
-        HttpContext context,
-        BlobSignedUrlSigner signer,
-        ILoggerFactory loggerFactory
-    )
+    public static async Task<IResult> UploadAsync(string token, HttpContext context, BlobSignedUrlSigner signer)
     {
         if (
             !signer.TryRead(token, BlobSignedUrlAccess.Upload, out var grant)
@@ -110,47 +104,18 @@ internal static class BlobSignedUrlEndpoint
             }
         }
 
-        try
-        {
-            await storage.UploadAsync(
-                grant.Location,
-                request.Body,
-                contentType: grant.ContentType ?? request.ContentType,
-                metadata: null,
-                context.RequestAborted
-            );
-        }
-        catch
-        {
-            // FileSystem and SFTP write in place, so an aborted or over-limit body would leave a truncated blob that
-            // reads as a finished upload. A cloud presigned PUT leaves no object on failure; deleting keeps that
-            // behavior, at the cost of also removing any earlier version the upload was replacing. The exception is
-            // rethrown so Kestrel answers an over-limit body with its own 413.
-            await _DeleteFailedUploadAsync(storage, grant.Location, loggerFactory);
-
-            throw;
-        }
+        // Every provider replaces a blob only once its whole body has arrived, so an aborted or over-limit upload leaves
+        // the earlier version in place and there is nothing to clean up. The exception propagates so Kestrel answers
+        // an over-limit body with its own 413.
+        await storage.UploadAsync(
+            grant.Location,
+            request.Body,
+            contentType: grant.ContentType ?? request.ContentType,
+            metadata: null,
+            context.RequestAborted
+        );
 
         return Results.Ok();
-    }
-
-    private static async Task _DeleteFailedUploadAsync(
-        IBlobStorage storage,
-        BlobLocation location,
-        ILoggerFactory loggerFactory
-    )
-    {
-        try
-        {
-            // The request is already aborted or failed, so its token would cancel the cleanup too.
-            await storage.DeleteAsync(location, CancellationToken.None);
-        }
-        catch (Exception e)
-        {
-            loggerFactory
-                .CreateLogger("Headless.Blobs.SignedUrlEndpoint")
-                .LogFailedUploadCleanup(e, location.ToString());
-        }
     }
 
     private static string _FileName(string path)
@@ -176,15 +141,4 @@ internal static class BlobSignedUrlEndpoint
             && MediaTypeHeaderValue.TryParse(expected, out var expectedType)
             && actualType.MediaType.Equals(expectedType.MediaType, StringComparison.OrdinalIgnoreCase);
     }
-}
-
-internal static partial class BlobSignedUrlEndpointLog
-{
-    [LoggerMessage(
-        EventId = 1,
-        EventName = "FailedUploadCleanup",
-        Level = LogLevel.Warning,
-        Message = "A failed signed upload to {Blob} could not be deleted; a truncated blob may remain"
-    )]
-    internal static partial void LogFailedUploadCleanup(this ILogger logger, Exception exception, string blob);
 }

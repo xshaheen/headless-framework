@@ -18,7 +18,7 @@ public sealed class DataProtectionKeyRingValidationOptions
 
     /// <summary>
     /// Whether to verify write access with a real write on each validation by uploading and deleting a reserved
-    /// sentinel blob in the <c>DataProtection</c> container through the same ensure + retry pipeline the key writes
+    /// sentinel blob in the key container through the same ensure + retry pipeline the key writes
     /// use. Defaults to <see langword="true"/>. This is what catches lost write permission or a deleted container when
     /// the key ring already holds a valid key — a state in which the protect/unprotect round-trip performs no write
     /// — and it is the only write-path guarantee on nodes with <c>AutoGenerateKeys</c> disabled. Only applies when

@@ -2,6 +2,7 @@
 
 using Headless.Blobs;
 using Headless.Blobs.FileSystem;
+using Headless.Blobs.Internal;
 using Headless.Serializer;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -95,6 +96,12 @@ public sealed class FileSystemBlobStorageTests : BlobStorageTestsBase
     public override Task can_save_over_existing_stored_content()
     {
         return base.can_save_over_existing_stored_content();
+    }
+
+    [Fact]
+    public override Task failed_overwrite_keeps_the_previous_blob_and_metadata()
+    {
+        return base.failed_overwrite_keeps_the_previous_blob_and_metadata();
     }
 
     [Fact]
@@ -425,6 +432,135 @@ public sealed class FileSystemBlobStorageTests : BlobStorageTestsBase
         // Container lifecycle belongs to FileSystemBlobContainerManager, so the container root survives a delete-all.
         Directory.Exists(containerDirectory).Should().BeTrue();
         (await storage.GetBlobsListAsync(Container, cancellationToken: AbortToken)).Should().BeEmpty();
+    }
+
+    #endregion
+
+    #region Atomic replace
+
+    [Fact]
+    public async Task should_read_the_previous_blob_while_an_overwrite_is_streaming()
+    {
+        // given: an overwrite whose body has started but not finished
+        await using var storage = GetStorage();
+        await ResetAsync(storage);
+        var location = new BlobLocation(ContainerName, "live.txt");
+        await storage.UploadContentAsync(location, "original", AbortToken);
+
+        await using var body = new GatedStream("replacement"u8.ToArray());
+        var upload = storage.UploadAsync(location, body, cancellationToken: AbortToken).AsTask();
+        await body.FirstReadServed.WaitAsync(AbortToken);
+
+        // when
+        var duringWrite = await storage.GetBlobContentAsync(location, AbortToken);
+        body.Release();
+        await upload;
+
+        // then
+        duringWrite.Should().Be("original");
+        (await storage.GetBlobContentAsync(location, AbortToken)).Should().Be("replacement");
+        Directory
+            .EnumerateFiles(Path.Combine(_baseDirectoryPath, ContainerName))
+            .Select(Path.GetFileName)
+            .Should()
+            .BeEquivalentTo("live.txt", "live.txt" + BlobStorageHelpers.SidecarSuffix);
+    }
+
+    [Fact]
+    public async Task should_leave_no_temporary_file_when_an_overwrite_is_cancelled()
+    {
+        // given
+        await using var storage = GetStorage();
+        await ResetAsync(storage);
+        var location = new BlobLocation(ContainerName, "cancelled.txt");
+        await storage.UploadContentAsync(location, "original", AbortToken);
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        await using var body = new GatedStream("replacement"u8.ToArray());
+        var upload = storage.UploadAsync(location, body, cancellationToken: cancellation.Token).AsTask();
+        await body.FirstReadServed.WaitAsync(AbortToken);
+
+        // when
+        await cancellation.CancelAsync();
+        var act = async () => await upload;
+
+        // then
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        (await storage.GetBlobContentAsync(location, AbortToken)).Should().Be("original");
+        Directory
+            .EnumerateFiles(Path.Combine(_baseDirectoryPath, ContainerName))
+            .Select(Path.GetFileName)
+            .Should()
+            .BeEquivalentTo("cancelled.txt", "cancelled.txt" + BlobStorageHelpers.SidecarSuffix);
+    }
+
+    /// <summary>
+    /// A non-seekable body that returns its bytes on the first read, then holds the second read until
+    /// <see cref="Release"/> is called or the read is cancelled.
+    /// </summary>
+    private sealed class GatedStream(byte[] content) : Stream
+    {
+        private readonly TaskCompletionSource _firstReadServed = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+
+        private readonly TaskCompletionSource _released = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        private bool _served;
+
+        public Task FirstReadServed => _firstReadServed.Task;
+
+        public void Release()
+        {
+            _released.TrySetResult();
+        }
+
+        public override bool CanRead => true;
+
+        public override bool CanSeek => false;
+
+        public override bool CanWrite => false;
+
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default
+        )
+        {
+            if (!_served)
+            {
+                _served = true;
+                content.CopyTo(buffer);
+                _firstReadServed.TrySetResult();
+
+                return content.Length;
+            }
+
+            await _released.Task.WaitAsync(cancellationToken);
+
+            return 0;
+        }
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+        {
+            return ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        public override void Flush() { }
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 
     #endregion

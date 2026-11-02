@@ -30,6 +30,19 @@ public static class BlobStorageHelpers
         return key.EndsWith(SidecarSuffix, StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Builds a unique temporary sibling of <paramref name="path"/> for a write that is renamed over the final path
+    /// once complete.
+    /// </summary>
+    /// <remarks>
+    /// The name ends in <see cref="SidecarSuffix"/>, so listings and deletes skip it like any sidecar and no
+    /// <see cref="BlobLocation"/> can name it. The random part keeps concurrent uploads of one key apart.
+    /// </remarks>
+    public static string BuildTempUploadPath(string path)
+    {
+        return $"{path}.{Guid.NewGuid():N}.tmp{SidecarSuffix}";
+    }
+
     /// <summary>Returns <see langword="true"/> when any <c>/</c>-delimited segment is reserved for sidecar metadata.</summary>
     public static bool HasSidecarSegment(string key)
     {
