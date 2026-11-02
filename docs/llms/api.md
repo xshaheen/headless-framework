@@ -51,7 +51,7 @@ Additional packages:
 - For MVC, inherit from `ApiControllerBase` — it provides common utilities. Use `ConfigureHeadlessMvc()` not manual `MvcOptions` configuration.
 - Use `Headless.Api.FluentValidation` validators (`FileNotEmpty()`, `LessThanOrEqualTo()`, `ContentTypes()`, `HaveSignatures()`, `PhoneNumber()`, `GeoCoordinate()`, `PageMetadata()`) for API-boundary validation — do not write manual file or request-contract validation logic.
 - Use `PersistKeysToBlobStorage()` from `Headless.DataProtection.Blobs` to persist Data Protection keys in distributed/containerized environments.
-- For Serilog enrichment, call `AddHeadlessSerilogEnrichers()` on services and `UseHeadlessSerilogEnrichers()` on the app, after `UseAuthentication()` so the enrichers can read the user.
+- For Serilog enrichment, call `UseHeadlessSerilogEnrichers()` on the app, after `UseAuthentication()` so the enrichers can read the user. It needs no service registration beyond `AddHeadless()`: the middleware is built once with the pipeline and reads `IRequestContext` per request.
 - Inject `IRequestContext` (from Abstractions) for request-scoped user, tenant, locale, timezone, and correlation ID — never access `HttpContext` directly in service code.
 - `AddHeadless()` registers neither `IFieldEncryptor` nor `IBlindIndexer` and reads no encryption configuration. An app that encrypts values (including encrypted `Headless.Settings` definitions) or builds blind indexes calls `AddHeadlessEncryption(...)`; see [Encryption](encryption.md).
 - Place `UseResponseCompression()` **before** `UseHeadlessHttpIdempotency()` in the pipeline. Compression middleware registered inside idempotency records compressed bytes in the cache; replaying those bytes without re-encoding them produces garbled or double-encoded responses.
@@ -920,9 +920,6 @@ dotnet add package Headless.Api.Logging.Serilog
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddHeadless(); // registers IRequestContext, which the enrichers read
-
-// Register enrichers
-builder.Services.AddHeadlessSerilogEnrichers();
 
 var app = builder.Build();
 
