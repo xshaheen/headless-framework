@@ -774,7 +774,7 @@ internal sealed class MessageSender : IMessageSender
                     dispatchServices,
                     MessageType.Publish,
                     _logger,
-                    _timeProvider,
+                    _backoffClock,
                     _shutdownToken
                 )
                 .ConfigureAwait(false);

@@ -506,7 +506,7 @@ internal sealed partial class ConsumerRegister
                             _options.RetryPolicy.OnExhaustedTimeout,
                             storageId: Guid.Empty,
                             _logger,
-                            _timeProvider,
+                            _backoffClock,
                             hostShutdownToken
                         )
                         .ConfigureAwait(false);

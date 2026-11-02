@@ -167,7 +167,8 @@ internal static class RetryHelper
 
     /// <summary>
     /// Invokes the supplied <paramref name="callback"/> with a hard timeout via
-    /// <see cref="Task.WaitAsync(TimeSpan,TimeProvider,CancellationToken)"/>.
+    /// <see cref="Task.WaitAsync(TimeSpan,TimeProvider,CancellationToken)"/>, measured on
+    /// <paramref name="backoffClock"/>.
     /// On timeout the callback is orphaned (continues running in the background) and a
     /// <c>OnExhaustedTimedOut</c> log event is emitted. Exceptions thrown by the callback
     /// are caught and logged so they cannot crash the dispatch loop. Cancellation observed
@@ -180,13 +181,17 @@ internal static class RetryHelper
     /// callback that ignores its CT is still orphaned (we cannot abort an unmanaged Task), but the
     /// well-behaved case lands cleanly.
     /// </remarks>
+    /// <param name="backoffClock">
+    /// The messaging back-off clock (<see cref="MessagingOptions.BackoffClockServiceKey"/>), not the app clock: the
+    /// timeout cuts off a hung callback, which must happen in real time even when a test freezes the app clock.
+    /// </param>
     public static async Task InvokeOnExhaustedAsync(
         Func<FailedInfo, CancellationToken, Task> callback,
         FailedInfo failedInfo,
         TimeSpan timeout,
         Guid storageId,
         ILogger logger,
-        TimeProvider timeProvider,
+        TimeProvider backoffClock,
         CancellationToken cancellationToken
     )
     {
@@ -221,7 +226,7 @@ internal static class RetryHelper
 
             try
             {
-                await callbackTask.WaitAsync(timeout, timeProvider, cancellationToken).ConfigureAwait(false);
+                await callbackTask.WaitAsync(timeout, backoffClock, cancellationToken).ConfigureAwait(false);
             }
             catch (TimeoutException)
             {
@@ -305,6 +310,9 @@ internal static class RetryHelper
     /// All callback failures (synchronous throw, async fault, timeout, shutdown) are absorbed via
     /// <see cref="InvokeOnExhaustedAsync"/> — see that method for the cancellation/timeout contract.
     /// </remarks>
+    /// <param name="backoffClock">
+    /// The messaging back-off clock that bounds the callback by <see cref="RetryPolicyOptions.OnExhaustedTimeout"/>.
+    /// </param>
     public static async Task RunOnExhaustedAsync(
         RetryPolicyOptions policy,
         MediumMessage message,
@@ -312,7 +320,7 @@ internal static class RetryHelper
         IServiceProvider dispatchServices,
         MessageType messageType,
         ILogger logger,
-        TimeProvider timeProvider,
+        TimeProvider backoffClock,
         CancellationToken cancellationToken
     )
     {
@@ -340,7 +348,7 @@ internal static class RetryHelper
                 policy.OnExhaustedTimeout,
                 message.StorageId,
                 logger,
-                timeProvider,
+                backoffClock,
                 cancellationToken
             )
             .ConfigureAwait(false);
