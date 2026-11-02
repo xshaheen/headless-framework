@@ -71,7 +71,8 @@ public static class ExtraPropertyExtensions
 
         /// <summary>
         /// Determines whether this instance and <paramref name="otherDictionary"/> contain the same keys with values
-        /// that are equal under the default equality comparer.
+        /// that are equal under the default equality comparer, or, for two <see cref="JsonElement"/> values, hold the
+        /// same JSON.
         /// </summary>
         /// <param name="otherDictionary">The dictionary to compare against.</param>
         /// <returns><see langword="true"/> if both contain the same keys and equivalent values; otherwise, <see langword="false"/>.</returns>
@@ -88,10 +89,7 @@ public static class ExtraPropertyExtensions
 
             foreach (var (key, value) in extraProperties)
             {
-                if (
-                    !otherDictionary.TryGetValue(key, out var otherValue)
-                    || !EqualityComparer<object?>.Default.Equals(value, otherValue)
-                )
+                if (!otherDictionary.TryGetValue(key, out var otherValue) || !_ValuesEqual(value, otherValue))
                 {
                     return false;
                 }
@@ -99,6 +97,15 @@ public static class ExtraPropertyExtensions
 
             return true;
         }
+    }
+
+    // A bag read from JSON holds an object or array value as a JsonElement, whose Equals compares positions in a
+    // document rather than content, so two reads of the same JSON would never match.
+    private static bool _ValuesEqual(object? value, object? otherValue)
+    {
+        return value is JsonElement element && otherValue is JsonElement otherElement
+            ? JsonElement.DeepEquals(element, otherElement)
+            : EqualityComparer<object?>.Default.Equals(value, otherValue);
     }
 }
 

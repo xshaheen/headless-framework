@@ -218,7 +218,6 @@
           "Headless.Context.Abstractions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
-          "Headless.Serializer.Json": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.13, )",
           "Microsoft.Extensions.Options": "[10.0.13, )"
@@ -299,16 +298,6 @@
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Headless.Generator.Primitives.Abstractions": "[1.0.0, )"
-        }
-      },
-      "headless.serializer.abstractions": {
-        "type": "Project"
-      },
-      "headless.serializer.json": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.Serializer.Abstractions": "[1.0.0, )"
         }
       },
       "headless.sql": {

@@ -1,7 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Buffers;
+using System.Globalization;
 using System.Reflection;
+using Headless.Primitives;
 using Headless.Serializer;
 using MessagePack;
 
@@ -396,6 +398,78 @@ public sealed class MessagePackBinarySerializerTests
         var second = first.Append(data.AsMemory(mid));
 
         return new ReadOnlySequence<byte>(first, 0, second, second.Memory.Length);
+    }
+
+    public sealed class PrimitiveContainer
+    {
+        public required UserId Owner { get; init; }
+
+        public Month Month { get; init; }
+
+        public Month? OptionalMonth { get; init; }
+
+        public UserId? OptionalOwner { get; init; }
+    }
+
+    [Fact]
+    public void should_round_trip_generated_primitives_through_their_underlying_value()
+    {
+        // given — a generated primitive keeps its value in private fields, so a member-by-member resolver writes an
+        // empty map and reads back an uninitialized value
+        var value = new PrimitiveContainer
+        {
+            Owner = new UserId("user-42"),
+            Month = new Month(7),
+            OptionalMonth = new Month(12),
+            OptionalOwner = null,
+        };
+
+        // when
+        var bytes = _serializer.SerializeToBytes(value);
+        var result = _serializer.Deserialize<PrimitiveContainer>(bytes);
+
+        // then
+        result.Should().NotBeNull();
+        result!.Owner.GetUnderlyingPrimitiveValue().Should().Be("user-42");
+        result.Month.GetUnderlyingPrimitiveValue().Should().Be(7);
+        result.OptionalMonth.Should().NotBeNull();
+        result.OptionalMonth!.Value.GetUnderlyingPrimitiveValue().Should().Be(12);
+        result.OptionalOwner.Should().BeNull();
+        var raw = _serializer.Deserialize<Dictionary<string, object?>>(bytes);
+        raw!["Owner"].Should().Be("user-42");
+        Convert.ToInt32(raw["Month"], CultureInfo.InvariantCulture).Should().Be(7);
+    }
+
+    [Fact]
+    public void should_leave_a_primitive_without_a_value_constructor_to_the_fallback_resolver()
+    {
+        // when
+        var formatter = PrimitiveFormatterResolver.Instance.GetFormatter<HandWrittenPrimitive>();
+
+        // then
+        formatter.Should().BeNull();
+    }
+
+    public sealed class HandWrittenPrimitive : Headless.Generator.Primitives.IPrimitive<int>
+    {
+        public int Value { get; init; }
+
+        public Type GetUnderlyingPrimitiveType() => typeof(int);
+
+        public int GetUnderlyingPrimitiveValue() => Value;
+
+        public static Headless.Generator.Primitives.PrimitiveValidationResult Validate(int value) =>
+            Headless.Generator.Primitives.PrimitiveValidationResult.Ok;
+    }
+
+    [Fact]
+    public void should_round_trip_a_generated_primitive_at_the_top_level()
+    {
+        // when
+        var result = _serializer.Deserialize<Month>(_serializer.SerializeToBytes(new Month(3)));
+
+        // then
+        result.GetUnderlyingPrimitiveValue().Should().Be(3);
     }
 
     private static MessagePackSerializerOptions _ReadOptions(MessagePackBinarySerializer serializer)

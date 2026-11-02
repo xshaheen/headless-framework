@@ -23,14 +23,16 @@ Neither provider registers itself into DI automatically — you must call `servi
 - Always depend on `ISerializer`, `IJsonSerializer`, or `IBinarySerializer` from `Headless.Serializer.Abstractions`. Never reference `SystemJsonSerializer` or `MessagePackBinarySerializer` in application code.
 - Default to `Headless.Serializer.Json` for general use. Switch to `Headless.Serializer.MessagePack` only when binary performance or payload size matters (e.g., cache entries, internal message envelopes, high-throughput pipelines).
 - Do not call `System.Text.Json.JsonSerializer` directly in application code — go through `IJsonSerializer` so the implementation can be swapped and options are centralized.
-- Register JSON: `services.AddSingleton<IJsonSerializer, SystemJsonSerializer>()`. Also register a custom `IJsonOptionsProvider` if you need non-default options (registration order does not matter — it is resolved by constructor injection).
+- Register JSON: `services.AddSingleton<IJsonSerializer, SystemJsonSerializer>()`. Also register a custom `IJsonOptionsProvider` if you need non-default options (registration order does not matter — it is resolved by constructor injection, and no framework storage package registers its own `IJsonSerializer` ahead of yours).
+- Keep web-API JSON and stored JSON apart. MVC and minimal APIs read `JsonConstants.ConfigureWebJsonOptions`; `IJsonOptionsProvider` feeds the shared `IJsonSerializer` that caches and blob metadata round-trip your types through; framework-owned records use fixed options no host setting changes. See [Web-API JSON and stored JSON](#web-api-json-and-stored-json).
+- Do not build an `IJsonOptionsProvider` from the web preset unchanged: it camelCases dictionary keys on write only, so `{"Admin":1}` reads back as `{"admin":1}`. Set `DictionaryKeyPolicy = null` on your copy, as `DefaultJsonOptionsProvider` does.
 - Register MessagePack: `services.AddSingleton<IBinarySerializer, MessagePackBinarySerializer>()`. Pass custom `MessagePackSerializerOptions` via constructor for compression or resolver changes.
 - **MessagePack security**: the parameterless `MessagePackBinarySerializer()` uses `MessagePackSecurity.UntrustedData`, so it is safe for cross-service caches and external producers by default. Use `new MessagePackBinarySerializer(untrustedData: false)` only when payloads originate inside the current trust boundary and the MessagePack-CSharp fast path is a deliberate choice. When you supply your own `MessagePackSerializerOptions`, set `Security` there — the `untrustedData` switch is ignored and never changes the level you chose.
 - `SystemJsonSerializer` is annotated `[RequiresUnreferencedCode]` and `[RequiresDynamicCode]` — not AOT-safe as-is. For AOT/NativeAOT scenarios, implement a source-generated `IJsonSerializer` instead.
 - The `ISerializer` contract is buffer-first: writes target an `IBufferWriter<byte>`, reads consume a `ReadOnlyMemory<byte>` or `ReadOnlySequence<byte>`. Use extension methods (`SerializeToBytes<T>`, `SerializeToString<T>`, `Deserialize<T>(byte[])`, `Deserialize<T>(string?)`, plus `Serialize<T>(T, Stream)` / `Deserialize<T>(Stream)`) from `SerializerExtensions` when you hold a `byte[]`, `string`, or `Stream` instead.
 - `SerializeToString` on a binary serializer (e.g., MessagePack) returns a Base64 string; on a text serializer it returns UTF-8. `Deserialize<T>(string?)` reverses this automatically.
 - Built-in JSON converters in `Headless.Serializer.Json` — add them to your `IJsonOptionsProvider` when needed: `UnixTimeJsonConverter`, `IpAddressJsonConverter` (included in default options), `EmptyStringAsNullJsonConverter<T>`, `StringToGuidJsonConverter`, `NullableStringToGuidJsonConverter`, `StringToBooleanJsonConverter`, `SingleOrListJsonConverter<TItem>`, `SingleOrHashsetJsonConverter<TItem>`, `ObjectToInferredTypesJsonConverter`, `CollectionItemJsonConverter<TDatatype, TConverterType>`.
-- The `DefaultWebJsonOptions` used by `DefaultJsonOptionsProvider` include `IpAddressJsonConverter` and a `JsonStringEnumConverter` that writes member names and refuses numbers, automatically. Do not add them again in a custom provider — duplicate converters cause unexpected behavior.
+- The `DefaultWebJsonOptions`, and the `DefaultJsonOptionsProvider` options built from them, include `IpAddressJsonConverter` and a `JsonStringEnumConverter` that writes member names and refuses numbers, automatically. Do not add them again in a custom provider — duplicate converters cause unexpected behavior.
 - For a wire contract shared with a non-.NET producer (for example a Python service using snake_case), build options with `JsonConstants.CreateInternalJsonOptions(JsonNamingPolicy.SnakeCaseLower)`. The naming policy covers property names and enum values together; do not set `PropertyNamingPolicy` on your own copy and forget the enum converter.
 - For a fingerprint, idempotency key, or signature over JSON, use `JsonCanonicalizer.Hash` (RFC 8785). Never hash `JsonSerializer` output or a hand-sorted `Utf8JsonWriter` copy: their escaping is .NET-specific, so no other language reproduces the bytes.
 - None of the serializer packages auto-register services — all DI wiring is explicit.
@@ -160,12 +162,13 @@ System.Text.Json implementation of `IJsonSerializer` with opinionated defaults a
 ### API and behavior
 
 - `SystemJsonSerializer` — `IJsonSerializer` implementation; accepts an optional `IJsonOptionsProvider`
-- `IJsonOptionsProvider` / `DefaultJsonOptionsProvider` — injectable options split into separate serialize and deserialize `JsonSerializerOptions`
+- `IJsonOptionsProvider` / `DefaultJsonOptionsProvider` — injectable options split into separate serialize and deserialize `JsonSerializerOptions`. The default is the web preset with string dictionary keys written as they are and `object` values read as `JsonElement`, so a value round-trips; `SystemJsonSerializer` uses it when built without a provider
 - `JsonConstants` — shared, pre-configured, **read-only** (frozen) option sets. Customize by copying via a `Create*JsonOptions()` factory rather than mutating a preset:
-  - `DefaultWebJsonOptions` — camelCase properties, case-insensitive read, enums as their member names (`Active`, or a `[JsonStringEnumMemberName]` alias) with numbers refused, `IpAddressJsonConverter`, nullable-annotations respected, trailing commas allowed, cycles ignored
+  - `DefaultWebJsonOptions` — camelCase properties and dictionary keys (on write only, so not a round-trip codec), `object` values read as `JsonNode`, case-insensitive read, enums as their member names (`Active`, or a `[JsonStringEnumMemberName]` alias) with numbers refused, `IpAddressJsonConverter`, nullable-annotations respected, trailing commas allowed, cycles ignored
   - `DefaultInternalJsonOptions` — strict (no case-insensitive read, no trailing commas, unknown members and duplicate properties rejected, `WhenWritingNull`); a polymorphic `$type` discriminator is accepted in any position
+  - `DefaultStorageJsonOptions` — the internal preset plus `ObjectToInferredTypesJsonConverter`: string dictionary keys stay as written and `object` values read back as `string`, `bool`, `long`, `decimal`, or `JsonElement` for objects and arrays. The format of JSON the framework persists and reads back itself: EF Core JSON columns, `ExtraProperties` bags, and the relational Settings, Features, and Permissions definition stores
   - `DefaultPrettyJsonOptions` — `DefaultWebJsonOptions` with `WriteIndented = true`
-  - `CreateWebJsonOptions()` / `CreateInternalJsonOptions(JsonNamingPolicy? namingPolicy = null)` / `CreatePrettyJsonOptions()` — return a fresh **mutable** instance with the matching preset applied
+  - `CreateWebJsonOptions()` / `CreateInternalJsonOptions(JsonNamingPolicy? namingPolicy = null)` / `CreateStorageJsonOptions()` / `CreatePrettyJsonOptions()` — return a fresh **mutable** instance with the matching preset applied
   - `ConfigureWebJsonOptions(JsonSerializerOptions)` / `ConfigureInternalJsonOptions(JsonSerializerOptions, JsonNamingPolicy? namingPolicy = null)` — apply settings to an existing instance
   - The internal preset's `namingPolicy` (for example `JsonNamingPolicy.SnakeCaseLower`) renames property names and enum values; `null` keeps CLR property names and camelCase enum values. String dictionary keys are never renamed; enum dictionary keys follow the enum naming (`Dictionary<Status, int>` writes `{"pending_payment":1}` under snake_case).
 - `JsonCanonicalizer` — RFC 8785 (JSON Canonicalization Scheme) output and its SHA-256 hash:
@@ -195,7 +198,21 @@ System.Text.Json implementation of `IJsonSerializer` with opinionated defaults a
 
 `SystemJsonSerializer` is annotated `[RequiresUnreferencedCode]` and `[RequiresDynamicCode]` because it uses reflection-based STJ APIs. This means it is **not AOT-safe** out of the box. The annotation propagates to call sites — you will see trim warnings in NativeAOT or PublishTrimmed builds. For AOT scenarios, write a source-generated `IJsonSerializer` wrapper using `JsonSerializerContext` and register it instead.
 
-The three `JsonConstants` presets (`DefaultWebJsonOptions`, `DefaultInternalJsonOptions`, `DefaultPrettyJsonOptions`) are frozen (`JsonSerializerOptions.IsReadOnly == true`) at initialization so they can be shared process-wide without a caller silently reconfiguring framework serialization. Mutating a preset throws `InvalidOperationException` — start from a fresh mutable copy via `CreateWebJsonOptions()` / `CreateInternalJsonOptions()` / `CreatePrettyJsonOptions()` instead.
+The `JsonConstants` presets (`DefaultWebJsonOptions`, `DefaultInternalJsonOptions`, `DefaultStorageJsonOptions`, `DefaultPrettyJsonOptions`) are frozen (`JsonSerializerOptions.IsReadOnly == true`) at initialization so they can be shared process-wide without a caller silently reconfiguring framework serialization. Mutating a preset throws `InvalidOperationException` — start from a fresh mutable copy via `CreateWebJsonOptions()` / `CreateInternalJsonOptions()` / `CreateStorageJsonOptions()` / `CreatePrettyJsonOptions()` instead.
+
+### Web-API JSON and stored JSON
+
+The framework uses three JSON configurations on purpose, and no host setting moves data from one to another:
+
+| JSON | Options | Who sets them | Used by |
+|---|---|---|---|
+| HTTP requests and responses | `JsonConstants.ConfigureWebJsonOptions`, applied to MVC and minimal-API `JsonOptions` | The host, through ASP.NET Core options | Controllers, minimal APIs, ProblemDetails |
+| Host types the framework round-trips | `IJsonOptionsProvider` behind the shared `IJsonSerializer`; default `DefaultJsonOptionsProvider` | The host, by registering an `IJsonOptionsProvider` in any order | Redis and hybrid cache values (L2), blob metadata on Redis, FileSystem, and SFTP, and any `IJsonSerializer` the app injects |
+| Framework-owned records | Fixed per feature | Nobody: the format is a storage contract | Settings, Features, and Permissions definition `ExtraProperties` (`DefaultStorageJsonOptions`), EF Core JSON columns and `ExtraProperties` (`DefaultStorageJsonOptions`), audit-log `OldValues`/`NewValues`/`ChangedFields` on every provider (`JsonSerializerDefaults.Web`: keys as written, values as `JsonElement`, enums as numbers), Coordination node metadata (a keyed `SystemJsonSerializer` over `DefaultJsonOptionsProvider`) |
+
+Two rules follow. The HTTP preset is never a stored format: it camelCases dictionary keys on write only, which suits a response but would hand a reader a key the writer never used. And a framework-owned record never follows the host's `IJsonOptionsProvider`: every node and every storage provider must write the same JSON for the same value, or a stored definition never compares equal to the one the code declares and an audit entry reads back differently by provider. The storage packages therefore register no `IJsonSerializer`; the shared one comes from the host, `AddHeadless()`, or the first cache or blob package, each built from the registered `IJsonOptionsProvider`.
+
+A stored `object` value comes back as JSON can express it, not as the CLR type written: under `DefaultJsonOptionsProvider` as `JsonElement`, under `DefaultStorageJsonOptions` as `string`, `bool`, `long`, `decimal`, or `JsonElement`. Read it with `GetProperty<T>(name)` on an `ExtraProperties` owner, or with the `JsonElement` API. The definition serializers convert a declared definition's `ExtraProperties` to that stored shape before comparing it with the stored record, so a re-seed of unchanged definitions writes nothing and `seed --verify` reports the store current.
 
 The internal preset rejects duplicate properties because parsers in other languages disagree on which duplicate wins, and accepts the `$type` discriminator after ordinary properties because PostgreSQL `jsonb` reorders keys. Both settings apply everywhere the preset is used, including EF Core JSON columns, blob metadata, and settings and feature values.
 
@@ -255,15 +272,23 @@ using System.Text.Json;
 
 public sealed class MyJsonOptionsProvider : IJsonOptionsProvider
 {
-    // Starts from DefaultWebJsonOptions, then adds a custom converter:
-    public JsonSerializerOptions GetSerializeOptions()
+    // Starts from the web preset, keeps dictionary keys as written (a cache or blob store reads them back), then adds a
+    // custom converter:
+    private static readonly JsonSerializerOptions _Options = _Create();
+
+    public JsonSerializerOptions GetSerializeOptions() => _Options;
+
+    public JsonSerializerOptions GetDeserializeOptions() => _Options;
+
+    private static JsonSerializerOptions _Create()
     {
         var opts = JsonConstants.CreateWebJsonOptions();
+        opts.DictionaryKeyPolicy = null;
+        opts.UnknownTypeHandling = JsonUnknownTypeHandling.JsonElement;
         opts.Converters.Add(new UnixTimeJsonConverter());
+        opts.MakeReadOnly(populateMissingResolver: true);
         return opts;
     }
-
-    public JsonSerializerOptions GetDeserializeOptions() => JsonConstants.CreateWebJsonOptions();
 }
 ```
 
@@ -317,6 +342,7 @@ MessagePack binary serialization implementation of `IBinarySerializer`.
 
 - `MessagePackBinarySerializer` — `IBinarySerializer` implementation
 - Contractless by default: uses `ContractlessStandardResolver`, so plain POCOs serialize without any attributes
+- `PrimitiveFormatterResolver` — writes a generated primitive (`IPrimitive<T>`, such as `UserId` or `Month`) as its underlying value and reads it back through the primitive's value constructor, so validation runs on read. The default options put it ahead of the contractless resolver; without it a primitive's private state serializes as an empty map and reads back uninitialized. When you supply your own options, compose it first: `CompositeResolver.Create(PrimitiveFormatterResolver.Instance, ContractlessStandardResolver.Instance)`
 - Accepts `MessagePackSerializerOptions` via constructor for compression, custom resolvers, or security settings
 - Applies `MessagePackSecurity.UntrustedData` by default; pass `untrustedData: false` only for trusted payloads where the MessagePack-CSharp fast path is intentional
 - Built-in LZ4 compression available via `WithCompression(MessagePackCompression.Lz4BlockArray)`

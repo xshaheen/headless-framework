@@ -9,6 +9,7 @@
     <PackageReference Include="MessagePack" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Headless.Generator.Primitives.Abstractions\Headless.Generator.Primitives.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Serializer.Abstractions\Headless.Serializer.Abstractions.csproj" />
   </ItemGroup>
 </Project>

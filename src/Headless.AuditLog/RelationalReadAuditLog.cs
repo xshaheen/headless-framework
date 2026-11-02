@@ -2,15 +2,13 @@
 
 using System.Data.Common;
 using Headless.Primitives;
-using Headless.Serializer;
 using Headless.Sql;
 
 namespace Headless.AuditLog;
 
 /// <summary>The relational <see cref="IReadAuditLog{TContext}"/>: keyset pages over (<c>CreatedAt</c>, <c>Id</c>).</summary>
 #pragma warning disable CA2100 // SQL text interpolates only validated schema and table identifiers; values are parameters.
-internal sealed class RelationalReadAuditLog<TContext>(RelationalAuditLogTable table, IJsonSerializer serializer)
-    : IReadAuditLog<TContext>
+internal sealed class RelationalReadAuditLog<TContext>(RelationalAuditLogTable table) : IReadAuditLog<TContext>
 {
     private static readonly string[] _Columns =
     [
@@ -206,14 +204,18 @@ internal sealed class RelationalReadAuditLog<TContext>(RelationalAuditLogTable t
             : reader.GetString(ordinal);
     }
 
-    private async Task<T?> _DeserializeAsync<T>(DbDataReader reader, int ordinal, CancellationToken cancellationToken)
+    private static async Task<T?> _DeserializeAsync<T>(
+        DbDataReader reader,
+        int ordinal,
+        CancellationToken cancellationToken
+    )
     {
         if (await reader.IsDBNullAsync(ordinal, cancellationToken).ConfigureAwait(false))
         {
             return default;
         }
 
-        return serializer.Deserialize<T>(reader.GetString(ordinal));
+        return JsonSerializer.Deserialize<T>(reader.GetString(ordinal), AuditLogJsonOptions.Instance);
     }
 }
 #pragma warning restore CA2100

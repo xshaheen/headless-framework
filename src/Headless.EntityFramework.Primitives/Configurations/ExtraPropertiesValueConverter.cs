@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Primitives;
+using Headless.Serializer;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
@@ -15,7 +16,7 @@ namespace Headless.EntityFramework;
 public sealed class ExtraPropertiesValueConverter()
     : ValueConverter<ExtraProperties, string>(x => _Serialize(x), x => _Deserialize(x))
 {
-    private static readonly JsonSerializerOptions _Options = EfCoreJsonOptions.Instance;
+    private static readonly JsonSerializerOptions _Options = JsonConstants.DefaultStorageJsonOptions;
 
     private static string _Serialize(ExtraProperties? extraProperties)
     {

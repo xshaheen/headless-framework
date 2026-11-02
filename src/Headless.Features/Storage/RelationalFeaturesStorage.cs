@@ -2,7 +2,6 @@
 
 using FluentValidation;
 using Headless.Hosting.Schema;
-using Headless.Serializer;
 using Headless.Sql;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -41,7 +40,6 @@ internal static class RelationalFeaturesStorage
         );
 
         services.TryAddSingleton(TimeProvider.System);
-        services.TryAddSingleton<IJsonSerializer>(_ => new SystemJsonSerializer());
         services.TryAddSingleton<IFeatureValueRecordRepository>(sp => new RelationalFeatureValueRecordRepository(
             sp.GetRequiredService<RelationalFeaturesTables>(),
             sp.GetRequiredService<IOptions<TOptions>>().Value,
@@ -50,8 +48,7 @@ internal static class RelationalFeaturesStorage
         services.TryAddSingleton<IFeatureDefinitionRecordRepository>(
             sp => new RelationalFeatureDefinitionRecordRepository(
                 sp.GetRequiredService<RelationalFeaturesTables>(),
-                sp.GetRequiredService<IOptions<TOptions>>().Value,
-                sp.GetRequiredService<IJsonSerializer>()
+                sp.GetRequiredService<IOptions<TOptions>>().Value
             )
         );
     }

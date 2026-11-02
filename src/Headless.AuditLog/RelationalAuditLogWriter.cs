@@ -4,14 +4,13 @@ using System.Collections.Concurrent;
 using System.Data.Common;
 using System.Globalization;
 using System.Text;
-using Headless.Serializer;
 using Headless.Sql;
 
 namespace Headless.AuditLog;
 
 /// <summary>Writes audit rows with multi-row <c>INSERT</c> statements, on the caller's transaction or its own.</summary>
 #pragma warning disable CA2100 // SQL text interpolates only validated schema and table identifiers; values are parameters.
-internal sealed class RelationalAuditLogWriter(RelationalAuditLogTable table, IJsonSerializer serializer)
+internal sealed class RelationalAuditLogWriter(RelationalAuditLogTable table)
 {
     // SQL Server allows 2,100 parameters per statement: 100 rows use 1,600.
     private const int _MaxRowsPerCommand = 100;
@@ -207,9 +206,9 @@ internal sealed class RelationalAuditLogWriter(RelationalAuditLogTable table, IJ
             rowIndex,
             AuditLogFieldLimits.Truncate(entry.EntityId, AuditLogFieldLimits.EntityId)
         );
-        _AddText(command, "OldValues", rowIndex, serializer.SerializeToString(entry.OldValues));
-        _AddText(command, "NewValues", rowIndex, serializer.SerializeToString(entry.NewValues));
-        _AddText(command, "ChangedFields", rowIndex, serializer.SerializeToString(entry.ChangedFields));
+        _AddText(command, "OldValues", rowIndex, _Serialize(entry.OldValues));
+        _AddText(command, "NewValues", rowIndex, _Serialize(entry.NewValues));
+        _AddText(command, "ChangedFields", rowIndex, _Serialize(entry.ChangedFields));
         _dialect.AddParameter(command, _Name("Success", rowIndex), SqlColumnType.Boolean, entry.Success);
         _AddText(
             command,
@@ -285,6 +284,12 @@ internal sealed class RelationalAuditLogWriter(RelationalAuditLogTable table, IJ
         _ParameterNamesByColumn[column] = names;
 
         return names[rowIndex];
+    }
+
+    private static string? _Serialize<T>(T? value)
+        where T : class
+    {
+        return value is null ? null : JsonSerializer.Serialize(value, AuditLogJsonOptions.Instance);
     }
 }
 #pragma warning restore CA2100

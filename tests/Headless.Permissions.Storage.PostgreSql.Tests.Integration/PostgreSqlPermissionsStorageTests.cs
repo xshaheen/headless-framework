@@ -5,6 +5,8 @@ using Headless.Caching;
 using Headless.Hosting;
 using Headless.MultiTenancy;
 using Headless.Permissions;
+using Headless.Primitives;
+using Headless.Serializer;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -50,6 +52,46 @@ public sealed class PostgreSqlPermissionsStorageTests(PostgreSqlPermissionsFixtu
         stored!.IsGranted.Should().BeTrue();
         storedGroups.Should().ContainSingle(x => x.Name == "Users");
         storedPermissions.Should().ContainSingle(x => x.Name == "Users.Create");
+    }
+
+    [Fact]
+    public async Task should_round_trip_definition_extra_properties_with_their_keys_and_values_as_written()
+    {
+        // given — keys that a camelCasing dictionary policy would rename, and values the store reads back as CLR
+        // primitives
+        await _DropSchemaAsync();
+        using var host = _CreateHost();
+        await host.StartAsync(AbortToken);
+        var repository = host.Services.GetRequiredService<IPermissionDefinitionRecordRepository>();
+        var group = new PermissionGroupDefinitionRecord(Guid.NewGuid(), "Users", "Users");
+        group.SetProperty("Order", 5L).SetProperty("USD", "Default");
+        var permission = new PermissionDefinitionRecord(Guid.NewGuid(), "Users", "Users.Create", null, "Create users");
+        permission.SetProperty("Group", "Users").SetProperty("Enabled", true);
+
+        // when
+        await repository.SaveAsync([group], [], [], [permission], [], [], AbortToken);
+        var storedGroup = (await repository.GetGroupsListAsync(AbortToken)).Single();
+        var storedPermission = (await repository.GetPermissionsListAsync(AbortToken)).Single();
+
+        // then — the definitions read back equal, so a re-seed finds nothing to update
+        storedGroup.ExtraProperties.Should().BeEquivalentTo(group.ExtraProperties);
+        storedPermission.ExtraProperties.Should().BeEquivalentTo(permission.ExtraProperties);
+        storedGroup.HasSameData(group).Should().BeTrue();
+        storedPermission.HasSameData(permission).Should().BeTrue();
+    }
+
+    [Fact]
+    public void should_leave_the_shared_json_serializer_to_the_host()
+    {
+        // given — the shared serializer carries the host's JSON options for caches and blob metadata; a storage that
+        // registered its own first would decide those options by registration order
+        using var host = _CreateHost();
+
+        // when
+        var serializer = host.Services.GetService<IJsonSerializer>();
+
+        // then
+        serializer.Should().BeNull();
     }
 
     [Fact]

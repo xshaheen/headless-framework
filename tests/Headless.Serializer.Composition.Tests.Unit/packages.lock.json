@@ -346,6 +346,16 @@
       "headless.checks": {
         "type": "Project"
       },
+      "headless.generator.primitives.abstractions": {
+        "type": "Project"
+      },
+      "headless.primitives": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Generator.Primitives.Abstractions": "[1.0.0, )"
+        }
+      },
       "headless.serializer.abstractions": {
         "type": "Project"
       },
@@ -359,6 +369,7 @@
       "headless.serializer.messagepack": {
         "type": "Project",
         "dependencies": {
+          "Headless.Generator.Primitives.Abstractions": "[1.0.0, )",
           "Headless.Serializer.Abstractions": "[1.0.0, )",
           "MessagePack": "[3.1.12, )"
         }

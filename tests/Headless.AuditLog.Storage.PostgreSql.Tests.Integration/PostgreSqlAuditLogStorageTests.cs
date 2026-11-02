@@ -1,7 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Text.Json;
 using Headless.AuditLog;
 using Headless.Hosting;
+using Headless.Serializer;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -62,6 +64,61 @@ public sealed class PostgreSqlAuditLogStorageTests(PostgreSqlAuditLogFixture fix
         entries[0].EntityId.Should().Be("ORD-1");
         entries[0].ChangedFields.Should().Equal("total");
         entries[0].NewValues.Should().ContainKey("total");
+    }
+
+    [Fact]
+    public async Task should_read_changed_values_back_under_their_property_names_as_json_elements()
+    {
+        // given — captured property names are PascalCase, and ChangedFields names the same keys
+        await _DropSchemaAsync();
+        using var host = _CreateHost();
+        await host.StartAsync(AbortToken);
+        await using var scope = host.Services.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<IAuditLogStore>();
+        var reader = scope.ServiceProvider.GetRequiredService<IReadAuditLog<object>>();
+
+        await store.SaveAsync(
+            [
+                new AuditLogEntryData
+                {
+                    Action = "entity.updated",
+                    ChangeType = AuditChangeType.Updated,
+                    EntityType = "Order",
+                    EntityId = "ORD-2",
+                    TenantId = "tenant-names",
+                    OldValues = new Dictionary<string, object?>(StringComparer.Ordinal) { ["TotalAmount"] = 10m },
+                    NewValues = new Dictionary<string, object?>(StringComparer.Ordinal) { ["TotalAmount"] = 12.5m },
+                    ChangedFields = ["TotalAmount"],
+                    CreatedAt = new DateTimeOffset(2026, 5, 24, 12, 0, 0, TimeSpan.Zero),
+                },
+            ],
+            savingContext: new object(),
+            AbortToken
+        );
+
+        // when
+        var entry = (
+            await reader.QueryAsync(new() { TenantId = "tenant-names" }, cancellationToken: AbortToken)
+        ).Items.Single();
+
+        // then
+        var changed = entry.ChangedFields!.Single();
+        entry.NewValues![changed].Should().BeOfType<JsonElement>().Which.GetDecimal().Should().Be(12.5m);
+        entry.OldValues![changed].Should().BeOfType<JsonElement>().Which.GetDecimal().Should().Be(10m);
+    }
+
+    [Fact]
+    public void should_leave_the_shared_json_serializer_to_the_host()
+    {
+        // given — the shared serializer carries the host's JSON options for caches and blob metadata; a storage that
+        // registered its own first would decide those options by registration order
+        using var host = _CreateHost();
+
+        // when
+        var serializer = host.Services.GetService<IJsonSerializer>();
+
+        // then
+        serializer.Should().BeNull();
     }
 
     [Fact]

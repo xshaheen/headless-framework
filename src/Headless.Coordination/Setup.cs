@@ -116,9 +116,9 @@ public static class SetupCoordinationCore
         {
             services.AddSingletonOptionValue<CoordinationOptions>();
 
-            // Keyed so consumers can override coordination metadata/endpoint serialization independently of the
-            // global IJsonSerializer by pre-registering their own keyed serializer under the same key. Defaults to
-            // web JSON (SystemJsonSerializer + DefaultJsonOptionsProvider).
+            // Keyed so the stored node format never follows the host's IJsonOptionsProvider or global IJsonSerializer;
+            // a consumer overrides it only by pre-registering a serializer under this key. The default provider keeps
+            // metadata keys as written, so every peer reads back the key the node published.
             services.TryAddKeyedSingleton<IJsonSerializer>(
                 CoordinationOptions.JsonSerializerServiceKey,
                 static (_, _) => new SystemJsonSerializer(new DefaultJsonOptionsProvider())

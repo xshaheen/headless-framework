@@ -11,8 +11,7 @@ namespace Headless.Settings;
 #pragma warning disable CA2100 // SQL text interpolates only validated schema and table identifiers; values are parameters.
 internal sealed class RelationalSettingDefinitionRecordRepository(
     RelationalSettingsTables tables,
-    RelationalSettingsOptions options,
-    IJsonSerializer serializer
+    RelationalSettingsOptions options
 ) : ISettingDefinitionRecordRepository
 {
     // Written text is unbounded: a parameter sized to the column would silently truncate an over-long value, where the
@@ -72,7 +71,7 @@ internal sealed class RelationalSettingDefinitionRecordRepository(
                 reader.GetBoolean(8)
             );
 
-            foreach (var (key, value) in serializer.Deserialize<ExtraProperties>(reader.GetString(9)) ?? [])
+            foreach (var (key, value) in _ReadExtraProperties(reader.GetString(9)))
             {
                 record.ExtraProperties[key] = value;
             }
@@ -137,9 +136,17 @@ internal sealed class RelationalSettingDefinitionRecordRepository(
             command,
             "ExtraProperties",
             _Written,
-            serializer.SerializeToString(record.ExtraProperties) ?? "{}"
+            JsonSerializer.Serialize(record.ExtraProperties, JsonConstants.DefaultStorageJsonOptions)
         );
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    // The bag's JSON is a storage format shared with the EF provider and every other node, so it is read and written
+    // with the fixed storage preset: keys as written, values as inferred CLR primitives. The host's JSON options
+    // never reach it.
+    private static ExtraProperties _ReadExtraProperties(string json)
+    {
+        return JsonSerializer.Deserialize<ExtraProperties>(json, JsonConstants.DefaultStorageJsonOptions) ?? [];
     }
 
     private DbCommand _CreateCommand(DbConnection connection, DbTransaction? transaction, string sql)

@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Serializer;
+
 namespace Headless.EntityFramework;
 
 /// <summary>
@@ -92,7 +94,7 @@ internal static class HeadlessJsonValueEquality
     {
         return value is null or JsonElement || _IsSimple(value)
             ? value
-            : JsonSerializer.Deserialize<object>(_Serialize(value), EfCoreJsonOptions.Instance);
+            : JsonSerializer.Deserialize<object>(_Serialize(value), JsonConstants.DefaultStorageJsonOptions);
     }
 
     // Equality must match the stored JSON, which keeps a DateTimeOffset's offset, a DateTime's kind, a decimal's scale
@@ -140,5 +142,6 @@ internal static class HeadlessJsonValueEquality
                 or Enum;
     }
 
-    private static string _Serialize(object value) => JsonSerializer.Serialize(value, EfCoreJsonOptions.Instance);
+    private static string _Serialize(object value) =>
+        JsonSerializer.Serialize(value, JsonConstants.DefaultStorageJsonOptions);
 }

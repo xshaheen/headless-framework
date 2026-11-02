@@ -14,7 +14,7 @@ namespace Headless.AuditLog;
 internal sealed class AuditLogEntryConfiguration(AuditLogStorageOptions options, StorageNamingStyle style)
     : IEntityTypeConfiguration<AuditLogEntry>
 {
-    private static readonly JsonSerializerOptions _JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions _JsonOptions = AuditLogJsonOptions.Instance;
 
     public void Configure(EntityTypeBuilder<AuditLogEntry> builder)
     {

@@ -12,8 +12,9 @@ namespace Headless.Serializer;
 /// <para>
 /// <see cref="DefaultWebJsonOptions"/> — camelCase naming, case-insensitive reads, numbers from strings,
 /// cycle-safe reference handling, <c>RespectNullableAnnotations</c>/<c>RespectRequiredConstructorParameters</c>,
-/// and the <see cref="IpAddressJsonConverter"/> included. Intended for public-facing HTTP APIs. Used by
-/// <see cref="DefaultJsonOptionsProvider"/>.
+/// and the <see cref="IpAddressJsonConverter"/> included. Intended for public-facing HTTP APIs. It camelCases
+/// dictionary keys on write only, so it is not a round-trip codec; <see cref="DefaultJsonOptionsProvider"/> starts
+/// from it and writes keys as they are.
 /// </para>
 /// <para>
 /// <see cref="DefaultInternalJsonOptions"/> — strict number handling, no naming policy (preserves property
@@ -24,22 +25,31 @@ namespace Headless.Serializer;
 /// <see cref="JsonNamingPolicy.SnakeCaseLower"/>, for a contract shared with a non-.NET producer.
 /// </para>
 /// <para>
+/// <see cref="DefaultStorageJsonOptions"/> — the internal preset plus <see cref="ObjectToInferredTypesJsonConverter"/>,
+/// so an <see langword="object"/> value reads back as a CLR primitive (<see cref="string"/>, <see cref="bool"/>,
+/// <see cref="long"/>, <see cref="decimal"/>) or a <see cref="JsonElement"/> for an object or array. Intended for JSON
+/// the framework persists and reads back itself: EF Core JSON columns, <c>ExtraProperties</c> bags, and the relational
+/// definition stores. Its format never depends on the host's <see cref="IJsonOptionsProvider"/>, so every node and
+/// every storage provider writes the same JSON for the same value.
+/// </para>
+/// <para>
 /// <see cref="DefaultPrettyJsonOptions"/> — identical to <see cref="DefaultWebJsonOptions"/> with
 /// <see cref="JsonSerializerOptions.WriteIndented"/> set to <see langword="true"/>. Useful for logging and
 /// diagnostics.
 /// </para>
 /// <para>
-/// All three presets include <see cref="System.Text.Json.Serialization.JsonStringEnumConverter"/>, with integer values
+/// All four presets include <see cref="System.Text.Json.Serialization.JsonStringEnumConverter"/>, with integer values
 /// disallowed, and <see cref="Converters.IpAddressJsonConverter"/>, via the shared
 /// <see cref="ConfigureWebJsonOptions"/> / <see cref="ConfigureInternalJsonOptions"/> helpers. The web and pretty
 /// presets write an enum under its member name as declared (<c>Active</c>, or a <c>[JsonStringEnumMemberName]</c>
 /// alias); the internal preset writes it camelCase unless given a naming policy.
 /// </para>
 /// <para>
-/// The three shared presets are frozen (<see cref="JsonSerializerOptions.IsReadOnly"/> is <see langword="true"/>)
+/// The shared presets are frozen (<see cref="JsonSerializerOptions.IsReadOnly"/> is <see langword="true"/>)
 /// at initialization, so they can be shared process-wide without a caller silently mutating framework serialization.
 /// To customize, start from a fresh mutable instance via <see cref="CreateWebJsonOptions"/>,
-/// <see cref="CreateInternalJsonOptions"/>, or <see cref="CreatePrettyJsonOptions"/> instead of mutating a preset.
+/// <see cref="CreateInternalJsonOptions"/>, <see cref="CreateStorageJsonOptions"/>, or
+/// <see cref="CreatePrettyJsonOptions"/> instead of mutating a preset.
 /// </para>
 /// </remarks>
 [PublicAPI]
@@ -57,6 +67,13 @@ public static class JsonConstants
     /// <see cref="CreateInternalJsonOptions"/> for a mutable copy.
     /// </summary>
     public static readonly JsonSerializerOptions DefaultInternalJsonOptions = _Freeze(CreateInternalJsonOptions());
+
+    /// <summary>
+    /// Shared, read-only options for JSON the framework persists and reads back itself. See the
+    /// <see cref="JsonConstants"/> remarks for the full configuration applied. Use
+    /// <see cref="CreateStorageJsonOptions"/> for a mutable copy.
+    /// </summary>
+    public static readonly JsonSerializerOptions DefaultStorageJsonOptions = _Freeze(CreateStorageJsonOptions());
 
     /// <summary>
     /// Shared, read-only options for human-readable (indented) output. Identical to
@@ -93,6 +110,29 @@ public static class JsonConstants
     public static JsonSerializerOptions CreateInternalJsonOptions(JsonNamingPolicy? namingPolicy = null)
     {
         return ConfigureInternalJsonOptions(new JsonSerializerOptions(), namingPolicy);
+    }
+
+    /// <summary>
+    /// Creates a new <see cref="JsonSerializerOptions"/> instance configured for JSON the framework persists and reads
+    /// back itself: the internal preset with <see cref="ObjectToInferredTypesJsonConverter"/> added.
+    /// </summary>
+    /// <returns>A new, mutable options instance with the storage preset applied.</returns>
+    [UnconditionalSuppressMessage(
+        "Trimming",
+        "IL2026:RequiresUnreferencedCode",
+        Justification = "Presets use the reflection-based serializer by default; consumers should use source generation for AOT/trimmed scenarios."
+    )]
+    [UnconditionalSuppressMessage(
+        "AOT",
+        "IL3050:RequiresDynamicCode",
+        Justification = "Presets use the reflection-based serializer by default; consumers should use source generation for AOT scenarios."
+    )]
+    public static JsonSerializerOptions CreateStorageJsonOptions()
+    {
+        var options = CreateInternalJsonOptions();
+        options.Converters.Add(new ObjectToInferredTypesJsonConverter());
+
+        return options;
     }
 
     /// <summary>

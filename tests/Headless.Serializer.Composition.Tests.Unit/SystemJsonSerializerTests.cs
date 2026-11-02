@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Text.Json;
 using Headless.Serializer;
 using Headless.Serializer.Converters;
 
@@ -8,6 +9,43 @@ namespace Tests;
 public sealed class SystemJsonSerializerTests
 {
     private readonly SystemJsonSerializer _serializer = new();
+
+    [Fact]
+    public void should_round_trip_dictionary_keys_verbatim_by_default()
+    {
+        // given — keys are data: a renamed key no longer matches the one the writer used
+        var value = new Dictionary<string, int>(StringComparer.Ordinal)
+        {
+            ["Admin"] = 1,
+            ["USD"] = 2,
+            ["Contoso.Region"] = 3,
+        };
+
+        // when
+        var json = _serializer.SerializeToString(value);
+        var result = _serializer.Deserialize<Dictionary<string, int>>(json);
+
+        // then
+        json.Should().Be("{\"Admin\":1,\"USD\":2,\"Contoso.Region\":3}");
+        result.Should().BeEquivalentTo(value);
+    }
+
+    [Fact]
+    public void should_read_object_values_as_json_element_by_default()
+    {
+        // given
+        var json = _serializer.SerializeToString(
+            new Dictionary<string, object?>(StringComparer.Ordinal) { ["Name"] = "Billing", ["Order"] = 5 }
+        );
+
+        // when
+        var result = _serializer.Deserialize<Dictionary<string, object?>>(json);
+
+        // then
+        result.Should().NotBeNull();
+        result!["Name"].Should().BeOfType<JsonElement>().Which.GetString().Should().Be("Billing");
+        result["Order"].Should().BeOfType<JsonElement>().Which.GetInt32().Should().Be(5);
+    }
 
     [Fact]
     public void should_write_to_stream_when_serialize_type()

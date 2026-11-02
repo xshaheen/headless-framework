@@ -9,8 +9,8 @@ namespace Headless.Serializer;
 /// </summary>
 /// <remarks>
 /// Serialization and deserialization options are provided by the injected <see cref="IJsonOptionsProvider"/>.
-/// When no provider is supplied the <see cref="DefaultJsonOptionsProvider"/> is used, which delegates to
-/// <see cref="JsonConstants.DefaultWebJsonOptions"/>.
+/// When no provider is supplied the <see cref="DefaultJsonOptionsProvider"/> is used: the web preset with dictionary
+/// keys written verbatim and <see langword="object"/> values read as <see cref="JsonElement"/>, so a value round-trips.
 /// <para>
 /// Writes go through a <see cref="Utf8JsonWriter"/> over the caller's <see cref="IBufferWriter{T}"/> and reads
 /// through <see cref="System.Text.Json.JsonSerializer"/>'s span/reader overloads, so no intermediate

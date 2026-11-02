@@ -5,7 +5,6 @@ using Headless.Context;
 using Headless.Hosting;
 using Headless.Hosting.Schema;
 using Headless.MultiTenancy;
-using Headless.Serializer;
 using Headless.Sql;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -56,7 +55,6 @@ internal static class RelationalAuditLogStorage
             )
         );
 
-        services.TryAddSingleton<IJsonSerializer>(_ => new SystemJsonSerializer());
         services.TryAddSingleton<RelationalAuditLogWriter>();
         services.TryAddSingleton<RelationalAuditLogEnlistment>();
         services.AddStartupValidator<RelationalAuditLogEnlistmentStartupValidator>();

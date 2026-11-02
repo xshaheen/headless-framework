@@ -18,7 +18,8 @@ namespace Headless.Serializer;
 /// </para>
 /// <para>
 /// With no <paramref name="options"/> the serializer uses <c>MessagePackSerializerOptions.Standard</c> with
-/// <c>ContractlessStandardResolver</c>, which maps .NET properties by name without requiring
+/// <see cref="PrimitiveFormatterResolver"/> ahead of <c>ContractlessStandardResolver</c>: a generated primitive is
+/// written as its underlying value, and everything else maps .NET properties by name without requiring
 /// <c>[MessagePackObject]</c> attributes, with <see cref="MessagePackSecurity.UntrustedData"/> applied by default.
 /// </para>
 /// <para>
@@ -62,7 +63,10 @@ public sealed class MessagePackBinarySerializer(MessagePackSerializerOptions? op
             return options;
         }
 
-        var resolved = MessagePackSerializerOptions.Standard.WithResolver(ContractlessStandardResolver.Instance);
+        // Generated primitives come first: the contractless resolver would map their private state to an empty map.
+        var resolved = MessagePackSerializerOptions.Standard.WithResolver(
+            CompositeResolver.Create(PrimitiveFormatterResolver.Instance, ContractlessStandardResolver.Instance)
+        );
 
         return untrustedData ? resolved.WithSecurity(MessagePackSecurity.UntrustedData) : resolved;
     }
