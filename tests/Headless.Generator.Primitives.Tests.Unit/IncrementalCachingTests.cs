@@ -117,7 +117,9 @@ public sealed class IncrementalCachingTests : TestBase
             .Should()
             .Contain(IncrementalStepRunReason.Modified);
         result
-            .GeneratedSources.Single(source => string.Equals(source.HintName, "Amount.g.cs", StringComparison.Ordinal))
+            .GeneratedSources.Single(source =>
+                string.Equals(source.HintName, "Demo.Amount.g.cs", StringComparison.Ordinal)
+            )
             .SourceText.ToString()
             .Should()
             .NotContain("IAdditionOperators");

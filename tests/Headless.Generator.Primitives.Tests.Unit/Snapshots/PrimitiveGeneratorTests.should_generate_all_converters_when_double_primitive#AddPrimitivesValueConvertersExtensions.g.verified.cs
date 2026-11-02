@@ -8,8 +8,6 @@
 
 #nullable enable
 
-using Headless.Primitives;
-using Headless.Primitives.Converters;
 using Microsoft.EntityFrameworkCore;
 
 [assembly: Headless.Generator.Primitives.PrimitiveAssemblyAttribute]
@@ -22,7 +20,7 @@ public static class AddPrimitivesValueConvertersExtensions
     /// <param name="configurationBuilder">The ModelConfigurationBuilder instance to which converters are added.</param>
     public static global::Microsoft.EntityFrameworkCore.ModelConfigurationBuilder AddPrimitivePropertyConversions(this global::Microsoft.EntityFrameworkCore.ModelConfigurationBuilder configurationBuilder)
     {
-        configurationBuilder.Properties<DoublePrimitive>().HaveConversion<DoublePrimitiveValueConverter>();
+        configurationBuilder.Properties<global::Headless.Primitives.DoublePrimitive>().HaveConversion<global::Headless.Primitives.Converters.DoublePrimitiveValueConverter>();
         return configurationBuilder;
     }
 }

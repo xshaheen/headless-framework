@@ -26,7 +26,7 @@ internal static class TypeConverterSourceFilesGeneratorEmitter
             "System.Globalization",
             AbstractionConstants.Namespace,
         ]);
-        builder.AppendNamespace(data.Namespace + ".Converters");
+        builder.AppendNamespace(data.ConvertersNamespace);
         builder.AppendSummary($"TypeConverter for <see cref = \"{data.ClassName}\"/>");
 
         builder.AppendClass(
@@ -87,16 +87,14 @@ internal static class TypeConverterSourceFilesGeneratorEmitter
 
         builder.CloseBracket().CloseBracket();
 
-        context.AddSource(_CreateFileName(data.ClassName), builder.ToString());
+        context.AddSource(
+            GeneratorData.HintName($"{data.ConvertersNamespace}.{CreateClassName(data.ClassName)}"),
+            builder.ToString()
+        );
     }
 
     public static string CreateClassName(string className)
     {
         return $"{className}TypeConverter";
-    }
-
-    private static string _CreateFileName(string className)
-    {
-        return $"{CreateClassName(className)}.g.cs";
     }
 }
