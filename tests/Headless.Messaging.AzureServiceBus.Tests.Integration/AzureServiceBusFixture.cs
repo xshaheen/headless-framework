@@ -314,6 +314,12 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
     /// Takes every message the dead-letter subqueue of <paramref name="queueName"/> holds and returns their message ids,
     /// so one message dead-lettered twice shows twice.
     /// </summary>
+    /// <remarks>
+    /// The drain reads in peek-lock mode, not <see cref="ServiceBusReceiveMode.ReceiveAndDelete"/>: a receive-and-delete
+    /// link is settled on send, so a message the broker pushes onto a receiver's outstanding credit while it closes would
+    /// be deleted without ever being returned, and a polling caller would wait for a message that no longer exists. A copy
+    /// whose lock is lost before its completion is not taken; it stays in the subqueue and a later read returns it.
+    /// </remarks>
     internal static async ValueTask<IReadOnlyList<string>> TakeDeadLetteredMessageIdsAsync(
         string connectionString,
         string queueName,
@@ -342,9 +348,34 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
 
             foreach (var message in messages)
             {
-                await receiver.CompleteMessageAsync(message, cancellationToken);
-                taken.Add(message.MessageId);
+                if (await _TryCompleteAsync(receiver, message, cancellationToken))
+                {
+                    taken.Add(message.MessageId);
+                }
             }
+        }
+    }
+
+    /// <summary>
+    /// Completes <paramref name="message"/>, or returns <see langword="false"/> when its lock is gone, so the caller treats
+    /// the copy as not taken yet instead of failing the read.
+    /// </summary>
+    private static async ValueTask<bool> _TryCompleteAsync(
+        ServiceBusReceiver receiver,
+        ServiceBusReceivedMessage message,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            await receiver.CompleteMessageAsync(message, cancellationToken);
+            return true;
+        }
+        catch (ServiceBusException exception) when (exception.Reason == ServiceBusFailureReason.MessageLockLost)
+        {
+            // Nothing else settles this subqueue, so a lost lock means it expired or an earlier poll's closed receiver
+            // still holds it: the copy is still in the subqueue, and the read after the lock lapses takes it.
+            return false;
         }
     }
 

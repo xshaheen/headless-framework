@@ -1,0 +1,23 @@
+<Project>
+  <!--
+    Start Testcontainers' resource reaper (Ryuk) once per integration test process, with one retry, before any fixture
+    starts a container. Ryuk otherwise starts with whichever container comes first, and a handshake that misses its
+    fixed 60-second window under Docker load fails that fixture's whole collection. Covering it here reaches the
+    project-local fixtures and the containers tests build themselves, not only the shared Headless fixtures.
+
+    The attribute is added only to integration and chaos projects whose resolved references include
+    Headless.Testing.Testcontainers, so a suite with no containers (SQLite) never needs Docker for it.
+  -->
+  <Target
+    Name="_HeadlessAddResourceReaperFixture"
+    BeforeTargets="GetAssemblyAttributes"
+    DependsOnTargets="ResolveAssemblyReferences"
+    Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('$(MSBuildProjectName)', '\.Tests\.(Integration|Chaos)$'))">
+    <ItemGroup Condition="'@(ReferencePath->AnyHaveMetadataValue('Filename', 'Headless.Testing.Testcontainers'))' == 'true'">
+      <AssemblyAttribute Include="Xunit.AssemblyFixtureAttribute">
+        <_Parameter1>typeof(Headless.Testing.Testcontainers.HeadlessResourceReaperFixture)</_Parameter1>
+        <_Parameter1_IsLiteral>true</_Parameter1_IsLiteral>
+      </AssemblyAttribute>
+    </ItemGroup>
+  </Target>
+</Project>
