@@ -17,43 +17,21 @@ internal sealed class RedisConnectionPool : IRedisConnectionPool, IDisposable, I
     private readonly ILoggerFactory _loggerFactory;
     private readonly RedisMessagingOptions _redisOptions;
     private int _isDisposed;
-    private bool _poolAlreadyConfigured;
+    private int _nextIndex = -1;
 
     public RedisConnectionPool(IOptions<RedisMessagingOptions> options, ILoggerFactory loggerFactory)
     {
         _redisOptions = options.Value;
         _loggerFactory = loggerFactory;
-        _connections = new AsyncLazyRedisConnection[_redisOptions.ConnectionPoolSize];
+        // A shared multiplexer belongs to the app, so the pool opens and disposes no connection of its own.
+        _connections = new AsyncLazyRedisConnection[
+            _redisOptions.ConnectionMultiplexer is null ? _redisOptions.ConnectionPoolSize : 0
+        ];
 
         for (var index = 0; index < _connections.Length; index++)
         {
             _connections[index] = _CreateConnection();
         }
-    }
-
-    private AsyncLazyRedisConnection? QuietConnection => _poolAlreadyConfigured ? _ConnectionsByLeastCapacity() : null;
-
-    // Manual min-scan: OrderBy + FirstOrDefault allocated a key-buffer array and ran O(n log n) comparisons
-    // on every ConnectAsync (publish and poll paths).
-    private AsyncLazyRedisConnection? _ConnectionsByLeastCapacity()
-    {
-        AsyncLazyRedisConnection? best = null;
-        long bestCapacity = long.MaxValue;
-
-        foreach (var connection in _connections)
-        {
-            var capacity = connection.CreatedConnection?.ConnectionCapacity ?? long.MaxValue;
-
-            if (capacity >= bestCapacity)
-            {
-                continue;
-            }
-
-            best = connection;
-            bestCapacity = capacity;
-        }
-
-        return best;
     }
 
     public void Dispose()
@@ -85,43 +63,26 @@ internal sealed class RedisConnectionPool : IRedisConnectionPool, IDisposable, I
         Ensure.NotDisposed(Volatile.Read(ref _isDisposed) != 0, this);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (QuietConnection is not { } quietConnection)
+        if (_redisOptions.ConnectionMultiplexer is { } shared)
         {
-            _poolAlreadyConfigured =
-                _connections.Where(static c => c.IsValueCreated).Take(_redisOptions.ConnectionPoolSize + 1).Count()
-                == _redisOptions.ConnectionPoolSize;
-            quietConnection = QuietConnection;
-            if (quietConnection?.CreatedConnection is { } createdConnection)
-            {
-                return createdConnection.Connection;
-            }
+            return shared;
         }
-        else if (quietConnection.CreatedConnection is { } createdConnection)
+
+        // Taken in turn rather than by load: every publish and poll lands here, and reading each multiplexer's
+        // outstanding-command counters allocates and takes its queue locks, while no command the transport sends
+        // blocks a multiplexer long enough for load-aware picking to pay for that.
+        var index =
+            _connections.Length == 1
+                ? 0
+                : (int)((uint)Interlocked.Increment(ref _nextIndex) % (uint)_connections.Length);
+        var lazy = Volatile.Read(ref _connections[index]);
+
+        if (lazy.CreatedConnection is { } createdConnection)
         {
             return createdConnection.Connection;
         }
 
-        for (var index = 0; index < _connections.Length; index++)
-        {
-            var lazy = Volatile.Read(ref _connections[index]);
-
-            if (!lazy.IsValueCreated || lazy.CreatedConnection is not { } createdConnection)
-            {
-                return (await _ResolveAsync(index, lazy, cancellationToken).ConfigureAwait(false)).Connection;
-            }
-
-            if (createdConnection.ConnectionCapacity == 0)
-            {
-                return createdConnection.Connection;
-            }
-        }
-
-        var selectedIndex = _SelectLeastLoadedIndex();
-
-        return (
-            await _ResolveAsync(selectedIndex, Volatile.Read(ref _connections[selectedIndex]), cancellationToken)
-                .ConfigureAwait(false)
-        ).Connection;
+        return (await _ResolveAsync(index, lazy, cancellationToken).ConfigureAwait(false)).Connection;
     }
 
     private async Task<RedisConnection> _ResolveAsync(
@@ -174,26 +135,6 @@ internal sealed class RedisConnectionPool : IRedisConnectionPool, IDisposable, I
 
             Volatile.Write(ref _connections[index], _CreateConnection());
         }
-    }
-
-    private int _SelectLeastLoadedIndex()
-    {
-        var selectedIndex = 0;
-        var lowestCapacity = long.MaxValue;
-
-        for (var index = 0; index < _connections.Length; index++)
-        {
-            var capacity =
-                Volatile.Read(ref _connections[index]).CreatedConnection?.ConnectionCapacity ?? long.MaxValue;
-
-            if (capacity < lowestCapacity)
-            {
-                lowestCapacity = capacity;
-                selectedIndex = index;
-            }
-        }
-
-        return selectedIndex;
     }
 
     private AsyncLazyRedisConnection _CreateConnection()
