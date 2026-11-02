@@ -8,8 +8,6 @@
 
 #nullable enable
 
-using Headless.Primitives.Outer.Nested;
-using Headless.Primitives.Outer.Nested.Converters;
 using Microsoft.EntityFrameworkCore;
 
 [assembly: Headless.Generator.Primitives.PrimitiveAssemblyAttribute]
@@ -22,7 +20,7 @@ public static class AddPrimitivesValueConvertersExtensions
     /// <param name="configurationBuilder">The ModelConfigurationBuilder instance to which converters are added.</param>
     public static global::Microsoft.EntityFrameworkCore.ModelConfigurationBuilder AddPrimitivePropertyConversions(this global::Microsoft.EntityFrameworkCore.ModelConfigurationBuilder configurationBuilder)
     {
-        configurationBuilder.Properties<IntPrimitive>().HaveConversion<IntPrimitiveValueConverter>();
+        configurationBuilder.Properties<global::Headless.Primitives.Outer.Nested.IntPrimitive>().HaveConversion<global::Headless.Primitives.Outer.Nested.Converters.IntPrimitiveValueConverter>();
         return configurationBuilder;
     }
 }
