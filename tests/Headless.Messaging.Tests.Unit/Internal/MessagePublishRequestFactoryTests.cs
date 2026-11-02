@@ -36,7 +36,11 @@ public sealed class MessagePublishRequestFactoryTests
         // when
         var prepared = factory.Create(
             response,
-            new PublishOptions { MessageName = "callbacks.messageName", MessageType = typeof(CallbackResponse) }
+            new PublishOptions
+            {
+                MessageName = "callbacks.messageName",
+                MessageType = MessageTypeHandle.For<CallbackResponse>(),
+            }
         );
 
         // then

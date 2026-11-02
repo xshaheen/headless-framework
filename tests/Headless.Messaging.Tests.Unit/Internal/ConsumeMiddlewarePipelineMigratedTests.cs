@@ -239,7 +239,7 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
 
         // when
         await pipeline.ExecuteAsync(
-            _BuildConsumerContext(),
+            _BuildConsumerContext(messageBinding: ConsumeMessageBinding.For<OtherMigratedConsumeMessage>()),
             new OtherMigratedConsumeMessage("other"),
             typeof(OtherMigratedConsumeMessage),
             AbortToken
@@ -348,7 +348,8 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
     private static ConsumerContext _BuildConsumerContext(
         string? tenantHeader = null,
         MessageLane lane = MessageLane.Bus,
-        IUnitOfWork? unitOfWork = null
+        IUnitOfWork? unitOfWork = null,
+        ConsumeMessageBinding? messageBinding = null
     )
     {
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -366,7 +367,8 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
         {
             Lane = lane,
             ConsumerType = typeof(ConsumeMiddlewarePipelineMigratedTests),
-            MessageType = typeof(MigratedConsumeMessage),
+            MessageType = (messageBinding ?? ConsumeMessageBinding.For<MigratedConsumeMessage>()).MessageType,
+            MessageBinding = messageBinding ?? ConsumeMessageBinding.For<MigratedConsumeMessage>(),
             Dispatch = static (services, _, cancellationToken) =>
                 services.GetRequiredService<MigratedConsumeDispatcher>().DispatchAsync(cancellationToken),
             MessageName = "orders",

@@ -416,6 +416,7 @@ public sealed class SubscribeExecutorLeaseRenewalTests : TestBase
             Lane = MessageLane.Bus,
             ConsumerType = typeof(CancellationExecutorTestConsumer),
             MessageType = typeof(CancellationExecutorTestMessage),
+            MessageBinding = ConsumeMessageBinding.For<CancellationExecutorTestMessage>(),
             MessageName = "test.messageName",
             SubscriptionName = "test",
         };

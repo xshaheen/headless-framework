@@ -538,7 +538,11 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         await harness.Publisher.PublishAsync(
             MessageLane.Bus,
             content,
-            new PublishOptions { MessageType = typeof(DeliveryMessage), MessageName = "delivery.message" },
+            new PublishOptions
+            {
+                MessageType = MessageTypeHandle.For<DeliveryMessage>(),
+                MessageName = "delivery.message",
+            },
             unitOfWork: null,
             requireCoordination: false,
             AbortToken

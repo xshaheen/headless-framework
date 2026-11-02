@@ -360,7 +360,7 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
         var payload = new ConcreteDeclaredContract("value");
 
         // when
-        await _ExecuteWithDeclaredContractAsync(pipeline, payload, typeof(IDeclaredContract));
+        await _ExecuteWithDeclaredContractAsync<IDeclaredContract>(pipeline, payload);
 
         // then
         recorder.Context.Should().NotBeNull();
@@ -380,7 +380,7 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
         var pipeline = _BuildPipeline(services);
 
         // when
-        await _ExecuteWithDeclaredContractAsync(pipeline, content: null, typeof(IDeclaredContract));
+        await _ExecuteWithDeclaredContractAsync<IDeclaredContract>(pipeline, content: null);
 
         // then
         recorder.Context.Should().NotBeNull();
@@ -405,11 +405,10 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
 
         // when
-        await pipeline.ExecuteAsync(
+        await pipeline.ExecuteAsync<object>(
             payload,
-            typeof(IDeclaredContract),
             MessageLane.Queue,
-            options: null,
+            new QueueOptions { MessageType = MessageTypeHandle.For<IDeclaredContract>() },
             _DirectQueueDecision,
             static (_, _) => Task.CompletedTask,
             cts.Token
@@ -438,8 +437,8 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
         var second = new OtherDeclaredContract(2);
 
         // when
-        await _ExecuteWithDeclaredContractAsync(pipeline, first, typeof(IDeclaredContract));
-        await _ExecuteWithDeclaredContractAsync(pipeline, second, typeof(IDeclaredContract));
+        await _ExecuteWithDeclaredContractAsync<IDeclaredContract>(pipeline, first);
+        await _ExecuteWithDeclaredContractAsync<IDeclaredContract>(pipeline, second);
 
         // then
         recorder.Contexts.Should().HaveCount(2);
@@ -517,17 +516,18 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
         return new PublishMiddlewarePipeline(services.BuildServiceProvider());
     }
 
-    private static Task _ExecuteWithDeclaredContractAsync(
+    // Declares the contract through the options, as a callback response does, so the payload's static type differs from
+    // the declared one.
+    private static Task _ExecuteWithDeclaredContractAsync<TDeclared>(
         IPublishMiddlewarePipeline pipeline,
-        object? content,
-        Type declaredContract
+        object? content
     )
+        where TDeclared : class
     {
         return pipeline.ExecuteAsync(
             content,
-            declaredContract,
             MessageLane.Bus,
-            options: null,
+            new PublishOptions { MessageType = MessageTypeHandle.For<TDeclared>() },
             _DirectDecision,
             static (_, _) => Task.CompletedTask,
             AbortToken

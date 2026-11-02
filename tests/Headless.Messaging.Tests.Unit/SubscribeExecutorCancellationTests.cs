@@ -49,6 +49,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
             Lane = MessageLane.Bus,
             ConsumerType = typeof(CancellationExecutorTestConsumer),
             MessageType = typeof(CancellationExecutorTestMessage),
+            MessageBinding = ConsumeMessageBinding.For<CancellationExecutorTestMessage>(),
             MessageName = "test.messageName",
             SubscriptionName = "test",
         };
@@ -488,6 +489,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
             Lane = MessageLane.Bus,
             ConsumerType = typeof(CancellationExecutorTestConsumer),
             MessageType = typeof(CancellationExecutorTestMessage),
+            MessageBinding = ConsumeMessageBinding.For<CancellationExecutorTestMessage>(),
             MessageName = "test.messageName",
             SubscriptionName = CancellationExecutorTestConsumer.Identity,
             ConsumerIdentity = CancellationExecutorTestConsumer.Identity,

@@ -80,6 +80,7 @@ public class ConsumeDispatchBenchmarks
         {
             ConsumerType = typeof(NoOpBenchmarkConsumer),
             MessageType = typeof(BenchmarkPayload),
+            MessageBinding = ConsumeMessageBinding.For<BenchmarkPayload>(),
             Lane = MessageLane.Bus,
             MessageName = "benchmark.payload",
             SubscriptionName = NoOpBenchmarkConsumer.Identity,

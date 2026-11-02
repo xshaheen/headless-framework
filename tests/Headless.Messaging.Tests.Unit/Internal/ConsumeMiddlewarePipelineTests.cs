@@ -28,6 +28,23 @@ public sealed class ConsumeMiddlewarePipelineTests : TestBase
     }
 
     [Fact]
+    public async Task should_refuse_a_descriptor_without_a_message_binding_before_dispatch()
+    {
+        // given
+        var recorder = new MiddlewareCallRecorder();
+        var pipeline = _BuildPipeline(_CreateServices(recorder));
+        var context = _BuildConsumerContext(withBinding: false);
+
+        // when
+        var act = () =>
+            pipeline.ExecuteAsync(context, new MiddlewarePayload("hi"), typeof(MiddlewarePayload), AbortToken);
+
+        // then
+        await act.Should().ThrowExactlyAsync<InvalidOperationException>().WithMessage("*declares no message type*");
+        recorder.Calls.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task should_keep_registration_lane_authoritative_when_compatible_header_disagrees()
     {
         // given
@@ -202,13 +219,14 @@ public sealed class ConsumeMiddlewarePipelineTests : TestBase
         return new ConsumeMiddlewarePipeline(services.BuildServiceProvider(), runtimeRegistry);
     }
 
-    private static ConsumerContext _BuildConsumerContext()
+    private static ConsumerContext _BuildConsumerContext(bool withBinding = true)
     {
         var descriptor = new ConsumerExecutorDescriptor
         {
             Lane = MessageLane.Bus,
             ConsumerType = typeof(ConsumeMiddlewarePipelineTests),
             MessageType = typeof(MiddlewarePayload),
+            MessageBinding = withBinding ? ConsumeMessageBinding.For<MiddlewarePayload>() : null,
             Dispatch = static (services, _, cancellationToken) =>
                 services.GetRequiredService<RecordingMiddlewareDispatcher>().DispatchAsync(cancellationToken),
             MessageName = "test.messageName",

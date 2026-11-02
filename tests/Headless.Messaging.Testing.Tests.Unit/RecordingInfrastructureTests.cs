@@ -559,7 +559,7 @@ public sealed class RecordingInfrastructureTests : TestBase
         var payload = new SimplePayload { Value = "scoped" };
         var expected = new ConsumerExecutedResult(
             payload,
-            typeof(SimplePayload),
+            resultMessageType: null,
             "scope-message",
             "response.message",
             new Dictionary<string, string?>(StringComparer.Ordinal) { ["custom-response"] = "value" },

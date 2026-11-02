@@ -133,6 +133,8 @@ public sealed class RuntimeSubscriberTests : TestBase
         cache.TryGetMessageNameExecutor("runtime.duplicate", "runtime.group", out var descriptor).Should().BeTrue();
         descriptor.Should().NotBeNull();
         descriptor!.HandlerId.Should().Be(replaced.HandlerId);
+        // A runtime subscription is consumed through the binding captured from its type argument.
+        descriptor.MessageBinding.Should().BeSameAs(ConsumeMessageBinding.For<RuntimeMessage>());
 
         await first.DisposeAsync();
         await replaced.DisposeAsync();

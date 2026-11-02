@@ -1218,7 +1218,7 @@ internal sealed class SubscribeExecutor(
                             {
                                 MessageName = ret.CallbackName,
                                 Headers = ret.CallbackHeader,
-                                MessageType = ret.ResultType,
+                                MessageType = ret.ResultMessageType,
                                 CorrelationId = callbackCorrelationId,
                                 CausationId = callbackCausationId,
                                 CorrelationSequence = callbackSequence,
@@ -1244,7 +1244,7 @@ internal sealed class SubscribeExecutor(
                                 DeliveryMode = DeliveryMode.Durable,
                                 MessageName = ret.CallbackName,
                                 Headers = ret.CallbackHeader,
-                                MessageType = ret.ResultType,
+                                MessageType = ret.ResultMessageType,
                                 CorrelationId = callbackCorrelationId,
                                 CausationId = callbackCausationId,
                                 CorrelationSequence = callbackSequence,

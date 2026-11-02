@@ -4,7 +4,7 @@ namespace Headless.Messaging.Internal;
 
 internal sealed class ConsumerExecutedResult(
     object? result,
-    Type? resultType,
+    MessageTypeHandle? resultMessageType,
     string msgId,
     string? callbackName,
     IDictionary<string, string?>? callbackHeader,
@@ -13,7 +13,10 @@ internal sealed class ConsumerExecutedResult(
 {
     public object? Result { get; init; } = result;
 
-    public Type? ResultType { get; init; } = resultType;
+    /// <summary>The declared type of <see cref="Result"/>, which the callback publish names as its contract.</summary>
+    public MessageTypeHandle? ResultMessageType { get; init; } = resultMessageType;
+
+    public Type? ResultType => ResultMessageType?.Type;
 
     public string MessageId { get; init; } = msgId;
 
