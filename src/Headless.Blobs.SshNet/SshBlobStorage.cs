@@ -75,25 +75,44 @@ internal sealed partial class SshBlobStorage(
         // GetBlobInfoAsync uses to recover the blob's Created timestamp.
         var payload = BlobStorageHelpers.BuildEffectiveMetadata(metadata, timeProvider.GetUtcNow(), location.Path);
 
+        // Write the content and the sidecar to temporary siblings, then rename each over its final path, so a fault
+        // or cancellation while the body streams leaves the previous blob and its metadata untouched.
+        var contentTemp = BlobStorageHelpers.BuildTempUploadPath(blobPath);
+        var sidecarTemp = BlobStorageHelpers.BuildTempUploadPath(blobPath);
+
         var client = await pool.AcquireAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            // Write content first, creating only container-relative parent directories on demand. The top-level
-            // container must already exist because explicit container lifecycle lives on IBlobContainerManager.
             try
             {
-                await _WriteAllAsync(client, blobPath, content, cancellationToken).ConfigureAwait(false);
-            }
-            catch (SftpPathNotFoundException e)
-            {
-                logger.LogErrorSavingBlobCreatingDirectory(e, blobPath);
-                await _EnsureParentDirectoryAsync(client, blobPath, cancellationToken).ConfigureAwait(false);
-                await _WriteAllAsync(client, blobPath, content, cancellationToken).ConfigureAwait(false);
-            }
+                // Content first, creating only container-relative parent directories on demand. The top-level
+                // container must already exist because explicit container lifecycle lives on IBlobContainerManager.
+                try
+                {
+                    await _WriteAllAsync(client, contentTemp, content, cancellationToken).ConfigureAwait(false);
+                }
+                catch (SftpPathNotFoundException e)
+                {
+                    logger.LogErrorSavingBlobCreatingDirectory(e, blobPath);
+                    await _EnsureParentDirectoryAsync(client, blobPath, cancellationToken).ConfigureAwait(false);
+                    await _WriteAllAsync(client, contentTemp, content, cancellationToken).ConfigureAwait(false);
+                }
 
-            // Sidecar second, so a crash between the two leaves the blob readable with no metadata rather than the
-            // reverse. The parent directory already exists after the content write.
-            await _WriteSidecarAsync(client, sidecarPath, payload, cancellationToken).ConfigureAwait(false);
+                await _WriteSidecarAsync(client, sidecarTemp, payload, cancellationToken).ConfigureAwait(false);
+
+                // Content rename first, then sidecar: a crash between the two pairs the new content with the old
+                // metadata rather than the reverse. Once the content is replaced the sidecar must follow, so its
+                // rename ignores cancellation.
+                await _ReplaceFileAsync(client, contentTemp, blobPath, cancellationToken).ConfigureAwait(false);
+                await _ReplaceFileAsync(client, sidecarTemp, sidecarPath, CancellationToken.None).ConfigureAwait(false);
+            }
+            finally
+            {
+                // A no-op after both renames. After a failure it removes the partial write; the request token may
+                // already be cancelled, so the cleanup does not use it.
+                await _DeleteTempFileAsync(client, contentTemp).ConfigureAwait(false);
+                await _DeleteTempFileAsync(client, sidecarTemp).ConfigureAwait(false);
+            }
         }
         finally
         {
@@ -542,26 +561,11 @@ internal sealed partial class SshBlobStorage(
 
     internal static (string Directory, string RelativePrefix) GetEnumerationScope(string container, string? prefix)
     {
-        if (string.IsNullOrEmpty(prefix))
-        {
-            return (container, "");
-        }
+        var prefixDirectory = BlobStorageHelpers.GetPrefixDirectory(prefix);
 
-        var lastSlash = prefix.LastIndexOf('/');
-
-        if (lastSlash < 0)
-        {
-            return (container, "");
-        }
-
-        var directoryPrefix = prefix[..lastSlash];
-
-        if (directoryPrefix.Length == 0)
-        {
-            return (container, "");
-        }
-
-        return ($"{container}/{directoryPrefix}", prefix[..(lastSlash + 1)]);
+        return prefixDirectory.Length == 0
+            ? (container, "")
+            : ($"{container}/{prefixDirectory[..^1]}", prefixDirectory);
     }
 
     private async Task _WriteSidecarAsync(
@@ -692,6 +696,47 @@ internal sealed partial class SshBlobStorage(
                     throw;
                 }
             }
+        }
+    }
+
+    /// <summary>Renames <paramref name="source"/> over <paramref name="destination"/>, replacing it.</summary>
+    /// <remarks>
+    /// SFTP's own rename fails when the destination exists, so the replace uses OpenSSH's <c>posix-rename</c>
+    /// extension, which swaps the file in one step: a reader sees the old content or the new, never neither. A server
+    /// without the extension gets delete-then-rename, which leaves a short window in which the blob is absent but
+    /// never exposes a partial write.
+    /// </remarks>
+    private static async Task _ReplaceFileAsync(
+        SftpClient client,
+        string source,
+        string destination,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        try
+        {
+#pragma warning disable CA1849 // RenameFileAsync has no posix flag; the synchronous overload is the only posix-rename API.
+            client.RenameFile(source, destination, isPosix: true);
+#pragma warning restore CA1849
+        }
+        catch (NotSupportedException)
+        {
+            await _DeleteFileIfExistsAsync(client, destination, cancellationToken).ConfigureAwait(false);
+            await client.RenameFileAsync(source, destination, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private async Task _DeleteTempFileAsync(SftpClient client, string path)
+    {
+        try
+        {
+            await _DeleteFileIfExistsAsync(client, path, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (SshException e)
+        {
+            logger.LogFailedToDeleteTempFile(e, path);
         }
     }
 

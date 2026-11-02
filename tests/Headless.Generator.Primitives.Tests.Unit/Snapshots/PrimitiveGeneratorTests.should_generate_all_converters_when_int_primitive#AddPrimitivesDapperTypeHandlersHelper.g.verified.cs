@@ -8,9 +8,6 @@
 
 #nullable enable
 
-using Headless.Primitives;
-using Headless.Primitives.Converters;
-
 namespace generator_Test.Converters.Extensions;
 
 /// <summary>Helper class providing methods to configure Dapper Type Handlers for Primitive types of generator_Test</summary>
@@ -19,6 +16,6 @@ public static class AddPrimitivesDapperTypeHandlersHelper
     /// <summary>Adds Dapper Type Handlers for specific custom types to ensure proper mapping to Dapper ORM.</summary>
     public static void AddPrimitivesDapperTypeHandlers()
     {
-        global::Dapper.SqlMapper.AddTypeMap(new IntPrimitiveDapperTypeHandler());
+        global::Dapper.SqlMapper.AddTypeHandler(new global::Headless.Primitives.Converters.IntPrimitiveDapperTypeHandler());
     }
 }

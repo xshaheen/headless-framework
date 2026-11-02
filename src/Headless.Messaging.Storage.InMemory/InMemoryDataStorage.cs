@@ -621,7 +621,7 @@ internal sealed partial class InMemoryDataStorage(
             {
                 StorageId = guidGenerator.Create(),
                 Origin = _CloneOrigin(message.Origin),
-                Content = serializer.Serialize(message.Origin),
+                Content = _ContentOf(message),
                 Lane = message.Lane,
                 Name = name,
                 ConsumerIdentity = consumerIdentity,
@@ -780,7 +780,7 @@ internal sealed partial class InMemoryDataStorage(
         {
             StorageId = guidGenerator.Create(),
             Origin = message.Origin,
-            Content = serializer.Serialize(message.Origin),
+            Content = _ContentOf(message),
             Lane = message.Lane,
             Added = added,
             ExpiresAt = publishAt,
@@ -870,7 +870,7 @@ internal sealed partial class InMemoryDataStorage(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var content = string.IsNullOrEmpty(message.Content) ? serializer.Serialize(message.Origin) : message.Content;
+        var content = _ContentOf(message);
         var messageId = message.Origin.Id;
         var version = messagingOptions.Value.Version;
         var now = timeProvider.GetUtcNow();
@@ -969,7 +969,7 @@ internal sealed partial class InMemoryDataStorage(
         var added = timeProvider.GetUtcNow();
         var initialNextRetryAt = added.Add(messagingOptions.Value.RetryPolicy.InitialDispatchGrace);
         var origin = message.Origin;
-        var serialized = serializer.Serialize(origin);
+        var serialized = _ContentOf(message);
 
         // Tolerate missing MessageId header (degenerate test inputs / synthetic payloads): without
         // a MessageId there's no upsert identity to share, so concurrent calls degrade to plain
@@ -1584,6 +1584,12 @@ internal sealed partial class InMemoryDataStorage(
     /// stored Origin, and a stored Origin must not drift under a caller that keeps editing its copy. The
     /// payload value is shared by reference — payload semantics treat it as immutable.
     /// </summary>
+    // The content the caller already serialized for the origin when it supplied one, otherwise a fresh serialization.
+    private string _ContentOf(MediumMessage message)
+    {
+        return string.IsNullOrEmpty(message.Content) ? serializer.Serialize(message.Origin) : message.Content;
+    }
+
     private static Message _CloneOrigin(Message origin)
     {
         return new Message(new Dictionary<string, string?>(origin.Headers, StringComparer.Ordinal), origin.Value);

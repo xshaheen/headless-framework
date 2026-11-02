@@ -4,6 +4,7 @@ using System.Reflection;
 using Headless.Messaging.Dashboard;
 using Headless.Messaging.Dashboard.K8s;
 using Headless.Testing.Tests;
+using k8s;
 using k8s.Models;
 
 #pragma warning disable REFL009 // The referenced member is not known to exist
@@ -23,9 +24,100 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
 
     protected override ValueTask DisposeAsyncCore()
     {
+        _provider.Dispose();
         _cache.Dispose();
         return base.DisposeAsyncCore();
     }
+
+    #region Client lifetime Tests
+
+    [Fact]
+    public async Task should_reuse_one_kubernetes_client_when_called_repeatedly()
+    {
+        // given: a pre-cancelled token fails each API call before any connection is opened
+        using var provider = new K8sNodeDiscoveryProvider(LoggerFactory, _cache, _NamespacedOptions());
+        using var cancellationSource = new CancellationTokenSource();
+        await cancellationSource.CancelAsync();
+
+        // when
+        var listNodes = () => provider.GetNodesAsync(cancellationToken: cancellationSource.Token);
+        await listNodes.Should().ThrowAsync<OperationCanceledException>();
+        var first = _ReadClient(provider);
+        var getNode = () => provider.GetNodeAsync("messaging-api", cancellationToken: cancellationSource.Token);
+        await getNode.Should().ThrowAsync<OperationCanceledException>();
+
+        // then
+        first.Should().NotBeNull();
+        _ReadClient(provider).Should().BeSameAs(first);
+    }
+
+    [Fact]
+    public async Task should_report_no_nodes_without_reaching_the_api_when_disposed()
+    {
+        // given
+        using var provider = new K8sNodeDiscoveryProvider(LoggerFactory, _cache, _NamespacedOptions());
+        provider.Dispose();
+
+        // when
+        var nodes = await provider.GetNodesAsync(cancellationToken: AbortToken);
+        var node = await provider.GetNodeAsync("messaging-api", cancellationToken: AbortToken);
+
+        // then
+        nodes.Should().BeEmpty();
+        node.Should().BeNull();
+        _cache.TryGetValue<int>("messaging.nodes.count", out var count).Should().BeTrue();
+        count.Should().Be(0);
+        _ReadClient(provider).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_keep_the_client_when_disposed_without_managed_resources()
+    {
+        // given
+        using var provider = new FinalizingK8sNodeDiscoveryProvider(LoggerFactory, _cache, _NamespacedOptions());
+        using var cancellationSource = new CancellationTokenSource();
+        await cancellationSource.CancelAsync();
+        var listNodes = () => provider.GetNodesAsync(cancellationToken: cancellationSource.Token);
+        await listNodes.Should().ThrowAsync<OperationCanceledException>();
+        var client = _ReadClient(provider);
+
+        // when: the finalizer path releases no managed resources
+        provider.DisposeUnmanagedOnly();
+
+        // then
+        client.Should().NotBeNull();
+        _ReadClient(provider).Should().BeSameAs(client);
+    }
+
+    private static K8sDiscoveryOptions _NamespacedOptions()
+    {
+        return new K8sDiscoveryOptions
+        {
+            K8sClientConfig = new KubernetesClientConfiguration
+            {
+                Host = "http://127.0.0.1:1",
+                Namespace = "messaging",
+            },
+        };
+    }
+
+    private static object? _ReadClient(K8sNodeDiscoveryProvider provider)
+    {
+        return typeof(K8sNodeDiscoveryProvider)
+            .GetField("_client", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .GetValue(provider);
+    }
+
+    private sealed class FinalizingK8sNodeDiscoveryProvider(
+        Microsoft.Extensions.Logging.ILoggerFactory logger,
+        MessagingDashboardCache cache,
+        K8sDiscoveryOptions options
+    ) : K8sNodeDiscoveryProvider(logger, cache, options)
+    {
+        public void DisposeUnmanagedOnly() => Dispose(disposing: false);
+    }
+
+    #endregion
 
     #region FilterNodesByTags Tests
 
@@ -80,7 +172,7 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
     {
         // given
         _options.ShowOnlyExplicitVisibleNodes = false;
-        var provider = new K8sNodeDiscoveryProvider(LoggerFactory, _cache, _options);
+        using var provider = new K8sNodeDiscoveryProvider(LoggerFactory, _cache, _options);
         var tags = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["headless.messaging.something"] = "value",

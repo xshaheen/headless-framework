@@ -49,6 +49,20 @@ public sealed class PresentationDocumentMediaFileTextProviderTests : TestBase
         result.Should().Be(string.Join(Environment.NewLine, slideTexts) + Environment.NewLine);
     }
 
+    [Fact]
+    public async Task should_refuse_slide_text_past_the_extraction_limit()
+    {
+        // given: two slides, each under the per-part limit, whose text together passes 16 Mi characters
+        var slideText = new string('A', 9 * 1024 * 1024);
+        await using var stream = _CreatePresentationWithSlides([slideText, slideText]);
+
+        // when
+        var act = async () => await _sut.GetTextAsync(stream, AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<InvalidDataException>();
+    }
+
     private static MemoryStream _CreateEmptyPresentation()
     {
         var stream = new MemoryStream();

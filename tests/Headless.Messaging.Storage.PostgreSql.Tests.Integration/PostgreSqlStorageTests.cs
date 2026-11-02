@@ -1477,6 +1477,8 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
         );
 
         indexDef.Should().NotBeNull().And.Contain("(status_name, added)");
+        // The dashboard counts filter on intent_type too; carrying it lets them read the index alone.
+        indexDef.Should().Contain("INCLUDE (intent_type)");
     }
 
     [Fact]

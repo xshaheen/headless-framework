@@ -323,7 +323,10 @@ public sealed partial class TusAzureStore
         }
     }
 
-    /// <summary>Splits a stream into chunks of the specified maximum size.</summary>
+    /// <summary>
+    /// Splits a stream into chunks of exactly <paramref name="chunkSize"/> bytes; only the last chunk may be
+    /// shorter. A cancelled read ends the enumeration after yielding the bytes received so far.
+    /// </summary>
     /// <param name="sourceStream">The source stream to read and split into chunks.</param>
     /// <param name="chunkSize">Maximum size of each chunk in bytes.</param>
     /// <param name="cancellationToken">Token to cancel the async enumeration.</param>
@@ -383,33 +386,52 @@ public sealed partial class TusAzureStore
 
             try
             {
-                while (true)
+                var sourceEnded = false;
+
+                while (!sourceEnded)
                 {
-                    int bytesRead;
+                    // A request-body read returns whatever is buffered (often a few KB), so fill the
+                    // whole chunk before yielding: each yielded segment becomes one staged block, and a
+                    // block per short read multiplies round trips and burns Azure's committed-block cap.
+                    var filled = 0;
 
-                    // The client read is the only place the live token belongs: tusdotnet's guarded
-                    // stream usually surfaces a disconnect as EOF, but a token cancelled between
-                    // reads throws — either way the bytes received so far must survive.
-                    try
+                    while (filled < chunkSize)
                     {
-                        bytesRead = await sourceStream
-                            .ReadAsync(buffer.AsMemory(0, chunkSize), cancellationToken)
-                            .ConfigureAwait(false);
+                        int bytesRead;
+
+                        // The client read is the only place the live token belongs: tusdotnet's guarded
+                        // stream usually surfaces a disconnect as EOF, but a token cancelled between
+                        // reads throws — either way the bytes received so far must survive.
+                        try
+                        {
+                            bytesRead = await sourceStream
+                                .ReadAsync(buffer.AsMemory(filled, chunkSize - filled), cancellationToken)
+                                .ConfigureAwait(false);
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            sourceEnded = true;
+                            break;
+                        }
+
+                        if (bytesRead == 0)
+                        {
+                            sourceEnded = true;
+                            break;
+                        }
+
+                        filled += bytesRead;
                     }
-                    catch (OperationCanceledException)
+
+                    if (filled == 0)
                     {
                         break;
                     }
 
-                    if (bytesRead == 0)
-                    {
-                        break;
-                    }
-
-                    // Return segment of the shared pooled buffer
+                    // Return segment of the shared pooled buffer; only the final chunk may be short.
                     // IMPORTANT: This segment is only valid until the next iteration!
                     // Caller MUST consume (hash + upload) before continuing enumeration
-                    yield return new ArraySegment<byte>(buffer, 0, bytesRead);
+                    yield return new ArraySegment<byte>(buffer, 0, filled);
                 }
             }
             finally

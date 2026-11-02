@@ -242,16 +242,26 @@ internal sealed class SourceCodeBuilder
         return OpenBracket();
     }
 
-    /// <summary>Appends a file-scoped namespace declaration.</summary>
+    /// <summary>
+    /// Appends a file-scoped namespace declaration, or nothing for an empty name, which stands for the global namespace.
+    /// </summary>
     public SourceCodeBuilder AppendNamespace(string @namespace)
     {
+        if (@namespace.Length == 0)
+        {
+            return this;
+        }
+
         return Append("namespace ").Continue(@namespace).ContinueLine(";").NewLine();
     }
 
-    /// <summary>Appends using directives for distinct namespace names.</summary>
+    /// <summary>
+    /// Appends using directives for distinct namespace names, skipping empty names, which stand for the global
+    /// namespace and need no directive.
+    /// </summary>
     public SourceCodeBuilder AppendUsings(IEnumerable<string> usings)
     {
-        foreach (var us in usings.Distinct(StringComparer.Ordinal))
+        foreach (var us in usings.Where(static u => u.Length != 0).Distinct(StringComparer.Ordinal))
         {
             Append("using ").Continue(us).ContinueLine(";");
         }

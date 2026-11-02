@@ -28,8 +28,7 @@ namespace Headless.DataProtection;
 /// the sentinel is always excluded from key-ring loading. <c>Healthy</c> means the key ring can actually be
 /// persisted (what rotation needs).</description></item>
 /// <item><description><see cref="KeyRingProbeStyle.ContainerExistence"/> (explicit opt-down) — a cheap
-/// <see cref="IBlobContainerManager.ContainerExistsAsync"/> existence check on the <c>DataProtection</c>
-/// container. Does NOT verify write access; a missing container means key rotation will fail. When no manager is
+/// <see cref="IBlobContainerManager.ContainerExistsAsync"/> existence check on the key container. Does NOT verify write access; a missing container means key rotation will fail. When no manager is
 /// wired, the check falls back to the write probe (the only probe possible) with a description noting the
 /// fallback.</description></item>
 /// </list>
@@ -46,36 +45,34 @@ internal sealed class DataProtectionKeyRingHealthCheck(
 ) : IHealthCheck
 {
     /// <summary>Description reported when the container-manager existence probe finds the container.</summary>
-    internal const string ExistenceProbeHealthyDescription =
-        $"The '{BlobStorageDataProtectionXmlRepository.ContainerName}' blob container exists "
+    internal static string ExistenceProbeHealthyDescription(string containerName) =>
+        $"The '{containerName}' blob container exists "
         + "(container-manager existence probe; write access not verified).";
 
     /// <summary>Description reported when the container-manager existence probe finds no container.</summary>
-    internal const string ContainerMissingDescription =
-        $"The '{BlobStorageDataProtectionXmlRepository.ContainerName}' blob container is missing — key rotation "
+    internal static string ContainerMissingDescription(string containerName) =>
+        $"The '{containerName}' blob container is missing — key rotation "
         + "will fail (container-manager existence probe).";
 
     /// <summary>Description reported when the container-manager existence probe itself throws.</summary>
-    internal const string ExistenceProbeFailedDescription =
-        $"The '{BlobStorageDataProtectionXmlRepository.ContainerName}' blob container existence check failed "
-        + "(container-manager existence probe).";
+    internal static string ExistenceProbeFailedDescription(string containerName) =>
+        $"The '{containerName}' blob container existence check failed " + "(container-manager existence probe).";
 
     /// <summary>Description reported when the sentinel write probe succeeds.</summary>
-    internal const string WriteProbeHealthyDescription =
-        $"Write access to the '{BlobStorageDataProtectionXmlRepository.ContainerName}' blob container verified "
-        + "(sentinel write probe: upload + delete).";
+    internal static string WriteProbeHealthyDescription(string containerName) =>
+        $"Write access to the '{containerName}' blob container verified " + "(sentinel write probe: upload + delete).";
 
     /// <summary>Description reported when the sentinel write probe fails.</summary>
-    internal const string WriteProbeFailedDescription =
-        $"Write access to the '{BlobStorageDataProtectionXmlRepository.ContainerName}' blob container could not "
+    internal static string WriteProbeFailedDescription(string containerName) =>
+        $"Write access to the '{containerName}' blob container could not "
         + "be verified (sentinel write probe: upload + delete).";
 
     /// <summary>
     /// Description reported when a <see cref="KeyRingProbeStyle.ContainerExistence"/> registration succeeded via
     /// the write-probe fallback because no container manager is wired.
     /// </summary>
-    internal const string ExistenceFallbackHealthyDescription =
-        $"Write access to the '{BlobStorageDataProtectionXmlRepository.ContainerName}' blob container verified "
+    internal static string ExistenceFallbackHealthyDescription(string containerName) =>
+        $"Write access to the '{containerName}' blob container verified "
         + "(sentinel write probe — the requested container-existence probe is unavailable because no "
         + "IBlobContainerManager is wired).";
 
@@ -83,8 +80,8 @@ internal sealed class DataProtectionKeyRingHealthCheck(
     /// Description reported when a <see cref="KeyRingProbeStyle.ContainerExistence"/> registration failed via the
     /// write-probe fallback because no container manager is wired.
     /// </summary>
-    internal const string ExistenceFallbackFailedDescription =
-        $"Write access to the '{BlobStorageDataProtectionXmlRepository.ContainerName}' blob container could not "
+    internal static string ExistenceFallbackFailedDescription(string containerName) =>
+        $"Write access to the '{containerName}' blob container could not "
         + "be verified (sentinel write probe — the requested container-existence probe is unavailable because no "
         + "IBlobContainerManager is wired).";
 
@@ -136,7 +133,12 @@ internal sealed class DataProtectionKeyRingHealthCheck(
         {
             if (repository.ContainerManager is { } containerManager)
             {
-                return await _RunExistenceProbeAsync(containerManager, context, cancellationToken)
+                return await _RunExistenceProbeAsync(
+                        containerManager,
+                        repository.ContainerName,
+                        context,
+                        cancellationToken
+                    )
                     .ConfigureAwait(false);
             }
 
@@ -146,8 +148,8 @@ internal sealed class DataProtectionKeyRingHealthCheck(
             return await _RunWriteProbeAsync(
                     repository,
                     context,
-                    ExistenceFallbackHealthyDescription,
-                    ExistenceFallbackFailedDescription,
+                    ExistenceFallbackHealthyDescription(repository.ContainerName),
+                    ExistenceFallbackFailedDescription(repository.ContainerName),
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -158,8 +160,8 @@ internal sealed class DataProtectionKeyRingHealthCheck(
         return await _RunWriteProbeAsync(
                 repository,
                 context,
-                WriteProbeHealthyDescription,
-                WriteProbeFailedDescription,
+                WriteProbeHealthyDescription(repository.ContainerName),
+                WriteProbeFailedDescription(repository.ContainerName),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -167,6 +169,7 @@ internal sealed class DataProtectionKeyRingHealthCheck(
 
     private static async Task<HealthCheckResult> _RunExistenceProbeAsync(
         IBlobContainerManager containerManager,
+        string containerName,
         HealthCheckContext context,
         CancellationToken cancellationToken
     )
@@ -174,18 +177,18 @@ internal sealed class DataProtectionKeyRingHealthCheck(
         try
         {
             var exists = await containerManager
-                .ContainerExistsAsync(BlobStorageDataProtectionXmlRepository.ContainerName, cancellationToken)
+                .ContainerExistsAsync(containerName, cancellationToken)
                 .ConfigureAwait(false);
 
             return exists
-                ? HealthCheckResult.Healthy(ExistenceProbeHealthyDescription)
-                : new HealthCheckResult(context.Registration.FailureStatus, ContainerMissingDescription);
+                ? HealthCheckResult.Healthy(ExistenceProbeHealthyDescription(containerName))
+                : new HealthCheckResult(context.Registration.FailureStatus, ContainerMissingDescription(containerName));
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             return new HealthCheckResult(
                 context.Registration.FailureStatus,
-                ExistenceProbeFailedDescription,
+                ExistenceProbeFailedDescription(containerName),
                 exception
             );
         }

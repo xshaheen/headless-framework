@@ -104,7 +104,7 @@ public sealed class DataProtectionBuilderExtensionsTests : TestBase
         // then: fail at configuration time, not at the first key write, with the actionable fixes named.
         act.Should()
             .Throw<InvalidOperationException>()
-            .WithMessage("*DataProtection*")
+            .WithMessage("*data-protection key container*")
             .WithMessage("*IBlobContainerManager*")
             .WithMessage("*BlobContainerProvisioning.PreProvisioned*")
             .WithMessage("*Cloudflare R2*");
@@ -206,6 +206,93 @@ public sealed class DataProtectionBuilderExtensionsTests : TestBase
         options.XmlRepository!.StoreElement(new XElement("key"), "friendly");
 
         await containerManager.Received(1).EnsureContainerAsync("DataProtection", Arg.Any<CancellationToken>());
+    }
+
+    #endregion
+
+    #region Container name
+
+    [Fact]
+    public async Task should_store_keys_in_the_configured_container()
+    {
+        // given
+        var services = new ServiceCollection();
+        var builder = services.AddDataProtection();
+        var storage = Substitute.For<IBlobStorage>();
+        var containerManager = Substitute.For<IBlobContainerManager>();
+
+        // when
+        builder.PersistKeysToBlobStorage(
+            storage,
+            containerManager,
+            configure: options => options.ContainerName = "orders-api-keys"
+        );
+
+        // then
+        await using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<KeyManagementOptions>>().Value;
+        options.XmlRepository!.StoreElement(new XElement("key"), "friendly");
+
+        await containerManager.Received(1).EnsureContainerAsync("orders-api-keys", Arg.Any<CancellationToken>());
+        await storage
+            .Received(1)
+            .UploadAsync(
+                new BlobLocation("orders-api-keys", "friendly.xml"),
+                Arg.Any<Stream>(),
+                contentType: null,
+                metadata: null,
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_read_the_container_name_from_registered_options_on_the_di_overload()
+    {
+        // given: the name comes from the application's options, not the call
+        var services = new ServiceCollection();
+        var storage = Substitute.For<IBlobStorage>();
+        services.AddSingleton(storage);
+        services.AddSingleton(Substitute.For<IBlobContainerManager>());
+        services.Configure<BlobStorageDataProtectionOptions>(options => options.ContainerName = "billing-keys");
+
+        // when
+        services.AddDataProtection().PersistKeysToBlobStorage();
+
+        // then
+        await using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<KeyManagementOptions>>().Value;
+        options.XmlRepository!.StoreElement(new XElement("key"), "friendly");
+
+        await storage
+            .Received(1)
+            .UploadAsync(
+                new BlobLocation("billing-keys", "friendly.xml"),
+                Arg.Any<Stream>(),
+                contentType: null,
+                metadata: null,
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_reject_an_empty_container_name()
+    {
+        // given
+        var services = new ServiceCollection();
+        services
+            .AddDataProtection()
+            .PersistKeysToBlobStorage(
+                Substitute.For<IBlobStorage>(),
+                Substitute.For<IBlobContainerManager>(),
+                configure: options => options.ContainerName = " "
+            );
+        await using var provider = services.BuildServiceProvider();
+
+        // when
+        var act = () => provider.GetRequiredService<IOptions<KeyManagementOptions>>().Value;
+
+        // then
+        act.Should().Throw<OptionsValidationException>();
     }
 
     #endregion

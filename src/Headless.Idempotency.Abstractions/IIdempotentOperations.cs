@@ -139,7 +139,8 @@ public interface IIdempotentOperations
     /// <param name="cancellationToken">Token used to cancel the database call.</param>
     /// <returns>
     /// <see cref="IdempotencyPeekStatus.Absent" /> when no record exists or its retention already elapsed;
-    /// otherwise <see cref="IdempotencyPeekStatus.Pending" /> or <see cref="IdempotencyPeekStatus.Completed" />.
+    /// <see cref="IdempotencyPeekStatus.Completed" /> when a result is stored; <see cref="IdempotencyPeekStatus.Pending" />
+    /// while an attempt holds a live lease; otherwise <see cref="IdempotencyPeekStatus.Released" />.
     /// </returns>
     /// <exception cref="ArgumentException">The key or current tenant id is invalid.</exception>
     ValueTask<IdempotencyPeekStatus> PeekAsync(string key, CancellationToken cancellationToken = default);

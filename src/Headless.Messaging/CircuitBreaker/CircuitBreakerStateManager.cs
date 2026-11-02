@@ -392,7 +392,9 @@ internal sealed class CircuitBreakerStateManager(
     {
         Argument.IsNotNull(consumerKey);
 
-        if (!_circuits.TryGetValue(consumerKey, out var state))
+        // Fast path: every delivery asks, and the circuit is almost never Open. The answer when it is not Open needs no
+        // epoch, so the volatile State read alone decides it, as the locked read would at that instant.
+        if (!_circuits.TryGetValue(consumerKey, out var state) || state.State is not CircuitBreakerState.Open)
         {
             epoch = 0;
             return false;

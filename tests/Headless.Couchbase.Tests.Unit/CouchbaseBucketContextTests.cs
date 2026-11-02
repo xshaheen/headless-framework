@@ -27,7 +27,7 @@ public sealed class CouchbaseBucketContextTests : TestBase
                 _ =>
                 {
                     operationCalled = true;
-                    return Task.FromResult(true);
+                    return Task.CompletedTask;
                 },
                 cancellationToken: cancellationToken
             );

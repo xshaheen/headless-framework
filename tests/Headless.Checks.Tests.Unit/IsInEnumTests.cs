@@ -22,6 +22,14 @@ public sealed class IsInEnumTests
         Execute = 4,
     }
 
+    [Flags]
+    private enum ByteFlags : byte
+    {
+        None = 0,
+        A = 1,
+        B = 2,
+    }
+
     [Fact]
     public void should_return_argument_when_is_in_enum_generic_valid()
     {
@@ -108,6 +116,33 @@ public sealed class IsInEnumTests
         Action action = () => Argument.IsInEnum(argument);
 
         // then
+        action.Should().ThrowExactly<InvalidEnumArgumentException>();
+    }
+
+    [Fact]
+    public void should_accept_composite_of_defined_flags_when_is_in_enum_int()
+    {
+        // when & then - 3 is Read | Write, a valid combination that is not a named member
+        Argument.IsInEnum<Permissions>(3).Should().Be(3);
+    }
+
+    [Fact]
+    public void should_throw_when_is_in_enum_int_flags_value_has_undefined_bits()
+    {
+        // when
+        Action action = () => Argument.IsInEnum<Permissions>(9);
+
+        // then
+        action.Should().ThrowExactly<InvalidEnumArgumentException>();
+    }
+
+    [Fact]
+    public void should_validate_flags_combination_when_enum_is_not_int_backed()
+    {
+        // when & then
+        Argument.IsInEnum(ByteFlags.A | ByteFlags.B).Should().Be(ByteFlags.A | ByteFlags.B);
+
+        Action action = () => Argument.IsInEnum((ByteFlags)4);
         action.Should().ThrowExactly<InvalidEnumArgumentException>();
     }
 }

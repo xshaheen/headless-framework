@@ -17,6 +17,7 @@ namespace Tests.RequestReply;
 /// attempt after it, and it never schedules a retry that would start after it or that waits for the persisted retry
 /// processor, because the caller is gone by then.
 /// </summary>
+[Collection(RequestReplyCollection.Name)]
 public sealed class RequestDeadlineTests : TestBase
 {
     [Theory]

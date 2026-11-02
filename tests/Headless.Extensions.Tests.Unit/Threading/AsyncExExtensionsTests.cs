@@ -90,6 +90,48 @@ public sealed class AsyncExExtensionsTests : TestBase
         await act.Should().NotThrowAsync();
     }
 
+    [Fact]
+    public async Task safe_wait_async_swallows_timeout_for_manual_reset_event()
+    {
+        // given — an event that is never set, so the internal timeout token fires
+        var resetEvent = new AsyncManualResetEvent();
+
+        // when
+        var act = async () => await resetEvent.SafeWaitAsync(TimeSpan.FromMilliseconds(10), AbortToken);
+
+        // then
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task safe_wait_async_swallows_caller_cancellation_for_countdown_event_with_timeout()
+    {
+        // given — a countdown that never reaches zero and an already-cancelled caller token
+        var countdownEvent = new AsyncCountdownEvent(1);
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        // when
+        var act = async () => await countdownEvent.SafeWaitAsync(TimeSpan.FromMinutes(1), cts.Token);
+
+        // then
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task safe_wait_async_returns_task_that_completes_successfully_when_wait_times_out()
+    {
+        // given
+        var resetEvent = new AsyncAutoResetEvent();
+
+        // when
+        var task = resetEvent.SafeWaitAsync(TimeSpan.FromMilliseconds(10), AbortToken);
+        await task;
+
+        // then — the timeout is reported as a normal completion, never as a canceled task
+        task.IsCompletedSuccessfully.Should().BeTrue();
+    }
+
     #endregion
 
     #region WaitAsync(AsyncCountdownEvent, timeout) — cancels the loser

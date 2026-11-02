@@ -413,6 +413,24 @@ internal sealed partial class RelationalDataStorage
         );
     }
 
+    /// <summary>Renders the attempt reservation of a held lease in the received or published table.</summary>
+    private string _RenderReserveAttempt(bool received)
+    {
+        var fence =
+            $"{_terminalGuardWithRetries} AND {_Same(_t.LockedUntil, "LockedUntil")} AND {_Same(_t.Owner, "CurrentOwner")} AND {_t.LockedUntil} > {SqlDialectTokens.Now}";
+        if (received)
+        {
+            fence += $" AND {_InboxAttemptGuard(matchStorageId: true)}";
+        }
+
+        return _RenderTransition(
+            received ? _receivedTable : _publishedTable,
+            fence,
+            $"{_t.InlineAttempts}=@InlineAttempts, {_t.LockedUntil}={_dialect.ShiftByDuration(SqlDialectTokens.Now, "Lease")}",
+            [_t.LockedUntil, _t.Owner]
+        );
+    }
+
     private async ValueTask<bool> _ReserveAttemptAsync(
         string operation,
         string table,
@@ -426,20 +444,11 @@ internal sealed partial class RelationalDataStorage
         // the reservation also re-stamps the lease from the same clock reading: a row reserved late in the batch starts
         // its attempt with a full lease instead of whatever the batch lease has left.
         var received = _IsReceived(table);
-        var fence =
-            $"{_terminalGuardWithRetries} AND {_Same(_t.LockedUntil, "LockedUntil")} AND {_Same(_t.Owner, "CurrentOwner")} AND {_t.LockedUntil} > {SqlDialectTokens.Now}";
-        if (received)
-        {
-            fence += $" AND {_InboxAttemptGuard(matchStorageId: true)}";
-        }
 
-        var lease = await _TransitionAsync(
+        var lease = await _RunTransitionAsync(
                 operation,
                 transaction: null,
-                table,
-                fence,
-                $"{_t.InlineAttempts}=@InlineAttempts, {_t.LockedUntil}={_dialect.ShiftByDuration(SqlDialectTokens.Now, "Lease")}",
-                [_t.LockedUntil, _t.Owner],
+                _reserveAttemptSql[received ? 1 : 0],
                 command =>
                 {
                     _dialect.AddParameter(command, "Id", SqlColumnType.Guid, message.StorageId);
@@ -523,20 +532,11 @@ internal sealed partial class RelationalDataStorage
         }
 
         var received = _IsReceived(table);
-        var fence =
-            $"{_terminalGuard} AND {_t.LockedUntil}=@LockedUntil AND {_Same(_t.Owner, "CurrentOwner")} AND {_t.LockedUntil} > {SqlDialectTokens.Now}";
-        if (received)
-        {
-            fence += $" AND {_InboxAttemptGuard(matchStorageId: true)}";
-        }
 
-        var lease = await _TransitionAsync(
+        var lease = await _RunTransitionAsync(
                 operation,
                 transaction: null,
-                table,
-                fence,
-                $"{_t.LockedUntil}={_dialect.ShiftByDuration(SqlDialectTokens.Now, "Lease")}",
-                [_t.LockedUntil, _t.Owner],
+                _renewLeaseSql[received ? 1 : 0],
                 command =>
                 {
                     _dialect.AddParameter(command, "Id", SqlColumnType.Guid, message.StorageId);
@@ -561,6 +561,24 @@ internal sealed partial class RelationalDataStorage
 
         _AdoptLease(message, stored.LockedUntil, stored.Owner);
         return true;
+    }
+
+    /// <summary>Renders the renewal of a held lease in the received or published table.</summary>
+    private string _RenderRenewLease(bool received)
+    {
+        var fence =
+            $"{_terminalGuard} AND {_t.LockedUntil}=@LockedUntil AND {_Same(_t.Owner, "CurrentOwner")} AND {_t.LockedUntil} > {SqlDialectTokens.Now}";
+        if (received)
+        {
+            fence += $" AND {_InboxAttemptGuard(matchStorageId: true)}";
+        }
+
+        return _RenderTransition(
+            received ? _receivedTable : _publishedTable,
+            fence,
+            $"{_t.LockedUntil}={_dialect.ShiftByDuration(SqlDialectTokens.Now, "Lease")}",
+            [_t.LockedUntil, _t.Owner]
+        );
     }
 
     /// <summary>
@@ -671,32 +689,14 @@ internal sealed partial class RelationalDataStorage
         CancellationToken cancellationToken
     )
     {
+        var received = _IsReceived(table);
         // A received row starts a new inbox attempt with each lease it takes, so a stale attempt is fenced out.
-        var newAttempt = reserve is not null && _IsReceived(table);
-        var set = $"{_t.LockedUntil}={_dialect.ShiftByDuration(SqlDialectTokens.Now, "Lease")}, {_t.Owner}=@Owner";
-        if (reserve is not null)
-        {
-            set += $", {_t.InlineAttempts}=@InlineAttempts";
-        }
+        var newAttempt = reserve is not null && received;
 
-        if (newAttempt)
-        {
-            set += $", {_t.AttemptId}=CASE WHEN {_t.IsInboxRecord} = {_t.True} THEN {_dialect.NewGuid()} ELSE NULL END";
-        }
-
-        var fence =
-            $"({_t.LockedUntil} IS NULL OR {_t.LockedUntil} <= {SqlDialectTokens.Now}) AND {(reserve is null ? _terminalGuard : _terminalGuardWithRetries)}";
-        IReadOnlyList<string> returning = newAttempt
-            ? [_t.LockedUntil, _t.Owner, _t.AttemptId]
-            : [_t.LockedUntil, _t.Owner];
-
-        var lease = await _TransitionAsync(
+        var lease = await _RunTransitionAsync(
                 operation,
                 transaction: null,
-                table,
-                fence,
-                set,
-                returning,
+                _leaseSql[(received ? 2 : 0) | (reserve is null ? 0 : 1)],
                 command =>
                 {
                     _dialect.AddParameter(command, "Id", SqlColumnType.Guid, message.StorageId);
@@ -737,6 +737,31 @@ internal sealed partial class RelationalDataStorage
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Renders the lease take of a row in the received or published table, with or without reserving the next inline
+    /// attempt; a received reservation also starts a new inbox attempt.
+    /// </summary>
+    private string _RenderLease(bool received, bool reserve)
+    {
+        var newAttempt = reserve && received;
+        var set = $"{_t.LockedUntil}={_dialect.ShiftByDuration(SqlDialectTokens.Now, "Lease")}, {_t.Owner}=@Owner";
+        if (reserve)
+        {
+            set += $", {_t.InlineAttempts}=@InlineAttempts";
+        }
+
+        if (newAttempt)
+        {
+            set += $", {_t.AttemptId}=CASE WHEN {_t.IsInboxRecord} = {_t.True} THEN {_dialect.NewGuid()} ELSE NULL END";
+        }
+
+        var fence =
+            $"({_t.LockedUntil} IS NULL OR {_t.LockedUntil} <= {SqlDialectTokens.Now}) AND {(reserve ? _terminalGuardWithRetries : _terminalGuard)}";
+        string[] returning = newAttempt ? [_t.LockedUntil, _t.Owner, _t.AttemptId] : [_t.LockedUntil, _t.Owner];
+
+        return _RenderTransition(received ? _receivedTable : _publishedTable, fence, set, returning);
     }
 
     private static async Task<(DateTimeOffset LockedUntil, string? Owner, Guid? AttemptId)?> _ReadLeaseAsync(
@@ -928,16 +953,11 @@ internal sealed partial class RelationalDataStorage
     )
     {
         var identity = deferral.Identity;
-        var fence =
-            $"{_t.IntentType}=@IntentType AND {_Same(_t.Owner, "Owner")} AND {_t.LockedUntil}=@LockedUntil AND {_t.LockedUntil} > {SqlDialectTokens.Now} AND {_InboxAttemptGuard(matchStorageId: true)} AND {_terminalGuard}";
 
-        return await _TransitionAsync(
+        return await _RunTransitionAsync(
                 "messaging.defer_received_retry",
                 transaction: null,
-                _receivedTable,
-                fence,
-                $"{_t.NextRetryAt}={_dialect.ShiftByDuration(SqlDialectTokens.Now, "RetryDelay")}, {_t.Owner}=NULL, {_t.LockedUntil}=NULL",
-                [_t.Id],
+                _deferReceivedRetrySql,
                 command =>
                 {
                     _dialect.AddParameter(command, "Id", SqlColumnType.Guid, identity.StorageId);
@@ -956,6 +976,20 @@ internal sealed partial class RelationalDataStorage
                 cancellationToken
             )
             .ConfigureAwait(false);
+    }
+
+    /// <summary>Renders the circuit deferral of a held received row's retry.</summary>
+    private string _RenderDeferReceivedRetry()
+    {
+        var fence =
+            $"{_t.IntentType}=@IntentType AND {_Same(_t.Owner, "Owner")} AND {_t.LockedUntil}=@LockedUntil AND {_t.LockedUntil} > {SqlDialectTokens.Now} AND {_InboxAttemptGuard(matchStorageId: true)} AND {_terminalGuard}";
+
+        return _RenderTransition(
+            _receivedTable,
+            fence,
+            $"{_t.NextRetryAt}={_dialect.ShiftByDuration(SqlDialectTokens.Now, "RetryDelay")}, {_t.Owner}=NULL, {_t.LockedUntil}=NULL",
+            [_t.Id]
+        );
     }
 
     public ValueTask<bool> DeferReceivedInboxOrphanAsync(
@@ -988,20 +1022,10 @@ internal sealed partial class RelationalDataStorage
             return false;
         }
 
-        // The next orphan probe falls due on the database clock, the clock the retry pickup compares it against.
-        var set = orphaned
-            ? $"{_t.IsInboxOrphaned}={_t.True}, {_t.NextRetryAt}={_dialect.ShiftByDuration(SqlDialectTokens.Now, "ProbeInterval")}, {_t.Owner}=NULL, {_t.LockedUntil}=NULL"
-            : $"{_t.IsInboxOrphaned}={_t.False}";
-        var fencePredicate =
-            $"{_t.IntentType}=@IntentType AND {_t.Generation}=@Generation AND {_t.GenerationIncarnationId}=@GenerationIncarnationId AND {_t.AttemptId}=@AttemptId AND {_Same(_t.Owner, "Owner")} AND {_t.LockedUntil}=@LockedUntil AND {_t.LockedUntil} > {SqlDialectTokens.Now}";
-
-        var (changed, nextRetryAt) = await _TransitionAsync(
+        var (changed, nextRetryAt) = await _RunTransitionAsync(
                 operation,
                 transaction: null,
-                _receivedTable,
-                fencePredicate,
-                set,
-                [_t.NextRetryAt],
+                _inboxRoutabilitySql[orphaned ? 1 : 0],
                 command =>
                 {
                     _dialect.AddParameter(command, "Id", SqlColumnType.Guid, fence.StorageId);
@@ -1043,5 +1067,18 @@ internal sealed partial class RelationalDataStorage
         }
 
         return changed;
+    }
+
+    /// <summary>Renders the transition that marks a held inbox row orphaned (deferring its probe) or routable.</summary>
+    private string _RenderInboxRoutability(bool orphaned)
+    {
+        // The next orphan probe falls due on the database clock, the clock the retry pickup compares it against.
+        var set = orphaned
+            ? $"{_t.IsInboxOrphaned}={_t.True}, {_t.NextRetryAt}={_dialect.ShiftByDuration(SqlDialectTokens.Now, "ProbeInterval")}, {_t.Owner}=NULL, {_t.LockedUntil}=NULL"
+            : $"{_t.IsInboxOrphaned}={_t.False}";
+        var fence =
+            $"{_t.IntentType}=@IntentType AND {_t.Generation}=@Generation AND {_t.GenerationIncarnationId}=@GenerationIncarnationId AND {_t.AttemptId}=@AttemptId AND {_Same(_t.Owner, "Owner")} AND {_t.LockedUntil}=@LockedUntil AND {_t.LockedUntil} > {SqlDialectTokens.Now}";
+
+        return _RenderTransition(_receivedTable, fence, set, [_t.NextRetryAt]);
     }
 }

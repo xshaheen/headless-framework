@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using AutoFixture;
 using Headless.Payments.Paymob.CashOut;
 using Microsoft.Extensions.Options;
 using WireMock.Server;
@@ -16,7 +15,6 @@ public sealed class PaymobCashOutFixture : IDisposable
         // bodies for non-GET methods unless this setting is enabled.
         Server = WireMockServer.Start(new WireMockServerSettings { AllowBodyForAllHttpMethods = true });
         HttpClient = new HttpClient { BaseAddress = new Uri(Server.Urls[0]) };
-        AutoFixture.Register(() => JsonSerializer.Deserialize<object?>("null"));
         CashOutOptions = new PaymobCashOutOptions
         {
             ApiBaseUrl = Server.Urls[0],
@@ -31,8 +29,6 @@ public sealed class PaymobCashOutFixture : IDisposable
         HttpClientFactory = Substitute.For<IHttpClientFactory>();
         HttpClientFactory.CreateClient(Arg.Any<string>()).Returns(HttpClient);
     }
-
-    public Fixture AutoFixture { get; } = new();
 
     public WireMockServer Server { get; }
 

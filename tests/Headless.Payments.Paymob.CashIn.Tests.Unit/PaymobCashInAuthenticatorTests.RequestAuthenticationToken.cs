@@ -13,12 +13,12 @@ public sealed partial class PaymobCashInAuthenticatorTests
     public async Task should_make_call_and_return_response_when_send_request()
     {
         // given
-        var apiKey = fixture.AutoFixture.Create<string>();
+        var apiKey = CashInTestData.Text(Faker);
         var config = fixture.CashInOptions with { ApiKey = apiKey };
         fixture.OptionsAccessor.CurrentValue.Returns(config);
         var request = new CashInAuthenticationTokenRequest { ApiKey = apiKey };
         var requestJson = JsonSerializer.Serialize(request);
-        var expectedResponse = fixture.AutoFixture.Create<CashInAuthenticationTokenResponse>();
+        var expectedResponse = CashInTestData.AuthenticationTokenResponse(Faker);
         var expectedResponseJson = JsonSerializer.Serialize(expectedResponse);
 
         fixture
@@ -41,12 +41,12 @@ public sealed partial class PaymobCashInAuthenticatorTests
     public async Task should_throw_http_request_exception_when_not_success()
     {
         // given
-        var apiKey = fixture.AutoFixture.Create<string>();
+        var apiKey = CashInTestData.Text(Faker);
         var config = fixture.CashInOptions with { ApiKey = apiKey };
         fixture.OptionsAccessor.CurrentValue.Returns(config);
         var request = new CashInAuthenticationTokenRequest { ApiKey = apiKey };
         var requestJson = JsonSerializer.Serialize(request);
-        var body = fixture.AutoFixture.Create<string>();
+        var body = CashInTestData.Text(Faker);
 
         fixture
             .Server.Given(Request.Create().WithPath("/auth/tokens").UsingPost().WithBody(requestJson))

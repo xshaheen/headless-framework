@@ -2,7 +2,6 @@
 
 using System.Net;
 using System.Text.Encodings.Web;
-using AutoFixture;
 using Headless.Payments.Paymob.CashOut;
 using Headless.Testing.Tests;
 using WireMock.RequestBuilders;
@@ -14,6 +13,8 @@ public sealed class PaymobCashOutBrokerTests(PaymobCashOutFixture fixture)
     : TestBase,
         IClassFixture<PaymobCashOutFixture>
 {
+    protected override Faker Faker { get; set; } = CashOutTestData.CreateFaker();
+
     // Mirrors the wire shape produced by the package-internal CashOutJsonOptions
     private static readonly JsonSerializerOptions _WireOptions = new(JsonSerializerDefaults.Web)
     {
@@ -28,7 +29,7 @@ public sealed class PaymobCashOutBrokerTests(PaymobCashOutFixture fixture)
         var (authenticator, token) = _SetupAuthenticator();
         var request = CashOutDisburseRequest.Vodafone(amount: 150.25m, phoneNumber: "01012345678");
         var requestJson = JsonSerializer.Serialize(request, _WireOptions);
-        var transactionId = fixture.AutoFixture.Create<string>();
+        var transactionId = CashOutTestData.Text(Faker);
         var responseJson =
             $$"""{"transaction_id":"{{transactionId}}","issuer":"vodafone","msisdn":"01012345678","amount":150.25,"disbursement_status":"success","status_code":"200"}""";
 
@@ -88,7 +89,7 @@ public sealed class PaymobCashOutBrokerTests(PaymobCashOutFixture fixture)
         // given
         var (authenticator, token) = _SetupAuthenticator();
         var request = CashOutDisburseRequest.Vodafone(amount: 10m, phoneNumber: "01099999999");
-        var errorBody = fixture.AutoFixture.Create<string>();
+        var errorBody = CashOutTestData.Text(Faker);
 
         fixture
             .Server.Given(
@@ -238,7 +239,7 @@ public sealed class PaymobCashOutBrokerTests(PaymobCashOutFixture fixture)
 
     private (IPaymobCashOutAuthenticator authenticator, string token) _SetupAuthenticator()
     {
-        var token = fixture.AutoFixture.Create<string>();
+        var token = CashOutTestData.Text(Faker);
         var authenticator = Substitute.For<IPaymobCashOutAuthenticator>();
         authenticator.GetAccessTokenAsync(Arg.Any<CancellationToken>()).Returns(token);
 

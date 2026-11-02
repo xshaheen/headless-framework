@@ -15,6 +15,12 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
     // The fallback drain budget when the client is disposed without a shutdown budget from the messaging core.
     private static readonly TimeSpan _ShutdownDrainTimeout = TimeSpan.FromSeconds(30);
 
+    // A prefetch equal to the concurrency leaves each handler slot idle for one ack-to-deliver round trip per message,
+    // so the default buffers a few deliveries per slot. RabbitMQ holds no per-message lock that expires while a
+    // delivery waits in the buffer, and a sequential consumer (concurrency 0) still dispatches one delivery at a time,
+    // so the larger buffer does not change delivery order.
+    private const int _DefaultPrefetchPerHandlerSlot = 4;
+
     private readonly SemaphoreSlim _semaphore = new(1, 1);
     private readonly string _subscriptionName;
     private readonly byte _groupConcurrent;
@@ -187,7 +193,8 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         }
         else
         {
-            var prefetch = _groupConcurrent > 0 ? _groupConcurrent : (ushort)1;
+            // The concurrency is a byte, so the product stays within ushort (at most 1020).
+            var prefetch = (ushort)(Math.Max(1, (int)_groupConcurrent) * _DefaultPrefetchPerHandlerSlot);
             await _channel!
                 .BasicQosAsync(prefetchSize: 0, prefetchCount: prefetch, global: false, cancellationToken)
                 .ConfigureAwait(false);

@@ -35,11 +35,19 @@ public sealed class WordDocumentMediaFileTextProvider : IMediaFileTextProvider
     /// <exception cref="OperationCanceledException">
     /// Thrown when <paramref name="cancellationToken"/> is cancelled before extraction completes.
     /// </exception>
+    /// <exception cref="System.Xml.XmlException">
+    /// Thrown when a decompressed document part exceeds 16 Mi characters, as a zip bomb does.
+    /// </exception>
+    /// <exception cref="InvalidDataException">Thrown when the extracted text exceeds 16 Mi characters.</exception>
     public Task<string> GetTextAsync(Stream fileStream, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        using var document = WordprocessingDocument.Open(fileStream, isEditable: false);
+        using var document = WordprocessingDocument.Open(
+            fileStream,
+            isEditable: false,
+            MediaTextLimits.OpenXmlSettings
+        );
 
         var paragraphs = document.MainDocumentPart?.Document?.Body?.Descendants<Paragraph>().ToList();
 
@@ -53,7 +61,8 @@ public sealed class WordDocumentMediaFileTextProvider : IMediaFileTextProvider
         foreach (var paragraph in paragraphs)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            stringBuilder.AppendLine(paragraph.InnerText);
+            MediaTextLimits.AppendBounded(stringBuilder, paragraph.InnerText);
+            stringBuilder.AppendLine();
         }
 
         return Task.FromResult(stringBuilder.ToString());

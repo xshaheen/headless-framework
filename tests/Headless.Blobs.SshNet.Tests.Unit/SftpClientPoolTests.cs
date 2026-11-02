@@ -4,6 +4,7 @@ using Headless.Blobs.SshNet;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Renci.SshNet;
 
 namespace Tests;
 
@@ -49,6 +50,22 @@ public sealed class SftpClientPoolTests : TestBase
 
         // then
         act.Should().NotThrow();
+    }
+
+    [Fact]
+    public async Task should_dispose_a_client_released_after_the_pool_is_disposed()
+    {
+        // given: a client still checked out when the host shuts the pool down
+        var options = Options.Create(_CreateValidOptions());
+        var pool = new SftpClientPool(options, NullLogger<SftpClientPool>.Instance);
+        using var client = new SftpClient("localhost", "user", "pass");
+        pool.Dispose();
+
+        // when
+        var act = async () => await pool.ReleaseAsync(client);
+
+        // then
+        await act.Should().NotThrowAsync();
     }
 
     private static SshBlobStorageOptions _CreateValidOptions()

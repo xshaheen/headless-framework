@@ -107,6 +107,51 @@ public sealed class DiagnosticReportingTests : TestBase
         compilationErrors.Should().BeEmpty();
     }
 
+    [Fact]
+    public void should_report_a_nested_primitive_at_the_type_name_and_generate_nothing()
+    {
+        const string source = """
+            using Headless.Generator.Primitives;
+
+            namespace Demo;
+
+            public static partial class Outer
+            {
+                public readonly partial struct Inner : IPrimitive<int>
+                {
+                    public static PrimitiveValidationResult Validate(int value) => PrimitiveValidationResult.Ok;
+                }
+            }
+            """;
+
+        var (diagnostics, generated, _) = _Run(source);
+
+        diagnostics.Should().ContainSingle().Which.Id.Should().Be("HF1004");
+        _Text(source, diagnostics[0]).Should().Be("Inner");
+        generated.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void should_report_a_generic_primitive_at_the_type_name_and_generate_nothing()
+    {
+        const string source = """
+            using Headless.Generator.Primitives;
+
+            namespace Demo;
+
+            public readonly partial struct Tagged<TTag> : IPrimitive<int>
+            {
+                public static PrimitiveValidationResult Validate(int value) => PrimitiveValidationResult.Ok;
+            }
+            """;
+
+        var (diagnostics, generated, _) = _Run(source);
+
+        diagnostics.Should().ContainSingle().Which.Id.Should().Be("HF1005");
+        _Text(source, diagnostics[0]).Should().Be("Tagged");
+        generated.Should().BeEmpty();
+    }
+
     private static (ImmutableArray<Diagnostic> Diagnostics, string[] Generated, Diagnostic[] CompilationErrors) _Run(
         string source
     )

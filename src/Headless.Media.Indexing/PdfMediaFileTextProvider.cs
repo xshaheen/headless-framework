@@ -14,7 +14,8 @@ namespace Headless.Media.Indexing;
 /// PdfPig requires a seekable stream. When the input stream is not seekable (for
 /// example, a stream from Azure Blob Storage), the content is transparently buffered into a
 /// <see cref="MemoryStream"/> before parsing. For large documents this may consume significant
-/// memory; callers that already hold seekable streams should prefer to pass them directly.
+/// memory, so a non-seekable stream is capped at 100 MiB; callers that already hold seekable streams should prefer to
+/// pass them directly.
 /// </para>
 /// </remarks>
 [PublicAPI]
@@ -38,6 +39,10 @@ public sealed class PdfMediaFileTextProvider : IMediaFileTextProvider
     /// <exception cref="OperationCanceledException">
     /// Thrown when <paramref name="cancellationToken"/> is cancelled before extraction completes.
     /// </exception>
+    /// <exception cref="InvalidDataException">
+    /// Thrown when a non-seekable <paramref name="fileStream"/> exceeds 100 MiB, or the extracted text exceeds
+    /// 16 Mi characters.
+    /// </exception>
     public async Task<string> GetTextAsync(Stream fileStream, CancellationToken cancellationToken = default)
     {
         // PdfPig requires the stream to be seekable, see:
@@ -51,10 +56,10 @@ public sealed class PdfMediaFileTextProvider : IMediaFileTextProvider
             if (!fileStream.CanSeek)
             {
                 // Since fileStream.Length might not be supported either, we can't preconfigure the capacity of the
-                // MemoryStream.
+                // MemoryStream. Buffering is the only option, so it is capped: an unbounded body would otherwise be
+                // read into memory whole.
                 seekableStream = new MemoryStream();
-                // While this involves loading the file into memory, we don't really have a choice.
-                await fileStream.CopyToAsync(seekableStream, cancellationToken).ConfigureAwait(false);
+                await _CopyBoundedAsync(fileStream, seekableStream, cancellationToken).ConfigureAwait(false);
                 seekableStream.Position = 0;
             }
 
@@ -64,7 +69,7 @@ public sealed class PdfMediaFileTextProvider : IMediaFileTextProvider
             foreach (var page in document.GetPages())
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                stringBuilder.Append(page.Text);
+                MediaTextLimits.AppendBounded(stringBuilder, page.Text);
             }
 
             return stringBuilder.ToString();
@@ -75,6 +80,31 @@ public sealed class PdfMediaFileTextProvider : IMediaFileTextProvider
             {
                 await seekableStream.DisposeAsync().ConfigureAwait(false);
             }
+        }
+    }
+
+    private static async Task _CopyBoundedAsync(
+        Stream source,
+        MemoryStream destination,
+        CancellationToken cancellationToken
+    )
+    {
+        var buffer = new byte[81920];
+        int read;
+
+        while ((read = await source.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
+        {
+            if (destination.Length + read > MediaTextLimits.MaxBufferedPdfBytes)
+            {
+                throw new InvalidDataException(
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"The non-seekable PDF stream exceeds {MediaTextLimits.MaxBufferedPdfBytes} bytes, the most the provider buffers. Pass a seekable stream instead."
+                    )
+                );
+            }
+
+            await destination.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
         }
     }
 }

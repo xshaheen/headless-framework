@@ -199,7 +199,7 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
         // timeout, and an enlisted unit holds that lock until the unit ends.
         _peekSql = _dialect.Render(
             new SqlClockedStatement(
-                $"SELECT {t.Status}, {t.RetentionUntil}, {now} FROM {t.Table} WHERE {t.TenantId} = @TenantId AND {t.Key} = @IdempotencyKey;"
+                $"SELECT {t.Status}, {t.RetentionUntil}, {now}, {t.Generation}, {t.LeaseExpiresAt} FROM {t.Table} WHERE {t.TenantId} = @TenantId AND {t.Key} = @IdempotencyKey;"
             )
         );
 
@@ -611,9 +611,19 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
                     return IdempotencyPeekStatus.Absent;
                 }
 
-                return status == IdempotencyRecordStatus.Completed
-                    ? IdempotencyPeekStatus.Completed
-                    : IdempotencyPeekStatus.Pending;
+                if (status == IdempotencyRecordStatus.Completed)
+                {
+                    return IdempotencyPeekStatus.Completed;
+                }
+
+                // A waiter polls this to learn when it may take the key, so a record no attempt holds (released, or
+                // its lease expired) must read differently from one an attempt is still running under.
+                var generation = await _ReadInt64OrNullAsync(reader, 3, ct).ConfigureAwait(false);
+                var leaseExpiresAt = await _ReadTimestampOrNullAsync(reader, 4, ct).ConfigureAwait(false);
+
+                return generation is not null && leaseExpiresAt > now
+                    ? IdempotencyPeekStatus.Pending
+                    : IdempotencyPeekStatus.Released;
             },
             cancellationToken
         );

@@ -28,7 +28,7 @@ namespace Headless.DataProtection;
 /// <para>
 /// Unless <see cref="DataProtectionKeyRingValidationOptions.ProbeWritePath"/> is disabled, both modes additionally
 /// verify write access with a real write: a reserved sentinel blob is uploaded to and deleted from the
-/// <c>DataProtection</c> container through the same ensure + retry pipeline the key writes use. This is what
+/// key container through the same ensure + retry pipeline the key writes use. This is what
 /// catches lost write permission when a valid key already exists (the round-trip performs no write then), and the
 /// only write-path guarantee on read-only (<c>AutoGenerateKeys == false</c>) nodes.
 /// </para>
@@ -73,10 +73,16 @@ internal sealed class DataProtectionKeyRingValidationWarmup(
             ?? NullLogger.Instance;
 
         var keyRingIsEmpty = false;
+        var containerName = _ConfiguredContainerName();
 
         try
         {
             var keyManagementOptions = serviceProvider.GetRequiredService<IOptions<KeyManagementOptions>>().Value;
+
+            if (keyManagementOptions.XmlRepository is BlobStorageDataProtectionXmlRepository blobRepository)
+            {
+                containerName = blobRepository.ContainerName;
+            }
 
             if (keyManagementOptions.AutoGenerateKeys)
             {
@@ -85,7 +91,7 @@ internal sealed class DataProtectionKeyRingValidationWarmup(
                 // upload, surfacing container/permission problems at deploy time instead of at the first lazy key
                 // write.
                 _RunProtectRoundTrip();
-                logger.LogKeyRingValidationRoundTripSucceeded(BlobStorageDataProtectionXmlRepository.ContainerName);
+                logger.LogKeyRingValidationRoundTripSucceeded(containerName);
             }
             else
             {
@@ -100,10 +106,7 @@ internal sealed class DataProtectionKeyRingValidationWarmup(
                 }
                 else
                 {
-                    logger.LogKeyRingValidationReadProbeSucceeded(
-                        keyCount,
-                        BlobStorageDataProtectionXmlRepository.ContainerName
-                    );
+                    logger.LogKeyRingValidationReadProbeSucceeded(keyCount, containerName);
                 }
             }
 
@@ -112,7 +115,8 @@ internal sealed class DataProtectionKeyRingValidationWarmup(
             // rotation-day write guarantee. Skipped when the key ring is already known-bad (empty).
             if (!keyRingIsEmpty && _options.ProbeWritePath)
             {
-                await _RunWriteProbeAsync(logger, keyManagementOptions, cancellationToken).ConfigureAwait(false);
+                await _RunWriteProbeAsync(logger, keyManagementOptions, containerName, cancellationToken)
+                    .ConfigureAwait(false);
             }
         }
         catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
@@ -121,14 +125,14 @@ internal sealed class DataProtectionKeyRingValidationWarmup(
             // surfaces as an OperationCanceledException; only a stop request propagates as cancellation.
             if (_options.Check is KeyRingCheck.LogOnly)
             {
-                logger.LogKeyRingValidationFailed(exception, BlobStorageDataProtectionXmlRepository.ContainerName);
+                logger.LogKeyRingValidationFailed(exception, containerName);
 
                 return;
             }
 
             throw new InvalidOperationException(
                 "Data protection key-ring validation failed: the key ring could not be exercised against the "
-                    + $"'{BlobStorageDataProtectionXmlRepository.ContainerName}' blob container. On a fresh "
+                    + $"'{containerName}' blob container. On a fresh "
                     + "deployment this usually means the container does not exist or the credentials cannot access "
                     + "it. Wire an IBlobContainerManager so PersistKeysToBlobStorage ensures the container before "
                     + "writes, or provision the container out-of-band and acknowledge it with "
@@ -152,19 +156,34 @@ internal sealed class DataProtectionKeyRingValidationWarmup(
         // instead of being buried as an inner exception under the generic backend-failure wrap.
         if (_options.Check is KeyRingCheck.LogOnly)
         {
-            logger.LogKeyRingValidationEmptyKeyRing(BlobStorageDataProtectionXmlRepository.ContainerName);
+            logger.LogKeyRingValidationEmptyKeyRing(containerName);
 
             return;
         }
 
         throw new InvalidOperationException(
             "Data protection key-ring validation failed: the key-ring read probe reached the "
-                + $"'{BlobStorageDataProtectionXmlRepository.ContainerName}' blob container but found no keys. "
+                + $"'{containerName}' blob container but found no keys. "
                 + "AutoGenerateKeys is false on this node (designated-key-writer topology), so it cannot create one "
                 + "and its first protected operation would fail. This is not a backend error — the container is "
                 + "reachable but empty: has the designated key writer run yet? Is this the right container/storage "
                 + "for this environment? The host stays unready and the validation is retried."
         );
+    }
+
+    // The name a failure message reports before the repository itself is reachable. Reading the options can throw
+    // the same misconfiguration this validation reports, so that falls back to the default name.
+    private string _ConfiguredContainerName()
+    {
+        try
+        {
+            return serviceProvider.GetService<IOptions<BlobStorageDataProtectionOptions>>()?.Value.ContainerName
+                ?? BlobStorageDataProtectionOptions.DefaultContainerName;
+        }
+        catch (OptionsValidationException)
+        {
+            return BlobStorageDataProtectionOptions.DefaultContainerName;
+        }
     }
 
     private void _RunProtectRoundTrip()
@@ -188,6 +207,7 @@ internal sealed class DataProtectionKeyRingValidationWarmup(
     private static async Task _RunWriteProbeAsync(
         ILogger logger,
         KeyManagementOptions keyManagementOptions,
+        string containerName,
         CancellationToken cancellationToken
     )
     {
@@ -204,6 +224,6 @@ internal sealed class DataProtectionKeyRingValidationWarmup(
         }
 
         await repository.ProbeWriteAccessAsync(cancellationToken).ConfigureAwait(false);
-        logger.LogKeyRingValidationWriteProbeSucceeded(BlobStorageDataProtectionXmlRepository.ContainerName);
+        logger.LogKeyRingValidationWriteProbeSucceeded(containerName);
     }
 }

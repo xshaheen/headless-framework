@@ -219,9 +219,11 @@ internal static class PostgreSqlMessagingSchemaContribution
             CREATE INDEX IF NOT EXISTS "idx_messaging_received_delayed" ON {received} ("status_name","expires_at") WHERE "status_name" = 'Delayed';
             -- #508 — ("status_name","added") serves BOTH the dashboard hourly-timeline query
             -- (WHERE "status_name"=$1 AND "added" BETWEEN … — a status_name seek + added range scan) and the
-            -- per-status COUNTs in GetStatisticsAsync via its "status_name" prefix. The step creates the final
+            -- per-status COUNTs in GetStatisticsAsync via its "status_name" prefix. Every dashboard count and page
+            -- also filters on "intent_type", so INCLUDE carries it and those counts read the index alone instead of
+            -- fetching each heap row of a status that retention keeps in the millions. The step creates the final
             -- schema directly; it does not carry migration DDL for superseded index shapes.
-            CREATE INDEX IF NOT EXISTS "idx_messaging_received_status_name_added" ON {received} ("status_name","added");
+            CREATE INDEX IF NOT EXISTS "idx_messaging_received_status_name_added" ON {received} ("status_name","added") INCLUDE ("intent_type");
 
             CREATE TABLE IF NOT EXISTS "{schema}"."{_ReceiptsTable}"(
                 "operation_id" UUID PRIMARY KEY NOT NULL,
@@ -336,7 +338,7 @@ internal static class PostgreSqlMessagingSchemaContribution
             -- Queued backlog (e.g. accumulated during broker downtime).
             CREATE INDEX IF NOT EXISTS "idx_messaging_published_version_expires_at_queued" ON {published} ("version","expires_at") WHERE "status_name" = 'Queued';
             -- #508 — see the received-table note above; create the final dashboard timeline/statistics index.
-            CREATE INDEX IF NOT EXISTS "idx_messaging_published_status_name_added" ON {published} ("status_name","added");
+            CREATE INDEX IF NOT EXISTS "idx_messaging_published_status_name_added" ON {published} ("status_name","added") INCLUDE ("intent_type");
             """
         );
     }

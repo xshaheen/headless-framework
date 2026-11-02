@@ -12,8 +12,8 @@ public sealed partial class PaymobCashInBrokerTests
     public async Task should_make_call_and_return_response_when_create_wallet_pay_request()
     {
         // given
-        var requestPaymentKey = _Faker.Random.String2(10, 50);
-        var requestPhoneNumber = _Faker.Phone.PhoneNumber();
+        var requestPaymentKey = Faker.Random.String2(10, 50);
+        var requestPhoneNumber = Faker.Phone.PhoneNumber();
 
         var request = new CashInPayRequest
         {
@@ -22,7 +22,7 @@ public sealed partial class PaymobCashInBrokerTests
         };
 
         var requestJson = JsonSerializer.Serialize(request);
-        var response = fixture.AutoFixture.Create<CashInWalletPayResponse>();
+        var response = CashInTestData.WalletPayResponse(Faker);
         var responseJson = JsonSerializer.Serialize(response);
 
         fixture

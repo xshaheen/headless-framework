@@ -6,6 +6,8 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="xunit.v3.mtp-v2" />
+    <!-- A real provider pins how its multi-host data source reads; no connection is opened. -->
+    <PackageReference Include="Npgsql" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.UnitOfWork\Headless.UnitOfWork.csproj" />

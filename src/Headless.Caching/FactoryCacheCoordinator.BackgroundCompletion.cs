@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Threading;
+
 namespace Headless.Caching;
 
 // Soft-timeout background completion: when the foreground factory soft-times out the per-key lock (and any
@@ -14,7 +16,7 @@ public sealed partial class FactoryCacheCoordinator
         CancellationTokenSource internalCts,
         CacheStoreEntry<T> staleCandidate,
         CacheEntryOptions options,
-        IDisposable releaser,
+        KeyedAsyncLock.Releaser releaser,
         IAsyncDisposable? distributedLease
     )
     {
@@ -41,7 +43,7 @@ public sealed partial class FactoryCacheCoordinator
         CancellationTokenSource internalCts,
         CacheStoreEntry<T> staleCandidate,
         CacheEntryOptions options,
-        IDisposable releaser,
+        KeyedAsyncLock.Releaser releaser,
         IAsyncDisposable? distributedLease
     )
     {

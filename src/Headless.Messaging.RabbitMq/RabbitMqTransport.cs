@@ -177,7 +177,7 @@ internal static partial class RabbitMqTransportLog
 {
     [LoggerMessage(
         EventId = 3004,
-        Level = LogLevel.Information,
+        Level = LogLevel.Debug,
         Message = "Headless message '{Name}' published, internal id '{Id}'"
     )]
     internal static partial void MessagePublished(this ILogger logger, string name, string? id);

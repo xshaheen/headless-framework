@@ -33,7 +33,7 @@ CAPTCHA verification (Google reCAPTCHA v2/v3, Cloudflare Turnstile) is its own d
 - Use `ISeeder` from Hosting for data the code declares; register with `services.AddSeeder<T>()`, order with `DependsOn`, and let the deployment run `seed` (or `deploy`). Tools and tests call `await app.Services.SeedAsync()`. EF Core migrations are structure, not data: register them with `services.AddDbContextMigrations<TContext>()`, which `resources provision` applies.
 - Use `Headless.NetTopologySuite` for geospatial work. Key methods: `SanitizeForSqlGeography()`, `PermissiveIntersection()`, `PermissiveUnion()`, `ComputeOverlap()`, `EnsureIsOrientedCounterClockwise()`, `Simplify()`. Use `GeoConstants.GoogleMapsSrid` (4326) for SRID. Call `services.AddHeadlessNetTopologySuite()` once at startup: it installs `GeoServices.NtsGeometryServices` as the process-wide `NtsGeometryServices.Instance`, which NetTopologySuite reads instead of DI, and registers it and `GeoServices.GeometryFactory` as singletons.
 - Use `Headless.Redis` for Lua script management only, not for general Redis operations. Call `HeadlessRedisScriptsLoader.EvaluateAsync(...)` directly: a script not loaded yet loads on that call. To have a package's scripts ready before first use, call `LoadAsync` with the scripts the package uses from an `IWarmup` whose `GatesReadiness` is `false`; never from a startup initializer, which blocks the host start on a Redis round trip.
-- Use `Headless.Sitemaps` for XML sitemap generation. Create `List<SitemapUrl>` and call `urls.WriteToAsync(stream)`. Auto-splits at 50,000 URLs via `urls.WriteAsync()`. Use `SitemapAlternateUrl` for hreflang/localized URLs.
+- Use `Headless.Sitemaps` for XML sitemap generation. Create `List<SitemapUrl>` and call `urls.WriteToAsync(stream)` for one file. For more than 50,000 URLs, call `urls.WriteAsync(onShard)` on an `IEnumerable<SitemapUrl>` or `IAsyncEnumerable<SitemapUrl>`: it calls `onShard` with each 50,000-URL `SitemapShard` and returns the shard count for the sitemap index. Write the shard inside the callback; it is invalid after the callback returns. Use `SitemapAlternateUrl` for hreflang/localized URLs.
 - Use `Slug.Create(text)` for slug generation. Customize with `SlugOptions` (separator, max length, casing, character replacements). Handles Unicode/Arabic text natively.
 
 ---
@@ -167,7 +167,10 @@ Roslyn source generator for creating strongly-typed domain primitives.
 
 - Roslyn incremental source generator
 - Emits unique `HF1000`-series diagnostics for invalid primitive declarations; legacy `AL` diagnostic IDs are no longer emitted.
-- Generates for types implementing `IPrimitive<T>`
+- Generates for types implementing `IPrimitive<T>` that are declared directly in a namespace, including the global namespace, and are not generic (`HF1004`, `HF1005`)
+- Converters go in the `<Namespace>.Converters` namespace beside the primitive (`Converters` for a primitive in the global namespace). The EF Core and Dapper registration helpers (`AddPrimitivePropertyConversions`, `AddPrimitivesDapperTypeHandlers`) go in `<AssemblyName>.Converters.Extensions`, with the assembly name mapped to a valid namespace the way the Messaging and Jobs generators map it (`My-App` gives `My_App.Converters.Extensions`). Two primitives may share a simple name in different namespaces.
+- The Dapper handler's `SetValue` binds the underlying value. Its `Parse` accepts the wider integer and floating-point types a provider may return (for example `short` for a `byte` primitive on PostgreSQL) when the value fits the underlying type, bounds included, and throws `InvalidCastException` otherwise
+- A primitive implements `IConvertible` only when its underlying type does, so `Guid`, `DateTimeOffset`, and `TimeSpan` primitives do not
 - Auto-generated code:
   - Constructors and factory methods
   - `IEquatable<T>`, `IComparable<T>` implementations
@@ -186,6 +189,8 @@ Primitive generator diagnostics use the framework-wide `HF` prefix. Existing sup
 | <a id="hf1000"></a>`HF1000` | Error | The generator threw an exception; the message carries it. | Report it as a generator bug with the message. |
 | <a id="hf1001"></a>`HF1001` | Error | The primitive wraps a type the generator does not support, such as a custom class or a nullable value type. Nothing is generated for it. | Wrap a string, `Guid`, `bool`, `char`, numeric, or date and time type, or another primitive. |
 | <a id="hf1002"></a>`HF1002` | Error | The primitive is not declared `partial`. | Add `partial` to the declaration. |
+| <a id="hf1004"></a>`HF1004` | Error | The primitive is declared inside another type. Nothing is generated for it. | Move the declaration directly into a namespace. |
+| <a id="hf1005"></a>`HF1005` | Error | The primitive declares type parameters. Nothing is generated for it. | Remove the type parameters, or declare one primitive per closed type. |
 | <a id="hf1012"></a>`HF1012` | Error | `[SerializationFormat]` is on a primitive that does not wrap `DateTime`, `DateTimeOffset`, `DateOnly`, `TimeOnly`, or `TimeSpan`. The format is ignored. | Remove the attribute, or wrap a date or time type. |
 | <a id="hf1013"></a>`HF1013` | Error | `[SupportedOperations]` is on a primitive that does not wrap a numeric type. The attribute is ignored. | Remove the attribute. |
 | <a id="hf1015"></a>`HF1015` | Warning | A class primitive wraps a value type. | Declare the primitive as a `struct`. |
@@ -1004,7 +1009,8 @@ XML sitemap generation utilities for SEO.
 
 - `SitemapUrl` - URL entry with metadata (lastmod, changefreq, priority)
 - `SitemapUrlOptions` - Optional metadata passed to either `SitemapUrl` constructor instead of separate optional constructor parameters
-- `SitemapUrls` - Extension methods to write sitemap URLs to streams
+- `SitemapUrls` - Extension methods to write sitemap URLs: `WriteToAsync` writes one file to a stream, and `WriteAsync` splits any number of URLs into shards
+- `SitemapShard` - One shard of at most 50,000 URLs (`Index`, `Count`, `WriteToAsync(stream)`), valid only during its `onShard` call
 - `SitemapIndexBuilder` - Sitemap index generation for large sites
 - `SitemapAlternateUrl` - Localized/alternate URL support (hreflang)
 - `SitemapImage` - Image sitemap support
@@ -1041,10 +1047,36 @@ var urls = new List<SitemapUrl>
 // Write to stream
 await using var stream = new MemoryStream();
 await urls.WriteToAsync(stream);
-
-// Or auto-split at 50,000 URLs per sitemap
-var streams = await urls.WriteAsync();
 ```
+
+#### Large Sitemaps
+
+A sitemap file holds at most `SitemapConstants.MaxSitemapUrls` (50,000) URLs. `WriteAsync` splits the input into shards of that size and calls `onShard` for each one, in order, as soon as it fills. Memory holds one shard's URL references at a time, and no shard XML unless the callback buffers it. It returns the shard count; build the sitemap index from it.
+
+```csharp
+// sitemapUrls is an IEnumerable<SitemapUrl> or an IAsyncEnumerable<SitemapUrl>,
+// such as a streamed database query.
+var shardCount = await sitemapUrls.WriteAsync(
+    async (shard, ct) =>
+    {
+        await using var file = File.Create($"wwwroot/sitemap-{shard.Index}.xml");
+        await shard.WriteToAsync(file, ct);
+    },
+    cancellationToken
+);
+
+var references = Enumerable
+    .Range(0, shardCount)
+    .Select(i => new SitemapReference { Location = new Uri($"https://example.com/sitemap-{i}.xml") });
+
+await using var index = File.Create("wwwroot/sitemap.xml");
+await references.WriteToAsync(index, cancellationToken);
+```
+
+- **A shard is valid only during its callback.** The writer reuses the shard's URL buffer for the next shard, so await `shard.WriteToAsync` inside `onShard`. Calling it after the callback returns throws `InvalidOperationException`.
+- **A blob upload needs its own buffer.** A blob API reads the content from a stream, so write the shard into a `MemoryStream` inside the callback, rewind it, and upload it before the callback returns. Only that one shard's XML is held at a time.
+- **Each shard declares only the namespaces it uses.** `xmlns:xhtml` and `xmlns:image` appear in a shard only when one of its URLs has alternates or images; the bytes equal `WriteToAsync` on the same URLs.
+- **Failure and cancellation stop enumeration.** An exception from `onShard` propagates and no more URLs are read. Cancellation is checked before each URL. An empty input calls `onShard` zero times and returns `0`.
 
 #### Localized URLs
 
