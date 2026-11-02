@@ -109,15 +109,6 @@
           "Serilog": "4.0.0"
         }
       },
-      "Serilog.Enrichers.Span": {
-        "type": "Direct",
-        "requested": "[3.1.0, )",
-        "resolved": "3.1.0",
-        "contentHash": "xNxy5FxIuLLusRHBpJwJ/YqVw5S7Dtbt79NUsPQxDtu4+CYG4kJgjLs9fjZhKPMjZQL8GZRewT8brap9h2r+Vw==",
-        "dependencies": {
-          "Serilog": "2.10.0"
-        }
-      },
       "Serilog.Enrichers.Thread": {
         "type": "Direct",
         "requested": "[4.0.0, )",

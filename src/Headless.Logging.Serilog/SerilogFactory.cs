@@ -7,7 +7,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Serilog;
 using Serilog.Configuration;
-using Serilog.Enrichers.Span;
 using Serilog.Events;
 using Serilog.Formatting;
 using Serilog.Formatting.Compact;
@@ -237,7 +236,6 @@ public static class SerilogFactory
             )
             .Destructure.ByTransforming(_IpAddressTransform)
             .Enrich.FromLogContext()
-            .Enrich.WithSpan()
             .Enrich.WithEnvironmentName()
             .Enrich.WithThreadId()
             .Enrich.WithProcessId()
