@@ -775,12 +775,29 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
 
     #region Peek
 
-    public virtual async Task should_peek_absent_pending_completed_and_respect_retention_and_tenant_scope()
+    public virtual async Task should_peek_absent_pending_released_completed_and_respect_retention_and_tenant_scope()
     {
         var key = CreateKey();
         await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
 
         (await host.Operations.PeekAsync(key, AbortToken)).Should().Be(IdempotencyPeekStatus.Absent);
+
+        var released = await AdmitAsync(host, key);
+
+        (await host.Operations.PeekAsync(key, AbortToken)).Should().Be(IdempotencyPeekStatus.Pending);
+
+        await host.Operations.ReleaseAsync(released, AbortToken);
+
+        (await host.Operations.PeekAsync(key, AbortToken))
+            .Should()
+            .Be(IdempotencyPeekStatus.Released, "a waiter must see that a released key is free to take");
+
+        await AdmitAsync(host, key);
+        await Fixture.ShiftLeaseIntoPastAsync(HostKey(key), LongLease + TimeSpan.FromMinutes(1), AbortToken);
+
+        (await host.Operations.PeekAsync(key, AbortToken))
+            .Should()
+            .Be(IdempotencyPeekStatus.Released, "no attempt holds a key whose lease expired");
 
         var admitted = await AdmitAsync(host, key);
 

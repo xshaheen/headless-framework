@@ -1069,6 +1069,51 @@ public sealed class HybridCacheTests : TestBase
             );
     }
 
+    [Fact]
+    public async Task should_publish_invalidation_when_try_insert_adds_the_key()
+    {
+        // given - L2 lost the key (eviction or a manual delete) while a peer may still hold it in L1
+        var (cache, _, _, publisher) = _CreateCache();
+        await using var _ = cache;
+        var key = Faker.Random.AlphaNumeric(10);
+
+        // when
+        var inserted = await cache.TryInsertAsync(key, Faker.Random.Int(), TimeSpan.FromMinutes(5), AbortToken);
+
+        // then
+        inserted.Should().BeTrue();
+        await publisher
+            .Received(1)
+            .PublishAsync(
+                Arg.Is<CacheInvalidationMessage>(m => m.Key == key),
+                Arg.Is<PublishOptions?>(options => options!.DeliveryMode == DeliveryMode.Direct),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_not_publish_invalidation_when_try_insert_finds_the_key()
+    {
+        // given
+        var (cache, _, l2, publisher) = _CreateCache();
+        await using var _ = cache;
+        var key = Faker.Random.AlphaNumeric(10);
+        await l2.UpsertAsync(key, 1, TimeSpan.FromMinutes(5), AbortToken);
+
+        // when
+        var inserted = await cache.TryInsertAsync(key, 2, TimeSpan.FromMinutes(5), AbortToken);
+
+        // then
+        inserted.Should().BeFalse();
+        await publisher
+            .DidNotReceive()
+            .PublishAsync(
+                Arg.Any<CacheInvalidationMessage>(),
+                Arg.Any<PublishOptions?>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
     #endregion
 
     #region Numeric Operations

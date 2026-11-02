@@ -20,6 +20,7 @@ internal sealed class RedisCacheScriptsWarmup(IServiceProvider services, IEnumer
     private static readonly IReadOnlyList<RedisScriptDefinition> _Scripts =
     [
         IncrementWithExpireScriptDefinition.Instance,
+        CacheOverwriteIfUnchangedScriptDefinition.Instance,
         CacheRemoveIfEqualScriptDefinition.Instance,
         CacheReplaceIfEqualScriptDefinition.Instance,
         CacheTaggedSetScriptDefinition.Instance,

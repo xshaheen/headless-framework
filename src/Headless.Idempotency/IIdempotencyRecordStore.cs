@@ -209,8 +209,9 @@ public interface IIdempotencyRecordStore
     /// <param name="cancellationToken">Token used to cancel the database call.</param>
     /// <returns>
     /// <see cref="IdempotencyPeekStatus.Absent" /> when the row does not exist or its <c>retention_until</c> is at or
-    /// before the database clock; otherwise the row's <see cref="IdempotencyRecordStatus" /> mapped to
-    /// <see cref="IdempotencyPeekStatus.Pending" /> or <see cref="IdempotencyPeekStatus.Completed" />.
+    /// before the database clock; <see cref="IdempotencyPeekStatus.Completed" /> for a completed row;
+    /// <see cref="IdempotencyPeekStatus.Pending" /> for a pending row whose generation holds a lease that ends after the
+    /// database clock; otherwise <see cref="IdempotencyPeekStatus.Released" />.
     /// </returns>
     ValueTask<IdempotencyPeekStatus> PeekAsync(IdempotencyRecordKey key, CancellationToken cancellationToken = default);
 
