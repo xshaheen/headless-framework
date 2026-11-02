@@ -279,7 +279,9 @@ public sealed class HeadlessRedisScriptsLoader(
         ResetScripts();
     }
 
-    private async Task<LoadedLuaScript> _GetOrLoadScriptAsync(
+    // ValueTask: the loaded case completes synchronously on every script call, and a completed Task<T> of a
+    // reference type is allocated per call while a synchronously completed ValueTask<T> is not.
+    private async ValueTask<LoadedLuaScript> _GetOrLoadScriptAsync(
         RedisScriptDefinition scriptDefinition,
         CancellationToken cancellationToken
     )

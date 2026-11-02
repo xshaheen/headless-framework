@@ -938,6 +938,220 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
     }
 
     [Fact]
+    public async Task should_read_store_concurrently_when_callers_wait_on_in_flight_factory()
+    {
+        // given: one caller runs the factory while the others miss; once it writes, every waiter must read the
+        // store at the same time rather than draining the per-key lock one read at a time.
+        const int waiters = 4;
+        var key = Faker.Random.AlphaNumeric(8);
+        var store = new GatedReadStore(_store);
+        var factoryCalls = 0;
+        var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var factoryGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var coordinator = _CreateCoordinator();
+
+        async ValueTask<string?> factory(CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref factoryCalls);
+            factoryStarted.TrySetResult();
+            await factoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            return "fresh";
+        }
+
+        var first = coordinator.GetOrAddAsync(store, key, factory, _CreateOptions(), AbortToken).AsTask();
+        await factoryStarted.Task;
+        var others = Enumerable
+            .Range(0, waiters)
+            .Select(_ => coordinator.GetOrAddAsync(store, key, factory, _CreateOptions(), AbortToken).AsTask())
+            .ToArray();
+
+        // when
+        store.HoldReadsUntil(waiters);
+        factoryGate.SetResult();
+        await store.AllReadsEntered.WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
+        var results = await Task.WhenAll([first, .. others]);
+
+        // then
+        results.Should().OnlyContain(result => result.Value == "fresh" && !result.IsStale);
+        factoryCalls.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_serve_stale_immediately_when_joined_caller_reads_flagged_entry_after_write()
+    {
+        // given: store reads 1-2 are the holder's (pre-lock, under-lock), 3 is the joined caller's pre-lock read,
+        // and 4 is its read after the holder wrote; that read sees a stale entry flagged to be served at once.
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.TryGetEntryOverride = (_, calls) => calls == 4 ? _StaleEntry(now, serveStaleImmediately: true) : null;
+        var (holder, started, holderGate) = _StartGatedHolder(key, _CreateOptions(isFailSafeEnabled: true));
+        await started;
+        var joinedFactoryCalls = 0;
+
+        ValueTask<string?> joinedFactory(CancellationToken _)
+        {
+            joinedFactoryCalls++;
+            return ValueTask.FromResult<string?>("joined");
+        }
+
+        var joined = _LastCoordinator
+            .GetOrAddAsync(_store, key, joinedFactory, _CreateOptions(isFailSafeEnabled: true), AbortToken)
+            .AsTask();
+
+        // when
+        holderGate.SetResult();
+        await holder;
+        var result = await joined;
+
+        // then
+        result.Value.Should().Be("stale");
+        result.IsStale.Should().BeTrue();
+        joinedFactoryCalls.Should().Be(0);
+        _store.TryGetEntryCalls.Should().Be(4);
+    }
+
+    [Fact]
+    public async Task should_keep_stale_candidate_from_post_write_read_when_joined_caller_falls_back_to_lock()
+    {
+        // given: the joined caller's post-write read (call 4) finds a stale reserve, and its under-lock read fails
+        // (a miss), so the only reserve its failing factory can fall back to is the one read after the write.
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.TryGetEntryOverride = (_, calls) =>
+        {
+            if (calls != 4)
+            {
+                return null;
+            }
+
+            _store.TryGetEntryFault = static () => new InvalidOperationException("store down");
+            return _StaleEntry(now, serveStaleImmediately: false);
+        };
+        var (holder, started, holderGate) = _StartGatedHolder(key, _CreateOptions(isFailSafeEnabled: true));
+        await started;
+
+        static ValueTask<string?> failingFactory(CancellationToken _)
+        {
+            return ValueTask.FromException<string?>(new InvalidOperationException("joined factory failed"));
+        }
+
+        var joined = _LastCoordinator
+            .GetOrAddAsync(_store, key, failingFactory, _CreateOptions(isFailSafeEnabled: true), AbortToken)
+            .AsTask();
+
+        // when
+        holderGate.SetResult();
+        await holder;
+        var result = await joined;
+
+        // then
+        result.Value.Should().Be("stale");
+        result.IsStale.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_run_own_factory_within_remaining_lock_budget_when_joined_factory_fails()
+    {
+        // given: a finite LockTimeout; the holder fails, so the joined caller takes the lock with what is left of
+        // its budget rather than timing out or waiting unbounded.
+        var key = Faker.Random.AlphaNumeric(8);
+        var options = _CreateOptions(lockTimeout: TimeSpan.FromSeconds(10));
+        var firstStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var firstGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var coordinator = _CreateCoordinator();
+
+        async ValueTask<string?> failingFactory(CancellationToken cancellationToken)
+        {
+            firstStarted.TrySetResult();
+            await firstGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            throw new InvalidOperationException("factory failed");
+        }
+
+        var first = coordinator.GetOrAddAsync(_store, key, failingFactory, options, AbortToken).AsTask();
+        await firstStarted.Task;
+        var second = coordinator.GetOrAddAsync(_store, key, _FactoryReturns("second"), options, AbortToken).AsTask();
+
+        // when
+        _timeProvider.Advance(TimeSpan.FromSeconds(3));
+        firstGate.SetResult();
+        var firstAct = () => first;
+        await firstAct.Should().ThrowAsync<InvalidOperationException>();
+        var secondResult = await second;
+
+        // then
+        secondResult.Value.Should().Be("second");
+        _store.GetEntry(key)!.Value.Should().Be("second");
+    }
+
+    private FactoryCacheCoordinator _LastCoordinator => _coordinators[^1];
+
+    // Starts a caller that takes the per-key lock and holds it inside its factory until the returned gate opens.
+    private (Task Holder, Task FactoryStarted, TaskCompletionSource Gate) _StartGatedHolder(
+        string key,
+        CacheEntryOptions options
+    )
+    {
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var coordinator = _CreateCoordinator();
+
+        async ValueTask<string?> factory(CancellationToken cancellationToken)
+        {
+            started.TrySetResult();
+            await gate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            return "fresh";
+        }
+
+        return (coordinator.GetOrAddAsync(_store, key, factory, options, AbortToken).AsTask(), started.Task, gate);
+    }
+
+    private static FakeFactoryCacheStore.Entry _StaleEntry(DateTime now, bool serveStaleImmediately)
+    {
+        return new FakeFactoryCacheStore.Entry(
+            Value: "stale",
+            IsNull: false,
+            LogicalExpiresAt: now.AddSeconds(-1),
+            PhysicalExpiresAt: now.AddMinutes(5),
+            SlidingExpiration: null,
+            ServeStaleImmediately: serveStaleImmediately
+        );
+    }
+
+    [Fact]
+    public async Task should_run_own_factory_when_joined_in_flight_factory_fails()
+    {
+        // given: the caller that holds the lock fails without fail-safe, so the joined caller has no value to read
+        // and must fall back to the per-key lock and run its own factory.
+        var key = Faker.Random.AlphaNumeric(8);
+        var firstStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var firstGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var coordinator = _CreateCoordinator();
+
+        async ValueTask<string?> failingFactory(CancellationToken cancellationToken)
+        {
+            firstStarted.TrySetResult();
+            await firstGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            throw new InvalidOperationException("factory failed");
+        }
+
+        var first = coordinator.GetOrAddAsync(_store, key, failingFactory, _CreateOptions(), AbortToken).AsTask();
+        await firstStarted.Task;
+        var second = coordinator
+            .GetOrAddAsync(_store, key, _FactoryReturns("second"), _CreateOptions(), AbortToken)
+            .AsTask();
+
+        // when
+        firstGate.SetResult();
+        var firstAct = () => first;
+        await firstAct.Should().ThrowAsync<InvalidOperationException>();
+        var secondResult = await second;
+
+        // then
+        secondResult.Value.Should().Be("second");
+        _store.GetEntry(key)!.Value.Should().Be("second");
+    }
+
+    [Fact]
     public async Task should_return_stale_on_soft_timeout_and_complete_factory_in_background()
     {
         // given
@@ -3215,6 +3429,72 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
             }
 
             return await inner.SetEntryAsync(key, in entry, cancellationToken).ConfigureAwait(false);
+        }
+
+        public ValueTask TryRearmSlidingAsync(
+            string key,
+            TimeSpan slidingExpiration,
+            DateTime physicalExpiresAt,
+            DateTime now,
+            CancellationToken cancellationToken
+        )
+        {
+            return inner.TryRearmSlidingAsync(key, slidingExpiration, physicalExpiresAt, now, cancellationToken);
+        }
+    }
+
+    // Wraps FakeFactoryCacheStore and, once armed, holds every read until the expected number of reads is in flight
+    // at the same time. A coordinator that serialized those reads behind the per-key lock never gets there.
+    private sealed class GatedReadStore(FakeFactoryCacheStore inner) : IFactoryCacheStore
+    {
+        private readonly TaskCompletionSource _allReadsEntered = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+
+        private int _expectedReads;
+        private int _enteredReads;
+
+        public Task AllReadsEntered => _allReadsEntered.Task;
+
+        public void HoldReadsUntil(int expectedReads) => Volatile.Write(ref _expectedReads, expectedReads);
+
+        public async ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(
+            string key,
+            FactoryCacheReadOptions readOptions = default,
+            CancellationToken cancellationToken = default
+        )
+        {
+            var expected = Volatile.Read(ref _expectedReads);
+
+            if (expected > 0)
+            {
+                if (Interlocked.Increment(ref _enteredReads) >= expected)
+                {
+                    _allReadsEntered.TrySetResult();
+                }
+
+                await _allReadsEntered.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            return await inner.TryGetEntryAsync<T>(key, readOptions, cancellationToken).ConfigureAwait(false);
+        }
+
+        public ValueTask<CacheStoreEntry<T>[]> TryGetAllEntriesAsync<T>(
+            IReadOnlyList<string> keys,
+            FactoryCacheReadOptions readOptions = default,
+            CancellationToken cancellationToken = default
+        )
+        {
+            return inner.TryGetAllEntriesAsync<T>(keys, readOptions, cancellationToken);
+        }
+
+        public ValueTask<bool> SetEntryAsync<T>(
+            string key,
+            in CacheStoreEntryWrite<T> entry,
+            CancellationToken cancellationToken
+        )
+        {
+            return inner.SetEntryAsync(key, in entry, cancellationToken);
         }
 
         public ValueTask TryRearmSlidingAsync(

@@ -89,7 +89,7 @@ internal sealed class DisposableSemaphoreSlot : DistributedLockHandleBase
 
     protected override Task ReleaseCoreAsync()
     {
-        return _provider.ReleaseAsync(Resource, LeaseId, CancellationToken.None);
+        return _provider.ReleaseAsync(Resource, LeaseId);
     }
 
     protected override void OnMonitorDisposeFailed(Exception exception)
