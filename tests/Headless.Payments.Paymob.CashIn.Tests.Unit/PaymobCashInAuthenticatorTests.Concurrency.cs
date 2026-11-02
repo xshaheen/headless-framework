@@ -15,8 +15,8 @@ public sealed partial class PaymobCashInAuthenticatorTests
         // given
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var callCount = 0;
-        var apiKey = fixture.AutoFixture.Create<string>();
-        var token = fixture.AutoFixture.Create<string>();
+        var apiKey = CashInTestData.Text(Faker);
+        var token = CashInTestData.Text(Faker);
         var config = fixture.CashInOptions with { ApiKey = apiKey };
         fixture.OptionsAccessor.CurrentValue.Returns(config);
         var request = new CashInAuthenticationTokenRequest { ApiKey = apiKey };
@@ -56,8 +56,8 @@ public sealed partial class PaymobCashInAuthenticatorTests
         // given
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var callCount = 0;
-        var apiKey = fixture.AutoFixture.Create<string>();
-        var token = fixture.AutoFixture.Create<string>();
+        var apiKey = CashInTestData.Text(Faker);
+        var token = CashInTestData.Text(Faker);
         var config = fixture.CashInOptions with { ApiKey = apiKey };
         fixture.OptionsAccessor.CurrentValue.Returns(config);
         var request = new CashInAuthenticationTokenRequest { ApiKey = apiKey };
@@ -100,7 +100,7 @@ public sealed partial class PaymobCashInAuthenticatorTests
     {
         // given
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        var apiKey = fixture.AutoFixture.Create<string>();
+        var apiKey = CashInTestData.Text(Faker);
         var config = fixture.CashInOptions with { ApiKey = apiKey };
         fixture.OptionsAccessor.CurrentValue.Returns(config);
         var request = new CashInAuthenticationTokenRequest { ApiKey = apiKey };
@@ -114,7 +114,7 @@ public sealed partial class PaymobCashInAuthenticatorTests
                     .WithDelay(TimeSpan.FromSeconds(5))
                     .WithBody(_ =>
                     {
-                        var response = fixture.AutoFixture.Create<CashInAuthenticationTokenResponse>();
+                        var response = CashInTestData.AuthenticationTokenResponse(Faker);
                         return JsonSerializer.Serialize(response);
                     })
             );

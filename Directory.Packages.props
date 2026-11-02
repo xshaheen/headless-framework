@@ -196,14 +196,12 @@
     keeps them out of shipped dependency lists, and a shipped project that references one fails restore (NU1010).
   -->
   <ItemGroup Label="Non-shipping package versions" Condition="'$(IsPackable)' == 'false'">
-    <PackageVersion Include="AutoFixture" Version="5.0.0-rc.1" />
     <PackageVersion Include="AwesomeAssertions.Analyzers" Version="9.0.8" />
     <PackageVersion Include="AwesomeAssertions.Json" Version="9.0.0" />
     <PackageVersion Include="BenchmarkDotNet" Version="0.15.8" />
     <PackageVersion Include="Dapper" Version="2.1.89" />
     <PackageVersion Include="Foundatio" Version="13.0.5" />
     <PackageVersion Include="Foundatio.Redis" Version="13.0.5" />
-    <PackageVersion Include="Invio.Extensions.Authentication.JwtBearer" Version="2.0.1" />
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="10.0.13" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.13" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.13" />
@@ -241,7 +239,6 @@
     <GlobalPackageReference Include="ReferenceTrimmer" Version="3.5.9" />
   </ItemGroup>
   <ItemGroup Label="Analyzers" Condition="'$(MSBuildProjectExtension)' == '.csproj'">
-    <GlobalPackageReference Include="SerilogAnalyzer" Version="0.15.0" />
     <GlobalPackageReference Include="Microsoft.CodeAnalysis.ResxSourceGenerator" Version="5.0.0-1.25277.114">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>

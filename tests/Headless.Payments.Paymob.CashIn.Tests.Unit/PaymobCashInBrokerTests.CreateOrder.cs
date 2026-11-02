@@ -20,12 +20,12 @@ public sealed partial class PaymobCashInBrokerTests : TestBase
     {
         // given
         var request = _CreateOrderRequest();
-        var token = fixture.AutoFixture.Create<string>();
+        var token = CashInTestData.Text(Faker);
         var authenticator = Substitute.For<IPaymobCashInAuthenticator>();
         authenticator.GetAuthenticationTokenAsync(AbortToken).Returns(token);
         var internalRequest = new CashInCreateOrderInternalRequest(token, request);
         var internalRequestJson = JsonSerializer.Serialize(internalRequest, _IgnoreNullOptions);
-        var response = fixture.AutoFixture.Create<CashInCreateOrderResponse>();
+        var response = CashInTestData.CreateOrderResponse(Faker);
         var responseJson = JsonSerializer.Serialize(response);
 
         fixture
@@ -47,9 +47,9 @@ public sealed partial class PaymobCashInBrokerTests : TestBase
         // given
         var request = _CreateOrderRequest();
         var authenticator = Substitute.For<IPaymobCashInAuthenticator>();
-        var token = fixture.AutoFixture.Create<string>();
+        var token = CashInTestData.Text(Faker);
         authenticator.GetAuthenticationTokenAsync(AbortToken).Returns(token);
-        var body = fixture.AutoFixture.Create<string>();
+        var body = CashInTestData.Text(Faker);
 
         fixture
             .Server.Given(Request.Create().WithPath("/ecommerce/orders").UsingPost())
@@ -64,11 +64,11 @@ public sealed partial class PaymobCashInBrokerTests : TestBase
         _ = await authenticator.Received(1).GetAuthenticationTokenAsync(AbortToken);
     }
 
-    private static CashInCreateOrderRequest _CreateOrderRequest()
+    private CashInCreateOrderRequest _CreateOrderRequest()
     {
         return CashInCreateOrderRequest.CreateOrder(
-            amountCents: _Faker.Random.Int(10_000, 100_000),
-            currency: _Faker.Finance.Currency().Code,
+            amountCents: Faker.Random.Int(10_000, 100_000),
+            currency: Faker.Finance.Currency().Code,
             merchantOrderId: Guid.NewGuid().ToString()
         );
     }
