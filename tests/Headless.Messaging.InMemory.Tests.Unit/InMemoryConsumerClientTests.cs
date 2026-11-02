@@ -113,18 +113,18 @@ public sealed class InMemoryConsumerClientTests : TestBase
         await _client.SubscribeAsync(["test-messageName"], AbortToken);
         using var cts = new CancellationTokenSource();
 
-        // A blocking take would never return on its own, so a deadline keeps a regression a failure, not a hang.
-        cts.CancelAfter(TimeSpan.FromMilliseconds(1500));
+        // A blocking take would never return on its own, so a deadline keeps a regression a failure, not a hang. It
+        // is long, because a blocking take returns only once it fires, already completed, which the check below
+        // catches; a short deadline would let a stalled runner complete a non-blocking call too.
+        cts.CancelAfter(TimeSpan.FromSeconds(10));
 
         // when - the call runs on this thread until its first real await, so a blocking take would hold it here
-        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         var listening = _client.ListeningAsync(TimeSpan.FromSeconds(5), cts.Token).AsTask();
-        stopwatch.Stop();
 
         // then
-        stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(1));
-        listening.IsCompleted.Should().BeFalse();
+        listening.IsCompleted.Should().BeFalse("the call must return to the caller while it waits for a message");
 
+        await cts.CancelAsync();
         var act = async () => await listening.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         await act.Should().ThrowAsync<OperationCanceledException>();
     }

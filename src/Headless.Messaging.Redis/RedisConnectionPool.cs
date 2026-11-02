@@ -31,6 +31,10 @@ internal sealed class RedisConnectionPool : IRedisConnectionPool, IDisposable, I
         }
     }
 
+    // How many pooled connections have started connecting. Connections open lazily, on first use, so a test can show
+    // that constructing the pool attempts none without timing the constructor.
+    internal int CreatedConnectionCount => _connections.Count(static c => c.IsValueCreated);
+
     private AsyncLazyRedisConnection? QuietConnection => _poolAlreadyConfigured ? _ConnectionsByLeastCapacity() : null;
 
     // Manual min-scan: OrderBy + FirstOrDefault allocated a key-buffer array and ran O(n log n) comparisons
