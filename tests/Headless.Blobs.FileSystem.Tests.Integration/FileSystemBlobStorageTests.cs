@@ -493,6 +493,91 @@ public sealed class FileSystemBlobStorageTests : BlobStorageTestsBase
             .BeEquivalentTo("cancelled.txt", "cancelled.txt" + BlobStorageHelpers.SidecarSuffix);
     }
 
+    [Fact]
+    public async Task should_drop_the_destination_metadata_when_copying_a_blob_without_a_sidecar()
+    {
+        // given: a source written out-of-band (no sidecar) and a destination that carries metadata
+        await using var storage = GetStorage();
+        await ResetAsync(storage);
+        var destination = new BlobLocation(ContainerName, "copy-target.txt");
+        var metadata = new Dictionary<string, string>(StringComparer.Ordinal) { ["version"] = "1" };
+
+        await using (var body = new MemoryStream("original"u8.ToArray()))
+        {
+            await storage.UploadAsync(destination, body, metadata: metadata, cancellationToken: AbortToken);
+        }
+
+        var containerDirectory = Path.Combine(_baseDirectoryPath, ContainerName);
+        await File.WriteAllTextAsync(Path.Combine(containerDirectory, "copy-source.txt"), "replacement", AbortToken);
+
+        // when
+        var copied = await storage.CopyAsync(
+            new BlobLocation(ContainerName, "copy-source.txt"),
+            destination,
+            AbortToken
+        );
+
+        // then
+        copied.Should().BeTrue();
+        (await storage.GetBlobContentAsync(destination, AbortToken)).Should().Be("replacement");
+        (await storage.GetBlobInfoAsync(destination, AbortToken))!.Metadata.Should().BeNull();
+        Directory
+            .EnumerateFiles(containerDirectory)
+            .Select(Path.GetFileName)
+            .Should()
+            .BeEquivalentTo("copy-source.txt", "copy-target.txt");
+    }
+
+    [Fact]
+    public async Task should_keep_the_previous_blob_and_metadata_when_a_copy_faults_midway()
+    {
+        // given: a destination with its own content and metadata, and a source whose sidecar cannot be read
+        await using var storage = GetStorage();
+        await ResetAsync(storage);
+        var source = new BlobLocation(ContainerName, "copy-source.txt");
+        var destination = new BlobLocation(ContainerName, "copy-target.txt");
+        var sourceMetadata = new Dictionary<string, string>(StringComparer.Ordinal) { ["version"] = "2" };
+        var destinationMetadata = new Dictionary<string, string>(StringComparer.Ordinal) { ["version"] = "1" };
+
+        await using (var body = new MemoryStream("replacement"u8.ToArray()))
+        {
+            await storage.UploadAsync(source, body, metadata: sourceMetadata, cancellationToken: AbortToken);
+        }
+
+        await using (var body = new MemoryStream("original"u8.ToArray()))
+        {
+            await storage.UploadAsync(destination, body, metadata: destinationMetadata, cancellationToken: AbortToken);
+        }
+
+        var containerDirectory = Path.Combine(_baseDirectoryPath, ContainerName);
+        var sourceSidecar = Path.Combine(containerDirectory, "copy-source.txt" + BlobStorageHelpers.SidecarSuffix);
+
+        // An exclusive handle makes every other open fail, including a root process's, once the content is copied.
+        var act = async () => await storage.CopyAsync(source, destination, AbortToken);
+
+        await using (new FileStream(sourceSidecar, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            // when
+            await act.Should().ThrowAsync<IOException>();
+        }
+
+        // then
+        (await storage.GetBlobContentAsync(destination, AbortToken))
+            .Should()
+            .Be("original");
+        (await storage.GetBlobInfoAsync(destination, AbortToken))!.Metadata.Should().Contain("version", "1");
+        Directory
+            .EnumerateFiles(containerDirectory)
+            .Select(Path.GetFileName)
+            .Should()
+            .BeEquivalentTo(
+                "copy-source.txt",
+                "copy-source.txt" + BlobStorageHelpers.SidecarSuffix,
+                "copy-target.txt",
+                "copy-target.txt" + BlobStorageHelpers.SidecarSuffix
+            );
+    }
+
     /// <summary>
     /// A non-seekable body that returns its bytes on the first read, then holds the second read until
     /// <see cref="Release"/> is called or the read is cancelled.
