@@ -202,8 +202,14 @@ internal sealed class FileSystemBlobStorage : IBlobStorage
 
         var count = 0;
         List<Exception>? failures = null;
+        var enumerationRoot = _FindEnumerationRoot(containerDirectory, prefix);
 
-        foreach (var file in Directory.EnumerateFiles(containerDirectory, "*", SearchOption.AllDirectories))
+        if (enumerationRoot is null)
+        {
+            return ValueTask.FromResult(0);
+        }
+
+        foreach (var file in Directory.EnumerateFiles(enumerationRoot, "*", SearchOption.AllDirectories))
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -501,6 +507,12 @@ internal sealed class FileSystemBlobStorage : IBlobStorage
         }
 
         var startAfterKey = BlobStorageHelpers.DecodeContinuationToken(query.ContinuationToken);
+        var enumerationRoot = _FindEnumerationRoot(containerDirectory, prefix);
+
+        if (enumerationRoot is null)
+        {
+            return BlobPage.Empty;
+        }
 
         // Hold at most PageSize+1 entries in a sliding window (mirroring the SFTP provider) so memory stays
         // O(pageSize) regardless of how many blobs the container holds — a full window signals a further page remains.
@@ -515,7 +527,7 @@ internal sealed class FileSystemBlobStorage : IBlobStorage
 
         // DirectoryInfo enumeration yields FileInfo instances pre-populated from the directory scan, so the
         // page entries below need no second stat per file (Directory.EnumerateFiles + new FileInfo did).
-        var containerInfo = new DirectoryInfo(containerDirectory);
+        var containerInfo = new DirectoryInfo(enumerationRoot);
 
         foreach (var info in containerInfo.EnumerateFiles("*", SearchOption.AllDirectories))
         {
@@ -674,6 +686,57 @@ internal sealed class FileSystemBlobStorage : IBlobStorage
             : fileFullName.Replace(containerDirectory, string.Empty, StringComparison.Ordinal);
 
         return key.Replace('\\', '/');
+    }
+
+    /// <summary>
+    /// Returns the deepest directory the <paramref name="prefix"/> implies, so listing and delete-by-prefix walk only
+    /// the subtree that can hold matching keys instead of the whole container; <see langword="null"/> when that
+    /// directory does not exist, meaning no key can match.
+    /// </summary>
+    private static string? _FindEnumerationRoot(string containerDirectory, string? prefix)
+    {
+        var prefixDirectory = BlobStorageHelpers.GetPrefixDirectory(prefix);
+
+        if (prefixDirectory.Length == 0)
+        {
+            return containerDirectory;
+        }
+
+        var segments = prefixDirectory[..^1].Split('/');
+
+        // An empty segment ("a//b/") has no directory of its own; keep the full walk and let the key filter decide.
+        if (Array.Exists(segments, static segment => segment.Length == 0))
+        {
+            return containerDirectory;
+        }
+
+        var current = containerDirectory;
+
+        foreach (var segment in segments)
+        {
+            // Match each segment ordinally against the real entry names rather than opening Path.Combine(current,
+            // segment): on a case-insensitive file system that would enter a differently-cased directory and report
+            // its keys in the prefix's casing, while keys are compared ordinally everywhere else.
+            string? next = null;
+
+            foreach (var directory in Directory.EnumerateDirectories(current))
+            {
+                if (string.Equals(Path.GetFileName(directory), segment, StringComparison.Ordinal))
+                {
+                    next = directory;
+                    break;
+                }
+            }
+
+            if (next is null)
+            {
+                return null;
+            }
+
+            current = next;
+        }
+
+        return current;
     }
 
     #endregion

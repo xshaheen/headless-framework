@@ -746,39 +746,86 @@ internal sealed class AzureBlobStorage(
         // user-delegation SAS. This requires the identity to hold an RBAC role granting
         // "Microsoft.Storage/storageAccounts/blobServices/generateUserDelegationKey" (e.g. "Storage Blob Delegator")
         // plus a data role for the GET/PUT itself. The delegation key — and therefore the SAS — is capped at 7 days.
-        UserDelegationKey userDelegationKey;
-
-        try
-        {
-            var response = await blobServiceClient
-                .GetUserDelegationKeyAsync(startsOn: null, expiresOn: builder.ExpiresOn, cancellationToken)
-                .ConfigureAwait(false);
-
-            userDelegationKey = response.Value;
-        }
-        // Azure.Core surfaces a single failed attempt as RequestFailedException and an exhausted retry sequence as an
-        // AggregateException of them (a host that never resolves fails every attempt), so both shapes mean the same
-        // thing here: the client cannot obtain a delegation key.
-        catch (Exception e)
-            when (e is RequestFailedException
-                || (
-                    e is AggregateException aggregate && aggregate.InnerExceptions.All(x => x is RequestFailedException)
-                )
-            )
-        {
-            throw new InvalidOperationException(
-                "Unable to generate a presigned URL. The BlobServiceClient cannot sign with an account key and "
-                    + "requesting a user-delegation key failed. Use a client built with an account key "
-                    + "(StorageSharedKeyCredential), or a TokenCredential whose identity has the 'Storage Blob "
-                    + "Delegator' role (plus a data role), and keep the requested expiry within 7 days.",
-                e
-            );
-        }
+        var userDelegationKey = await _GetUserDelegationKeyAsync(builder.ExpiresOn, cancellationToken)
+            .ConfigureAwait(false);
 
         var sas = builder.ToSasQueryParameters(userDelegationKey, blobServiceClient.AccountName);
         var uriBuilder = new BlobUriBuilder(blobClient.Uri) { Sas = sas };
 
         return uriBuilder.ToUri();
+    }
+
+    // Requesting a delegation key is a service round trip; one key signs any number of SAS tokens, so a page that
+    // mints a URL per item would otherwise pay one round trip per URL. The cached key is reused while it outlives
+    // the requested SAS expiry, and replaced (never extended) once a request needs a later expiry.
+    private static readonly TimeSpan _MinDelegationKeyLifetime = TimeSpan.FromHours(1);
+
+    private readonly SemaphoreSlim _delegationKeyLock = new(1, 1);
+    private UserDelegationKey? _delegationKey;
+
+    private async ValueTask<UserDelegationKey> _GetUserDelegationKeyAsync(
+        DateTimeOffset sasExpiresOn,
+        CancellationToken cancellationToken
+    )
+    {
+        if (Volatile.Read(ref _delegationKey) is { } cached && cached.SignedExpiresOn >= sasExpiresOn)
+        {
+            return cached;
+        }
+
+        await _delegationKeyLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            // Another caller may have refreshed the key while this one waited.
+            if (_delegationKey is { } refreshed && refreshed.SignedExpiresOn >= sasExpiresOn)
+            {
+                return refreshed;
+            }
+
+            // Ask for at least the minimum lifetime so short-lived SAS requests share one key, but never shorten a
+            // longer requested expiry: the service rejects anything past 7 days, which maps to the error below.
+            var minKeyExpiresOn = timeProvider.GetUtcNow().Add(_MinDelegationKeyLifetime);
+            var keyExpiresOn = sasExpiresOn > minKeyExpiresOn ? sasExpiresOn : minKeyExpiresOn;
+
+            UserDelegationKey key;
+
+            try
+            {
+                var response = await blobServiceClient
+                    .GetUserDelegationKeyAsync(startsOn: null, expiresOn: keyExpiresOn, cancellationToken)
+                    .ConfigureAwait(false);
+
+                key = response.Value;
+            }
+            // Azure.Core surfaces a single failed attempt as RequestFailedException and an exhausted retry sequence as an
+            // AggregateException of them (a host that never resolves fails every attempt), so both shapes mean the same
+            // thing here: the client cannot obtain a delegation key.
+            catch (Exception e)
+                when (e is RequestFailedException
+                    || (
+                        e is AggregateException aggregate
+                        && aggregate.InnerExceptions.All(x => x is RequestFailedException)
+                    )
+                )
+            {
+                throw new InvalidOperationException(
+                    "Unable to generate a presigned URL. The BlobServiceClient cannot sign with an account key and "
+                        + "requesting a user-delegation key failed. Use a client built with an account key "
+                        + "(StorageSharedKeyCredential), or a TokenCredential whose identity has the 'Storage Blob "
+                        + "Delegator' role (plus a data role), and keep the requested expiry within 7 days.",
+                    e
+                );
+            }
+
+            Volatile.Write(ref _delegationKey, key);
+
+            return key;
+        }
+        finally
+        {
+            _delegationKeyLock.Release();
+        }
     }
 
     #endregion
@@ -798,6 +845,7 @@ internal sealed class AzureBlobStorage(
         }
 
         _disposed = true;
+        _delegationKeyLock.Dispose();
 
         return ValueTask.CompletedTask;
     }
