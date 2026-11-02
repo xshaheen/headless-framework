@@ -168,7 +168,7 @@ Change Data Capture (e.g. Debezium) is an advanced alternative that bypasses thi
 | **Global filters** | `IMultiTenant`, `IDeleteAudit` — automatic | None; consumers implement their own query predicates |
 | **Auditing** | Automatic via `ICreateAudit`, `IUpdateAudit`, `IDeleteAudit` | None |
 | **Events** | Domain events (in-process) + integration events (outbox) | None |
-| **Transactions** | EF Core execution strategy + `IUnitOfWorkFactory.RunAsync(db, …)` (always unit-of-work-aware) | Couchbase Transactions via `ExecuteTransactionAsync(Func<AttemptContext, Task<bool>>)` |
+| **Transactions** | EF Core execution strategy + `IUnitOfWorkFactory.RunAsync(db, …)` (always unit-of-work-aware) | Couchbase Transactions via `ExecuteTransactionAsync(Func<AttemptContext, Task>)` |
 | **DI** | `AddHeadlessDbContext<TDbContext>(...)` | `AddHeadlessCouchbase()` for the framework providers; the consumer supplies `ICouchbaseClusterOptionsProvider` + `ICouchbaseTransactionConfigProvider` |
 
 `Headless.EntityFramework.Messaging` is an add-on to `Headless.EntityFramework`, not a competing provider. It does not appear in the table above.
@@ -630,7 +630,7 @@ Couchbase integration for bucket-context based document access, transactions, an
 
 ### API and behavior
 
-- `CouchbaseBucketContext` base context over Linq2Couchbase `BucketContext` — exposes typed `Query<T>(scope, collection)` for N1QL and `ExecuteTransactionAsync(Func<AttemptContext, Task<bool>>)` for Couchbase Transactions
+- `CouchbaseBucketContext` base context over Linq2Couchbase `BucketContext` — exposes typed `Query<T>(scope, collection)` for N1QL and `ExecuteTransactionAsync(Func<AttemptContext, Task>)` for Couchbase Transactions
 - `IBucketContextProvider` / `BucketContextProvider` — resolves typed contexts per cluster key + bucket name + default scope; wires cluster and transaction objects via `ICouchbaseClustersProvider`
 - `ICouchbaseClustersProvider` / `CouchbaseClustersProvider` — manages cluster connections keyed by `clusterKey`, each lazily initialized and cached; returns a `CouchbaseClusterConnection` (cluster + transaction manager) per call to `GetClusterAsync`
 - `DocumentSetExtensions` — KV operations (`GetAsync`, `ExistsAsync`, `UpsertAsync`, `InsertAsync`, `ReplaceAsync`, `RemoveAsync`, `UnlockAsync`, `TouchAsync`, `GetAndLockAsync`, `GetAnyReplicaAsync`, `GetAllReplicasAsync`, `LookupInAsync`, `MutateInAsync`, `ScanAsync`) typed against `IEntity` models; keys are derived from `IEntity.GetKey()`
@@ -651,7 +651,7 @@ dotnet add package Headless.Couchbase
 ```csharp
 using Couchbase;
 using Couchbase.Linq;
-using Couchbase.Transactions;
+using Couchbase.Client.Transactions;
 
 // Define a typed bucket context; the provider wires each attributed IDocumentSet<T> property to its collection
 public sealed class AppBucketContext(
@@ -680,11 +680,10 @@ var results = context.Query<Product>("_default", "products")
     .Where(p => p.IsActive)
     .ToList();
 
-// Couchbase Transaction — return true to commit, false to rollback
+// Couchbase Transaction — returning commits, throwing rolls back
 await context.ExecuteTransactionAsync(async attempt =>
 {
     // perform transactional KV operations
-    return true;
 });
 ```
 
@@ -711,6 +710,7 @@ services.AddHeadlessCouchbase();
 - Cluster connections are lazily initialized and cached per `CouchbaseClustersProvider` instance (a singleton within one container) by `clusterKey`; separate containers hold independent connections. Each cluster waits up to 1 minute for readiness on first access; a readiness failure is logged but does not throw (operations fail at call time).
 - `CouchbaseManager` caches scope/collection specs per `clusterKey + bucketName` in-memory to reduce repeated `GetAllScopesAsync` calls; cache is invalidated on scope creation.
 - The manager's retry back-off, its overall `Timeout`, and its pause between creating a collection and its primary index run on the system clock. It takes no `TimeProvider`, so a host that registers a `FakeTimeProvider` (a test host) still retries and times out in real time.
+- `ExecuteTransactionAsync` follows the SDK contract: the transaction commits when the operation returns and rolls back when it throws. The SDK reruns the whole operation on transient conflicts, so keep it free of side effects outside the transaction. The transaction types come from `CouchbaseNetClient` (`Couchbase.Client.Transactions` namespace); the deprecated `Couchbase.Transactions` package is no longer referenced.
 - `CouchbaseBucketContext.ExecuteTransactionAsync` emits `Information` logs on success and `Error` logs on failure via structured logging.
 
 ### Cancellation (Couchbase)
