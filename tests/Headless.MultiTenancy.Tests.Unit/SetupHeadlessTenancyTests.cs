@@ -38,6 +38,53 @@ public sealed class SetupHeadlessTenancyTests
     }
 
     [Fact]
+    public async Task should_resolve_one_write_guard_bypass_when_tenancy_is_added_without_ef()
+    {
+        // given
+        var builder = Host.CreateApplicationBuilder();
+
+        // when
+        builder.AddHeadlessTenancy(_ => { });
+        builder.AddHeadlessTenancy(_ => { });
+
+        // then
+        builder
+            .Services.Where(descriptor => descriptor.ServiceType == typeof(ITenantWriteGuardBypass))
+            .Should()
+            .ContainSingle()
+            .Which.Lifetime.Should()
+            .Be(ServiceLifetime.Singleton);
+
+        await using var provider = builder.Services.BuildServiceProvider();
+        var bypass = provider.GetRequiredService<ITenantWriteGuardBypass>();
+        bypass.Should().BeOfType<TenantWriteGuardBypass>();
+
+        // A store resolving the bypass later must see the scope the caller began on the same instance.
+        using (bypass.BeginBypass())
+        {
+            provider.GetRequiredService<ITenantWriteGuardBypass>().IsActive.Should().BeTrue();
+        }
+
+        bypass.IsActive.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_keep_consumer_write_guard_bypass_when_registered_before_tenancy()
+    {
+        // given
+        var builder = Host.CreateApplicationBuilder();
+        var custom = Substitute.For<ITenantWriteGuardBypass>();
+        builder.Services.AddSingleton(custom);
+
+        // when
+        builder.AddHeadlessTenancy(_ => { });
+
+        // then
+        await using var provider = builder.Services.BuildServiceProvider();
+        provider.GetRequiredService<ITenantWriteGuardBypass>().Should().BeSameAs(custom);
+    }
+
+    [Fact]
     public void should_record_seam_posture_idempotently()
     {
         // given
