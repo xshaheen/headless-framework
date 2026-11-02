@@ -627,6 +627,79 @@ public sealed class RetryBehaviorTests : TestBase
     }
 
     [Fact]
+    public async Task execute_task_async_cuts_off_a_hanging_exhausted_callback_when_the_app_clock_never_advances()
+    {
+        // given: a host whose registered clock is frozen. The callback bound guards against a hung callback, so it
+        // must elapse in real time; on the app clock it would never fire and the run would never finish.
+        var callbackTokenCancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var options = new JobsRetryOptions
+        {
+            OnExhaustedTimeout = TimeSpan.FromMilliseconds(20),
+            OnExhausted = (_, token) =>
+            {
+                token.Register(() => callbackTokenCancelled.TrySetResult());
+                return Task.Delay(Timeout.InfiniteTimeSpan, token);
+            },
+        };
+        var (handler, context, _, _) = _SetupRetryTestFixture(
+            [],
+            retries: 0,
+            retryOptions: options,
+            timeProvider: new FakeTimeProvider()
+        );
+
+        // when: the outer bound only turns a hang into a failure instead of a stuck test run
+        await handler
+            .ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken)
+            .WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
+
+        // then
+        context.Status.Should().Be(JobStatus.Failed);
+        callbackTokenCancelled.Task.IsCompleted.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task execute_task_async_cuts_off_a_hanging_exception_observer_when_the_app_clock_never_advances()
+    {
+        // given: a frozen registered clock and an observer that hangs on the per-retry path, where it runs inline
+        // before the retry; a bound on the app clock would stall the retry forever.
+        var observerTokenCancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var exceptionHandler = Substitute.For<Headless.Jobs.IJobExceptionHandler>();
+        exceptionHandler
+            .HandleExceptionAsync(
+                Arg.Any<Exception>(),
+                Arg.Any<Guid>(),
+                Arg.Any<JobType>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(async call =>
+            {
+                var token = call.Arg<CancellationToken>();
+                token.Register(() => observerTokenCancelled.TrySetResult());
+                await Task.Delay(Timeout.InfiniteTimeSpan, token);
+            });
+
+        var options = new JobsRetryOptions { OnExhaustedTimeout = TimeSpan.FromMilliseconds(20) };
+        var (handler, context, _, attempts) = _SetupRetryTestFixture(
+            [0],
+            retries: 1,
+            retryOptions: options,
+            configureServices: services => services.AddSingleton(exceptionHandler),
+            timeProvider: new FakeTimeProvider()
+        );
+
+        // when: the outer bound only turns a hang into a failure instead of a stuck test run
+        await handler
+            .ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken)
+            .WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
+
+        // then
+        attempts.Should().HaveCount(2);
+        context.Status.Should().Be(JobStatus.Failed);
+        observerTokenCancelled.Task.IsCompleted.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task execute_task_async_stamps_child_ownership_before_running_child_delegate()
     {
         var services = new ServiceCollection();
