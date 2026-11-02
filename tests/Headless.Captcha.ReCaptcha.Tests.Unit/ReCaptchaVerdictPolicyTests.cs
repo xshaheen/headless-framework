@@ -32,11 +32,24 @@ public sealed class ReCaptchaVerdictPolicyTests : TestBase
     }
 
     [Fact]
-    public async Task low_score_fails_the_generic_verifier_with_the_default_threshold()
+    public async Task low_score_passes_with_the_default_threshold()
+    {
+        using var handler = new StubSiteVerifyHandler();
+        handler.EnqueueJson(HttpStatusCode.OK, _V3Body(0.0f));
+        var verifier = _v3.CreateVerifier(handler);
+
+        var result = await verifier.VerifyAsync(new CaptchaVerifyRequest { Response = "token" }, AbortToken);
+
+        result.Success.Should().BeTrue();
+        result.ErrorCodes.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task low_score_fails_the_generic_verifier_below_a_configured_threshold()
     {
         using var handler = new StubSiteVerifyHandler();
         handler.EnqueueJson(HttpStatusCode.OK, _V3Body(0.1f));
-        var verifier = _v3.CreateVerifier(handler);
+        var verifier = _v3.CreateVerifier(handler, o => o.MinimumScore = 0.5f);
 
         var result = await verifier.VerifyAsync(new CaptchaVerifyRequest { Response = "token" }, AbortToken);
 
@@ -49,7 +62,7 @@ public sealed class ReCaptchaVerdictPolicyTests : TestBase
     {
         using var handler = new StubSiteVerifyHandler();
         handler.EnqueueJson(HttpStatusCode.OK, _V3Body(0.5f));
-        var verifier = _v3.CreateV3Verifier(handler);
+        var verifier = _v3.CreateV3Verifier(handler, o => o.MinimumScore = 0.5f);
 
         var result = await verifier.VerifyAsync(new CaptchaVerifyRequest { Response = "token" }, AbortToken);
 
@@ -71,7 +84,7 @@ public sealed class ReCaptchaVerdictPolicyTests : TestBase
     }
 
     [Fact]
-    public async Task missing_score_fails_closed()
+    public async Task missing_score_fails_closed_with_the_default_threshold()
     {
         using var handler = new StubSiteVerifyHandler();
         handler.EnqueueJson(

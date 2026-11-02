@@ -107,7 +107,7 @@ public sealed class ReCaptchaSetupTests
     }
 
     [Fact]
-    public void minimum_score_defaults_to_google_suggested_threshold()
+    public void minimum_score_defaults_to_zero()
     {
         var services = new ServiceCollection();
         services.AddHeadlessCaptcha(builder => builder.UseReCaptchaV3(_Section("ReCaptchaV3", key: "k", secret: "s")));
@@ -118,7 +118,7 @@ public sealed class ReCaptchaSetupTests
             .GetRequiredService<IOptionsMonitor<ReCaptchaOptions>>()
             .Get(CaptchaConstants.ReCaptchaV3Provider);
 
-        options.MinimumScore.Should().Be(0.5f);
+        options.MinimumScore.Should().Be(0f);
         options.ExpectedAction.Should().BeNull();
         options.ExpectedHostName.Should().BeNull();
     }
