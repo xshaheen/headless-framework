@@ -479,6 +479,41 @@ public sealed class ConsumerRegisterTests : TestBase
     }
 
     [Fact]
+    public async Task should_finish_consumer_client_teardown_before_synchronous_dispose_returns()
+    {
+        // given a running register whose consumer client is slow to dispose
+        var startupClient = new StartupControlledConsumerClient();
+        var factory = new SequencedConsumerClientFactory(new MetadataConsumerClient(), startupClient);
+        await using var provider = _CreateProvider(
+            configureMessaging: setup => setup.AddConsumer<BootstrapReadyConsumer>(),
+            configureServices: services =>
+            {
+                services.ConfigureMessaging(messaging => messaging.Message<BootstrapReadyMessage>("ready-messageName"));
+                services.AddSingleton<IConsumerClientFactory>(factory);
+                services.AddSingleton<BootstrapReadyConsumer>();
+            }
+        );
+        var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
+        using var hostCts = new CancellationTokenSource();
+        var startTask = register.StartAsync(hostCts.Token).AsTask();
+        await startupClient.WaitUntilListeningEnteredAsync(AbortToken);
+        startupClient.SignalReady();
+        await startTask.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+        startupClient.HoldDisposal();
+
+        // when
+        var disposeCall = Task.Run(register.Dispose, AbortToken);
+        await startupClient.WaitUntilDisposalEnteredAsync(AbortToken);
+        var returnedBeforeTeardown = disposeCall.IsCompleted;
+        startupClient.ReleaseDisposal();
+        await disposeCall.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // then
+        returnedBeforeTeardown.Should().BeFalse("synchronous dispose must wait for the client teardown");
+        startupClient.IsDisposed.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task should_listen_with_the_configured_consumer_poll_timeout()
     {
         // given
@@ -3453,10 +3488,42 @@ public sealed class ConsumerRegisterTests : TestBase
             return ValueTask.CompletedTask;
         }
 
-        public ValueTask DisposeAsync()
+        private readonly TaskCompletionSource _disposalEntered = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+
+        private TaskCompletionSource? _disposalGate;
+        private int _disposed;
+
+        public bool IsDisposed => Volatile.Read(ref _disposed) != 0;
+
+        /// <summary>Makes the next disposal wait until <see cref="ReleaseDisposal"/>.</summary>
+        public void HoldDisposal()
+        {
+            _disposalGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        }
+
+        public void ReleaseDisposal()
+        {
+            _disposalGate?.TrySetResult();
+        }
+
+        public async Task WaitUntilDisposalEnteredAsync(CancellationToken cancellationToken)
+        {
+            await _disposalEntered.Task.WaitAsync(cancellationToken);
+        }
+
+        public async ValueTask DisposeAsync()
         {
             _ready.TrySetCanceled();
-            return ValueTask.CompletedTask;
+            _disposalEntered.TrySetResult();
+
+            if (_disposalGate is not null)
+            {
+                await _disposalGate.Task;
+            }
+
+            Volatile.Write(ref _disposed, 1);
         }
     }
 
