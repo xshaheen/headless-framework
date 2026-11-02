@@ -3,6 +3,7 @@
 using System.Data.Common;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -136,6 +137,101 @@ public sealed class EfUnitOfWorkRunAsyncTests : TestBase
     }
 
     [Fact]
+    public async Task should_replay_a_relative_update_once_when_a_save_succeeded_before_the_transient_fault()
+    {
+        await using var host = await EfUnitOfWorkHost.CreateAsync(configureOptions: options =>
+            options.ReplaceService<IExecutionStrategyFactory, RetryExecutionStrategyFactory>()
+        );
+        var id = await _SeedProbeAsync(host, counter: 100);
+        await using var session = host.CreateSession();
+        var operationCalls = 0;
+
+        await session.Factory.RunAsync(
+            session.Db,
+            async (_, ct) =>
+            {
+                operationCalls++;
+                var row = await session.Db.Probes.SingleAsync(x => x.Id == id, ct);
+                row.Counter -= 10;
+                await session.Db.SaveChangesAsync(ct);
+
+                if (operationCalls == 1)
+                {
+                    // The save above succeeded inside the transaction the fault now rolls back.
+                    throw new TransientMarkerException();
+                }
+            },
+            cancellationToken: AbortToken
+        );
+
+        operationCalls.Should().Be(2);
+        (await _ReadCounterAsync(host, id))
+            .Should()
+            .Be(90, "the replay must start from the rolled-back row, not the accepted tracker");
+    }
+
+    [Fact]
+    public async Task should_write_an_idempotent_update_again_when_the_block_replays()
+    {
+        await using var host = await EfUnitOfWorkHost.CreateAsync(configureOptions: options =>
+            options.ReplaceService<IExecutionStrategyFactory, RetryExecutionStrategyFactory>()
+        );
+        var id = await _SeedProbeAsync(host, counter: 100);
+        await using var session = host.CreateSession();
+        var operationCalls = 0;
+
+        await session.Factory.RunAsync(
+            session.Db,
+            async (_, ct) =>
+            {
+                operationCalls++;
+                var row = await session.Db.Probes.SingleAsync(x => x.Id == id, ct);
+                row.Counter = 5;
+                await session.Db.SaveChangesAsync(ct);
+
+                if (operationCalls == 1)
+                {
+                    throw new TransientMarkerException();
+                }
+            },
+            cancellationToken: AbortToken
+        );
+
+        operationCalls.Should().Be(2);
+        (await _ReadCounterAsync(host, id)).Should().Be(5, "the replayed save must not be skipped as already applied");
+    }
+
+    [Fact]
+    public async Task should_surface_the_transient_fault_without_replay_when_the_context_tracked_entities_before_the_block()
+    {
+        await using var host = await EfUnitOfWorkHost.CreateAsync(configureOptions: options =>
+            options.ReplaceService<IExecutionStrategyFactory, RetryExecutionStrategyFactory>()
+        );
+        var id = await _SeedProbeAsync(host, counter: 100);
+        await using var session = host.CreateSession();
+        var row = await session.Db.Probes.SingleAsync(x => x.Id == id, AbortToken);
+        var operationCalls = 0;
+
+        var act = () =>
+            session.Factory.RunAsync(
+                session.Db,
+                async (_, ct) =>
+                {
+                    operationCalls++;
+                    row.Counter -= 10;
+                    await session.Db.SaveChangesAsync(ct);
+
+                    throw new TransientMarkerException();
+                },
+                cancellationToken: AbortToken
+            );
+
+        await act.Should().ThrowAsync<TransientMarkerException>();
+        operationCalls.Should().Be(1, "a replay cannot restore entities the caller tracked before the block");
+        (await _ReadCounterAsync(host, id)).Should().Be(100);
+    }
+
+    [Fact]
     public async Task should_return_the_result_of_the_block()
     {
         await using var host = await EfUnitOfWorkHost.CreateAsync();
@@ -181,6 +277,25 @@ public sealed class EfUnitOfWorkRunAsyncTests : TestBase
         count.Should().Be(7);
         (await host.CountProbeRowsAsync()).Should().Be(1);
         session.Logs.Should().Contain(e => e.Message.Contains("Post-commit drain faulted", StringComparison.Ordinal));
+    }
+
+    private static async Task<int> _SeedProbeAsync(EfUnitOfWorkHost host, int counter)
+    {
+        await using var scope = host.Root.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ProbeDbContext>();
+        var row = new ProbeRow { Name = "seed", Counter = counter };
+        db.Probes.Add(row);
+        await db.SaveChangesAsync(AbortToken);
+
+        return row.Id;
+    }
+
+    private static async Task<int> _ReadCounterAsync(EfUnitOfWorkHost host, int id)
+    {
+        await using var scope = host.Root.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ProbeDbContext>();
+
+        return await db.Probes.AsNoTracking().Where(x => x.Id == id).Select(x => x.Counter).SingleAsync(AbortToken);
     }
 
     /// <summary>

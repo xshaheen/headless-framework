@@ -293,7 +293,17 @@ internal sealed class HeadlessSaveChangesPipeline(
                 throw;
             }
 
-            await unitOfWork.CompleteAsync(state.CancellationToken).ConfigureAwait(false);
+            try
+            {
+                await unitOfWork.CompleteAsync(state.CancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception drainFault) when (unitOfWork.State == UnitOfWorkState.Completed)
+            {
+                // The commit is durable and the tracker already accepted it; only an after-commit callback faulted.
+                // Throwing would report a failed save for committed rows and invite a retry that applies them twice,
+                // so the fault is logged, as RunAsync does for the same drain fault.
+                _logger.LogPostCommitDrainFaulted(drainFault);
+            }
 
             return saved;
         }
@@ -330,7 +340,15 @@ internal sealed class HeadlessSaveChangesPipeline(
                 throw;
             }
 
-            _RunBlocking(unitOfWork.CompleteAsync(CancellationToken.None));
+            try
+            {
+                _RunBlocking(unitOfWork.CompleteAsync(CancellationToken.None));
+            }
+            catch (Exception drainFault) when (unitOfWork.State == UnitOfWorkState.Completed)
+            {
+                // Same rule as the async twin: the commit is durable, so a callback fault is logged, not thrown.
+                _logger.LogPostCommitDrainFaulted(drainFault);
+            }
 
             return saved;
 #pragma warning restore AsyncFixer04
@@ -914,4 +932,12 @@ internal static partial class HeadlessSaveChangesPipelineLog
         Message = "Rolling the save's unit of work back faulted during the exception path; rethrowing the original SaveChanges exception."
     )]
     internal static partial void LogUnitOfWorkRollbackFailed(this ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 3,
+        EventName = "HeadlessPostCommitDrainFaulted",
+        Level = LogLevel.Error,
+        Message = "An after-commit callback faulted after the save committed; the save's result is returned and the relay recovers any enlisted work."
+    )]
+    internal static partial void LogPostCommitDrainFaulted(this ILogger logger, Exception exception);
 }

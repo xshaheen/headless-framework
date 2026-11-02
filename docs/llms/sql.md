@@ -68,7 +68,7 @@ public interface ISqlCurrentConnection : IAsyncDisposable
 }
 ```
 
-`Headless.Sql` provides `DefaultSqlCurrentConnection`, which lazily opens one connection per instance, protects concurrent callers with an `AsyncLock`, and re-opens if the connection drops. Register it as **scoped** — one instance per request/scope — so it is disposed at the end of each unit of work.
+`Headless.Sql` provides `DefaultSqlCurrentConnection`, which lazily opens one connection per instance, protects concurrent callers with an `AsyncLock`, and re-opens if the connection drops. Register it as **scoped** — one instance per request/scope — so it is disposed at the end of each unit of work. Disposing it disposes the connection in any state, including one that broke or was closed during the scope.
 
 ### Connection string checker
 

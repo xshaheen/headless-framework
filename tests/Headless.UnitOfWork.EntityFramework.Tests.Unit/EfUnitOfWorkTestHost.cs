@@ -133,6 +133,8 @@ internal sealed class ProbeRow
     public int Id { get; set; }
 
     public required string Name { get; init; }
+
+    public int Counter { get; set; }
 }
 
 /// <summary>A transient marker exception the retrying strategy below retries once.</summary>
