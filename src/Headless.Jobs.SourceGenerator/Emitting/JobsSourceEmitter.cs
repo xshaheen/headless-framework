@@ -15,7 +15,9 @@ namespace Headless.Jobs.SourceGenerator.Emitting;
 /// </summary>
 internal static class JobsSourceEmitter
 {
-    /// <summary>The generated module's type name, in the namespace named after the assembly.</summary>
+    /// <summary>
+    /// The generated module's type name, in the namespace named after the assembly (see <see cref="NamespaceName.From"/>).
+    /// </summary>
     public const string ModuleClassName = "JobsModule";
 
     public static string Emit(JobsRegistrationModel model)
@@ -31,7 +33,7 @@ internal static class JobsSourceEmitter
             );
         }
 
-        writer.AppendLine($"namespace {model.AssemblyName}");
+        writer.AppendLine($"namespace {NamespaceName.From(model.AssemblyName)}");
         writer.OpenBracket();
         // Public so the host assembly can name it in AddModule<T>(); the registration itself is an explicit interface
         // implementation, reachable only through that call, which runs it once per process.
@@ -83,7 +85,7 @@ internal static class JobsSourceEmitter
 
         if (!string.IsNullOrEmpty(assemblyName))
         {
-            writer.AppendLine($"using {assemblyName};");
+            writer.AppendLine($"using {NamespaceName.From(assemblyName)};");
         }
 
         writer.NewLine();

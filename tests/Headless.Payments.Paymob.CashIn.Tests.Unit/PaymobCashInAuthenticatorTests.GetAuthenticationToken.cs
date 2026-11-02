@@ -54,7 +54,7 @@ public sealed partial class PaymobCashInAuthenticatorTests
 
     private void _SetupRandomResponse()
     {
-        var apiKey = fixture.AutoFixture.Create<string>();
+        var apiKey = CashInTestData.Text(Faker);
         var config = fixture.CashInOptions with { ApiKey = apiKey };
         fixture.OptionsAccessor.CurrentValue.Returns(config);
         var request = new CashInAuthenticationTokenRequest { ApiKey = apiKey };
@@ -68,7 +68,7 @@ public sealed partial class PaymobCashInAuthenticatorTests
     private string _GetTokenResponseJson()
     {
         // var fixture = new Fixture();
-        var response = fixture.AutoFixture.Create<CashInAuthenticationTokenResponse>();
+        var response = CashInTestData.AuthenticationTokenResponse(Faker);
         return JsonSerializer.Serialize(response);
     }
 }

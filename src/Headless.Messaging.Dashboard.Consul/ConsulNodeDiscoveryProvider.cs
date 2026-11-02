@@ -12,13 +12,54 @@ namespace Headless.Messaging.Dashboard.Consul;
 /// Queries the Consul catalog for services tagged <c>messaging</c> to discover peer dashboard nodes,
 /// and registers the current node so peers can discover it.
 /// </summary>
-public sealed class ConsulNodeDiscoveryProvider(
-    ILoggerFactory logger,
-    MessagingDashboardCache cache,
-    ConsulDiscoveryOptions options
-) : INodeDiscoveryProvider
+public sealed class ConsulNodeDiscoveryProvider : INodeDiscoveryProvider, IDisposable
 {
-    private readonly ILogger<ConsulNodeDiscoveryProvider> _logger = logger.CreateLogger<ConsulNodeDiscoveryProvider>();
+    private const string _MessagingTag = "messaging";
+
+    private readonly ILogger<ConsulNodeDiscoveryProvider> _logger;
+    private readonly MessagingDashboardCache _cache;
+    private readonly ConsulDiscoveryOptions _options;
+
+    // One client for the provider's lifetime: each ConsulClient owns an HttpClient and its handler, so a client per
+    // call opens new sockets on every stats refresh and gateway lookup.
+    private readonly ConsulClient _consul;
+
+    public ConsulNodeDiscoveryProvider(
+        ILoggerFactory logger,
+        MessagingDashboardCache cache,
+        ConsulDiscoveryOptions options
+    )
+        : this(logger, cache, options, _CreateClient(options)) { }
+
+    internal ConsulNodeDiscoveryProvider(
+        ILoggerFactory logger,
+        MessagingDashboardCache cache,
+        ConsulDiscoveryOptions options,
+        ConsulClient consul
+    )
+    {
+        _logger = logger.CreateLogger<ConsulNodeDiscoveryProvider>();
+        _cache = cache;
+        _options = options;
+        _consul = consul;
+    }
+
+    /// <inheritdoc />
+    public void Dispose() => _consul.Dispose();
+
+    private static ConsulClient _CreateClient(ConsulDiscoveryOptions options)
+    {
+        return new ConsulClient(config =>
+        {
+            config.WaitTime = TimeSpan.FromSeconds(5);
+            config.Address = new Uri(
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"http://{options.DiscoveryServerHostName}:{options.DiscoveryServerPort}"
+                )
+            );
+        });
+    }
 
     public async Task<Node?> GetNodeAsync(
         string nodeName,
@@ -28,18 +69,8 @@ public sealed class ConsulNodeDiscoveryProvider(
     {
         try
         {
-            using var consul = new ConsulClient(config =>
-            {
-                config.WaitTime = TimeSpan.FromSeconds(5);
-                config.Address = new Uri(
-                    string.Create(
-                        CultureInfo.InvariantCulture,
-                        $"http://{options.DiscoveryServerHostName}:{options.DiscoveryServerPort}"
-                    )
-                );
-            });
-            var serviceCatalog = await consul
-                .Catalog.Service(nodeName, "messaging", cancellationToken)
+            var serviceCatalog = await _consul
+                .Catalog.Service(nodeName, _MessagingTag, cancellationToken)
                 .ConfigureAwait(false);
 
             if (serviceCatalog.StatusCode == HttpStatusCode.OK)
@@ -74,23 +105,20 @@ public sealed class ConsulNodeDiscoveryProvider(
         {
             var nodes = new List<Node>();
 
-            using var consul = new ConsulClient(config =>
-            {
-                config.WaitTime = TimeSpan.FromSeconds(5);
-                config.Address = new Uri(
-                    string.Create(
-                        CultureInfo.InvariantCulture,
-                        $"http://{options.DiscoveryServerHostName}:{options.DiscoveryServerPort}"
-                    )
-                );
-            });
-
-            var services = await consul.Catalog.Services(cancellationToken).ConfigureAwait(false);
+            var services = await _consul.Catalog.Services(cancellationToken).ConfigureAwait(false);
 
             foreach (var service in services.Response)
             {
-                var serviceInfo = await consul
-                    .Catalog.Service(service.Key, "messaging", cancellationToken)
+                // The catalog listing already carries each service's tags, so a service without the messaging tag
+                // is skipped here instead of costing one round trip that returns nothing. Consul's own tag filter
+                // ignores case, and nodes register the tag as "Messaging", so this match ignores case too.
+                if (!service.Value.Contains(_MessagingTag, StringComparer.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var serviceInfo = await _consul
+                    .Catalog.Service(service.Key, _MessagingTag, cancellationToken)
                     .ConfigureAwait(false);
 
                 var node = serviceInfo
@@ -107,7 +135,7 @@ public sealed class ConsulNodeDiscoveryProvider(
                 nodes.AddRange(node);
             }
 
-            cache.Set("messaging.nodes.count", nodes.Count, TimeSpan.FromSeconds(60));
+            _cache.Set("messaging.nodes.count", nodes.Count, TimeSpan.FromSeconds(60));
 
             return nodes;
         }
@@ -117,7 +145,7 @@ public sealed class ConsulNodeDiscoveryProvider(
         }
         catch (Exception ex)
         {
-            cache.Set("messaging.nodes.count", 0, TimeSpan.FromSeconds(20));
+            _cache.Set("messaging.nodes.count", 0, TimeSpan.FromSeconds(20));
 
             _logger.LogConsulGetNodesException(ex.Message, ex.InnerException?.Message);
             return [];
@@ -135,46 +163,35 @@ public sealed class ConsulNodeDiscoveryProvider(
                 Status = HealthStatus.Passing,
             };
 
-            if (options.Scheme.Equals("http", StringComparison.OrdinalIgnoreCase))
+            if (_options.Scheme.Equals("http", StringComparison.OrdinalIgnoreCase))
             {
                 healthCheck.HTTP = string.Create(
                     CultureInfo.InvariantCulture,
-                    $"http://{options.CurrentNodeHostName}:{options.CurrentNodePort}{options.MatchPath}/api/health"
+                    $"http://{_options.CurrentNodeHostName}:{_options.CurrentNodePort}{_options.MatchPath}/api/health"
                 );
             }
-            else if (options.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase))
+            else if (_options.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase))
             {
                 healthCheck.TCP = string.Create(
                     CultureInfo.InvariantCulture,
-                    $"{options.CurrentNodeHostName}:{options.CurrentNodePort}"
+                    $"{_options.CurrentNodeHostName}:{_options.CurrentNodePort}"
                 );
             }
 
             var tags = new[] { "Headless", "Messaging", "Client", "Dashboard" };
-            if (options.CustomTags is { Length: > 0 })
+            if (_options.CustomTags is { Length: > 0 })
             {
-                tags = [.. tags.Union(options.CustomTags, StringComparer.Ordinal)];
+                tags = [.. tags.Union(_options.CustomTags, StringComparer.Ordinal)];
             }
 
-            using var consul = new ConsulClient(config =>
-            {
-                config.WaitTime = TimeSpan.FromSeconds(5);
-                config.Address = new Uri(
-                    string.Create(
-                        CultureInfo.InvariantCulture,
-                        $"http://{options.DiscoveryServerHostName}:{options.DiscoveryServerPort}"
-                    )
-                );
-            });
-
-            var result = await consul
+            var result = await _consul
                 .Agent.ServiceRegister(
                     new AgentServiceRegistration
                     {
-                        ID = options.NodeId,
-                        Name = options.NodeName,
-                        Address = options.CurrentNodeHostName,
-                        Port = options.CurrentNodePort,
+                        ID = _options.NodeId,
+                        Name = _options.NodeName,
+                        Address = _options.CurrentNodeHostName,
+                        Port = _options.CurrentNodePort,
                         Tags = tags,
                         Check = healthCheck,
                     },

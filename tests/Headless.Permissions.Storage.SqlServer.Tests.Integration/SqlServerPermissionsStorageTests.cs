@@ -263,12 +263,14 @@ public sealed class SqlServerPermissionsStorageTests(SqlServerPermissionsFixture
         using var host = _CreateHost();
         await host.StartAsync(AbortToken);
         var repository = host.Services.GetRequiredService<IPermissionGrantRepository>();
+        var paddedTenant = Substitute.For<ICurrentTenant>();
+        paddedTenant.Id.Returns("t1 ");
         var store = new PermissionGrantStore(
             Substitute.For<IPermissionDefinitionManager>(),
             repository,
             new SequentialGuidGenerator(SequentialGuidType.Version7),
             Substitute.For<ICache<PermissionGrantCacheItem>>(),
-            Substitute.For<ICurrentTenant>(),
+            paddedTenant,
             Options.Create(new PermissionManagementOptions()),
             NullLogger<PermissionGrantStore>.Instance
         );
@@ -280,8 +282,7 @@ public sealed class SqlServerPermissionsStorageTests(SqlServerPermissionsFixture
         // when
         var revoke = async () => await store.RevokeAsync("Users.Create", "Role", "acme ", AbortToken);
         var isGranted = async () => await store.IsGrantedAsync("Users.Create", "Role", "acme ", AbortToken);
-        var grantToPaddedTenant = async () =>
-            await store.GrantAsync("Users.Delete", "Role", "acme", tenantId: "t1 ", AbortToken);
+        var grantToPaddedTenant = async () => await store.GrantAsync("Users.Delete", "Role", "acme", AbortToken);
 
         // then
         await revoke.Should().ThrowExactlyAsync<ArgumentException>();

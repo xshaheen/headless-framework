@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
-using AutoFixture;
 using Headless.Payments.Paymob.CashOut;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Options;
@@ -15,12 +14,14 @@ public sealed class PaymobCashOutAuthenticatorTests(PaymobCashOutFixture fixture
     : TestBase,
         IClassFixture<PaymobCashOutFixture>
 {
+    protected override Faker Faker { get; set; } = CashOutTestData.CreateFaker();
+
     [Fact]
     public async Task should_post_password_grant_with_basic_auth_when_no_cached_token()
     {
         // given
         var (options, monitor) = _CreateOptions();
-        var accessToken = fixture.AutoFixture.Create<string>();
+        var accessToken = CashOutTestData.Text(Faker);
 
         fixture
             .Server.Given(
@@ -47,7 +48,7 @@ public sealed class PaymobCashOutAuthenticatorTests(PaymobCashOutFixture fixture
         // given
         var (options, monitor) = _CreateOptions();
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        var accessToken = fixture.AutoFixture.Create<string>();
+        var accessToken = CashOutTestData.Text(Faker);
         var callCount = 0;
 
         fixture
@@ -103,7 +104,7 @@ public sealed class PaymobCashOutAuthenticatorTests(PaymobCashOutFixture fixture
     {
         // given
         var (options, monitor) = _CreateOptions();
-        var accessToken = fixture.AutoFixture.Create<string>();
+        var accessToken = CashOutTestData.Text(Faker);
         var callCount = 0;
 
         fixture
@@ -158,7 +159,7 @@ public sealed class PaymobCashOutAuthenticatorTests(PaymobCashOutFixture fixture
     {
         // given
         var (options, monitor) = _CreateOptions();
-        var body = fixture.AutoFixture.Create<string>();
+        var body = CashOutTestData.Text(Faker);
 
         fixture
             .Server.Given(Request.Create().WithPath("/o/token/").UsingPost().WithBody(_PasswordGrantBody(options)))
@@ -180,9 +181,9 @@ public sealed class PaymobCashOutAuthenticatorTests(PaymobCashOutFixture fixture
     {
         // given
         var (options, monitor) = _CreateOptions();
-        var refreshToken = fixture.AutoFixture.Create<string>();
-        var accessToken = fixture.AutoFixture.Create<string>();
-        var newRefreshToken = fixture.AutoFixture.Create<string>();
+        var refreshToken = CashOutTestData.Text(Faker);
+        var accessToken = CashOutTestData.Text(Faker);
+        var newRefreshToken = CashOutTestData.Text(Faker);
         var passwordGrantCalls = 0;
 
         fixture
@@ -225,8 +226,8 @@ public sealed class PaymobCashOutAuthenticatorTests(PaymobCashOutFixture fixture
     {
         // given
         var (options, monitor) = _CreateOptions();
-        var refreshToken = fixture.AutoFixture.Create<string>();
-        var body = fixture.AutoFixture.Create<string>();
+        var refreshToken = CashOutTestData.Text(Faker);
+        var body = CashOutTestData.Text(Faker);
 
         fixture
             .Server.Given(
@@ -287,10 +288,10 @@ public sealed class PaymobCashOutAuthenticatorTests(PaymobCashOutFixture fixture
         var options = new PaymobCashOutOptions
         {
             ApiBaseUrl = fixture.Server.Urls[0],
-            UserName = fixture.AutoFixture.Create<string>(),
-            Password = fixture.AutoFixture.Create<string>(),
-            ClientId = fixture.AutoFixture.Create<string>(),
-            ClientSecret = fixture.AutoFixture.Create<string>(),
+            UserName = CashOutTestData.Text(Faker),
+            Password = CashOutTestData.Text(Faker),
+            ClientId = CashOutTestData.Text(Faker),
+            ClientSecret = CashOutTestData.Text(Faker),
         };
 
         var monitor = Substitute.For<IOptionsMonitor<PaymobCashOutOptions>>();

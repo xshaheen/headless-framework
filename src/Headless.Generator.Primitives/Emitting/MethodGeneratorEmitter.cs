@@ -457,7 +457,10 @@ internal static class MethodGeneratorEmitter
         }
         else if (isChar)
         {
-            builder.AppendLine("char.Parse(s);");
+            // char has no span overload of Parse or TryParse; a char is exactly one UTF-16 code unit.
+            builder.AppendLine(
+                "s.Length == 1 ? s[0] : throw new global::System.FormatException(\"String must be exactly one character long.\");"
+            );
         }
         else if (isBool)
         {
@@ -480,11 +483,14 @@ internal static class MethodGeneratorEmitter
 
         #region T Parse(string s, IFormatProvider? provider)
 
+        // A string-backed primitive already owns a string, so use it directly instead of copying it through a span.
         builder
             .AppendInheritDoc()
             .AppendMethodAggressiveInliningAttribute()
             .AppendLine(
-                $"public static {dataClassName} Parse(string s, {TypeNames.IFormatProvider}? provider) => Parse(s.AsSpan(), provider);"
+                isString
+                    ? $"public static {dataClassName} Parse(string s, {TypeNames.IFormatProvider}? provider) => s ?? string.Empty;"
+                    : $"public static {dataClassName} Parse(string s, {TypeNames.IFormatProvider}? provider) => Parse(s.AsSpan(), provider);"
             );
 
         #endregion
@@ -507,7 +513,8 @@ internal static class MethodGeneratorEmitter
         }
         else if (isChar)
         {
-            builder.AppendLine("if (!char.TryParse(s, out var value))");
+            builder.AppendLine("var value = s.Length == 1 ? s[0] : default;");
+            builder.AppendLine("if (s.Length != 1)");
         }
         else if (isBool)
         {
@@ -524,24 +531,7 @@ internal static class MethodGeneratorEmitter
         }
 
         builder.OpenBracket().AppendLine("result = default;").AppendLine("return false;").CloseBracket().NewLine();
-
-        if (!data.IsValueType)
-        {
-            builder.AppendLine($"return {dataClassName}.TryCreate(value, out result);");
-        }
-        else
-        {
-            builder
-                .AppendLine("if (TryCreate(value, out var created))")
-                .OpenBracket()
-                .AppendLine("result = created.Value;")
-                .AppendLine("return true;")
-                .CloseBracket()
-                .NewLine()
-                .AppendLine("result = default;")
-                .AppendLine("return false;");
-        }
-
+        _AppendTryCreateResult(builder, data, "value");
         builder.CloseBracket();
 
         #endregion
@@ -550,13 +540,54 @@ internal static class MethodGeneratorEmitter
 
         #region bool TryParse(string? s, IFormatProvider? provider, out T result)
 
-        builder
-            .AppendInheritDoc()
-            .AppendLine(
-                $"public static bool TryParse([NotNullWhen(true)] string? s, {TypeNames.IFormatProvider}? provider, [MaybeNullWhen(false)] out {dataClassName} result) => TryParse(s is null ? [] : s.AsSpan(), provider, out result);"
-            );
+        if (isString)
+        {
+            // Mirrors the span overload without copying the string the caller already owns.
+            builder
+                .AppendInheritDoc()
+                .AppendLine(
+                    $"public static bool TryParse([NotNullWhen(true)] string? s, {TypeNames.IFormatProvider}? provider, [MaybeNullWhen(false)] out {dataClassName} result)"
+                )
+                .OpenBracket()
+                .AppendLine("if (string.IsNullOrEmpty(s))")
+                .OpenBracket()
+                .AppendLine("result = default;")
+                .AppendLine("return false;")
+                .CloseBracket()
+                .NewLine();
+
+            _AppendTryCreateResult(builder, data, "s");
+            builder.CloseBracket();
+        }
+        else
+        {
+            builder
+                .AppendInheritDoc()
+                .AppendLine(
+                    $"public static bool TryParse([NotNullWhen(true)] string? s, {TypeNames.IFormatProvider}? provider, [MaybeNullWhen(false)] out {dataClassName} result) => TryParse(s is null ? [] : s.AsSpan(), provider, out result);"
+                );
+        }
 
         #endregion
+    }
+
+    private static void _AppendTryCreateResult(SourceCodeBuilder builder, GeneratorData data, string valueName)
+    {
+        if (!data.IsValueType)
+        {
+            builder.AppendLine($"return {data.ClassName}.TryCreate({valueName}, out result);");
+            return;
+        }
+
+        builder
+            .AppendLine($"if (TryCreate({valueName}, out var created))")
+            .OpenBracket()
+            .AppendLine("result = created.Value;")
+            .AppendLine("return true;")
+            .CloseBracket()
+            .NewLine()
+            .AppendLine("result = default;")
+            .AppendLine("return false;");
     }
 
     /// <summary>Generates code for implementing the IComparable interface for the specified type.</summary>

@@ -118,6 +118,77 @@ public sealed class MessageSenderTests : TestBase
             .BeEmpty("the invalid stored key must reject before lease or attempt reservation");
     }
 
+    [Fact]
+    public async Task should_send_the_transport_prepared_at_publish_without_serializing_again()
+    {
+        // given a stored message whose publish already serialized the payload
+        var storage = Substitute.For<IDataStorage>();
+        var serializer = Substitute.For<IMessageSerializer>();
+        await using var transport = new CapturingTransport();
+        var sender = _CreateSender(storage, serializer, transport, new MessagingOptions());
+        var message = _CreateMediumMessage();
+        var body = """{"prepared":true}"""u8.ToArray();
+        message.PreparedTransport = (message.Origin, new TransportMessage(message.Origin.Headers, body));
+
+        // and a header stamped after the store
+        message.Origin.Headers["late-header"] = "after-store";
+
+        // when
+        var result = await sender.SendAsync(message);
+
+        // then
+        result.Succeeded.Should().BeTrue();
+        await serializer
+            .DidNotReceive()
+            .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>());
+        var delivered = transport.Sent.Should().ContainSingle().Subject;
+        delivered.Body.ToArray().Should().Equal(body);
+        delivered.Headers["late-header"].Should().Be("after-store");
+    }
+
+    [Fact]
+    public async Task should_serialize_again_when_the_prepared_transport_no_longer_matches_the_origin()
+    {
+        // given a prepared transport built for an envelope the message no longer carries
+        var storage = Substitute.For<IDataStorage>();
+        var transportMessage = _CreateTransportMessage();
+        var serializer = Substitute.For<IMessageSerializer>();
+        serializer
+            .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(transportMessage));
+        await using var transport = new CapturingTransport();
+        var sender = _CreateSender(storage, serializer, transport, new MessagingOptions());
+        var message = _CreateMediumMessage();
+        var stale = new Message(
+            new Dictionary<string, string?>(message.Origin.Headers, StringComparer.Ordinal),
+            "stale"
+        );
+        message.PreparedTransport = (stale, new TransportMessage(stale.Headers, "\"stale\""u8.ToArray()));
+
+        // when
+        var result = await sender.SendAsync(message);
+
+        // then
+        result.Succeeded.Should().BeTrue();
+        await serializer.Received(1).SerializeToTransportMessageAsync(message.Origin, Arg.Any<CancellationToken>());
+        transport.Sent.Should().ContainSingle().Which.Should().Be(transportMessage);
+    }
+
+    private sealed class CapturingTransport : ITransport
+    {
+        public List<TransportMessage> Sent { get; } = [];
+
+        public BrokerAddress BrokerAddress { get; } = new("Test", "localhost");
+
+        public Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
+        {
+            Sent.Add(message);
+            return Task.FromResult(OperateResult.Success);
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
     private static MessageSender _CreateSender(
         IDataStorage storage,
         IMessageSerializer serializer,
@@ -1744,6 +1815,49 @@ public sealed class MessageSenderTests : TestBase
             .DidNotReceiveWithAnyArgs()
             .LeasePublishAndReserveAttemptAsync(default!, default, default, AbortToken);
         await storage.DidNotReceiveWithAnyArgs().ReservePublishAttemptAsync(default!, default, AbortToken);
+    }
+
+    [Fact]
+    public async Task should_cut_off_a_hung_on_exhausted_callback_on_the_backoff_clock_while_the_app_clock_is_frozen()
+    {
+        // given a frozen app clock, the default real back-off clock, and a callback that never returns
+        var storage = Substitute.For<IDataStorage>();
+        var serializer = Substitute.For<IMessageSerializer>();
+        var transport = Substitute.For<ITransport>();
+        var callbackEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var hung = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var options = new MessagingOptions
+        {
+            RetryPolicy =
+            {
+                RetryStrategy = TestRetryStrategies.ZeroDelay(2),
+                MaxPersistedRetries = 1,
+                OnExhaustedTimeout = TimeSpan.FromMilliseconds(50),
+                OnExhausted = (_, _) =>
+                {
+                    callbackEntered.TrySetResult();
+                    return hung.Task;
+                },
+            },
+        };
+        var sender = _CreateSender(storage, serializer, transport, options, timeProvider: new FakeTimeProvider());
+        var message = _CreateMediumMessage();
+        message.Retries = 3;
+
+        try
+        {
+            // when the over-cap row ends as exhausted
+            var send = sender.SendAsync(message);
+            await callbackEntered.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+            // then the send finishes once the timeout passes in real time
+            var result = await send.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+            result.Succeeded.Should().BeFalse();
+        }
+        finally
+        {
+            hung.TrySetResult();
+        }
     }
 
     [Fact]

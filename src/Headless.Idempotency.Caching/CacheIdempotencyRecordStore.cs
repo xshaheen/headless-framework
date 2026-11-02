@@ -322,15 +322,21 @@ internal sealed class CacheIdempotencyRecordStore(
     )
     {
         var (_, record) = await _ReadAsync(key, cancellationToken).ConfigureAwait(false);
+        var now = timeProvider.GetUtcNow();
 
-        if (record is null || record.RetentionUntil <= timeProvider.GetUtcNow())
+        if (record is null || record.RetentionUntil <= now)
         {
             return IdempotencyPeekStatus.Absent;
         }
 
-        return record.Status == IdempotencyRecordStatus.Completed
-            ? IdempotencyPeekStatus.Completed
-            : IdempotencyPeekStatus.Pending;
+        if (record.Status == IdempotencyRecordStatus.Completed)
+        {
+            return IdempotencyPeekStatus.Completed;
+        }
+
+        return record.Generation is not null && record.LeaseExpiresAt > now
+            ? IdempotencyPeekStatus.Pending
+            : IdempotencyPeekStatus.Released;
     }
 
     public async ValueTask<IdempotentResult?> GetResultAsync(

@@ -7,11 +7,11 @@ namespace Tests;
 
 public sealed partial class PaymobCashInBrokerTests(PaymobCashInFixture fixture) : IClassFixture<PaymobCashInFixture>
 {
-    private static readonly Faker _Faker = new();
+    protected override Faker Faker { get; set; } = CashInTestData.CreateFaker();
 
     private (IPaymobCashInAuthenticator authenticator, string token) _SetupGentAuthenticationToken()
     {
-        var token = fixture.AutoFixture.Create<string>();
+        var token = CashInTestData.Text(Faker);
         var authenticator = Substitute.For<IPaymobCashInAuthenticator>();
         authenticator.GetAuthenticationTokenAsync(Arg.Any<CancellationToken>()).Returns(token);
         return (authenticator, token);

@@ -43,7 +43,9 @@ public sealed class DefaultSqlCurrentConnection(ISqlConnectionFactory factory) :
     /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
-        if (_connection is { State: ConnectionState.Open })
+        // Whatever its state: a connection the server broke or a caller closed during the scope still holds the
+        // driver's resources until it is disposed.
+        if (_connection is not null)
         {
             await _connection.DisposeAsync().ConfigureAwait(false);
             _connection = null;

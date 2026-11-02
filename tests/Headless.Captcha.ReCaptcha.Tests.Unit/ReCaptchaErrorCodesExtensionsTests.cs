@@ -14,6 +14,9 @@ public sealed class ReCaptchaErrorCodesExtensionsTests
     [InlineData("invalid-input-response", ReCaptchaError.InvalidInputResponse)]
     [InlineData("bad-request", ReCaptchaError.BadRequest)]
     [InlineData("timeout-or-duplicate", ReCaptchaError.TimeOutOrDuplicate)]
+    [InlineData("score-too-low", ReCaptchaError.ScoreTooLow)]
+    [InlineData("action-mismatch", ReCaptchaError.ActionMismatch)]
+    [InlineData("hostname-mismatch", ReCaptchaError.HostNameMismatch)]
     public void maps_each_known_code_to_its_enum_value(string code, ReCaptchaError expected)
     {
         new[] { code }.ToReCaptchaErrors().Should().ContainSingle().Which.Should().Be(expected);

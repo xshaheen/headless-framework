@@ -1210,6 +1210,60 @@ public sealed class DistributedLockTests : TestBase
     }
 
     [Fact]
+    public async Task should_log_publish_failure_when_wakeup_publish_completes_faulted()
+    {
+        // given — the bus returns an already-faulted publish instead of throwing.
+        var captured = new List<int>();
+        var logger = new DistributedLockTestSupport.CapturingLogger<DistributedLock>(captured);
+        var provider = _CreateProvider(logger: logger);
+        var resource = Faker.Random.AlphaNumeric(10);
+        _bus.PublishAsync(Arg.Any<DistributedLockReleased>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<PublishReceipt>(new InvalidOperationException("bus down")));
+
+        var acquiredLock = await provider.TryAcquireAsync(resource, cancellationToken: AbortToken);
+        acquiredLock.Should().NotBeNull();
+
+        // when
+        var act = async () => await provider.ReleaseAsync(resource, acquiredLock!.LeaseId, AbortToken);
+
+        // then — the release succeeds and the failure is logged as LockReleasePublishFailed (EventId 17).
+        await act.Should().NotThrowAsync();
+        (await provider.IsLockedAsync(resource, AbortToken)).Should().BeFalse();
+
+        lock (captured)
+        {
+            captured.Should().Contain(17);
+        }
+    }
+
+    [Fact]
+    public async Task should_return_from_release_without_waiting_for_wakeup_publish_when_broker_is_slow()
+    {
+        // given — the broker never acknowledges the wake-up; the release must not wait on it.
+        var provider = _CreateProvider();
+        var resource = Faker.Random.AlphaNumeric(10);
+        var publishGate = new TaskCompletionSource<PublishReceipt>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _bus.PublishAsync(Arg.Any<DistributedLockReleased>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(publishGate.Task);
+
+        var acquiredLock = await provider.TryAcquireAsync(resource, cancellationToken: AbortToken);
+        acquiredLock.Should().NotBeNull();
+
+        // when
+        await provider.ReleaseAsync(resource, acquiredLock!.LeaseId, AbortToken).Bounded();
+
+        // then — the publish was started before the release returned, and the lock is gone.
+        await _bus.Received(1)
+            .PublishAsync(
+                Arg.Is<DistributedLockReleased>(m => m.Resource == resource),
+                Arg.Any<PublishOptions?>(),
+                Arg.Any<CancellationToken>()
+            );
+        (await provider.IsLockedAsync(resource, AbortToken)).Should().BeFalse();
+        publishGate.SetException(new InvalidOperationException("bus down"));
+    }
+
+    [Fact]
     public async Task should_return_without_publishing_when_release_exceeds_dispose_timeout()
     {
         // given — storage hangs forever on remove. DisposeTimeout bounds the release so application

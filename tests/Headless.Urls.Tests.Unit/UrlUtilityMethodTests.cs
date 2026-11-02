@@ -97,4 +97,38 @@ public sealed class UrlUtilityMethodTests
         encoded.Should().Contain("%F0%9F%98%80"); // intact 4-byte UTF-8 sequence, not two split surrogates
         Url.Decode(encoded, false).Should().Be(s); // round-trips without corruption
     }
+
+    [Theory]
+    [InlineData("hi%20there", "hi%20there")]
+    [InlineData("a b%20c d", "a%20b%20c%20d")]
+    [InlineData("%2F", "%2F")]
+    [InlineData("%ab%CD", "%ab%CD")]
+    [InlineData("100%", "100%25")]
+    [InlineData("%zz", "%25zz")]
+    [InlineData("%2", "%252")]
+    [InlineData("x%2", "x%252")]
+    [InlineData("%%20", "%25%20")]
+    [InlineData("é%20ü", "%C3%A9%20%C3%BC")]
+    [InlineData("😀%20", "%F0%9F%98%80%20")]
+    public void should_encode_illegal_chars_and_keep_valid_percent_escapes(string input, string expected)
+    {
+        Url.EncodeIllegalCharacters(input).Should().Be(expected);
+    }
+
+    [Fact]
+    public void should_encode_spaces_as_plus_and_keep_percent_escapes()
+    {
+        Url.EncodeIllegalCharacters("a b%20c", encodeSpaceAsPlus: true).Should().Be("a+b%20c");
+    }
+
+    [Fact]
+    public void should_keep_percent_escapes_in_very_long_value()
+    {
+        const int count = 100_000;
+        var s = string.Concat(Enumerable.Repeat("ab cd%20", count));
+
+        var encoded = Url.EncodeIllegalCharacters(s);
+
+        encoded.Should().Be(string.Concat(Enumerable.Repeat("ab%20cd%20", count)));
+    }
 }

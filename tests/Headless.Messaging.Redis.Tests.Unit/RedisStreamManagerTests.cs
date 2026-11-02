@@ -390,16 +390,15 @@ public sealed class RedisStreamManagerTests : TestBase
     }
 
     [Fact]
-    public async Task should_skip_a_stream_without_reporting_a_failure_when_the_server_refuses_its_consumer_group()
+    public async Task should_report_a_failed_latest_read_when_the_server_refuses_the_consumer_group_of_every_stream()
     {
         // given a server that answers the group setup with an error of its own
-        _GivenConsumerGroupSetupFailsWith(
-            new RedisServerException(
-                RedisErrorKind.WrongType,
-                CommandFlags.None,
-                "WRONGTYPE Operation against a key holding the wrong kind of value"
-            )
+        var refusal = new RedisServerException(
+            RedisErrorKind.WrongType,
+            CommandFlags.None,
+            "WRONGTYPE Operation against a key holding the wrong kind of value"
         );
+        _GivenConsumerGroupSetupFailsWith(refusal);
         var sut = _CreateSut(new FakeTimeProvider());
         var outcomes = new List<Exception?>();
 
@@ -418,9 +417,51 @@ public sealed class RedisStreamManagerTests : TestBase
             .Should()
             .BeTrue();
 
-        // then the server was reached, so the read is no outage
-        outcomes.Should().Equal([null]);
+        // then a read that can consume nothing is no success, even though the server answered
+        outcomes.Should().Equal(refusal);
         enumerator.Current.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_read_the_other_streams_without_reporting_a_failure_when_the_server_refuses_one_consumer_group()
+    {
+        // given one stream whose group setup the server refuses, beside one that is fine
+        _mockDatabase
+            .KeyExistsAsync("refused-stream", Arg.Any<CommandFlags>())
+            .Returns(Task.FromException<bool>(_ServerException("NOPERM this user has no permissions")));
+        var sut = _CreateSut(new FakeTimeProvider());
+        var outcomes = new List<Exception?>();
+
+        await using var enumerator = sut.PollStreamsLatestMessagesAsync(
+                ["refused-stream", "orders-stream"],
+                "group",
+                "consumer",
+                TimeSpan.FromMinutes(1),
+                outcomes.Add,
+                AbortToken
+            )
+            .GetAsyncEnumerator(AbortToken);
+
+        // when
+        (await enumerator.MoveNextAsync())
+            .Should()
+            .BeTrue();
+
+        // then the readable stream is still consumed, so the read succeeds
+        outcomes.Should().Equal([null]);
+        await _mockDatabase
+            .Received(1)
+            .StreamReadGroupAsync(
+                Arg.Is<StreamPosition[]>(x => x.Length == 1 && x[0].Key == "orders-stream"),
+                Arg.Any<RedisValue>(),
+                Arg.Any<RedisValue>(),
+                Arg.Any<int?>(),
+                Arg.Any<bool>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<int?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CommandFlags>()
+            );
     }
 
     [Fact]
@@ -585,7 +626,7 @@ public sealed class RedisStreamManagerTests : TestBase
     }
 
     [Fact]
-    public async Task should_skip_the_stream_without_failing_the_read_when_the_server_rejects_the_group_check()
+    public async Task should_back_off_as_a_read_failure_when_the_server_rejects_the_only_group_check()
     {
         // given
         var timeProvider = new FakeTimeProvider();
@@ -610,9 +651,7 @@ public sealed class RedisStreamManagerTests : TestBase
         var secondPoll = enumerator.MoveNextAsync().AsTask();
         timeProvider.Advance(TimeSpan.FromSeconds(40));
 
-        // then - the server answered, so the broker is reachable and the loop keeps its normal cadence
-        secondPoll.IsCompleted.Should().BeFalse();
-        timeProvider.Advance(pollDelay);
+        // then - nothing can be consumed, so the loop backs off as after a failure instead of waiting the poll delay
         await secondPoll.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
     }
 

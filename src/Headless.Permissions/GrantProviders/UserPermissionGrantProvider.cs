@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Context;
-using Headless.MultiTenancy;
 
 namespace Headless.Permissions;
 
@@ -11,8 +10,8 @@ namespace Headless.Permissions;
 /// <c>providerKey = userId</c>. Returns <c>Undefined</c> for anonymous principals (null user id).
 /// </summary>
 [PublicAPI]
-public sealed class UserPermissionGrantProvider(IPermissionGrantStore grantStore, ICurrentTenant currentTenant)
-    : StorePermissionGrantProvider(grantStore, currentTenant)
+public sealed class UserPermissionGrantProvider(IPermissionGrantStore grantStore)
+    : StorePermissionGrantProvider(grantStore)
 {
     private readonly IPermissionGrantStore _grantStore = grantStore;
 

@@ -1287,14 +1287,15 @@ internal sealed class JobsExecutionTaskHandler
         // IJobExceptionHandler would otherwise stall every retry of a failing job until lease loss, and after a
         // terminal write it would hold the worker slot. The linked token is passed to the handler and cancelled on
         // timeout so a cooperative handler can short-circuit; the CTS is disposed only once an orphaned handler can no
-        // longer observe it (deferred continuation), never underneath it.
+        // longer observe it (deferred continuation), never underneath it. The bound runs on the system clock: it rides
+        // out a hung handler, and a registered clock that never advances must not turn that hang into a stalled retry.
         var handlerCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         Task? handlerTask = null;
         try
         {
             handlerTask = invoke(handler, handlerCts.Token);
             await handlerTask
-                .WaitAsync(_retryOptions.OnExhaustedTimeout, _timeProvider, cancellationToken)
+                .WaitAsync(_retryOptions.OnExhaustedTimeout, TimeProvider.System, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (TimeoutException)
@@ -1360,6 +1361,8 @@ internal sealed class JobsExecutionTaskHandler
         }
 
         var scope = _serviceProvider.CreateAsyncScope();
+        // The callback bound waits on the system clock, like the exception-handler bound: a registered clock that
+        // never advances must not keep a hung callback holding the worker slot.
         var callbackCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         Task? callbackTask = null;
         try
@@ -1376,7 +1379,7 @@ internal sealed class JobsExecutionTaskHandler
                 callbackCts.Token
             );
             await callbackTask
-                .WaitAsync(_retryOptions.OnExhaustedTimeout, _timeProvider, cancellationToken)
+                .WaitAsync(_retryOptions.OnExhaustedTimeout, TimeProvider.System, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (TimeoutException timeoutException)
@@ -1510,8 +1513,10 @@ internal sealed class JobsExecutionTaskHandler
     /// </summary>
     private async Task<bool> _TryRenewLeaseAsync(JobExecutionState context, CancellationToken renewalLoopToken)
     {
-        // Bound the renewal DB call to one cadence so a hung store can't block the loop past the lease deadline.
-        using var timeoutCts = new CancellationTokenSource(_leaseRenewalInterval, _timeProvider);
+        // Bound the renewal DB call to one cadence so a hung store can't block the loop past the lease deadline. The
+        // bound is an I/O timeout, so it runs on the system clock; only the renewal cadence follows the registered
+        // clock, and a host clock that never advances must not turn a hung store into a lease nobody renews.
+        using var timeoutCts = new CancellationTokenSource(_leaseRenewalInterval, TimeProvider.System);
         using var renewalCts = CancellationTokenSource.CreateLinkedTokenSource(renewalLoopToken, timeoutCts.Token);
 
         try

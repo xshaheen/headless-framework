@@ -20,13 +20,13 @@ internal sealed class InMemoryRowTable<TKey, TRow>(Func<TKey, string> lockName) 
     public ConcurrentDictionary<TKey, TRow> Rows { get; } = new();
 
     /// <summary>Waits for and takes the key's lock; disposing the result releases it.</summary>
-    public Task<IDisposable> LockAsync(TKey key, CancellationToken cancellationToken)
+    public ValueTask<KeyedAsyncLock.Releaser> LockAsync(TKey key, CancellationToken cancellationToken)
     {
         return _locks.LockAsync(lockName(key), cancellationToken);
     }
 
     /// <summary>Takes the key's lock only if no one holds it, the in-memory form of <c>SKIP LOCKED</c>.</summary>
-    public IDisposable? TryLock(TKey key)
+    public KeyedAsyncLock.Releaser? TryLock(TKey key)
     {
         return _locks.TryLock(lockName(key));
     }

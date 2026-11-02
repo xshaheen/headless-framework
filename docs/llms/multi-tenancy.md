@@ -659,7 +659,7 @@ Missing ambient context or a missing required tenant on an Added entry uses `Hea
 
 `CrossTenantWriteException` is non-transient and must NOT be retried. Catch-all retry policies (for example `Policy.Handle<Exception>()`) should exclude it explicitly; retrying a cross-tenant write either fails identically or — if the ambient tenant context changes between attempts — persists the unsafe write.
 
-For intentional admin or host-level maintenance writes, keep the bypass narrow:
+For intentional admin or host-level maintenance writes, keep the bypass narrow. `AddHeadlessTenancy` and `AddHeadlessDbContextServices()` both register `ITenantWriteGuardBypass`, so a host without EF Core resolves it too:
 
 ```csharp
 var bypass = serviceProvider.GetRequiredService<ITenantWriteGuardBypass>();
@@ -1091,7 +1091,7 @@ public sealed class OrderService(ICurrentTenant currentTenant)
 }
 ```
 
-`ICurrentTenant` and `ICurrentTenantAccessor` are contracts only — this package registers nothing, though it does ship the default `AsyncLocal`-backed implementations (`CurrentTenant`, `AsyncLocalCurrentTenantAccessor`); the seam packages register them. `ITenantStore`, `ITenantDirectory`, and `ICurrentTenantInfo` are also contracts only — `Headless.MultiTenancy`'s `Catalog(...)` builder wires the store implementation and the catalog service.
+`ICurrentTenant` and `ICurrentTenantAccessor` are contracts only — this package registers nothing, though it does ship the default `AsyncLocal`-backed implementations (`CurrentTenant`, `AsyncLocalCurrentTenantAccessor`, `TenantWriteGuardBypass`); the seam packages register them. `AddHeadlessTenancy` and `AddHeadlessDbContextServices()` both register `TenantWriteGuardBypass`. A store outside those paths that honours the write guard registers it with `services.TryAddSingleton<ITenantWriteGuardBypass, TenantWriteGuardBypass>()` instead of reimplementing the bypass. Keep it a singleton: the bypass state lives on the instance, so a scope begun on one instance is invisible to another. `ITenantStore`, `ITenantDirectory`, and `ICurrentTenantInfo` are also contracts only — `Headless.MultiTenancy`'s `Catalog(...)` builder wires the store implementation and the catalog service.
 
 ### Configuration
 
@@ -1201,6 +1201,7 @@ Custom validators implement `IHeadlessTenancyValidator` and register themselves 
 - Registers a singleton `TenantPostureManifest` via `services.AddSingleton(manifest)`.
 - Registers `HeadlessTenancyStartupValidator` as an `IHeadlessStartupValidator` (idempotent; safe to call multiple times).
 - Registers a default no-op scoped `ICurrentTenantInfo` (`NullCurrentTenantInfo`).
+- Registers `ITenantWriteGuardBypass` (`TenantWriteGuardBypass`) as a singleton through `TryAddSingleton`, so every tenancy host can resolve it, with or without EF Core. A registration made before `AddHeadlessTenancy` wins; `AddHeadlessDbContextServices()` uses `TryAddSingleton` too, so whichever path runs first supplies the one instance.
 - `Telemetry(...)` registers `TenantTelemetryOptions` with its validator (`ValidateOnStart`). Without it, the defaults apply.
 - `AddHeadlessTenancy` also invokes the caller's `configure` callback, which may register additional services from seam packages.
 - `Catalog(...)` registers `TenantCatalogOptions` (validated, `ValidateOnStart`), the selected storage provider's services, `ITenantCatalogService` (scoped, backed by `TenantCatalogService`), replaces the default `ICurrentTenantInfo` with the catalog-backed implementation, and registers `TenantCatalogPostureValidator`.

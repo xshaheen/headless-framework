@@ -86,7 +86,7 @@ internal sealed class DisposableReaderWriterLock : DistributedLockHandleBase
 
     protected override Task ReleaseCoreAsync()
     {
-        return _provider.ReleaseAsync(_mode, Resource, LeaseId, CancellationToken.None);
+        return _provider.ReleaseAsync(_mode, Resource, LeaseId);
     }
 
     protected override void OnMonitorDisposeFailed(Exception exception)

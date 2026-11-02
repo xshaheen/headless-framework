@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using System.Runtime.ExceptionServices;
 using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 
@@ -16,7 +17,9 @@ internal static class RedisStreamManagerExtensions
     /// <remarks>
     /// Only an error the server answered with skips a stream. A connection or timeout failure propagates so the read
     /// fails as a whole and counts toward the broker's reachability; swallowing it would report a successful empty
-    /// read and reset the failure count after every real failure.
+    /// read and reset the failure count after every real failure. When the server refuses the group of every stream
+    /// (an ACL without <c>XGROUP</c> rights, <c>LOADING</c>, <c>OOM</c>), the last refusal propagates too: a read
+    /// that can consume nothing is no success, and reporting it as one would keep readiness healthy indefinitely.
     /// </remarks>
     public static async IAsyncEnumerable<StreamPosition> TryGetOrCreateConsumerGroupPositionsAsync(
         this IDatabase database,
@@ -26,6 +29,9 @@ internal static class RedisStreamManagerExtensions
         ILogger logger
     )
     {
+        RedisServerException? lastRefusal = null;
+        var yieldedAny = false;
+
         foreach (var position in positions)
         {
             var key = (position.Key.ToString(), consumerGroup);
@@ -47,6 +53,8 @@ internal static class RedisStreamManagerExtensions
                 // success.
                 catch (RedisServerException ex)
                 {
+                    lastRefusal = ex;
+
                     if (ex.GetRedisErrorType() == RedisErrorTypes.Unknown)
                     {
                         logger?.LogCreateConsumerGroupFailed(ex, consumerGroup, position.Key);
@@ -59,7 +67,14 @@ internal static class RedisStreamManagerExtensions
                 }
             }
 
+            yieldedAny = true;
+
             yield return position;
+        }
+
+        if (!yieldedAny && lastRefusal is not null)
+        {
+            ExceptionDispatchInfo.Throw(lastRefusal);
         }
     }
 

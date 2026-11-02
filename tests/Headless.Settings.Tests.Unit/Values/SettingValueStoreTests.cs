@@ -115,6 +115,48 @@ public sealed class SettingValueStoreTests : TestBase
             );
     }
 
+    [Fact]
+    public async Task should_load_once_when_concurrent_reads_miss_the_same_provider_key()
+    {
+        // given
+        const string name = "TestSetting";
+        var providerName = $"Provider-{Guid.NewGuid():N}";
+        const string providerKey = "user-1";
+        var cacheKey = SettingValueCacheItem.CalculateCacheKey(name, providerName, providerKey);
+        CacheValue<SettingValueCacheItem> cached = CacheValue<SettingValueCacheItem>.NoValue;
+
+        _cache.GetAsync(cacheKey, AbortToken).Returns(_ => cached);
+        _cache
+            .UpsertAllAsync(Arg.Any<IDictionary<string, SettingValueCacheItem>>(), Arg.Any<TimeSpan?>(), AbortToken)
+            .Returns(call =>
+            {
+                var items = call.Arg<IDictionary<string, SettingValueCacheItem>>();
+                cached = new CacheValue<SettingValueCacheItem>(items[cacheKey], hasValue: true);
+
+                return items.Count;
+            });
+
+        _definitionManager.GetAllAsync(AbortToken).Returns([new SettingDefinition(name)]);
+
+        var load = new TaskCompletionSource<List<SettingValueRecord>>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        _repository.GetListAsync(providerName, providerKey, AbortToken).Returns(_ => load.Task);
+
+        // when
+        var first = _sut.GetOrDefaultAsync(name, providerName, providerKey, AbortToken);
+        var second = _sut.GetOrDefaultAsync(name, providerName, providerKey, AbortToken);
+        load.SetResult([new(Guid.NewGuid(), name, "repo-value", providerName, providerKey)]);
+        var results = await Task.WhenAll(first, second);
+
+        // then
+        results.Should().Equal("repo-value", "repo-value");
+        await _repository.Received(1).GetListAsync(providerName, providerKey, AbortToken);
+        await _cache
+            .Received(1)
+            .UpsertAllAsync(Arg.Any<IDictionary<string, SettingValueCacheItem>>(), Arg.Any<TimeSpan?>(), AbortToken);
+    }
+
     #endregion
 
     #region SetAllAsync

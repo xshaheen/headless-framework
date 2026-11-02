@@ -30,6 +30,18 @@
   <data name="PrimitiveMustBePartialMessage" xml:space="preserve">
     <value>Primitive '{0}' must be declared partial so the generator can add its members</value>
   </data>
+  <data name="PrimitiveMustNotBeNestedTitle" xml:space="preserve">
+    <value>Primitive must not be nested</value>
+  </data>
+  <data name="PrimitiveMustNotBeNestedMessage" xml:space="preserve">
+    <value>Primitive '{0}' must be declared directly in a namespace, not inside another type, so the generator can add its members</value>
+  </data>
+  <data name="PrimitiveMustNotBeGenericTitle" xml:space="preserve">
+    <value>Primitive must not be generic</value>
+  </data>
+  <data name="PrimitiveMustNotBeGenericMessage" xml:space="preserve">
+    <value>Primitive '{0}' must not declare type parameters, so the generator can add its members</value>
+  </data>
   <data name="SerializationFormatRequiresDateOrTimeTitle" xml:space="preserve">
     <value>SerializationFormat requires a date or time primitive</value>
   </data>

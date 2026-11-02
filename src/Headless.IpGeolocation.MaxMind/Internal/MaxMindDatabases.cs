@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using MaxMind.Db;
 using MaxMind.GeoIP2;
 using Microsoft.Extensions.Logging;
@@ -17,8 +18,10 @@ internal sealed partial class MaxMindDatabases
     private readonly MaxMindOptions _options;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<MaxMindDatabases> _logger;
-    private readonly Dictionary<string, MaxMindDatabase> _databases = new(StringComparer.Ordinal);
-    private readonly Lock _lock = new();
+
+    // Every lookup reads this, often twice, on request threads; a concurrent dictionary keeps those reads lock-free
+    // while the updater swaps an edition in place.
+    private readonly ConcurrentDictionary<string, MaxMindDatabase> _databases = new(StringComparer.Ordinal);
 
     public MaxMindDatabases(
         IOptions<MaxMindOptions> options,
@@ -58,10 +61,7 @@ internal sealed partial class MaxMindDatabases
 
     public MaxMindDatabase? Get(string editionId)
     {
-        lock (_lock)
-        {
-            return _databases.GetValueOrDefault(editionId);
-        }
+        return _databases.GetValueOrDefault(editionId);
     }
 
     public string PathOf(string editionId) => Path.Combine(_options.DatabaseDirectory, editionId + ".mmdb");
@@ -77,18 +77,12 @@ internal sealed partial class MaxMindDatabases
 
     public void Replace(string editionId, MaxMindDatabase database)
     {
-        lock (_lock)
-        {
-            _databases[editionId] = database;
-        }
+        _databases[editionId] = database;
     }
 
     public void Remove(string editionId)
     {
-        lock (_lock)
-        {
-            _databases.Remove(editionId);
-        }
+        _databases.TryRemove(editionId, out _);
     }
 
     private void _LoadExisting(string editionId)

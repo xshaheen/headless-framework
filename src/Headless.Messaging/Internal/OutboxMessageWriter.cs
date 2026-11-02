@@ -10,6 +10,7 @@ namespace Headless.Messaging.Internal;
 internal sealed class OutboxMessageWriter(
     IDataStorage storage,
     IDispatcher dispatcher,
+    IMessageSerializer serializer,
     TimeProvider timeProvider,
     MessagingTelemetry? telemetry = null
 )
@@ -27,6 +28,18 @@ internal sealed class OutboxMessageWriter(
         try
         {
             traceHandle = _TracingBefore(publishRequest.Message, publishRequest.Lane);
+
+            // Serialized once: the stored row embeds the transport body, and the send that follows reuses it.
+            var transport = await serializer
+                .SerializeToTransportMessageAsync(publishRequest.Message, cancellationToken)
+                .ConfigureAwait(false);
+            var envelope = new MediumMessage
+            {
+                StorageId = Guid.Empty,
+                Origin = publishRequest.Message,
+                Content = serializer.Serialize(publishRequest.Message, transport.Body),
+                Lane = publishRequest.Lane,
+            };
 
             // Use the unit of work/transaction captured in the caller's frame — never re-read Current here. If the
             // captured transaction has since completed, StoreMessageAsync fails loudly rather than silently dropping
@@ -48,7 +61,8 @@ internal sealed class OutboxMessageWriter(
                 );
 
                 var mediumMessage = await _StoreCoordinatedMessageAsync(
-                        publishRequest,
+                        publishRequest.MessageName,
+                        envelope,
                         decision,
                         unitOfWork,
                         cancellationToken
@@ -57,6 +71,7 @@ internal sealed class OutboxMessageWriter(
 
                 _TracingAfter(traceHandle, publishRequest.Message, publishRequest.Lane);
 
+                _AttachPreparedTransport(mediumMessage, envelope.Origin, transport);
                 buffer.Add(unitOfWork, mediumMessage);
 
                 return mediumMessage.StorageId;
@@ -66,7 +81,8 @@ internal sealed class OutboxMessageWriter(
             // Dispatch after this boundary is non-blocking acceleration; retry/delayed pickup owns recovery.
             var immediateMessage = await _StoreMessageAsync(
                     storage,
-                    publishRequest,
+                    publishRequest.MessageName,
+                    envelope,
                     decision,
                     transaction: null,
                     cancellationToken
@@ -74,6 +90,8 @@ internal sealed class OutboxMessageWriter(
                 .ConfigureAwait(false);
 
             _TracingAfter(traceHandle, publishRequest.Message, publishRequest.Lane);
+
+            _AttachPreparedTransport(immediateMessage, envelope.Origin, transport);
 
             if (decision.PublishAt is not null)
             {
@@ -104,8 +122,18 @@ internal sealed class OutboxMessageWriter(
         }
     }
 
+    // A storage keeps the origin it was given, so the transport serialized for that origin can ride along to the send.
+    private static void _AttachPreparedTransport(MediumMessage stored, Message origin, TransportMessage transport)
+    {
+        if (ReferenceEquals(stored.Origin, origin))
+        {
+            stored.PreparedTransport = (origin, transport);
+        }
+    }
+
     private ValueTask<MediumMessage> _StoreCoordinatedMessageAsync(
-        PreparedPublishMessage publishRequest,
+        string messageName,
+        MediumMessage envelope,
         DeliveryDecision decision,
         IUnitOfWork unitOfWork,
         CancellationToken cancellationToken
@@ -114,8 +142,8 @@ internal sealed class OutboxMessageWriter(
         if (decision.Coordination.Transaction is { } transaction)
         {
             return decision.Coordination.Outbox is { } outbox
-                ? _StoreInOutboxAsync(outbox, publishRequest, decision, transaction, cancellationToken)
-                : _StoreMessageAsync(storage, publishRequest, decision, transaction, cancellationToken);
+                ? _StoreInOutboxAsync(outbox, messageName, envelope, decision, transaction, cancellationToken)
+                : _StoreMessageAsync(storage, messageName, envelope, decision, transaction, cancellationToken);
         }
 
         // A compatible unit without a relational handle is only valid for a storage that captures rows on the
@@ -129,8 +157,8 @@ internal sealed class OutboxMessageWriter(
         }
 
         return coordinatedStore.StoreCoordinatedMessageAsync(
-            publishRequest.MessageName,
-            _CreateStorageEnvelope(publishRequest),
+            messageName,
+            envelope,
             decision.PublishAt,
             unitOfWork,
             cancellationToken
@@ -143,7 +171,8 @@ internal sealed class OutboxMessageWriter(
     // the database is reachable now, so initialize it here rather than fail the write on a missing table.
     private static async ValueTask<MediumMessage> _StoreInOutboxAsync(
         MessagingOutbox outbox,
-        PreparedPublishMessage publishRequest,
+        string messageName,
+        MediumMessage envelope,
         DeliveryDecision decision,
         System.Data.Common.DbTransaction transaction,
         CancellationToken cancellationToken
@@ -151,7 +180,14 @@ internal sealed class OutboxMessageWriter(
     {
         await outbox.EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
 
-        var message = await _StoreMessageAsync(outbox.Storage, publishRequest, decision, transaction, cancellationToken)
+        var message = await _StoreMessageAsync(
+                outbox.Storage,
+                messageName,
+                envelope,
+                decision,
+                transaction,
+                cancellationToken
+            )
             .ConfigureAwait(false);
         message.OutboxStorage = outbox.Storage;
 
@@ -160,33 +196,16 @@ internal sealed class OutboxMessageWriter(
 
     private static ValueTask<MediumMessage> _StoreMessageAsync(
         IDataStorage target,
-        PreparedPublishMessage publishRequest,
+        string messageName,
+        MediumMessage envelope,
         DeliveryDecision decision,
         System.Data.Common.DbTransaction? transaction,
         CancellationToken cancellationToken
     )
     {
-        var envelope = _CreateStorageEnvelope(publishRequest);
         return decision.PublishAt is { } publishAt
-            ? target.StoreScheduledMessageAsync(
-                publishRequest.MessageName,
-                envelope,
-                publishAt,
-                transaction,
-                cancellationToken
-            )
-            : target.StoreMessageAsync(publishRequest.MessageName, envelope, transaction, cancellationToken);
-    }
-
-    private static MediumMessage _CreateStorageEnvelope(PreparedPublishMessage publishRequest)
-    {
-        return new()
-        {
-            StorageId = Guid.Empty,
-            Origin = publishRequest.Message,
-            Content = string.Empty,
-            Lane = publishRequest.Lane,
-        };
+            ? target.StoreScheduledMessageAsync(messageName, envelope, publishAt, transaction, cancellationToken)
+            : target.StoreMessageAsync(messageName, envelope, transaction, cancellationToken);
     }
 
     #region Tracing

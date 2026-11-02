@@ -4,6 +4,7 @@ using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Text;
 using Headless.Caching.Scripts;
 using Headless.Checks;
 using Headless.Redis;
@@ -52,6 +53,13 @@ public sealed class RedisCache(
     // Caps the per-hash-slot commands a cluster bulk call keeps in flight. Sending every slot at once on a huge
     // call queues enough work behind the multiplexer to hit command timeouts.
     private const int _MaxInFlightSlotCommands = 16;
+
+    // Bounds how often TryInsertAsync retries when writers keep replacing or removing a key it judged logically
+    // absent; past it the insert reports the key present, which an insert-if-absent caller already handles.
+    private const int _MaxInsertOverDeadEntryAttempts = 3;
+
+    // Redis glob metacharacters (stringmatchlen): '\\' escapes the next character, so each is matched literally.
+    private static readonly SearchValues<char> _GlobSpecialCharacters = SearchValues.Create("*?[]\\");
 
     /// <summary>
     /// Reserved namespace segment for Family-2 per-tag invalidation markers: each tag's last-invalidation
@@ -423,7 +431,93 @@ public sealed class RedisCache(
         Argument.IsPositive(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
-        return await _SetInternalAsync(_GetKey(key), value, expiration, When.NotExists).ConfigureAwait(false);
+        var redisKey = _GetKey(key);
+
+        for (var attempt = 1; ; attempt++)
+        {
+            if (await _SetInternalAsync(redisKey, value, expiration, When.NotExists).ConfigureAwait(false))
+            {
+                return true;
+            }
+
+            // SET NX refuses any physically present key, but a logical clear, flush, or tag removal, and a logical
+            // expiry inside the fail-safe reserve, leave keys every read already reports as absent. Insert-if-absent
+            // must agree with those reads, so such an entry is overwritten, and only while it still holds the exact
+            // bytes judged dead: a live entry another writer stores in between wins.
+            var current = await _database.StringGetAsync(redisKey).ConfigureAwait(false);
+
+            if (current.IsNull)
+            {
+                // Removed between the two calls: the next SET NX decides.
+                if (attempt < _MaxInsertOverDeadEntryAttempts)
+                {
+                    continue;
+                }
+
+                return false;
+            }
+
+            if (await _IsLogicallyPresentAsync((ReadOnlyMemory<byte>)current).ConfigureAwait(false))
+            {
+                return false;
+            }
+
+            if (
+                await _OverwriteIfUnchangedAsync(redisKey, current, value, expiration, cancellationToken)
+                    .ConfigureAwait(false)
+            )
+            {
+                return true;
+            }
+
+            if (attempt >= _MaxInsertOverDeadEntryAttempts)
+            {
+                // Writers keep racing on the key; reporting it present is the safe answer for insert-if-absent.
+                return false;
+            }
+        }
+    }
+
+    private async ValueTask<bool> _OverwriteIfUnchangedAsync<T>(
+        RedisKey redisKey,
+        RedisValue current,
+        T? value,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken
+    )
+    {
+        var now = timeProvider.GetUtcNow();
+        var expiresAt = _GetExpirationDateTime(_NormalizeExpiration(expiration), now);
+
+        // #580 zero-concat write: the using scope extends past the EVALSHA await because the pooled payload
+        // buffer backs the outgoing value until the command is written to the socket.
+        using var framed = _EncodeFramedWrite(
+            value,
+            isNull: value is null,
+            logicalExpiresAt: expiresAt,
+            physicalExpiresAt: expiresAt,
+            slidingExpiration: null,
+            createdAt: now.UtcDateTime
+        );
+
+        var expiresMs = _GetExpirationMilliseconds(expiration, now);
+
+        var redisResult = await scriptsLoader
+            .EvaluateAsync(
+                _database,
+                CacheOverwriteIfUnchangedScriptDefinition.Instance,
+                new
+                {
+                    key = redisKey,
+                    current,
+                    value = framed.Value,
+                    expires = expiresMs ?? RedisValue.EmptyString,
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return (int)redisResult > 0;
     }
 
     public async ValueTask<bool> TryReplaceAsync<T>(
@@ -437,7 +531,15 @@ public sealed class RedisCache(
         Argument.IsPositive(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
-        return await _SetInternalAsync(_GetKey(key), value, expiration, When.Exists).ConfigureAwait(false);
+        var redisKey = _GetKey(key);
+
+        // SET XX alone would replace an entry every read already reports as absent (logically cleared or expired).
+        if (!await _KeyIsLogicallyPresentAsync(redisKey).ConfigureAwait(false))
+        {
+            return false;
+        }
+
+        return await _SetInternalAsync(redisKey, value, expiration, When.Exists).ConfigureAwait(false);
     }
 
     public async ValueTask<bool> TryReplaceIfEqualAsync<T>(
@@ -455,6 +557,13 @@ public sealed class RedisCache(
         if (expiration is { Ticks: <= 0 })
         {
             await RemoveAsync(key, cancellationToken).ConfigureAwait(false);
+            return false;
+        }
+
+        // The script compares only the value segment, so it cannot see a clear, flush, or tag marker, or a logical
+        // expiry: an entry every read reports absent must not match the expected value.
+        if (!await _KeyIsLogicallyPresentAsync(_GetKey(key)).ConfigureAwait(false))
+        {
             return false;
         }
 
@@ -1126,8 +1235,7 @@ public sealed class RedisCache(
         cancellationToken.ThrowIfCancellationRequested();
 
         const int chunkSize = 2500;
-        var prefixedPrefix = _GetKey(prefix);
-        var pattern = $"{prefixedPrefix}*";
+        var pattern = _PrefixPattern(prefix);
         var stripLength = _keyPrefix.Length;
         var keys = new List<string>();
 
@@ -1202,7 +1310,7 @@ public sealed class RedisCache(
         if (usePrefix)
         {
             const int chunkSize = 2500;
-            var pattern = $"{_GetKey(prefix)}*";
+            var pattern = _PrefixPattern(prefix);
 
             foreach (var endpoint in endpoints)
             {
@@ -1562,6 +1670,12 @@ public sealed class RedisCache(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
+        // The script compares only the value segment; an entry every read reports absent must not match.
+        if (!await _KeyIsLogicallyPresentAsync(_GetKey(key)).ConfigureAwait(false))
+        {
+            return false;
+        }
+
         var expectedValue = _ToRedisValue(expected);
         var redisResult = await scriptsLoader
             .EvaluateAsync(
@@ -1673,7 +1787,7 @@ public sealed class RedisCache(
         Argument.IsNotNullOrEmpty(prefix);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var removed = await _RemoveByPatternAsync($"{_GetKey(prefix)}*", cancellationToken).ConfigureAwait(false);
+        var removed = await _RemoveByPatternAsync(_PrefixPattern(prefix), cancellationToken).ConfigureAwait(false);
 
         CachingMetrics.RecordWrite(_cacheName, CachingMetrics.OperationRemoveByPrefix, CachingMetrics.TierL2, removed);
         _coordinator.EventsHub.OnRemoveByPrefix(prefix, (int)removed);
@@ -1920,6 +2034,34 @@ public sealed class RedisCache(
 
     #region Helpers
 
+    /// <summary>
+    /// The SCAN MATCH pattern for every key under <paramref name="prefix" />. The prefix is matched literally: a
+    /// tenant id or caller prefix holding <c>* ? [ ] \</c> would otherwise widen the match to other keys.
+    /// </summary>
+    private string _PrefixPattern(string prefix)
+    {
+        var literal = _GetKey(prefix);
+
+        if (literal.AsSpan().IndexOfAny(_GlobSpecialCharacters) < 0)
+        {
+            return literal + "*";
+        }
+
+        var builder = new StringBuilder(literal.Length + 8);
+
+        foreach (var c in literal)
+        {
+            if (_GlobSpecialCharacters.Contains(c))
+            {
+                builder.Append('\\');
+            }
+
+            builder.Append(c);
+        }
+
+        return builder.Append('*').ToString();
+    }
+
     private string _GetKey(string key)
     {
         // #555: reject NUL bytes in consumer keys. Redis keys are binary-safe, so the leading-NUL namespace that
@@ -2017,6 +2159,26 @@ public sealed class RedisCache(
     /// <see langword="null"/> when no marker applies (entry is never invalidated).
     /// </summary>
     private async ValueTask<DateTime?> _ResolveNewestMarkerAsync(IReadOnlyCollection<string>? tags)
+    {
+        var (newestMs, removeMs) = await _ResolveMarkersMsAsync(tags).ConfigureAwait(false);
+
+        if (removeMs > newestMs)
+        {
+            newestMs = removeMs;
+        }
+
+        return newestMs == _MarkerAbsent ? null : RedisCacheEntryFrame.FromUnixTimeMilliseconds(newestMs);
+    }
+
+    /// <summary>
+    /// Resolves the newest clear-generation + per-tag marker and, separately, the remove-generation marker, from the
+    /// local marker cache plus one bulk read of every stale marker. They stay apart because the factory-store read
+    /// treats them differently: the remove marker is a hard miss, while a clear/tag marker demotes the entry to a
+    /// still-servable fail-safe reserve.
+    /// </summary>
+    private async ValueTask<(long ClearAndTagMs, long RemoveMs)> _ResolveMarkersMsAsync(
+        IReadOnlyCollection<string>? tags
+    )
     {
         // Direct reads: the remove-generation marker (logical FlushAsync) also makes an entry a miss, alongside
         // the clear- and per-tag markers (all compared on every read, tagged or not). Every marker key is known
@@ -2125,143 +2287,7 @@ public sealed class RedisCache(
             }
         }
 
-        if (removeMs > newestMs)
-        {
-            newestMs = removeMs;
-        }
-
-        return newestMs == _MarkerAbsent ? null : RedisCacheEntryFrame.FromUnixTimeMilliseconds(newestMs);
-    }
-
-    /// <summary>
-    /// Resolves the newest CLEAR-generation + per-tag marker, EXCLUDING the remove-generation marker. The
-    /// coordinator demote path uses this: a clear/tag-invalidated entry demotes to a still-servable fail-safe
-    /// reserve, whereas the remove marker (resolved separately by the caller) is a hard miss with no reserve — so
-    /// the coordinator resolves the remove marker once for its hard-miss check and this for the demote check,
-    /// instead of resolving the remove marker twice.
-    /// </summary>
-    private async ValueTask<DateTime?> _ResolveClearAndTagMarkerAsync(IReadOnlyCollection<string>? tags)
-    {
-        var newestMs = await _ResolveClearAndTagMarkerMsAsync(tags).ConfigureAwait(false);
-        return newestMs == _MarkerAbsent ? null : RedisCacheEntryFrame.FromUnixTimeMilliseconds(newestMs);
-    }
-
-    private async ValueTask<long> _ResolveClearAndTagMarkerMsAsync(IReadOnlyCollection<string>? tags)
-    {
-        var newestMs = await _ResolveClearMarkerAsync().ConfigureAwait(false);
-
-        if (tags is { Count: > 0 })
-        {
-            var tagMs = await _ResolveTagMarkersAsync(tags).ConfigureAwait(false);
-
-            if (tagMs > newestMs)
-            {
-                newestMs = tagMs;
-            }
-        }
-
-        return newestMs;
-    }
-
-    private async ValueTask<long> _ResolveClearMarkerAsync()
-    {
-        var fetchedTicks = Interlocked.Read(ref _clearMarkerFetchedTicks);
-
-        if (_MarkerIsFresh(fetchedTicks))
-        {
-            return Interlocked.Read(ref _clearMarkerMs);
-        }
-
-        var value = await _database
-            .StringGetAsync((RedisKey)_GetClearMarkerKey(), cacheOptions.ReadMode)
-            .ConfigureAwait(false);
-        var ms = _ParseMarkerMs(value);
-
-        // Raise-only (mirrors SeedClearMarker): a stale durable read — e.g. a lagging replica — must not
-        // lower a newer clear generation a backplane push already seeded. Surface the raised max so this read
-        // does not under-invalidate either.
-        _clearMarkerMs.InterlockedRaiseTo(ms);
-        Interlocked.Exchange(ref _clearMarkerFetchedTicks, _StopwatchTicks());
-        return Interlocked.Read(ref _clearMarkerMs);
-    }
-
-    private async ValueTask<long> _ResolveRemoveMarkerAsync()
-    {
-        var fetchedTicks = Interlocked.Read(ref _removeMarkerFetchedTicks);
-
-        if (_MarkerIsFresh(fetchedTicks))
-        {
-            return Interlocked.Read(ref _removeMarkerMs);
-        }
-
-        var value = await _database
-            .StringGetAsync((RedisKey)_GetRemoveMarkerKey(), cacheOptions.ReadMode)
-            .ConfigureAwait(false);
-        var ms = _ParseMarkerMs(value);
-
-        // Raise-only (mirrors SeedRemoveMarker): a stale durable read — e.g. a lagging replica — must not
-        // lower a newer remove generation a backplane push already seeded. Surface the raised max so this read
-        // does not under-invalidate either.
-        _removeMarkerMs.InterlockedRaiseTo(ms);
-        Interlocked.Exchange(ref _removeMarkerFetchedTicks, _StopwatchTicks());
-        return Interlocked.Read(ref _removeMarkerMs);
-    }
-
-    private async ValueTask<long> _ResolveTagMarkersAsync(IReadOnlyCollection<string> tags)
-    {
-        // Collect tags whose cached marker is stale/missing; batch-fetch them in one MGET.
-        List<string>? stale = null;
-        var newestMs = _MarkerAbsent;
-
-        foreach (var tag in tags)
-        {
-            if (_markerCache.TryGetValue(tag, out var cached) && _MarkerIsFresh(cached.FetchedTicks))
-            {
-                if (cached.MarkerMs > newestMs)
-                {
-                    newestMs = cached.MarkerMs;
-                }
-            }
-            else
-            {
-                (stale ??= []).Add(tag);
-            }
-        }
-
-        if (stale is not null)
-        {
-            var markerKeys = new RedisKey[stale.Count];
-
-            for (var i = 0; i < stale.Count; i++)
-            {
-                markerKeys[i] = _GetTagMarkerKey(stale[i]);
-            }
-
-            var values = await _BulkStringGetOrderedAsync(markerKeys).ConfigureAwait(false);
-            var fetchedTicks = _StopwatchTicks();
-
-            for (var i = 0; i < stale.Count; i++)
-            {
-                var ms = _ParseMarkerMs(values[i]);
-
-                // Raise-only (mirrors SeedTagMarker): a stale durable read must not lower a newer per-tag marker
-                // a backplane push already seeded. FetchedTicks is still refreshed so the freshness window holds.
-                var (markerMs, _) = _RaiseTagMarker(stale[i], ms, fetchedTicks);
-
-                if (markerMs > newestMs)
-                {
-                    newestMs = markerMs;
-                }
-            }
-
-            // Prune only when a fetch actually happened (mirrors _PrefetchTagMarkersAsync's gating): an all-fresh
-            // resolve has nothing new to prune, and fetches recur at least once per refresh window — the same
-            // cadence the prune throttle enforces — so gating here skips the per-read throttle check without
-            // delaying eviction beyond a window.
-            _PruneMarkerCacheIfDue();
-        }
-
-        return newestMs;
+        return (newestMs, removeMs);
     }
 
     private static long _ParseMarkerMs(RedisValue value)
@@ -2328,7 +2354,7 @@ public sealed class RedisCache(
     /// newer, always refreshing the freshness stamp to <paramref name="fetchedTicks"/>. Raise-only: a stale durable
     /// read or a backplane push can never lower a newer marker this node already observed; the freshness stamp is
     /// refreshed in both branches so the refresh window holds. Returns the resolved (post-raise) entry. Shared by
-    /// <see cref="SeedTagMarker"/>, <see cref="_ResolveTagMarkersAsync"/>, and <see cref="_PrefetchTagMarkersAsync"/>
+    /// <see cref="SeedTagMarker"/>, <see cref="_ResolveMarkersMsAsync"/>, and <see cref="_PrefetchTagMarkersAsync"/>
     /// so the raise-only invariant lives in exactly one place.
     /// </summary>
     private (long MarkerMs, long FetchedTicks) _RaiseTagMarker(string tag, long markerMs, long fetchedTicks)
@@ -3340,8 +3366,6 @@ public sealed class RedisCache(
                 return CacheStoreEntry<T>.NotFound;
             }
 
-            var value = frame.IsNull ? default : _DeserializeValueSegment<T>(frame.ValueSegment);
-
             // For sliding entries the embedded logical timestamp goes stale after a metadata-only re-arm
             // (KeyExpire bumps the key TTL but does not rewrite the frame), so reporting it would make the
             // coordinator treat a live, recently-touched key as logically expired and spuriously re-run the
@@ -3350,23 +3374,28 @@ public sealed class RedisCache(
             var logicalExpiresAt = frame.SlidingExpiration.HasValue ? null : frame.LogicalExpiresAt;
             var slidingExpiration = frame.SlidingExpiration;
 
-            // Remove-generation (logical FlushAsync): a hard miss with NO fail-safe reserve — distinct from the
-            // clear/tag markers below, which demote to a still-servable reserve. Checked first so a removed entry
-            // never surfaces as a stale candidate the coordinator could serve.
-            var removeMs = await _ResolveRemoveMarkerAsync().ConfigureAwait(false);
+            // Every stale marker (remove, clear, tags) comes back from one bulk read, kept apart because they
+            // mean different things here.
+            var (clearAndTagMs, removeMs) = await _ResolveMarkersMsAsync(frame.Tags).ConfigureAwait(false);
             var removeMarker =
                 removeMs == _MarkerAbsent ? (DateTime?)null : RedisCacheEntryFrame.FromUnixTimeMilliseconds(removeMs);
 
+            // Remove-generation (logical FlushAsync): a hard miss with NO fail-safe reserve — distinct from the
+            // clear/tag markers below, which demote to a still-servable reserve. Checked first, and before the value
+            // is deserialized, so a removed entry never surfaces as a stale candidate the coordinator could serve.
             if (CacheTagInvalidation.IsInvalidated(frame.CreatedAt, removeMarker))
             {
                 return CacheStoreEntry<T>.NotFound;
             }
 
+            var value = frame.IsNull ? default : _DeserializeValueSegment<T>(frame.ValueSegment);
+
             // Family-2 logical tag/clear invalidation: demote the entry to logically-expired-but-physically-
             // present so the coordinator re-runs the factory but can still serve this reserve stale on failure.
-            // Uses the clear+tag resolver (NOT _ResolveNewestMarkerAsync) so the remove marker — already resolved
-            // for the hard-miss check above — is not resolved a second time on this path.
-            var newestMarker = await _ResolveClearAndTagMarkerAsync(frame.Tags).ConfigureAwait(false);
+            var newestMarker =
+                clearAndTagMs == _MarkerAbsent
+                    ? (DateTime?)null
+                    : RedisCacheEntryFrame.FromUnixTimeMilliseconds(clearAndTagMs);
 
             if (CacheTagInvalidation.IsInvalidated(frame.CreatedAt, newestMarker))
             {
@@ -3429,32 +3458,47 @@ public sealed class RedisCache(
 
         try
         {
-            var frame = RedisCacheEntryFrame.DecodeMemory(lease.Memory);
-
-            if (!frame.IsFramed)
-            {
-                return true;
-            }
-
-            var now = timeProvider.GetUtcNow().UtcDateTime;
-
-            if (
-                _IsExpired(frame.PhysicalExpiresAt, now)
-                || (!frame.SlidingExpiration.HasValue && _IsExpired(frame.LogicalExpiresAt, now))
-            )
-            {
-                return false;
-            }
-
-            // Family-2: a tag/clear-invalidated entry is logically absent for direct reads (Exists), even though
-            // its physical reserve survives for fail-safe serving.
-            var newestMarker = await _ResolveNewestMarkerAsync(frame.Tags).ConfigureAwait(false);
-            return !CacheTagInvalidation.IsInvalidated(frame.CreatedAt, newestMarker);
+            return await _IsLogicallyPresentAsync(lease.Memory).ConfigureAwait(false);
         }
         finally
         {
             lease.Dispose();
         }
+    }
+
+    private async ValueTask<bool> _IsLogicallyPresentAsync(ReadOnlyMemory<byte> raw)
+    {
+        var frame = RedisCacheEntryFrame.DecodeMemory(raw);
+
+        if (!frame.IsFramed)
+        {
+            return true;
+        }
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+
+        if (
+            _IsExpired(frame.PhysicalExpiresAt, now)
+            || (!frame.SlidingExpiration.HasValue && _IsExpired(frame.LogicalExpiresAt, now))
+        )
+        {
+            return false;
+        }
+
+        // Family-2: a tag/clear-invalidated entry is logically absent for direct reads (Exists) and for the
+        // conditional writes, even though its physical reserve survives for fail-safe serving.
+        var newestMarker = await _ResolveNewestMarkerAsync(frame.Tags).ConfigureAwait(false);
+        return !CacheTagInvalidation.IsInvalidated(frame.CreatedAt, newestMarker);
+    }
+
+    /// <summary>
+    /// Whether the key holds an entry every read would serve. A conditional write reads this from the primary first,
+    /// because the key can still be physically present after a logical clear, flush, tag removal, or logical expiry.
+    /// </summary>
+    private async ValueTask<bool> _KeyIsLogicallyPresentAsync(RedisKey redisKey)
+    {
+        var lease = await _database.StringGetLeaseAsync(redisKey).ConfigureAwait(false);
+        return await _LeaseIsLogicallyPresentAsync(lease).ConfigureAwait(false);
     }
 
     private ValueTask<long?> _TryRearmSlidingEntryAsync(

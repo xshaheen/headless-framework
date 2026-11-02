@@ -380,6 +380,14 @@ public sealed partial class HybridCache
         {
             var localExpiration = _GetLocalExpiration(expiration);
             await LocalCache.UpsertAsync(key, value, localExpiration, cancellationToken).ConfigureAwait(false);
+
+            // An absent L2 entry does not prove every peer's L1 is empty: L2 can lose the key to eviction, a manual
+            // delete, or a logical clear while a peer still serves its local copy, so peers drop it like any write.
+            await _PublishInvalidationAsync(
+                    new CacheInvalidationMessage { InstanceId = _instanceId, Key = key },
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
         }
 
         return added;

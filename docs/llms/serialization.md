@@ -182,7 +182,7 @@ System.Text.Json implementation of `IJsonSerializer` with opinionated defaults a
   - `StringToBooleanJsonConverter` — `bool` from string `"true"`/`"false"`
   - `SingleOrListJsonConverter<TItem>` — accepts a single JSON value or array as `List<TItem?>`
   - `SingleOrHashsetJsonConverter<TItem>` — accepts a single JSON value or array as `HashSet<TItem?>`
-  - `ObjectToInferredTypesJsonConverter` — maps `object` properties to inferred CLR primitives
+  - `ObjectToInferredTypesJsonConverter` — maps `object` properties to inferred CLR primitives: `bool`, `long` for integers that fit, `decimal` for other numbers (`double` when `decimal` cannot hold the value exactly enough), `string` for every string, and `JsonElement` for objects and arrays. It never turns a string into a date; JSON has no date type, so the reader parses a date string itself
   - `CollectionItemJsonConverter<TDatatype, TConverterType>` — applies a per-item converter to any `IEnumerable`
 - Type info modifiers (namespace `Headless.Serializer.Modifiers`):
   - `SystemJsonTypeInfoResolver` — `DefaultJsonTypeInfoResolver` with pluggable `Modifiers` callbacks

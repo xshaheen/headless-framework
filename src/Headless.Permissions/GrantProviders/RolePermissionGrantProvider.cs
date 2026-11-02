@@ -2,7 +2,6 @@
 
 using Headless.Checks;
 using Headless.Context;
-using Headless.MultiTenancy;
 
 namespace Headless.Permissions;
 
@@ -13,8 +12,8 @@ namespace Headless.Permissions;
 /// A permission remains <c>Undefined</c> when the user has no roles.
 /// </summary>
 [PublicAPI]
-public sealed class RolePermissionGrantProvider(IPermissionGrantStore grantStore, ICurrentTenant currentTenant)
-    : StorePermissionGrantProvider(grantStore, currentTenant)
+public sealed class RolePermissionGrantProvider(IPermissionGrantStore grantStore)
+    : StorePermissionGrantProvider(grantStore)
 {
     private readonly IPermissionGrantStore _grantStore = grantStore;
 

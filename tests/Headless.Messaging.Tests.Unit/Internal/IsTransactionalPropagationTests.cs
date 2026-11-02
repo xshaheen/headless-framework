@@ -209,7 +209,12 @@ public sealed class IsTransactionalPropagationTests : TestBase
             )
             .Returns(Task.CompletedTask);
 
-        var writer = new OutboxMessageWriter(storage, dispatcher, TimeProvider.System);
+        var writer = new OutboxMessageWriter(
+            storage,
+            dispatcher,
+            new JsonUtf8Serializer(Options.Create(new MessagingOptions())),
+            TimeProvider.System
+        );
 #pragma warning disable CA2000 // This test transport owns no resources and is captured for the non-disposable publisher's lifetime.
         var transport = new SuccessfulTransport();
 #pragma warning restore CA2000

@@ -479,6 +479,41 @@ public sealed class ConsumerRegisterTests : TestBase
     }
 
     [Fact]
+    public async Task should_finish_consumer_client_teardown_before_synchronous_dispose_returns()
+    {
+        // given a running register whose consumer client is slow to dispose
+        var startupClient = new StartupControlledConsumerClient();
+        var factory = new SequencedConsumerClientFactory(new MetadataConsumerClient(), startupClient);
+        await using var provider = _CreateProvider(
+            configureMessaging: setup => setup.AddConsumer<BootstrapReadyConsumer>(),
+            configureServices: services =>
+            {
+                services.ConfigureMessaging(messaging => messaging.Message<BootstrapReadyMessage>("ready-messageName"));
+                services.AddSingleton<IConsumerClientFactory>(factory);
+                services.AddSingleton<BootstrapReadyConsumer>();
+            }
+        );
+        var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
+        using var hostCts = new CancellationTokenSource();
+        var startTask = register.StartAsync(hostCts.Token).AsTask();
+        await startupClient.WaitUntilListeningEnteredAsync(AbortToken);
+        startupClient.SignalReady();
+        await startTask.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+        startupClient.HoldDisposal();
+
+        // when
+        var disposeCall = Task.Run(register.Dispose, AbortToken);
+        await startupClient.WaitUntilDisposalEnteredAsync(AbortToken);
+        var returnedBeforeTeardown = disposeCall.IsCompleted;
+        startupClient.ReleaseDisposal();
+        await disposeCall.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // then
+        returnedBeforeTeardown.Should().BeFalse("synchronous dispose must wait for the client teardown");
+        startupClient.IsDisposed.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task should_listen_with_the_configured_consumer_poll_timeout()
     {
         // given
@@ -580,6 +615,77 @@ public sealed class ConsumerRegisterTests : TestBase
 
         client.CommitCount.Should().Be(3);
         client.RejectCount.Should().Be(0, "a persisted delivery must not be rejected after broker settlement");
+    }
+
+    [Fact]
+    public async Task inbox_admission_should_store_the_received_body_instead_of_reserializing_the_payload()
+    {
+        // given a durable consumer whose storage records what admission hands it
+        await using var client = new InboxConsumerClient();
+        var dispatcher = Substitute.For<IDispatcher>();
+        var storage = Substitute.For<Headless.Messaging.Persistence.IDataStorage>();
+        MediumMessage? admitted = null;
+        storage
+            .AdmitReceivedMessageAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<MediumMessage>(),
+                Arg.Any<long>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(call =>
+            {
+                admitted = call.ArgAt<MediumMessage>(3);
+                return ValueTask.FromResult(
+                    new Headless.Messaging.Persistence.InboxAdmissionResult(
+                        Headless.Messaging.Persistence.InboxAdmissionDisposition.Winner,
+                        admitted
+                    )
+                );
+            });
+
+        await using var provider = _CreateProvider(
+            configureMessaging: setup =>
+            {
+                setup.AddConsumer<BootstrapReadyConsumer>();
+            },
+            configureServices: services =>
+            {
+                services.ConfigureMessaging(messaging => messaging.Message<BootstrapReadyMessage>("ready-messageName"));
+                services.AddSingleton(dispatcher);
+                services.AddSingleton<BootstrapReadyConsumer>();
+            }
+        );
+        var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
+        var serializer = provider.GetRequiredService<Headless.Messaging.IMessageSerializer>();
+        _AttachInboxProcessor(provider, register, client, dispatcher, serializer, storage);
+
+        // and a producer body carrying a member the consumer type does not bind, which a re-serialization would drop
+        var origin = new Message(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [Headers.MessageId] = "inbox-raw-body",
+                [Headers.MessageName] = "ready-messageName",
+            },
+            new BootstrapReadyMessage()
+        );
+        var serialized = await serializer.SerializeToTransportMessageAsync(origin, AbortToken);
+        var body = """{ "ProducerOnly": 1 }"""u8.ToArray();
+        var transport = new TransportMessage(serialized.Headers, body);
+
+        // when
+        await client.OnMessageCallback!(transport, null);
+
+        // then
+        admitted.Should().NotBeNull();
+        var stored = serializer.Deserialize(admitted!.Content)!;
+        stored.Value.Should().BeOfType<JsonElement>().Which.GetRawText().Should().Be(Encoding.UTF8.GetString(body));
+        stored.Headers[Headers.MessageId].Should().Be("inbox-raw-body");
+        stored.Headers.Should().ContainKey(Headers.ExecutionInstanceId);
+        serializer.Deserialize(stored.Value!, typeof(BootstrapReadyMessage)).Should().Be(new BootstrapReadyMessage());
+        client.CommitCount.Should().Be(1);
     }
 
     [Fact]
@@ -3453,10 +3559,42 @@ public sealed class ConsumerRegisterTests : TestBase
             return ValueTask.CompletedTask;
         }
 
-        public ValueTask DisposeAsync()
+        private readonly TaskCompletionSource _disposalEntered = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+
+        private TaskCompletionSource? _disposalGate;
+        private int _disposed;
+
+        public bool IsDisposed => Volatile.Read(ref _disposed) != 0;
+
+        /// <summary>Makes the next disposal wait until <see cref="ReleaseDisposal"/>.</summary>
+        public void HoldDisposal()
+        {
+            _disposalGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        }
+
+        public void ReleaseDisposal()
+        {
+            _disposalGate?.TrySetResult();
+        }
+
+        public async Task WaitUntilDisposalEnteredAsync(CancellationToken cancellationToken)
+        {
+            await _disposalEntered.Task.WaitAsync(cancellationToken);
+        }
+
+        public async ValueTask DisposeAsync()
         {
             _ready.TrySetCanceled();
-            return ValueTask.CompletedTask;
+            _disposalEntered.TrySetResult();
+
+            if (_disposalGate is not null)
+            {
+                await _disposalGate.Task;
+            }
+
+            Volatile.Write(ref _disposed, 1);
         }
     }
 

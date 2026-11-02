@@ -531,6 +531,80 @@ public sealed class InMemoryConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task should_wait_for_a_running_concurrent_handler_before_disposing()
+    {
+        // given a concurrent handler still running when the client is disposed
+        var client = new InMemoryConsumerClient(_queue, "drain-group", 2);
+        await client.SubscribeAsync(["drain-messageName"], AbortToken);
+
+        var logs = new ConcurrentQueue<LogMessageEventArgs>();
+        client.OnLogCallback = logs.Enqueue;
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.OnMessageCallback = async (_, _) =>
+        {
+            started.TrySetResult();
+            await release.Task;
+        };
+
+        using var cts = new CancellationTokenSource();
+        _StartListening(client, cts.Token);
+        _queue.SendBus(_CreateTestMessage("msg-1", "drain-messageName"));
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // when
+        var disposing = client.DisposeAsync().AsTask();
+        var completedBeforeHandler = disposing.IsCompleted;
+        release.SetResult();
+        await disposing.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        await cts.CancelAsync();
+
+        // then the handler finished and released its slot before the semaphore went away
+        completedBeforeHandler.Should().BeFalse("disposal must wait for the running handler");
+        logs.Should().NotContain(x => x.LogType == MqLogType.ExceptionReceived);
+    }
+
+    [Fact]
+    public async Task should_keep_the_handler_outcome_when_it_outlives_the_shutdown_drain()
+    {
+        // given a concurrent handler that finishes, with a fault of its own, only after the drain gave up on it
+        await using var client = new InMemoryConsumerClient(_queue, "outlive-group", 2);
+        await client.SubscribeAsync(["outlive-messageName"], AbortToken);
+
+        var handlerFault = new InvalidOperationException("handler failed");
+        var faults = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.OnLogCallback = log =>
+        {
+            if (log.Reason?.Contains("concurrent message handler", StringComparison.Ordinal) == true)
+            {
+                faults.TrySetResult(log.Reason);
+            }
+        };
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.OnMessageCallback = async (_, _) =>
+        {
+            started.TrySetResult();
+            await release.Task;
+            throw handlerFault;
+        };
+
+        using var cts = new CancellationTokenSource();
+        _StartListening(client, cts.Token);
+        _queue.SendBus(_CreateTestMessage("msg-1", "outlive-messageName"));
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // when
+        await ((IConsumerClient)client).ShutdownAsync(TimeSpan.Zero, AbortToken);
+        release.SetResult();
+        var reported = await faults.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        await cts.CancelAsync();
+
+        // then releasing the disposed semaphore does not replace the handler's own fault
+        reported.Should().Contain(handlerFault.Message).And.NotContain(nameof(ObjectDisposedException));
+    }
+
+    [Fact]
     public async Task should_stop_listening_on_cancellation()
     {
         // given

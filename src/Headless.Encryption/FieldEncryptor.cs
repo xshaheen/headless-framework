@@ -85,7 +85,8 @@ internal sealed class FieldEncryptor(DataKeyRing ring, ICurrentTenant currentTen
         DataKeyScope.Resolve(
             context.Scope,
             currentTenant,
-            $"Encrypting or decrypting '{context.Purpose}'",
+            "Encrypting or decrypting",
+            context.Purpose,
             "FieldContext.Host(purpose)",
             nameof(FieldContext.Scope)
         );

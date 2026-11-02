@@ -143,31 +143,19 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
         var startDate = today.AddDays(_ClampGraphDays(pastDays));
         var endDate = today.AddDays(_ClampGraphDays(futureDays));
 
-        var cronJobOccurrences = await _persistenceProvider
-            .GetAllCronJobOccurrencesAsync(
-                x => x.CronJobId == id && x.ExecutionTime.Date >= startDate && x.ExecutionTime.Date <= endDate,
-                cancellationToken
-            )
+        // Storage-side grouped counts for the one definition, so a long window never loads its occurrences.
+        var dailyCounts = await _persistenceProvider
+            .GetCronOccurrenceDailyStatusCountsAsync(id, startDate, endDate, cancellationToken)
             .ConfigureAwait(false);
 
         var allStatuses = Enum.GetValues<JobStatus>();
-
-        var rawData = cronJobOccurrences
-            .GroupBy(x => new { x.ExecutionTime.Date, x.Status })
-            .Select(g => new
-            {
-                g.Key.Date,
-                g.Key.Status,
-                Count = g.Count(),
-            })
-            .ToList();
 
         var allDates = Enumerable
             .Range(0, _GraphDayCount(startDate, endDate))
             .Select(offset => startDate.AddDays(offset))
             .ToList();
 
-        var groupedData = rawData
+        var groupedData = dailyCounts
             .GroupBy(x => x.Date)
             .ToDictionary(g => g.Key, g => g.ToDictionary(s => s.Status, s => s.Count));
 

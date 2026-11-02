@@ -79,9 +79,13 @@ internal static class RequestCallParser
 
             foreach (var attribute in assembly.GetAttributes())
             {
+                // The simple-name check runs first: it rejects nearly every assembly attribute without formatting
+                // its class name, and this scan reruns over every reference on each edit.
                 if (
-                    string.Equals(
-                        attribute.AttributeClass?.ToDisplayString(),
+                    attribute.AttributeClass
+                        is { Name: SourceGeneratorConstants.ResponderMetadataAttributeSimpleName } attributeClass
+                    && string.Equals(
+                        attributeClass.ToDisplayString(),
                         SourceGeneratorConstants.ResponderMetadataAttributeName,
                         StringComparison.Ordinal
                     )

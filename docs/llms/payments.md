@@ -31,7 +31,8 @@ Register via:
 - CashIn and CashOut have **separate** API credentials. `PaymobCashInOptions` requires `ApiKey`, `Hmac`, and `SecretKey`. `PaymobCashOutOptions` requires `ApiBaseUrl`, `UserName`, `Password`, `ClientId`, and `ClientSecret`.
 - Never store credentials in appsettings directly — always bind from secrets or environment variables.
 - Always validate HMAC on CashIn callbacks. The broker exposes four `Validate(...)` overloads: for `CashInCallbackTransaction`, `CashInCallbackToken`, `CashInCallbackQueryParameters`, or a raw concatenated string. Choose by what Paymob sends to your endpoint.
-- Money amounts denominated in cents are typed as `long` throughout CashIn (`CashInCreateIntentionRequest.Amount`, `CreateOrderRequest.AmountCents`, `PaymentKeyRequest.AmountCents`, and the response DTOs). For the legacy payment-key flow (`CreateOrderAsync` / `RequestPaymentKeyAsync`), multiply your decimal EGP amount by 100 yourself; the `Headless.Payments.Paymob` service layer does this conversion internally. `CashOutDisburseRequest.Amount` and `CashOutTransaction.Amount` are `decimal` EGP (whole-currency, not cents).
+- A valid HMAC proves only the fields Paymob signs: the amount, currency, creation time, the transaction `Id`, the Paymob `Order.Id`, `IntegrationId`, `Owner`, the status flags (`Success`, `Pending`, `IsRefunded`, `IsVoided`, and the others in `ToConcatenatedString()`), and the card source data. `MerchantOrderId`, `Data.TxnResponseCode`, and `Data.Message` are not signed, and nothing in the callback stops a replay of an earlier valid one. Find your order by the signed Paymob `Order.Id` (store it when you create the order), never by `MerchantOrderId`; check the signed `AmountCents` and `Currency` against the order; and process callbacks idempotently, keyed on the transaction `Id`, so a replayed or repeated callback changes nothing. The failure-reason helpers (`IsDeclinedError()`, `IsRiskChecksError()`, and similar) read unsigned fields: use them for display and logging, not for state changes.
+- Money amounts denominated in cents are typed as `long` throughout CashIn (`CashInCreateIntentionRequest.Amount`, `CreateOrderRequest.AmountCents`, `PaymentKeyRequest.AmountCents`, and the response DTOs). For the legacy payment-key flow (`CreateOrderAsync` / `RequestPaymentKeyAsync`), multiply your decimal EGP amount by 100 yourself; the `Headless.Payments.Paymob` service layer does this conversion internally and rounds a fraction of a cent up, for charges and refunds alike, so refunding the same decimal amount refunds exactly the cents that were charged. `CashOutDisburseRequest.Amount` and `CashOutTransaction.Amount` are `decimal` EGP (whole-currency, not cents).
 - Paymob-assigned resource identifiers are typed as `long` (`long?` when nullable) across every request/response DTO — transaction, order, integration, profile, owner, merchant, and gateway-integration IDs, plus kiosk/Aman bill references (`payment_methods` is `IReadOnlyList<long>`). They grow unboundedly and can exceed `int` range, so treat them as 64-bit everywhere. Genuinely bounded domain numbers stay `int` (quantities, package counts, shipping dimensions, status codes, `exp`/`expiration` seconds).
 - CashOut `DisburseAsync(...)` (with the standard async suffix) is the broker method. Use `CashOutDisburseRequest` static factory methods — `BankCard`, `Vodafone`, `Etisalat`, `Orange`, `BankWallet`, `Accept` — rather than constructing the record directly.
 - Both brokers (`IPaymobCashInBroker`, `IPaymobCashOutBroker`) are registered as **scoped** with an injected `HttpClient`. Do not treat them as singletons.
@@ -168,9 +169,12 @@ public IActionResult HandleCallback([FromBody] CashInCallbackTransaction transac
     if (!_broker.Validate(transaction, hmac))
         return BadRequest("Invalid HMAC");
 
+    // Look the order up by the signed Paymob order id, not the unsigned merchant_order_id, and make the
+    // update idempotent on transaction.Id: Paymob retries callbacks and a valid one can be replayed.
     if (transaction.Success)
     {
-        // mark order as paid
+        // mark the order whose Paymob id is transaction.Order.Id as paid, once per transaction.Id,
+        // after checking transaction.AmountCents and transaction.Currency against it
     }
 
     return Ok();

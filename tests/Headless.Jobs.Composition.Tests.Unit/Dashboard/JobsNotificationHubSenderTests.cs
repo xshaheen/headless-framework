@@ -106,6 +106,32 @@ public sealed class JobsNotificationHubSenderTests : TestBase
             .SendCoreAsync("UpdateTimeJobNotification", Arg.Any<object?[]>(), Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task should_coalesce_claimed_time_job_updates_into_one_payload_free_send()
+    {
+        var logger = new CapturingLogger<JobsNotificationHubSender>();
+        var all = Substitute.For<IClientProxy>();
+        all.SendCoreAsync(Arg.Any<string>(), Arg.Any<object?[]>(), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+        var timeProvider = new FakeTimeProvider();
+        using var sender = _Create(all, logger, timeProvider);
+
+        await sender.UpdateTimeJobNotifyAsync(new TimeJobEntity { Id = Guid.NewGuid() });
+        await sender.UpdateTimeJobNotifyAsync(new TimeJobEntity { Id = Guid.NewGuid() });
+        await sender.UpdateTimeJobFromExecutionState<TimeJobEntity>(new JobExecutionState { FunctionName = "test" });
+
+        await all.DidNotReceiveWithAnyArgs().SendCoreAsync(default!, default!, AbortToken);
+
+        timeProvider.Advance(TimeSpan.FromMilliseconds(100));
+
+        await all.Received(1)
+            .SendCoreAsync(
+                "UpdateTimeJobNotification",
+                Arg.Is<object?[]>(args => args.Length == 0),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
     private static JobsNotificationHubSender _Create(
         IClientProxy all,
         CapturingLogger<JobsNotificationHubSender> logger,

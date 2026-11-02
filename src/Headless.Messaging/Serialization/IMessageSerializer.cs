@@ -30,8 +30,38 @@ public interface IMessageSerializer
     string Serialize(Message message);
 
     /// <summary>
+    /// Serializes a <see cref="Message"/> envelope to the stored string form, reusing a payload already serialized
+    /// for the transport instead of serializing <see cref="Message.Value"/> again.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The runtime calls this on durable publish with the <see cref="TransportMessage.Body"/> that
+    /// <see cref="SerializeToTransportMessageAsync"/> returned for the same envelope, and on durable consume with the
+    /// received body that <see cref="DeserializeAsync"/> turned into <see cref="Message.Value"/>. The result must
+    /// read back through <see cref="Deserialize(string)"/> the same way <see cref="Serialize(Message)"/> output does.
+    /// </para>
+    /// <para>
+    /// The default calls <see cref="Serialize(Message)"/>. Override it when the body can be embedded as it is, as
+    /// the built-in System.Text.Json serializer does.
+    /// </para>
+    /// </remarks>
+    /// <param name="message">The message envelope to serialize. Its headers are written as they are now.</param>
+    /// <param name="serializedValue">
+    /// The payload bytes produced from or deserialized into <see cref="Message.Value"/>; empty when there are none.
+    /// </param>
+    /// <returns>A string representation of the envelope, as <see cref="Serialize(Message)"/> would produce.</returns>
+    string Serialize(Message message, ReadOnlyMemory<byte> serializedValue) => Serialize(message);
+
+    /// <summary>
     /// Serializes a <see cref="Message"/> envelope into a <see cref="TransportMessage"/> ready for broker dispatch.
     /// </summary>
+    /// <remarks>
+    /// On durable publish the runtime calls this once, before the row is stored. When the returned
+    /// <see cref="TransportMessage.Headers"/> is <paramref name="message"/>'s own <see cref="Message.Headers"/>
+    /// dictionary, the first send of that same envelope instance reuses the result instead of calling this again, so
+    /// header changes made after the store still reach the broker. A body produced that way must depend only on
+    /// <see cref="Message.Value"/>. Return a copied header dictionary to have every send serialize afresh.
+    /// </remarks>
     /// <param name="message">The message envelope to serialize.</param>
     /// <param name="cancellationToken">A token to observe while awaiting the serialization operation.</param>
     /// <returns>
@@ -45,7 +75,7 @@ public interface IMessageSerializer
     /// <summary>
     /// Deserializes a JSON string back into a <see cref="Message"/> envelope.
     /// </summary>
-    /// <param name="json">The JSON string produced by <see cref="Serialize"/>.</param>
+    /// <param name="json">The JSON string produced by <see cref="Serialize(Message)"/>.</param>
     /// <returns>The deserialized envelope, or <see langword="null"/> when the input is empty or unrecognized.</returns>
     Message? Deserialize(string json);
 

@@ -2,9 +2,9 @@
 
 using System.Reflection;
 using Couchbase;
+using Couchbase.Client.Transactions;
+using Couchbase.Client.Transactions.Config;
 using Couchbase.Linq;
-using Couchbase.Transactions;
-using Couchbase.Transactions.Config;
 using Microsoft.Extensions.Logging;
 
 namespace Headless.Couchbase.Context;
@@ -49,11 +49,16 @@ public class CouchbaseBucketContext(IBucket bucket, Transactions transactions, I
     /// <returns>A LINQ queryable targeting the specified scope and collection.</returns>
     public IQueryable<T> Query<T>(string scope, string collection, BucketQueryOptions options = BucketQueryOptions.None)
     {
-        var queryable =
-            _QueryMethod.MakeGenericMethod(typeof(T)).Invoke(this, [scope, collection, options])
-            ?? throw new InvalidOperationException("Cannot be null");
+        return QueryInvoker<T>.Invoke(this, scope, collection, options);
+    }
 
-        return (IQueryable<T>)queryable;
+    /// <summary>Binds the non-public overload once per document type instead of reflecting on every query.</summary>
+    private static class QueryInvoker<T>
+    {
+        public static readonly Func<BucketContext, string, string, BucketQueryOptions, IQueryable<T>> Invoke =
+            _QueryMethod
+                .MakeGenericMethod(typeof(T))
+                .CreateDelegate<Func<BucketContext, string, string, BucketQueryOptions, IQueryable<T>>>();
     }
 
     #endregion
@@ -61,14 +66,11 @@ public class CouchbaseBucketContext(IBucket bucket, Transactions transactions, I
     #region Transactions
 
     /// <summary>
-    /// Executes <paramref name="operation"/> within a Couchbase ACID transaction. The operation
-    /// receives an <c>AttemptContext</c> and returns <see langword="true"/> to commit or
-    /// <see langword="false"/> to roll back.
+    /// Executes <paramref name="operation"/> within a Couchbase ACID transaction. The SDK commits when the
+    /// operation returns and rolls back when it throws, retrying the whole operation on transient conflicts, so the
+    /// operation must be safe to run more than once.
     /// </summary>
-    /// <param name="operation">
-    /// The transactional work to perform. Return <see langword="true"/> to commit, or
-    /// <see langword="false"/> (or throw) to roll back.
-    /// </param>
+    /// <param name="operation">The transactional work to perform. Throw to roll back.</param>
     /// <param name="config">Optional per-transaction overrides (timeout, durability, etc.).</param>
     /// <param name="cancellationToken">
     /// A token to observe before the transaction begins. The Couchbase transactions SDK
@@ -77,7 +79,7 @@ public class CouchbaseBucketContext(IBucket bucket, Transactions transactions, I
     /// failure. Bound in-transaction duration with <paramref name="config"/> (timeout / durability) instead.
     /// </param>
     public async Task ExecuteTransactionAsync(
-        Func<AttemptContext, Task<bool>> operation,
+        Func<AttemptContext, Task> operation,
         PerTransactionConfig? config = null,
         CancellationToken cancellationToken = default
     )
@@ -87,35 +89,7 @@ public class CouchbaseBucketContext(IBucket bucket, Transactions transactions, I
 
         try
         {
-            var transactionResult = await transactions
-                .RunAsync(
-                    async ctx =>
-                    {
-                        bool commit;
-
-                        try
-                        {
-                            commit = await operation(ctx).ConfigureAwait(false);
-                        }
-                        catch
-                        {
-                            await ctx.RollbackAsync().ConfigureAwait(false);
-
-                            throw;
-                        }
-
-                        if (commit)
-                        {
-                            await ctx.CommitAsync().ConfigureAwait(false);
-                        }
-                        else
-                        {
-                            await ctx.RollbackAsync().ConfigureAwait(false);
-                        }
-                    },
-                    config
-                )
-                .ConfigureAwait(false);
+            var transactionResult = await transactions.RunAsync(operation, config).ConfigureAwait(false);
 
             logger.LogTransactionCompleted(
                 transactionResult.TransactionId,

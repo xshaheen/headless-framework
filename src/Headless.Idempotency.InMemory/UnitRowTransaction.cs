@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Threading;
 using Headless.UnitOfWork;
 
 namespace Headless.Idempotency.InMemory;
@@ -18,7 +19,7 @@ internal sealed class UnitRowTransaction<TKey, TRow> : IDisposable
     where TRow : class
 {
     private readonly Lock _gate = new();
-    private readonly Dictionary<TKey, IDisposable> _held = [];
+    private readonly Dictionary<TKey, KeyedAsyncLock.Releaser> _held = [];
     private readonly Dictionary<TKey, TRow?> _staged = [];
     private DateTimeOffset _lastReading = DateTimeOffset.MinValue;
     private bool _ended;
@@ -77,9 +78,7 @@ internal sealed class UnitRowTransaction<TKey, TRow> : IDisposable
                 return true;
             }
 
-            var releaser = Table.TryLock(key);
-
-            if (releaser is null)
+            if (Table.TryLock(key) is not { } releaser)
             {
                 return false;
             }

@@ -5,6 +5,7 @@ using Headless.Coordination;
 using Headless.DistributedLocks;
 using Headless.Messaging.RequestReply;
 using Headless.Messaging.Transport;
+using Headless.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -595,9 +596,23 @@ internal sealed class Bootstrapper(
         types.Add(messageType);
     }
 
+    /// <summary>
+    /// Shuts messaging down and returns only once its teardown finished or ran out of
+    /// <see cref="MessagingOptions.ShutdownTimeout"/>, so a container disposed synchronously does not dispose the
+    /// transport, storage, or clock while processors are still being stopped against them.
+    /// </summary>
     public override void Dispose()
     {
-        _ = _StartShutdown(dispose: true);
+        try
+        {
+            Async.RunSync(() => _StartShutdown(dispose: true));
+        }
+        catch (Exception ex)
+        {
+            // Dispose must not throw; the async path surfaces the same failure to an awaiting caller.
+            logger.ProcessorStopFailed(ex, nameof(Bootstrapper));
+        }
+
         base.Dispose();
     }
 

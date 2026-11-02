@@ -48,6 +48,38 @@ public sealed class GeneratedSourceCompilationTests
         diagnostics.Should().NotContain(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
     }
 
+    [Theory]
+    [InlineData("Billing-Worker", "Billing_Worker")]
+    [InlineData("2024.Billing", "_2024.Billing")]
+    [InlineData("Billing.event", "Billing.@event")]
+    public void should_compile_when_the_assembly_name_is_not_a_valid_namespace(
+        string assemblyName,
+        string expectedNamespace
+    )
+    {
+        // given
+        const string source = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Headless.Jobs;
+
+            namespace Billing;
+
+            [Job("billing.plain")]
+            public sealed class PlainJob : IJob
+            {
+                public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) => default;
+            }
+            """;
+
+        // when
+        var (diagnostics, generated) = _Generate(assemblyName, source);
+
+        // then
+        diagnostics.Should().NotContain(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        generated.Should().Contain($"namespace {expectedNamespace}\n");
+    }
+
     [Fact]
     public void should_compile_argument_types_whose_simple_names_collide()
     {
