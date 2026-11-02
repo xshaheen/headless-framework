@@ -232,6 +232,15 @@ internal sealed class KafkaConsumerClient : IConsumerClient
         // Consume blocks, so it runs on its own thread; the async loop awaits it and holds no pool thread while idle.
         using var pollThread = new KafkaPollThread($"kafka-poll-{_groupId}");
 
+        // Built once: the loop polls once per record, so a lambda inside it would allocate a closure per record.
+        Func<ConsumeResult<string, byte[]>?> poll = () =>
+        {
+            lock (_consumeLock)
+            {
+                return _consumerClient?.Consume(timeout);
+            }
+        };
+
         while (!cancellationToken.IsCancellationRequested)
         {
             await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
@@ -244,15 +253,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
 
             try
             {
-                var polled = await pollThread
-                    .PollAsync(() =>
-                    {
-                        lock (_consumeLock)
-                        {
-                            return _consumerClient?.Consume(timeout);
-                        }
-                    })
-                    .ConfigureAwait(false);
+                var polled = await pollThread.PollAsync(poll).ConfigureAwait(false);
 
                 // A null consumer means shutdown closed it; a null result is an empty poll. Only the former ends the loop.
                 if (_consumerClient is null)
