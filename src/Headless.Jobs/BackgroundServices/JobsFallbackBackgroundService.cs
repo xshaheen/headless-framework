@@ -33,11 +33,13 @@ internal sealed class JobsFallbackBackgroundService(
 
     // One cadence with the dead-owner bridge, which resolves the same value and logs the clamp. Only the durable path
     // registers the reclaimer, and only it runs on a coordination provider whose retention window bounds the cadence;
-    // the in-memory path (which never sweeps) resolves without coordination options.
-    private readonly TimeSpan _orphanSweepInterval = DeadOwnerReconcileInterval.Resolve(
-        schedulerOptions.DeadNodeReconcileInterval,
-        deadOwnerReclaimer is null || membership is NullNodeMembership ? null : coordinationOptions?.Value
-    );
+    // the in-memory path (which never sweeps) resolves without coordination options. Internal so tests can check it
+    // matches the bridge's without driving a sweep loop through it.
+    internal TimeSpan OrphanSweepInterval { get; } =
+        DeadOwnerReconcileInterval.Resolve(
+            schedulerOptions.DeadNodeReconcileInterval,
+            deadOwnerReclaimer is null || membership is NullNodeMembership ? null : coordinationOptions?.Value
+        );
 
     public override Task StartAsync(CancellationToken ct)
     {
@@ -223,7 +225,7 @@ internal sealed class JobsFallbackBackgroundService(
 
         if (
             _lastOrphanSweepTimestamp != 0
-            && timeProvider.GetElapsedTime(_lastOrphanSweepTimestamp) < _orphanSweepInterval
+            && timeProvider.GetElapsedTime(_lastOrphanSweepTimestamp) < OrphanSweepInterval
         )
         {
             return;
