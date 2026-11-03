@@ -80,25 +80,34 @@ public sealed class AmazonSqsTransportConnectivityTests : TransportConnectivityT
 public sealed class AwsConnectivityCollection;
 
 /// <summary>
-/// A LocalStack of its own on a fixed host port, so a stop and start brings it back at the address the host uses;
-/// Docker assigns a new random port on every start otherwise.
+/// A LocalStack of its own behind a <see cref="BrokerPortForwarder"/>, so a stop and start brings it back at the address
+/// the host uses; Docker publishes it on a new random port on every start.
 /// </summary>
 internal sealed class FixedPortLocalStackFixture : HeadlessLocalStackFixture
 {
-    private readonly int _hostPort = BrokerHostPort.Reserve();
+    private readonly BrokerPortForwarder _forwarder;
 
-    public string ConnectionString => Container.GetConnectionString();
+    public FixedPortLocalStackFixture()
+    {
+        _forwarder = new BrokerPortForwarder(() => Container, LocalStackBuilder.LocalStackPort);
+    }
+
+    public string ConnectionString => $"http://{_forwarder.Address}";
 
     public ValueTask StartAsync()
     {
         return InitializeAsync();
     }
 
-    protected override LocalStackBuilder Configure()
+    protected override async ValueTask DisposeAsyncCore()
     {
-        return new LocalStackBuilder(TestImages.LocalStack).WithPortBinding(
-            _hostPort,
-            LocalStackBuilder.LocalStackPort
-        );
+        try
+        {
+            await base.DisposeAsyncCore();
+        }
+        finally
+        {
+            await _forwarder.DisposeAsync();
+        }
     }
 }

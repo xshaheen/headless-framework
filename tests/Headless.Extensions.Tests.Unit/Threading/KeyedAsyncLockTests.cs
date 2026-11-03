@@ -100,7 +100,7 @@ public sealed class KeyedAsyncLockTests : TestBase
                 {
                     executionOrder.Enqueue(1);
                     lock1Acquired.SetResult();
-                    await lock1Released.Task;
+                    await lock1Released.Task.Bounded();
                     // Recorded while still holding the lock, so a task2 that got in early lands before it.
                     executionOrder.Enqueue(3);
                 }
@@ -108,7 +108,7 @@ public sealed class KeyedAsyncLockTests : TestBase
             AbortToken
         );
 
-        await lock1Acquired.Task;
+        await lock1Acquired.Task.Bounded();
 
         var task2 = Task.Run(
             async () =>
@@ -148,7 +148,7 @@ public sealed class KeyedAsyncLockTests : TestBase
                 using (await keyedLock.LockAsync("key-a"))
                 {
                     key1Acquired.SetResult();
-                    await bothAcquired.Task;
+                    await bothAcquired.Task.Bounded();
                 }
             },
             AbortToken
@@ -160,7 +160,7 @@ public sealed class KeyedAsyncLockTests : TestBase
                 using (await keyedLock.LockAsync("key-b"))
                 {
                     key2Acquired.SetResult();
-                    await bothAcquired.Task;
+                    await bothAcquired.Task.Bounded();
                 }
             },
             AbortToken
@@ -355,7 +355,7 @@ public sealed class KeyedAsyncLockTests : TestBase
                 using (await keyedLock.LockAsync("CaseSensitive"))
                 {
                     key1Acquired.SetResult();
-                    await bothAcquired.Task;
+                    await bothAcquired.Task.Bounded();
                 }
             },
             AbortToken
@@ -367,7 +367,7 @@ public sealed class KeyedAsyncLockTests : TestBase
                 using (await keyedLock.LockAsync("casesensitive"))
                 {
                     key2Acquired.SetResult();
-                    await bothAcquired.Task;
+                    await bothAcquired.Task.Bounded();
                 }
             },
             AbortToken
@@ -405,7 +405,7 @@ public sealed class KeyedAsyncLockTests : TestBase
             AbortToken
         );
 
-        await lockAcquired.Task;
+        await lockAcquired.Task.Bounded();
 
         // Cancel before lock is acquired
         cts.CancelAfter(50);
@@ -616,13 +616,13 @@ public sealed class KeyedAsyncLockTests : TestBase
                 using (await keyedLock.LockAsync("cancel-cleanup-key", AbortToken))
                 {
                     lockAcquired.SetResult();
-                    await canRelease.Task;
+                    await canRelease.Task.Bounded();
                 }
             },
             AbortToken
         );
 
-        await lockAcquired.Task;
+        await lockAcquired.Task.Bounded();
 
         // Try to acquire with cancellation
         cts.CancelAfter(50);
@@ -729,13 +729,13 @@ public sealed class KeyedAsyncLockTests : TestBase
                 using (await lock1.LockAsync("shared-key"))
                 {
                     lock1Acquired.SetResult();
-                    await lock1CanRelease.Task;
+                    await lock1CanRelease.Task.Bounded();
                 }
             },
             AbortToken
         );
 
-        await lock1Acquired.Task;
+        await lock1Acquired.Task.Bounded();
 
         var task2 = Task.Run(
             async () =>

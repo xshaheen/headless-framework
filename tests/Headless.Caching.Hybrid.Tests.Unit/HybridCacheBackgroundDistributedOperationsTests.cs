@@ -290,7 +290,7 @@ public sealed class HybridCacheBackgroundDistributedOperationsTests : TestBase
                 async Task<PublishReceipt> (_) =>
                 {
                     publishStarted.TrySetResult();
-                    await publishGate.Task;
+                    await publishGate.Task.Bounded();
                     return default;
                 }
             );

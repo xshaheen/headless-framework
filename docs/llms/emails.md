@@ -173,7 +173,7 @@ Setup builder, MimeKit integration, and shared utilities for email implementatio
 - `EmailAttachmentContentType.Resolve(fileName)` — derives an attachment MIME type from its file name (MimeKit lookup, `application/octet-stream` fallback)
 - `EmailToMimeMessageConverter.ConvertToMimeMessageAsync()` — converts `SendSingleEmailRequest` to a MimeKit `MimeMessage` (internal extension; visible to the Aws/Mailkit providers via `InternalsVisibleTo`)
 - `MapToMailboxAddress()` — maps an `EmailRequestAddress` to a MimeKit `MailboxAddress` (internal)
-- Full address mapping (From, To, Cc, Bcc), body building (text + HTML via `BodyBuilder`), and attachment streaming
+- Full address mapping (From, To, Cc, Bcc), body building (text + HTML via `BodyBuilder`), and attachment streaming: a binary attachment (any type but `text/*` and `message/*`) is base64-encoded from the request's `File` memory when the message is written, without a copy, so that memory must stay unchanged until the send returns
 
 ### Design constraints
 

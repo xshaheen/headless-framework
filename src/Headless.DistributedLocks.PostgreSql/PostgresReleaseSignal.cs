@@ -47,7 +47,8 @@ internal sealed class PostgresReleaseSignal : IReleaseSignal, IAsyncDisposable
     /// </summary>
     /// <param name="options">Provider options supplying command timeout and push-wakeup toggle.</param>
     /// <param name="dataSource">
-    /// The shared lock connection source injected by the DI registration. Not disposed here.
+    /// The provider's lock connection source injected by the DI registration, never the application's unkeyed
+    /// <see cref="NpgsqlDataSource"/> itself. Not disposed here.
     /// </param>
     /// <param name="timeProvider">
     /// The app clock, which paces the local polling fallback alongside the waiter's acquire timeout. The reconnect

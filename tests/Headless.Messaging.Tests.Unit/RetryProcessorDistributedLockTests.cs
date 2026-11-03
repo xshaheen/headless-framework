@@ -192,7 +192,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
 
         // Wait until the storage call fires — at that point the processor owns the received-retry
         // lease while the storage pickup remains in flight.
-        var capturedLock = await lockAcquiredTcs.Task.WaitAsync(AbortToken);
+        var capturedLock = await lockAcquiredTcs.Task.Bounded();
 
         // when — tick 2: the in-progress guard waits without manually renewing the handle.
         await processor.ProcessAsync(context);
@@ -390,7 +390,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         await using var context = _CreateContext(storage);
 
         await processor.ProcessAsync(context);
-        await receivedCallStarted.Task.WaitAsync(AbortToken);
+        await receivedCallStarted.Task.Bounded();
 
         receivedLease.MarkLost();
         storageBlocker.TrySetResult();
@@ -566,7 +566,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         {
             // when — tick 1: spawns the published-retry task that blocks inside the storage call
             await processor.ProcessAsync(context);
-            await publishedCallFired.Task.WaitAsync(AbortToken);
+            await publishedCallFired.Task.Bounded();
 
             // when — tick 2: in-progress guard must skip spawning a second published-retry task
             await processor.ProcessAsync(context);

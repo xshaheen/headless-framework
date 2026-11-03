@@ -26,8 +26,8 @@ public sealed class RabbitMqTransportConnectivityTests : TransportConnectivityTe
     {
         setup.UseRabbitMq(options =>
         {
-            options.HostName = _broker.Container.Hostname;
-            options.Port = _broker.Container.GetMappedPublicPort(RabbitMqBuilder.RabbitMqPort);
+            options.HostName = _broker.Host;
+            options.Port = _broker.Port;
             options.UserName = RabbitMqBuilder.DefaultUsername;
             options.Password = RabbitMqBuilder.DefaultPassword;
         });
@@ -52,18 +52,37 @@ public sealed class RabbitMqTransportConnectivityTests : TransportConnectivityTe
 [CollectionDefinition("RabbitMqConnectivity", DisableParallelization = true)]
 public sealed class RabbitMqConnectivityCollection;
 
-/// <summary>A RabbitMQ of its own on a fixed host port, so a stop and start brings it back where the host connects.</summary>
+/// <summary>
+/// A RabbitMQ of its own behind a <see cref="BrokerPortForwarder"/>, so a stop and start brings it back at the address
+/// the host connects to.
+/// </summary>
 internal sealed class FixedPortRabbitMqFixture : HeadlessRabbitMqFixture
 {
-    private readonly int _hostPort = BrokerHostPort.Reserve();
+    private readonly BrokerPortForwarder _forwarder;
+
+    public FixedPortRabbitMqFixture()
+    {
+        _forwarder = new BrokerPortForwarder(() => Container, RabbitMqBuilder.RabbitMqPort);
+    }
+
+    public string Host => _forwarder.Host;
+
+    public int Port => _forwarder.Port;
 
     public ValueTask StartAsync()
     {
         return InitializeAsync();
     }
 
-    protected override RabbitMqBuilder Configure()
+    protected override async ValueTask DisposeAsyncCore()
     {
-        return new RabbitMqBuilder(TestImages.RabbitMq).WithPortBinding(_hostPort, RabbitMqBuilder.RabbitMqPort);
+        try
+        {
+            await base.DisposeAsyncCore();
+        }
+        finally
+        {
+            await _forwarder.DisposeAsync();
+        }
     }
 }

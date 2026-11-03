@@ -1210,7 +1210,7 @@ public sealed class HybridCacheTests : TestBase
             );
 
         var assertion = act.Should().ThrowAsync<OperationCanceledException>();
-        await factoryReached.Task;
+        await factoryReached.Task.Bounded();
         await cts.CancelAsync();
         await assertion;
 
@@ -1331,7 +1331,7 @@ public sealed class HybridCacheTests : TestBase
 
         // when — the caller soft-times-out, then the detached factory completes and writes through the store
         var timedOutTask = cache.GetOrAddAsync(key, factory, options, AbortToken).AsTask();
-        await factoryStarted.Task;
+        await factoryStarted.Task.Bounded();
         await _TriggerTimeoutAsync(options.FactorySoftTimeout, timedOutTask);
         var timedOut = await timedOutTask;
         factoryGate.SetResult(2);
@@ -1616,7 +1616,7 @@ public sealed class HybridCacheTests : TestBase
         }
 
         var pending = cache.GetOrAddAsync(key, factory, TimeSpan.FromMinutes(5), AbortToken).AsTask();
-        await factoryStarted.Task;
+        await factoryStarted.Task.Bounded();
 
         // when — the L2 entry is created and removed by another actor mid-operation, then the factory lands
         await l2.UpsertAsync(key, 99, TimeSpan.FromMinutes(5), AbortToken);
@@ -1655,7 +1655,7 @@ public sealed class HybridCacheTests : TestBase
         }
 
         var pending = cache.GetOrAddAsync(key, factory, TimeSpan.FromMinutes(5), AbortToken).AsTask();
-        await factoryStarted.Task;
+        await factoryStarted.Task.Bounded();
 
         // when — L2 starts throwing mid-operation, then the factory completes
         l2.FailWrites = true;
@@ -1856,7 +1856,7 @@ public sealed class HybridCacheTests : TestBase
         }
 
         var pending = cache.GetOrAddAsync(key, factory, TimeSpan.FromMinutes(5), AbortToken).AsTask();
-        await factoryStarted.Task;
+        await factoryStarted.Task.Bounded();
 
         // when — the key is removed while the factory is in flight, then the factory write lands
         await cache.RemoveAsync(key, AbortToken);
@@ -1889,7 +1889,7 @@ public sealed class HybridCacheTests : TestBase
         }
 
         var pending = cache.GetOrAddAsync(key, factory, TimeSpan.FromMinutes(5), AbortToken).AsTask();
-        await factoryStarted.Task;
+        await factoryStarted.Task.Bounded();
 
         // when — the invalidation-driven removal fires mid-factory, then the factory write lands
         await cache.HandleInvalidationAsync(
@@ -2209,7 +2209,7 @@ public sealed class HybridCacheTests : TestBase
                 cts.Token
             )
             .AsTask();
-        await l2.ReadStarted.Task;
+        await l2.ReadStarted.Task.Bounded();
         await cts.CancelAsync();
         var act = async () => await pending;
 
@@ -2250,7 +2250,7 @@ public sealed class HybridCacheTests : TestBase
         var pending = cache
             .GetOrAddAsync(key, _ => new ValueTask<int?>(42), TimeSpan.FromMinutes(5), cts.Token)
             .AsTask();
-        await l2.WriteStarted.Task;
+        await l2.WriteStarted.Task.Bounded();
         await cts.CancelAsync();
         var act = async () => await pending;
 

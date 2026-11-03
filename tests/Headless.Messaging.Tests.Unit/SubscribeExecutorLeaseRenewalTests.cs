@@ -39,7 +39,7 @@ public sealed class SubscribeExecutorLeaseRenewalTests : TestBase
             .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
             .Returns(async _ =>
             {
-                await release.Task;
+                await release.Task.Bounded();
                 return new ConsumerExecutedResult(null, null, "message-id", null, null);
             });
         var executor = _CreateExecutor();
@@ -122,7 +122,7 @@ public sealed class SubscribeExecutorLeaseRenewalTests : TestBase
             .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
             .Returns(async _ =>
             {
-                await renewed.Task;
+                await renewed.Task.Bounded();
                 return new ConsumerExecutedResult(null, null, "message-id", null, null);
             });
         var executor = _CreateExecutor();
@@ -173,7 +173,7 @@ public sealed class SubscribeExecutorLeaseRenewalTests : TestBase
             .InvokeInScopeAsync(Arg.Any<ConsumerContext>(), Arg.Any<IServiceProvider>(), Arg.Any<CancellationToken>())
             .Returns(async _ =>
             {
-                await renewed.Task;
+                await renewed.Task.Bounded();
                 return new ConsumerExecutedResult(null, null, "message-id", null, null);
             });
         var runner = new RecordingInboxRunner();

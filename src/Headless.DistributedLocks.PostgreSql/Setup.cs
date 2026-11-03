@@ -205,7 +205,9 @@ public static class SetupDistributedLocksPostgreSql
 
         // One connection source shared by storage, release signal, and schema runner, so a configuration produces a
         // single pool rather than one each. It is deliberately not registered as NpgsqlDataSource: that service is the
-        // application's, and the parameterless UsePostgreSql() reads it.
+        // application's (AddNpgsqlDataSource, Aspire, EF Core), and the parameterless UsePostgreSql() reads it. Claiming
+        // it would send locks to the application's database or application traffic to the lock database, depending on
+        // which registration came first.
         services.TryAddSingleton<PostgresLockDataSource>();
 
         services.TryAddSingleton<PostgresConnectionScopedLockStorage>();

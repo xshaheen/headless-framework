@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
-using System.Net;
-using System.Net.Sockets;
 using System.Threading.Channels;
 using DotNet.Testcontainers.Builders;
 using Headless.Messaging;
@@ -78,29 +76,41 @@ public sealed class NatsReplyTransportTests(NatsFixture fixture) : TestBase
         await using var server = new RestartableNatsServer();
         await server.StartAsync(AbortToken);
         var listenerPool = _CreatePool(server.ConnectionString);
+        var received = Channel.CreateUnbounded<TransportMessage>();
+        await using var listener = await _CreateTransport(listenerPool)
+            .OpenListenerAsync((reply, _) => received.Writer.WriteAsync(reply, AbortToken), AbortToken);
+        var address = await _WithinBoundAsync(listener.WaitForAddressAsync(AbortToken), "the first address");
+
+        // The client raises a connection's events one at a time, each to its handlers in the order they were added. The
+        // listener added its handler when it opened, so by the time this one runs the listener has withdrawn the address.
         var disconnected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         listenerPool.GetConnection().ConnectionDisconnected += (_, _) =>
         {
             disconnected.TrySetResult();
             return ValueTask.CompletedTask;
         };
-        var received = Channel.CreateUnbounded<TransportMessage>();
-        await using var listener = await _CreateTransport(listenerPool)
-            .OpenListenerAsync((reply, _) => received.Writer.WriteAsync(reply, AbortToken), AbortToken);
-        var address = await listener.WaitForAddressAsync(AbortToken).AsTask().WaitAsync(_Bound, AbortToken);
 
         // when
         await server.RestartAsync(AbortToken);
-        await disconnected.Task.WaitAsync(_Bound, AbortToken);
+        await _WithinBoundAsync(disconnected.Task, "the disconnect");
+
+        // The listener hands the address out again only after the server answered a PING sent behind the re-sent SUB,
+        // so a reply sent from then on cannot miss the subscription.
+        var addressAfterRestart = await _WithinBoundAsync(
+            listener.WaitForAddressAsync(AbortToken),
+            "the address after the reconnect"
+        );
 
         // then
-        // A sender on a fresh connection, so the reply reaches the listener only through the restarted server.
-        var sender = _CreateTransport(_CreatePool(server.ConnectionString));
-        var delivered = await _SendUntilReceivedAsync(sender, address, received.Reader);
-        delivered.Headers[MessagingHeaders.InReplyTo].Should().Be("after-restart");
-        (await listener.WaitForAddressAsync(AbortToken).AsTask().WaitAsync(_Bound, AbortToken))
+        addressAfterRestart
             .Should()
             .Be(address, "the client re-sends the subscription, so the address survives the restart");
+
+        // A sender on a fresh connection, so the reply reaches the listener only through the restarted server.
+        await _CreateTransport(_CreatePool(server.ConnectionString))
+            .SendAsync(addressAfterRestart, _Reply("after-restart"), AbortToken);
+        var delivered = await _WithinBoundAsync(received.Reader.ReadAsync(AbortToken), "the reply after the restart");
+        delivered.Headers[MessagingHeaders.InReplyTo].Should().Be("after-restart");
     }
 
     [Fact]
@@ -311,29 +321,34 @@ public sealed class NatsReplyTransportTests(NatsFixture fixture) : TestBase
         );
     }
 
-    private static async Task<TransportMessage> _SendUntilReceivedAsync(
-        NatsReplyTransport sender,
-        string address,
-        ChannelReader<TransportMessage> received
-    )
+    // Names the step whose wait ran out, so a timeout under load says which of them was slow.
+    private static async Task<T> _WithinBoundAsync<T>(ValueTask<T> pending, string step)
     {
-        using var bound = new CancellationTokenSource(_Bound);
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(bound.Token, AbortToken);
-
-        // Replies sent before the restarted server has the subscription again are discarded, so keep sending until one
-        // arrives; each attempt waits briefly for its delivery.
-        while (true)
+        try
         {
-            await sender.SendAsync(address, _Reply("after-restart"), linked.Token);
+            return await pending.AsTask().WaitAsync(_Bound, AbortToken);
+        }
+        catch (TimeoutException e)
+        {
+            throw new TimeoutException(
+                string.Create(CultureInfo.InvariantCulture, $"Waited {_Bound.TotalSeconds:0} s for {step}."),
+                e
+            );
+        }
+    }
 
-            using var attempt = CancellationTokenSource.CreateLinkedTokenSource(linked.Token);
-            attempt.CancelAfter(TimeSpan.FromMilliseconds(250));
-
-            try
-            {
-                return await received.ReadAsync(attempt.Token);
-            }
-            catch (OperationCanceledException) when (!linked.IsCancellationRequested) { }
+    private static async Task _WithinBoundAsync(Task pending, string step)
+    {
+        try
+        {
+            await pending.WaitAsync(_Bound, AbortToken);
+        }
+        catch (TimeoutException e)
+        {
+            throw new TimeoutException(
+                string.Create(CultureInfo.InvariantCulture, $"Waited {_Bound.TotalSeconds:0} s for {step}."),
+                e
+            );
         }
     }
 
@@ -405,22 +420,25 @@ public sealed class NatsReplyTransportTests(NatsFixture fixture) : TestBase
 }
 
 /// <summary>
-/// A NATS server of one test's own, on a fixed host port: a restart keeps the address clients already know, so they
-/// reconnect to the restarted server rather than lose it. It is never reused, so a restarted server stays this test's.
+/// A NATS server of one test's own behind a <see cref="BrokerPortForwarder"/>: a restart keeps the address clients
+/// already know, so they reconnect to the restarted server rather than lose it. It is never reused, so a restarted
+/// server stays this test's.
 /// </summary>
 internal sealed class RestartableNatsServer : IAsyncDisposable
 {
-    private readonly int _port;
     private readonly NatsContainer _container;
+    private readonly BrokerPortForwarder _forwarder;
 
     public RestartableNatsServer()
     {
-        _port = _ReserveFreePort();
-        _container = new NatsBuilder(TestImages.Nats).WithPortBinding(_port, NatsBuilder.NatsClientPort).Build();
+        _container = new NatsBuilder(TestImages.Nats)
+            .WithPortBinding(NatsBuilder.NatsClientPort, assignRandomHostPort: true)
+            .Build();
+        _forwarder = new BrokerPortForwarder(() => _container, NatsBuilder.NatsClientPort);
     }
 
     /// <summary>The server's address, known before it starts, so a client can be pointed at a server that is down.</summary>
-    public string ConnectionString => $"nats://{_container.Hostname}:{_port}";
+    public string ConnectionString => $"nats://{_forwarder.Address}";
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
@@ -433,15 +451,15 @@ internal sealed class RestartableNatsServer : IAsyncDisposable
         await _container.StartAsync(cancellationToken);
     }
 
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
-        return _container.DisposeAsync();
-    }
-
-    private static int _ReserveFreePort()
-    {
-        using var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        return ((IPEndPoint)listener.LocalEndpoint).Port;
+        try
+        {
+            await _container.DisposeAsync();
+        }
+        finally
+        {
+            await _forwarder.DisposeAsync();
+        }
     }
 }

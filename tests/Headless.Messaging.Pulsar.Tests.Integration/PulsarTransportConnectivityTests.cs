@@ -49,21 +49,36 @@ public sealed class PulsarTransportConnectivityTests : TransportConnectivityTest
 [CollectionDefinition("PulsarConnectivity", DisableParallelization = true)]
 public sealed class PulsarConnectivityCollection;
 
-/// <summary>A Pulsar of its own on fixed host ports, so a stop and start brings it back where the host connects.</summary>
+/// <summary>
+/// A Pulsar of its own behind a <see cref="BrokerPortForwarder"/> on its binary-protocol port, so a stop and start brings
+/// it back at the address the host connects to.
+/// </summary>
 internal sealed class FixedPortPulsarFixture : HeadlessPulsarFixture
 {
-    private readonly int _brokerPort = BrokerHostPort.Reserve();
-    private readonly int _webPort = BrokerHostPort.Reserve();
+    private readonly BrokerPortForwarder _forwarder;
+
+    public FixedPortPulsarFixture()
+    {
+        _forwarder = new BrokerPortForwarder(() => Container, PulsarBuilder.PulsarBrokerDataPort);
+    }
+
+    /// <summary>Gets the binary-protocol service URL, which stays the same across a stop and start.</summary>
+    public new string ConnectionString => $"pulsar://{_forwarder.Address}";
 
     public ValueTask StartAsync()
     {
         return InitializeAsync();
     }
 
-    protected override PulsarBuilder Configure()
+    protected override async ValueTask DisposeAsyncCore()
     {
-        return new PulsarBuilder(TestImages.Pulsar)
-            .WithPortBinding(_brokerPort, PulsarBuilder.PulsarBrokerDataPort)
-            .WithPortBinding(_webPort, PulsarBuilder.PulsarWebServicePort);
+        try
+        {
+            await base.DisposeAsyncCore();
+        }
+        finally
+        {
+            await _forwarder.DisposeAsync();
+        }
     }
 }
