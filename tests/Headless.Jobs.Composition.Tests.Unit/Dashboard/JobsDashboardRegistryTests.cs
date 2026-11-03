@@ -316,7 +316,6 @@ public sealed class JobsDashboardRegistryTests : TestBase
             persistence,
             Substitute.For<IJobsHostScheduler>(),
             Substitute.For<IJobsNotificationHubSender>(),
-            new DashboardOptionsBuilder(),
             dispatcher,
             registry,
             TimeProvider.System,

@@ -228,7 +228,7 @@ public sealed class DashboardEndpointMetadataTests : TestBase
         await _GetEndpoint(app, "StopJobHost").RequestDelegate!(context);
 
         context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
-        await app.Services.GetRequiredService<IJobsHostScheduler>().Received(1).StopAsync();
+        await app.Services.GetRequiredService<IJobsHostScheduler>().Received(1).StopAsync(Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -307,7 +307,7 @@ public sealed class DashboardEndpointMetadataTests : TestBase
         context.Request.QueryString = new QueryString(query);
         if (forgeryHeader)
         {
-            context.Request.Headers["X-Requested-With"] = "XMLHttpRequest";
+            context.Request.Headers.XRequestedWith = "XMLHttpRequest";
         }
 
         if (body is not null)
