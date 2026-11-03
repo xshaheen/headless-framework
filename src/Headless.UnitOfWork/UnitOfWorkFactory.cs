@@ -169,6 +169,39 @@ internal sealed partial class UnitOfWorkFactory(
         }
     }
 
+    /// <summary>
+    /// Records that the caller's own commit of an observed unit's transaction faulted: claim Failed(InDoubt) or
+    /// Failed(Faulted) as <see cref="CompleteAsync"/> classifies an owned commit, then drain. Returns the exception
+    /// the caller throws: a <see cref="UnitOfWorkInDoubtException"/> wrapping <paramref name="commitFault"/> when the
+    /// commit may have reached the database, otherwise <paramref name="commitFault"/> itself.
+    /// </summary>
+    internal async ValueTask<Exception> FailObservedCommitAsync(
+        Internal.UnitOfWork unit,
+        Exception commitFault,
+        bool cancelledBeforeCommit
+    )
+    {
+        var inDoubt = InDoubtCommitFaults.IsInDoubt(commitFault, cancelledBeforeCommit)
+            ? new UnitOfWorkInDoubtException(commitFault)
+            : null;
+        var failure = inDoubt is null
+            ? new UnitOfWorkFailure(UnitOfWorkFailureReason.Faulted, commitFault)
+            : new UnitOfWorkFailure(UnitOfWorkFailureReason.InDoubt, inDoubt);
+
+        if (inDoubt is not null)
+        {
+            LogCommitInDoubt(Logger, commitFault);
+        }
+
+        // A unit already terminal keeps its outcome; the caller still learns the commit's own classification.
+        if (unit.TryClaimFailed(failure, out var claim))
+        {
+            await _DrainFailedQuietlyAsync(claim, failure).ConfigureAwait(false);
+        }
+
+        return inDoubt ?? commitFault;
+    }
+
     /// <summary>Rolls a unit back explicitly: claim Failed(RolledBack), roll the owned resource back, drain.</summary>
     internal async ValueTask RollbackAsync(Internal.UnitOfWork unit)
     {

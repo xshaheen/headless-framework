@@ -49,21 +49,13 @@ public sealed class DeadOwnerReconcileIntervalTests : TestBase
     }
 
     [Fact]
-    public void should_keep_a_configured_interval_without_a_warning_when_the_host_has_no_membership_provider()
+    public void should_clamp_through_the_public_overload_without_a_logger()
     {
-        // Messaging registers NullNodeMembership as its fallback while the options system still resolves default
-        // coordination options, so a host with no coordination provider must not be clamped against that window.
-        var logger = new RecordingLogger();
+        // A feature that runs its own sweep on the bridge's cadence resolves the same value without logging the clamp
+        // a second time.
+        var interval = DeadOwnerReconcileInterval.Resolve(TimeSpan.FromMinutes(1), _DefaultCoordination);
 
-        var interval = DeadOwnerReconcileInterval.Resolve(
-            TimeSpan.FromMinutes(1),
-            _DefaultCoordination,
-            logger,
-            new NullNodeMembership()
-        );
-
-        interval.Should().Be(TimeSpan.FromMinutes(1));
-        logger.Entries.Should().BeEmpty();
+        interval.Should().Be(TimeSpan.FromSeconds(15));
     }
 
     [Fact]

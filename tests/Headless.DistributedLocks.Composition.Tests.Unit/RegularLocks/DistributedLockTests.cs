@@ -4,9 +4,9 @@ using System.Diagnostics.Metrics;
 using Headless;
 using Headless.DistributedLocks;
 using Headless.DistributedLocks.InMemory;
-using Headless.Messaging;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 
 namespace Tests.RegularLocks;
@@ -15,7 +15,7 @@ public sealed class DistributedLockTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
     private readonly InMemoryDistributedLockStorage _storage;
-    private readonly IBus _bus = Substitute.For<IBus>();
+    private readonly IDistributedLockReleaseSignal _releaseSignal = Substitute.For<IDistributedLockReleaseSignal>();
     private readonly IGuidGenerator _guidGenerator = Substitute.For<IGuidGenerator>();
 
     public DistributedLockTests()
@@ -26,9 +26,8 @@ public sealed class DistributedLockTests : TestBase
     private DistributedLock _CreateProvider(
         DistributedLockOptions? options = null,
         IDistributedLockStorage? storage = null,
-        IBus? bus = null,
         ILogger<DistributedLock>? logger = null,
-        bool useNullBus = false,
+        bool useNullSignal = false,
         TimeProvider? timeProvider = null
     )
     {
@@ -37,7 +36,9 @@ public sealed class DistributedLockTests : TestBase
 
         return new DistributedLock(
             storage ?? _storage,
-            useNullBus ? null : bus ?? _bus,
+            useNullSignal
+                ? new NullDistributedLockReleaseSignal(NullLogger<NullDistributedLockReleaseSignal>.Instance)
+                : _releaseSignal,
             options,
             _guidGenerator,
             timeProvider ?? _timeProvider,
@@ -1149,7 +1150,7 @@ public sealed class DistributedLockTests : TestBase
     }
 
     [Fact]
-    public async Task should_publish_lock_released_message()
+    public async Task should_announce_the_release()
     {
         // given
         var provider = _CreateProvider();
@@ -1162,19 +1163,75 @@ public sealed class DistributedLockTests : TestBase
         await provider.ReleaseAsync(resource, acquiredLock!.LeaseId, AbortToken);
 
         // then
-        await _bus.Received(1)
-            .PublishAsync(
-                Arg.Is<DistributedLockReleased>(m => m.Resource == resource && m.LeaseId == acquiredLock.LeaseId),
-                Arg.Is<PublishOptions?>(options => options!.DeliveryMode == DeliveryMode.Direct),
-                Arg.Any<CancellationToken>()
-            );
+        _releaseSignal.Received(1).Announce(resource, acquiredLock.LeaseId);
     }
 
     [Fact]
-    public async Task should_release_without_publishing_when_bus_is_absent()
+    public async Task should_not_announce_the_release_when_a_try_once_lease_skips_the_wake_up()
     {
         // given
-        var provider = _CreateProvider(useNullBus: true);
+        var provider = _CreateProvider();
+        var resource = Faker.Random.AlphaNumeric(10);
+        var acquiredLock = await provider.TryAcquireAsync(
+            resource,
+            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero, NotifyWaitersOnRelease = false },
+            AbortToken
+        );
+        acquiredLock.Should().NotBeNull();
+
+        // when
+        await acquiredLock!.DisposeAsync();
+
+        // then
+        (await provider.IsLockedAsync(resource, AbortToken))
+            .Should()
+            .BeFalse();
+        _releaseSignal.DidNotReceiveWithAnyArgs().Announce(default!, default!);
+    }
+
+    [Fact]
+    public async Task should_announce_the_release_when_a_try_once_lease_keeps_the_default_wake_up()
+    {
+        // given
+        var provider = _CreateProvider();
+        var resource = Faker.Random.AlphaNumeric(10);
+        var acquiredLock = await provider.TryAcquireAsync(
+            resource,
+            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero },
+            AbortToken
+        );
+        acquiredLock.Should().NotBeNull();
+
+        // when
+        await acquiredLock!.DisposeAsync();
+
+        // then
+        _releaseSignal.Received(1).Announce(resource, acquiredLock.LeaseId);
+    }
+
+    [Fact]
+    public async Task should_reject_skipping_the_wake_up_when_the_acquirer_waits()
+    {
+        // given
+        var provider = _CreateProvider();
+        var options = new DistributedLockAcquireOptions
+        {
+            AcquireTimeout = TimeSpan.FromSeconds(1),
+            NotifyWaitersOnRelease = false,
+        };
+
+        // when
+        var act = async () => await provider.TryAcquireAsync(Faker.Random.AlphaNumeric(10), options, AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*NotifyWaitersOnRelease*");
+    }
+
+    [Fact]
+    public async Task should_release_when_no_release_transport_is_configured()
+    {
+        // given
+        var provider = _CreateProvider(useNullSignal: true);
         var resource = Faker.Random.AlphaNumeric(10);
         var acquiredLock = await provider.TryAcquireAsync(resource, cancellationToken: AbortToken);
 
@@ -1188,87 +1245,11 @@ public sealed class DistributedLockTests : TestBase
     }
 
     [Fact]
-    public async Task should_release_lock_even_when_wakeup_publish_fails()
-    {
-        // given — healthy storage, but the bus dies when publishing the release notification.
-        // The publish is a best-effort wake-up for waiters; its failure must not fail the release
-        // itself (waiters fall back to polling / TTL expiry).
-        var provider = _CreateProvider();
-        var resource = Faker.Random.AlphaNumeric(10);
-        _bus.PublishAsync(Arg.Any<DistributedLockReleased>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns<PublishReceipt>(_ => throw new InvalidOperationException("bus down"));
-
-        var acquiredLock = await provider.TryAcquireAsync(resource, cancellationToken: AbortToken);
-        acquiredLock.Should().NotBeNull();
-
-        // when
-        var act = async () => await provider.ReleaseAsync(resource, acquiredLock!.LeaseId, AbortToken);
-
-        // then — release completes and the lock is actually gone from storage.
-        await act.Should().NotThrowAsync();
-        (await provider.IsLockedAsync(resource, AbortToken)).Should().BeFalse();
-    }
-
-    [Fact]
-    public async Task should_log_publish_failure_when_wakeup_publish_completes_faulted()
-    {
-        // given — the bus returns an already-faulted publish instead of throwing.
-        var captured = new List<int>();
-        var logger = new DistributedLockTestSupport.CapturingLogger<DistributedLock>(captured);
-        var provider = _CreateProvider(logger: logger);
-        var resource = Faker.Random.AlphaNumeric(10);
-        _bus.PublishAsync(Arg.Any<DistributedLockReleased>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromException<PublishReceipt>(new InvalidOperationException("bus down")));
-
-        var acquiredLock = await provider.TryAcquireAsync(resource, cancellationToken: AbortToken);
-        acquiredLock.Should().NotBeNull();
-
-        // when
-        var act = async () => await provider.ReleaseAsync(resource, acquiredLock!.LeaseId, AbortToken);
-
-        // then — the release succeeds and the failure is logged as LockReleasePublishFailed (EventId 17).
-        await act.Should().NotThrowAsync();
-        (await provider.IsLockedAsync(resource, AbortToken)).Should().BeFalse();
-
-        lock (captured)
-        {
-            captured.Should().Contain(17);
-        }
-    }
-
-    [Fact]
-    public async Task should_return_from_release_without_waiting_for_wakeup_publish_when_broker_is_slow()
-    {
-        // given — the broker never acknowledges the wake-up; the release must not wait on it.
-        var provider = _CreateProvider();
-        var resource = Faker.Random.AlphaNumeric(10);
-        var publishGate = new TaskCompletionSource<PublishReceipt>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _bus.PublishAsync(Arg.Any<DistributedLockReleased>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(publishGate.Task);
-
-        var acquiredLock = await provider.TryAcquireAsync(resource, cancellationToken: AbortToken);
-        acquiredLock.Should().NotBeNull();
-
-        // when
-        await provider.ReleaseAsync(resource, acquiredLock!.LeaseId, AbortToken).Bounded();
-
-        // then — the publish was started before the release returned, and the lock is gone.
-        await _bus.Received(1)
-            .PublishAsync(
-                Arg.Is<DistributedLockReleased>(m => m.Resource == resource),
-                Arg.Any<PublishOptions?>(),
-                Arg.Any<CancellationToken>()
-            );
-        (await provider.IsLockedAsync(resource, AbortToken)).Should().BeFalse();
-        publishGate.SetException(new InvalidOperationException("bus down"));
-    }
-
-    [Fact]
-    public async Task should_return_without_publishing_when_release_exceeds_dispose_timeout()
+    public async Task should_return_without_announcing_when_release_exceeds_dispose_timeout()
     {
         // given — storage hangs forever on remove. DisposeTimeout bounds the release so application
         // shutdown is never blocked by sustained storage unavailability; on timeout the release
-        // returns without throwing, skips the wake-up publish, and the record TTL is the fallback.
+        // returns without throwing, skips the wake-up announcement, and the record TTL is the fallback.
         var storage = Substitute.For<IDistributedLockStorage>();
         storage
             .RemoveIfEqualAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
@@ -1288,17 +1269,16 @@ public sealed class DistributedLockTests : TestBase
 
         var act = async () => await releaseTask.Bounded();
 
-        // then — no throw and no publish (an unconfirmed release must not wake waiters early)
+        // then — no throw and no announcement (an unconfirmed release must not wake waiters early)
         await act.Should().NotThrowAsync();
-        await _bus.DidNotReceive()
-            .PublishAsync(Arg.Any<DistributedLockReleased>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>());
+        _releaseSignal.DidNotReceiveWithAnyArgs().Announce(default!, default!);
     }
 
     [Fact]
-    public async Task should_acquire_waiting_lock_with_polling_when_bus_is_absent()
+    public async Task should_acquire_waiting_lock_with_polling_when_no_release_transport_is_configured()
     {
         // given
-        var provider = _CreateProvider(useNullBus: true);
+        var provider = _CreateProvider(useNullSignal: true);
         var resource = Faker.Random.AlphaNumeric(10);
         await using var existing = await provider.AcquireAsync(resource, cancellationToken: AbortToken);
 
@@ -1325,55 +1305,17 @@ public sealed class DistributedLockTests : TestBase
     }
 
     [Fact]
-    public void should_log_warning_when_bus_is_absent()
+    public void should_log_warning_once_when_no_release_transport_is_configured()
     {
         // given
-        var logger = Substitute.For<ILogger<DistributedLock>>();
-        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
-        var captured = new List<(LogLevel Level, int Id)>();
-        logger
-            .When(l =>
-                l.Log(
-                    Arg.Any<LogLevel>(),
-                    Arg.Any<EventId>(),
-                    Arg.Any<object>(),
-                    Arg.Any<Exception?>(),
-                    Arg.Any<Func<object, Exception?, string>>()
-                )
-            )
-            .Do(call => captured.Add((call.Arg<LogLevel>(), call.Arg<EventId>().Id)));
-
-        // when
-        _ = _CreateProvider(logger: logger, useNullBus: true);
-
-        // then
-        captured.Should().ContainSingle(e => e.Level == LogLevel.Warning && e.Id == 16);
-    }
-
-    [Fact]
-    public void should_not_log_warning_when_bus_is_present()
-    {
-        // given
-        var logger = Substitute.For<ILogger<DistributedLock>>();
-        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
         var captured = new List<int>();
-        logger
-            .When(l =>
-                l.Log(
-                    Arg.Any<LogLevel>(),
-                    Arg.Any<EventId>(),
-                    Arg.Any<object>(),
-                    Arg.Any<Exception?>(),
-                    Arg.Any<Func<object, Exception?, string>>()
-                )
-            )
-            .Do(call => captured.Add(call.Arg<EventId>().Id));
+        var logger = new DistributedLockTestSupport.CapturingLogger<NullDistributedLockReleaseSignal>(captured);
 
         // when
-        _ = _CreateProvider(logger: logger);
+        _ = new NullDistributedLockReleaseSignal(logger);
 
-        // then
-        captured.Should().NotContain(16);
+        // then - the operator sees why waiters fall back to polling
+        captured.Should().ContainSingle().Which.Should().Be(16);
     }
 
     #endregion

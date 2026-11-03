@@ -201,9 +201,10 @@ public sealed class MessagingOptions
 
     /// <summary>
     /// Gets or sets a value indicating whether to use distributed storage locking when retrying failed messages.
-    /// When enabled, retry processors coordinate pickup through a messaging-keyed distributed lock,
-    /// reducing duplicate retry-pickup work across replicas. Message delivery remains at-least-once and
-    /// consumers must stay idempotent.
+    /// When enabled, each retry quadrant takes a messaging-keyed distributed lock before its claim, so one replica
+    /// claims it per tick. The claim already skips rows another replica holds and leases what it returns, so the lock
+    /// adds no exclusion: it trades backlog drain rate (replicas take turns) and a lock round trip per tick for one
+    /// claim per quadrant across the fleet. Message delivery remains at-least-once and consumers must stay idempotent.
     /// Default is false.
     /// </summary>
     public bool UseStorageLock { get; set; }

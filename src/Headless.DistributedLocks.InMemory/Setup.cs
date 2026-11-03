@@ -11,8 +11,8 @@ namespace Headless.DistributedLocks;
 /// </summary>
 /// <remarks>
 /// This provider is not distributed and does not coordinate across application instances.
-/// Messaging is optional; when an <see cref="Headless.Messaging.IBus"/> registration exists before lock setup,
-/// release notifications use push wake-ups. Otherwise, waiters fall back to polling backoff.
+/// Waiters fall back to polling backoff unless a release signal transport is configured, such as
+/// <c>UseMessagingReleaseSignal()</c> from <c>Headless.DistributedLocks.Messaging</c>.
 /// </remarks>
 [PublicAPI]
 public static class SetupDistributedLocksInMemory

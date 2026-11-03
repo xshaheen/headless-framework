@@ -12,6 +12,7 @@ namespace Headless.DistributedLocks;
 internal sealed class DisposableDistributedLock : DistributedLockHandleBase
 {
     private readonly IDistributedLock _lockProvider;
+    private readonly bool _notifyWaitersOnRelease;
 
     /// <summary>
     /// Creates a new mutex lock handle. Ownership must have already been acquired in storage before
@@ -30,6 +31,7 @@ internal sealed class DisposableDistributedLock : DistributedLockHandleBase
     /// <param name="timeProvider">Time provider for elapsed-time and timestamp measurements.</param>
     /// <param name="deregisterMonitor">Callback invoked after the monitor is disposed to remove it from the provider's registry.</param>
     /// <param name="logger">Logger for dispose, renew, and monitor lifecycle events.</param>
+    /// <param name="notifyWaitersOnRelease">When <see langword="false"/>, release skips the wake-up signal.</param>
     internal DisposableDistributedLock(
         string resource,
         string leaseId,
@@ -43,7 +45,8 @@ internal sealed class DisposableDistributedLock : DistributedLockHandleBase
         DistributedLockOptions options,
         TimeProvider timeProvider,
         Action<string, string>? deregisterMonitor,
-        ILogger logger
+        ILogger logger,
+        bool notifyWaitersOnRelease = true
     )
         : base(
             resource,
@@ -61,6 +64,7 @@ internal sealed class DisposableDistributedLock : DistributedLockHandleBase
         )
     {
         _lockProvider = lockProvider;
+        _notifyWaitersOnRelease = notifyWaitersOnRelease;
     }
 
     /// <summary>
@@ -116,7 +120,10 @@ internal sealed class DisposableDistributedLock : DistributedLockHandleBase
 
     protected override Task ReleaseCoreAsync()
     {
-        return _lockProvider.ReleaseAsync(Resource, LeaseId, CancellationToken.None);
+        // Only DistributedLock creates a handle with the wake-up off, and it passes itself as the provider.
+        return !_notifyWaitersOnRelease && _lockProvider is DistributedLock provider
+            ? provider.ReleaseCoreAsync(Resource, LeaseId, notifyWaiters: false)
+            : _lockProvider.ReleaseAsync(Resource, LeaseId, CancellationToken.None);
     }
 
     protected override void OnMonitorDisposeFailed(Exception exception)

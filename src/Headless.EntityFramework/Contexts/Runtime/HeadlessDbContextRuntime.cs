@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Headless.EntityFramework;
@@ -133,7 +134,7 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
         _pipeline = null;
         _currentTenant = null;
         _guardOptions = null;
-        DisposeScope(fallbackScope, _db.GetType());
+        EndOwnedScope(fallbackScope);
 
         _boundServices = services;
         _explicitlyBound = true;
@@ -146,6 +147,16 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
     /// out from under the request that leased it in between.
     /// </summary>
     public bool IsScopeLeased { get; private set; }
+
+    /// <summary>
+    /// <see langword="true"/> while the context's own dispose must do nothing: a scope's lease holds the instance (see
+    /// <see cref="IsScopeLeased"/>), or the context is ending the scope it owns, which disposes the context again when
+    /// the scope resolved it.
+    /// </summary>
+    public bool IsDisposeSuppressed => IsScopeLeased || IsEndingOwnedScope;
+
+    /// <summary><see langword="true"/> while <see cref="EndOwnedScope"/> disposes the scope this context owned.</summary>
+    public bool IsEndingOwnedScope { get; private set; }
 
     /// <summary>Binds this pooled instance to the scope whose lease holds it until the scope ends.</summary>
     public void BindScopeLease(IServiceProvider services)
@@ -168,9 +179,9 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
     }
 
     /// <summary>
-    /// Clears the lease state and returns the scope this context owned, if any, for the caller to dispose after the
-    /// base context is disposed. Clearing comes first because disposing a pooled context returns it to the pool,
-    /// where another caller may lease and bind it at once.
+    /// Clears the lease state and returns the scope this context owned, if any, for the caller to end with
+    /// <see cref="EndOwnedScope"/> before the base context is disposed. Clearing comes first because disposing a pooled
+    /// context returns it to the pool, where another caller may lease and bind it at once.
     /// </summary>
     public IServiceScope? Release()
     {
@@ -223,6 +234,13 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
     {
         _ownedScope = _GetApplicationServices().GetRequiredService<IServiceScopeFactory>().CreateAsyncScope();
         _boundServices = _ownedScope.ServiceProvider;
+
+        // The scope serves only this context, so the context's own registration resolves to it there: a domain-event
+        // handler injecting the context type then receives the instance being saved, and with it the save's unit.
+        if (_boundServices.GetService<HeadlessPrivateScopeOwner>() is { } owner)
+        {
+            owner.Context = _db;
+        }
 
         return _boundServices;
     }
@@ -302,10 +320,56 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
     }
 
     /// <summary>
-    /// Disposes a scope returned by <see cref="Release"/>. A secondary scope-dispose failure is logged rather than
-    /// thrown, so it never masks the primary disposal exception operators need.
+    /// Ends a scope this context owned, which <see cref="Release"/> or a replaced fallback binding returned. The scope
+    /// may have resolved this very instance (its own registration resolves to it, see
+    /// <see cref="HeadlessPrivateScopeOwner"/>), and disposing the scope disposes what it resolved, so the context's own
+    /// dispose is suppressed meanwhile. The caller ends the scope before disposing the base context: a pooled instance
+    /// is still out of the pool then, so that nested dispose can never return it a second time.
     /// </summary>
-    public static void DisposeScope(IServiceScope? scope, Type contextType)
+    public void EndOwnedScope(IServiceScope? scope)
+    {
+        if (scope is null)
+        {
+            return;
+        }
+
+        IsEndingOwnedScope = true;
+
+        try
+        {
+            _DisposeScope(scope, _db.GetType());
+        }
+        finally
+        {
+            IsEndingOwnedScope = false;
+        }
+    }
+
+    /// <inheritdoc cref="EndOwnedScope"/>
+    public async ValueTask EndOwnedScopeAsync(IServiceScope? scope)
+    {
+        if (scope is null)
+        {
+            return;
+        }
+
+        IsEndingOwnedScope = true;
+
+        try
+        {
+            await _DisposeScopeAsync(scope, _db.GetType()).ConfigureAwait(false);
+        }
+        finally
+        {
+            IsEndingOwnedScope = false;
+        }
+    }
+
+    /// <summary>
+    /// Disposes a scope. A scope-dispose failure is logged rather than thrown, so it never stops the base context's
+    /// disposal that follows, and never masks the primary exception of a fallback rebinding.
+    /// </summary>
+    private static void _DisposeScope(IServiceScope? scope, Type contextType)
     {
         if (scope is null)
         {
@@ -325,8 +389,8 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
         }
     }
 
-    /// <inheritdoc cref="DisposeScope"/>
-    public static async ValueTask DisposeScopeAsync(IServiceScope? scope, Type contextType)
+    /// <inheritdoc cref="_DisposeScope"/>
+    private static async ValueTask _DisposeScopeAsync(IServiceScope? scope, Type contextType)
     {
         if (scope is null)
         {
@@ -357,7 +421,10 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
     {
         builder.AddBuildingBlocksPrimitivesConvertersMappings();
         // The entity mapping runs first: the tenant convention validates the finished mapping of each root.
-        builder.Conventions.Add(_ => new HeadlessEntityModelConvention());
+        builder.Conventions.Add(services => new HeadlessEntityModelConvention(
+            services.GetService<ILoggerFactory>()?.CreateLogger<HeadlessEntityModelConvention>()
+                ?? NullLogger<HeadlessEntityModelConvention>.Instance
+        ));
         builder.Conventions.Add(_ => new HeadlessTenantModelConvention(_db));
     }
 }

@@ -15,7 +15,7 @@ namespace Headless.DistributedLocks.PostgreSql;
 /// (<see cref="OptimisticConnectionMultiplexingDbDistributedLock"/>). The engine decides share-vs-dedicate per
 /// acquisition and, on a dedicated connection, attaches a <see cref="ConnectionMonitor"/> whose active probe backs the
 /// handle's connection-lost token. This adapter keeps the observability queries (<c>pg_locks</c> counts/listing) on the
-/// owned <see cref="NpgsqlDataSource"/> directly, and bridges the engine handle's
+/// shared <see cref="PostgresLockDataSource"/> directly, and bridges the engine handle's
 /// <see cref="IDistributedLease.LostToken"/> onto <see cref="ConnectionScopedLockHandle.ConnectionLostToken"/>.
 /// </summary>
 internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLockStorage, IAsyncDisposable
@@ -23,7 +23,7 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
     private readonly PostgreSqlDistributedLockOptions _options;
     private readonly TimeProvider _timeProvider;
     private readonly ConcurrentDictionary<string, HeldLock> _heldByLockId = new(StringComparer.Ordinal);
-    private readonly NpgsqlDataSource _dataSource;
+    private readonly PostgresLockDataSource _dataSource;
     private readonly string _connectionString;
     private readonly int _commandTimeoutSeconds;
     private readonly TimeSpan _keepaliveCadence;
@@ -42,7 +42,8 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
     /// <param name="options">Resolved provider options (polling fallback, command timeout, keepalive, key prefix).</param>
     /// <param name="storageOptions">Supplies the schema that holds the fence sequence.</param>
     /// <param name="dataSource">
-    /// The provider's own data source owner, never the application's unkeyed <see cref="NpgsqlDataSource"/>. Not
+    /// The provider's <see cref="PostgresLockDataSource"/> connection source, never the application's unkeyed
+    /// <see cref="NpgsqlDataSource"/> itself. Not
     /// disposed by this instance; disposal is owned by the DI registration.
     /// </param>
     /// <param name="timeProvider">Time source used for monitoring sleeps and keepalive cadence.</param>
@@ -57,7 +58,7 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
         _timeProvider = timeProvider;
         // The data source is owned and disposed by the DI registration (a single shared instance across the
         // Postgres consumers), so this storage never disposes it.
-        _dataSource = dataSource.DataSource;
+        _dataSource = dataSource;
         _connectionString = _dataSource.ConnectionString;
         _commandTimeoutSeconds = (int)_options.CommandTimeout.TotalSeconds;
         // Exclusive acquires draw their fencing token in the grant statement, on the session that holds the lock.
@@ -379,9 +380,9 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
 
     private PostgresDatabaseConnection _CreateConnection(string connectionString)
     {
-        // connectionString is the engine's pool key; the storage always opens against its owned data source so an
-        // injected DataSource (with its configuration and pooling) is honored.
-        return new(_dataSource, _timeProvider, _commandTimeoutSeconds);
+        // connectionString is the engine's pool key; the storage always opens against its shared connection source so
+        // an injected DataSource (with its configuration and pooling) is honored.
+        return _dataSource.CreateLockConnection(_timeProvider, _commandTimeoutSeconds);
     }
 
     private PostgreSqlAdvisoryLockKey _CreateKey(string resource)

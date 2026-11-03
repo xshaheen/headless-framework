@@ -804,7 +804,7 @@ FluentValidation extensions for ASP.NET Core file uploads and reusable Headless 
 - `GreaterThanOrEqualTo(bytes)` — minimum file size validation
 - `LessThanOrEqualTo(bytes)` — maximum file size validation
 - `ContentTypes(list)` — MIME type allowlist validation; the rule copies the list when it is built. A failure reports `g:file_unexpected_content_type` and lists the accepted types
-- `HaveSignatures(inspector, predicate)` — magic bytes/file signature validation, reporting `g:file_unexpected_signature`; built on FileSignatures. It opens a new stream through `OpenReadStream()`, asks the `IFileFormatInspector` for the format, and passes it (or `null`) to the predicate; the inspector needs a seekable stream. The rule is asynchronous, so validate with `ValidateAsync`. `Headless.Api.ServiceDefaults` registers an `IFileFormatInspector` over the built-in formats; elsewhere register `new FileFormatInspector()`.
+- `HaveSignatures(inspector, predicate)` — magic bytes/file signature validation, reporting `g:file_unexpected_signature`; built on FileSignatures. It opens a new stream through `OpenReadStream()`, asks the `IFileFormatInspector` for the format, and passes it (or `null`) to the predicate; the inspector needs a seekable stream. The rule is asynchronous, so validate with `ValidateAsync`. `AddHeadlessFileFormatInspector()` (`Headless.FluentValidation` namespace) registers a singleton `IFileFormatInspector` over every format FileSignatures ships, so a validator can take it from its constructor; it is `TryAdd`, so an inspector the application registered first, such as one limited to the formats it accepts, is kept. `Headless.Api.ServiceDefaults` does not register one.
 - The size and content-type rules are typed validators implementing `IFileSizeValidator` and `IFileContentTypeValidator` (`Headless.FluentValidation`), so Headless.OpenApi documents a form's accepted part types and size bounds; `HaveSignatures` is a predicate and documents nothing
 - Validate the upload at the endpoint, where the `IFormFile` is bound. A command handled after the endpoint stores the file carries a reference to the stored content (a blob location, for example), not the live upload
 - `PhoneNumber()` — validates `PhoneNumberRequest` country code and local subscriber number
@@ -825,7 +825,11 @@ using FileSignatures;
 using FileSignatures.Formats;
 using FluentValidation;
 using Headless.Api;
+using Headless.FluentValidation;
 using Microsoft.AspNetCore.Http;
+
+// Registers the IFileFormatInspector that HaveSignatures takes.
+builder.Services.AddHeadlessFileFormatInspector();
 
 public sealed record ProfileRequest(
     IFormFile? Avatar,

@@ -52,6 +52,7 @@ Headless.DistributedLocks
 Headless.DistributedLocks.Abstractions
 Headless.DistributedLocks.Database
 Headless.DistributedLocks.InMemory
+Headless.DistributedLocks.Messaging
 Headless.DistributedLocks.PostgreSql
 Headless.DistributedLocks.Redis
 Headless.DistributedLocks.SqlServer

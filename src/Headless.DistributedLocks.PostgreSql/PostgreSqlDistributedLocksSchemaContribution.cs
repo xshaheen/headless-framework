@@ -2,7 +2,6 @@
 
 using Headless.Hosting.Schema;
 using Headless.Sql.PostgreSql;
-using Npgsql;
 
 namespace Headless.DistributedLocks.PostgreSql;
 
@@ -24,7 +23,10 @@ internal static class PostgreSqlDistributedLocksSchemaContribution
         return $"\"{schema}\".\"{SequenceName}\"";
     }
 
-    public static SchemaContribution Create(DistributedLocksStorageOptions storageOptions, NpgsqlDataSource dataSource)
+    public static SchemaContribution Create(
+        DistributedLocksStorageOptions storageOptions,
+        PostgresLockDataSource dataSource
+    )
     {
         var schema = storageOptions.Schema;
 

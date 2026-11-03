@@ -2,9 +2,9 @@
 
 using System.Collections.Concurrent;
 using Headless.DistributedLocks;
-using Headless.Messaging;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 
 namespace Tests;
@@ -12,7 +12,7 @@ namespace Tests;
 public sealed class SetupTests : TestBase
 {
     [Fact]
-    public void should_contribute_only_an_inert_module_when_messaging_is_absent()
+    public void should_resolve_the_silent_release_signal_and_contribute_no_messaging_when_no_transport_is_configured()
     {
         // given
         var services = new ServiceCollection();
@@ -22,86 +22,39 @@ public sealed class SetupTests : TestBase
         services.AddHeadlessDistributedLocks(setup => setup.UseInMemory());
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 
-        // then - the consumer is declared by the generated module and stays inert without messaging, so waiters fall
-        // back to polling
+        // then - releases announce nothing and waiters fall back to polling; the lock package declares no messaging
         provider.GetRequiredService<IDistributedLock>().Should().NotBeNull();
-        provider.GetService<IBus>().Should().BeNull();
+        provider
+            .GetRequiredService<IDistributedLockReleaseSignal>()
+            .Should()
+            .BeOfType<NullDistributedLockReleaseSignal>();
         services
             .Should()
-            .Contain(static d =>
+            .NotContain(static d =>
                 string.Equals(d.ServiceType.Name, "MessagingModuleContribution", StringComparison.Ordinal)
             );
-        services.Should().NotContain(d => d.ServiceType == typeof(IConsume<DistributedLockReleased>));
     }
 
     [Fact]
-    public void should_register_an_every_instance_lock_released_consumer_when_added_before_messaging()
+    public void should_reference_no_messaging_assembly_from_the_lock_package()
     {
-        // given
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddSingleton(Substitute.For<IBus>());
-
         // when
-        services.AddHeadlessDistributedLocks(setup => setup.UseInMemory());
-        services.AddHeadlessMessaging(_ => { });
-        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        var referenced = typeof(IDistributedLockReleaseSignal).Assembly.GetReferencedAssemblies();
 
-        // then - the release signal keeps its contract, and every process receives it because the waiters it wakes
-        // live in each process
-        provider.GetRequiredService<IDistributedLock>().Should().NotBeNull();
-        var metadata = _SingleLockReleasedConsumer(provider);
-        metadata.MessageName.Should().Be("headless.locks.released");
-        metadata.MessageContractVersion.Should().Be("1");
-        metadata.ConsumerIdentity.Should().Be("headless.distributed-locks.release");
-        metadata.Lane.Should().Be(MessageLane.Bus);
-        metadata.EveryInstance.Should().BeTrue();
-        metadata.Concurrency.Should().Be(1);
+        // then - the cross-host wake-up lives in a bridge package, so the lock package can ship without messaging
+        referenced
+            .Should()
+            .NotContain(static name => name.Name!.StartsWith("Headless.Messaging", StringComparison.Ordinal));
     }
 
     [Fact]
-    public void should_share_one_lock_released_consumer_across_lock_and_semaphore()
+    public async Task should_announce_each_release_through_a_release_signal_registered_before_the_locks()
     {
-        // given
+        // given - an application transport registered first, which the default must not replace
+        var signal = Substitute.For<IDistributedLockReleaseSignal>();
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSingleton(Substitute.For<IBus>());
-
-        // when - the provider registers both lock and semaphore; they share one consumer via the
-        // ICanReceiveLockReleased fan-out, so only a single registry entry must exist.
-        services.AddHeadlessDistributedLocks(setup => setup.UseInMemory());
-        services.AddHeadlessMessaging(_ => { });
-        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
-
-        // then
-        _SingleLockReleasedConsumer(provider);
-        provider.GetRequiredService<IConsumerRegistry>().GetAll().Should().ContainSingle();
-    }
-
-    [Fact]
-    public void should_register_lock_released_consumer_when_added_after_messaging()
-    {
-        // given
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddHeadlessMessaging(_ => { });
-
-        // when - the contribution is applied when messaging starts, so registration order does not matter
-        services.AddHeadlessDistributedLocks(setup => setup.UseInMemory());
-        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
-
-        // then
-        _SingleLockReleasedConsumer(provider).EveryInstance.Should().BeTrue();
-    }
-
-    [Fact]
-    public async Task should_publish_the_release_signal_through_the_registered_bus()
-    {
-        // given
-        var bus = Substitute.For<IBus>();
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddSingleton(bus);
+        services.AddSingleton(signal);
         services.AddHeadlessDistributedLocks(setup => setup.UseInMemory());
         await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         var locks = provider.GetRequiredService<IDistributedLock>();
@@ -112,22 +65,36 @@ public sealed class SetupTests : TestBase
         // when
         await locks.ReleaseAsync(resource, handle!.LeaseId, AbortToken);
 
-        // then — the container's bus carries the signal, still autonomous and Direct.
-        await bus.Received(1)
-            .PublishAsync(
-                Arg.Is<DistributedLockReleased>(message =>
-                    message.Resource == resource && message.LeaseId == handle.LeaseId
-                ),
-                Arg.Is<PublishOptions?>(options => options!.DeliveryMode == DeliveryMode.Direct),
-                Arg.Any<CancellationToken>()
-            );
+        // then
+        signal.Received(1).Announce(resource, handle.LeaseId);
     }
 
     [Fact]
-    public async Task should_log_the_absent_bus_and_still_release_without_messaging()
+    public void should_apply_a_cross_cutting_extension_after_the_provider()
     {
         // given
-        using var logs = new BusAbsenceLoggerProvider();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var replacement = Substitute.For<IDistributedLockReleaseSignal>();
+
+        // when - registered before the provider in the callback, but applied after it
+        services.AddHeadlessDistributedLocks(setup =>
+        {
+            setup.RegisterCrossCuttingExtension(s => s.Replace(ServiceDescriptor.Singleton(replacement)));
+            setup.UseInMemory();
+        });
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+
+        // then - the cross-cutting extension replaced the default the provider registered, and did not count as a
+        // second provider
+        provider.GetRequiredService<IDistributedLockReleaseSignal>().Should().BeSameAs(replacement);
+    }
+
+    [Fact]
+    public async Task should_log_the_absent_release_signal_and_still_release_without_a_transport()
+    {
+        // given
+        using var logs = new EventNameLoggerProvider();
         var services = new ServiceCollection();
         services.AddLogging(builder => builder.AddProvider(logs));
         services.AddHeadlessDistributedLocks(setup => setup.UseInMemory());
@@ -142,7 +109,7 @@ public sealed class SetupTests : TestBase
 
         // then — waiters fall back to polling; the operator sees why, and nothing throws.
         await act.Should().NotThrowAsync();
-        logs.EventNames.Should().Contain("BusAbsent");
+        logs.EventNames.Should().Contain("ReleaseSignalAbsent");
     }
 
     [Fact]
@@ -202,7 +169,7 @@ public sealed class SetupTests : TestBase
     }
 
     /// <summary>Records only the event names the lock primitives log, which is all these tests assert on.</summary>
-    private sealed class BusAbsenceLoggerProvider : ILoggerProvider
+    private sealed class EventNameLoggerProvider : ILoggerProvider
     {
         private readonly ConcurrentBag<string> _eventNames = [];
 
@@ -233,17 +200,5 @@ public sealed class SetupTests : TestBase
                 }
             }
         }
-    }
-
-    // Selecting candidates applies the recorded contributions to the registry, as the bootstrapper does at startup.
-    private static ConsumerMetadata _SingleLockReleasedConsumer(IServiceProvider provider)
-    {
-        provider.GetRequiredService<IConsumerServiceSelector>().SelectCandidates();
-        return provider
-            .GetRequiredService<IConsumerRegistry>()
-            .GetAll()
-            .Should()
-            .ContainSingle(m => m.ConsumerType == typeof(DistributedLock.LockReleasedConsumer))
-            .Subject;
     }
 }

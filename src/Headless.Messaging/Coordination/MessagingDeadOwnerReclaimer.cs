@@ -10,7 +10,7 @@ using Microsoft.Extensions.Options;
 namespace Headless.Messaging.Coordination;
 
 /// <summary>
-/// Messaging reclaim sink for the shared <see cref="DeadOwnerRecoveryBridge{TReclaimer}"/>. Accelerates
+/// Messaging reclaim sink for the shared dead-owner recovery bridge. Accelerates
 /// retry visibility for the outbox (published) and inbox (received) rows still leased by a dead node
 /// identity by fast-forwarding their <c>LockedUntil</c>; the conditional, owner-scoped storage UPDATE keeps
 /// a repeated reclaim idempotent.
@@ -19,22 +19,11 @@ internal sealed class MessagingDeadOwnerReclaimer(
     IDataStorage storage,
     IOptions<MessagingOptions> options,
     ILogger<MessagingDeadOwnerReclaimer> logger,
-    MessagingOutboxes? outboxes = null,
-    IOptions<CoordinationOptions>? coordinationOptions = null,
-    INodeMembership? membership = null
+    MessagingOutboxes? outboxes = null
 ) : IDeadOwnerReclaimer
 {
-    /// <summary>
-    /// The effective reconcile cadence, derived from the coordination dead-retention window. Resolved and, when
-    /// clamped, logged once per host.
-    /// </summary>
-    public TimeSpan ReconcileInterval { get; } =
-        DeadOwnerReconcileInterval.Resolve(
-            options.Value.DeadNodeReconcileInterval,
-            coordinationOptions?.Value,
-            logger,
-            membership
-        );
+    /// <summary>The configured reconcile cadence; the bridge derives the default and clamps it.</summary>
+    public TimeSpan? ReconcileInterval => options.Value.DeadNodeReconcileInterval;
 
     public async Task ReclaimAsync(IReadOnlyCollection<string> owners, CancellationToken cancellationToken)
     {

@@ -391,7 +391,8 @@ internal sealed class HeadlessSaveChangesPipeline(
 
         try
         {
-            // A completed drain is retained across persistence retries. Handler failure is not a per-handler checkpoint.
+            // A completed drain is retained across persistence retries. A replay reaches this point only when no handler
+            // returned (see _EndReplayAfterHandler), so the retained drain holds nothing a replay would need to redo.
             if (!state.DomainEventsPublished.Value)
             {
                 while (_TryTakeDomainOccurrence(state.Context, state.SaveContext) is { } occurrence)
@@ -403,6 +404,7 @@ internal sealed class HeadlessSaveChangesPipeline(
                     if (_MarkHandledOccurrence(state.SaveContext, occurrence))
                     {
                         await dispatcher.DispatchAsync(occurrence, state.CancellationToken).ConfigureAwait(false);
+                        _EndReplayAfterHandler(unitOfWork, commitTransaction);
                     }
 
                     state.SaveContext.DomainEventCursor++;
@@ -465,7 +467,29 @@ internal sealed class HeadlessSaveChangesPipeline(
             if (commitTransaction)
             {
                 state.SaveContext.CommitStarted = true;
-                await transaction.CommitAsync(state.CancellationToken).ConfigureAwait(false);
+                var cancelledBeforeCommit = state.CancellationToken.IsCancellationRequested;
+
+                try
+                {
+                    await transaction.CommitAsync(state.CancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception commitFault)
+                {
+                    // The pipeline commits its observed unit's transaction itself, so it reports the outcome the way
+                    // an owned unit's CompleteAsync does: the unit fails as in-doubt or faulted, not abandoned, and a
+                    // commit that may have landed surfaces as UnitOfWorkInDoubtException.
+                    var reported = await ObservedCommits
+                        .FailAsync(unitOfWork!, commitFault, cancelledBeforeCommit)
+                        .ConfigureAwait(false);
+
+                    if (ReferenceEquals(reported, commitFault))
+                    {
+                        throw;
+                    }
+
+                    throw reported;
+                }
+
                 if (state.AcceptAllChangesOnSuccess)
                 {
                     // Detach the audit rows first: accepting them would snapshot their JSON columns for a row that
@@ -545,6 +569,7 @@ internal sealed class HeadlessSaveChangesPipeline(
                     if (_MarkHandledOccurrence(state.SaveContext, occurrence))
                     {
                         _DispatchDomainEventBlocking(dispatcher, occurrence);
+                        _EndReplayAfterHandler(unitOfWork, commitTransaction);
                     }
 
                     state.SaveContext.DomainEventCursor++;
@@ -588,7 +613,26 @@ internal sealed class HeadlessSaveChangesPipeline(
             if (commitTransaction)
             {
                 state.SaveContext.CommitStarted = true;
-                transaction.Commit();
+
+                try
+                {
+                    transaction.Commit();
+                }
+                catch (Exception commitFault)
+                {
+                    // Same report as the async twin; a synchronous commit takes no token, so none was cancelled.
+                    var reported = _RunBlocking(
+                        ObservedCommits.FailAsync(unitOfWork!, commitFault, cancelledBeforeCommit: false)
+                    );
+
+                    if (ReferenceEquals(reported, commitFault))
+                    {
+                        throw;
+                    }
+
+                    throw reported;
+                }
+
                 if (state.AcceptAllChangesOnSuccess)
                 {
                     // Detach the audit rows first: accepting them would snapshot their JSON columns for a row that
@@ -633,6 +677,23 @@ internal sealed class HeadlessSaveChangesPipeline(
 
             ExceptionDispatchInfo.Capture(caught).Throw();
             throw; // unreachable; satisfies analyzers
+        }
+    }
+
+    /// <summary>
+    /// Ends replay of a pipeline-owned save once a domain-event handler has returned. The execution strategy replays
+    /// only the save, resuming the drain after the last handler that returned, so it never runs that handler again:
+    /// whatever the handler wrote outside the change tracker (a command on the context's connection, a raw-ADO block
+    /// joined through that connection, a transaction-scoped lock) rolls back with the failed attempt and nothing writes
+    /// it again, while the aggregate still commits. The pipeline cannot see what a handler wrote, so any handler that
+    /// returned ends replay. A handler that throws has not returned, so a transient fault inside it still replays and
+    /// re-runs it. A caller-owned save is replayed by the caller's block, which re-runs the handlers.
+    /// </summary>
+    private static void _EndReplayAfterHandler(IUnitOfWork? unitOfWork, bool commitTransaction)
+    {
+        if (commitTransaction)
+        {
+            unitOfWork?.PreventRetry();
         }
     }
 
@@ -775,6 +836,11 @@ internal sealed class HeadlessSaveChangesPipeline(
 
     // The unit-of-work verbs are async-only by contract; the synchronous SaveChanges path blocks on them here,
     // in infrastructure, for the same reason as the domain-event bridge above.
+    private static T _RunBlocking<T>(ValueTask<T> pending)
+    {
+        return pending.IsCompletedSuccessfully ? pending.Result : pending.AsTask().GetAwaiter().GetResult();
+    }
+
     private static void _RunBlocking(ValueTask pending)
     {
         if (pending.IsCompletedSuccessfully)
@@ -910,11 +976,12 @@ internal sealed class HeadlessSaveChangesPipeline(
 /// unit of work for the save's duration, and completes that unit after the commit so audit and message-emitter
 /// work commits atomically with the entity batch and after-commit work drains once the outcome is durable.
 /// <para>
-/// A completed local drain is not repeated by subsequent persistence retries within an owned save.
-/// Handler failures can repeat handler entry; there are no per-handler checkpoints. Local handlers must
-/// remain replay-safe and avoid rollback-unsafe external effects. Once a participant prevents retry
-/// (such as a job write enlisted in the unit of work), any failure propagates and requires a fresh context and
-/// graph. Caller-owned successful saves clear only their saved batches before physical commit; a known outer
+/// An owned save is not replayed once a local handler has returned, because a replay would not run it again and
+/// whatever it wrote outside the change tracker would be lost with the failed attempt. A transient fault inside a
+/// handler, or before any handler ran, still replays, and a replayed handler runs again from its start; local
+/// handlers must remain replay-safe and avoid rollback-unsafe external effects. Once retry is prevented (by a
+/// returned handler, or a participant such as a job write enlisted in the unit of work), any failure propagates
+/// and requires a fresh context and graph. Caller-owned successful saves clear only their saved batches before physical commit; a known outer
 /// rollback requires a fresh context and graph. Outbox storage can enlist atomically; delivery and external
 /// effects remain at-least-once.
 /// </para>

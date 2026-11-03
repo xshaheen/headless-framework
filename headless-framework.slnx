@@ -179,6 +179,7 @@
         <Project Path="src\Headless.DistributedLocks.Abstractions\Headless.DistributedLocks.Abstractions.csproj" />
         <Project Path="src\Headless.DistributedLocks\Headless.DistributedLocks.csproj" />
         <Project Path="src\Headless.DistributedLocks.InMemory\Headless.DistributedLocks.InMemory.csproj" />
+        <Project Path="src\Headless.DistributedLocks.Messaging\Headless.DistributedLocks.Messaging.csproj" />
         <Project Path="src\Headless.DistributedLocks.Database\Headless.DistributedLocks.Database.csproj" />
         <Project Path="src\Headless.DistributedLocks.PostgreSql\Headless.DistributedLocks.PostgreSql.csproj" />
         <Project Path="src\Headless.DistributedLocks.Redis\Headless.DistributedLocks.Redis.csproj" />
@@ -188,6 +189,7 @@
         <Project Path="tests\Headless.DistributedLocks.Composition.Tests.Unit\Headless.DistributedLocks.Composition.Tests.Unit.csproj" />
         <Project Path="tests\Headless.DistributedLocks.Database.Tests.Unit\Headless.DistributedLocks.Database.Tests.Unit.csproj" />
         <Project Path="tests\Headless.DistributedLocks.InMemory.Tests.Integration\Headless.DistributedLocks.InMemory.Tests.Integration.csproj" />
+        <Project Path="tests\Headless.DistributedLocks.Messaging.Tests.Unit\Headless.DistributedLocks.Messaging.Tests.Unit.csproj" />
         <Project Path="tests\Headless.DistributedLocks.PostgreSql.Tests.Integration\Headless.DistributedLocks.PostgreSql.Tests.Integration.csproj" />
         <Project Path="tests\Headless.DistributedLocks.Redis.Tests.Integration\Headless.DistributedLocks.Redis.Tests.Integration.csproj" />
         <Project Path="tests\Headless.DistributedLocks.SqlServer.Tests.Integration\Headless.DistributedLocks.SqlServer.Tests.Integration.csproj" />

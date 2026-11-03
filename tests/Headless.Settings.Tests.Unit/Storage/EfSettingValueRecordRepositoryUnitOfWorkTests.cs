@@ -106,7 +106,11 @@ public sealed class EfSettingValueRecordRepositoryUnitOfWorkTests : TestBase
         var key = SettingValueCacheItem.CalculateCacheKey("App.Theme", "Tenant", "t1");
         await _cache
             .Received(3)
-            .RemoveAllAsync(Arg.Is<IEnumerable<string>>(keys => keys.Single() == key), Arg.Any<CancellationToken>());
+            .UpsertAllAsync(
+                Arg.Is<IDictionary<string, SettingValueCacheItem>>(items => items.Keys.Single() == key),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -125,6 +129,37 @@ public sealed class EfSettingValueRecordRepositoryUnitOfWorkTests : TestBase
         // then
         unit.IsRetryPrevented.Should().BeTrue();
         (await Repository.GetListAsync("Tenant", "t1", AbortToken)).Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task should_write_the_stored_value_to_the_cache_on_a_direct_write()
+    {
+        // given
+        await using var owner = await _CreateOwnerAsync();
+        var value = _Value("App.Theme");
+        var key = SettingValueCacheItem.CalculateCacheKey("App.Theme", "Tenant", "t1");
+        var written = new List<string?>();
+        _cache
+            .When(x =>
+                x.UpsertAllAsync(
+                    Arg.Any<IDictionary<string, SettingValueCacheItem>>(),
+                    Arg.Any<TimeSpan?>(),
+                    Arg.Any<CancellationToken>()
+                )
+            )
+            .Do(call => written.Add(call.Arg<IDictionary<string, SettingValueCacheItem>>()[key].Value));
+
+        // when the row is inserted, updated, saved in a batch, and deleted outside a unit
+        await Repository.InsertAsync(value, AbortToken);
+        value.Value = "light";
+        await Repository.UpdateAsync(value, AbortToken);
+        value.Value = "blue";
+        await Repository.SaveAsync([], [value], [], AbortToken);
+        await Repository.DeleteAsync([value], AbortToken);
+
+        // then each write stores what it wrote (a delete stores an empty entry) instead of removing the entry
+        written.Should().Equal("dark", "light", "blue", null);
+        await _cache.DidNotReceive().RemoveAllAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>());
     }
 
     protected override async ValueTask DisposeAsyncCore()

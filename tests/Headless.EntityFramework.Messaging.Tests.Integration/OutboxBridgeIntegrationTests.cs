@@ -354,6 +354,7 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         bool synchronous
     )
     {
+        // No domain-event handler runs, so the replay loses nothing and re-publishes the captured occurrences.
         var fault = new OutboxFault { FailuresRemaining = 1 };
         await using var provider = await _BuildProviderAsync(
             services => _AddFaultingDispatcher(services, fault),
@@ -362,19 +363,18 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<BridgeTestDbContext>();
         var order = new OrderEntity { Name = "retry" };
-        order.EmitShipping();
+        order.EmitIntegrationEvent(new OrderShipped("evt-derived-shipped"));
+        order.EmitIntegrationEvent(new OrderInvoiced("evt-derived-invoiced"));
+        var captured = order.GetIntegrationEvents().ToArray();
         db.Orders.Add(order);
 
         await _SaveAsync(db, synchronous);
 
-        var evidence = provider.GetRequiredService<EmissionEvidence>();
-        evidence.LocalHandlerCalls.Should().Be(1);
-        evidence.Children.Should().HaveCount(2);
         fault.Attempts.Should().HaveCount(2);
         fault.Attempts[0].Should().Equal(fault.Attempts[1]);
         var rows = await _ReadPublishedAsync(provider, "evt-derived");
         rows.Should().HaveCount(2);
-        foreach (var occurrence in evidence.Children)
+        foreach (var occurrence in captured)
         {
             _AssertOccurrence(
                 rows.Single(row => string.Equals(row.Id, occurrence.EventId, StringComparison.Ordinal)),
@@ -384,6 +384,36 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
 
         (await _CountOrdersAsync()).Should().Be(1);
         order.GetIntegrationEvents().Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task should_surface_a_transient_outbox_fault_without_replay_after_a_domain_handler_ran(
+        bool synchronous
+    )
+    {
+        // The handler derived the integration events; a replay would resume after it without running it again, so
+        // the pipeline ends replay once it returned and the fault surfaces with nothing committed.
+        var fault = new OutboxFault { FailuresRemaining = 1 };
+        await using var provider = await _BuildProviderAsync(
+            services => _AddFaultingDispatcher(services, fault),
+            options => options.ReplaceService<IExecutionStrategyFactory, RetryOnceStrategyFactory>()
+        );
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<BridgeTestDbContext>();
+        var order = new OrderEntity { Name = "no-replay" };
+        order.EmitShipping();
+        db.Orders.Add(order);
+
+        var act = async () => await _SaveAsync(db, synchronous);
+
+        await act.Should().ThrowAsync<TransientOutboxException>();
+        var evidence = provider.GetRequiredService<EmissionEvidence>();
+        evidence.LocalHandlerCalls.Should().Be(1);
+        fault.Attempts.Should().ContainSingle();
+        (await _ReadPublishedAsync(provider, "evt-derived")).Should().BeEmpty();
+        (await _CountOrdersAsync()).Should().Be(0);
     }
 
     [Fact]

@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.DistributedLocks;
-using Headless.Messaging;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -109,33 +108,24 @@ public sealed class DistributedReadWriteLockSetupTests : TestBase
     }
 
     [Fact]
-    public void should_register_reader_writer_lock_as_can_receive_lock_released_seam_with_one_consumer()
+    public void should_register_reader_writer_lock_as_release_listener()
     {
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSingleton(Substitute.For<IBus>());
 
         // when
         services.AddHeadlessDistributedLocks(setup => setup.UseInMemory());
-        services.AddHeadlessMessaging(_ => { });
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 
-        // then - the release fan-out reaches the same reader-writer singleton, and joining it adds no second consumer
-        var receivers = provider.GetServices<ICanReceiveLockReleased>().ToList();
+        // then - the release fan-out reaches the same reader-writer singleton
+        var receivers = provider.GetServices<IDistributedLockReleaseListener>().ToList();
         receivers.Should().ContainSingle(r => r is DistributedReadWriteLock);
         receivers
             .OfType<DistributedReadWriteLock>()
             .Single()
             .Should()
             .BeSameAs(provider.GetRequiredService<DistributedReadWriteLock>());
-
-        provider.GetRequiredService<IConsumerServiceSelector>().SelectCandidates();
-        provider
-            .GetRequiredService<IConsumerRegistry>()
-            .GetAll()
-            .Should()
-            .ContainSingle(m => m.ConsumerType == typeof(DistributedLock.LockReleasedConsumer));
     }
 
     private sealed class MarkerService

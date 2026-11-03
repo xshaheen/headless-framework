@@ -146,6 +146,7 @@ internal sealed class ConnectionScopedDistributedLock(
         Argument.IsLessThanOrEqualTo(resource.Length, lockOptions.MaxResourceNameLength, paramName: nameof(resource));
 
         DistributedLockCoreHelpers.ValidateAcquireTimeout(options?.AcquireTimeout);
+        DistributedLockCoreHelpers.ValidateReleaseNotification(options);
 
         var acquireTimeout = options?.AcquireTimeout ?? DefaultAcquireTimeout;
         var observeLoss = (options?.Monitoring ?? LockMonitoringMode.None) != LockMonitoringMode.None;
@@ -195,7 +196,7 @@ internal sealed class ConnectionScopedDistributedLock(
                         waited,
                         options?.ReleaseOnDispose ?? true,
                         timeProvider,
-                        _ReleaseAsync,
+                        options?.NotifyWaitersOnRelease == false ? _ReleaseWithoutWakeAsync : _ReleaseAsync,
                         _IsHeldAsync,
                         logger
                     );
@@ -440,6 +441,12 @@ internal sealed class ConnectionScopedDistributedLock(
     {
         await storage.ReleaseAsync(handle, cancellationToken).ConfigureAwait(false);
         await _PublishReleaseAsync(handle.Resource, handle.LeaseId).ConfigureAwait(false);
+    }
+
+    // For a try-once resource nobody waits on: the unlock alone, with no NOTIFY or other wake-up to send.
+    private ValueTask _ReleaseWithoutWakeAsync(ConnectionScopedLockHandle handle, CancellationToken cancellationToken)
+    {
+        return storage.ReleaseAsync(handle, cancellationToken);
     }
 
     private ValueTask<bool> _IsHeldAsync(ConnectionScopedLockHandle handle, CancellationToken cancellationToken)

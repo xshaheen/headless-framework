@@ -1,6 +1,6 @@
 ---
 domain: Distributed Locks
-packages: DistributedLocks.Abstractions, DistributedLocks, DistributedLocks.Database, DistributedLocks.InMemory, DistributedLocks.PostgreSql, DistributedLocks.Redis, DistributedLocks.SqlServer
+packages: DistributedLocks.Abstractions, DistributedLocks, DistributedLocks.Database, DistributedLocks.InMemory, DistributedLocks.Messaging, DistributedLocks.PostgreSql, DistributedLocks.Redis, DistributedLocks.SqlServer
 ---
 
 # Distributed Locks
@@ -26,7 +26,8 @@ Use `IDistributedReadWriteLock` when concurrent readers are safe and writers nee
 - A `DistributedSemaphoreRequest`'s `MaxCount` is the semaphore's capacity, not a permit count: a composite takes exactly one slot of each named semaphore, and naming one resource twice with different `MaxCount` values throws before any provider call. There is no all-or-nothing way to take N permits of a *single* semaphore today — repeated `AcquireAsync(...)` calls can split permits between two contending callers, and a composite cannot fix it (see [Composite Acquisition](#composite-acquisition)).
 - Sizing a connection pool for PostgreSQL or SQL Server: a reader-writer composite over N resources pins N connections for the entire hold, because those backends are connection-scoped. Size for your largest composite.
 - When implementing a custom `IDistributedLock`, `IDistributedReadWriteLock`, or `IDistributedSemaphoreProvider`, satisfy `IDistributedLockEnvironment` — the base interface all three extend — by exposing `TimeProvider`, `Logger`, `DefaultTimeUntilExpires`, and `DefaultAcquireTimeout` (the composite coordinator reads all four off the provider), and preserve ordinal resource identity. If the backend aliases ordinal-distinct names, reject non-canonical names or require callers to canonicalize them before composite acquisition; normalizing only inside the provider is too late.
-- Per-call configuration is bundled into `DistributedLockAcquireOptions` (`TimeUntilExpires`, `AcquireTimeout`, `ReleaseOnDispose`, `Monitoring`). Omit the argument to use defaults; use `with` expressions to derive variants.
+- Per-call configuration is bundled into `DistributedLockAcquireOptions` (`TimeUntilExpires`, `AcquireTimeout`, `ReleaseOnDispose`, `Monitoring`, `NotifyWaitersOnRelease`). Omit the argument to use defaults; use `with` expressions to derive variants.
+- Each release of an `IDistributedLock` lease sends a wake-up so waiting acquirers retry at once: on the storage-backed providers (in-memory, Redis), a messaging broadcast to every instance once `UseMessagingReleaseSignal()` from `Headless.DistributedLocks.Messaging` is configured, otherwise nothing; a `pg_notify` on PostgreSQL. For a resource no caller ever waits on, where every acquirer tries once with `AcquireTimeout = TimeSpan.Zero` (one instance runs a periodic task per tick), set `NotifyWaitersOnRelease = false` to skip it. The provider rejects `false` with any other `AcquireTimeout` (`ArgumentException`), and a waiter that does exist still acquires the lock on its next poll.
 - Always `await using` the returned lock when `ReleaseOnDispose` is `true` (the default); set `ReleaseOnDispose = false` only when ownership is deliberately transferred and the caller will release explicitly.
 - Set `Monitoring = LockMonitoringMode.Monitor` when work should observe lease loss through `IDistributedLease.LostToken`; set `Monitoring = LockMonitoringMode.AutoExtend` only when long work should renew its own lease in the background (it implies `Monitor`).
 - The Tus file-lock adapter (`Headless.Tus.DistributedLocks`) auto-extends its lease but cannot observe `LostToken`: tusdotnet's `ITusFileLock` has no hook for lease loss, so a request whose lease is lost keeps writing until it ends. See [Tus](tus.md#concurrent-patch-safety).
@@ -38,7 +39,7 @@ Use `IDistributedReadWriteLock` when concurrent readers are safe and writers nee
 - Use `Headless.DistributedLocks.PostgreSql` when the protected resource is already in PostgreSQL or when transaction-coupled advisory locks are required. Standard session-scoped Postgres locks require direct connections or PgBouncer session pooling.
 - For connection-scoped (database) locks there is no TTL and no finalizer reclaim: always dispose the handle (`await using`) or call `ReleaseAsync()`. An abandoned handle leaks its connection and advisory lock until the provider is disposed. Connection death is surfaced through `LostToken` only when monitoring is enabled, so observe that token for monitored handles rather than assuming a lease will expire.
 - Default lock expiration is 20 minutes and default acquire timeout is 30 seconds. Override them per call via `DistributedLockAcquireOptions`; `DistributedLockOptions` configures key prefix and waiter/resource limits.
-- If `Headless.Messaging` is registered, lock release wake-ups are push-based and use `IBus` with `DeliveryMode.Direct`. If no `IBus` is registered, the provider still works and falls back to polling backoff with a one-time warning.
+- For push-based release wake-ups on the in-memory or Redis provider, reference `Headless.DistributedLocks.Messaging` and call `setup.UseMessagingReleaseSignal()` on the lock builder; it publishes through `IBus` with `DeliveryMode.Direct`. `Headless.DistributedLocks` does not reference messaging: without that call (or another `IDistributedLockReleaseSignal`), the provider still works and falls back to polling backoff with a one-time warning, even when the host registers `Headless.Messaging`.
 - `Headless.Messaging` uses a keyed `IDistributedLock` registration under `"headless.messaging"`; an un-keyed app lock provider is not automatically used by message retry processors.
 - Use `AddHeadlessDistributedLocks(setup => setup.UseRedis())` for Redis-backed mutex, reader-writer, and semaphore primitives. PostgreSQL and SQL Server providers intentionally register mutex + reader-writer only.
 
@@ -166,13 +167,17 @@ TCP keepalive remains complementary, not redundant. Keepalive (`PostgreSqlDistri
 
 **Optimistic connection multiplexing.** Opening one physical connection per uncontended lock is wasteful, so the engine multiplexes: several uncontended advisory locks on *distinct* keys share a single physical connection. Two situations force a transparent fall back to a *dedicated* connection: (1) the acquire would block (contention — a dedicated connection lets PostgreSQL serialize the waiter correctly without holding up the shared connection's other locks or their release); and (2) two resource strings resolve to the *same* advisory key (a key collision — advisory locks are re-entrant per session, so sharing one connection would let two callers each believe they hold an exclusive lock; routing the colliding acquirer to its own connection makes the database serialize them). The trade-off is shared-connection efficiency in the common uncontended case versus a dedicated connection exactly when correctness or progress demands it. This is internal: callers see only cheaper connection usage, never different lock semantics.
 
-**A failed release ends the session.** When an unlock throws, or an acquire fails and its cleanup throws `LockCleanupFailedException`, the lock may still be held on that session, and a connection returned to the driver pool keeps its session (and the lock) alive until the pool reuses or evicts it. The engine therefore never pools such a connection: it clears the driver pool and disposes the connection, which closes the session and frees the lock. A connection that is already closed or broken when this happens is only disposed: its session is gone, so it holds no lock, and the driver does not pool it. The failure still surfaces to the caller of `ReleaseAsync()`. Clearing the pool also drops its idle connections: on PostgreSQL that is the whole data source, including a consumer-supplied `PostgreSqlDistributedLockOptions.DataSource` shared with the application; on SQL Server it is the connection-string pool. This cost applies only on the failure path. On a multiplexed PostgreSQL connection, the connection accepts no new locks after the failure, and the failed lock stays held until the last other lock on that connection releases; the engine never force-closes a connection that still holds other locks, because that would drop their locks without signalling their `LostToken`.
+**A failed release ends the session.** When an unlock throws, or an acquire fails and its cleanup throws `LockCleanupFailedException`, the lock may still be held on that session, and a connection returned to the driver pool keeps its session (and the lock) alive until the pool reuses or evicts it. The engine therefore never pools such a connection: it clears the driver pool and disposes the connection, which closes the session and frees the lock. A connection that is already closed or broken when this happens is only disposed: its session is gone, so it holds no lock, and the driver does not pool it. The failure still surfaces to the caller of `ReleaseAsync()`. Clearing the pool also drops its idle connections: on PostgreSQL that is the whole data source, including a consumer-supplied `PostgreSqlDistributedLockOptions.DataSource` shared with the application, or the shared connection-string pool under the parameterless `UsePostgreSql()`; on SQL Server it is the connection-string pool. This cost applies only on the failure path. On a multiplexed PostgreSQL connection, the connection accepts no new locks after the failure, and the failed lock stays held until the last other lock on that connection releases; the engine never force-closes a connection that still holds other locks, because that would drop their locks without signalling their `LostToken`.
 
-### Messaging Wake-ups
+### Release Wake-ups
 
-`DistributedLock` can publish `DistributedLockReleased` through `IBus` with `DeliveryMode.Direct` so waiters wake quickly without involving durable storage or an active unit of work. `DistributedLock` is a framework-internal singleton: its DI factory resolves the registered `IBus`, itself an autonomous singleton that never reads a caller's unit of work, so the notification is always autonomous regardless of any caller's transaction. The message is a best-effort hint; polling and lease expiry remain the correctness floor. A release starts the publish but does not wait for the broker, so `ReleaseAsync` returns once storage confirms the removal; a publish failure is logged as `LockReleasePublishFailed` and never fails the release. The same message also nudges active lease monitors for that resource so loss validation can happen before the next polling cadence. Messaging is optional: when no bus is registered, lock acquisition and lease monitoring fall back to polling. This keeps distributed locks usable without forcing `Headless.Messaging`. Reader-writer releases publish the same message, and blocked reader-writer acquirers in the process wake on it the same way, one waiter per release, with backoff as the fallback; it does not nudge reader-writer lease monitors.
+Every release on the storage-backed providers (in-memory, Redis) is announced through the registered `IDistributedLockReleaseSignal`, so waiters on other hosts can retry at once instead of on their next backoff poll. The signal is a best-effort hint; polling and lease expiry remain the correctness floor. `Headless.DistributedLocks` registers a silent default (`TryAdd`) that announces nothing and logs `ReleaseSignalAbsent` (`EventId = 16`, Warning) once when it is first resolved, so waiters fall back to polling and the lock family stays free of any messaging dependency. A release with `NotifyWaitersOnRelease = false` announces nothing whatever signal is registered.
 
-The release signal is published as `headless.locks.released` (contract version `1`, `DistributedLockReleased.MessageName`), whatever naming conventions the host configures, and consumed by an [every-instance Bus consumer](messaging.md#every-instance-bus-delivery) with the identity `headless.distributed-locks.release`. A waiter lives in one process, so every process must receive every release: a competing subscription would hand the signal to one replica and leave the waiters in the others on their backoff. Delivery is at most once, and a release published while a process is not subscribed never arrives there; that waiter wakes on its next backoff poll (capped at 3 seconds plus up to 25% jitter), so the consumer needs no reconnect hook. The transport must support every-instance delivery: AWS SNS/SQS does not, and a host that combines distributed locks with it fails at startup naming the consumer and the provider. `ConsumeOnly` never filters every-instance consumers, so a host that limits its consumers still receives release signals.
+The transport is a separate concern. `Headless.DistributedLocks.Messaging` supplies the bus transport: `setup.UseMessagingReleaseSignal()` replaces the silent default with a signal that publishes `DistributedLockReleased` through `IBus` with `DeliveryMode.Direct`, and registers the consumer that hands each delivered release to every `IDistributedLockReleaseListener` in the host. Each of the three providers registers its own singleton as a listener: a mutex release wakes one waiter and nudges active lease monitors for that resource so loss validation happens before the next polling cadence; a semaphore release wakes one slot waiter; a reader-writer release wakes one blocked reader-writer acquirer and does not nudge reader-writer lease monitors. A release starts the publish but does not wait for the broker, so `ReleaseAsync` returns once storage confirms the removal; a publish failure is logged as `LockReleasePublishFailed` (`EventId = 17`) and never fails the release. The publishing signal is a framework-internal singleton over the registered `IBus`, an autonomous singleton that never reads a caller's unit of work, so the notification is always autonomous regardless of any caller's transaction.
+
+To use another transport, implement `IDistributedLockReleaseSignal` (its `Announce(resource, leaseId)` runs on the release path, so it must not throw or wait for I/O) and register it before `AddHeadlessDistributedLocks(...)`, or from `setup.RegisterCrossCuttingExtension(...)` with `services.Replace(...)`. On the receiving side, resolve `IEnumerable<IDistributedLockReleaseListener>` and call `OnReleased(resource, leaseId)` on each; it only pulses in-process events, so the transport may call it on its delivery thread.
+
+The bus signal is published as `headless.locks.released` (contract version `1`, `DistributedLockReleased.MessageName`), whatever naming conventions the host configures, and consumed by an [every-instance Bus consumer](messaging.md#every-instance-bus-delivery) with the identity `headless.distributed-locks.release`. A waiter lives in one process, so every process must receive every release: a competing subscription would hand the signal to one replica and leave the waiters in the others on their backoff. Delivery is at most once, and a release published while a process is not subscribed never arrives there; that waiter wakes on its next backoff poll (capped at 3 seconds plus up to 25% jitter), so the consumer needs no reconnect hook. The transport must support every-instance delivery: AWS SNS/SQS does not, and a host that combines `UseMessagingReleaseSignal()` with it fails at startup naming the consumer and the provider. `ConsumeOnly` never filters every-instance consumers, so a host that limits its consumers still receives release signals.
 
 ### Observability
 
@@ -281,7 +286,7 @@ Ordinal sorting cannot fix that, because neither call ever sees the full set. A 
 
 Use `IDistributedSemaphoreProvider` when a resource may have N concurrent holders. `CreateSemaphore(resource, maxCount)` binds capacity to the returned semaphore instance, so its acquire calls cannot disagree about `maxCount`; all callers must use the same `maxCount` for a given distributed resource because mixed counts are undefined. Acquired slots return the same `IDistributedLease` handle used by mutex locks: `ReleaseAsync()`, `RenewAsync(...)`, `LostToken`, `LockMonitoringMode.Monitor`, `LockMonitoringMode.AutoExtend`, and `FencingToken` all flow through the same surface.
 
-Redis semaphores store live holders in a ZSET keyed by lease id with expiration timestamps as scores. Lua uses Redis server `TIME`; acquire prunes expired holders before checking capacity, while count and validate stay read-only and exclude expired scores without mutating the ZSET. The holders key gets a safety TTL of at least `ttl * 2` without shrinking an existing longer key TTL. Each successful slot grant increments the same per-resource fence counter model used by Redis mutex locks. Semaphore release publishes `DistributedLockReleased`, so waiters can wake through the same optional direct bus path as mutex waiters; without messaging they fall back to polling backoff.
+Redis semaphores store live holders in a ZSET keyed by lease id with expiration timestamps as scores. Lua uses Redis server `TIME`; acquire prunes expired holders before checking capacity, while count and validate stay read-only and exclude expired scores without mutating the ZSET. The holders key gets a safety TTL of at least `ttl * 2` without shrinking an existing longer key TTL. Each successful slot grant increments the same per-resource fence counter model used by Redis mutex locks. Semaphore release is announced through the same `IDistributedLockReleaseSignal` as a mutex release, so waiters wake through the optional bus transport (`UseMessagingReleaseSignal()`); without it they fall back to polling backoff.
 
 ```csharp
 var semaphore = semaphoreProvider.CreateSemaphore("downstream:billing-api", maxCount: 5);
@@ -455,15 +460,16 @@ Provides the `DistributedLock` implementation and setup extensions.
 - `IDistributedSemaphoreStorage` defines acquire, extend, validate, release, and holder-count operations for storage providers.
 - `DistributedLockOptions` configures key prefix, resource name length, waiter limits, and lease-monitor cadence fractions.
 - `AddHeadlessDistributedLocks(...)` is the single root registration entry point (it returns the `IServiceCollection` for chaining); provider packages contribute `Use...` methods on the `HeadlessDistributedLocksSetupBuilder`.
-- `AddHeadlessDistributedLocks(...)` contributes the package's generated messaging module, which declares the every-instance `DistributedLockReleased` consumer (`headless.distributed-locks.release`) and the `headless.locks.released` message contract.
+- `IDistributedLockReleaseSignal` announces each release to waiters on other hosts; the default announces nothing. `IDistributedLockReleaseListener` is the receiving side: the mutex, semaphore, and reader-writer providers each register their singleton under it. See [Release Wake-ups](#release-wake-ups).
+- `HeadlessDistributedLocksSetupBuilder.RegisterCrossCuttingExtension(Action<IServiceCollection>)` runs a registration after the selected provider's, without counting as a provider. Bridge packages such as `Headless.DistributedLocks.Messaging` use it to replace a default the provider registered.
 - `IDistributedLocksOptionsExtension` is the setup-time hook used by provider packages to wire supported primitives.
 - Composite acquisition over any provider, as extension methods on the Abstractions contracts: `TryAcquireAllAsync(...)` / `AcquireAllAsync(...)` on `IDistributedLock` over `IEnumerable<string>`; on `IDistributedReadWriteLock` over a mixed `IEnumerable<DistributedReadWriteLockRequest>` set, plus the uniform-mode sugar `TryAcquireAllReadAsync(...)` / `AcquireAllReadAsync(...)` / `TryAcquireAllWriteAsync(...)` / `AcquireAllWriteAsync(...)`; and on `IDistributedSemaphoreProvider` over `IEnumerable<DistributedSemaphoreRequest>`. They live here, not in Abstractions, because the shared coordinator behind them is implementation; reference this package to use them.
 - `TryUsingAsync(resource, work, ...)` convenience that acquires, executes work, and releases — prefer this over manual try/finally for simple guarded execution.
 
 ### Design constraints
 
-- `IBus` is optional. When present, release notifications use `DeliveryMode.Direct` as best-effort wake-up hints; without it, waiters fall back to polling backoff and a warning is logged once when the provider is constructed.
-- When messaging is present, the release consumer registers at messaging startup whether `AddHeadlessDistributedLocks(...)` runs before or after `AddHeadlessMessaging(...)`; without messaging, waiters fall back to polling.
+- The package references no messaging assembly. Without a release transport, waiters fall back to polling backoff and `ReleaseSignalAbsent` is logged once; `Headless.DistributedLocks.Messaging` adds the bus transport.
+- An `IDistributedLockReleaseSignal` registered before `AddHeadlessDistributedLocks(...)` wins over the silent default, which is added with `TryAdd`.
 - `TryAcquireAsync(..., new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero })` performs a single storage attempt with an internal safety deadline. If that deadline fires (lock-store stall, caller token never cancels), the acquire still returns `null` but emits the `TryOnceSafetyDeadlineFired` log event (`EventId = 24`, Warning) and tags the failure metric `reason=stalled`, distinguishing a stall from routine contention (`reason=contended`). Applies to mutex, reader-writer, and semaphore non-blocking acquires.
 - Lease monitors drain before dispose-time release, so monitoring does not add release retry latency during shutdown.
 - Multi-resource acquisition validates, deduplicates, and ordinal-sorts the complete input before the first provider call, then applies one acquire timeout across the canonical set. A zero timeout gives every canonical resource one non-blocking attempt. Partial acquisition is compensated by exhaustive reverse-order release and disposal; it is not transactional. The same coordinator backs all three primitives.
@@ -493,6 +499,7 @@ builder.Services.AddHeadlessDistributedLocks(setup =>
     });
 
     setup.UseRedis(); // from Headless.DistributedLocks.Redis
+    setup.UseMessagingReleaseSignal(); // optional, from Headless.DistributedLocks.Messaging
 });
 
 builder.Services.AddHeadlessMessaging(setup =>
@@ -563,7 +570,8 @@ await using var lease = await lockProvider.AcquireAsync(
 - Redis and InMemory providers register `IDistributedLock`, `IDistributedReadWriteLock`, and `IDistributedSemaphoreProvider`.
 - PostgreSQL and SQL Server providers register `IDistributedLock` and `IDistributedReadWriteLock`.
 - Registers `TimeProvider.System` and `IGuidGenerator` when absent.
-- Auto-registers the shared, every-instance `DistributedLockReleased` messaging consumer through the package's generated messaging module. The contribution is inert when messaging is absent; waiters still use polling.
+- Registers the silent `IDistributedLockReleaseSignal` when none is registered, and each provider singleton as an `IDistributedLockReleaseListener`.
+- Applies cross-cutting extensions after the provider's registration.
 
 ---
 
@@ -658,6 +666,50 @@ Mutex, reader-writer, and semaphore TTL checks use the registered `TimeProvider`
 
 ---
 
+## Headless.DistributedLocks.Messaging
+
+Pushes lock-release wake-ups to every host over the messaging bus.
+
+### API and behavior
+
+- `setup.UseMessagingReleaseSignal()` on `HeadlessDistributedLocksSetupBuilder` replaces the silent `IDistributedLockReleaseSignal` with one that publishes `DistributedLockReleased` through `IBus`, and contributes the package's generated messaging module through `ConfigureMessaging(...)`.
+- `DistributedLockReleased` (`Resource`, `LeaseId`) is the wire message: `headless.locks.released`, contract version `1`, `DistributedLockReleased.MessageName`.
+- The internal consumer (`headless.distributed-locks.release`, every-instance, concurrency 1) hands each release to every `IDistributedLockReleaseListener`, so one consumer serves the mutex, semaphore, and reader-writer providers.
+
+### Design constraints
+
+- Requires `AddHeadlessMessaging(...)` in the host, before or after `AddHeadlessDistributedLocks(...)`; the contribution applies when messaging starts. Without messaging, the contribution stays inert, and resolving the lock fails because no `IBus` is registered.
+- The publish is `DeliveryMode.Direct` with `IsSystemMessage = true` and `CancellationToken.None`: a release from host scope carries no tenant, and the caller's token must not cancel a wake-up for other hosts. The release does not wait for the broker; a failure is logged as `LockReleasePublishFailed` (`EventId = 17`, Warning). Each delivered release logs `ProcessingLockReleased` (`EventId = 14`, Debug).
+- The transport must support every-instance delivery. See [Release Wake-ups](#release-wake-ups).
+
+### Install
+
+```bash
+dotnet add package Headless.DistributedLocks.Messaging
+```
+
+### Setup and use
+
+```csharp
+builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis().UseMessagingReleaseSignal());
+
+builder.Services.AddHeadlessMessaging(setup =>
+{
+    // setup.Use... storage and transport providers
+});
+```
+
+### Configuration
+
+No options. The lock provider's `DistributedLockOptions` and the host's messaging options apply.
+
+### Runtime behavior
+
+- Registers the messaging `IDistributedLockReleaseSignal` (replacing the silent default), the `DistributedLockReleased` message contract, and the every-instance release consumer.
+- The PostgreSQL and SQL Server providers do not announce through `IDistributedLockReleaseSignal`: their connection-scoped engine wakes its own waiters (`pg_notify` on PostgreSQL), so this package changes nothing for them.
+
+---
+
 ## Headless.DistributedLocks.PostgreSql
 
 PostgreSQL advisory-lock provider for mutex and reader-writer distributed locks.
@@ -683,7 +735,8 @@ PostgreSQL advisory-lock provider for mutex and reader-writer distributed locks.
 - Postgres does not provide an N-holder advisory semaphore; use Redis semaphores or a separate slot-table design when N-holder concurrency is required. Because there is no semaphore here, **semaphore composites do not apply to this provider**. Mutex and reader-writer composites do.
 - A composite acquisition over N resources **pins N connections for the whole duration of the hold**, because these locks are connection-scoped and there is no TTL-backed lease to hold a resource without a live session. Size the connection pool for the largest composite the application forms. See [Connection-Scoped Locks](#connection-scoped-locks-database-engine).
 - The provider multiplexes uncontended advisory locks on distinct keys onto a shared physical connection and falls back to a dedicated connection on contention or advisory-key collision. This lowers connection usage in the common case without changing lock semantics — but it does not reduce a composite's hold-time connection count, since contended children take dedicated connections by design.
-- Connection-death detection for an idle lock holder is active: monitored handles (`LostToken`) run a periodic bounded-timeout server-side probe whose command timeout catches silently-dropped half-open connections that Npgsql's `StateChange` event alone would miss until the next operation. TCP keepalive is complementary, not redundant: when the provider builds its own data source from `ConnectionString` it defaults `KeepAlive` (30s, see `PostgreSqlDistributedLockOptions.KeepAlive`) unless the connection string already sets one, surfacing dead sockets faster at the transport layer. If you inject your own `DataSource`, set `Keepalive` on it yourself for the tightest detection window; the active monitor still operates regardless.
+- Connection-death detection for an idle lock holder is active: monitored handles (`LostToken`) run a periodic bounded-timeout server-side probe whose command timeout catches silently-dropped half-open connections that Npgsql's `StateChange` event alone would miss until the next operation. TCP keepalive is complementary, not redundant: when the provider builds its own data source from `ConnectionString` it defaults `KeepAlive` (30s, see `PostgreSqlDistributedLockOptions.KeepAlive`) unless the connection string already sets one, surfacing dead sockets faster at the transport layer. If you inject your own `DataSource`, or use the parameterless `UsePostgreSql()`, set `Keepalive` on the application's data source or connection string yourself for the tightest detection window; the active monitor still operates regardless.
+- **Which pool the locks use.** The parameterless `UsePostgreSql()` takes the container's `NpgsqlDataSource` when the application registered one (for example with `AddNpgsqlDataSource`), and otherwise the `AddPostgreSqlSql` connection string, opening plain connections on Npgsql's pool for that string, the pool every other Headless feature on the same string already uses. Neither path opens a second pool against the server, and neither rewrites `KeepAlive`. An explicit `UsePostgreSql(connectionString)` (or `options.ConnectionString`) builds a provider-owned `NpgsqlDataSource`, its own pool with its own `Max Pool Size`, with the `KeepAlive` default applied; choose it when you want lock-pinned connections isolated from application queries. The provider never registers its data source as the container's `NpgsqlDataSource`, so an application or EF `UseNpgsql()` that resolves that service gets its own. On a shared pool, a failed release clears that pool (see [Connection-Scoped Locks](#connection-scoped-locks-database-engine)), and lock holders count against its `Max Pool Size`.
 
 ### Install
 
@@ -701,7 +754,7 @@ builder.Services.AddHeadlessDistributedLocks(setup =>
         options.KeyPrefix = "distributed-lock:";
     })
 );
-// or reuse the connection from services.AddPostgreSqlSql(connectionString): setup.UsePostgreSql()
+// or reuse the application's NpgsqlDataSource, else the AddPostgreSqlSql connection: setup.UsePostgreSql()
 
 await using var lease = await lockProvider.AcquireAsync(
     "orders:123",
@@ -853,7 +906,7 @@ options.DataSource = dataSource; // preferred when already registered
 options.KeyPrefix = "distributed-lock:";
 options.PollingFallback = TimeSpan.FromMilliseconds(100);
 options.EnablePushWakeup = true;
-options.KeepAlive = TimeSpan.FromSeconds(30); // applied only to a provider-built DataSource
+options.KeepAlive = TimeSpan.FromSeconds(30); // applied only to a provider-built DataSource (explicit ConnectionString)
 ```
 
 The provider keeps its data source to itself: it neither registers nor resolves an unkeyed `NpgsqlDataSource`. A host that registers its own data source for application data (`AddNpgsqlDataSource`, Aspire, or EF Core) keeps it in either registration order, and locks always run on the database `ConnectionString` or `DataSource` names. To share the application's pool, pass it as `DataSource` explicitly.

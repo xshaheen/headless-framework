@@ -5,7 +5,6 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Headless.Checks;
-using Headless.Messaging;
 using Microsoft.Extensions.Logging;
 using Nito.AsyncEx;
 using Polly;
@@ -16,7 +15,7 @@ namespace Headless.DistributedLocks;
 /// <summary>
 /// The default mutex (exclusive) distributed-lock provider. Implements <see cref="IDistributedLock"/>
 /// using a compare-and-set storage backend (<see cref="IDistributedLockStorage"/>) with exponential
-/// backoff and optional push-based wake-up via the messaging bus.
+/// backoff and optional push-based wake-up through an <see cref="IDistributedLockReleaseSignal"/>.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -24,9 +23,10 @@ namespace Headless.DistributedLocks;
 /// receives an <see cref="IDistributedLease"/> handle that can be released explicitly or on dispose.
 /// </para>
 /// <para>
-/// Wake-up model: when <see cref="IBus"/> is available, a best-effort <see cref="DistributedLockReleased"/>
-/// signal is sent directly after each confirmed release; blocked acquirers are signalled immediately
-/// instead of waiting for the next backoff interval. Without the bus, callers fall back to polling.
+/// Wake-up model: after each confirmed release the provider hands a best-effort announcement to the registered
+/// <see cref="IDistributedLockReleaseSignal"/>; a transport such as <c>Headless.DistributedLocks.Messaging</c>
+/// delivers it to every host, so blocked acquirers wake immediately instead of waiting for the next backoff
+/// interval. The default signal sends nothing, and callers fall back to polling.
 /// </para>
 /// <para>
 /// Monitoring: if <see cref="DistributedLockAcquireOptions.Monitoring"/> is
@@ -36,9 +36,8 @@ namespace Headless.DistributedLocks;
 /// <see cref="IDistributedLease.LostToken"/> when lease loss is detected.
 /// </para>
 /// <para>
-/// This class also implements <see cref="ICanReceiveLockReleased"/> so the shared
-/// <c>LockReleasedConsumer</c> can fan release signals out to multiple providers without coupling
-/// to concrete types.
+/// This class also implements <see cref="IDistributedLockReleaseListener"/> so a release transport can fan
+/// release signals out to multiple providers without coupling to concrete types.
 /// </para>
 /// <para>
 /// This concrete type is DI-only plumbing: resolve <see cref="IDistributedLock"/> instead of constructing it.
@@ -49,15 +48,14 @@ namespace Headless.DistributedLocks;
 [EditorBrowsable(EditorBrowsableState.Never)]
 public sealed class DistributedLock(
     IDistributedLockStorage storage,
-    IBus? bus,
+    IDistributedLockReleaseSignal releaseSignal,
     DistributedLockOptions lockOptions,
     IGuidGenerator guidGenerator,
     TimeProvider timeProvider,
     ILogger<DistributedLock> logger
-) : IDistributedLock, ICanReceiveLockReleased
+) : IDistributedLock, IDistributedLockReleaseListener
 {
     private readonly ScopedDistributedLockStorage _storage = new(storage, lockOptions.KeyPrefix);
-    private readonly IBus? _bus = DistributedLockCoreHelpers.ConfigureBus(bus, logger);
     private readonly TimeSpan _disposeTimeout = lockOptions.DisposeTimeout;
 
     // Long-running pipeline for ReleaseAsync (critical path: failure to release strands waiters
@@ -166,6 +164,7 @@ public sealed class DistributedLock(
         Argument.IsLessThanOrEqualTo(resource.Length, _maxResourceNameLength, paramName: nameof(resource));
         options ??= new DistributedLockAcquireOptions();
         DistributedLockCoreHelpers.ValidateAcquireTimeout(options.AcquireTimeout);
+        DistributedLockCoreHelpers.ValidateReleaseNotification(options);
         cancellationToken.ThrowIfCancellationRequested();
 
         var timeUntilExpires = DistributedLockCoreHelpers.NormalizeTimeUntilExpires(
@@ -203,6 +202,7 @@ public sealed class DistributedLock(
                     monitorLease,
                     autoExtend,
                     leaseDuration,
+                    options.NotifyWaitersOnRelease,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -353,7 +353,8 @@ public sealed class DistributedLock(
             acquireTimestamp,
             releaseOnDispose,
             monitorLease,
-            autoExtend
+            autoExtend,
+            notifyWaitersOnRelease: true
         );
     }
 
@@ -366,6 +367,7 @@ public sealed class DistributedLock(
         bool monitorLease,
         bool autoExtend,
         TimeSpan leaseDuration,
+        bool notifyWaitersOnRelease,
         CancellationToken callerToken
     )
     {
@@ -452,7 +454,8 @@ public sealed class DistributedLock(
             acquireTimestamp,
             releaseOnDispose,
             monitorLease,
-            autoExtend
+            autoExtend,
+            notifyWaitersOnRelease
         );
     }
 
@@ -465,7 +468,8 @@ public sealed class DistributedLock(
         long acquireTimestamp,
         bool releaseOnDispose,
         bool monitorLease,
-        bool autoExtend
+        bool autoExtend,
+        bool notifyWaitersOnRelease
     )
     {
         var handle = new DisposableDistributedLock(
@@ -481,7 +485,8 @@ public sealed class DistributedLock(
             lockOptions,
             timeProvider,
             _DeregisterMonitor,
-            logger
+            logger,
+            notifyWaitersOnRelease
         );
 
         if (!monitorLease)
@@ -619,7 +624,17 @@ public sealed class DistributedLock(
     /// </remarks>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="resource"/> or <paramref name="leaseId"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when <paramref name="resource"/> or <paramref name="leaseId"/> is empty or whitespace.</exception>
-    public async Task ReleaseAsync(string resource, string leaseId, CancellationToken cancellationToken = default)
+    public Task ReleaseAsync(string resource, string leaseId, CancellationToken cancellationToken = default)
+    {
+        return ReleaseCoreAsync(resource, leaseId, notifyWaiters: true);
+    }
+
+    /// <summary>
+    /// Releases the lease, sending the release wake-up only when <paramref name="notifyWaiters"/> is
+    /// <see langword="true"/>. A handle acquired with <see cref="DistributedLockAcquireOptions.NotifyWaitersOnRelease"/>
+    /// off passes <see langword="false"/>, so a try-once resource nobody waits on sends no broadcast.
+    /// </summary>
+    internal async Task ReleaseCoreAsync(string resource, string leaseId, bool notifyWaiters)
     {
         Argument.IsNotNullOrWhiteSpace(resource);
         Argument.IsNotNullOrWhiteSpace(leaseId);
@@ -699,11 +714,11 @@ public sealed class DistributedLock(
             }
         }
 
-        // Only publish if we actually removed the lock.
-        // Publish notifies waiters immediately; if skipped, waiters retry via backoff.
-        if (removed && _bus is not null)
+        // Only announce if we actually removed the lock.
+        // The announcement wakes waiters immediately; if skipped, waiters retry via backoff.
+        if (removed && notifyWaiters)
         {
-            DistributedLockCoreHelpers.PublishReleaseSignal(_bus, logger, resource, leaseId);
+            releaseSignal.Announce(resource, leaseId);
         }
 
         logger.LogReleaseReleased(resource, leaseId);
@@ -957,22 +972,22 @@ public sealed class DistributedLock(
 
     #endregion
 
-    #region Message Consumer
+    #region Release Listener
 
-    void ICanReceiveLockReleased.OnLockReleased(DistributedLockReleased message)
+    void IDistributedLockReleaseListener.OnReleased(string resource, string leaseId)
     {
-        logger.LogGotLockReleasedMessage(message.Resource, message.LeaseId);
+        logger.LogGotLockReleasedMessage(resource, leaseId);
 
         // Signal waiters immediately when lock released instead of waiting for delay timeout.
         // No lock needed - ConcurrentDictionary.TryGetValue is thread-safe for reads.
         // Uses ref-counted events per resource to avoid memory leaks—events removed when no waiters.
         // ReSharper disable once InconsistentlySynchronizedField
-        if (_autoResetEvents.TryGetValue(message.Resource, out var autoResetEvent))
+        if (_autoResetEvents.TryGetValue(resource, out var autoResetEvent))
         {
             autoResetEvent.Target.Set();
         }
 
-        _monitorRegistry.NudgeActive(message.Resource);
+        _monitorRegistry.NudgeActive(resource);
     }
 
     private void _DeregisterMonitor(string resource, string leaseId)
@@ -988,60 +1003,6 @@ public sealed class DistributedLock(
     internal int GetActiveMonitorResourceCount()
     {
         return _monitorRegistry.GetResourceCount();
-    }
-
-    /// <summary>
-    /// Messaging consumer that fans a <see cref="DistributedLockReleased"/> event out to every
-    /// registered <see cref="ICanReceiveLockReleased"/> provider (mutex, semaphore, and reader-writer), allowing
-    /// blocked acquirers to be woken immediately after a release rather than waiting for the next
-    /// backoff poll interval.
-    /// </summary>
-    /// <remarks>
-    /// Every-instance: the waiters live in each process, so every process must see every release instead of sharing one
-    /// copy with its replicas. Delivery is at most once and needs no reconnect hook, because a waiter that misses a
-    /// release still wakes on its next backoff poll.
-    /// </remarks>
-    [BusConsumer(Identity, EveryInstance = true)]
-    internal sealed class LockReleasedConsumer(
-        IEnumerable<ICanReceiveLockReleased> receivers,
-        ILogger<LockReleasedConsumer> logger
-    ) : IConsume<DistributedLockReleased>
-    {
-        /// <summary>The consumer identity that <c>Tune</c> and <c>ConsumeOnly</c> refer to.</summary>
-        public const string Identity = "headless.distributed-locks.release";
-
-        /// <summary>
-        /// Fans the release signal to all registered receivers and returns synchronously.
-        /// Cancellation is honoured before dispatch; if <paramref name="cancellationToken"/>
-        /// is already cancelled, returns a cancelled <see cref="ValueTask"/> without calling
-        /// any receiver.
-        /// </summary>
-        /// <param name="context">The consume context carrying the <see cref="DistributedLockReleased"/> message.</param>
-        /// <param name="cancellationToken">Token cancelled on application shutdown.</param>
-        /// <returns>A completed (or cancelled) <see cref="ValueTask"/>.</returns>
-        public ValueTask ConsumeAsync(
-            ConsumeContext<DistributedLockReleased> context,
-            CancellationToken cancellationToken
-        )
-        {
-            if (cancellationToken.IsCancellationRequested)
-            {
-                return ValueTask.FromCanceled(cancellationToken);
-            }
-
-            logger.LogProcessingLockReleased(context.MessageId, context.Message.Resource);
-
-            // Fan the released signal out to every provider that can wake waiters (mutex,
-            // semaphore, reader-writer). DistributedLock, DistributedSemaphoreProvider, and
-            // DistributedReadWriteLock are registered under ICanReceiveLockReleased via
-            // TryAddEnumerable so this seam stays decoupled from the concrete provider types.
-            foreach (var receiver in receivers)
-            {
-                receiver.OnLockReleased(context.Message);
-            }
-
-            return ValueTask.CompletedTask;
-        }
     }
 
     #endregion

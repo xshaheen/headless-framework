@@ -1,36 +1,41 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Headless.Coordination;
 
 /// <summary>
-/// Resolves the cadence of the dead-owner reconcile backstop for a feature that runs a
-/// <see cref="DeadOwnerRecoveryBridge{TReclaimer}"/>, so every feature derives it from the coordination
-/// options the same way.
+/// Resolves the effective cadence of the dead-owner reconcile backstop from an
+/// <see cref="IDeadOwnerReclaimer.ReconcileInterval"/> and the coordination options. The recovery bridge applies it
+/// to every registered reclaimer; a feature that runs its own sweep on the same cadence calls it to get the value the
+/// bridge uses.
 /// </summary>
-internal static class DeadOwnerReconcileInterval
+[PublicAPI]
+public static class DeadOwnerReconcileInterval
 {
-    /// <summary>Returns the effective reconcile interval, logging a warning when a configured value is clamped.</summary>
+    /// <summary>Returns the effective reconcile interval.</summary>
     /// <param name="configured">The feature's configured interval, or <see langword="null"/> for the derived default.</param>
-    /// <param name="coordination">The coordination options, or <see langword="null"/> when coordination is not registered.</param>
-    /// <param name="logger">The feature's logger, so the warning carries the feature's category.</param>
-    /// <param name="membership">
-    /// The host's registered membership. <see cref="NullNodeMembership"/> means no coordination provider, so the
-    /// coordination options are ignored even though the options system still resolves their defaults.
+    /// <param name="coordination">
+    /// The coordination options, or <see langword="null"/> when the host runs no coordination provider. Pass
+    /// <see langword="null"/> rather than default options in that case: the options system resolves defaults even
+    /// without a provider, and clamping against a window no store enforces would shorten a configured interval for
+    /// nothing.
     /// </param>
-    internal static TimeSpan Resolve(
-        TimeSpan? configured,
-        CoordinationOptions? coordination,
-        ILogger logger,
-        INodeMembership? membership = null
-    )
+    /// <returns>
+    /// <paramref name="configured"/> when it is at most half of <see cref="CoordinationOptions.DeadRetentionWindow"/>
+    /// (or <paramref name="coordination"/> is <see langword="null"/>), half that window when it is longer, and half
+    /// the window of default <see cref="CoordinationOptions"/> when <paramref name="configured"/> is
+    /// <see langword="null"/> and <paramref name="coordination"/> is <see langword="null"/> too.
+    /// </returns>
+    public static TimeSpan Resolve(TimeSpan? configured, CoordinationOptions? coordination)
     {
-        if (membership is NullNodeMembership)
-        {
-            coordination = null;
-        }
+        return Resolve(configured, coordination, NullLogger.Instance);
+    }
 
+    /// <summary>Returns the effective reconcile interval, logging a warning when a configured value is clamped.</summary>
+    internal static TimeSpan Resolve(TimeSpan? configured, CoordinationOptions? coordination, ILogger logger)
+    {
         // Relational membership providers prune a dead identity DeadRetentionWindow after DeadThreshold, so Dead is
         // observable for only that window. The reconcile is documented as the authoritative backstop when a NodeLeft
         // event is missed — with a reconcile interval wider than half the visibility window, a dead owner has roughly

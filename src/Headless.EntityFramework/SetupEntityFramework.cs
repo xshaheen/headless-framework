@@ -35,7 +35,7 @@ public static class SetupEntityFramework
         /// </remarks>
         /// <typeparam name="TDbContext">The <see cref="HeadlessDbContext"/> subclass to register.</typeparam>
         /// <param name="optionsAction">Optional EF Core options callback.</param>
-        /// <param name="contextLifetime">DI lifetime for <typeparamref name="TDbContext"/>: <see cref="ServiceLifetime.Scoped"/> (the default) or <see cref="ServiceLifetime.Transient"/>; <see cref="ServiceLifetime.Singleton"/> throws <see cref="ArgumentException"/>.</param>
+        /// <param name="contextLifetime">DI lifetime for <typeparamref name="TDbContext"/>: must be <see cref="ServiceLifetime.Scoped"/> (the default). <see cref="ServiceLifetime.Singleton"/> and <see cref="ServiceLifetime.Transient"/> throw <see cref="ArgumentException"/>: a transient context would hand a domain-event handler another instance than the one being saved. Use <see cref="IDbContextFactory{TContext}"/> for a context outside the request scope.</param>
         /// <param name="optionsLifetime">
         /// DI lifetime for <see cref="DbContextOptions{TContext}"/>. <see cref="ServiceLifetime.Scoped"/> (the default)
         /// builds the options in every scope. <see cref="ServiceLifetime.Singleton"/> builds them once, from the root
@@ -71,7 +71,7 @@ public static class SetupEntityFramework
         /// Optional callback to customize <see cref="HeadlessDbContextOptions"/> (for example to add or
         /// replace save-entry processors).
         /// </param>
-        /// <param name="contextLifetime">DI lifetime for <typeparamref name="TDbContext"/>: <see cref="ServiceLifetime.Scoped"/> (the default) or <see cref="ServiceLifetime.Transient"/>; <see cref="ServiceLifetime.Singleton"/> throws <see cref="ArgumentException"/>.</param>
+        /// <param name="contextLifetime">DI lifetime for <typeparamref name="TDbContext"/>: must be <see cref="ServiceLifetime.Scoped"/> (the default). <see cref="ServiceLifetime.Singleton"/> and <see cref="ServiceLifetime.Transient"/> throw <see cref="ArgumentException"/>: a transient context would hand a domain-event handler another instance than the one being saved. Use <see cref="IDbContextFactory{TContext}"/> for a context outside the request scope.</param>
         /// <param name="optionsLifetime">
         /// DI lifetime for <see cref="DbContextOptions{TContext}"/>. <see cref="ServiceLifetime.Scoped"/> (the default)
         /// builds the options in every scope. <see cref="ServiceLifetime.Singleton"/> builds them once, from the root
@@ -104,7 +104,7 @@ public static class SetupEntityFramework
         /// </summary>
         /// <typeparam name="TDbContext">The <see cref="HeadlessDbContext"/> subclass to register.</typeparam>
         /// <param name="optionsAction">Optional EF Core options callback that receives the scoped service provider.</param>
-        /// <param name="contextLifetime">DI lifetime for <typeparamref name="TDbContext"/>: <see cref="ServiceLifetime.Scoped"/> (the default) or <see cref="ServiceLifetime.Transient"/>; <see cref="ServiceLifetime.Singleton"/> throws <see cref="ArgumentException"/>.</param>
+        /// <param name="contextLifetime">DI lifetime for <typeparamref name="TDbContext"/>: must be <see cref="ServiceLifetime.Scoped"/> (the default). <see cref="ServiceLifetime.Singleton"/> and <see cref="ServiceLifetime.Transient"/> throw <see cref="ArgumentException"/>: a transient context would hand a domain-event handler another instance than the one being saved. Use <see cref="IDbContextFactory{TContext}"/> for a context outside the request scope.</param>
         /// <param name="optionsLifetime">
         /// DI lifetime for <see cref="DbContextOptions{TContext}"/>. <see cref="ServiceLifetime.Scoped"/> (the default)
         /// builds the options in every scope. <see cref="ServiceLifetime.Singleton"/> builds them once, from the root
@@ -140,7 +140,7 @@ public static class SetupEntityFramework
         /// <param name="configureHeadlessOptions">
         /// Optional callback to customize <see cref="HeadlessDbContextOptions"/>.
         /// </param>
-        /// <param name="contextLifetime">DI lifetime for <typeparamref name="TDbContext"/>: <see cref="ServiceLifetime.Scoped"/> (the default) or <see cref="ServiceLifetime.Transient"/>; <see cref="ServiceLifetime.Singleton"/> throws <see cref="ArgumentException"/>.</param>
+        /// <param name="contextLifetime">DI lifetime for <typeparamref name="TDbContext"/>: must be <see cref="ServiceLifetime.Scoped"/> (the default). <see cref="ServiceLifetime.Singleton"/> and <see cref="ServiceLifetime.Transient"/> throw <see cref="ArgumentException"/>: a transient context would hand a domain-event handler another instance than the one being saved. Use <see cref="IDbContextFactory{TContext}"/> for a context outside the request scope.</param>
         /// <param name="optionsLifetime">
         /// DI lifetime for <see cref="DbContextOptions{TContext}"/>. <see cref="ServiceLifetime.Scoped"/> (the default)
         /// builds the options in every scope. <see cref="ServiceLifetime.Singleton"/> builds them once, from the root

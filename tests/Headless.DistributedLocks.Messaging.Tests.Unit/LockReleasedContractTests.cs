@@ -21,7 +21,7 @@ public sealed class LockReleasedContractTests : TestBase
         await using var harness = await MessagingTestHarness.CreateAsync(
             services =>
             {
-                services.AddHeadlessDistributedLocks(setup => setup.UseInMemory());
+                services.AddHeadlessDistributedLocks(setup => setup.UseInMemory().UseMessagingReleaseSignal());
                 services.AddHeadlessMessaging(setup =>
                 {
                     setup.UseInMemory();

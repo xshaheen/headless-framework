@@ -43,6 +43,32 @@ public static class SetupCoordinationCore
             return _AddCoordinationProviderCore(services, setup);
         }
 
+        /// <summary>
+        /// Registers <typeparamref name="TReclaimer"/> as a singleton and hosts a dead-owner recovery bridge that
+        /// drives it: the bridge calls <see cref="IDeadOwnerReclaimer.ReclaimAsync"/> when a node of this cluster
+        /// leaves, and from a periodic liveness-snapshot reconcile that catches a death whose <c>NodeLeft</c> event was
+        /// missed. Calling it again for the same <typeparamref name="TReclaimer"/> adds no second reclaimer or bridge;
+        /// each distinct reclaimer type gets its own bridge and logger category.
+        /// </summary>
+        /// <remarks>
+        /// The bridge resolves <see cref="INodeMembership"/> when the host starts. Register a coordination provider
+        /// with <see cref="AddHeadlessCoordination"/>, or a <see cref="NullNodeMembership"/> fallback, under which the
+        /// bridge sees no node leave and no dead node and never calls the reclaimer.
+        /// </remarks>
+        /// <typeparam name="TReclaimer">The reclaimer that releases the resources a dead node owned.</typeparam>
+        /// <returns>The same <see cref="IServiceCollection"/> for chaining.</returns>
+        public IServiceCollection AddDeadOwnerReclaimer<TReclaimer>()
+            where TReclaimer : class, IDeadOwnerReclaimer
+        {
+            services.TryAddSingleton(TimeProvider.System);
+            services.TryAddSingleton<TReclaimer>();
+            services.TryAddEnumerable(
+                ServiceDescriptor.Singleton<IHostedService, DeadOwnerRecoveryBridge<TReclaimer>>()
+            );
+
+            return services;
+        }
+
         internal IServiceCollection AddCoordinationCore<TStore>()
             where TStore : class, IMembershipStore
         {

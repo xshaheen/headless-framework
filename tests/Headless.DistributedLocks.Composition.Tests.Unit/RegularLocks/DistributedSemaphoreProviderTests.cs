@@ -4,7 +4,6 @@ using System.Diagnostics.Metrics;
 using Headless;
 using Headless.DistributedLocks;
 using Headless.DistributedLocks.InMemory;
-using Headless.Messaging;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
@@ -89,11 +88,11 @@ public sealed class DistributedSemaphoreProviderTests : TestBase
     }
 
     [Fact]
-    public async Task should_publish_release_signal_directly()
+    public async Task should_announce_release_through_the_release_signal()
     {
         // given
-        var bus = Substitute.For<IBus>();
-        var provider = _CreateProvider(bus: bus);
+        var releaseSignal = Substitute.For<IDistributedLockReleaseSignal>();
+        var provider = _CreateProvider(releaseSignal: releaseSignal);
         var resource = Faker.Random.AlphaNumeric(10);
         var semaphore = provider.CreateSemaphore(resource, maxCount: 1);
         await using var slot = await semaphore.AcquireAsync(cancellationToken: AbortToken);
@@ -102,14 +101,7 @@ public sealed class DistributedSemaphoreProviderTests : TestBase
         await slot.ReleaseAsync();
 
         // then
-        await bus.Received(1)
-            .PublishAsync(
-                Arg.Is<DistributedLockReleased>(message =>
-                    message.Resource == resource && message.LeaseId == slot.LeaseId
-                ),
-                Arg.Is<PublishOptions?>(options => options!.DeliveryMode == DeliveryMode.Direct),
-                Arg.Any<CancellationToken>()
-            );
+        releaseSignal.Received(1).Announce(resource, slot.LeaseId);
     }
 
     [Fact]
@@ -299,7 +291,7 @@ public sealed class DistributedSemaphoreProviderTests : TestBase
 
         // when — release the slot and immediately send the push wake-up signal
         await holder.ReleaseAsync();
-        ((ICanReceiveLockReleased)provider).OnLockReleased(new DistributedLockReleased(resource, holder.LeaseId));
+        ((IDistributedLockReleaseListener)provider).OnReleased(resource, holder.LeaseId);
 
         // then — waiter is unblocked faster than the polling budget
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
@@ -430,7 +422,7 @@ public sealed class DistributedSemaphoreProviderTests : TestBase
         _guidGenerator.Create().Returns(_ => Guid.NewGuid());
         var provider = new DistributedSemaphoreProvider(
             storage,
-            Substitute.For<IBus>(),
+            Substitute.For<IDistributedLockReleaseSignal>(),
             new DistributedLockOptions(),
             _guidGenerator,
             _timeProvider,
@@ -455,11 +447,11 @@ public sealed class DistributedSemaphoreProviderTests : TestBase
         hangingStorage
             .ReleaseAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(_ => new ValueTask<bool>(new TaskCompletionSource<bool>().Task));
-        var bus = Substitute.For<IBus>();
+        var releaseSignal = Substitute.For<IDistributedLockReleaseSignal>();
 
         var provider = new DistributedSemaphoreProvider(
             hangingStorage,
-            bus,
+            releaseSignal,
             new DistributedLockOptions { DisposeTimeout = TimeSpan.FromSeconds(5) },
             _guidGenerator,
             _timeProvider,
@@ -479,13 +471,12 @@ public sealed class DistributedSemaphoreProviderTests : TestBase
 
         // then
         await act.Should().NotThrowAsync();
-        await bus.DidNotReceive()
-            .PublishAsync(Arg.Any<DistributedLockReleased>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>());
+        releaseSignal.DidNotReceiveWithAnyArgs().Announce(default!, default!);
     }
 
     private DistributedSemaphoreProvider _CreateProvider(
         DistributedLockOptions? options = null,
-        IBus? bus = null,
+        IDistributedLockReleaseSignal? releaseSignal = null,
         FakeTimeProvider? timeProvider = null
     )
     {
@@ -493,7 +484,7 @@ public sealed class DistributedSemaphoreProviderTests : TestBase
 
         return new DistributedSemaphoreProvider(
             timeProvider is null ? _storage : new InMemoryDistributedSemaphoreStorage(timeProvider),
-            bus ?? Substitute.For<IBus>(),
+            releaseSignal ?? Substitute.For<IDistributedLockReleaseSignal>(),
             options ?? new DistributedLockOptions(),
             _guidGenerator,
             timeProvider ?? _timeProvider,

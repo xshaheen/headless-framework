@@ -78,23 +78,22 @@ public sealed class HeadlessSaveChangesPipelineSharedConnectionTests : TestBase
     }
 
     [Theory]
-    [InlineData(true, true)]
-    [InlineData(true, false)]
-    [InlineData(false, true)]
-    [InlineData(false, false)]
-    public async Task should_not_replay_the_owner_save_after_a_handler_wrote_through_a_sibling(
-        bool sync,
-        bool siblingWrites
-    )
+    [InlineData(true, HandlerWrite.None)]
+    [InlineData(true, HandlerWrite.SiblingSave)]
+    [InlineData(true, HandlerWrite.RawSql)]
+    [InlineData(false, HandlerWrite.None)]
+    [InlineData(false, HandlerWrite.SiblingSave)]
+    [InlineData(false, HandlerWrite.RawSql)]
+    public async Task should_not_replay_the_owner_save_after_a_handler_returned(bool sync, HandlerWrite write)
     {
-        // given — the owner's pipeline save enlists its own observed unit; the domain-event handler saves through a
-        // sibling over the same connection, then the owner's base save faults once with a retryable exception.
+        // given — the owner's pipeline save enlists its own observed unit; the domain-event handler writes through
+        // the shared connection (or not at all), then the owner's base save faults once with a retryable exception.
         var (provider, connection) = await _CreateProviderAsync(retryOnce: true);
         await using var _ = provider;
         await using var __ = connection;
         var evidence = provider.GetRequiredService<SharedConnectionEvidence>();
         evidence.Sync = sync;
-        evidence.SiblingWrites = siblingWrites;
+        evidence.Write = write;
         await using var scope = provider.CreateAsyncScope();
         var owner = scope.ServiceProvider.GetRequiredService<OwnerDbContext>();
         var emitter = new EmitterRow { Name = "owner" };
@@ -104,27 +103,15 @@ public sealed class HeadlessSaveChangesPipelineSharedConnectionTests : TestBase
         // when
         var act = async () => await _SaveAsync(owner, sync, AbortToken);
 
-        // then
-        if (siblingWrites)
-        {
-            // A replay would re-run only the owner's save and commit it without the sibling's rolled-back row.
-            await act.Should().ThrowAsync<TransientProbeException>("the replay would lose the sibling's row");
-            evidence.FaultsThrown.Should().Be(1);
-            evidence.HandlerCalls.Should().Be(1);
-            evidence.RetryPreventedAfterSiblingSave.Should().BeTrue();
-            (await _CountAsync<OwnerDbContext, EmitterRow>(provider)).Should().Be(0);
-            (await _CountAsync<SiblingDbContext, SiblingRow>(provider)).Should().Be(0);
-        }
-        else
-        {
-            // Nothing written through the sibling, so the replay loses nothing and still runs.
-            await act.Should().NotThrowAsync();
-            evidence.FaultsThrown.Should().Be(1, "the owner's save replayed after the transient fault");
-            evidence.HandlerCalls.Should().Be(1, "the replay does not re-run the handlers");
-            evidence.RetryPreventedAfterSiblingSave.Should().BeFalse();
-            (await _CountAsync<OwnerDbContext, EmitterRow>(provider)).Should().Be(1);
-            (await _CountAsync<SiblingDbContext, SiblingRow>(provider)).Should().Be(0);
-        }
+        // then — a replay would re-run only the owner's save, resuming after the handler, and commit the aggregate
+        // without whatever the handler wrote outside the tracker; the pipeline cannot tell whether it wrote anything,
+        // so the fault surfaces and nothing commits.
+        await act.Should().ThrowAsync<TransientProbeException>("a replay would not re-run the returned handler");
+        evidence.FaultsThrown.Should().Be(1);
+        evidence.HandlerCalls.Should().Be(1);
+        evidence.RetryPreventedAfterHandler.Should().BeTrue();
+        (await _CountAsync<OwnerDbContext, EmitterRow>(provider)).Should().Be(0);
+        (await _CountAsync<SiblingDbContext, SiblingRow>(provider)).Should().Be(0);
     }
 
     [Theory]
@@ -254,16 +241,18 @@ public sealed class HeadlessSaveChangesPipelineSharedConnectionTests : TestBase
     {
         public bool Sync { get; set; }
 
-        public bool SiblingWrites { get; set; }
+        public HandlerWrite Write { get; set; }
 
         public int HandlerCalls { get; set; }
 
-        public bool? RetryPreventedAfterSiblingSave { get; set; }
+        public bool? RetryPreventedAfterHandler { get; set; }
 
         // Armed by the handler so the fault hits the owner's base save after the drain, not a handler's save.
         public bool FaultArmed { get; set; }
 
         public int FaultsThrown { get; set; }
+
+        public IUnitOfWork? Unit { get; set; }
     }
 
     /// <summary>Faults the owner's next base save once, after the domain-event drain has completed.</summary>
@@ -299,6 +288,7 @@ public sealed class HeadlessSaveChangesPipelineSharedConnectionTests : TestBase
 
             evidence.FaultArmed = false;
             evidence.FaultsThrown++;
+            evidence.RetryPreventedAfterHandler = evidence.Unit?.IsRetryPrevented;
 
             throw new TransientProbeException();
         }
@@ -314,15 +304,34 @@ public sealed class HeadlessSaveChangesPipelineSharedConnectionTests : TestBase
         {
             evidence.HandlerCalls++;
 
-            if (evidence.SiblingWrites)
+            switch (evidence.Write)
             {
-                sibling.Siblings.Add(new SiblingRow { Name = "from-handler" });
+                case HandlerWrite.SiblingSave:
+                    sibling.Siblings.Add(new SiblingRow { Name = "from-handler" });
+                    await _SaveAsync(sibling, evidence.Sync, cancellationToken);
+
+                    break;
+                case HandlerWrite.RawSql:
+                    // A command on the shared connection, outside any change tracker: nothing restores it on replay.
+                    await sibling.Database.ExecuteSqlAsync(
+                        $"INSERT INTO \"Siblings\" (\"Id\", \"Name\") VALUES ({Guid.NewGuid()}, 'raw')",
+                        cancellationToken
+                    );
+
+                    break;
             }
 
-            await _SaveAsync(sibling, evidence.Sync, cancellationToken);
-            evidence.RetryPreventedAfterSiblingSave = sibling.UnitOfWork()?.IsRetryPrevented;
+            // Read after the handler returns, as the owner's pipeline sees the unit when its base save faults.
             evidence.FaultArmed = true;
+            evidence.Unit = sibling.UnitOfWork();
         }
+    }
+
+    public enum HandlerWrite
+    {
+        None,
+        SiblingSave,
+        RawSql,
     }
 
     // A plain entity: an aggregate root's save dispatches its lifecycle events, and a caller-owned save that

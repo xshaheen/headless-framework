@@ -115,9 +115,9 @@ public sealed class DistributedSemaphoreSetupTests : TestBase
         services.AddHeadlessDistributedLocks(setup => setup.UseInMemory());
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 
-        // then — the provider is registered under the ICanReceiveLockReleased seam so the
-        // LockReleasedConsumer wakes semaphore waiters, and it is the same singleton instance.
-        var consumers = provider.GetServices<ICanReceiveLockReleased>().ToList();
+        // then — the provider is registered as a release listener so a release transport wakes
+        // semaphore waiters, and it is the same singleton instance.
+        var consumers = provider.GetServices<IDistributedLockReleaseListener>().ToList();
         consumers.Should().ContainSingle(c => c is DistributedSemaphoreProvider);
         consumers
             .OfType<DistributedSemaphoreProvider>()

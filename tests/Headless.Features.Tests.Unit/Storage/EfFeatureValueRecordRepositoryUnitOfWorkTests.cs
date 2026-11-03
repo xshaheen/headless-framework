@@ -106,7 +106,11 @@ public sealed class EfFeatureValueRecordRepositoryUnitOfWorkTests : TestBase
         var key = FeatureValueCacheItem.CalculateCacheKey("Reports", "Tenant", "t1");
         await _cache
             .Received(3)
-            .RemoveAllAsync(Arg.Is<IEnumerable<string>>(keys => keys.Single() == key), Arg.Any<CancellationToken>());
+            .UpsertAllAsync(
+                Arg.Is<IDictionary<string, FeatureValueCacheItem>>(items => items.Keys.Single() == key),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
