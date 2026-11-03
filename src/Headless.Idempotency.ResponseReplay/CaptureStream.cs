@@ -21,10 +21,15 @@ namespace Headless.Idempotency;
 /// <see cref="ObjectDisposedException"/> after <see cref="Dispose"/> is called.
 /// </para>
 /// <para>
+/// Disposing the stream only ends writing; the captured bytes stay readable. A handler may dispose the response body
+/// it was given (a <see cref="StreamWriter"/> or a compression stream over <c>Response.Body</c> does so by default,
+/// and Kestrel's own response stream ignores it), and the middleware still has to store what that handler sent.
+/// </para>
+/// <para>
 /// The capture rents its backing array from <see cref="ArrayPool{T}.Shared"/> and returns it on
-/// <see cref="Dispose"/> (zeroed, so a response body does not linger in pool memory), so capturing a
-/// response allocates nothing beyond the pool rental; growth copies into a new rental instead of
-/// leaving a chain of abandoned buffers.
+/// <see cref="ReturnBuffer"/> (zeroed, so a response body does not linger in pool memory), which the owner calls once
+/// it has read the capture. Capturing a response allocates nothing beyond the pool rental; growth copies into a new
+/// rental instead of leaving a chain of abandoned buffers.
 /// </para>
 /// </remarks>
 internal sealed class CaptureStream : Stream
@@ -38,7 +43,7 @@ internal sealed class CaptureStream : Stream
     private int _length;
     private bool _disposed;
 
-    /// <summary>Captures into a pooled rental, which <see cref="Dispose"/> returns to the pool.</summary>
+    /// <summary>Captures into a pooled rental, which <see cref="ReturnBuffer"/> returns to the pool.</summary>
     /// <param name="inner">The stream the captured bytes are forwarded to.</param>
     /// <param name="cap">The most bytes captured.</param>
     /// <param name="responseHeaders">
@@ -48,7 +53,7 @@ internal sealed class CaptureStream : Stream
     internal CaptureStream(Stream inner, int cap, IHeaderDictionary? responseHeaders = null)
         : this(inner, cap, ArrayPool<byte>.Shared.Rent(Math.Min(cap, 4096)), responseHeaders) { }
 
-    /// <summary>Test seam: captures into the given rental, which <see cref="Dispose"/> returns to the pool.</summary>
+    /// <summary>Test seam: captures into the given rental, which <see cref="ReturnBuffer"/> returns to the pool.</summary>
     internal CaptureStream(Stream inner, int cap, byte[] rentedBuffer, IHeaderDictionary? responseHeaders = null)
     {
         _inner = inner;
@@ -184,18 +189,31 @@ internal sealed class CaptureStream : Stream
         throw new NotSupportedException();
     }
 
-    protected override void Dispose(bool disposing)
+    /// <summary>
+    /// Zeroes the captured bytes, returns the rental to the pool, and ends writing. Call it once the capture has been
+    /// read; the captured bytes read as empty afterwards. Idempotent.
+    /// </summary>
+    internal void ReturnBuffer()
     {
-        if (disposing && !_disposed)
+        if (_buffer.Length == 0)
         {
-            // The captured response body can carry PII; zero it before the rental rejoins the shared pool so a
-            // later renter cannot over-read residual bytes.
-            _buffer.AsSpan(0, _length).Clear();
-            ArrayPool<byte>.Shared.Return(_buffer);
-            _buffer = [];
-            _disposed = true;
+            return;
         }
 
+        // The captured response body can carry PII; zero it before the rental rejoins the shared pool so a later
+        // renter cannot over-read residual bytes.
+        _buffer.AsSpan(0, _length).Clear();
+        ArrayPool<byte>.Shared.Return(_buffer);
+        _buffer = [];
+        _length = 0;
+        _disposed = true;
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        // Ends writing only. The handler that disposes the response body it was handed must not take the capture
+        // with it; the owner returns the rental through ReturnBuffer after reading it.
+        _disposed = true;
         base.Dispose(disposing);
         // _inner is intentionally NOT disposed — the response pipeline owns it
     }

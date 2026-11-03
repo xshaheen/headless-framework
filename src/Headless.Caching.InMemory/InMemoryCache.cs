@@ -636,6 +636,7 @@ public sealed class InMemoryCache
                 var total = current.HasValue ? current.Value + input : input;
                 return new NumericOpResult<double>(Replace: true, NewValue: total, Result: total);
             },
+            keepsExpirationWhenUnset: true,
             cancellationToken
         );
     }
@@ -656,6 +657,7 @@ public sealed class InMemoryCache
                 var total = current.HasValue ? current.Value + input : input;
                 return new NumericOpResult<long>(Replace: true, NewValue: total, Result: total);
             },
+            keepsExpirationWhenUnset: true,
             cancellationToken
         );
     }
@@ -675,6 +677,7 @@ public sealed class InMemoryCache
                 current < input
                     ? new NumericOpResult<double>(Replace: true, NewValue: input, Result: input - current.Value)
                     : new NumericOpResult<double>(Replace: false, NewValue: 0, Result: 0),
+            keepsExpirationWhenUnset: false,
             cancellationToken
         );
     }
@@ -694,6 +697,7 @@ public sealed class InMemoryCache
                 current < input
                     ? new NumericOpResult<long>(Replace: true, NewValue: input, Result: input - current.Value)
                     : new NumericOpResult<long>(Replace: false, NewValue: 0, Result: 0),
+            keepsExpirationWhenUnset: false,
             cancellationToken
         );
     }
@@ -713,6 +717,7 @@ public sealed class InMemoryCache
                 current > input
                     ? new NumericOpResult<double>(Replace: true, NewValue: input, Result: current.Value - input)
                     : new NumericOpResult<double>(Replace: false, NewValue: 0, Result: 0),
+            keepsExpirationWhenUnset: false,
             cancellationToken
         );
     }
@@ -732,6 +737,7 @@ public sealed class InMemoryCache
                 current > input
                     ? new NumericOpResult<long>(Replace: true, NewValue: input, Result: current.Value - input)
                     : new NumericOpResult<long>(Replace: false, NewValue: 0, Result: 0),
+            keepsExpirationWhenUnset: false,
             cancellationToken
         );
     }
@@ -740,11 +746,15 @@ public sealed class InMemoryCache
     // validation, zero-expiration eviction, the AddOrUpdate, size/expiry bookkeeping, and maintenance scheduling.
     // Each overload supplies only the `apply` delegate describing, against the current value, whether to replace,
     // the value to store, and the value to return (the new total for Increment, the delta for SetIfHigher/Lower).
+    // keepsExpirationWhenUnset mirrors the Redis command each op maps to: INCRBY keeps the key's TTL, so a null
+    // expiration leaves a live counter's expiry as it was; the SetIfHigher/Lower scripts write with a plain SET, which
+    // clears the TTL, so a null expiration stores the replacement without one.
     private async ValueTask<TNumeric> _RunNumericOpAsync<TNumeric>(
         string key,
         TNumeric inputValue,
         TimeSpan? expiration,
         Func<TNumeric?, TNumeric, NumericOpResult<TNumeric>> apply,
+        bool keepsExpirationWhenUnset,
         CancellationToken cancellationToken
     )
         where TNumeric : struct
@@ -839,7 +849,7 @@ public sealed class InMemoryCache
 
                 return new CacheEntry(
                     op.NewValue,
-                    expiresAt,
+                    expiration is null && keepsExpirationWhenUnset ? existingEntry.PhysicalExpiresAt : expiresAt,
                     _timeProvider,
                     _shouldClone,
                     _shouldThrowOnSerializationError,
@@ -1187,6 +1197,7 @@ public sealed class InMemoryCache
     )
     {
         _ThrowIfDisposed();
+        Argument.IsNotNullOrEmpty(prefix);
         var keys = _GetKeys(prefix);
         return await GetAllAsync<T>(keys, cancellationToken).ConfigureAwait(false);
     }
@@ -1197,6 +1208,7 @@ public sealed class InMemoryCache
     )
     {
         _ThrowIfDisposed();
+        Argument.IsNotNullOrEmpty(prefix);
         cancellationToken.ThrowIfCancellationRequested();
         return new ValueTask<IReadOnlyList<string>>(_GetKeys(prefix));
     }
@@ -2337,7 +2349,7 @@ public sealed class InMemoryCache
 
     private List<string> _GetKeys(string prefix)
     {
-        var prefixedPrefix = string.IsNullOrEmpty(prefix) ? null : _GetKey(prefix);
+        var prefixedPrefix = _GetKey(prefix);
         var stripLength = _keyPrefix.Length;
 
         // Manual foreach avoids the LINQ Where+Select iterator-wrapper allocations on every prefix scan.
@@ -2350,7 +2362,7 @@ public sealed class InMemoryCache
                 continue;
             }
 
-            if (prefixedPrefix is not null && !kvp.Key.StartsWith(prefixedPrefix, StringComparison.Ordinal))
+            if (!kvp.Key.StartsWith(prefixedPrefix, StringComparison.Ordinal))
             {
                 continue;
             }
@@ -2666,6 +2678,16 @@ public sealed class InMemoryCache
         {
             using (await _lock.LockAsync(_disposedCts.Token).ConfigureAwait(false))
             {
+                // Reap expired entries before evicting live ones: the LRU/size sample ignores expiry, so a cache full
+                // of expired entries would otherwise lose live keys while the expired ones stay resident until the
+                // next maintenance tick.
+                var nowTicks = _timeProvider.GetUtcNow().UtcDateTime.Ticks;
+
+                if (Volatile.Read(ref _nextExpiryTicks) <= nowTicks)
+                {
+                    _SweepExpiredEntries(nowTicks);
+                }
+
                 var removalCount = 0;
 
                 // Compaction is rare, so the eviction loop pays for the exact count and stops at the real limit.
@@ -2788,30 +2810,20 @@ public sealed class InMemoryCache
         }
     }
 
-    // Single pass over the live entries: evict the physically/sliding-expired and recompute the soonest
-    // surviving expiry to re-arm the hint. Gated by _DoMaintenanceAsync so it only runs when something is due.
-    // Eviction is capped at _maxEvictionsPerCompaction per sweep so a simultaneous burst of N tagged entries
-    // expiring cannot turn one tick into an O(N x tags) untag storm (#15). When the cap is hit the remainder is
-    // left for the next maintenance tick, which is forced to run promptly by arming the hint to now (see below).
+    // Single pass over the live entries: evict every physically/sliding-expired entry and recompute the soonest
+    // surviving expiry to re-arm the hint. Gated by its callers so it only runs when something is due. The pass is
+    // uncapped: it already visits every entry, a removal costs only the dictionary delete (tag invalidation keeps no
+    // per-entry index to unlink), and a cap would bound reaping by the maintenance cadence while short-lived keys keep
+    // arriving faster than that.
     private void _SweepExpiredEntries(long nowTicks)
     {
         var soonest = long.MaxValue;
         var removalCount = 0;
-        var capReached = false;
 
         foreach (var (key, entry) in _memory)
         {
             if (entry.ShouldRemoveAt(nowTicks))
             {
-                if (removalCount >= _maxEvictionsPerCompaction)
-                {
-                    // Per-sweep eviction cap reached with expired work still pending. Abort the scan: the
-                    // soonest-survivor recomputation is now incomplete (entries past this point are unscanned),
-                    // so we must not trust `soonest`. Force an immediate follow-up tick to continue the sweep.
-                    capReached = true;
-                    break;
-                }
-
                 if (_memory.TryRemove(new KeyValuePair<string, CacheEntry>(key, entry)))
                 {
                     _OnEntryRemoved(entry);
@@ -2834,28 +2846,18 @@ public sealed class InMemoryCache
 
         CachingMetrics.RecordEviction(_cacheName, CachingMetrics.EvictExpired, CachingMetrics.TierL1, removalCount);
 
-        // Re-arm the hint.
-        //
-        // Capped sweep: the scan aborted early, `soonest` is incomplete, and expired work is known to remain.
-        // Arm the target to `nowTicks` so the next maintenance tick's (_nextExpiryTicks <= now) gate passes and
-        // resumes the sweep, instead of deferring to a far-future survivor we may not have observed.
-        //
-        // Full sweep: use the soonest survivor.
-        //
-        // For either target: a hint still <= now is the stale pre-sweep value of an entry we just removed: raise
-        // it (full sweep) or hold it at now (capped) so the next sweep is scheduled correctly. A hint already
-        // > now was lowered by a writer to a live entry added during the scan: keep the smaller of the two so that
-        // entry is never starved of a sweep. The CAS retries if a writer moves the hint mid-update; writers only
-        // ever lower, so convergence is monotone.
-        var sweepResult = capReached ? nowTicks : soonest;
-
+        // Re-arm the hint to the soonest survivor. A hint still <= now is the stale pre-sweep value of an entry we
+        // just removed: raise it so the next sweep is scheduled correctly. A hint already > now was lowered by a
+        // writer to a live entry added during the scan: keep the smaller of the two so that entry is never starved of
+        // a sweep. The CAS retries if a writer moves the hint mid-update; writers only ever lower, so convergence is
+        // monotone.
         long current;
         long target;
 
         do
         {
             current = Volatile.Read(ref _nextExpiryTicks);
-            target = current <= nowTicks ? sweepResult : Math.Min(current, sweepResult);
+            target = current <= nowTicks ? soonest : Math.Min(current, soonest);
 
             if (target == current)
             {

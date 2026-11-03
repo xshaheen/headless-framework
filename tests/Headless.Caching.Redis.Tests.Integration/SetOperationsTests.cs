@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Microsoft.Extensions.Time.Testing;
+
 namespace Tests;
 
 public sealed class SetOperationsTests(RedisCacheFixture fixture) : RedisCacheTestBase(fixture)
@@ -218,5 +220,41 @@ public sealed class SetOperationsTests(RedisCacheFixture fixture) : RedisCacheTe
     {
         public int Id { get; init; }
         public required string Name { get; init; }
+    }
+
+    [Fact]
+    public async Task should_read_set_members_by_the_redis_clock_when_the_app_clock_runs_ahead()
+    {
+        // given - an app clock years ahead of Redis; members expire by Redis's clock
+        await FlushAsync();
+        using var cache = CreateCache(timeProvider: new FakeTimeProvider(DateTimeOffset.UtcNow.AddYears(5)));
+        var key = Faker.Random.AlphaNumeric(10);
+        await cache.SetAddAsync(key, [1, 2], TimeSpan.FromMinutes(5), AbortToken);
+
+        // when
+        var all = await cache.GetSetAsync<int>(key, cancellationToken: AbortToken);
+        var page = await cache.GetSetAsync<int>(key, pageIndex: 1, pageSize: 1, cancellationToken: AbortToken);
+
+        // then - the members are still live on Redis, so the read returns them
+        all.Value.Should().BeEquivalentTo([1, 2]);
+        page.Value.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task should_hide_expired_set_members_when_the_app_clock_runs_behind()
+    {
+        // given - an app clock years behind Redis
+        await FlushAsync();
+        using var cache = CreateCache(timeProvider: new FakeTimeProvider(DateTimeOffset.UtcNow.AddYears(-5)));
+        var key = Faker.Random.AlphaNumeric(10);
+        await cache.SetAddAsync(key, [1], TimeSpan.FromMilliseconds(200), AbortToken);
+        await cache.SetAddAsync(key, [2], TimeSpan.FromMinutes(5), AbortToken);
+
+        // when - the short member expires on Redis's clock
+        await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(700), AbortToken);
+        var result = await cache.GetSetAsync<int>(key, cancellationToken: AbortToken);
+
+        // then
+        result.Value.Should().BeEquivalentTo([2]);
     }
 }

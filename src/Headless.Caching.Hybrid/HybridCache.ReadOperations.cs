@@ -380,7 +380,7 @@ public sealed partial class HybridCache
     )
     {
         _ThrowIfDisposed();
-        Argument.IsNotNull(prefix);
+        Argument.IsNotNullOrEmpty(prefix);
         cancellationToken.ThrowIfCancellationRequested();
 
         // Prefix queries go straight to L2 (L1 may not hold every matching key), but still through the L2
@@ -411,7 +411,7 @@ public sealed partial class HybridCache
     )
     {
         _ThrowIfDisposed();
-        Argument.IsNotNull(prefix);
+        Argument.IsNotNullOrEmpty(prefix);
         cancellationToken.ThrowIfCancellationRequested();
 
         // Route through the L2 resilience wrapper (circuit breaker + soft timeout) and degrade to an empty list

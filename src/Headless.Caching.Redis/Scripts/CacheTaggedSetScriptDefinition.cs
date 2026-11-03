@@ -8,7 +8,9 @@ namespace Headless.Caching.Scripts;
 /// Compare-and-set write: verifies the live value matches the caller's expected concurrency stamp before writing
 /// the framed entry with its key TTL. Used only when a write carries an <c>ExpectedConcurrencyStamp</c> (a
 /// factory write derived from an existing physical entry); plain writes use a direct SET. Family-2 tag/clear
-/// invalidation reads timestamp markers, so this script no longer maintains any reverse tag index.
+/// invalidation reads timestamp markers, so this script no longer maintains any reverse tag index. A non-positive
+/// <c>@keyTtlMs</c> deletes the key instead of writing it, under the same compare, so a write that is already expired
+/// cannot delete a value a concurrent writer stored after the caller read the entry.
 /// </summary>
 /// <remarks>
 /// The concurrency stamp captures only the fixed frame header (the first <c>@headerLen</c> bytes), so the CAS
@@ -43,6 +45,11 @@ internal sealed class CacheTaggedSetScriptDefinition : RedisScriptDefinition
               if string.sub(current, 1, headerLen) ~= @expectedValue then
                 return 0
               end
+            end
+
+            if keyTtlMs <= 0 then
+              redis.call('del', @key)
+              return 1
             end
 
             redis.call('set', @key, @value, 'PX', keyTtlMs)

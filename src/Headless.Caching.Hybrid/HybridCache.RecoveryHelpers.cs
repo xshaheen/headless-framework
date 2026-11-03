@@ -29,7 +29,19 @@ public sealed partial class HybridCache
     /// captured) it falls back to a presence-only check. Returns <see langword="true"/> when the write should still
     /// replay.
     /// </summary>
-    private Func<CancellationToken, ValueTask<bool>> _BuildL1StampGuard<T>(string key, DateTime? l1PhysicalStamp)
+    /// <param name="key">The key the queued write targets.</param>
+    /// <param name="l1PhysicalStamp">The physical expiry the write left on the L1 entry.</param>
+    /// <param name="requireLogicallyLive">
+    /// Also require that the L1 entry has not been logically invalidated since (a tag or clear marker, local or from a
+    /// peer). A scalar upsert replays through a plain L2 write that is born at replay time, so an invalidation issued
+    /// during the outage can only win here; a framed set-entry replay carries its original birth time and lets the L2
+    /// markers decide instead.
+    /// </param>
+    private Func<CancellationToken, ValueTask<bool>> _BuildL1StampGuard<T>(
+        string key,
+        DateTime? l1PhysicalStamp,
+        bool requireLogicallyLive = false
+    )
     {
         return async ct =>
         {
@@ -37,7 +49,13 @@ public sealed partial class HybridCache
             {
                 var current = await l1Store.TryGetEntryAsync<T>(key, cancellationToken: ct).ConfigureAwait(false);
 
-                return current.Found && current.PhysicalExpiresAt == l1PhysicalStamp;
+                if (!current.Found || current.PhysicalExpiresAt != l1PhysicalStamp)
+                {
+                    return false;
+                }
+
+                // A tag/clear-invalidated entry reads back with its logical expiry clamped to the read instant.
+                return !requireLogicallyLive || current.LogicalExpiresAt is not { } logical || logical > _GetUtcNow();
             }
 
             var fallback = await LocalCache.GetAsync<T>(key, ct).ConfigureAwait(false);
@@ -78,7 +96,7 @@ public sealed partial class HybridCache
 
         // Values without a TTL have no natural item expiry; bound them by the generous fixed window.
         var deadline = expiration.HasValue ? now + expiration.Value : now + queue.DefaultRetention;
-        var l1Guard = _BuildL1StampGuard<T>(key, l1PhysicalStamp);
+        var l1Guard = _BuildL1StampGuard<T>(key, l1PhysicalStamp, requireLogicallyLive: true);
 
         queue.Enqueue(
             key,
@@ -87,7 +105,8 @@ public sealed partial class HybridCache
             async ct =>
             {
                 // L1 is the source of truth: only replay while it still holds the exact physical stamp this write
-                // produced (a different stamp means a newer local write landed and the queued write is obsolete).
+                // produced (a different stamp means a newer local write landed and the queued write is obsolete), and
+                // while no tag or clear invalidation has reached that entry since.
                 if (!await l1Guard(ct).ConfigureAwait(false))
                 {
                     return HybridCacheRecoveryReplayOutcome.Obsolete;
