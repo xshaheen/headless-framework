@@ -398,6 +398,149 @@ public sealed class MessagePackBinarySerializerTests
         return new ReadOnlySequence<byte>(first, 0, second, second.Memory.Length);
     }
 
+    public sealed class PrimitiveContainer
+    {
+        public required CustomerId Customer { get; init; }
+
+        public required ContactEmail Contact { get; init; }
+
+        public ContactEmail? CarbonCopy { get; init; }
+
+        public ItemQuantity Quantity { get; init; }
+
+        public ItemQuantity? OptionalQuantity { get; init; }
+    }
+
+    public sealed class RawPrimitiveContainer
+    {
+        public required string Customer { get; init; }
+
+        public required string Contact { get; init; }
+
+        public int Quantity { get; init; }
+    }
+
+    [Fact]
+    public void should_round_trip_generated_primitives_inside_a_containing_object()
+    {
+        // given
+        var customer = Guid.NewGuid();
+        var value = new PrimitiveContainer
+        {
+            Customer = new CustomerId(customer),
+            Contact = new ContactEmail("owner@example.com"),
+            CarbonCopy = null,
+            Quantity = new ItemQuantity(7),
+            OptionalQuantity = new ItemQuantity(12),
+        };
+
+        // when
+        var result = _serializer.Deserialize<PrimitiveContainer>(_serializer.SerializeToBytes(value));
+
+        // then
+        result.Should().NotBeNull();
+        result!.Customer.GetUnderlyingPrimitiveValue().Should().Be(customer);
+        result.Contact.GetUnderlyingPrimitiveValue().Should().Be("owner@example.com");
+        result.CarbonCopy.Should().BeNull();
+        result.Quantity.GetUnderlyingPrimitiveValue().Should().Be(7);
+        result.OptionalQuantity.Should().NotBeNull();
+        result.OptionalQuantity!.Value.GetUnderlyingPrimitiveValue().Should().Be(12);
+    }
+
+    [Fact]
+    public void should_write_a_generated_primitive_as_its_underlying_value()
+    {
+        // given
+        var customer = Guid.NewGuid();
+        var value = new PrimitiveContainer
+        {
+            Customer = new CustomerId(customer),
+            Contact = new ContactEmail("owner@example.com"),
+            Quantity = new ItemQuantity(3),
+        };
+
+        // when — read back through a shape with plain members, so the primitives' own formatters play no part
+        var raw = _serializer.Deserialize<RawPrimitiveContainer>(_serializer.SerializeToBytes(value));
+
+        // then
+        raw.Should().NotBeNull();
+        raw!.Customer.Should().Be(customer.ToString());
+        raw.Contact.Should().Be("owner@example.com");
+        raw.Quantity.Should().Be(3);
+    }
+
+    [Fact]
+    public void should_validate_a_generated_primitive_when_reading()
+    {
+        // given
+        var bytes = _serializer.SerializeToBytes(
+            new RawPrimitiveContainer
+            {
+                Customer = Guid.NewGuid().ToString(),
+                Contact = "not-an-email",
+                Quantity = 1,
+            }
+        );
+
+        // when
+        var act = () => _serializer.Deserialize<PrimitiveContainer>(bytes);
+
+        // then
+        act.Should()
+            .Throw<MessagePackSerializationException>()
+            .WithInnerException<Headless.Generator.Primitives.InvalidPrimitiveValueException>();
+    }
+
+    [Fact]
+    public void should_round_trip_generated_primitives_at_the_top_level()
+    {
+        // given
+        var customer = Guid.NewGuid();
+
+        // when
+        var customerResult = _serializer.Deserialize<CustomerId>(
+            _serializer.SerializeToBytes(new CustomerId(customer))
+        );
+        var contactResult = _serializer.Deserialize<ContactEmail>(
+            _serializer.SerializeToBytes(new ContactEmail("owner@example.com"))
+        );
+        var quantityResult = _serializer.Deserialize<ItemQuantity>(_serializer.SerializeToBytes(new ItemQuantity(5)));
+
+        // then
+        customerResult.GetUnderlyingPrimitiveValue().Should().Be(customer);
+        contactResult.Should().NotBeNull();
+        contactResult!.GetUnderlyingPrimitiveValue().Should().Be("owner@example.com");
+        quantityResult.GetUnderlyingPrimitiveValue().Should().Be(5);
+    }
+
+    [Fact]
+    public void should_read_nil_as_a_null_class_primitive()
+    {
+        // given — written through the buffer API: the byte-array adapter short-circuits null before the formatter runs
+        var writer = new ArrayBufferWriter<byte>();
+        _serializer.Serialize<ContactEmail?>(null, writer);
+
+        // when
+        var result = _serializer.Deserialize<ContactEmail>(writer.WrittenMemory);
+
+        // then
+        writer.WrittenSpan.ToArray().Should().Equal(MessagePackCode.Nil);
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public void should_use_the_generated_formatter_when_options_are_supplied()
+    {
+        // given — the attribute is honored by every standard resolver chain, not only the default contractless one
+        var serializer = new MessagePackBinarySerializer(MessagePackSerializerOptions.Standard);
+
+        // when
+        var result = serializer.Deserialize<ItemQuantity>(serializer.SerializeToBytes(new ItemQuantity(9)));
+
+        // then
+        result.GetUnderlyingPrimitiveValue().Should().Be(9);
+    }
+
     private static MessagePackSerializerOptions _ReadOptions(MessagePackBinarySerializer serializer)
     {
         var field = typeof(MessagePackBinarySerializer).GetField(

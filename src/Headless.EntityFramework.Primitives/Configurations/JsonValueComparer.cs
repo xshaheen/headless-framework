@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Serializer;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 
 namespace Headless.EntityFramework;
@@ -28,7 +29,7 @@ public sealed class JsonValueComparer<T>(JsonSerializerOptions options)
 {
     /// <summary>Creates a comparer that serializes with the options the Headless JSON value converters use.</summary>
     public JsonValueComparer()
-        : this(EfCoreJsonOptions.Instance) { }
+        : this(JsonConstants.DefaultStorageJsonOptions) { }
 
     private static bool _AreEqual(T? left, T? right, JsonSerializerOptions options)
     {

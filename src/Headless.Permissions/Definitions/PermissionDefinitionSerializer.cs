@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Primitives;
+using Headless.Serializer;
 
 namespace Headless.Permissions;
 
@@ -36,7 +37,9 @@ public sealed class PermissionDefinitionSerializer(IGuidGenerator guidGenerator)
                 group.DisplayName
             );
 
-            foreach (var property in group.ExtraProperties)
+            // The record is compared with the stored one to decide whether the store is current, so its bag holds what
+            // the store reads back (a long for an int, a name for an enum), not the values the code declared.
+            foreach (var property in JsonConstants.DefaultStorageJsonOptions.RoundTrip(group.ExtraProperties) ?? [])
             {
                 permissionGroupRecord.SetProperty(property.Key, property.Value);
             }
@@ -59,7 +62,11 @@ public sealed class PermissionDefinitionSerializer(IGuidGenerator guidGenerator)
                 _SerializeProviders(permission.Providers)
             );
 
-            foreach (var property in permission.ExtraProperties)
+            // The record is compared with the stored one to decide whether the store is current, so its bag holds what
+            // the store reads back (a long for an int, a name for an enum), not the values the code declared.
+            foreach (
+                var property in JsonConstants.DefaultStorageJsonOptions.RoundTrip(permission.ExtraProperties) ?? []
+            )
             {
                 permissionRecord.SetProperty(property.Key, property.Value);
             }

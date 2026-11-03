@@ -7,6 +7,8 @@ using Headless.Caching;
 using Headless.Features;
 using Headless.Hosting;
 using Headless.Hosting.Schema;
+using Headless.Primitives;
+using Headless.Serializer;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
@@ -149,6 +151,46 @@ public abstract class FeaturesStorageConformanceTests<TFixture>(TFixture fixture
         stored!.Value.Should().Be("true");
         storedGroups.Should().ContainSingle(x => x.Name == "Checkout");
         storedFeatures.Should().ContainSingle(x => x.Name == "Checkout.Enabled");
+    }
+
+    [Fact]
+    public async Task should_round_trip_definition_extra_properties_with_their_keys_and_values_as_written()
+    {
+        // given — keys that a camelCasing dictionary policy would rename, and values the store reads back as CLR
+        // primitives
+        await fixture.DropSchemaAsync(_Schema, AbortToken);
+        using var host = fixture.CreateHost(_Schema);
+        await host.StartAsync(AbortToken);
+        var repository = host.Services.GetRequiredService<IFeatureDefinitionRecordRepository>();
+        var group = new FeatureGroupDefinitionRecord(Guid.NewGuid(), "Billing", "Billing");
+        group.SetProperty("Order", 5L).SetProperty("USD", "Default");
+        var feature = new FeatureDefinitionRecord(Guid.NewGuid(), "Billing", "Billing.Invoices", null, "Invoices");
+        feature.SetProperty("Group", "Billing").SetProperty("Enabled", true);
+
+        // when
+        await repository.SaveAsync([group], [], [], [feature], [], [], AbortToken);
+        var storedGroup = (await repository.GetGroupsListAsync(AbortToken)).Single();
+        var storedFeature = (await repository.GetFeaturesListAsync(AbortToken)).Single();
+
+        // then — the definitions read back equal, so a re-seed finds nothing to update
+        storedGroup.ExtraProperties.Should().BeEquivalentTo(group.ExtraProperties);
+        storedFeature.ExtraProperties.Should().BeEquivalentTo(feature.ExtraProperties);
+        storedGroup.HasSameData(group).Should().BeTrue();
+        storedFeature.HasSameData(feature).Should().BeTrue();
+    }
+
+    [Fact]
+    public void should_leave_the_shared_json_serializer_to_the_host()
+    {
+        // given — the shared serializer carries the host's JSON options for caches and blob metadata; a storage that
+        // registered its own first would decide those options by registration order
+        using var host = fixture.CreateHost(_Schema);
+
+        // when
+        var serializer = host.Services.GetService<IJsonSerializer>();
+
+        // then
+        serializer.Should().BeNull();
     }
 
     [Fact]

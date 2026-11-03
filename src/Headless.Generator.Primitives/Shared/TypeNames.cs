@@ -33,6 +33,12 @@ internal static class TypeNames
     public const string IModulusOperators = "global::System.Numerics.IModulusOperators";
     public const string DapperTypeHandler = "global::Dapper.SqlMapper.TypeHandler";
     public const string IDbDataParameter = "global::System.Data.IDbDataParameter";
+    public const string MessagePackFormatterAttribute = "global::MessagePack.MessagePackFormatter";
+    public const string IMessagePackFormatter = "global::MessagePack.Formatters.IMessagePackFormatter";
+    public const string MessagePackWriter = "global::MessagePack.MessagePackWriter";
+    public const string MessagePackReader = "global::MessagePack.MessagePackReader";
+    public const string MessagePackSerializerOptions = "global::MessagePack.MessagePackSerializerOptions";
+    public const string MessagePackFormatterResolverExtensions = "global::MessagePack.FormatterResolverExtensions";
     public const string ModelConfigurationBuilder = "global::Microsoft.EntityFrameworkCore.ModelConfigurationBuilder";
     public const string ValueConverter = "global::Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter";
 

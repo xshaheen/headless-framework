@@ -346,6 +346,9 @@
       "headless.checks": {
         "type": "Project"
       },
+      "headless.generator.primitives.abstractions": {
+        "type": "Project"
+      },
       "headless.serializer.abstractions": {
         "type": "Project"
       },

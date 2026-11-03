@@ -533,6 +533,7 @@ internal static class Parser
             GenerateXmlConverters = parseBool(provider, "PrimitiveXmlConverters"),
             GenerateEntityFrameworkValueConverters = parseBool(provider, "PrimitiveEntityFrameworkValueConverters"),
             GenerateDapperConverters = parseBool(provider, "PrimitiveDapperConverters"),
+            GenerateMessagePackFormatters = parseBool(provider, "PrimitiveMessagePackFormatters"),
         };
 
         static bool parseBool(AnalyzerConfigOptionsProvider p, string key)

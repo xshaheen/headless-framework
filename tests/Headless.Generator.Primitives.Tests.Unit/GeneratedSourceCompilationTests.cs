@@ -26,6 +26,7 @@ public sealed class GeneratedSourceCompilationTests : TestBase
         GenerateXmlConverters = true,
         GenerateEntityFrameworkValueConverters = true,
         GenerateDapperConverters = true,
+        GenerateMessagePackFormatters = true,
     };
 
     public static TheoryData<string> UnderlyingTypes =>
@@ -303,8 +304,8 @@ public sealed class GeneratedSourceCompilationTests : TestBase
         return new AssemblyLoadContext(name: null, isCollectible: true).LoadFromStream(stream);
     }
 
-    // Every assembly the test host can load: the whole shared framework plus Dapper and EF Core, which is what a
-    // consumer app that turns these converters on compiles against.
+    // Every assembly the test host can load: the whole shared framework plus Dapper, EF Core, and MessagePack, which is
+    // what a consumer app that turns these converters on compiles against.
     private static readonly Lazy<ImmutableArray<MetadataReference>> _References = new(() =>
         [
             .. ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!)

@@ -17,8 +17,7 @@ namespace Headless.Features;
 #pragma warning disable CA2100 // SQL text interpolates only validated schema and table identifiers; values are parameters.
 internal sealed class RelationalFeatureDefinitionRecordRepository(
     RelationalFeaturesTables tables,
-    RelationalFeaturesOptions options,
-    IJsonSerializer serializer
+    RelationalFeaturesOptions options
 ) : IFeatureDefinitionRecordRepository
 {
     // SQL Server allows 2,100 parameters per statement: 100 feature rows use 1,100.
@@ -254,16 +253,24 @@ internal sealed class RelationalFeatureDefinitionRecordRepository(
             command,
             _ParameterName("ExtraProperties", rowIndex),
             _Written,
-            serializer.SerializeToString(extraProperties) ?? "{}"
+            JsonSerializer.Serialize(extraProperties, JsonConstants.DefaultStorageJsonOptions)
         );
     }
 
-    private void _CopyExtraProperties(string json, ExtraProperties target)
+    private static void _CopyExtraProperties(string json, ExtraProperties target)
     {
-        foreach (var (key, value) in serializer.Deserialize<ExtraProperties>(json) ?? [])
+        foreach (var (key, value) in _ReadExtraProperties(json))
         {
             target[key] = value;
         }
+    }
+
+    // The bag's JSON is a storage format shared with the EF provider and every other node, so it is read and written
+    // with the fixed storage preset: keys as written, values as inferred CLR primitives. The host's JSON options
+    // never reach it.
+    private static ExtraProperties _ReadExtraProperties(string json)
+    {
+        return JsonSerializer.Deserialize<ExtraProperties>(json, JsonConstants.DefaultStorageJsonOptions) ?? [];
     }
 
     private DbCommand _CreateCommand(DbConnection connection, DbTransaction? transaction, string sql)

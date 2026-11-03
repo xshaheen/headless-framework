@@ -5,6 +5,8 @@ using System.Data.Common;
 using Headless;
 using Headless.Caching;
 using Headless.Hosting;
+using Headless.Primitives;
+using Headless.Serializer;
 using Headless.Settings;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
@@ -128,6 +130,51 @@ public abstract class SettingsStorageConformanceTests<TFixture>(TFixture fixture
         updated!.Value.Should().Be("Light");
         updated.CreatedAt.Should().NotBe(default);
         updated.UpdatedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task should_round_trip_definition_extra_properties_with_their_keys_and_values_as_written()
+    {
+        // given — keys that a camelCasing dictionary policy would rename, and values the store reads back as CLR
+        // primitives
+        await fixture.DropSchemaAsync(_Schema, AbortToken);
+        using var host = fixture.CreateHost(_Schema);
+        await host.StartAsync(AbortToken);
+        var repository = host.Services.GetRequiredService<ISettingDefinitionRecordRepository>();
+        var record = new SettingDefinitionRecord(
+            Guid.NewGuid(),
+            "Billing.Currency",
+            "Currency",
+            description: null,
+            defaultValue: null,
+            providers: null,
+            isVisibleToClients: false,
+            isInherited: true,
+            isEncrypted: false
+        );
+        record.SetProperty("Group", "Billing").SetProperty("Order", 5L).SetProperty("USD", true);
+
+        // when
+        await repository.SaveAsync([record], [], [], AbortToken);
+        var stored = (await repository.GetListAsync(AbortToken)).Single();
+
+        // then — the definition reads back equal, so a re-seed finds nothing to update
+        stored.ExtraProperties.Should().BeEquivalentTo(record.ExtraProperties);
+        stored.HasSameData(record).Should().BeTrue();
+    }
+
+    [Fact]
+    public void should_leave_the_shared_json_serializer_to_the_host()
+    {
+        // given — the shared serializer carries the host's JSON options for caches and blob metadata; a storage that
+        // registered its own first would decide those options by registration order
+        using var host = fixture.CreateHost(_Schema);
+
+        // when
+        var serializer = host.Services.GetService<IJsonSerializer>();
+
+        // then
+        serializer.Should().BeNull();
     }
 
     [Fact]

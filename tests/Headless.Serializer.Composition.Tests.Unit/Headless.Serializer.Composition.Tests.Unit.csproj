@@ -11,6 +11,20 @@
     <ProjectReference Include="..\..\src\Headless.Serializer.Abstractions\Headless.Serializer.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Headless.Serializer.Json\Headless.Serializer.Json.csproj" />
     <ProjectReference Include="..\..\src\Headless.Serializer.MessagePack\Headless.Serializer.MessagePack.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Generator.Primitives.Abstractions\Headless.Generator.Primitives.Abstractions.csproj" />
+    <ProjectReference
+      Include="..\..\src\Headless.Generator.Primitives\Headless.Generator.Primitives.csproj"
+      OutputItemType="Analyzer"
+      ReferenceOutputAssembly="false"
+      PrivateAssets="all"
+      ExcludeAssets="runtime"
+    />
+  </ItemGroup>
+  <PropertyGroup Label="Primitives Generator Settings">
+    <PrimitiveMessagePackFormatters>true</PrimitiveMessagePackFormatters>
+  </PropertyGroup>
+  <ItemGroup Label="Primitives Generator Settings">
+    <CompilerVisibleProperty Include="PrimitiveMessagePackFormatters" />
   </ItemGroup>
   <ItemGroup>
     <None Update="TestData\Jcs\**\*.json;TestData\Jcs\numbers.csv">

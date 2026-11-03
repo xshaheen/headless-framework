@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Primitives;
+using Headless.Serializer;
 
 namespace Headless.Features;
 
@@ -31,7 +32,9 @@ public sealed class FeatureDefinitionSerializer(IGuidGenerator guidGenerator) : 
         {
             var record = new FeatureGroupDefinitionRecord(guidGenerator.Create(), group.Name, group.DisplayName);
 
-            foreach (var property in group.ExtraProperties)
+            // The record is compared with the stored one to decide whether the store is current, so its bag holds what
+            // the store reads back (a long for an int, a name for an enum), not the values the code declared.
+            foreach (var property in JsonConstants.DefaultStorageJsonOptions.RoundTrip(group.ExtraProperties) ?? [])
             {
                 record.SetProperty(property.Key, property.Value);
             }
@@ -58,7 +61,9 @@ public sealed class FeatureDefinitionSerializer(IGuidGenerator guidGenerator) : 
                 _SerializeProviders(feature.Providers)
             );
 
-            foreach (var property in feature.ExtraProperties)
+            // The record is compared with the stored one to decide whether the store is current, so its bag holds what
+            // the store reads back (a long for an int, a name for an enum), not the values the code declared.
+            foreach (var property in JsonConstants.DefaultStorageJsonOptions.RoundTrip(feature.ExtraProperties) ?? [])
             {
                 featureRecord.SetProperty(property.Key, property.Value);
             }

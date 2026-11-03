@@ -11,6 +11,7 @@
     <CompilerVisibleProperty Include="PrimitiveTypeConverters" />
     <CompilerVisibleProperty Include="PrimitiveEntityFrameworkValueConverters" />
     <CompilerVisibleProperty Include="PrimitiveDapperConverters" />
+    <CompilerVisibleProperty Include="PrimitiveMessagePackFormatters" />
   </ItemGroup>
   <ItemGroup>
     <None Include="buildTransitive\*.props" Pack="true" PackagePath="buildTransitive\" />

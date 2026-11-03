@@ -17,21 +17,27 @@ public interface IJsonOptionsProvider
 }
 
 /// <summary>
-/// Default <see cref="IJsonOptionsProvider"/> that returns <see cref="JsonConstants.DefaultWebJsonOptions"/>
-/// for both serialization and deserialization.
+/// Default <see cref="IJsonOptionsProvider"/>: returns <see cref="JsonConstants.DefaultStorageJsonOptions"/> for both
+/// serialization and deserialization, so a value the framework stores for the app (a cache entry, blob metadata,
+/// coordination metadata) reads back with the keys and values it was written with, on every node.
 /// </summary>
+/// <remarks>
+/// HTTP JSON uses the web preset instead. That preset camelCases property names and reads leniently, which suits a
+/// client but not a round trip. A host that registers its own provider changes how its stored values are written; if
+/// that provider returns its HTTP options, stored property names follow them too.
+/// </remarks>
 [PublicAPI]
 public sealed class DefaultJsonOptionsProvider : IJsonOptionsProvider
 {
     /// <inheritdoc/>
     public JsonSerializerOptions GetSerializeOptions()
     {
-        return JsonConstants.DefaultWebJsonOptions;
+        return JsonConstants.DefaultStorageJsonOptions;
     }
 
     /// <inheritdoc/>
     public JsonSerializerOptions GetDeserializeOptions()
     {
-        return JsonConstants.DefaultWebJsonOptions;
+        return JsonConstants.DefaultStorageJsonOptions;
     }
 }

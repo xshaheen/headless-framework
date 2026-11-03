@@ -84,6 +84,9 @@ internal static class TestHelpers
                     case "build_property.PrimitiveDapperConverters":
                         value = options.GenerateDapperConverters.ToString();
                         return true;
+                    case "build_property.PrimitiveMessagePackFormatters":
+                        value = options.GenerateMessagePackFormatters.ToString();
+                        return true;
                     default:
                         value = null;
                         return false;

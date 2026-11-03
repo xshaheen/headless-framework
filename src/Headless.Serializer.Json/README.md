@@ -4,7 +4,7 @@ System.Text.Json implementation of `IJsonSerializer` with opinionated defaults a
 
 ## Why use this package
 
-Provides JSON serialization via System.Text.Json with a battle-tested default configuration (camelCase, enum strings, cycle-safe, nullable-aware) and a set of reusable converters for common edge cases — all wired through the `IJsonSerializer` abstraction.
+Provides JSON serialization via System.Text.Json with two presets, one for HTTP APIs and one for stored JSON that reads back what it wrote, and a set of reusable converters for common edge cases — all wired through the `IJsonSerializer` abstraction.
 
 ## Install
 

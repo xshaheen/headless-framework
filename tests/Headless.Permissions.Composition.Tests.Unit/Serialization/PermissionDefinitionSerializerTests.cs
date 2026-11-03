@@ -1,7 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless;
+using Headless.EntityFramework;
 using Headless.Permissions;
+using Headless.Primitives;
 using Headless.Testing.Tests;
 
 namespace Tests.Serialization;
@@ -78,7 +80,8 @@ public sealed class PermissionDefinitionSerializerTests : TestBase
         groupRecord.ExtraProperties.Should().ContainKey("CustomKey");
         groupRecord.ExtraProperties["CustomKey"].Should().Be("CustomValue");
         groupRecord.ExtraProperties.Should().ContainKey("NumberKey");
-        groupRecord.ExtraProperties["NumberKey"].Should().Be(42);
+        // The record holds what the store reads back, so it compares equal to the stored record: an int is a long.
+        groupRecord.ExtraProperties["NumberKey"].Should().Be(42L);
 
         // then - permission properties transferred to extra properties
         permissionRecord.ExtraProperties.Should().ContainKey("PermissionKey");
@@ -86,6 +89,45 @@ public sealed class PermissionDefinitionSerializerTests : TestBase
     }
 
     #endregion
+
+    [Fact]
+    public void should_match_the_stored_records_after_a_storage_round_trip_of_their_extra_properties()
+    {
+        // given — properties the store reads back as other CLR types (an int as a long, an enum as its name, an array
+        // as JSON)
+        var group = new PermissionGroupDefinition("Billing");
+        group["Order"] = 5;
+        group["Kind"] = DayOfWeek.Monday;
+        var permission = group.AddChild("Invoices");
+        permission["Group"] = "Billing";
+        permission["Tags"] = new[] { "a", "b" };
+        var groupRecord = _sut.Serialize(group);
+        var permissionRecord = _sut.Serialize(permission, group);
+        var storedGroup = _sut.Serialize(group);
+        var storedPermission = _sut.Serialize(permission, group);
+        _ReplaceWithStoredBag(storedGroup);
+        _ReplaceWithStoredBag(storedPermission);
+
+        // when
+        var sameGroup = groupRecord.HasSameData(storedGroup);
+        var samePermission = permissionRecord.HasSameData(storedPermission);
+
+        // then — otherwise every seed rewrites the definitions and seed verification reports the store stale forever
+        sameGroup.Should().BeTrue();
+        samePermission.Should().BeTrue();
+    }
+
+    private static void _ReplaceWithStoredBag(IHasExtraProperties record)
+    {
+        var converter = new ExtraPropertiesValueConverter();
+        var json = (string)converter.ConvertToProvider(record.ExtraProperties)!;
+        record.ExtraProperties.Clear();
+
+        foreach (var (key, value) in (ExtraProperties)converter.ConvertFromProvider(json)!)
+        {
+            record.ExtraProperties[key] = value;
+        }
+    }
 
     #region Test 115: should_serialize_providers_list
 

@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless;
+using Headless.EntityFramework;
+using Headless.Primitives;
 using Headless.Settings;
 using Headless.Testing.Tests;
 
@@ -44,6 +46,35 @@ public sealed class SettingDefinitionSerializerTests : TestBase
         record.IsVisibleToClients.Should().BeTrue();
         record.IsInherited.Should().BeFalse();
         record.IsEncrypted.Should().BeTrue();
+    }
+
+    [Fact]
+    public void should_match_the_stored_record_after_a_storage_round_trip_of_its_extra_properties()
+    {
+        // given — a definition whose properties the store reads back as other CLR types (an int as a long, an enum
+        // as its name, an array as JSON)
+        var definition = new SettingDefinition("TestSetting");
+        definition["Group"] = "Billing";
+        definition["Order"] = 5;
+        definition["Kind"] = DayOfWeek.Monday;
+        definition["Tags"] = new[] { "a", "b" };
+        var record = _sut.Serialize(definition);
+        var converter = new ExtraPropertiesValueConverter();
+        var stored = _sut.Serialize(definition);
+        var json = (string)converter.ConvertToProvider(record.ExtraProperties)!;
+        stored.ExtraProperties.Clear();
+
+        foreach (var (key, value) in (ExtraProperties)converter.ConvertFromProvider(json)!)
+        {
+            stored.ExtraProperties[key] = value;
+        }
+
+        // when
+        var same = record.HasSameData(stored);
+
+        // then — otherwise every seed rewrites the definition and seed verification reports the store stale forever
+        same.Should().BeTrue();
+        stored.ExtraProperties.Keys.Should().BeEquivalentTo("Group", "Order", "Kind", "Tags");
     }
 
     [Fact]

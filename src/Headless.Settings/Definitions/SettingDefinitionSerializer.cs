@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Primitives;
+using Headless.Serializer;
 
 namespace Headless.Settings;
 
@@ -24,7 +25,9 @@ public sealed class SettingDefinitionSerializer(IGuidGenerator guidGenerator) : 
                 isEncrypted: setting.IsEncrypted
             );
 
-            foreach (var property in setting.ExtraProperties)
+            // The record is compared with the stored one to decide whether the store is current, so its bag holds what
+            // the store reads back (a long for an int, a name for an enum), not the values the code declared.
+            foreach (var property in JsonConstants.DefaultStorageJsonOptions.RoundTrip(setting.ExtraProperties) ?? [])
             {
                 record.SetProperty(property.Key, property.Value);
             }

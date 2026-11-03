@@ -2,7 +2,6 @@
 
 using FluentValidation;
 using Headless.Hosting.Schema;
-using Headless.Serializer;
 using Headless.Sql;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -41,7 +40,6 @@ internal static class RelationalPermissionsStorage
         );
 
         services.TryAddSingleton(TimeProvider.System);
-        services.TryAddSingleton<IJsonSerializer>(_ => new SystemJsonSerializer());
         services.TryAddSingleton<IPermissionGrantRepository>(sp => new RelationalPermissionGrantRepository(
             sp.GetRequiredService<RelationalPermissionsTables>(),
             sp.GetRequiredService<IOptions<TOptions>>().Value,
@@ -51,8 +49,7 @@ internal static class RelationalPermissionsStorage
         services.TryAddSingleton<IPermissionDefinitionRecordRepository>(
             sp => new RelationalPermissionDefinitionRecordRepository(
                 sp.GetRequiredService<RelationalPermissionsTables>(),
-                sp.GetRequiredService<IOptions<TOptions>>().Value,
-                sp.GetRequiredService<IJsonSerializer>()
+                sp.GetRequiredService<IOptions<TOptions>>().Value
             )
         );
     }
