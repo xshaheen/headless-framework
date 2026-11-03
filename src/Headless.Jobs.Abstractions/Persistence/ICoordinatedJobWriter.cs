@@ -17,7 +17,8 @@ namespace Headless.Jobs;
 /// invalidation. Those side effects are the manager's responsibility and are registered on
 /// <c>IUnitOfWork.OnCompleted</c> so they fire only after the caller's transaction commits (and never on
 /// rollback). <see cref="InvalidateCronExpressionsCacheAsync" /> is exposed here because the cron-expressions cache
-/// is owned by the provider; the manager registers it on commit rather than letting it fire on a pre-commit snapshot.
+/// is owned by the provider; the manager runs it from the post-commit worker rather than letting it fire on a
+/// pre-commit snapshot.
 /// </remarks>
 internal interface ICoordinatedJobWriter<in TTimeJob, in TCronJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
@@ -93,8 +94,9 @@ internal interface ICoordinatedJobWriter<in TTimeJob, in TCronJob>
     );
 
     /// <summary>
-    /// Invalidates the cron-expressions cache. The manager registers this on <c>OnCommit</c> for the coordinated cron
-    /// path so the cache is dropped only after the caller's transaction commits — never on a pre-commit snapshot.
+    /// Invalidates the cron-expressions cache. For the coordinated cron path the manager runs this from the post-commit
+    /// worker, so the cache is dropped only after the caller's transaction commits — never on a pre-commit snapshot —
+    /// and a stalled cache never holds the commit.
     /// Best-effort and deliberately without a <see cref="CancellationToken" />: it runs post-commit as a fire-after-commit
     /// invalidation, and the durable store remains authoritative if the cache layer is unavailable.
     /// </summary>

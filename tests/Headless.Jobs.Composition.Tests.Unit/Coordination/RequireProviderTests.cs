@@ -80,6 +80,8 @@ public sealed class RequireProviderTests
     {
         public NodeIdentity? Identity => new(new NodeId("stub"), new NodeIncarnation(1));
 
+        public string ClusterName => CoordinationOptions.DefaultClusterName;
+
         public CancellationToken LocalMembershipLostToken => CancellationToken.None;
 
         public ValueTask<NodeIdentity> RegisterAsync(CancellationToken cancellationToken = default)

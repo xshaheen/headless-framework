@@ -7,7 +7,7 @@ namespace Headless.Jobs.Instrumentation;
 
 internal abstract class JobsBaseLoggerInstrumentation(ILogger logger, IJobsOwnerIdentity ownerIdentity)
 {
-    // Live read so telemetry reflects the node@incarnation owner once registration completes (DisplayOwner never throws).
+    // Live read so telemetry reflects the cluster/node@incarnation owner once registration completes (DisplayOwner never throws).
     protected string InstanceIdentifier => ownerIdentity.DisplayOwner;
 
     public abstract Activity? StartJobActivity(string activityName, JobExecutionState context);

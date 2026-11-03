@@ -475,8 +475,7 @@ public abstract class JobsProgressConformanceTests<TFixture>(TFixture fixture) :
         return progress is null ? state : state.SetProperty(x => x.Progress, progress);
     }
 
-    private static string _Owner(IHost host) =>
-        host.Services.GetRequiredService<INodeMembership>().Identity!.Value.ToString();
+    private static string _Owner(IHost host) => host.Services.GetRequiredService<INodeMembership>().GetOwnerTag()!;
 
     private static IJobPersistenceProvider<TimeJobEntity, CronJobEntity> _Store(IHost host) =>
         host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();

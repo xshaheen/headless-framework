@@ -12,7 +12,6 @@
     <InternalsVisibleTo Include="Headless.Idempotency.InMemory" />
     <InternalsVisibleTo Include="Headless.Idempotency.InMemory.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Idempotency.Tests.Harness" />
-    <InternalsVisibleTo Include="Headless.Jobs.EntityFramework" />
     <InternalsVisibleTo Include="Headless.UnitOfWork.EntityFramework" />
     <InternalsVisibleTo Include="Headless.Sql.PostgreSql" />
     <InternalsVisibleTo Include="Headless.Sql.SqlServer" />

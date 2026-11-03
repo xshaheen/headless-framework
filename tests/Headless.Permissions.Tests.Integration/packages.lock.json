@@ -1017,6 +1017,18 @@
           "Headless.Messaging": "[1.0.0, )"
         }
       },
+      "headless.multitenancy": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Caching.Abstractions": "[1.0.0, )",
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
+          "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.13, )",
+          "Microsoft.Extensions.Hosting.Abstractions": "[10.0.13, )"
+        }
+      },
       "headless.multitenancy.abstractions": {
         "type": "Project",
         "dependencies": {

@@ -316,7 +316,7 @@ public sealed class CronFleetAgreementTests : TestBase
             .TryGetStampOwner(out Arg.Any<string?>())
             .Returns(call =>
             {
-                call[0] = _Self.ToString();
+                call[0] = NodeOwnerTag.Format(membership.ClusterName, _Self);
                 return true;
             });
 

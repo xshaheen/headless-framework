@@ -50,6 +50,39 @@ public sealed class JobsDashboardRegistryTests : TestBase
     }
 
     [Fact]
+    public void should_generate_the_request_example_with_the_configured_request_json_options()
+    {
+        // A host that names request properties in camelCase deserializes job payloads with the same options; an
+        // example written in PascalCase would bind no property and the job would run on a defaulted request.
+        var serialization = new JobsRequestSerializationOptions
+        {
+            SerializerOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase },
+        };
+        var registry = JobFunctionRegistryBuilder.Build(
+            [new KeyValuePair<string, JobFunctionRegistration>(_FunctionName, _Registration())],
+            [
+                new KeyValuePair<string, (string, Type)>(
+                    _FunctionName,
+                    (typeof(ExampleRequest).FullName!, typeof(ExampleRequest))
+                ),
+            ],
+            []
+        );
+        var (repository, _, _, serviceProvider) = _CreateRepository(registry, serialization: serialization);
+        using (serviceProvider)
+        {
+            var example = repository.GetJobFunctions().Should().ContainSingle().Which.Item2.Item2;
+
+            example.Should().Contain("\"name\": \"string\"");
+            var request = JsonSerializer.Deserialize<ExampleRequest>(example, serialization.SerializerOptions);
+            request.Should().NotBeNull();
+            request!.Name.Should().Be("string");
+            request.Retries.Should().Be(123);
+            request.Tags.Should().Equal("string");
+        }
+    }
+
+    [Fact]
     public void should_return_an_empty_request_example_when_the_registered_type_cannot_be_constructed()
     {
         var registry = JobFunctionRegistryBuilder.Build(
@@ -227,7 +260,11 @@ public sealed class JobsDashboardRegistryTests : TestBase
         IJobPersistenceProvider<TimeJobEntity, CronJobEntity> Persistence,
         IJobsDispatcher Dispatcher,
         ServiceProvider ServiceProvider
-    ) _CreateRepository(JobFunctionRegistry registry, IGuidGenerator? guidGenerator = null)
+    ) _CreateRepository(
+        JobFunctionRegistry registry,
+        IGuidGenerator? guidGenerator = null,
+        JobsRequestSerializationOptions? serialization = null
+    )
     {
         var persistence = Substitute.For<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
         var dispatcher = Substitute.For<IJobsDispatcher>();
@@ -243,7 +280,7 @@ public sealed class JobsDashboardRegistryTests : TestBase
             TimeProvider.System,
             guidGenerator ?? new SequentialGuidGenerator(SequentialGuidType.Version7),
             serviceProvider,
-            JobsRequestSerializationOptions.Default
+            serialization ?? JobsRequestSerializationOptions.Default
         );
 
         return (repository, persistence, dispatcher, serviceProvider);

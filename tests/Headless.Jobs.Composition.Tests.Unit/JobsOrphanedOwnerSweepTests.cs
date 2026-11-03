@@ -30,10 +30,16 @@ public sealed class JobsOrphanedOwnerSweepTests : TestBase
         manager
             .GetActiveOwnerIdsAsync(Arg.Any<CancellationToken>())
             .Returns(
-                Task.FromResult<string[]>(["ghost@1", aliveIdentity.ToString(), suspectedIdentity.ToString(), "self@3"])
+                Task.FromResult<string[]>([
+                    _Tag("ghost@1"),
+                    _Tag(aliveIdentity),
+                    _Tag(suspectedIdentity),
+                    _Tag("self@3"),
+                ])
             );
 
         var membership = Substitute.For<INodeMembership>();
+        membership.ClusterName.Returns(_Cluster);
         membership
             .GetLivenessSnapshotAsync(Arg.Any<CancellationToken>())
             .Returns(
@@ -59,7 +65,7 @@ public sealed class JobsOrphanedOwnerSweepTests : TestBase
             .TryGetStampOwner(out Arg.Any<string?>())
             .Returns(call =>
             {
-                call[0] = "self@3";
+                call[0] = _Tag("self@3");
                 return true;
             });
 
@@ -84,7 +90,7 @@ public sealed class JobsOrphanedOwnerSweepTests : TestBase
             await manager
                 .Received(1)
                 .ReleaseDeadNodeResources(
-                    Arg.Is<IReadOnlyCollection<string>>(owners => owners.SequenceEqual(new[] { "ghost@1" })),
+                    Arg.Is<IReadOnlyCollection<string>>(owners => owners.SequenceEqual(new[] { _Tag("ghost@1") })),
                     CancellationToken.None
                 );
         }
@@ -105,9 +111,10 @@ public sealed class JobsOrphanedOwnerSweepTests : TestBase
         var suspectedIdentity = new NodeIdentity(new NodeId("slow"), new NodeIncarnation(4));
         manager
             .GetActiveOwnerIdsAsync(Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<string[]>([deadIdentity.ToString(), suspectedIdentity.ToString()]));
+            .Returns(Task.FromResult<string[]>([_Tag(deadIdentity), _Tag(suspectedIdentity)]));
 
         var membership = Substitute.For<INodeMembership>();
+        membership.ClusterName.Returns(_Cluster);
         membership
             .GetLivenessSnapshotAsync(Arg.Any<CancellationToken>())
             .Returns(
@@ -151,9 +158,7 @@ public sealed class JobsOrphanedOwnerSweepTests : TestBase
             await manager
                 .Received(1)
                 .ReleaseDeadNodeResources(
-                    Arg.Is<IReadOnlyCollection<string>>(owners =>
-                        owners.SequenceEqual(new[] { deadIdentity.ToString() })
-                    ),
+                    Arg.Is<IReadOnlyCollection<string>>(owners => owners.SequenceEqual(new[] { _Tag(deadIdentity) })),
                     CancellationToken.None
                 );
         }
@@ -166,7 +171,7 @@ public sealed class JobsOrphanedOwnerSweepTests : TestBase
     [Fact]
     public async Task does_not_reclaim_an_owner_that_registers_and_stamps_work_between_the_owner_and_snapshot_reads()
     {
-        const string newlyRegisteredOwner = "new-owner@1";
+        var newlyRegisteredOwner = _Tag("new-owner@1");
         var identity = new NodeIdentity(new NodeId("new-owner"), new NodeIncarnation(1));
         var ownerScanCompleted = false;
         var snapshotObservedRegistration = false;
@@ -180,6 +185,7 @@ public sealed class JobsOrphanedOwnerSweepTests : TestBase
             });
 
         var membership = Substitute.For<INodeMembership>();
+        membership.ClusterName.Returns(_Cluster);
         membership
             .GetLivenessSnapshotAsync(Arg.Any<CancellationToken>())
             .Returns(_ =>
@@ -224,9 +230,12 @@ public sealed class JobsOrphanedOwnerSweepTests : TestBase
     public async Task does_not_start_the_release_batch_after_local_membership_is_lost()
     {
         var manager = _Manager();
-        manager.GetActiveOwnerIdsAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult<string[]>(["ghost@1"]));
+        manager
+            .GetActiveOwnerIdsAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<string[]>([_Tag("ghost@1")]));
 
         var membership = Substitute.For<INodeMembership>();
+        membership.ClusterName.Returns(_Cluster);
         membership
             .GetLivenessSnapshotAsync(Arg.Any<CancellationToken>())
             .Returns(new ValueTask<IReadOnlyList<NodeLivenessSnapshot>>([]));
@@ -280,12 +289,13 @@ public sealed class JobsOrphanedOwnerSweepTests : TestBase
             .GetActiveOwnerIdsAsync(Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
-                string[] result = registered ? [interleavedIdentity.ToString()] : [];
+                string[] result = registered ? [_Tag(interleavedIdentity)] : [];
                 registered = true;
                 return Task.FromResult(result);
             });
 
         var membership = Substitute.For<INodeMembership>();
+        membership.ClusterName.Returns(_Cluster);
         membership
             .GetLivenessSnapshotAsync(Arg.Any<CancellationToken>())
             .Returns(_ =>
@@ -330,7 +340,7 @@ public sealed class JobsOrphanedOwnerSweepTests : TestBase
 
             await manager
                 .DidNotReceive()
-                .ReleaseDeadNodeResources(interleavedIdentity.ToString(), Arg.Any<CancellationToken>());
+                .ReleaseDeadNodeResources(_Tag(interleavedIdentity), Arg.Any<CancellationToken>());
         }
         finally
         {
@@ -373,6 +383,71 @@ public sealed class JobsOrphanedOwnerSweepTests : TestBase
             await service.StopAsync(CancellationToken.None);
         }
     }
+
+    [Fact]
+    public async Task leaves_owners_stamped_by_another_cluster_sharing_the_store_alone()
+    {
+        // Two apps share one Jobs store under different coordination clusters. This node's snapshot lists only its
+        // own cluster, so the other app's live owner is absent from it without being orphaned.
+        var manager = _Manager();
+        var self = new NodeIdentity(new NodeId("node-a"), new NodeIncarnation(1));
+        var otherCluster = NodeOwnerTag.Format("billing", self);
+        manager
+            .GetActiveOwnerIdsAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<string[]>([_Tag(self), otherCluster, _Tag("ghost@1")]));
+        var membership = Substitute.For<INodeMembership>();
+        membership.ClusterName.Returns(_Cluster);
+        membership
+            .GetLivenessSnapshotAsync(Arg.Any<CancellationToken>())
+            .Returns(
+                new ValueTask<IReadOnlyList<NodeLivenessSnapshot>>([
+                    new NodeLivenessSnapshot(
+                        self,
+                        NodeLivenessState.Alive,
+                        Role: null,
+                        new Dictionary<string, string>(StringComparer.Ordinal)
+                    ),
+                ])
+            );
+        var ownerIdentity = Substitute.For<IJobsOwnerIdentity>();
+        ownerIdentity.MembershipLostToken.Returns(CancellationToken.None);
+
+        await using var harness = _Service(manager, ownerIdentity, membership);
+        await harness.Service.StartAsync(AbortToken);
+
+        try
+        {
+            await _WaitForAsync(() =>
+                manager
+                    .ReceivedCalls()
+                    .Any(c =>
+                        string.Equals(
+                            c.GetMethodInfo().Name,
+                            nameof(manager.ReleaseDeadNodeResources),
+                            StringComparison.Ordinal
+                        )
+                    )
+            );
+
+            await manager
+                .Received(1)
+                .ReleaseDeadNodeResources(
+                    Arg.Is<IReadOnlyCollection<string>>(owners => owners.SequenceEqual(new[] { _Tag("ghost@1") })),
+                    CancellationToken.None
+                );
+        }
+        finally
+        {
+            await harness.Service.StopAsync(CancellationToken.None);
+        }
+    }
+
+    private const string _Cluster = "orders";
+
+    private static string _Tag(string nodeAtIncarnation) =>
+        NodeOwnerTag.Format(_Cluster, NodeIdentity.Parse(nodeAtIncarnation));
+
+    private static string _Tag(NodeIdentity identity) => NodeOwnerTag.Format(_Cluster, identity);
 
     private static async Task _WaitForAsync(Func<bool> condition)
     {

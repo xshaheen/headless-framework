@@ -406,19 +406,28 @@ public sealed class SqlServerDialect : ISqlDialect
 
     public SqlErrorKind Classify(Exception exception)
     {
-        return exception is SqlException { Number: var number }
-            ? number switch
-            {
-                SqlErrorCodes.SqlServer.DuplicateKeyUniqueIndex
-                or SqlErrorCodes.SqlServer.DuplicateKeyUniqueConstraint => SqlErrorKind.UniqueViolation,
-                SqlErrorCodes.SqlServer.DeadlockVictim => SqlErrorKind.Deadlock,
-                SqlErrorCodes.SqlServer.SnapshotUpdateConflict => SqlErrorKind.SerializationConflict,
-                2714 or 1913 or 2759 => SqlErrorKind.DuplicateObject,
-                1222 => SqlErrorKind.LockTimeout,
-                SqlErrorCodes.SqlServer.UncommittableTransaction => SqlErrorKind.TransactionAborted,
-                _ => SqlErrorKind.None,
-            }
-            : SqlErrorKind.None;
+        if (exception is not SqlException sqlException)
+        {
+            return SqlErrorKind.None;
+        }
+
+        var kind = sqlException.Number switch
+        {
+            SqlErrorCodes.SqlServer.DuplicateKeyUniqueIndex or SqlErrorCodes.SqlServer.DuplicateKeyUniqueConstraint =>
+                SqlErrorKind.UniqueViolation,
+            SqlErrorCodes.SqlServer.DeadlockVictim => SqlErrorKind.Deadlock,
+            SqlErrorCodes.SqlServer.SnapshotUpdateConflict => SqlErrorKind.SerializationConflict,
+            2714 or 1913 or 2759 => SqlErrorKind.DuplicateObject,
+            1222 => SqlErrorKind.LockTimeout,
+            SqlErrorCodes.SqlServer.UncommittableTransaction => SqlErrorKind.TransactionAborted,
+            _ => SqlErrorKind.None,
+        };
+
+        // Number is only the first error. The first error still decides, but a duplicate key reported behind an
+        // error this switch does not know is a unique violation all the same.
+        return kind is SqlErrorKind.None && RelationalFaults.IsUniqueViolation(sqlException)
+            ? SqlErrorKind.UniqueViolation
+            : kind;
     }
 
     private static void _ValidateTuples(
