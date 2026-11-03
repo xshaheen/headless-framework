@@ -22,7 +22,7 @@ public sealed class DerivedSoftDeleteModelTests : TestBase
     {
         // given
         await using var connection = await _OpenAsync();
-        var logs = new CapturingLoggerProvider();
+        using var logs = new CapturingLoggerProvider();
         await using var provider = _Provider<WarningDbContext>(connection, logs);
         await using var scope = provider.CreateAsyncScope();
 
@@ -41,7 +41,8 @@ public sealed class DerivedSoftDeleteModelTests : TestBase
     {
         // given
         await using var connection = await _OpenAsync();
-        await using var provider = _Provider<PlainRootDbContext>(connection, new CapturingLoggerProvider());
+        using var logs = new CapturingLoggerProvider();
+        await using var provider = _Provider<PlainRootDbContext>(connection, logs);
         await using (var writeScope = provider.CreateAsyncScope())
         {
             var writer = writeScope.ServiceProvider.GetRequiredService<PlainRootDbContext>();
@@ -69,7 +70,7 @@ public sealed class DerivedSoftDeleteModelTests : TestBase
     {
         // given
         await using var connection = await _OpenAsync();
-        var logs = new CapturingLoggerProvider();
+        using var logs = new CapturingLoggerProvider();
         await using var provider = _Provider<SoftRootDbContext>(connection, logs);
         await using var scope = provider.CreateAsyncScope();
 
