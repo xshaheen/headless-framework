@@ -887,6 +887,7 @@ libphonenumber-backed operations for phone numbers: formatting, normalization, r
 - Every formatting, normalization, and region member parses the number on each call. Cache the result when a hot path formats the same number repeatedly.
 - Inside a `Headless.*` namespace, a fully qualified `PhoneNumbers.X` now resolves to this package's `Headless.PhoneNumbers` namespace. Import libphonenumber with `using PhoneNumbers;` at file scope, or qualify it as `global::PhoneNumbers.X`.
 - Conversions to and from libphonenumber's `PhoneNumber` are explicit methods (`ToUtilsPhoneNumber()`, `PhoneNumber.FromPhoneNumber(...)`) because C# extension members cannot declare conversion operators.
+- `Number` is libphonenumber's national significant number, so it keeps a leading zero that a region dials as part of the subscriber number: `FromInternationalFormat("+39 06 1234 5678").Number` is `0612345678`, and `MobilePhoneNumberValidator.IsValid(..., out normalizedNumber)` returns the E.164 form (`+2250701234567` for Côte d'Ivoire). A national trunk prefix such as Egypt's `0` is not part of it.
 
 ### Install
 

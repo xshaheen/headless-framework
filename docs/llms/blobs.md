@@ -961,6 +961,8 @@ builder.Services.AddHeadlessBlobs(blobs =>
 );
 ```
 
+The store reads the `PrivateKey` stream once, when its connection pool is created, and disposes it; every pooled connection, read-stream connections included, then authenticates with that parsed key. A key that cannot be parsed fails when the store is first resolved, not on the first operation.
+
 ### Runtime behavior
 
 Registered via `AddHeadlessBlobs(b => b.UseSsh(...))` or `AddNamed("name", i => i.UseSsh(...))`:

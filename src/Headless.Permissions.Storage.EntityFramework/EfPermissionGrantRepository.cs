@@ -178,6 +178,44 @@ internal sealed class EfPermissionGrantRepository<TContext>(
         await cache.RemoveAllAsync(owned.Select(_CacheKey), cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Deletes the supplied records that belong to the current tenant and inserts the new ones in one
+    /// <c>SaveChanges</c>, so both commit or neither does.
+    /// </summary>
+    public async Task SaveAsync(
+        IReadOnlyCollection<PermissionGrantRecord> inserted,
+        IReadOnlyCollection<PermissionGrantRecord> deleted,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var owned = _OwnedByCurrentTenant(deleted);
+
+        if (inserted.Count == 0 && owned.Count == 0)
+        {
+            return;
+        }
+
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+
+        using (_BeginHostWrite([.. inserted, .. owned]))
+        {
+            var set = db.Set<PermissionGrantRecord>();
+            set.RemoveRange(owned);
+            set.AddRange(inserted);
+
+            // One SaveChanges runs every statement in the transaction EF opens for it, and EF orders a delete before
+            // an insert that reuses its unique key, so a failing insert rolls the delete back.
+            await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await cache
+            .RemoveAllAsync(
+                inserted.Concat(owned).Select(_CacheKey).Distinct(StringComparer.Ordinal),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
     public Task<List<PermissionGrantRecord>> GetListEnlistedAsync(
         IUnitOfWork unitOfWork,
         string providerName,

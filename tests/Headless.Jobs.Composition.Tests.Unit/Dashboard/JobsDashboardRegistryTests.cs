@@ -106,6 +106,36 @@ public sealed class JobsDashboardRegistryTests : TestBase
     }
 
     [Fact]
+    public void should_generate_a_truncated_request_example_when_the_request_type_references_itself()
+    {
+        var registry = JobFunctionRegistryBuilder.Build(
+            [new KeyValuePair<string, JobFunctionRegistration>(_FunctionName, _Registration())],
+            [
+                new KeyValuePair<string, (string, Type)>(
+                    _FunctionName,
+                    (typeof(TreeRequest).FullName!, typeof(TreeRequest))
+                ),
+            ],
+            []
+        );
+        var (repository, _, _, serviceProvider) = _CreateRepository(registry);
+        using (serviceProvider)
+        {
+            var example = repository.GetJobFunctions().Should().ContainSingle().Which.Item2.Item2;
+
+            var request = JsonSerializer.Deserialize<TreeRequest>(example);
+            request.Should().NotBeNull();
+            request!.Name.Should().Be("string");
+            request.Children.Should().BeEmpty();
+            request.Siblings.Should().BeEmpty();
+            request.Parent.Should().BeNull();
+            request.Branch.Should().NotBeNull();
+            request.Branch!.Name.Should().Be("string");
+            request.Branch.Leaves.Should().BeEmpty();
+        }
+    }
+
+    [Fact]
     public async Task should_dispatch_on_demand_occurrences_with_the_host_registry_delegate_and_priority()
     {
         var registration = _Registration();
@@ -298,4 +328,24 @@ public sealed class JobsDashboardRegistryTests : TestBase
     }
 
     private abstract class AbstractRequest;
+
+    private sealed class TreeRequest
+    {
+        public string Name { get; set; } = string.Empty;
+
+        public List<TreeRequest> Children { get; set; } = [];
+
+        public TreeRequest[] Siblings { get; set; } = [];
+
+        public TreeRequest? Parent { get; set; }
+
+        public TreeBranch? Branch { get; set; }
+    }
+
+    private sealed class TreeBranch
+    {
+        public string Name { get; set; } = string.Empty;
+
+        public IList<TreeRequest> Leaves { get; set; } = [];
+    }
 }

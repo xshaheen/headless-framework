@@ -9,8 +9,7 @@ namespace Headless.Permissions;
 /// PostgreSQL / SQL Server provider packages.
 /// </summary>
 /// <remarks>
-/// New members arrive as default interface members, so a third-party implementation keeps compiling. The enlisted
-/// members (<c>*EnlistedAsync</c>) run inside a caller's <see cref="IUnitOfWork" /> and default to throwing
+/// The enlisted members (<c>*EnlistedAsync</c>) run inside a caller's <see cref="IUnitOfWork" /> and default to throwing
 /// <see cref="NotSupportedException" />; an implementation that cannot join a unit leaves them, and
 /// <c>unit.Permissions</c> then refuses before any write.
 /// </remarks>
@@ -86,6 +85,25 @@ public interface IPermissionGrantRepository
     /// <summary>Deletes multiple grant records in a single batch.</summary>
     Task DeleteManyAsync(
         IReadOnlyCollection<PermissionGrantRecord> permissionGrants,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Deletes <paramref name="deleted" />, then inserts <paramref name="inserted" />, in one transaction: either every
+    /// change persists or none does.
+    /// </summary>
+    /// <remarks>
+    /// Records are insert-only, so flipping a grant to a denial (or back) replaces its row. The replacement shares the
+    /// old row's unique key, so the delete runs first, and both commit together: a failure between two separate
+    /// commits would leave no row, and the permission would fall through to a lower-priority provider instead of
+    /// keeping its explicit state. Deletes are scoped to the current tenant, as <see cref="DeleteManyAsync" /> is.
+    /// </remarks>
+    /// <param name="inserted">The new records to insert.</param>
+    /// <param name="deleted">The existing records to delete.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    Task SaveAsync(
+        IReadOnlyCollection<PermissionGrantRecord> inserted,
+        IReadOnlyCollection<PermissionGrantRecord> deleted,
         CancellationToken cancellationToken = default
     );
 

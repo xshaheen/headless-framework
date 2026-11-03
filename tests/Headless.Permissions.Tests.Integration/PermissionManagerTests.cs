@@ -1,3 +1,4 @@
+using Headless;
 using Headless.Permissions;
 using Headless.Primitives;
 using Headless.Testing;
@@ -365,6 +366,59 @@ public sealed class PermissionManagerTests(PermissionsTestFixture fixture) : Per
             .BeFalse();
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task should_keep_the_explicit_state_when_flipping_it_fails_midway(bool storedIsGranted)
+    {
+        // given — a role holds an explicit grant (or denial) on one permission and a grant on another
+        await Fixture.ResetAsync();
+        var guidGenerator = new ScriptedGuidGenerator();
+        using var host = CreateHost(b =>
+        {
+            b.Services.AddPermissionDefinitionProvider<PermissionsDefinitionProvider>();
+            b.Services.AddSingleton<IGuidGenerator>(guidGenerator);
+        });
+        await using var scope = host.Services.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<IPermissionGrantStore>();
+        var repository = scope.ServiceProvider.GetRequiredService<IPermissionGrantRepository>();
+        const string roleName = "Role1";
+        var flipped = _GroupDefinitions[0].Permissions[0].Name;
+        var other = _GroupDefinitions[0].Permissions[1].Name;
+
+        await _SetAsync(store, flipped, roleName, storedIsGranted);
+        await store.GrantAsync(other, RolePermissionGrantProvider.ProviderName, roleName, AbortToken);
+        var otherRecord = await repository.FindAsync(
+            other,
+            RolePermissionGrantProvider.ProviderName,
+            roleName,
+            AbortToken
+        );
+
+        // when — the replacement row cannot be written (its id collides with the other grant), so the flip fails after
+        // the old row is removed
+        guidGenerator.Next = otherRecord!.Id;
+        var act = () => _SetAsync(store, flipped, roleName, !storedIsGranted);
+
+        // then — the flip is all-or-nothing: the explicit state survives instead of falling back to undefined
+        await act.Should().ThrowAsync<Exception>();
+        var stored = await repository.FindAsync(
+            flipped,
+            RolePermissionGrantProvider.ProviderName,
+            roleName,
+            AbortToken
+        );
+        stored.Should().NotBeNull();
+        stored!.IsGranted.Should().Be(storedIsGranted);
+    }
+
+    private static Task _SetAsync(IPermissionGrantStore store, string name, string roleName, bool isGranted)
+    {
+        return isGranted
+            ? store.GrantAsync(name, RolePermissionGrantProvider.ProviderName, roleName, AbortToken)
+            : store.RevokeAsync(name, RolePermissionGrantProvider.ProviderName, roleName, AbortToken);
+    }
+
     private HostApplicationBuilder _CreateDynamicEnabledHostBuilder<T>()
         where T : class, IPermissionDefinitionProvider
     {
@@ -393,6 +447,19 @@ public sealed class PermissionManagerTests(PermissionsTestFixture fixture) : Per
         public void Define(IPermissionDefinitionContext context)
         {
             context.AddGroup("Group2").AddChild("Permission2");
+        }
+    }
+
+    private sealed class ScriptedGuidGenerator : IGuidGenerator
+    {
+        public Guid? Next { get; set; }
+
+        public Guid Create()
+        {
+            var next = Next ?? Guid.CreateVersion7();
+            Next = null;
+
+            return next;
         }
     }
 

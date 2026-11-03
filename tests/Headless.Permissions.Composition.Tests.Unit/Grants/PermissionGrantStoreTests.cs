@@ -502,9 +502,16 @@ public sealed class PermissionGrantStoreTests : TestBase
         // when
         await _sut.GrantAsync(permissionName, _ProviderName, _ProviderKey, AbortToken);
 
-        // then
-        await _repository.Received(1).DeleteAsync(deniedRecord, AbortToken);
-        await _repository.Received(1).InsertAsync(Arg.Is<PermissionGrantRecord>(static r => r.IsGranted), AbortToken);
+        // then — the denial and its replacement commit together, never as two separate writes
+        await _repository
+            .Received(1)
+            .SaveAsync(
+                Arg.Is<IReadOnlyCollection<PermissionGrantRecord>>(r => r.Single().Id == newId && r.Single().IsGranted),
+                Arg.Is<IReadOnlyCollection<PermissionGrantRecord>>(r => r.Single() == deniedRecord),
+                AbortToken
+            );
+        await _repository.DidNotReceive().DeleteAsync(Arg.Any<PermissionGrantRecord>(), Arg.Any<CancellationToken>());
+        await _repository.DidNotReceive().InsertAsync(Arg.Any<PermissionGrantRecord>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -594,11 +601,12 @@ public sealed class PermissionGrantStoreTests : TestBase
 
         // then — both the replaced denial and the new record carry the current tenant
         await _repository
-            .Received(2)
-            .InsertManyAsync(
-                Arg.Is<IEnumerable<PermissionGrantRecord>>(static records =>
-                    records.All(static r => r.TenantId == "tenant-a")
+            .Received(1)
+            .SaveAsync(
+                Arg.Is<IReadOnlyCollection<PermissionGrantRecord>>(static records =>
+                    records.Count == 2 && records.All(static r => r.TenantId == "tenant-a")
                 ),
+                Arg.Any<IReadOnlyCollection<PermissionGrantRecord>>(),
                 AbortToken
             );
     }
@@ -613,6 +621,24 @@ public sealed class PermissionGrantStoreTests : TestBase
         var single = async () => await _sut.GrantAsync("Users.Create", _ProviderName, _ProviderKey, AbortToken);
         var batch = async () =>
             await _sut.GrantAsync(["Users.Create", "Users.Delete"], _ProviderName, _ProviderKey, AbortToken);
+
+        // then
+        await single.Should().ThrowExactlyAsync<ArgumentException>();
+        await batch.Should().ThrowExactlyAsync<ArgumentException>();
+        _repository.ReceivedCalls().Should().BeEmpty();
+        _cache.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_refuse_a_padded_current_tenant_when_revoking_before_touching_storage()
+    {
+        // given — a denial is tenant-scoped like a grant, so a padded id would share another tenant's rows too
+        _currentTenant.Id.Returns("acme ");
+
+        // when
+        var single = async () => await _sut.RevokeAsync("Users.Create", _ProviderName, _ProviderKey, AbortToken);
+        var batch = async () =>
+            await _sut.RevokeAsync(["Users.Create", "Users.Delete"], _ProviderName, _ProviderKey, AbortToken);
 
         // then
         await single.Should().ThrowExactlyAsync<ArgumentException>();
@@ -692,17 +718,12 @@ public sealed class PermissionGrantStoreTests : TestBase
         // then
         await _repository
             .Received(1)
-            .DeleteManyAsync(
+            .SaveAsync(
+                Arg.Is<IReadOnlyCollection<PermissionGrantRecord>>(static records =>
+                    records.Count == 1 && records.All(static r => r.Name == "Users.Update" && r.IsGranted)
+                ),
                 Arg.Is<IReadOnlyCollection<PermissionGrantRecord>>(static r =>
                     r.Count == 1 && r.All(static x => x.Name == "Users.Update")
-                ),
-                AbortToken
-            );
-        await _repository
-            .Received(1)
-            .InsertManyAsync(
-                Arg.Is<IEnumerable<PermissionGrantRecord>>(static records =>
-                    records.All(static r => r.Name == "Users.Update" && r.IsGranted)
                 ),
                 AbortToken
             );
@@ -736,23 +757,24 @@ public sealed class PermissionGrantStoreTests : TestBase
         // when
         await _sut.GrantAsync(permissionNames, _ProviderName, _ProviderKey, cancellationToken: AbortToken);
 
-        // then — the denial is converted and the missing name is inserted
+        // then — the denial is converted and the missing name is inserted, in one write
         await _repository
             .Received(1)
-            .InsertManyAsync(
-                Arg.Is<IEnumerable<PermissionGrantRecord>>(static records =>
-                    records.All(static r => r.Name == "Users.Update" && r.IsGranted)
+            .SaveAsync(
+                Arg.Is<IReadOnlyCollection<PermissionGrantRecord>>(static records =>
+                    records.Count == 2
+                    && records.All(static r => r.IsGranted)
+                    && records
+                        .Select(static r => r.Name)
+                        .Order(StringComparer.Ordinal)
+                        .SequenceEqual(new[] { "Users.Create", "Users.Update" })
+                ),
+                Arg.Is<IReadOnlyCollection<PermissionGrantRecord>>(static r =>
+                    r.Count == 1 && r.All(static x => x.Name == "Users.Update")
                 ),
                 AbortToken
             );
-        await _repository
-            .Received(1)
-            .InsertManyAsync(
-                Arg.Is<IEnumerable<PermissionGrantRecord>>(static records =>
-                    records.All(static r => r.Name == "Users.Create" && r.IsGranted)
-                ),
-                AbortToken
-            );
+        await _repository.DidNotReceive().InsertManyAsync(Arg.Any<IEnumerable<PermissionGrantRecord>>(), AbortToken);
         await _cache
             .Received(1)
             .UpsertAllAsync(
@@ -844,9 +866,18 @@ public sealed class PermissionGrantStoreTests : TestBase
         // when
         await _sut.RevokeAsync(permissionName, _ProviderName, _ProviderKey, AbortToken);
 
-        // then
-        await _repository.Received(1).DeleteAsync(grantedRecord, AbortToken);
-        await _repository.Received(1).InsertAsync(Arg.Is<PermissionGrantRecord>(static r => !r.IsGranted), AbortToken);
+        // then — the grant and its replacing denial commit together, never as two separate writes
+        await _repository
+            .Received(1)
+            .SaveAsync(
+                Arg.Is<IReadOnlyCollection<PermissionGrantRecord>>(r =>
+                    r.Single().Id == newId && !r.Single().IsGranted && r.Single().TenantId == "tenant-1"
+                ),
+                Arg.Is<IReadOnlyCollection<PermissionGrantRecord>>(r => r.Single() == grantedRecord),
+                AbortToken
+            );
+        await _repository.DidNotReceive().DeleteAsync(Arg.Any<PermissionGrantRecord>(), Arg.Any<CancellationToken>());
+        await _repository.DidNotReceive().InsertAsync(Arg.Any<PermissionGrantRecord>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -929,18 +960,18 @@ public sealed class PermissionGrantStoreTests : TestBase
         // then
         await _repository
             .Received(1)
-            .DeleteManyAsync(
+            .SaveAsync(
+                Arg.Is<IReadOnlyCollection<PermissionGrantRecord>>(static records =>
+                    records.Count == 2 && records.All(static r => !r.IsGranted)
+                ),
                 Arg.Is<IReadOnlyCollection<PermissionGrantRecord>>(static r =>
                     r.Count == 2 && r.All(static x => x.IsGranted)
                 ),
                 AbortToken
             );
         await _repository
-            .Received(1)
-            .InsertManyAsync(
-                Arg.Is<IEnumerable<PermissionGrantRecord>>(static records => records.All(static r => !r.IsGranted)),
-                AbortToken
-            );
+            .DidNotReceive()
+            .DeleteManyAsync(Arg.Any<IReadOnlyCollection<PermissionGrantRecord>>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
