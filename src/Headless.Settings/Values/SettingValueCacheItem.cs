@@ -5,12 +5,25 @@ using Headless.Text;
 namespace Headless.Settings;
 
 /// <summary>Cached representation of a single setting value for a specific provider and key.</summary>
-public sealed class SettingValueCacheItem(string? value)
+public sealed record SettingValueCacheItem
 {
     private static readonly CompositeFormat _Format = CompositeFormat.Parse("settings:provider:{0}:{1},name:{2}");
 
+    /// <summary>Creates an entry holding <paramref name="value"/> under a new <see cref="Stamp"/>.</summary>
+    public SettingValueCacheItem(string? value)
+    {
+        Value = value;
+    }
+
     /// <summary>Gets the cached setting value, or <see langword="null"/> if no value was stored.</summary>
-    public string? Value { get; } = value;
+    public string? Value { get; }
+
+    /// <summary>
+    /// Tells this write apart from every other write of an equal value. A writer swaps an entry only while it still
+    /// holds the exact write it read, so a slow writer cannot overwrite a newer entry that happens to hold the value it
+    /// read. A new entry gets a random stamp; deserialization restores the stored one.
+    /// </summary>
+    public Guid Stamp { get; init; } = Guid.NewGuid();
 
     /// <summary>Computes the cache key for a setting value entry.</summary>
     /// <param name="name">The setting name.</param>

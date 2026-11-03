@@ -30,6 +30,32 @@ public sealed class PermissionGrantStoreUnitOfWorkTests : TestBase
         guidGenerator.Create().Returns(_ => Guid.NewGuid());
         _unit.OnCompleted(Arg.Do<Func<ValueTask>>(_afterCommit.Add)).Returns(Substitute.For<IDisposable>());
 
+        // After the commit the store reads the written names back and inserts them into an empty cache; a test that
+        // cares what the repository holds then overrides the read-back.
+        _repository
+            .GetListAsync(
+                Arg.Any<IReadOnlyCollection<string>>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns([]);
+        _cache
+            .GetAllAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+                ValueTask.FromResult<IDictionary<string, CacheValue<PermissionGrantCacheItem>>>(
+                    new Dictionary<string, CacheValue<PermissionGrantCacheItem>>(StringComparer.Ordinal)
+                )
+            );
+        _cache
+            .TryInsertAsync(
+                Arg.Any<string>(),
+                Arg.Any<PermissionGrantCacheItem?>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(true));
+
         _sut = new PermissionGrantStore(
             Substitute.For<IPermissionDefinitionManager>(),
             _repository,
@@ -94,27 +120,29 @@ public sealed class PermissionGrantStoreUnitOfWorkTests : TestBase
             .OnlyContain(name => name.EndsWith("EnlistedAsync", StringComparison.Ordinal));
         _cache.ReceivedCalls().Should().BeEmpty();
 
-        // and the committed status is written once the unit commits, so a reader that loaded before the commit
-        // cannot fill the entry with what it read
-        await _CommitAsync();
-        await _cache
-            .Received(1)
-            .UpsertAllAsync(
-                Arg.Is<IDictionary<string, PermissionGrantCacheItem>>(values =>
-                    values
-                        .Keys.Order()
-                        .SequenceEqual(
-                            new[]
-                            {
-                                PermissionGrantCacheItem.CalculateCacheKey("Users.Create", _ProviderName, _ProviderKey),
-                                PermissionGrantCacheItem.CalculateCacheKey("Users.Delete", _ProviderName, _ProviderKey),
-                            }.Order()
-                        ) && values.Values.All(static v => v.IsGranted == true)
-                ),
-                Arg.Any<TimeSpan?>(),
+        // and the committed status is read back and written once the unit commits, so a reader that loaded before
+        // the commit cannot fill the entry with what it read
+        _repository
+            .GetListAsync(
+                Arg.Any<IReadOnlyCollection<string>>(),
+                _ProviderName,
+                _ProviderKey,
                 Arg.Any<CancellationToken>()
+            )
+            .Returns([
+                new PermissionGrantRecord(Guid.NewGuid(), "Users.Create", _ProviderName, _ProviderKey, true),
+                new PermissionGrantRecord(Guid.NewGuid(), "Users.Delete", _ProviderName, _ProviderKey, true),
+            ]);
+        await _CommitAsync();
+        _InsertedStatuses()
+            .Should()
+            .Equal(
+                new Dictionary<string, bool?>(StringComparer.Ordinal)
+                {
+                    [_CacheKey("Users.Create")] = true,
+                    [_CacheKey("Users.Delete")] = true,
+                }
             );
-        _cache.ReceivedCalls().Should().ContainSingle();
     }
 
     [Fact]
@@ -194,11 +222,7 @@ public sealed class PermissionGrantStoreUnitOfWorkTests : TestBase
             )
             .Returns([]);
         _cache
-            .UpsertAllAsync(
-                Arg.Any<IDictionary<string, PermissionGrantCacheItem>>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<CancellationToken>()
-            )
+            .GetAllAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("cache down"));
         await _sut.GrantEnlistedAsync(_unit, ["Users.Create"], _ProviderName, _ProviderKey, AbortToken);
 
@@ -228,14 +252,14 @@ public sealed class PermissionGrantStoreUnitOfWorkTests : TestBase
         await _repository.Received(1).DeleteManyEnlistedAsync(_unit, grants, AbortToken);
         _cache.ReceivedCalls().Should().BeEmpty();
         await _CommitAsync();
-        await _cache
-            .Received(1)
-            .UpsertAllAsync(
-                Arg.Is<IDictionary<string, PermissionGrantCacheItem>>(static values =>
-                    values.Count == 2 && values.Values.All(static v => v.IsGranted == null)
-                ),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<CancellationToken>()
+        _InsertedStatuses()
+            .Should()
+            .Equal(
+                new Dictionary<string, bool?>(StringComparer.Ordinal)
+                {
+                    [_CacheKey("Users.Create")] = null,
+                    [_CacheKey("Users.Delete")] = null,
+                }
             );
     }
 
@@ -267,17 +291,9 @@ public sealed class PermissionGrantStoreUnitOfWorkTests : TestBase
         // then
         removed.Should().Equal("Users.Create");
         await _repository.Received(1).DeleteManyAsync(grants, AbortToken);
-        await _cache
-            .Received(1)
-            .UpsertAllAsync(
-                Arg.Is<IDictionary<string, PermissionGrantCacheItem>>(values =>
-                    values.Single().Key
-                        == PermissionGrantCacheItem.CalculateCacheKey("Users.Create", _ProviderName, _ProviderKey)
-                    && values.Single().Value.IsGranted == null
-                ),
-                Arg.Any<TimeSpan?>(),
-                AbortToken
-            );
+        _InsertedStatuses()
+            .Should()
+            .Equal(new Dictionary<string, bool?>(StringComparer.Ordinal) { [_CacheKey("Users.Create")] = null });
     }
 
     [Fact]
@@ -302,6 +318,30 @@ public sealed class PermissionGrantStoreUnitOfWorkTests : TestBase
 
         // then
         await act.Should().ThrowAsync<NotSupportedException>().WithMessage("*cannot run inside a unit of work*");
+    }
+
+    /// <summary>The status each cache key was inserted with, read from the calls the cache received.</summary>
+    private Dictionary<string, bool?> _InsertedStatuses()
+    {
+        return _cache
+            .ReceivedCalls()
+            .Where(call =>
+                string.Equals(
+                    call.GetMethodInfo().Name,
+                    nameof(ICache<PermissionGrantCacheItem>.TryInsertAsync),
+                    StringComparison.Ordinal
+                )
+            )
+            .ToDictionary(
+                call => (string)call.GetArguments()[0]!,
+                call => ((PermissionGrantCacheItem)call.GetArguments()[1]!).IsGranted,
+                StringComparer.Ordinal
+            );
+    }
+
+    private static string _CacheKey(string name)
+    {
+        return PermissionGrantCacheItem.CalculateCacheKey(name, _ProviderName, _ProviderKey);
     }
 
     private async Task _CommitAsync()

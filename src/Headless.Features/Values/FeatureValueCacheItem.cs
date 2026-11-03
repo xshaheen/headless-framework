@@ -5,12 +5,25 @@ using Headless.Text;
 namespace Headless.Features;
 
 /// <summary>Cache entry that holds the raw string value of a feature for a specific provider/key combination.</summary>
-public sealed class FeatureValueCacheItem(string? value)
+public sealed record FeatureValueCacheItem
 {
     private static readonly CompositeFormat _Format = CompositeFormat.Parse("features:provider:{0}:{1},name:{2}");
 
+    /// <summary>Creates an entry holding <paramref name="value"/> under a new <see cref="Stamp"/>.</summary>
+    public FeatureValueCacheItem(string? value)
+    {
+        Value = value;
+    }
+
     /// <summary>Gets the cached feature value, or <see langword="null"/> when no value has been set for this provider/key.</summary>
-    public string? Value { get; } = value;
+    public string? Value { get; }
+
+    /// <summary>
+    /// Tells this write apart from every other write of an equal value. A writer swaps an entry only while it still
+    /// holds the exact write it read, so a slow writer cannot overwrite a newer entry that happens to hold the value it
+    /// read. A new entry gets a random stamp; deserialization restores the stored one.
+    /// </summary>
+    public Guid Stamp { get; init; } = Guid.NewGuid();
 
     /// <summary>Computes the cache key for the given feature <paramref name="name"/>, <paramref name="providerName"/>, and <paramref name="providerKey"/>.</summary>
     /// <param name="name">The feature name.</param>

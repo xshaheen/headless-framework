@@ -312,14 +312,7 @@ public sealed class PermissionGrantStore(
                 .ConfigureAwait(false);
         }
 
-        await cache
-            .UpsertAsync(
-                cacheKey: PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey),
-                cacheValue: new PermissionGrantCacheItem(isGranted: true),
-                expiration: _cacheExpiration,
-                cancellationToken: cancellationToken
-            )
-            .ConfigureAwait(false);
+        await _SyncCacheAsync([name], providerName, providerKey, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task GrantAsync(
@@ -342,8 +335,7 @@ public sealed class PermissionGrantStore(
             )
             .ConfigureAwait(false);
 
-        await _UpsertCacheAsync(distinctNames, providerName, providerKey, isGranted: true, cancellationToken)
-            .ConfigureAwait(false);
+        await _SyncCacheAsync(distinctNames, providerName, providerKey, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task RevokeAsync(
@@ -403,14 +395,7 @@ public sealed class PermissionGrantStore(
                 .ConfigureAwait(false);
         }
 
-        await cache
-            .UpsertAsync(
-                cacheKey: PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey),
-                cacheValue: new PermissionGrantCacheItem(isGranted: false),
-                expiration: _cacheExpiration,
-                cancellationToken: cancellationToken
-            )
-            .ConfigureAwait(false);
+        await _SyncCacheAsync([name], providerName, providerKey, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task RevokeAsync(
@@ -433,8 +418,7 @@ public sealed class PermissionGrantStore(
             )
             .ConfigureAwait(false);
 
-        await _UpsertCacheAsync(distinctNames, providerName, providerKey, isGranted: false, cancellationToken)
-            .ConfigureAwait(false);
+        await _SyncCacheAsync(distinctNames, providerName, providerKey, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<string>> DeleteAsync(
@@ -456,15 +440,7 @@ public sealed class PermissionGrantStore(
 
         var names = grants.ConvertAll(x => x.Name);
 
-        // Written as undefined rather than removed: a reader that loaded the rows before the delete fills only an
-        // absent entry, so an entry this write leaves in place keeps its stale load out.
-        await cache
-            .UpsertAllAsync(
-                _CacheValues(names, providerName, providerKey, isGranted: null),
-                _cacheExpiration,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
+        await _SyncCacheAsync(names, providerName, providerKey, cancellationToken).ConfigureAwait(false);
 
         return names;
     }
@@ -491,7 +467,7 @@ public sealed class PermissionGrantStore(
             )
             .ConfigureAwait(false);
 
-        _WriteCacheAfterCommit(unitOfWork, distinctNames, providerName, providerKey, isGranted: true);
+        _SyncCacheAfterCommit(unitOfWork, distinctNames, providerName, providerKey);
     }
 
     public async Task RevokeEnlistedAsync(
@@ -516,7 +492,7 @@ public sealed class PermissionGrantStore(
             )
             .ConfigureAwait(false);
 
-        _WriteCacheAfterCommit(unitOfWork, distinctNames, providerName, providerKey, isGranted: false);
+        _SyncCacheAfterCommit(unitOfWork, distinctNames, providerName, providerKey);
     }
 
     public async Task<IReadOnlyList<string>> DeleteEnlistedAsync(
@@ -541,7 +517,7 @@ public sealed class PermissionGrantStore(
         await repository.DeleteManyEnlistedAsync(unitOfWork, grants, cancellationToken).ConfigureAwait(false);
 
         var names = grants.ConvertAll(x => x.Name);
-        _WriteCacheAfterCommit(unitOfWork, names, providerName, providerKey, isGranted: null);
+        _SyncCacheAfterCommit(unitOfWork, names, providerName, providerKey);
 
         return names;
     }
@@ -659,61 +635,49 @@ public sealed class PermissionGrantStore(
         }
     }
 
-    private async Task _UpsertCacheAsync(
-        HashSet<string> distinctNames,
-        string providerName,
-        string providerKey,
-        bool isGranted,
-        CancellationToken cancellationToken
-    )
-    {
-        await cache
-            .UpsertAllAsync(
-                _CacheValues(distinctNames, providerName, providerKey, isGranted),
-                expiration: _cacheExpiration,
-                cancellationToken: cancellationToken
-            )
-            .ConfigureAwait(false);
-    }
-
     /// <summary>
-    /// Writes the committed status once the unit commits. Writing it rather than removing the entry keeps out a reader
-    /// that loaded the rows before the commit: readers fill only an absent entry.
+    /// Brings the cache entries of <paramref name="names" /> to the statuses the repository holds after this write.
+    /// Storing what the repository holds, rather than the status this call wrote, keeps the last committed status
+    /// cached when another writer's cache write lands after this one; storing a status rather than removing the entry
+    /// keeps out a reader that loaded the rows before the write, because readers fill only an absent entry.
     /// </summary>
-    private void _WriteCacheAfterCommit(
-        IUnitOfWork unitOfWork,
+    private ValueTask _SyncCacheAsync(
         IReadOnlyCollection<string> names,
         string providerName,
         string providerKey,
-        bool? isGranted
+        CancellationToken cancellationToken
     )
     {
-        PermissionGrantCacheInvalidation.UpsertAfterCommit(
-            unitOfWork,
+        return PermissionGrantCacheInvalidation.SyncAsync(
             cache,
-            currentTenant,
-            _CacheValues(names, providerName, providerKey, isGranted),
+            repository,
+            names,
+            providerName,
+            providerKey,
             _cacheExpiration,
-            logger
+            cancellationToken
         );
     }
 
-    private static Dictionary<string, PermissionGrantCacheItem> _CacheValues(
-        IEnumerable<string> names,
+    /// <summary>Runs <see cref="_SyncCacheAsync" /> once the unit commits.</summary>
+    private void _SyncCacheAfterCommit(
+        IUnitOfWork unitOfWork,
+        IReadOnlyCollection<string> names,
         string providerName,
-        string providerKey,
-        bool? isGranted
+        string providerKey
     )
     {
-        var cacheItem = new PermissionGrantCacheItem(isGranted);
-        var cacheValues = new Dictionary<string, PermissionGrantCacheItem>(StringComparer.Ordinal);
-
-        foreach (var name in names)
-        {
-            cacheValues[PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey)] = cacheItem;
-        }
-
-        return cacheValues;
+        PermissionGrantCacheInvalidation.SyncAfterCommit(
+            unitOfWork,
+            cache,
+            repository,
+            currentTenant,
+            names,
+            providerName,
+            providerKey,
+            _cacheExpiration,
+            logger
+        );
     }
 
     /// <summary>
@@ -860,8 +824,7 @@ public sealed class PermissionGrantStore(
             return PermissionGrantStatus.From(cached.Value?.IsGranted);
         }
 
-        var statuses = await _CacheAllAsync(providerName, providerKey, replace: false, cancellationToken)
-            .ConfigureAwait(false);
+        var statuses = await _CacheAllAsync(providerName, providerKey, cancellationToken).ConfigureAwait(false);
 
         return statuses.TryGetValue(permissionToFind, out var isGranted)
             ? PermissionGrantStatus.From(isGranted)
@@ -878,20 +841,23 @@ public sealed class PermissionGrantStore(
         Argument.IsNotNullOrWhiteSpace(providerKey);
         _EnsureKey(providerName, providerKey);
 
-        await _CacheAllAsync(providerName, providerKey, replace: true, cancellationToken).ConfigureAwait(false);
+        var definitions = await permissionDefinitionManager
+            .GetPermissionsAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        // Swapped in like a write's cache update, not overwritten: a refresh that loaded the rows before a concurrent
+        // write would otherwise put the old status back over the write's.
+        await _SyncCacheAsync(definitions.Select(x => x.Name).ToList(), providerName, providerKey, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <summary>
     /// Loads every grant for the provider target, writes one cache entry per known definition (a missing row caches
     /// as undefined), and returns the per-name grant value so callers can answer a lookup from the same load.
     /// </summary>
-    /// <param name="replace">
-    /// Overwrites present entries (an explicit refresh) instead of filling only absent ones (a cache miss).
-    /// </param>
     private async Task<Dictionary<string, bool?>> _CacheAllAsync(
         string providerName,
         string providerKey,
-        bool replace,
         CancellationToken cancellationToken
     )
     {
@@ -921,14 +887,7 @@ public sealed class PermissionGrantStore(
             statuses[permission.Name] = isGranted;
         }
 
-        if (replace)
-        {
-            await cache.UpsertAllAsync(cacheItems, _cacheExpiration, cancellationToken).ConfigureAwait(false);
-        }
-        else
-        {
-            await _FillCacheAsync(cacheItems, cancellationToken).ConfigureAwait(false);
-        }
+        await _FillCacheAsync(cacheItems, cancellationToken).ConfigureAwait(false);
 
         logger.LogFinishedSettingCacheItemsForDefinitions(definitions.Count);
 

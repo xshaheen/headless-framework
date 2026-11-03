@@ -19,6 +19,32 @@ public sealed class FeatureValueStoreTests : TestBase
 
     public FeatureValueStoreTests()
     {
+        // A write reads the written names back after its save and inserts them into an empty cache; a test that cares
+        // what the repository holds then overrides the read-back.
+        _repository
+            .GetListAsync(
+                Arg.Any<HashSet<string>>(),
+                Arg.Any<string>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns([]);
+        _cache
+            .GetAllAsync<FeatureValueCacheItem>(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+                ValueTask.FromResult<IDictionary<string, CacheValue<FeatureValueCacheItem>>>(
+                    new Dictionary<string, CacheValue<FeatureValueCacheItem>>(StringComparer.Ordinal)
+                )
+            );
+        _cache
+            .TryInsertAsync(
+                Arg.Any<string>(),
+                Arg.Any<FeatureValueCacheItem?>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(true));
+
         _sut = new FeatureValueStore(
             _definitionManager,
             _repository,
@@ -268,6 +294,11 @@ public sealed class FeatureValueStoreTests : TestBase
         var cacheKey = FeatureValueCacheItem.CalculateCacheKey(name, providerName, providerKey);
 
         _repository.FindAsync(name, providerName, providerKey, AbortToken).Returns((FeatureValueRecord?)null);
+        List<FeatureValueRecord> stored = [];
+        _repository.InsertAsync(Arg.Do<FeatureValueRecord>(stored.Add), AbortToken).Returns(Task.CompletedTask);
+        _repository
+            .GetListAsync(Arg.Any<HashSet<string>>(), providerName, providerKey, AbortToken)
+            .Returns(_ => stored);
 
         // when
         await _sut.SetAsync(name, newValue, providerName, providerKey, AbortToken);
@@ -277,14 +308,9 @@ public sealed class FeatureValueStoreTests : TestBase
             .Received(1)
             .InsertAsync(Arg.Is<FeatureValueRecord>(static r => r.Value == newValue), AbortToken);
         await _repository.DidNotReceive().UpdateAsync(Arg.Any<FeatureValueRecord>(), Arg.Any<CancellationToken>());
-        await _cache
-            .Received(1)
-            .UpsertAsync(
-                cacheKey,
-                Arg.Is<FeatureValueCacheItem>(static i => i.Value == newValue),
-                Arg.Any<TimeSpan?>(),
-                AbortToken
-            );
+        _InsertedValues()
+            .Should()
+            .Equal(new Dictionary<string, string?>(StringComparer.Ordinal) { [cacheKey] = newValue });
     }
 
     [Fact]
@@ -299,6 +325,9 @@ public sealed class FeatureValueStoreTests : TestBase
         var existing = new FeatureValueRecord(Guid.NewGuid(), name, "old-value", providerName, providerKey);
 
         _repository.FindAsync(name, providerName, providerKey, AbortToken).Returns(existing);
+        _repository
+            .GetListAsync(Arg.Any<HashSet<string>>(), providerName, providerKey, AbortToken)
+            .Returns(_ => [existing]);
 
         // when
         await _sut.SetAsync(name, newValue, providerName, providerKey, AbortToken);
@@ -306,14 +335,9 @@ public sealed class FeatureValueStoreTests : TestBase
         // then
         await _repository.Received(1).UpdateAsync(existing, AbortToken);
         await _repository.DidNotReceive().InsertAsync(Arg.Any<FeatureValueRecord>(), Arg.Any<CancellationToken>());
-        await _cache
-            .Received(1)
-            .UpsertAsync(
-                cacheKey,
-                Arg.Is<FeatureValueCacheItem>(static i => i.Value == newValue),
-                Arg.Any<TimeSpan?>(),
-                AbortToken
-            );
+        _InsertedValues()
+            .Should()
+            .Equal(new Dictionary<string, string?>(StringComparer.Ordinal) { [cacheKey] = newValue });
     }
 
     #endregion SetAsync
@@ -328,9 +352,16 @@ public sealed class FeatureValueStoreTests : TestBase
         const string providerKey = "tenant-1";
         var existingA = new FeatureValueRecord(Guid.NewGuid(), "A", "old-a", providerName, providerKey);
         var existingB = new FeatureValueRecord(Guid.NewGuid(), "B", "old-b", providerName, providerKey);
+        // the plan reads A and B; the read-back after the save sees A updated, B deleted, and C inserted
         _repository
             .GetListAsync(Arg.Any<HashSet<string>>(), providerName, providerKey, AbortToken)
-            .Returns([existingA, existingB]);
+            .Returns(
+                [existingA, existingB],
+                [
+                    new FeatureValueRecord(existingA.Id, "A", "new-a", providerName, providerKey),
+                    new FeatureValueRecord(Guid.NewGuid(), "C", "new-c", providerName, providerKey),
+                ]
+            );
         _guidGenerator.Create().Returns(Guid.NewGuid());
         var values = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
@@ -344,8 +375,9 @@ public sealed class FeatureValueStoreTests : TestBase
         await _sut.SetAllAsync(values, providerName, providerKey, AbortToken);
 
         // then
+        // once to plan the batch, once to read the saved rows back for the cache
         await _repository
-            .Received(1)
+            .Received(2)
             .GetListAsync(
                 Arg.Is<HashSet<string>>(names => names.SetEquals(new[] { "A", "B", "C", "D" })),
                 providerName,
@@ -369,27 +401,17 @@ public sealed class FeatureValueStoreTests : TestBase
                 ),
                 AbortToken
             );
-        await _cache
-            .Received(1)
-            .UpsertAllAsync(
-                Arg.Is<IDictionary<string, FeatureValueCacheItem>>(items =>
-                    items.Count == 4
-                    && items[FeatureValueCacheItem.CalculateCacheKey("A", providerName, providerKey)].Value == "new-a"
-                    && items[FeatureValueCacheItem.CalculateCacheKey("C", providerName, providerKey)].Value == "new-c"
-                ),
-                Arg.Any<TimeSpan?>(),
-                AbortToken
-            );
         // a deleted (or never stored) name is written as empty rather than removed
-        await _cache
-            .Received(1)
-            .UpsertAllAsync(
-                Arg.Is<IDictionary<string, FeatureValueCacheItem>>(items =>
-                    items[FeatureValueCacheItem.CalculateCacheKey("B", providerName, providerKey)].Value == null
-                    && items[FeatureValueCacheItem.CalculateCacheKey("D", providerName, providerKey)].Value == null
-                ),
-                Arg.Any<TimeSpan?>(),
-                AbortToken
+        _InsertedValues()
+            .Should()
+            .Equal(
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    [FeatureValueCacheItem.CalculateCacheKey("A", providerName, providerKey)] = "new-a",
+                    [FeatureValueCacheItem.CalculateCacheKey("B", providerName, providerKey)] = null,
+                    [FeatureValueCacheItem.CalculateCacheKey("C", providerName, providerKey)] = "new-c",
+                    [FeatureValueCacheItem.CalculateCacheKey("D", providerName, providerKey)] = null,
+                }
             );
     }
 
@@ -415,13 +437,7 @@ public sealed class FeatureValueStoreTests : TestBase
 
         // then a reader keeps seeing the values the store still holds
         await act.Should().ThrowAsync<InvalidOperationException>();
-        await _cache
-            .DidNotReceive()
-            .UpsertAllAsync(
-                Arg.Any<IDictionary<string, FeatureValueCacheItem>>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<CancellationToken>()
-            );
+        _cache.ReceivedCalls().Should().BeEmpty();
     }
 
     [Fact]
@@ -535,16 +551,10 @@ public sealed class FeatureValueStoreTests : TestBase
         // when
         await _sut.DeleteAsync(name, providerName, providerKey, AbortToken);
 
-        // then
-        await _cache
-            .Received(1)
-            .UpsertAllAsync(
-                Arg.Is<IDictionary<string, FeatureValueCacheItem>>(items =>
-                    items.Single().Key == cacheKey && items.Single().Value.Value == null
-                ),
-                Arg.Any<TimeSpan?>(),
-                AbortToken
-            );
+        // then the entry is written as empty rather than removed
+        _InsertedValues()
+            .Should()
+            .Equal(new Dictionary<string, string?>(StringComparer.Ordinal) { [cacheKey] = null });
     }
 
     [Fact]
@@ -649,4 +659,19 @@ public sealed class FeatureValueStoreTests : TestBase
     }
 
     #endregion Surrounding white space
+
+    /// <summary>The value each cache key was inserted with, read from the calls the cache received.</summary>
+    private Dictionary<string, string?> _InsertedValues()
+    {
+        return _cache
+            .ReceivedCalls()
+            .Where(call =>
+                string.Equals(call.GetMethodInfo().Name, nameof(ICache.TryInsertAsync), StringComparison.Ordinal)
+            )
+            .ToDictionary(
+                call => (string)call.GetArguments()[0]!,
+                call => ((FeatureValueCacheItem)call.GetArguments()[1]!).Value,
+                StringComparer.Ordinal
+            );
+    }
 }

@@ -143,15 +143,8 @@ public sealed class SettingValueStore(
             await valueRepository.UpdateAsync(settingValue, cancellationToken).ConfigureAwait(false);
         }
 
-        var cacheKey = SettingValueCacheItem.CalculateCacheKey(name, providerName, providerKey);
-
-        await cache
-            .UpsertAsync(
-                cacheKey: cacheKey,
-                cacheValue: new SettingValueCacheItem(settingValue.Value),
-                expiration: _cacheExpiration,
-                cancellationToken: cancellationToken
-            )
+        await SettingValueCacheInvalidation
+            .SyncAsync(cache, valueRepository, [name], providerName, providerKey, _cacheExpiration, cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -207,12 +200,17 @@ public sealed class SettingValueStore(
                 continue;
             }
 
-            if (changes.CacheItems.Count != 0)
-            {
-                await cache
-                    .UpsertAllAsync(changes.CacheItems, _cacheExpiration, cancellationToken)
-                    .ConfigureAwait(false);
-            }
+            await SettingValueCacheInvalidation
+                .SyncAsync(
+                    cache,
+                    valueRepository,
+                    names,
+                    providerName,
+                    providerKey,
+                    _cacheExpiration,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
 
             return;
         }
@@ -231,7 +229,6 @@ public sealed class SettingValueStore(
 
         foreach (var (name, value) in values)
         {
-            var cacheKey = SettingValueCacheItem.CalculateCacheKey(name, providerName, providerKey);
             existingByName.TryGetValue(name, out var existing);
 
             if (value is null)
@@ -240,10 +237,6 @@ public sealed class SettingValueStore(
                 {
                     changes.Deleted.Add(existing);
                 }
-
-                // Stored as empty rather than removed, so a reader that loaded the row before this delete cannot fill
-                // it back: readers fill only an absent entry.
-                changes.CacheItems[cacheKey] = new SettingValueCacheItem(value: null);
 
                 continue;
             }
@@ -259,8 +252,6 @@ public sealed class SettingValueStore(
                 existing.Value = value;
                 changes.Updated.Add(existing);
             }
-
-            changes.CacheItems[cacheKey] = new SettingValueCacheItem(value);
         }
 
         return changes;
@@ -273,8 +264,6 @@ public sealed class SettingValueStore(
         public List<SettingValueRecord> Updated { get; } = [];
 
         public List<SettingValueRecord> Deleted { get; } = [];
-
-        public Dictionary<string, SettingValueCacheItem> CacheItems { get; } = new(StringComparer.Ordinal);
     }
 
     /// <inheritdoc/>
@@ -298,13 +287,8 @@ public sealed class SettingValueStore(
 
         await valueRepository.DeleteAsync(settings, cancellationToken).ConfigureAwait(false);
 
-        // Stored as empty rather than removed, so a reader that loaded the row before this delete cannot fill it back.
-        await cache
-            .UpsertAllAsync(
-                SettingValueCacheInvalidation.WrittenItems([], settings),
-                _cacheExpiration,
-                cancellationToken
-            )
+        await SettingValueCacheInvalidation
+            .SyncAsync(cache, valueRepository, [name], providerName, providerKey, _cacheExpiration, cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -367,10 +351,13 @@ public sealed class SettingValueStore(
             .SaveEnlistedAsync(unitOfWork, changes.Inserted, changes.Updated, changes.Deleted, cancellationToken)
             .ConfigureAwait(false);
 
-        SettingValueCacheInvalidation.UpsertAfterCommit(
+        SettingValueCacheInvalidation.SyncAfterCommit(
             unitOfWork,
             cache,
-            changes.CacheItems,
+            valueRepository,
+            [.. values.Keys],
+            providerName,
+            providerKey,
             _cacheExpiration,
             logger
         );
@@ -398,10 +385,13 @@ public sealed class SettingValueStore(
 
         await valueRepository.SaveEnlistedAsync(unitOfWork, [], [], records, cancellationToken).ConfigureAwait(false);
 
-        SettingValueCacheInvalidation.UpsertAfterCommit(
+        SettingValueCacheInvalidation.SyncAfterCommit(
             unitOfWork,
             cache,
-            SettingValueCacheInvalidation.WrittenItems([], records),
+            valueRepository,
+            records.ConvertAll(x => x.Name),
+            providerName,
+            providerKey,
             _cacheExpiration,
             logger
         );
