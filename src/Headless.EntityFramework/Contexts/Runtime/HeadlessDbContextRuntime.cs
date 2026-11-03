@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Headless.EntityFramework;
@@ -357,7 +358,10 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
     {
         builder.AddBuildingBlocksPrimitivesConvertersMappings();
         // The entity mapping runs first: the tenant convention validates the finished mapping of each root.
-        builder.Conventions.Add(_ => new HeadlessEntityModelConvention());
+        builder.Conventions.Add(services => new HeadlessEntityModelConvention(
+            services.GetService<ILoggerFactory>()?.CreateLogger<HeadlessEntityModelConvention>()
+                ?? NullLogger<HeadlessEntityModelConvention>.Instance
+        ));
         builder.Conventions.Add(_ => new HeadlessTenantModelConvention(_db));
     }
 }

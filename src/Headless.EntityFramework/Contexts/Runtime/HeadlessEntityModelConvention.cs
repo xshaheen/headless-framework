@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Microsoft.EntityFrameworkCore.Metadata.Conventions;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using Microsoft.Extensions.Logging;
 
 namespace Headless.EntityFramework;
 
@@ -22,7 +23,9 @@ namespace Headless.EntityFramework;
 /// before or after the base call. Column facets, keys, converters, and filters are applied when the model is finalized,
 /// after all configuration has run, so a data annotation also keeps its value.
 /// </remarks>
-internal sealed class HeadlessEntityModelConvention : IEntityTypeAddedConvention, IModelFinalizingConvention
+internal sealed class HeadlessEntityModelConvention(ILogger logger)
+    : IEntityTypeAddedConvention,
+        IModelFinalizingConvention
 {
     private static readonly NormalizeDateTimeValueConverter _DateTimeConverter = new();
     private static readonly NullableNormalizeDateTimeValueConverter _NullableDateTimeConverter = new();
@@ -78,6 +81,10 @@ internal sealed class HeadlessEntityModelConvention : IEntityTypeAddedConvention
                 if (type.BaseType is null && type.ClrType.IsAssignableTo<IDeleteAudit>())
                 {
                     _ConfigureNotDeletedFilter(type);
+                }
+                else if (_IsTopmostDeleteAuditBelowRoot(type))
+                {
+                    logger.LogDerivedDeleteAuditNotFiltered(type.ClrType, type.GetRootType().ClrType);
                 }
             }
 
@@ -190,6 +197,17 @@ internal sealed class HeadlessEntityModelConvention : IEntityTypeAddedConvention
         }
     }
 
+    // EF Core accepts a query filter only on a hierarchy root (dotnet/efcore#10259), and a root filter cannot read a
+    // property only some derived types declare, so a soft-deletable derived type under a plain root stays unfiltered.
+    // A consumer may still filter IsDeleted per query on the derived set, so this warns instead of failing the model.
+    // Only the topmost such type warns: its derived types share its root and the same remedy.
+    private static bool _IsTopmostDeleteAuditBelowRoot(IConventionEntityType type)
+    {
+        return type.BaseType is { } baseType
+            && type.ClrType.IsAssignableTo<IDeleteAudit>()
+            && !baseType.ClrType.IsAssignableTo<IDeleteAudit>();
+    }
+
     private static void _ConfigureNotDeletedFilter(IConventionEntityType type)
     {
         // The filter names the property, not its column: a consumer may map IsDeleted to any column name.
@@ -295,4 +313,15 @@ internal sealed class HeadlessEntityModelConvention : IEntityTypeAddedConvention
     {
         return type.GetInterfaces().Any(x => x.IsGenericType && x.GetGenericTypeDefinition() == genericInterface);
     }
+}
+
+internal static partial class HeadlessEntityModelConventionLog
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "HeadlessDerivedDeleteAuditNotFiltered",
+        Level = LogLevel.Warning,
+        Message = "Entity type {EntityType} implements IDeleteAudit but its hierarchy root {RootType} does not. EF Core applies query filters only to a hierarchy root, so the soft-delete filter does not cover {EntityType}: queries return its soft-deleted rows, and IgnoreNotDeletedFilter() changes nothing. Implement IDeleteAudit on {RootType}, or filter IsDeleted in each query."
+    )]
+    internal static partial void LogDerivedDeleteAuditNotFiltered(this ILogger logger, Type entityType, Type rootType);
 }
