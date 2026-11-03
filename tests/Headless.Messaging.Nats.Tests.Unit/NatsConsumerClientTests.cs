@@ -887,6 +887,57 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task should_count_a_paused_pull_as_open_until_its_drain_ends()
+    {
+        // given — a consume whose drain, after the pause cancels it, lasts until the test releases it
+        var idled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var draining = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var drainEnds = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var resumed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var consumer = Substitute.For<INatsJSConsumer>();
+        _OnConsume(
+            consumer,
+            (call, token) =>
+                call == 0 ? _DrainUntil(drainEnds.Task, idled, draining, token) : _Deliver(token, idled: resumed)
+        );
+
+        await using var client = new NatsConsumerClient(
+            "test-group",
+            1,
+            _options,
+            _serviceProvider,
+            (_, _, _) => Task.FromResult(consumer)
+        );
+        await client.SubscribeAsync(["orders.created"], AbortToken);
+
+        using var cts = new CancellationTokenSource();
+        var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token).AsTask();
+        try
+        {
+            await idled.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+            client.OpenPullCount.Should().Be(1);
+
+            // when
+            await client.PauseAsync(AbortToken);
+            await draining.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+            // then — cancelled but still draining, so the server may still deliver to it
+            client.OpenPullCount.Should().Be(1);
+
+            drainEnds.TrySetResult();
+            await _WaitUntilAsync(() => client.OpenPullCount == 0, TimeSpan.FromSeconds(5));
+
+            await client.ResumeAsync(AbortToken);
+            await resumed.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+            client.OpenPullCount.Should().Be(1);
+        }
+        finally
+        {
+            await _StopListeningAsync(listeningTask, cts);
+        }
+    }
+
+    [Fact]
     public async Task should_exit_and_report_connect_error_when_listening_async_receive_connection_fails()
     {
         // given
@@ -1836,6 +1887,30 @@ public sealed class NatsConsumerClientTests : TestBase
         {
             drained?.TrySetResult();
         }
+    }
+
+    // Idles like an empty pull until the token cancels, then holds the drain open until the given task completes.
+    private static async IAsyncEnumerable<INatsJSMsg<ReadOnlyMemory<byte>>> _DrainUntil(
+        Task drainEnds,
+        TaskCompletionSource idled,
+        TaskCompletionSource draining,
+        [EnumeratorCancellation] CancellationToken cancellationToken
+    )
+    {
+        idled.TrySetResult();
+
+        try
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            draining.TrySetResult();
+        }
+
+        await drainEnds.WaitAsync(AbortToken);
+
+        yield break;
     }
 
     // Yields the messages, then fails the consume.
