@@ -12,13 +12,17 @@
     <ProjectReference Include="..\..\src\Headless.Api.Identity\Headless.Api.Identity.csproj" />
     <ProjectReference Include="..\..\src\Headless.Api.ServiceDefaults\Headless.Api.ServiceDefaults.csproj" />
     <ProjectReference Include="..\..\src\Headless.Api.UserAgent\Headless.Api.UserAgent.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Captcha.ReCaptcha\Headless.Captcha.ReCaptcha.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Captcha.Turnstile\Headless.Captcha.Turnstile.csproj" />
     <ProjectReference Include="..\..\src\Headless.Context.Abstractions\Headless.Context.Abstractions.csproj" />
     <!-- The handler matches LockAcquisitionTimeoutException by name; the real type makes a rename fail these tests. -->
     <ProjectReference Include="..\..\src\Headless.DistributedLocks.Abstractions\Headless.DistributedLocks.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Headless.Extensions\Headless.Extensions.csproj" />
     <ProjectReference Include="..\..\src\Headless.Payments.Paymob.CashOut\Headless.Payments.Paymob.CashOut.csproj" />
+    <ProjectReference Include="..\..\src\Headless.PushNotifications.Apns\Headless.PushNotifications.Apns.csproj" />
     <ProjectReference Include="..\..\src\Headless.Sms.Connekio\Headless.Sms.Connekio.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
+    <ProjectReference Include="..\Headless.PushNotifications.Tests.Harness\Headless.PushNotifications.Tests.Harness.csproj" />
     <ProjectReference Include="..\Headless.Sms.Tests.Harness\Headless.Sms.Tests.Harness.csproj" />
   </ItemGroup>
 </Project>

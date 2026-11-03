@@ -16,7 +16,10 @@ namespace Headless.DistributedLocks;
 /// </summary>
 internal static class DistributedLockCoreHelpers
 {
-    public static PublishOptions ReleaseSignalPublishOptions { get; } = new() { DeliveryMode = DeliveryMode.Direct };
+    // A system message: a lock released from host scope carries no tenant and must still wake peers when the host
+    // requires a tenant on every publish.
+    public static PublishOptions ReleaseSignalPublishOptions { get; } =
+        new() { DeliveryMode = DeliveryMode.Direct, IsSystemMessage = true };
 
     /// <summary>
     /// Sends the release wake-up without making the release wait for the broker. The signal is a best-effort hint

@@ -147,6 +147,12 @@ public sealed class TenantScopedFileSystemBlobStorageTests : BlobStorageTestsBas
     }
 
     [Fact]
+    public override Task failed_overwrite_keeps_the_previous_blob_and_metadata()
+    {
+        return base.failed_overwrite_keeps_the_previous_blob_and_metadata();
+    }
+
+    [Fact]
     public override Task can_concurrently_manage_files()
     {
         return base.can_concurrently_manage_files();

@@ -203,15 +203,14 @@ public sealed class HelperTest
         var pathologicalInput = "foo." + new string('a', 1000); // No 'bar' at end
         var regex = new Regex(pattern, RegexOptions.None, TimeSpan.FromSeconds(1));
 
-        // when - measure time to ensure instant failure
-        var sw = System.Diagnostics.Stopwatch.StartNew();
+        // when
         var matches = regex.IsMatch(pathologicalInput);
-        sw.Stop();
 
-        // then - possessive quantifier should fail instantly (< 100ms)
-        // Non-greedy would take ~1 second (timeout)
+        // then - the wildcard expands to an atomic group, which gives the engine nothing to backtrack into; asserting
+        // the shape rather than a wall-clock budget keeps the check stable on a loaded runner, and the 1 s match
+        // timeout still fails the test if backtracking ever returns
         matches.Should().BeFalse();
-        sw.ElapsedMilliseconds.Should().BeLessThan(100, "possessive quantifiers prevent backtracking");
+        pattern.Should().Contain("(?>[0-9a-zA-Z]+)", "possessive quantifiers prevent backtracking");
     }
 
     [Fact]

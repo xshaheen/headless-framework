@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using System.Reflection;
 using Headless.Testing.Tests;
 using Headless.Threading;
@@ -87,7 +88,7 @@ public sealed class KeyedAsyncLockTests : TestBase
     {
         // given
         using var keyedLock = new KeyedAsyncLock();
-        var executionOrder = new List<int>();
+        var executionOrder = new ConcurrentQueue<int>();
         var lock1Acquired = new TaskCompletionSource();
         var lock1Released = new TaskCompletionSource();
 
@@ -97,9 +98,11 @@ public sealed class KeyedAsyncLockTests : TestBase
             {
                 using (await keyedLock.LockAsync("shared-key"))
                 {
-                    executionOrder.Add(1);
+                    executionOrder.Enqueue(1);
                     lock1Acquired.SetResult();
                     await lock1Released.Task;
+                    // Recorded while still holding the lock, so a task2 that got in early lands before it.
+                    executionOrder.Enqueue(3);
                 }
             },
             AbortToken
@@ -112,21 +115,21 @@ public sealed class KeyedAsyncLockTests : TestBase
             {
                 using (await keyedLock.LockAsync("shared-key"))
                 {
-                    executionOrder.Add(2);
+                    executionOrder.Enqueue(2);
                 }
             },
             AbortToken
         );
 
-        // Give task2 time to block
+        // A negative window: without mutual exclusion task2 would enter and record 2 here.
         await Task.Delay(50, AbortToken);
+        task2.IsCompleted.Should().BeFalse("task2 must wait while task1 holds the key");
 
-        // Release lock1
         lock1Released.SetResult();
         await Task.WhenAll(task1, task2);
 
-        // then - task2 should only execute after task1 releases
-        executionOrder.Should().ContainInOrder(1, 2);
+        // then - task2 entered only after task1 left the lock
+        executionOrder.Should().Equal(1, 3, 2);
     }
 
     [Fact]
@@ -165,7 +168,8 @@ public sealed class KeyedAsyncLockTests : TestBase
 
         // then - both should acquire without blocking
         var bothTask = Task.WhenAll(key1Acquired.Task, key2Acquired.Task);
-        var completed = await Task.WhenAny(bothTask, Task.Delay(1000, AbortToken));
+        // A broken lock blocks forever instead of running late, so the bound only has to outlast a starved pool.
+        var completed = await Task.WhenAny(bothTask, Task.Delay(TimeSpan.FromSeconds(30), AbortToken));
 
         completed.Should().Be(bothTask, "both locks should be acquired concurrently");
 
@@ -257,7 +261,8 @@ public sealed class KeyedAsyncLockTests : TestBase
 
         // then - should complete without deadlock
         var allTasks = Task.WhenAll(tasks);
-        var completed = await Task.WhenAny(allTasks, Task.Delay(5000, AbortToken));
+        // A broken lock blocks forever instead of running late, so the bound only has to outlast a starved pool.
+        var completed = await Task.WhenAny(allTasks, Task.Delay(TimeSpan.FromSeconds(30), AbortToken));
         completed.Should().Be(allTasks, "all locks should complete within timeout");
     }
 
@@ -370,7 +375,8 @@ public sealed class KeyedAsyncLockTests : TestBase
 
         // then - both should acquire without blocking (different keys)
         var bothTask = Task.WhenAll(key1Acquired.Task, key2Acquired.Task);
-        var completed = await Task.WhenAny(bothTask, Task.Delay(1000, AbortToken));
+        // A broken lock blocks forever instead of running late, so the bound only has to outlast a starved pool.
+        var completed = await Task.WhenAny(bothTask, Task.Delay(TimeSpan.FromSeconds(30), AbortToken));
 
         completed.Should().Be(bothTask, "case-different keys should be treated as different locks");
 
@@ -743,7 +749,11 @@ public sealed class KeyedAsyncLockTests : TestBase
         );
 
         // then - lock2 should acquire immediately (instance-based locking, not global)
-        var lock2AcquiredResult = await Task.WhenAny(lock2Acquired.Task, Task.Delay(500, AbortToken));
+        // A broken lock blocks forever instead of running late, so the bound only has to outlast a starved pool.
+        var lock2AcquiredResult = await Task.WhenAny(
+            lock2Acquired.Task,
+            Task.Delay(TimeSpan.FromSeconds(30), AbortToken)
+        );
         lock2AcquiredResult
             .Should()
             .Be(lock2Acquired.Task, "lock2 should acquire immediately because lock2 has its own lock dictionary");

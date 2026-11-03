@@ -6,6 +6,7 @@ using Headless.Permissions;
 using Headless.Testing;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.Options;
 using NSubstitute.ExceptionExtensions;
 
 namespace Tests.Grants;
@@ -14,13 +15,15 @@ public sealed class GrantedPoliciesReaderTests : TestBase
 {
     private readonly IPermissionManager _permissionManager = Substitute.For<IPermissionManager>();
     private readonly IAuthorizationService _authorizationService = Substitute.For<IAuthorizationService>();
+    private readonly IPermissionDefinitionManager _definitionManager = Substitute.For<IPermissionDefinitionManager>();
+    private readonly PermissionManagementOptions _managementOptions = new();
     private readonly ThreadCurrentPrincipalAccessor _principalAccessor = new();
     private readonly TestCurrentTenant _currentTenant = new();
     private readonly GrantedPoliciesReader _sut;
 
     public GrantedPoliciesReaderTests()
     {
-        _sut = new GrantedPoliciesReader(_permissionManager, _authorizationService, _currentTenant, _principalAccessor);
+        _sut = _CreateSut();
         _permissionManager
             .GetAllAsync(Arg.Any<ICurrentUser>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns([]);
@@ -126,6 +129,78 @@ public sealed class GrantedPoliciesReaderTests : TestBase
         tenantDuringCheck.Should().Be("issued-tenant");
         _principalAccessor.Principal.Should().BeSameAs(ambient);
         _currentTenant.Id.Should().Be("ambient-tenant");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("perm:")]
+    public async Task should_decide_permission_named_policies_from_the_batch_read(string? prefix)
+    {
+        // given
+        _managementOptions.PolicyNamePrefix = prefix;
+        var sut = _CreateSut();
+        _Define("Orders.Edit");
+        _Define("Orders.Delete");
+        var context = _Context("tenant-1");
+        _permissionManager
+            .GetAllAsync(Arg.Any<ICurrentUser>(), Arg.Any<string?>(), AbortToken)
+            .Returns([
+                new GrantedPermissionResult("Orders.Edit", true),
+                new GrantedPermissionResult("Orders.Delete", false),
+            ]);
+
+        // when
+        var granted = await sut.GetAsync(context, [prefix + "Orders.Edit", prefix + "Orders.Delete"], AbortToken);
+
+        // then - the same names as evaluating each policy, without a grant check per policy
+        granted.Should().BeEquivalentTo(new[] { prefix + "Orders.Edit", "Orders.Edit" }.Distinct());
+        await _authorizationService.DidNotReceiveWithAnyArgs().AuthorizeAsync(default!, default, default(string)!);
+        await _permissionManager
+            .Received(1)
+            .GetAllAsync(Arg.Any<ICurrentUser>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_evaluate_a_registered_policy_that_shares_a_permission_name()
+    {
+        // given - a registered policy wins over the permission of the same name
+        var authorizationOptions = new AuthorizationOptions();
+        authorizationOptions.AddPolicy("Orders.Edit", policy => policy.RequireRole("admin"));
+        var sut = _CreateSut(authorizationOptions);
+        _Define("Orders.Edit");
+        var context = _Context("tenant-1");
+        _authorizationService
+            .AuthorizeAsync(context.Principal, null, "Orders.Edit")
+            .Returns(AuthorizationResult.Failed());
+
+        // when
+        await sut.GetAsync(context, ["Orders.Edit"], AbortToken);
+
+        // then
+        await _authorizationService.Received(1).AuthorizeAsync(context.Principal, null, "Orders.Edit");
+    }
+
+    private GrantedPoliciesReader _CreateSut(AuthorizationOptions? authorizationOptions = null)
+    {
+        var policyProvider = new PermissionPolicyProvider(
+            Options.Create(authorizationOptions ?? new AuthorizationOptions()),
+            _definitionManager,
+            Options.Create(_managementOptions)
+        );
+
+        return new GrantedPoliciesReader(
+            _permissionManager,
+            _authorizationService,
+            policyProvider,
+            _currentTenant,
+            _principalAccessor
+        );
+    }
+
+    private void _Define(string name)
+    {
+        var permission = new PermissionGroupDefinition("TestGroup").AddChild(name);
+        _definitionManager.FindAsync(name, Arg.Any<CancellationToken>()).Returns(permission);
     }
 
     private static PrincipalContext _Context(string? tenantId)

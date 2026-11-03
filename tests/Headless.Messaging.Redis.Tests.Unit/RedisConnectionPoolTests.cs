@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Diagnostics;
 using Headless.Messaging.Redis;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Options;
@@ -29,19 +28,11 @@ public sealed class RedisConnectionPoolTests : TestBase
             }
         );
 
-        var stopwatch = Stopwatch.StartNew();
-
-        // when - constructor should return quickly since connections are lazy
-        // NOTE: This test will FAIL if constructor blocks for connection attempts
+        // when
         using var pool = new RedisConnectionPool(options, LoggerFactory);
 
-        stopwatch.Stop();
-
-        // then - constructor should complete within 100ms
-        // If this fails, it indicates the sync-over-async bug is present
-        stopwatch
-            .ElapsedMilliseconds.Should()
-            .BeLessThan(100, "constructor should not block waiting for Redis connections");
+        // then - connections open on first use, so the constructor starts none and cannot block on Redis
+        pool.CreatedConnectionCount.Should().Be(0, "constructor should not start Redis connections");
     }
 
     [Fact]
@@ -175,6 +166,28 @@ public sealed class RedisConnectionPoolTests : TestBase
         // then — a cached faulted task rethrows the very same exception instance to every later caller,
         // which is what used to poison the transport until the process restarted
         second.Should().NotBeSameAs(first, "the faulted slot must be replaced so the next caller retries");
+    }
+
+    [Fact]
+    public async Task should_return_the_shared_multiplexer_and_leave_it_open_on_dispose()
+    {
+        // given
+        var shared = Substitute.For<IConnectionMultiplexer>();
+        var options = Options.Create(
+            new RedisMessagingOptions { ConnectionMultiplexer = shared, ConnectionPoolSize = 3 }
+        );
+        var pool = new RedisConnectionPool(options, LoggerFactory);
+
+        // when
+        var first = await pool.ConnectAsync(AbortToken);
+        var second = await pool.ConnectAsync(AbortToken);
+        await pool.DisposeAsync();
+
+        // then
+        first.Should().BeSameAs(shared);
+        second.Should().BeSameAs(shared);
+        shared.DidNotReceive().Dispose();
+        await shared.DidNotReceive().DisposeAsync();
     }
 
     [Fact]

@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
-using System.Net;
-using System.Net.Sockets;
 using Headless.PushNotifications;
 using Headless.PushNotifications.Apns;
 using Headless.PushNotifications.Apns.Internal;
@@ -474,9 +472,8 @@ public sealed class ApnsPushNotificationServiceTests : TestBase
     public async Task should_report_failure_per_token_when_endpoint_is_unreachable()
     {
         // given
-        var closedPort = _GetClosedLoopbackPort();
         await using var provider = _server.CreateProvider(configureClient: c =>
-            c.BaseAddress = new Uri($"http://127.0.0.1:{closedPort}")
+            c.BaseAddress = FakeApnsServer.UnreachableAddress
         );
         var service = provider.GetRequiredService<IPushNotificationService>();
 
@@ -982,16 +979,6 @@ public sealed class ApnsPushNotificationServiceTests : TestBase
         var overhead = """{"aps":{"alert":{"title":"T","body":""}}}""".Length;
 
         return PushNotificationRequests.Valid("T", new string('x', bytes - overhead));
-    }
-
-    private static int _GetClosedLoopbackPort()
-    {
-        using var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        listener.Stop();
-
-        return port;
     }
 
     /// <summary>Fails the first <c>failures</c> attempts the way a refused TCP connect does, before any byte is sent.</summary>
