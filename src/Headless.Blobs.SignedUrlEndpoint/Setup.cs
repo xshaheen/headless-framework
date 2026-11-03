@@ -2,6 +2,7 @@
 
 using Headless.Checks;
 using Headless.IO;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -24,6 +25,12 @@ public static class SetupBlobSignedUrl
         /// The tokens are ASP.NET Core data-protection payloads, so every replica that mints or serves them must share
         /// one persisted key ring, and a URL outlives no key it was protected with. A store registered as an instance
         /// becomes container-disposed once it is decorated.
+        /// <para>
+        /// The token in a URL's path is replaced by <c>***</c> in HTTP logging (<c>UseHttpLogging</c>) and in the
+        /// request activity's <c>url.path</c>, <c>http.target</c>, and <c>url.full</c> tags. ASP.NET Core's own
+        /// request scope (<c>RequestPath</c>) and its "Request starting" and "Request finished" lines are written
+        /// before any application code runs and still carry the token; the Blobs guide lists how to turn them off.
+        /// </para>
         /// </remarks>
         public HeadlessBlobsSetupBuilder UseSignedUrlEndpoint(Action<BlobSignedUrlOptions> setupAction)
         {
@@ -36,6 +43,15 @@ public static class SetupBlobSignedUrl
                 services.TryAddSingleton(TimeProvider.System);
                 services.TryAddSingleton<IMimeTypeProvider, MimeTypeProvider>();
                 services.TryAddSingleton<BlobSignedUrlSigner>();
+
+                // The token is a live credential, so its path stays out of HTTP logging and traces whenever the
+                // endpoint exists. Without HTTP logging or an activity listener, neither hook changes anything, and
+                // a request outside the route prefix costs one path comparison.
+                services.TryAddSingleton<BlobSignedUrlPathRedactor>();
+                services.AddHttpLoggingInterceptor<BlobSignedUrlHttpLoggingInterceptor>();
+                services.TryAddEnumerable(
+                    ServiceDescriptor.Singleton<IStartupFilter, BlobSignedUrlTraceRedactionStartupFilter>()
+                );
 
                 // Cross-cutting extensions run after every provider contribution, so every store is registered by now.
                 services.TryDecorateWith<IBlobStorage>((inner, provider) => _Wrap(inner, store: null, provider));
