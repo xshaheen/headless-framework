@@ -9,6 +9,7 @@
     <InternalsVisibleTo Include="Headless.Jobs.Composition.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.DistributedLocks.InMemory.Tests.Integration" />
     <InternalsVisibleTo Include="Headless.Messaging.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.DistributedLocks.Messaging.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.DistributedLocks.Composition.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Jobs.Composition.Tests.Unit" />
   </ItemGroup>

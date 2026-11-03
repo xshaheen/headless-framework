@@ -181,14 +181,6 @@ internal static partial class RegularLockLoggerExtensions
     );
 
     [LoggerMessage(
-        EventId = 14,
-        EventName = "ProcessingLockReleased",
-        Level = LogLevel.Debug,
-        Message = "Processing lock released {MessageId} for {Resource}"
-    )]
-    internal static partial void LogProcessingLockReleased(this ILogger logger, string? messageId, string resource);
-
-    [LoggerMessage(
         EventId = 15,
         EventName = "BestEffortLockCleanupFailed",
         Level = LogLevel.Warning,
@@ -203,24 +195,11 @@ internal static partial class RegularLockLoggerExtensions
 
     [LoggerMessage(
         EventId = 16,
-        EventName = "BusAbsent",
+        EventName = "ReleaseSignalAbsent",
         Level = LogLevel.Warning,
-        Message = "No IBus registered; lock-release wake-ups will fall back to polling backoff. Register Headless.Messaging for push-based latency."
+        Message = "No lock release signal registered; lock-release wake-ups will fall back to polling backoff. Call UseMessagingReleaseSignal() from Headless.DistributedLocks.Messaging for push-based latency."
     )]
-    internal static partial void LogBusAbsent(this ILogger logger);
-
-    [LoggerMessage(
-        EventId = 17,
-        EventName = "LockReleasePublishFailed",
-        Level = LogLevel.Warning,
-        Message = "Lock released but wake-up publish failed; waiters will fall back to polling: R={Resource} Id={LeaseId}"
-    )]
-    internal static partial void LogLockReleasePublishFailed(
-        this ILogger logger,
-        Exception exception,
-        string resource,
-        string leaseId
-    );
+    internal static partial void LogReleaseSignalAbsent(this ILogger logger);
 
     [LoggerMessage(
         EventId = 19,

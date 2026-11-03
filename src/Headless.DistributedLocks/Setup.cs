@@ -2,7 +2,6 @@
 
 using Headless.Checks;
 using Headless.Hosting;
-using Headless.Messaging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
@@ -68,6 +67,11 @@ public static class SetupDistributedLocks
             extension.AddServices(services);
         }
 
+        foreach (var action in setup.CrossCuttingExtensions)
+        {
+            action(services);
+        }
+
         return services;
     }
 
@@ -115,11 +119,10 @@ internal static class DistributedLockCoreServiceCollectionExtensions
 
     /// <summary>
     /// Registers the <see cref="DistributedLock"/> singleton, its <see cref="IDistributedLock"/>
-    /// alias, and the <see cref="ICanReceiveLockReleased"/> enumerable entry using the supplied
+    /// alias, and the <see cref="IDistributedLockReleaseListener"/> enumerable entry using the supplied
     /// <paramref name="storageFactory"/>. All registrations are idempotent via
     /// <c>TryAdd*</c> so repeated calls (e.g., multi-provider extension) do not accumulate
-    /// duplicate descriptors. Also auto-registers the shared lock-released consumer so
-    /// messaging-driven wake-ups work when <c>AddHeadlessMessaging</c> is later called.
+    /// duplicate descriptors.
     /// </summary>
     internal static IServiceCollection AddDistributedLockCore(
         this IServiceCollection services,
@@ -129,6 +132,7 @@ internal static class DistributedLockCoreServiceCollectionExtensions
         services.AddSingletonOptionValue<DistributedLockOptions>();
         services.TryAddSingleton(TimeProvider.System);
         services.AddHeadlessGuidGenerator();
+        services.AddNullReleaseSignal();
 
         // TryAddSingleton on the concrete + the public interface keeps repeated
         // AddHeadlessDistributedLocks(...) calls idempotent inside a single provider extension.
@@ -136,7 +140,7 @@ internal static class DistributedLockCoreServiceCollectionExtensions
         // resolving against the same concrete type.
         services.TryAddSingleton<DistributedLock>(provider => new DistributedLock(
             storageFactory(provider),
-            provider.GetService<IBus>(),
+            provider.GetRequiredService<IDistributedLockReleaseSignal>(),
             provider.GetRequiredService<DistributedLockOptions>(),
             provider.GetRequiredService<IGuidGenerator>(),
             provider.GetRequiredService<TimeProvider>(),
@@ -145,21 +149,16 @@ internal static class DistributedLockCoreServiceCollectionExtensions
 
         services.TryAddSingleton<IDistributedLock>(sp => sp.GetRequiredService<DistributedLock>());
 
-        // Register ICanReceiveLockReleased pointing at the same concrete instance so that a
-        // decorator wrapped around IDistributedLock does not break the lock-release
-        // wake-up signal (the consumer always receives the real DistributedLock).
-        // TryAddEnumerable keeps repeated primitive registrations idempotent, and
-        // LockReleasedConsumer fans out over the collected IEnumerable<ICanReceiveLockReleased>
-        // so mutex and semaphore providers share one decoupled wake-up seam.
+        // Register the listener pointing at the same concrete instance so that a decorator wrapped around
+        // IDistributedLock does not break the lock-release wake-up signal (the transport always reaches the real
+        // DistributedLock). TryAddEnumerable keeps repeated primitive registrations idempotent, and the transport fans
+        // out over the collected IEnumerable<IDistributedLockReleaseListener>, so the mutex, semaphore, and
+        // reader-writer providers share one wake-up seam.
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<ICanReceiveLockReleased, DistributedLock>(static sp =>
+            ServiceDescriptor.Singleton<IDistributedLockReleaseListener, DistributedLock>(static sp =>
                 sp.GetRequiredService<DistributedLock>()
             )
         );
-
-        // Auto-register the shared lock-released consumer. Messaging applies the contribution when it
-        // starts, so it may come before or after AddHeadlessMessaging; without messaging it stays inert.
-        DistributedLockConsumerRegistration.AddLockReleasedConsumer(services);
 
         return services;
     }
@@ -179,10 +178,11 @@ internal static class DistributedReadWriteLockCoreServiceCollectionExtensions
         services.AddSingletonOptionValue<DistributedLockOptions>();
         services.TryAddSingleton(TimeProvider.System);
         services.AddHeadlessGuidGenerator();
+        services.AddNullReleaseSignal();
 
         services.TryAddSingleton<DistributedReadWriteLock>(provider => new DistributedReadWriteLock(
             provider.GetRequiredService<TStorage>(),
-            provider.GetService<IBus>(),
+            provider.GetRequiredService<IDistributedLockReleaseSignal>(),
             provider.GetRequiredService<DistributedLockOptions>(),
             provider.GetRequiredService<IGuidGenerator>(),
             provider.GetRequiredService<TimeProvider>(),
@@ -191,11 +191,9 @@ internal static class DistributedReadWriteLockCoreServiceCollectionExtensions
 
         services.TryAddSingleton<IDistributedReadWriteLock>(sp => sp.GetRequiredService<DistributedReadWriteLock>());
 
-        // Join the lock-released fan-out with the same singleton so a release wakes reader-writer waiters too. The
-        // consumer itself is not registered here: every setup that adds this core also adds the mutex and semaphore
-        // cores, which register it.
+        // Join the lock-released fan-out with the same singleton so a release wakes reader-writer waiters too.
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<ICanReceiveLockReleased, DistributedReadWriteLock>(static sp =>
+            ServiceDescriptor.Singleton<IDistributedLockReleaseListener, DistributedReadWriteLock>(static sp =>
                 sp.GetRequiredService<DistributedReadWriteLock>()
             )
         );
@@ -210,7 +208,7 @@ internal static class DistributedSemaphoreCoreServiceCollectionExtensions
     /// Registers the <see cref="DistributedSemaphoreProvider"/> singleton and its
     /// <see cref="IDistributedSemaphoreProvider"/> alias using <typeparamref name="TStorage"/>
     /// as the storage backend. Also registers the semaphore under
-    /// <see cref="ICanReceiveLockReleased"/> so messaging-driven wake-ups wake semaphore
+    /// <see cref="IDistributedLockReleaseListener"/> so release wake-ups reach semaphore
     /// waiters alongside mutex waiters. Registrations are idempotent via <c>TryAdd*</c>.
     /// </summary>
     internal static IServiceCollection AddDistributedSemaphoreCore<TStorage>(this IServiceCollection services)
@@ -220,10 +218,11 @@ internal static class DistributedSemaphoreCoreServiceCollectionExtensions
         services.AddSingletonOptionValue<DistributedLockOptions>();
         services.TryAddSingleton(TimeProvider.System);
         services.AddHeadlessGuidGenerator();
+        services.AddNullReleaseSignal();
 
         services.TryAddSingleton(provider => new DistributedSemaphoreProvider(
             provider.GetRequiredService<TStorage>(),
-            provider.GetService<IBus>(),
+            provider.GetRequiredService<IDistributedLockReleaseSignal>(),
             provider.GetRequiredService<DistributedLockOptions>(),
             provider.GetRequiredService<IGuidGenerator>(),
             provider.GetRequiredService<TimeProvider>(),
@@ -234,15 +233,28 @@ internal static class DistributedSemaphoreCoreServiceCollectionExtensions
             sp.GetRequiredService<DistributedSemaphoreProvider>()
         );
 
-        // Register under ICanReceiveLockReleased so LockReleasedConsumer wakes semaphore waiters
+        // Register as a release listener so a release signal wakes semaphore waiters
         // alongside mutex waiters. TryAddEnumerable keeps repeated registrations idempotent.
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<ICanReceiveLockReleased, DistributedSemaphoreProvider>(static sp =>
+            ServiceDescriptor.Singleton<IDistributedLockReleaseListener, DistributedSemaphoreProvider>(static sp =>
                 sp.GetRequiredService<DistributedSemaphoreProvider>()
             )
         );
 
-        DistributedLockConsumerRegistration.AddLockReleasedConsumer(services);
+        return services;
+    }
+}
+
+internal static class DistributedLockReleaseSignalServiceCollectionExtensions
+{
+    /// <summary>
+    /// Registers the default release signal, which sends nothing so waiters poll. <c>TryAdd</c> keeps a transport the
+    /// app registered first, and the messaging bridge replaces it from a cross-cutting extension that runs after the
+    /// provider.
+    /// </summary>
+    internal static IServiceCollection AddNullReleaseSignal(this IServiceCollection services)
+    {
+        services.TryAddSingleton<IDistributedLockReleaseSignal, NullDistributedLockReleaseSignal>();
 
         return services;
     }

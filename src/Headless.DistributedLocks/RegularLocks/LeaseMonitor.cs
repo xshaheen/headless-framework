@@ -202,7 +202,7 @@ internal sealed class LeaseMonitor : IAsyncDisposable
     /// <summary>
     /// Signals the monitoring loop to run a validation iteration immediately instead of waiting for
     /// the next scheduled cadence. Used by the release-signal path to surface lease loss with
-    /// minimal latency when a <see cref="DistributedLockReleased"/> event is received.
+    /// minimal latency when a release signal is received.
     /// </summary>
     public void TriggerImmediateValidation()
     {

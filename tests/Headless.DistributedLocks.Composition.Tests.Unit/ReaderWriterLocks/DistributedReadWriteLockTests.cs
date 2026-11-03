@@ -4,7 +4,6 @@ using System.Diagnostics.Metrics;
 using Headless;
 using Headless.DistributedLocks;
 using Headless.DistributedLocks.InMemory;
-using Headless.Messaging;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
@@ -22,7 +21,7 @@ public sealed class DistributedReadWriteLockTests : TestBase
 
     private DistributedReadWriteLock _CreateProvider(
         IDistributedReadWriteLockStorage? storage = null,
-        IBus? bus = null,
+        IDistributedLockReleaseSignal? releaseSignal = null,
         DistributedLockOptions? options = null,
         FakeTimeProvider? timeProvider = null
     )
@@ -32,7 +31,7 @@ public sealed class DistributedReadWriteLockTests : TestBase
 
         return new DistributedReadWriteLock(
             storage ?? new InMemoryDistributedReadWriteLockStorage(timeProvider),
-            bus,
+            releaseSignal ?? Substitute.For<IDistributedLockReleaseSignal>(),
             options ?? new DistributedLockOptions(),
             _guidGenerator,
             timeProvider,
@@ -63,7 +62,7 @@ public sealed class DistributedReadWriteLockTests : TestBase
 
         // when - the holder releases and the release signal arrives; fake time never moves
         await holder.ReleaseAsync();
-        ((ICanReceiveLockReleased)provider).OnLockReleased(new DistributedLockReleased(resource, holder.LeaseId));
+        ((IDistributedLockReleaseListener)provider).OnReleased(resource, holder.LeaseId);
 
         // then
         await using var lease = await waiterTask.Bounded();
@@ -88,7 +87,7 @@ public sealed class DistributedReadWriteLockTests : TestBase
 
         // when
         await writer.ReleaseAsync();
-        ((ICanReceiveLockReleased)provider).OnLockReleased(new DistributedLockReleased(resource, writer.LeaseId));
+        ((IDistributedLockReleaseListener)provider).OnReleased(resource, writer.LeaseId);
 
         // then
         await using var lease = await readerTask.Bounded();
@@ -157,7 +156,7 @@ public sealed class DistributedReadWriteLockTests : TestBase
         _guidGenerator.Create().Returns(_ => Guid.NewGuid());
         return new DistributedReadWriteLock(
             storage,
-            bus: null,
+            Substitute.For<IDistributedLockReleaseSignal>(),
             new DistributedLockOptions(),
             _guidGenerator,
             _timeProvider,
@@ -197,15 +196,15 @@ public sealed class DistributedReadWriteLockTests : TestBase
     }
 
     [Fact]
-    public async Task should_publish_release_signal_directly()
+    public async Task should_announce_release_through_the_release_signal()
     {
         // given
         var storage = Substitute.For<IDistributedReadWriteLockStorage>();
         storage
             .ReleaseWriteAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(ValueTask.CompletedTask);
-        var bus = Substitute.For<IBus>();
-        var provider = _CreateProvider(storage, bus);
+        var releaseSignal = Substitute.For<IDistributedLockReleaseSignal>();
+        var provider = _CreateProvider(storage, releaseSignal);
         var resource = Faker.Random.AlphaNumeric(10);
         var leaseId = Faker.Random.AlphaNumeric(10);
 
@@ -213,12 +212,7 @@ public sealed class DistributedReadWriteLockTests : TestBase
         await provider.ReleaseAsync(ReaderWriterLockMode.Write, resource, leaseId);
 
         // then
-        await bus.Received(1)
-            .PublishAsync(
-                Arg.Is<DistributedLockReleased>(message => message.Resource == resource && message.LeaseId == leaseId),
-                Arg.Is<PublishOptions?>(options => options!.DeliveryMode == DeliveryMode.Direct),
-                Arg.Any<CancellationToken>()
-            );
+        releaseSignal.Received(1).Announce(resource, leaseId);
     }
 
     [Fact]

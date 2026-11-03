@@ -10,6 +10,7 @@
     <InternalsVisibleTo Include="Headless.DistributedLocks.InMemory" />
     <InternalsVisibleTo Include="Headless.DistributedLocks.InMemory.Tests.Integration" />
     <InternalsVisibleTo Include="Headless.DistributedLocks.Database" />
+    <InternalsVisibleTo Include="Headless.DistributedLocks.Messaging.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.DistributedLocks.Redis" />
     <InternalsVisibleTo Include="Headless.DistributedLocks.Redis.Tests.Integration" />
   </ItemGroup>
@@ -20,16 +21,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
-    <ProjectReference Include="..\Headless.Messaging.Abstractions\Headless.Messaging.Abstractions.csproj" />
-    <ProjectReference Include="..\Headless.Messaging.Bus.Abstractions\Headless.Messaging.Bus.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.DistributedLocks.Abstractions\Headless.DistributedLocks.Abstractions.csproj" />
-    <!-- Generates this assembly's MessagingModule at build time; the module ships compiled into this package, so
-         consumers of the package need neither the generator nor a dependency on it. -->
-    <ProjectReference
-      Include="..\Headless.Messaging.SourceGenerator\Headless.Messaging.SourceGenerator.csproj"
-      OutputItemType="Analyzer"
-      ReferenceOutputAssembly="false"
-      PrivateAssets="all"
-    />
   </ItemGroup>
 </Project>

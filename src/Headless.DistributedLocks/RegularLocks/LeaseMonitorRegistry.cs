@@ -8,7 +8,7 @@ namespace Headless.DistributedLocks;
 /// <summary>
 /// Thread-safe registry that tracks <see cref="LeaseMonitor"/> instances by resource and lease ID.
 /// Used by the lock/semaphore providers to deregister monitors on release and to nudge active monitors
-/// when a <see cref="DistributedLockReleased"/> event is received.
+/// when a release signal is received.
 /// </summary>
 /// <remarks>
 /// Monitors are stored as <see cref="WeakReference{T}"/> inside per-resource <c>MonitorBucket</c>s.
@@ -67,7 +67,7 @@ internal sealed class LeaseMonitorRegistry(ILogger logger)
 
     /// <summary>
     /// Triggers an immediate validation iteration on all live monitors for the given
-    /// <paramref name="resource"/>. Called when a <see cref="DistributedLockReleased"/> event is
+    /// <paramref name="resource"/>. Called when a release signal is
     /// received to let monitors surface lease-loss quickly rather than waiting for the next cadence.
     /// Dead weak references in the bucket are pruned during the nudge pass.
     /// </summary>

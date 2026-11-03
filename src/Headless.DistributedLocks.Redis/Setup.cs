@@ -3,7 +3,6 @@
 using Headless.DistributedLocks.Redis;
 using Headless.DistributedLocks.Redis.Scripts;
 using Headless.Hosting;
-using Headless.Messaging;
 using Headless.Redis;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -18,8 +17,8 @@ namespace Headless.DistributedLocks;
 /// </summary>
 /// <remarks>
 /// Requires <see cref="IConnectionMultiplexer"/> to be registered in the service collection.
-/// Messaging is optional; when an <see cref="IBus"/> registration exists before lock setup,
-/// release notifications use push wake-ups. Otherwise, waiters fall back to polling backoff.
+/// Waiters fall back to polling backoff unless a release signal transport is configured, such as
+/// <c>UseMessagingReleaseSignal()</c> from <c>Headless.DistributedLocks.Messaging</c>.
 /// <c>UseRedis</c> also contributes the <c>distributed-locks-redis</c> readiness health check, which pings Redis
 /// through the registered multiplexer.
 /// </remarks>
@@ -36,8 +35,6 @@ public static class SetupDistributedLocksRedis
         /// Prerequisites:
         /// <list type="bullet">
         ///   <item><see cref="IConnectionMultiplexer"/> must be registered</item>
-        ///   <item>Call <c>AddHeadlessDistributedLocks(...)</c> before <c>AddHeadlessMessaging(...)</c>
-        ///   when push-based lock release wake-ups are needed</item>
         /// </list>
         /// </remarks>
         public HeadlessDistributedLocksSetupBuilder UseRedis()

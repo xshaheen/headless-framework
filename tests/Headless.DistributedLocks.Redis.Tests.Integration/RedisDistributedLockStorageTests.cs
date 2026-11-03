@@ -456,7 +456,7 @@ public sealed class RedisDistributedLockStorageTests(RedisTestFixture fixture) :
         // sent; the handle must report loss before that, while the key is still there.
         var provider = new DistributedLock(
             fixture.LockStorage,
-            bus: null,
+            Substitute.For<IDistributedLockReleaseSignal>(),
             new DistributedLockOptions(),
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             TimeProvider.System,

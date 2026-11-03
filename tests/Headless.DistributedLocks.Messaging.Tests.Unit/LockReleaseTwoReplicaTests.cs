@@ -66,7 +66,7 @@ public sealed class LockReleaseTwoReplicaTests : TestBase
 
         // Registered before the provider, whose TryAdd keeps this one store shared by both replicas.
         services.AddSingleton(store);
-        services.AddHeadlessDistributedLocks(setup => setup.UseInMemory());
+        services.AddHeadlessDistributedLocks(setup => setup.UseInMemory().UseMessagingReleaseSignal());
         services.AddHeadlessMessaging(setup =>
         {
             setup.UseInMemory();

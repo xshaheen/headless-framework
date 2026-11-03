@@ -39,7 +39,7 @@ public sealed class JobsDistributedLockGuardTests : TestBase
     {
         return new DistributedLock(
             storage,
-            bus: null, // lock-released notifications are not needed for these guard tests
+            Substitute.For<IDistributedLockReleaseSignal>(), // lock-released notifications are not needed for these guard tests
             new DistributedLockOptions(),
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             TimeProvider.System,

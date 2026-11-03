@@ -3,7 +3,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using Headless.Checks;
-using Headless.Messaging;
 using Microsoft.Extensions.Logging;
 using Nito.AsyncEx;
 using Polly;
@@ -23,28 +22,27 @@ namespace Headless.DistributedLocks;
 /// breaks the capacity-reclaim contract.
 /// </para>
 /// <para>
-/// Wake-up model mirrors <see cref="DistributedLock"/>: when <see cref="IBus"/> is available,
-/// a <see cref="DistributedLockReleased"/> message is published after each confirmed release so
-/// blocked acquirers are woken immediately. Without the bus, callers fall back to polling.
+/// Wake-up model mirrors <see cref="DistributedLock"/>: each confirmed release is announced through the
+/// registered <see cref="IDistributedLockReleaseSignal"/> so blocked acquirers are woken immediately. With the
+/// default signal, which sends nothing, callers fall back to polling.
 /// </para>
 /// <para>
-/// This class also implements <see cref="ICanReceiveLockReleased"/> so it participates in the same
-/// fan-out signal path as the mutex provider via the shared <c>LockReleasedConsumer</c>.
+/// This class also implements <see cref="IDistributedLockReleaseListener"/> so it participates in the same
+/// fan-out signal path as the mutex provider.
 /// </para>
 /// </remarks>
 internal sealed class DistributedSemaphoreProvider(
     IDistributedSemaphoreStorage storage,
-    IBus? bus,
+    IDistributedLockReleaseSignal releaseSignal,
     DistributedLockOptions lockOptions,
     IGuidGenerator guidGenerator,
     TimeProvider timeProvider,
     ILogger<DistributedSemaphoreProvider> logger
-) : IDistributedSemaphoreProvider, ICanReceiveLockReleased
+) : IDistributedSemaphoreProvider, IDistributedLockReleaseListener
 {
     private static readonly TimeSpan _LongLockWarningThreshold = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan _NonBlockingAcquireDeadline = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan _OrphanSlotCleanupTimeout = TimeSpan.FromSeconds(5);
-    private readonly IBus? _bus = DistributedLockCoreHelpers.ConfigureBus(bus, logger);
 
     private readonly ResiliencePipeline _releasePipeline = DistributedLockCoreHelpers.BuildReleasePipeline(logger);
 
@@ -384,9 +382,9 @@ internal sealed class DistributedSemaphoreProvider(
             await monitor.DisposeAsync().ConfigureAwait(false);
         }
 
-        if (removed && _bus is not null)
+        if (removed)
         {
-            DistributedLockCoreHelpers.PublishReleaseSignal(_bus, logger, resource, leaseId);
+            releaseSignal.Announce(resource, leaseId);
         }
     }
 
@@ -560,17 +558,17 @@ internal sealed class DistributedSemaphoreProvider(
         }
     }
 
-    void ICanReceiveLockReleased.OnLockReleased(DistributedLockReleased message)
+    void IDistributedLockReleaseListener.OnReleased(string resource, string leaseId)
     {
         // _autoResetEvents is a ConcurrentDictionary (self-synchronizing). _resetEventLock guards the compound
         // refcount invariant (count-check+create / decrement+conditional-remove), not this lock-free read fast path.
         // ReSharper disable once InconsistentlySynchronizedField
-        if (_autoResetEvents.TryGetValue(message.Resource, out var autoResetEvent))
+        if (_autoResetEvents.TryGetValue(resource, out var autoResetEvent))
         {
             autoResetEvent.Target.Set();
         }
 
-        _monitorRegistry.NudgeActive(message.Resource);
+        _monitorRegistry.NudgeActive(resource);
     }
 
     private void _DeregisterMonitor(string resource, string leaseId)

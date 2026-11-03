@@ -455,17 +455,6 @@
       "headless.checks": {
         "type": "Project"
       },
-      "headless.context": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.Context.Abstractions": "[1.0.0, )",
-          "Headless.Extensions": "[1.0.0, )",
-          "Headless.Hosting": "[1.0.0, )",
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.13, )",
-          "Microsoft.Extensions.Logging.Abstractions": "[10.0.13, )"
-        }
-      },
       "headless.context.abstractions": {
         "type": "Project",
         "dependencies": {
@@ -473,35 +462,11 @@
           "Headless.Primitives": "[1.0.0, )"
         }
       },
-      "headless.coordination": {
-        "type": "Project",
-        "dependencies": {
-          "FluentValidation": "[12.2.0, )",
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.Context": "[1.0.0, )",
-          "Headless.Context.Abstractions": "[1.0.0, )",
-          "Headless.Coordination.Abstractions": "[1.0.0, )",
-          "Headless.Extensions": "[1.0.0, )",
-          "Headless.Hosting": "[1.0.0, )",
-          "Headless.Serializer.Json": "[1.0.0, )",
-          "Microsoft.Extensions.Configuration.Abstractions": "[10.0.13, )",
-          "Microsoft.Extensions.Hosting.Abstractions": "[10.0.13, )",
-          "Microsoft.Extensions.Logging.Abstractions": "[10.0.13, )"
-        }
-      },
-      "headless.coordination.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )"
-        }
-      },
       "headless.distributedlocks": {
         "type": "Project",
         "dependencies": {
           "Headless.DistributedLocks.Abstractions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
-          "Headless.Messaging.Abstractions": "[1.0.0, )",
-          "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
           "Microsoft.Extensions.Telemetry.Abstractions": "[10.11.0, )",
           "OpenTelemetry.Api": "[1.20.1, )",
           "Polly.Core": "[8.8.0, )"
@@ -576,74 +541,6 @@
           "OpenTelemetry.Api": "[1.20.1, )"
         }
       },
-      "headless.messaging": {
-        "type": "Project",
-        "dependencies": {
-          "FastExpressionCompiler": "[6.0.0, )",
-          "Headless.Coordination": "[1.0.0, )",
-          "Headless.Coordination.Abstractions": "[1.0.0, )",
-          "Headless.DistributedLocks.Abstractions": "[1.0.0, )",
-          "Headless.Extensions": "[1.0.0, )",
-          "Headless.Hosting": "[1.0.0, )",
-          "Headless.Messaging.Abstractions": "[1.0.0, )",
-          "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
-          "Headless.Messaging.Queue.Abstractions": "[1.0.0, )",
-          "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
-          "Headless.Sql": "[1.0.0, )",
-          "Headless.Sql.Abstractions": "[1.0.0, )",
-          "Headless.UnitOfWork": "[1.0.0, )",
-          "Microsoft.Extensions.Diagnostics": "[10.0.13, )",
-          "Microsoft.Extensions.Options": "[10.0.13, )",
-          "OpenTelemetry.Api": "[1.20.1, )",
-          "Polly.Core": "[8.8.0, )",
-          "System.Threading.RateLimiting": "[10.0.13, )"
-        }
-      },
-      "headless.messaging.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.Reliability.Abstractions": "[1.0.0, )",
-          "Headless.UnitOfWork.Abstractions": "[1.0.0, )",
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.13, )"
-        }
-      },
-      "headless.messaging.bus.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Messaging.Abstractions": "[1.0.0, )"
-        }
-      },
-      "headless.messaging.inmemory": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Messaging": "[1.0.0, )",
-          "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
-          "Headless.Messaging.Queue.Abstractions": "[1.0.0, )"
-        }
-      },
-      "headless.messaging.queue.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Messaging.Abstractions": "[1.0.0, )"
-        }
-      },
-      "headless.messaging.storage.inmemory": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Messaging": "[1.0.0, )"
-        }
-      },
-      "headless.messaging.testing": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Messaging": "[1.0.0, )",
-          "Headless.Messaging.InMemory": "[1.0.0, )",
-          "Headless.Messaging.Storage.InMemory": "[1.0.0, )",
-          "Microsoft.Extensions.DependencyInjection": "[10.0.13, )",
-          "Microsoft.Extensions.Logging": "[10.0.13, )"
-        }
-      },
       "headless.multitenancy.abstractions": {
         "type": "Project",
         "dependencies": {
@@ -659,36 +556,6 @@
           "Headless.Checks": "[1.0.0, )",
           "Headless.Generator.Primitives.Abstractions": "[1.0.0, )"
         }
-      },
-      "headless.reliability.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )"
-        }
-      },
-      "headless.serializer.abstractions": {
-        "type": "Project"
-      },
-      "headless.serializer.json": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.Serializer.Abstractions": "[1.0.0, )"
-        }
-      },
-      "headless.sql": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.Extensions": "[1.0.0, )",
-          "Headless.Sql.Abstractions": "[1.0.0, )",
-          "Headless.UnitOfWork": "[1.0.0, )",
-          "Nito.AsyncEx": "[5.1.2, )",
-          "OpenTelemetry.Api": "[1.20.1, )"
-        }
-      },
-      "headless.sql.abstractions": {
-        "type": "Project"
       },
       "headless.testing": {
         "type": "Project",
@@ -706,29 +573,11 @@
           "xunit.v3.extensibility.core": "[4.0.2, )"
         }
       },
-      "headless.unitofwork": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.Extensions": "[1.0.0, )",
-          "Headless.UnitOfWork.Abstractions": "[1.0.0, )",
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.13, )",
-          "Microsoft.Extensions.Logging.Abstractions": "[10.0.13, )",
-          "Microsoft.Extensions.Options": "[10.0.13, )",
-          "Polly.Core": "[8.8.0, )"
-        }
-      },
       "headless.unitofwork.abstractions": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )"
         }
-      },
-      "FastExpressionCompiler": {
-        "type": "CentralTransitive",
-        "requested": "[6.0.0, )",
-        "resolved": "6.0.0",
-        "contentHash": "EvY3eiWFnSYAUd4F4zvt3VTe8z75XxfqEUW3Fp2SsM1El4rfSNzah49/DLk6VlkL5yOLHZXf6XL19HQrcgTDxg=="
       },
       "FluentValidation": {
         "type": "CentralTransitive",
@@ -784,17 +633,6 @@
         "requested": "[10.0.13, )",
         "resolved": "10.0.13",
         "contentHash": "G2GrGWNAPZBsii2F6AU8n+JT2tC1/I0Ml/e9ZyNCgPjf3hZqronP7o0X91aAynCmVeae8KkSIUNXXeXCNRmdVQ=="
-      },
-      "Microsoft.Extensions.Diagnostics": {
-        "type": "CentralTransitive",
-        "requested": "[10.0.13, )",
-        "resolved": "10.0.13",
-        "contentHash": "J9ODOrffj1mK3Et69elNsLGRguesPxvThTdVpFmQX7fLNPhIOgqHQfLdGnTBEwNAV3yf8yiyVlpDZNw2qN87Nw==",
-        "dependencies": {
-          "Microsoft.Extensions.Configuration": "10.0.13",
-          "Microsoft.Extensions.Diagnostics.Abstractions": "10.0.13",
-          "Microsoft.Extensions.Options.ConfigurationExtensions": "10.0.13"
-        }
       },
       "Microsoft.Extensions.Diagnostics.HealthChecks": {
         "type": "CentralTransitive",
@@ -929,12 +767,6 @@
         "requested": "[8.8.0, )",
         "resolved": "8.8.0",
         "contentHash": "TewV9uNFsoRFggoFbTAGFwsMYPuckA+wTIpQPyhLL9BANRPQRENz2S4bwATrB3HBOakN5oKLFIllPiDnVecmJg=="
-      },
-      "System.Threading.RateLimiting": {
-        "type": "CentralTransitive",
-        "requested": "[10.0.13, )",
-        "resolved": "10.0.13",
-        "contentHash": "3+orva+l3D+EdXYQOJm9zKWgwSxf4/EieVZ0D+uQRjMOUaJMoNIkc/Wu7abCAK5VnAeStZoLcibFYQrmYdsJ0g=="
       },
       "xunit.v3.assert": {
         "type": "CentralTransitive",

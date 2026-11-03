@@ -35,7 +35,7 @@ public sealed class DistributedLocksDiagnosticsTests : TestBase
         var storage = new InMemoryDistributedLockStorage(tp);
         var provider = new DistributedLock(
             storage,
-            bus: null,
+            Substitute.For<IDistributedLockReleaseSignal>(),
             new DistributedLockOptions(),
             _guidGenerator,
             tp,
