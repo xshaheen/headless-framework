@@ -69,6 +69,14 @@ internal sealed class UnitOfWorkHandle(Internal.UnitOfWork unit, UnitOfWorkFacto
         await factory.CompleteAsync(unit, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc cref="UnitOfWorkFactory.FailObservedCommitAsync"/>
+    internal ValueTask<Exception> FailObservedCommitAsync(Exception commitFault, bool cancelledBeforeCommit)
+    {
+        _ThrowIfDisposed();
+
+        return factory.FailObservedCommitAsync(unit, commitFault, cancelledBeforeCommit);
+    }
+
     public ValueTask RollbackAsync()
     {
         _ThrowIfDisposed();

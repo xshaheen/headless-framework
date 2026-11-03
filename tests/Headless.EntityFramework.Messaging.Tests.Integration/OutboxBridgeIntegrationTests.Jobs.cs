@@ -89,17 +89,32 @@ public sealed partial class OutboxBridgeIntegrationTests
 
         using var incomingTrace = new Activity("composition-incoming");
         incomingTrace.Start();
+
+        if (retryProducer)
+        {
+            // The consumer's save ran its domain handler before the outbox fault, so the save does not replay: the
+            // fault surfaces to the consumer pipeline, which redelivers, and nothing from the attempt committed.
+            var faulted = async () =>
+                await _InvokeStoredConsumerAsync<ShipOrder, ShipOrderConsumer>(provider, incoming);
+            (await faulted.Should().ThrowAsync<Exception>())
+                .Which.ToString()
+                .Should()
+                .Contain(nameof(TransientOutboxException));
+            evidence.LocalHandlerCalls.Should().Be(1);
+            fault.Attempts.Should().ContainSingle();
+            (await _ReadPublishedAsync(provider, "evt-derived")).Should().BeEmpty();
+            (await _CountOrdersAsync()).Should().Be(0);
+
+            return;
+        }
+
         await _InvokeStoredConsumerAsync<ShipOrder, ShipOrderConsumer>(provider, incoming);
         evidence.Parent.Should().NotBeNull();
         evidence.Parent.CausationId.Should().Be(incomingId);
         evidence.Parent.CorrelationId.Should().Be("composition-root");
         evidence.LocalHandlerCalls.Should().Be(1);
         evidence.Children.Should().HaveCount(2);
-        fault.Attempts.Should().HaveCount(retryProducer ? 2 : 1);
-        if (retryProducer)
-        {
-            fault.Attempts[0].Should().Equal(fault.Attempts[1]);
-        }
+        fault.Attempts.Should().ContainSingle();
 
         var published = await _ReadPublishedAsync(provider, "evt-derived");
         published.Should().HaveCount(2);

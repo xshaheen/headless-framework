@@ -55,13 +55,11 @@ internal sealed partial class InMemoryDataStorage(
 
     DeliveryCoordination IDeliveryCoordinationResolver.Resolve(IUnitOfWork unitOfWork)
     {
-        // A relational resource means the caller's work commits in a database; in-memory rows cannot be atomic
-        // with it, so refusing is the only honest answer. Without one — including a resource-less unit of
-        // work — the unit itself is the commit boundary and rows are captured on it through
-        // ICoordinatedMessageStore.
-        return unitOfWork.Resource is IRelationalUnitOfWorkResource
-            ? DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.StorageProvider)
-            : DeliveryCoordination.Compatible(unitOfWork, transaction: null);
+        // Rows are captured on the unit through ICoordinatedMessageStore and promoted only when it completes, which
+        // comes after its commit, relational or not, and never after a rollback. That is as atomic as process-local
+        // storage gets: a crash between the commit and the promotion loses the rows, as a crash loses every row this
+        // storage holds. So any unit can host a publish, including one over a database transaction (an EF save).
+        return DeliveryCoordination.Compatible(unitOfWork, transaction: null);
     }
 
     ValueTask<MediumMessage> ICoordinatedMessageStore.StoreCoordinatedMessageAsync(
@@ -84,7 +82,7 @@ internal sealed partial class InMemoryDataStorage(
     }
 
     /// <summary>
-    /// Scope-local rows captured inside a non-relational unit of work. They join <see cref="PublishedMessages" />
+    /// Unit-local rows captured inside a unit of work. They join <see cref="PublishedMessages" />
     /// only when the unit completes; a failure disposes the buffer and the rows with it.
     /// </summary>
     // Same shape as MessageOutboxBuffer: rows wait in the scope-local buffer and are promoted on completion; a

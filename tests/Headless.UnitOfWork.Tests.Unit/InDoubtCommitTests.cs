@@ -163,6 +163,56 @@ public sealed class InDoubtCommitTests : TestBase
         attempts.Should().Be(1, "an in-doubt commit may already be durable, so it is never replayed");
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task should_fail_an_observed_unit_whose_caller_commit_faulted(bool inDoubt)
+    {
+        // given — an observed unit; its caller commits the transaction itself and the commit faults
+        var factory = new UnitOfWorkFactory();
+        await using var unit = factory.Enlist(new FakeUnitOfWorkResource(isOwned: false));
+        var reasons = new List<UnitOfWorkFailureReason>();
+        unit.OnFailed(failure =>
+        {
+            reasons.Add(failure.Reason);
+
+            return ValueTask.CompletedTask;
+        });
+        Exception fault = inDoubt ? new FakeDbException(inner: new SocketException()) : new FakeDbException();
+
+        // when
+        var reported = await ObservedCommits.FailAsync(unit, fault, cancelledBeforeCommit: false);
+
+        // then
+        if (inDoubt)
+        {
+            reported.Should().BeOfType<UnitOfWorkInDoubtException>().Which.InnerException.Should().BeSameAs(fault);
+            reasons.Should().Equal(UnitOfWorkFailureReason.InDoubt);
+        }
+        else
+        {
+            reported.Should().BeSameAs(fault);
+            reasons.Should().Equal(UnitOfWorkFailureReason.Faulted);
+        }
+
+        unit.State.Should().Be(UnitOfWorkState.Failed);
+    }
+
+    [Fact]
+    public async Task should_classify_the_commit_fault_of_a_unit_it_cannot_fail()
+    {
+        // A unit from another factory cannot be failed from here, but the caller still throws the classified fault.
+        var foreign = Substitute.For<IUnitOfWork>();
+        var fault = new FakeDbException(inner: new SocketException());
+
+        var reported = await ObservedCommits.FailAsync(foreign, fault, cancelledBeforeCommit: false);
+
+        reported.Should().BeOfType<UnitOfWorkInDoubtException>();
+        (await ObservedCommits.FailAsync(foreign, fault, cancelledBeforeCommit: true))
+            .Should()
+            .BeOfType<UnitOfWorkInDoubtException>("a database fault is classified by its content, not the token");
+    }
+
     private sealed class DisposableProbe : IAsyncDisposable
     {
         public ValueTask DisposeAsync()

@@ -28,7 +28,7 @@ internal static class HeadlessDbContextRegistration
     public const int DefaultPoolSize = 1024;
 
     /// <summary>
-    /// One context instance per scope (or per resolution, for <see cref="ServiceLifetime.Transient"/>), built with
+    /// One context instance per scope, built with
     /// options of <paramref name="optionsLifetime"/>; singleton options are built once and copied into each scope (see
     /// <see cref="HeadlessSharedDbContextOptions{TContext}"/>). A derived constructor may take scoped services.
     /// </summary>
@@ -47,10 +47,20 @@ internal static class HeadlessDbContextRegistration
     )
         where TDbContext : DbContext, IHeadlessDbContext
     {
-        // A singleton context would bind the root provider and serve every request with one change tracker.
-        Argument.IsNotEqualTo(contextLifetime, ServiceLifetime.Singleton);
+        // A singleton context would bind the root provider and serve every request with one change tracker. A
+        // transient one hands every resolution its own instance, so a domain-event handler injecting the context
+        // would get an instance other than the one being saved, without its unit of work: an enlisted publish
+        // through db.UnitOfWork() would be skipped while the save commits. IDbContextFactory covers detached use.
+        Argument.IsEqualTo(
+            contextLifetime,
+            ServiceLifetime.Scoped,
+            "A Headless context must be scoped: a singleton would serve every request with one change tracker, and a "
+                + "transient one would give a domain-event handler another instance than the context being saved. "
+                + "Use IDbContextFactory<TDbContext> for a context outside the request scope."
+        );
 
         services.AddDiRegisteredInterceptorsConfiguration<TDbContext>();
+        services.TryAddScoped<HeadlessPrivateScopeOwner>();
 
         services.TryAdd(
             new ServiceDescriptor(typeof(TDbContext), _ImplementationKey, typeof(TDbContext), contextLifetime)
@@ -58,7 +68,9 @@ internal static class HeadlessDbContextRegistration
         services.TryAdd(
             new ServiceDescriptor(
                 typeof(TDbContext),
-                sp => _Bind(sp.GetRequiredKeyedService<TDbContext>(_ImplementationKey), sp),
+                sp =>
+                    sp.GetRequiredService<HeadlessPrivateScopeOwner>().Context as TDbContext
+                    ?? _Bind(sp.GetRequiredKeyedService<TDbContext>(_ImplementationKey), sp),
                 contextLifetime
             )
         );
@@ -107,6 +119,7 @@ internal static class HeadlessDbContextRegistration
         Argument.IsPositive(poolSize);
 
         services.AddDiRegisteredInterceptorsConfiguration<TDbContext>();
+        services.TryAddScoped<HeadlessPrivateScopeOwner>();
 
         // The scope's lease returns the instance once, at scope end; a consumer disposing the context earlier is a
         // no-op. DI disposes the context (no-op while leased) before the lease, which it resolved first.
@@ -134,8 +147,9 @@ internal static class HeadlessDbContextRegistration
             );
         }
 
-        // A transient context resolved from the root would otherwise bind the root, and scoped collaborators resolved
-        // from it would live for the host's lifetime; left unbound, it opens a private scope instead.
+        // A context resolved from the root (possible with scope validation off) would otherwise bind the root, and
+        // scoped collaborators resolved from it would live for the host's lifetime; left unbound, it opens a private
+        // scope instead.
         if (!HeadlessDbContextRuntime.IsRootProvider(services))
         {
             owner.Runtime.Bind(services);
