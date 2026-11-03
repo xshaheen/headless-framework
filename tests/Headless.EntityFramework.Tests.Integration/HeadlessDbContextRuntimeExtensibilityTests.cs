@@ -333,17 +333,11 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task should_publish_domain_events_at_most_once_when_save_changes_execution_strategy_retries(
-        bool synchronous
-    )
+    public async Task should_surface_a_transient_save_fault_without_replay_once_domain_handlers_ran(bool synchronous)
     {
-        // given — SQLite has no built-in retrying strategy, so we wire a one-shot retrying execution strategy
-        // (ReplaceService<IExecutionStrategyFactory>) plus a SaveChanges interceptor that throws a marker
-        // exception on its FIRST invocation and passes through on the second. The interceptor fires inside
-        // baseSaveChanges, which the pipeline calls AFTER its domain-event publish loop. So attempt 1:
-        // publish domain events -> baseSaveChanges throws the marker -> execution strategy classifies it as
-        // transient and replays the whole operation. Attempt 2: the at-most-once guard skips the publish loop,
-        // the interceptor passes through, the save commits. A correct guard fires each handler exactly once.
+        // given — a one-shot retrying strategy and an interceptor that faults the base save once, after the drain.
+        // A replay would resume after the handlers and commit the aggregate without re-running them, losing anything
+        // they wrote outside the tracker, so the pipeline ends replay once a handler has returned.
         var bus = new CountingDomainEventDispatcher();
         var interceptor = new OneShotTransientFailureInterceptor();
         var (provider, connection) = await _CreateProviderAsync(
@@ -357,27 +351,23 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
         await using var __ = provider;
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<RuntimeTestDbContext>();
-        var entity = new RuntimeEntity { Name = "retries-once" };
+        var entity = new RuntimeEntity { Name = "faults-once" };
 
         db.Entities.Add(entity);
 
         // when
-        await _SaveAsync(db, synchronous);
+        var save = async () => await _SaveAsync(db, synchronous);
 
-        // then — the interceptor actually fired and the strategy replayed (guards against a silently-green
-        // test where no retry happened at all).
-        interceptor.InvocationCount.Should().Be(2, "the operation must be replayed once");
-
-        // AggregateRoot.Add emits EntityCreated + EntityChanged = 2 domain events. Each handler must fire
-        // exactly once across BOTH attempts — a re-fire on the replay would double the count to 4.
+        // then — the fault surfaces, each domain event was published exactly once, and nothing committed.
+        await save.Should().ThrowAsync<TransientMarkerException>();
+        interceptor.InvocationCount.Should().Be(1, "the strategy must not replay after the handlers ran");
         bus.Occurrences.Should().OnlyHaveUniqueItems(occurrence => occurrence.EventId);
-        entity.GetDomainEvents().Should().BeEmpty();
-        bus.PublishCount.Should().Be(2, "each domain event must be published exactly once despite the retry");
+        bus.PublishCount.Should().Be(2, "AggregateRoot.Add emits EntityCreated and EntityChanged once each");
 
-        // and the row is persisted (the save ultimately succeeded on the replayed attempt).
-        (await db.Entities.CountAsync(AbortToken))
+        await using var verifyScope = provider.CreateAsyncScope();
+        (await verifyScope.ServiceProvider.GetRequiredService<RuntimeTestDbContext>().Entities.CountAsync(AbortToken))
             .Should()
-            .Be(1);
+            .Be(0);
     }
 
     [Theory]
@@ -594,7 +584,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task should_retry_business_write_after_transient_outbox_failure_without_repeating_local_drain(
+    public async Task should_surface_a_transient_outbox_failure_without_replay_once_domain_handlers_ran(
         bool synchronous
     )
     {
@@ -608,7 +598,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<RuntimeTestDbContext>();
         var dispatcher = scope.ServiceProvider.GetRequiredService<RuntimeRecordingMessageDispatcher>();
-        var entity = new RuntimeEntity { Name = "post-save-retry" };
+        var entity = new RuntimeEntity { Name = "post-save-fault" };
         entity.EmitIntegrationEvent(new RuntimeDistributedMessage("outbox"));
         db.Entities.Add(entity);
         var attempts = 0;
@@ -620,11 +610,17 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
             }
         };
 
-        await _SaveAsync(db, synchronous);
-        attempts.Should().Be(2);
+        // The lifecycle handlers ran before the outbox dispatch, so a replay would not re-run them.
+        var save = async () => await _SaveAsync(db, synchronous);
+        await save.Should().ThrowAsync<TransientMarkerException>();
+        attempts.Should().Be(1);
         dispatcher.LocalEmitters.Should().HaveCount(2);
-        (await db.Entities.CountAsync(AbortToken)).Should().Be(1);
-        entity.GetIntegrationEvents().Should().BeEmpty();
+        entity.GetIntegrationEvents().Should().NotBeEmpty("the failed save keeps its events for a fresh attempt");
+
+        await using var verifyScope = provider.CreateAsyncScope();
+        (await verifyScope.ServiceProvider.GetRequiredService<RuntimeTestDbContext>().Entities.CountAsync(AbortToken))
+            .Should()
+            .Be(0);
     }
 
     [Theory]

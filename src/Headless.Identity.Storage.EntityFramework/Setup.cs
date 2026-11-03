@@ -36,7 +36,7 @@ public static class SetupIdentityEntityFramework
         /// <param name="configureHeadlessOptions">
         /// An optional action to configure Headless-specific context options such as audit behaviour.
         /// </param>
-        /// <param name="contextLifetime">The DI lifetime for <typeparamref name="TDbContext"/> (default: Scoped).</param>
+        /// <param name="contextLifetime">The DI lifetime for <typeparamref name="TDbContext"/>: must be Scoped (the default); Singleton and Transient throw <see cref="ArgumentException"/>.</param>
         /// <param name="optionsLifetime">
         /// DI lifetime for <see cref="DbContextOptions{TContext}"/>. <see cref="ServiceLifetime.Scoped"/> (the default)
         /// builds the options in every scope. <see cref="ServiceLifetime.Singleton"/> builds them once, from the root
@@ -122,7 +122,7 @@ public static class SetupIdentityEntityFramework
         /// <param name="configureHeadlessOptions">
         /// An optional action to configure Headless-specific context options such as audit behaviour.
         /// </param>
-        /// <param name="contextLifetime">The DI lifetime for <typeparamref name="TDbContext"/> (default: Scoped).</param>
+        /// <param name="contextLifetime">The DI lifetime for <typeparamref name="TDbContext"/>: must be Scoped (the default); Singleton and Transient throw <see cref="ArgumentException"/>.</param>
         /// <param name="optionsLifetime">
         /// DI lifetime for <see cref="DbContextOptions{TContext}"/>. <see cref="ServiceLifetime.Scoped"/> (the default)
         /// builds the options in every scope. <see cref="ServiceLifetime.Singleton"/> builds them once, from the root
@@ -205,7 +205,7 @@ public static class SetupIdentityEntityFramework
         /// <param name="configureHeadlessOptions">
         /// An optional action to configure Headless-specific context options such as audit behaviour.
         /// </param>
-        /// <param name="contextLifetime">The DI lifetime for <typeparamref name="TDbContext"/> (default: Scoped).</param>
+        /// <param name="contextLifetime">The DI lifetime for <typeparamref name="TDbContext"/>: must be Scoped (the default); Singleton and Transient throw <see cref="ArgumentException"/>.</param>
         /// <param name="optionsLifetime">
         /// DI lifetime for <see cref="DbContextOptions{TContext}"/>. <see cref="ServiceLifetime.Scoped"/> (the default)
         /// builds the options in every scope. <see cref="ServiceLifetime.Singleton"/> builds them once, from the root
@@ -295,7 +295,7 @@ public static class SetupIdentityEntityFramework
         /// <param name="configureHeadlessOptions">
         /// An optional action to configure Headless-specific context options such as audit behaviour.
         /// </param>
-        /// <param name="contextLifetime">The DI lifetime for <typeparamref name="TDbContext"/> (default: Scoped).</param>
+        /// <param name="contextLifetime">The DI lifetime for <typeparamref name="TDbContext"/>: must be Scoped (the default); Singleton and Transient throw <see cref="ArgumentException"/>.</param>
         /// <param name="optionsLifetime">
         /// DI lifetime for <see cref="DbContextOptions{TContext}"/>. <see cref="ServiceLifetime.Scoped"/> (the default)
         /// builds the options in every scope. <see cref="ServiceLifetime.Singleton"/> builds them once, from the root

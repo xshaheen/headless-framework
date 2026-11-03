@@ -213,53 +213,37 @@ public abstract class HeadlessIdentityDbContext<
     }
 
     /// <summary>
-    /// Releases the scope bound to this context, then disposes the base EF Core context, which returns a pooled
-    /// instance to its pool, then disposes the scope the context owned, if any. A pooled context resolved from a
-    /// scope is returned when the scope ends, so disposing it earlier does nothing.
+    /// Releases the scope bound to this context, disposes the scope the context owned, if any, then disposes the base
+    /// EF Core context, which returns a pooled instance to its pool. A pooled context resolved from a scope is
+    /// returned when the scope ends, so disposing it earlier does nothing.
     /// </summary>
     public override void Dispose()
     {
-        if (_runtime.IsScopeLeased)
+        if (_runtime.IsDisposeSuppressed)
         {
             return;
         }
 
-        var ownedScope = _runtime.Release();
-
-        try
-        {
-            base.Dispose();
-        }
-        finally
-        {
-            HeadlessDbContextRuntime.DisposeScope(ownedScope, GetType());
-            GC.SuppressFinalize(this);
-        }
+        _runtime.EndOwnedScope(_runtime.Release());
+        base.Dispose();
+        GC.SuppressFinalize(this);
     }
 
     /// <summary>
-    /// Asynchronously releases the scope bound to this context, disposes the base EF Core context, which returns a
-    /// pooled instance to its pool, then disposes the scope the context owned, if any.
+    /// Asynchronously releases the scope bound to this context, disposes the scope the context owned, if any, then
+    /// disposes the base EF Core context, which returns a pooled instance to its pool.
     /// </summary>
     /// <returns>A <see cref="ValueTask"/> that completes when all resources have been released.</returns>
     public override async ValueTask DisposeAsync()
     {
-        if (_runtime.IsScopeLeased)
+        if (_runtime.IsDisposeSuppressed)
         {
             return;
         }
 
-        var ownedScope = _runtime.Release();
-
-        try
-        {
-            await base.DisposeAsync().ConfigureAwait(false);
-        }
-        finally
-        {
-            await HeadlessDbContextRuntime.DisposeScopeAsync(ownedScope, GetType()).ConfigureAwait(false);
-            GC.SuppressFinalize(this);
-        }
+        await _runtime.EndOwnedScopeAsync(_runtime.Release()).ConfigureAwait(false);
+        await base.DisposeAsync().ConfigureAwait(false);
+        GC.SuppressFinalize(this);
     }
 
     /// <summary>

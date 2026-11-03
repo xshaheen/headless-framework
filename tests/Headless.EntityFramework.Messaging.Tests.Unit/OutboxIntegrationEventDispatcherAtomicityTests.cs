@@ -24,9 +24,8 @@ public sealed record OutboxOrderPlaced(string UniqueId);
 public sealed class OutboxIntegrationEventDispatcherAtomicityTests : TestBase
 {
     /// <summary>
-    /// A unit-of-work resource that is not relational. The dispatcher refuses to run without a resource, while
-    /// the in-memory storage refuses only a relational one (it cannot be atomic with a database transaction),
-    /// so this is the one resource shape that satisfies both and keeps the proof off Docker.
+    /// A unit-of-work resource the test commits or rolls back by hand, so the dispatcher's contract is pinned on the
+    /// unit alone. <see cref="OutboxIntegrationEventSaveTests"/> drives the same bridge through a real save.
     /// </summary>
     private sealed class NonRelationalResource : IUnitOfWorkResource
     {

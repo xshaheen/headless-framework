@@ -12,8 +12,24 @@ namespace Headless.EntityFramework;
 internal sealed class HeadlessScopedDbContextLease<TDbContext> : IDisposable, IAsyncDisposable
     where TDbContext : DbContext, IHeadlessDbContext
 {
-    public HeadlessScopedDbContextLease(IDbContextFactory<TDbContext> factory, IServiceProvider services)
+    // True when the scope is the private scope a context opened for itself: the context is that context, which owns
+    // the scope rather than being held by it, so the lease neither binds nor returns it.
+    private readonly bool _borrowed;
+
+    public HeadlessScopedDbContextLease(
+        IDbContextFactory<TDbContext> factory,
+        IServiceProvider services,
+        HeadlessPrivateScopeOwner privateScopeOwner
+    )
     {
+        if (privateScopeOwner.Context is TDbContext owningContext)
+        {
+            Context = owningContext;
+            _borrowed = true;
+
+            return;
+        }
+
         Context = factory.CreateDbContext();
 
         if (Context is not IHeadlessDbContextRuntimeOwner owner)
@@ -33,12 +49,22 @@ internal sealed class HeadlessScopedDbContextLease<TDbContext> : IDisposable, IA
 
     public void Dispose()
     {
+        if (_borrowed)
+        {
+            return;
+        }
+
         ((IHeadlessDbContextRuntimeOwner)Context).Runtime.EndScopeLease();
         Context.Dispose();
     }
 
     public ValueTask DisposeAsync()
     {
+        if (_borrowed)
+        {
+            return ValueTask.CompletedTask;
+        }
+
         ((IHeadlessDbContextRuntimeOwner)Context).Runtime.EndScopeLease();
 
         return Context.DisposeAsync();

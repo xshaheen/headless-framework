@@ -18,8 +18,8 @@ namespace Tests;
 
 /// <summary>
 /// In-memory storage takes part in a non-relational unit of work: rows written through the coordinated
-/// publish path stay invisible until the unit completes and are discarded when it fails. A unit whose resource
-/// is relational stays incompatible, because in-memory rows cannot be atomic with a database.
+/// publish path stay invisible until the unit completes and are discarded when it fails. A unit over a database
+/// transaction is compatible too: its rows are promoted only when the unit completes, after the commit.
 /// </summary>
 public sealed class InMemoryDataStorageCoordinationTests : TestBase
 {
@@ -37,15 +37,18 @@ public sealed class InMemoryDataStorageCoordinationTests : TestBase
     }
 
     [Fact]
-    public void should_report_relational_unit_of_work_incompatible()
+    public void should_report_relational_unit_of_work_compatible_without_transaction()
     {
+        // The rows wait on the unit and are promoted when it completes, which follows the database commit, so a unit
+        // over a database transaction (an EF save) hosts the publish instead of refusing it.
         var storage = _CreateStorage();
         var unitOfWork = _FakeRelationalUnitOfWork();
 
         var coordination = _Resolver(storage).Resolve(unitOfWork);
 
-        coordination.Status.Should().Be(DeliveryCoordinationStatus.Incompatible);
-        coordination.Mismatch.Should().Be(DeliveryCoordinationMismatch.StorageProvider);
+        coordination.Status.Should().Be(DeliveryCoordinationStatus.Compatible);
+        coordination.UnitOfWork.Should().BeSameAs(unitOfWork);
+        coordination.Transaction.Should().BeNull("the row is captured on the unit, not written on the transaction");
     }
 
     [Fact]

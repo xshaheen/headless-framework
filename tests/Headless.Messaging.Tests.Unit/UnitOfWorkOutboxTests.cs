@@ -74,23 +74,28 @@ public sealed class UnitOfWorkOutboxTests : TestBase
     }
 
     [Fact]
-    public async Task should_throw_before_writing_anything_when_the_storage_cannot_join_the_unit_of_work()
+    public async Task should_hold_a_publish_into_a_relational_unit_until_the_unit_completes()
     {
-        // given — a relational resource the in-memory storage cannot be atomic with
+        // given — a unit over a database transaction the caller commits (an EF save's observed unit): in-memory rows
+        // cannot share the transaction, so they wait on the unit and are promoted when it completes, after the commit
         await using var host = _CreateHost();
         await using var scope = host.Provider.CreateAsyncScope();
         var resource = Substitute.For<IRelationalUnitOfWorkResource>();
-        var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>().Enlist(resource);
+        await using var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>().Enlist(resource);
 
         // when
-        var act = () => unitOfWork.Outbox.PublishAsync(new Placed("unjoinable"), AbortToken);
+        await unitOfWork.Outbox.PublishAsync(new Placed("relational"), AbortToken);
 
-        // then — refused rather than degraded to a standalone row
-        (await act.Should().ThrowAsync<InvalidOperationException>())
-            .Which.Message.Should()
-            .Contain("cannot join the active unit of work");
-        (await _CountPublishedAsync(host)).Should().Be(0);
+        // then — nothing is visible before completion, one row after it
+        (await _CountPublishedAsync(host))
+            .Should()
+            .Be(0);
         host.Dispatcher.CommittedMessages.Should().BeEmpty();
+
+        await unitOfWork.CompleteAsync(AbortToken);
+
+        (await _CountPublishedAsync(host)).Should().Be(1);
+        host.Dispatcher.CommittedMessages.Should().ContainSingle();
     }
 
     [Fact]
