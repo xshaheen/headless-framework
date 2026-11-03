@@ -14,15 +14,15 @@ public sealed class JobsOwnerIdentityAdapterTests
     }
 
     [Fact]
-    public void should_expose_node_at_incarnation_when_registered()
+    public void should_expose_the_cluster_qualified_owner_tag_when_registered()
     {
         var membership = new FakeNodeMembership { Identity = _Identity("node-a", 5) };
         var options = new SchedulerOptionsBuilder { NodeId = "machine-x" };
         var adapter = new JobsOwnerIdentityAdapter(membership, options);
 
-        adapter.DisplayOwner.Should().Be("node-a@5");
+        adapter.DisplayOwner.Should().Be("orders/node-a@5");
         adapter.TryGetStampOwner(out var owner).Should().BeTrue();
-        owner.Should().Be("node-a@5");
+        owner.Should().Be("orders/node-a@5");
     }
 
     [Fact]
@@ -51,8 +51,8 @@ public sealed class JobsOwnerIdentityAdapterTests
 
         membership.Identity = _Identity("node-a", 7);
         adapter.TryGetStampOwner(out var afterRegister).Should().BeTrue();
-        afterRegister.Should().Be("node-a@7");
-        adapter.DisplayOwner.Should().Be("node-a@7");
+        afterRegister.Should().Be("orders/node-a@7");
+        adapter.DisplayOwner.Should().Be("orders/node-a@7");
 
         membership.Identity = null;
         adapter.TryGetStampOwner(out _).Should().BeFalse();
@@ -92,6 +92,8 @@ public sealed class JobsOwnerIdentityAdapterTests
     private sealed class FakeNodeMembership : INodeMembership
     {
         public NodeIdentity? Identity { get; set; }
+
+        public string ClusterName => "orders";
 
         public CancellationToken LostToken { get; set; } = CancellationToken.None;
 

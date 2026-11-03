@@ -24,7 +24,7 @@ public static class JobsDistributedLockExtensions
     /// <param name="provider">The lock provider instance to use for Jobs coordination.</param>
     /// <remarks>
     /// Best-effort duplicate-suppression, not the job-execution correctness boundary: per-row predicates,
-    /// <c>node@incarnation</c> ownership, and per-job leases stay that boundary. Jobs keeps the provider under a
+    /// <c>cluster/node@incarnation</c> ownership, and per-job leases stay that boundary. Jobs keeps the provider under a
     /// Jobs-private keyed-DI key so it never conflicts with any application-level <see cref="IDistributedLock"/>.
     /// Last-wins: calling this (or its factory overload) more than once replaces any prior Jobs lock registration.
     /// </remarks>

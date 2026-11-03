@@ -556,7 +556,8 @@ internal sealed class MessagePublishRequestFactory(
     //
     // Ambient fallback (#238): when MessagingOptions.TenantContextRequired = true and the
     // typed property is unset, resolve from the ambient ICurrentTenant. If both are null, throw
-    // MissingTenantContextException. Sibling of the EF (#234) and Mediator (#236) tenancy guards.
+    // MissingTenantContextException, unless the publish is marked MessageOptions.IsSystemMessage.
+    // Sibling of the EF (#234) and Mediator (#236) tenancy guards.
     //
     private void _ApplyTenantId(Dictionary<string, string?> headers, MessageOptions? options)
     {
@@ -586,18 +587,24 @@ internal sealed class MessagePublishRequestFactory(
         if (typed is null && _options.TenantContextRequired)
         {
             typed = options?.SuppressAmbientBusinessContext == true ? null : currentTenant.Id;
+
             if (string.IsNullOrWhiteSpace(typed))
             {
-                var ex = new MissingTenantContextException(
-                    options?.SuppressAmbientBusinessContext == true
-                        ? "Publish requires an explicit TenantId when SuppressAmbientBusinessContext is enabled. "
-                            + "Set TenantId on your publish options; a captured system scope cannot satisfy required tenancy."
-                        : "Publish requires an ambient tenant context but none was set. "
-                            + "Set TenantId on your publish options explicitly, or wrap the publish in "
-                            + "ICurrentTenant.Change(tenantId) to scope the AsyncLocal accessor "
-                            + "(common pattern for background workers and IHostedService callers)."
-                );
-                throw ex;
+                typed = null;
+
+                if (!_IsHostScopeSystemMessage(options))
+                {
+                    var ex = new MissingTenantContextException(
+                        options?.SuppressAmbientBusinessContext == true
+                            ? "Publish requires an explicit TenantId when SuppressAmbientBusinessContext is enabled. "
+                                + "Set TenantId on your publish options; a captured system scope cannot satisfy required tenancy."
+                            : "Publish requires an ambient tenant context but none was set. "
+                                + "Set TenantId on your publish options explicitly, or wrap the publish in "
+                                + "ICurrentTenant.Change(tenantId) to scope the AsyncLocal accessor "
+                                + "(common pattern for background workers and IHostedService callers)."
+                    );
+                    throw ex;
+                }
             }
         }
 
@@ -638,6 +645,13 @@ internal sealed class MessagePublishRequestFactory(
 
         headers[Headers.TenantId] = typed;
     }
+
+    // A system message (cache invalidation, change announcement) is host-level traffic the framework sends from host
+    // scope, so a missing tenant is expected there. The waiver holds only while no ambient tenant exists: code running
+    // for a tenant keeps that tenant stamped, and cannot pair the flag with SuppressAmbientBusinessContext to publish
+    // into host scope.
+    private bool _IsHostScopeSystemMessage(MessageOptions? options) =>
+        options?.IsSystemMessage == true && string.IsNullOrWhiteSpace(currentTenant.Id);
 
     private static void _ValidateTenantId(string tenantId)
     {

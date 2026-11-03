@@ -92,5 +92,17 @@ public sealed class MessagePublishOptionsBaseEqualityTests
         (captured with { }).GetHashCode().Should().Be(captured.GetHashCode());
     }
 
+    [Fact]
+    public void should_include_the_system_message_flag_in_options_value_semantics()
+    {
+        var application = new PublishOptions();
+        var system = application with { IsSystemMessage = true };
+
+        system.Should().NotBe(application);
+        system.GetHashCode().Should().NotBe(application.GetHashCode());
+        (system with { }).Should().Be(system);
+        (system with { }).GetHashCode().Should().Be(system.GetHashCode());
+    }
+
     private sealed record SampleResponse(string Status);
 }

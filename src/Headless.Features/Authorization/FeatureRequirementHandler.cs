@@ -42,13 +42,33 @@ internal sealed class FeatureRequirementHandler(IFeatureManager featureManager) 
             return;
         }
 
+        if (checkDisabled)
+        {
+            foreach (var requirement in requirements)
+            {
+                context.Succeed(requirement);
+            }
+
+            return;
+        }
+
+        // One read for every name in the combined policy: a route group, an endpoint, and a surface policy each add
+        // their own requirement, and reading per requirement would walk the provider chain once for each.
+        var names = new HashSet<string>(StringComparer.Ordinal);
+
         foreach (var requirement in requirements)
         {
-            // The handler contract carries no token; a feature read is a cache hit after the first request.
+            names.UnionWith(requirement.FeatureNames);
+        }
+
+        // The handler contract carries no token; a feature read is a cache hit after the first request.
+        var values = await _featureManager.GetAllAsync(names).ConfigureAwait(false);
+
+        foreach (var requirement in requirements)
+        {
             if (
-                checkDisabled
-                || await _featureManager
-                    .IsEnabledAsync(requirement.RequiresAll, requirement.FeatureNames)
+                await _featureManager
+                    .IsEnabledAsync(requirement.RequiresAll, requirement.FeatureNames, values, CancellationToken.None)
                     .ConfigureAwait(false)
             )
             {

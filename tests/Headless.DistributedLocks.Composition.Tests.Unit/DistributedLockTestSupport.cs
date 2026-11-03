@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using System.Diagnostics.Metrics;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
@@ -17,27 +18,6 @@ internal static class DistributedLockTestSupport
 {
     /// <summary>EventId of <c>RegularLockLoggerExtensions.LogTryOnceSafetyDeadlineFired</c>.</summary>
     public const int SafetyDeadlineFiredEventId = 24;
-
-    /// <summary>
-    /// Long enough that a merely starved continuation still completes, short enough that a stuck one is reported.
-    /// </summary>
-    private static readonly TimeSpan _WaitBound = TimeSpan.FromSeconds(30);
-
-    /// <summary>
-    /// Bounds a wait on work another thread, timer or lock must finish. An await with no bound turns a single stuck
-    /// test into a silent hang of the whole assembly until the CI job's own deadline, with no test name to go on;
-    /// this fails that one test instead. It never shortens a passing wait, so it is not a timing assertion.
-    /// </summary>
-    public static Task Bounded(this Task task)
-    {
-        return task.WaitAsync(_WaitBound);
-    }
-
-    /// <inheritdoc cref="Bounded(Task)"/>
-    public static Task<T> Bounded<T>(this Task<T> task)
-    {
-        return task.WaitAsync(_WaitBound);
-    }
 
     /// <summary>EventId of <c>RegularLockLoggerExtensions.LogFailedToAcquireLockAfter</c> (routine contention).</summary>
     public const int FailedToAcquireLockAfterEventId = 13;
@@ -61,9 +41,11 @@ internal static class DistributedLockTestSupport
 
         while (!condition())
         {
-            if (TimeProvider.System.GetElapsedTime(start) >= _WaitBound)
+            if (TimeProvider.System.GetElapsedTime(start) >= HeadlessTestTaskExtensions.DefaultTimeout)
             {
-                throw new TimeoutException($"The condition did not hold within {_WaitBound}.");
+                throw new TimeoutException(
+                    $"The condition did not hold within {HeadlessTestTaskExtensions.DefaultTimeout}."
+                );
             }
 
             await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(1), cancellationToken);
@@ -98,9 +80,11 @@ internal static class DistributedLockTestSupport
     /// process-wide and shared across parallel tests, so assert with <c>Contain</c>, not
     /// <c>ContainSingle</c>; exclusivity belongs on an isolated capturing logger.
     /// </summary>
-    public static List<string> CaptureFailedReasons(MeterListener listener, string instrumentName)
+    public static ConcurrentQueue<string> CaptureFailedReasons(MeterListener listener, string instrumentName)
     {
-        var reasons = new List<string>();
+        // A concurrent queue, because parallel tests record on this listener while the test enumerates it for an
+        // assertion; enumerating it takes a snapshot, where a locked List would throw "Collection was modified".
+        var reasons = new ConcurrentQueue<string>();
         // `headless.lock.failed` carries `headless.lock.reason`; same shape for the semaphore counter.
         var tagName = instrumentName.Replace(".failed", ".reason", StringComparison.Ordinal);
 
@@ -122,10 +106,7 @@ internal static class DistributedLockTestSupport
                 {
                     if (tag.Value is string reason && string.Equals(tag.Key, tagName, StringComparison.Ordinal))
                     {
-                        lock (reasons)
-                        {
-                            reasons.Add(reason);
-                        }
+                        reasons.Enqueue(reason);
                     }
                 }
             }

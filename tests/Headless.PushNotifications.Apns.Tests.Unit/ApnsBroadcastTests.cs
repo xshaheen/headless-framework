@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
-using System.Net.Sockets;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Headless.PushNotifications;
@@ -284,9 +283,8 @@ public sealed class ApnsBroadcastTests : TestBase
     public async Task should_report_a_transport_failure_as_a_result()
     {
         // given
-        var closedPort = _GetClosedLoopbackPort();
         await using var provider = _server.CreateProvider(configureClient: c =>
-            c.BaseAddress = new Uri($"http://127.0.0.1:{closedPort}")
+            c.BaseAddress = FakeApnsServer.UnreachableAddress
         );
         var service = provider.GetRequiredService<IApnsPushNotificationService>();
 
@@ -567,16 +565,6 @@ public sealed class ApnsBroadcastTests : TestBase
         using var document = JsonDocument.Parse(json);
 
         return document.RootElement.Clone();
-    }
-
-    private static int _GetClosedLoopbackPort()
-    {
-        using var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        listener.Stop();
-
-        return port;
     }
 
     #endregion

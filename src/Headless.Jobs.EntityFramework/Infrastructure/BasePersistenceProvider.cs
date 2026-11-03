@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Data.Common;
 using Headless.Caching;
 using Headless.Checks;
 using Headless.Jobs.Internal;
@@ -44,7 +43,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     // descendant is a boundary — excluded from the in-tree walk, claimed independently.
     protected int MaxChainDepth { get; } = optionsBuilder.MaxChainDepth;
 
-    // Runtime owner accessor. Stamp/acquire sites read the current node@incarnation via TryGetStampOwner
+    // Runtime owner accessor. Stamp/acquire sites read the current cluster/node@incarnation via TryGetStampOwner
     // and refuse to touch rows when membership is not established (registration pending or membership lost).
     protected IJobsOwnerIdentity OwnerIdentity { get; } = ownerIdentity;
 
@@ -1776,29 +1775,13 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
     private static bool _IsUniqueConstraintViolation(string? providerName, DbUpdateException exception)
     {
-        if (exception.GetBaseException() is not DbException databaseException)
-        {
-            return false;
-        }
-
-        if (string.Equals(providerName, "Npgsql.EntityFrameworkCore.PostgreSQL", StringComparison.Ordinal))
-        {
-            return string.Equals(
-                databaseException.SqlState,
-                SqlErrorCodes.PostgreSql.UniqueViolation,
-                StringComparison.Ordinal
-            );
-        }
-
-        if (string.Equals(providerName, "Microsoft.EntityFrameworkCore.SqlServer", StringComparison.Ordinal))
-        {
-            var number = databaseException.GetType().GetProperty("Number")?.GetValue(databaseException);
-            return number
-                is SqlErrorCodes.SqlServer.DuplicateKeyUniqueIndex
-                    or SqlErrorCodes.SqlServer.DuplicateKeyUniqueConstraint;
-        }
-
-        return false;
+        // Gated to the providers whose concurrent first boot was verified to raise exactly this race.
+        return (
+                string.Equals(providerName, "Npgsql.EntityFrameworkCore.PostgreSQL", StringComparison.Ordinal)
+                || string.Equals(providerName, "Microsoft.EntityFrameworkCore.SqlServer", StringComparison.Ordinal)
+            )
+            && RelationalFaults.FindDatabaseException(exception) is { } databaseException
+            && RelationalFaults.IsUniqueViolation(databaseException);
     }
 
     public async Task<CronJobEntity[]> GetAllCronJobExpressionsAsync(CancellationToken cancellationToken = default)

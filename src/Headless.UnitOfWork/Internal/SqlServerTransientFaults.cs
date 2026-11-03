@@ -295,7 +295,7 @@ internal static class SqlServerTransientFaults
     /// </summary>
     public static bool HasTransientError(DbException exception)
     {
-        foreach (var number in GetErrorNumbers(exception))
+        foreach (var number in RelationalFaults.GetSqlServerErrorNumbers(exception))
         {
             if (_TransientNumbers.Contains(number))
             {
@@ -309,44 +309,11 @@ internal static class SqlServerTransientFaults
     /// <summary>
     /// The driver's error number, read from a public <c>Number</c> property; <see langword="null" /> when the
     /// exception exposes none. On SqlClient this is the FIRST error only; classify with
-    /// <see cref="GetErrorNumbers" /> when any error in the batch counts.
+    /// <see cref="RelationalFaults.GetSqlServerErrorNumbers" /> when any error in the batch counts.
     /// </summary>
     public static int? GetErrorNumber(DbException exception)
     {
         return _ReadNumber(exception);
-    }
-
-    /// <summary>
-    /// Every error number <paramref name="exception" /> carries: the <c>Number</c> of each item in a public
-    /// <c>Errors</c> collection (SqlClient reports several errors per exception, and <c>Number</c> is only the
-    /// first), else the exception's own <c>Number</c>; empty when it exposes neither.
-    /// </summary>
-    public static IEnumerable<int> GetErrorNumbers(DbException exception)
-    {
-        var any = false;
-
-        if (
-            _ErrorsProperties
-                .GetOrAdd(exception.GetType(), static type => type.GetProperty("Errors"))
-                ?.GetValue(exception)
-            is IEnumerable errors
-        )
-        {
-            foreach (var error in errors)
-            {
-                if (error is not null && _ReadNumber(error) is { } number)
-                {
-                    any = true;
-
-                    yield return number;
-                }
-            }
-        }
-
-        if (!any && _ReadNumber(exception) is { } own)
-        {
-            yield return own;
-        }
     }
 
     private static int? _ReadNumber(object source)

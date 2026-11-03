@@ -90,7 +90,7 @@ public sealed class CouchbaseClustersProviderTests : TestBase
         var transactions = CouchbaseTestFactory.CreateTransactions(cluster);
         var connection = new CouchbaseClusterConnection { Cluster = cluster, Transactions = transactions };
         var lazy = new AsyncLazy<CouchbaseClusterConnection>(() => Task.FromResult(connection));
-        _ = await lazy.Task;
+        _ = await lazy.Task.Bounded();
         var sut = _CreateProvider(
             Substitute.For<ICouchbaseClusterOptionsProvider>(),
             Substitute.For<ICouchbaseTransactionConfigProvider>()

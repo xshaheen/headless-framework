@@ -460,6 +460,10 @@ internal sealed class AzureServiceBusConsumerClient(
         }
     }
 
+    // Set the moment a probe starts, well before its first peek, so a test can see a wrongly started probe at once
+    // instead of waiting out the back-off that precedes the peek.
+    internal bool IsProbing => Volatile.Read(ref _probing) != 0;
+
     // The processor reports a success only by delivering a message, so an idle consumer whose broker came back would read
     // unreachable until traffic arrived. After a failure, one probe loop peeks the entity on a real-time back-off until a
     // peek reaches Service Bus or a delivery reports the recovery first. A healthy client never probes.

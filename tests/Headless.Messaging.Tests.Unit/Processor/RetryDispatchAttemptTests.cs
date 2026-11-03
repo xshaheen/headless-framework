@@ -29,7 +29,7 @@ public sealed class RetryDispatchAttemptTests : TestBase
                 () => RetryDispatchAttempt.ReleaseAbandonedBatchAsync([attempt]).AsTask(),
                 AbortToken
             );
-            await Task.WhenAll(startTask, abandonTask).WaitAsync(AbortToken);
+            await Task.WhenAll(startTask, abandonTask).WaitAsync(AbortToken).Bounded();
 
             var started = await startTask;
             if (started)

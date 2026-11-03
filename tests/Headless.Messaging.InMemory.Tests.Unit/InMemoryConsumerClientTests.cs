@@ -113,18 +113,18 @@ public sealed class InMemoryConsumerClientTests : TestBase
         await _client.SubscribeAsync(["test-messageName"], AbortToken);
         using var cts = new CancellationTokenSource();
 
-        // A blocking take would never return on its own, so a deadline keeps a regression a failure, not a hang.
-        cts.CancelAfter(TimeSpan.FromMilliseconds(1500));
+        // A blocking take would never return on its own, so a deadline keeps a regression a failure, not a hang. It
+        // is long, because a blocking take returns only once it fires, already completed, which the check below
+        // catches; a short deadline would let a stalled runner complete a non-blocking call too.
+        cts.CancelAfter(TimeSpan.FromSeconds(10));
 
         // when - the call runs on this thread until its first real await, so a blocking take would hold it here
-        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         var listening = _client.ListeningAsync(TimeSpan.FromSeconds(5), cts.Token).AsTask();
-        stopwatch.Stop();
 
         // then
-        stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(1));
-        listening.IsCompleted.Should().BeFalse();
+        listening.IsCompleted.Should().BeFalse("the call must return to the caller while it waits for a message");
 
+        await cts.CancelAsync();
         var act = async () => await listening.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
@@ -402,7 +402,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
                 Interlocked.CompareExchange(ref maxRunning, now, seen);
             }
 
-            await blockingGate.Task.WaitAsync(AbortToken);
+            await blockingGate.Task.Bounded();
             Interlocked.Decrement(ref running);
             await client.CommitAsync(sender, AbortToken);
         };
@@ -544,7 +544,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
         client.OnMessageCallback = async (_, _) =>
         {
             started.TrySetResult();
-            await release.Task;
+            await release.Task.Bounded();
         };
 
         using var cts = new CancellationTokenSource();
@@ -585,7 +585,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
         client.OnMessageCallback = async (_, _) =>
         {
             started.TrySetResult();
-            await release.Task;
+            await release.Task.Bounded();
             throw handlerFault;
         };
 
@@ -681,6 +681,8 @@ public sealed class InMemoryConsumerClientTests : TestBase
         var lockObj = new Lock();
         const int messageCount = 10;
         var tcs = new TaskCompletionSource();
+        // Handlers hold here, so the in-flight count can reach the concurrency limit no matter how fast each runs.
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         client.OnMessageCallback = async (_, sender) =>
         {
@@ -693,7 +695,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
                 }
             }
 
-            await Task.Delay(50, AbortToken); // Simulate work
+            await release.Task.Bounded();
 
             lock (lockObj)
             {
@@ -729,14 +731,22 @@ public sealed class InMemoryConsumerClientTests : TestBase
             queue.SendBus(_CreateTestMessage($"msg-{i}", "concurrent-messageName"));
         }
 
-        // Wait for processing
+        // Wait until the limit is in flight, then let every handler finish
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+
+        while (Volatile.Read(ref currentConcurrent) < concurrency && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(10, AbortToken);
+        }
+
+        release.SetResult();
         _ = await Task.WhenAny(tcs.Task, Task.Delay(30000, AbortToken));
         await cts.CancelAsync();
         await client.DisposeAsync();
 
         // then
         processedCount.Should().Be(messageCount);
-        maxConcurrent.Should().BeGreaterThanOrEqualTo(1);
+        maxConcurrent.Should().Be(concurrency, "the client runs up to its concurrency limit at once, and no more");
     }
 
     [Fact]

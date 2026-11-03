@@ -631,7 +631,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         // Acquiring every permit waits for the fire-and-forget handler to release its own.
         for (var i = 0; i < concurrencyLimit; i++)
         {
-            await semaphore.WaitAsync(AbortToken);
+            await semaphore.WaitAsync(AbortToken).Bounded();
         }
 
         semaphore.Release(concurrencyLimit);
@@ -789,13 +789,14 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
             AbortToken
         );
 
-        // Wait for messages to be processed or timeout
-        _ = await Task.WhenAny(tcs.Task, Task.Delay(TimeSpan.FromSeconds(4), AbortToken));
+        // Wait for every message; a cap check over no handled messages proves nothing.
+        var processedAll = await Task.WhenAny(tcs.Task, Task.Delay(TimeSpan.FromSeconds(4), AbortToken)) == tcs.Task;
         await cts.CancelAsync();
         await listeningTask;
 
         // then - max concurrent should not exceed concurrency limit
-        maxConcurrent.Should().BeLessThanOrEqualTo(concurrencyLimit);
+        processedAll.Should().BeTrue("all four messages must be handled within the listening window");
+        maxConcurrent.Should().BeInRange(1, concurrencyLimit);
     }
 
     [Fact]
@@ -1019,7 +1020,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         // A second poll proves the loop finished dispatching the first batch.
         await secondPoll.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
         // The fire-and-forget handler holds the only permit until it has finished, so acquiring it waits for the handler.
-        await _GetSemaphore(client).WaitAsync(AbortToken);
+        await _GetSemaphore(client).WaitAsync(AbortToken).Bounded();
         await cts.CancelAsync();
 
         try
@@ -1257,7 +1258,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         // A second poll proves the loop finished dispatching the first batch.
         await secondPoll.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
         // The fire-and-forget handler holds the only permit until it has finished, so acquiring it waits for the handler.
-        await _GetSemaphore(client).WaitAsync(AbortToken);
+        await _GetSemaphore(client).WaitAsync(AbortToken).Bounded();
         await cts.CancelAsync();
 
         try

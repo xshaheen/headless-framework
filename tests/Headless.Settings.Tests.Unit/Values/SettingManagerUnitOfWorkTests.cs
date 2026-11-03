@@ -62,7 +62,7 @@ public sealed class SettingManagerUnitOfWorkTests : TestBase
 
         // when the write ran in tenant-a, and the unit completes after the code left it
         await _sut.SetAsync(_unit, _Values("App.Theme", "dark"), _Writer, "tenant-a", cancellationToken: AbortToken);
-        await _bus.DidNotReceiveWithAnyArgs().PublishAsync(default(SettingChangedMessage), AbortToken);
+        await _bus.DidNotReceiveWithAnyArgs().PublishAsync(default(SettingChangedMessage), null, AbortToken);
         _currentTenant.Id.Returns((string?)null);
         await _CommitAsync();
 
@@ -85,6 +85,7 @@ public sealed class SettingManagerUnitOfWorkTests : TestBase
                     && m.ProviderKey == "tenant-a"
                     && m.OriginHostName == "prod/orders-7d"
                 ),
+                Arg.Is<PublishOptions>(static options => options.IsSystemMessage),
                 CancellationToken.None
             );
     }
@@ -177,10 +178,14 @@ public sealed class SettingManagerUnitOfWorkTests : TestBase
 
         // then
         await _valueStore.DidNotReceiveWithAnyArgs().DeleteAsync(default!, default!, default, AbortToken);
-        await _bus.DidNotReceiveWithAnyArgs().PublishAsync(default(SettingChangedMessage), AbortToken);
+        await _bus.DidNotReceiveWithAnyArgs().PublishAsync(default(SettingChangedMessage), null, AbortToken);
         await _CommitAsync();
         await _bus.Received(1)
-            .PublishAsync(Arg.Is<SettingChangedMessage>(m => m.SettingNames.Count == 2), CancellationToken.None);
+            .PublishAsync(
+                Arg.Is<SettingChangedMessage>(m => m.SettingNames.Count == 2),
+                Arg.Is<PublishOptions>(static options => options.IsSystemMessage),
+                CancellationToken.None
+            );
     }
 
     [Fact]

@@ -528,7 +528,12 @@ internal sealed class FileSystemBlobStorage : IBlobStorage
 
             // FileName is the full container-relative key (location.Path), matching AWS/Azure/Redis/SSH — not just the
             // last path segment.
-            return new BlobDownloadResult(fileStream, location.Path, BlobStorageHelpers.ToUserMetadata(metadata));
+            return new BlobDownloadResult(
+                fileStream,
+                location.Path,
+                BlobStorageHelpers.ToUserMetadata(metadata),
+                fileStream.Length
+            );
         }
         catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException)
         {

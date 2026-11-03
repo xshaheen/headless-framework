@@ -525,7 +525,7 @@ public static class SetupJobs
         // Only nodes sharing a durable store have a fleet whose cron rules must agree before a rebase.
         services.AddSingleton<CronFleetAgreement>();
 
-        // Override the default owner identity with the node@incarnation adapter over INodeMembership.
+        // Override the default owner identity with the cluster/node@incarnation adapter over INodeMembership.
         services.AddSingleton<IJobsOwnerIdentity, JobsOwnerIdentityAdapter>();
 
         // Event-driven dead-node recovery (shared bridge) and the registration startup gate. The gate only orders

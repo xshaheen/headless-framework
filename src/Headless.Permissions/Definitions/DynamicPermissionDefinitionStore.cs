@@ -33,6 +33,10 @@ public sealed class DynamicPermissionDefinitionStore(
     IBus? messagePublisher = null
 ) : IDynamicPermissionDefinitionStore, IDisposable
 {
+    // A system message: a change made from host scope carries no tenant, and its announcement must still reach peers
+    // when the host requires a tenant on every publish.
+    private static readonly PublishOptions _ChangedPublishOptions = new() { IsSystemMessage = true };
+
     private readonly PermissionManagementOptions _options = optionsAccessor.Value;
     private readonly PermissionManagementProvidersOptions _providers = providersAccessor.Value;
 
@@ -404,7 +408,9 @@ public sealed class DynamicPermissionDefinitionStore(
                 Permissions = [.. newPermissions.Select(x => x.Name), .. updatedPermissions.Select(x => x.Name)],
             };
 
-            await messagePublisher.PublishAsync(message, cancellationToken: cancellationToken).ConfigureAwait(false);
+            await messagePublisher
+                .PublishAsync(message, _ChangedPublishOptions, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         await distributedCache

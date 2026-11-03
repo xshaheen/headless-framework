@@ -57,7 +57,7 @@ public sealed class JobsActivationBarrierStartupTests : TestBase
         await _Warmup(provider).WarmUpAsync(AbortToken);
 
         // The barrier is open, so the scheduler resumes — and its first selection observed a completed drain.
-        (await probe.FirstSelection.Task.WaitAsync(AbortToken))
+        (await probe.FirstSelection.Task.Bounded())
             .Should()
             .BeTrue();
         probe.SelectionsBeforeActivation.Should().Be(0);
@@ -81,14 +81,14 @@ public sealed class JobsActivationBarrierStartupTests : TestBase
 
         // The drain runs after the start and is still blocked, yet the start has returned: it no longer waits on a
         // store round trip per page and per stale row.
-        await probe.DrainEntered.Task.WaitAsync(AbortToken);
+        await probe.DrainEntered.Task.Bounded();
         await startTask.WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
         barrier.IsActivated.Should().BeFalse();
         probe.SelectionsBeforeActivation.Should().Be(0);
 
         probe.ReleaseDrain();
 
-        (await probe.FirstSelection.Task.WaitAsync(AbortToken)).Should().BeTrue();
+        (await probe.FirstSelection.Task.Bounded()).Should().BeTrue();
         probe.SelectionsBeforeActivation.Should().Be(0);
         barrier.IsActivated.Should().BeTrue();
 
@@ -106,7 +106,7 @@ public sealed class JobsActivationBarrierStartupTests : TestBase
 
         // A store outage during the drain no longer aborts the start.
         await host.StartAsync(AbortToken);
-        await probe.FirstDrainFailed.Task.WaitAsync(AbortToken);
+        await probe.FirstDrainFailed.Task.Bounded();
 
         // Failed closed: the barrier stays shut, nothing was selected, and the host keeps running.
         barrier.IsActivated.Should().BeFalse();
@@ -114,7 +114,7 @@ public sealed class JobsActivationBarrierStartupTests : TestBase
         lifetime.ApplicationStopping.IsCancellationRequested.Should().BeFalse();
 
         // The warm-up runner retries the drain; once it succeeds the barrier opens and the scheduler selects.
-        (await probe.FirstSelection.Task.WaitAsync(AbortToken))
+        (await probe.FirstSelection.Task.Bounded())
             .Should()
             .BeTrue();
         probe.DrainAttempts.Should().Be(2);
@@ -164,7 +164,7 @@ public sealed class JobsActivationBarrierStartupTests : TestBase
         await scheduler.StartAsync(AbortToken);
 
         scheduler.IsRunning.Should().BeTrue();
-        (await probe.FirstSelection.Task.WaitAsync(AbortToken)).Should().BeTrue();
+        (await probe.FirstSelection.Task.Bounded()).Should().BeTrue();
 
         await scheduler.StopAsync(AbortToken);
         await fallback.StopAsync(AbortToken);
@@ -197,7 +197,7 @@ public sealed class JobsActivationBarrierStartupTests : TestBase
         await scheduler.StartAsync(AbortToken);
 
         scheduler.IsRunning.Should().BeTrue();
-        (await probe.FirstSelection.Task.WaitAsync(AbortToken)).Should().BeTrue();
+        (await probe.FirstSelection.Task.Bounded()).Should().BeTrue();
 
         await scheduler.StopAsync(AbortToken);
     }
@@ -235,7 +235,7 @@ public sealed class JobsActivationBarrierStartupTests : TestBase
 
         await service.StartAsync(AbortToken);
         await membershipLostCts.CancelAsync();
-        await service.ExecuteTask!.WaitAsync(AbortToken);
+        await service.ExecuteTask!.WaitAsync(AbortToken).Bounded();
 
         logger.Entries.Should().ContainSingle(entry => entry.EventId == 3220 && entry.Level == LogLevel.Warning);
         await manager.DidNotReceive().GetNextJobs(Arg.Any<CancellationToken>());
@@ -270,7 +270,7 @@ public sealed class JobsActivationBarrierStartupTests : TestBase
 
         await service.StartAsync(AbortToken);
         await membershipLostCts.CancelAsync();
-        await service.ExecuteTask!.WaitAsync(AbortToken);
+        await service.ExecuteTask!.WaitAsync(AbortToken).Bounded();
 
         logger.Entries.Should().ContainSingle(entry => entry.EventId == 3201 && entry.Level == LogLevel.Warning);
         await manager.DidNotReceive().ReclaimStalledResources(Arg.Any<CancellationToken>());

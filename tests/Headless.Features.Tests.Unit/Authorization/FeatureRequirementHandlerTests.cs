@@ -89,6 +89,51 @@ public sealed class FeatureRequirementHandlerTests : TestBase
     }
 
     [Fact]
+    public async Task should_read_every_feature_of_a_combined_policy_once()
+    {
+        // given - a group-level and an endpoint-level requirement combined into one policy
+        await using var provider = _CreateProvider(_Reports);
+        var featureManager = provider.GetRequiredService<IFeatureManager>();
+        var policy = new AuthorizationPolicyBuilder()
+            .AddRequirements(new FeatureRequirement([_Reports], requiresAll: false))
+            .AddRequirements(new FeatureRequirement([_Reports, _Exports], requiresAll: true))
+            .Build();
+
+        // when
+        var result = await _AuthorizeAsync(provider, policy);
+
+        // then - only the second requirement fails its rule, so the evaluation carries one reason
+        result.Succeeded.Should().BeFalse();
+        result.Failure!.FailCalled.Should().BeTrue();
+        result.Failure.FailureReasons.Should().ContainSingle();
+        await featureManager
+            .Received(1)
+            .GetAllAsync(
+                Arg.Is<IReadOnlySet<string>>(names => names.SetEquals(new[] { _Reports, _Exports })),
+                Arg.Any<CancellationToken>()
+            );
+        await featureManager.DidNotReceiveWithAnyArgs().GetAsync(default!, default, default, default, AbortToken);
+    }
+
+    [Fact]
+    public async Task should_read_no_feature_when_the_policy_disables_the_feature_check()
+    {
+        // given
+        await using var provider = _CreateProvider();
+        var featureManager = provider.GetRequiredService<IFeatureManager>();
+        var policy = new AuthorizationPolicyBuilder()
+            .AddRequirements([.. new RequiresFeatureAttribute(_Reports).GetRequirements()])
+            .AddRequirements([.. new DisableFeatureCheckAttribute().GetRequirements()])
+            .Build();
+
+        // when
+        await _AuthorizeAsync(provider, policy);
+
+        // then
+        await featureManager.DidNotReceiveWithAnyArgs().GetAllAsync(default!, AbortToken);
+    }
+
+    [Fact]
     public void should_declare_no_requirement_for_an_attribute_without_features()
     {
         // when

@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Net;
-using System.Net.Sockets;
 using Headless.Hosting;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
@@ -149,20 +147,5 @@ public sealed class ConnectivityProbeQueueModule : IMessagingModule
             "tests.transport-connectivity.queue-probe",
             TestConsumerDispatch.FromServices<ConnectivityProbeConsumer, ConnectivityProbeMessage>()
         );
-    }
-}
-
-/// <summary>
-/// Picks a free host port for a broker container that a test stops and starts: Docker assigns a new random port on
-/// every start unless the binding names one, and the host under test keeps the address it was given.
-/// </summary>
-[PublicAPI]
-public static class BrokerHostPort
-{
-    public static int Reserve()
-    {
-        using var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        return ((IPEndPoint)listener.LocalEndpoint).Port;
     }
 }

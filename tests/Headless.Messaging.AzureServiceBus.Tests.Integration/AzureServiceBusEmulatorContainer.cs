@@ -40,12 +40,19 @@ internal sealed class AzureServiceBusEmulatorContainer : IAsyncDisposable
     private readonly INetwork _network;
     private readonly IContainer _sql;
     private readonly IContainer _emulator;
+    private readonly BrokerPortForwarder? _amqpForwarder;
 
-    private AzureServiceBusEmulatorContainer(INetwork network, IContainer sql, IContainer emulator)
+    private AzureServiceBusEmulatorContainer(
+        INetwork network,
+        IContainer sql,
+        IContainer emulator,
+        bool stableAmqpAddress
+    )
     {
         _network = network;
         _sql = sql;
         _emulator = emulator;
+        _amqpForwarder = stableAmqpAddress ? new BrokerPortForwarder(() => _emulator, _AmqpPort) : null;
     }
 
     /// <summary>
@@ -55,15 +62,16 @@ internal sealed class AzureServiceBusEmulatorContainer : IAsyncDisposable
     public string ConnectionString { get; private set; } = string.Empty;
 
     /// <summary>
-    /// Starts SQL Server and then the emulator. Pass <paramref name="amqpHostPort"/> to publish AMQP on a fixed host port,
-    /// so a client keeps its address across <see cref="RestartAsync"/>; otherwise the port is random.
+    /// Starts SQL Server and then the emulator. Pass <paramref name="stableAmqpAddress"/> to reach AMQP through a
+    /// <see cref="BrokerPortForwarder"/>, so a client keeps its address across <see cref="RestartAsync"/>; otherwise the
+    /// connection string names the random port Docker published for the first start.
     /// </summary>
     /// <remarks>
     /// Both images start only with their license accepted. The caller must have the user's explicit opt-in before it
     /// calls this; the fixture checks it.
     /// </remarks>
     public static async Task<AzureServiceBusEmulatorContainer> StartAsync(
-        int? amqpHostPort,
+        bool stableAmqpAddress,
         CancellationToken cancellationToken
     )
     {
@@ -83,10 +91,11 @@ internal sealed class AzureServiceBusEmulatorContainer : IAsyncDisposable
             .WithEnvironment("MSSQL_SA_PASSWORD", _SqlPassword)
             .WithWaitStrategy(Wait.ForUnixContainer().UntilInternalTcpPortIsAvailable(_SqlPort))
             .Build();
-        var emulatorBuilder = new ContainerBuilder(_EmulatorImage)
+        var emulator = new ContainerBuilder(_EmulatorImage)
             .WithNetwork(network)
             .WithResourceMapping(config, _ConfigPath)
             .WithPortBinding(_ManagementPort, assignRandomHostPort: true)
+            .WithPortBinding(_AmqpPort, assignRandomHostPort: true)
             .WithEnvironment("ACCEPT_EULA", "Y")
             .WithEnvironment("SQL_SERVER", _SqlAlias)
             .WithEnvironment("MSSQL_SA_PASSWORD", _SqlPassword)
@@ -98,13 +107,10 @@ internal sealed class AzureServiceBusEmulatorContainer : IAsyncDisposable
                         wait => wait.WithTimeout(TimeSpan.FromMinutes(5))
                     )
                     .UntilHttpRequestIsSucceeded(request => request.ForPort(_ManagementPort).ForPath("/health"))
-            );
-        emulatorBuilder = amqpHostPort is { } hostPort
-            ? emulatorBuilder.WithPortBinding(hostPort, _AmqpPort)
-            : emulatorBuilder.WithPortBinding(_AmqpPort, assignRandomHostPort: true);
-        var emulator = emulatorBuilder.Build();
+            )
+            .Build();
 
-        var started = new AzureServiceBusEmulatorContainer(network, sql, emulator);
+        var started = new AzureServiceBusEmulatorContainer(network, sql, emulator, stableAmqpAddress);
 
         try
         {
@@ -145,17 +151,29 @@ internal sealed class AzureServiceBusEmulatorContainer : IAsyncDisposable
             }
             finally
             {
-                await _network.DisposeAsync().ConfigureAwait(false);
+                try
+                {
+                    await _network.DisposeAsync().ConfigureAwait(false);
+                }
+                finally
+                {
+                    if (_amqpForwarder is not null)
+                    {
+                        await _amqpForwarder.DisposeAsync().ConfigureAwait(false);
+                    }
+                }
             }
         }
     }
 
     private string _BuildConnectionString()
     {
-        var port = _emulator.GetMappedPublicPort(_AmqpPort).ToString(CultureInfo.InvariantCulture);
+        var address =
+            _amqpForwarder?.Address
+            ?? $"{_emulator.Hostname}:{_emulator.GetMappedPublicPort(_AmqpPort).ToString(CultureInfo.InvariantCulture)}";
 
         // The emulator's documented development key; it guards nothing outside this container.
-        return $"Endpoint=sb://{_emulator.Hostname}:{port};SharedAccessKeyName=RootManageSharedAccessKey;"
+        return $"Endpoint=sb://{address};SharedAccessKeyName=RootManageSharedAccessKey;"
             + "SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;";
     }
 }

@@ -421,7 +421,7 @@ public sealed partial class TenantCatalogServiceTests : TestBase
         {
             Interlocked.Increment(ref storeReads);
             storeEntered.TrySetResult();
-            await releaseStore.Task;
+            await releaseStore.Task.Bounded();
 
             return tenant;
         }
@@ -436,7 +436,7 @@ public sealed partial class TenantCatalogServiceTests : TestBase
             .Select(_ => Task.Run(() => sut.ResolveAsync("acme", AbortToken), AbortToken))
             .ToArray();
 
-        await storeEntered.Task.WaitAsync(AbortToken);
+        await storeEntered.Task.Bounded();
         releaseStore.SetResult();
 
         var outcomes = await Task.WhenAll(callers);
@@ -465,7 +465,7 @@ public sealed partial class TenantCatalogServiceTests : TestBase
                 allCallersInStore.SetResult();
             }
 
-            await allCallersInStore.Task;
+            await allCallersInStore.Task.Bounded();
 
             return new TenantInfo("ten_1", "acme", "Acme", isEnabled: true);
         }
@@ -505,7 +505,7 @@ public sealed partial class TenantCatalogServiceTests : TestBase
                 allCallersInStore.SetResult();
             }
 
-            await allCallersInStore.Task;
+            await allCallersInStore.Task.Bounded();
 
             return new TenantInfo("ten_1", "acme", "Acme", isEnabled: true);
         }

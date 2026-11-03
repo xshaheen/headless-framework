@@ -74,6 +74,8 @@ The *static store* (`IStaticFeatureDefinitionStore`) builds the feature catalog 
 
 `FeatureValueStore` caches resolved feature values to avoid repeated database reads. The cache is backed by the registered `ICache` (or a named cache instance when `FeatureManagementOptions.FeatureValueCacheName` is set). When `IFeatureManager.SetAsync` writes a value, `FeatureValueStore` updates or evicts the affected cache entries directly through `ICache` (a distributed cache propagates the eviction across nodes via `CacheInvalidationMessage`). A write through `unit.Features` touches the cache only after its unit commits, and then evicts the entries instead of writing them, so the next read loads the committed row; a unit that rolls back leaves the cache as it was, and a cache fault after the commit is logged rather than thrown. Direct EF `IFeatureValueRecordRepository` writes also evict the affected cache entry — the repository removes it after `SaveChangesAsync`, or after the unit commits for an enlisted write — so a repository-level write bypassing the manager is still reflected on the next read. Writes that bypass the EF repository (the PostgreSQL or SQL Server repository called directly, raw SQL, direct `DbContext`) leave the cache stale.
 
+**Use the hybrid cache in production.** The feature value cache is read on every request that reaches a feature gate, so this package expects `UseHybrid` (an in-process L1 in front of the distributed cache), where a warm read costs no network trip. On a distributed-only cache (`UseRedis`), each feature check is one round trip on the request path (every provider's entry is read in one batch), and nothing memoizes a result within a request: a second feature check of the same name in the same request repeats the trip. [Permissions](permissions.md#grant-store-and-caching) gives the round-trip count of a whole tenant-scoped request.
+
 ### Reacting to a change
 
 `FeatureManager` publishes one `FeatureChangedMessage` over `IBus` after each successful `SetAsync` or `DeleteAsync`, listing every name that call changed, so an instance holding a resolved value learns it is stale instead of polling for it. The state it refreshes lives in each process, so consume it with an [every-instance consumer](messaging.md#every-instance-bus-delivery): every process receives every announcement instead of one replica taking the only copy. Delivery is at most once, so reload after a gap in the subscription too. Wire contract: `AddHeadlessFeatures` declares the message as `headless.features.changed`, contract version `1` (`FeatureChangedMessage.MessageName`), so the consumer below needs no `Message<T>` declaration of its own. The host's naming conventions (`UseConventions`) do not rename it; only the host-wide `MessagingOptions.MessageNamePrefix` applies, as it does to every message.
@@ -393,7 +395,8 @@ Every object follows its database's naming convention. On PostgreSQL the tables,
 
 ### Runtime behavior
 
-- Registers `IFeatureManager` and `IClientVisibleFeaturesReader` as transient
+- Registers `IFeatureManager` (`FeatureManager`) as singleton, like the permission and setting managers; a replacement `IFeatureManager` must be singleton-safe, because the singleton feature authorization handler holds it
+- Registers `IClientVisibleFeaturesReader` as transient
 - Registers `IUnitOfWorkFeatures` (a `FeatureManager`) as singleton, and calls `AddUnitOfWork()` so `IUnitOfWorkFactory` resolves
 - Registers an `AsyncLocal`-backed `CurrentTenant` as the `ICurrentTenant` fallback (the same fallback Permissions, Settings, Messaging, and Jobs use); any real tenancy registration replaces it
 - Registers `IStaticFeatureDefinitionStore`, `IDynamicFeatureDefinitionStore`, `IFeatureDefinitionManager`, `IFeatureValueStore`, `IFeatureValueProviderManager` as singletons
@@ -401,7 +404,7 @@ Every object follows its database's naming convention. On PostgreSQL the tables,
 - Registers the `FeatureDefinitions` seeder (`ISeeder`); it runs only when the host seeds
 - Registers the `FeatureDefinitions` warm-up (`IWarmup`), which adds the `warmup` readiness check; it loads and gates readiness only when `IsDynamicFeatureStoreEnabled` is true
 - Registers `IMethodInvocationFeatureCheckerService` as singleton
-- Registers the feature authorization handler (transient, once however often `AddHeadlessFeatures` runs) and calls `AddAuthorizationCore()`, which only adds services the host has not registered
+- Registers the feature authorization handler (singleton, once however often `AddHeadlessFeatures` runs). It reads every feature named by the policy's `FeatureRequirement`s in one `IFeatureManager.GetAllAsync` call, then decides each requirement from those values, so a group and an endpoint gate cost one read and calls `AddAuthorizationCore()`, which only adds services the host has not registered
 
 ### Gating HTTP endpoints
 

@@ -186,9 +186,11 @@ public static class SetupDistributedLocksPostgreSql
         // schema runner) so a connection-string configuration produces a single pool rather than
         // one each. The owner wrapper centralizes disposal: an injected DataSource is consumer-owned and
         // never disposed, while a connection-string-built one is owned and disposed on container
-        // teardown. Consumers inject the NpgsqlDataSource directly and must not dispose it.
+        // teardown. Consumers take the data source from the wrapper and must not dispose it. It is never published
+        // as the unkeyed NpgsqlDataSource: that slot belongs to the application (AddNpgsqlDataSource, Aspire, EF
+        // Core), and sharing it would send locks to the application's database or application traffic to the lock
+        // database, depending on which registration came first.
         services.TryAddSingleton<PostgresLockDataSource>();
-        services.TryAddSingleton(sp => sp.GetRequiredService<PostgresLockDataSource>().DataSource);
 
         services.TryAddSingleton<PostgresConnectionScopedLockStorage>();
         services.TryAddSingleton<IConnectionScopedLockStorage>(sp =>
@@ -200,7 +202,7 @@ public static class SetupDistributedLocksPostgreSql
         services.AddHeadlessSchemaContribution(sp =>
             PostgreSqlDistributedLocksSchemaContribution.Create(
                 sp.GetRequiredService<IOptions<DistributedLocksStorageOptions>>().Value,
-                sp.GetRequiredService<NpgsqlDataSource>()
+                sp.GetRequiredService<PostgresLockDataSource>().DataSource
             )
         );
         // The unit-of-work feature behind unit.TransactionLocks; resolved by GetFeature on a host that also registered

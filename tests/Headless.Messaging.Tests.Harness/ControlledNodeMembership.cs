@@ -27,6 +27,9 @@ public sealed class ControlledNodeMembership : INodeMembership
 
     public NodeIdentity? Identity { get; private set; }
 
+    /// <summary>The cluster owner tags are qualified with; settable so a test can model two clusters on one store.</summary>
+    public string ClusterName { get; set; } = CoordinationOptions.DefaultClusterName;
+
     public CancellationToken LocalMembershipLostToken => CancellationToken.None;
 
     /// <summary>Sets the local identity used to stamp <c>Owner</c> when leasing a row.</summary>
@@ -35,6 +38,12 @@ public sealed class ControlledNodeMembership : INodeMembership
         var identity = new NodeIdentity(new NodeId(nodeId), new NodeIncarnation(incarnation));
         Identity = identity;
         return identity;
+    }
+
+    /// <summary>The owner tag a row leased under <paramref name="identity"/> carries in this membership's cluster.</summary>
+    public string OwnerTag(NodeIdentity identity)
+    {
+        return NodeOwnerTag.Format(ClusterName, identity);
     }
 
     /// <summary>Replaces the authoritative liveness snapshot the reconcile loop reads.</summary>

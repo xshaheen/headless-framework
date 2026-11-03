@@ -126,7 +126,7 @@ public sealed class SqsRejectBatcherTests : TestBase
     public async Task should_not_send_a_reject_while_the_visibility_gate_is_held_and_send_the_waiting_ones_together()
     {
         // given: a heartbeat extension holds the gate
-        await _gate.WaitAsync(AbortToken);
+        await _gate.WaitAsync(AbortToken).Bounded();
         List<ChangeMessageVisibilityBatchRequestEntry>? batch = null;
         _sqs.ChangeMessageVisibilityBatchAsync(
                 _QueueUrl,

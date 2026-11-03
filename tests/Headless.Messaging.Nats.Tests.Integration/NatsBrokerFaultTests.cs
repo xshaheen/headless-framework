@@ -18,7 +18,7 @@ public sealed class NatsBrokerFaultTests(NatsFixture fixture) : BrokerFaultTests
         CancellationToken cancellationToken
     )
     {
-        // A server of its own on a fixed host port: a restart must not disturb the collection's server, and the
+        // A server of its own behind a port forwarder: a restart must not disturb the collection's server, and the
         // session must find the restarted server at the address it already holds.
 #pragma warning disable CA2000 // Ownership moves to the returned session, or the catch disposes it.
         var broker = new FixedPortNatsFixture();
@@ -28,7 +28,7 @@ public sealed class NatsBrokerFaultTests(NatsFixture fixture) : BrokerFaultTests
         {
             await broker.StartAsync();
             var session = await NatsFixture.CreateDurableConformanceSessionAsync(
-                broker.Container.GetConnectionString(),
+                broker.ConnectionString,
                 cancellationToken
             );
 

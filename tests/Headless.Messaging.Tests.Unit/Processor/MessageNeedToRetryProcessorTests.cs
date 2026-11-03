@@ -964,7 +964,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         );
 
         var run = _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus);
-        await classified.Task.WaitAsync(AbortToken);
+        await classified.Task.Bounded();
         await cts.CancelAsync();
         await run;
 
@@ -1062,7 +1062,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             cancellationToken: AbortToken
         );
 
-        await _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus).WaitAsync(AbortToken);
+        await _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus)
+            .WaitAsync(AbortToken)
+            .Bounded();
 
         outcome.Task.IsCompleted.Should().BeFalse("the probe holder never reported");
         await ((ICircuitRetryDeferralStorage)storage)
@@ -1082,7 +1084,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         var healthy = _CreateMessage("healthy-consumer");
         _SetupReceivedMessages(storage, healthy);
-        await _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus).WaitAsync(AbortToken);
+        await _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus)
+            .WaitAsync(AbortToken)
+            .Bounded();
 
         await dispatcher.Received(1).EnqueueToExecute(healthy, null, Arg.Any<CancellationToken>());
     }
@@ -1118,7 +1122,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             cancellationToken: AbortToken
         );
 
-        await _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus).WaitAsync(AbortToken);
+        await _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus)
+            .WaitAsync(AbortToken)
+            .Bounded();
 
         outcome.Task.IsCompleted.Should().BeFalse();
         await ((ICircuitRetryDeferralStorage)storage)

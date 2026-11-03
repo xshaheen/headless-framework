@@ -151,7 +151,7 @@ public sealed class AmazonSqsConsumerReceiveLoopTests : TestBase
         client.OnMessageCallback = async (_, sender) =>
         {
             handlerStarted.TrySetResult();
-            await finishHandler.Task;
+            await finishHandler.Task.Bounded();
             await client.CommitAsync(sender);
         };
 

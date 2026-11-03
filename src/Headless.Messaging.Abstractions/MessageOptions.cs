@@ -138,6 +138,28 @@ public abstract record MessageOptions
     public bool SuppressAmbientBusinessContext { get; init; }
 
     /// <summary>
+    /// Marks a system message, such as a cache invalidation or a change announcement, that may publish without a tenant
+    /// when required tenancy is enabled.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Defaults to <see langword="false"/>. With required tenancy (<c>RequireTenantOnPublish()</c>), a publish that resolves
+    /// no explicit or ambient tenant is rejected with <c>MissingTenantContextException</c>; a system message publishes
+    /// with no tenant header instead. The framework sets this on its own host-level messages so they keep working from
+    /// host scope: hybrid cache invalidations, distributed lock release signals, and the feature, setting, permission,
+    /// and permission-definition change announcements.
+    /// </para>
+    /// <para>
+    /// The flag only waives the missing-tenant rejection. It never removes a tenant: an explicit <see cref="TenantId"/>
+    /// or a propagated ambient tenant is still stamped and validated, and a publish that sets
+    /// <see cref="SuppressAmbientBusinessContext"/> while an ambient tenant exists is still rejected, so code running for
+    /// a tenant cannot publish into host scope by setting it. Leave it unset on application messages; required tenancy
+    /// exists to catch a publish that forgot its tenant.
+    /// </para>
+    /// </remarks>
+    public bool IsSystemMessage { get; init; }
+
+    /// <summary>
     /// Gets the explicit correlation sequence override.
     /// </summary>
     public int? CorrelationSequence { get; init; }
@@ -160,7 +182,7 @@ public abstract record MessageOptions
     /// When set, the publish pipeline stamps the value into the <c>Headers.TenantId</c> wire header.
     /// When <see langword="null"/>, configured tenant propagation or required-tenancy resolution may use the
     /// ambient tenant unless <see cref="SuppressAmbientBusinessContext"/> is enabled. Without a resolved tenant,
-    /// no header is written; required tenancy rejects the publish instead.
+    /// no header is written; required tenancy rejects the publish instead unless <see cref="IsSystemMessage"/> is set.
     /// </para>
     /// <para>
     /// The publish pipeline enforces a strict 4-case integrity policy. A raw write to
@@ -207,6 +229,7 @@ public abstract record MessageOptions
             && string.Equals(CorrelationId, other.CorrelationId, StringComparison.Ordinal)
             && string.Equals(CausationId, other.CausationId, StringComparison.Ordinal)
             && SuppressAmbientBusinessContext == other.SuppressAmbientBusinessContext
+            && IsSystemMessage == other.IsSystemMessage
             && IsRetainedForTransactionReplay == other.IsRetainedForTransactionReplay
             && CorrelationSequence == other.CorrelationSequence
             // MessageType is internal-init and participates in equality so internally-produced options carrying a
@@ -232,6 +255,7 @@ public abstract record MessageOptions
         hash.Add(CorrelationId, StringComparer.Ordinal);
         hash.Add(CausationId, StringComparer.Ordinal);
         hash.Add(SuppressAmbientBusinessContext);
+        hash.Add(IsSystemMessage);
         hash.Add(IsRetainedForTransactionReplay);
         hash.Add(CorrelationSequence);
         // MessageType is internal-init and participates in equality so internally-produced options carrying a

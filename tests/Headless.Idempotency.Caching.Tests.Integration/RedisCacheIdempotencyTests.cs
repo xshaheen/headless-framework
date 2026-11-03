@@ -41,7 +41,7 @@ public sealed class RedisCacheIdempotencyTests(RedisIdempotencyFixture fixture) 
                     Task.Run(
                         async () =>
                         {
-                            await start.Task;
+                            await start.Task.Bounded();
 
                             return await _AdmitAsync(i % 2 == 0 ? hostA : hostB, key);
                         },

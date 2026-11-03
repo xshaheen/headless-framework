@@ -54,13 +54,13 @@ public sealed class JobsExecutionCancellationRegistryConcurrencyTests : TestBase
                 var registrationTasks = sources
                     .Select(async source =>
                     {
-                        await start.Task.WaitAsync(AbortToken);
+                        await start.Task.Bounded();
                         return registry.Register(source, _Context(Guid.NewGuid()));
                     })
                     .ToArray();
 
                 start.SetResult();
-                registrations = await Task.WhenAll(registrationTasks).WaitAsync(AbortToken);
+                registrations = await Task.WhenAll(registrationTasks).WaitAsync(AbortToken).Bounded();
 
                 foreach (var registration in registrations.Where((_, index) => index != survivorIndex))
                 {

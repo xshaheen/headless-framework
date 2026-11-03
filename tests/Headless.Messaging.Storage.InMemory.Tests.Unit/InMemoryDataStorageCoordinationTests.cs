@@ -254,10 +254,11 @@ public sealed class InMemoryDataStorageCoordinationTests : TestBase
         /// <summary>Whether the row was already in the published set when the dispatcher received it.</summary>
         public List<bool> VisibleAtHandOff { get; } = [];
 
-        public void EnqueueCommittedMessage(MediumMessage message)
+        public ValueTask EnqueueCommittedMessageAsync(MediumMessage message, long waitStartedAt)
         {
             VisibleAtHandOff.Add(storage.PublishedMessages.ContainsKey(message.StorageId));
             CommittedMessages.Add(message);
+            return ValueTask.CompletedTask;
         }
 
         public bool IsSchedulerFull => false;

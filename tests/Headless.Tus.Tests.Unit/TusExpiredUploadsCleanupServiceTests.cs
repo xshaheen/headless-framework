@@ -32,15 +32,93 @@ public sealed class TusExpiredUploadsCleanupServiceTests : TestBase
 
     private static TusExpiredUploadsCleanupService _CreateService(
         ITusExpirationStore store,
-        FakeTimeProvider timeProvider
+        FakeTimeProvider timeProvider,
+        ITusExpiredUploadsCleanupGate? gate = null
     )
     {
         return new TusExpiredUploadsCleanupService(
             store,
             Options.Create(new TusExpiredUploadsCleanupOptions { Interval = _Interval }),
             timeProvider,
-            NullLogger<TusExpiredUploadsCleanupService>.Instance
+            NullLogger<TusExpiredUploadsCleanupService>.Instance,
+            gate
         );
+    }
+
+    [Fact]
+    public async Task should_skip_the_pass_when_another_node_claimed_it()
+    {
+        // given
+        var store = Substitute.For<ITusExpirationStore>();
+        var gate = new _FakeGate(claims: false);
+
+        var timeProvider = new FakeTimeProvider();
+        using var service = _CreateService(store, timeProvider, gate);
+
+        // when
+        await service.StartAsync(AbortToken);
+        await gate.Attempted.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        await service.StopAsync(AbortToken);
+
+        // then
+        await store.DidNotReceive().RemoveExpiredFilesAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_run_the_pass_and_hold_the_claim_for_most_of_the_interval_when_claimed()
+    {
+        // given
+        var store = Substitute.For<ITusExpirationStore>();
+        var firstPass = new TaskCompletionSource();
+        store.RemoveExpiredFilesAsync(Arg.Any<CancellationToken>()).Returns(1).AndDoes(_ => firstPass.TrySetResult());
+        var gate = new _FakeGate(claims: true);
+
+        var timeProvider = new FakeTimeProvider();
+        using var service = _CreateService(store, timeProvider, gate);
+
+        // when
+        await service.StartAsync(AbortToken);
+        await firstPass.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        await service.StopAsync(AbortToken);
+
+        // then
+        gate.HoldFor.Should().Be(_Interval - (_Interval / 10));
+    }
+
+    // A hand-written fake: the gate interface is internal, which NSubstitute's proxy assembly cannot see.
+    private sealed class _FakeGate(bool claims) : ITusExpiredUploadsCleanupGate
+    {
+        public TaskCompletionSource Attempted { get; } = new();
+
+        public TimeSpan? HoldFor { get; private set; }
+
+        public Task<bool> TryClaimPassAsync(TimeSpan holdFor, CancellationToken cancellationToken)
+        {
+            HoldFor = holdFor;
+            Attempted.TrySetResult();
+
+            return Task.FromResult(claims);
+        }
+    }
+
+    [Fact]
+    public void should_resolve_without_a_gate_when_no_lock_provider_is_registered()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddSingleton(Substitute.For<ITusExpirationStore>());
+        services.AddLogging();
+        services.AddTusExpiredUploadsCleanup();
+
+        // when
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        provider.GetService<ITusExpiredUploadsCleanupGate>().Should().BeNull();
+        provider
+            .GetServices<Microsoft.Extensions.Hosting.IHostedService>()
+            .Should()
+            .ContainSingle(service => service is TusExpiredUploadsCleanupService);
     }
 
     [Fact]

@@ -229,10 +229,15 @@ internal sealed partial class HeadlessApiExceptionHandler(
                     statusCode = StatusCodes.Status503ServiceUnavailable;
                     break;
 
+                // A TimeoutException is the server's own wait running out (a cache factory, Redis, a database command),
+                // never a client that was slow to send its request, so it is a server fault: 408 would tell clients,
+                // and browsers on a reused connection without asking anyone, to resend a request whose writes may
+                // already have committed. Like the lock wait above, no Retry-After: nothing says when the dependency
+                // recovers. The 408 that ASP.NET Core's request-timeout middleware writes is not an exception.
                 case TimeoutException:
                     _LogRequestTimeoutException(logger, exception);
-                    problemDetails = problemDetailsCreator.RequestTimeout();
-                    statusCode = StatusCodes.Status408RequestTimeout;
+                    problemDetails = problemDetailsCreator.ServiceUnavailable();
+                    statusCode = StatusCodes.Status503ServiceUnavailable;
                     break;
 
                 case NotImplementedException:
@@ -396,7 +401,7 @@ internal sealed partial class HeadlessApiExceptionHandler(
 
         for (var depth = 0; inner is not null && depth < _MaxProviderExceptionDepth; depth++)
         {
-            if (inner is DbException dbException && _IsUniqueViolation(dbException))
+            if (inner is DbException dbException && RelationalFaults.IsUniqueViolation(dbException))
             {
                 return true;
             }
@@ -405,38 +410,6 @@ internal sealed partial class HeadlessApiExceptionHandler(
         }
 
         return false;
-    }
-
-    // Provider exceptions are recognized by type name and public error-code properties, so Headless.Api takes no
-    // dependency on any ADO.NET provider.
-    private static bool _IsUniqueViolation(DbException exception)
-    {
-        // PostgreSQL (Npgsql) exposes SQLSTATE through the standard DbException.SqlState: 23505 is unique_violation.
-        if (string.Equals(exception.SqlState, "23505", StringComparison.Ordinal))
-        {
-            return true;
-        }
-
-        return exception.GetType().FullName switch
-        {
-            // 2627: unique constraint violated; 2601: duplicate key in a unique index.
-            "Microsoft.Data.SqlClient.SqlException" or "System.Data.SqlClient.SqlException" => _ReadInt32Property(
-                exception,
-                "Number"
-            )
-                is 2627
-                    or 2601,
-            // SQLITE_CONSTRAINT_UNIQUE (2067) and SQLITE_CONSTRAINT_PRIMARYKEY (1555).
-            "Microsoft.Data.Sqlite.SqliteException" => _ReadInt32Property(exception, "SqliteExtendedErrorCode")
-                is 2067
-                    or 1555,
-            _ => false,
-        };
-    }
-
-    private static int? _ReadInt32Property(Exception exception, string propertyName)
-    {
-        return exception.GetType().GetProperty(propertyName)?.GetValue(exception) as int?;
     }
 
     private static bool _IsCancellationException(Exception? ex, int maxDepth = 20)
@@ -568,7 +541,7 @@ internal sealed partial class HeadlessApiExceptionHandler(
         EventId = 5004,
         EventName = "RequestTimeoutException",
         Level = LogLevel.Warning,
-        Message = "Request was timed out"
+        Message = "An operation timed out while serving the request"
     )]
     private static partial void _LogRequestTimeoutException(ILogger logger, Exception exception);
 

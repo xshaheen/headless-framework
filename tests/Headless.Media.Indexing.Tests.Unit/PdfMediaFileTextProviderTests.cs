@@ -1,3 +1,4 @@
+using Headless.IO;
 using Headless.Media.Indexing;
 using Headless.Testing.Tests;
 
@@ -19,10 +20,30 @@ public sealed class PdfMediaFileTextProviderTests : TestBase
         await using var fileStream = File.OpenRead(pdfFilePath);
 
         // when
-        var result = await _sut.GetTextAsync(fileStream, AbortToken);
+        var result = await _sut.GetTextAsync(fileStream, cancellationToken: AbortToken);
 
         // then
         await Verify(result).UseDirectory("Snapshots");
+    }
+
+    [Fact]
+    public async Task should_extract_the_same_text_from_a_non_seekable_stream_of_known_length()
+    {
+        // given
+        var separator = Path.DirectorySeparatorChar;
+        var pdfFilePath = Path.Combine(
+            AppDomain.CurrentDomain.BaseDirectory,
+            $"..{separator}..{separator}..{separator}Files{separator}TestPdf.pdf"
+        );
+        await using var seekable = File.OpenRead(pdfFilePath);
+        var expected = await _sut.GetTextAsync(seekable, cancellationToken: AbortToken);
+        await using var nonSeekable = new NonSeekableStream(File.OpenRead(pdfFilePath));
+
+        // when
+        var result = await _sut.GetTextAsync(nonSeekable, new FileInfo(pdfFilePath).Length, AbortToken);
+
+        // then
+        result.Should().Be(expected);
     }
 
     [Fact]
@@ -32,7 +53,7 @@ public sealed class PdfMediaFileTextProviderTests : TestBase
         await using var stream = new ZeroStream(101L * 1024 * 1024);
 
         // when
-        var act = async () => await _sut.GetTextAsync(stream, AbortToken);
+        var act = async () => await _sut.GetTextAsync(stream, cancellationToken: AbortToken);
 
         // then
         await act.Should().ThrowAsync<InvalidDataException>();

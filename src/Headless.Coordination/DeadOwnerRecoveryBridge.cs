@@ -27,6 +27,7 @@ internal sealed class DeadOwnerRecoveryBridge<TReclaimer>(
 ) : BackgroundService, IDeadOwnerRecoveryBridge
     where TReclaimer : IDeadOwnerReclaimer
 {
+    private static readonly TimeSpan _MinimumSnapshotReadTimeout = TimeSpan.FromSeconds(5);
     private readonly Lock _gate = new();
     private readonly HashSet<string> _reclaimed = new(StringComparer.Ordinal);
 
@@ -96,7 +97,7 @@ internal sealed class DeadOwnerRecoveryBridge<TReclaimer>(
         // NodeSuspected / NodeRecovered / NodeJoined / LocalMembershipLost do not reclaim — only a confirmed leave.
         if (membershipEvent is NodeLeft left)
         {
-            await _TryReclaimAsync([left.Identity.ToString()]).ConfigureAwait(false);
+            await _TryReclaimAsync([NodeOwnerTag.Format(membership.ClusterName, left.Identity)]).ConfigureAwait(false);
         }
     }
 
@@ -108,10 +109,13 @@ internal sealed class DeadOwnerRecoveryBridge<TReclaimer>(
     {
         // Bound the snapshot read so a hung membership store cannot block the reconcile loop indefinitely; on
         // timeout the read fails with OCE, the loop logs DeadNodeReconcileFailed, and the next tick retries. The
-        // reconcile interval is the natural cap — a snapshot read should never approach a whole tick. The bound is
-        // an I/O timeout, so it runs on the system clock; only the reconcile cadence follows the registered clock.
-        var timeout = reclaimer.ReconcileInterval;
-        using var timeoutCts = timeout > TimeSpan.Zero ? new CancellationTokenSource(timeout) : null;
+        // bound is the reconcile interval, but never under a floor: a sub-second interval would otherwise fail every
+        // read that a busy database answers in more than one tick, and no reconcile would ever see a dead node. The
+        // bound is an I/O timeout, so it runs on the system clock; only the reconcile cadence follows the registered
+        // clock.
+        var interval = reclaimer.ReconcileInterval;
+        var timeout = interval > _MinimumSnapshotReadTimeout ? interval : _MinimumSnapshotReadTimeout;
+        using var timeoutCts = interval > TimeSpan.Zero ? new CancellationTokenSource(timeout) : null;
         using var linkedCts = timeoutCts is null
             ? null
             : CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
@@ -126,7 +130,7 @@ internal sealed class DeadOwnerRecoveryBridge<TReclaimer>(
         {
             if (node.State == NodeLivenessState.Dead)
             {
-                deadOwners.Add(node.Identity.ToString());
+                deadOwners.Add(NodeOwnerTag.Format(membership.ClusterName, node.Identity));
             }
         }
 

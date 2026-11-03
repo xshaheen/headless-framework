@@ -775,6 +775,7 @@ public sealed class SettingManagerTests : TestBase
                     && m.ProviderKey == "key1"
                     && m.OriginHostName == "prod/orders-7d"
                 ),
+                Arg.Is<PublishOptions>(static options => options.IsSystemMessage),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -800,6 +801,7 @@ public sealed class SettingManagerTests : TestBase
         await _bus.Received(1)
             .PublishAsync(
                 Arg.Is<SettingChangedMessage>(m => m.SettingNames.Count == 1 && m.SettingNames[0] == settingName),
+                Arg.Is<PublishOptions>(static options => options.IsSystemMessage),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -823,6 +825,7 @@ public sealed class SettingManagerTests : TestBase
                     && m.SettingNames.Contains("Setting2")
                     && m.ProviderName == "Provider1"
                 ),
+                Arg.Is<PublishOptions>(static options => options.IsSystemMessage),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -837,7 +840,8 @@ public sealed class SettingManagerTests : TestBase
         await _sut.DeleteAsync("Provider1", "key1", AbortToken);
 
         // then an empty announcement would wake every peer to re-read a value that did not change
-        await _bus.DidNotReceive().PublishAsync(Arg.Any<SettingChangedMessage>(), Arg.Any<CancellationToken>());
+        await _bus.DidNotReceive()
+            .PublishAsync(Arg.Any<SettingChangedMessage>(), Arg.Any<PublishOptions>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -883,7 +887,7 @@ public sealed class SettingManagerTests : TestBase
 
         _definitionManager.FindAsync(settingName, AbortToken).Returns(definition);
         _valueProviderManager.Providers.Returns([provider]);
-        _bus.PublishAsync(Arg.Any<SettingChangedMessage>(), Arg.Any<CancellationToken>())
+        _bus.PublishAsync(Arg.Any<SettingChangedMessage>(), Arg.Any<PublishOptions>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("broker down"));
 
         // when
@@ -908,7 +912,7 @@ public sealed class SettingManagerTests : TestBase
         _valueProviderManager.Providers.Returns([provider]);
 
         using var cts = new CancellationTokenSource();
-        _bus.PublishAsync(Arg.Any<SettingChangedMessage>(), Arg.Any<CancellationToken>())
+        _bus.PublishAsync(Arg.Any<SettingChangedMessage>(), Arg.Any<PublishOptions>(), Arg.Any<CancellationToken>())
             .Returns<Task<PublishReceipt>>(async _ =>
             {
                 await cts.CancelAsync();
@@ -1110,6 +1114,7 @@ public sealed class SettingManagerTests : TestBase
                     && m.ProviderName == "Provider1"
                     && m.ProviderKey == "key1"
                 ),
+                Arg.Is<PublishOptions>(static options => options.IsSystemMessage),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -1158,7 +1163,8 @@ public sealed class SettingManagerTests : TestBase
         // then
         await action.Should().ThrowExactlyAsync<ConflictException>();
         (await provider.GetOrDefaultAsync(setting1, cancellationToken: AbortToken)).Should().BeNull();
-        await _bus.DidNotReceive().PublishAsync(Arg.Any<SettingChangedMessage>(), Arg.Any<CancellationToken>());
+        await _bus.DidNotReceive()
+            .PublishAsync(Arg.Any<SettingChangedMessage>(), Arg.Any<PublishOptions>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -1179,7 +1185,8 @@ public sealed class SettingManagerTests : TestBase
         // then
         await action.Should().ThrowExactlyAsync<ConflictException>();
         (await writable.GetOrDefaultAsync(setting1, cancellationToken: AbortToken)).Should().BeNull();
-        await _bus.DidNotReceive().PublishAsync(Arg.Any<SettingChangedMessage>(), Arg.Any<CancellationToken>());
+        await _bus.DidNotReceive()
+            .PublishAsync(Arg.Any<SettingChangedMessage>(), Arg.Any<PublishOptions>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -1206,7 +1213,8 @@ public sealed class SettingManagerTests : TestBase
                 Arg.Any<string?>(),
                 Arg.Any<CancellationToken>()
             );
-        await _bus.DidNotReceive().PublishAsync(Arg.Any<SettingChangedMessage>(), Arg.Any<CancellationToken>());
+        await _bus.DidNotReceive()
+            .PublishAsync(Arg.Any<SettingChangedMessage>(), Arg.Any<PublishOptions>(), Arg.Any<CancellationToken>());
     }
 
     #endregion

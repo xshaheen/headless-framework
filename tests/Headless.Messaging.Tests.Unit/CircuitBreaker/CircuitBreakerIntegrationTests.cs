@@ -544,7 +544,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
             onResume: async epoch =>
             {
                 resumeQueued.TrySetResult(epoch);
-                await releaseResume.Task.WaitAsync(AbortToken);
+                await releaseResume.Task.Bounded();
                 await _ResumeHandleAsync(register, handle, epoch);
                 resumeFinished.TrySetResult();
             }
@@ -554,11 +554,11 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         await client.Received(1).PauseAsync(Arg.Any<CancellationToken>());
 
         timeProvider.Advance(TimeSpan.FromMinutes(1));
-        await resumeQueued.Task.WaitAsync(AbortToken);
+        await resumeQueued.Task.Bounded();
 
         await stateManager.ForceOpenAsync(circuitGroup, AbortToken);
         releaseResume.TrySetResult();
-        await resumeFinished.Task.WaitAsync(AbortToken);
+        await resumeFinished.Task.Bounded();
 
         stateManager.GetState(circuitGroup).Should().Be(CircuitBreakerState.Open);
         await client.DidNotReceive().ResumeAsync(Arg.Any<CancellationToken>());
@@ -590,7 +590,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
             onResume: async epoch =>
             {
                 resumeQueued.TrySetResult(epoch);
-                await releaseResume.Task.WaitAsync(AbortToken);
+                await releaseResume.Task.Bounded();
                 await _ResumeHandleAsync(register, handle, epoch);
                 resumeFinished.TrySetResult();
             }
@@ -601,11 +601,11 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
 
         var decision = stateManager.GetRetryDecision(MessageLane.Bus, group);
         decision.Kind.Should().Be(CircuitRetryDecisionKind.ProbeAcquired);
-        await resumeQueued.Task.WaitAsync(AbortToken);
+        await resumeQueued.Task.Bounded();
 
         await stateManager.ForceOpenAsync(circuitGroup, AbortToken);
         releaseResume.TrySetResult();
-        await resumeFinished.Task.WaitAsync(AbortToken);
+        await resumeFinished.Task.Bounded();
 
         stateManager.GetState(circuitGroup).Should().Be(CircuitBreakerState.Open);
         await client.DidNotReceive().ResumeAsync(Arg.Any<CancellationToken>());
@@ -641,7 +641,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
 
         await stateManager.ReportFailureAsync(circuitGroup, 0, new TimeoutException(), AbortToken);
         await stateManager.ResetAsync(circuitGroup, AbortToken);
-        await resumeCompleted.Task.WaitAsync(AbortToken);
+        await resumeCompleted.Task.Bounded();
 
         stateManager.GetState(circuitGroup).Should().Be(CircuitBreakerState.Closed);
         await client.Received(1).ResumeAsync(Arg.Any<CancellationToken>());
@@ -685,7 +685,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
             onResume: async epoch =>
             {
                 staleResumeQueued.TrySetResult(epoch);
-                await releaseStaleResume.Task.WaitAsync(AbortToken);
+                await releaseStaleResume.Task.Bounded();
                 await _ResumeHandleAsync(register, replacementHandle, epoch);
                 staleResumeFinished.TrySetResult();
             }
@@ -695,14 +695,14 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         timeProvider.Advance(TimeSpan.FromMinutes(1));
         var staleDecision = stateManager.GetRetryDecision(MessageLane.Bus, group);
         staleDecision.Kind.Should().Be(CircuitRetryDecisionKind.ProbeAcquired);
-        var staleEpoch = await staleResumeQueued.Task.WaitAsync(AbortToken);
+        var staleEpoch = await staleResumeQueued.Task.Bounded();
 
         await stateManager.AbortHalfOpenProbeAsync(circuitGroup);
         stateManager.TryGetOpenEpoch(circuitGroup, out var restartEpoch).Should().BeTrue();
         await _PauseHandleAsync(register, replacementHandle, restartEpoch);
 
         releaseStaleResume.TrySetResult();
-        await staleResumeFinished.Task.WaitAsync(AbortToken);
+        await staleResumeFinished.Task.Bounded();
         await _ResumeHandleAsync(register, replacementHandle, staleEpoch);
 
         stateManager.GetState(circuitGroup).Should().Be(CircuitBreakerState.Open);
