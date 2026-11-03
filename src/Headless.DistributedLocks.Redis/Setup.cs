@@ -17,8 +17,9 @@ namespace Headless.DistributedLocks;
 /// </summary>
 /// <remarks>
 /// Requires <see cref="IConnectionMultiplexer"/> to be registered in the service collection.
-/// Waiters fall back to polling backoff unless a release signal transport is configured, such as
-/// <c>UseMessagingReleaseSignal()</c> from <c>Headless.DistributedLocks.Messaging</c>.
+/// Waiters fall back to polling backoff unless a release signal transport is configured:
+/// <c>UseRedisReleaseSignal()</c> here, or <c>UseMessagingReleaseSignal()</c> from
+/// <c>Headless.DistributedLocks.Messaging</c>.
 /// <c>UseRedis</c> also contributes the <c>distributed-locks-redis</c> readiness health check, which pings Redis
 /// through the registered multiplexer.
 /// </remarks>
@@ -40,6 +41,36 @@ public static class SetupDistributedLocksRedis
         public HeadlessDistributedLocksSetupBuilder UseRedis()
         {
             setup.RegisterExtension(new RedisDistributedLocksOptionsExtension());
+
+            return setup;
+        }
+
+        /// <summary>
+        /// Pushes lock-release wake-ups to every host over a Redis pub/sub channel: each confirmed release of a lock,
+        /// semaphore slot, or reader-writer lease is published on the channel, and each host wakes its local waiters.
+        /// Without a release signal, waiters wake on their backoff poll.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Needs no message broker, so it works with any messaging transport or none. Requires a registered
+        /// <see cref="IConnectionMultiplexer"/>; it is usually combined with <c>UseRedis()</c> but works with any lock
+        /// storage provider whose hosts share the Redis server.
+        /// </para>
+        /// <para>
+        /// The channel is <c>{KeyPrefix}released</c> (<see cref="DistributedLockOptions.KeyPrefix"/>), so hosts with
+        /// different key prefixes do not wake each other. Delivery is at most once; a waiter that misses a release
+        /// still wakes on its next poll. Replaces any release signal registered earlier, and a later
+        /// <c>Use*ReleaseSignal</c> call replaces this one.
+        /// </para>
+        /// </remarks>
+        /// <returns>The same <see cref="HeadlessDistributedLocksSetupBuilder"/> for chaining.</returns>
+        public HeadlessDistributedLocksSetupBuilder UseRedisReleaseSignal()
+        {
+            setup.RegisterCrossCuttingExtension(static services =>
+                services.Replace(
+                    ServiceDescriptor.Singleton<IDistributedLockReleaseSignal, RedisDistributedLockReleaseSignal>()
+                )
+            );
 
             return setup;
         }
