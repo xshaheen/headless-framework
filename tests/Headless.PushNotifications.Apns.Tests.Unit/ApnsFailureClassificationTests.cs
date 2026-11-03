@@ -224,9 +224,8 @@ public sealed class ApnsFailureClassificationTests : TestBase
     public async Task should_classify_a_transport_failure_as_retryable_and_keep_the_documented_failure_error()
     {
         // given
-        var closedPort = _GetClosedLoopbackPort();
         await using var provider = _server.CreateProvider(configureClient: c =>
-            c.BaseAddress = new Uri($"http://127.0.0.1:{closedPort}")
+            c.BaseAddress = FakeApnsServer.UnreachableAddress
         );
         var service = provider.GetRequiredService<IApnsPushNotificationService>();
 
@@ -363,16 +362,6 @@ public sealed class ApnsFailureClassificationTests : TestBase
                 e.Contains("TooManyProviderTokenUpdates", StringComparison.Ordinal)
                 && e.Contains("20 minutes", StringComparison.Ordinal)
             );
-    }
-
-    private static int _GetClosedLoopbackPort()
-    {
-        using var listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        listener.Stop();
-
-        return port;
     }
 
     /// <summary>Captures rendered log messages, structured values, and exception text as one string per entry.</summary>

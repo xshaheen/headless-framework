@@ -34,6 +34,10 @@ internal sealed class RedisConnectionPool : IRedisConnectionPool, IDisposable, I
         }
     }
 
+    // How many pooled connections have started connecting. Connections open lazily, on first use, so a test can show
+    // that constructing the pool attempts none without timing the constructor.
+    internal int CreatedConnectionCount => _connections.Count(static c => c.IsValueCreated);
+
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _isDisposed, 1) != 0)
