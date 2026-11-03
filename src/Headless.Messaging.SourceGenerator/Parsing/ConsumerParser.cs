@@ -156,7 +156,8 @@ internal static class ConsumerParser
                     SourceGeneratorConstants.ConsumerLifecycleMetadataName
                 ),
                 everyInstance && implementsSubscriptionHook,
-                values.FailurePolicy?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
+                values.FailurePolicy?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                _HasSingleActivationConstructor(compilation, classSymbol)
             );
 
         return new(
@@ -171,6 +172,32 @@ internal static class ConsumerParser
     }
 
     /// <summary>The <c>T</c> of every <c>IConsume&lt;T&gt;</c> the class implements, directly or through a base type.</summary>
+    // ActivatorUtilities only considers public instance constructors; an implicit default constructor counts as one.
+    private static bool _HasSingleActivationConstructor(Compilation compilation, INamedTypeSymbol classSymbol)
+    {
+        var constructors = classSymbol
+            .InstanceConstructors.Where(constructor => constructor.DeclaredAccessibility == Accessibility.Public)
+            .ToList();
+
+        if (constructors.Count == 1)
+        {
+            return true;
+        }
+
+        var preferredAttribute = compilation.GetTypeByMetadataName(
+            SourceGeneratorConstants.ActivatorUtilitiesConstructorAttributeMetadataName
+        );
+
+        return preferredAttribute is not null
+            && constructors.Count(constructor =>
+                constructor
+                    .GetAttributes()
+                    .Any(attribute =>
+                        SymbolEqualityComparer.Default.Equals(attribute.AttributeClass, preferredAttribute)
+                    )
+            ) == 1;
+    }
+
     private static List<ITypeSymbol> _ResolveMessageTypes(Compilation compilation, INamedTypeSymbol classSymbol)
     {
         return

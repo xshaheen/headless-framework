@@ -98,6 +98,84 @@ public sealed class GeneratedDispatchTests : TestBase
         }
         """;
 
+    // Two public constructors and no preferred one: which runs depends on what the delivery's scope can resolve.
+    private const string _OverloadedConstructorSource = """
+        using System.Threading;
+        using System.Threading.Tasks;
+        using Headless.Messaging;
+
+        namespace Billing;
+
+        public sealed record LedgerPosted(string Number);
+
+        public sealed class LedgerClock;
+
+        [BusConsumer("billing.ledger-audit")]
+        public sealed class LedgerAudit : IConsume<LedgerPosted>
+        {
+            private readonly Tests.DispatchProbe _probe;
+            private readonly string _constructor;
+
+            public LedgerAudit(Tests.DispatchProbe probe)
+            {
+                _probe = probe;
+                _constructor = "short";
+            }
+
+            public LedgerAudit(Tests.DispatchProbe probe, LedgerClock clock)
+            {
+                _probe = probe;
+                _constructor = "long";
+            }
+
+            public ValueTask ConsumeAsync(ConsumeContext<LedgerPosted> context, CancellationToken cancellationToken)
+            {
+                _probe.Calls.Add(_constructor + ":" + context.Message.Number);
+                return default;
+            }
+        }
+        """;
+
+    // Two public constructors, one preferred: the preferred one runs even where the longer one could resolve.
+    private const string _PreferredConstructorSource = """
+        using System.Threading;
+        using System.Threading.Tasks;
+        using Headless.Messaging;
+        using Microsoft.Extensions.DependencyInjection;
+
+        namespace Billing;
+
+        public sealed record LedgerPosted(string Number);
+
+        public sealed class LedgerClock;
+
+        [BusConsumer("billing.ledger-audit")]
+        public sealed class LedgerAudit : IConsume<LedgerPosted>
+        {
+            private readonly Tests.DispatchProbe _probe;
+            private readonly string _constructor;
+
+            [ActivatorUtilitiesConstructor]
+            public LedgerAudit(Tests.DispatchProbe probe)
+            {
+                _probe = probe;
+                _constructor = "preferred";
+            }
+
+            public LedgerAudit(Tests.DispatchProbe probe, LedgerClock clock)
+            {
+                _probe = probe;
+                _constructor = "long";
+            }
+
+            public ValueTask ConsumeAsync(ConsumeContext<LedgerPosted> context, CancellationToken cancellationToken)
+            {
+                _probe.Calls.Add(_constructor + ":" + context.Message.Number);
+                return default;
+            }
+        }
+        """;
+
     private const string _InvoiceProjection = "billing.invoice-projection";
 
     private const string _PriceCache = "billing.price-cache";
@@ -320,13 +398,59 @@ public sealed class GeneratedDispatchTests : TestBase
         context.ReplyType.Should().BeNull();
     }
 
+    [Fact]
+    public async Task should_pick_the_constructor_each_scope_can_resolve_when_a_consumer_has_several()
+    {
+        // given
+        var declarations = _RegisterGeneratedModule(_OverloadedConstructorSource, out var messageTypes);
+        var dispatch = declarations.Single().Dispatch;
+        var probe = new DispatchProbe();
+        await using var withoutClock = new ServiceCollection().AddSingleton(probe).BuildServiceProvider();
+        await using var withClock = new ServiceCollection()
+            .AddSingleton(probe)
+            .AddSingleton(messageTypes["LedgerClock"])
+            .BuildServiceProvider();
+
+        // when
+        await dispatch(withoutClock, _Context(messageTypes["LedgerPosted"], "L-1"), AbortToken);
+        await dispatch(withClock, _Context(messageTypes["LedgerPosted"], "L-2"), AbortToken);
+
+        // then - the longest resolvable constructor, chosen per delivery, as the container would choose it
+        probe.Calls.Should().Equal("short:L-1", "long:L-2");
+    }
+
+    [Fact]
+    public async Task should_build_a_consumer_through_its_preferred_constructor_when_it_marks_one()
+    {
+        // given
+        var declarations = _RegisterGeneratedModule(_PreferredConstructorSource, out var messageTypes);
+        var dispatch = declarations.Single().Dispatch;
+        var probe = new DispatchProbe();
+        await using var provider = new ServiceCollection()
+            .AddSingleton(probe)
+            .AddSingleton(messageTypes["LedgerClock"])
+            .BuildServiceProvider();
+
+        // when
+        await dispatch(provider, _Context(messageTypes["LedgerPosted"], "L-1"), AbortToken);
+        await dispatch(provider, _Context(messageTypes["LedgerPosted"], "L-2"), AbortToken);
+
+        // then
+        probe.Calls.Should().Equal("preferred:L-1", "preferred:L-2");
+    }
+
     public sealed record UnrelatedMessage(string Number);
 
     private static IReadOnlyList<MessagingConsumerDeclaration> _RegisterGeneratedModule(
         out Dictionary<string, Type> messageTypes
+    ) => _RegisterGeneratedModule(_Source, out messageTypes);
+
+    private static IReadOnlyList<MessagingConsumerDeclaration> _RegisterGeneratedModule(
+        string source,
+        out Dictionary<string, Type> messageTypes
     )
     {
-        GeneratorTestHelper.Run(_Source, out var diagnostics, out var compilation);
+        GeneratorTestHelper.Run(source, out var diagnostics, out var compilation);
         diagnostics.Should().NotContain(x => x.Severity == DiagnosticSeverity.Error);
 
         using var stream = new MemoryStream();
@@ -336,14 +460,10 @@ public sealed class GeneratedDispatchTests : TestBase
 
         // A collectible context keeps each compiled copy of the source out of the test process's default context.
         var assembly = new AssemblyLoadContext(name: null, isCollectible: true).LoadFromStream(stream);
-        messageTypes = new Dictionary<string, Type>(StringComparer.Ordinal)
-        {
-            ["InvoiceIssued"] = assembly.GetType("Billing.InvoiceIssued", throwOnError: true)!,
-            ["InvoicePaid"] = assembly.GetType("Billing.InvoicePaid", throwOnError: true)!,
-            ["PriceChanged"] = assembly.GetType("Billing.PriceChanged", throwOnError: true)!,
-            ["GetQuote"] = assembly.GetType("Billing.GetQuote", throwOnError: true)!,
-            ["Quote"] = assembly.GetType("Billing.Quote", throwOnError: true)!,
-        };
+        messageTypes = assembly
+            .GetTypes()
+            .Where(type => !type.IsNested && string.Equals(type.Namespace, "Billing", StringComparison.Ordinal))
+            .ToDictionary(type => type.Name, StringComparer.Ordinal);
 
         var module = assembly.GetType($"{GeneratorTestHelper.AssemblyName}.MessagingModule", throwOnError: true)!;
         var register = module.GetInterfaceMap(typeof(IMessagingModule)).TargetMethods.Single();
