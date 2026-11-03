@@ -77,4 +77,22 @@ public sealed class SetupCachingDistributedLocksTests : TestBase
         // then — TryAdd semantics keep the caller's registration
         serviceProvider.GetRequiredService<ICacheFactoryLockProvider>().Should().BeSameAs(existing);
     }
+
+    [Fact]
+    public void should_reject_resource_prefix_too_long_for_digest_form()
+    {
+        // given
+        var validator = new CacheFactoryLockOptionsValidator();
+        var options = new CacheFactoryLockOptions
+        {
+            ResourcePrefix = new string('p', DistributedLockCacheFactoryLockProvider.MaxResourcePrefixLength + 1),
+        };
+
+        // when
+        var result = validator.Validate(options);
+
+        // then
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle(e => e.PropertyName == nameof(CacheFactoryLockOptions.ResourcePrefix));
+    }
 }

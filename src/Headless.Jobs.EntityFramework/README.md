@@ -4,7 +4,7 @@ Entity Framework Core persistence provider for `Headless.Jobs` — durable, dist
 
 ## Why use this package
 
-Provides persistence of time jobs and cron occurrences across restarts and across multiple nodes, using EF Core-mapped tables. Integrates with `Headless.Coordination` for distributed node identity (`node@incarnation`), dead-node recovery, and fail-stop on membership loss.
+Provides persistence of time jobs and cron occurrences across restarts and across multiple nodes, using EF Core-mapped tables. Integrates with `Headless.Coordination` for distributed node identity (`cluster/node@incarnation` owner tags), dead-node recovery, and fail-stop on membership loss.
 
 ## Install
 

@@ -59,7 +59,7 @@ public sealed class AzureServiceBusClientPoolTests : TestBase
                 Task.Run(
                     async () =>
                     {
-                        await gate.Task;
+                        await gate.Task.Bounded();
                         return pool.GetSender($"topic-{i % distinctPaths}");
                     },
                     AbortToken
@@ -327,7 +327,7 @@ public sealed class AzureServiceBusClientPoolTests : TestBase
 #pragma warning restore CA2000
 
         var getSenderTask = Task.Run(() => pool.GetSender("orders"), AbortToken);
-        await factoryEntered.Task;
+        await factoryEntered.Task.Bounded();
 
         // when: dispose races the in-flight creation, then the factory completes
         var disposeTask = Task.Run(async () => await pool.DisposeAsync(), AbortToken);
@@ -363,7 +363,7 @@ public sealed class AzureServiceBusClientPoolTests : TestBase
         _ = pool.GetSender("warmup");
 
         var blockedTask = Task.Run(() => pool.GetSender("blocked"), AbortToken);
-        await createEntered.Task;
+        await createEntered.Task.Bounded();
 
         // when: dispose runs while the sender is mid-creation
         var disposeTask = pool.DisposeAsync().AsTask();

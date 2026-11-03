@@ -9,21 +9,27 @@ namespace Tests;
 public sealed class HybridCacheConformanceTests : CacheConformanceTestsBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
+    private readonly TimerSignalingTimeProvider _clock;
     private readonly List<object> _disposables = [];
+
+    public HybridCacheConformanceTests()
+    {
+        _clock = new TimerSignalingTimeProvider(_timeProvider);
+    }
 
     protected override ICache CreateCache(string keyPrefix)
     {
         var l1Options = new InMemoryCacheOptions { CloneValues = true };
-        var l1 = new InMemoryCache(_timeProvider, l1Options);
+        var l1 = new InMemoryCache(_clock, l1Options);
         var l2Options = new InMemoryCacheOptions { CloneValues = true };
-        var l2Inner = new InMemoryCache(_timeProvider, l2Options);
+        var l2Inner = new InMemoryCache(_clock, l2Options);
         var l2 = new InMemoryRemoteCacheAdapter(l2Inner);
         var publisher = Substitute.For<IBus>();
         publisher
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
             .Returns(default(PublishReceipt));
 
-        var cache = new HybridCache(l1, l2, publisher, new HybridCacheOptions(), timeProvider: _timeProvider);
+        var cache = new HybridCache(l1, l2, publisher, new HybridCacheOptions(), timeProvider: _clock);
 
         // The conformance base never disposes the cache it requests, so this fixture owns teardown.
         // Dispose the HybridCache before its backing L1/L2 stores (its dispose may drain into L2).
@@ -51,6 +57,11 @@ public sealed class HybridCacheConformanceTests : CacheConformanceTestsBase
 
         _disposables.Clear();
         await base.DisposeAsyncCore().ConfigureAwait(false);
+    }
+
+    protected override Task WatchForTimer(TimeSpan dueTime)
+    {
+        return _clock.WatchForTimer(dueTime);
     }
 
     protected override ValueTask AdvancePastExpirationAsync(TimeSpan expiration)

@@ -1,6 +1,6 @@
 # Headless.Coordination.Abstractions
 
-Defines the public coordination contract: `node@incarnation` identity, membership operations, liveness snapshots, lifecycle events, options, and exceptions.
+Defines the public coordination contract: `node@incarnation` identity, cluster-qualified owner tags, membership operations, liveness snapshots, lifecycle events, options, and exceptions.
 
 ## Why use this package
 

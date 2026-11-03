@@ -13,11 +13,22 @@ namespace Headless.Blobs;
 /// <param name="Stream">Readable stream delivering the blob content.</param>
 /// <param name="FileName">The blob file name as stored by the provider.</param>
 /// <param name="Metadata">Provider-supplied metadata key and value pairs, or <see langword="null"/> when the provider does not return metadata.</param>
+/// <param name="ContentLength">
+/// The content length in bytes the provider reported with the download, or <see langword="null"/> when it reports none.
+/// A cloud response stream is not seekable, so this is the only way to size a buffer for it without a second
+/// <see cref="IBlobStorage.GetBlobInfoAsync"/> round trip.
+/// </param>
+/// <param name="ContentType">
+/// The content type stored with the blob, or <see langword="null"/> when the provider stores none (FileSystem, Redis,
+/// and SFTP keep no content type).
+/// </param>
 [PublicAPI]
 public sealed record BlobDownloadResult(
     Stream Stream,
     string FileName,
-    IReadOnlyDictionary<string, string>? Metadata = null
+    IReadOnlyDictionary<string, string>? Metadata = null,
+    long? ContentLength = null,
+    string? ContentType = null
 ) : IAsyncDisposable, IDisposable
 {
     /// <inheritdoc />

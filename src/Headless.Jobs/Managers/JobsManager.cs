@@ -521,12 +521,17 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 .Writer.WriteCronJobsAsync([entity], _SeedCronSchedulePosition, context.Relational, cancellationToken)
                 .ConfigureAwait(false);
 
-            // Cron has no immediate-dispatch branch: cache invalidation runs on commit, scheduler-restart + notify go
-            // to the worker. The signal carries the PERSISTED projection, not a pre-persistence guess.
-            _SignalCronOnCommit(
+            // Cron has no immediate-dispatch branch: scheduler restart, cache invalidation, and notify all go to the
+            // worker. The signal carries the PERSISTED projection, not a pre-persistence guess.
+            _SignalOnCommit(
                 context.UnitOfWork,
-                context.Writer,
-                new CronJobsCommittedSignal(this, [entity], coordinatedSeed.EarliestNextDueUtc, entity.Id.ToString())
+                new CronJobsCommittedSignal(
+                    this,
+                    context.Writer,
+                    [entity],
+                    coordinatedSeed.EarliestNextDueUtc,
+                    entity.Id.ToString()
+                )
             );
 
             return entity;
@@ -1329,11 +1334,11 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 )
                 .ConfigureAwait(false);
 
-            _SignalCronOnCommit(
+            _SignalOnCommit(
                 context.UnitOfWork,
-                context.Writer,
                 new CronJobsCommittedSignal(
                     this,
+                    context.Writer,
                     [.. validEntities],
                     coordinatedSeed.EarliestNextDueUtc,
                     $"cron batch ({validEntities.Count})"

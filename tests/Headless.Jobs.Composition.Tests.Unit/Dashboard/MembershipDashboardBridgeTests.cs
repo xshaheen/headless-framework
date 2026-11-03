@@ -141,6 +141,8 @@ public sealed class MembershipDashboardBridgeTests
     {
         public NodeIdentity? Identity => null;
 
+        public string ClusterName => CoordinationOptions.DefaultClusterName;
+
         public CancellationToken LocalMembershipLostToken => CancellationToken.None;
 
         public ValueTask<NodeIdentity> RegisterAsync(CancellationToken cancellationToken = default)

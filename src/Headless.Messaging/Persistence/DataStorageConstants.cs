@@ -6,15 +6,10 @@ namespace Headless.Messaging.Persistence;
 
 internal static class DataStorageConstants
 {
-    // Allows a Kubernetes DNS-label node id (253), '@', and a long decimal incarnation with margin.
-    public const int MinimumOwnerColumnMaxLength = 300;
+    // The longest owner tag coordination can issue: a full-length cluster name and node id plus the incarnation.
+    public const int MinimumOwnerColumnMaxLength = NodeOwnerTag.MaxLength;
 
     public const int OwnerColumnMaxLength = 512;
-
-    public static string? GetOwnerTag(this INodeMembership membership)
-    {
-        return membership.Identity?.ToString();
-    }
 
     public static object GetOwnerParameterValue(this INodeMembership membership, DateTimeOffset? lockedUntil)
     {

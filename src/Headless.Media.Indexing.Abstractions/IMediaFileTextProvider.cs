@@ -24,6 +24,11 @@ public interface IMediaFileTextProvider
     /// A stream whose content is the media file to extract text from. Whether the stream must be
     /// seekable depends on the implementation — see the concrete provider's documentation.
     /// </param>
+    /// <param name="contentLength">
+    /// The content length in bytes when the caller knows it, such as a blob download's reported length, or
+    /// <see langword="null"/>. A provider that must buffer a non-seekable stream uses it to size the buffer once and
+    /// to refuse an oversize input before reading it.
+    /// </param>
     /// <param name="cancellationToken">Token to cancel the extraction.</param>
     /// <returns>
     /// The extracted plain-text content of the file, or an empty string when no text could be found.
@@ -31,5 +36,9 @@ public interface IMediaFileTextProvider
     /// <exception cref="OperationCanceledException">
     /// Thrown when <paramref name="cancellationToken"/> is cancelled before extraction completes.
     /// </exception>
-    Task<string> GetTextAsync(Stream fileStream, CancellationToken cancellationToken = default);
+    Task<string> GetTextAsync(
+        Stream fileStream,
+        long? contentLength = null,
+        CancellationToken cancellationToken = default
+    );
 }

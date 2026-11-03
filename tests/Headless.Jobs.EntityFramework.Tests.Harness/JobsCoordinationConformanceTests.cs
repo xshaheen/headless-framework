@@ -40,7 +40,7 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
 
         try
         {
-            var owner = host.Services.GetRequiredService<INodeMembership>().Identity!.Value.ToString();
+            var owner = host.Services.GetRequiredService<INodeMembership>().GetOwnerTag()!;
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
             var idleId = Guid.NewGuid();
             var queuedId = Guid.NewGuid();
@@ -208,8 +208,8 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
             // The gate registers during StartingAsync, which completes before StartAsync returns.
             var membership = host.Services.GetRequiredService<INodeMembership>();
             membership.Identity.Should().NotBeNull();
-            var owner = membership.Identity!.Value.ToString();
-            owner.Should().StartWith("node-a@");
+            var owner = membership.GetOwnerTag()!;
+            owner.Should().Contain("/node-a@");
 
             var jobId = Guid.NewGuid();
             await fixture.SeedTimeJobAsync(jobId, "Stamp_Sample", (int)JobStatus.Idle, ownerId: null, ct);
@@ -766,7 +766,7 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
         try
         {
             var membershipA = hostA.Services.GetRequiredService<INodeMembership>();
-            var ownerA = membershipA.Identity!.Value.ToString();
+            var ownerA = membershipA.GetOwnerTag()!;
 
             // A row A is mid-flight on when it crashes.
             var jobId = Guid.NewGuid();
@@ -821,7 +821,7 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
         try
         {
             var membership = host.Services.GetRequiredService<INodeMembership>();
-            var owner = membership.Identity!.Value.ToString();
+            var owner = membership.GetOwnerTag()!;
 
             var seededLease = DateTime.UtcNow.AddMinutes(1);
             var ownedId = Guid.NewGuid();
@@ -929,7 +929,7 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
         try
         {
             const string staleOwner = "node-a@0";
-            var liveOwner = host.Services.GetRequiredService<INodeMembership>().Identity!.Value.ToString();
+            var liveOwner = host.Services.GetRequiredService<INodeMembership>().GetOwnerTag()!;
             liveOwner.Should().NotBe(staleOwner);
 
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
@@ -1403,7 +1403,7 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
 
         try
         {
-            var owner = host.Services.GetRequiredService<INodeMembership>().Identity!.Value.ToString();
+            var owner = host.Services.GetRequiredService<INodeMembership>().GetOwnerTag()!;
             var lease = DateTime.UtcNow.AddMinutes(1);
 
             var cronId = Guid.NewGuid();
@@ -1472,7 +1472,7 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
 
         try
         {
-            var owner = host.Services.GetRequiredService<INodeMembership>().Identity!.Value.ToString();
+            var owner = host.Services.GetRequiredService<INodeMembership>().GetOwnerTag()!;
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
             var cronId = Guid.NewGuid();
@@ -1598,7 +1598,7 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
 
         try
         {
-            var owner = host.Services.GetRequiredService<INodeMembership>().Identity!.Value.ToString();
+            var owner = host.Services.GetRequiredService<INodeMembership>().GetOwnerTag()!;
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
             var grandChild = new TimeJobEntity
             {
@@ -1650,7 +1650,7 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
 
         try
         {
-            var owner = host.Services.GetRequiredService<INodeMembership>().Identity!.Value.ToString();
+            var owner = host.Services.GetRequiredService<INodeMembership>().GetOwnerTag()!;
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
             var grandChild = new TimeJobEntity
             {
@@ -1770,7 +1770,7 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
 
         try
         {
-            var owner = host.Services.GetRequiredService<INodeMembership>().Identity!.Value.ToString();
+            var owner = host.Services.GetRequiredService<INodeMembership>().GetOwnerTag()!;
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
             var id = Guid.NewGuid();
@@ -1815,7 +1815,7 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
 
         try
         {
-            var owner = host.Services.GetRequiredService<INodeMembership>().Identity!.Value.ToString();
+            var owner = host.Services.GetRequiredService<INodeMembership>().GetOwnerTag()!;
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
             var cronId = Guid.NewGuid();

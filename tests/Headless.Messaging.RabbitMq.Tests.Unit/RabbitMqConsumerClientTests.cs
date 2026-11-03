@@ -1253,7 +1253,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
                 if (checkpoint == RabbitMqConsumerLifecycleCheckpoint.BeforeStartLock)
                 {
                     beforeStartLock.TrySetResult();
-                    await allowStartLock.Task.WaitAsync(AbortToken);
+                    await allowStartLock.Task.Bounded();
                 }
                 else
                 {
@@ -1269,12 +1269,12 @@ public sealed class RabbitMqConsumerClientTests : TestBase
 
         try
         {
-            await beforeStartLock.Task.WaitAsync(AbortToken);
+            await beforeStartLock.Task.Bounded();
 
             // when - ListeningAsync has passed the outer gate, but PauseAsync wins the lifecycle lock.
             await client.PauseAsync(AbortToken);
             allowStartLock.TrySetResult();
-            await startDeferred.Task.WaitAsync(AbortToken);
+            await startDeferred.Task.Bounded();
 
             // then
             _CountBasicConsumeCalls().Should().Be(0);
@@ -1331,13 +1331,13 @@ public sealed class RabbitMqConsumerClientTests : TestBase
 
             // when
             var pauseTask = client.PauseAsync(pauseCts.Token).AsTask();
-            await cancellationStarted.Task.WaitAsync(AbortToken);
+            await cancellationStarted.Task.Bounded();
             await pauseCts.CancelAsync();
             allowCancellation.TrySetResult();
             await pauseTask;
 
             // then
-            (await brokerCancellationToken.Task.WaitAsync(AbortToken))
+            (await brokerCancellationToken.Task.Bounded())
                 .Should()
                 .Be(CancellationToken.None);
             await client.ResumeAsync(AbortToken);
@@ -1487,7 +1487,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
             async (_, sender) =>
             {
                 handlerStarted.TrySetResult();
-                await releaseHandler.Task;
+                await releaseHandler.Task.Bounded();
                 await client.CommitAsync(sender, CancellationToken.None);
             },
             _ => { }

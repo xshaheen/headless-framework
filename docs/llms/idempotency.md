@@ -255,7 +255,7 @@ builder.Services.AddHeadlessIdempotency(setup => setup.UseCache());
 | `CacheIdempotencyOptions` | Default | Effect |
 | --- | --- | --- |
 | `KeyPrefix` | `headless:idempotency:` | Prefix of every entry: `{prefix}record:{tenant length}:{tenant}{key}` per record and `{prefix}generation` for the counter. Give applications that share a cache distinct prefixes. |
-| `CacheName` | `null` | A keyed `ICache` instance to hold the records. `null` uses the registered `IRemoteCache` when there is one, otherwise the default `ICache`. Name a remote (Redis) instance, not a hybrid one. |
+| `CacheName` | `null` | A keyed `ICache` instance to hold the records. `null` uses the registered `IRemoteCache` when there is one, otherwise the default `ICache`. The cache must be single-tier (an `IRemoteCache` or `IInMemoryCache`): resolving the store fails with `InvalidOperationException` on a hybrid, because its reads come from a local copy that lags other replicas' writes. With a default hybrid whose L2 is a named Redis instance (`HybridCacheOptions.RemoteCacheName`), set `CacheName` to that instance. |
 
 ### Design and runtime behavior
 

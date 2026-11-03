@@ -1044,6 +1044,12 @@ public partial class SqlServerStorageTests(SqlServerTestFixture fixture) : DataS
     }
 
     [Fact]
+    public override Task should_not_reclaim_a_row_owned_by_the_same_identity_in_another_cluster()
+    {
+        return base.should_not_reclaim_a_row_owned_by_the_same_identity_in_another_cluster();
+    }
+
+    [Fact]
     public override Task should_reclaim_published_retry_row_owned_by_dead_node()
     {
         return base.should_reclaim_published_retry_row_owned_by_dead_node();
@@ -1758,13 +1764,13 @@ public partial class SqlServerStorageTests(SqlServerTestFixture fixture) : DataS
                 {
                     firstMessages.AddRange(messages);
                     firstSchedulerEntered.SetResult();
-                    await releaseFirstScheduler.Task.WaitAsync(AbortToken);
+                    await releaseFirstScheduler.Task.Bounded();
                 },
                 AbortToken
             )
             .AsTask();
 
-        await firstSchedulerEntered.Task.WaitAsync(AbortToken);
+        await firstSchedulerEntered.Task.Bounded();
 
         await secondStorage.ScheduleMessagesOfDelayedAsync(
             (_, messages) =>
@@ -1776,7 +1782,7 @@ public partial class SqlServerStorageTests(SqlServerTestFixture fixture) : DataS
         );
 
         releaseFirstScheduler.SetResult();
-        await firstSchedule.WaitAsync(AbortToken);
+        await firstSchedule.WaitAsync(AbortToken).Bounded();
 
         // then
         firstMessages.Should().ContainSingle();

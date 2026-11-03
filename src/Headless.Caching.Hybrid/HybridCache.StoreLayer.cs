@@ -61,6 +61,10 @@ public sealed partial class HybridCache
         CacheStoreEntry<T>? l1StaleCandidate = null;
         var l1SlidingHit = false;
 
+        // A coordinator re-check repeats this operation's first read, so it records no per-tier metric or event:
+        // counting it would report two or three tier misses for one logical miss.
+        var recordTierRead = !readOptions.IsRecheck;
+
         // Per-tier read control: SkipMemoryRead bypasses the L1 read entirely, so the read is served from (or
         // refreshed against) L2 — no L1 hit, no L1 stale reserve, no L1 miss log. A value still read from L2 is
         // promoted into L1 below (promotion is a write, governed by SkipMemoryCacheWrite, not by the read skip).
@@ -82,13 +86,17 @@ public sealed partial class HybridCache
                 {
                     _logger.LogLocalCacheHit(key);
                     Interlocked.Increment(ref _localCacheHits);
-                    CachingMetrics.RecordRequest(
-                        _metricCacheName,
-                        CachingMetrics.OperationGet,
-                        CachingMetrics.OutcomeHit,
-                        CachingMetrics.TierL1
-                    );
-                    _coordinator.EventsHub.MemoryHub?.OnHit(key);
+
+                    if (recordTierRead)
+                    {
+                        CachingMetrics.RecordRequest(
+                            _metricCacheName,
+                            CachingMetrics.OperationGet,
+                            CachingMetrics.OutcomeHit,
+                            CachingMetrics.TierL1
+                        );
+                        _coordinator.EventsHub.MemoryHub?.OnHit(key);
+                    }
 
                     if (!l1Entry.SlidingExpiration.HasValue)
                     {
@@ -113,13 +121,18 @@ public sealed partial class HybridCache
                 {
                     _logger.LogLocalCacheHit(key);
                     Interlocked.Increment(ref _localCacheHits);
-                    CachingMetrics.RecordRequest(
-                        _metricCacheName,
-                        CachingMetrics.OperationGet,
-                        CachingMetrics.OutcomeHit,
-                        CachingMetrics.TierL1
-                    );
-                    _coordinator.EventsHub.MemoryHub?.OnHit(key);
+
+                    if (recordTierRead)
+                    {
+                        CachingMetrics.RecordRequest(
+                            _metricCacheName,
+                            CachingMetrics.OperationGet,
+                            CachingMetrics.OutcomeHit,
+                            CachingMetrics.TierL1
+                        );
+                        _coordinator.EventsHub.MemoryHub?.OnHit(key);
+                    }
+
                     return new CacheStoreEntry<T>(
                         Found: true,
                         IsNull: l1Value.IsNull,
@@ -131,7 +144,7 @@ public sealed partial class HybridCache
                 }
             }
 
-            if (!l1SlidingHit)
+            if (!l1SlidingHit && recordTierRead)
             {
                 _logger.LogLocalCacheMiss(key);
                 CachingMetrics.RecordRequest(
@@ -174,13 +187,16 @@ public sealed partial class HybridCache
                 _logger.LogFailedToReadFromL2Cache(exception, key);
             }
 
-            CachingMetrics.RecordRequest(
-                _metricCacheName,
-                CachingMetrics.OperationGet,
-                CachingMetrics.OutcomeMiss,
-                CachingMetrics.TierL2
-            );
-            _coordinator.EventsHub.DistributedHub?.OnMiss(key);
+            if (recordTierRead)
+            {
+                CachingMetrics.RecordRequest(
+                    _metricCacheName,
+                    CachingMetrics.OperationGet,
+                    CachingMetrics.OutcomeMiss,
+                    CachingMetrics.TierL2
+                );
+                _coordinator.EventsHub.DistributedHub?.OnMiss(key);
+            }
 
             if (
                 l1StaleCandidate is { } fallback
@@ -199,19 +215,23 @@ public sealed partial class HybridCache
             ConcurrencyStamp = _TagStamp(_L2StampPrefix, l2Read.Value.ConcurrencyStamp),
         };
 
-        CachingMetrics.RecordRequest(
-            _metricCacheName,
-            CachingMetrics.OperationGet,
-            l2Entry.Found ? CachingMetrics.OutcomeHit : CachingMetrics.OutcomeMiss,
-            CachingMetrics.TierL2
-        );
-        if (l2Entry.Found)
+        if (recordTierRead)
         {
-            _coordinator.EventsHub.DistributedHub?.OnHit(key);
-        }
-        else
-        {
-            _coordinator.EventsHub.DistributedHub?.OnMiss(key);
+            CachingMetrics.RecordRequest(
+                _metricCacheName,
+                CachingMetrics.OperationGet,
+                l2Entry.Found ? CachingMetrics.OutcomeHit : CachingMetrics.OutcomeMiss,
+                CachingMetrics.TierL2
+            );
+
+            if (l2Entry.Found)
+            {
+                _coordinator.EventsHub.DistributedHub?.OnHit(key);
+            }
+            else
+            {
+                _coordinator.EventsHub.DistributedHub?.OnMiss(key);
+            }
         }
 
         // Only promote a logically-fresh L2 entry into L1. Promoting a stale (logically-expired) reserve on

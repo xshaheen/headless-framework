@@ -2,6 +2,7 @@
 
 using Dapper;
 using Headless;
+using Headless.Coordination;
 using Headless.Hosting.Schema;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
@@ -1108,6 +1109,12 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
     public override Task should_handle_concurrent_state_updates_to_same_row()
     {
         return base.should_handle_concurrent_state_updates_to_same_row();
+    }
+
+    [Fact]
+    public override Task should_not_reclaim_a_row_owned_by_the_same_identity_in_another_cluster()
+    {
+        return base.should_not_reclaim_a_row_owned_by_the_same_identity_in_another_cluster();
     }
 
     [Fact]

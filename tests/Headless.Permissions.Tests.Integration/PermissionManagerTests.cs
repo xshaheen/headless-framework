@@ -52,6 +52,42 @@ public sealed class PermissionManagerTests(PermissionsTestFixture fixture) : Per
         permission.Providers.Should().BeEmpty();
     }
 
+    [Theory]
+    [InlineData("Role1", "Role2")]
+    [InlineData("Role2", "Role1")]
+    public async Task should_deny_whatever_the_role_order_when_one_role_prohibits_and_another_grants(
+        string firstRole,
+        string secondRole
+    )
+    {
+        // given — Role1 grants and Role2 prohibits the same permission
+        await Fixture.ResetAsync();
+        using var host = CreateHost(b => b.Services.AddPermissionDefinitionProvider<PermissionsDefinitionProvider>());
+        await using var scope = host.Services.CreateAsyncScope();
+        var permissionManager = scope.ServiceProvider.GetRequiredService<IPermissionManager>();
+        var somePermission = _GroupDefinitions[0].Permissions[0];
+
+        await permissionManager.GrantToRoleAsync(somePermission.Name, "Role1", AbortToken);
+        await permissionManager.RevokeFromRoleAsync(somePermission.Name, "Role2", AbortToken);
+
+        var currentUser = new TestCurrentUser
+        {
+            IsAuthenticated = true,
+            UserId = new UserId("123"),
+            WritableRoles = { firstRole, secondRole },
+        };
+
+        // when
+        var permission = await permissionManager.GetAsync(
+            somePermission.Name,
+            currentUser,
+            cancellationToken: AbortToken
+        );
+
+        // then — a prohibition from any role denies, as a prohibition from any provider does
+        permission.IsGranted.Should().BeFalse();
+    }
+
     [Fact]
     public async Task should_get_not_granted()
     {

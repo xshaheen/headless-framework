@@ -51,10 +51,20 @@ internal interface ICommittedDelayedMessageDispatcher
 }
 
 /// <summary>
-/// Internal non-blocking acceleration path for an immediate message whose durable row already committed.
-/// A rejected enqueue is safe because durable retry pickup remains the recovery authority.
+/// Internal acceleration path for an immediate message whose durable row already committed.
+/// A dropped enqueue is safe because durable retry pickup remains the recovery authority.
 /// </summary>
 internal interface ICommittedMessageDispatcher
 {
-    void EnqueueCommittedMessage(MediumMessage message);
+    /// <summary>
+    /// Hands a committed message to the sender, waiting for channel capacity only within a short budget shared by
+    /// every message of one committing operation. Never throws: the publish already succeeded when this runs.
+    /// </summary>
+    /// <param name="message">The committed message.</param>
+    /// <param name="waitStartedAt">
+    /// A <see cref="System.Diagnostics.Stopwatch.GetTimestamp"/> value taken once per committing operation. Every
+    /// message passed with the same value shares one budget measured from it, so a flush of many messages against a
+    /// full channel waits the budget once in total, not once per message.
+    /// </param>
+    ValueTask EnqueueCommittedMessageAsync(MediumMessage message, long waitStartedAt);
 }

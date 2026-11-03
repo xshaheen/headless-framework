@@ -759,7 +759,12 @@ internal sealed class RedisBlobStorage : IBlobStorage
 
         var stream = new MemoryStream(fileContent!);
 
-        return new BlobDownloadResult(stream, location.Path, BlobStorageHelpers.ToUserMetadata(blobInfo?.Metadata));
+        return new BlobDownloadResult(
+            stream,
+            location.Path,
+            BlobStorageHelpers.ToUserMetadata(blobInfo?.Metadata),
+            stream.Length
+        );
     }
 
     public async ValueTask<BlobInfo?> GetBlobInfoAsync(

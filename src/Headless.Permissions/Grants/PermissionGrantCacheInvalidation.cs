@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Permissions;
 
-/// <summary>Clears grant cache entries once a unit of work commits, never at write time.</summary>
+/// <summary>Clears or rewrites grant cache entries once a unit of work commits, never at write time.</summary>
 internal static class PermissionGrantCacheInvalidation
 {
     /// <summary>
@@ -50,6 +50,49 @@ internal static class PermissionGrantCacheInvalidation
             }
         });
     }
+
+    /// <summary>
+    /// Writes <paramref name="cacheValues" /> after <paramref name="unitOfWork" /> commits. A rolled-back unit writes
+    /// nothing. Writing the committed status rather than removing the entry keeps out a reader that loaded the rows
+    /// before the commit, because readers fill only an absent entry. A write fault is logged, not thrown: the commit
+    /// is already durable, and the entry expires on its own.
+    /// </summary>
+    public static void UpsertAfterCommit(
+        IUnitOfWork unitOfWork,
+        ICache<PermissionGrantCacheItem> cache,
+        ICurrentTenant currentTenant,
+        IDictionary<string, PermissionGrantCacheItem> cacheValues,
+        TimeSpan expiration,
+        ILogger logger
+    )
+    {
+        if (cacheValues.Count == 0)
+        {
+            return;
+        }
+
+        var tenantId = currentTenant.Id;
+        var tenantName = currentTenant.Name;
+
+        unitOfWork.OnCompleted(async () =>
+        {
+            try
+            {
+                // The cache is tenant-scoped through the current tenant, which the code completing the unit may no
+                // longer hold.
+                using (currentTenant.Change(tenantId, tenantName))
+                {
+                    await cache.UpsertAllAsync(cacheValues, expiration).ConfigureAwait(false);
+                }
+            }
+#pragma warning disable CA1031 // The commit is durable; a cache fault must not turn it into a reported failure.
+            catch (Exception ex)
+#pragma warning restore CA1031
+            {
+                logger.LogFailedToInvalidateGrantCache(ex, cacheValues.Count);
+            }
+        });
+    }
 }
 
 internal static partial class PermissionGrantCacheInvalidationLog
@@ -58,7 +101,7 @@ internal static partial class PermissionGrantCacheInvalidationLog
         EventId = 1,
         EventName = "FailedToInvalidateGrantCacheAfterCommit",
         Level = LogLevel.Warning,
-        Message = "Failed to clear {KeyCount} permission grant cache entries after the unit of work committed; the write is durable and the entries expire on their own"
+        Message = "Failed to update {KeyCount} permission grant cache entries after the unit of work committed; the write is durable and the entries expire on their own"
     )]
     internal static partial void LogFailedToInvalidateGrantCache(
         this ILogger logger,

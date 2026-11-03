@@ -143,11 +143,6 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
         );
     }
 
-    // Bound for the one side effect that stays on the commit path (the cron-expressions cache invalidation). The
-    // unit of work drains OnCompleted callbacks without a cancellation token, so nothing external carries a
-    // deadline; without an independent one a stalled cache would hold the commit thread, DI scope, and connection.
-    private static readonly TimeSpan _CronCacheInvalidationDeadline = JobsPostCommitSignalService.SignalDeadline;
-
     // Registers a coordinated write's post-commit signal. The callback is synchronous: it hands the worker a signal
     // and returns, so dispatch, scheduler restart, and dashboard notification never run on the caller's commit. The
     // row is already durable when the worker runs them, so a dropped or failed signal cannot roll the commit back —
@@ -162,47 +157,6 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
 
             return ValueTask.CompletedTask;
         });
-    }
-
-    // Cron variant: the cron-expressions cache invalidation (which the direct path's InsertCronJobsAsync runs after
-    // SaveChanges) fires inline on commit — never on a pre-commit snapshot, and never through the drop-on-full channel,
-    // because the poll sweep reads THROUGH that distributed cache and would not recover a dropped invalidation.
-    // It is bounded so a stalled cache releases the commit; the durable store stays authoritative either way.
-    private void _SignalCronOnCommit(
-        IUnitOfWork unitOfWork,
-        ICoordinatedJobWriter<TTimeJob, TCronJob> writer,
-        JobsPostCommitSignal signal
-    )
-    {
-        unitOfWork.OnCompleted(async () =>
-        {
-            await _InvalidateCronExpressionsCacheBoundedAsync(writer, signal.JobScope).ConfigureAwait(false);
-            _postCommitSignals.TrySignal(signal);
-        });
-    }
-
-    private async Task _InvalidateCronExpressionsCacheBoundedAsync(
-        ICoordinatedJobWriter<TTimeJob, TCronJob> writer,
-        string jobScope
-    )
-    {
-        Task? invalidation = null;
-
-        try
-        {
-            invalidation = writer.InvalidateCronExpressionsCacheAsync();
-            await invalidation.WaitAsync(_CronCacheInvalidationDeadline, timeProvider).ConfigureAwait(false);
-        }
-        catch (TimeoutException) when (invalidation is { IsCompleted: false })
-        {
-            // The removal is not cancellable, so it completes unobserved; only its late fault is worth a log line.
-            Log.CronCacheInvalidationTimedOut(_logger, jobScope, _CronCacheInvalidationDeadline);
-            LateFaultObserver.ObserveLateFault(invalidation, _logger, jobScope, Log.CronCacheInvalidationFailed);
-        }
-        catch (Exception e)
-        {
-            Log.CronCacheInvalidationFailed(_logger, jobScope, e);
-        }
     }
 
     // Signal kinds. Each carries what the worker needs to run the existing side-effect methods against rows that are
@@ -231,6 +185,7 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
 
     private sealed record CronJobsCommittedSignal(
         JobsManager<TTimeJob, TCronJob> Manager,
+        ICoordinatedJobWriter<TTimeJob, TCronJob> Writer,
         TCronJob[] Entities,
         DateTime? PersistedEarliestNextDueUtc,
         string Scope
@@ -239,17 +194,24 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
         public override Task RunAsync(DateTimeOffset now, CancellationToken cancellationToken)
         {
             return Manager._RunCommittedCronJobsSideEffectsAsync(
+                Writer,
                 Entities,
                 PersistedEarliestNextDueUtc,
+                Scope,
                 cancellationToken
             );
         }
     }
 
-    // Cron side effects after commit (the cache invalidation already ran on the commit callback).
+    // Cron side effects after commit. The cache invalidation runs here, off the commit path, like every other side
+    // effect: the cache is not the source of truth for any claim or poll (its only reader is the fingerprint sweep's
+    // zone set, which tolerates a stale entry), so a dropped or abandoned invalidation costs at most the entry's
+    // expiry, while an inline one would let a stalled cache hold the caller's commit.
     private async Task _RunCommittedCronJobsSideEffectsAsync(
+        ICoordinatedJobWriter<TTimeJob, TCronJob> writer,
         TCronJob[] entities,
         DateTime? persistedEarliestNextDueUtc,
+        string jobScope,
         CancellationToken cancellationToken
     )
     {
@@ -259,8 +221,19 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
         }
 
         // The store-anchored position the write persisted. Recomputing it here from this node's clock would arm the
-        // wake against a projection the row does not carry.
+        // wake against a projection the row does not carry. Armed before the cache call so a stalled cache cannot
+        // delay the wake.
         _jobsHostScheduler.RestartIfNeeded(persistedEarliestNextDueUtc);
+
+        try
+        {
+            await writer.InvalidateCronExpressionsCacheAsync().ConfigureAwait(false);
+        }
+        catch (Exception e)
+        {
+            // A failed invalidation leaves a stale entry that expires on its own; the notification still runs.
+            Log.CronCacheInvalidationFailed(_logger, jobScope, e);
+        }
 
         foreach (var entity in entities)
         {
@@ -289,13 +262,5 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
                 + "the cache entry is stale until it expires or the next definition write invalidates it."
         )]
         internal static partial void CronCacheInvalidationFailed(ILogger logger, string jobScope, Exception exception);
-
-        [LoggerMessage(
-            3227,
-            LogLevel.Warning,
-            "Cron-expressions cache invalidation for {JobScope} did not finish within {Deadline}; the commit was "
-                + "released and the removal completes unobserved."
-        )]
-        internal static partial void CronCacheInvalidationTimedOut(ILogger logger, string jobScope, TimeSpan deadline);
     }
 }

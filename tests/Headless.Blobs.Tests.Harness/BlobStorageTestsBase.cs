@@ -738,6 +738,12 @@ public abstract class BlobStorageTestsBase : TestBase
             download.FileName.Should().Be("meta/doc.txt");
             download.Metadata.Should().NotBeNull();
             download.Metadata!["author"].Should().Be("blake");
+
+            // A provider that reports a length reports the stored one; null means it reports none.
+            if (download.ContentLength is { } contentLength)
+            {
+                contentLength.Should().Be(5);
+            }
         }
 
         // A listing never surfaces a sidecar companion as a blob.

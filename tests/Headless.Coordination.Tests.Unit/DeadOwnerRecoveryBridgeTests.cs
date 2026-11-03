@@ -64,7 +64,7 @@ public sealed class DeadOwnerRecoveryBridgeTests : TestBase
 
         await bridge.HandleEventAsync(new NodeLeft(_Identity("node-a", 5)));
 
-        await reclaimer.Received(1).ReclaimAsync(_Batch("node-a@5"), Arg.Any<CancellationToken>());
+        await reclaimer.Received(1).ReclaimAsync(_Batch("orders/node-a@5"), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -74,7 +74,7 @@ public sealed class DeadOwnerRecoveryBridgeTests : TestBase
 
         await bridge.HandleEventAsync(new NodeLeft(_Identity("node-a", 5)));
 
-        await reclaimer.Received(1).ReclaimAsync(_Batch("node-a@5"), CancellationToken.None);
+        await reclaimer.Received(1).ReclaimAsync(_Batch("orders/node-a@5"), CancellationToken.None);
     }
 
     [Fact]
@@ -114,9 +114,9 @@ public sealed class DeadOwnerRecoveryBridgeTests : TestBase
 
         await bridge.ReconcileOnceAsync(AbortToken);
 
-        await reclaimer.Received(1).ReclaimAsync(_Batch("node-dead@5"), Arg.Any<CancellationToken>());
-        await reclaimer.Received(1).ReclaimAsync(_BatchWithout("node-alive@7"), Arg.Any<CancellationToken>());
-        await reclaimer.Received(1).ReclaimAsync(_BatchWithout("node-suspect@9"), Arg.Any<CancellationToken>());
+        await reclaimer.Received(1).ReclaimAsync(_Batch("orders/node-dead@5"), Arg.Any<CancellationToken>());
+        await reclaimer.Received(1).ReclaimAsync(_BatchWithout("orders/node-alive@7"), Arg.Any<CancellationToken>());
+        await reclaimer.Received(1).ReclaimAsync(_BatchWithout("orders/node-suspect@9"), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -128,7 +128,7 @@ public sealed class DeadOwnerRecoveryBridgeTests : TestBase
         await bridge.HandleEventAsync(new NodeLeft(_Identity("node-a", 5)));
         await bridge.ReconcileOnceAsync(AbortToken);
 
-        await reclaimer.Received(1).ReclaimAsync(_Batch("node-a@5"), Arg.Any<CancellationToken>());
+        await reclaimer.Received(1).ReclaimAsync(_Batch("orders/node-a@5"), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -141,7 +141,7 @@ public sealed class DeadOwnerRecoveryBridgeTests : TestBase
         await bridge.ReconcileOnceAsync(AbortToken);
         await bridge.ReconcileOnceAsync(AbortToken);
 
-        await reclaimer.Received(1).ReclaimAsync(_Batch("node-a@5"), Arg.Any<CancellationToken>());
+        await reclaimer.Received(1).ReclaimAsync(_Batch("orders/node-a@5"), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -156,8 +156,8 @@ public sealed class DeadOwnerRecoveryBridgeTests : TestBase
         membership.Snapshot = [_Dead("node-a", 6)];
         await bridge.ReconcileOnceAsync(AbortToken);
 
-        await reclaimer.Received(1).ReclaimAsync(_Batch("node-a@5"), Arg.Any<CancellationToken>());
-        await reclaimer.Received(1).ReclaimAsync(_Batch("node-a@6"), Arg.Any<CancellationToken>());
+        await reclaimer.Received(1).ReclaimAsync(_Batch("orders/node-a@5"), Arg.Any<CancellationToken>());
+        await reclaimer.Received(1).ReclaimAsync(_Batch("orders/node-a@6"), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -168,7 +168,7 @@ public sealed class DeadOwnerRecoveryBridgeTests : TestBase
 
         // Throw on the first reclaim, succeed afterwards.
         reclaimer
-            .ReclaimAsync(_Batch("node-a@5"), Arg.Any<CancellationToken>())
+            .ReclaimAsync(_Batch("orders/node-a@5"), Arg.Any<CancellationToken>())
             .Returns(_ => throw new InvalidOperationException("boom"), _ => Task.CompletedTask);
 
         // The event-path failure must not escape the handler (loop continues).
@@ -177,7 +177,7 @@ public sealed class DeadOwnerRecoveryBridgeTests : TestBase
         // The next reconcile retries because the failed owner was removed from the reclaimed-set.
         await bridge.ReconcileOnceAsync(AbortToken);
 
-        await reclaimer.Received(2).ReclaimAsync(_Batch("node-a@5"), Arg.Any<CancellationToken>());
+        await reclaimer.Received(2).ReclaimAsync(_Batch("orders/node-a@5"), Arg.Any<CancellationToken>());
     }
 
     private sealed class FakeMembership : INodeMembership
@@ -185,6 +185,8 @@ public sealed class DeadOwnerRecoveryBridgeTests : TestBase
         public IReadOnlyList<NodeLivenessSnapshot> Snapshot { get; set; } = [];
 
         public NodeIdentity? Identity => null;
+
+        public string ClusterName => "orders";
 
         public CancellationToken LocalMembershipLostToken => CancellationToken.None;
 

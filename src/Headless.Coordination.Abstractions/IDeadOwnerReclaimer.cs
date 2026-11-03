@@ -28,8 +28,8 @@ public interface IDeadOwnerReclaimer
     /// Reclaims resources owned by the dead identities in <paramref name="owners"/>.
     /// </summary>
     /// <param name="owners">
-    /// One or more dead owner identities, each in the <c>node@incarnation</c> form, whose resources must
-    /// be reassigned or cleaned up. Handle the batch atomically when possible, for example with a single
+    /// One or more dead owners, each a <see cref="NodeOwnerTag"/> (<c>cluster/node@incarnation</c>) of the bridge's
+    /// own cluster, whose resources must be reassigned or cleaned up. Handle the batch atomically when possible, for example with a single
     /// <c>UPDATE … WHERE Owner IN (@owners)</c>, to minimize write amplification under mass node loss.
     /// </param>
     /// <param name="cancellationToken">

@@ -856,6 +856,8 @@ options.EnablePushWakeup = true;
 options.KeepAlive = TimeSpan.FromSeconds(30); // applied only to a provider-built DataSource
 ```
 
+The provider keeps its data source to itself: it neither registers nor resolves an unkeyed `NpgsqlDataSource`. A host that registers its own data source for application data (`AddNpgsqlDataSource`, Aspire, or EF Core) keeps it in either registration order, and locks always run on the database `ConnectionString` or `DataSource` names. To share the application's pool, pass it as `DataSource` explicitly.
+
 The fencing sequence's schema is not a provider option. Set it on the feature:
 
 ```csharp

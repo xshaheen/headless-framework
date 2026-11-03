@@ -235,15 +235,18 @@ internal sealed class JobsFallbackBackgroundService(
         }
 
         var snapshot = await membership.GetLivenessSnapshotAsync(cancellationToken).ConfigureAwait(false);
+        var clusterName = membership.ClusterName;
         var live = snapshot
             .Where(static x => x.State is NodeLivenessState.Alive or NodeLivenessState.Suspected)
-            .Select(static x => x.Identity.ToString())
+            .Select(x => NodeOwnerTag.Format(clusterName, x.Identity))
             .ToHashSet(StringComparer.Ordinal);
         List<string> orphanedOwners = [];
 
         foreach (var owner in stamped)
         {
-            if (live.Contains(owner))
+            // The snapshot speaks only for this cluster. Another app sharing the store under its own cluster stamps
+            // owners this snapshot never lists, and treating them as orphaned would bounce that app's claimed work.
+            if (!NodeOwnerTag.IsInCluster(owner, clusterName) || live.Contains(owner))
             {
                 continue;
             }
