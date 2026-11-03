@@ -45,8 +45,14 @@ public sealed class FeatureManager(
             Argument.IsNotNull(providerName);
         }
 
-        return await _CoreGetOrDefaultAsync(name, providerName, providerKey, fallback, cancellationToken)
-            .ConfigureAwait(false);
+        await using (
+            await _EnterProviderContextAsync(providerName, providerKey, fallback, cancellationToken)
+                .ConfigureAwait(false)
+        )
+        {
+            return await _CoreGetOrDefaultAsync(name, providerName, providerKey, fallback, cancellationToken)
+                .ConfigureAwait(false);
+        }
     }
 
     /// <inheritdoc/>
@@ -155,6 +161,14 @@ public sealed class FeatureManager(
         }
 
         var featureValues = new Dictionary<string, FeatureValue>(StringComparer.Ordinal);
+
+        await using var context = await _EnterProviderContextAsync(
+                providerName,
+                providerKey,
+                fallback,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
 
         // One batch read per provider instead of one read per definition per provider; the head of the
         // chain takes providerKey (SkipWhile guarantees it is the requested provider) and the rest read
@@ -387,6 +401,14 @@ public sealed class FeatureManager(
             await providers[0].HandleContextAsync(providerName, providerKey, cancellationToken).ConfigureAwait(false)
         )
         {
+            // Without the edition of the tenant being written, the comparison would run against the wrong fallback
+            // (the default, or the caller's own edition) and could drop a value that differs from what the tenant
+            // really inherits. Keeping the value as written is the safe answer.
+            if (!await _CanResolveFallbackEditionAsync(providers, cancellationToken).ConfigureAwait(false))
+            {
+                return;
+            }
+
             for (var i = 0; i < writes.Count; i++)
             {
                 var (feature, value) = writes[i];
@@ -413,6 +435,53 @@ public sealed class FeatureManager(
                 }
             }
         }
+    }
+
+    private static async ValueTask<bool> _CanResolveFallbackEditionAsync(
+        List<IFeatureValueReadProvider> providers,
+        CancellationToken cancellationToken
+    )
+    {
+        for (var i = 1; i < providers.Count; i++)
+        {
+            if (providers[i] is EditionFeatureValueProvider edition)
+            {
+                var resolution = await edition.ResolveCurrentEditionAsync(cancellationToken).ConfigureAwait(false);
+
+                return resolution.IsKnown;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Enters the context of the provider a read names with an explicit key (for the Tenant provider, that tenant),
+    /// so the fallback providers below it resolve against that scope rather than the caller's.
+    /// </summary>
+    /// <remarks>
+    /// Not an <see langword="async"/> method: a provider switches ambient (async-local) state synchronously, and an
+    /// async method would discard that switch when it returns.
+    /// </remarks>
+    private Task<IAsyncDisposable> _EnterProviderContextAsync(
+        string? providerName,
+        string? providerKey,
+        bool fallback,
+        CancellationToken cancellationToken
+    )
+    {
+        if (!fallback || providerName is null || providerKey is null)
+        {
+            return Task.FromResult(DisposableFactory.EmptyAsync);
+        }
+
+        var provider = valueProviderManager.ValueProviders.FirstOrDefault(p =>
+            string.Equals(p.Name, providerName, StringComparison.Ordinal)
+        );
+
+        return provider is null
+            ? Task.FromResult(DisposableFactory.EmptyAsync)
+            : provider.HandleContextAsync(providerName, providerKey, cancellationToken);
     }
 
     /// <inheritdoc/>
@@ -717,7 +786,7 @@ public sealed class FeatureManager(
             var pk = string.Equals(storeProvider.Name, providerName, StringComparison.Ordinal) ? providerKey : null;
             providerKeys ??= new string?[chain.Length];
             prefetched ??= new bool[chain.Length];
-            providerKeys[i] = storeProvider.ResolveProviderKey(pk);
+            providerKeys[i] = await storeProvider.ResolveProviderKeyAsync(pk, cancellationToken).ConfigureAwait(false);
             prefetched[i] = true;
             count++;
         }

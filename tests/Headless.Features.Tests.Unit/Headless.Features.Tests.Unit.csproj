@@ -13,6 +13,7 @@
   <ItemGroup>
     <!-- The feature gate's HTTP behavior (409 rewrite, composition with a permission policy) is asserted end to end. -->
     <ProjectReference Include="..\..\src\Headless.Api\Headless.Api.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Caching.InMemory\Headless.Caching.InMemory.csproj" />
     <ProjectReference Include="..\..\src\Headless.Features\Headless.Features.csproj" />
     <ProjectReference Include="..\..\src\Headless.Features.Storage.EntityFramework\Headless.Features.Storage.EntityFramework.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.Testing\Headless.Messaging.Testing.csproj" />

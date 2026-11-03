@@ -85,10 +85,17 @@ public sealed class FeatureValueStoreTests : TestBase
         result.Should().Be("value-a");
         await _cache
             .Received(1)
-            .UpsertAllAsync(
-                Arg.Is<IDictionary<string, FeatureValueCacheItem>>(d =>
-                    d.Count == 2 && d[requestedKey].Value == "value-a" && d[otherKey].Value == "value-b"
-                ),
+            .TryInsertAsync(
+                requestedKey,
+                Arg.Is<FeatureValueCacheItem>(x => x.Value == "value-a"),
+                Arg.Any<TimeSpan?>(),
+                AbortToken
+            );
+        await _cache
+            .Received(1)
+            .TryInsertAsync(
+                otherKey,
+                Arg.Is<FeatureValueCacheItem>(x => x.Value == "value-b"),
                 Arg.Any<TimeSpan?>(),
                 AbortToken
             );
@@ -116,10 +123,9 @@ public sealed class FeatureValueStoreTests : TestBase
         result.Should().BeNull();
         await _cache
             .Received(1)
-            .UpsertAllAsync(
-                Arg.Is<IDictionary<string, FeatureValueCacheItem>>(d =>
-                    d.ContainsKey(cacheKey) && d[cacheKey].Value == null
-                ),
+            .TryInsertAsync(
+                cacheKey,
+                Arg.Is<FeatureValueCacheItem>(x => x.Value == null),
                 Arg.Any<TimeSpan?>(),
                 AbortToken
             );
@@ -207,13 +213,19 @@ public sealed class FeatureValueStoreTests : TestBase
         // and — the miss was cached together with the load
         await _cache
             .Received(1)
-            .UpsertAllAsync(
-                Arg.Is<IDictionary<string, FeatureValueCacheItem>>(static d =>
-                    d.Count == 1
-                    && d[FeatureValueCacheItem.CalculateCacheKey("FeatureB", providerName, providerKey)].Value == "db-b"
-                ),
+            .TryInsertAsync(
+                FeatureValueCacheItem.CalculateCacheKey("FeatureB", providerName, providerKey),
+                Arg.Is<FeatureValueCacheItem>(static x => x.Value == "db-b"),
                 Arg.Any<TimeSpan?>(),
                 AbortToken
+            );
+        await _cache
+            .DidNotReceive()
+            .TryInsertAsync(
+                FeatureValueCacheItem.CalculateCacheKey("FeatureA", providerName, providerKey),
+                Arg.Any<FeatureValueCacheItem>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
             );
     }
 
@@ -361,25 +373,22 @@ public sealed class FeatureValueStoreTests : TestBase
             .Received(1)
             .UpsertAllAsync(
                 Arg.Is<IDictionary<string, FeatureValueCacheItem>>(items =>
-                    items.Count == 2
+                    items.Count == 4
                     && items[FeatureValueCacheItem.CalculateCacheKey("A", providerName, providerKey)].Value == "new-a"
                     && items[FeatureValueCacheItem.CalculateCacheKey("C", providerName, providerKey)].Value == "new-c"
                 ),
                 Arg.Any<TimeSpan?>(),
                 AbortToken
             );
+        // a deleted (or never stored) name is written as empty rather than removed
         await _cache
             .Received(1)
-            .RemoveAllAsync(
-                Arg.Is<IEnumerable<string>>(keys =>
-                    keys.SequenceEqual(
-                        new[]
-                        {
-                            FeatureValueCacheItem.CalculateCacheKey("B", providerName, providerKey),
-                            FeatureValueCacheItem.CalculateCacheKey("D", providerName, providerKey),
-                        }
-                    )
+            .UpsertAllAsync(
+                Arg.Is<IDictionary<string, FeatureValueCacheItem>>(items =>
+                    items[FeatureValueCacheItem.CalculateCacheKey("B", providerName, providerKey)].Value == null
+                    && items[FeatureValueCacheItem.CalculateCacheKey("D", providerName, providerKey)].Value == null
                 ),
+                Arg.Any<TimeSpan?>(),
                 AbortToken
             );
     }
@@ -413,7 +422,6 @@ public sealed class FeatureValueStoreTests : TestBase
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<CancellationToken>()
             );
-        await _cache.DidNotReceive().RemoveAllAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -528,7 +536,15 @@ public sealed class FeatureValueStoreTests : TestBase
         await _sut.DeleteAsync(name, providerName, providerKey, AbortToken);
 
         // then
-        await _cache.Received(1).RemoveAsync(cacheKey, AbortToken);
+        await _cache
+            .Received(1)
+            .UpsertAllAsync(
+                Arg.Is<IDictionary<string, FeatureValueCacheItem>>(items =>
+                    items.Single().Key == cacheKey && items.Single().Value.Value == null
+                ),
+                Arg.Any<TimeSpan?>(),
+                AbortToken
+            );
     }
 
     [Fact]
@@ -548,7 +564,7 @@ public sealed class FeatureValueStoreTests : TestBase
         await _repository
             .DidNotReceive()
             .DeleteAsync(Arg.Any<IReadOnlyCollection<FeatureValueRecord>>(), Arg.Any<CancellationToken>());
-        await _cache.DidNotReceive().RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        _cache.ReceivedCalls().Should().BeEmpty();
     }
 
     #endregion DeleteAsync
