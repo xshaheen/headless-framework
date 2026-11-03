@@ -111,7 +111,7 @@ public sealed class UnitOfWorkBindingTests : TestBase
         public async ValueTask RollbackAsync(CancellationToken cancellationToken)
         {
             RollbackStarted.TrySetResult();
-            await RollbackGate.Task;
+            await RollbackGate.Task.Bounded();
         }
     }
 }

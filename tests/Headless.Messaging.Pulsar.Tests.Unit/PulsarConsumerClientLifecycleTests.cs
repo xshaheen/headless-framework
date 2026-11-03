@@ -47,7 +47,7 @@ public sealed class PulsarConsumerClientLifecycleTests : TestBase
             receiveLock.Exit();
         }
 
-        await Task.WhenAll(pauseTask, resumeTask).WaitAsync(AbortToken);
+        await Task.WhenAll(pauseTask, resumeTask).WaitAsync(AbortToken).Bounded();
         var receiveCts = _GetField<CancellationTokenSource>(client, "_receiveCts");
         pauseGate.IsPaused.Should().BeFalse();
         receiveCts.IsCancellationRequested.Should().BeFalse();
@@ -184,7 +184,7 @@ public sealed class PulsarConsumerClientLifecycleTests : TestBase
                 {
                     // A receive that completes with a message as shutdown cancels it: the broker had already sent it.
                     receiveEntered.TrySetResult();
-                    await completeReceive.Task;
+                    await completeReceive.Task.Bounded();
                     return delivery;
                 }
 

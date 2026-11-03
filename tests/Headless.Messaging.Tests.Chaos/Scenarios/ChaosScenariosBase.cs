@@ -846,7 +846,7 @@ public abstract class ChaosScenariosBase(ChaosStackFixture stack) : MultiHostGua
                 .Range(0, count)
                 .Select(async index =>
                 {
-                    await gate.WaitAsync(AbortToken);
+                    await gate.WaitAsync(AbortToken).Bounded();
 
                     try
                     {

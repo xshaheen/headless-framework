@@ -247,7 +247,7 @@ public sealed class InFlightHandlerTrackerTests : TestBase
 
         // when
         handler.SetResult();
-        await handler.Task;
+        await handler.Task.Bounded();
 
         // then — removal runs synchronously on completion for a source without async continuations
         tracker.Snapshot().Should().BeEmpty();

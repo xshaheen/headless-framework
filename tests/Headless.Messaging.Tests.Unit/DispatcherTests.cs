@@ -1296,7 +1296,7 @@ public sealed class DispatcherTests : TestBase
             DateTimeOffset.UtcNow.AddMinutes(2),
             cancellationToken: operationCts.Token
         );
-        await writeStarted.Task.WaitAsync(AbortToken);
+        await writeStarted.Task.Bounded();
         await operationCts.CancelAsync();
         var act = async () => await enqueue;
 
@@ -1346,7 +1346,7 @@ public sealed class DispatcherTests : TestBase
             DateTimeOffset.UtcNow.AddSeconds(50),
             cancellationToken: AbortToken
         );
-        await writeStarted.Task.WaitAsync(AbortToken);
+        await writeStarted.Task.Bounded();
         enqueue.IsCompleted.Should().BeFalse();
 
         commitWrite.TrySetResult(true);
@@ -1672,7 +1672,7 @@ public sealed class DispatcherTests : TestBase
             cancellationToken: AbortToken
         );
         var disposeTask = dispatcher.DisposeAsync(TimeSpan.FromSeconds(10), AbortToken).AsTask();
-        await flushStarted.Task.WaitAsync(AbortToken);
+        await flushStarted.Task.Bounded();
         var delayed = _CreateTestMessage(_StorageGuid(2));
         delayed.ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(1);
 
@@ -1774,7 +1774,7 @@ public sealed class DispatcherTests : TestBase
             AbortToken
         );
 
-        await sender.Entered.Task.WaitAsync(AbortToken);
+        await sender.Entered.Task.Bounded();
         try
         {
             await enqueueTask.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
@@ -1800,7 +1800,7 @@ public sealed class DispatcherTests : TestBase
 
         var commitTask = Task.Run(async () => await unitOfWork.CompleteAsync(), AbortToken);
 
-        await sender.Entered.Task.WaitAsync(AbortToken);
+        await sender.Entered.Task.Bounded();
         try
         {
             await commitTask.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
@@ -2138,7 +2138,7 @@ public sealed class DispatcherTests : TestBase
         );
 
         var dispose = dispatcher.DisposeAsync(TimeSpan.FromSeconds(2), AbortToken).AsTask();
-        await flushStarted.Task.WaitAsync(AbortToken);
+        await flushStarted.Task.Bounded();
         dispose.IsCompleted.Should().BeFalse();
 
         timeProvider.Advance(TimeSpan.FromSeconds(2));
@@ -2187,7 +2187,7 @@ public sealed class DispatcherTests : TestBase
         using var cts = new CancellationTokenSource();
         await dispatcher.StartAsync(cts.Token);
         await dispatcher.EnqueueToExecute(_CreateTestMessage(), cancellationToken: AbortToken);
-        await entered.Task.WaitAsync(AbortToken);
+        await entered.Task.Bounded();
 
         var dispose = dispatcher.DisposeAsync().AsTask();
         dispose.IsCompleted.Should().BeFalse("the processing loop still owns an in-flight handler");
@@ -2236,7 +2236,7 @@ public sealed class DispatcherTests : TestBase
         using var cts = new CancellationTokenSource();
         await dispatcher.StartAsync(cts.Token);
         await dispatcher.EnqueueToExecute(_CreateTestMessage(), cancellationToken: AbortToken);
-        await entered.Task.WaitAsync(AbortToken);
+        await entered.Task.Bounded();
 
         // First dispose: the handler ignores cancellation, so completion must come from the
         // ShutdownTimeout branch (_CompleteTimedOutShutdownAsync), never from the handler.
@@ -2317,7 +2317,7 @@ public sealed class DispatcherTests : TestBase
         using var cts = new CancellationTokenSource();
         await dispatcher.StartAsync(cts.Token);
         await dispatcher.EnqueueToExecute(_CreateTestMessage(), cancellationToken: AbortToken);
-        await entered.Task.WaitAsync(AbortToken);
+        await entered.Task.Bounded();
 
         var dispose = dispatcher.DisposeAsync().AsTask();
 
@@ -2360,7 +2360,7 @@ public sealed class DispatcherTests : TestBase
                 TaskScheduler.Default
             )
             .Unwrap();
-        await startPublishing.Task.WaitAsync(AbortToken);
+        await startPublishing.Task.Bounded();
         var quiesceTask = Task.Factory.StartNew(
             () => ((IProcessingServerShutdown)dispatcher).Quiesce(),
             CancellationToken.None,

@@ -514,7 +514,7 @@ public sealed class SqlServerDistributedLockTests(SqlServerDistributedLockFixtur
             ProbeGateAcquiredAsync = async () =>
             {
                 probeOwnsGate.TrySetResult();
-                await resumeProbe.Task.WaitAsync(AbortToken);
+                await resumeProbe.Task.Bounded();
             },
         };
         var resource = Faker.Random.AlphaNumeric(12);
@@ -523,13 +523,13 @@ public sealed class SqlServerDistributedLockTests(SqlServerDistributedLockFixtur
         handle.Should().NotBeNull();
 
         timeProvider.Advance(TimeSpan.FromSeconds(30));
-        await probeOwnsGate.Task.WaitAsync(AbortToken);
+        await probeOwnsGate.Task.Bounded();
 
         var release = handle!.ReleaseAsync(AbortToken).AsTask();
         var releaseWaitedForProbe = !release.IsCompleted;
 
         resumeProbe.TrySetResult();
-        await release.WaitAsync(AbortToken);
+        await release.WaitAsync(AbortToken).Bounded();
 
         releaseWaitedForProbe.Should().BeTrue();
         handle.ConnectionLostToken.IsCancellationRequested.Should().BeFalse();

@@ -756,7 +756,7 @@ public sealed class SettingsSnapshotTests : TestBase
         {
             if (_readGate is { } gate)
             {
-                await gate.WaitAsync(AbortToken);
+                await gate.WaitAsync(AbortToken).Bounded();
             }
 
             return

@@ -62,7 +62,7 @@ public sealed class SqlServerInboxAdmissionTests(SqlServerTestFixture fixture, I
                 .Range(0, concurrentCount)
                 .Select(async index =>
                 {
-                    await start.Task.WaitAsync(AbortToken);
+                    await start.Task.Bounded();
                     return await _AdmitAsync(storage, $"concurrent-{index}");
                 })
                 .ToArray();

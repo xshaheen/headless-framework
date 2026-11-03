@@ -111,7 +111,7 @@ public sealed class InMemoryLeaseStoreTests : TestBase
                 Task.Run(
                     async () =>
                     {
-                        await start.Task;
+                        await start.Task.Bounded();
 
                         return await leases.GrantAsync("job", "order-1", _Duration, AbortToken);
                     },

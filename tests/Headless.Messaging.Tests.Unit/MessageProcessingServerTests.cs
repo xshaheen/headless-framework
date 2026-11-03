@@ -41,7 +41,7 @@ public sealed class MessageProcessingServerTests : TestBase
                 TaskScheduler.Default
             )
             .Unwrap();
-        await startPublishing.Task.WaitAsync(AbortToken);
+        await startPublishing.Task.Bounded();
         var quiesceTask = Task.Factory.StartNew(
             () => ((IProcessingServerShutdown)server).Quiesce(),
             CancellationToken.None,
@@ -57,7 +57,7 @@ public sealed class MessageProcessingServerTests : TestBase
             CancellationToken.None
         );
 
-        await retryProcessor.ProcessAsync(context).WaitAsync(AbortToken);
+        await retryProcessor.ProcessAsync(context).WaitAsync(AbortToken).Bounded();
         retryProcessor.StartupJitterApplied.Should().BeFalse("quiesce must remain authoritative after startup");
         await ((IProcessingServerShutdown)server).StopAsync(TimeSpan.FromSeconds(2));
     }

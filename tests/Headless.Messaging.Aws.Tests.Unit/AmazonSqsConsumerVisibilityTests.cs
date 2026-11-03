@@ -104,7 +104,7 @@ public sealed class AmazonSqsConsumerVisibilityTests : TestBase
             if (string.Equals(message.Id, "receipt-1", StringComparison.Ordinal))
             {
                 handlerStarted.TrySetResult();
-                await finishHandler.Task;
+                await finishHandler.Task.Bounded();
             }
 
             await client.CommitAsync(sender);
@@ -220,7 +220,7 @@ public sealed class AmazonSqsConsumerVisibilityTests : TestBase
         await using var client = _CreateClient(concurrency: 1);
         client.OnMessageCallback = async (_, sender) =>
         {
-            await reject.Task;
+            await reject.Task.Bounded();
             await client.RejectAsync(sender);
         };
         using var cts = new CancellationTokenSource();
@@ -292,7 +292,7 @@ public sealed class AmazonSqsConsumerVisibilityTests : TestBase
                 bothStarted.TrySetResult();
             }
 
-            await held.Task;
+            await held.Task.Bounded();
         };
         using var cts = new CancellationTokenSource();
         var listening = client.ListeningAsync(TimeSpan.FromSeconds(1), cts.Token).AsTask();
@@ -325,7 +325,7 @@ public sealed class AmazonSqsConsumerVisibilityTests : TestBase
         client.OnMessageCallback = async (_, sender) =>
         {
             handlerStarted.TrySetResult();
-            await finishHandler.Task;
+            await finishHandler.Task.Bounded();
             await client.CommitAsync(sender);
         };
         var listening = client.ListeningAsync(TimeSpan.FromSeconds(1), AbortToken).AsTask();

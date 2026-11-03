@@ -74,7 +74,7 @@ public sealed class HybridCacheConcurrencyStampTests : TestBase
                 async _ =>
                 {
                     started.TrySetResult();
-                    await release.Task;
+                    await release.Task.Bounded();
 
                     return value;
                 },

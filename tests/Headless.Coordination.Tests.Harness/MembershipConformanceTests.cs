@@ -119,7 +119,7 @@ public abstract class MembershipConformanceTests<TFixture>(TFixture fixture) : T
             .Range(0, racers)
             .Select(async _ =>
             {
-                await start.WaitAsync(AbortToken);
+                await start.WaitAsync(AbortToken).Bounded();
 
                 return await store.AllocateIncarnationAsync(new NodeId("racer"), AbortToken);
             })

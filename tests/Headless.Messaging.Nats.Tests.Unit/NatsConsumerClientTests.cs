@@ -354,7 +354,7 @@ public sealed class NatsConsumerClientTests : TestBase
         using var cts = new CancellationTokenSource();
 
         var connectTask = client.ConnectAsync(cts.Token);
-        await connectStarted.Task.WaitAsync(AbortToken);
+        await connectStarted.Task.Bounded();
         await cts.CancelAsync();
 
         var act = async () => await connectTask;
@@ -363,7 +363,7 @@ public sealed class NatsConsumerClientTests : TestBase
         connectionDisposed.Task.IsCompleted.Should().BeFalse();
 
         connectCompletion.SetResult();
-        await connectionDisposed.Task.WaitAsync(AbortToken);
+        await connectionDisposed.Task.Bounded();
     }
 
     // Pause/Resume tests
@@ -1033,11 +1033,11 @@ public sealed class NatsConsumerClientTests : TestBase
 
         try
         {
-            var firstOutcome = await Task.WhenAny(transientLogged.Task, listening).WaitAsync(AbortToken);
+            var firstOutcome = await Task.WhenAny(transientLogged.Task, listening).WaitAsync(AbortToken).Bounded();
             firstOutcome.Should().Be(transientLogged.Task, "protocol timeouts retry within the subject loop");
 
             timeProvider.Advance(TimeSpan.FromSeconds(2));
-            await secondAttempt.Task.WaitAsync(AbortToken);
+            await secondAttempt.Task.Bounded();
             listening.IsCompleted.Should().BeFalse();
         }
         finally
@@ -1193,7 +1193,7 @@ public sealed class NatsConsumerClientTests : TestBase
             OnMessageCallback = async (_, _) =>
             {
                 handlerStarted.TrySetResult();
-                await releaseHandler.Task;
+                await releaseHandler.Task.Bounded();
             },
         };
 
@@ -1708,7 +1708,7 @@ public sealed class NatsConsumerClientTests : TestBase
             OnMessageCallback = async (_, sender) =>
             {
                 handlerStarted.TrySetResult();
-                await releaseHandler.Task;
+                await releaseHandler.Task.Bounded();
                 await client!.CommitAsync(sender, CancellationToken.None);
                 settled.TrySetResult();
             },
@@ -1908,7 +1908,7 @@ public sealed class NatsConsumerClientTests : TestBase
             draining.TrySetResult();
         }
 
-        await drainEnds.WaitAsync(AbortToken);
+        await drainEnds.WaitAsync(AbortToken).Bounded();
 
         yield break;
     }

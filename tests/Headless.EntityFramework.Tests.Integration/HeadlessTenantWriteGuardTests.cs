@@ -213,7 +213,7 @@ public sealed class HeadlessTenantWriteGuardTests(
 
         var unrelated = Task.Run(async () =>
         {
-            await release.Task;
+            await release.Task.Bounded();
 
             return bypass.IsActive;
         });
@@ -248,12 +248,12 @@ public sealed class HeadlessTenantWriteGuardTests(
             captured = Task.Run(async () =>
             {
                 started.SetResult();
-                await release.Task;
+                await release.Task.Bounded();
 
                 return bypass.IsActive;
             });
 
-            await started.Task;
+            await started.Task.Bounded();
             bypass.IsActive.Should().BeTrue();
         }
 

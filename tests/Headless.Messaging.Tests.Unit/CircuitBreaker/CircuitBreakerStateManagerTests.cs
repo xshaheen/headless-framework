@@ -313,7 +313,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
 
         decision.Kind.Should().Be(CircuitRetryDecisionKind.ProbeAcquired);
         sut.GetState(laneGroup).Should().Be(CircuitBreakerState.HalfOpen);
-        await resumed.Task.WaitAsync(AbortToken);
+        await resumed.Task.Bounded();
     }
 
     [Fact]
@@ -1194,7 +1194,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
             {
                 resumeEpoch = epoch;
                 resumeStarted.TrySetResult();
-                await releaseResume.Task;
+                await releaseResume.Task.Bounded();
             }
         );
 
@@ -1234,7 +1234,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
             {
                 resumeEpoch = epoch;
                 resumeStarted.TrySetResult();
-                await releaseResume.Task;
+                await releaseResume.Task.Bounded();
             }
         );
 
@@ -1279,12 +1279,12 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
                 if (epoch == 2)
                 {
                     firstStarted.TrySetResult();
-                    await releaseFirst.Task;
+                    await releaseFirst.Task.Bounded();
                 }
                 else
                 {
                     secondStarted.TrySetResult();
-                    await releaseSecond.Task;
+                    await releaseSecond.Task.Bounded();
                 }
             }
         );
@@ -1334,7 +1334,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
             onResume: async _ =>
             {
                 resumeStarted.TrySetResult();
-                await releaseResume.Task;
+                await releaseResume.Task.Bounded();
             }
         );
 
@@ -1432,7 +1432,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
                 staleResumeEntered.TrySetResult();
                 try
                 {
-                    await releaseStaleResume.Task;
+                    await releaseStaleResume.Task.Bounded();
                     throw new InvalidOperationException("stale resume failed");
                 }
                 finally
