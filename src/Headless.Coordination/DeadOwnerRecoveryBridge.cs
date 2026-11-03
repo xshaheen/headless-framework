@@ -3,6 +3,7 @@
 using Headless.Threading;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Headless.Coordination;
 
@@ -17,19 +18,34 @@ namespace Headless.Coordination;
 /// reconcile paths, and each consumer's conditional reclaim makes a repeated reclaim a no-op. Reclaim writes
 /// use <see cref="CancellationToken.None"/> so a reclaim racing host shutdown is not torn mid-write.
 /// A failed reclaim is logged and removed from the set so the next reconcile tick retries it. The closed
-/// generic gives each consumer a distinct hosted service and a distinct <see cref="ILogger"/> category.
+/// generic gives each consumer a distinct hosted service and a distinct <see cref="ILogger"/> category. Registered
+/// through <c>AddDeadOwnerReclaimer&lt;TReclaimer&gt;()</c>.
 /// </remarks>
 internal sealed class DeadOwnerRecoveryBridge<TReclaimer>(
     INodeMembership membership,
     TReclaimer reclaimer,
     TimeProvider timeProvider,
-    ILogger<DeadOwnerRecoveryBridge<TReclaimer>> logger
+    ILogger<DeadOwnerRecoveryBridge<TReclaimer>> logger,
+    IOptions<CoordinationOptions>? coordinationOptions = null
 ) : BackgroundService, IDeadOwnerRecoveryBridge
     where TReclaimer : IDeadOwnerReclaimer
 {
     private static readonly TimeSpan _MinimumSnapshotReadTimeout = TimeSpan.FromSeconds(5);
     private readonly Lock _gate = new();
     private readonly HashSet<string> _reclaimed = new(StringComparer.Ordinal);
+
+    /// <summary>Gets the effective reconcile cadence after the dead-retention clamp.</summary>
+    /// <remarks>
+    /// Resolved and, when clamped, logged once per bridge. <see cref="NullNodeMembership"/> means no coordination
+    /// provider: the options system still resolves default coordination options, but no store enforces their
+    /// retention window.
+    /// </remarks>
+    internal TimeSpan ReconcileInterval { get; } =
+        DeadOwnerReconcileInterval.Resolve(
+            reclaimer.ReconcileInterval,
+            membership is NullNodeMembership ? null : coordinationOptions?.Value,
+            logger
+        );
 
     // Registered-clock instant the data behind the previous reconcile was current as of; a reused heartbeat read must
     // have started after it, so no reconcile decides twice from one read.
@@ -81,7 +97,7 @@ internal sealed class DeadOwnerRecoveryBridge<TReclaimer>(
         {
             try
             {
-                await timeProvider.Delay(reclaimer.ReconcileInterval, stoppingToken).ConfigureAwait(false);
+                await timeProvider.Delay(ReconcileInterval, stoppingToken).ConfigureAwait(false);
                 await ReconcileOnceAsync(stoppingToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -119,7 +135,7 @@ internal sealed class DeadOwnerRecoveryBridge<TReclaimer>(
         if (
             membership is MembershipService service
             && service.TryGetRecentLivenessSnapshot(
-                reclaimer.ReconcileInterval,
+                ReconcileInterval,
                 _lastDecisionDataAt,
                 out var recent,
                 out var recentStartedAt
@@ -166,7 +182,7 @@ internal sealed class DeadOwnerRecoveryBridge<TReclaimer>(
         // read that a busy database answers in more than one tick, and no reconcile would ever see a dead node. The
         // bound is an I/O timeout, so it runs on the system clock; only the reconcile cadence follows the registered
         // clock.
-        var interval = reclaimer.ReconcileInterval;
+        var interval = ReconcileInterval;
         var timeout = interval > _MinimumSnapshotReadTimeout ? interval : _MinimumSnapshotReadTimeout;
         using var timeoutCts = interval > TimeSpan.Zero ? new CancellationTokenSource(timeout) : null;
         using var linkedCts = timeoutCts is null

@@ -3,8 +3,9 @@
 namespace Headless.Coordination;
 
 /// <summary>
-/// Reclaims resources owned by dead node identities. Supplied by consumers
-/// and driven by the dead-owner recovery bridge.
+/// Reclaims resources owned by dead node identities. Supplied by consumers, registered with
+/// <c>services.AddDeadOwnerReclaimer&lt;TReclaimer&gt;()</c> from <c>Headless.Coordination</c>, and driven by the
+/// dead-owner recovery bridge that registration hosts.
 /// </summary>
 /// <remarks>
 /// The bridge owns the membership orchestration: the <c>WatchAsync</c> event path, the periodic
@@ -13,16 +14,25 @@ namespace Headless.Coordination;
 /// the event path, or the whole newly-dead batch from a reconciliation tick. The batch shape lets a
 /// consumer collapse the reclaim into one write, for example a single
 /// <c>UPDATE … WHERE Owner IN (@owners)</c>, instead of one write per owner under mass node loss.
-/// Implementations carry only the domain reclaim action and the cadence at which the reconcile
-/// backstop runs. The token passed to <see cref="ReclaimAsync"/> is <see cref="CancellationToken.None"/>
+/// Implementations carry only the domain reclaim action and the configured cadence of the reconcile
+/// backstop; the bridge derives and clamps the effective cadence. The token passed to <see cref="ReclaimAsync"/> is <see cref="CancellationToken.None"/>
 /// by contract, so a reclaim racing host shutdown is not torn mid-write; implementations must not
 /// substitute a cancellable token into the write path.
 /// </remarks>
 [PublicAPI]
 public interface IDeadOwnerReclaimer
 {
-    /// <summary>Gets how often the bridge's reconcile backstop reclaims dead owners from the liveness snapshot.</summary>
-    TimeSpan ReconcileInterval { get; }
+    /// <summary>
+    /// Gets how often the bridge's reconcile backstop should reclaim dead owners from the liveness snapshot, or
+    /// <see langword="null"/> to use half of <see cref="CoordinationOptions.DeadRetentionWindow"/>.
+    /// </summary>
+    /// <remarks>
+    /// The bridge reads this once, when it starts. On a host with a coordination provider it clamps a value longer
+    /// than half of <see cref="CoordinationOptions.DeadRetentionWindow"/> to that half and logs a warning: a relational
+    /// provider keeps a dead identity visible only for that window, so a longer interval could miss a dead owner
+    /// whose <c>NodeLeft</c> event was lost.
+    /// </remarks>
+    TimeSpan? ReconcileInterval { get; }
 
     /// <summary>
     /// Reclaims resources owned by the dead identities in <paramref name="owners"/>.

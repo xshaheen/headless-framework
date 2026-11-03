@@ -88,7 +88,7 @@ Coordination is fencing-safe, fail-stop, and fail-closed when backed by an autho
 - `NodeJoined`, `NodeSuspected`, `NodeRecovered`, `NodeLeft`, and `LocalMembershipLost` event contracts.
 - `IMembershipEventSource.WatchAsync(...)` for lifecycle events.
 - `INodeDrainParticipant` — a consumer-registered singleton (`Task WaitUntilDrainedAsync(CancellationToken)`) that holds the node in membership during host stop until the work it owns has drained and written its outcome. The heartbeat resolves every registered participant and awaits them before leaving; the token is the host stop token, so an implementation returns or throws `OperationCanceledException` promptly when it fires. Jobs registers one on hosts that claim work. Coordination knows nothing about its participants.
-- `IDeadOwnerReclaimer` — the per-domain reclaim sink driven by the shared dead-owner recovery bridge (carries `ReconcileInterval` and `ReclaimAsync(owners, ct)`, where `owners` is a single owner from the event path or the whole dead set from a reconcile tick so a consumer can collapse the reclaim into one batched write); implemented by each consumer (Jobs, Messaging).
+- `IDeadOwnerReclaimer` — the per-domain reclaim sink driven by the shared dead-owner recovery bridge. It carries `TimeSpan? ReconcileInterval` (the feature's configured cadence, or `null` for half of `CoordinationOptions.DeadRetentionWindow`; the bridge reads it once at start and clamps it) and `ReclaimAsync(owners, ct)`, where `owners` is a single owner from the event path or the whole dead set from a reconcile tick, so a consumer can collapse the reclaim into one batched write, and `ct` is always `CancellationToken.None`. Jobs and Messaging implement it; any package or app can, and registers it with `AddDeadOwnerReclaimer<TReclaimer>()` from `Headless.Coordination`.
 - `CoordinationOptions` for thresholds, cluster name, role, metadata, and membership-loss behavior. The node id is not an option here; it is `IHostIdentityAccessor.HostName` from `Headless.Context`.
 
 ### Design constraints
@@ -148,7 +148,9 @@ Self-heartbeat rejection is a local fencing failure. On a host that runs the hea
 
 An incarnation is terminal once it leaves, reaches `DeadThreshold`, or its retained liveness entry is pruned. PostgreSQL, SQL Server, and Redis reject later heartbeats for that same incarnation; recovery requires allocating and registering a higher incarnation, so a delayed process cannot resurrect its old ownership identity.
 
-Core also hosts the shared dead-owner recovery bridge — a generic `BackgroundService` parameterized by an `IDeadOwnerReclaimer` that reclaims dead-incarnation resources on `NodeLeft` events plus a periodic `Dead`-only snapshot reconcile (idempotent dedup, `CancellationToken.None` writes). It is internal infrastructure consumed by registering a closed generic from the owning assembly (Jobs, Messaging) via `InternalsVisibleTo`; each closed type yields a distinct hosted service and logger category. Coordination does not register it — the consuming feature does.
+Core also hosts the shared dead-owner recovery bridge, a `BackgroundService` that drives one `IDeadOwnerReclaimer` on `NodeLeft` events plus a periodic `Dead`-only snapshot reconcile (idempotent dedup, `CancellationToken.None` writes). The bridge type is internal; `services.AddDeadOwnerReclaimer<TReclaimer>()` registers the reclaimer as a singleton and hosts its bridge. A repeat call for the same `TReclaimer` adds nothing, and each distinct reclaimer type gets its own hosted service and logger category, `Headless.Coordination.DeadOwnerRecoveryBridge<TReclaimer>`, matched in a service list through the public `IDeadOwnerRecoveryBridge` marker. Coordination registers no reclaimer itself: the owning feature does. The host needs an `INodeMembership`, from `AddHeadlessCoordination` or a `NullNodeMembership` fallback; under the fallback the bridge sees no node leave and no dead node and never calls the reclaimer.
+
+The bridge resolves the reconcile cadence once at start through `DeadOwnerReconcileInterval.Resolve(configured, coordination)`: `null` becomes half of `DeadRetentionWindow` (15 seconds with default options), because relational providers keep a dead identity observable for only that window, and an explicit value above that ceiling is clamped to it with one warning (EventId 14, `DeadNodeReconcileIntervalClamped`) under the bridge's category. Under `NullNodeMembership` the coordination options are ignored and an explicit value is used as set. A feature that runs its own sweep on the bridge's cadence calls the public `Resolve` overload, which logs nothing, to get the same value.
 
 ### Install
 
@@ -163,6 +165,17 @@ services.AddCoordinationCore<MyMembershipStore>(options =>
 {
     options.ClusterName = "orders";
 });
+
+// Release the leases a dead node held; the bridge calls it on NodeLeft and on each reconcile tick.
+services.AddDeadOwnerReclaimer<LeaseReclaimer>();
+
+public sealed class LeaseReclaimer(ILeaseStore leases) : IDeadOwnerReclaimer
+{
+    public TimeSpan? ReconcileInterval => null; // half of DeadRetentionWindow
+
+    public Task ReclaimAsync(IReadOnlyCollection<string> owners, CancellationToken cancellationToken) =>
+        leases.ReleaseOwnedByAsync(owners, cancellationToken);
+}
 ```
 
 Applications normally use a provider package and call `AddHeadlessCoordination(setup => setup.Use...)` (which returns the `IServiceCollection`); `AddCoordinationCore<TStore>` is the lower-level hook for provider authors and custom stores.

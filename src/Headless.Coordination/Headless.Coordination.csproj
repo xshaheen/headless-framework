@@ -11,7 +11,6 @@
     <InternalsVisibleTo Include="Headless.Coordination.SqlServer" />
     <InternalsVisibleTo Include="Headless.Coordination.Redis" />
     <InternalsVisibleTo Include="Headless.Jobs" />
-    <InternalsVisibleTo Include="Headless.Messaging" />
     <InternalsVisibleTo Include="Headless.Coordination.Tests.Unit" />
   </ItemGroup>
   <ItemGroup>

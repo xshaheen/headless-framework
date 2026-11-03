@@ -207,8 +207,7 @@ public static class SetupMessaging
         // INodeMembership is wired the registered NullNodeMembership makes the bridge a benign no-op
         // (empty snapshot, no NodeLeft events). Cross-node safety rests on the owner-scoped conditional
         // reclaim UPDATE being idempotent, not on a held lock.
-        services.TryAddSingleton<MessagingDeadOwnerReclaimer>();
-        services.AddHostedService<DeadOwnerRecoveryBridge<MessagingDeadOwnerReclaimer>>();
+        services.AddDeadOwnerReclaimer<MessagingDeadOwnerReclaimer>();
 
         services.TryAddSingleton<TransportCheckProcessor>();
         services.TryAddSingleton<MessageDelayedProcessor>();

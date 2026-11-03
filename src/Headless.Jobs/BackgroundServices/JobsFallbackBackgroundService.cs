@@ -6,6 +6,7 @@ using Headless.Jobs.Internal;
 using Headless.Jobs.JobsThreadPool;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Headless.Jobs.BackgroundServices;
 
@@ -21,7 +22,8 @@ internal sealed class JobsFallbackBackgroundService(
     JobsActivationBarrier activationBarrier,
     ILogger<JobsFallbackBackgroundService> logger,
     INodeMembership? membership = null,
-    JobsDeadOwnerReclaimer? deadOwnerReclaimer = null
+    JobsDeadOwnerReclaimer? deadOwnerReclaimer = null,
+    IOptions<CoordinationOptions>? coordinationOptions = null
 ) : BackgroundService
 {
     private int _started;
@@ -29,11 +31,13 @@ internal sealed class JobsFallbackBackgroundService(
     private long _lastStallSweepTimestamp;
     private readonly TimeSpan _fallbackJobPeriod = schedulerOptions.FallbackIntervalChecker;
 
-    // One cadence with the dead-owner bridge: the reclaimer resolves and logs it; a host without the reclaimer (the
-    // in-memory path, which never sweeps) falls back to the same resolution without coordination options.
-    private readonly TimeSpan _orphanSweepInterval =
-        deadOwnerReclaimer?.ReconcileInterval
-        ?? DeadOwnerReconcileInterval.Resolve(schedulerOptions.DeadNodeReconcileInterval, coordination: null, logger);
+    // One cadence with the dead-owner bridge, which resolves the same value and logs the clamp. Only the durable path
+    // registers the reclaimer, and only it runs on a coordination provider whose retention window bounds the cadence;
+    // the in-memory path (which never sweeps) resolves without coordination options.
+    private readonly TimeSpan _orphanSweepInterval = DeadOwnerReconcileInterval.Resolve(
+        schedulerOptions.DeadNodeReconcileInterval,
+        deadOwnerReclaimer is null || membership is NullNodeMembership ? null : coordinationOptions?.Value
+    );
 
     public override Task StartAsync(CancellationToken ct)
     {

@@ -531,8 +531,7 @@ public static class SetupJobs
         // Event-driven dead-node recovery (shared bridge) and the registration startup gate. The gate only orders
         // registration ahead of the first claim, so a host without startup initialization (and so without claims)
         // leaves registration to the coordination heartbeat or to its own code.
-        services.AddSingleton<JobsDeadOwnerReclaimer>();
-        services.AddHostedService<DeadOwnerRecoveryBridge<JobsDeadOwnerReclaimer>>();
+        services.AddDeadOwnerReclaimer<JobsDeadOwnerReclaimer>();
 
         // A node that claims rows keeps beating until its scheduler has drained and released them: leaving first
         // lets a peer reclaim a row this node is still settling, charging a retry or running the job twice.
