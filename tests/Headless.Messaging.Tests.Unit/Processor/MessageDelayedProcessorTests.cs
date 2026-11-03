@@ -2,14 +2,17 @@
 
 using System.Data.Common;
 using Headless.Messaging;
+using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Processor;
+using Headless.Messaging.Transactions;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
+using Tests.Internal;
 
 namespace Tests.Processor;
 
@@ -191,6 +194,57 @@ public sealed class MessageDelayedProcessorTests : TestBase
         // then — claiming would only lease rows the scheduler must refuse and hand back.
         _ = ((ICommittedDelayedMessageDispatcher)dispatcher).Received().IsSchedulerFull;
         await claimStorage.DidNotReceive().ClaimDelayedMessagesAsync(Arg.Any<CancellationToken>());
+        await storage
+            .DidNotReceive()
+            .ChangePublishStateToDelayedAsync(
+                Arg.Any<IReadOnlyCollection<MediumMessage>>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_claim_due_delayed_rows_when_far_future_hand_offs_outnumber_the_scheduler_capacity()
+    {
+        // given — a scheduler with room for two, and two committed publishes scheduled a week out
+        var hostStorage = Substitute.For<IDataStorage>();
+        await using var dispatcher = new Dispatcher(
+            Substitute.For<ILogger<Dispatcher>>(),
+            new TestThreadSafeMessageSender(),
+            Options.Create(new MessagingOptions { EnablePublishParallelSend = false, SchedulerBatchSize = 2 }),
+            Substitute.For<ISubscribeExecutor>(),
+            hostStorage,
+            TimeProvider.System,
+            new ServiceCollection().BuildServiceProvider().GetRequiredService<IServiceScopeFactory>()
+        );
+        await dispatcher.StartAsync(AbortToken);
+        await using (var unitOfWork = new FakeUnitOfWork())
+        {
+            var buffer = new MessageOutboxBuffer(dispatcher);
+            for (var i = 0; i < 2; i++)
+            {
+                var farFuture = _CreateDelayedMessage();
+                farFuture.ExpiresAt = DateTimeOffset.UtcNow.AddDays(7);
+                farFuture.LockedUntil = null;
+                buffer.Add(unitOfWork, farFuture);
+            }
+
+            await unitOfWork.CompleteAsync(AbortToken);
+        }
+
+        // and a Delayed row, written by another host, that is due in 90 seconds
+        var storage = Substitute.For<IDataStorage, IDelayedMessageClaimStorage>();
+        var claimStorage = (IDelayedMessageClaimStorage)storage;
+        var due = _CreateDelayedMessage();
+        due.ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(90);
+        claimStorage
+            .ClaimDelayedMessagesAsync(Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<IReadOnlyList<MediumMessage>>([due]));
+
+        // when
+        await _ProcessOnceAsync(storage, dispatcher);
+
+        // then — the far-future rows stay with the durable claim, so the due row is claimed and scheduled here
+        await claimStorage.Received(1).ClaimDelayedMessagesAsync(Arg.Any<CancellationToken>());
         await storage
             .DidNotReceive()
             .ChangePublishStateToDelayedAsync(

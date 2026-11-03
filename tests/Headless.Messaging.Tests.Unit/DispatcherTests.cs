@@ -1719,6 +1719,38 @@ public sealed class DispatcherTests : TestBase
     }
 
     [Fact]
+    public async Task should_hand_off_a_committed_delayed_row_only_when_it_is_due_within_the_claim_lookahead()
+    {
+        // given — a scheduler queue with room for one message.
+        await using var dispatcher = new Dispatcher(
+            _logger,
+            new TestThreadSafeMessageSender(),
+            Options.Create(new MessagingOptions { EnablePublishParallelSend = false, SchedulerBatchSize = 1 }),
+            _executor,
+            _storage,
+            TimeProvider.System,
+            _scopeFactory
+        );
+        await dispatcher.StartAsync(AbortToken);
+        var committed = (ICommittedDelayedMessageDispatcher)dispatcher;
+        var later = _CreateTestMessage(_StorageGuid(1));
+        later.ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(10);
+        var soon = _CreateTestMessage(_StorageGuid(2));
+        soon.ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(90);
+
+        // when
+        var laterAccepted = committed.HandOffCommittedDelayedMessage(later);
+        var fullAfterLater = committed.IsSchedulerFull;
+        var soonAccepted = committed.HandOffCommittedDelayedMessage(soon);
+
+        // then — the later row stays durable for the delayed claim and takes no scheduler slot.
+        laterAccepted.Should().BeFalse("the row is due after the claim lookahead");
+        fullAfterLater.Should().BeFalse();
+        soonAccepted.Should().BeTrue();
+        committed.IsSchedulerFull.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task should_drop_coordinated_delayed_acceleration_after_disposal()
     {
         var dispatcher = _CreateDispatcher(new TestThreadSafeMessageSender());
