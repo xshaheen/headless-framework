@@ -30,7 +30,10 @@ public sealed class DefaultHybridCacheTiersTests(RedisCacheFixture fixture) : Te
                 options.KeyPrefix = "hybrid-tiers:";
             });
             setup.UseHybrid(options => options.DefaultLocalExpiration = TimeSpan.FromMinutes(5));
-            setup.UseRedisBackplane();
+            // This test checks how the tiers compose. The Redis backplane flushes L1 once its first subscription is
+            // confirmed, which can land after the write below and empty the memory tier, so it is covered by its own
+            // tests instead.
+            setup.UseSingleInstanceBackplane();
         });
 
         using var host = builder.Build();
