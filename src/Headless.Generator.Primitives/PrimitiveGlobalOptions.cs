@@ -47,4 +47,12 @@ internal sealed record PrimitiveGlobalOptions
     ///   <see langword="true"/> if Dapper converters should be generated; otherwise, <see langword="false"/>.
     /// </value>
     public bool GenerateDapperConverters { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether MessagePack formatters should be generated for Primitive types.
+    /// </summary>
+    /// <value>
+    ///   <see langword="true"/> if MessagePack formatters should be generated; otherwise, <see langword="false"/>.
+    /// </value>
+    public bool GenerateMessagePackFormatters { get; set; }
 }

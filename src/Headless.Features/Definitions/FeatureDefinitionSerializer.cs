@@ -32,7 +32,9 @@ public sealed class FeatureDefinitionSerializer(IGuidGenerator guidGenerator) : 
         {
             var record = new FeatureGroupDefinitionRecord(guidGenerator.Create(), group.Name, group.DisplayName);
 
-            foreach (var property in _AsStored(group.ExtraProperties))
+            // The record is compared with the stored one to decide whether the store is current, so its bag holds what
+            // the store reads back (a long for an int, a name for an enum), not the values the code declared.
+            foreach (var property in JsonConstants.DefaultStorageJsonOptions.RoundTrip(group.ExtraProperties) ?? [])
             {
                 record.SetProperty(property.Key, property.Value);
             }
@@ -59,7 +61,9 @@ public sealed class FeatureDefinitionSerializer(IGuidGenerator guidGenerator) : 
                 _SerializeProviders(feature.Providers)
             );
 
-            foreach (var property in _AsStored(feature.ExtraProperties))
+            // The record is compared with the stored one to decide whether the store is current, so its bag holds what
+            // the store reads back (a long for an int, a name for an enum), not the values the code declared.
+            foreach (var property in JsonConstants.DefaultStorageJsonOptions.RoundTrip(feature.ExtraProperties) ?? [])
             {
                 featureRecord.SetProperty(property.Key, property.Value);
             }
@@ -71,20 +75,6 @@ public sealed class FeatureDefinitionSerializer(IGuidGenerator guidGenerator) : 
     private static string? _SerializeProviders(List<string> providers)
     {
         return providers.Count != 0 ? providers.JoinAsString(',') : null;
-    }
-
-    // The record is compared with the stored record to decide whether the store is current, so its bag holds what the
-    // store reads back (a long for an int, a string for an enum) rather than the CLR values the code declared.
-    private static ExtraProperties _AsStored(ExtraProperties extraProperties)
-    {
-        if (extraProperties.Count == 0)
-        {
-            return extraProperties;
-        }
-
-        var json = JsonSerializer.SerializeToUtf8Bytes(extraProperties, JsonConstants.DefaultStorageJsonOptions);
-
-        return JsonSerializer.Deserialize<ExtraProperties>(json, JsonConstants.DefaultStorageJsonOptions) ?? [];
     }
 }
 

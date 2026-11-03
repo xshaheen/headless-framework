@@ -66,6 +66,25 @@ public sealed class ErrorDescriptorTests
     }
 
     [Fact]
+    public void should_store_param_keys_camel_case_from_every_entry_point()
+    {
+        var fromDictionary = new ErrorDescriptor(
+            "g:minimum_length",
+            "Too short",
+            new Dictionary<string, object?>(StringComparer.Ordinal) { ["MinLength"] = 8 }
+        );
+        var fromTuples = new ErrorDescriptor("g:minimum_length", "Too short", ("PropertyName", "Password"));
+        var chained = new ErrorDescriptor("g:minimum_length", "Too short")
+            .WithParam("TotalLength", 1)
+            .WithParams(new Dictionary<string, object?>(StringComparer.Ordinal) { ["MaxLength"] = -1 });
+
+        fromDictionary.Params.Should().ContainKey("minLength");
+        fromTuples.Params.Should().ContainKey("propertyName");
+        chained.Params!.Keys.Should().BeEquivalentTo("totalLength", "maxLength");
+        fromDictionary.Params!["MinLength"].Should().Be(8, "lookups still ignore case");
+    }
+
+    [Fact]
     public void should_accept_severity_with_tuple_parameters()
     {
         var descriptor = new ErrorDescriptor(

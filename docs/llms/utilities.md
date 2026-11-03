@@ -171,6 +171,7 @@ Roslyn source generator for creating strongly-typed domain primitives.
 - Converters go in the `<Namespace>.Converters` namespace beside the primitive (`Converters` for a primitive in the global namespace). The EF Core and Dapper registration helpers (`AddPrimitivePropertyConversions`, `AddPrimitivesDapperTypeHandlers`) go in `<AssemblyName>.Converters.Extensions`, with the assembly name mapped to a valid namespace the way the Messaging and Jobs generators map it (`My-App` gives `My_App.Converters.Extensions`). Two primitives may share a simple name in different namespaces.
 - The Dapper handler's `SetValue` binds the underlying value. Its `Parse` accepts the wider integer and floating-point types a provider may return (for example `short` for a `byte` primitive on PostgreSQL) when the value fits the underlying type, bounds included, and throws `InvalidCastException` otherwise
 - A primitive implements `IConvertible` only when its underlying type does, so `Guid`, `DateTimeOffset`, and `TimeSpan` primitives do not
+- With `PrimitiveMessagePackFormatters` on, each primitive gets a `<Name>MessagePackFormatter` in its `Converters` namespace and a `[MessagePackFormatter]` attribute pointing at it. The formatter writes the underlying value with the resolver's formatter for that type and reads it back through the validating constructor, so an invalid payload fails the read; a `class` primitive writes and reads nil as `null`. MessagePack's standard and contractless resolvers consult `[MessagePackFormatter]` before mapping members, so `MessagePackBinarySerializer` and any options built on them pick the formatter up with no resolver to compose. With the switch off, a primitive serializes as an empty map, because its value lives in private fields, and reads back uninitialized. The project must reference `MessagePack`
 - Auto-generated code:
   - Constructors and factory methods
   - `IEquatable<T>`, `IComparable<T>` implementations
@@ -178,6 +179,7 @@ Roslyn source generator for creating strongly-typed domain primitives.
   - Entity Framework Core value converters
   - TypeConverter for model binding
   - Dapper type handlers
+  - MessagePack formatters (opt-in)
 - No OpenAPI schema mapping is generated: `Headless.OpenApi` documents every `IPrimitive<T>` as its underlying JSON type automatically, with the `[StringLength]` bounds of a string primitive as `minLength`/`maxLength`
 
 ### Design constraints
@@ -246,6 +248,7 @@ modelBuilder.Entity<User>().Property(u => u.Email).HasConversion<EmailValueConve
   <PrimitiveDapperConverters>true</PrimitiveDapperConverters>
   <PrimitiveEntityFrameworkValueConverters>true</PrimitiveEntityFrameworkValueConverters>
   <PrimitiveJsonConverters>true</PrimitiveJsonConverters>
+  <PrimitiveMessagePackFormatters>false</PrimitiveMessagePackFormatters>
   <PrimitiveTypeConverters>true</PrimitiveTypeConverters>
   <PrimitiveXmlConverters>false</PrimitiveXmlConverters>
 </PropertyGroup>

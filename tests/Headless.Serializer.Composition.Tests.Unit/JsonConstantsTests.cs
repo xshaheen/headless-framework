@@ -42,6 +42,7 @@ public sealed class JsonConstantsTests
     {
         JsonConstants.DefaultWebJsonOptions.IsReadOnly.Should().BeTrue();
         JsonConstants.DefaultInternalJsonOptions.IsReadOnly.Should().BeTrue();
+        JsonConstants.DefaultStorageJsonOptions.IsReadOnly.Should().BeTrue();
         JsonConstants.DefaultPrettyJsonOptions.IsReadOnly.Should().BeTrue();
     }
 
@@ -58,6 +59,7 @@ public sealed class JsonConstantsTests
     {
         JsonConstants.CreateWebJsonOptions().IsReadOnly.Should().BeFalse();
         JsonConstants.CreateInternalJsonOptions().IsReadOnly.Should().BeFalse();
+        JsonConstants.CreateStorageJsonOptions().IsReadOnly.Should().BeFalse();
         JsonConstants.CreatePrettyJsonOptions().IsReadOnly.Should().BeFalse();
     }
 
@@ -146,6 +148,147 @@ public sealed class JsonConstantsTests
         var act = () => JsonSerializer.Deserialize<WireOrder>("""{"order_id":7,"status":"paid","extra":1}""", options);
 
         act.Should().Throw<JsonException>();
+    }
+
+    [Fact]
+    public void should_reject_repeated_property_when_web_options()
+    {
+        var act = () =>
+            JsonSerializer.Deserialize<TestModel2>(
+                """{"name":"First","name":"Second","tags":[]}""",
+                JsonConstants.DefaultWebJsonOptions
+            );
+
+        act.Should().Throw<JsonException>();
+    }
+
+    [Fact]
+    public void should_read_type_discriminator_in_any_position_when_web_options()
+    {
+        var shape = JsonSerializer.Deserialize<WireShape>(
+            """{"radius":2,"$type":"circle"}""",
+            JsonConstants.DefaultWebJsonOptions
+        );
+
+        shape.Should().BeOfType<WireCircle>().Which.Radius.Should().Be(2);
+    }
+
+    [Fact]
+    public void should_write_dictionary_keys_as_given_when_web_options()
+    {
+        var json = JsonSerializer.Serialize(
+            new Dictionary<string, int>(StringComparer.Ordinal) { ["Admin"] = 1, ["TENANT-A"] = 2 },
+            JsonConstants.DefaultWebJsonOptions
+        );
+
+        json.Should().Be("""{"Admin":1,"TENANT-A":2}""");
+    }
+
+    [Fact]
+    public void should_throw_when_web_options_write_a_reference_cycle()
+    {
+        var node = new CycleNode();
+        node.Next = node;
+
+        var act = () => JsonSerializer.Serialize(node, JsonConstants.DefaultWebJsonOptions);
+
+        act.Should().Throw<JsonException>();
+    }
+
+    [Theory]
+    [InlineData("web")]
+    [InlineData("internal")]
+    public void should_read_object_values_as_json_element_when_web_or_internal_options(string preset)
+    {
+        var options = string.Equals(preset, "web", StringComparison.Ordinal)
+            ? JsonConstants.DefaultWebJsonOptions
+            : JsonConstants.DefaultInternalJsonOptions;
+
+        var value = JsonSerializer.Deserialize<Dictionary<string, object?>>("""{"Count":1,"Tags":["a"]}""", options);
+
+        value.Should().NotBeNull();
+        value!["Count"].Should().BeOfType<JsonElement>();
+        value["Tags"].Should().BeOfType<JsonElement>();
+    }
+
+    [Fact]
+    public void should_skip_unknown_members_when_storage_options()
+    {
+        // A newer node wrote "Added"; an older node that does not know it must still read the value.
+        var order = JsonSerializer.Deserialize<WireOrder>(
+            """{"OrderId":7,"Status":"paid","Added":true}""",
+            JsonConstants.DefaultStorageJsonOptions
+        );
+
+        order.Should().NotBeNull();
+        order!.OrderId.Should().Be(7);
+    }
+
+    [Fact]
+    public void should_reject_unknown_members_when_internal_options()
+    {
+        var act = () =>
+            JsonSerializer.Deserialize<WireOrder>(
+                """{"OrderId":7,"Status":"paid","Added":true}""",
+                JsonConstants.DefaultInternalJsonOptions
+            );
+
+        act.Should().Throw<JsonException>();
+    }
+
+    [Fact]
+    public void should_read_object_values_as_inferred_primitives_when_storage_options()
+    {
+        var value = JsonSerializer.Deserialize<Dictionary<string, object?>>(
+            """{"Count":1,"Name":"a","On":true,"Tags":["a"]}""",
+            JsonConstants.DefaultStorageJsonOptions
+        );
+
+        value.Should().NotBeNull();
+        value!["Count"].Should().Be(1L);
+        value["Name"].Should().Be("a");
+        value["On"].Should().Be(true);
+        value["Tags"].Should().BeOfType<JsonElement>();
+    }
+
+    [Fact]
+    public void should_return_stored_shape_when_round_tripping_through_storage_options()
+    {
+        var declared = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["Count"] = 1,
+            ["Status"] = WireOrderStatus.PendingPayment,
+        };
+
+        var stored = JsonConstants.DefaultStorageJsonOptions.RoundTrip(declared);
+
+        stored.Should().NotBeNull();
+        stored!["Count"].Should().Be(1L);
+        stored["Status"].Should().Be("pendingPayment");
+    }
+
+    [Fact]
+    public void should_round_trip_a_null_constructor_parameter_when_storage_options()
+    {
+        // A cache item built through its constructor: dropping the null on write would fail the read, since the
+        // parameter is required.
+        var json = JsonSerializer.Serialize(new CachedValue(null), JsonConstants.DefaultStorageJsonOptions);
+
+        var result = JsonSerializer.Deserialize<CachedValue>(json, JsonConstants.DefaultStorageJsonOptions);
+
+        json.Should().Be("""{"Value":null}""");
+        result.Should().NotBeNull();
+        result!.Value.Should().BeNull();
+    }
+
+    private sealed class CachedValue(string? value)
+    {
+        public string? Value { get; } = value;
+    }
+
+    private sealed class CycleNode
+    {
+        public CycleNode? Next { get; set; }
     }
 
     private sealed class TestModel1(string name)

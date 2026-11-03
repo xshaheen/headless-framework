@@ -10,27 +10,30 @@ namespace Headless.Serializer;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <see cref="DefaultWebJsonOptions"/> — camelCase naming, case-insensitive reads, numbers from strings,
-/// cycle-safe reference handling, <c>RespectNullableAnnotations</c>/<c>RespectRequiredConstructorParameters</c>,
-/// and the <see cref="IpAddressJsonConverter"/> included. Intended for public-facing HTTP APIs. It camelCases
-/// dictionary keys on write only, so it is not a round-trip codec; <see cref="DefaultJsonOptionsProvider"/> starts
-/// from it and writes keys as they are.
+/// <see cref="DefaultWebJsonOptions"/> — camelCase property names, dictionary keys as written, case-insensitive reads,
+/// numbers from strings, unknown members skipped, duplicate properties refused, a polymorphic type discriminator
+/// accepted in any position, <see langword="object"/> values read as <see cref="JsonElement"/>, a reference cycle
+/// refused rather than written as <see langword="null"/>, <c>RespectNullableAnnotations</c>/
+/// <c>RespectRequiredConstructorParameters</c>, and the <see cref="IpAddressJsonConverter"/> included. Intended for
+/// public-facing HTTP APIs.
 /// </para>
 /// <para>
-/// <see cref="DefaultInternalJsonOptions"/> — strict number handling, no naming policy (preserves property
-/// casing), unknown members and duplicate properties disallowed, null values omitted, and a polymorphic type
-/// discriminator accepted in any position. Intended for internal persistence or inter-service payloads where schema
+/// <see cref="DefaultInternalJsonOptions"/> — built on <see cref="JsonSerializerDefaults.Strict"/>: strict number handling, no naming policy (preserves property
+/// casing), unknown members and duplicate properties disallowed, null values omitted, <see langword="object"/> values
+/// read as <see cref="JsonElement"/>, and a polymorphic type discriminator accepted in any position. Intended for internal persistence or inter-service payloads where schema
 /// drift must surface immediately. <see cref="CreateInternalJsonOptions"/> and
 /// <see cref="ConfigureInternalJsonOptions"/> take an optional naming policy, such as
 /// <see cref="JsonNamingPolicy.SnakeCaseLower"/>, for a contract shared with a non-.NET producer.
 /// </para>
 /// <para>
-/// <see cref="DefaultStorageJsonOptions"/> — the internal preset plus <see cref="ObjectToInferredTypesJsonConverter"/>,
-/// so an <see langword="object"/> value reads back as a CLR primitive (<see cref="string"/>, <see cref="bool"/>,
+/// <see cref="DefaultStorageJsonOptions"/> — the internal preset with unknown members skipped, so an older node reads
+/// what a newer one wrote, null values written, so a constructor parameter that holds null reads back, plus <see cref="ObjectToInferredTypesJsonConverter"/>, so an <see langword="object"/> value reads back as a CLR primitive (<see cref="string"/>, <see cref="bool"/>,
 /// <see cref="long"/>, <see cref="decimal"/>) or a <see cref="JsonElement"/> for an object or array. Intended for JSON
-/// the framework persists and reads back itself: EF Core JSON columns, <c>ExtraProperties</c> bags, and the relational
-/// definition stores. Its format never depends on the host's <see cref="IJsonOptionsProvider"/>, so every node and
-/// every storage provider writes the same JSON for the same value.
+/// the framework persists and reads back: EF Core JSON columns, <c>ExtraProperties</c> bags, the relational definition
+/// stores, and, through <see cref="DefaultJsonOptionsProvider"/>, the app values the framework stores (cache entries,
+/// blob metadata). Framework-owned records always use it, so every node and every storage provider writes the same
+/// JSON for the same value; a host that registers its own <see cref="IJsonOptionsProvider"/> changes only how its own
+/// stored values are written.
 /// </para>
 /// <para>
 /// <see cref="DefaultPrettyJsonOptions"/> — identical to <see cref="DefaultWebJsonOptions"/> with
@@ -109,12 +112,13 @@ public static class JsonConstants
     /// <returns>A new, mutable options instance with the internal preset applied.</returns>
     public static JsonSerializerOptions CreateInternalJsonOptions(JsonNamingPolicy? namingPolicy = null)
     {
-        return ConfigureInternalJsonOptions(new JsonSerializerOptions(), namingPolicy);
+        return ConfigureInternalJsonOptions(new JsonSerializerOptions(JsonSerializerDefaults.Strict), namingPolicy);
     }
 
     /// <summary>
     /// Creates a new <see cref="JsonSerializerOptions"/> instance configured for JSON the framework persists and reads
-    /// back itself: the internal preset with <see cref="ObjectToInferredTypesJsonConverter"/> added.
+    /// back itself: the internal preset with unknown members skipped and <see cref="ObjectToInferredTypesJsonConverter"/>
+    /// added.
     /// </summary>
     /// <returns>A new, mutable options instance with the storage preset applied.</returns>
     [UnconditionalSuppressMessage(
@@ -130,6 +134,12 @@ public static class JsonConstants
     public static JsonSerializerOptions CreateStorageJsonOptions()
     {
         var options = CreateInternalJsonOptions();
+        // Stored JSON outlives the code that wrote it: during a rolling deploy an older node reads what a newer node
+        // wrote, so a member it does not know is skipped rather than failing the read.
+        options.UnmappedMemberHandling = JsonUnmappedMemberHandling.Skip;
+        // A round trip must give back what was written: an omitted null fails the read of a constructor parameter, and
+        // RespectRequiredConstructorParameters makes every one required.
+        options.DefaultIgnoreCondition = JsonIgnoreCondition.Never;
         options.Converters.Add(new ObjectToInferredTypesJsonConverter());
 
         return options;
@@ -147,18 +157,25 @@ public static class JsonConstants
         options.NumberHandling = JsonNumberHandling.AllowReadingFromString;
         options.ReadCommentHandling = JsonCommentHandling.Disallow;
         options.DefaultIgnoreCondition = JsonIgnoreCondition.Never;
-        options.ReferenceHandler = ReferenceHandler.IgnoreCycles;
+        // A cycle in a response is a modelling bug; IgnoreCycles would hide it by writing null, so the write throws.
+        options.ReferenceHandler = null;
         // Make it populate when this get fixed: https://github.com/dotnet/runtime/issues/92877
         options.PreferredObjectCreationHandling = JsonObjectCreationHandling.Replace;
-        options.UnknownTypeHandling = JsonUnknownTypeHandling.JsonNode;
+        options.UnknownTypeHandling = JsonUnknownTypeHandling.JsonElement;
         options.UnmappedMemberHandling = JsonUnmappedMemberHandling.Skip;
+        // A proxy or WAF that reads the first copy of a repeated key would vet a different payload than the app binds.
+        options.AllowDuplicateProperties = false;
+        // Clients do not all write a polymorphic type discriminator first, and the order carries no meaning.
+        options.AllowOutOfOrderMetadataProperties = true;
         options.IgnoreReadOnlyProperties = false;
         options.WriteIndented = false;
         options.RespectNullableAnnotations = true;
         options.RespectRequiredConstructorParameters = true;
         options.AllowTrailingCommas = true;
         options.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
-        options.DictionaryKeyPolicy = JsonNamingPolicy.CamelCase;
+        // String dictionary keys are data (identifiers, role names, user input), not member names, so they go out as
+        // written; a response that wants camelCase keys, such as validation errors, names them itself.
+        options.DictionaryKeyPolicy = null;
         // Enums go out under their member names, so a route, query, or header value a client copies from a response or
         // the OpenAPI document is the text Enum.TryParse already reads, and binding it needs no rewrite or allocation.
         _AddDefaultConverters(options, enumNamingPolicy: null);
@@ -188,7 +205,7 @@ public static class JsonConstants
         options.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
         // Make it populate when this get fixed: https://github.com/dotnet/runtime/issues/92877
         options.PreferredObjectCreationHandling = JsonObjectCreationHandling.Replace;
-        options.UnknownTypeHandling = JsonUnknownTypeHandling.JsonNode;
+        options.UnknownTypeHandling = JsonUnknownTypeHandling.JsonElement;
         options.UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow;
         // Parsers in other languages disagree on which duplicate wins, so a strict contract refuses the ambiguity.
         options.AllowDuplicateProperties = false;

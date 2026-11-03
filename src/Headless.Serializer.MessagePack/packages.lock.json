@@ -135,9 +135,6 @@
         "resolved": "10.0.13",
         "contentHash": "ZlcywyQ7FJmgOV2nctdfOEPGS0kRK8T2CdOoPr6F4HPYpmjSo6GQfj3yTyOzNO6B+2U84/JKSPkJJMWqLmVsMw=="
       },
-      "headless.generator.primitives.abstractions": {
-        "type": "Project"
-      },
       "headless.serializer.abstractions": {
         "type": "Project"
       }

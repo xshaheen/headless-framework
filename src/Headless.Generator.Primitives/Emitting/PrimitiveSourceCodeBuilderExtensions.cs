@@ -31,6 +31,11 @@ internal static class PrimitiveSourceCodeBuilderExtensions
         return builder.AppendLine($"[global::System.ComponentModel.TypeConverter(typeof({typeName}))]");
     }
 
+    public static SourceCodeBuilder AppendMessagePackFormatterAttribute(this SourceCodeBuilder builder, string typeName)
+    {
+        return builder.AppendLine($"[{TypeNames.MessagePackFormatterAttribute}(typeof({typeName}))]");
+    }
+
     /// <summary>
     /// Every primitive implements <c>IComparable</c> so it can be sorted, but ordering operators are generated
     /// only for numeric, char, and date/time types. CA1036 would otherwise ask the consumer to add <c>&lt;</c> to an

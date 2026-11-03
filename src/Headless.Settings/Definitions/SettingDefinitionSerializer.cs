@@ -25,7 +25,9 @@ public sealed class SettingDefinitionSerializer(IGuidGenerator guidGenerator) : 
                 isEncrypted: setting.IsEncrypted
             );
 
-            foreach (var property in _AsStored(setting.ExtraProperties))
+            // The record is compared with the stored one to decide whether the store is current, so its bag holds what
+            // the store reads back (a long for an int, a name for an enum), not the values the code declared.
+            foreach (var property in JsonConstants.DefaultStorageJsonOptions.RoundTrip(setting.ExtraProperties) ?? [])
             {
                 record.SetProperty(property.Key, property.Value);
             }
@@ -80,20 +82,6 @@ public sealed class SettingDefinitionSerializer(IGuidGenerator guidGenerator) : 
     private static string? _SerializeProviders(List<string> providers)
     {
         return providers.Count != 0 ? providers.JoinAsString(",") : null;
-    }
-
-    // The record is compared with the stored record to decide whether the store is current, so its bag holds what the
-    // store reads back (a long for an int, a string for an enum) rather than the CLR values the code declared.
-    private static ExtraProperties _AsStored(ExtraProperties extraProperties)
-    {
-        if (extraProperties.Count == 0)
-        {
-            return extraProperties;
-        }
-
-        var json = JsonSerializer.SerializeToUtf8Bytes(extraProperties, JsonConstants.DefaultStorageJsonOptions);
-
-        return JsonSerializer.Deserialize<ExtraProperties>(json, JsonConstants.DefaultStorageJsonOptions) ?? [];
     }
 }
 

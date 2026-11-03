@@ -86,7 +86,11 @@ public sealed class SqlServerAuditLogStorageTests(SqlServerAuditLogFixture fixtu
                     EntityId = "ORD-2",
                     TenantId = "tenant-names",
                     OldValues = new Dictionary<string, object?>(StringComparer.Ordinal) { ["TotalAmount"] = 10m },
-                    NewValues = new Dictionary<string, object?>(StringComparer.Ordinal) { ["TotalAmount"] = 12.5m },
+                    NewValues = new Dictionary<string, object?>(StringComparer.Ordinal)
+                    {
+                        ["TotalAmount"] = 12.5m,
+                        ["Change"] = AuditChangeType.Deleted,
+                    },
                     ChangedFields = ["TotalAmount"],
                     CreatedAt = new DateTimeOffset(2026, 5, 24, 12, 0, 0, TimeSpan.Zero),
                 },
@@ -104,6 +108,8 @@ public sealed class SqlServerAuditLogStorageTests(SqlServerAuditLogFixture fixtu
         var changed = entry.ChangedFields!.Single();
         entry.NewValues![changed].Should().BeOfType<JsonElement>().Which.GetDecimal().Should().Be(12.5m);
         entry.OldValues![changed].Should().BeOfType<JsonElement>().Which.GetDecimal().Should().Be(10m);
+        // Enums are stored by name, so reordering an enum never changes what history says
+        entry.NewValues["Change"].Should().BeOfType<JsonElement>().Which.GetString().Should().Be("deleted");
     }
 
     [Fact]

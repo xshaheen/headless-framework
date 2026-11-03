@@ -12,6 +12,13 @@ public sealed class PrimitiveGeneratorTests
 {
     private const int _GenerateAllFileCounts = 7;
 
+    private static readonly PrimitiveGlobalOptions _MessagePackOnlyOptions = new()
+    {
+        GenerateJsonConverters = false,
+        GenerateTypeConverters = false,
+        GenerateMessagePackFormatters = true,
+    };
+
     private readonly PrimitiveGlobalOptions _generateAllOptions = new()
     {
         GenerateJsonConverters = true, // generate 1 files
@@ -663,6 +670,88 @@ public sealed class PrimitiveGeneratorTests
             """;
 
         return TestHelper.VerifyDiagnostic(source, "HF1001", generated => generated.Files.Should().BeEmpty());
+    }
+
+    [Fact]
+    public Task should_generate_messagepack_formatter_when_struct_primitive()
+    {
+        const string source = """
+            using System;
+            using Headless.Generator.Primitives;
+
+            namespace Headless.Primitives;
+
+            public readonly partial struct OrderId : IPrimitive<Guid>
+            {
+                public static PrimitiveValidationResult Validate(Guid value)
+                {
+                    return value == Guid.Empty ? "Invalid Value" : PrimitiveValidationResult.Ok;
+                }
+            }
+            """;
+
+        return TestHelper.Verify(
+            source,
+            generated =>
+            {
+                generated.Files.Should().HaveCount(2);
+                generated
+                    .Files.Should()
+                    .Contain(file =>
+                        file.Contains(
+                            "[global::MessagePack.MessagePackFormatter(typeof(global::Headless.Primitives.Converters.OrderIdMessagePackFormatter))]",
+                            StringComparison.Ordinal
+                        )
+                    );
+            },
+            _MessagePackOnlyOptions
+        );
+    }
+
+    [Fact]
+    public Task should_generate_messagepack_formatter_with_nil_handling_when_class_primitive()
+    {
+        const string source = """
+            using System;
+            using Headless.Generator.Primitives;
+
+            namespace Headless.Primitives;
+
+            public sealed partial class Email : IPrimitive<string>
+            {
+                public static PrimitiveValidationResult Validate(string value)
+                {
+                    return value.Contains('@', StringComparison.Ordinal) ? PrimitiveValidationResult.Ok : "Invalid Value";
+                }
+            }
+            """;
+
+        return TestHelper.Verify(source, generated => generated.Files.Should().HaveCount(2), _MessagePackOnlyOptions);
+    }
+
+    [Fact]
+    public void should_not_generate_messagepack_formatter_when_switch_is_off()
+    {
+        // given
+        const string source = """
+            using System;
+            using Headless.Generator.Primitives;
+
+            namespace Headless.Primitives;
+
+            public readonly partial struct OrderId : IPrimitive<Guid>
+            {
+                public static PrimitiveValidationResult Validate(Guid value) => PrimitiveValidationResult.Ok;
+            }
+            """;
+
+        // when
+        var generated = TestHelpers.GetGeneratedOutput<PrimitiveGenerator>(source, _generateAllOptions);
+
+        // then
+        generated.Diagnostics.Where(x => x.Severity == DiagnosticSeverity.Error).Should().BeEmpty();
+        generated.Files.Should().NotBeEmpty();
+        generated.Files.Should().NotContain(file => file.Contains("MessagePack", StringComparison.Ordinal));
     }
 
     private static class TestHelper

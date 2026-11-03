@@ -42,7 +42,12 @@ public sealed class ErrorDescriptor
         Code = code;
         Description = description;
         Severity = severity;
-        _params = new Dictionary<string, object?>(paramsDictionary, StringComparer.OrdinalIgnoreCase);
+        _params = new Dictionary<string, object?>(paramsDictionary.Count, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var (key, value) in paramsDictionary)
+        {
+            _params[_Key(key)] = value;
+        }
     }
 
     /// <summary>Initializes a new <see cref="ErrorDescriptor"/> with parameters supplied as a contiguous span.</summary>
@@ -107,7 +112,10 @@ public sealed class ErrorDescriptor
     [JsonIgnore]
     public ValidationSeverity Severity { get; private init; }
 
-    /// <summary>Object containing parameter values related to the error.</summary>
+    /// <summary>
+    /// Object containing parameter values related to the error. Keys are stored camelCase (<c>MinLength</c> becomes
+    /// <c>minLength</c>) and compared case-insensitively.
+    /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyDictionary<string, object?>? Params => _params;
 
@@ -118,7 +126,7 @@ public sealed class ErrorDescriptor
     public ErrorDescriptor WithParam(string key, object? value)
     {
         _params ??= new(StringComparer.OrdinalIgnoreCase);
-        _params[key] = value;
+        _params[_Key(key)] = value;
 
         return this;
     }
@@ -132,11 +140,15 @@ public sealed class ErrorDescriptor
 
         foreach (var (key, value) in values)
         {
-            _params[key] = value;
+            _params[_Key(key)] = value;
         }
 
         return this;
     }
+
+    // Params go out in HTTP error responses, whose member names are camelCase, and the web JSON options write dictionary
+    // keys as given; naming them here keeps the response shape whichever options serialize the descriptor.
+    private static string _Key(string key) => JsonNamingPolicy.CamelCase.ConvertName(key);
 
     private static Dictionary<string, object?>? _CreateParams(ReadOnlySpan<(string Key, object? Value)> parameters)
     {
@@ -149,7 +161,7 @@ public sealed class ErrorDescriptor
 
         foreach (var (key, value) in parameters)
         {
-            result[key] = value;
+            result[_Key(key)] = value;
         }
 
         return result;
@@ -162,12 +174,12 @@ public sealed class ErrorDescriptor
     {
         var result = new Dictionary<string, object?>(1 + additionalParameters.Length, StringComparer.OrdinalIgnoreCase)
         {
-            [parameter.Key] = parameter.Value,
+            [_Key(parameter.Key)] = parameter.Value,
         };
 
         foreach (var (key, value) in additionalParameters)
         {
-            result[key] = value;
+            result[_Key(key)] = value;
         }
 
         return result;

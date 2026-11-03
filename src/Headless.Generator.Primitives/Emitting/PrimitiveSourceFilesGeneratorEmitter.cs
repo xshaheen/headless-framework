@@ -99,6 +99,15 @@ internal static class PrimitiveSourceFilesGeneratorEmitter
             );
         }
 
+        // The attribute is what lets the standard and contractless resolvers find the formatter with no resolver
+        // composition by the consumer: their chain includes AttributeFormatterResolver.
+        if (options.GenerateMessagePackFormatters)
+        {
+            builder.AppendMessagePackFormatterAttribute(
+                $"global::{data.ConvertersNamespace}.{MessagePackFormatterSourceFilesGeneratorEmitter.CreateClassName(data.ClassName)}"
+            );
+        }
+
         if (!data.IsValueType)
         {
             builder.AppendClass(

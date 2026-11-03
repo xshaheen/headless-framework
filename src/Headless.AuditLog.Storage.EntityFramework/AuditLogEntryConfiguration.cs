@@ -3,6 +3,7 @@
 using Headless.AuditLog.Internal;
 using Headless.EntityFramework;
 using Headless.Hosting;
+using Headless.Serializer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -14,7 +15,9 @@ namespace Headless.AuditLog;
 internal sealed class AuditLogEntryConfiguration(AuditLogStorageOptions options, StorageNamingStyle style)
     : IEntityTypeConfiguration<AuditLogEntry>
 {
-    private static readonly JsonSerializerOptions _JsonOptions = AuditLogJsonOptions.Instance;
+    // The audit format is the internal preset on every provider: keys as captured, enums by name so a reordered enum
+    // never changes what history says, and values read back as JsonElement. It never follows the host's JSON options.
+    private static readonly JsonSerializerOptions _JsonOptions = JsonConstants.DefaultInternalJsonOptions;
 
     public void Configure(EntityTypeBuilder<AuditLogEntry> builder)
     {

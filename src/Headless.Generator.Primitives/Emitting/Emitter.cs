@@ -78,6 +78,11 @@ internal static class Emitter
                     dapperConverterTypes.Add(generatorData);
                     context.AddDapperTypeHandlerConverter(generatorData);
                 }
+
+                if (globalOptions.GenerateMessagePackFormatters)
+                {
+                    context.AddMessagePackFormatter(generatorData);
+                }
             }
 
             // Add helpers

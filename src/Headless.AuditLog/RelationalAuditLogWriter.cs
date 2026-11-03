@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Data.Common;
 using System.Globalization;
 using System.Text;
+using Headless.Serializer;
 using Headless.Sql;
 
 namespace Headless.AuditLog;
@@ -289,7 +290,7 @@ internal sealed class RelationalAuditLogWriter(RelationalAuditLogTable table)
     private static string? _Serialize<T>(T? value)
         where T : class
     {
-        return value is null ? null : JsonSerializer.Serialize(value, AuditLogJsonOptions.Instance);
+        return value is null ? null : JsonSerializer.Serialize(value, JsonConstants.DefaultInternalJsonOptions);
     }
 }
 #pragma warning restore CA2100

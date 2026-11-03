@@ -31,7 +31,7 @@ public sealed class SystemJsonSerializerTests
     }
 
     [Fact]
-    public void should_read_object_values_as_json_element_by_default()
+    public void should_read_object_values_as_inferred_primitives_by_default()
     {
         // given
         var json = _serializer.SerializeToString(
@@ -43,8 +43,8 @@ public sealed class SystemJsonSerializerTests
 
         // then
         result.Should().NotBeNull();
-        result!["Name"].Should().BeOfType<JsonElement>().Which.GetString().Should().Be("Billing");
-        result["Order"].Should().BeOfType<JsonElement>().Which.GetInt32().Should().Be(5);
+        result!["Name"].Should().Be("Billing");
+        result["Order"].Should().Be(5L);
     }
 
     [Fact]
@@ -62,7 +62,7 @@ public sealed class SystemJsonSerializerTests
         var result = reader.ReadToEnd();
 
         // then
-        result.Should().Be("{\"name\":\"Test\",\"age\":30}");
+        result.Should().Be("{\"Name\":\"Test\",\"Age\":30}");
     }
 
     [Fact]
@@ -80,14 +80,14 @@ public sealed class SystemJsonSerializerTests
         var result = reader.ReadToEnd();
 
         // then
-        result.Should().Be("{\"name\":\"Test\",\"age\":30}");
+        result.Should().Be("{\"Name\":\"Test\",\"Age\":30}");
     }
 
     [Fact]
     public void should_return_valid_object_when_deserialize_stream()
     {
         // given
-        const string json = "{\"name\":\"Test\",\"age\":30}";
+        const string json = "{\"Name\":\"Test\",\"Age\":30}";
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
 
         // when
@@ -104,11 +104,14 @@ public sealed class SystemJsonSerializerTests
     {
         // given — DefaultWebJsonOptions sets AllowTrailingCommas = true; the Stream/sequence path must honor the
         // configured reader options, not fall back to Utf8JsonReader defaults.
+        var provider = Substitute.For<IJsonOptionsProvider>();
+        provider.GetDeserializeOptions().Returns(JsonConstants.DefaultWebJsonOptions);
+        var serializer = new SystemJsonSerializer(provider);
         const string json = "{\"name\":\"Test\",\"age\":30,}";
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
 
         // when
-        var result = _serializer.Deserialize<TestClass>(stream);
+        var result = serializer.Deserialize<TestClass>(stream);
 
         // then
         result.Should().NotBeNull();
@@ -122,7 +125,7 @@ public sealed class SystemJsonSerializerTests
         // given — a payload preceded by a prefix the caller has already consumed; the stream is positioned at the
         // payload start, so deserialization must read from Position, not from offset 0.
         var prefix = "PREFIX"u8.ToArray();
-        var payload = Encoding.UTF8.GetBytes("{\"name\":\"Test\",\"age\":30}");
+        var payload = Encoding.UTF8.GetBytes("{\"Name\":\"Test\",\"Age\":30}");
         using var stream = new MemoryStream([.. prefix, .. payload]);
         stream.Position = prefix.Length;
 
@@ -140,7 +143,7 @@ public sealed class SystemJsonSerializerTests
     {
         // given — the sequence/Stream path must reject trailing non-whitespace just like the span/byte[] overloads,
         // so a corrupt "{...}<garbage>" payload cannot deserialize silently.
-        const string json = "{\"name\":\"Test\",\"age\":30}garbage";
+        const string json = "{\"Name\":\"Test\",\"Age\":30}garbage";
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
 
         // when
@@ -154,7 +157,7 @@ public sealed class SystemJsonSerializerTests
     public void deserialize_stream_consumes_the_stream()
     {
         // given
-        var payload = Encoding.UTF8.GetBytes("{\"name\":\"Test\",\"age\":30}");
+        var payload = Encoding.UTF8.GetBytes("{\"Name\":\"Test\",\"Age\":30}");
         using var stream = new MemoryStream(payload);
 
         // when
@@ -257,7 +260,7 @@ public sealed class SystemJsonSerializerTests
     public void should_deserialize_with_type_parameter()
     {
         // given
-        const string json = "{\"name\":\"John\",\"age\":42}";
+        const string json = "{\"Name\":\"John\",\"Age\":42}";
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
 
         // when
@@ -348,7 +351,7 @@ public sealed class SystemJsonSerializerTests
         json.Should().Contain("\"visible\"");
         json.Should().NotContain("IgnoredProperty");
         json.Should().NotContain("should-not-appear");
-        json.Should().Contain("\"regularProperty\"");
+        json.Should().Contain("\"RegularProperty\"");
 
         // verify deserialization respects JsonPropertyName
         using var deserializeStream = new MemoryStream(Encoding.UTF8.GetBytes(json));
