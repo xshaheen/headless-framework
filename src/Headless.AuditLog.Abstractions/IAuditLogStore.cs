@@ -33,7 +33,11 @@ public interface IAuditLogStore
     /// be called before the entity change is saved: the rows then commit in the same batch, and a failed save leaves
     /// nothing behind. A store that writes during <see cref="Save"/> must run after the entity change succeeds.
     /// </summary>
-    bool AddsToSavingContext => false;
+    /// <remarks>
+    /// Every store declares this, and the member has no default, because the two answers order the save differently:
+    /// a default would let a store written before the member existed switch save paths on upgrade without notice.
+    /// </remarks>
+    bool AddsToSavingContext { get; }
 
     /// <summary>
     /// Persists audit entries asynchronously using the specified saving context.

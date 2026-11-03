@@ -10,6 +10,9 @@ namespace Headless.AuditLog;
 internal sealed class RelationalAuditLogStore(RelationalAuditLogWriter writer, RelationalAuditLogEnlistment enlistment)
     : IAuditLogStore
 {
+    // Writes its rows during Save, so the pipeline must call it only after the entity change is saved.
+    public bool AddsToSavingContext => false;
+
     public IReadOnlyList<IAuditLogStoreEntry> Save(IReadOnlyList<AuditLogEntryData> entries, object savingContext)
     {
         if (entries.Count == 0)
