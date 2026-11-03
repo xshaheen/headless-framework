@@ -2,6 +2,7 @@
 
 using Headless.DistributedLocks;
 using Headless.DistributedLocks.PostgreSql;
+using Headless.Sql;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
@@ -41,6 +42,27 @@ public sealed class PostgreSqlDistributedLockTests(PostgreSqlDistributedLockFixt
             options.DataSource = dataSource;
             options.EnablePushWakeup = false;
         });
+        var locks = provider.GetRequiredService<IDistributedLock>();
+
+        // when
+        await using var handle = await locks.AcquireAsync(Faker.Random.AlphaNumeric(12), cancellationToken: AbortToken);
+
+        // then
+        handle.FencingToken.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task should_acquire_on_the_shared_connection_string_when_the_app_data_source_multiplexes()
+    {
+        // given (an app data source with Multiplexing on, which cannot hold a session advisory lock)
+        var multiplexing = new NpgsqlConnectionStringBuilder(fixture.ConnectionString) { Multiplexing = true };
+        await using var appDataSource = NpgsqlDataSource.Create(multiplexing.ConnectionString);
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(appDataSource);
+        services.AddPostgreSqlSql(fixture.ConnectionString);
+        services.AddHeadlessDistributedLocks(setup => setup.UsePostgreSql());
+        await using var provider = services.BuildServiceProvider();
         var locks = provider.GetRequiredService<IDistributedLock>();
 
         // when

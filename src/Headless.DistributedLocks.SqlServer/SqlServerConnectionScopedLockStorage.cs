@@ -540,6 +540,7 @@ internal sealed class SqlServerConnectionScopedLockStorage(
         private readonly SemaphoreSlim _connectionGate = new(1, 1);
 
         private ITimer? _probeTimer;
+        private Task? _probeTask;
         private int _disposed;
         private int _probing;
 
@@ -606,7 +607,7 @@ internal sealed class SqlServerConnectionScopedLockStorage(
                 return;
             }
 
-            _ = _ProbeAsync();
+            Volatile.Write(ref _probeTask, _ProbeAsync());
         }
 
         private async Task _ProbeAsync()
@@ -714,6 +715,15 @@ internal sealed class SqlServerConnectionScopedLockStorage(
             if (_probeTimer is not null)
             {
                 await _probeTimer.DisposeAsync().ConfigureAwait(false);
+            }
+
+            // The timer callback only launches the probe, so disposing the timer does not wait for one already on the
+            // connection: a probe that took the gate after release freed it would otherwise run its command, release the
+            // gate, and touch the token source after all three are disposed underneath it. The probe catches its own
+            // failures; its outcome matters here only as "finished".
+            if (Volatile.Read(ref _probeTask) is { } probe)
+            {
+                await probe.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
             }
 
             // Unsubscribe before closing the connection so the imminent StateChange to Closed is not

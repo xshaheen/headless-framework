@@ -98,5 +98,12 @@ internal sealed class PostgreSqlDistributedLockOptionsValidator : AbstractValida
             .WithMessage(
                 $"{nameof(PostgreSqlDistributedLockOptions.ConnectionString)} or {nameof(PostgreSqlDistributedLockOptions.DataSource)} is required."
             );
+        RuleFor(x => x)
+            .Must(x => !PostgresDataSourceFactory.IsMultiplexing(x.DataSource?.ConnectionString ?? x.ConnectionString))
+            .WithMessage(
+                "PostgreSQL distributed locks need a connection without Multiplexing: a session advisory lock lives on one "
+                    + "physical connection, which multiplexing does not bind. Remove Multiplexing=true from the lock's "
+                    + "connection string or data source, or give the lock its own connection string."
+            );
     }
 }
