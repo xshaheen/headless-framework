@@ -20,13 +20,15 @@ namespace Headless.Tus;
 /// <see cref="ITusExpirationStore"/>. The first pass runs immediately at startup (reclaiming
 /// uploads that expired while the app was down, matching tusdotnet's sample cleanup service),
 /// then every <see cref="TusExpiredUploadsCleanupOptions.Interval"/>; failures are logged and
-/// the loop continues.
+/// the loop continues. When a cleanup gate is registered (by <c>AddDistributedLockTusLockProvider</c>),
+/// a node runs a pass only when it claims it, so one node sweeps per interval.
 /// </remarks>
 internal sealed partial class TusExpiredUploadsCleanupService(
     ITusExpirationStore store,
     IOptions<TusExpiredUploadsCleanupOptions> options,
     TimeProvider timeProvider,
-    ILogger<TusExpiredUploadsCleanupService> logger
+    ILogger<TusExpiredUploadsCleanupService> logger,
+    ITusExpiredUploadsCleanupGate? gate = null
 ) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -46,6 +48,19 @@ internal sealed partial class TusExpiredUploadsCleanupService(
     {
         try
         {
+            // Hold the claim for most of the interval so the other nodes skip their ticks in it, but not all of it,
+            // so this node's own next tick is not refused by its still-live claim.
+            var interval = options.Value.Interval;
+
+            if (
+                gate is not null
+                && !await gate.TryClaimPassAsync(interval - (interval / 10), stoppingToken).ConfigureAwait(false)
+            )
+            {
+                LogCleanupPassSkipped(logger);
+                return;
+            }
+
             var removed = await store.RemoveExpiredFilesAsync(stoppingToken).ConfigureAwait(false);
 
             if (removed > 0)
@@ -72,6 +87,13 @@ internal sealed partial class TusExpiredUploadsCleanupService(
 
     [LoggerMessage(EventId = 3261, Level = LogLevel.Error, Message = "Expired-upload cleanup pass failed")]
     private static partial void LogCleanupFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 3266,
+        Level = LogLevel.Debug,
+        Message = "Skipped the expired-upload cleanup pass: another node claimed it"
+    )]
+    private static partial void LogCleanupPassSkipped(ILogger logger);
 }
 
 /// <summary>Options for <see cref="TusExpiredUploadsCleanupService"/>.</summary>
@@ -85,9 +107,11 @@ public sealed class TusExpiredUploadsCleanupOptions
     /// store's uploads (a prefix listing for the Azure store) — prefer a coarser interval on
     /// containers with many uploads; the expiration window itself is configured on
     /// <c>DefaultTusConfiguration.Expiration</c>. In multi-node deployments every node runs its
-    /// own loop against the same store: deletions are idempotent so this is safe, but the scan
-    /// load multiplies and the logged removal counts are per-node — wrap the service in a
-    /// distributed-lock single-flight guard if that matters.
+    /// own loop against the same store. With <c>AddDistributedLockTusLockProvider</c> registered,
+    /// the node that takes the cleanup lease runs the pass and holds the lease for 90% of the
+    /// interval, so the store is swept about once per interval across the cluster. Without it,
+    /// every node sweeps on every tick: deletions are idempotent so this is safe, but the scan
+    /// load multiplies and the logged removal counts are per-node.
     /// </remarks>
     public TimeSpan Interval { get; set; } = TimeSpan.FromMinutes(5);
 }

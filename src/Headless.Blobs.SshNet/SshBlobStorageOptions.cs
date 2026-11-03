@@ -54,6 +54,20 @@ public sealed class SshBlobStorageOptions
     public int MaxPoolSize { get; set; } = 4;
 
     /// <summary>
+    /// Maximum SFTP connections held by open read streams, the results of
+    /// <see cref="IBlobStorage.OpenReadStreamAsync"/>. Default is 4.
+    /// </summary>
+    /// <remarks>
+    /// A read stream keeps its connection until the caller disposes it, so a download read at a slow client's pace
+    /// (for example through the signed-URL endpoint) holds the connection for the whole transfer. These connections
+    /// are separate from the <see cref="MaxPoolSize"/> pool, so open streams never block uploads, deletes, listings,
+    /// or info reads; once all of them are in use, the next <c>OpenReadStreamAsync</c> waits for a stream to be
+    /// disposed or for its own cancellation. A store can therefore hold up to
+    /// <see cref="MaxPoolSize"/> + <see cref="MaxReadStreamConnections"/> SSH connections.
+    /// </remarks>
+    public int MaxReadStreamConnections { get; set; } = 4;
+
+    /// <summary>
     /// Allow none-authentication fallback. When false (default), throws if no password or private key is provided.
     /// Set to true only if intentionally using passwordless authentication.
     /// </summary>
@@ -72,5 +86,7 @@ internal sealed class SshBlobStorageOptionsValidator : AbstractValidator<SshBlob
             .InclusiveBetween(1, 100)
             .GreaterThanOrEqualTo(x => x.MaxConcurrentOperations)
             .WithMessage("MaxPoolSize must be >= MaxConcurrentOperations");
+
+        RuleFor(x => x.MaxReadStreamConnections).InclusiveBetween(1, 100);
     }
 }
