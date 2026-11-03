@@ -61,11 +61,9 @@ public static class HeadlessAuditModelPolicyExtensions
                 && options.EntityFilter?.Invoke(policyEntityType.ClrType) != true,
             Properties =
             [
-                .. entityType
-                    .GetProperties()
-                    .Select(property =>
-                        HeadlessAuditPolicyResolver.ResolveProperty(property, entityType.ClrType, options)
-                    ),
+                .. HeadlessAuditPolicyResolver
+                    .GetAuditableProperties(entityType)
+                    .Select(path => HeadlessAuditPolicyResolver.ResolveProperty(path, entityType.ClrType, options)),
             ],
         };
     }

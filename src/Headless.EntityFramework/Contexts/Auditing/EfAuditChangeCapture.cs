@@ -233,13 +233,21 @@ internal sealed class EfAuditChangeCapture(
         var clrType = entityType.ClrType;
         var properties = new List<CapturedProperty>();
 
-        foreach (var property in entityType.GetProperties())
+        foreach (var path in HeadlessAuditPolicyResolver.GetAuditableProperties(entityType))
         {
-            var policy = HeadlessAuditPolicyResolver.ResolveProperty(property, clrType, opts);
+            var policy = HeadlessAuditPolicyResolver.ResolveProperty(path, clrType, opts);
 
             if (policy.IsCaptured)
             {
-                properties.Add(new CapturedProperty(property, policy));
+                // Capture runs against the runtime model, whose metadata implements the IProperty and IComplexProperty the entry API takes.
+                properties.Add(
+                    new CapturedProperty(
+                        (IProperty)path.Property,
+                        policy,
+                        path.Path,
+                        [.. path.ComplexChain.Cast<IComplexProperty>()]
+                    )
+                );
             }
         }
 
@@ -323,10 +331,9 @@ internal sealed class EfAuditChangeCapture(
         var actionContext = new ActionContext();
         List<TemporaryValuePatch>? temporaryValuePatches = null;
 
-        foreach (var (metadata, policy) in plan.Properties)
+        foreach (var (metadata, policy, propertyName, complexChain) in plan.Properties)
         {
-            var property = entry.Property(metadata);
-            var propertyName = metadata.Name;
+            var property = _GetPropertyEntry(entry, metadata, complexChain);
 
             _CaptureActionFlags(actionContext, propertyName, property);
 
@@ -412,6 +419,27 @@ internal sealed class EfAuditChangeCapture(
         }
 
         return data;
+    }
+
+    private static PropertyEntry _GetPropertyEntry(
+        EntityEntry entry,
+        IProperty metadata,
+        IComplexProperty[] complexChain
+    )
+    {
+        if (complexChain.Length == 0)
+        {
+            return entry.Property(metadata);
+        }
+
+        var complex = entry.ComplexProperty(complexChain[0]);
+
+        for (var i = 1; i < complexChain.Length; i++)
+        {
+            complex = complex.ComplexProperty(complexChain[i]);
+        }
+
+        return complex.Property(metadata);
     }
 
     private static void _CaptureActionFlags(ActionContext context, string propertyName, PropertyEntry property)
@@ -633,7 +661,16 @@ internal sealed class EfAuditChangeCapture(
     /// </summary>
     private sealed record AuditCapturePlan(AuditLogOptions Options, bool? IsAudited, CapturedProperty[] Properties);
 
-    private readonly record struct CapturedProperty(IProperty Metadata, AuditPropertyPolicy Policy);
+    /// <summary>
+    /// One captured scalar property: <see cref="Path"/> is the name its values are recorded under (dotted for a complex
+    /// type's property), and <see cref="ComplexChain"/> the complex properties the entry walks to reach it.
+    /// </summary>
+    private readonly record struct CapturedProperty(
+        IProperty Metadata,
+        AuditPropertyPolicy Policy,
+        string Path,
+        IComplexProperty[] ComplexChain
+    );
 
     private sealed record DeferredEntryResolution(
         EntityEntry Entry,

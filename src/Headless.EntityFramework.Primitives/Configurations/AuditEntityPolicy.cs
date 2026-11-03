@@ -44,7 +44,10 @@ public sealed class AuditEntityPolicy
     /// </summary>
     public required bool IsAudited { get; init; }
 
-    /// <summary>Gets the policy of every property of <see cref="EntityType"/>, in model order.</summary>
+    /// <summary>
+    /// Gets the policy of every property capture can read on <see cref="EntityType"/>, in model order: its own
+    /// properties, then those of each single-valued complex property, depth first. Complex collections are not captured.
+    /// </summary>
     public required IReadOnlyList<AuditPropertyPolicy> Properties { get; init; }
 
     /// <inheritdoc/>
@@ -60,6 +63,14 @@ public sealed class AuditPropertyPolicy
 {
     /// <summary>Gets the property this policy describes.</summary>
     public required IReadOnlyProperty Property { get; init; }
+
+    /// <summary>
+    /// Gets the name capture records the property's values under: the property name, or for a property of a complex
+    /// type the dotted path from the entity (<c>Address.City</c>).
+    /// <see cref="Headless.AuditLog.AuditLogOptions.DefaultExcludedProperties"/> and
+    /// <see cref="Headless.AuditLog.AuditLogOptions.PropertyFilter"/> match against this name.
+    /// </summary>
+    public required string Path { get; init; }
 
     /// <summary>Gets whether the property is marked sensitive with <c>IsAuditSensitive(...)</c>.</summary>
     public required bool IsSensitive { get; init; }
@@ -83,6 +94,6 @@ public sealed class AuditPropertyPolicy
     /// <inheritdoc/>
     public override string ToString()
     {
-        return Property.Name;
+        return Path;
     }
 }

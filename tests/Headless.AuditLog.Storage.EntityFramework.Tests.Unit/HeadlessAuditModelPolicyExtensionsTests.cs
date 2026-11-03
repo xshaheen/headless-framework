@@ -171,6 +171,25 @@ public sealed partial class EfAuditChangeCaptureTests
         nullEntityType.Should().Throw<ArgumentNullException>();
     }
 
+    [Fact]
+    public async Task should_report_complex_type_properties_under_the_paths_capture_records()
+    {
+        var (db, conn) = _CreateComplexDb();
+        await using (conn)
+        await using (db)
+        {
+            var policy = _Policy<ComplexCustomer>(db, new AuditLogOptions());
+
+            policy
+                .Properties.Select(property => property.Path)
+                .Should()
+                .Contain(["Shipping.City", "Shipping.Geo.Latitude", "Contact.Phone", "Backup.Phone"]);
+            _Property(policy, "Shipping.City").ToString().Should().Be("Shipping.City");
+            _Property(policy, "Contact.Phone").SensitiveDataStrategy.Should().Be(SensitiveDataStrategy.Redact);
+            _Property(policy, "Contact.Note").IsCaptured.Should().BeFalse();
+        }
+    }
+
     private static AuditEntityPolicy _Policy<TEntity>(DbContext db, AuditLogOptions options)
     {
         return db.Model.FindEntityType(typeof(TEntity))!.GetAuditPolicy(options);
@@ -178,8 +197,6 @@ public sealed partial class EfAuditChangeCaptureTests
 
     private static AuditPropertyPolicy _Property(AuditEntityPolicy policy, string name)
     {
-        return policy.Properties.Single(property =>
-            string.Equals(property.Property.Name, name, StringComparison.Ordinal)
-        );
+        return policy.Properties.Single(property => string.Equals(property.Path, name, StringComparison.Ordinal));
     }
 }
