@@ -30,7 +30,11 @@ public sealed class SitemapShard
     /// <summary>The 0-based position of this shard in the generated sequence.</summary>
     public int Index { get; }
 
-    /// <summary>The number of <see cref="SitemapUrl"/> entries in this shard.</summary>
+    /// <summary>
+    /// The number of <see cref="SitemapUrl"/> entries in this shard. An entry with alternates writes one
+    /// <c>&lt;url&gt;</c> per alternate, so the file can hold more <c>&lt;url&gt;</c> elements than this count, but
+    /// never more than <see cref="SitemapConstants.MaxSitemapUrls"/>.
+    /// </summary>
     public int Count { get; }
 
     /// <summary>Writes this shard's sitemap XML straight into <paramref name="output"/>.</summary>

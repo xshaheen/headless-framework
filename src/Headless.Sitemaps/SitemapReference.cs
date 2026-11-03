@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
+
 namespace Headless.Sitemaps;
 
 /// <summary>Represents a node that references a sub-sitemap file in a sitemap index.</summary>
@@ -10,7 +12,18 @@ public sealed record SitemapReference
     /// Identifies the location of the sitemap. This location can be a sitemap, an Atom file,
     /// an RSS file, or a simple text file.
     /// </summary>
-    public required Uri Location { get; init; }
+    /// <exception cref="ArgumentNullException">The value is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">The value is not an absolute URI.</exception>
+    public required Uri Location
+    {
+        get;
+        init
+        {
+            Argument.IsNotNull(value);
+            Argument.IsTrue(value.IsAbsoluteUri, SitemapConstants.AbsoluteLocationRequired, nameof(value));
+            field = value;
+        }
+    }
 
     /// <summary>
     /// Identifies the time that the corresponding sitemap file was modified. It does not correspond

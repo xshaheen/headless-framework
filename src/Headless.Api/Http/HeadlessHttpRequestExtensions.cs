@@ -12,16 +12,22 @@ public static class HeadlessHttpRequestExtensions
 {
     private const string _XmlHttpRequest = "XMLHttpRequest";
 
-    /// <summary>Determines whether the specified HTTP request is an AJAX request.</summary>
+    /// <summary>
+    /// Determines whether the specified HTTP request is an AJAX request, meaning it carries the
+    /// <c>X-Requested-With: XMLHttpRequest</c> header.
+    /// </summary>
     /// <param name="request">The HTTP request.</param>
     /// <returns><see langword="true"/> if the specified HTTP request is an AJAX request; otherwise, <see langword="false"/>.</returns>
+    /// <remarks>
+    /// Only the header counts. A query-string parameter of the same name is ignored: anyone can put one in a link,
+    /// and a cross-origin page cannot set the header on a top-level navigation.
+    /// </remarks>
     /// <exception cref="ArgumentNullException">The <paramref name="request"/> parameter is <see langword="null"/>.</exception>
     public static bool IsAjaxRequest(this HttpRequest request)
     {
         Argument.IsNotNull(request);
 
-        return string.Equals(request.Query[HeaderNames.XRequestedWith], _XmlHttpRequest, StringComparison.Ordinal)
-            || string.Equals(request.Headers.XRequestedWith, _XmlHttpRequest, StringComparison.Ordinal);
+        return string.Equals(request.Headers.XRequestedWith, _XmlHttpRequest, StringComparison.Ordinal);
     }
 
     /// <summary>
