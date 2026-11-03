@@ -78,6 +78,30 @@ public sealed class RedisHybridCacheBackplaneTests(RedisCacheFixture fixture) : 
         (await reader.Cache.GetAsync<string>(key, AbortToken)).Value.Should().Be("v2");
     }
 
+    [Fact]
+    public async Task should_skip_a_message_that_is_not_an_invalidation_and_keep_delivering()
+    {
+        // given - two subscribed hosts, and the reader holds the key in L1
+        var prefix = $"hybrid-bad-{Faker.Random.AlphaNumeric(8)}:";
+        await using var writer = await _StartHostAsync(prefix);
+        await using var reader = await _StartHostAsync(prefix);
+        var key = Faker.Random.AlphaNumeric(12);
+        await writer.Cache.UpsertAsync(key, "v1", TimeSpan.FromMinutes(5), AbortToken);
+        await _WaitUntilAsync(() => ValueTask.FromResult(reader.Cache.InvalidateCacheCalls >= 1));
+        (await reader.Cache.GetAsync<string>(key, AbortToken)).Value.Should().Be("v1");
+
+        // when - something else publishes text that is not an invalidation on the channel, then a real write follows
+        await writer.Connection.GetSubscriber().PublishAsync(reader.Backplane.Channel, "not an invalidation");
+        await writer.Connection.GetSubscriber().PublishAsync(reader.Backplane.Channel, "null");
+        await writer.Cache.UpsertAsync(key, "v2", TimeSpan.FromMinutes(5), AbortToken);
+
+        // then - the bad payloads are dropped and the delivery loop still applies the write that came after them
+        await _WaitUntilAsync(async () =>
+            reader.Cache.InvalidateCacheCalls >= 2 && !await reader.Cache.LocalCache.ExistsAsync(key, AbortToken)
+        );
+        (await reader.Cache.GetAsync<string>(key, AbortToken)).Value.Should().Be("v2");
+    }
+
     private async Task<BackplaneHost> _StartHostAsync(string keyPrefix)
     {
         var connection = await ConnectionMultiplexer.ConnectAsync(fixture.ConnectionString);
