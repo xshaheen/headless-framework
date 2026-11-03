@@ -215,12 +215,7 @@ internal sealed class EfPermissionGrantRepository<TContext>(
             await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        await cache
-            .RemoveAllAsync(
-                inserted.Concat(owned).Select(_CacheKey).Distinct(StringComparer.Ordinal),
-                cancellationToken
-            )
-            .ConfigureAwait(false);
+        await _WriteCacheAsync(inserted, owned, cancellationToken).ConfigureAwait(false);
     }
 
     public Task<List<PermissionGrantRecord>> GetListEnlistedAsync(
