@@ -17,7 +17,7 @@ public sealed class InMemoryDistributedSemaphoreProviderTests : DistributedSemap
     {
         return new DistributedSemaphoreProvider(
             new InMemoryDistributedSemaphoreStorage(_timeProvider),
-            bus: null,
+            Substitute.For<IDistributedLockReleaseSignal>(),
             options ?? new DistributedLockOptions(),
             _guidGenerator,
             _timeProvider,

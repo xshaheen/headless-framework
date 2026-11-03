@@ -28,6 +28,8 @@ public sealed class HeadlessDistributedLocksSetupBuilder
 
     internal IList<IDistributedLocksOptionsExtension> Extensions { get; } = [];
 
+    internal List<Action<IServiceCollection>> CrossCuttingExtensions { get; } = [];
+
     /// <summary>
     /// Binds <see cref="DistributedLockOptions"/> from the supplied <paramref name="configuration"/>
     /// section and registers FluentValidation-backed startup validation.
@@ -147,5 +149,21 @@ public sealed class HeadlessDistributedLocksSetupBuilder
         Argument.IsNotNull(extension);
 
         Extensions.Add(extension);
+    }
+
+    /// <summary>
+    /// Queues a cross-cutting contribution (e.g. the messaging release signal) applied after the provider, so it can
+    /// replace a default the provider registered. Unlike <see cref="RegisterExtension"/>, it does not count as a
+    /// provider.
+    /// </summary>
+    /// <param name="action">The deferred service registration action.</param>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="action"/> is <see langword="null"/>.
+    /// </exception>
+    public void RegisterCrossCuttingExtension(Action<IServiceCollection> action)
+    {
+        Argument.IsNotNull(action);
+
+        CrossCuttingExtensions.Add(action);
     }
 }

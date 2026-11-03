@@ -2,7 +2,6 @@
 
 using System.Diagnostics;
 using Headless.Checks;
-using Headless.Messaging;
 using Microsoft.Extensions.Logging;
 using Polly;
 
@@ -25,18 +24,17 @@ namespace Headless.DistributedLocks;
 /// </remarks>
 internal sealed class DistributedReadWriteLock(
     IDistributedReadWriteLockStorage storage,
-    IBus? bus,
+    IDistributedLockReleaseSignal releaseSignal,
     DistributedLockOptions lockOptions,
     IGuidGenerator guidGenerator,
     TimeProvider timeProvider,
     ILogger<DistributedReadWriteLock> logger
-) : IDistributedReadWriteLock, ICanReceiveLockReleased
+) : IDistributedReadWriteLock, IDistributedLockReleaseListener
 {
     private static readonly TimeSpan _LongLockWarningThreshold = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan _NonBlockingAcquireDeadline = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan _WaitingMarkerCleanupTimeout = TimeSpan.FromSeconds(5);
     private readonly ScopedDistributedReadWriteLockStorage _storage = new(storage, lockOptions.KeyPrefix);
-    private readonly IBus? _bus = DistributedLockCoreHelpers.ConfigureBus(bus, logger);
     private readonly LeaseMonitorRegistry _monitorRegistry = new(logger);
     private readonly ReleaseWaiterRegistry _releaseWaiters = new();
     private readonly int _maxResourceNameLength = lockOptions.MaxResourceNameLength;
@@ -341,10 +339,10 @@ internal sealed class DistributedReadWriteLock(
     /// in the given <paramref name="mode"/>. The release path retries up to 15 times via a shared
     /// Polly pipeline and is bounded by <see cref="DistributedLockOptions.DisposeTimeout"/>; on
     /// timeout a warning is logged and the TTL acts as eventual cleanup. After storage release,
-    /// any active lease monitor is disposed, and if a messaging bus is configured a
-    /// <see cref="DistributedLockReleased"/> message is published to wake waiters, without waiting
-    /// for the broker. Takes no cancellation token: the storage release always runs to completion so
-    /// disposal is not interrupted by caller cancellation, and the publish outlives the call.
+    /// any active lease monitor is disposed, and the release is announced through the registered
+    /// <see cref="IDistributedLockReleaseSignal"/> to wake waiters, without waiting for any transport.
+    /// Takes no cancellation token: the storage release always runs to completion so disposal is not
+    /// interrupted by caller cancellation, and the announcement outlives the call.
     /// </summary>
     /// <param name="mode">Whether to release a read or write lease.</param>
     /// <param name="resource">The locked resource name.</param>
@@ -427,10 +425,7 @@ internal sealed class DistributedReadWriteLock(
             }
         }
 
-        if (_bus is not null)
-        {
-            DistributedLockCoreHelpers.PublishReleaseSignal(_bus, logger, resource, leaseId);
-        }
+        releaseSignal.Announce(resource, leaseId);
     }
 
     private async Task<IDistributedLease?> _TryAcquireAsync(
@@ -806,13 +801,13 @@ internal sealed class DistributedReadWriteLock(
         _ = _monitorRegistry.TryDeregister(resource, leaseId);
     }
 
-    void ICanReceiveLockReleased.OnLockReleased(DistributedLockReleased message)
+    void IDistributedLockReleaseListener.OnReleased(string resource, string leaseId)
     {
-        logger.LogGotLockReleasedMessage(message.Resource, message.LeaseId);
+        logger.LogGotLockReleasedMessage(resource, leaseId);
 
         // Wakes a blocked acquirer only. Lease monitors are not nudged: every reader release would make each
         // held lease re-validate against storage, adding round trips the reader-writer lock never made before.
-        _releaseWaiters.Signal(message.Resource);
+        _releaseWaiters.Signal(resource);
     }
 
     /// <summary>

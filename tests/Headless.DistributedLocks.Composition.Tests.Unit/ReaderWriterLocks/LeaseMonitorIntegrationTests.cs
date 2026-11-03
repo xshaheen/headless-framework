@@ -438,7 +438,7 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
                 ?? (
                     timeProvider is null ? _storage : new InMemoryDistributedReadWriteLockStorage(effectiveTimeProvider)
                 ),
-            bus: null,
+            Substitute.For<IDistributedLockReleaseSignal>(),
             new DistributedLockOptions(),
             _guidGenerator,
             effectiveTimeProvider,

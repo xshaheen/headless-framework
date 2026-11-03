@@ -3,9 +3,9 @@
 using Headless;
 using Headless.DistributedLocks;
 using Headless.DistributedLocks.InMemory;
-using Headless.Messaging;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 
 namespace Tests.RegularLocks;
@@ -118,7 +118,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         // when — the released notification names a lock id the handle does not own, which must cancel its
         // LostToken. Nothing else can complete this signal, so waiting for it is the whole assertion; how many
         // milliseconds the notification took to land is the scheduler's business, not the contract's.
-        ((ICanReceiveLockReleased)provider).OnLockReleased(new DistributedLockReleased(resource, "foreign-lock"));
+        ((IDistributedLockReleaseListener)provider).OnReleased(resource, "foreign-lock");
         await lostSignal.Task.Bounded();
 
         // then
@@ -368,7 +368,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         );
 
         // when - trigger validation
-        ((ICanReceiveLockReleased)provider).OnLockReleased(new DistributedLockReleased(resource, "foreign-lock"));
+        ((IDistributedLockReleaseListener)provider).OnReleased(resource, "foreign-lock");
 
         // then - dispose path completes in bounded time (no deadlock).
         await disposalDone.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
@@ -378,7 +378,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
     public async Task should_not_signal_handle_lost_on_self_release()
     {
         // given - monitor-backed handle, then provider.ReleaseAsync (direct) instead of dispose.
-        // The release path's OnLockReleased nudge must not declare Lost for the same leaseId.
+        // The release path's OnReleased nudge must not declare Lost for the same leaseId.
         var options = new DistributedLockOptions();
         var provider = _CreateProvider(options);
         var resource = Faker.Random.AlphaNumeric(10);
@@ -396,7 +396,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         // when - direct release of the same leaseId; this triggers the wake-up path and would
         // historically nudge the still-alive monitor for that resource.
         await provider.ReleaseAsync(resource, handle!.LeaseId, AbortToken);
-        ((ICanReceiveLockReleased)provider).OnLockReleased(new DistributedLockReleased(resource, handle.LeaseId));
+        ((IDistributedLockReleaseListener)provider).OnReleased(resource, handle.LeaseId);
         _timeProvider.Advance(TimeSpan.FromSeconds(6));
         await DistributedLockTestSupport.WaitUntilAsync(
             () => provider.GetActiveMonitorCount(resource) == 0,
@@ -435,13 +435,13 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
     }
 
     [Fact]
-    public async Task should_signal_lease_loss_via_polling_when_bus_is_null()
+    public async Task should_signal_lease_loss_via_polling_when_no_release_transport_is_configured()
     {
-        // AC8 — without a bus publisher, the only way the monitor can learn of loss is
+        // Without a release transport, the only way the monitor can learn of loss is
         // via its own cadence-driven probe. Confirm that polling alone (no nudge) eventually
         // surfaces LostToken when storage is mutated by another party.
         var options = new DistributedLockOptions();
-        var provider = _CreateProvider(options, bus: null);
+        var provider = _CreateProvider(options, _SilentReleaseSignal());
         var resource = Faker.Random.AlphaNumeric(10);
         await using var handle = await provider.TryAcquireAsync(
             resource,
@@ -682,7 +682,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
 
         return new DistributedLock(
             storage,
-            bus: null,
+            _SilentReleaseSignal(),
             options ?? new DistributedLockOptions(),
             _guidGenerator,
             timeProvider ?? _timeProvider,
@@ -807,12 +807,12 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         FakeTimeProvider? timeProvider = null
     )
     {
-        return _CreateProvider(options, Substitute.For<IBus>(), timeProvider);
+        return _CreateProvider(options, Substitute.For<IDistributedLockReleaseSignal>(), timeProvider);
     }
 
     private DistributedLock _CreateProvider(
         DistributedLockOptions? options,
-        IBus? bus,
+        IDistributedLockReleaseSignal releaseSignal,
         FakeTimeProvider? timeProvider = null
     )
     {
@@ -821,7 +821,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         var effectiveTimeProvider = timeProvider ?? _timeProvider;
         return new DistributedLock(
             timeProvider is null ? _storage : new InMemoryDistributedLockStorage(effectiveTimeProvider),
-            bus,
+            releaseSignal,
             options ?? new DistributedLockOptions(),
             _guidGenerator,
             effectiveTimeProvider,
@@ -848,5 +848,10 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         provider.GetActiveMonitorCount(resource).Should().Be(1);
         provider.GetActiveMonitorResourceCount().Should().Be(1);
         GC.KeepAlive(handle);
+    }
+
+    private static NullDistributedLockReleaseSignal _SilentReleaseSignal()
+    {
+        return new NullDistributedLockReleaseSignal(NullLogger<NullDistributedLockReleaseSignal>.Instance);
     }
 }

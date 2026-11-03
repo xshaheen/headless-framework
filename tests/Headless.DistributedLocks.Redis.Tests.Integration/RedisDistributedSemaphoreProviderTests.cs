@@ -19,7 +19,7 @@ public sealed class RedisDistributedSemaphoreProviderTests(RedisTestFixture fixt
     {
         return new DistributedSemaphoreProvider(
             fixture.SemaphoreStorage,
-            bus: null,
+            Substitute.For<IDistributedLockReleaseSignal>(),
             options ?? new DistributedLockOptions(),
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             TimeProvider.System,

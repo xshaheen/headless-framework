@@ -2,7 +2,6 @@
 
 using Headless;
 using Headless.DistributedLocks;
-using Headless.Messaging;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
@@ -400,7 +399,7 @@ public sealed class DisposableSemaphoreSlotTests : TestBase
 
         var provider = new DistributedSemaphoreProvider(
             _storage,
-            Substitute.For<IBus>(),
+            Substitute.For<IDistributedLockReleaseSignal>(),
             new DistributedLockOptions(),
             _guidGenerator,
             _timeProvider,
