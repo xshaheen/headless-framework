@@ -305,7 +305,11 @@ public sealed class UnitOfWorkOutboxTests : TestBase
     {
         public List<MediumMessage> CommittedMessages { get; } = [];
 
-        public void EnqueueCommittedMessage(MediumMessage message) => CommittedMessages.Add(message);
+        public ValueTask EnqueueCommittedMessageAsync(MediumMessage message, long waitStartedAt)
+        {
+            CommittedMessages.Add(message);
+            return ValueTask.CompletedTask;
+        }
 
         public ValueTask EnqueueToPublish(MediumMessage message, CancellationToken cancellationToken = default) =>
             ValueTask.CompletedTask;

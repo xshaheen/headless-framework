@@ -46,7 +46,7 @@ public sealed class PulsarReconnectMonitorTests : TestBase
         // then
         Volatile.Read(ref _callbacks).Should().Be(1, "one lost connection is reported once");
         await cts.CancelAsync();
-        await monitor.WaitAsync(AbortToken);
+        await monitor.WaitAsync(AbortToken).Bounded();
     }
 
     [Fact]
@@ -68,7 +68,7 @@ public sealed class PulsarReconnectMonitorTests : TestBase
         Volatile.Write(ref _connected, true);
         await _AdvanceUntilAsync(() => Volatile.Read(ref _callbacks) == 1);
         await cts.CancelAsync();
-        await monitor.WaitAsync(AbortToken);
+        await monitor.WaitAsync(AbortToken).Bounded();
     }
 
     [Fact]
@@ -85,7 +85,7 @@ public sealed class PulsarReconnectMonitorTests : TestBase
         // then
         Volatile.Read(ref _callbacks).Should().Be(0);
         await cts.CancelAsync();
-        await monitor.WaitAsync(AbortToken);
+        await monitor.WaitAsync(AbortToken).Bounded();
     }
 
     [Fact]
@@ -128,7 +128,7 @@ public sealed class PulsarReconnectMonitorTests : TestBase
         // then
         Volatile.Read(ref errors).Should().Be(1);
         await cts.CancelAsync();
-        await monitor.WaitAsync(AbortToken);
+        await monitor.WaitAsync(AbortToken).Bounded();
     }
 
     [Fact]
@@ -146,7 +146,7 @@ public sealed class PulsarReconnectMonitorTests : TestBase
         var probesBeforeRecovery = _states.Count;
         await _AdvanceUntilAsync(() => _states.Count > probesBeforeRecovery);
         await cts.CancelAsync();
-        await monitor.WaitAsync(AbortToken);
+        await monitor.WaitAsync(AbortToken).Bounded();
 
         // then the probes read connected, then lost, then connected again
         _states.Should().StartWith(true).And.EndWith(true).And.Contain(false);
@@ -175,7 +175,7 @@ public sealed class PulsarReconnectMonitorTests : TestBase
         var probesBeforeRecovery = Volatile.Read(ref _probes);
         await _AdvanceUntilAsync(() => Volatile.Read(ref _probes) >= probesBeforeRecovery + 2);
         await cts.CancelAsync();
-        await monitor.WaitAsync(AbortToken);
+        await monitor.WaitAsync(AbortToken).Bounded();
 
         // then the state still reaches the host
         _states.Should().Contain(false).And.EndWith(true);

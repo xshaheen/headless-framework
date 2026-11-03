@@ -296,7 +296,7 @@ public sealed class RunHeadlessAsyncTests : TestBase
             await using (stoppingToken.Register(() => cancelled.TrySetResult()))
             {
                 _listening.TrySetResult();
-                await cancelled.Task;
+                await cancelled.Task.Bounded();
             }
 
             throw new ObjectDisposedException("The client was disposed.");

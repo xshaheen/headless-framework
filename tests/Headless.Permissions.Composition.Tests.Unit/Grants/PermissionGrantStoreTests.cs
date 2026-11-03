@@ -84,10 +84,18 @@ public sealed class PermissionGrantStoreTests : TestBase
         result.Should().Be(PermissionGrantStatus.Granted);
         await _cache
             .Received(1)
-            .UpsertAllAsync(
-                Arg.Is<IDictionary<string, PermissionGrantCacheItem>>(static d => d.Count == 1),
+            .TryInsertAsync(
+                cacheKey,
+                Arg.Is<PermissionGrantCacheItem>(static x => x.IsGranted == true),
                 Arg.Any<TimeSpan>(),
                 AbortToken
+            );
+        await _cache
+            .DidNotReceive()
+            .UpsertAllAsync(
+                Arg.Any<IDictionary<string, PermissionGrantCacheItem>>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<CancellationToken>()
             );
     }
 
@@ -269,7 +277,15 @@ public sealed class PermissionGrantStoreTests : TestBase
         result.Should().HaveCount(2);
         await _cache
             .Received(1)
-            .UpsertAllAsync(Arg.Any<IDictionary<string, PermissionGrantCacheItem>>(), Arg.Any<TimeSpan>(), AbortToken);
+            .TryInsertAsync(cacheKey2, Arg.Any<PermissionGrantCacheItem>(), Arg.Any<TimeSpan>(), AbortToken);
+        await _cache
+            .DidNotReceive()
+            .TryInsertAsync(
+                cacheKey1,
+                Arg.Any<PermissionGrantCacheItem>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     #endregion IsGrantedAsync - Batch
@@ -363,23 +379,26 @@ public sealed class PermissionGrantStoreTests : TestBase
         result["manager"]["Users.Create"].Should().Be(PermissionGrantStatus.Granted);
         result["manager"]["Users.Update"].Should().Be(PermissionGrantStatus.Undefined);
 
-        // and — the misses of both roles were cached together
-        await _cache
-            .Received(1)
-            .UpsertAllAsync(
-                Arg.Is<IDictionary<string, PermissionGrantCacheItem>>(d =>
-                    d.Count == 4
-                    && d[PermissionGrantCacheItem.CalculateCacheKey("Users.Create", _ProviderName, "admin")].IsGranted
-                        == true
-                    && d[PermissionGrantCacheItem.CalculateCacheKey("Users.Update", _ProviderName, "admin")].IsGranted
-                        == false
-                    && d[PermissionGrantCacheItem.CalculateCacheKey("Users.Create", _ProviderName, "manager")].IsGranted
-                        == true
-                    && d[PermissionGrantCacheItem.CalculateCacheKey("Users.Update", _ProviderName, "manager")].IsGranted
-                        == null
-                ),
-                Arg.Any<TimeSpan>(),
-                AbortToken
+        // and — the misses of both roles were each filled from the one load
+        var filled = _cache
+            .ReceivedCalls()
+            .Where(static c =>
+                string.Equals(c.GetMethodInfo().Name, nameof(ICache<>.TryInsertAsync), StringComparison.Ordinal)
+            )
+            .ToDictionary(
+                static c => (string)c.GetArguments()[0]!,
+                static c => ((PermissionGrantCacheItem)c.GetArguments()[1]!).IsGranted
+            );
+        filled
+            .Should()
+            .BeEquivalentTo(
+                new Dictionary<string, bool?>
+                {
+                    [PermissionGrantCacheItem.CalculateCacheKey("Users.Create", _ProviderName, "admin")] = true,
+                    [PermissionGrantCacheItem.CalculateCacheKey("Users.Update", _ProviderName, "admin")] = false,
+                    [PermissionGrantCacheItem.CalculateCacheKey("Users.Create", _ProviderName, "manager")] = true,
+                    [PermissionGrantCacheItem.CalculateCacheKey("Users.Update", _ProviderName, "manager")] = null,
+                }
             );
     }
 

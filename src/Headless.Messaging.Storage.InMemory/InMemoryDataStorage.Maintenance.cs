@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using System.Data.Common;
 using Headless.Checks;
+using Headless.Coordination;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
 

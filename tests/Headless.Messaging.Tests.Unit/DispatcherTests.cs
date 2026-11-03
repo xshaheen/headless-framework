@@ -1,4 +1,5 @@
 using System.Data.Common;
+using System.Diagnostics;
 using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
@@ -1295,7 +1296,7 @@ public sealed class DispatcherTests : TestBase
             DateTimeOffset.UtcNow.AddMinutes(2),
             cancellationToken: operationCts.Token
         );
-        await writeStarted.Task.WaitAsync(AbortToken);
+        await writeStarted.Task.Bounded();
         await operationCts.CancelAsync();
         var act = async () => await enqueue;
 
@@ -1345,7 +1346,7 @@ public sealed class DispatcherTests : TestBase
             DateTimeOffset.UtcNow.AddSeconds(50),
             cancellationToken: AbortToken
         );
-        await writeStarted.Task.WaitAsync(AbortToken);
+        await writeStarted.Task.Bounded();
         enqueue.IsCompleted.Should().BeFalse();
 
         commitWrite.TrySetResult(true);
@@ -1574,7 +1575,7 @@ public sealed class DispatcherTests : TestBase
     }
 
     [Fact]
-    public async Task should_accelerate_committed_message_without_waiting_for_public_dispatch_path()
+    public async Task should_accelerate_committed_message_without_waiting_when_the_channel_has_room()
     {
         var sender = new TestThreadSafeMessageSender();
         var dispatcher = new Dispatcher(
@@ -1592,7 +1593,13 @@ public sealed class DispatcherTests : TestBase
             var message = _CreateTestMessage(_StorageGuid(1));
             await dispatcher.StartAsync(cts.Token);
 
-            ((ICommittedMessageDispatcher)dispatcher).EnqueueCommittedMessage(message);
+            var enqueue = ((ICommittedMessageDispatcher)dispatcher).EnqueueCommittedMessageAsync(
+                message,
+                Stopwatch.GetTimestamp()
+            );
+
+            enqueue.IsCompletedSuccessfully.Should().BeTrue("a channel with room takes the signal without waiting");
+            await enqueue;
 
             for (var attempt = 0; attempt < 100 && sender.Count != 1; attempt++)
             {
@@ -1621,9 +1628,13 @@ public sealed class DispatcherTests : TestBase
         await dispatcher.StartAsync(cts.Token);
         await dispatcher.DisposeAsync();
 
-        var act = () => ((ICommittedMessageDispatcher)dispatcher).EnqueueCommittedMessage(_CreateTestMessage());
+        var act = async () =>
+            await ((ICommittedMessageDispatcher)dispatcher).EnqueueCommittedMessageAsync(
+                _CreateTestMessage(),
+                Stopwatch.GetTimestamp()
+            );
 
-        act.Should().NotThrow("the committed row remains recoverable by the relay after shutdown");
+        await act.Should().NotThrowAsync("the committed row remains recoverable by the relay after shutdown");
         sender.Count.Should().Be(0);
     }
 
@@ -1661,7 +1672,7 @@ public sealed class DispatcherTests : TestBase
             cancellationToken: AbortToken
         );
         var disposeTask = dispatcher.DisposeAsync(TimeSpan.FromSeconds(10), AbortToken).AsTask();
-        await flushStarted.Task.WaitAsync(AbortToken);
+        await flushStarted.Task.Bounded();
         var delayed = _CreateTestMessage(_StorageGuid(2));
         delayed.ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(1);
 
@@ -1733,7 +1744,13 @@ public sealed class DispatcherTests : TestBase
         await dispatcher.StartAsync(cts.Token);
         var committed = (ICommittedMessageDispatcher)dispatcher;
 
-        Parallel.For(0, messageCount, index => committed.EnqueueCommittedMessage(_CreateTestMessage(index + 1)));
+        await Parallel.ForAsync(
+            0,
+            messageCount,
+            AbortToken,
+            async (index, _) =>
+                await committed.EnqueueCommittedMessageAsync(_CreateTestMessage(index + 1), Stopwatch.GetTimestamp())
+        );
 
         await sender.WaitForCountAsync(messageCount, TimeSpan.FromSeconds(10), AbortToken);
         sender.ReceivedMessages.Should().OnlyHaveUniqueItems(static message => message.StorageId);
@@ -1749,11 +1766,15 @@ public sealed class DispatcherTests : TestBase
         await dispatcher.StartAsync(cts.Token);
 
         var enqueueTask = Task.Run(
-            () => ((ICommittedMessageDispatcher)dispatcher).EnqueueCommittedMessage(_CreateTestMessage()),
+            async () =>
+                await ((ICommittedMessageDispatcher)dispatcher).EnqueueCommittedMessageAsync(
+                    _CreateTestMessage(),
+                    Stopwatch.GetTimestamp()
+                ),
             AbortToken
         );
 
-        await sender.Entered.Task.WaitAsync(AbortToken);
+        await sender.Entered.Task.Bounded();
         try
         {
             await enqueueTask.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
@@ -1779,7 +1800,7 @@ public sealed class DispatcherTests : TestBase
 
         var commitTask = Task.Run(async () => await unitOfWork.CompleteAsync(), AbortToken);
 
-        await sender.Entered.Task.WaitAsync(AbortToken);
+        await sender.Entered.Task.Bounded();
         try
         {
             await commitTask.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
@@ -1790,6 +1811,133 @@ public sealed class DispatcherTests : TestBase
         }
 
         await cts.CancelAsync();
+    }
+
+    [Fact]
+    public async Task should_enqueue_committed_message_when_the_sender_frees_channel_room_within_the_budget()
+    {
+        // given — a budget long enough that only the sender's progress decides the outcome.
+        var sender = new GatedMessageSender();
+        await using var dispatcher = _CreateDispatcher(sender);
+        dispatcher.CommittedCapacityWait = TimeSpan.FromMinutes(5);
+        using var cts = new CancellationTokenSource();
+        await dispatcher.StartAsync(cts.Token);
+        var (accepted, waitingMessage, waiting) = await _FillPublishChannelAsync(dispatcher, sender);
+
+        // when
+        sender.Release();
+        await waiting.WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
+
+        // then
+        await sender.Sent.WaitForCountAsync(accepted + 1, TimeSpan.FromSeconds(30), AbortToken);
+        sender.Sent.ReceivedMessages.Should().ContainSingle(message => message.StorageId == waitingMessage.StorageId);
+        await cts.CancelAsync();
+    }
+
+    [Fact]
+    public async Task should_drop_committed_message_without_throwing_when_the_channel_stays_full_past_the_budget()
+    {
+        // given — the default budget and a sender that frees no room until the wait has returned.
+        var sender = new GatedMessageSender();
+        await using var dispatcher = _CreateDispatcher(sender);
+        using var cts = new CancellationTokenSource();
+        await dispatcher.StartAsync(cts.Token);
+        var (accepted, waitingMessage, waiting) = await _FillPublishChannelAsync(dispatcher, sender);
+
+        // when
+        var act = async () => await waiting.WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
+
+        // then — the wait ends on its budget, not on the sender, and the publish sees no error.
+        await act.Should().NotThrowAsync("the row is committed, so a dropped signal is not a publish failure");
+        sender.Release();
+        await sender.Sent.WaitForCountAsync(accepted, TimeSpan.FromSeconds(30), AbortToken);
+        var sentinel = _CreateTestMessage();
+        await ((ICommittedMessageDispatcher)dispatcher).EnqueueCommittedMessageAsync(
+            sentinel,
+            Stopwatch.GetTimestamp()
+        );
+        await sender.Sent.WaitForCountAsync(accepted + 1, TimeSpan.FromSeconds(30), AbortToken);
+        // The sender drains in order, so a signal that had entered the channel would arrive before the sentinel.
+        sender.Sent.ReceivedMessages.Should().HaveCount(accepted + 1).And.EndWith(sentinel);
+        sender
+            .Sent.ReceivedMessages.Should()
+            .NotContain(message => message.StorageId == waitingMessage.StorageId, "the relay owns the dropped row");
+        await cts.CancelAsync();
+    }
+
+    [Fact]
+    public async Task should_not_wait_again_when_the_shared_budget_is_already_spent()
+    {
+        // given — a full channel and an operation whose budget started a second ago.
+        var sender = new GatedMessageSender();
+        await using var dispatcher = _CreateDispatcher(sender);
+        using var cts = new CancellationTokenSource();
+        await dispatcher.StartAsync(cts.Token);
+        var (_, _, waiting) = await _FillPublishChannelAsync(dispatcher, sender);
+        var spentBudgetStartedAt = Stopwatch.GetTimestamp() - Stopwatch.Frequency;
+
+        // when
+        var enqueue = ((ICommittedMessageDispatcher)dispatcher).EnqueueCommittedMessageAsync(
+            _CreateTestMessage(),
+            spentBudgetStartedAt
+        );
+
+        // then
+        enqueue.IsCompletedSuccessfully.Should().BeTrue("a later message of the same operation must not wait again");
+        await enqueue;
+        await waiting.WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
+        sender.Release();
+        await cts.CancelAsync();
+    }
+
+    [Fact]
+    public async Task should_end_the_committed_capacity_wait_when_the_dispatcher_stops()
+    {
+        // given
+        var sender = new GatedMessageSender();
+        await using var dispatcher = _CreateDispatcher(sender);
+        dispatcher.CommittedCapacityWait = TimeSpan.FromMinutes(5);
+        using var cts = new CancellationTokenSource();
+        await dispatcher.StartAsync(cts.Token);
+        var (_, _, waiting) = await _FillPublishChannelAsync(dispatcher, sender);
+
+        // when
+        await cts.CancelAsync();
+
+        // then
+        var act = async () => await waiting.WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
+        await act.Should().NotThrowAsync("shutdown drops the signal and leaves the committed row to the relay");
+        sender.Release();
+    }
+
+    [Fact]
+    public async Task should_share_one_capacity_wait_budget_across_every_message_of_a_flush()
+    {
+        // given
+        var dispatcher = Substitute.For<IDispatcher, ICommittedMessageDispatcher>();
+        await using var unitOfWork = new FakeUnitOfWork();
+        var buffer = new MessageOutboxBuffer(dispatcher);
+        buffer.Add(unitOfWork, _CreateTestMessage(1));
+        buffer.Add(unitOfWork, _CreateTestMessage(2));
+        buffer.Add(unitOfWork, _CreateTestMessage(3));
+
+        // when
+        await unitOfWork.CompleteAsync(AbortToken);
+
+        // then
+        var budgetStarts = ((ICommittedMessageDispatcher)dispatcher)
+            .ReceivedCalls()
+            .Where(call =>
+                string.Equals(
+                    call.GetMethodInfo().Name,
+                    nameof(ICommittedMessageDispatcher.EnqueueCommittedMessageAsync),
+                    StringComparison.Ordinal
+                )
+            )
+            .Select(call => (long)call.GetArguments()[1]!)
+            .ToList();
+        budgetStarts.Should().HaveCount(3);
+        budgetStarts.Should().AllBeEquivalentTo(budgetStarts[0], "a saturated channel must cost one flush one budget");
     }
 
     [Fact]
@@ -1990,7 +2138,7 @@ public sealed class DispatcherTests : TestBase
         );
 
         var dispose = dispatcher.DisposeAsync(TimeSpan.FromSeconds(2), AbortToken).AsTask();
-        await flushStarted.Task.WaitAsync(AbortToken);
+        await flushStarted.Task.Bounded();
         dispose.IsCompleted.Should().BeFalse();
 
         timeProvider.Advance(TimeSpan.FromSeconds(2));
@@ -2039,7 +2187,7 @@ public sealed class DispatcherTests : TestBase
         using var cts = new CancellationTokenSource();
         await dispatcher.StartAsync(cts.Token);
         await dispatcher.EnqueueToExecute(_CreateTestMessage(), cancellationToken: AbortToken);
-        await entered.Task.WaitAsync(AbortToken);
+        await entered.Task.Bounded();
 
         var dispose = dispatcher.DisposeAsync().AsTask();
         dispose.IsCompleted.Should().BeFalse("the processing loop still owns an in-flight handler");
@@ -2088,7 +2236,7 @@ public sealed class DispatcherTests : TestBase
         using var cts = new CancellationTokenSource();
         await dispatcher.StartAsync(cts.Token);
         await dispatcher.EnqueueToExecute(_CreateTestMessage(), cancellationToken: AbortToken);
-        await entered.Task.WaitAsync(AbortToken);
+        await entered.Task.Bounded();
 
         // First dispose: the handler ignores cancellation, so completion must come from the
         // ShutdownTimeout branch (_CompleteTimedOutShutdownAsync), never from the handler.
@@ -2169,7 +2317,7 @@ public sealed class DispatcherTests : TestBase
         using var cts = new CancellationTokenSource();
         await dispatcher.StartAsync(cts.Token);
         await dispatcher.EnqueueToExecute(_CreateTestMessage(), cancellationToken: AbortToken);
-        await entered.Task.WaitAsync(AbortToken);
+        await entered.Task.Bounded();
 
         var dispose = dispatcher.DisposeAsync().AsTask();
 
@@ -2212,7 +2360,7 @@ public sealed class DispatcherTests : TestBase
                 TaskScheduler.Default
             )
             .Unwrap();
-        await startPublishing.Task.WaitAsync(AbortToken);
+        await startPublishing.Task.Bounded();
         var quiesceTask = Task.Factory.StartNew(
             () => ((IProcessingServerShutdown)dispatcher).Quiesce(),
             CancellationToken.None,
@@ -2233,6 +2381,34 @@ public sealed class DispatcherTests : TestBase
     private static MediumMessage _CreateTestMessage(int storageId)
     {
         return _CreateTestMessage(_StorageGuid(storageId));
+    }
+
+    // Parks the sequential sender on its first message, then offers messages until one has to wait for room. Returns
+    // how many entered the channel or the sender, the message left waiting, and its pending enqueue.
+    private static async Task<(int Accepted, MediumMessage WaitingMessage, Task Waiting)> _FillPublishChannelAsync(
+        Dispatcher dispatcher,
+        GatedMessageSender sender
+    )
+    {
+        var committed = (ICommittedMessageDispatcher)dispatcher;
+        await committed.EnqueueCommittedMessageAsync(_CreateTestMessage(), Stopwatch.GetTimestamp());
+        await sender.Entered.Task.WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
+
+        // Bounded well above any real capacity (ProcessorCount * 500) so a channel that never fills fails the test.
+        for (var accepted = 1; accepted < 1_000_000; accepted++)
+        {
+            var message = _CreateTestMessage();
+            var enqueue = committed.EnqueueCommittedMessageAsync(message, Stopwatch.GetTimestamp());
+
+            if (!enqueue.IsCompleted)
+            {
+                return (accepted, message, enqueue.AsTask());
+            }
+
+            await enqueue;
+        }
+
+        throw new InvalidOperationException("The publish channel never filled.");
     }
 
     private Dispatcher _CreateDispatcher(IMessageSender sender)
@@ -2277,6 +2453,42 @@ public sealed class DispatcherTests : TestBase
     private static Guid _StorageGuid(int value)
     {
         return Guid.Parse($"00000000-0000-0000-0000-{value:000000000000}");
+    }
+
+    /// <summary>Holds every send until <see cref="Release"/>, without blocking a thread, then records it.</summary>
+    private sealed class GatedMessageSender : IMessageSender
+    {
+        private readonly TaskCompletionSource _gate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        internal TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        internal TestThreadSafeMessageSender Sent { get; } = new();
+
+        public async Task<OperateResult> SendAsync(MediumMessage message)
+        {
+            Entered.TrySetResult();
+            await _gate.Task.ConfigureAwait(false);
+            return await Sent.SendAsync(message).ConfigureAwait(false);
+        }
+
+        public Task<OperateResult> SendAsync(MediumMessage message, IServiceProvider dispatchServices)
+        {
+            return SendAsync(message);
+        }
+
+        public Task<OperateResult> SendRetryAsync(
+            MediumMessage message,
+            IServiceProvider dispatchServices,
+            RetryExecutionState executionState
+        )
+        {
+            return SendAsync(message);
+        }
+
+        internal void Release()
+        {
+            _gate.TrySetResult();
+        }
     }
 
     private sealed class SynchronouslyBlockingMessageSender : IMessageSender, IDisposable

@@ -80,6 +80,7 @@ internal sealed class NatsConsumerClient(
     private IEnumerable<string>? _subscribedMessageNames;
     private volatile NatsArrivalNames _arrivalNames = NatsArrivalNames.Empty;
     private int _disposed;
+    private int _openPulls;
 
     // Set by ConnectAsync for an every-instance client, which listens on core subscriptions instead of JetStream.
     private NatsEveryInstanceListener? _everyInstance;
@@ -107,6 +108,13 @@ internal sealed class NatsConsumerClient(
 
     /// <summary>The pause gate every receive loop waits on.</summary>
     internal ConsumerPauseGate PauseGate { get; } = new();
+
+    /// <summary>
+    /// The JetStream consumes that still hold a pull subscription. A pause cancels each one, and it closes only after its
+    /// drain: the client unsubscribes, the server confirms with a PONG, and any message the pull already carried goes
+    /// back to the stream. At zero the server has no pull left to hand this client a message.
+    /// </summary>
+    internal int OpenPullCount => Volatile.Read(ref _openPulls);
 
     /// <summary>The core's re-established callback, reported when the subscription may have missed messages.</summary>
     internal Func<CancellationToken, Task>? OnReestablished { get; private set; }
@@ -554,6 +562,7 @@ internal sealed class NatsConsumerClient(
                     await PauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
 
                     using var receiveLease = AcquireReceiveLease(cancellationToken);
+                    Interlocked.Increment(ref _openPulls);
 
                     try
                     {
@@ -589,6 +598,11 @@ internal sealed class NatsConsumerClient(
                     catch (OperationCanceledException) when (PauseGate.IsPaused)
                     {
                         continue;
+                    }
+                    finally
+                    {
+                        // NATS.Net ends the enumeration only after it drained or disposed the pull subscription.
+                        Interlocked.Decrement(ref _openPulls);
                     }
 
                     if (cancellationToken.IsCancellationRequested || IsDisposed)

@@ -199,7 +199,7 @@ public sealed class PostgreSqlDistributedLockTests(PostgreSqlDistributedLockFixt
 
         while (!sentinelSeen)
         {
-            await listener.WaitAsync(AbortToken);
+            await listener.WaitAsync(AbortToken).Bounded();
         }
 
         releaseNotifications.Should().Be(0);

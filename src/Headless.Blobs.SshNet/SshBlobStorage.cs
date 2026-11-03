@@ -388,7 +388,10 @@ internal sealed partial class SshBlobStorage(
 
         logger.LogGettingFileStream(blobPath);
 
-        var client = await pool.AcquireAsync(cancellationToken).ConfigureAwait(false);
+        // The returned stream holds its client at the reader's pace, so it comes from the read-stream pool and never
+        // takes a connection the store's own operations need.
+        var streamPool = pool.ReadStreams;
+        var client = await streamPool.AcquireAsync(cancellationToken).ConfigureAwait(false);
 
         try
         {
@@ -400,20 +403,20 @@ internal sealed partial class SshBlobStorage(
                 .OpenAsync(blobPath, FileMode.Open, FileAccess.Read, cancellationToken)
                 .ConfigureAwait(false);
 
-            var wrappedStream = new PooledClientStream(sftpStream, client, pool);
+            var wrappedStream = new PooledClientStream(sftpStream, client, streamPool);
 
             return new BlobDownloadResult(wrappedStream, location.Path, BlobStorageHelpers.ToUserMetadata(metadata));
         }
         catch (SftpPathNotFoundException ex)
         {
             logger.LogFileStreamNotFound(ex, blobPath);
-            await pool.ReleaseAsync(client).ConfigureAwait(false);
+            await streamPool.ReleaseAsync(client).ConfigureAwait(false);
 
             return null;
         }
         catch
         {
-            await pool.ReleaseAsync(client).ConfigureAwait(false);
+            await streamPool.ReleaseAsync(client).ConfigureAwait(false);
             throw;
         }
     }

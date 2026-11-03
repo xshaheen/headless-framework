@@ -542,7 +542,7 @@ public sealed class RedisConsumerClientTests : TestBase
             async (_, _) =>
             {
                 handlerStarted.TrySetResult();
-                await releaseHandler.Task;
+                await releaseHandler.Task.Bounded();
                 handlerFinished = true;
             },
             onLog: null
@@ -629,7 +629,7 @@ public sealed class RedisConsumerClientTests : TestBase
             async (_, _) =>
             {
                 handlerStarted.TrySetResult();
-                await neverReleased.Task;
+                await neverReleased.Task.Bounded();
             },
             onLog: null
         );

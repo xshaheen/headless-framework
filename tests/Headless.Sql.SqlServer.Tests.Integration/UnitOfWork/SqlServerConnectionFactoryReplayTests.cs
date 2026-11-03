@@ -52,7 +52,7 @@ public sealed class SqlServerConnectionFactoryReplayTests(SqlServerUnitOfWorkFix
         var release = Task.Run(
             async () =>
             {
-                await firstAttemptFailed.Task;
+                await firstAttemptFailed.Task.Bounded();
                 await holding.RollbackAsync(AbortToken);
                 holderReleased.SetResult();
             },

@@ -29,7 +29,7 @@ public sealed class ReplyAddressGateTests : TestBase
         (await wait)
             .Should()
             .Be(_Address);
-        (await gate.WaitAsync(AbortToken)).Should().Be(_Address);
+        (await gate.WaitAsync(AbortToken).Bounded()).Should().Be(_Address);
     }
 
     [Fact]
@@ -55,7 +55,7 @@ public sealed class ReplyAddressGateTests : TestBase
         gate.Publish(_Address, isLive: () => true);
 
         // then
-        (await gate.WaitAsync(AbortToken))
+        (await gate.WaitAsync(AbortToken).Bounded())
             .Should()
             .Be(_Address);
     }
@@ -88,7 +88,7 @@ public sealed class ReplyAddressGateTests : TestBase
         gate.Retract(isStillLive: () => true);
 
         // then
-        (await gate.WaitAsync(AbortToken))
+        (await gate.WaitAsync(AbortToken).Bounded())
             .Should()
             .Be(_Address);
     }
@@ -134,7 +134,7 @@ public sealed class ReplyAddressGateTests : TestBase
         gate.Retract(isStillLive: () => false);
 
         // then — a later caller does not block on a wait nobody will ever complete
-        (await gate.WaitAsync(AbortToken))
+        (await gate.WaitAsync(AbortToken).Bounded())
             .Should()
             .Be(_Address);
     }

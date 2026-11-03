@@ -37,7 +37,7 @@ public sealed class FormFileExtensionsTests : TestBase
         var file = new BlockingFormFile();
 
         var read = file.GetAllBytesAsync(cts.Token);
-        await file.ReadStarted.Task.WaitAsync(AbortToken);
+        await file.ReadStarted.Task.Bounded();
         await cts.CancelAsync();
         var act = async () => await read;
 

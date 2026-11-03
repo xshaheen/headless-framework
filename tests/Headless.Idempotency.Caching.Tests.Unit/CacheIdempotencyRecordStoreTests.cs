@@ -258,6 +258,41 @@ public sealed class CacheIdempotencyRecordStoreTests : TestBase
     }
 
     [Fact]
+    public async Task should_refuse_a_named_multi_tier_cache()
+    {
+        // given - a cache that is neither tier, the shape a named hybrid instance registers
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessCaching(static setup => setup.UseInMemory());
+        services.AddKeyedSingleton("records", Substitute.For<ICache>());
+        services.AddHeadlessIdempotency(static setup => setup.UseCache(static o => o.CacheName = "records"));
+        await using var provider = services.BuildServiceProvider();
+
+        // when
+        var resolve = () => provider.GetRequiredService<IIdempotencyRecordStore>();
+
+        // then
+        resolve.Should().Throw<InvalidOperationException>().WithMessage("*'records'*single-tier*");
+    }
+
+    [Fact]
+    public async Task should_refuse_a_default_multi_tier_cache_when_no_remote_tier_is_registered()
+    {
+        // given - a default hybrid whose remote tier is a named instance registers no unkeyed IRemoteCache
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(Substitute.For<ICache>());
+        services.AddHeadlessIdempotency(static setup => setup.UseCache());
+        await using var provider = services.BuildServiceProvider();
+
+        // when
+        var resolve = () => provider.GetRequiredService<IIdempotencyRecordStore>();
+
+        // then
+        resolve.Should().Throw<InvalidOperationException>().WithMessage("*default cache*RemoteCacheName*");
+    }
+
+    [Fact]
     public void should_name_use_cache_among_the_providers_when_none_is_chosen()
     {
         var none = () => new ServiceCollection().AddHeadlessIdempotency(static _ => { });

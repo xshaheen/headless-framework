@@ -1317,7 +1317,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
             requireCoordination: false,
             AbortToken
         );
-        await transport.Started.Task.WaitAsync(AbortToken);
+        await transport.Started.Task.Bounded();
         timeProvider.Advance(timeout);
         var act = async () => await publishTask;
 
@@ -1343,7 +1343,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
             requireCoordination: false,
             callerCts.Token
         );
-        await transport.Started.Task.WaitAsync(AbortToken);
+        await transport.Started.Task.Bounded();
         await callerCts.CancelAsync();
         var act = async () => await publishTask;
 
@@ -1371,14 +1371,14 @@ public sealed class MessagePublisherDeliveryTests : TestBase
             requireCoordination: false,
             AbortToken
         );
-        await serializer.Started.Task.WaitAsync(AbortToken);
+        await serializer.Started.Task.Bounded();
         timeProvider.Advance(timeout);
 
         // then
         publishTask.IsCompleted.Should().BeFalse("serialization uses only the caller cancellation token");
 
         serializer.Release();
-        await transport.Started.Task.WaitAsync(AbortToken);
+        await transport.Started.Task.Bounded();
         publishTask.IsCompleted.Should().BeFalse("the transport receives a fresh timeout budget");
 
         timeProvider.Advance(timeout);
@@ -1657,9 +1657,10 @@ public sealed class MessagePublisherDeliveryTests : TestBase
 
         public int SchedulerCalls { get; private set; }
 
-        public void EnqueueCommittedMessage(MediumMessage message)
+        public ValueTask EnqueueCommittedMessageAsync(MediumMessage message, long waitStartedAt)
         {
             CommittedMessages.Add(message);
+            return ValueTask.CompletedTask;
         }
 
         public bool IsSchedulerFull => false;

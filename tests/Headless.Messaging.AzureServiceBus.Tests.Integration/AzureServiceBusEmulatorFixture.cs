@@ -53,7 +53,7 @@ public sealed class AzureServiceBusEmulatorFixture : IAsyncLifetime
             return;
         }
 
-        _emulator = await AzureServiceBusEmulatorContainer.StartAsync(amqpHostPort: null, CancellationToken.None);
+        _emulator = await AzureServiceBusEmulatorContainer.StartAsync(stableAmqpAddress: false, CancellationToken.None);
     }
 
     /// <summary>Opens a session on a queue no other session of this run has used.</summary>
@@ -141,8 +141,8 @@ public sealed class AzureServiceBusEmulatorFixture : IAsyncLifetime
     }
 
     /// <summary>
-    /// Opens a session on an emulator of its own whose AMQP port is fixed on the host, so restarting it disturbs no other
-    /// test and the session finds it again at the address it already holds.
+    /// Opens a session on an emulator of its own whose AMQP address stays the same across a restart, so restarting it
+    /// disturbs no other test and the session finds it again at the address it already holds.
     /// </summary>
     public async ValueTask<InterruptibleTransportSession> CreateInterruptibleSessionAsync(
         CancellationToken cancellationToken
@@ -151,7 +151,7 @@ public sealed class AzureServiceBusEmulatorFixture : IAsyncLifetime
         RequireEulaAccepted();
 
 #pragma warning disable CA2000 // Ownership moves to the returned session, or the catch disposes it.
-        var emulator = await AzureServiceBusEmulatorContainer.StartAsync(BrokerHostPort.Reserve(), cancellationToken);
+        var emulator = await AzureServiceBusEmulatorContainer.StartAsync(stableAmqpAddress: true, cancellationToken);
 #pragma warning restore CA2000
 
         try

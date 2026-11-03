@@ -125,11 +125,11 @@ public sealed class ConsumeContextAccessorTests
         {
             accessor.Current.Should().BeSameAs(context);
             childReady.TrySetResult();
-            await releaseChild.Task;
+            await releaseChild.Task.Bounded();
             return accessor.Current;
         });
 
-        await childReady.Task;
+        await childReady.Task.Bounded();
         accessor.Current = null;
         releaseChild.TrySetResult();
         var childContext = await child;
@@ -153,7 +153,7 @@ public sealed class ConsumeContextAccessorTests
         {
             accessor.Current = _Context("corr-a");
             aReady.TrySetResult();
-            await release.Task;
+            await release.Task.Bounded();
             return accessor.Current?.CorrelationId;
         });
 
@@ -161,7 +161,7 @@ public sealed class ConsumeContextAccessorTests
         {
             accessor.Current = _Context("corr-b");
             bReady.TrySetResult();
-            await release.Task;
+            await release.Task.Bounded();
             return accessor.Current?.CorrelationId;
         });
 

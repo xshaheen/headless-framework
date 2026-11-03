@@ -97,7 +97,7 @@ internal sealed class DeadOwnerRecoveryBridge<TReclaimer>(
         // NodeSuspected / NodeRecovered / NodeJoined / LocalMembershipLost do not reclaim — only a confirmed leave.
         if (membershipEvent is NodeLeft left)
         {
-            await _TryReclaimAsync([left.Identity.ToString()]).ConfigureAwait(false);
+            await _TryReclaimAsync([NodeOwnerTag.Format(membership.ClusterName, left.Identity)]).ConfigureAwait(false);
         }
     }
 
@@ -130,7 +130,7 @@ internal sealed class DeadOwnerRecoveryBridge<TReclaimer>(
         {
             if (node.State == NodeLivenessState.Dead)
             {
-                deadOwners.Add(node.Identity.ToString());
+                deadOwners.Add(NodeOwnerTag.Format(membership.ClusterName, node.Identity));
             }
         }
 

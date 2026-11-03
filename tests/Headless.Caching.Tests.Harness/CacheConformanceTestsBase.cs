@@ -26,6 +26,18 @@ public abstract class CacheConformanceTestsBase : TestBase
         return AdvancePastExpirationAsync(duration);
     }
 
+    /// <summary>
+    /// Returns a task that completes once the cache has armed its next timer whose due time is <paramref name="dueTime"/>,
+    /// so advancing time past it fires that timer. The default completes at once, which suits a provider on real
+    /// time, where the timer runs whether or not the test waits for it. A fake-clock provider must override this
+    /// (usually through <see cref="TimerSignalingTimeProvider"/>): advancing a fake clock before the cache arms its
+    /// timeout timer leaves that timer unfired and the call pending.
+    /// </summary>
+    protected virtual Task WatchForTimer(TimeSpan dueTime)
+    {
+        return Task.CompletedTask;
+    }
+
     #region Events (cross-provider contract)
 
     public virtual async Task should_raise_set_and_hit_events_on_contract_operations()
@@ -433,11 +445,12 @@ public abstract class CacheConformanceTestsBase : TestBase
             return await factoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
 
+        var timerArmed = WatchForTimer(options.FactorySoftTimeout);
         var timeoutTask = cache.GetOrAddAsync(key, factory, options, AbortToken).AsTask();
-        await factoryStarted.Task;
-        await _TriggerTimeoutAsync(options.FactorySoftTimeout, timeoutTask);
+        await factoryStarted.Task.Bounded();
+        await _TriggerTimeoutAsync(options.FactorySoftTimeout, timerArmed);
 
-        var timedOut = await timeoutTask;
+        var timedOut = await _CompletedWithinBoundAsync(timeoutTask);
         factoryGate.SetResult("fresh");
 
         await _WaitUntilAsync(async () =>
@@ -465,10 +478,11 @@ public abstract class CacheConformanceTestsBase : TestBase
             return "fresh";
         }
 
+        var timerArmed = WatchForTimer(options.FactoryHardTimeout);
         var timeoutTask = cache.GetOrAddAsync(key, factory, options, AbortToken).AsTask();
-        await factoryStarted.Task;
-        await _TriggerTimeoutAsync(options.FactoryHardTimeout, timeoutTask);
-        var act = async () => await timeoutTask;
+        await factoryStarted.Task.Bounded();
+        await _TriggerTimeoutAsync(options.FactoryHardTimeout, timerArmed);
+        var act = async () => await _CompletedWithinBoundAsync(timeoutTask);
 
         await act.Should().ThrowAsync<CacheFactoryTimeoutException>();
     }
@@ -491,10 +505,11 @@ public abstract class CacheConformanceTestsBase : TestBase
             return "fresh";
         }
 
+        var timerArmed = WatchForTimer(options.FactoryHardTimeout);
         var timeoutTask = cache.GetOrAddAsync(key, factory, options, AbortToken).AsTask();
-        await factoryStarted.Task;
-        await _TriggerTimeoutAsync(options.FactoryHardTimeout, timeoutTask);
-        var result = await timeoutTask;
+        await factoryStarted.Task.Bounded();
+        await _TriggerTimeoutAsync(options.FactoryHardTimeout, timerArmed);
+        var result = await _CompletedWithinBoundAsync(timeoutTask);
 
         result.Value.Should().Be("stale");
         result.IsStale.Should().BeTrue();
@@ -525,12 +540,17 @@ public abstract class CacheConformanceTestsBase : TestBase
             return ValueTask.FromResult<string?>("second");
         }
 
+        // The first call arms its own factory timer with the same due time just after its factory starts, on its own
+        // thread. Wait for that timer before watching for the second caller's lock-wait timer, so the watch cannot
+        // match the first call's timer instead.
+        var firstTimerArmed = WatchForTimer(options.FactorySoftTimeout);
         var first = cache.GetOrAddAsync(key, firstFactory, options, AbortToken).AsTask();
-        await firstStarted.Task;
-        await Task.Yield();
+        await firstStarted.Task.Bounded();
+        await firstTimerArmed.WaitAsync(_TimeoutWaitBound, AbortToken);
+        var timerArmed = WatchForTimer(options.FactorySoftTimeout);
         var second = cache.GetOrAddAsync(key, secondFactory, options, AbortToken).AsTask();
-        await _TriggerTimeoutAsync(options.FactorySoftTimeout, second);
-        var secondResult = await second;
+        await _TriggerTimeoutAsync(options.FactorySoftTimeout, timerArmed);
+        var secondResult = await _CompletedWithinBoundAsync(second);
         firstGate.SetResult("fresh");
         await first;
 
@@ -1328,19 +1348,40 @@ public abstract class CacheConformanceTestsBase : TestBase
         };
     }
 
-    private async ValueTask _TriggerTimeoutAsync(TimeSpan timeout, Task pendingTimeout)
-    {
-        await Task.Yield();
-        await AdvanceAsync(timeout);
+    // Real-time ceiling on a wait that should finish within milliseconds, so a regression fails one test with a
+    // message instead of hanging the module until the runner's timeout.
+    private static readonly TimeSpan _TimeoutWaitBound = TimeSpan.FromSeconds(10);
 
-        // The coordinator arms its delay timer only after the factory has started, so with a fake time
-        // provider the advance above can land before the timer exists — leaving it armed at the already
-        // advanced "now" plus the timeout, with nothing left to move the clock (a permanent hang). Keep
-        // nudging time forward on a real-time cadence until the caller-observable task completes.
-        for (var attempt = 0; attempt < 50 && !pendingTimeout.IsCompleted; attempt++)
+    private async ValueTask _TriggerTimeoutAsync(TimeSpan timeout, Task timerArmed)
+    {
+        try
         {
-            await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(10), AbortToken);
-            await AdvanceAsync(TimeSpan.FromMilliseconds(20));
+            await timerArmed.WaitAsync(_TimeoutWaitBound, AbortToken);
+        }
+        catch (TimeoutException e)
+        {
+            throw new TimeoutException(
+                $"The cache did not arm a {timeout.TotalMilliseconds}ms timer within {_TimeoutWaitBound}.",
+                e
+            );
+        }
+
+        await AdvanceAsync(timeout);
+    }
+
+    private static async Task<T> _CompletedWithinBoundAsync<T>(Task<T> pending)
+    {
+        try
+        {
+            return await pending.WaitAsync(_TimeoutWaitBound, AbortToken);
+        }
+        // The guard keeps a TimeoutException the cache call itself threw as that call's own outcome.
+        catch (TimeoutException e) when (!pending.IsCompleted)
+        {
+            throw new TimeoutException(
+                $"The cache call did not complete within {_TimeoutWaitBound} after its timeout elapsed.",
+                e
+            );
         }
     }
 

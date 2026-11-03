@@ -100,6 +100,76 @@ public sealed class EmailToMimeMessageConverterTests : TestBase
     }
 
     [Fact]
+    public async Task should_encode_a_binary_attachment_from_the_callers_bytes_without_copying_them()
+    {
+        var file = new byte[] { 1, 2, 3, 4 };
+
+        var request = new SendSingleEmailRequest
+        {
+            From = "from@example.com",
+            Destination = new EmailRequestDestination { ToAddresses = [new EmailRequestAddress("to@example.com")] },
+            Subject = "binary attachment",
+            MessageText = "see attached",
+            Attachments = [new EmailRequestAttachment { Name = "photo.png", File = file }],
+        };
+
+        using var message = await request.ConvertToMimeMessageAsync(AbortToken);
+
+        var attachment = message.Attachments.OfType<MimePart>().Single();
+        attachment.ContentType.MimeType.Should().Be("image/png");
+        attachment.FileName.Should().Be("photo.png");
+        attachment.IsAttachment.Should().BeTrue();
+        attachment.ContentTransferEncoding.Should().Be(ContentEncoding.Base64);
+        var content = attachment.Content!.Stream.Should().BeOfType<MemoryStream>().Subject;
+        content.TryGetBuffer(out var buffer).Should().BeTrue();
+        buffer.Array.Should().BeSameAs(file);
+    }
+
+    [Fact]
+    public async Task should_write_a_binary_attachment_on_every_write_of_the_message()
+    {
+        var request = new SendSingleEmailRequest
+        {
+            From = "from@example.com",
+            Destination = new EmailRequestDestination { ToAddresses = [new EmailRequestAddress("to@example.com")] },
+            Subject = "written twice",
+            MessageText = "see attached",
+            Attachments = [new EmailRequestAttachment { Name = "a.bin", File = "hello"u8.ToArray() }],
+        };
+
+        using var message = await request.ConvertToMimeMessageAsync(AbortToken);
+
+        // A retried send writes the message again, so the part must re-read its content from the start.
+        await using var first = new MemoryStream();
+        await message.WriteToAsync(first, AbortToken);
+        await using var second = new MemoryStream();
+        await message.WriteToAsync(second, AbortToken);
+
+        var expected = Convert.ToBase64String("hello"u8.ToArray());
+        Encoding.ASCII.GetString(first.ToArray()).Should().Contain(expected);
+        second.ToArray().Should().Equal(first.ToArray());
+    }
+
+    [Fact]
+    public async Task should_keep_mimekit_choosing_the_encoding_of_a_text_attachment()
+    {
+        var request = new SendSingleEmailRequest
+        {
+            From = "from@example.com",
+            Destination = new EmailRequestDestination { ToAddresses = [new EmailRequestAddress("to@example.com")] },
+            Subject = "text attachment",
+            MessageText = "see attached",
+            Attachments = [new EmailRequestAttachment { Name = "notes.txt", File = "plain ascii notes"u8.ToArray() }],
+        };
+
+        using var message = await request.ConvertToMimeMessageAsync(AbortToken);
+
+        var attachment = message.Attachments.OfType<MimePart>().Single();
+        attachment.ContentType.MimeType.Should().Be("text/plain");
+        attachment.ContentTransferEncoding.Should().NotBe(ContentEncoding.Base64);
+    }
+
+    [Fact]
     public async Task should_rethrow_when_cancelled_during_attachment_build()
     {
         using var cts = new CancellationTokenSource();

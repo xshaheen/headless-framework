@@ -501,7 +501,7 @@ Exception mapping from `AddHeadlessProblemDetails()`:
 | `FluentValidation.ValidationException` | 422 with field errors |
 | `EntityNotFoundException` | 404 |
 | EF Core `DbUpdateConcurrencyException` (matched by type name) | 409 with concurrency-failure error |
-| EF Core `DbUpdateException` (matched by type name) whose provider exception is a unique-constraint violation: PostgreSQL SQLSTATE `23505`, SQL Server error `2627` or `2601`, SQLite extended code `2067` or `1555` | 409 with `errors[].code: g:unique_violation`; the constraint name stays in the logs (event 5013) |
+| EF Core `DbUpdateException` (matched by type name) whose provider exception is a unique-constraint violation: PostgreSQL SQLSTATE `23505`, SQL Server error `2627` or `2601` in any error the `SqlException` carries, SQLite extended code `2067` or `1555` (read through `RelationalFaults.IsUniqueViolation` in `Headless.Extensions`) | 409 with `errors[].code: g:unique_violation`; the constraint name stays in the logs (event 5013) |
 | `LockAcquisitionTimeoutException` from `Headless.DistributedLocks` (matched by type name) | 503 with `error.code: g:resource_busy` and no `Retry-After`: the lock wait says nothing about when the holder finishes. The resource name stays in the logs (event 5014) |
 | `TimeoutException` | 503 with no `Retry-After`. A timeout raised while serving the request (a cache factory, Redis, a database command) is the server's wait running out, not a slow client; 408 would invite clients, and browsers on a reused connection, to resend a request whose writes may have committed. Only ASP.NET Core's request-timeout middleware answers 408 |
 | `NotImplementedException` | 501 |

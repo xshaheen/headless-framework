@@ -68,7 +68,7 @@ public sealed class AzureBlobContainerManagerTests : TestBase
         // Start the delete and park it inside the backend call; the ensured-cache entry was already evicted under
         // the per-container lock before the backend delete began.
         var deleteTask = sut.DeleteContainerAsync("mycontainer", AbortToken).AsTask();
-        await deleteCalled.Task;
+        await deleteCalled.Task.Bounded();
 
         // A concurrent ensure must not be served from the stale cache entry: it misses and waits on the
         // per-container lock held by the in-flight delete instead of reporting success for a container mid-deletion.

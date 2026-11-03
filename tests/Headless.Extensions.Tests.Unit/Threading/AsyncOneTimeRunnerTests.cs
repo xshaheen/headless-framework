@@ -62,7 +62,7 @@ public sealed class AsyncOneTimeRunnerTests : TestBase
                 Task.Run(
                     async () =>
                     {
-                        await gate.Task;
+                        await gate.Task.Bounded();
                         await runner.RunAsync(
                             () =>
                             {
@@ -196,7 +196,7 @@ public sealed class AsyncOneTimeRunnerTests : TestBase
                     async () =>
                     {
                         actionStarted.SetResult();
-                        await actionCanContinue.Task;
+                        await actionCanContinue.Task.Bounded();
                     },
                     AbortToken
                 );
@@ -204,7 +204,7 @@ public sealed class AsyncOneTimeRunnerTests : TestBase
             AbortToken
         );
 
-        await actionStarted.Task;
+        await actionStarted.Task.Bounded();
 
         // cancel the second waiter after a short delay
         cts.CancelAfter(50);

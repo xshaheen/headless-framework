@@ -61,7 +61,7 @@ public class CronJobOccurrenceEntity<TCronJob>
     public virtual JobStatus Status { get; internal set; }
 
     /// <summary>
-    /// The <c>node@incarnation</c> identifier of the node that claimed and is executing this
+    /// The <c>cluster/node@incarnation</c> identifier of the node that claimed and is executing this
     /// occurrence, or <see langword="null"/> when unleased.
     /// </summary>
     public virtual string? OwnerId { get; internal set; }

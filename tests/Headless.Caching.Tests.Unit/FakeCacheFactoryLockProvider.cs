@@ -51,13 +51,18 @@ internal sealed class FakeCacheFactoryLockProvider : ICacheFactoryLockProvider
         return new ExternalHold(semaphore);
     }
 
+    /// <summary>The cache instance name of the most recent acquire attempt.</summary>
+    public string? LastCacheName { get; private set; }
+
     public async ValueTask<IAsyncDisposable?> TryAcquireAsync(
+        string cacheName,
         string key,
         TimeSpan timeout,
         CancellationToken cancellationToken
     )
     {
         Interlocked.Increment(ref _acquireAttempts);
+        LastCacheName = cacheName;
 
         if (AcquireFault is { } acquireFault)
         {

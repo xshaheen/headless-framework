@@ -96,7 +96,7 @@ public sealed class IdempotencyRetentionServiceTests : TestBase
         // given
         using var service = _Service();
         await service.StartAsync(AbortToken);
-        await _loopStarted.Task.WaitAsync(AbortToken);
+        await _loopStarted.Task.Bounded();
 
         // when
         await service.StopAsync(AbortToken);

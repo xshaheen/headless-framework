@@ -2,6 +2,7 @@ using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Drawing;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Presentation;
+using Headless.IO;
 using Headless.Media.Indexing;
 using Headless.Testing.Tests;
 using Path = System.IO.Path;
@@ -26,17 +27,33 @@ public sealed class PresentationDocumentMediaFileTextProviderTests : TestBase
 
         // when
         await using var fileStream = File.OpenRead(powerPintFilePath);
-        var result = await _sut.GetTextAsync(fileStream, AbortToken);
+        var result = await _sut.GetTextAsync(fileStream, cancellationToken: AbortToken);
 
         // then
         result.Should().Contain("Second"); // Replace with actual expected content
     }
 
     [Fact]
+    public async Task should_extract_text_from_a_non_seekable_stream()
+    {
+        // given: the shape of a blob download or a request body
+        var path = Path.GetFullPath(
+            Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "Files", "TestPPTX.pptx")
+        );
+        await using var stream = new NonSeekableStream(File.OpenRead(path));
+
+        // when
+        var result = await _sut.GetTextAsync(stream, cancellationToken: AbortToken);
+
+        // then
+        result.Should().Contain("Second");
+    }
+
+    [Fact]
     public async Task should_return_empty_string_when_get_text_async_presentation_has_no_slides()
     {
         await using var stream = _CreateEmptyPresentation();
-        var result = await _sut.GetTextAsync(stream, AbortToken);
+        var result = await _sut.GetTextAsync(stream, cancellationToken: AbortToken);
         result.Should().BeEmpty();
     }
 
@@ -45,7 +62,7 @@ public sealed class PresentationDocumentMediaFileTextProviderTests : TestBase
     {
         var slideTexts = new[] { "Slide 1", "Slide 2", "Slide 3" };
         await using var stream = _CreatePresentationWithSlides(slideTexts);
-        var result = await _sut.GetTextAsync(stream, AbortToken);
+        var result = await _sut.GetTextAsync(stream, cancellationToken: AbortToken);
         result.Should().Be(string.Join(Environment.NewLine, slideTexts) + Environment.NewLine);
     }
 
@@ -57,7 +74,7 @@ public sealed class PresentationDocumentMediaFileTextProviderTests : TestBase
         await using var stream = _CreatePresentationWithSlides([slideText, slideText]);
 
         // when
-        var act = async () => await _sut.GetTextAsync(stream, AbortToken);
+        var act = async () => await _sut.GetTextAsync(stream, cancellationToken: AbortToken);
 
         // then
         await act.Should().ThrowAsync<InvalidDataException>();

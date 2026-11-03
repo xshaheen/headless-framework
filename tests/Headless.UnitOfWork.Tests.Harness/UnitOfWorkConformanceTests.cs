@@ -281,7 +281,7 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
 
         unitOfWork.OnCompleted(async () =>
         {
-            await gate.Task;
+            await gate.Task.Bounded();
             completed = true;
         });
 

@@ -22,6 +22,9 @@ public sealed class NullNodeMembership : INodeMembership
     /// <inheritdoc/>
     public NodeIdentity? Identity { get; private set; }
 
+    /// <summary>Always <see cref="CoordinationOptions.DefaultClusterName"/>; this implementation has no cluster.</summary>
+    public string ClusterName => CoordinationOptions.DefaultClusterName;
+
     /// <summary>
     /// Always <see cref="CancellationToken.None"/>; this implementation never loses membership.
     /// </summary>
