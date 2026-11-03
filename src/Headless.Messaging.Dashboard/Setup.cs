@@ -141,7 +141,7 @@ public static class SetupMessagingDashboard
         var json = JsonSerializer.Serialize(envConfig, _JsonOptions);
         json = DashboardSpaHelper.SanitizeForInlineScript(json);
 
-        var baseTag = $"""<base href="{frontendBasePath}/" />""";
+        var baseTag = DashboardSpaHelper.BuildBaseTag(frontendBasePath);
 
         var script = $$"""
             <script>

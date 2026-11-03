@@ -1202,7 +1202,8 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         var totalCount = materialized.Length;
 
         var items = materialized
-            .OrderByDescending(x => x.ExecutionTime) // Match EF Core's OrderByDescending(x => x.ExecutionTime)
+            .OrderByDescending(x => x.ExecutionTime) // Match EF Core: execution time, then Id to break ties
+            .ThenByDescending(x => x.Id)
             .Skip((pageNumber - 1) * pageSize)
             .Take(pageSize)
             .Select(_BuildTickerHierarchy)
@@ -2940,6 +2941,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
         var items = materialized
             .OrderByDescending(x => x.CreatedAt)
+            .ThenByDescending(x => x.Id)
             .Skip((pageNumber - 1) * pageSize)
             .Take(pageSize)
             .ToArray();
@@ -3905,6 +3907,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
         var items = materialized
             .OrderByDescending(x => x.CreatedAt)
+            .ThenByDescending(x => x.Id)
             .Skip((pageNumber - 1) * pageSize)
             .Take(pageSize)
             .Select(_CloneCronOccurrence)

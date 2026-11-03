@@ -251,7 +251,12 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             baseQuery = baseQuery.Where(predicate);
         }
 
-        baseQuery = baseQuery.Where(x => x.ParentId == null).OrderByDescending(x => x.ExecutionTime);
+        // A batch enqueue stamps one execution time on every root; Id breaks the tie so OFFSET paging never
+        // repeats or skips a row between pages.
+        baseQuery = baseQuery
+            .Where(x => x.ParentId == null)
+            .OrderByDescending(x => x.ExecutionTime)
+            .ThenByDescending(x => x.Id);
 
         return await baseQuery.ToPaginatedListAsync(pageNumber, pageSize, cancellationToken).ConfigureAwait(false);
     }
@@ -1359,7 +1364,8 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             baseQuery = baseQuery.Where(predicate);
         }
 
-        baseQuery = baseQuery.OrderByDescending(x => x.CreatedAt);
+        // A seed stamps one creation time on every definition; Id breaks the tie for stable OFFSET paging.
+        baseQuery = baseQuery.OrderByDescending(x => x.CreatedAt).ThenByDescending(x => x.Id);
 
         return await baseQuery.ToPaginatedListAsync(pageNumber, pageSize, cancellationToken).ConfigureAwait(false);
     }
@@ -1662,7 +1668,8 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             baseQuery = baseQuery.Where(predicate);
         }
 
-        baseQuery = baseQuery.OrderByDescending(x => x.ExecutionTime);
+        // Id breaks execution-time ties for stable OFFSET paging when the predicate spans definitions.
+        baseQuery = baseQuery.OrderByDescending(x => x.ExecutionTime).ThenByDescending(x => x.Id);
 
         return await baseQuery.ToPaginatedListAsync(pageNumber, pageSize, cancellationToken).ConfigureAwait(false);
     }

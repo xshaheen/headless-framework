@@ -75,8 +75,11 @@ public sealed class CrossDashboardAuthenticationTests : TestBase
             .Should()
             .Be(HubOutcome.Authenticated);
         (await _HubStatusAsync(app, _JobsApiKey)).Should().Be(HubOutcome.Authenticated);
-        (await _HubStatusAsync(app, _MessagingBasic)).Should().Be(HubOutcome.Closed);
-        (await _HubStatusAsync(app, accessToken: null)).Should().Be(HubOutcome.Closed);
+        // A wrong or missing credential is refused before SignalR opens a connection that could hear a broadcast.
+        (await _HubStatusAsync(app, _MessagingBasic))
+            .Should()
+            .Be(HubOutcome.Refused);
+        (await _HubStatusAsync(app, accessToken: null)).Should().Be(HubOutcome.Refused);
     }
 
     [Fact]
@@ -85,7 +88,7 @@ public sealed class CrossDashboardAuthenticationTests : TestBase
         await using var app = await _StartAsync(jobs => jobs.WithBasicAuth("jobs-user", "jobs-pass"));
 
         (await _HubStatusAsync(app, "jobs-user:jobs-pass".ToBase64())).Should().Be(HubOutcome.Authenticated);
-        (await _HubStatusAsync(app, _MessagingBasic)).Should().Be(HubOutcome.Closed);
+        (await _HubStatusAsync(app, _MessagingBasic)).Should().Be(HubOutcome.Refused);
     }
 
     [Fact]
@@ -96,7 +99,7 @@ public sealed class CrossDashboardAuthenticationTests : TestBase
         );
 
         (await _HubStatusAsync(app, "Token abc")).Should().Be(HubOutcome.Authenticated);
-        (await _HubStatusAsync(app, "Token other")).Should().Be(HubOutcome.Closed);
+        (await _HubStatusAsync(app, "Token other")).Should().Be(HubOutcome.Refused);
     }
 
     [Fact]
@@ -226,7 +229,8 @@ public sealed class CrossDashboardAuthenticationTests : TestBase
         }
         catch (InvalidOperationException)
         {
-            // TestServer reports a refused upgrade (401/403 from authorization) as a failed connect.
+            // TestServer reports a refused upgrade (401 from the dashboard auth middleware, 401/403 from host
+            // authorization) as a failed connect.
             return HubOutcome.Refused;
         }
 
@@ -303,7 +307,7 @@ public sealed class CrossDashboardAuthenticationTests : TestBase
         /// <summary>The hub completed the upgrade, then closed the connection.</summary>
         Closed = 1,
 
-        /// <summary>Authorization refused the WebSocket upgrade.</summary>
+        /// <summary>Authentication or authorization refused the WebSocket upgrade.</summary>
         Refused = 2,
     }
 

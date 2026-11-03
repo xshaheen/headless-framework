@@ -12,7 +12,6 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
     IJobPersistenceProvider<TTimeJob, TCronJob> persistenceProvider,
     IJobsHostScheduler jobsHostScheduler,
     IJobsNotificationHubSender notificationHubSender,
-    DashboardOptionsBuilder dashboardOptions,
     IJobsDispatcher dispatcher,
     JobFunctionRegistry functionRegistry,
     TimeProvider timeProvider,
@@ -35,7 +34,6 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
     private readonly JobFunctionRegistry _functionRegistry = Argument.IsNotNull(functionRegistry);
     private readonly IJobsNotificationHubSender _notificationHubSender = Argument.IsNotNull(notificationHubSender);
     private readonly JobsExecutionContext _executionContext = Argument.IsNotNull(executionContext);
-    private readonly DashboardOptionsBuilder _dashboardOptions = Argument.IsNotNull(dashboardOptions);
     private readonly TimeProvider _timeProvider = Argument.IsNotNull(timeProvider);
     private readonly IGuidGenerator _guidGenerator = Argument.IsNotNull(guidGenerator);
 
@@ -584,7 +582,8 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
 
         try
         {
-            JsonSerializer.Deserialize(jsonRequest, functionTypeContext.Item2, _dashboardOptions.DashboardJsonOptions);
+            // The job binds its payload with the request options, so only they can say whether it matches the type.
+            JsonSerializer.Deserialize(jsonRequest, functionTypeContext.Item2, _serializationOptions.SerializerOptions);
             return (jsonRequest, 1);
         }
 #pragma warning disable ERP022 // Unobserved exception in generic exception handler

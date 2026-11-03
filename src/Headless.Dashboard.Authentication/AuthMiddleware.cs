@@ -2,13 +2,15 @@
 
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace Headless.Dashboard.Authentication;
 
 /// <summary>
-/// Authenticates requests under <c>/api/</c>, except the <c>/api/auth/info</c> and <c>/api/auth/validate</c> endpoints.
+/// Authenticates requests under <c>/api/</c>, except the <c>/api/auth/info</c> and <c>/api/auth/validate</c> endpoints,
+/// and every request routed to a SignalR hub endpoint.
 /// </summary>
 /// <remarks>
 /// Add it with <c>UseMiddleware&lt;AuthMiddleware&gt;(authenticationName)</c>. It authenticates through the
@@ -30,8 +32,8 @@ public sealed class AuthMiddleware(RequestDelegate next, string authenticationNa
 
     /// <summary>
     /// Processes the request, enforcing authentication on every <c>/api/</c> path except <c>/api/auth/info</c> and
-    /// <c>/api/auth/validate</c>. Paths outside <c>/api/</c> (the SPA shell, static files, and the SignalR hub) pass
-    /// through untouched.
+    /// <c>/api/auth/validate</c>, and on every request routed to a SignalR hub endpoint (its negotiate route included).
+    /// Other paths (the SPA shell and its static files) pass through untouched.
     /// </summary>
     /// <remarks>
     /// On success, sets <see cref="UsernameKey"/> and <see cref="AuthenticatedKey"/> in
@@ -46,11 +48,16 @@ public sealed class AuthMiddleware(RequestDelegate next, string authenticationNa
         // All comparisons below are case-insensitive, so the request path needs no lowercased copy per request.
         var path = context.Request.Path.Value ?? "";
 
-        // Only API endpoints are protected here: the SPA shell, its static files, and the SignalR hub live outside
-        // /api/ (the hub authenticates itself). Inside /api/ only the two auth endpoints the login flow needs are
-        // anonymous; matching anything else by extension or substring would let a request such as /api/x/y.js reach
-        // a route parameter unauthenticated.
-        if (!path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase) || _IsAnonymousAuthEndpoint(path))
+        // API endpoints and hub endpoints are protected here; the SPA shell and its static files are not. SignalR adds
+        // a connection to Clients.All before the hub's OnConnectedAsync can refuse it, so a hub request is refused here,
+        // before a connection exists to hear a broadcast; routing metadata, not the path, marks it. Inside /api/ only
+        // the two auth endpoints the login flow needs are anonymous; matching anything else by extension or substring
+        // would let a request such as /api/x/y.js reach a route parameter unauthenticated.
+        var isHubRequest = context.GetEndpoint()?.Metadata.GetMetadata<HubMetadata>() is not null;
+        if (
+            !isHubRequest
+            && (!path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase) || _IsAnonymousAuthEndpoint(path))
+        )
         {
             await next(context);
             return;

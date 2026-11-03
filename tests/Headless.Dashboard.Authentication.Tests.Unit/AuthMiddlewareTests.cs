@@ -4,6 +4,7 @@ using System.Security.Claims;
 using Headless.Dashboard.Authentication;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -100,6 +101,53 @@ public sealed class AuthMiddlewareTests : TestBase
         );
         var context = new DefaultHttpContext();
         context.Request.Path = "/some-page";
+
+        await middleware.InvokeAsync(context);
+
+        nextCalled.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("/job-notification-hub")]
+    [InlineData("/job-notification-hub/negotiate")]
+    public async Task returns_401_before_an_unauthenticated_hub_request_reaches_signalr(string path)
+    {
+        // SignalR adds a connection to Clients.All before the hub's OnConnectedAsync can reject it, so a connection
+        // left to the hub to refuse would hear every broadcast sent while its credential was being checked.
+        await using var sp = _ApiKeyServices();
+        var nextCalled = false;
+        var middleware = new AuthMiddleware(
+            _ =>
+            {
+                nextCalled = true;
+                return Task.CompletedTask;
+            },
+            _Name,
+            _logger
+        );
+        var context = _HubContext(sp, path, accessToken: null);
+
+        await middleware.InvokeAsync(context);
+
+        nextCalled.Should().BeFalse();
+        context.Response.StatusCode.Should().Be(401);
+    }
+
+    [Fact]
+    public async Task passes_an_authenticated_hub_request_through()
+    {
+        await using var sp = _ApiKeyServices();
+        var nextCalled = false;
+        var middleware = new AuthMiddleware(
+            _ =>
+            {
+                nextCalled = true;
+                return Task.CompletedTask;
+            },
+            _Name,
+            _logger
+        );
+        var context = _HubContext(sp, "/job-notification-hub", accessToken: "secret");
 
         await middleware.InvokeAsync(context);
 
@@ -232,6 +280,38 @@ public sealed class AuthMiddlewareTests : TestBase
         context.Request.Headers.Authorization = authorization;
 
         await new AuthMiddleware(_ => Task.CompletedTask, name, _logger).InvokeAsync(context);
+
+        return context;
+    }
+
+    private static ServiceProvider _ApiKeyServices()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddDashboardAuthentication(
+            _Name,
+            config =>
+            {
+                config.Mode = AuthMode.ApiKey;
+                config.ApiKey = "secret";
+            }
+        );
+
+        return services.BuildServiceProvider();
+    }
+
+    private static DefaultHttpContext _HubContext(IServiceProvider services, string path, string? accessToken)
+    {
+        var context = new DefaultHttpContext { RequestServices = services };
+        context.Request.Path = path;
+        if (accessToken is not null)
+        {
+            context.Request.QueryString = QueryString.Create("access_token", accessToken);
+        }
+
+        context.SetEndpoint(
+            new Endpoint(_ => Task.CompletedTask, new EndpointMetadataCollection(new HubMetadata(typeof(Hub))), "hub")
+        );
 
         return context;
     }
