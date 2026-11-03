@@ -6,6 +6,7 @@ using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 using StackExchange.Redis;
 
 namespace Tests;
@@ -207,6 +208,94 @@ public sealed class RedisConsumerClientTests : TestBase
 
         // then
         message.Headers[Headers.TransportAddress].Should().Be(stream);
+    }
+
+    [Theory]
+    [InlineData(3, true)]
+    [InlineData(2, false)]
+    public async Task should_raise_the_reestablished_signal_before_dispatch_when_an_every_instance_read_gap_reaches_half_the_stream_age(
+        int gapMinutes,
+        bool expectSignal
+    )
+    {
+        // given a read, then a failed read, then a successful one after the gap (EveryInstanceStreamMaxAge is 5 minutes)
+        const string stream = "headless:messaging:bus:orders.created";
+        var timeProvider = new FakeTimeProvider();
+        _mockStreamManager
+            .GetStreamTailPositionsAsync(Arg.Any<string[]>(), Arg.Any<CancellationToken>())
+            .Returns([new StreamPosition(stream, StreamPosition.Beginning)]);
+        _mockStreamManager
+            .PollStreamsFromAsync(
+                Arg.Any<StreamPosition[]>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<Action<Exception?>?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(callInfo =>
+                _ReadsAfterGap(
+                    callInfo.ArgAt<Action<Exception?>?>(2),
+                    timeProvider,
+                    TimeSpan.FromMinutes(gapMinutes),
+                    new RedisStreamMessages(stream, [_ValidEntry("2-0")])
+                )
+            );
+        await using var client = new RedisConsumerClient(
+            "billing.cache",
+            1,
+            _mockStreamManager,
+            _options,
+            LoggerFactory.CreateLogger<RedisConsumerClient>(),
+            MessageLane.Bus,
+            timeProvider,
+            ConsumerSubscriptionKind.EveryInstance
+        );
+        var events = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        var delivered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.AttachCallbacks(
+            (_, _) =>
+            {
+                events.Enqueue("delivered");
+                delivered.TrySetResult();
+                return Task.CompletedTask;
+            },
+            onLog: null
+        );
+        client.AttachReestablishedCallback(_ =>
+        {
+            events.Enqueue("reestablished");
+            return Task.CompletedTask;
+        });
+        await client.SubscribeAsync(["orders.created"], AbortToken);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+
+        // when
+        var listening = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token);
+        await delivered.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        await cts.CancelAsync();
+        await listening;
+
+        // then
+        events.Should().Equal(expectSignal ? ["reestablished", "delivered"] : ["delivered"]);
+    }
+
+    private static async IAsyncEnumerable<IEnumerable<RedisStreamMessages>> _ReadsAfterGap(
+        Action<Exception?>? onRead,
+        FakeTimeProvider timeProvider,
+        TimeSpan gap,
+        RedisStreamMessages afterGap
+    )
+    {
+        onRead?.Invoke(null);
+        yield return [];
+
+        onRead?.Invoke(new RedisException("No connection is available"));
+        yield return [];
+
+        timeProvider.Advance(gap);
+        onRead?.Invoke(null);
+        yield return [afterGap];
+
+        await Task.CompletedTask;
     }
 
     private RedisConsumerClient _CreateEveryInstanceClient(ILogger<RedisConsumerClient> logger) =>

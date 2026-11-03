@@ -5,6 +5,7 @@ using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
+using NSubstitute.ExceptionExtensions;
 using StackExchange.Redis;
 
 namespace Tests;
@@ -132,6 +133,7 @@ public sealed class RedisStreamManagerTests : TestBase
         // given
         var now = new DateTimeOffset(2026, 10, 9, 12, 0, 0, TimeSpan.Zero);
         var sut = _CreateSut(new FakeTimeProvider(now), options => options.StreamMaxAge = TimeSpan.FromHours(1));
+        _StreamHasGroups("orders-stream", 1);
         StreamAddOptions? sent = null;
         _mockDatabase
             .StreamAddAsync(
@@ -158,6 +160,7 @@ public sealed class RedisStreamManagerTests : TestBase
     {
         // given
         var sut = _CreateSut(new FakeTimeProvider(), options => options.StreamMaxAge = TimeSpan.Zero);
+        _StreamHasGroups("orders-stream", 1);
         StreamAddOptions? sent = null;
         _mockDatabase
             .StreamAddAsync(
@@ -723,6 +726,134 @@ public sealed class RedisStreamManagerTests : TestBase
         // then
         reads.Should().Be(2);
         await _mockDatabase.Received(2).KeyExistsAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>());
+    }
+
+    [Fact]
+    public async Task should_trim_a_stream_no_consumer_group_reads_by_the_every_instance_age()
+    {
+        // given
+        var now = new DateTimeOffset(2026, 10, 9, 12, 0, 0, TimeSpan.Zero);
+        var sut = _CreateSut(
+            new FakeTimeProvider(now),
+            options => options.EveryInstanceStreamMaxAge = TimeSpan.FromMinutes(3)
+        );
+        _StreamHasGroups("cache-invalidation", 0);
+        var sent = _CaptureAddOptions();
+
+        // when
+        await sut.PublishAsync("cache-invalidation", [new("headers", "{}")], AbortToken);
+
+        // then
+        sent().MinId.Should().Be((RedisValue)$"{now.AddMinutes(-3).ToUnixTimeMilliseconds()}-0");
+        sent().Approximate.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_trim_an_absent_stream_by_the_every_instance_age()
+    {
+        // given
+        var now = new DateTimeOffset(2026, 10, 9, 12, 0, 0, TimeSpan.Zero);
+        var sut = _CreateSut(new FakeTimeProvider(now));
+        _mockDatabase
+            .StreamGroupInfoAsync("new-stream", Arg.Any<CommandFlags>())
+            .ThrowsAsync(_ServerException("ERR no such key"));
+        var sent = _CaptureAddOptions();
+
+        // when
+        await sut.PublishAsync("new-stream", [new("headers", "{}")], AbortToken);
+
+        // then
+        sent().MinId.Should().Be((RedisValue)$"{now.AddMinutes(-5).ToUnixTimeMilliseconds()}-0");
+    }
+
+    [Fact]
+    public async Task should_keep_the_stream_max_age_when_the_server_refuses_to_list_groups()
+    {
+        // given
+        var now = new DateTimeOffset(2026, 10, 9, 12, 0, 0, TimeSpan.Zero);
+        var sut = _CreateSut(new FakeTimeProvider(now), options => options.StreamMaxAge = TimeSpan.FromHours(1));
+        _mockDatabase
+            .StreamGroupInfoAsync("orders-stream", Arg.Any<CommandFlags>())
+            .ThrowsAsync(_ServerException("NOPERM this user has no permissions to run the 'xinfo' command"));
+        var sent = _CaptureAddOptions();
+
+        // when
+        await sut.PublishAsync("orders-stream", [new("headers", "{}")], AbortToken);
+
+        // then
+        sent().MinId.Should().Be((RedisValue)$"{now.AddHours(-1).ToUnixTimeMilliseconds()}-0");
+    }
+
+    [Fact]
+    public async Task should_list_groups_of_a_stream_with_a_group_once()
+    {
+        // given
+        var sut = _CreateSut(new FakeTimeProvider());
+        _StreamHasGroups("orders-stream", 2);
+        _CaptureAddOptions();
+
+        // when
+        await sut.PublishAsync("orders-stream", [new("headers", "{}")], AbortToken);
+        await sut.PublishAsync("orders-stream", [new("headers", "{}")], AbortToken);
+        await sut.PublishAsync("orders-stream", [new("headers", "{}")], AbortToken);
+
+        // then
+        await _mockDatabase.Received(1).StreamGroupInfoAsync("orders-stream", Arg.Any<CommandFlags>());
+    }
+
+    [Fact]
+    public async Task should_recheck_a_stream_without_a_group_after_half_the_every_instance_age()
+    {
+        // given
+        var now = new DateTimeOffset(2026, 10, 9, 12, 0, 0, TimeSpan.Zero);
+        var timeProvider = new FakeTimeProvider(now);
+        var sut = _CreateSut(
+            timeProvider,
+            options =>
+            {
+                options.EveryInstanceStreamMaxAge = TimeSpan.FromMinutes(4);
+                options.StreamMaxAge = TimeSpan.FromHours(1);
+            }
+        );
+        _StreamHasGroups("orders-stream", 0);
+        var sent = _CaptureAddOptions();
+
+        await sut.PublishAsync("orders-stream", [new("headers", "{}")], AbortToken);
+        timeProvider.Advance(TimeSpan.FromMinutes(1));
+        await sut.PublishAsync("orders-stream", [new("headers", "{}")], AbortToken);
+
+        // a consumer group is created meanwhile
+        _StreamHasGroups("orders-stream", 1);
+        timeProvider.Advance(TimeSpan.FromMinutes(1));
+
+        // when
+        await sut.PublishAsync("orders-stream", [new("headers", "{}")], AbortToken);
+
+        // then
+        await _mockDatabase.Received(2).StreamGroupInfoAsync("orders-stream", Arg.Any<CommandFlags>());
+        sent().MinId.Should().Be((RedisValue)$"{timeProvider.GetUtcNow().AddHours(-1).ToUnixTimeMilliseconds()}-0");
+    }
+
+    private void _StreamHasGroups(string stream, int count)
+    {
+        _mockDatabase
+            .StreamGroupInfoAsync(stream, Arg.Any<CommandFlags>())
+            .Returns(Task.FromResult(new StreamGroupInfo[count]));
+    }
+
+    private Func<StreamAddOptions> _CaptureAddOptions()
+    {
+        StreamAddOptions? sent = null;
+        _mockDatabase
+            .StreamAddAsync(
+                Arg.Any<RedisKey>(),
+                Arg.Any<NameValueEntry[]>(),
+                Arg.Do<StreamAddOptions>(options => sent = options),
+                Arg.Any<CommandFlags>()
+            )
+            .Returns(new RedisValue("1-0"));
+
+        return () => sent ?? throw new InvalidOperationException("Nothing was published.");
     }
 
     private static RedisServerException _ServerException(string message)

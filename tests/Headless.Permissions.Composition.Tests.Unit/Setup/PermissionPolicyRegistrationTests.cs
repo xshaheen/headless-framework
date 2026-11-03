@@ -148,8 +148,13 @@ public sealed class PermissionPolicyRegistrationTests : TestBase
         // given
         var permissionManager = Substitute.For<IPermissionManager>();
         permissionManager
-            .GetAsync("Orders.Edit", Arg.Any<ICurrentUser>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(new GrantedPermissionResult("Orders.Edit", isGranted));
+            .GetAllAsync(
+                Arg.Is<IReadOnlyCollection<string>>(names => names.SequenceEqual(new[] { "Orders.Edit" })),
+                Arg.Any<ICurrentUser>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns([new GrantedPermissionResult("Orders.Edit", isGranted)]);
         var services = _CreateResolvableServices(permissionManager);
         services.AddAuthorizationCore();
         await using var provider = services.BuildServiceProvider();

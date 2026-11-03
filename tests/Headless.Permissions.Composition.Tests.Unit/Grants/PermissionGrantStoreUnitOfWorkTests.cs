@@ -94,21 +94,24 @@ public sealed class PermissionGrantStoreUnitOfWorkTests : TestBase
             .OnlyContain(name => name.EndsWith("EnlistedAsync", StringComparison.Ordinal));
         _cache.ReceivedCalls().Should().BeEmpty();
 
-        // and the cache is cleared, not rewritten, once the unit commits
+        // and the committed status is written once the unit commits, so a reader that loaded before the commit
+        // cannot fill the entry with what it read
         await _CommitAsync();
         await _cache
             .Received(1)
-            .RemoveAllAsync(
-                Arg.Is<IEnumerable<string>>(keys =>
-                    keys.Order()
+            .UpsertAllAsync(
+                Arg.Is<IDictionary<string, PermissionGrantCacheItem>>(values =>
+                    values
+                        .Keys.Order()
                         .SequenceEqual(
                             new[]
                             {
                                 PermissionGrantCacheItem.CalculateCacheKey("Users.Create", _ProviderName, _ProviderKey),
                                 PermissionGrantCacheItem.CalculateCacheKey("Users.Delete", _ProviderName, _ProviderKey),
                             }.Order()
-                        )
+                        ) && values.Values.All(static v => v.IsGranted == true)
                 ),
+                Arg.Any<TimeSpan?>(),
                 Arg.Any<CancellationToken>()
             );
         _cache.ReceivedCalls().Should().ContainSingle();
@@ -191,7 +194,11 @@ public sealed class PermissionGrantStoreUnitOfWorkTests : TestBase
             )
             .Returns([]);
         _cache
-            .RemoveAllAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .UpsertAllAsync(
+                Arg.Any<IDictionary<string, PermissionGrantCacheItem>>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            )
             .ThrowsAsync(new InvalidOperationException("cache down"));
         await _sut.GrantEnlistedAsync(_unit, ["Users.Create"], _ProviderName, _ProviderKey, AbortToken);
 
@@ -221,7 +228,15 @@ public sealed class PermissionGrantStoreUnitOfWorkTests : TestBase
         await _repository.Received(1).DeleteManyEnlistedAsync(_unit, grants, AbortToken);
         _cache.ReceivedCalls().Should().BeEmpty();
         await _CommitAsync();
-        await _cache.Received(1).RemoveAllAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>());
+        await _cache
+            .Received(1)
+            .UpsertAllAsync(
+                Arg.Is<IDictionary<string, PermissionGrantCacheItem>>(static values =>
+                    values.Count == 2 && values.Values.All(static v => v.IsGranted == null)
+                ),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -240,7 +255,7 @@ public sealed class PermissionGrantStoreUnitOfWorkTests : TestBase
     }
 
     [Fact]
-    public async Task should_remove_the_cache_entries_of_an_autonomous_delete()
+    public async Task should_mark_the_cache_entries_of_an_autonomous_delete_undefined()
     {
         // given
         List<PermissionGrantRecord> grants = [new(Guid.NewGuid(), "Users.Create", _ProviderName, _ProviderKey, true)];
@@ -254,11 +269,13 @@ public sealed class PermissionGrantStoreUnitOfWorkTests : TestBase
         await _repository.Received(1).DeleteManyAsync(grants, AbortToken);
         await _cache
             .Received(1)
-            .RemoveAllAsync(
-                Arg.Is<IEnumerable<string>>(keys =>
-                    keys.Single()
-                    == PermissionGrantCacheItem.CalculateCacheKey("Users.Create", _ProviderName, _ProviderKey)
+            .UpsertAllAsync(
+                Arg.Is<IDictionary<string, PermissionGrantCacheItem>>(values =>
+                    values.Single().Key
+                        == PermissionGrantCacheItem.CalculateCacheKey("Users.Create", _ProviderName, _ProviderKey)
+                    && values.Single().Value.IsGranted == null
                 ),
+                Arg.Any<TimeSpan?>(),
                 AbortToken
             );
     }

@@ -155,8 +155,8 @@ public sealed partial class ArabicRegionalResourcesTests : TestBase
     [Fact]
     public void should_add_regional_validation_messages_when_configuring_global_settings()
     {
-        // when: no reset, since SetupApiTests toggles the same process-wide guard in parallel; the first call in the
-        // process ran the full body, so the translations are in place either way
+        // when: no reset, since SetupApiTests toggles the same process-wide guard in parallel; the call returns only
+        // after some call has applied the translations, and a reset never removes them
         SetupApi.ConfigureGlobalSettings();
 
         // then

@@ -115,7 +115,7 @@ public class JobExecutionState
     public bool LeaseLost { get; set; }
 
     /// <summary>
-    /// Transient, non-persisted <c>node@incarnation</c> owner that claimed this row, captured from the claimed root
+    /// Transient, non-persisted <c>cluster/node@incarnation</c> owner that claimed this row, captured from the claimed root
     /// and shared by every chain descendant that runs under the root's claim. It is never part of
     /// <see cref="PropertiesToUpdate"/>.
     /// </summary>

@@ -41,7 +41,7 @@ internal static class InDoubtCommitFaults
             return !cancelledBeforeCommit;
         }
 
-        if (TransientFaults.FindDatabaseException(exception) is not { } databaseException)
+        if (RelationalFaults.FindDatabaseException(exception) is not { } databaseException)
         {
             return _HasTransportFault(exception);
         }

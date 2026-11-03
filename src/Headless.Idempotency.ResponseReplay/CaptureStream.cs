@@ -2,6 +2,8 @@
 
 using System.Buffers;
 using Headless.Checks;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Primitives;
 
 namespace Headless.Idempotency;
 
@@ -31,20 +33,40 @@ internal sealed class CaptureStream : Stream
     private readonly Stream _inner;
 #pragma warning restore CA2213
     private readonly int _cap;
+    private readonly IHeaderDictionary? _responseHeaders;
     private byte[] _buffer;
     private int _length;
     private bool _disposed;
 
-    internal CaptureStream(Stream inner, int cap)
-        : this(inner, cap, ArrayPool<byte>.Shared.Rent(Math.Min(cap, 4096))) { }
+    /// <summary>Captures into a pooled rental, which <see cref="Dispose"/> returns to the pool.</summary>
+    /// <param name="inner">The stream the captured bytes are forwarded to.</param>
+    /// <param name="cap">The most bytes captured.</param>
+    /// <param name="responseHeaders">
+    /// The response headers whose <c>Content-Encoding</c> is read the moment the first byte or flush leaves this
+    /// stream; see <see cref="ContentEncodingOfCapture"/>.
+    /// </param>
+    internal CaptureStream(Stream inner, int cap, IHeaderDictionary? responseHeaders = null)
+        : this(inner, cap, ArrayPool<byte>.Shared.Rent(Math.Min(cap, 4096)), responseHeaders) { }
 
     /// <summary>Test seam: captures into the given rental, which <see cref="Dispose"/> returns to the pool.</summary>
-    internal CaptureStream(Stream inner, int cap, byte[] rentedBuffer)
+    internal CaptureStream(Stream inner, int cap, byte[] rentedBuffer, IHeaderDictionary? responseHeaders = null)
     {
         _inner = inner;
         _cap = cap;
         _buffer = rentedBuffer;
+        _responseHeaders = responseHeaders;
     }
+
+    /// <summary>True once a write or flush reached the inner stream.</summary>
+    public bool Forwarded { get; private set; }
+
+    /// <summary>
+    /// The <c>Content-Encoding</c> the response carried when the first write or flush left this stream, which is the
+    /// coding of the captured bytes. A compressor wrapping this stream labels the shared response headers only once
+    /// data reaches it, and it encodes the bytes after they were captured, so a value it adds later describes its own
+    /// output and not the capture. Meaningful only when <see cref="Forwarded"/> is true.
+    /// </summary>
+    public StringValues ContentEncodingOfCapture { get; private set; }
 
     /// <summary>True when writes exceeded the cap; captured bytes are incomplete.</summary>
     public bool TruncatedCapture { get; private set; }
@@ -80,6 +102,7 @@ internal sealed class CaptureStream : Stream
         // cannot throw; if the inner write later throws, the captured buffer still represents
         // exactly what the handler intended to send up to that point.
         _AppendToBuffer(buffer.AsSpan(offset, count));
+        _OnForward();
         _inner.Write(buffer, offset, count);
     }
 
@@ -89,6 +112,7 @@ internal sealed class CaptureStream : Stream
     {
         Ensure.NotDisposed(_disposed, this);
         _AppendToBuffer(buffer);
+        _OnForward();
         _inner.Write(buffer);
     }
 
@@ -98,6 +122,7 @@ internal sealed class CaptureStream : Stream
     {
         Ensure.NotDisposed(_disposed, this);
         _AppendToBuffer(buffer.AsSpan(offset, count));
+        _OnForward();
         await _inner.WriteAsync(buffer.AsMemory(offset, count), cancellationToken).ConfigureAwait(false);
     }
 
@@ -110,6 +135,7 @@ internal sealed class CaptureStream : Stream
     {
         Ensure.NotDisposed(_disposed, this);
         _AppendToBuffer(buffer.Span);
+        _OnForward();
         await _inner.WriteAsync(buffer, cancellationToken).ConfigureAwait(false);
     }
 
@@ -119,16 +145,21 @@ internal sealed class CaptureStream : Stream
     {
         Ensure.NotDisposed(_disposed, this);
         _AppendToBuffer(new ReadOnlySpan<byte>(in value));
+        _OnForward();
         _inner.WriteByte(value);
     }
 
     public override void Flush()
     {
+        // A flush also starts the response (Response.StartAsync flushes this stream), and a compressor wrapping it
+        // labels the headers then, before any byte arrives.
+        _OnForward();
         _inner.Flush();
     }
 
     public override Task FlushAsync(CancellationToken cancellationToken)
     {
+        _OnForward();
         return _inner.FlushAsync(cancellationToken);
     }
 
@@ -167,6 +198,17 @@ internal sealed class CaptureStream : Stream
 
         base.Dispose(disposing);
         // _inner is intentionally NOT disposed — the response pipeline owns it
+    }
+
+    private void _OnForward()
+    {
+        if (Forwarded)
+        {
+            return;
+        }
+
+        Forwarded = true;
+        ContentEncodingOfCapture = _responseHeaders?.ContentEncoding ?? default;
     }
 
     private void _AppendToBuffer(ReadOnlySpan<byte> data)

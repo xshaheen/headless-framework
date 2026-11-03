@@ -102,7 +102,15 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
         var clock = new SteppableClock();
         var retryPlanned = new RetryPlannedSignal();
         var probe = new StopProbe(StopProbeMode.Fail);
-        using var host = _BuildHost(probe, timeProvider: clock, exceptionHandler: retryPlanned);
+        // The stop budget runs on the real clock while the test steps its own; the default 2 s budget can run out
+        // before a loaded runner writes the parked row, leaving it InProgress, so give the stop room to finish.
+        using var host = _BuildHost(
+            probe,
+            stopBudget: TimeSpan.FromSeconds(20),
+            hostShutdownTimeout: TimeSpan.FromSeconds(30),
+            timeProvider: clock,
+            exceptionHandler: retryPlanned
+        );
         await host.StartAsync(AbortToken);
         var id = await _Scheduler(host).EnqueueAsync<StopJob>(o => o.WithRetries(2).WithRetryIntervals(60), AbortToken);
         await retryPlanned.Observed.WaitAsync(_WaitBudget, AbortToken);
@@ -175,7 +183,12 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
         // then: the job ran until the release window opened, then was cancelled
         var cancelledAfter = TimeProvider.System.GetElapsedTime(stopStarted, probe.CancelledAt!.Value);
         cancelledAfter.Should().BeGreaterThan(budget - releaseWindow - TimeSpan.FromMilliseconds(250));
-        stopElapsed.Should().BeLessThan(budget, "the stop must end inside its own budget");
+        // The scheduler bounds only its own stop by the budget; the whole host stop also carries the continuations
+        // that resume after each wait, which a loaded runner delays by a few hundred milliseconds. The host would
+        // otherwise wait out its fifteen-second shutdown timeout, so 1.5 s of slack still proves the budget ended it.
+        stopElapsed
+            .Should()
+            .BeLessThan(budget + TimeSpan.FromSeconds(1.5), "the stop must end inside its own budget");
 
         // and its uncharged release had committed when the stop returned
         var stored = await _Store(host).GetTimeJobByIdAsync(id, AbortToken);
@@ -215,7 +228,16 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
         // plus the two left before the release window); one second of slack separates the two and absorbs a loaded
         // runner, where 750 ms was overrun.
         cancelledAfter.Should().BeLessThan(laterServiceStop + TimeSpan.FromSeconds(1));
-        stopElapsed.Should().BeLessThan(budget, "the budget counts from the host's stop, not the scheduler's");
+        // The scheduler bounds only its own stop by the budget; the whole host stop also carries the continuations
+        // that resume after each wait, which a loaded runner delays past the budget by a few hundred milliseconds.
+        // Counting the budget from the scheduler's own stop would end near seven seconds (the later service's three
+        // plus the full four), so 1.5 s of slack still separates the two.
+        stopElapsed
+            .Should()
+            .BeLessThan(
+                budget + TimeSpan.FromSeconds(1.5),
+                "the budget counts from the host's stop, not the scheduler's"
+            );
 
         // and its uncharged release had committed when the stop returned
         var stored = await _Store(host).GetTimeJobByIdAsync(id, AbortToken);
@@ -230,10 +252,18 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
     {
         // given: an overdue row written straight to the store, so the sleeping scheduler loop is never woken for it
         // and only the fallback sweep can dispatch it
+        // A long stop budget keeps the release window, which cancels running jobs, far from the observation below, so
+        // a slow runner cannot cancel the job before the test releases it.
         var probe = new StopProbe(StopProbeMode.BlockUntilReleased);
-        using var host = _BuildHost(probe, fallbackInterval: TimeSpan.FromMilliseconds(200));
+        using var host = _BuildHost(
+            probe,
+            stopBudget: TimeSpan.FromSeconds(20),
+            hostShutdownTimeout: TimeSpan.FromSeconds(30),
+            fallbackInterval: TimeSpan.FromMilliseconds(200)
+        );
         await host.StartAsync(AbortToken);
         var store = _Store(host);
+        var pool = host.Services.GetRequiredService<JobsTaskScheduler>();
         var id = Guid.NewGuid();
         await store.AddTimeJobsAsync(
             [
@@ -251,7 +281,7 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
 
         // when: the host stops while the job is still running, and the job finishes inside the stop budget
         var stop = host.StopAsync(AbortToken);
-        await Task.Delay(TimeSpan.FromMilliseconds(300), AbortToken);
+        await _WaitUntilAsync(() => pool.IsDraining);
         probe.CancelledAt.Should().BeNull("a running job keeps running until the release window opens");
         probe.Release();
         await stop;

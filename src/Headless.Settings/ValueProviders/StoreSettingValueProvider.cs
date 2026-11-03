@@ -13,7 +13,7 @@ public abstract class StoreSettingValueProvider(ISettingValueStore store) : ISet
     /// <inheritdoc/>
     public bool StoresEncryptedValues => true;
 
-    private ISettingValueStore Store { get; } = store;
+    internal ISettingValueStore Store { get; } = store;
 
     /// <inheritdoc/>
     public async Task<string?> GetOrDefaultAsync(
@@ -127,6 +127,12 @@ public abstract class StoreSettingValueProvider(ISettingValueStore store) : ISet
             NormalizeProviderKey(providerKey),
             cancellationToken
         );
+    }
+
+    /// <summary>The key <see cref="GetOrDefaultAsync"/> reads the store with for <paramref name="providerKey"/>.</summary>
+    internal string? ResolveProviderKey(string? providerKey)
+    {
+        return NormalizeProviderKey(providerKey);
     }
 
     /// <summary>Normalizes the provider key before it is forwarded to the store. Override to apply provider-specific scoping logic.</summary>

@@ -4,7 +4,7 @@ namespace Headless.Coordination;
 
 /// <summary>
 /// Provides store-authoritative membership and liveness tracking for stamping work with
-/// <c>node@incarnation</c> identities.
+/// <c>cluster/node@incarnation</c> owner tags (see <see cref="NodeOwnerTag"/>).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -32,6 +32,13 @@ public interface INodeMembership : IMembershipEventSource
     /// <see cref="CoordinationOptions.SelfFenceMargin"/> since its registration or last accepted heartbeat.
     /// </summary>
     NodeIdentity? Identity { get; }
+
+    /// <summary>
+    /// Gets the coordination cluster this membership belongs to (<see cref="CoordinationOptions.ClusterName"/>). Every
+    /// identity this membership reports, the local one and the ones in its liveness reads, belongs to this cluster.
+    /// Format owner tags with <see cref="NodeOwnerTag"/> so a store shared by several clusters keeps their owners apart.
+    /// </summary>
+    string ClusterName { get; }
 
     /// <summary>
     /// Gets a cancellation token cancelled when the local membership is lost: through a superseded

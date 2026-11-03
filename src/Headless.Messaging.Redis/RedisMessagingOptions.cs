@@ -16,8 +16,10 @@ namespace Headless.Messaging.Redis;
 public sealed class RedisMessagingOptions
 {
     /// <summary>
-    /// The native StackExchange.Redis connection options. When <see langword="null"/>,
-    /// the transport connects to <c>localhost</c> on the default Redis port.
+    /// The native StackExchange.Redis connection options for a connection the transport opens and owns. Leave it
+    /// <see langword="null"/> to share <see cref="ConnectionMultiplexer"/> or the <see cref="IConnectionMultiplexer"/>
+    /// registered in the service collection; with neither, the transport connects to <c>localhost</c> on the default
+    /// Redis port.
     /// </summary>
     /// <remarks>
     /// This is a deliberate full-fidelity pass-through of the StackExchange.Redis type
@@ -27,11 +29,26 @@ public sealed class RedisMessagingOptions
     /// </remarks>
     public ConfigurationOptions? Configuration { get; set; }
 
+    /// <summary>
+    /// A connection multiplexer the transport shares instead of opening its own. Left unset while
+    /// <see cref="Configuration"/> is also unset, it resolves to the <see cref="IConnectionMultiplexer"/> registered in
+    /// the service collection, the same one the Redis cache, lock, coordination, and blob providers use.
+    /// </summary>
+    /// <remarks>
+    /// The transport never disposes a shared multiplexer, and <see cref="ConnectionPoolSize"/> does not apply to it.
+    /// Sharing costs no throughput: the transport sends no blocking command, so its stream reads pipeline with the other
+    /// packages' traffic, and its wake-up and reply channels use the multiplexer's one subscription connection. Set only
+    /// one of <see cref="Configuration"/> and this property.
+    /// </remarks>
+    public IConnectionMultiplexer? ConnectionMultiplexer { get; set; }
+
     // BrokerAddress is emitted to telemetry and dashboards, so expose only broker endpoints here.
     internal string DisplayEndpoint =>
         Configuration?.EndPoints.Count > 0
             ? string.Join(',', Configuration.EndPoints.Select(BrokerAddressDisplay.Format))
-            : string.Empty;
+        : ConnectionMultiplexer?.GetEndPoints() is { Length: > 0 } endPoints
+            ? string.Join(',', endPoints.Select(BrokerAddressDisplay.Format))
+        : string.Empty;
 
     /// <summary>
     /// The maximum number of stream entries one read takes from each stream. A read that returns a full batch is
@@ -85,6 +102,22 @@ public sealed class RedisMessagingOptions
     public TimeSpan StreamMaxAge { get; set; } = TimeSpan.FromDays(7);
 
     /// <summary>
+    /// How long a stream that no consumer group reads keeps an entry. Only group-less every-instance readers read such a
+    /// stream, such as cache invalidation and lock-release signals, and each one reads from the tail it found when it
+    /// subscribed, so an entry is useful only until every live reader has polled past it. Must be at least
+    /// <c>2 minutes</c>. Defaults to <c>5 minutes</c>.
+    /// </summary>
+    /// <remarks>
+    /// A consumer group starts at the entries added after it was created, so it never reads an entry published before
+    /// it existed, and trimming a stream with no group by this age loses nothing a group could read. A stream that has
+    /// at least one consumer group keeps <see cref="StreamMaxAge"/>. A publisher learns whether a stream has a group with
+    /// one <c>XINFO GROUPS</c> per stream at most every half of this age. An every-instance reader that could not read
+    /// for half of this age, during a Redis outage for example, may have lost entries to the trim, so it raises the
+    /// reconnect signal (<c>IOnSubscriptionEstablished</c> with <c>IsReconnect = true</c>) before it reads on.
+    /// </remarks>
+    public TimeSpan EveryInstanceStreamMaxAge { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>
     /// When <see langword="true"/> (default), each publish follows its <c>XADD</c> with a fire-and-forget
     /// <c>PUBLISH</c> on the stream's wake channel, <c>{stream}:wake</c>, and consumers subscribed to it read the stream
     /// at once instead of at their next poll. A message published to an idle stream is then read within a round trip
@@ -101,11 +134,16 @@ public sealed class RedisMessagingOptions
     public bool WakeConsumersOnPublish { get; set; } = true;
 
     /// <summary>
-    /// The number of <c>IConnectionMultiplexer</c> instances in the shared connection pool.
-    /// Increase when many concurrent consumers cause connection contention.
-    /// Must be greater than <c>0</c>. Defaults to <c>10</c>.
+    /// The number of <c>IConnectionMultiplexer</c> instances the transport opens from <see cref="Configuration"/>,
+    /// taken in turn. A shared <see cref="ConnectionMultiplexer"/> ignores it. Must be greater than <c>0</c>. Defaults
+    /// to <c>1</c>.
     /// </summary>
-    public int ConnectionPoolSize { get; set; } = 10;
+    /// <remarks>
+    /// One multiplexer pipelines every command on one socket per server, and the transport sends no blocking command,
+    /// so more multiplexers add connections, handshakes, and heartbeats rather than throughput. Raise it only when large
+    /// message bodies hold up the smaller commands queued behind them on one socket.
+    /// </remarks>
+    public int ConnectionPoolSize { get; set; } = 1;
 
     /// <summary>
     /// Optional callback that adds headers to an inbound message from its stream entry. Use this to surface the
@@ -149,6 +187,14 @@ internal sealed class RedisMessagingOptionsValidator : AbstractValidator<RedisMe
         RuleFor(x => x.ConnectionPoolSize).GreaterThan(0);
         RuleFor(x => x.PendingClaimMinIdleTime).GreaterThan(TimeSpan.Zero);
         RuleFor(x => x.IdleConsumerDeleteAfter).GreaterThanOrEqualTo(TimeSpan.Zero);
+
+        // A reader polls at most 30 seconds apart and raises the reconnect signal after a read gap of half this age, so a
+        // shorter age would flush every-instance state on an ordinary poll gap.
+        RuleFor(x => x.EveryInstanceStreamMaxAge).GreaterThanOrEqualTo(TimeSpan.FromMinutes(2));
+
+        RuleFor(x => x)
+            .Must(options => options.Configuration is null || options.ConnectionMultiplexer is null)
+            .WithMessage("Set either Configuration or ConnectionMultiplexer, not both.");
 
         // A shorter age would trim an entry before any consumer could claim it from a crashed one.
         RuleFor(x => x.StreamMaxAge)

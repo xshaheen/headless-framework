@@ -5,6 +5,7 @@ using Headless.Context;
 using Headless.MultiTenancy;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -186,6 +187,17 @@ internal sealed class HeadlessAuditPersistence(
         }
 
         _ResolveEntityIds(entries);
+
+        if (_auditStore is not { AddsToSavingContext: true })
+        {
+            // A store that writes its own rows leaves nothing in the tracker, so the second base save would find no
+            // changes: there is nothing to hide from it and no tracker state to put back.
+            return new(
+                RequiresManualAcceptAllChanges: true,
+                await _SaveEntriesAsync(context, entries, cancellationToken).ConfigureAwait(false)
+            );
+        }
+
         var snapshots = TrackedEntrySnapshot.Capture(context);
 
         var auditEntries = await _SaveEntriesAsync(context, entries, cancellationToken).ConfigureAwait(false);
@@ -224,6 +236,13 @@ internal sealed class HeadlessAuditPersistence(
         }
 
         _ResolveEntityIds(entries);
+
+        if (_auditStore is not { AddsToSavingContext: true })
+        {
+            // Same rule as the async twin: a store that writes its own rows leaves nothing for a second save.
+            return new(RequiresManualAcceptAllChanges: true, _SaveEntries(context, entries));
+        }
+
         var snapshots = TrackedEntrySnapshot.Capture(context);
 
         var auditEntries = _SaveEntries(context, entries);
@@ -377,7 +396,7 @@ internal sealed class HeadlessAuditPersistence(
                 foreach (var property in entry.Properties)
                 {
                     properties.Add(
-                        new(property.Metadata.Name, property.OriginalValue, property.CurrentValue, property.IsModified)
+                        new(property.Metadata, property.OriginalValue, property.CurrentValue, property.IsModified)
                     );
                 }
 
@@ -394,7 +413,7 @@ internal sealed class HeadlessAuditPersistence(
 
             foreach (var property in Properties)
             {
-                var propertyEntry = entry.Property(property.Name);
+                var propertyEntry = entry.Property(property.Metadata);
 
                 // The Modified→Unchanged transition above rejected the pending changes, so EF reset
                 // each current value to its original — including store-generated values the business
@@ -417,7 +436,13 @@ internal sealed class HeadlessAuditPersistence(
         }
     }
 
-    private sealed record PropertySnapshot(string Name, object? OriginalValue, object? CurrentValue, bool IsModified);
+    // Keyed by the property metadata, so the restore reads each property without a by-name lookup.
+    private sealed record PropertySnapshot(
+        IProperty Metadata,
+        object? OriginalValue,
+        object? CurrentValue,
+        bool IsModified
+    );
 }
 
 internal static partial class HeadlessAuditPersistenceLog

@@ -50,6 +50,11 @@ public static class SetupHeadlessTenancy
         // registration with the catalog-backed implementation.
         services.TryAddScoped<ICurrentTenantInfo, NullCurrentTenantInfo>();
 
+        // Every tenancy host gets the bypass, not only hosts on the EF pipeline, so a non-EF store can honour
+        // the write guard and an app can call BeginBypass() without depending on which store registered it.
+        // Singleton because the bypass state lives on the instance; TryAdd lets a consumer's registration win.
+        services.TryAddSingleton<ITenantWriteGuardBypass, TenantWriteGuardBypass>();
+
         return manifest;
     }
 

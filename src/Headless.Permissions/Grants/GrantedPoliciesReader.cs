@@ -11,6 +11,7 @@ namespace Headless.Permissions;
 internal sealed class GrantedPoliciesReader(
     IPermissionManager permissionManager,
     IAuthorizationService authorizationService,
+    IAuthorizationPolicyProvider policyProvider,
     ICurrentTenant currentTenant,
     // Optional: only Headless.Api.ServiceDefaults registers an accessor. The principal is passed explicitly to the
     // grant check and to IAuthorizationService, so the switch matters only to handlers that read the ambient one.
@@ -31,11 +32,40 @@ internal sealed class GrantedPoliciesReader(
         using var principalScope = principalAccessor?.Change(context.Principal);
         using var tenantScope = currentTenant.Change(context.TenantId);
 
+        var permissions = await permissionManager
+            .GetAllAsync(new PrincipalCurrentUser(context.Principal), cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+
         var granted = new HashSet<string>(StringComparer.Ordinal);
+        var grantedPermissions = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var permission in permissions)
+        {
+            if (permission.IsGranted)
+            {
+                grantedPermissions.Add(permission.Name);
+            }
+        }
 
         foreach (var policyName in policyNames.Distinct(StringComparer.Ordinal))
         {
             cancellationToken.ThrowIfCancellationRequested();
+
+            // A permission-named policy checks only its permission, which the batch read above already decided;
+            // evaluating it would repeat that permission's grant reads once per listed name.
+            var permissionName = policyProvider is PermissionPolicyProvider permissionPolicies
+                ? await permissionPolicies.FindPermissionNameAsync(policyName).ConfigureAwait(false)
+                : null;
+
+            if (permissionName is not null)
+            {
+                if (grantedPermissions.Contains(permissionName))
+                {
+                    granted.Add(policyName);
+                }
+
+                continue;
+            }
 
             var result = await authorizationService.AuthorizeAsync(context.Principal, policyName).ConfigureAwait(false);
 
@@ -45,17 +75,7 @@ internal sealed class GrantedPoliciesReader(
             }
         }
 
-        var permissions = await permissionManager
-            .GetAllAsync(new PrincipalCurrentUser(context.Principal), cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
-
-        foreach (var permission in permissions)
-        {
-            if (permission.IsGranted)
-            {
-                granted.Add(permission.Name);
-            }
-        }
+        granted.UnionWith(grantedPermissions);
 
         return granted;
     }

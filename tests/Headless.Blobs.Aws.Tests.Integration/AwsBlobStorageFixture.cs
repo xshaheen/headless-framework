@@ -10,9 +10,6 @@ public sealed class AwsBlobStorageFixture : HeadlessLocalStackFixture, ICollecti
 {
     protected override LocalStackBuilder Configure()
     {
-        return base.Configure()
-            .WithEnvironment("SERVICES", "s3")
-            .WithEnvironment("DEBUG", "1")
-            .WithPortBinding(8055, 8080);
+        return base.Configure().WithEnvironment("SERVICES", "s3").WithEnvironment("DEBUG", "1");
     }
 }

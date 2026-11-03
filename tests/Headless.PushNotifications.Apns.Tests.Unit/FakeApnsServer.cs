@@ -87,6 +87,12 @@ public sealed class FakeApnsServer : IAsyncDisposable
     public const string TeamId = "TEAM123456";
     public const string BundleId = "com.example.app";
 
+    /// <summary>
+    /// A loopback address whose connect is refused. Port 1 is privileged, so no test can bind it; a released ephemeral
+    /// port is not safe here because the OS can hand it to another fake server running in parallel, which then answers.
+    /// </summary>
+    public static Uri UnreachableAddress { get; } = new("http://127.0.0.1:1");
+
     private readonly ConcurrentQueue<FakeApnsRequest> _requests = new();
     private readonly ConcurrentDictionary<string, int> _attempts = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, byte> _acceptedClientThumbprints;

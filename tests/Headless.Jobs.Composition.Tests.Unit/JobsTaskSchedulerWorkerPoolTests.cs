@@ -29,9 +29,9 @@ public sealed class JobsTaskSchedulerWorkerPoolTests : TestBase
         );
         await ran.Task.WaitAsync(_Timeout, AbortToken);
 
-        // Let the worker leave its short spin phase and park.
-        await Task.Delay(TimeSpan.FromMilliseconds(500), AbortToken);
-        var before = timeProvider.TimerCount;
+        // Every timer on this clock is a worker's park, so the pool is idle once each live worker has armed one and the
+        // count holds. A fixed wait let a starved worker finish its spin phase, and park, inside the measured window.
+        var before = await _WaitUntilParkedAsync(scheduler, timeProvider);
 
         await Task.Delay(TimeSpan.FromSeconds(1), AbortToken);
 
@@ -330,6 +330,29 @@ public sealed class JobsTaskSchedulerWorkerPoolTests : TestBase
             }
 
             await Task.Delay(TimeSpan.FromMilliseconds(5), AbortToken);
+        }
+    }
+
+    private static async Task<long> _WaitUntilParkedAsync(
+        JobsTaskScheduler scheduler,
+        CountingTimeProvider timeProvider
+    )
+    {
+        using var budget = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        budget.CancelAfter(_Timeout);
+        var previous = -1L;
+
+        while (true)
+        {
+            var current = timeProvider.TimerCount;
+
+            if (current == previous && current >= scheduler.ActiveWorkers)
+            {
+                return current;
+            }
+
+            previous = current;
+            await Task.Delay(TimeSpan.FromMilliseconds(100), budget.Token);
         }
     }
 

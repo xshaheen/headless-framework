@@ -54,7 +54,7 @@ Additional packages:
 - For Serilog enrichment, call `UseHeadlessSerilogEnrichers()` on the app, after `UseAuthentication()` so the enrichers can read the user. It needs no service registration beyond `AddHeadless()`: the middleware is built once with the pipeline and reads `IRequestContext` per request.
 - Inject `IRequestContext` (from Abstractions) for request-scoped user, tenant, locale, timezone, and correlation ID — never access `HttpContext` directly in service code.
 - `AddHeadless()` registers neither `IFieldEncryptor` nor `IBlindIndexer` and reads no encryption configuration. An app that encrypts values (including encrypted `Headless.Settings` definitions) or builds blind indexes calls `AddHeadlessEncryption(...)`; see [Encryption](encryption.md).
-- Place `UseResponseCompression()` **before** `UseHeadlessHttpIdempotency()` in the pipeline. Compression middleware registered inside idempotency records compressed bytes in the cache; replaying those bytes without re-encoding them produces garbled or double-encoded responses.
+- Place `UseResponseCompression()` **before** `UseHeadlessHttpIdempotency()` in the pipeline. Compression middleware registered inside idempotency records compressed bytes in the cache; replaying those bytes without re-encoding them produces garbled or double-encoded responses. In the right order the middleware stores the uncompressed body without the compressor's `Content-Encoding`, and each replay is compressed again for the retry's `Accept-Encoding`.
 - `HeaderName` per-endpoint overrides via `.WithIdempotency()` are silently ignored — the middleware reads the request header before resolving endpoint metadata. Change the header name globally via `AddHeadlessHttpIdempotency(o => o.HeaderName = ...)` only.
 - `TenantRequirement` must be in `DefaultPolicy` or `FallbackPolicy` for framework-level enforcement; placing it in a named policy is not detected by the startup validator.
 - `UseHeadlessTenancy()` must run after `UseRouting()` so `HttpContext.GetEndpoint()` returns metadata when `[SkipTenantResolution]` is checked.
@@ -501,9 +501,9 @@ Exception mapping from `AddHeadlessProblemDetails()`:
 | `FluentValidation.ValidationException` | 422 with field errors |
 | `EntityNotFoundException` | 404 |
 | EF Core `DbUpdateConcurrencyException` (matched by type name) | 409 with concurrency-failure error |
-| EF Core `DbUpdateException` (matched by type name) whose provider exception is a unique-constraint violation: PostgreSQL SQLSTATE `23505`, SQL Server error `2627` or `2601`, SQLite extended code `2067` or `1555` | 409 with `errors[].code: g:unique_violation`; the constraint name stays in the logs (event 5013) |
+| EF Core `DbUpdateException` (matched by type name) whose provider exception is a unique-constraint violation: PostgreSQL SQLSTATE `23505`, SQL Server error `2627` or `2601` in any error the `SqlException` carries, SQLite extended code `2067` or `1555` (read through `RelationalFaults.IsUniqueViolation` in `Headless.Extensions`) | 409 with `errors[].code: g:unique_violation`; the constraint name stays in the logs (event 5013) |
 | `LockAcquisitionTimeoutException` from `Headless.DistributedLocks` (matched by type name) | 503 with `error.code: g:resource_busy` and no `Retry-After`: the lock wait says nothing about when the holder finishes. The resource name stays in the logs (event 5014) |
-| `TimeoutException` | 408 |
+| `TimeoutException` | 503 with no `Retry-After`. A timeout raised while serving the request (a cache factory, Redis, a database command) is the server's wait running out, not a slow client; 408 would invite clients, and browsers on a reused connection, to resend a request whose writes may have committed. Only ASP.NET Core's request-timeout middleware answers 408 |
 | `NotImplementedException` | 501 |
 | `BadHttpRequestException` (a Minimal API body that cannot be bound with `ThrowOnBadRequest` on, the Development default; an unsupported content type; an oversized body) | Its `StatusCode`: 400 `bad-request`, or 413 `payload-too-large`. The exception message, which names the failed parameter or the JSON parse position, stays out of the body and is logged at Information with the exception (event 5015) |
 | `OperationCanceledException` (or inner OCE at any depth) when `HttpContext.RequestAborted` is the source | 499 (no body) |
@@ -692,6 +692,7 @@ Surface filtering runs before schema generation and is independent of API Explor
 - Registers no field-encryption or blind-index service and requires no `Headless:Encryption` configuration.
 - Registers all core primitives from `Headless.Api` including problem details, response compression, status-code rewriting, and default API conventions.
 - Registers no JWT, Identity, or authentication-scheme services; add `Headless.Api.Identity` or ASP.NET Core's own schemes and call their registration methods.
+- Registers `ICurrentUser` (`HttpCurrentUser`, reading `user_id`, `account_id`, `account_type`, and `role` claims from the request principal), replacing only the framework fallback `NullCurrentUser` that EF Core and relational audit-log storage register, in either call order; a consumer-registered `ICurrentUser` is kept.
 - Registers a fallback `IUserAgentParser` that identifies nothing (`TryAddSingleton`); `AddHeadlessUserAgentParser()` from `Headless.Api.UserAgent` replaces it in either call order.
 - Registers antiforgery services only when `options.Antiforgery.Enabled` is `true`.
 - Configures MVC and Minimal API JSON serializer defaults.
@@ -906,6 +907,7 @@ builder.Services
 ### Runtime behavior
 
 - `AddHeadless()` registers none of these services. `AddHeadlessLookupNormalizer()` removes any earlier `ILookupNormalizer` registration, so it wins whether it runs before or after `AddIdentityCore`.
+- `AddApiKey()` and `AddBasicSchema()` set `IdentityOptions.ClaimsIdentity.UserIdClaimType` to `user_id` (`UserClaimTypes.UserId`) and `RoleClaimType` to `role` (`UserClaimTypes.Roles`), so the principal Identity builds for a Basic or API-key caller carries the user id and roles `ICurrentUser` reads (idempotency scoping, permission grants, audit actor). They replace only Identity's defaults (`ClaimTypes.NameIdentifier`, `ClaimTypes.Role`); a claim type the application set explicitly is kept in either registration order, and then `ICurrentUser` does not see that claim. The setting is global to Identity, so cookie sign-ins through the same `SignInManager` carry the same claim types.
 - `AddApiKey()` and `AddBasicSchema()` replace `IAuthenticationSchemeProvider` with `DynamicAuthenticationSchemeProvider` and register `IHttpContextAccessor`, which it reads. A host that uses only a bearer scheme keeps ASP.NET Core's provider and selects the scheme through `AddAuthentication(defaultScheme)`.
 
 ---
