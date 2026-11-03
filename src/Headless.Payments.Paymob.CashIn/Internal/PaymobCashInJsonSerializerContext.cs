@@ -5,9 +5,11 @@ namespace Headless.Payments.Paymob.CashIn.Internal;
 [JsonSourceGenerationOptions(
     GenerationMode = JsonSourceGenerationMode.Metadata,
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
-    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-    Converters = [typeof(AddEgyptZoneOffsetToUnspecifiedDateTimeJsonConverter), typeof(AddNullableAmountConverter)]
+    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
 )]
+// No context-wide converters: CashInJsonOptions builds its own options over this resolver, so they
+// would apply only to this context's Default.Options, which the broker never uses. The amount and
+// Egypt-time converters are attached to the properties that need them.
 // Auth
 [JsonSerializable(typeof(CashInAuthenticationTokenRequest))]
 [JsonSerializable(typeof(CashInAuthenticationTokenResponse))]
