@@ -189,13 +189,16 @@ internal static class ConsumerParser
         );
 
         return preferredAttribute is not null
-            && constructors.Count(constructor =>
-                constructor
-                    .GetAttributes()
-                    .Any(attribute =>
-                        SymbolEqualityComparer.Default.Equals(attribute.AttributeClass, preferredAttribute)
-                    )
-            ) == 1;
+            && constructors
+                .Where(constructor =>
+                    constructor
+                        .GetAttributes()
+                        .Any(attribute =>
+                            SymbolEqualityComparer.Default.Equals(attribute.AttributeClass, preferredAttribute)
+                        )
+                )
+                .Take(2)
+                .Count() == 1;
     }
 
     private static List<ITypeSymbol> _ResolveMessageTypes(Compilation compilation, INamedTypeSymbol classSymbol)

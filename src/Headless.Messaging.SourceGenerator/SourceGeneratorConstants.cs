@@ -16,6 +16,7 @@ internal static class SourceGeneratorConstants
     public const string ResponderMetadataAttributeSimpleName = "ResponderMetadataAttribute";
     public const string RequestMethodName = "RequestAsync";
     public const string GetReplyMethodName = "GetReplyAsync";
+
     public const string ActivatorUtilitiesConstructorAttributeMetadataName =
         "Microsoft.Extensions.DependencyInjection.ActivatorUtilitiesConstructorAttribute";
 
