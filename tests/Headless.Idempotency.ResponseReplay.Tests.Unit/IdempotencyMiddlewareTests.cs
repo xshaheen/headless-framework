@@ -209,6 +209,38 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
     }
 
     [Fact]
+    public async Task should_complete_with_captured_response_when_handler_disposes_the_response_body()
+    {
+        // A StreamWriter (or a compression stream) over Response.Body disposes it by default; Kestrel's own response
+        // stream ignores that, so the middleware must still store what the handler sent.
+        var operations = CreateAdmittingOperations();
+        var middleware = CreateMiddleware(operations: operations);
+        var context = CreateContext(idempotencyKey: "k1", body: [1, 2, 3]);
+        var originalBody = (MemoryStream)context.Response.Body;
+
+        await middleware.InvokeAsync(
+            context,
+            async ctx =>
+            {
+                ctx.Response.StatusCode = StatusCodes.Status201Created;
+                await using var writer = new StreamWriter(ctx.Response.Body);
+                await writer.WriteAsync("{\"id\":1}");
+            }
+        );
+
+        CallCount(operations, nameof(IIdempotentOperations.ReleaseAsync)).Should().Be(0);
+        var complete = operations
+            .ReceivedCalls()
+            .Should()
+            .ContainSingle(c => c.GetMethodInfo().Name == nameof(IIdempotentOperations.CompleteAsync))
+            .Which.GetArguments();
+        var snapshot = IdempotencyResponseSnapshot.Decode((ReadOnlyMemory<byte>)complete[1]!);
+        snapshot.StatusCode.Should().Be(201);
+        Encoding.UTF8.GetString(snapshot.Body).Should().Be("{\"id\":1}");
+        Encoding.UTF8.GetString(originalBody.ToArray()).Should().Be("{\"id\":1}");
+    }
+
+    [Fact]
     public async Task should_expose_takeover_flag_to_the_handler()
     {
         var operations = CreateAdmittingOperations(isTakeover: true);
@@ -984,6 +1016,44 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
 
         Volatile.Read(ref calls).Should().BeGreaterThanOrEqualTo(2);
         await firstCallCancelled.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+    }
+
+    [Fact]
+    public async Task should_complete_the_response_when_a_renewal_throws_before_returning_its_task()
+    {
+        // A store (or a decorator over it) that throws synchronously from RenewAsync must not fault the renewal loop:
+        // the loop is awaited after the handler, and a faulted loop would fail a request whose work already committed
+        // and leave the lease pending until it expires.
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var operations = CreateAdmittingOperations();
+        var calls = 0;
+        operations
+            .RenewAsync(Arg.Any<IdempotentAdmission>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns<ValueTask<IdempotentLeaseRenewal>>(_ =>
+            {
+                Interlocked.Increment(ref calls);
+                throw new InvalidOperationException("store unavailable");
+            });
+        var lease = TimeSpan.FromSeconds(30);
+        var middleware = CreateMiddleware(
+            options: Monitor(new HttpIdempotencyOptions { InFlightLease = lease }),
+            operations: operations,
+            timeProvider: time
+        );
+        var context = CreateContext(idempotencyKey: "k1");
+
+        await middleware.InvokeAsync(
+            context,
+            async ctx =>
+            {
+                await _AdvanceUntilAsync(time, lease / 3, () => Volatile.Read(ref calls) >= 2);
+                ctx.Response.StatusCode = 201;
+            }
+        );
+
+        Volatile.Read(ref calls).Should().BeGreaterThanOrEqualTo(2, "a failed renewal is retried on the next tick");
+        context.Response.StatusCode.Should().Be(201);
+        CallCount(operations, nameof(IIdempotentOperations.CompleteAsync)).Should().Be(1);
     }
 
     // ── malformed header ─────────────────────────────────────────────────────

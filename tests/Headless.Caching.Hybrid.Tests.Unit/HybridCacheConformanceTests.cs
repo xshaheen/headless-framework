@@ -113,6 +113,18 @@ public sealed class HybridCacheConformanceTests : CacheConformanceTestsBase
     }
 
     [Fact]
+    public override Task should_keep_the_expiration_when_incrementing_without_one()
+    {
+        return base.should_keep_the_expiration_when_incrementing_without_one();
+    }
+
+    [Fact]
+    public override Task should_reject_an_empty_prefix_when_listing_by_prefix()
+    {
+        return base.should_reject_an_empty_prefix_when_listing_by_prefix();
+    }
+
+    [Fact]
     public override Task should_compare_and_swap_on_matching_values_only()
     {
         return base.should_compare_and_swap_on_matching_values_only();

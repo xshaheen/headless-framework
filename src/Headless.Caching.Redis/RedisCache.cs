@@ -1262,6 +1262,8 @@ public sealed class RedisCache(
         CancellationToken cancellationToken = default
     )
     {
+        Argument.IsNotNullOrEmpty(prefix);
+
         var keys = await GetAllKeysByPrefixAsync(prefix, cancellationToken).ConfigureAwait(false);
         return await GetAllAsync<T>(keys, cancellationToken).ConfigureAwait(false);
     }
@@ -1271,6 +1273,8 @@ public sealed class RedisCache(
         CancellationToken cancellationToken = default
     )
     {
+        // A non-empty, NUL-free prefix also keeps the scan off the reserved {KeyPrefix}\0__ marker keys.
+        Argument.IsNotNullOrEmpty(prefix);
         cancellationToken.ThrowIfCancellationRequested();
 
         const int chunkSize = 2500;
@@ -1360,7 +1364,7 @@ public sealed class RedisCache(
                     continue;
                 }
 
-                tasks.Add(_CountKeysByPatternAsync(server, pattern, chunkSize, cancellationToken));
+                tasks.Add(_CountKeysByPatternAsync(server, pattern, _keyPrefix.Length, chunkSize, cancellationToken));
             }
         }
         else
@@ -1579,37 +1583,17 @@ public sealed class RedisCache(
 
         key = _GetKey(key);
 
-        if (!pageIndex.HasValue)
-        {
-            var set = await _database
-                .SortedSetRangeByScoreAsync(
-                    key,
-                    timeProvider.GetUtcNow().ToUnixTimeMilliseconds(),
-                    double.PositiveInfinity,
-                    Exclude.Start,
-                    flags: cacheOptions.ReadMode
-                )
+        // Members expire by Redis's clock (the set-add script scores and prunes them with TIME), so the live-member
+        // cutoff is computed there too rather than from the app clock.
+        var set = pageIndex.HasValue
+            ? await SetGetLiveMembersScriptDefinition
+                .EvaluateAsync(_database, key, skip: (pageIndex.Value - 1L) * pageSize, take: pageSize)
+                .ConfigureAwait(false)
+            : await SetGetLiveMembersScriptDefinition
+                .EvaluateAsync(_database, key, skip: 0, take: -1)
                 .ConfigureAwait(false);
 
-            return _RedisValuesToCacheValue<T>(set);
-        }
-
-        {
-            var skip = (pageIndex.Value - 1) * pageSize;
-            var set = await _database
-                .SortedSetRangeByScoreAsync(
-                    key,
-                    timeProvider.GetUtcNow().ToUnixTimeMilliseconds(),
-                    double.PositiveInfinity,
-                    Exclude.Start,
-                    skip: skip,
-                    take: pageSize,
-                    flags: cacheOptions.ReadMode
-                )
-                .ConfigureAwait(false);
-
-            return _RedisValuesToCacheValue<T>(set);
-        }
+        return _RedisValuesToCacheValue<T>(set);
     }
 
     #endregion
@@ -3128,24 +3112,37 @@ public sealed class RedisCache(
 
         if (expiresIn <= TimeSpan.Zero)
         {
-            if (entry.ExpectedConcurrencyStamp is { } expiredExpectedStamp)
+            if (entry.ExpectedConcurrencyStamp is null)
             {
-                var current = await _database.StringGetAsync(redisKey).ConfigureAwait(false);
-
-                // #13: compare via the header-only stamp so this CAS-delete stays consistent with the slice the
-                // live path captures. Recomputing the stamp from the current value reuses the single stamp codec
-                // instead of re-deriving the header offset here.
-                if (
-                    !current.HasValue
-                    || !string.Equals(_ToConcurrencyStamp(current), expiredExpectedStamp, StringComparison.Ordinal)
-                )
-                {
-                    return false;
-                }
+                await _database.KeyDeleteAsync(redisKey).ConfigureAwait(false);
+                return true;
             }
 
-            await _database.KeyDeleteAsync(redisKey).ConfigureAwait(false);
-            return true;
+            // CAS delete: the compare and the delete run in one script (the CAS-write script with a zero TTL), so a
+            // writer that lands after the caller read the entry keeps its value instead of losing it to a delete that
+            // checked an older one.
+            if (!_TryDecodeConcurrencyStamp(entry.ExpectedConcurrencyStamp, out var expiredExpectedValue))
+            {
+                return false;
+            }
+
+            var deleted = await scriptsLoader
+                .EvaluateAsync(
+                    _database,
+                    CacheTaggedSetScriptDefinition.Instance,
+                    new
+                    {
+                        key = (RedisKey)redisKey,
+                        value = RedisValue.EmptyString,
+                        expectedValue = expiredExpectedValue,
+                        keyTtlMs = 0L,
+                        headerLen = RedisCacheEntryFrame.HeaderLength,
+                    },
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            return (int)deleted == 1;
         }
 
         // #580 zero-concat write: the using scope extends past the SET/EVALSHA await because the pooled payload
@@ -3204,24 +3201,9 @@ public sealed class RedisCache(
 
     // #13: the concurrency stamp captures only the fixed frame header (the first HeaderLength bytes) rather than
     // base64-encoding the whole payload on every read. The header carries the per-write CreatedAt + expiry stamps
-    // that uniquely identify an entry version, so it is sufficient for CAS. Both CAS comparison sites
-    // (CacheTaggedSetScriptDefinition and the zero-expiration delete branch) compare the SAME header slice, so the
-    // stamp stays provably consistent. A shorter-than-header value (e.g. a legacy raw value) encodes in full.
-    private static string _ToConcurrencyStamp(RedisValue value)
-    {
-        // Slice the ReadOnlySequence view instead of casting to byte[]: the cast re-materializes the whole
-        // payload for inline/sequence-backed values (see _DeserializeRedisValue) just to read the fixed prefix.
-        var sequence = (ReadOnlySequence<byte>)value!;
-        var length = (int)Math.Min(sequence.Length, RedisCacheEntryFrame.HeaderLength);
-
-        Span<byte> header = stackalloc byte[RedisCacheEntryFrame.HeaderLength];
-        sequence.Slice(0, length).CopyTo(header);
-
-        return _ToConcurrencyStamp(header[..length]);
-    }
-
-    // Contiguous-bytes overload for the lease/memory read paths (#580): both encode the SAME header slice as the
-    // sequence overload above, so stamps from either path stay comparable.
+    // that uniquely identify an entry version, so it is sufficient for CAS. CacheTaggedSetScriptDefinition, the one
+    // CAS comparison site (writes and zero-expiration deletes alike), compares the SAME header slice, so the stamp
+    // stays provably consistent. A shorter-than-header value (e.g. a legacy raw value) encodes in full.
     private static string _ToConcurrencyStamp(ReadOnlySpan<byte> value)
     {
         var length = Math.Min(value.Length, RedisCacheEntryFrame.HeaderLength);
@@ -3876,6 +3858,7 @@ public sealed class RedisCache(
     private static async Task<long> _CountKeysByPatternAsync(
         IServer server,
         string pattern,
+        int keyPrefixLength,
         int pageSize,
         CancellationToken cancellationToken
     )
@@ -3883,9 +3866,18 @@ public sealed class RedisCache(
         long count = 0;
 
         await foreach (
-            var _ in server.KeysAsync(pattern: pattern, pageSize: pageSize).WithCancellation(cancellationToken)
+            var key in server.KeysAsync(pattern: pattern, pageSize: pageSize).WithCancellation(cancellationToken)
         )
         {
+            // An empty caller prefix matches the reserved {KeyPrefix}\0__ tag/clear/remove markers too; they are not
+            // entries. Consumer keys never contain NUL, so the byte after the instance prefix tells them apart.
+            var name = (string)key!;
+
+            if (name.Length > keyPrefixLength && name[keyPrefixLength] == '\0')
+            {
+                continue;
+            }
+
             count++;
         }
 

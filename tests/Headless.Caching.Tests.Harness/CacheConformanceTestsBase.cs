@@ -213,6 +213,45 @@ public abstract class CacheConformanceTestsBase : TestBase
         cached.Value.Should().Be(5);
     }
 
+    public virtual async Task should_keep_the_expiration_when_incrementing_without_one()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+
+        await cache.IncrementAsync(key, 1L, TimeSpan.FromMinutes(5), AbortToken);
+        var result = await cache.IncrementAsync(key, 1L, expiration: null, AbortToken);
+        var expiration = await cache.GetExpirationAsync(key, AbortToken);
+
+        result.Should().Be(2);
+        expiration.Should().NotBeNull("a null expiration leaves the counter's expiration as it was");
+        expiration!
+            .Value.Should()
+            .BeGreaterThan(TimeSpan.FromMinutes(4))
+            .And.BeLessThanOrEqualTo(TimeSpan.FromMinutes(5));
+    }
+
+    public virtual async Task should_reject_an_empty_prefix_when_listing_by_prefix()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var tag = Faker.Random.AlphaNumeric(8);
+
+        await cache.UpsertEntryAsync(
+            Faker.Random.AlphaNumeric(10),
+            "value",
+            new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5), Tags = [tag] },
+            AbortToken
+        );
+        await cache.RemoveByTagAsync(tag, AbortToken);
+
+        var listKeys = async () => await cache.GetAllKeysByPrefixAsync("", AbortToken);
+        var readValues = async () => await cache.GetByPrefixAsync<string>("", AbortToken);
+
+        await listKeys.Should().ThrowAsync<ArgumentException>();
+        await readValues.Should().ThrowAsync<ArgumentException>();
+    }
+
     public virtual async Task should_compare_and_swap_on_matching_values_only()
     {
         await ResetAsync();

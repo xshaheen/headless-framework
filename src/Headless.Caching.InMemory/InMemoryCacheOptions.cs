@@ -66,7 +66,8 @@ public sealed class InMemoryCacheOptions : CacheOptions
     /// <summary>
     /// Gets or sets the maximum number of entries evicted in a single maintenance compaction cycle when the
     /// cache exceeds its capacity caps. Smaller values keep compaction latency predictable; larger values
-    /// reclaim memory faster when the cache is well over capacity. Default: 10.
+    /// reclaim memory faster when the cache is well over capacity. The cap applies to live entries only: compaction
+    /// first reaps every expired entry, and the maintenance sweep reaps expired entries without a cap. Default: 10.
     /// </summary>
     public int MaxEvictionsPerCompaction { get; set; } = 10;
 
