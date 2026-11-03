@@ -1,38 +1,23 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Coordination;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 
 namespace Headless.Jobs.Coordination;
 
 /// <summary>
-/// Jobs reclaim sink for the shared <see cref="DeadOwnerRecoveryBridge{TReclaimer}"/>. Releases the
+/// Jobs reclaim sink for the shared dead-owner recovery bridge. Releases the
 /// operational-store resources owned by a dead node identity; the skip-in-flight policy lives inside
 /// <see cref="IInternalJobManager.ReleaseDeadNodeResources(IReadOnlyCollection{string}, CancellationToken)"/>.
 /// </summary>
 internal sealed class JobsDeadOwnerReclaimer(
     IInternalJobManager internalJobManager,
-    SchedulerOptionsBuilder optionsBuilder,
-    IOptions<CoordinationOptions>? coordinationOptions = null,
-    ILogger<JobsDeadOwnerReclaimer>? logger = null,
-    INodeMembership? membership = null
+    SchedulerOptionsBuilder optionsBuilder
 ) : IDeadOwnerReclaimer
 {
     private readonly IInternalJobManager _internalJobManager = internalJobManager;
 
-    /// <summary>
-    /// The effective reconcile cadence, shared with the fallback service's orphaned-owner sweep so both run on one
-    /// value. Resolved and, when clamped, logged once per host.
-    /// </summary>
-    public TimeSpan ReconcileInterval { get; } =
-        DeadOwnerReconcileInterval.Resolve(
-            optionsBuilder.DeadNodeReconcileInterval,
-            coordinationOptions?.Value,
-            logger ?? NullLogger<JobsDeadOwnerReclaimer>.Instance,
-            membership
-        );
+    /// <summary>The configured reconcile cadence; the bridge, and the fallback service's orphaned-owner sweep, clamp it.</summary>
+    public TimeSpan? ReconcileInterval => optionsBuilder.DeadNodeReconcileInterval;
 
     public async Task ReclaimAsync(IReadOnlyCollection<string> owners, CancellationToken cancellationToken)
     {

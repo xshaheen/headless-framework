@@ -2060,7 +2060,7 @@ builder.Services.AddHeadlessJobs(options =>
 
 - Replaces the in-memory `IJobPersistenceProvider` with `JobsEFCorePersistenceProvider`.
 - Registers `JobsOwnerIdentityAdapter` (overrides the default `DefaultJobsOwnerIdentity`).
-- Registers `JobsDeadOwnerReclaimer`, `DeadOwnerRecoveryBridge`, and `JobsCoordinationStartupGate` hosted services. `DisableStartupInitialization()` drops the gate; the bridge stays, so an enqueue-only node still reclaims a dead node's work.
+- Registers `JobsDeadOwnerReclaimer` through Coordination's `AddDeadOwnerReclaimer<JobsDeadOwnerReclaimer>()`, which hosts its dead-owner recovery bridge, and the `JobsCoordinationStartupGate` hosted service. `DisableStartupInitialization()` drops the gate; the bridge stays, so an enqueue-only node still reclaims a dead node's work. A clamped `DeadNodeReconcileInterval` logs its warning (Coordination EventId 14) under the bridge's category, `Headless.Coordination.DeadOwnerRecoveryBridge<JobsDeadOwnerReclaimer>`.
 - Registers a startup validator that fails when a job sets `ClusterMaxConcurrency` and a host running background services would claim through the portable CAS path (see [Cluster-wide concurrency](#cluster-wide-concurrency)).
 - Persists job rows in EF Core-mapped tables under the configured schema.
 - Never acquires a job with a `ClusterMaxConcurrency` through immediate dispatch; the native claim leases it against the limit. A host that would claim a cluster-limited job through the portable optimistic-CAS path fails at startup (see [Cluster-wide concurrency](#cluster-wide-concurrency)).

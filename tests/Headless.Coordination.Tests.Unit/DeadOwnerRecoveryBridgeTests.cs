@@ -2,6 +2,8 @@
 
 using Headless.Coordination;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 
@@ -178,6 +180,147 @@ public sealed class DeadOwnerRecoveryBridgeTests : TestBase
         await bridge.ReconcileOnceAsync(AbortToken);
 
         await reclaimer.Received(2).ReclaimAsync(_Batch("orders/node-a@5"), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_drive_a_consumer_reclaimer_registered_through_the_public_entry_on_both_paths()
+    {
+        // given
+        await using var provider = _BuildConsumerHost(TimeSpan.FromSeconds(10), out var membership);
+        var bridge = _SingleBridge(provider);
+        var reclaimer = provider.GetRequiredService<ConsumerReclaimer>();
+        membership.Snapshot = [_Dead("node-b", 3)];
+
+        // when
+        await bridge.HandleEventAsync(new NodeLeft(_Identity("node-a", 5)));
+        await bridge.ReconcileOnceAsync(AbortToken);
+
+        // then
+        reclaimer.Batches.Should().HaveCount(2);
+        reclaimer.Batches[0].Should().Equal("orders/node-a@5");
+        reclaimer.Batches[1].Should().Equal("orders/node-b@3");
+        reclaimer.Tokens.Should().AllSatisfy(token => token.Should().Be(CancellationToken.None));
+    }
+
+    [Fact]
+    public void should_add_one_reclaimer_and_one_bridge_when_registered_twice()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        services.AddDeadOwnerReclaimer<ConsumerReclaimer>();
+        services.AddDeadOwnerReclaimer<ConsumerReclaimer>();
+        services.AddDeadOwnerReclaimer<OtherConsumerReclaimer>();
+
+        // then
+        services.Should().ContainSingle(d => d.ServiceType == typeof(ConsumerReclaimer));
+        services
+            .Where(d => d.ServiceType == typeof(IHostedService))
+            .Select(d => d.ImplementationType)
+            .Should()
+            .BeEquivalentTo([
+                typeof(DeadOwnerRecoveryBridge<ConsumerReclaimer>),
+                typeof(DeadOwnerRecoveryBridge<OtherConsumerReclaimer>),
+            ]);
+    }
+
+    [Fact]
+    public async Task should_clamp_a_reclaimer_interval_above_half_the_dead_retention_window()
+    {
+        // given (the default 30 s retention window caps the cadence at 15 s)
+        await using var provider = _BuildConsumerHost(TimeSpan.FromMinutes(1), out _);
+
+        // when
+        var bridge = _SingleBridge(provider);
+
+        // then
+        bridge.ReconcileInterval.Should().Be(TimeSpan.FromSeconds(15));
+    }
+
+    [Fact]
+    public async Task should_derive_half_the_dead_retention_window_when_the_reclaimer_states_no_interval()
+    {
+        // given
+        await using var provider = _BuildConsumerHost(configured: null, out _);
+
+        // when
+        var bridge = _SingleBridge(provider);
+
+        // then
+        bridge.ReconcileInterval.Should().Be(TimeSpan.FromSeconds(15));
+    }
+
+    [Fact]
+    public async Task should_keep_a_reclaimer_interval_when_the_host_has_no_coordination_provider()
+    {
+        // given (the options system still resolves default coordination options, but no store enforces their window)
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<INodeMembership, NullNodeMembership>();
+        services.AddSingleton(new ConsumerReclaimerSettings(TimeSpan.FromMinutes(1)));
+        services.AddDeadOwnerReclaimer<ConsumerReclaimer>();
+        await using var provider = services.BuildServiceProvider();
+
+        // when
+        var bridge = _SingleBridge(provider);
+
+        // then
+        bridge.ReconcileInterval.Should().Be(TimeSpan.FromMinutes(1));
+    }
+
+    private static ServiceProvider _BuildConsumerHost(TimeSpan? configured, out FakeMembership membership)
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        membership = new FakeMembership();
+        services.AddSingleton<INodeMembership>(membership);
+        services.AddSingleton<TimeProvider>(new FakeTimeProvider());
+        services.AddSingleton(new ConsumerReclaimerSettings(configured));
+        services.AddDeadOwnerReclaimer<ConsumerReclaimer>();
+
+        return services.BuildServiceProvider();
+    }
+
+    private static DeadOwnerRecoveryBridge<ConsumerReclaimer> _SingleBridge(IServiceProvider provider)
+    {
+        return provider
+            .GetServices<IHostedService>()
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .BeOfType<DeadOwnerRecoveryBridge<ConsumerReclaimer>>()
+            .Subject;
+    }
+
+    private sealed record ConsumerReclaimerSettings(TimeSpan? ReconcileInterval);
+
+    // Stands in for a reclaimer an application or another package defines, outside Coordination's friend assemblies.
+    private sealed class ConsumerReclaimer(ConsumerReclaimerSettings settings) : IDeadOwnerReclaimer
+    {
+        public List<string[]> Batches { get; } = [];
+
+        public List<CancellationToken> Tokens { get; } = [];
+
+        public TimeSpan? ReconcileInterval => settings.ReconcileInterval;
+
+        public Task ReclaimAsync(IReadOnlyCollection<string> owners, CancellationToken cancellationToken)
+        {
+            Batches.Add([.. owners]);
+            Tokens.Add(cancellationToken);
+
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class OtherConsumerReclaimer : IDeadOwnerReclaimer
+    {
+        public TimeSpan? ReconcileInterval => null;
+
+        public Task ReclaimAsync(IReadOnlyCollection<string> owners, CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class FakeMembership : INodeMembership
