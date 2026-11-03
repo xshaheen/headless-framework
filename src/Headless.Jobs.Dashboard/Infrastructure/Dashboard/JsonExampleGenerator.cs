@@ -1,14 +1,14 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Buffers;
 using System.Collections;
 using System.Collections.Concurrent;
+using System.Text;
 
 namespace Headless.Jobs.Infrastructure.Dashboard;
 
 internal static class JsonExampleGenerator
 {
-    private static readonly JsonSerializerOptions _JsonOptions = new() { WriteIndented = true };
-
     private static object? _GenerateExample(Type type)
     {
         return _Generate(type);
@@ -96,34 +96,45 @@ internal static class JsonExampleGenerator
         };
     }
 
-    private static string _GenerateExampleJson(Type type)
+    // The example is written with the host's request options, the ones the job deserializes its payload with: an
+    // operator submits it verbatim, so a naming policy or converter it ignored would bind nothing and the job would run
+    // on a defaulted request. It is re-indented afterwards for display, which keeps every name and value as written.
+    private static string _GenerateExampleJson(Type type, JsonSerializerOptions requestOptions)
     {
-        return JsonSerializer.Serialize(_GenerateExample(type), _JsonOptions);
+        var element = JsonSerializer.SerializeToElement(_GenerateExample(type), type, requestOptions);
+        var buffer = new ArrayBufferWriter<byte>();
+
+        using (var writer = new Utf8JsonWriter(buffer, new JsonWriterOptions { Indented = true }))
+        {
+            element.WriteTo(writer);
+        }
+
+        return Encoding.UTF8.GetString(buffer.WrittenSpan);
     }
 
-    // Example JSON depends only on the request Type's shape, so it is computed once per process instead of once
-    // per dashboard HTTP request. An empty string is never a successful serialization, so it doubles as the
-    // cached failure marker and a Type that cannot be exemplified is not retried per request.
-    private static readonly ConcurrentDictionary<Type, string> _ExampleJsonCache = new();
+    // Example JSON depends only on the request Type's shape and the request options, so it is computed once per pair
+    // instead of once per dashboard HTTP request. An empty string is never a successful serialization, so it doubles
+    // as the cached failure marker and a Type that cannot be exemplified is not retried per request.
+    private static readonly ConcurrentDictionary<(Type, JsonSerializerOptions), string> _ExampleJsonCache = new();
 
-    public static bool TryGenerateExampleJson(Type type, out string json)
+    public static bool TryGenerateExampleJson(Type type, JsonSerializerOptions requestOptions, out string json)
     {
         json = _ExampleJsonCache.GetOrAdd(
-            type,
-            static t =>
+            (type, requestOptions),
+            static key =>
             {
-                return _TryGenerateExampleJson(t, out var example) ? example : string.Empty;
+                return _TryGenerateExampleJson(key.Item1, key.Item2, out var example) ? example : string.Empty;
             }
         );
 
         return json.Length != 0;
     }
 
-    private static bool _TryGenerateExampleJson(Type type, out string json)
+    private static bool _TryGenerateExampleJson(Type type, JsonSerializerOptions requestOptions, out string json)
     {
         try
         {
-            json = _GenerateExampleJson(type);
+            json = _GenerateExampleJson(type, requestOptions);
             return true;
         }
 #pragma warning disable ERP022 // Unobserved exception in generic exception handler

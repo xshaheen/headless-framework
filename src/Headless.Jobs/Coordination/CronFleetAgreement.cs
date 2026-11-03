@@ -76,7 +76,11 @@ internal sealed class CronFleetAgreement(
             if (
                 node.State is not (NodeLivenessState.Alive or NodeLivenessState.Suspected)
                 || !_RunsTheSweep(node)
-                || string.Equals(node.Identity.ToString(), self, StringComparison.Ordinal)
+                || string.Equals(
+                    NodeOwnerTag.Format(membership.ClusterName, node.Identity),
+                    self,
+                    StringComparison.Ordinal
+                )
             )
             {
                 continue;

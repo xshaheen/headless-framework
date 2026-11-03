@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Coordination;
 using Headless.Jobs;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
@@ -84,7 +85,7 @@ public abstract class JobsGenericCronClaimConformanceTests<TFixture>(TFixture fi
                 .AsNoTracking()
                 .SingleAsync(x => x.Id == occurrence.Id, ct);
             stored.Status.Should().Be(JobStatus.Queued);
-            stored.OwnerId.Should().StartWith("generic-cron-claim@");
+            stored.OwnerId.Should().Contain("/generic-cron-claim@");
             claimed.Id.Should().Be(stored.Id);
             claimed.Status.Should().Be(stored.Status);
             claimed.OwnerId.Should().Be(stored.OwnerId);

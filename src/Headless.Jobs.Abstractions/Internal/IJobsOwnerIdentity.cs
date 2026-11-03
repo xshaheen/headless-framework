@@ -6,7 +6,7 @@ namespace Headless.Jobs;
 /// Supplies the current node's owner identity for stamping durable job rows and for logging/telemetry.
 /// </summary>
 /// <remarks>
-/// On the coordinated durable path the owner is the <c>node@incarnation</c> string allocated by the
+/// On the coordinated durable path the owner is the <c>cluster/node@incarnation</c> string allocated by the
 /// membership substrate at host start; on the zero-infra in-memory path it falls back to the configured
 /// node identifier. The two reads are intentionally split: <see cref="DisplayOwner"/> never throws and is
 /// safe on the logging/telemetry hot path, while <see cref="TryGetStampOwner"/> is the authoritative gate
@@ -16,7 +16,7 @@ internal interface IJobsOwnerIdentity
 {
     /// <summary>
     /// Best-effort owner label for logging and telemetry. Never throws. Returns the current
-    /// <c>node@incarnation</c> when registered, otherwise a safe fallback (the configured node identifier).
+    /// <c>cluster/node@incarnation</c> when registered, otherwise a safe fallback (the configured node identifier).
     /// </summary>
     string DisplayOwner { get; }
 

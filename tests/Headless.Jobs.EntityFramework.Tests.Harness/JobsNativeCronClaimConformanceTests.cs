@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Data.Common;
+using Headless.Coordination;
 using Headless.Jobs;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
@@ -137,7 +138,7 @@ public abstract class JobsNativeCronClaimConformanceTests<TFixture>(TFixture fix
                 var existing = existingIds.Contains(claim.Id);
                 claim.Should().BeEquivalentTo(stored[claim.Id], options => options.Excluding(x => x.CronJob));
                 claim.Status.Should().Be(JobStatus.Queued);
-                claim.OwnerId.Should().StartWith("native-cron-batch@");
+                claim.OwnerId.Should().Contain("/native-cron-batch@");
                 claim.LockedUntil.Should().Be(claim.UpdatedAt.UtcDateTime.Add(leaseDuration));
                 claim.UpdatedAt.Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromSeconds(15));
                 claim.RetryCount.Should().Be(existing ? 3 : 0);
