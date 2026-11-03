@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
+using System.Diagnostics;
 using System.Threading.Channels;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
@@ -54,6 +55,14 @@ internal sealed class Dispatcher
     private volatile bool _disposed;
 
     internal Action? StartPublicationHookForTest { get; set; }
+
+    // How long a committed publish (or one unit-of-work flush) may wait for room in a full publish channel. Long
+    // enough to ride out a burst the sender is about to drain, short enough that a saturated host adds a small,
+    // fixed cost to the commit rather than holding it until the sender catches up; past it the relay delivers.
+    private static readonly TimeSpan _CommittedCapacityWaitBudget = TimeSpan.FromMilliseconds(100);
+
+    // Settable so a test can widen the budget and let only the sender's progress decide whether a wait succeeds.
+    internal TimeSpan CommittedCapacityWait { get; set; } = _CommittedCapacityWaitBudget;
 
     // Pre-cancelled token used for OCEs surfaced when the dispatcher is pre-start or post-dispose.
     // Downstream code that pattern-matches on oce.CancellationToken (e.g., RetryHelper.IsCancellation)
@@ -238,7 +247,7 @@ internal sealed class Dispatcher
         return _schedulerQueue.TryEnqueue(message, publishTime.Ticks);
     }
 
-    void ICommittedMessageDispatcher.EnqueueCommittedMessage(MediumMessage message)
+    async ValueTask ICommittedMessageDispatcher.EnqueueCommittedMessageAsync(MediumMessage message, long waitStartedAt)
     {
         if (_IsCancellationRequested())
         {
@@ -246,9 +255,34 @@ internal sealed class Dispatcher
             return;
         }
 
-        // A full channel is not a publish failure: the row already committed, so the relay is the
-        // recovery authority. This path must never wait for channel capacity or broker progress.
-        _ = PublishedChannel.Writer.TryWrite(new PublishedDispatchWork(message, RetryAttempt: null));
+        var work = new PublishedDispatchWork(message, RetryAttempt: null);
+
+        if (PublishedChannel.Writer.TryWrite(work))
+        {
+            return;
+        }
+
+        // A full channel is not a publish failure: the row already committed, so the relay is the recovery
+        // authority. But a dropped signal leaves the row idle for InitialDispatchGrace plus a retry poll, so a burst
+        // that briefly outruns the sender waits a short, bounded time for a free slot instead. The bound is real time
+        // and shared by every message of one committing operation.
+        var remaining = CommittedCapacityWait - Stopwatch.GetElapsedTime(waitStartedAt);
+
+        if (remaining <= TimeSpan.Zero)
+        {
+            return;
+        }
+
+        using var budget = new CancellationTokenSource(remaining);
+
+        try
+        {
+            await _WriteToChannelAsync(PublishedChannel, work, budget.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // The budget ran out or the dispatcher stopped: drop the signal and leave the committed row to the relay.
+        }
     }
 
     public async ValueTask EnqueueToPublish(MediumMessage message, CancellationToken cancellationToken = default)

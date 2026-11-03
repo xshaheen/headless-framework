@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics;
 using Headless.Messaging.Transport;
 using Headless.UnitOfWork;
 
@@ -35,10 +36,14 @@ internal sealed class MessageOutboxBuffer(IDispatcher dispatcher) : InMemoryWork
         Add(message);
     }
 
-    private ValueTask _FlushAsync()
+    private async ValueTask _FlushAsync()
     {
-        // The transaction is already committed. These best-effort signals must never add broker or scheduler I/O
-        // to the commit path; the durable relay remains the correctness mechanism when a signal is dropped.
+        // The transaction is already committed. These best-effort signals never add broker or scheduler I/O to the
+        // commit path; the durable relay remains the correctness mechanism when a signal is dropped. The only wait is
+        // for room in a full publish channel, and the whole flush shares one short budget started here, so a
+        // saturated host delays the commit by that budget once, not once per buffered message.
+        var waitStartedAt = Stopwatch.GetTimestamp();
+
         foreach (var message in Drain())
         {
             if (message.ExpiresAt is not null)
@@ -48,9 +53,10 @@ internal sealed class MessageOutboxBuffer(IDispatcher dispatcher) : InMemoryWork
                 continue;
             }
 
-            (dispatcher as ICommittedMessageDispatcher)?.EnqueueCommittedMessage(message);
+            if (dispatcher is ICommittedMessageDispatcher committed)
+            {
+                await committed.EnqueueCommittedMessageAsync(message, waitStartedAt).ConfigureAwait(false);
+            }
         }
-
-        return ValueTask.CompletedTask;
     }
 }
