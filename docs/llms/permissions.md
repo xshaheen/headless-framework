@@ -78,7 +78,7 @@ public sealed class OrderPermissionProvider : IPermissionDefinitionProvider
 
 `PermissionManager` delegates resolution to a chain of `IPermissionGrantProvider` implementations. Built-in providers (registration order, lowest to highest priority):
 
-1. `RolePermissionGrantProvider` (`"Role"`) — checks grants attached to each role the current user holds. It loads every role's grants for the pending names through one `IPermissionGrantStore.IsGrantedAsync(names, providerName, providerKeys)` call, then applies the roles in the user's role order, so the first role with a decisive status for a name wins. If the user has no roles, all permissions are `Undefined`.
+1. `RolePermissionGrantProvider` (`"Role"`) — checks grants attached to each role the current user holds. It loads every role's grants for the pending names through one `IPermissionGrantStore.IsGrantedAsync(names, providerName, providerKeys)` call, then combines them the way providers combine: a name any role prohibits is `Prohibited`, otherwise a name any role grants is `Granted`, and every deciding role is reported in ordinal order. The user's roles are a set, so no role order decides a conflict. If the user has no roles, all permissions are `Undefined`.
 2. `UserPermissionGrantProvider` (`"User"`) — checks grants attached to the user's id. Returns `Undefined` for anonymous principals (null user id).
 
 Last-registered provider has the highest priority, so **User wins over Role**. Custom providers added with `services.AddPermissionGrantProvider<T>()` are appended after the built-in providers and therefore have higher priority than both.
