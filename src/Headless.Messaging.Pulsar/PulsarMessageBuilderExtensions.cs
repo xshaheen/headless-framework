@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Messaging.Transport;
 using Pulsar.Client.Api;
 using Pulsar.Client.Common;
 

@@ -1081,10 +1081,10 @@ internal sealed class NatsConsumerClient(
         {
             // Not rethrown: the message is already handled, and JetStream redelivers an unacknowledged one after its
             // ack wait, which the inbox deduplicates. The operator still needs to see that settlement is failing.
-            MessagingMetrics.RecordSettlementFailure(
+            TransportMetrics.RecordSettlementFailure(
                 "nats",
-                MessagingMetrics.OperationNameAck,
-                MessagingTelemetry.ErrorTypeOf(ex)
+                TransportMetrics.OperationAck,
+                TransportMetrics.ErrorTypeOf(ex)
             );
             OnLogCallback?.Invoke(
                 new LogMessageEventArgs

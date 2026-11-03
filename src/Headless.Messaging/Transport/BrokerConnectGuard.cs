@@ -1,12 +1,14 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
+
 namespace Headless.Messaging.Transport;
 
 /// <summary>
 /// Classifies a consumer-client connect failure the way the messaging core consumes it: cancellation of the
 /// factory's token is always cancellation, and anything else is a broker connection failure.
 /// </summary>
-internal static class BrokerConnectGuard
+public static class BrokerConnectGuard
 {
     /// <summary>
     /// Returns the exception a consumer client factory must throw for a failed connect attempt: an
@@ -21,8 +23,14 @@ internal static class BrokerConnectGuard
     /// one. Callers must still observe the token before they create the half-connected client, so an
     /// already-cancelled caller never builds one.
     /// </remarks>
-    internal static Exception ConnectFailure(Exception failure, CancellationToken cancellationToken)
+    /// <param name="failure">The exception the connect attempt failed with.</param>
+    /// <param name="cancellationToken">The token passed to <see cref="IConsumerClientFactory.CreateAsync"/>.</param>
+    /// <returns>The exception to throw; never <see langword="null"/>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="failure"/> is <see langword="null"/>.</exception>
+    public static Exception ConnectFailure(Exception failure, CancellationToken cancellationToken)
     {
+        Argument.IsNotNull(failure);
+
         if (cancellationToken.IsCancellationRequested)
         {
             return new OperationCanceledException(cancellationToken);

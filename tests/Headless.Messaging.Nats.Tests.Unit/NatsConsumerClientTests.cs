@@ -1125,7 +1125,7 @@ public sealed class NatsConsumerClientTests : TestBase
                     new MessageRouteKey(typeof(ShardedOrder), "orders.created", MessageLane.Bus),
                     typeof(ShardedOrder),
                     "v1",
-                    CorrelationSelector: null,
+                    correlationSelector: null,
                     contract.Build().Bus.ProviderConfigs
                 ),
             ]);

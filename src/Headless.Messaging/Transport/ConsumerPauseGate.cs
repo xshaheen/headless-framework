@@ -7,13 +7,19 @@ namespace Headless.Messaging.Transport;
 /// Callers await <see cref="WaitIfPausedAsync"/> in their consume loop;
 /// the circuit breaker calls <see cref="PauseAsync"/>/<see cref="ResumeAsync"/> on state transitions.
 /// </summary>
-internal sealed class ConsumerPauseGate
+/// <remarks>
+/// A consumer client backs <see cref="IConsumerClient.PauseAsync"/> and <see cref="IConsumerClient.ResumeAsync"/> with
+/// one gate and calls <see cref="Release"/> when it shuts down, so a loop parked on a paused gate wakes and observes its
+/// own cancellation instead of hanging the shutdown.
+/// </remarks>
+public sealed class ConsumerPauseGate
 {
     private readonly Lock _lock = new();
     private volatile TaskCompletionSource _gate = _CreateCompletedGate();
     private bool _paused;
     private bool _disposed;
 
+    /// <summary>Gets whether the gate is paused.</summary>
     public bool IsPaused
     {
         get
@@ -25,10 +31,13 @@ internal sealed class ConsumerPauseGate
         }
     }
 
-    public ValueTask WaitIfPausedAsync(CancellationToken ct)
+    /// <summary>Completes at once while the gate is open; otherwise waits until it resumes or is released.</summary>
+    /// <param name="cancellationToken">Ends the wait early, with <see cref="OperationCanceledException"/>.</param>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled while paused.</exception>
+    public ValueTask WaitIfPausedAsync(CancellationToken cancellationToken)
     {
         var gate = _gate; // snapshot under volatile read
-        return gate.Task.IsCompleted ? ValueTask.CompletedTask : new ValueTask(gate.Task.WaitAsync(ct));
+        return gate.Task.IsCompleted ? ValueTask.CompletedTask : new ValueTask(gate.Task.WaitAsync(cancellationToken));
     }
 
     /// <summary>
@@ -75,6 +84,9 @@ internal sealed class ConsumerPauseGate
         return new ValueTask<bool>(result: true);
     }
 
+    /// <summary>
+    /// Opens the gate for good: every waiter resumes, and later <see cref="PauseAsync"/> calls do nothing.
+    /// </summary>
     public void Release()
     {
         TaskCompletionSource gateToComplete;

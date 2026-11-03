@@ -706,6 +706,246 @@ A transport package adapts one broker to `Headless.Messaging`. Core already owns
 - `MyBrokerConsumerClient : IConsumerClient`
 - broker-specific pools, factories, or helpers when connection reuse matters
 
+### Public building blocks
+
+A transport written outside this repository reaches parity with the built-in ones through public API only; none of the built-in transports uses an internal of `Headless.Messaging` or `Headless.Messaging.Abstractions`. The seams live in `Headless.Messaging.Transport`, except `MessageQueueMarkerService`, which sits with the other registration types in `Headless.Messaging`:
+
+| Type | Use it to |
+| --- | --- |
+| `MessageQueueMarkerService` | Name the transport from its `IMessagesOptionsExtension` (one instance, registered as a singleton instance), so the test harness and the dashboard find it. |
+| `IMessageMetadataRegistry`, `MessageMetadata`, `MessageRouteKey` | Read the declared routes from the container: names, lanes, raw-payload and affinity flags, and the provider configs an application attached. |
+| `IMessageProviderConfigBuilder<TMessage>`, `IConsumerProviderConfigBuilder`, `ConsumerRegistryExtensions.ResolveConsumerConfig<TConfig>` | Attach a per-contract or per-consumer config from a `Use{Provider}` extension, and read the consumer config back when a client opens a subscription. |
+| `IProviderHeaderContributions`, `ProviderHeaderContribution`, `IProviderMissingPayloadValidation` | Optional capabilities of a per-contract config: headers computed from the payload at publish time, and refusing a publish with no payload. |
+| `TransportEnvelopeGate`, `EnvelopeArrival`, `NativeEnvelopeFacts` | Run the check every delivery passes before the core sees it, and complete the envelope of a raw-payload route from broker metadata. |
+| `ConsumerPauseGate`, `InFlightHandlerTracker` | Back `PauseAsync`/`ResumeAsync`, and drain running handlers before a client disposes what settlement needs. |
+| `BrokerConnectGuard`, `BrokerFailures`, `BrokerReachabilityReporter` | Classify connect and receive failures the way the core counts [broker reachability](#broker-reachability). |
+| `BusNameBuilder`, `BusNameRules`, `TransportNaming` | Derive broker-legal subscription, queue, and stream names that every process agrees on. |
+| `RedeliveryBackoff`, `DeliverByEnvelope`, `TransportBody`, `LogSanitizer` | Delay a redelivery, read the `DeliverWithin` deadline, hand a body to a client that only takes arrays, and sanitize broker-supplied text before it reaches a log. |
+| `ReplyListenerSupervisor`, `ReplyAddressGate`, `ReplyHandlerInvoker` | Keep a request/reply channel open across broker outages and hand replies to the core one at a time. |
+| `TransportMetrics`, `MessagingDiagnostics.Meter` | Record settlement failures and transport-side every-instance drops on the core's instruments, and add broker-specific instruments to the messaging meter. |
+
+Each provider interface states its evolution policy in its XML docs. An interface a provider implements grows through optional capability interfaces the core discovers by a type check, or through default interface members with a behavior-preserving fallback; existing members never gain parameters. The helper classes are sealed or static.
+
+A consumer client built on these pieces:
+
+```csharp
+using System.Globalization;
+using Headless.Messaging.Transport;
+using Headless.Threading;
+
+// Stands in for the broker's client library.
+public interface IMyBrokerSession : IAsyncDisposable
+{
+    Task<MyBrokerDelivery?> ReceiveAsync(CancellationToken cancellationToken);
+    Task AckAsync(long tag, CancellationToken cancellationToken);
+    Task NackAsync(long tag, CancellationToken cancellationToken);
+}
+
+public interface IMyBrokerConnector
+{
+    Task<IMyBrokerSession> ConnectAsync(string queue, CancellationToken cancellationToken);
+}
+
+public sealed record MyBrokerDelivery(long Tag, string Queue, long Offset, Dictionary<string, string?> Headers, byte[] Body);
+
+public sealed class MyBrokerConsumerClientFactory(IMyBrokerConnector connector, IServiceProvider services)
+    : IConsumerClientFactory
+{
+    // The broker accepts letters, digits, '-', '_', and '.', up to 120 characters.
+    private static readonly BusNameRules _QueueRules = new(maxLength: 120, isAllowed: static c => c is '-' or '_' or '.');
+
+    public async Task<IConsumerClient> CreateAsync(
+        ConsumerClientRequest request,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var queue = request.Lane == MessageLane.Bus
+            ? BusNameBuilder.Build(request, _QueueRules)
+            : request.SubscriptionName;
+
+        try
+        {
+            var session = await connector.ConnectAsync(queue, cancellationToken).ConfigureAwait(false);
+            var gate = services.GetService<TransportEnvelopeGate>() ?? TransportEnvelopeGate.Strict;
+
+            return new MyBrokerConsumerClient(request.Lane, session, gate);
+        }
+        catch (Exception e)
+        {
+            // Cancellation stays cancellation; anything else is a broker connection failure.
+            throw BrokerConnectGuard.ConnectFailure(e, cancellationToken);
+        }
+    }
+}
+
+public sealed class MyBrokerConsumerClient(MessageLane lane, IMyBrokerSession session, TransportEnvelopeGate envelopeGate)
+    : IConsumerClient
+{
+    private readonly ConsumerPauseGate _pauseGate = new();
+    private readonly InFlightHandlerTracker _inFlight = new();
+    private readonly BrokerReachabilityReporter _reachability = new();
+
+    // A lost broker is waited for in real time, never on the app clock a test host fakes.
+    private readonly ReconnectBackoff _backoff = new();
+
+    public BrokerAddress BrokerAddress { get; } = new("MyBroker", "broker.internal:5000");
+
+    public Func<TransportMessage, object?, Task>? OnMessageCallback { get; private set; }
+
+    public Action<LogMessageEventArgs>? OnLogCallback { get; private set; }
+
+    public void AttachCallbacks(Func<TransportMessage, object?, Task>? onMessage, Action<LogMessageEventArgs>? onLog)
+    {
+        OnMessageCallback = onMessage;
+        OnLogCallback = onLog;
+    }
+
+    public ValueTask SubscribeAsync(IEnumerable<string> messageNames, CancellationToken cancellationToken = default) =>
+        ValueTask.CompletedTask;
+
+    public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
+
+            MyBrokerDelivery? delivery;
+            try
+            {
+                delivery = await session.ReceiveAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception e) when (BrokerFailures.IsConnectivity(e))
+            {
+                // The session reconnects on its own; the host still learns the broker went away. A caught
+                // connectivity failure must never fall through to the success report below.
+                _reachability.ReportFailure(OnLogCallback, e);
+
+                if (!await _backoff.WaitAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    return;
+                }
+
+                continue;
+            }
+
+            _backoff.Reset();
+            _reachability.ReportSuccess(OnLogCallback);
+
+            if (delivery is null)
+            {
+                continue;
+            }
+
+            delivery.Headers[Headers.TransportAddress] = delivery.Queue;
+
+            try
+            {
+                envelopeGate.Admit(
+                    delivery.Headers,
+                    new EnvelopeArrival("MyBroker", lane, ArrivalName: null),
+                    delivery,
+                    static d => new NativeEnvelopeFacts(
+                        ProducerMessageId: null,
+                        PositionId: NativeEnvelopeFacts.Position(
+                            "mybroker",
+                            d.Queue,
+                            d.Offset.ToString(CultureInfo.InvariantCulture)
+                        ),
+                        StoredAt: null
+                    )
+                );
+            }
+            catch (InvalidDataException e)
+            {
+                // A malformed envelope never reaches a handler; settle it so the broker stops redelivering it.
+                OnLogCallback?.Invoke(
+                    new LogMessageEventArgs { LogType = MqLogType.ConsumeError, Reason = LogSanitizer.Sanitize(e.Message, 255) }
+                );
+                await session.AckAsync(delivery.Tag, CancellationToken.None).ConfigureAwait(false);
+                continue;
+            }
+
+            _inFlight.Track(_HandleAsync(delivery));
+        }
+    }
+
+    private async Task _HandleAsync(MyBrokerDelivery delivery)
+    {
+        try
+        {
+            await OnMessageCallback!(new TransportMessage(delivery.Headers, delivery.Body), delivery.Tag)
+                .ConfigureAwait(false);
+        }
+        catch (Exception e)
+        {
+            // The core settles every handler outcome itself, so a throw means nothing settled this delivery.
+            OnLogCallback?.Invoke(new LogMessageEventArgs { LogType = MqLogType.ConsumeError, Reason = e.Message });
+            await session.NackAsync(delivery.Tag, CancellationToken.None).ConfigureAwait(false);
+        }
+    }
+
+    public async ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default) =>
+        await session.AckAsync((long)sender!, cancellationToken).ConfigureAwait(false);
+
+    public async ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default) =>
+        await session.NackAsync((long)sender!, cancellationToken).ConfigureAwait(false);
+
+    public async ValueTask PauseAsync(CancellationToken cancellationToken = default) =>
+        await _pauseGate.PauseAsync().ConfigureAwait(false);
+
+    public async ValueTask ResumeAsync(CancellationToken cancellationToken = default) =>
+        await _pauseGate.ResumeAsync().ConfigureAwait(false);
+
+    public async ValueTask ShutdownAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
+    {
+        _pauseGate.Release();
+
+        // Handlers settle against the session, so they finish before it closes. The budget is real time.
+        await _inFlight.DrainAsync(timeout, TimeProvider.System).ConfigureAwait(false);
+        await DisposeAsync().ConfigureAwait(false);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _pauseGate.Release();
+        await session.DisposeAsync().ConfigureAwait(false);
+    }
+}
+```
+
+A per-contract config that computes a header from the payload, attached from the provider's own `Use{Provider}` extension:
+
+```csharp
+using Headless.Messaging.Transport;
+
+public sealed class MyBrokerMessageConfig<TMessage>(Func<TMessage, string?> partitionKey) : IProviderHeaderContributions
+    where TMessage : class
+{
+    public IReadOnlyList<ProviderHeaderContribution> HeaderContributions { get; } =
+        [new("mybroker-partition-key", payload => partitionKey((TMessage)payload))];
+}
+
+public static class MyBrokerMessageBuilderExtensions
+{
+    public static IQueueContractBuilder<TMessage> UseMyBroker<TMessage>(
+        this IQueueContractBuilder<TMessage> builder,
+        Func<TMessage, string?> partitionKey
+    )
+        where TMessage : class
+    {
+        ((IMessageProviderConfigBuilder<TMessage>)builder).SetMessageProviderConfig(
+            new MyBrokerMessageConfig<TMessage>(partitionKey)
+        );
+
+        return builder;
+    }
+}
+```
+
+Storage providers do not have this parity yet. `IDataStorage`, `IStorageTableNames`, and the optional storage capabilities are public, but inbox delivery coordination, the inbox transaction runners, and the shared relational engine are internal, so the built-in storage packages still compile against `Headless.Messaging` internals.
+
 ### Registration shape
 
 Register the broker through `MessagingSetupBuilder.RegisterExtension(...)` with an `IMessagesOptionsExtension` that adds:
@@ -765,7 +1005,7 @@ On the Bus lane, derive the broker-legal subscription name from the identity wit
 - **`RejectAsync(sender, redeliveryDelay, cancellationToken)`** is what the core calls for a delivery it could not admit (its store failed, or its circuit's half-open probe is out). The default implementation holds the delivery for `redeliveryDelay` in real time, then calls the plain `RejectAsync`; the token only cuts the wait short on shutdown, and the reject still runs with `CancellationToken.None`. That hold always runs on `TimeProvider.System`, because a default interface member cannot resolve the [back-off clock](#headlessmessagingtesting); a test transport that steps through the delay overrides the member, as the in-memory transport does. Override it when the broker can delay redelivery itself (a NAK delay, a visibility timeout, a negative-acknowledge delay, a pending-entry idle time), so the delivery is released at once.
 - **`DeadLetterAsync(sender, reason, description)`** settles a message poisoned on arrival after Core stored its poison row. Core calls it only for the delivery that stored the row; a redelivery of a message already recorded terminal is committed, so the dead-letter destination holds one copy per poisoned message. A redelivery that fails before admission (for example a contract-version mismatch during a rolling deploy after a lost ack) of a message whose inbox row already exists for the same tenant, message id, message name, consumer identity, and lane is committed as a duplicate: no poison row, no dead-letter, no `OnExhausted`, no circuit-breaker failure, and no request fault. An explicit receive-middleware `Reject` is the exception: it keeps its poison row and dead-letter even when the id matches admitted work. The default implementation calls `CommitAsync`, so a transport without a dead-letter destination needs no change. Override it when the broker can keep the message aside, and attach `reason` and `description` when the broker can carry them. Reason codes: `SubscriberNotFound`, `ReceiveRejected` (a receive middleware's `Reject`), `DeserializationFailed`, and `ReceiveFailed` (a contract-version mismatch, a receive middleware fault, or an undeclared outcome). An explicit `Reject` is `ReceiveRejected` whatever cause it carries. The description is the sanitized exception message capped at 1024 characters, except for `ReceiveFailed`, which carries only the exception type, because a middleware's own exception message can echo header values such as a signature or token.
 - **`PauseAsync` and `ResumeAsync`** serve circuit-breaker backpressure. They must be idempotent, safe to call concurrently, and stop new message pulls once `PauseAsync` returns. In-flight deliveries may complete. Pause and resume keep the long-running listener alive; a provider may cancel an in-flight broker receive to reach its pause gate, but it must install fresh receive state before reopening the gate.
-- **`OnLogCallback`** emits `MqLogType` events for connection failures, broker shutdown, consumer registration and cancellation, and receive-loop errors. Core relies on them to keep transport health and restart behavior accurate. Health is tracked per consumer client: `ConsumerCancelled`, `ConsumerShutdown`, `ServerConnError`, and `ConnectError` mark the client that raised them as degraded, and `ConsumerRegistered` clears only that client, never a sibling. A `ConsumerCancelled` raised while the circuit breaker has paused the client's subscription is the pause itself and changes nothing. `RedisConsumeError` and the other receive-error types are logged only. Every 30 seconds the transport check rebuilds each subscription that holds a degraded client and leaves the healthy subscriptions consuming; a failure that belongs to no subscription, such as a broker that refused a client before its subscription started or a generation that did not stop in time, rebuilds every subscription. A client that retries a lost broker inside its own receive loop, instead of failing the loop, reports each failed receive as `MqLogType.BrokerUnreachable` and the first successful receive after one as `MqLogType.BrokerReachable`; Core counts these toward [broker reachability](#broker-reachability) without rebuilding the client. Emit `MqLogType.SettlementFailed` when an ack did not reach the broker (for example a failed ack call or a closed channel) and record `MessagingMetrics`' settlement-failure counter; Core logs it as a warning (EventId 4120 `TransportSettlementFailed`). Do not throw from the settlement: the broker redelivers and the inbox deduplicates.
+- **`OnLogCallback`** emits `MqLogType` events for connection failures, broker shutdown, consumer registration and cancellation, and receive-loop errors. Core relies on them to keep transport health and restart behavior accurate. Health is tracked per consumer client: `ConsumerCancelled`, `ConsumerShutdown`, `ServerConnError`, and `ConnectError` mark the client that raised them as degraded, and `ConsumerRegistered` clears only that client, never a sibling. A `ConsumerCancelled` raised while the circuit breaker has paused the client's subscription is the pause itself and changes nothing. `RedisConsumeError` and the other receive-error types are logged only. Every 30 seconds the transport check rebuilds each subscription that holds a degraded client and leaves the healthy subscriptions consuming; a failure that belongs to no subscription, such as a broker that refused a client before its subscription started or a generation that did not stop in time, rebuilds every subscription. A client that retries a lost broker inside its own receive loop, instead of failing the loop, reports each failed receive as `MqLogType.BrokerUnreachable` and the first successful receive after one as `MqLogType.BrokerReachable`; Core counts these toward [broker reachability](#broker-reachability) without rebuilding the client. Emit `MqLogType.SettlementFailed` when an ack did not reach the broker (for example a failed ack call or a closed channel) and record it with `TransportMetrics.RecordSettlementFailure`; Core logs it as a warning (EventId 4120 `TransportSettlementFailed`). Do not throw from the settlement: the broker redelivers and the inbox deduplicates.
 - **`DisposeAsync`** disposes only resources owned by that client instance, never shared pools or connections still used elsewhere in the package.
 
 ### Provisioning: `ITransportTopologyProvisioner`

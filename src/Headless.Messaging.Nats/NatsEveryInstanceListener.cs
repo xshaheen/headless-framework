@@ -316,7 +316,7 @@ internal sealed class NatsEveryInstanceListener
             return ValueTask.CompletedTask;
         }
 
-        MessagingMetrics.RecordEveryInstanceDelivery(_subscriptionName, "dropped", DroppedOverflowErrorType);
+        TransportMetrics.RecordEveryInstanceDrop(_subscriptionName, DroppedOverflowErrorType);
         Interlocked.Increment(ref _droppedSinceSignal);
 
         if (Interlocked.CompareExchange(ref _dropSignalScheduled, 1, 0) == 0)

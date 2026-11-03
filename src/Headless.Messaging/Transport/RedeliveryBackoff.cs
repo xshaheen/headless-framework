@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Headless.Threading;
 
 namespace Headless.Messaging.Transport;
@@ -14,7 +15,7 @@ namespace Headless.Messaging.Transport;
 /// message no consumer ever saw. The delays run in real time: they wait for a dependency to come back, which an app
 /// clock that a test host fakes would never let happen.
 /// </remarks>
-internal static class RedeliveryBackoff
+public static class RedeliveryBackoff
 {
     /// <summary>The retries of a failed inbox admission write before the delivery is handed back to the broker.</summary>
     public const int AdmissionRetries = 3;
@@ -24,8 +25,11 @@ internal static class RedeliveryBackoff
     private static readonly TimeSpan _FirstAdmissionRetryDelay = TimeSpan.FromMilliseconds(250);
 
     /// <summary>The jittered wait before admission retry <paramref name="retry"/> (1-based): about 250 ms, doubling.</summary>
+    /// <exception cref="ArgumentNullException"><paramref name="random"/> is <see langword="null"/>.</exception>
     public static TimeSpan AdmissionRetryDelay(int retry, Random random)
     {
+        Argument.IsNotNull(random);
+
         return _Doubling(_FirstAdmissionRetryDelay, retry, maxDoublings: AdmissionRetries - 1, random);
     }
 
@@ -33,8 +37,11 @@ internal static class RedeliveryBackoff
     /// The jittered delay before the broker redelivers a delivery after <paramref name="failures"/> consecutive failed
     /// attempts (1-based): about one second, doubling up to <see cref="ReconnectBackoff.Ceiling"/>.
     /// </summary>
+    /// <exception cref="ArgumentNullException"><paramref name="random"/> is <see langword="null"/>.</exception>
     public static TimeSpan RedeliveryDelay(long failures, Random random)
     {
+        Argument.IsNotNull(random);
+
         // Five doublings from one second already pass the 30 s ceiling.
         return _Doubling(ReconnectBackoff.FirstDelay, failures, maxDoublings: 5, random);
     }
@@ -50,6 +57,12 @@ internal static class RedeliveryBackoff
     /// ends the wait early, so a stopping host does not wait out the delay; the reject still runs, because settlement
     /// is must-complete.
     /// </summary>
+    /// <param name="client">The consumer client that owns the delivery.</param>
+    /// <param name="sender">The delivery handle the client passed with the message.</param>
+    /// <param name="delay">How long to hold the delivery; zero or less rejects at once.</param>
+    /// <param name="clock">The clock the hold is measured on; pass <see cref="TimeProvider.System"/> for real time.</param>
+    /// <param name="cancellationToken">Ends the hold early; the reject still runs.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="client"/> or <paramref name="clock"/> is <see langword="null"/>.</exception>
     public static async ValueTask DelayThenRejectAsync(
         IConsumerClient client,
         object? sender,
@@ -58,6 +71,9 @@ internal static class RedeliveryBackoff
         CancellationToken cancellationToken
     )
     {
+        Argument.IsNotNull(client);
+        Argument.IsNotNull(clock);
+
         // A stopping host cuts the wait short and hands the delivery back at once.
         if (delay > TimeSpan.Zero)
         {

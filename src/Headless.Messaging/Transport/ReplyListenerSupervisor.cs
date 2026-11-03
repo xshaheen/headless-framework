@@ -24,10 +24,12 @@ namespace Headless.Messaging.Transport;
 /// address is out, such as a best-effort configuration check, goes in the pass right after <see cref="Ready(string)"/>.
 /// </para>
 /// </remarks>
-internal sealed class ReplyListenerSupervisor : IAsyncDisposable
+public sealed class ReplyListenerSupervisor : IAsyncDisposable
 {
     private readonly string _transport;
+#pragma warning disable CA2213 // False positive: the listener owns this supervisor and disposes it, not the reverse.
     private readonly IReplyListener _listener;
+#pragma warning restore CA2213
     private readonly Func<CancellationToken, Task<string>> _serveOnce;
     private readonly ReconnectBackoff _backoff;
     private readonly ILogger _logger;
@@ -50,6 +52,11 @@ internal sealed class ReplyListenerSupervisor : IAsyncDisposable
     /// channel would never reopen. Tests of the supervisor itself pass a fake to step through the delays.
     /// </param>
     /// <param name="jitter">The backoff's jitter source; <see cref="Random.Shared"/> when omitted.</param>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="transport"/>, <paramref name="listener"/>, <paramref name="serveOnce"/>, or
+    /// <paramref name="logger"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException"><paramref name="transport"/> is empty or white space.</exception>
     public ReplyListenerSupervisor(
         string transport,
         IReplyListener listener,
@@ -59,11 +66,11 @@ internal sealed class ReplyListenerSupervisor : IAsyncDisposable
         Random? jitter = null
     )
     {
-        _transport = transport;
-        _listener = listener;
-        _serveOnce = serveOnce;
+        _transport = Argument.IsNotNullOrWhiteSpace(transport);
+        _listener = Argument.IsNotNull(listener);
+        _serveOnce = Argument.IsNotNull(serveOnce);
         _backoff = new ReconnectBackoff(backoffClock, jitter);
-        _logger = logger;
+        _logger = Argument.IsNotNull(logger);
 
         // Cached, so a connection event that fires after disposal still reads a cancelled token instead of throwing.
         ClosingToken = _closing.Token;
@@ -96,8 +103,11 @@ internal sealed class ReplyListenerSupervisor : IAsyncDisposable
     }
 
     /// <summary>Hands <paramref name="address"/> out: the current pass can receive replies.</summary>
+    /// <exception cref="ArgumentNullException"><paramref name="address"/> is <see langword="null"/>.</exception>
     public void Ready(string address)
     {
+        Argument.IsNotNull(address);
+
         Address.Publish(address);
         _OnReady(address);
     }
@@ -106,8 +116,14 @@ internal sealed class ReplyListenerSupervisor : IAsyncDisposable
     /// Hands <paramref name="address"/> out only while <paramref name="isLive"/> holds under the gate's lock, the lock
     /// a retraction from a connection event takes too.
     /// </summary>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="address"/> or <paramref name="isLive"/> is <see langword="null"/>.
+    /// </exception>
     public void Ready(string address, Func<bool> isLive)
     {
+        Argument.IsNotNull(address);
+        Argument.IsNotNull(isLive);
+
         Address.Publish(address, isLive);
         _OnReady(address);
     }

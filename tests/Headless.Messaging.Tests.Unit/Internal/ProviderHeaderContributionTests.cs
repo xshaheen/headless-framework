@@ -3,6 +3,7 @@
 using Headless;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
+using Headless.Messaging.Transport;
 using Headless.MultiTenancy;
 using Microsoft.Extensions.Options;
 
