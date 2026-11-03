@@ -134,26 +134,17 @@ public sealed partial class HeadlessLanguageManagerExtensionsTests : TestBase
     [Fact]
     public void should_resolve_headless_validator_messages_in_each_register()
     {
-        // given
-        var previousCulture = FluentValidatorErrors.Culture;
+        // when: the UI culture, not the static FluentValidatorErrors.Culture, which is process-wide and would hand
+        // its culture to every test in the module reading these messages at the same time
+        var egyptian = _InCulture(
+            _EgyptianArabic,
+            () => FluentValidatorErrorDescriber.Strings.OnlyNumberValidator().Description
+        );
+        var arabic = _InCulture(_Arabic, () => FluentValidatorErrorDescriber.Strings.OnlyNumberValidator().Description);
 
-        try
-        {
-            // when
-            FluentValidatorErrors.Culture = _EgyptianArabic;
-            var egyptian = FluentValidatorErrorDescriber.Strings.OnlyNumberValidator().Description;
-
-            FluentValidatorErrors.Culture = _Arabic;
-            var arabic = FluentValidatorErrorDescriber.Strings.OnlyNumberValidator().Description;
-
-            // then
-            egyptian.Should().Be("الحقل ده لازم يكون أرقام بس.");
-            arabic.Should().Be("أدخل أرقاماً فقط.");
-        }
-        finally
-        {
-            FluentValidatorErrors.Culture = previousCulture;
-        }
+        // then
+        egyptian.Should().Be("الحقل ده لازم يكون أرقام بس.");
+        arabic.Should().Be("أدخل أرقاماً فقط.");
     }
 
     private static HashSet<string> _Placeholders(string template)

@@ -229,10 +229,15 @@ internal sealed partial class HeadlessApiExceptionHandler(
                     statusCode = StatusCodes.Status503ServiceUnavailable;
                     break;
 
+                // A TimeoutException is the server's own wait running out (a cache factory, Redis, a database command),
+                // never a client that was slow to send its request, so it is a server fault: 408 would tell clients,
+                // and browsers on a reused connection without asking anyone, to resend a request whose writes may
+                // already have committed. Like the lock wait above, no Retry-After: nothing says when the dependency
+                // recovers. The 408 that ASP.NET Core's request-timeout middleware writes is not an exception.
                 case TimeoutException:
                     _LogRequestTimeoutException(logger, exception);
-                    problemDetails = problemDetailsCreator.RequestTimeout();
-                    statusCode = StatusCodes.Status408RequestTimeout;
+                    problemDetails = problemDetailsCreator.ServiceUnavailable();
+                    statusCode = StatusCodes.Status503ServiceUnavailable;
                     break;
 
                 case NotImplementedException:
@@ -568,7 +573,7 @@ internal sealed partial class HeadlessApiExceptionHandler(
         EventId = 5004,
         EventName = "RequestTimeoutException",
         Level = LogLevel.Warning,
-        Message = "Request was timed out"
+        Message = "An operation timed out while serving the request"
     )]
     private static partial void _LogRequestTimeoutException(ILogger logger, Exception exception);
 

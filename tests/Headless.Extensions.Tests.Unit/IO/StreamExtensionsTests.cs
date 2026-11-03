@@ -15,7 +15,7 @@ public sealed class StreamExtensionsTests : TestBase
         const string text = "Hello, World!";
         var bytes = Encoding.UTF8.GetBytes(text);
         using var stream = new MemoryStream(bytes);
-        stream.Position = Random.Shared.Next(0, bytes.Length);
+        stream.Position = 5; // Mid-stream on purpose: the helper must read from the start wherever the stream is
 
         // when
         var result = stream.GetAllText();
@@ -32,7 +32,7 @@ public sealed class StreamExtensionsTests : TestBase
         const string text = "Hello, World!";
         var bytes = Encoding.UTF8.GetBytes(text);
         await using var stream = new MemoryStream(bytes);
-        stream.Position = Random.Shared.Next(0, bytes.Length);
+        stream.Position = 5; // Mid-stream on purpose: the helper must read from the start wherever the stream is
 
         // when
         var result = await stream.GetAllTextAsync(AbortToken);
@@ -52,7 +52,7 @@ public sealed class StreamExtensionsTests : TestBase
         // given
         byte[] bytes = [1, 2, 3, 4, 5, 6, 7, 8];
         using var stream = new MemoryStream(bytes);
-        stream.Position = Random.Shared.Next(0, bytes.Length);
+        stream.Position = 5; // Mid-stream on purpose: the helper must read from the start wherever the stream is
 
         // when
         var result = stream.GetAllBytes();
@@ -68,6 +68,7 @@ public sealed class StreamExtensionsTests : TestBase
         const string text = "Hello, World!";
         var bytes = Encoding.UTF8.GetBytes(text);
         await using var stream = new MemoryStream(bytes);
+        stream.Position = 5; // Mid-stream on purpose: the helper must read from the start wherever the stream is
 
         // when
         var result = await stream.GetAllBytesAsync(AbortToken);
@@ -122,7 +123,7 @@ public sealed class StreamExtensionsTests : TestBase
         // given
         byte[] bytes = [1, 2, 3, 4, 5, 6, 7, 8];
         using var stream = new MemoryStream(bytes);
-        stream.Position = Random.Shared.Next(0, bytes.Length); // It should not affect the result
+        stream.Position = 5; // Mid-stream on purpose: the helper must read from the start wherever the stream is
 
         // when
         using var memoryStream = stream.CreateMemoryStream();
@@ -145,7 +146,7 @@ public sealed class StreamExtensionsTests : TestBase
         // given
         byte[] bytes = [1, 2, 3, 4, 5, 6, 7, 8];
         await using var stream = new MemoryStream(bytes);
-        stream.Position = Random.Shared.Next(0, bytes.Length); // It should not affect the result
+        stream.Position = 5; // Mid-stream on purpose: the helper must read from the start wherever the stream is
 
         // when
         await using var memoryStream = await stream.CreateMemoryStreamAsync(AbortToken);

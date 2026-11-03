@@ -302,25 +302,27 @@ public sealed class MembershipHeartbeatBackgroundServiceTests : TestBase
             MembershipLostBehavior = MembershipLostBehavior.StopMembershipOnly,
         };
         var store = new FakeMembershipStore();
-        var (sut, timeProvider, membership) = _CreateSut(store, options);
+        var timeProvider = new BeatDelayTimeProvider(options.HeartbeatInterval);
+        var (sut, _, membership) = _CreateSut(store, options, timeProvider);
         using var serviceLifetime = sut;
 
         // when
         await sut.StartingAsync(AbortToken);
         await membership.RegisterAsync(AbortToken);
 
-        await _WaitUntilAsync(() => store.Heartbeats.Count > 0);
-
-        // Step the clock in small increments, yielding after each so the loop schedules its next delay before time
-        // moves past it.
-        for (var step = 0; step < 40; step++)
+        // Advance one interval only once the loop has beaten and parked on its next delay. Moving the fake clock while
+        // a starved loop has not parked yet would carry it past the fence deadline with no beat in between, which is
+        // a fence the real loop would never see.
+        for (var interval = 0; interval < 10; interval++)
         {
-            timeProvider.Advance(TimeSpan.FromMilliseconds(250));
-            await Task.Delay(10, AbortToken);
+            await _WaitUntilAsync(() => timeProvider.BeatDelays > interval);
+            timeProvider.Advance(options.HeartbeatInterval);
         }
 
+        await _WaitUntilAsync(() => timeProvider.BeatDelays > 10);
+
         // then: 10s of startup, well past DeadThreshold, and the loop kept the node a member
-        store.Heartbeats.Should().HaveCountGreaterThan(4);
+        store.Heartbeats.Should().HaveCountGreaterThan(10);
         membership.Identity.Should().NotBeNull();
         membership.LocalMembershipLostToken.IsCancellationRequested.Should().BeFalse();
         await sut.StopAsync(AbortToken);
@@ -679,6 +681,27 @@ public sealed class MembershipHeartbeatBackgroundServiceTests : TestBase
         {
             var timer = base.CreateTimer(callback, state, dueTime, period);
             RetryDelays.Writer.TryWrite(dueTime);
+            return timer;
+        }
+    }
+
+    // Counts the beat loop's parks: each one is a delay of exactly one heartbeat interval, while the fence timer is
+    // armed for the fence budget instead.
+    private sealed class BeatDelayTimeProvider(TimeSpan heartbeatInterval) : FakeTimeProvider
+    {
+        private int _beatDelays;
+
+        public int BeatDelays => Volatile.Read(ref _beatDelays);
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            var timer = base.CreateTimer(callback, state, dueTime, period);
+
+            if (dueTime == heartbeatInterval)
+            {
+                Interlocked.Increment(ref _beatDelays);
+            }
+
             return timer;
         }
     }

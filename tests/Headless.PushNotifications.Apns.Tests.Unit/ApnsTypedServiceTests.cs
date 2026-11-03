@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
-using System.Net.Sockets;
 using System.Text.Json.Nodes;
 using Headless.PushNotifications.Apns;
 using Headless.Testing.Tests;
@@ -113,9 +112,8 @@ public sealed class ApnsTypedServiceTests : TestBase
     public async Task should_report_a_failure_without_a_status_when_the_endpoint_is_unreachable()
     {
         // given
-        var closedPort = _GetClosedLoopbackPort();
         await using var provider = _server.CreateProvider(configureClient: c =>
-            c.BaseAddress = new Uri($"http://127.0.0.1:{closedPort}")
+            c.BaseAddress = FakeApnsServer.UnreachableAddress
         );
         var service = provider.GetRequiredService<IApnsPushNotificationService>();
 
@@ -134,9 +132,8 @@ public sealed class ApnsTypedServiceTests : TestBase
     public async Task should_keep_the_caller_apns_id_when_the_endpoint_is_unreachable()
     {
         // given
-        var closedPort = _GetClosedLoopbackPort();
         await using var provider = _server.CreateProvider(configureClient: c =>
-            c.BaseAddress = new Uri($"http://127.0.0.1:{closedPort}")
+            c.BaseAddress = FakeApnsServer.UnreachableAddress
         );
         var service = provider.GetRequiredService<IApnsPushNotificationService>();
         var apnsId = Guid.Parse("4d3c2b1a-0f9e-4d8c-b7a6-5f4e3d2c1b0a");
@@ -481,16 +478,6 @@ public sealed class ApnsTypedServiceTests : TestBase
         using var document = JsonDocument.Parse(json);
 
         return document.RootElement.Clone();
-    }
-
-    private static int _GetClosedLoopbackPort()
-    {
-        using var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        listener.Stop();
-
-        return port;
     }
 
     #endregion

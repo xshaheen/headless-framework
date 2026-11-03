@@ -5,6 +5,7 @@ using Headless.Blobs.SshNet;
 using Headless.Hosting;
 using Headless.Serializer;
 using Microsoft.Extensions.Logging;
+using Renci.SshNet.Common;
 
 namespace Tests;
 
@@ -107,6 +108,114 @@ public sealed class SshBlobStorageTests(SshBlobStorageFixture fixture) : BlobSto
         (await storage.GetBlobInfoAsync(new BlobLocation(ContainerName, "EmptyDirectory"), AbortToken))
             .Should()
             .BeNull();
+    }
+
+    [Fact]
+    public async Task should_drop_the_destination_metadata_when_copying_a_blob_without_a_sidecar()
+    {
+        // given: a source written out-of-band (no sidecar) and a destination that carries metadata
+        await using var storage = GetStorage();
+        await ResetAsync(storage);
+        var destination = new BlobLocation(ContainerName, "copy-target.txt");
+        var metadata = new Dictionary<string, string>(StringComparer.Ordinal) { ["version"] = "1" };
+
+        await using (var body = new MemoryStream("original"u8.ToArray()))
+        {
+            await storage.UploadAsync(destination, body, metadata: metadata, cancellationToken: AbortToken);
+        }
+
+        var client = await fixture.Pool.AcquireAsync(AbortToken);
+
+        try
+        {
+            await using var raw = await client.OpenAsync(
+                $"{ContainerName}/copy-source.txt",
+                FileMode.Create,
+                FileAccess.Write,
+                AbortToken
+            );
+
+            await raw.WriteAsync("replacement"u8.ToArray(), AbortToken);
+        }
+        finally
+        {
+            await fixture.Pool.ReleaseAsync(client);
+        }
+
+        // when
+        var copied = await storage.CopyAsync(
+            new BlobLocation(ContainerName, "copy-source.txt"),
+            destination,
+            AbortToken
+        );
+
+        // then
+        copied.Should().BeTrue();
+        (await storage.GetBlobContentAsync(destination, AbortToken)).Should().Be("replacement");
+        (await storage.GetBlobInfoAsync(destination, AbortToken))!.Metadata.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_keep_the_previous_blob_and_metadata_when_a_copy_faults_midway()
+    {
+        // given: a destination with its own content and metadata, and a source whose sidecar cannot be read
+        await using var storage = GetStorage();
+        await ResetAsync(storage);
+        var source = new BlobLocation(ContainerName, "copy-source.txt");
+        var destination = new BlobLocation(ContainerName, "copy-target.txt");
+        var sourceMetadata = new Dictionary<string, string>(StringComparer.Ordinal) { ["version"] = "2" };
+        var destinationMetadata = new Dictionary<string, string>(StringComparer.Ordinal) { ["version"] = "1" };
+
+        await using (var body = new MemoryStream("replacement"u8.ToArray()))
+        {
+            await storage.UploadAsync(source, body, metadata: sourceMetadata, cancellationToken: AbortToken);
+        }
+
+        await using (var body = new MemoryStream("original"u8.ToArray()))
+        {
+            await storage.UploadAsync(destination, body, metadata: destinationMetadata, cancellationToken: AbortToken);
+        }
+
+        var sourceSidecar = $"{ContainerName}/copy-source.txt.hlmeta";
+        var client = await fixture.Pool.AcquireAsync(AbortToken);
+
+        try
+        {
+            // The server drops to the login user, so a mode-000 sidecar fails to open after the content is copied.
+            client.ChangePermissions(sourceSidecar, 0);
+
+            // when
+            var act = async () => await storage.CopyAsync(source, destination, AbortToken);
+
+            // then
+            await act.Should().ThrowAsync<SftpPermissionDeniedException>();
+            (await storage.GetBlobContentAsync(destination, AbortToken)).Should().Be("original");
+            (await storage.GetBlobInfoAsync(destination, AbortToken))!.Metadata.Should().Contain("version", "1");
+
+            var names = new List<string>();
+
+            await foreach (var file in client.ListDirectoryAsync(ContainerName, AbortToken))
+            {
+                if (file.IsRegularFile)
+                {
+                    names.Add(file.Name);
+                }
+            }
+
+            names
+                .Should()
+                .BeEquivalentTo(
+                    "copy-source.txt",
+                    "copy-source.txt.hlmeta",
+                    "copy-target.txt",
+                    "copy-target.txt.hlmeta"
+                );
+        }
+        finally
+        {
+            client.ChangePermissions(sourceSidecar, 420); // 0644
+            await fixture.Pool.ReleaseAsync(client);
+        }
     }
 
     #endregion

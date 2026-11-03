@@ -170,6 +170,94 @@ public sealed class StrictTenancyPublishGuardTests : TestBase
         act.Should().Throw<MissingTenantContextException>();
     }
 
+    [Fact]
+    public void should_publish_a_system_message_without_a_tenant_from_host_scope_when_strict_tenancy_enabled()
+    {
+        // given - host scope: no explicit tenant and no ambient tenant
+        var factory = _CreateFactory(tenantContextRequired: true, ambientTenantId: null);
+
+        // when
+        var prepared = factory.Create(new TestMessage("v"), new PublishOptions { IsSystemMessage = true });
+
+        // then
+        prepared.Message.Headers.Should().NotContainKey(Headers.TenantId);
+    }
+
+    [Fact]
+    public void should_still_stamp_the_ambient_tenant_on_a_system_message_when_strict_tenancy_enabled()
+    {
+        // given - the flag waives only the missing-tenant rejection; it never drops a tenant that exists
+        var factory = _CreateFactory(tenantContextRequired: true, ambientTenantId: "acme");
+
+        // when
+        var prepared = factory.Create(new TestMessage("v"), new PublishOptions { IsSystemMessage = true });
+
+        // then
+        prepared.Message.Headers[Headers.TenantId].Should().Be("acme");
+    }
+
+    [Fact]
+    public void should_honor_an_explicit_tenant_on_a_system_message()
+    {
+        // given
+        var factory = _CreateFactory(tenantContextRequired: true, ambientTenantId: null);
+
+        // when
+        var prepared = factory.Create(
+            new TestMessage("v"),
+            new PublishOptions { IsSystemMessage = true, TenantId = "acme" }
+        );
+
+        // then
+        prepared.Message.Headers[Headers.TenantId].Should().Be("acme");
+    }
+
+    [Fact]
+    public void should_reject_a_system_message_that_suppresses_an_existing_ambient_tenant()
+    {
+        // given - tenant code must not reach host scope by pairing the flag with suppression
+        var factory = _CreateFactory(tenantContextRequired: true, ambientTenantId: "acme");
+
+        // when
+        var act = () =>
+            factory.Create(
+                new TestMessage("v"),
+                new PublishOptions { IsSystemMessage = true, SuppressAmbientBusinessContext = true }
+            );
+
+        // then
+        act.Should().Throw<MissingTenantContextException>();
+    }
+
+    [Fact]
+    public void should_publish_a_system_message_that_suppresses_ambient_context_from_host_scope()
+    {
+        // given
+        var factory = _CreateFactory(tenantContextRequired: true, ambientTenantId: null);
+
+        // when
+        var prepared = factory.Create(
+            new TestMessage("v"),
+            new PublishOptions { IsSystemMessage = true, SuppressAmbientBusinessContext = true }
+        );
+
+        // then
+        prepared.Message.Headers.Should().NotContainKey(Headers.TenantId);
+    }
+
+    [Fact]
+    public void should_still_reject_a_message_not_marked_system_from_host_scope_when_strict_tenancy_enabled()
+    {
+        // given
+        var factory = _CreateFactory(tenantContextRequired: true, ambientTenantId: null);
+
+        // when
+        var act = () => factory.Create(new TestMessage("v"), new PublishOptions { IsSystemMessage = false });
+
+        // then
+        act.Should().Throw<MissingTenantContextException>();
+    }
+
     private static MessagePublishRequestFactory _CreateFactory(
         bool tenantContextRequired,
         string? ambientTenantId = null,
