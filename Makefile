@@ -93,7 +93,7 @@ MESSAGING_DRIFT_REPORT_ROOT ?= $(MESSAGING_INTEGRATION_RESULTS_DIR)
 MESSAGING_DRIFT_EXCLUDED_PROVIDERS ?= Azure Service Bus
 MESSAGING_QUARANTINE_DIR ?= $(TEST_RESULTS_DIR)/messaging-quarantine
 MESSAGING_UNIT_PROJECT ?= tests/Headless.Messaging.Tests.Unit/Headless.Messaging.Tests.Unit.csproj
-MESSAGING_CONFORMANCE_PROVIDERS ?= Aws Kafka Nats Pulsar RabbitMq Redis
+MESSAGING_CONFORMANCE_PROVIDERS ?= Aws Kafka Nats RabbitMq Redis
 MESSAGING_CONFORMANCE_EVIDENCE_PROJECTS ?= $(foreach provider,$(MESSAGING_CONFORMANCE_PROVIDERS),tests/Headless.Messaging.$(provider).Tests.Integration/Headless.Messaging.$(provider).Tests.Integration.csproj)
 MESSAGING_CONFORMANCE_EVIDENCE_MODULES ?= $(foreach provider,$(MESSAGING_CONFORMANCE_PROVIDERS),tests/Headless.Messaging.$(provider).Tests.Integration/bin/$(CONFIGURATION)/net10.0/Headless.Messaging.$(provider).Tests.Integration.dll)
 # `build` type-checks (vue-tsc) and bundles; CI's solution build passes `build-only` because the separate

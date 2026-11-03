@@ -51,8 +51,6 @@ LEGS: tuple[Leg, ...] = (
     Leg("kafka-postgresql", _integration("Headless.Messaging.KafkaPostgreSql")),
     Leg("nats", _integration("Headless.Messaging.Nats")),
     Leg("nats-postgresql", _integration("Headless.Messaging.NatsPostgreSql")),
-    Leg("pulsar", _integration("Headless.Messaging.Pulsar")),
-    Leg("pulsar-postgresql", _integration("Headless.Messaging.PulsarPostgreSql")),
     Leg("rabbitmq", _integration("Headless.Messaging.RabbitMq")),
     Leg("rabbitmq-postgresql", _integration("Headless.Messaging.RabbitMqPostgreSql")),
     Leg("rabbitmq-sqlserver", _integration("Headless.Messaging.RabbitMqSqlServer")),

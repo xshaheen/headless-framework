@@ -414,7 +414,6 @@
         <Project Path="src/Headless.Messaging.InMemory/Headless.Messaging.InMemory.csproj" />
         <Project Path="src/Headless.Messaging.Kafka/Headless.Messaging.Kafka.csproj" />
         <Project Path="src/Headless.Messaging.Nats/Headless.Messaging.Nats.csproj" />
-        <Project Path="src/Headless.Messaging.Pulsar/Headless.Messaging.Pulsar.csproj" />
         <Project Path="src/Headless.Messaging.Queue.Abstractions/Headless.Messaging.Queue.Abstractions.csproj" />
         <Project Path="src/Headless.Messaging.RabbitMq/Headless.Messaging.RabbitMq.csproj" />
         <Project Path="src/Headless.Messaging.Redis/Headless.Messaging.Redis.csproj" />
@@ -433,7 +432,6 @@
         <Project Path="demo/Headless.Messaging.Dashboard.Auth.Demo/Headless.Messaging.Dashboard.Auth.Demo.csproj" />
         <Project Path="demo/Headless.Messaging.Dashboard.Jwt.Demo/Headless.Messaging.Dashboard.Jwt.Demo.csproj" />
         <Project Path="demo/Headless.Messaging.Kafka.PostgreSql.Demo/Headless.Messaging.Kafka.PostgreSql.Demo.csproj" />
-        <Project Path="demo/Headless.Messaging.Pulsar.InMemory.Demo/Headless.Messaging.Pulsar.InMemory.Demo.csproj" />
         <Project Path="demo/Headless.Messaging.RabbitMq.SqlServer.Demo/Headless.Messaging.RabbitMq.SqlServer.Demo.csproj" />
         <Project Path="demo/Headless.Messaging.Redis.SqlServer.Demo/Headless.Messaging.Redis.SqlServer.Demo.csproj" />
     </Folder>
@@ -456,8 +454,6 @@
         <Project Path="tests/Headless.Messaging.PackageReference.Tests.Unit/Headless.Messaging.PackageReference.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.Storage.PostgreSql.Tests.Unit/Headless.Messaging.Storage.PostgreSql.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.Storage.PostgreSql.EntityFramework.Tests.Unit/Headless.Messaging.Storage.PostgreSql.EntityFramework.Tests.Unit.csproj" />
-        <Project Path="tests/Headless.Messaging.Pulsar.Tests.Unit/Headless.Messaging.Pulsar.Tests.Unit.csproj" />
-        <Project Path="tests/Headless.Messaging.Pulsar.Tests.Integration/Headless.Messaging.Pulsar.Tests.Integration.csproj" />
         <Project Path="tests/Headless.Messaging.RabbitMq.Tests.Unit/Headless.Messaging.RabbitMq.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.RabbitMq.Tests.Integration/Headless.Messaging.RabbitMq.Tests.Integration.csproj" />
         <Project Path="tests/Headless.Messaging.Storage.SqlServer.Tests.Unit/Headless.Messaging.Storage.SqlServer.Tests.Unit.csproj" />
@@ -477,7 +473,6 @@
         <Project Path="tests/Headless.Messaging.RabbitMqPostgreSql.Tests.Integration/Headless.Messaging.RabbitMqPostgreSql.Tests.Integration.csproj" />
         <Project Path="tests/Headless.Messaging.RabbitMqSqlServer.Tests.Integration/Headless.Messaging.RabbitMqSqlServer.Tests.Integration.csproj" />
         <Project Path="tests/Headless.Messaging.KafkaPostgreSql.Tests.Integration/Headless.Messaging.KafkaPostgreSql.Tests.Integration.csproj" />
-        <Project Path="tests/Headless.Messaging.PulsarPostgreSql.Tests.Integration/Headless.Messaging.PulsarPostgreSql.Tests.Integration.csproj" />
         <Project Path="tests/Headless.Messaging.RedisPostgreSql.Tests.Integration/Headless.Messaging.RedisPostgreSql.Tests.Integration.csproj" />
         <Project Path="tests/Headless.Messaging.AwsPostgreSql.Tests.Integration/Headless.Messaging.AwsPostgreSql.Tests.Integration.csproj" />
         <Project Path="tests/Headless.Messaging.AzureServiceBusPostgreSql.Tests.Integration/Headless.Messaging.AzureServiceBusPostgreSql.Tests.Integration.csproj" />

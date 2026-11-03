@@ -19,7 +19,6 @@
     <PackageReference Include="Headless.Messaging.InMemory" Version="$(MessagingPackageVersion)" />
     <PackageReference Include="Headless.Messaging.Kafka" Version="$(MessagingPackageVersion)" />
     <PackageReference Include="Headless.Messaging.Nats" Version="$(MessagingPackageVersion)" />
-    <PackageReference Include="Headless.Messaging.Pulsar" Version="$(MessagingPackageVersion)" />
     <PackageReference Include="Headless.Messaging.Queue.Abstractions" Version="$(MessagingPackageVersion)" />
     <PackageReference Include="Headless.Messaging.RabbitMq" Version="$(MessagingPackageVersion)" />
     <PackageReference Include="Headless.Messaging.Redis" Version="$(MessagingPackageVersion)" />
