@@ -304,10 +304,16 @@ public sealed partial class TusS3Store
     }
 
     // Once the provider's abort window has passed, the parts are gone whether or not the store noticed, so the upload
-    // can only be reported as missing.
+    // can only be reported as missing. A committing upload already completed its multipart upload into the finished
+    // object, so no abort can reach it: it must stay reachable for the re-sent final PATCH that records it.
     private bool _MultipartUploadLifetimePassed(TusS3UploadState state)
     {
-        return state is { MultipartUploadId: not null, MultipartUploadCreatedAt: { } createdAt }
+        return state
+                is {
+                    Status: not TusS3UploadStatus.Committing,
+                    MultipartUploadId: not null,
+                    MultipartUploadCreatedAt: { } createdAt,
+                }
             && _options.EffectiveMultipartUploadLifetime is { } lifetime
             && _timeProvider.GetUtcNow() >= createdAt + lifetime;
     }
