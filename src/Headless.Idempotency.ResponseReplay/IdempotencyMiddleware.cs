@@ -55,6 +55,14 @@ internal sealed partial class IdempotencyMiddleware(
     /// </exception>
     public async Task InvokeAsync(HttpContext context, RequestDelegate next)
     {
+        // An endpoint that opted out runs as if ShouldApply declined it: a key is ignored, and a missing one is not
+        // refused.
+        if (context.GetEndpoint()?.Metadata.GetMetadata<DisableResponseReplayAttribute>() is not null)
+        {
+            await next(context).ConfigureAwait(false);
+            return;
+        }
+
         var ct = cancellationTokenProvider.Token;
         // IOptionsMonitor.CurrentValue is a cached singleton read that still observes reloads, avoiding the
         // per-request options rebuild + FluentValidation pass that IOptionsSnapshot.Value forces per scope.

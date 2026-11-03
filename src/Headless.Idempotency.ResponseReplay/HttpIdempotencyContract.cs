@@ -28,10 +28,11 @@ internal static class HttpIdempotencyContract
     /// <summary>Attaches, or refreshes, the contract of an endpoint that declared idempotency overrides.</summary>
     /// <param name="endpoint">The endpoint being built.</param>
     /// <remarks>
-    /// <c>RequireIdempotencyKey()</c> and <c>WithIdempotency(...)</c> each run it right after adding their override, so
-    /// the last run sees every override of the endpoint, its route group's included, and replaces the contract the
-    /// earlier runs attached. It is a plain convention rather than a <c>Finally</c> one because a convention builder
-    /// need not implement <c>Finally</c>.
+    /// <c>RequireIdempotencyKey()</c>, <c>WithIdempotency(...)</c>, and <c>DisableResponseReplay()</c> each run it right
+    /// after adding their metadata, so the last run sees every override of the endpoint, its route group's included,
+    /// and replaces the contract the earlier runs attached. An endpoint carrying
+    /// <see cref="DisableResponseReplayAttribute"/> ends with no contract, whichever ran last. It is a plain convention
+    /// rather than a <c>Finally</c> one because a convention builder need not implement <c>Finally</c>.
     /// </remarks>
     public static void Attach(EndpointBuilder endpoint)
     {
@@ -39,6 +40,12 @@ internal static class HttpIdempotencyContract
         {
             endpoint.Metadata.Remove(previous.Contract);
             endpoint.Metadata.Remove(previous);
+        }
+
+        // The middleware passes an opted-out endpoint's requests straight through, so it has no contract to describe.
+        if (endpoint.Metadata.OfType<DisableResponseReplayAttribute>().Any())
+        {
+            return;
         }
 
         var appOptions =

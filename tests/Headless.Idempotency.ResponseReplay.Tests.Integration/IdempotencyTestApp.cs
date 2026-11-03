@@ -32,7 +32,8 @@ internal static class IdempotencyTestApp
         Action<WebApplication>? mapAdditionalEndpoints = null,
         string? tenantHeaderName = null,
         TestHandlerGate? handlerGate = null,
-        Action<WebApplication>? configureOuterPipeline = null
+        Action<WebApplication>? configureOuterPipeline = null,
+        Action<IServiceCollection>? configureServices = null
     )
     {
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Test" });
@@ -79,6 +80,8 @@ internal static class IdempotencyTestApp
             o.InFlightStrategy = InFlightStrategy.Reject;
             configure?.Invoke(o);
         });
+
+        configureServices?.Invoke(builder.Services);
 
         builder.Services.AddDeployStepsOnStartup(o => o.Seed = false);
         var app = builder.Build();
