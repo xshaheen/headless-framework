@@ -286,7 +286,8 @@ public sealed class RabbitMqTopologyProvisionerTests(RabbitMqFixture fixture) : 
             RabbitMqPhysicalAddress.RoutingKey(MessageLane.Queue, name),
             mandatory: true,
             properties,
-            """{"value":"first"}"""u8.ToArray(),
+            // Names match the contract: Order's constructor parameter is required, so a body without "Value" is poison.
+            """{"Value":"first"}"""u8.ToArray(),
             AbortToken
         );
     }

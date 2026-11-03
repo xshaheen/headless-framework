@@ -88,7 +88,7 @@ public sealed class JsonConstantsTests
             JsonConstants.DefaultInternalJsonOptions
         );
 
-        json.Should().Be("""{"OrderId":7,"Status":"pendingPayment"}""");
+        json.Should().Be("""{"OrderId":7,"Status":"pendingPayment","Metadata":null}""");
     }
 
     [Fact]
@@ -143,7 +143,7 @@ public sealed class JsonConstantsTests
         JsonSerializer
             .Serialize(new WireOrder { OrderId = 7, Status = WireOrderStatus.Paid }, options)
             .Should()
-            .Be("""{"order_id":7,"status":"paid"}""");
+            .Be("""{"order_id":7,"status":"paid","metadata":null}""");
 
         var act = () => JsonSerializer.Deserialize<WireOrder>("""{"order_id":7,"status":"paid","extra":1}""", options);
 
@@ -267,14 +267,19 @@ public sealed class JsonConstantsTests
         stored["Status"].Should().Be("pendingPayment");
     }
 
-    [Fact]
-    public void should_round_trip_a_null_constructor_parameter_when_storage_options()
+    [Theory]
+    [InlineData("storage")]
+    [InlineData("internal")]
+    public void should_round_trip_a_null_constructor_parameter(string preset)
     {
-        // A cache item built through its constructor: dropping the null on write would fail the read, since the
-        // parameter is required.
-        var json = JsonSerializer.Serialize(new CachedValue(null), JsonConstants.DefaultStorageJsonOptions);
+        // A cache item built through its constructor: dropping the null on write would fail the read, since every
+        // constructor parameter is required.
+        var options = string.Equals(preset, "storage", StringComparison.Ordinal)
+            ? JsonConstants.DefaultStorageJsonOptions
+            : JsonConstants.DefaultInternalJsonOptions;
+        var json = JsonSerializer.Serialize(new CachedValue(null), options);
 
-        var result = JsonSerializer.Deserialize<CachedValue>(json, JsonConstants.DefaultStorageJsonOptions);
+        var result = JsonSerializer.Deserialize<CachedValue>(json, options);
 
         json.Should().Be("""{"Value":null}""");
         result.Should().NotBeNull();

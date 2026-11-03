@@ -165,7 +165,7 @@ public static class GlobalSettingManagerExtensions
         /// Use it instead of consecutive <c>SetGlobalAsync</c> calls when the values form one policy: every name is
         /// checked before anything is written, the built-in stores commit the batch in one transaction, and readers
         /// never observe a mix of old and new values. To store a typed value the way <c>SetGlobalAsync&lt;T&gt;</c>
-        /// does, serialize it with <c>JsonSerializer.Serialize(value, JsonConstants.DefaultInternalJsonOptions)</c>.
+        /// does, serialize it with <c>JsonSerializer.Serialize(value, JsonConstants.DefaultStorageJsonOptions)</c>.
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="values"/> is <see langword="null"/>.</exception>
         /// <exception cref="Headless.ConflictException">

@@ -167,7 +167,7 @@ public static class FeatureManagerExtensions
 
             return string.IsNullOrEmpty(value.Value)
                 ? default
-                : JsonSerializer.Deserialize<T>(value.Value, JsonConstants.DefaultInternalJsonOptions);
+                : JsonSerializer.Deserialize<T>(value.Value, JsonConstants.DefaultStorageJsonOptions);
         }
 
         /// <summary>Throws <see cref="Headless.ConflictException"/> when the feature with <paramref name="featureName"/> is not enabled.</summary>

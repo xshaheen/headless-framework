@@ -149,7 +149,7 @@ public sealed class MessagingOptionsCopyToTests : TestBase
                 MaxDepth = 99,
             },
         };
-        source.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+        source.JsonSerializerOptions.Converters.Add(new UpperCaseStringConverter());
 
         var target = new MessagingOptions();
 
@@ -166,7 +166,111 @@ public sealed class MessagingOptionsCopyToTests : TestBase
         target.JsonSerializerOptions.WriteIndented.Should().BeTrue();
         target.JsonSerializerOptions.AllowTrailingCommas.Should().BeTrue();
         target.JsonSerializerOptions.MaxDepth.Should().Be(99);
-        target.JsonSerializerOptions.Converters.Should().ContainSingle(c => c is JsonStringEnumConverter);
+        target.JsonSerializerOptions.Converters.Should().ContainSingle(c => c is UpperCaseStringConverter);
+        // The target starts with the default converters as well; the copy must not register them a second time.
+        target.JsonSerializerOptions.Converters.Should().Equal(source.JsonSerializerOptions.Converters);
+    }
+
+    [Fact]
+    public void should_start_message_json_from_the_storage_preset()
+    {
+        var options = new MessagingOptions().JsonSerializerOptions;
+
+        // A consumer on the previous version must still read a message whose producer added a member.
+        options.UnmappedMemberHandling.Should().Be(JsonUnmappedMemberHandling.Skip);
+        options.AllowDuplicateProperties.Should().BeFalse();
+        options.DefaultIgnoreCondition.Should().Be(JsonIgnoreCondition.Never);
+        options.IsReadOnly.Should().BeFalse("hosts customize it before the first message");
+    }
+
+    private sealed class UpperCaseStringConverter : JsonConverter<string>
+    {
+        public override string? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
+            reader.GetString();
+
+        public override void Write(Utf8JsonWriter writer, string value, JsonSerializerOptions options) =>
+            writer.WriteStringValue(value.ToUpperInvariant());
+    }
+
+    [Fact]
+    public void should_copy_duplicate_and_indent_json_settings()
+    {
+        var source = new MessagingOptions
+        {
+            JsonSerializerOptions =
+            {
+                AllowDuplicateProperties = false,
+                IndentCharacter = '\t',
+                IndentSize = 1,
+                NewLine = "\n",
+            },
+        };
+        var target = new MessagingOptions();
+
+        _InvokeCopyTo(source, target);
+
+        target.JsonSerializerOptions.AllowDuplicateProperties.Should().BeFalse();
+        target.JsonSerializerOptions.IndentCharacter.Should().Be('\t');
+        target.JsonSerializerOptions.IndentSize.Should().Be(1);
+        target.JsonSerializerOptions.NewLine.Should().Be("\n");
+    }
+
+    [Fact]
+    public void should_pin_every_settable_json_serializer_option_copied_by_copy_to()
+    {
+        // A setting .NET adds to JsonSerializerOptions would otherwise be dropped by CopyTo with no error, as
+        // AllowDuplicateProperties was. A new name here means: copy it in _CopyJsonSerializerOptions, then list it.
+        var copied = new HashSet<string>(StringComparer.Ordinal)
+        {
+            nameof(JsonSerializerOptions.AllowDuplicateProperties),
+            nameof(JsonSerializerOptions.AllowOutOfOrderMetadataProperties),
+            nameof(JsonSerializerOptions.AllowTrailingCommas),
+            nameof(JsonSerializerOptions.DefaultBufferSize),
+            nameof(JsonSerializerOptions.DefaultIgnoreCondition),
+            nameof(JsonSerializerOptions.DictionaryKeyPolicy),
+            nameof(JsonSerializerOptions.Encoder),
+            nameof(JsonSerializerOptions.IgnoreReadOnlyFields),
+            nameof(JsonSerializerOptions.IgnoreReadOnlyProperties),
+            nameof(JsonSerializerOptions.IncludeFields),
+            nameof(JsonSerializerOptions.IndentCharacter),
+            nameof(JsonSerializerOptions.IndentSize),
+            nameof(JsonSerializerOptions.MaxDepth),
+            nameof(JsonSerializerOptions.NewLine),
+            nameof(JsonSerializerOptions.NumberHandling),
+            nameof(JsonSerializerOptions.PreferredObjectCreationHandling),
+            nameof(JsonSerializerOptions.PropertyNameCaseInsensitive),
+            nameof(JsonSerializerOptions.PropertyNamingPolicy),
+            nameof(JsonSerializerOptions.ReadCommentHandling),
+            nameof(JsonSerializerOptions.ReferenceHandler),
+            nameof(JsonSerializerOptions.RespectNullableAnnotations),
+            nameof(JsonSerializerOptions.RespectRequiredConstructorParameters),
+            nameof(JsonSerializerOptions.TypeInfoResolver),
+            nameof(JsonSerializerOptions.UnknownTypeHandling),
+            nameof(JsonSerializerOptions.UnmappedMemberHandling),
+            nameof(JsonSerializerOptions.WriteIndented),
+        };
+
+        var settable = typeof(JsonSerializerOptions)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Where(p =>
+                p is { CanWrite: true, SetMethod.IsPublic: true } && !Attribute.IsDefined(p, typeof(ObsoleteAttribute))
+            )
+            .Select(p => p.Name)
+            .ToHashSet(StringComparer.Ordinal);
+
+        settable.Should().BeEquivalentTo(copied);
+    }
+
+    private static void _InvokeCopyTo(MessagingOptions source, MessagingOptions target)
+    {
+        var copyTo = typeof(MessagingOptions).GetMethod(
+            nameof(MessagingOptions.CopyTo),
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+            null,
+            [typeof(MessagingOptions)],
+            null
+        );
+        copyTo!.Invoke(source, [target]);
     }
 
     private static void _SetNonDefaultValues(MessagingOptions options)
