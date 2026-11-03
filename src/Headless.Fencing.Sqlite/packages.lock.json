@@ -260,9 +260,7 @@
           "Headless.Fencing.Abstractions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
-          "Headless.Sql": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
-          "Headless.UnitOfWork": "[1.0.0, )",
           "Headless.UnitOfWork.Abstractions": "[1.0.0, )",
           "Microsoft.Extensions.Configuration.Abstractions": "[10.0.13, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.13, )",
@@ -274,6 +272,18 @@
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
+          "Headless.UnitOfWork.Abstractions": "[1.0.0, )"
+        }
+      },
+      "headless.fencing.sql": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Fencing": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
+          "Headless.Sql": "[1.0.0, )",
+          "Headless.Sql.Abstractions": "[1.0.0, )",
+          "Headless.UnitOfWork": "[1.0.0, )",
           "Headless.UnitOfWork.Abstractions": "[1.0.0, )"
         }
       },

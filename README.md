@@ -14,7 +14,7 @@
 
 [اللغة: العربية](README.ar.md)
 
-214 packages &bull; One setup grammar &bull; Swap any provider in one line
+216 packages &bull; One setup grammar &bull; Swap any provider in one line
 
 [Why Headless](#why-headless) &bull; [60-second start](#60-second-start) &bull; [One grammar, every domain](#one-grammar-every-domain) &bull; [What is in the box](#what-is-in-the-box) &bull; [Package catalog](#package-catalog)
 
@@ -44,7 +44,7 @@ builder.Services.AddHeadlessCaching(setup => setup.UseRedis(...)); // production
 
 Every service, repository, and handler that injects `ICache` is untouched by that edit. The same holds for `IBlobStorage` across S3, Azure, Cloudflare R2, the file system, Redis, and SFTP; for `IEmailSender` across SES, Azure Communication Services, and SMTP; and for messaging across eight transports.
 
-**You install three packages, not 214.** The catalog is large because the provider matrix is large. A service that needs caching installs `Headless.Caching.Abstractions`, `Headless.Caching`, and one provider. Domain and application libraries reference the abstraction package alone. `Headless.Caching.Abstractions` pulls in two packages with no third-party dependencies: `Headless.Checks` and `Headless.Primitives`.
+**You install three packages, not 216.** The catalog is large because the provider matrix is large. A service that needs caching installs `Headless.Caching.Abstractions`, `Headless.Caching`, and one provider. Domain and application libraries reference the abstraction package alone. `Headless.Caching.Abstractions` pulls in two packages with no third-party dependencies: `Headless.Checks` and `Headless.Primitives`.
 
 **Tests do not need Docker to be fast.** Caching, distributed locks, and messaging ship in-memory providers; email, SMS, and push notifications ship dev providers that send nothing; blob storage runs against the local file system. Unit tests exercise the real contract with no containers. When you want the real backend, `Headless.Testing.Testcontainers` supplies the fixtures. The repository itself runs 122 unit-test projects and 63 integration-test projects on that split.
 
@@ -254,7 +254,7 @@ Provider packages are ordinary NuGet packages. To add a custom backend, implemen
 ## Package catalog
 
 <details>
-<summary><strong>All 214 packages, grouped by domain</strong> — expand to browse</summary>
+<summary><strong>All 216 packages, grouped by domain</strong> — expand to browse</summary>
 
 ### API & Web
 
@@ -592,6 +592,7 @@ Per-tenant consecutive numbers for receipts, invoices, and case numbers. The fas
 |---------|-------------|
 | [Headless.Sequences.Abstractions](src/Headless.Sequences.Abstractions/README.md) | `ISequenceGenerator`, `SequenceRange`, and the `unit.Sequences` accessor |
 | [Headless.Sequences](src/Headless.Sequences/README.md) | Registration, numbering policies, and tenant key resolution |
+| [Headless.Sequences.Sql](src/Headless.Sequences.Sql/README.md) | Shared relational counter store for SQL sequences providers |
 | [Headless.Sequences.PostgreSql](src/Headless.Sequences.PostgreSql/README.md) | PostgreSQL counters with a single upsert-increment |
 | [Headless.Sequences.SqlServer](src/Headless.Sequences.SqlServer/README.md) | SQL Server counters with a range-locked upsert |
 | [Headless.Sequences.Sqlite](src/Headless.Sequences.Sqlite/README.md) | SQLite counters under the database write lock |
@@ -604,6 +605,7 @@ Durable, cross-process leases that fence a stale or zombie attempt's writes at t
 |---------|-------------|
 | [Headless.Fencing.Abstractions](src/Headless.Fencing.Abstractions/README.md) | `IFencedLeases`, `FencedLease`, and the `unit.Leases` accessor |
 | [Headless.Fencing](src/Headless.Fencing/README.md) | Registration, key resolution, and the expired-lease sweep |
+| [Headless.Fencing.Sql](src/Headless.Fencing.Sql/README.md) | Shared relational lease store for SQL fencing providers |
 | [Headless.Fencing.InMemory](src/Headless.Fencing.InMemory/README.md) | In-process leases for tests and single-instance hosts |
 | [Headless.Fencing.PostgreSql](src/Headless.Fencing.PostgreSql/README.md) | PostgreSQL leases with a `SKIP LOCKED` sweep |
 | [Headless.Fencing.SqlServer](src/Headless.Fencing.SqlServer/README.md) | SQL Server leases with a `READPAST` sweep |

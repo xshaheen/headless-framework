@@ -1,6 +1,6 @@
 ---
 domain: Sequences
-packages: Sequences.Abstractions, Sequences, Sequences.PostgreSql, Sequences.SqlServer, Sequences.Sqlite
+packages: Sequences.Abstractions, Sequences, Sequences.Sql, Sequences.PostgreSql, Sequences.SqlServer, Sequences.Sqlite
 ---
 
 # Sequences
@@ -186,6 +186,25 @@ A policy with `Step` of 0 or less, an unknown `Format` token or unbalanced brace
 - It registers `ISequenceGenerator` and the gap-free unit-of-work feature as singletons, and `TimeProvider.System` unless the host registered a `TimeProvider`. It also registers the async-local `CurrentTenant` as the `ICurrentTenant` fallback, so `ICurrentTenant.Change(...)` works with no other tenancy registration. A real tenancy registration wins.
 - The gap-free call checks, in order: the arguments, the name's mode, the unit's state and relational resource, then the provider's transaction type and database. Only after every check passes does it mark an observed unit non-retryable and run the increment. A refused call leaves the unit retryable and runs no statement.
 - `ISequenceStore` is the provider seam. Applications do not call it. A reported advance creates the counter row if it is absent, then locks it and moves it forward with a fenced update, both in the caller's transaction, so the value read as `Previous` is the one the lock protects.
+
+---
+
+## Headless.Sequences.Sql
+
+The relational counter store the PostgreSQL, SQL Server, and SQLite providers share.
+
+### Setup
+
+```bash
+dotnet add package Headless.Sequences.Sql
+```
+
+Each relational provider package references it, so applications install the provider instead.
+
+### Design and runtime behavior
+
+- The one relational counter store, written against the SQL dialect kit (`ISqlDialect`, see [sql.md § Store statement kit](sql.md#store-statement-kit-for-provider-authors)); the PostgreSQL, SQL Server, and SQLite packages supply only their dialect, options, and DDL. Each call is one upsert that creates the counter row on first use and adds the step on every later use, returning the value it wrote.
+- `RelationalSequencesOptions`, the options base every relational provider's options derive from (`PostgreSqlSequencesOptions`, `SqlServerSequencesOptions`, `SqliteSequencesOptions`): `ConnectionString`, `CommandTimeout` (positive, at most 1 hour; default 30 seconds), `Schema`, and `TableName`.
 
 ---
 
