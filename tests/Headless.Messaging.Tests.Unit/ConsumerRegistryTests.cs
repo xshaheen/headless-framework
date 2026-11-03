@@ -521,7 +521,7 @@ public sealed class ConsumerRegistryTests : TestBase
                 )
             );
 
-            await Task.WhenAll(tasks).WaitAsync(AbortToken);
+            await Task.WhenAll(tasks).WaitAsync(AbortToken).Bounded();
         }
 
         // then - no NullReferenceException should occur

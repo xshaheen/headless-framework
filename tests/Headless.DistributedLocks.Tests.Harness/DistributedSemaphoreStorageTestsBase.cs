@@ -33,7 +33,7 @@ public abstract class DistributedSemaphoreStorageTestsBase : TestBase
             .Range(0, 64)
             .Select(async index =>
             {
-                await start.Task.WaitAsync(AbortToken);
+                await start.Task.Bounded();
 
                 return await SemaphoreStorage.TryAcquireAsync(
                     resource,

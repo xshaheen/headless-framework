@@ -264,7 +264,7 @@ public sealed class HeadlessRedisScriptsLoaderTests : TestBase
 
         // when
         var loadOtherScriptTask = sut.EvaluateAsync(db, otherScript, parameters: null, cancellationToken: AbortToken);
-        await firstOtherScriptLoadStarted.Task.WaitAsync(AbortToken);
+        await firstOtherScriptLoadStarted.Task.Bounded();
 
         sut.ResetScripts();
         releaseFirstOtherScriptLoad.SetResult();
@@ -331,7 +331,7 @@ public sealed class HeadlessRedisScriptsLoaderTests : TestBase
 
         // when
         var reloadTask = sut.EvaluateAsync(db, script, parameters: null, cancellationToken: AbortToken);
-        await secondScriptLoadStarted.Task.WaitAsync(AbortToken);
+        await secondScriptLoadStarted.Task.Bounded();
 
         sut.ResetScripts();
         releaseSecondScriptLoad.SetResult();

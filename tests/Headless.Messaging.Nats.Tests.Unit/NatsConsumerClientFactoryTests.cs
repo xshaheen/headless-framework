@@ -112,7 +112,7 @@ public sealed class NatsConsumerClientFactoryTests : TestBase
 
         // when
         var create = factory.CreateAsync(_QueueRequest(), cts.Token);
-        await connectStarted.Task.WaitAsync(AbortToken);
+        await connectStarted.Task.Bounded();
         await cts.CancelAsync();
         var act = async () => await create;
 

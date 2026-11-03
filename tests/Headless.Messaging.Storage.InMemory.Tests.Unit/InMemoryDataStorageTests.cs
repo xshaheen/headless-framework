@@ -776,7 +776,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
             AbortToken
         );
 
-        await lockAcquired.Task.WaitAsync(AbortToken);
+        await lockAcquired.Task.Bounded();
         using var cancellation = new CancellationTokenSource();
 
         var claim = Task.Run(async () => await storage.ClaimDelayedMessagesAsync(cancellation.Token), AbortToken);
@@ -784,8 +784,8 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
         await cancellation.CancelAsync();
         releaseLock.TrySetResult();
 
-        var claimed = await claim.WaitAsync(AbortToken);
-        await blocker.WaitAsync(AbortToken);
+        var claimed = await claim.WaitAsync(AbortToken).Bounded();
+        await blocker.WaitAsync(AbortToken).Bounded();
 
         claimed.Should().ContainSingle().Which.StorageId.Should().Be(first.StorageId);
 

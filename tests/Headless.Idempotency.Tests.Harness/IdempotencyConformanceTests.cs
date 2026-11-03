@@ -62,7 +62,7 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
                     Task.Run(
                         async () =>
                         {
-                            await start.Task;
+                            await start.Task.Bounded();
 
                             return await (i % 2 == 0 ? hostA : hostB).Operations.AdmitAsync(
                                 key,
@@ -112,7 +112,7 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
                 Task.Run(
                     async () =>
                     {
-                        await admitStart.Task;
+                        await admitStart.Task.Bounded();
 
                         return await (i % 2 == 0 ? hostA : hostB).Operations.AdmitAsync(
                             key,
@@ -151,7 +151,7 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
                 Task.Run(
                     async () =>
                     {
-                        await completeStart.Task;
+                        await completeStart.Task.Bounded();
 
                         try
                         {
@@ -206,7 +206,7 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
                 Task.Run(
                     async () =>
                     {
-                        await start.Task;
+                        await start.Task.Bounded();
                         await using var unit = await Fixture.BeginUnitAsync(host, AbortToken);
                         var admission = await unit.Unit.Idempotency.AdmitAsync(
                             key,
@@ -726,7 +726,7 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
             var complete = Task.Run(
                 async () =>
                 {
-                    await start.Task;
+                    await start.Task.Bounded();
                     await using var unit = await Fixture.BeginUnitAsync(host, AbortToken);
                     await unit.Unit.Idempotency.FenceAsync(admitted, AbortToken);
                     await Task.Yield();
@@ -747,7 +747,7 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
                     Task.Run(
                         async () =>
                         {
-                            await start.Task;
+                            await start.Task.Bounded();
 
                             return await AdmitAsync(host, key);
                         },

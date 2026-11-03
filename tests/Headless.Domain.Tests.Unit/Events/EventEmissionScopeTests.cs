@@ -119,7 +119,7 @@ public sealed class EventEmissionScopeTests : TestBase
                 ready.SetResult();
             }
 
-            await ready.Task.WaitAsync(AbortToken);
+            await ready.Task.Bounded();
             return EventContext.Capture<object>(new Fact(tenant));
         }
 

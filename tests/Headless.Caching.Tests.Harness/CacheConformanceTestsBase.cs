@@ -447,7 +447,7 @@ public abstract class CacheConformanceTestsBase : TestBase
 
         var timerArmed = WatchForTimer(options.FactorySoftTimeout);
         var timeoutTask = cache.GetOrAddAsync(key, factory, options, AbortToken).AsTask();
-        await factoryStarted.Task;
+        await factoryStarted.Task.Bounded();
         await _TriggerTimeoutAsync(options.FactorySoftTimeout, timerArmed);
 
         var timedOut = await _CompletedWithinBoundAsync(timeoutTask);
@@ -480,7 +480,7 @@ public abstract class CacheConformanceTestsBase : TestBase
 
         var timerArmed = WatchForTimer(options.FactoryHardTimeout);
         var timeoutTask = cache.GetOrAddAsync(key, factory, options, AbortToken).AsTask();
-        await factoryStarted.Task;
+        await factoryStarted.Task.Bounded();
         await _TriggerTimeoutAsync(options.FactoryHardTimeout, timerArmed);
         var act = async () => await _CompletedWithinBoundAsync(timeoutTask);
 
@@ -507,7 +507,7 @@ public abstract class CacheConformanceTestsBase : TestBase
 
         var timerArmed = WatchForTimer(options.FactoryHardTimeout);
         var timeoutTask = cache.GetOrAddAsync(key, factory, options, AbortToken).AsTask();
-        await factoryStarted.Task;
+        await factoryStarted.Task.Bounded();
         await _TriggerTimeoutAsync(options.FactoryHardTimeout, timerArmed);
         var result = await _CompletedWithinBoundAsync(timeoutTask);
 
@@ -545,7 +545,7 @@ public abstract class CacheConformanceTestsBase : TestBase
         // match the first call's timer instead.
         var firstTimerArmed = WatchForTimer(options.FactorySoftTimeout);
         var first = cache.GetOrAddAsync(key, firstFactory, options, AbortToken).AsTask();
-        await firstStarted.Task;
+        await firstStarted.Task.Bounded();
         await firstTimerArmed.WaitAsync(_TimeoutWaitBound, AbortToken);
         var timerArmed = WatchForTimer(options.FactorySoftTimeout);
         var second = cache.GetOrAddAsync(key, secondFactory, options, AbortToken).AsTask();

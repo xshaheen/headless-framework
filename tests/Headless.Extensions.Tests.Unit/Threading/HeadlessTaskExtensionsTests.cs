@@ -218,7 +218,7 @@ public sealed class HeadlessTaskExtensionsTests : TestBase
                             peak = Math.Max(peak, inFlight);
                         }
 
-                        await gates[index].Task;
+                        await gates[index].Task.Bounded();
 
                         lock (started)
                         {

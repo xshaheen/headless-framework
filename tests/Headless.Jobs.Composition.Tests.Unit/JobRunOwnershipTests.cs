@@ -292,7 +292,7 @@ public sealed class JobRunOwnershipTests : TestBase
         {
             observedAtInvocation.TrySetResult((await harnessRef!.StoredAsync()).Status);
             // Ignores its token, so only the bound ends the wait.
-            await hang.Task;
+            await hang.Task.Bounded();
         });
         await using var harness = await Harness.CreateAsync(
             retries: 0,

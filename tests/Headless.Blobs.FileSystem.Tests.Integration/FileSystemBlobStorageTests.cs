@@ -501,7 +501,7 @@ public sealed class FileSystemBlobStorageTests : BlobStorageTestsBase
 
         await using var body = new GatedStream("replacement"u8.ToArray());
         var upload = storage.UploadAsync(location, body, cancellationToken: AbortToken).AsTask();
-        await body.FirstReadServed.WaitAsync(AbortToken);
+        await body.FirstReadServed.WaitAsync(AbortToken).Bounded();
 
         // when
         var duringWrite = await storage.GetBlobContentAsync(location, AbortToken);
@@ -529,7 +529,7 @@ public sealed class FileSystemBlobStorageTests : BlobStorageTestsBase
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
         await using var body = new GatedStream("replacement"u8.ToArray());
         var upload = storage.UploadAsync(location, body, cancellationToken: cancellation.Token).AsTask();
-        await body.FirstReadServed.WaitAsync(AbortToken);
+        await body.FirstReadServed.WaitAsync(AbortToken).Bounded();
 
         // when
         await cancellation.CancelAsync();

@@ -172,7 +172,7 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
 
         // when — the winner enters its factory holding the distributed lock, then the loser piles up on it
         var first = coordinatorA.GetOrAddAsync(_store, key, factory, _CreateOptions(), AbortToken).AsTask();
-        await winnerStarted.Task.WaitAsync(AbortToken);
+        await winnerStarted.Task.Bounded();
         var second = coordinatorB.GetOrAddAsync(_store, key, factory, _CreateOptions(), AbortToken).AsTask();
 
         while (_lockProvider.AcquireAttempts < 2)
@@ -220,8 +220,8 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
 
         // when — the caller gets the stale value while the lease rides with the detached factory
         var resultTask = coordinator.GetOrAddAsync(_store, key, factory, options, AbortToken).AsTask();
-        await factoryStarted.Task.WaitAsync(AbortToken);
-        await timeoutRegistered.Task.WaitAsync(AbortToken);
+        await factoryStarted.Task.Bounded();
+        await timeoutRegistered.Task.Bounded();
         _timeProvider.Advance(TimeSpan.FromSeconds(1));
         var result = await resultTask;
 
@@ -233,7 +233,7 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
 
         // when — the detached factory completes
         factoryGate.SetResult("fresh");
-        await backgroundFinished.Task.WaitAsync(AbortToken);
+        await backgroundFinished.Task.Bounded();
 
         // then — the fresh value landed and the acquire/release counts balance
         _store.GetEntry(key)!.Value.Should().Be("fresh");
@@ -308,7 +308,7 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
 
         // when
         var result = await coordinator.GetOrAddAsync(_store, key, factory, options, AbortToken);
-        await backgroundFinished.Task.WaitAsync(AbortToken);
+        await backgroundFinished.Task.Bounded();
 
         // then — the still-fresh value is served and the entry (including its eager stamp) is untouched
         result.Value.Should().Be("old");
@@ -342,7 +342,7 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
 
         // when
         var result = await coordinator.GetOrAddAsync(_store, key, factory, options, AbortToken);
-        await backgroundFinished.Task.WaitAsync(AbortToken);
+        await backgroundFinished.Task.Bounded();
 
         // then — the caller got the still-fresh value while the refresh ran under the lease and released it
         result.Value.Should().Be("old");

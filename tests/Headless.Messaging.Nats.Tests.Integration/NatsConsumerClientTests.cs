@@ -1407,7 +1407,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
         {
             var completed = await Task.WhenAny(delivered.Task, Task.Delay(TimeSpan.FromSeconds(10), AbortToken));
             completed.Should().BeSameAs(delivered.Task, string.Join(" | ", logs));
-            return await delivered.Task;
+            return await delivered.Task.Bounded();
         }
         finally
         {
