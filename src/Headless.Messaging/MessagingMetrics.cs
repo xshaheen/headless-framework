@@ -48,6 +48,7 @@ internal static class MessagingMetrics
     internal const string RequestReplyDurationName = "headless.messaging.request_reply.duration";
     internal const string SettlementFailuresName = "headless.messaging.settlement.failures";
     internal const string OutboxTerminalName = "headless.messaging.outbox.terminal";
+    internal const string ConsumeTerminalName = "headless.messaging.consume.terminal";
     internal const string BacklogPendingName = "headless.messaging.backlog.pending";
     internal const string BacklogOldestAgeName = "headless.messaging.backlog.oldest_age";
 
@@ -104,6 +105,10 @@ internal static class MessagingMetrics
     // A settlement the transport could not send because the broker channel it belongs to had already closed. Not an
     // exception type, so it gets a convention-style snake_case value.
     internal const string ErrorTypeChannelClosed = "channel_closed";
+
+    // The conventions' fallback error.type when a failure carries no exception to name, such as a received envelope
+    // that arrived already marked failed.
+    internal const string ErrorTypeOther = "_OTHER";
 
     // --- Receive outcomes ------------------------------------------------------------------------------------
 
@@ -275,6 +280,12 @@ internal static class MessagingMetrics
         description: "Number of stored published messages the framework stopped trying to send: retries spent, a failure that is not retried, a passed delivery deadline, or no transport for the message's lane."
     );
 
+    private static readonly Counter<long> _ConsumeTerminal = MessagingDiagnostics.Meter.CreateCounter<long>(
+        ConsumeTerminalName,
+        unit: "{message}",
+        description: "Number of stored received messages the framework stopped trying to handle: retries spent, a failure that is not retried, a passed deadline, or a delivery stored as poison on arrival."
+    );
+
     // Every running backlog sampler of the process. The gauges are created once, like the meter they belong to, and
     // read whatever the samplers last stored: a collection never queries storage.
     private static readonly ConcurrentDictionary<BacklogSamplingProcessor, byte> _BacklogSamplers = new();
@@ -318,6 +329,7 @@ internal static class MessagingMetrics
         || _RequestReplyDuration.Enabled
         || _SettlementFailures.Enabled
         || _OutboxTerminal.Enabled
+        || _ConsumeTerminal.Enabled
         || _BacklogPending.Enabled
         || _BacklogOldestAge.Enabled;
 
@@ -695,6 +707,30 @@ internal static class MessagingMetrics
         );
     }
 
+    /// <summary>
+    /// Records one stored received message the framework gave up on, once, by the delivery or attempt whose terminal
+    /// write landed: an inbox row, a poison row stored on arrival, or a runtime subscription's row. Tagged with the
+    /// consumer identity, lane, and the failure's <c>error.type</c>; it carries no inbox tags, because a poison or
+    /// runtime-subscription row has no inbox admission behind it.
+    /// </summary>
+    internal static void RecordConsumeTerminal(string consumerIdentity, MessageLane lane, string errorType)
+    {
+        if (!_ConsumeTerminal.Enabled)
+        {
+            return;
+        }
+
+        _ConsumeTerminal.Add(
+            1,
+            new TagList
+            {
+                { TagConsumerGroupName, consumerIdentity },
+                { MessagingTags.Lane, LaneTagEnricher.ToTagValues(lane).Lane },
+                { TagErrorType, errorType },
+            }
+        );
+    }
+
     private static IEnumerable<Measurement<long>> _ObserveBacklogPending()
     {
         foreach (var sampler in _BacklogSamplers.Keys)
@@ -814,6 +850,10 @@ internal enum InboxMetricOutcome
     Replayed = 12,
     Expired = 13,
     FailedExpired = 14,
+
+    // A delivery stored as a poison row on arrival: no consumer attempt ran, so neither a spent budget nor an expiry
+    // describes it, and an operator tells malformed or unroutable input apart from handler failures by it.
+    FailedOnArrival = 15,
 }
 
 /// <summary>How inbox measurements treat the tenant dimension, resolved once from the host configuration.</summary>

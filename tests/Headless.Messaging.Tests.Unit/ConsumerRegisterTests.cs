@@ -2544,6 +2544,47 @@ public sealed class ConsumerRegisterTests : TestBase
     }
 
     [Fact]
+    public async Task receive_poison_is_counted_once_as_a_failed_on_arrival_inbox_terminal()
+    {
+        // given
+        using var terminal = new InboxTerminalRecorder();
+        using var consumeTerminal = new ConsumeTerminalRecorder();
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [Headers.MessageId] = "receive-terminal-poison",
+            [Headers.MessageName] = "ready-messageName",
+            [Headers.TenantId] = terminal.RunTenant,
+        };
+
+        // when — the delivery stores the poison row
+        await using var run = await _RunReceiveDeliveryAsync(
+            null,
+            "receive-terminal-poison",
+            "{invalid"u8.ToArray(),
+            publisherHeaders: headers,
+            configureServices: InboxTerminalRecorder.UseRunTag
+        );
+
+        // then — the consumer is this class's own, so no test running beside it shares its measurements
+        var row = run.Storage.ReceivedExceptionRows.Should().ContainSingle().Subject;
+        var consumer = row.Origin.Headers[Headers.ConsumerIdentity]!;
+        terminal.Outcomes.Should().Equal(nameof(InboxMetricOutcome.FailedOnArrival));
+        consumeTerminal
+            .Of(consumer)
+            .Should()
+            .Equal(
+                (LaneTagEnricher.ToTagValues(MessageLane.Bus).Lane, typeof(MessageDeserializationException).FullName)
+            );
+
+        // and when — the broker redelivers it, and the stored row refuses the second write
+        await run.Client.OnMessageCallback!(new TransportMessage(headers, "{invalid"u8.ToArray()), null);
+
+        // then — still one give-up for the message
+        terminal.Outcomes.Should().Equal(nameof(InboxMetricOutcome.FailedOnArrival));
+        consumeTerminal.Of(consumer).Should().ContainSingle();
+    }
+
+    [Fact]
     public async Task receive_redelivery_of_an_admitted_message_failing_the_contract_check_is_committed_as_a_duplicate()
     {
         // given - the first delivery was admitted to the inbox; its acknowledgement was lost

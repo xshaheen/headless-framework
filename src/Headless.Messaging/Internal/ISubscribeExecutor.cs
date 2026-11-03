@@ -986,16 +986,25 @@ internal sealed class SubscribeExecutor(
             await replies.SendFaultAsync(message.Origin, ResponderReplies.FaultCodeFor(ex), ex).ConfigureAwait(false);
         }
 
-        // An expired row (a request whose caller gave up, or a message past its delivery deadline) ends Failed without
-        // the exhausted path, so it gets its own terminal outcome: otherwise the attempt it reserved has no end.
-        if (affected && decision.IsSilentExpiry)
+        // Every terminal write that landed ends the attempt it reserved, once. An expired row (a request whose caller
+        // gave up, or a message past its delivery deadline) gets its own outcome; any other Stop, such as a request
+        // whose responder returned null, ends the row Failed like a spent budget and counts with it.
+        if (affected && decision.Outcome != MessagingRetryDecision.Kind.Continue)
         {
-            _RecordInboxMetric(message, InboxMetricKind.Terminal, InboxMetricOutcome.FailedExpired);
+            _RecordInboxMetric(
+                message,
+                InboxMetricKind.Terminal,
+                decision.IsSilentExpiry ? InboxMetricOutcome.FailedExpired : InboxMetricOutcome.FailedExhausted
+            );
+            MessagingMetrics.RecordConsumeTerminal(
+                _ConsumerIdentityOf(message),
+                message.Lane,
+                MessagingTelemetry.ErrorTypeOf(ex)
+            );
         }
 
         if (affected && decision.Outcome == MessagingRetryDecision.Kind.Exhausted)
         {
-            _RecordInboxMetric(message, InboxMetricKind.Terminal, InboxMetricOutcome.FailedExhausted);
             // #6 — shared OnExhausted body lives in RetryHelper; only MessageType varies per path.
             await RetryHelper
                 .RunOnExhaustedAsync(
@@ -1108,6 +1117,13 @@ internal sealed class SubscribeExecutor(
 
         return reserved;
     }
+
+    // An inbox row carries its consumer in its key; a runtime subscription's row only in the header the receive stage
+    // stamped, which every received row's stored envelope keeps.
+    private static string _ConsumerIdentityOf(MediumMessage message) =>
+        message.InboxKey?.ConsumerIdentity
+        ?? (message.Origin.Headers.TryGetValue(Headers.ConsumerIdentity, out var identity) ? identity : null)
+        ?? "";
 
     private void _RecordInboxMetric(MediumMessage message, InboxMetricKind kind, InboxMetricOutcome outcome)
     {

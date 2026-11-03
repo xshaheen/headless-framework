@@ -433,6 +433,32 @@ internal sealed partial class ConsumerRegister
                     )
                     .ConfigureAwait(false);
 
+                // Only the delivery whose write stored the poison row counts it, so a redelivery is not counted again.
+                if (stored)
+                {
+                    MessagingMetrics.RecordConsumeTerminal(
+                        consumerIdentity,
+                        lane,
+                        dispatchBypassException is null
+                            ? MessagingMetrics.ErrorTypeOther
+                            : MessagingTelemetry.ErrorTypeOf(dispatchBypassException)
+                    );
+                }
+
+                if (stored && _capabilityModel.StorageProvider is { InboxGuarantee: { } poisonGuarantee } poisonStorage)
+                {
+                    MessagingMetrics.RecordInbox(
+                        InboxMetricKind.Terminal,
+                        consumerIdentity,
+                        lane,
+                        InboxMetricOutcome.FailedOnArrival,
+                        poisonGuarantee,
+                        poisonStorage.Provider,
+                        message.Headers.TryGetValue(Headers.TenantId, out var poisonTenantId) ? poisonTenantId : null,
+                        _inboxMetricPolicy.TenantTagName
+                    );
+                }
+
                 // Settlement is must-complete: never abandon it on host shutdown. Only the delivery that stored the
                 // poison row dead-letters; a redelivery of a message already recorded terminal is committed, so the
                 // broker's dead-letter destination holds one copy per poisoned message.
