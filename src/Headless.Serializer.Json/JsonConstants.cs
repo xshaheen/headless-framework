@@ -19,7 +19,8 @@ namespace Headless.Serializer;
 /// </para>
 /// <para>
 /// <see cref="DefaultInternalJsonOptions"/> — built on <see cref="JsonSerializerDefaults.Strict"/>: strict number handling, no naming policy (preserves property
-/// casing), unknown members and duplicate properties disallowed, null values omitted, <see langword="object"/> values
+/// casing), unknown members and duplicate properties disallowed, null values written (every constructor parameter is
+/// required, so an omitted null would not read back), <see langword="object"/> values
 /// read as <see cref="JsonElement"/>, and a polymorphic type discriminator accepted in any position. Intended for internal persistence or inter-service payloads where schema
 /// drift must surface immediately. <see cref="CreateInternalJsonOptions"/> and
 /// <see cref="ConfigureInternalJsonOptions"/> take an optional naming policy, such as
@@ -27,7 +28,7 @@ namespace Headless.Serializer;
 /// </para>
 /// <para>
 /// <see cref="DefaultStorageJsonOptions"/> — the internal preset with unknown members skipped, so an older node reads
-/// what a newer one wrote, null values written, so a constructor parameter that holds null reads back, plus <see cref="ObjectToInferredTypesJsonConverter"/>, so an <see langword="object"/> value reads back as a CLR primitive (<see cref="string"/>, <see cref="bool"/>,
+/// what a newer one wrote, plus <see cref="ObjectToInferredTypesJsonConverter"/>, so an <see langword="object"/> value reads back as a CLR primitive (<see cref="string"/>, <see cref="bool"/>,
 /// <see cref="long"/>, <see cref="decimal"/>) or a <see cref="JsonElement"/> for an object or array. Intended for JSON
 /// the framework persists and reads back: EF Core JSON columns, <c>ExtraProperties</c> bags, the relational definition
 /// stores, and, through <see cref="DefaultJsonOptionsProvider"/>, the app values the framework stores (cache entries,
@@ -137,9 +138,6 @@ public static class JsonConstants
         // Stored JSON outlives the code that wrote it: during a rolling deploy an older node reads what a newer node
         // wrote, so a member it does not know is skipped rather than failing the read.
         options.UnmappedMemberHandling = JsonUnmappedMemberHandling.Skip;
-        // A round trip must give back what was written: an omitted null fails the read of a constructor parameter, and
-        // RespectRequiredConstructorParameters makes every one required.
-        options.DefaultIgnoreCondition = JsonIgnoreCondition.Never;
         options.Converters.Add(new ObjectToInferredTypesJsonConverter());
 
         return options;
@@ -202,7 +200,9 @@ public static class JsonConstants
         options.Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping;
         options.NumberHandling = JsonNumberHandling.Strict;
         options.ReadCommentHandling = JsonCommentHandling.Disallow;
-        options.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
+        // RespectRequiredConstructorParameters makes every constructor parameter required, so an omitted null would
+        // make the preset refuse JSON it wrote itself.
+        options.DefaultIgnoreCondition = JsonIgnoreCondition.Never;
         // Make it populate when this get fixed: https://github.com/dotnet/runtime/issues/92877
         options.PreferredObjectCreationHandling = JsonObjectCreationHandling.Replace;
         options.UnknownTypeHandling = JsonUnknownTypeHandling.JsonElement;

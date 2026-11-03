@@ -5,6 +5,7 @@ using Headless.Checks;
 using Headless.Messaging.Persistence;
 using Headless.MultiTenancy;
 using Headless.Reliability;
+using Headless.Serializer;
 using Headless.UnitOfWork;
 using Polly;
 using Polly.Retry;
@@ -187,10 +188,16 @@ public sealed class MessagingOptions
     public int OrphanProbeBatchSize { get; set; } = 10;
 
     /// <summary>
-    /// Gets or sets the JSON serialization options used for message content serialization and deserialization.
+    /// Gets the JSON serialization options used for message content serialization and deserialization.
     /// Customize this to control JSON formatting, naming policies, converters, and other serialization behavior.
     /// </summary>
-    public JsonSerializerOptions JsonSerializerOptions { get; } = new();
+    /// <remarks>
+    /// Starts from <see cref="JsonConstants.CreateStorageJsonOptions"/>. A message outlives the code that wrote it and
+    /// is read by consumers deployed on their own schedule, so a member a consumer does not know yet is skipped rather
+    /// than failing the message, nulls are written so required constructor parameters read back, and a repeated
+    /// property is refused.
+    /// </remarks>
+    public JsonSerializerOptions JsonSerializerOptions { get; } = JsonConstants.CreateStorageJsonOptions();
 
     /// <summary>
     /// Gets or sets a value indicating whether to use distributed storage locking when retrying failed messages.
@@ -441,6 +448,7 @@ public sealed class MessagingOptions
     /// </summary>
     private static void _CopyJsonSerializerOptions(JsonSerializerOptions source, JsonSerializerOptions target)
     {
+        target.AllowDuplicateProperties = source.AllowDuplicateProperties;
         target.AllowOutOfOrderMetadataProperties = source.AllowOutOfOrderMetadataProperties;
         target.AllowTrailingCommas = source.AllowTrailingCommas;
         target.DefaultBufferSize = source.DefaultBufferSize;
@@ -450,7 +458,10 @@ public sealed class MessagingOptions
         target.IgnoreReadOnlyFields = source.IgnoreReadOnlyFields;
         target.IgnoreReadOnlyProperties = source.IgnoreReadOnlyProperties;
         target.IncludeFields = source.IncludeFields;
+        target.IndentCharacter = source.IndentCharacter;
+        target.IndentSize = source.IndentSize;
         target.MaxDepth = source.MaxDepth;
+        target.NewLine = source.NewLine;
         target.NumberHandling = source.NumberHandling;
         target.PreferredObjectCreationHandling = source.PreferredObjectCreationHandling;
         target.PropertyNameCaseInsensitive = source.PropertyNameCaseInsensitive;
@@ -463,6 +474,9 @@ public sealed class MessagingOptions
         target.UnknownTypeHandling = source.UnknownTypeHandling;
         target.UnmappedMemberHandling = source.UnmappedMemberHandling;
         target.WriteIndented = source.WriteIndented;
+
+        // The target starts with the default converters too; adding the source's on top would register them twice.
+        target.Converters.Clear();
 
         foreach (var converter in source.Converters)
         {

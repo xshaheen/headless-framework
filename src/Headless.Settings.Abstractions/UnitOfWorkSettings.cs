@@ -74,7 +74,7 @@ public sealed class UnitOfWorkSettings
         CancellationToken cancellationToken = default
     )
     {
-        var valueJson = JsonSerializer.Serialize(value, JsonConstants.DefaultInternalJsonOptions);
+        var valueJson = JsonSerializer.Serialize(value, JsonConstants.DefaultStorageJsonOptions);
 
         return SetAsync(settingName, valueJson, providerName, providerKey, forceToSet, cancellationToken);
     }

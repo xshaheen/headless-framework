@@ -191,7 +191,7 @@ public static class BlobStorageExtensions
                     .SerializeAsync(
                         utf8Json: memoryStream,
                         value: contents,
-                        options: JsonConstants.DefaultInternalJsonOptions,
+                        options: JsonConstants.DefaultStorageJsonOptions,
                         cancellationToken: cancellationToken
                     )
                     .ConfigureAwait(false);
@@ -329,7 +329,7 @@ public static class BlobStorageExtensions
             }
 
             result.Stream.ResetPosition();
-            options ??= JsonConstants.DefaultInternalJsonOptions;
+            options ??= JsonConstants.DefaultStorageJsonOptions;
             return await JsonSerializer
                 .DeserializeAsync<T>(result.Stream, options, cancellationToken)
                 .ConfigureAwait(false);

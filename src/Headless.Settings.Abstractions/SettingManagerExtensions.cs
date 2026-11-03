@@ -76,7 +76,7 @@ public static class SettingManagerExtensions
 
             return string.IsNullOrEmpty(settingValue.Value)
                 ? default
-                : JsonSerializer.Deserialize<T>(settingValue.Value, JsonConstants.DefaultInternalJsonOptions);
+                : JsonSerializer.Deserialize<T>(settingValue.Value, JsonConstants.DefaultStorageJsonOptions);
         }
 
         /// <summary>Serializes <paramref name="value"/> to JSON and persists it through a specific provider.</summary>
@@ -96,7 +96,7 @@ public static class SettingManagerExtensions
             CancellationToken cancellationToken = default
         )
         {
-            var valueJson = JsonSerializer.Serialize(value, JsonConstants.DefaultInternalJsonOptions);
+            var valueJson = JsonSerializer.Serialize(value, JsonConstants.DefaultStorageJsonOptions);
 
             return settingManager.SetAsync(
                 settingName,
