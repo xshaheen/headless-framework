@@ -682,7 +682,7 @@ internal sealed class MessageSender : IMessageSender
         var originalInlineAttempts = message.InlineAttempts;
 
         message.Origin.AddOrUpdateException(ex);
-        message.ExpiresAt = message.Added.AddSeconds(_options.FailedMessageExpiredAfter);
+        message.ExpiresAt = _timeProvider.GetUtcNow().AddSeconds(_options.FailedMessageExpiredAfter);
 
         // Inline-retry budget still available: persist as Scheduled/NULL so a crash mid-delay
         // leaves the row picked up by the polling query on restart (Failed/NULL is filtered out).

@@ -411,6 +411,18 @@ internal static partial class LoggerExtensions
     internal static partial void MessageLeaseLost(this ILogger logger, Guid storageId);
 
     [LoggerMessage(
+        EventId = 4135,
+        EventName = "ClaimedRetryLeaseRenewalFailed",
+        Level = LogLevel.Warning,
+        Message = "Renewing the claim on retry message {StorageId}, which waits its turn in a pickup batch, failed; the renewal is retried on the next tick, and a claim that lapses meanwhile leaves the row to the next pickup."
+    )]
+    internal static partial void ClaimedRetryLeaseRenewalFailed(
+        this ILogger logger,
+        Exception exception,
+        Guid storageId
+    );
+
+    [LoggerMessage(
         EventId = 4125,
         EventName = "StoredMessageDeliverByExceeded",
         Level = LogLevel.Information,

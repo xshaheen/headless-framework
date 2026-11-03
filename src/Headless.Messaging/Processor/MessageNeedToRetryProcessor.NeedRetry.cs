@@ -441,6 +441,7 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
         var enqueued = 0;
         Interlocked.Exchange(ref state._consecutivePickupFailures, 0);
         var nextUnhanded = 0;
+        var claimRenewal = _StartClaimRenewal(messages, connection.RenewPublishLeaseAsync, context);
         try
         {
             while (nextUnhanded < messages.Count)
@@ -456,6 +457,7 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
                     );
                 }
 
+                await claimRenewal.TakeAsync(message).ConfigureAwait(false);
                 message.OutboxStorage = state.Outbox?.Storage;
 
                 if (_dispatcher is IRetryDispatcher retryDispatcher)
@@ -475,6 +477,8 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
         }
         finally
         {
+            // Settle every waiting row's lease identity before the release reads it.
+            await claimRenewal.DisposeAsync().ConfigureAwait(false);
             await _ReleaseUnhandedAsync(connection, MessageType.Publish, messages, nextUnhanded).ConfigureAwait(false);
         }
 
@@ -644,6 +648,13 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
             ))
             .ToList();
         var nextUnhanded = 0;
+
+        // Circuit claims wait behind the healthy rows too, so they are renewed with them until their disposition.
+        var claimRenewal = _StartClaimRenewal(
+            [.. healthy, .. circuitWork.Select(static work => work.Message)],
+            connection.RenewReceiveLeaseAsync,
+            context
+        );
         try
         {
             try
@@ -653,6 +664,7 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
                     context.ThrowIfStopping();
 
                     var message = healthy[nextUnhanded];
+                    await claimRenewal.TakeAsync(message).ConfigureAwait(false);
 
                     var transferred = await _DispatchReceivedAsync(message, context.CancellationToken)
                         .ConfigureAwait(false);
@@ -666,6 +678,8 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
             }
             finally
             {
+                // Settle every waiting row's lease identity before the release and the circuit dispositions read it.
+                await claimRenewal.DisposeAsync().ConfigureAwait(false);
                 await _ReleaseUnhandedAsync(connection, MessageType.Subscribe, healthy, nextUnhanded)
                     .ConfigureAwait(false);
             }
@@ -730,6 +744,22 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
             storageCapability.Provider,
             message.Origin.Headers.TryGetValue(Headers.TenantId, out var tenantId) ? tenantId : null,
             _inboxMetricPolicy.TenantTagName
+        );
+    }
+
+    private ClaimedBatchLeaseRenewal _StartClaimRenewal(
+        IEnumerable<MediumMessage> messages,
+        Func<MediumMessage, TimeSpan, CancellationToken, ValueTask<bool>> renew,
+        ProcessingContext context
+    )
+    {
+        return ClaimedBatchLeaseRenewal.Start(
+            messages.Where(static message => message.LockedUntil.HasValue),
+            renew,
+            _options.Value.RetryPolicy,
+            context.TimeProvider,
+            BackoffClock.Resolve(context.Provider),
+            _logger
         );
     }
 
