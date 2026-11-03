@@ -221,7 +221,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
     }
 
     [Fact]
-    public async Task should_process_synchronously_when_concurrent_is_zero()
+    public async Task should_process_the_delivery_when_concurrent_is_zero()
     {
         // given
         const byte concurrent = 0;
@@ -256,6 +256,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             body,
             CancellationToken.None
         );
+        await _WaitForHandlersAsync(consumer);
 
         // then
         consumeCallCount.Should().Be(1);
@@ -297,6 +298,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
 
         // then — the client's dispatcher would only log it, after the delivery was left unsettled
         await act.Should().NotThrowAsync();
+        await _WaitForHandlersAsync(consumer);
         _loggedEvents.Should().ContainSingle().Which.Reason.Should().Contain("Simulated consumption error");
     }
 
@@ -336,6 +338,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             "test-body"u8.ToArray(),
             CancellationToken.None
         );
+        await _WaitForHandlersAsync(consumer);
 
         // then
         receivedMessage.Should().NotBeNull();
@@ -379,6 +382,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             "test-body"u8.ToArray(),
             CancellationToken.None
         );
+        await _WaitForHandlersAsync(consumer);
 
         // then
         receivedMessage!.Value.Headers["ByteHeader"].Should().Be("TestValue");
@@ -418,6 +422,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             "test-body"u8.ToArray(),
             CancellationToken.None
         );
+        await _WaitForHandlersAsync(consumer);
 
         // then
         receivedMessage!.Value.Headers["IntHeader"].Should().Be("123");
@@ -460,6 +465,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             "test-body"u8.ToArray(),
             CancellationToken.None
         );
+        await _WaitForHandlersAsync(consumer);
 
         // then
         receivedMessage!.Value.Headers["CustomHeader"].Should().Be("CustomValue");
@@ -505,6 +511,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             "test-body"u8.ToArray(),
             AbortToken
         );
+        await _WaitForHandlersAsync(consumer);
 
         // then
         receivedMessage.Should().NotBeNull();
@@ -539,6 +546,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             "test-body"u8.ToArray(),
             AbortToken
         );
+        await _WaitForHandlersAsync(consumer);
 
         // then
         await _channel.Received(1).BasicRejectAsync(42ul, true, Arg.Any<CancellationToken>());
@@ -563,6 +571,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             _serviceProvider
         );
         await _DeliverAsync(consumer, 42UL);
+        await _WaitForHandlersAsync(consumer);
 
         // when
         await consumer.BasicAck(42UL, AbortToken);
@@ -588,6 +597,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             _serviceProvider
         );
         await _DeliverAsync(consumer, 42UL);
+        await _WaitForHandlersAsync(consumer);
 
         // when
         var act = async () => await consumer.BasicAck(42UL, AbortToken);
@@ -624,6 +634,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             _serviceProvider
         );
         await _DeliverAsync(consumer, 42UL);
+        await _WaitForHandlersAsync(consumer);
 
         // when
         await consumer.BasicReject(42UL, AbortToken);
@@ -646,6 +657,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             _serviceProvider
         );
         await _DeliverAsync(consumer, 42UL);
+        await _WaitForHandlersAsync(consumer);
 
         // when
         await consumer.BasicDeadLetter(42UL, AbortToken);
@@ -669,6 +681,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             _serviceProvider
         );
         await _DeliverAsync(consumer, 42UL);
+        await _WaitForHandlersAsync(consumer);
 
         // when
         await consumer.BasicDeadLetter(42UL, AbortToken);
@@ -693,6 +706,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             _serviceProvider
         );
         await _DeliverAsync(consumer, 42UL);
+        await _WaitForHandlersAsync(consumer);
 
         // when
         await consumer.BasicReject(42UL, AbortToken);
@@ -809,6 +823,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             "test-body"u8.ToArray(),
             CancellationToken.None
         );
+        await _WaitForHandlersAsync(consumer);
 
         // then
         receivedMessage.Should().BeNull();
@@ -870,6 +885,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             "test-body"u8.ToArray(),
             CancellationToken.None
         );
+        await _WaitForHandlersAsync(consumer);
 
         // then
         receivedMessage!.Value.Headers["NullHeader"].Should().BeNull();
@@ -981,6 +997,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             "test"u8.ToArray(),
             CancellationToken.None
         );
+        await _WaitForHandlersAsync(consumer);
 
         // then — malformed transport input is terminal and does not enter a requeue storm
         callbackInvoked.Should().BeFalse();
@@ -1004,6 +1021,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         await _DeliverAsync(consumer, 1UL);
         await _DeliverAsync(consumer, 2UL);
         await _DeliverAsync(consumer, 3UL);
+        await _WaitForHandlersAsync(consumer);
 
         // when - multiple acks should not block if semaphore is released properly
         await consumer.BasicAck(1UL, AbortToken);
@@ -1030,6 +1048,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         await _DeliverAsync(consumer, 1UL);
         await _DeliverAsync(consumer, 2UL);
         await _DeliverAsync(consumer, 3UL);
+        await _WaitForHandlersAsync(consumer);
 
         // when - multiple rejects should not block if semaphore is released properly
         await consumer.BasicReject(1UL, AbortToken);
@@ -1061,7 +1080,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             _serviceProvider
         );
 
-        // The sequential path runs the handler on the delivering call, so that call stays pending until release.
+        // The handler runs off the delivering call, so the test waits for it to start before draining.
         var delivery = consumer.HandleBasicDeliverAsync(
             "consumerTag",
             1ul,
@@ -1198,6 +1217,130 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         releaseHandler.TrySetResult();
     }
 
+    [Fact]
+    public async Task should_release_the_dispatcher_when_dispatching_stops_while_a_sequential_handler_hangs()
+    {
+        // given: a sequential consumer whose handler never finishes, and the next delivery behind it. Closing the channel
+        // waits for the client's dispatcher, so neither delivering call may stay inside it once dispatching stops.
+        var handlerStarted = _CreateSignal();
+        var releaseHandler = _CreateSignal();
+        var dispatched = 0;
+        using var consumer = new RabbitMqBasicConsumer(
+            _channel,
+            0,
+            async (_, _) =>
+            {
+                Interlocked.Increment(ref dispatched);
+                handlerStarted.TrySetResult();
+                await releaseHandler.Task.Bounded();
+            },
+            args => _loggedEvents.Add(args),
+            null,
+            _serviceProvider
+        );
+
+#pragma warning disable CA2025 // False positive: the test awaits both deliveries below, before the consumer is disposed.
+        var first = _DeliverAsync(consumer, 1ul);
+        await _WaitForSignalAsync(handlerStarted.Task);
+        var second = _DeliverAsync(consumer, 2ul);
+#pragma warning restore CA2025
+
+        // when
+        var drain = async () => await consumer.DrainAsync(TimeSpan.FromMilliseconds(50), TimeProvider.System);
+
+        // then
+        await drain.Should().ThrowAsync<TimeoutException>();
+        await Task.WhenAll(first, second).WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        Volatile.Read(ref dispatched).Should().Be(1);
+        consumer.InFlightCount.Should().Be(1);
+        releaseHandler.TrySetResult();
+    }
+
+    [Fact]
+    public async Task should_release_the_dispatcher_when_disposed_while_a_sequential_handler_hangs()
+    {
+        // given
+        var handlerStarted = _CreateSignal();
+        var releaseHandler = _CreateSignal();
+        var dispatched = 0;
+        var consumer = new RabbitMqBasicConsumer(
+            _channel,
+            0,
+            async (_, _) =>
+            {
+                Interlocked.Increment(ref dispatched);
+                handlerStarted.TrySetResult();
+                await releaseHandler.Task.Bounded();
+            },
+            args => _loggedEvents.Add(args),
+            null,
+            _serviceProvider
+        );
+
+#pragma warning disable CA2025 // Fix makes the test worse: disposing while these deliveries are pending is the behavior under test.
+        var first = _DeliverAsync(consumer, 1ul);
+        await _WaitForSignalAsync(handlerStarted.Task);
+        var second = _DeliverAsync(consumer, 2ul);
+#pragma warning restore CA2025
+
+        // when
+        consumer.Dispose();
+
+        // then
+        await Task.WhenAll(first, second).WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        Volatile.Read(ref dispatched).Should().Be(1);
+        releaseHandler.TrySetResult();
+    }
+
+    [Fact]
+    public async Task should_run_deliveries_one_at_a_time_in_arrival_order_when_concurrent_is_zero()
+    {
+        // given: each handler waits for the test to release it, and records when it starts and ends
+        const int deliveries = 3;
+        var started = Enumerable.Range(0, deliveries).Select(_ => _CreateSignal()).ToArray();
+        var release = Enumerable.Range(0, deliveries).Select(_ => _CreateSignal()).ToArray();
+        var events = new ConcurrentQueue<string>();
+        using var consumer = new RabbitMqBasicConsumer(
+            _channel,
+            0,
+            async (_, tag) =>
+            {
+                var index = (int)(ulong)tag! - 1;
+                events.Enqueue($"start {index + 1}");
+                started[index].TrySetResult();
+                await release[index].Task.Bounded();
+                events.Enqueue($"end {index + 1}");
+            },
+            args => _loggedEvents.Add(args),
+            null,
+            _serviceProvider
+        );
+
+        // when: deliveries arrive the way the client's dispatcher hands them over, each after the previous call returned
+        var dispatcher = Task.Run(
+            async () =>
+            {
+                for (var tag = 1ul; tag <= deliveries; tag++)
+                {
+                    await _DeliverAsync(consumer, tag);
+                }
+            },
+            AbortToken
+        );
+
+        for (var index = 0; index < deliveries; index++)
+        {
+            await _WaitForSignalAsync(started[index].Task);
+            release[index].TrySetResult();
+        }
+
+        await dispatcher.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        await consumer.DrainAsync(TimeSpan.FromSeconds(5), TimeProvider.System);
+
+        // then: no handler starts before the one ahead of it has finished
+        events.Should().Equal("start 1", "end 1", "start 2", "end 2", "start 3", "end 3");
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(2)]
@@ -1255,6 +1398,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             _serviceProvider
         );
         await _DeliverAsync(consumer, 7ul);
+        await _WaitForHandlersAsync(consumer);
         await consumer.BasicAck(7ul, AbortToken);
 
         // when — a tag the broker no longer knows closes the channel with PRECONDITION_FAILED if it is sent again
@@ -1314,6 +1458,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         // when
         await _DeliverAsync(consumer, 11ul);
         await _WaitForSignalAsync(consumeFailed.Task);
+        await _WaitForHandlersAsync(consumer);
 
         // then — nothing else settles it, so an unsettled delivery would hold its prefetch slot for good
         await _channel.Received(1).BasicRejectAsync(11ul, true, Arg.Any<CancellationToken>());
@@ -1341,12 +1486,19 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
 
         // when
         await _DeliverAsync(created, 12ul);
+        await _WaitForHandlersAsync(created);
 
         // then
         await _channel.Received(1).BasicAckAsync(12ul, false, Arg.Any<CancellationToken>());
         await _channel
             .DidNotReceive()
             .BasicRejectAsync(Arg.Any<ulong>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
+    }
+
+    // Handlers run after the delivering call returns, so a test that asserts on what a handler did waits for it first.
+    private static Task _WaitForHandlersAsync(RabbitMqBasicConsumer consumer)
+    {
+        return consumer.DrainAsync(TimeSpan.FromSeconds(5), TimeProvider.System);
     }
 
     private static Task _DeliverAsync(RabbitMqBasicConsumer consumer, ulong deliveryTag)
