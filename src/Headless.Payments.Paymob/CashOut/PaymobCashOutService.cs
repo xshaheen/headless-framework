@@ -172,13 +172,7 @@ internal sealed class PaymobCashOutService(IPaymobCashOutBroker broker, ILogger<
             // And one another form when just mess one field like bank_code
             // "status_description": { "non_field_errors": ["You must pass valid values for fields [bank_code, bank_card_number, bank_transaction_type, full_name]"] }
 
-            if (
-                result.StatusDescription is string description
-                && description.Contains(
-                    "the amount to be disbursed exceeds you budget limit",
-                    StringComparison.OrdinalIgnoreCase
-                )
-            )
+            if (_DescribesBudgetExceeded(result.StatusDescription))
             {
                 logger.LogCashOutBudgetExceeded(result);
                 return PaymobMessageDescriptor.CashOut.ProviderConnectionFailed();
@@ -188,6 +182,24 @@ internal sealed class PaymobCashOutService(IPaymobCashOutBroker broker, ILogger<
         }
 
         return PaymobMessageDescriptor.CashOut.ProviderConnectionFailed();
+    }
+
+    private static bool _DescribesBudgetExceeded(object? statusDescription)
+    {
+        // The deserializer fills an object-typed member with a JsonElement, never a string, so a description that
+        // arrives from Paymob is JSON text; a string only appears in a transaction built by hand.
+        var description = statusDescription switch
+        {
+            string text => text,
+            JsonElement { ValueKind: JsonValueKind.String } element => element.GetString(),
+            _ => null,
+        };
+
+        return description?.Contains(
+            "the amount to be disbursed exceeds you budget limit",
+            StringComparison.OrdinalIgnoreCase
+        )
+            is true;
     }
 
     private static string _ConvertToString(BankTransactionType type)

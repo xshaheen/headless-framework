@@ -290,6 +290,38 @@ internal sealed class RelationalPermissionGrantRepository(
         await _DeleteAsync(connection, transaction, permissionGrants, cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task SaveAsync(
+        IReadOnlyCollection<PermissionGrantRecord> inserted,
+        IReadOnlyCollection<PermissionGrantRecord> deleted,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var records = _Materialize(inserted, cancellationToken);
+
+        if (records.Count == 0 && deleted.Count == 0)
+        {
+            return;
+        }
+
+        await using var connection = _dialect.CreateConnection(options.ConnectionString);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        // The delete runs first because a replacement reuses the deleted row's unique key.
+        if (deleted.Count > 0)
+        {
+            await _DeleteAsync(connection, transaction, deleted, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (records.Count > 0)
+        {
+            await _InsertAsync(connection, transaction, records, cancellationToken).ConfigureAwait(false);
+        }
+
+        // Disposing an uncommitted transaction rolls it back, so a failing insert restores the deleted rows.
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     private async Task _DeleteAsync(
         DbConnection connection,
         DbTransaction? transaction,

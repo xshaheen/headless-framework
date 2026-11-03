@@ -172,6 +172,23 @@ public sealed class CacheAttemptLimiterTests : TestBase
     }
 
     [Fact]
+    public async Task should_count_a_multi_megabyte_subject_when_it_exceeds_the_stack()
+    {
+        // given: a subject far larger than a thread stack, as a request body field can carry
+        var limiter = _CreateLimiter();
+        var subject = new string('a', 4_000_000);
+        await limiter.AcquireAsync(_Purpose, subject, _FivePerMinute, AbortToken);
+
+        // when
+        var result = await limiter.AcquireAsync(_Purpose, subject, _FivePerMinute, AbortToken);
+        var other = await limiter.AcquireAsync(_Purpose, subject + "b", _FivePerMinute, AbortToken);
+
+        // then
+        result.Count.Should().Be(2);
+        other.Count.Should().Be(1);
+    }
+
+    [Fact]
     public async Task should_clear_the_budget_on_reset()
     {
         // given

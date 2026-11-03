@@ -34,7 +34,8 @@ public sealed class SshBlobStorageOptions
 
     /// <summary>
     /// Optional private key stream for SSH public-key authentication. When provided, a
-    /// <see cref="Renci.SshNet.PrivateKeyAuthenticationMethod"/> is added alongside any password method.
+    /// <see cref="Renci.SshNet.PrivateKeyAuthenticationMethod"/> is added alongside any password method. The store reads
+    /// the stream once, when its connection pool is created, and disposes it.
     /// </summary>
     public Stream? PrivateKey { get; set; }
 
