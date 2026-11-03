@@ -411,6 +411,8 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
             { "postgresql", "23505" },
             { "sqlserver", "2627" },
             { "sqlserver", "2601" },
+            // SqlClient's Number is the first error; a duplicate key reported behind another error still counts.
+            { "sqlserver-not-first", "2627" },
             { "sqlite", "2067" },
             { "sqlite", "1555" },
         };
@@ -421,6 +423,10 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         {
             "postgresql" => new Tests.Fakes.SqlStateDbException(code),
             "sqlserver" => new Microsoft.Data.SqlClient.SqlException(int.Parse(code, CultureInfo.InvariantCulture)),
+            "sqlserver-not-first" => new Microsoft.Data.SqlClient.SqlException(
+                8152,
+                int.Parse(code, CultureInfo.InvariantCulture)
+            ),
             "sqlite" => new Microsoft.Data.Sqlite.SqliteException(int.Parse(code, CultureInfo.InvariantCulture)),
             _ => new InvalidOperationException(code),
         };
