@@ -19,11 +19,13 @@ namespace Messaging.SourceGenerator.Tests
             catalog.AddQueueConsumer<global::Billing.Shapes.RebuildConsumer, global::Billing.Shapes.Rebuild>("billing.rebuild", dispatch: Dispatch_Billing_Shapes_RebuildConsumer);
         }
 
+        private static global::Microsoft.Extensions.DependencyInjection.ObjectFactory<global::Billing.Shapes.InvoiceProjection> Activator_Billing_Shapes_InvoiceProjection;
+
         private static global::Billing.Shapes.InvoiceProjection Create_Billing_Shapes_InvoiceProjection(global::System.IServiceProvider services, out bool created)
         {
             var registered = global::Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetService<global::Billing.Shapes.InvoiceProjection>(services);
             created = registered is null;
-            return registered ?? global::Microsoft.Extensions.DependencyInjection.ActivatorUtilities.CreateInstance<global::Billing.Shapes.InvoiceProjection>(services);
+            return registered ?? (Activator_Billing_Shapes_InvoiceProjection ??= global::Microsoft.Extensions.DependencyInjection.ActivatorUtilities.CreateFactory<global::Billing.Shapes.InvoiceProjection>(global::System.Type.EmptyTypes))(services, null);
         }
 
         private static async global::System.Threading.Tasks.ValueTask Dispatch_Billing_Shapes_InvoiceProjection(global::System.IServiceProvider services, global::Headless.Messaging.ConsumeContext context, global::System.Threading.CancellationToken cancellationToken)
@@ -42,11 +44,13 @@ namespace Messaging.SourceGenerator.Tests
             }
         }
 
+        private static global::Microsoft.Extensions.DependencyInjection.ObjectFactory<global::Billing.Shapes.PriceCache> Activator_Billing_Shapes_PriceCache;
+
         private static global::Billing.Shapes.PriceCache Create_Billing_Shapes_PriceCache(global::System.IServiceProvider services, out bool created)
         {
             var registered = global::Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetService<global::Billing.Shapes.PriceCache>(services);
             created = registered is null;
-            return registered ?? global::Microsoft.Extensions.DependencyInjection.ActivatorUtilities.CreateInstance<global::Billing.Shapes.PriceCache>(services);
+            return registered ?? (Activator_Billing_Shapes_PriceCache ??= global::Microsoft.Extensions.DependencyInjection.ActivatorUtilities.CreateFactory<global::Billing.Shapes.PriceCache>(global::System.Type.EmptyTypes))(services, null);
         }
 
         private static async global::System.Threading.Tasks.ValueTask Dispatch_Billing_Shapes_PriceCache(global::System.IServiceProvider services, global::Headless.Messaging.ConsumeContext context, global::System.Threading.CancellationToken cancellationToken)
@@ -88,11 +92,13 @@ namespace Messaging.SourceGenerator.Tests
             }
         }
 
+        private static global::Microsoft.Extensions.DependencyInjection.ObjectFactory<global::Billing.Shapes.CloseDayConsumer> Activator_Billing_Shapes_CloseDayConsumer;
+
         private static global::Billing.Shapes.CloseDayConsumer Create_Billing_Shapes_CloseDayConsumer(global::System.IServiceProvider services, out bool created)
         {
             var registered = global::Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetService<global::Billing.Shapes.CloseDayConsumer>(services);
             created = registered is null;
-            return registered ?? global::Microsoft.Extensions.DependencyInjection.ActivatorUtilities.CreateInstance<global::Billing.Shapes.CloseDayConsumer>(services);
+            return registered ?? (Activator_Billing_Shapes_CloseDayConsumer ??= global::Microsoft.Extensions.DependencyInjection.ActivatorUtilities.CreateFactory<global::Billing.Shapes.CloseDayConsumer>(global::System.Type.EmptyTypes))(services, null);
         }
 
         private static async global::System.Threading.Tasks.ValueTask Dispatch_Billing_Shapes_CloseDayConsumer(global::System.IServiceProvider services, global::Headless.Messaging.ConsumeContext context, global::System.Threading.CancellationToken cancellationToken)
@@ -125,11 +131,13 @@ namespace Messaging.SourceGenerator.Tests
             }
         }
 
+        private static global::Microsoft.Extensions.DependencyInjection.ObjectFactory<global::Billing.Shapes.IssueInvoice> Activator_Billing_Shapes_IssueInvoice;
+
         private static global::Billing.Shapes.IssueInvoice Create_Billing_Shapes_IssueInvoice(global::System.IServiceProvider services, out bool created)
         {
             var registered = global::Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetService<global::Billing.Shapes.IssueInvoice>(services);
             created = registered is null;
-            return registered ?? global::Microsoft.Extensions.DependencyInjection.ActivatorUtilities.CreateInstance<global::Billing.Shapes.IssueInvoice>(services);
+            return registered ?? (Activator_Billing_Shapes_IssueInvoice ??= global::Microsoft.Extensions.DependencyInjection.ActivatorUtilities.CreateFactory<global::Billing.Shapes.IssueInvoice>(global::System.Type.EmptyTypes))(services, null);
         }
 
         private static async global::System.Threading.Tasks.ValueTask Dispatch_Billing_Shapes_IssueInvoice(global::System.IServiceProvider services, global::Headless.Messaging.ConsumeContext context, global::System.Threading.CancellationToken cancellationToken)
@@ -155,11 +163,13 @@ namespace Messaging.SourceGenerator.Tests
             }
         }
 
+        private static global::Microsoft.Extensions.DependencyInjection.ObjectFactory<global::Billing.Shapes.RebuildConsumer> Activator_Billing_Shapes_RebuildConsumer;
+
         private static global::Billing.Shapes.RebuildConsumer Create_Billing_Shapes_RebuildConsumer(global::System.IServiceProvider services, out bool created)
         {
             var registered = global::Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetService<global::Billing.Shapes.RebuildConsumer>(services);
             created = registered is null;
-            return registered ?? global::Microsoft.Extensions.DependencyInjection.ActivatorUtilities.CreateInstance<global::Billing.Shapes.RebuildConsumer>(services);
+            return registered ?? (Activator_Billing_Shapes_RebuildConsumer ??= global::Microsoft.Extensions.DependencyInjection.ActivatorUtilities.CreateFactory<global::Billing.Shapes.RebuildConsumer>(global::System.Type.EmptyTypes))(services, null);
         }
 
         private static async global::System.Threading.Tasks.ValueTask Dispatch_Billing_Shapes_RebuildConsumer(global::System.IServiceProvider services, global::Headless.Messaging.ConsumeContext context, global::System.Threading.CancellationToken cancellationToken)

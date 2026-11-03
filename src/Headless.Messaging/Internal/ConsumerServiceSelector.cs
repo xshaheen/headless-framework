@@ -96,6 +96,7 @@ internal sealed class ConsumerServiceSelector(IServiceProvider serviceProvider) 
                 ConsumerType = consumer.ConsumerType,
                 MethodName = consumer.IsResponder ? nameof(IRespond<,>.RespondAsync) : nameof(IConsume<>.ConsumeAsync),
                 MessageType = consumer.MessageType,
+                MessageBinding = consumer.MessageBinding,
                 MessageName = consumer.MessageName,
                 SubscriptionName = consumer.SubscriptionName,
                 Concurrency = consumer.Concurrency,

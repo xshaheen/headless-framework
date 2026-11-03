@@ -108,19 +108,6 @@ public sealed class DropSignalRelayRecoveryTests : TestBase
 
     private sealed class NoopPublishMiddlewarePipeline : IPublishMiddlewarePipeline
     {
-        public Task ExecuteAsync(
-            object? contentObj,
-            Type declaredMessageType,
-            MessageLane lane,
-            MessageOptions? messageOptions,
-            DeliveryDecision decision,
-            Func<MessageOptions?, CancellationToken, Task> innerPublish,
-            CancellationToken cancellationToken = default
-        )
-        {
-            return innerPublish(messageOptions, cancellationToken);
-        }
-
         public Task ExecuteAsync<T>(
             T? contentObj,
             MessageLane lane,

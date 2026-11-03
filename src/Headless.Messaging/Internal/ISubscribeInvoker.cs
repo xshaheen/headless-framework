@@ -107,11 +107,9 @@ internal sealed class SubscribeInvoker(
         }
 
         return services is null
-            ? await executionPipeline
-                .ExecuteAsync(context, messageInstance, messageType, cancellationToken)
-                .ConfigureAwait(false)
+            ? await executionPipeline.ExecuteAsync(context, messageInstance, cancellationToken).ConfigureAwait(false)
             : await executionPipeline
-                .ExecuteInScopeAsync(context, messageInstance, messageType, services, cancellationToken)
+                .ExecuteInScopeAsync(context, messageInstance, services, cancellationToken)
                 .ConfigureAwait(false);
     }
 }

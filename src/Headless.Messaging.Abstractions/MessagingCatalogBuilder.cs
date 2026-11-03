@@ -64,7 +64,7 @@ public sealed class MessagingCatalogBuilder
     {
         _Add(
             typeof(TConsumer),
-            typeof(TMessage),
+            MessageTypeHandle.For<TMessage>(),
             MessageLane.Bus,
             identity,
             everyInstance,
@@ -96,7 +96,7 @@ public sealed class MessagingCatalogBuilder
     {
         _Add(
             typeof(TConsumer),
-            typeof(TMessage),
+            MessageTypeHandle.For<TMessage>(),
             MessageLane.Queue,
             identity,
             everyInstance: false,
@@ -138,7 +138,7 @@ public sealed class MessagingCatalogBuilder
     {
         _Add(
             typeof(TConsumer),
-            typeof(TRequest),
+            MessageTypeHandle.For<TRequest>(),
             MessageLane.Queue,
             identity,
             everyInstance: false,
@@ -165,7 +165,7 @@ public sealed class MessagingCatalogBuilder
 
     private void _Add(
         Type consumerType,
-        Type messageType,
+        MessageTypeHandle message,
         MessageLane lane,
         string identity,
         bool everyInstance,
@@ -197,7 +197,7 @@ public sealed class MessagingCatalogBuilder
             new MessagingConsumerDeclaration(
                 _source,
                 consumerType,
-                messageType,
+                message,
                 lane,
                 identity,
                 everyInstance,
@@ -247,7 +247,7 @@ public delegate ValueTask SubscriptionEstablishedDispatch(
 /// <summary>One message handled by one attribute-declared consumer, as a generated module declared it.</summary>
 /// <param name="Source">The module that declared it, for conflict messages.</param>
 /// <param name="ConsumerType">The consumer class.</param>
-/// <param name="MessageType">The consumed message type.</param>
+/// <param name="Message">The consumed message type, captured where it was a generic argument.</param>
 /// <param name="Lane">The lane the consumer's attribute names.</param>
 /// <param name="Identity">The consumer identity.</param>
 /// <param name="EveryInstance">Whether every process receives every message; always false on the Queue lane.</param>
@@ -260,7 +260,7 @@ public delegate ValueTask SubscriptionEstablishedDispatch(
 internal sealed record MessagingConsumerDeclaration(
     string Source,
     Type ConsumerType,
-    Type MessageType,
+    MessageTypeHandle Message,
     MessageLane Lane,
     string Identity,
     bool EveryInstance,
@@ -268,4 +268,8 @@ internal sealed record MessagingConsumerDeclaration(
     SubscriptionEstablishedDispatch? OnSubscriptionEstablished,
     Func<FailurePolicy>? FailurePolicyFactory = null,
     Type? ResponseType = null
-);
+)
+{
+    /// <summary>The consumed message type.</summary>
+    public Type MessageType => Message.Type;
+}

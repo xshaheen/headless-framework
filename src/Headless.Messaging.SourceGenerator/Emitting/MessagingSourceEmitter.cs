@@ -126,9 +126,26 @@ internal static class MessagingSourceEmitter
     /// or decorated, in the container resolves from the call's scope, which owns it; otherwise the factory constructs it
     /// with its dependencies from that scope and reports that the caller owns the instance.
     /// </summary>
+    /// <remarks>
+    /// <c>ActivatorUtilities.CreateInstance</c> selects a constructor by reflection on every call. When the class has one
+    /// activation constructor, the selection cannot differ between calls, so the factory caches an
+    /// <c>ObjectFactory</c> on first use. Otherwise the selection depends on what each scope can resolve, and only
+    /// <c>CreateInstance</c> makes it.
+    /// </remarks>
     private static void _WriteFactory(SourceCodeBuilder writer, ConsumerRegistrationModel registration)
     {
         var consumer = registration.Consumer;
+
+        if (consumer.HasSingleActivationConstructor)
+        {
+            // Not readonly and built on first use, so a consumer the container always supplies never pays for it. A
+            // racing first use builds two equivalent factories, and either one is correct.
+            writer.AppendLine(
+                $"private static global::Microsoft.Extensions.DependencyInjection.ObjectFactory<{consumer.TypeName}> {registration.ActivatorName};"
+            );
+            writer.NewLine();
+        }
+
         writer.AppendLine(
             $"private static {consumer.TypeName} {registration.FactoryName}({_ServiceProvider} services, out bool created)"
         );
@@ -138,7 +155,9 @@ internal static class MessagingSourceEmitter
         );
         writer.AppendLine("created = registered is null;");
         writer.AppendLine(
-            $"return registered ?? global::Microsoft.Extensions.DependencyInjection.ActivatorUtilities.CreateInstance<{consumer.TypeName}>(services);"
+            consumer.HasSingleActivationConstructor
+                ? $"return registered ?? ({registration.ActivatorName} ??= global::Microsoft.Extensions.DependencyInjection.ActivatorUtilities.CreateFactory<{consumer.TypeName}>(global::System.Type.EmptyTypes))(services, null);"
+                : $"return registered ?? global::Microsoft.Extensions.DependencyInjection.ActivatorUtilities.CreateInstance<{consumer.TypeName}>(services);"
         );
         writer.CloseBracket();
     }

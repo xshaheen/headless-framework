@@ -17,11 +17,13 @@ namespace Messaging.SourceGenerator.Tests
             catalog.AddBusConsumer<global::GlobalConsumer, global::GlobalMessage>("root.global", everyInstance: false, dispatch: Dispatch_GlobalConsumer);
         }
 
+        private static global::Microsoft.Extensions.DependencyInjection.ObjectFactory<global::Billing_Handlers.Nested> Activator_Billing_Handlers_Nested;
+
         private static global::Billing_Handlers.Nested Create_Billing_Handlers_Nested(global::System.IServiceProvider services, out bool created)
         {
             var registered = global::Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetService<global::Billing_Handlers.Nested>(services);
             created = registered is null;
-            return registered ?? global::Microsoft.Extensions.DependencyInjection.ActivatorUtilities.CreateInstance<global::Billing_Handlers.Nested>(services);
+            return registered ?? (Activator_Billing_Handlers_Nested ??= global::Microsoft.Extensions.DependencyInjection.ActivatorUtilities.CreateFactory<global::Billing_Handlers.Nested>(global::System.Type.EmptyTypes))(services, null);
         }
 
         private static async global::System.Threading.Tasks.ValueTask Dispatch_Billing_Handlers_Nested(global::System.IServiceProvider services, global::Headless.Messaging.ConsumeContext context, global::System.Threading.CancellationToken cancellationToken)
@@ -37,11 +39,13 @@ namespace Messaging.SourceGenerator.Tests
             }
         }
 
+        private static global::Microsoft.Extensions.DependencyInjection.ObjectFactory<global::Billing.Handlers.Nested> Activator_Billing_Handlers_Nested_2;
+
         private static global::Billing.Handlers.Nested Create_Billing_Handlers_Nested_2(global::System.IServiceProvider services, out bool created)
         {
             var registered = global::Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetService<global::Billing.Handlers.Nested>(services);
             created = registered is null;
-            return registered ?? global::Microsoft.Extensions.DependencyInjection.ActivatorUtilities.CreateInstance<global::Billing.Handlers.Nested>(services);
+            return registered ?? (Activator_Billing_Handlers_Nested_2 ??= global::Microsoft.Extensions.DependencyInjection.ActivatorUtilities.CreateFactory<global::Billing.Handlers.Nested>(global::System.Type.EmptyTypes))(services, null);
         }
 
         private static async global::System.Threading.Tasks.ValueTask Dispatch_Billing_Handlers_Nested_2(global::System.IServiceProvider services, global::Headless.Messaging.ConsumeContext context, global::System.Threading.CancellationToken cancellationToken)
@@ -60,11 +64,13 @@ namespace Messaging.SourceGenerator.Tests
             }
         }
 
+        private static global::Microsoft.Extensions.DependencyInjection.ObjectFactory<global::GlobalConsumer> Activator_GlobalConsumer;
+
         private static global::GlobalConsumer Create_GlobalConsumer(global::System.IServiceProvider services, out bool created)
         {
             var registered = global::Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetService<global::GlobalConsumer>(services);
             created = registered is null;
-            return registered ?? global::Microsoft.Extensions.DependencyInjection.ActivatorUtilities.CreateInstance<global::GlobalConsumer>(services);
+            return registered ?? (Activator_GlobalConsumer ??= global::Microsoft.Extensions.DependencyInjection.ActivatorUtilities.CreateFactory<global::GlobalConsumer>(global::System.Type.EmptyTypes))(services, null);
         }
 
         private static async global::System.Threading.Tasks.ValueTask Dispatch_GlobalConsumer(global::System.IServiceProvider services, global::Headless.Messaging.ConsumeContext context, global::System.Threading.CancellationToken cancellationToken)

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging.Internal;
 using Headless.Reliability;
 
 namespace Headless.Messaging;
@@ -64,6 +65,12 @@ internal sealed record MessageConsumerRegistration(
     MessageConsumerDispatch Dispatch
 )
 {
+    /// <summary>
+    /// The typed consume code of the consumed message, captured where the generated module named the type as a generic
+    /// argument.
+    /// </summary>
+    public ConsumeMessageBinding? MessageBinding { get; init; }
+
     /// <summary>Whether every process receives every message; only a Bus consumer sets it.</summary>
     public bool EveryInstance { get; init; }
 

@@ -17,5 +17,8 @@ internal static class SourceGeneratorConstants
     public const string RequestMethodName = "RequestAsync";
     public const string GetReplyMethodName = "GetReplyAsync";
 
+    public const string ActivatorUtilitiesConstructorAttributeMetadataName =
+        "Microsoft.Extensions.DependencyInjection.ActivatorUtilitiesConstructorAttribute";
+
     public const string GeneratedFileName = "MessagingModule.g.cs";
 }

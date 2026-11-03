@@ -424,6 +424,7 @@ public static class SetupMessaging
                     consumer.Dispatch
                 )
                 {
+                    MessageBinding = ConsumeMessageBinding.From(consumer.Message),
                     EveryInstance = consumer.EveryInstance,
                     DeclaringModule = consumer.Source,
                     OnSubscriptionEstablished = consumer.OnSubscriptionEstablished,
@@ -474,6 +475,7 @@ public static class SetupMessaging
                     registration.Lane
                 ) with
                 {
+                    MessageBinding = consumer.MessageBinding,
                     EveryInstance = consumer.EveryInstance,
                     Dispatch = consumer.Dispatch,
                     OnSubscriptionEstablished = consumer.OnSubscriptionEstablished,

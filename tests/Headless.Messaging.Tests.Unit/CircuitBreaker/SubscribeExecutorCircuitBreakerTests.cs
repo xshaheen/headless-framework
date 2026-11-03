@@ -58,6 +58,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
             Lane = MessageLane.Bus,
             ConsumerType = typeof(CbTestConsumer),
             MessageType = typeof(CbTestMessage),
+            MessageBinding = ConsumeMessageBinding.For<CbTestMessage>(),
             MessageName = _MessageName,
             SubscriptionName = _SubscriptionName,
         };

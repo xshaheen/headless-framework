@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging.Internal;
 using Headless.Reliability;
 
 namespace Headless.Messaging;
@@ -66,6 +67,12 @@ public sealed record ConsumerMetadata(
     /// Whether this consumer responds to requests. A host with a responder needs a transport with a reply channel.
     /// </summary>
     internal bool IsResponder => ResponseType is not null;
+
+    /// <summary>
+    /// The typed consume code of <see cref="MessageType"/>, captured where the generated module named the type as a
+    /// generic argument; a delivery to this consumer runs through it.
+    /// </summary>
+    internal ConsumeMessageBinding? MessageBinding { get; init; }
 
     /// <summary>The generated dispatch that runs the consumer class.</summary>
     internal MessageConsumerDispatch? Dispatch { get; init; }

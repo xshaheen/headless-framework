@@ -158,6 +158,15 @@ public abstract class PublishContext
 
     private protected bool IsCompleted { get; private set; }
 
+    /// <summary>The service type of middleware registered for this context's typed form.</summary>
+    internal abstract Type TypedMiddlewareServiceType { get; }
+
+    /// <summary>
+    /// Calls typed middleware that <see cref="TypedMiddlewareServiceType"/> resolved. The typed context implements it, so
+    /// the call is compiled generic code rather than a delegate built per context type at run time.
+    /// </summary>
+    internal abstract ValueTask InvokeTypedMiddlewareAsync(object middleware, Func<ValueTask> next);
+
     private protected void Complete()
     {
         IsCompleted = true;
@@ -288,6 +297,13 @@ public sealed class PublishContext<TMessage> : PublishContext, ICompletablePubli
 
     /// <summary>Gets the strongly-typed message payload being published. May be <see langword="null"/>.</summary>
     public new TMessage? Content => (TMessage?)base.Content;
+
+    internal override Type TypedMiddlewareServiceType => typeof(IPublishMiddleware<PublishContext<TMessage>>);
+
+    internal override ValueTask InvokeTypedMiddlewareAsync(object middleware, Func<ValueTask> next)
+    {
+        return ((IPublishMiddleware<PublishContext<TMessage>>)middleware).InvokeAsync(this, next);
+    }
 
     /// <summary>
     /// Gets or sets the current publish options before the inner publisher runs.

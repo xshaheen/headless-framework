@@ -1,10 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
-using System.Linq.Expressions;
-using System.Reflection;
 using System.Runtime.CompilerServices;
-using FastExpressionCompiler;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -19,13 +16,6 @@ internal sealed class ConsumeMiddlewarePipeline(
     IConsumeContextAccessor? consumeContextAccessor = null
 ) : IConsumeMiddlewarePipeline
 {
-    private static readonly ConcurrentDictionary<MiddlewareDispatchKey, ConsumeMiddlewareInvoker> _TypedInvokers =
-        new();
-
-    // Caches the IConsumeMiddleware<TContext> closed service type per concrete ConsumeContext type, so the
-    // resolution path avoids running MakeGenericType on every dispatch.
-    private static readonly ConcurrentDictionary<Type, Type> _TypedMiddlewareServiceTypes = new();
-
     // Cache the tracked-type HashSet per (registry, direction). The registry instance is stable for
     // the application's lifetime, so we never recompute the set on the hot consume path.
     private static readonly ConditionalWeakTable<
@@ -33,40 +23,27 @@ internal sealed class ConsumeMiddlewarePipeline(
         ConcurrentDictionary<MiddlewareDirection, HashSet<Type>>
     > _TrackedTypesByRegistry = [];
 
-    private readonly ConcurrentDictionary<
-        Type,
-        Func<object, MediumMessage, MessageHeader, string?, MessageLane, object>
-    > _compiledConsumeContextFactories = new();
-
     // Registration existence is fixed once the container is built, so cache per closed context type whether any
     // direct middleware is registered at all and skip the scoped GetServices + array build on the (common)
     // zero-middleware consume path. A null probe (non-conforming container) always takes the slow path.
     private readonly IServiceProviderIsService? _serviceProbe = serviceProvider.GetService<IServiceProviderIsService>();
 
-    private readonly ConcurrentDictionary<Type, bool> _hasDirectMiddleware = new();
+    private readonly ConcurrentDictionary<ConsumeMessageBinding, bool> _hasDirectMiddleware = new();
 
     public async Task<ConsumerExecutedResult> ExecuteAsync(
         ConsumerContext context,
         object messageInstance,
-        Type messageType,
         CancellationToken cancellationToken = default
     )
     {
         await using var scope = serviceProvider.CreateAsyncScope();
-        return await ExecuteInScopeAsync(
-                context,
-                messageInstance,
-                messageType,
-                scope.ServiceProvider,
-                cancellationToken
-            )
+        return await ExecuteInScopeAsync(context, messageInstance, scope.ServiceProvider, cancellationToken)
             .ConfigureAwait(false);
     }
 
     public async Task<ConsumerExecutedResult> ExecuteInScopeAsync(
         ConsumerContext context,
         object messageInstance,
-        Type messageType,
         IServiceProvider provider,
         CancellationToken cancellationToken = default
     )
@@ -81,17 +58,25 @@ internal sealed class ConsumeMiddlewarePipeline(
         // handler side effect, and warn when a recognized value disagrees with the registered lane.
         _ValidateLaneHeader(originHeaders, descriptor, logger);
 
+        // The binding was captured where the consumer's message type was a generic argument, so the typed context and
+        // typed middleware calls below are ordinary compiled generic code.
+        var binding =
+            descriptor.MessageBinding
+            ?? throw new InvalidOperationException(
+                $"Consumer {descriptor.ConsumerType.FullName ?? descriptor.ConsumerType.Name} of message "
+                    + $"'{descriptor.MessageName}' declares no message type."
+            );
+
         var consumeHeaders = new MessageHeader(originHeaders);
-        var consumeContext = _BuildConsumeContext(
+        var consumeContext = binding.CreateContext(
             messageInstance,
             context.MediumMessage,
-            messageType,
             consumeHeaders,
             tenantId,
-            descriptor.Lane,
-            context.UnitOfWork,
-            cancellationToken
+            descriptor.Lane
         );
+        consumeContext.SetCancellationToken(cancellationToken);
+        consumeContext.UnitOfWork = context.UnitOfWork;
         consumeContext.IsResponder = descriptor.IsResponder;
         var previousConsumeContext = consumeContextAccessor?.Current;
 
@@ -99,7 +84,7 @@ internal sealed class ConsumeMiddlewarePipeline(
         {
             consumeContextAccessor?.Current = consumeContext;
 
-            var middleware = _ResolveMiddleware(provider, consumeContext, descriptor);
+            var middleware = _ResolveMiddleware(provider, consumeContext, binding, descriptor);
 
             if (middleware.Length == 0)
             {
@@ -126,7 +111,7 @@ internal sealed class ConsumeMiddlewarePipeline(
                 {
                     var current = middleware[i];
                     var innerNext = next;
-                    next = () => _InvokeAsync(current, consumeContext, innerNext, innerRingCompleted);
+                    next = () => _InvokeAsync(current, binding, consumeContext, innerNext, innerRingCompleted);
                 }
 
                 await next().ConfigureAwait(false);
@@ -156,7 +141,7 @@ internal sealed class ConsumeMiddlewarePipeline(
         var callbackHeaders = consumeContext.ResponseHeaders;
         return new ConsumerExecutedResult(
             consumeContext.Response,
-            consumeContext.ResponseType,
+            consumeContext.ResponseMessageType,
             context.MediumMessage.Origin.Id,
             callbackName,
             callbackHeaders,
@@ -211,6 +196,7 @@ internal sealed class ConsumeMiddlewarePipeline(
 
     private async ValueTask _InvokeAsync(
         object middleware,
+        ConsumeMessageBinding binding,
         ConsumeContext context,
         Func<ValueTask> innerNext,
         StrongBox<bool> innerRingCompleted
@@ -218,7 +204,7 @@ internal sealed class ConsumeMiddlewarePipeline(
     {
         try
         {
-            await _InvokeMiddlewareAsync(middleware, context, innerNext).ConfigureAwait(false);
+            await _InvokeMiddlewareAsync(middleware, binding, context, innerNext).ConfigureAwait(false);
             context.MarkCompleted();
         }
         catch (Exception ex) when (innerRingCompleted.Value)
@@ -237,29 +223,26 @@ internal sealed class ConsumeMiddlewarePipeline(
         }
     }
 
-    private static ValueTask _InvokeMiddlewareAsync(object middleware, ConsumeContext context, Func<ValueTask> next)
+    private static ValueTask _InvokeMiddlewareAsync(
+        object middleware,
+        ConsumeMessageBinding binding,
+        ConsumeContext context,
+        Func<ValueTask> next
+    )
     {
-        if (middleware is IConsumeMiddleware<ConsumeContext> busMiddleware)
-        {
-            return busMiddleware.InvokeAsync(context, next);
-        }
-
-        var invoker = _TypedInvokers.GetOrAdd(
-            new MiddlewareDispatchKey(middleware.GetType(), context.MessageType),
-            static (_, contextType) => _CompileTypedInvoker(contextType),
-            context.GetType()
-        );
-
-        return invoker(middleware, context, next);
+        return middleware is IConsumeMiddleware<ConsumeContext> busMiddleware
+            ? busMiddleware.InvokeAsync(context, next)
+            : binding.InvokeMiddlewareAsync(middleware, context, next);
     }
 
     private object[] _ResolveMiddleware(
         IServiceProvider provider,
         ConsumeContext context,
+        ConsumeMessageBinding binding,
         ConsumerExecutorDescriptor consumer
     )
     {
-        var shared = _ResolveSharedMiddleware(provider, context);
+        var shared = _ResolveSharedMiddleware(provider, context, binding);
         var tuned = consumer.Middleware;
         if (tuned.Count == 0)
         {
@@ -277,10 +260,14 @@ internal sealed class ConsumeMiddlewarePipeline(
         return middleware;
     }
 
-    private object[] _ResolveSharedMiddleware(IServiceProvider provider, ConsumeContext context)
+    private object[] _ResolveSharedMiddleware(
+        IServiceProvider provider,
+        ConsumeContext context,
+        ConsumeMessageBinding binding
+    )
     {
         // _ResolveDirectMiddleware already materializes a fresh array; reuse it directly instead of copying again.
-        var directMiddleware = _ResolveDirectMiddleware(provider, context);
+        var directMiddleware = _ResolveDirectMiddleware(provider, binding);
 
         if (descriptorRegistry is null)
         {
@@ -304,15 +291,13 @@ internal sealed class ConsumeMiddlewarePipeline(
             : [.. _GetUntrackedDirectMiddleware(directMiddleware, MiddlewareDirection.Consume)];
     }
 
-    private object[] _ResolveDirectMiddleware(IServiceProvider provider, ConsumeContext context)
+    private object[] _ResolveDirectMiddleware(IServiceProvider provider, ConsumeMessageBinding binding)
     {
-        var contextType = context.GetType();
-
         if (
             _serviceProbe is not null
             && !_hasDirectMiddleware.GetOrAdd(
-                contextType,
-                static (type, self) => self._HasAnyDirectMiddleware(type),
+                binding,
+                static (binding, self) => self._HasAnyDirectMiddleware(binding),
                 this
             )
         )
@@ -320,28 +305,19 @@ internal sealed class ConsumeMiddlewarePipeline(
             return [];
         }
 
-        var typedServiceType = _TypedMiddlewareServiceTypes.GetOrAdd(
-            contextType,
-            static contextType => typeof(IConsumeMiddleware<>).MakeGenericType(contextType)
-        );
         var busMiddleware = provider.GetServices<IConsumeMiddleware<ConsumeContext>>().Cast<object>();
         var typedMiddleware = provider
-            .GetServices(typedServiceType)
+            .GetServices(binding.MiddlewareServiceType)
             .Where(static middleware => middleware is not null)
             .Cast<object>();
 
         return [.. busMiddleware, .. typedMiddleware];
     }
 
-    private bool _HasAnyDirectMiddleware(Type contextType)
+    private bool _HasAnyDirectMiddleware(ConsumeMessageBinding binding)
     {
-        var typedServiceType = _TypedMiddlewareServiceTypes.GetOrAdd(
-            contextType,
-            static type => typeof(IConsumeMiddleware<>).MakeGenericType(type)
-        );
-
         return _serviceProbe!.IsService(typeof(IConsumeMiddleware<ConsumeContext>))
-            || _serviceProbe.IsService(typedServiceType);
+            || _serviceProbe.IsService(binding.MiddlewareServiceType);
     }
 
     private IEnumerable<object> _GetUntrackedDirectMiddleware(
@@ -362,218 +338,6 @@ internal sealed class ConsumeMiddlewarePipeline(
         );
 
         return middleware.Where(current => !trackedTypes.Contains(current.GetType()));
-    }
-
-    private ConsumeContext _BuildConsumeContext(
-        object messageInstance,
-        MediumMessage mediumMessage,
-        Type messageType,
-        MessageHeader headers,
-        string? tenantId,
-        MessageLane lane,
-        IUnitOfWork? unitOfWork,
-        CancellationToken cancellationToken
-    )
-    {
-        var factory = _compiledConsumeContextFactories.GetOrAdd(messageType, _CompileFactory);
-        var context = (ConsumeContext)factory(messageInstance, mediumMessage, headers, tenantId, lane);
-        context.SetCancellationToken(cancellationToken);
-        context.UnitOfWork = unitOfWork;
-
-        return context;
-    }
-
-    private static Func<object, MediumMessage, MessageHeader, string?, MessageLane, object> _CompileFactory(
-        Type messageType
-    )
-    {
-        var consumeContextType = typeof(ConsumeContext<>).MakeGenericType(messageType);
-        var messageParam = Expression.Parameter(typeof(object), "message");
-        var mediumParam = Expression.Parameter(typeof(MediumMessage), "medium");
-        var consumeHeadersParam = Expression.Parameter(typeof(MessageHeader), "headers");
-        var tenantIdParam = Expression.Parameter(typeof(string), "tenantId");
-        var laneParam = Expression.Parameter(typeof(MessageLane), "lane");
-        var originProperty = Expression.Property(mediumParam, nameof(MediumMessage.Origin));
-        var addedProperty = Expression.Property(mediumParam, nameof(MediumMessage.Added));
-        var headersProperty = Expression.Property(originProperty, nameof(Message.Headers));
-
-        var messageProperty = consumeContextType.GetProperty(
-            nameof(ConsumeContext<>.Message),
-            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly
-        )!;
-        var messageIdProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.MessageId))!;
-        var correlationIdProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.CorrelationId))!;
-        var causationIdProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.CausationId))!;
-        var contractVersionProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.ContractVersion))!;
-        var tenantIdProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.TenantId))!;
-        var transportAddressProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.TransportAddress))!;
-        var headersCtxProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.Headers))!;
-        var timestampProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.Timestamp))!;
-        var topicProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.MessageName))!;
-        var laneProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.Lane))!;
-
-        var dictionaryIndexer = typeof(IDictionary<string, string?>).GetProperty(
-            "Item",
-            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly
-        )!;
-
-        var messageBinding = Expression.Bind(messageProperty, Expression.Convert(messageParam, messageType));
-
-        var messageIdKey = Expression.Constant(Headers.MessageId);
-        var messageIdBinding = Expression.Bind(
-            messageIdProperty,
-            Expression.Coalesce(
-                Expression.MakeIndex(headersProperty, dictionaryIndexer, [messageIdKey]),
-                Expression.Constant(string.Empty)
-            )
-        );
-
-        var correlationIdKey = Expression.Constant(Headers.CorrelationId);
-        var correlationIdVar = Expression.Variable(typeof(string), "correlationIdStr");
-        var tryGetValueMethod = typeof(IDictionary<string, string?>).GetMethod(
-            nameof(IDictionary<,>.TryGetValue),
-            [typeof(string), typeof(string).MakeByRefType()]
-        )!;
-        var isNullOrWhiteSpaceMethod = typeof(string).GetMethod(nameof(string.IsNullOrWhiteSpace), [typeof(string)])!;
-
-        var correlationIdExpression = Expression.Block(
-            [correlationIdVar],
-            Expression.Condition(
-                Expression.AndAlso(
-                    Expression.Call(headersProperty, tryGetValueMethod, correlationIdKey, correlationIdVar),
-                    Expression.Not(Expression.Call(isNullOrWhiteSpaceMethod, correlationIdVar))
-                ),
-                correlationIdVar,
-                Expression.Constant(null, typeof(string))
-            )
-        );
-
-        var correlationIdBinding = Expression.Bind(correlationIdProperty, correlationIdExpression);
-        var causationIdBinding = Expression.Bind(
-            causationIdProperty,
-            Expression.Call(
-                typeof(ConsumeMiddlewarePipeline),
-                nameof(_ResolveOptionalHeader),
-                typeArguments: null,
-                headersProperty,
-                Expression.Constant(Headers.CausationId)
-            )
-        );
-        var contractVersionBinding = Expression.Bind(
-            contractVersionProperty,
-            Expression.Call(
-                typeof(ConsumeMiddlewarePipeline),
-                nameof(_ResolveContractVersion),
-                typeArguments: null,
-                headersProperty
-            )
-        );
-        var transportAddressBinding = Expression.Bind(
-            transportAddressProperty,
-            Expression.Call(
-                typeof(ConsumeMiddlewarePipeline),
-                nameof(_ResolveOptionalHeader),
-                typeArguments: null,
-                headersProperty,
-                Expression.Constant(Headers.TransportAddress)
-            )
-        );
-        var tenantIdBinding = Expression.Bind(tenantIdProperty, tenantIdParam);
-        var laneBinding = Expression.Bind(laneProperty, laneParam);
-        var headersBinding = Expression.Bind(headersCtxProperty, consumeHeadersParam);
-        var timestampBinding = Expression.Bind(
-            timestampProperty,
-            Expression.Call(
-                typeof(ConsumeMiddlewarePipeline),
-                nameof(_ResolveTimestamp),
-                typeArguments: null,
-                headersProperty,
-                addedProperty
-            )
-        );
-        var messageNameKey = Expression.Constant(Headers.MessageName);
-        var topicBinding = Expression.Bind(
-            topicProperty,
-            Expression.Coalesce(
-                Expression.MakeIndex(headersProperty, dictionaryIndexer, [messageNameKey]),
-                Expression.Constant(string.Empty)
-            )
-        );
-
-        var newExpr = Expression.MemberInit(
-            Expression.New(consumeContextType),
-            messageBinding,
-            messageIdBinding,
-            correlationIdBinding,
-            causationIdBinding,
-            contractVersionBinding,
-            transportAddressBinding,
-            tenantIdBinding,
-            laneBinding,
-            headersBinding,
-            timestampBinding,
-            topicBinding
-        );
-
-        var lambda = Expression.Lambda<Func<object, MediumMessage, MessageHeader, string?, MessageLane, object>>(
-            newExpr,
-            messageParam,
-            mediumParam,
-            consumeHeadersParam,
-            tenantIdParam,
-            laneParam
-        );
-        return lambda.CompileFast();
-    }
-
-    private static string? _ResolveOptionalHeader(IDictionary<string, string?> headers, string name)
-    {
-        return headers.TryGetValue(name, out var value) && !string.IsNullOrWhiteSpace(value) ? value : null;
-    }
-
-    private static string _ResolveContractVersion(IDictionary<string, string?> headers)
-    {
-        return _ResolveOptionalHeader(headers, Headers.ContractVersion) ?? MessageOptions.InitialContractVersion;
-    }
-
-    private static ConsumeMiddlewareInvoker _CompileTypedInvoker(Type contextType)
-    {
-        var middlewareParam = Expression.Parameter(typeof(object), "middleware");
-        var contextParam = Expression.Parameter(typeof(ConsumeContext), "context");
-        var nextParam = Expression.Parameter(typeof(Func<ValueTask>), "next");
-        var serviceType = typeof(IConsumeMiddleware<>).MakeGenericType(contextType);
-        var invokeMethod = serviceType.GetMethod(nameof(IConsumeMiddleware<>.InvokeAsync))!;
-
-        var body = Expression.Call(
-            Expression.Convert(middlewareParam, serviceType),
-            invokeMethod,
-            Expression.Convert(contextParam, contextType),
-            nextParam
-        );
-
-        return Expression
-            .Lambda<ConsumeMiddlewareInvoker>(body, middlewareParam, contextParam, nextParam)
-            .CompileFast();
-    }
-
-    private static DateTimeOffset _ResolveTimestamp(IDictionary<string, string?> headers, DateTimeOffset added)
-    {
-        if (
-            headers.TryGetValue(Headers.SentTime, out var sentTime)
-            && !string.IsNullOrWhiteSpace(sentTime)
-            && DateTimeOffset.TryParse(
-                sentTime,
-                CultureInfo.InvariantCulture,
-                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
-                out var parsed
-            )
-        )
-        {
-            return parsed;
-        }
-
-        // MediumMessage.Added is already an instant -- there is no kind left to guess at.
-        return added;
     }
 
     private static void _ValidateLaneHeader(
@@ -622,12 +386,6 @@ internal sealed class ConsumeMiddlewarePipeline(
 
         return false;
     }
-
-    private delegate ValueTask ConsumeMiddlewareInvoker(
-        object middleware,
-        ConsumeContext context,
-        Func<ValueTask> next
-    );
 }
 
 internal interface IConsumeMiddlewarePipeline
@@ -635,7 +393,6 @@ internal interface IConsumeMiddlewarePipeline
     Task<ConsumerExecutedResult> ExecuteInScopeAsync(
         ConsumerContext context,
         object messageInstance,
-        Type messageType,
         IServiceProvider provider,
         CancellationToken cancellationToken = default
     );
@@ -643,7 +400,6 @@ internal interface IConsumeMiddlewarePipeline
     Task<ConsumerExecutedResult> ExecuteAsync(
         ConsumerContext context,
         object messageInstance,
-        Type messageType,
         CancellationToken cancellationToken = default
     );
 }
