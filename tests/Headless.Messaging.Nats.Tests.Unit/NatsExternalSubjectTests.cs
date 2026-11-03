@@ -681,9 +681,9 @@ public sealed class NatsExternalSubjectTests : TestBase
             new MessageRouteKey(typeof(RunResult), name, lane),
             typeof(RunResult),
             "1",
-            CorrelationSelector: null,
+            correlationSelector: null,
             lane == MessageLane.Bus ? contract.Bus.ProviderConfigs : contract.Queue.ProviderConfigs,
-            RawPayload: raw
+            rawPayload: raw
         );
     }
 

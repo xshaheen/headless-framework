@@ -28,8 +28,14 @@ public static class MessagingDiagnostics
     /// <summary>Shared <see cref="ActivitySource"/> for messaging traces.</summary>
     internal static readonly ActivitySource ActivitySource = HeadlessDiagnostics.CreateActivitySource("Messaging");
 
-    /// <summary>Shared <see cref="Meter"/> for messaging metrics.</summary>
-    internal static readonly Meter Meter = HeadlessDiagnostics.CreateMeter("Messaging");
+    /// <summary>Gets the shared <see cref="Meter"/> for messaging metrics.</summary>
+    /// <remarks>
+    /// A transport adds its broker-specific instruments here, so an application that subscribes to
+    /// <see cref="SourceName"/> receives them with no extra wiring. Name such an instrument
+    /// <c>headless.messaging.&lt;transport&gt;.*</c>, and create it once per process, not once per client, because the
+    /// meter lives as long as the process.
+    /// </remarks>
+    public static Meter Meter { get; } = HeadlessDiagnostics.CreateMeter("Messaging");
 
     /// <summary>
     /// Gets whether any span or metric listener is attached to the messaging scope. Emission sites gate their

@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using System.Text.RegularExpressions;
 using Headless.Checks;
+using Headless.Messaging.Transport;
 using Headless.Reliability;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;

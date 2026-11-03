@@ -239,13 +239,13 @@ public sealed class KafkaConsumerClientRawPayloadTests : TestBase
         };
     }
 
-    private static Headless.Messaging.Internal.MessageMetadata _Route(string name, string version, bool raw = false) =>
+    private static Headless.Messaging.Transport.MessageMetadata _Route(string name, string version, bool raw = false) =>
         new(
             new MessageRouteKey(typeof(object), name, MessageLane.Queue),
             typeof(object),
             version,
-            CorrelationSelector: null,
+            correlationSelector: null,
             new Dictionary<Type, object>(),
-            RawPayload: raw
+            rawPayload: raw
         );
 }

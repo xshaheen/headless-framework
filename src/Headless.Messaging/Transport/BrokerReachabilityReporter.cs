@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
+
 namespace Headless.Messaging.Transport;
 
 /// <summary>
@@ -8,9 +10,11 @@ namespace Headless.Messaging.Transport;
 /// </summary>
 /// <remarks>
 /// Every failure is reported, because the host counts them in a row. A success is reported only after a failure: the
-/// host needs it to end the run, and reporting every poll would put a callback on each receive.
+/// host needs it to end the run, and reporting every poll would put a callback on each receive. A consumer client whose
+/// broker library reconnects on its own and never surfaces the outage to <see cref="IConsumerClient.ListeningAsync"/>
+/// keeps one reporter and calls it from its receive loop.
 /// </remarks>
-internal sealed class BrokerReachabilityReporter
+public sealed class BrokerReachabilityReporter
 {
     private int _failureReported;
 
@@ -20,16 +24,22 @@ internal sealed class BrokerReachabilityReporter
     /// <summary>Reports a receive that failed because the broker could not be reached.</summary>
     /// <param name="onLog">The client's log callback, read at the call because the core attaches it after creation.</param>
     /// <param name="exception">The failure, whose message becomes the reported reason.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="exception"/> is <see langword="null"/>.</exception>
     public void ReportFailure(Action<LogMessageEventArgs>? onLog, Exception exception)
     {
+        Argument.IsNotNull(exception);
+
         ReportFailure(onLog, exception.Message);
     }
 
     /// <summary>Reports that the broker could not be reached, with no exception to show for it.</summary>
     /// <param name="onLog">The client's log callback, read at the call because the core attaches it after creation.</param>
     /// <param name="reason">What failed, for the host's log.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="reason"/> is <see langword="null"/>.</exception>
     public void ReportFailure(Action<LogMessageEventArgs>? onLog, string reason)
     {
+        Argument.IsNotNull(reason);
+
         Volatile.Write(ref _failureReported, 1);
         onLog?.Invoke(new LogMessageEventArgs { LogType = MqLogType.BrokerUnreachable, Reason = reason });
     }

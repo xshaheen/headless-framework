@@ -10,6 +10,10 @@ namespace Headless.Messaging;
 /// <c>IBusTransport</c> and <c>IQueueTransport</c> extend this interface with intent-specific
 /// delivery semantics. Application code should depend on those narrower interfaces rather than
 /// <see cref="ITransport"/> directly.
+/// <para>
+/// <b>Evolution policy:</b> this is a transport-provider extension point, so it evolves additively. New members ship as default
+/// interface methods with a behavior-preserving fallback, and existing members never gain parameters.
+/// </para>
 /// </remarks>
 [PublicAPI]
 public interface ITransport : IAsyncDisposable

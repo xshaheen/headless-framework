@@ -4,6 +4,7 @@ using System.Buffers;
 using System.Text.Json;
 using Headless.Hosting;
 using Headless.Messaging;
+using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;

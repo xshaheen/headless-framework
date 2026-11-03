@@ -5,6 +5,7 @@ using Headless.Checks;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.RequestReply;
 using Headless.Messaging.Retry;
+using Headless.Messaging.Transport;
 using Headless.Reliability;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;

@@ -1,9 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
+
 namespace Headless.Messaging.Transport;
 
 /// <summary>Hands one received reply to a listener's handler without letting a faulty reply stop the listener.</summary>
-internal static class ReplyHandlerInvoker
+public static class ReplyHandlerInvoker
 {
     /// <summary>Invokes <paramref name="onReply"/> for <paramref name="reply"/>.</summary>
     /// <param name="onReply">The handler the listener was opened with.</param>
@@ -15,6 +17,9 @@ internal static class ReplyHandlerInvoker
     /// <see langword="false"/> when the handler stopped because the listener is closing, whose pending calls the
     /// requester's shutdown fails; otherwise <see langword="true"/>.
     /// </returns>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="onReply"/>, <paramref name="reply"/>, or <paramref name="onFailure"/> is <see langword="null"/>.
+    /// </exception>
     public static async ValueTask<bool> InvokeAsync<TState>(
         Func<TransportMessage, CancellationToken, ValueTask> onReply,
         TransportMessage reply,
@@ -23,6 +28,10 @@ internal static class ReplyHandlerInvoker
         CancellationToken closingToken
     )
     {
+        Argument.IsNotNull(onReply);
+        Argument.IsNotNull(reply);
+        Argument.IsNotNull(onFailure);
+
         try
         {
             await onReply(reply, closingToken).ConfigureAwait(false);

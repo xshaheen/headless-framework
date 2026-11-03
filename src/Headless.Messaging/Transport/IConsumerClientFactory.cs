@@ -5,6 +5,11 @@ namespace Headless.Messaging.Transport;
 /// <summary>
 /// Factory interface for creating instances of <see cref="IConsumerClient"/>.
 /// </summary>
+/// <remarks>
+/// <b>Evolution policy:</b> this is a transport-provider extension point, so it evolves additively. New members ship as default
+/// interface methods with a behavior-preserving fallback, and existing members never gain parameters; a new
+/// per-client input arrives as a property of <see cref="ConsumerClientRequest"/>.
+/// </remarks>
 public interface IConsumerClientFactory
 {
     /// <summary>

@@ -2,6 +2,7 @@
 
 using System.Globalization;
 using Headless.Checks;
+using Headless.Messaging.Transport;
 
 namespace Headless.Messaging;
 
