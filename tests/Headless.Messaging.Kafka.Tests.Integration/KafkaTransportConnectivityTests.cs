@@ -1,8 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using DotNet.Testcontainers.Containers;
 using Headless.Messaging;
-using Headless.Testing.Testcontainers;
-using Testcontainers.Kafka;
 
 namespace Tests;
 
@@ -22,7 +21,7 @@ public sealed class KafkaTransportConnectivityTests : TransportConnectivityTests
 
     protected override ValueTask StartBrokerAsync(CancellationToken cancellationToken)
     {
-        return _broker.StartAsync();
+        return new ValueTask(_broker.StartAsync(cancellationToken));
     }
 
     protected override void ConfigureTransport(MessagingSetupBuilder setup)
@@ -42,27 +41,57 @@ public sealed class KafkaTransportConnectivityTests : TransportConnectivityTests
 
     protected override ValueTask StopBrokerAsync()
     {
-        return ((IAsyncDisposable)_broker).DisposeAsync();
+        return _broker.DisposeAsync();
     }
 }
 
 [CollectionDefinition("KafkaConnectivity", DisableParallelization = true)]
 public sealed class KafkaConnectivityCollection;
 
-/// <summary>A Kafka of its own on a fixed host port, so a stop and start brings it back where the host connects.</summary>
-internal sealed class FixedPortKafkaFixture : HeadlessKafkaFixture
+/// <summary>
+/// A Kafka of its own behind a <see cref="BrokerPortForwarder"/> that it also advertises, so a stop and start brings
+/// it back at the address the host connects to. The broker's advertised address must be the forwarder's: a client
+/// that bootstrapped through the forwarder connects next to whatever address the broker advertises.
+/// </summary>
+internal sealed class FixedPortKafkaFixture : IAsyncDisposable
 {
-    private readonly int _hostPort = BrokerHostPort.Reserve();
+    private const int _ClientPort = 9092;
 
-    public ValueTask StartAsync()
+    private readonly BrokerPortForwarder _forwarder;
+
+    public FixedPortKafkaFixture()
     {
-        return InitializeAsync();
+        _forwarder = new BrokerPortForwarder(_GetContainer, _ClientPort);
+        var advertised = $"PLAINTEXT://{_forwarder.Address}";
+        Container = SingleNodeKafka
+            .CreateBuilder([("PLAINTEXT", _ClientPort)], (_, _) => Task.FromResult(advertised))
+            .Build();
     }
 
-    protected override KafkaBuilder Configure()
+    public IContainer Container { get; }
+
+    /// <summary>Gets the bootstrap address, which stays the same across a stop and start.</summary>
+    public string ConnectionString => _forwarder.Address;
+
+    public Task StartAsync(CancellationToken cancellationToken)
     {
-        // KRaft keeps the broker's registration in its own log; with the embedded ZooKeeper a restart finds the previous
-        // session's broker node still registered and the broker refuses to start.
-        return new KafkaBuilder(TestImages.Kafka).WithKRaft().WithPortBinding(_hostPort, KafkaBuilder.KafkaPort);
+        return Container.StartAsync(cancellationToken);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            await Container.DisposeAsync();
+        }
+        finally
+        {
+            await _forwarder.DisposeAsync();
+        }
+    }
+
+    private IContainer _GetContainer()
+    {
+        return Container;
     }
 }

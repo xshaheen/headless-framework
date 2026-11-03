@@ -22,7 +22,7 @@ public sealed class AmazonSqsBrokerFaultTests(LocalStackTestFixture fixture) : B
         CancellationToken cancellationToken
     )
     {
-        // A LocalStack of its own on a fixed host port: a restart must not disturb the collection's LocalStack, and the
+        // A LocalStack of its own at a stable address: a restart must not disturb the collection's LocalStack, and the
         // session must find the restarted one at the address it already holds.
 #pragma warning disable CA2000 // Ownership moves to the returned session, or the catch disposes it.
         var broker = new FixedPortLocalStackFixture();

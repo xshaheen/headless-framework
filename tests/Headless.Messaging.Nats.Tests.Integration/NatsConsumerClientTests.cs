@@ -755,13 +755,16 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
         {
             await client.WaitUntilReadyAsync(AbortToken);
 
+            // Ready is reported before the first pull opens, so wait for it: the pause must have a live pull to stop.
+            await _WaitUntilAsync(() => client.OpenPullCount == 1, "the consume to open its pull");
+
             await client.PauseAsync(AbortToken);
 
-            // Pausing cancels the in-flight pull on the client, but the server keeps that pull open until the cancel
-            // reaches it or the pull's 1-second expiry passes. A publish on another connection can arrive first, and
-            // the server then hands the message to the dead pull, which redelivers it only after AckWait (30 seconds).
-            // Wait out the expiry so no pull is open when the paused message arrives.
-            await Task.Delay(TimeSpan.FromSeconds(1.5), AbortToken);
+            // Pausing cancels the pull, and NATS.Net then drains it on the consume loop: it unsubscribes, waits for the
+            // server's PONG, and the loop releases any message the pull already carried. Until that drain ends, a
+            // publish on another connection can still reach the old pull, so wait for it to close; from then on the
+            // server has no pull to deliver to, and the message stays in the stream until the resume.
+            await _WaitUntilAsync(() => client.OpenPullCount == 0, "the paused consume to drain its pull");
             await _PublishAsync(subject, "paused-msg"u8.ToArray());
             await Task.Delay(500, AbortToken);
 
@@ -1471,6 +1474,22 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
             { MessagingHeaders.MessageId, Guid.NewGuid().ToString("N") },
             { MessagingHeaders.MessageName, "TestEvent" },
         };
+    }
+
+    private static async Task _WaitUntilAsync(Func<bool> condition, string description)
+    {
+        using var bound = TimeSpan.FromSeconds(10).ToCancellationTokenSource(AbortToken);
+        while (!condition())
+        {
+            try
+            {
+                await Task.Delay(20, bound.Token);
+            }
+            catch (OperationCanceledException e) when (!AbortToken.IsCancellationRequested)
+            {
+                throw new TimeoutException($"Timed out waiting for {description}.", e);
+            }
+        }
     }
 
     private static async Task _StopListeningAsync(Task listeningTask, CancellationTokenSource cts)

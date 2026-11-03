@@ -46,20 +46,35 @@ public sealed class RedisTransportConnectivityTests : TransportConnectivityTests
 [CollectionDefinition("RedisConnectivity", DisableParallelization = true)]
 public sealed class RedisConnectivityCollection;
 
-/// <summary>A Redis of its own on a fixed host port, so a stop and start brings it back where the host connects.</summary>
+/// <summary>
+/// A Redis of its own behind a <see cref="BrokerPortForwarder"/>, so a stop and start brings it back at the address the
+/// host connects to.
+/// </summary>
 internal sealed class FixedPortRedisFixture : HeadlessRedisFixture
 {
-    private readonly int _hostPort = BrokerHostPort.Reserve();
+    private readonly BrokerPortForwarder _forwarder;
 
-    public string ConnectionString => Container.GetConnectionString();
+    public FixedPortRedisFixture()
+    {
+        _forwarder = new BrokerPortForwarder(() => Container, RedisBuilder.RedisPort);
+    }
+
+    public string ConnectionString => _forwarder.Address;
 
     public ValueTask StartAsync()
     {
         return InitializeAsync();
     }
 
-    protected override RedisBuilder Configure()
+    protected override async ValueTask DisposeAsyncCore()
     {
-        return new RedisBuilder(TestImages.Redis).WithPortBinding(_hostPort, RedisBuilder.RedisPort);
+        try
+        {
+            await base.DisposeAsyncCore();
+        }
+        finally
+        {
+            await _forwarder.DisposeAsync();
+        }
     }
 }
