@@ -12,12 +12,15 @@ public sealed class RedisCacheFixture : HeadlessRedisFixture, ICollectionFixture
     public ConnectionMultiplexer ConnectionMultiplexer { get; private set; } = null!;
     public HeadlessRedisScriptsLoader ScriptsLoader { get; private set; } = null!;
 
+    /// <summary>The container's connection string with admin commands allowed, for a test that needs its own connection.</summary>
+    public string ConnectionString { get; private set; } = null!;
+
     protected override async ValueTask InitializeAsync()
     {
         await base.InitializeAsync();
-        var connectionString = Container.GetConnectionString() + ",allowAdmin=true";
+        ConnectionString = Container.GetConnectionString() + ",allowAdmin=true";
 
-        ConnectionMultiplexer = await ConnectionMultiplexer.ConnectAsync(connectionString);
+        ConnectionMultiplexer = await ConnectionMultiplexer.ConnectAsync(ConnectionString);
         await FlushAllAsync();
 
         ScriptsLoader = new HeadlessRedisScriptsLoader(ConnectionMultiplexer);

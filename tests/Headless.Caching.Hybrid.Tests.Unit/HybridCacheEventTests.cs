@@ -2,7 +2,6 @@
 
 using System.Collections.Concurrent;
 using Headless.Caching;
-using Headless.Messaging;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Time.Testing;
 
@@ -19,10 +18,10 @@ public sealed class HybridCacheEventTests : TestBase
         var l2Inner = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
         var l2 = new InMemoryRemoteCacheAdapter(l2Inner);
 
-        var publisher = Substitute.For<IBus>();
+        var publisher = Substitute.For<IHybridCacheBackplane>();
         publisher
-            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(default(PublishReceipt));
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.CompletedTask);
 
         var cache = new HybridCache(
             l1,

@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Caching;
-using Headless.Messaging;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
@@ -14,10 +13,12 @@ public sealed class HybridCacheAutoRecoveryTests : TestBase
 
     private readonly FakeTimeProvider _timeProvider = new();
 
-    private (HybridCache cache, InMemoryCache l1, TogglableRemoteCache l2, IBus publisher) _CreateCache(
-        HybridCacheOptions? options = null,
-        IBus? publisher = null
-    )
+    private (
+        HybridCache cache,
+        InMemoryCache l1,
+        TogglableRemoteCache l2,
+        IHybridCacheBackplane publisher
+    ) _CreateCache(HybridCacheOptions? options = null, IHybridCacheBackplane? publisher = null)
     {
         options ??= new HybridCacheOptions();
         var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
@@ -25,14 +26,10 @@ public sealed class HybridCacheAutoRecoveryTests : TestBase
 
         if (publisher is null)
         {
-            publisher = Substitute.For<IBus>();
+            publisher = Substitute.For<IHybridCacheBackplane>();
             publisher
-                .PublishAsync(
-                    Arg.Any<CacheInvalidationMessage>(),
-                    Arg.Any<PublishOptions?>(),
-                    Arg.Any<CancellationToken>()
-                )
-                .Returns(default(PublishReceipt));
+                .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
+                .Returns(ValueTask.CompletedTask);
         }
 
         var cache = new HybridCache(l1, l2, publisher, options, timeProvider: _timeProvider);
@@ -129,11 +126,7 @@ public sealed class HybridCacheAutoRecoveryTests : TestBase
         cache.RecoveryQueue.Count.Should().Be(0);
         await publisher
             .Received(2)
-            .PublishAsync(
-                Arg.Is<CacheInvalidationMessage>(m => m.Key == key),
-                Arg.Is<PublishOptions?>(options => options!.DeliveryMode == DeliveryMode.Direct),
-                Arg.Any<CancellationToken>()
-            );
+            .PublishAsync(Arg.Is<CacheInvalidationMessage>(m => m.Key == key), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -295,11 +288,11 @@ public sealed class HybridCacheAutoRecoveryTests : TestBase
     {
         // given — L2 healthy, the invalidation backplane down for the first publish
         var failPublish = true;
-        var publisher = Substitute.For<IBus>();
+        var publisher = Substitute.For<IHybridCacheBackplane>();
         publisher
-            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
-                failPublish ? throw new InvalidOperationException("Publish failed") : default(PublishReceipt)
+                failPublish ? throw new InvalidOperationException("Publish failed") : ValueTask.CompletedTask
             );
 
         var (cache, _, l2, _) = _CreateCache(new HybridCacheOptions { EnableAutoRecovery = true }, publisher);
@@ -326,11 +319,7 @@ public sealed class HybridCacheAutoRecoveryTests : TestBase
         cache.RecoveryQueue.Count.Should().Be(0);
         await publisher
             .Received(2)
-            .PublishAsync(
-                Arg.Is<CacheInvalidationMessage>(m => m.Key == key),
-                Arg.Is<PublishOptions?>(options => options!.DeliveryMode == DeliveryMode.Direct),
-                Arg.Any<CancellationToken>()
-            );
+            .PublishAsync(Arg.Is<CacheInvalidationMessage>(m => m.Key == key), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -365,21 +354,17 @@ public sealed class HybridCacheAutoRecoveryTests : TestBase
         (await l2.GetAsync<int>(key, AbortToken)).HasValue.Should().BeFalse();
         await publisher
             .Received(2)
-            .PublishAsync(
-                Arg.Is<CacheInvalidationMessage>(m => m.Key == key),
-                Arg.Any<PublishOptions?>(),
-                Arg.Any<CancellationToken>()
-            );
+            .PublishAsync(Arg.Is<CacheInvalidationMessage>(m => m.Key == key), Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task should_not_displace_queued_value_op_when_publish_fails_for_same_key()
     {
         // given — a full outage: L2 writes and invalidation publishes both fail
-        var publisher = Substitute.For<IBus>();
+        var publisher = Substitute.For<IHybridCacheBackplane>();
         publisher
-            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns<PublishReceipt>(_ => throw new InvalidOperationException("Publish failed"));
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
+            .Returns<ValueTask>(_ => throw new InvalidOperationException("Publish failed"));
 
         var (cache, _, l2, _) = _CreateCache(new HybridCacheOptions { EnableAutoRecovery = true }, publisher);
         await using var _ = cache;
@@ -400,10 +385,10 @@ public sealed class HybridCacheAutoRecoveryTests : TestBase
     public async Task should_replace_queued_publish_when_value_op_queued_for_same_key()
     {
         // given — a backplane-only outage queues a publish for the key
-        var publisher = Substitute.For<IBus>();
+        var publisher = Substitute.For<IHybridCacheBackplane>();
         publisher
-            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns<PublishReceipt>(_ => throw new InvalidOperationException("Publish failed"));
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
+            .Returns<ValueTask>(_ => throw new InvalidOperationException("Publish failed"));
 
         var (cache, _, l2, _) = _CreateCache(new HybridCacheOptions { EnableAutoRecovery = true }, publisher);
         await using var _ = cache;
@@ -449,7 +434,6 @@ public sealed class HybridCacheAutoRecoveryTests : TestBase
             .Received(2)
             .PublishAsync(
                 Arg.Is<CacheInvalidationMessage>(m => m.Key == key && m.Timestamp == writeTime),
-                Arg.Any<PublishOptions?>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -459,11 +443,11 @@ public sealed class HybridCacheAutoRecoveryTests : TestBase
     {
         // given — a full outage queues a SetEntry for the key
         var failPublish = true;
-        var publisher = Substitute.For<IBus>();
+        var publisher = Substitute.For<IHybridCacheBackplane>();
         publisher
-            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
-                failPublish ? throw new InvalidOperationException("Publish failed") : default(PublishReceipt)
+                failPublish ? throw new InvalidOperationException("Publish failed") : ValueTask.CompletedTask
             );
 
         var (cache, _, l2, _) = _CreateCache(new HybridCacheOptions { EnableAutoRecovery = true }, publisher);
@@ -495,21 +479,17 @@ public sealed class HybridCacheAutoRecoveryTests : TestBase
         cache.RecoveryQueue.Count.Should().Be(0);
         await publisher
             .Received(3)
-            .PublishAsync(
-                Arg.Is<CacheInvalidationMessage>(m => m.Key == key),
-                Arg.Any<PublishOptions?>(),
-                Arg.Any<CancellationToken>()
-            );
+            .PublishAsync(Arg.Is<CacheInvalidationMessage>(m => m.Key == key), Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task should_bound_residual_publish_retries_when_backplane_stays_down()
     {
         // given — a full outage with a tight retry budget; the backplane never recovers
-        var publisher = Substitute.For<IBus>();
+        var publisher = Substitute.For<IHybridCacheBackplane>();
         publisher
-            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns<PublishReceipt>(_ => throw new InvalidOperationException("Publish failed"));
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
+            .Returns<ValueTask>(_ => throw new InvalidOperationException("Publish failed"));
 
         var (cache, _, l2, _) = _CreateCache(
             new HybridCacheOptions { EnableAutoRecovery = true, AutoRecoveryMaxRetries = 2 },
@@ -609,11 +589,7 @@ public sealed class HybridCacheAutoRecoveryTests : TestBase
         // and — the tag invalidation was re-broadcast on replay (live publish + replay publish)
         await publisher
             .Received(2)
-            .PublishAsync(
-                Arg.Is<CacheInvalidationMessage>(m => m.Tag == tag),
-                Arg.Any<PublishOptions?>(),
-                Arg.Any<CancellationToken>()
-            );
+            .PublishAsync(Arg.Is<CacheInvalidationMessage>(m => m.Tag == tag), Arg.Any<CancellationToken>());
     }
 
     [Fact]

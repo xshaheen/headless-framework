@@ -54,8 +54,8 @@ internal sealed class HybridCacheBestPracticesAdvisor(
             logger.LogAutoRecoveryWithoutCircuitBreaker();
         }
 
-        // (Check 5 — "backplane wired but no invalidation consumer" — was removed: UseHybrid now registers the
-        // consumer unconditionally through its order-independent generated messaging module, so the condition is
+        // (Check 5 — "backplane wired but no invalidation consumer" — was removed: every backplane transport now
+        // receives as well as sends, and a host without a backplane fails its startup check, so the condition is
         // unreachable.)
 
         var entry = o.DefaultEntryOptions;
@@ -105,7 +105,7 @@ internal sealed class HybridCacheBestPracticesAdvisor(
 
 internal static partial class HybridCacheBestPracticesAdvisorLogger
 {
-    // EventId 5 (InvalidationConsumerNotRegistered) is retired: the consumer is now registered unconditionally.
+    // EventId 5 (InvalidationConsumerNotRegistered) is retired: a host without a working backplane no longer starts.
     // Keep the id reserved — do not reuse it for a new advisor message.
 
     [LoggerMessage(

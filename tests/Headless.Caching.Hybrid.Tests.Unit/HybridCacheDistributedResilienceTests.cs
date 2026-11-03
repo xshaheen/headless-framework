@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Caching;
-using Headless.Messaging;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Time.Testing;
 
@@ -471,12 +470,12 @@ public sealed class HybridCacheDistributedResilienceTests : TestBase
         (await cache.GetCountAsync(prefix, AbortToken)).Should().Be(0);
     }
 
-    private static IBus _FaultingPublisher(string message)
+    private static IHybridCacheBackplane _FaultingPublisher(string message)
     {
-        var publisher = Substitute.For<IBus>();
+        var publisher = Substitute.For<IHybridCacheBackplane>();
         publisher
-            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(_ => Task.FromException<PublishReceipt>(new InvalidOperationException(message)));
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
+            .Returns(_ => ValueTask.FromException(new InvalidOperationException(message)));
 
         return publisher;
     }
@@ -488,10 +487,10 @@ public sealed class HybridCacheDistributedResilienceTests : TestBase
         TimeProvider? timeProvider = null
     )
     {
-        var publisher = Substitute.For<IBus>();
+        var publisher = Substitute.For<IHybridCacheBackplane>();
         publisher
-            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(default(PublishReceipt));
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.CompletedTask);
 
         return new HybridCache(l1, l2, publisher, options, timeProvider: timeProvider ?? _timeProvider);
     }

@@ -17,7 +17,7 @@
 [![GitHub Stars](https://img.shields.io/github/stars/xshaheen/headless-framework?style=social)](https://github.com/xshaheen/headless-framework)
 [![English](https://img.shields.io/badge/lang-English-2563EB?style=flat-square)](README.md)
 
-216 package &bull; نفس الـ setup في كل حتة &bull; بدّل أي provider بسطر واحد
+217 package &bull; نفس الـ setup في كل حتة &bull; بدّل أي provider بسطر واحد
 
 [ليه Headless](#ليه-headless) &bull; [ابدأ في 60 ثانية](#ابدأ-في-60-ثانية) &bull; [Setup واحد لكل المجالات](#setup-واحد-لكل-المجالات) &bull; [إيه اللي في الصندوق](#إيه-اللي-في-الصندوق) &bull; [فهرس الحزم](#فهرس-الحزم)
 
@@ -53,7 +53,7 @@ builder.Services.AddHeadlessCaching(setup => setup.UseRedis(...)); // production
 
 أي service أو repository أو handler بياخد `ICache` مش هيتأثر بالتعديل دا. ونفس الكلام على `IBlobStorage` بين S3 و Azure و Cloudflare R2 و FileSystem و Redis و SFTP، وعلى `IEmailSender` بين SES و Azure Communication Services و SMTP، وعلى الـ messaging بين 8 transports.
 
-**هتركّب 3 packages، مش 216.** الفهرس كبير عشان عدد الـ providers كبير. الخدمة اللي محتاجة caching بتركّب `Headless.Caching.Abstractions` و `Headless.Caching` وprovider واحد. والـ libraries بتاعة الـ domain والـ application بتعتمد على الـ Abstractions package لوحدها: `Headless.Caching.Abstractions` بتجرّ وراها package-ين بس، ومفيش فيهم أي dependency خارجية: `Headless.Checks` و `Headless.Primitives`.
+**هتركّب 3 packages، مش 217.** الفهرس كبير عشان عدد الـ providers كبير. الخدمة اللي محتاجة caching بتركّب `Headless.Caching.Abstractions` و `Headless.Caching` وprovider واحد. والـ libraries بتاعة الـ domain والـ application بتعتمد على الـ Abstractions package لوحدها: `Headless.Caching.Abstractions` بتجرّ وراها package-ين بس، ومفيش فيهم أي dependency خارجية: `Headless.Checks` و `Headless.Primitives`.
 
 **الـ tests مش محتاجة Docker عشان تبقى سريعة.** الـ caching والـ distributed locks والـ messaging فيهم in-memory providers؛ والـ emails والـ SMS والـ push notifications فيهم dev providers مش بتبعت حاجة؛ والـ blob storage بيشتغل على الـ file system المحلي. يعني الـ unit tests بتجرّب نفس الـ contract الحقيقي من غير containers. ولما تحتاج الـ backend الحقيقي، `Headless.Testing.Testcontainers` بتجهّزلك الـ fixtures. الـ repo نفسه ماشي على التقسيمة دي: 122 مشروع unit tests و 63 مشروع integration tests.
 
@@ -184,7 +184,7 @@ services.AddHeadless<Feature>(setup => setup.Use<Provider>(options => { ... }));
 
 | الـ Feature | نقطة الدخول | الـ Providers المتاحة |
 |------------|------------|---------------------|
-| Caching | `AddHeadlessCaching` | `UseInMemory`، `UseRedis`، `UseHybrid` (L1+L2) |
+| Caching | `AddHeadlessCaching` | `UseInMemory`، `UseRedis`، `UseHybrid` (L1+L2، مع `UseRedisBackplane` أو `UseMessagingBackplane` أو `UseSingleInstanceBackplane`) |
 | Blob storage | `AddHeadlessBlobs` | `UseAws`، `UseAzure`، `UseCloudflareR2`، `UseFileSystem`، `UseRedis`، `UseSsh` |
 | Emails | `AddHeadlessEmails` | `UseAwsSes`، `UseAzure`، `UseMailkit`، `UseDevelopment`، `UseNoop` |
 | SMS | `AddHeadlessSms` | `UseTwilio`، `UseAwsSns`، `UseInfobip`، `UseCequens`، `UseConnekio`، `UseVictoryLink`، `UseVodafone`، `UseDevelopment` |
@@ -293,7 +293,7 @@ packages الـ providers دي packages عادية على NuGet. عشان تضي
 </div>
 
 <details dir="rtl" align="right">
-<summary><strong>كل الـ 216 package، مرتّبة حسب الـ domain</strong> — اضغط للعرض</summary>
+<summary><strong>كل الـ 217 package، مرتّبة حسب الـ domain</strong> — اضغط للعرض</summary>
 
 ### API & Web
 
@@ -370,6 +370,7 @@ Cache متعدد الـ tiers خلف abstraction واحدة: in-memory، وRedis
 | [Headless.Caching.Abstractions](src/Headless.Caching.Abstractions/README.md) | الـ interfaces بتاعة الـ caching |
 | [Headless.Caching](src/Headless.Caching/README.md) | Orchestration مشتركة قايمة على الـ factories |
 | [Headless.Caching.Hybrid](src/Headless.Caching.Hybrid/README.md) | Hybrid cache بـ L1/L2 |
+| [Headless.Caching.Hybrid.Messaging](src/Headless.Caching.Hybrid.Messaging/README.md) | بيبعت invalidations الـ L1 بتاعة الـ hybrid cache لكل الـ hosts عن طريق الـ messaging bus |
 | [Headless.Caching.InMemory](src/Headless.Caching.InMemory/README.md) | Cache جوه الـ process |
 | [Headless.Caching.Redis](src/Headless.Caching.Redis/README.md) | Cache فوق Redis |
 | [Headless.Caching.Bcl](src/Headless.Caching.Bcl/README.md) | Adapter بيعرض الـ Headless cache كـ `IDistributedCache` |

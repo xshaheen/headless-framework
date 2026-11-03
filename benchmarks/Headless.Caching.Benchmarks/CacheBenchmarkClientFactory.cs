@@ -221,7 +221,7 @@ internal static class CacheBenchmarkClientFactory
         var hybrid = new HybridCache(
             local,
             new BenchmarkRemoteCacheAdapter(remote),
-            new NoOpBus(),
+            new NoOpBackplane(),
             new HybridCacheOptions
             {
                 KeyPrefix = keyPrefix,

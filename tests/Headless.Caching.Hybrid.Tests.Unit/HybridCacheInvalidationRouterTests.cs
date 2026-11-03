@@ -1,14 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Caching;
-using Headless.Messaging;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
 
-public sealed class HybridCacheInvalidationConsumerTests : TestBase
+public sealed class HybridCacheInvalidationRouterTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
 
@@ -20,7 +19,7 @@ public sealed class HybridCacheInvalidationConsumerTests : TestBase
         var cache = new HybridCache(
             l1,
             new InMemoryRemoteCacheAdapter(l2),
-            Substitute.For<IBus>(),
+            Substitute.For<IHybridCacheBackplane>(),
             new HybridCacheOptions { InstanceId = "node-b" },
             timeProvider: _timeProvider
         );
@@ -32,12 +31,9 @@ public sealed class HybridCacheInvalidationConsumerTests : TestBase
         await l2.UpsertAsync(key, "value", TimeSpan.FromMinutes(5), AbortToken);
         var provider = Substitute.For<ICacheProvider>();
         provider.GetCacheOrNull(CacheConstants.HybridCacheProvider).Returns(cache);
-        var consumer = _CreateConsumer(provider);
+        var router = _CreateRouter(provider);
 
-        await consumer.ConsumeAsync(
-            _CreateContext(new CacheInvalidationMessage { InstanceId = "node-a", Key = key }),
-            AbortToken
-        );
+        await router.OnInvalidationAsync(new CacheInvalidationMessage { InstanceId = "node-a", Key = key }, AbortToken);
 
         (await l1.ExistsAsync(key, AbortToken)).Should().BeFalse();
         (await l1.ExistsAsync(otherKey, AbortToken)).Should().BeTrue();
@@ -49,18 +45,16 @@ public sealed class HybridCacheInvalidationConsumerTests : TestBase
     {
         var provider = Substitute.For<ICacheProvider>();
         provider.GetCacheOrNull("missing").Returns((ICache?)null);
-        var consumer = _CreateConsumer(provider);
+        var router = _CreateRouter(provider);
 
         var act = async () =>
-            await consumer.ConsumeAsync(
-                _CreateContext(
-                    new CacheInvalidationMessage
-                    {
-                        InstanceId = "node-a",
-                        CacheName = "missing",
-                        Key = "key",
-                    }
-                ),
+            await router.OnInvalidationAsync(
+                new CacheInvalidationMessage
+                {
+                    InstanceId = "node-a",
+                    CacheName = "missing",
+                    Key = "key",
+                },
                 AbortToken
             );
 
@@ -69,17 +63,17 @@ public sealed class HybridCacheInvalidationConsumerTests : TestBase
     }
 
     [Fact]
-    public async Task should_swallow_non_cancellation_failure_at_consumer_boundary()
+    public async Task should_swallow_non_cancellation_failure_at_listener_boundary()
     {
         var provider = Substitute.For<ICacheProvider>();
         provider
             .GetCacheOrNull(CacheConstants.HybridCacheProvider)
             .Returns(_ => throw new InvalidOperationException("provider failed"));
-        var consumer = _CreateConsumer(provider);
+        var router = _CreateRouter(provider);
 
         var act = async () =>
-            await consumer.ConsumeAsync(
-                _CreateContext(new CacheInvalidationMessage { InstanceId = "node-a", Key = "key" }),
+            await router.OnInvalidationAsync(
+                new CacheInvalidationMessage { InstanceId = "node-a", Key = "key" },
                 AbortToken
             );
 
@@ -87,7 +81,7 @@ public sealed class HybridCacheInvalidationConsumerTests : TestBase
     }
 
     [Fact]
-    public async Task should_propagate_caller_cancellation_from_consumer_boundary()
+    public async Task should_propagate_caller_cancellation_from_listener_boundary()
     {
         using var cancellation = new CancellationTokenSource();
         await cancellation.CancelAsync();
@@ -95,11 +89,11 @@ public sealed class HybridCacheInvalidationConsumerTests : TestBase
         provider
             .GetCacheOrNull(CacheConstants.HybridCacheProvider)
             .Returns(_ => throw new OperationCanceledException(cancellation.Token));
-        var consumer = _CreateConsumer(provider);
+        var router = _CreateRouter(provider);
 
         var act = async () =>
-            await consumer.ConsumeAsync(
-                _CreateContext(new CacheInvalidationMessage { InstanceId = "node-a", Key = "key" }),
+            await router.OnInvalidationAsync(
+                new CacheInvalidationMessage { InstanceId = "node-a", Key = "key" },
                 cancellation.Token
             );
 
@@ -125,7 +119,7 @@ public sealed class HybridCacheInvalidationConsumerTests : TestBase
         provider.GetCacheOrNull("plain").Returns(Substitute.For<ICache>());
 
         // when
-        await _CreateConsumer(provider).OnSubscriptionEstablishedAsync(_Established(isReconnect: true), AbortToken);
+        await _CreateRouter(provider).OnSubscriptionEstablishedAsync(generation: 2, AbortToken);
 
         // then - both L1s are empty, while L2 keeps the entry as the source of truth
         (await defaultL1.ExistsAsync("key", AbortToken))
@@ -149,7 +143,7 @@ public sealed class HybridCacheInvalidationConsumerTests : TestBase
         provider.RegisteredNames.Returns(new HashSet<string>(StringComparer.Ordinal));
 
         // when
-        await _CreateConsumer(provider).OnSubscriptionEstablishedAsync(_Established(isReconnect: false), AbortToken);
+        await _CreateRouter(provider).OnSubscriptionEstablishedAsync(generation: 1, AbortToken);
 
         // then - the first establishment flushes like a reconnect; L2 keeps the entry
         (await l1.ExistsAsync("key", AbortToken))
@@ -162,35 +156,13 @@ public sealed class HybridCacheInvalidationConsumerTests : TestBase
         new(
             l1,
             new InMemoryRemoteCacheAdapter(l2),
-            Substitute.For<IBus>(),
+            Substitute.For<IHybridCacheBackplane>(),
             new HybridCacheOptions { InstanceId = Faker.Random.AlphaNumeric(8) },
             timeProvider: _timeProvider
         );
 
-    private static SubscriptionEstablishedContext _Established(bool isReconnect) =>
-        new(
-            HybridCacheInvalidationConsumer.Identity,
-            [nameof(CacheInvalidationMessage)],
-            isReconnect,
-            Generation: isReconnect ? 2 : 1
-        );
-
-    private static HybridCacheInvalidationConsumer _CreateConsumer(ICacheProvider provider)
+    private static HybridCacheInvalidationRouter _CreateRouter(ICacheProvider provider)
     {
-        return new(provider, NullLogger<HybridCacheInvalidationConsumer>.Instance);
-    }
-
-    private ConsumeContext<CacheInvalidationMessage> _CreateContext(CacheInvalidationMessage message)
-    {
-        return new()
-        {
-            Lane = MessageLane.Bus,
-            Message = message,
-            MessageId = Faker.Random.Guid().ToString(),
-            CorrelationId = null,
-            Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
-            Timestamp = _timeProvider.GetUtcNow(),
-            MessageName = CacheInvalidationMessage.MessageName,
-        };
+        return new(provider, NullLogger<HybridCacheInvalidationRouter>.Instance);
     }
 }

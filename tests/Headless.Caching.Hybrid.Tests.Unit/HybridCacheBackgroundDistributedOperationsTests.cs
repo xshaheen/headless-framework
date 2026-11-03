@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Caching;
-using Headless.Messaging;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Time.Testing;
 
@@ -13,12 +12,12 @@ public sealed class HybridCacheBackgroundDistributedOperationsTests : TestBase
 
     private readonly FakeTimeProvider _timeProvider = new();
 
-    private static IBus _CreateNoopPublisher()
+    private static IHybridCacheBackplane _CreateNoopPublisher()
     {
-        var publisher = Substitute.For<IBus>();
+        var publisher = Substitute.For<IHybridCacheBackplane>();
         publisher
-            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(default(PublishReceipt));
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.CompletedTask);
         return publisher;
     }
 
@@ -30,9 +29,12 @@ public sealed class HybridCacheBackgroundDistributedOperationsTests : TestBase
         return (cache, l1, l2);
     }
 
-    private (HybridCache cache, InMemoryCache l1, TogglableRemoteCache l2, IBus publisher) _CreateTogglableCache(
-        HybridCacheOptions options
-    )
+    private (
+        HybridCache cache,
+        InMemoryCache l1,
+        TogglableRemoteCache l2,
+        IHybridCacheBackplane publisher
+    ) _CreateTogglableCache(HybridCacheOptions options)
     {
         var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
         var l2 = new TogglableRemoteCache(_timeProvider);
@@ -197,11 +199,7 @@ public sealed class HybridCacheBackgroundDistributedOperationsTests : TestBase
         cache.RecoveryQueue.Count.Should().Be(0);
         await publisher
             .Received()
-            .PublishAsync(
-                Arg.Is<CacheInvalidationMessage>(m => m.Key == key),
-                Arg.Any<PublishOptions?>(),
-                Arg.Any<CancellationToken>()
-            );
+            .PublishAsync(Arg.Is<CacheInvalidationMessage>(m => m.Key == key), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -283,17 +281,10 @@ public sealed class HybridCacheBackgroundDistributedOperationsTests : TestBase
 
         var publishGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var publishStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var publisher = Substitute.For<IBus>();
+        var publisher = Substitute.For<IHybridCacheBackplane>();
         publisher
-            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(
-                async Task<PublishReceipt> (_) =>
-                {
-                    publishStarted.TrySetResult();
-                    await publishGate.Task.Bounded();
-                    return default;
-                }
-            );
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
+            .Returns(_ => _WaitAtGateAsync(publishStarted, publishGate));
 
         var cache = new HybridCache(
             l1,
@@ -325,10 +316,12 @@ public sealed class HybridCacheBackgroundDistributedOperationsTests : TestBase
         // then — exactly one key invalidation was broadcast from the background tail
         await publisher
             .Received(1)
-            .PublishAsync(
-                Arg.Is<CacheInvalidationMessage>(m => m.Key == key),
-                Arg.Any<PublishOptions?>(),
-                Arg.Any<CancellationToken>()
-            );
+            .PublishAsync(Arg.Is<CacheInvalidationMessage>(m => m.Key == key), Arg.Any<CancellationToken>());
+    }
+
+    private static async ValueTask _WaitAtGateAsync(TaskCompletionSource started, TaskCompletionSource gate)
+    {
+        started.TrySetResult();
+        await gate.Task.Bounded();
     }
 }

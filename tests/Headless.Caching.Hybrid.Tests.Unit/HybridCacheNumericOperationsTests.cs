@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Caching;
-using Headless.Messaging;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Time.Testing;
 
@@ -12,13 +11,13 @@ public sealed class HybridCacheNumericOperationsTests : TestBase
     private readonly FakeTimeProvider _timeProvider = new();
     private readonly List<IDisposable> _disposables = [];
 
-    private (HybridCache cache, InMemoryCache l1, InMemoryCache l2, IBus bus) _CreateCache()
+    private (HybridCache cache, InMemoryCache l1, InMemoryCache l2, IHybridCacheBackplane bus) _CreateCache()
     {
         var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
         var l2 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
-        var bus = Substitute.For<IBus>();
-        bus.PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(default(PublishReceipt));
+        var bus = Substitute.For<IHybridCacheBackplane>();
+        bus.PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.CompletedTask);
 
         var cache = new HybridCache(
             l1,
@@ -62,7 +61,6 @@ public sealed class HybridCacheNumericOperationsTests : TestBase
         await bus.Received(1)
             .PublishAsync(
                 Arg.Is<CacheInvalidationMessage>(message => message.Key == key),
-                Arg.Any<PublishOptions?>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -170,9 +168,9 @@ public sealed class HybridCacheNumericOperationsTests : TestBase
     {
         var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
         var remote = new TogglableRemoteCache(_timeProvider);
-        var bus = Substitute.For<IBus>();
-        bus.PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(default(PublishReceipt));
+        var bus = Substitute.For<IHybridCacheBackplane>();
+        bus.PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.CompletedTask);
         var cache = new HybridCache(
             l1,
             remote,

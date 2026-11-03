@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Caching;
-using Headless.Messaging;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Time.Testing;
 
@@ -30,10 +29,10 @@ public sealed class HybridCacheRecoveryQueueMinExpiryStaleTests : TestBase
         var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
         var l2 = new TogglableRemoteCache(_timeProvider);
 
-        var publisher = Substitute.For<IBus>();
+        var publisher = Substitute.For<IHybridCacheBackplane>();
         publisher
-            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(default(PublishReceipt));
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.CompletedTask);
 
         var cache = new HybridCache(l1, l2, publisher, options, timeProvider: _timeProvider);
 

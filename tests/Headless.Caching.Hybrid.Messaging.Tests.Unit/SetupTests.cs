@@ -9,11 +9,11 @@ using Microsoft.Extensions.Time.Testing;
 namespace Tests;
 
 /// <summary>
-/// Covers the auto-registration of <see cref="HybridCacheInvalidationConsumer"/> (#511, #936): every hybrid contributes
-/// the assembly's generated messaging module, registration order of caching and messaging does not matter, the
-/// contribution stays inert without messaging, and the consumer registers once as an every-instance Bus consumer.
+/// Covers <c>UseMessagingBackplane()</c>: it contributes the package's generated messaging module, the registration order
+/// of caching and messaging does not matter, the contribution stays inert without messaging, the consumer registers once
+/// as an every-instance Bus consumer, and the last backplane choice wins.
 /// </summary>
-public sealed class HybridCacheInvalidationConsumerRegistrationTests : TestBase
+public sealed class SetupTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
 
@@ -25,7 +25,7 @@ public sealed class HybridCacheInvalidationConsumerRegistrationTests : TestBase
         using var l2 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
 
         // when
-        _AddDefaultHybrid(services, new InMemoryRemoteCacheAdapter(l2));
+        _AddDefaultHybrid(services, new InMemoryRemoteCacheAdapter(l2), static setup => setup.UseMessagingBackplane());
 
         // then - the consumer is declared by the generated module, not placed in the container, so a bus-less host pays
         // nothing while a bus added later still gets the consumer
@@ -44,7 +44,7 @@ public sealed class HybridCacheInvalidationConsumerRegistrationTests : TestBase
         // given - caching first, messaging after: the reversed order once left the backplane publish-only
         var services = _CreateServices();
         using var l2 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
-        _AddDefaultHybrid(services, new InMemoryRemoteCacheAdapter(l2));
+        _AddDefaultHybrid(services, new InMemoryRemoteCacheAdapter(l2), static setup => setup.UseMessagingBackplane());
         services.AddHeadlessMessaging(_ => { });
 
         // when
@@ -63,7 +63,7 @@ public sealed class HybridCacheInvalidationConsumerRegistrationTests : TestBase
         using var l2 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
 
         // when
-        _AddDefaultHybrid(services, new InMemoryRemoteCacheAdapter(l2));
+        _AddDefaultHybrid(services, new InMemoryRemoteCacheAdapter(l2), static setup => setup.UseMessagingBackplane());
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 
         // then
@@ -95,6 +95,7 @@ public sealed class HybridCacheInvalidationConsumerRegistrationTests : TestBase
                 }
             );
             setup.UseHybrid();
+            setup.UseMessagingBackplane();
             setup.AddNamed(
                 "tenant",
                 instance =>
@@ -118,7 +119,7 @@ public sealed class HybridCacheInvalidationConsumerRegistrationTests : TestBase
         // given
         var services = _CreateServices();
         using var l2 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
-        _AddDefaultHybrid(services, new InMemoryRemoteCacheAdapter(l2));
+        _AddDefaultHybrid(services, new InMemoryRemoteCacheAdapter(l2), static setup => setup.UseMessagingBackplane());
         services.AddHeadlessMessaging(_ => { });
 
         // when
@@ -131,6 +132,73 @@ public sealed class HybridCacheInvalidationConsumerRegistrationTests : TestBase
         _AssertSingleInvalidationConsumer(provider).Concurrency.Should().Be(4);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void should_keep_the_last_backplane_choice(bool messagingLast)
+    {
+        // given
+        var services = _CreateServices();
+        using var l2 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
+
+        // when
+        _AddDefaultHybrid(
+            services,
+            new InMemoryRemoteCacheAdapter(l2),
+            setup =>
+            {
+                if (messagingLast)
+                {
+                    setup.UseSingleInstanceBackplane();
+                    setup.UseMessagingBackplane();
+                }
+                else
+                {
+                    setup.UseMessagingBackplane();
+                    setup.UseSingleInstanceBackplane();
+                }
+            }
+        );
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        var backplane = provider.GetRequiredService<IHybridCacheBackplane>();
+
+        if (messagingLast)
+        {
+            backplane.Should().BeOfType<MessagingHybridCacheBackplane>();
+        }
+        else
+        {
+            backplane.GetType().Name.Should().Be("SingleInstanceHybridCacheBackplane");
+        }
+    }
+
+    [Fact]
+    public void should_not_register_the_consumer_when_the_host_chose_another_backplane()
+    {
+        // given - messaging in the host, but the hybrid's invalidations travel elsewhere
+        var services = _CreateServices();
+        using var l2 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
+        _AddDefaultHybrid(
+            services,
+            new InMemoryRemoteCacheAdapter(l2),
+            static setup => setup.UseSingleInstanceBackplane()
+        );
+        services.AddHeadlessMessaging(_ => { });
+
+        // when
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        provider.GetRequiredService<IConsumerServiceSelector>().SelectCandidates();
+
+        // then
+        provider
+            .GetRequiredService<IConsumerRegistry>()
+            .GetAll()
+            .Should()
+            .NotContain(metadata => metadata.ConsumerType == typeof(HybridCacheInvalidationConsumer));
+    }
+
     private ServiceCollection _CreateServices()
     {
         var services = new ServiceCollection();
@@ -141,7 +209,11 @@ public sealed class HybridCacheInvalidationConsumerRegistrationTests : TestBase
         return services;
     }
 
-    private static void _AddDefaultHybrid(ServiceCollection services, InMemoryRemoteCacheAdapter remote)
+    private static void _AddDefaultHybrid(
+        ServiceCollection services,
+        InMemoryRemoteCacheAdapter remote,
+        Action<HeadlessCachingSetupBuilder>? configure = null
+    )
     {
         services.AddHeadlessCaching(setup =>
         {
@@ -155,6 +227,7 @@ public sealed class HybridCacheInvalidationConsumerRegistrationTests : TestBase
                 }
             );
             setup.UseHybrid();
+            configure?.Invoke(setup);
         });
     }
 

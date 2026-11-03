@@ -38,6 +38,7 @@ public sealed class HybridCacheStrictTenancyTests : TestBase
                         }
                     );
                     setup.UseHybrid(options => options.ReThrowBackplaneExceptions = true);
+                    setup.UseMessagingBackplane();
                 });
                 services.AddHeadlessMessaging(setup =>
                 {

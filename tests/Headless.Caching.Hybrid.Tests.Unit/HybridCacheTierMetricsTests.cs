@@ -3,7 +3,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics.Metrics;
 using Headless.Caching;
-using Headless.Messaging;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Time.Testing;
 
@@ -42,10 +41,10 @@ public sealed class HybridCacheTierMetricsTests : TestBase
         var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
         var l2Backing = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
         var l2 = new InMemoryRemoteCacheAdapter(l2Backing);
-        var publisher = Substitute.For<IBus>();
+        var publisher = Substitute.For<IHybridCacheBackplane>();
         publisher
-            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(default(PublishReceipt));
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.CompletedTask);
 
         // A unique cache name isolates this test's measurements from other parallel tests sharing the meter.
         var cacheName = "test-" + Guid.NewGuid().ToString("N");
@@ -109,10 +108,10 @@ public sealed class HybridCacheTierMetricsTests : TestBase
         var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
         var l2Backing = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
         var l2 = new InMemoryRemoteCacheAdapter(l2Backing);
-        var publisher = Substitute.For<IBus>();
+        var publisher = Substitute.For<IHybridCacheBackplane>();
         publisher
-            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(default(PublishReceipt));
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.CompletedTask);
 
         var cacheName = "test-" + Guid.NewGuid().ToString("N");
         var cache = new HybridCache(
@@ -165,7 +164,7 @@ public sealed class HybridCacheTierMetricsTests : TestBase
         var cache = new HybridCache(
             l1,
             l2,
-            Substitute.For<IBus>(),
+            Substitute.For<IHybridCacheBackplane>(),
             new HybridCacheOptions { CacheName = cacheName },
             timeProvider: _timeProvider
         );
@@ -205,7 +204,7 @@ public sealed class HybridCacheTierMetricsTests : TestBase
         var cache = new HybridCache(
             l1,
             l2,
-            Substitute.For<IBus>(),
+            Substitute.For<IHybridCacheBackplane>(),
             new HybridCacheOptions { CacheName = cacheName },
             timeProvider: _timeProvider,
             eventsConfig: new CacheEventsConfig()
@@ -252,10 +251,10 @@ public sealed class HybridCacheTierMetricsTests : TestBase
         var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
         var l2Backing = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
         var l2 = new InMemoryRemoteCacheAdapter(l2Backing);
-        var publisher = Substitute.For<IBus>();
+        var publisher = Substitute.For<IHybridCacheBackplane>();
         publisher
-            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(default(PublishReceipt));
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.CompletedTask);
 
         var cacheName = "orders-" + Guid.NewGuid().ToString("N");
         var hybridOptions = new HybridCacheOptions { CacheName = cacheName };
@@ -275,7 +274,6 @@ public sealed class HybridCacheTierMetricsTests : TestBase
             .Received(1)
             .PublishAsync(
                 Arg.Is<CacheInvalidationMessage>(message => message.CacheName == null && message.Clear),
-                Arg.Any<PublishOptions?>(),
                 Arg.Any<CancellationToken>()
             );
 

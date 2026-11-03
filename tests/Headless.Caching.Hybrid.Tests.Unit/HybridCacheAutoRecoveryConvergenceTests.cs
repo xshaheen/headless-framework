@@ -396,7 +396,7 @@ internal sealed class TwoNodeConvergenceHarness : IAsyncDisposable
 
     public InMemoryCache SharedL2Backend { get; }
 
-    public FakeBackplaneBus Bus { get; } = new();
+    public FakeBackplane Bus { get; } = new();
 
     public ConvergenceNode A { get; }
 

@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Caching;
-using Headless.Messaging;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -21,7 +20,6 @@ public sealed class DefaultHybridCacheTiersTests(RedisCacheFixture fixture) : Te
         // given
         var builder = Host.CreateApplicationBuilder();
         builder.Services.AddSingleton(TimeProvider.System);
-        builder.Services.AddSingleton(Substitute.For<IBus>());
 
         builder.Services.AddHeadlessCaching(setup =>
         {
@@ -32,6 +30,7 @@ public sealed class DefaultHybridCacheTiersTests(RedisCacheFixture fixture) : Te
                 options.KeyPrefix = "hybrid-tiers:";
             });
             setup.UseHybrid(options => options.DefaultLocalExpiration = TimeSpan.FromMinutes(5));
+            setup.UseRedisBackplane();
         });
 
         using var host = builder.Build();

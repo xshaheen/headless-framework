@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Caching;
-using Headless.Messaging;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Time.Testing;
 
@@ -20,7 +19,7 @@ public sealed class HybridCacheReadMatrixTests : TestBase
             new HybridCache(
                 l1,
                 l2,
-                Substitute.For<IBus>(),
+                Substitute.For<IHybridCacheBackplane>(),
                 options ?? new HybridCacheOptions(),
                 timeProvider: _timeProvider
             ),
@@ -169,7 +168,7 @@ public sealed class HybridCacheReadMatrixTests : TestBase
         var cache = new HybridCache(
             l1,
             l2,
-            Substitute.For<IBus>(),
+            Substitute.For<IHybridCacheBackplane>(),
             new HybridCacheOptions(),
             timeProvider: _timeProvider
         );

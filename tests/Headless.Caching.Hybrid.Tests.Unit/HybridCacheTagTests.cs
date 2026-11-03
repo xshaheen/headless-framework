@@ -2,7 +2,6 @@
 
 using System.Buffers;
 using Headless.Caching;
-using Headless.Messaging;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Time.Testing;
 
@@ -16,7 +15,7 @@ public sealed class HybridCacheTagTests : TestBase
     // L1/L2 stores. This fixture collects those raw InMemoryCache instances and disposes them at teardown.
     private readonly List<object> _disposables = [];
 
-    private (HybridCache cache, IInMemoryCache l1, IRemoteCache l2, IBus publisher) _CreateCache(
+    private (HybridCache cache, IInMemoryCache l1, IRemoteCache l2, IHybridCacheBackplane publisher) _CreateCache(
         HybridCacheOptions? options = null
     )
     {
@@ -29,10 +28,10 @@ public sealed class HybridCacheTagTests : TestBase
         var l2Inner = new InMemoryCache(_timeProvider, l2Options);
         var l2 = new InMemoryRemoteCacheAdapter(l2Inner);
 
-        var publisher = Substitute.For<IBus>();
+        var publisher = Substitute.For<IHybridCacheBackplane>();
         publisher
-            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(default(PublishReceipt));
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.CompletedTask);
 
         var cache = new HybridCache(l1, l2, publisher, options, timeProvider: _timeProvider);
 
@@ -86,7 +85,6 @@ public sealed class HybridCacheTagTests : TestBase
             .Received(1)
             .PublishAsync(
                 Arg.Is<CacheInvalidationMessage>(m => m.Tag == tag && m.Key == null && !m.FlushAll && !m.Clear),
-                Arg.Any<PublishOptions?>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -180,7 +178,6 @@ public sealed class HybridCacheTagTests : TestBase
             .Received(1)
             .PublishAsync(
                 Arg.Is<CacheInvalidationMessage>(m => m.Clear && !m.FlushAll && m.Tag == null && m.Key == null),
-                Arg.Any<PublishOptions?>(),
                 Arg.Any<CancellationToken>()
             );
     }

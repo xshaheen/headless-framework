@@ -36,6 +36,7 @@ public sealed class HybridCacheInvalidationContractTests : TestBase
                         }
                     );
                     setup.UseHybrid();
+                    setup.UseMessagingBackplane();
                 });
                 services.AddHeadlessMessaging(setup =>
                 {

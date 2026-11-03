@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Caching;
-using Headless.Messaging;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -97,9 +96,6 @@ public sealed class HybridCacheSetupTests : TestBase
         var services = new ServiceCollection();
         services.AddSingleton<TimeProvider>(_timeProvider);
         services.AddLogging();
-        // HybridCache's DI factory builds its own unit-less IBus over the singleton MessagePublisher
-        // core; a real in-memory transport is the lightest way to make that resolvable.
-        services.AddHeadlessMessaging(messaging => messaging.UseInMemory());
         services.AddHeadlessCaching(setup =>
         {
             setup.AddMemoryTier();
@@ -112,6 +108,7 @@ public sealed class HybridCacheSetupTests : TestBase
                 }
             );
             configureHybrid(setup);
+            setup.UseSingleInstanceBackplane();
         });
         return services;
     }

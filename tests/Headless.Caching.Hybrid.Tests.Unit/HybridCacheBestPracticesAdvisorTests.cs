@@ -417,9 +417,9 @@ public sealed class HybridCacheBestPracticesAdvisorTests : TestBase
         logger.HasWarning("FactorySoftTimeoutInertWithoutFailSafe").Should().BeFalse();
     }
 
-    // (Check 5 — "no invalidation consumer registered" — was removed: UseHybrid now registers the consumer
-    // unconditionally, so the advisor no longer carries that input. Coverage lives in
-    // HybridCacheInvalidationConsumerRegistrationTests.)
+    // (Check 5 — "no invalidation consumer registered" — was removed: a host without a backplane fails its startup
+    // check instead, so the advisor no longer carries that input. Coverage lives in
+    // HybridCacheBackplaneRegistrationTests.)
 
     // ────────────────────────────────────────────────────────────
     // Named instances — the advisor inspects the named options (re-review N14)

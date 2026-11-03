@@ -370,9 +370,7 @@
         "dependencies": {
           "Headless.Caching": "[1.0.0, )",
           "Headless.Caching.Abstractions": "[1.0.0, )",
-          "Headless.Hosting": "[1.0.0, )",
-          "Headless.Messaging.Abstractions": "[1.0.0, )",
-          "Headless.Messaging.Bus.Abstractions": "[1.0.0, )"
+          "Headless.Hosting": "[1.0.0, )"
         }
       },
       "headless.caching.inmemory": {
@@ -433,21 +431,6 @@
           "OpenTelemetry.Api": "[1.20.1, )"
         }
       },
-      "headless.messaging.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.Reliability.Abstractions": "[1.0.0, )",
-          "Headless.UnitOfWork.Abstractions": "[1.0.0, )",
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.13, )"
-        }
-      },
-      "headless.messaging.bus.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Messaging.Abstractions": "[1.0.0, )"
-        }
-      },
       "headless.multitenancy.abstractions": {
         "type": "Project",
         "dependencies": {
@@ -462,12 +445,6 @@
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Headless.Generator.Primitives.Abstractions": "[1.0.0, )"
-        }
-      },
-      "headless.reliability.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )"
         }
       },
       "headless.serializer.abstractions": {
@@ -487,12 +464,6 @@
           "Microsoft.Extensions.Logging": "[10.0.13, )",
           "Microsoft.Extensions.TimeProvider.Testing": "[10.11.0, )",
           "xunit.v3.extensibility.core": "[4.0.2, )"
-        }
-      },
-      "headless.unitofwork.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )"
         }
       },
       "FluentValidation": {

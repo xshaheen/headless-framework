@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Caching;
-using Headless.Messaging;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Time.Testing;
 
@@ -19,18 +18,21 @@ public sealed class HybridCacheTagAutoRecoveryTests : TestBase
 
     private readonly FakeTimeProvider _timeProvider = new();
 
-    private (HybridCache cache, InMemoryCache l1, TogglableRemoteCache l2, IBus publisher) _CreateCache(
-        HybridCacheOptions? options = null
-    )
+    private (
+        HybridCache cache,
+        InMemoryCache l1,
+        TogglableRemoteCache l2,
+        IHybridCacheBackplane publisher
+    ) _CreateCache(HybridCacheOptions? options = null)
     {
         options ??= new HybridCacheOptions { EnableAutoRecovery = true, InstanceId = "instance-1" };
         var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
         var l2 = new TogglableRemoteCache(_timeProvider);
 
-        var publisher = Substitute.For<IBus>();
+        var publisher = Substitute.For<IHybridCacheBackplane>();
         publisher
-            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(default(PublishReceipt));
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.CompletedTask);
 
         var cache = new HybridCache(l1, l2, publisher, options, timeProvider: _timeProvider);
 
@@ -87,11 +89,7 @@ public sealed class HybridCacheTagAutoRecoveryTests : TestBase
         // and — the replay re-publishes the invalidation for the key
         await publisher
             .Received()
-            .PublishAsync(
-                Arg.Is<CacheInvalidationMessage>(m => m.Key == key),
-                Arg.Any<PublishOptions?>(),
-                Arg.Any<CancellationToken>()
-            );
+            .PublishAsync(Arg.Is<CacheInvalidationMessage>(m => m.Key == key), Arg.Any<CancellationToken>());
     }
 
     [Fact]

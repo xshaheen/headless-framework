@@ -121,6 +121,7 @@ public sealed class HybridCacheTwoReplicaInvalidationTests : TestBase
                 }
             );
             setup.UseHybrid();
+            setup.UseMessagingBackplane();
         });
         services.AddHeadlessMessaging(setup =>
         {
