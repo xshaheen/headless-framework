@@ -477,7 +477,7 @@ Shared factory-backed cache orchestration for cache providers.
 - `CacheTagInvalidation` - the single shared read-time predicate `IsInvalidated(createdAt, newestMarker)` so every tier agrees on when an entry is logically tag/clear-invalidated.
 - `CacheEntryStamps` - single home of the fresh-write stamp math (`CreatedAt` birth time, fail-safe extends physical retention, eager threshold stamps the eager point, sliding clamps the logical lifetime) and of options/tags validation, so the coordinator and the providers' direct `UpsertEntryAsync` writes always agree.
 - `FactoryCacheStoreExtensions.UpsertEntryAsync` - shared direct options-based upsert composed on the store primitive (read-before-write; stamps a fresh `CreatedAt`).
-- `ICacheFactoryLockProvider` - optional cross-node coordination seam consumed when `CacheEntryOptions.UseDistributedFactoryLock` is set (adapter: `Headless.Caching.DistributedLocks`).
+- `ICacheFactoryLockProvider` - optional cross-node coordination seam consumed when `CacheEntryOptions.UseDistributedFactoryLock` is set (adapter: `Headless.Caching.DistributedLocks`). `TryAcquireAsync(cacheName, key, timeout, cancellationToken)` receives the cache instance name (`default` for the unkeyed cache) beside the unbounded key; an implementation keeps instances apart and maps long keys into its lock store's name limit.
 - `CacheStoreEntryExtensions` - shared `IsFresh`/`IsPhysicallyPresent` predicates so every provider and the coordinator agree on the expiration boundary (an entry is expired at the exact tick, `expiresAt <= now`).
 - `FactoryCacheCoordinator.IsCallerCancellation` - shared predicate provider composites use so caller cancellation propagates while an unrelated/downstream `OperationCanceledException` activates fail-safe consistently.
 - `SetupCachingCore.AddHeadlessCaching` - the single registration entry point: provider packages contribute deferred extensions through `Use*`/`Add*Tier`/`AddNamed` on the setup builder, and contributions are applied only after the setup gates pass.
@@ -556,7 +556,7 @@ Adapter that bridges the caching factory-lock seam (`ICacheFactoryLockProvider`)
 
 - `setup.UseDistributedFactoryLock()` — a cross-cutting extension on the `AddHeadlessCaching` setup builder — registers `ICacheFactoryLockProvider` backed by the application's `IDistributedLock` registration (any `Headless.DistributedLocks.*` provider). Three overload shapes: parameterless, `Action<CacheFactoryLockOptions>`, and `Action<CacheFactoryLockOptions, IServiceProvider>`.
 - Per-entry opt-in through `CacheEntryOptions.UseDistributedFactoryLock`; entries that do not set it pay zero cost.
-- Lock resources are namespaced with a configurable prefix (default `cache:factory:`) so cache locks never collide with other lock consumers on the same backend.
+- The lock resource is `{ResourcePrefix}{cacheName}:{key}` (default prefix `cache:factory:`), so cache locks never collide with other lock consumers on the same backend, and two cache instances that hold the same key lock separately. When that name exceeds 255 characters the adapter uses `{ResourcePrefix}sha256:{digest}` (the SHA-256 of `{cacheName}:{key}`), so a long cache key stays within every lock provider's resource name limit instead of failing the read.
 - The seam timeout maps directly onto `DistributedLockAcquireOptions.AcquireTimeout`: `TimeSpan.Zero` is a single try-once attempt (used by eager refresh), `Timeout.InfiniteTimeSpan` waits unboundedly, and a finite value bounds the wait.
 - Optional lease TTL override (`TimeUntilExpires`) as the backstop that frees the key when a node dies mid-factory; must be a finite positive value when set — the validator rejects zero, negative, or `Timeout.InfiniteTimeSpan` at startup.
 
@@ -621,7 +621,7 @@ Enabling `CacheEntryOptions.UseDistributedFactoryLock` without calling `setup.Us
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `ResourcePrefix` | `"cache:factory:"` | Prefix prepended to the cache key to form the distributed lock resource name; override to namespace cache locks away from other lock consumers sharing the backend. |
+| `ResourcePrefix` | `"cache:factory:"` | Prefix of the distributed lock resource name (`{ResourcePrefix}{cacheName}:{key}`, hashed past 255 characters); override to namespace cache locks away from other lock consumers sharing the backend. At most 184 characters, so the hashed form fits. |
 | `TimeUntilExpires` | `null` | Lease TTL applied to each acquired factory lock; `null` uses the distributed lock provider's default lease duration. The TTL frees the key when a node dies mid-factory. When set, must be a finite positive value — zero, negative, or `Timeout.InfiniteTimeSpan` are rejected at startup because an infinite or zero-duration lease cannot release a crashed holder. |
 
 ```csharp

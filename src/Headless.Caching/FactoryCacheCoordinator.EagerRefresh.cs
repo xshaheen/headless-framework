@@ -84,7 +84,7 @@ public sealed partial class FactoryCacheCoordinator
                 // lock is held elsewhere another node is already refreshing, so skip silently and leave the entry
                 // (including its eager stamp) untouched; that node's gate write clears the stamp for everyone.
                 distributedLease = await factoryLockProvider!
-                    .TryAcquireAsync(key, TimeSpan.Zero, CancellationToken.None)
+                    .TryAcquireAsync(_cacheName, key, TimeSpan.Zero, CancellationToken.None)
                     .ConfigureAwait(false);
 
                 if (distributedLease is null)

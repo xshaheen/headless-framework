@@ -11,7 +11,10 @@ public sealed class CacheFactoryLockOptions
     /// <summary>
     /// The prefix prepended to the cache key to form the distributed lock resource name. Defaults to
     /// <c>"cache:factory:"</c>; override it to namespace the cache locks away from other lock consumers
-    /// sharing the same lock backend.
+    /// sharing the same lock backend. The resource is <c>{ResourcePrefix}{cacheName}:{key}</c>; when that exceeds
+    /// 255 characters it becomes <c>{ResourcePrefix}sha256:{digest}</c>, the SHA-256 of <c>{cacheName}:{key}</c>, so a
+    /// long cache key never exceeds a lock provider's resource name limit. At most 184 characters, so the digest
+    /// form fits the 255-character bound.
     /// </summary>
     public string ResourcePrefix { get; set; } = "cache:factory:";
 
@@ -27,7 +30,9 @@ internal sealed class CacheFactoryLockOptionsValidator : AbstractValidator<Cache
 {
     public CacheFactoryLockOptionsValidator()
     {
-        RuleFor(x => x.ResourcePrefix).NotEmpty();
+        RuleFor(x => x.ResourcePrefix)
+            .NotEmpty()
+            .MaximumLength(DistributedLockCacheFactoryLockProvider.MaxResourcePrefixLength);
 
         // null means "delegate to the provider's own default TTL" — that path is always finite and safe.
         // A non-null value must be strictly positive and finite: Timeout.InfiniteTimeSpan (-1 ms) or any
