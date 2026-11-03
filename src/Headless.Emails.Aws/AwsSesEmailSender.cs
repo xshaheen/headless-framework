@@ -43,6 +43,20 @@ internal sealed class AwsSesEmailSender(IAmazonSimpleEmailServiceV2 ses, ILogger
         return formatOptions;
     }
 
+    // SES parses envelope addresses as RFC 5322 mailboxes: a display name with specials (`,` `"` `<` `;`)
+    // must be a quoted-string and a non-ASCII one an RFC 2047 encoded-word, or SES rejects the send.
+    // MimeKit applies both; the widest line length keeps it from folding a long name with a CRLF, which an
+    // envelope string cannot carry.
+    private static readonly FormatOptions _AddressFormatOptions = _CreateAddressFormatOptions();
+
+    private static FormatOptions _CreateAddressFormatOptions()
+    {
+        var formatOptions = FormatOptions.Default.Clone();
+        formatOptions.MaxLineLength = 998; // The RFC 5322 line limit, the widest MimeKit accepts.
+
+        return formatOptions;
+    }
+
     /// <summary>
     /// Sends a single email via Amazon SES v2.
     /// </summary>
@@ -84,7 +98,7 @@ internal sealed class AwsSesEmailSender(IAmazonSimpleEmailServiceV2 ses, ILogger
 
         var rawRequest = new SendEmailRequest
         {
-            FromEmailAddress = request.From.ToString(),
+            FromEmailAddress = _FormatAddress(request.From),
             Destination = _MapToDestination(request),
             Content = new EmailContent { Raw = new RawMessage { Data = memoryStream } },
         };
@@ -152,7 +166,7 @@ internal sealed class AwsSesEmailSender(IAmazonSimpleEmailServiceV2 ses, ILogger
     {
         return new SendEmailRequest
         {
-            FromEmailAddress = request.From.ToString(),
+            FromEmailAddress = _FormatAddress(request.From),
             Destination = _MapToDestination(request),
             Content = new EmailContent
             {
@@ -177,10 +191,20 @@ internal sealed class AwsSesEmailSender(IAmazonSimpleEmailServiceV2 ses, ILogger
     {
         return new Destination
         {
-            ToAddresses = [.. request.Destination.ToAddresses.Select(address => address.ToString())],
-            CcAddresses = [.. request.Destination.CcAddresses.Select(address => address.ToString())],
-            BccAddresses = [.. request.Destination.BccAddresses.Select(address => address.ToString())],
+            ToAddresses = [.. request.Destination.ToAddresses.Select(_FormatAddress)],
+            CcAddresses = [.. request.Destination.CcAddresses.Select(_FormatAddress)],
+            BccAddresses = [.. request.Destination.BccAddresses.Select(_FormatAddress)],
         };
+    }
+
+    private static string _FormatAddress(EmailRequestAddress address)
+    {
+        return string.IsNullOrEmpty(address.DisplayName)
+            ? address.EmailAddress
+            : new MailboxAddress(address.DisplayName, address.EmailAddress).ToString(
+                _AddressFormatOptions,
+                encode: true
+            );
     }
 
     #endregion

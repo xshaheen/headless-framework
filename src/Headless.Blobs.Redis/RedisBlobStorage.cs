@@ -26,7 +26,8 @@ namespace Headless.Blobs.Redis;
 /// whose hashes sit in different cluster slots cannot run as one script, so it reads the source in one script and
 /// writes the destination in another; a cross-slot move is therefore copy-then-delete, not atomic. A Polly
 /// retry pipeline retries transient <see cref="RedisConnectionException"/>/timeout errors with exponential back-off and
-/// jitter.
+/// jitter. Move, delete, and the destination write of a cross-slot move retry only a command the client never sent,
+/// because a re-run over their own effect would report the wrong outcome.
 /// <para>
 /// Container/bucket lifecycle is not part of this data-plane contract — it lives on the separately-registered
 /// <see cref="IBlobContainerManager"/> capability (<see cref="RedisBlobContainerManager"/>). Redis has no real
@@ -45,6 +46,7 @@ internal sealed class RedisBlobStorage : IBlobStorage
     private readonly TimeProvider _timeProvider;
     private readonly RedisBlobStorageOptions _options;
     private readonly ResiliencePipeline _retryPipeline;
+    private readonly ResiliencePipeline _unsentOnlyRetryPipeline;
     private readonly IBlobNamingNormalizer _normalizer;
 
     // Server-page hint for the internal full-scan loops (delete-all). The public ListAsync uses BlobQuery.PageSize.
@@ -154,16 +156,38 @@ internal sealed class RedisBlobStorage : IBlobStorage
         _normalizer = normalizer;
         Database = _options.ConnectionMultiplexer.GetDatabase();
 
-        var pipelineLogger = _logger;
+        _retryPipeline = _BuildRetryPipeline(
+            _logger,
+            new PredicateBuilder()
+                .Handle<RedisConnectionException>()
+                .Handle<RedisTimeoutException>()
+                .Handle<TimeoutException>()
+        );
 
-        _retryPipeline = new ResiliencePipelineBuilder()
+        // A timeout or a dropped connection after the command was sent says nothing about whether the script
+        // ran. Move, refuse-occupied write, and delete answer differently when re-run over their own effect (a moved
+        // blob reads as "source missing", a written destination as "occupied", a deleted blob as "not found"), so they
+        // retry only a command the client never sent.
+        _unsentOnlyRetryPipeline = _BuildRetryPipeline(
+            _logger,
+            new PredicateBuilder()
+                .Handle<RedisConnectionException>(e => _WasNeverSent(e.CommandStatus))
+                .Handle<RedisTimeoutException>(e => _WasNeverSent(e.Commandstatus))
+        );
+    }
+
+    private static bool _WasNeverSent(CommandStatus status)
+    {
+        return status is CommandStatus.WaitingToBeSent or CommandStatus.WaitingInBacklog;
+    }
+
+    private static ResiliencePipeline _BuildRetryPipeline(ILogger logger, PredicateBuilder<object> shouldHandle)
+    {
+        return new ResiliencePipelineBuilder()
             .AddRetry(
                 new RetryStrategyOptions
                 {
-                    ShouldHandle = new PredicateBuilder()
-                        .Handle<RedisConnectionException>()
-                        .Handle<RedisTimeoutException>()
-                        .Handle<TimeoutException>(),
+                    ShouldHandle = shouldHandle,
                     MaxRetryAttempts = 3,
                     BackoffType = DelayBackoffType.Exponential,
                     Delay = TimeSpan.FromMilliseconds(50),
@@ -171,7 +195,7 @@ internal sealed class RedisBlobStorage : IBlobStorage
                     UseJitter = true,
                     OnRetry = args =>
                     {
-                        pipelineLogger.LogRedisRetry(args.AttemptNumber + 1, args.RetryDelay, args.Outcome.Exception);
+                        logger.LogRedisRetry(args.AttemptNumber + 1, args.RetryDelay, args.Outcome.Exception);
 
                         return default;
                     },
@@ -347,7 +371,7 @@ internal sealed class RedisBlobStorage : IBlobStorage
         _logger.LogDeletingPath(key);
 
         // Atomic delete via Lua so both content and info are removed together.
-        var result = await _retryPipeline
+        var result = await _unsentOnlyRetryPipeline
             .ExecuteAsync(
                 async _ =>
                     await Database
@@ -521,7 +545,7 @@ internal sealed class RedisBlobStorage : IBlobStorage
             // stronger than the contract's "non-atomic, best-effort rollback" promise. The script rejects an occupied
             // destination (never overwrites): it returns 1 on success, 0 when the source is missing, -1 when the
             // destination is occupied — both 0 and -1 surface as false.
-            var result = await _retryPipeline
+            var result = await _unsentOnlyRetryPipeline
                 .ExecuteAsync(
                     async _ =>
                         await Database
@@ -678,7 +702,9 @@ internal sealed class RedisBlobStorage : IBlobStorage
         var blobData = (byte[])parts[0]!;
         var infoData = parts[1].IsNull ? [] : (byte[])parts[1]!;
 
-        var result = await _retryPipeline
+        // An overwriting write is safe to re-run; one that refuses an occupied destination would refuse its own write.
+        var pipeline = refuseOccupied ? _unsentOnlyRetryPipeline : _retryPipeline;
+        var result = await pipeline
             .ExecuteAsync(
                 async _ =>
                     await Database

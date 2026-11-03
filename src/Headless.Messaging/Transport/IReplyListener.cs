@@ -6,6 +6,10 @@ namespace Headless.Messaging.Transport;
 /// An open reply channel of one process, created by <see cref="IReplyTransport.OpenListenerAsync"/>. Disposing it
 /// stops delivery and removes the channel's broker objects.
 /// </summary>
+/// <remarks>
+/// <b>Evolution policy:</b> this is a transport-provider extension point, so it evolves additively. New members ship as default
+/// interface methods with a behavior-preserving fallback, and existing members never gain parameters.
+/// </remarks>
 [PublicAPI]
 public interface IReplyListener : IAsyncDisposable
 {

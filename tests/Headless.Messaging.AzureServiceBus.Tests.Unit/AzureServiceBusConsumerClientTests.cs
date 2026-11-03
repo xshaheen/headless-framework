@@ -727,6 +727,97 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task should_return_from_pause_async_when_a_delivery_handler_pauses_the_client()
+    {
+        // given — a processor whose stop returns only once the delivering handler has returned
+        var handlerReturned = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var (client, processor) = await _CreateQueueClientWithProcessorAsync(handlerReturned.Task);
+        var pausedInsideHandler = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.AttachCallbacks(
+            async (_, _) =>
+            {
+                // The circuit breaker trips on this delivery's failure and pauses the client from inside the handler.
+                await client.PauseAsync(AbortToken);
+                pausedInsideHandler.TrySetResult();
+            },
+            _ => { }
+        );
+
+        try
+        {
+            // when
+            var delivery = _DeliverAsync(client);
+
+            // then — the pause and the delivery return instead of waiting on the handler they run in
+            await pausedInsideHandler.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+            await delivery.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+            await processor.Received(1).StopProcessingAsync(Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            handlerReturned.TrySetResult();
+            await client.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task should_restart_the_processor_after_the_pending_stop_completes_when_resume_async()
+    {
+        // given — a listening client paused while a handler still runs, so the processor's stop is pending
+        var handlerReturned = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var (client, processor) = await _CreateQueueClientWithProcessorAsync(handlerReturned.Task);
+        client.AttachCallbacks((_, _) => Task.CompletedTask, _ => { });
+        await client.ListeningAsync(TimeSpan.FromSeconds(5), AbortToken);
+        processor.ClearReceivedCalls();
+        await client.PauseAsync(AbortToken).AsTask().WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        try
+        {
+            // when
+            var resume = client.ResumeAsync(AbortToken).AsTask();
+
+            // then — the restart waits for the stop, so it is not skipped as still processing
+            resume.IsCompleted.Should().BeFalse();
+            await processor.DidNotReceive().StartProcessingAsync(Arg.Any<CancellationToken>());
+            handlerReturned.TrySetResult();
+            await resume.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+            await processor.Received(1).StartProcessingAsync(Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            handlerReturned.TrySetResult();
+            await client.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task should_log_and_still_resume_when_the_processor_stop_started_by_pause_async_fails()
+    {
+        // given — a processor whose stop faults; nothing awaits the stop a pause starts, so the client must observe it
+        var (client, processor) = await _CreateQueueClientWithProcessorAsync(Task.CompletedTask);
+        processor
+            .StopProcessingAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new InvalidOperationException("stop failed")));
+        var logs = new List<LogMessageEventArgs>();
+        client.AttachCallbacks((_, _) => Task.CompletedTask, logs.Add);
+
+        try
+        {
+            // when
+            await client.PauseAsync(AbortToken).AsTask().WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+            await client.ResumeAsync(AbortToken).AsTask().WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+            // then — the failure is logged instead of going unobserved, and the resume is not blocked by it
+            logs.Should().Contain(log => log.LogType == MqLogType.ConsumeError && log.Reason!.Contains("stop failed"));
+            await processor.Received(1).StopProcessingAsync(Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            await client.DisposeAsync();
+        }
+    }
+
+    [Fact]
     public async Task should_toggle_the_startup_gate_before_processing_starts_when_pause_async_and_resume_async()
     {
         // given

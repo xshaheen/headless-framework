@@ -5,6 +5,7 @@ using Headless.Checks;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.RequestReply;
 using Headless.Messaging.Retry;
+using Headless.Messaging.Transport;
 using Headless.Reliability;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
@@ -868,7 +869,7 @@ internal sealed class SubscribeExecutor(
         message.Origin.AddOrUpdateException(ex);
         message.HasUnpersistedOriginChanges = true;
         message.ExceptionInfo = ex.ExpandMessage();
-        message.ExpiresAt = message.Added.AddSeconds(_options.FailedMessageExpiredAfter);
+        message.ExpiresAt = timeProvider.GetUtcNow().AddSeconds(_options.FailedMessageExpiredAfter);
 
         // Inline-retry budget still available: persist as Scheduled/NULL so a crash mid-delay
         // leaves the row picked up by the polling query on restart (Failed/NULL is filtered out).

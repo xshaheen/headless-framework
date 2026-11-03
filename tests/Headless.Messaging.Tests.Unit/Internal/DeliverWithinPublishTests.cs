@@ -4,6 +4,7 @@ using Headless;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.Messaging.RequestReply;
+using Headless.Messaging.Transport;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Options;

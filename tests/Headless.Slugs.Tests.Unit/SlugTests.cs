@@ -417,4 +417,70 @@ public sealed class SlugTests
     }
 
     #endregion
+
+    #region Unicode
+
+    [Theory]
+    [InlineData("B\u00E4r")] // composed input
+    [InlineData("Ba\u0308r")] // decomposed input
+    public void should_apply_composed_replacement_key_whatever_the_input_normalization(string input)
+    {
+        var options = new SlugOptions { Replacements = new Dictionary<string, string> { ["\u00E4"] = "ae" } };
+
+        Slug.Create(input, options).Should().Be("baer");
+    }
+
+    [Fact]
+    public void should_apply_decomposed_replacement_key_to_composed_input()
+    {
+        var options = new SlugOptions { Replacements = new Dictionary<string, string> { ["a\u0308"] = "ae" } };
+
+        Slug.Create("B\u00E4r", options).Should().Be("baer");
+    }
+
+    [Fact]
+    public void should_normalize_keys_of_a_frozen_replacement_dictionary()
+    {
+        var replacements = new Dictionary<string, string> { ["\u00E4"] = "ae" }.ToFrozenDictionary(
+            StringComparer.Ordinal
+        );
+
+        Slug.Create("Ba\u0308r", new SlugOptions { Replacements = replacements }).Should().Be("baer");
+    }
+
+    [Fact]
+    public void should_keep_a_frozen_replacement_dictionary_whose_keys_are_already_decomposed()
+    {
+        var replacements = new Dictionary<string, string> { ["@"] = " at " }.ToFrozenDictionary(StringComparer.Ordinal);
+
+        new SlugOptions { Replacements = replacements }
+            .Replacements.Should()
+            .BeSameAs(replacements);
+    }
+
+    [Fact]
+    public void should_reject_replacement_keys_that_are_the_same_text_once_normalized()
+    {
+        var act = () =>
+            new SlugOptions
+            {
+                Replacements = new Dictionary<string, string> { ["\u00E4"] = "ae", ["a\u0308"] = "a" },
+            };
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void should_not_split_a_surrogate_pair_when_truncating()
+    {
+        // An empty AllowedRanges admits every rune, emoji included. The emoji takes code units 80 and 81, so a cut
+        // at 80 would leave a lone high surrogate.
+        var options = new SlugOptions { AllowedRanges = [], MaximumLength = 80 };
+
+        var slug = Slug.Create(new string('a', 79) + "\U0001F600x", options);
+
+        slug.Should().Be(new string('a', 79));
+    }
+
+    #endregion
 }

@@ -7,12 +7,6 @@
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Messaging" />
-    <InternalsVisibleTo Include="Headless.Messaging.Aws" />
-    <InternalsVisibleTo Include="Headless.Messaging.AzureServiceBus" />
-    <InternalsVisibleTo Include="Headless.Messaging.Kafka" />
-    <InternalsVisibleTo Include="Headless.Messaging.Nats" />
-    <InternalsVisibleTo Include="Headless.Messaging.Pulsar" />
-    <InternalsVisibleTo Include="Headless.Messaging.RabbitMq" />
     <InternalsVisibleTo Include="Headless.EntityFramework.Messaging" />
     <!-- Grants Tests.Unit access to internal ConsumeContext.Response/ResponseType/ResponseCallbackName and MarkCompleted() for callback-capture unit assertions. -->
     <InternalsVisibleTo Include="Headless.Messaging.Tests.Unit" />

@@ -11,10 +11,12 @@ internal sealed class ProcessingContext(
 ) : IAsyncDisposable
 {
     private AsyncServiceScope? _scope;
-    private readonly TimeProvider _timeProvider = timeProvider;
 
     private ProcessingContext(ProcessingContext other)
-        : this(other.Provider, other._timeProvider, other.CancellationToken) { }
+        : this(other.Provider, other.TimeProvider, other.CancellationToken) { }
+
+    /// <summary>The app clock the processors schedule on.</summary>
+    public TimeProvider TimeProvider { get; } = timeProvider;
 
     public IServiceProvider Provider { get; private init; } = provider;
 
@@ -44,11 +46,11 @@ internal sealed class ProcessingContext(
 
     public Task WaitAsync(TimeSpan timeout)
     {
-        return _timeProvider.Delay(timeout, CancellationToken);
+        return TimeProvider.Delay(timeout, CancellationToken);
     }
 
     public DateTimeOffset GetUtcNow()
     {
-        return _timeProvider.GetUtcNow();
+        return TimeProvider.GetUtcNow();
     }
 }

@@ -1198,8 +1198,9 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// <param name="pageSize">Maximum number of root jobs on the page.</param>
     /// <param name="cancellationToken">Token that aborts the query.</param>
     /// <returns>
-    /// The requested page ordered by execution time, most recent first, with a total count that reflects matching
-    /// <b>root</b> jobs only — child rows are never counted or paged independently.
+    /// The requested page ordered by execution time, most recent first, then by <c>Id</c> so roots that share an
+    /// execution time keep one order across pages, with a total count that reflects matching <b>root</b> jobs only —
+    /// child rows are never counted or paged independently.
     /// </returns>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task<PaginationResult<TTimeJob>> GetTimeJobsPaginatedAsync(
@@ -1501,7 +1502,10 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// <param name="pageNumber">The <b>1-based</b> page to return.</param>
     /// <param name="pageSize">Maximum number of definitions on the page.</param>
     /// <param name="cancellationToken">Token that aborts the query.</param>
-    /// <returns>The requested page ordered by creation time, newest first, with the total matching count.</returns>
+    /// <returns>
+    /// The requested page ordered by creation time, newest first, then by <c>Id</c> so definitions that share a
+    /// creation time keep one order across pages, with the total matching count.
+    /// </returns>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task<PaginationResult<TCronJob>> GetCronJobsPaginatedAsync(
         Expression<Func<TCronJob, bool>>? predicate,
@@ -1662,7 +1666,8 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// <param name="cancellationToken">Token that aborts the query.</param>
     /// <returns>
     /// The requested page, newest first, with the total matching count. As with
-    /// <see cref="GetAllCronJobOccurrencesAsync"/> the exact ordering key is provider-defined.
+    /// <see cref="GetAllCronJobOccurrencesAsync"/> the exact ordering key is provider-defined; ties on it are broken
+    /// by <c>Id</c>, so each occurrence appears on exactly one page.
     /// </returns>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task<PaginationResult<CronJobOccurrenceEntity<TCronJob>>> GetAllCronJobOccurrencesPaginatedAsync(

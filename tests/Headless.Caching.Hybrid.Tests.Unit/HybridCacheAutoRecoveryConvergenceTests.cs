@@ -222,6 +222,35 @@ public sealed class HybridCacheAutoRecoveryConvergenceTests : TestBase
     }
 
     [Fact]
+    public async Task should_not_replay_a_queued_upsert_that_a_peer_clear_invalidated_during_the_outage()
+    {
+        // given — only A's L2 connection is down; A writes a value that queues for replay
+        await using var harness = new TwoNodeConvergenceHarness();
+        var (a, b) = (harness.A, harness.B);
+        a.L2.FailWrites = true;
+
+        var key = Faker.Random.AlphaNumeric(10);
+        await a.Cache.UpsertAsync(key, "v-a", _Ttl, AbortToken);
+        a.Cache.RecoveryQueue!.Count.Should().Be(1);
+
+        // when — B clears the cache after A's write; the clear reaches A and invalidates its L1 copy
+        harness.Time.Advance(TimeSpan.FromSeconds(1));
+        await b.Cache.ClearAsync(AbortToken);
+        (await a.Cache.GetAsync<string>(key, AbortToken)).HasValue.Should().BeFalse();
+
+        // and — A's L2 recovers and the replay runs
+        a.L2.FailWrites = false;
+        harness.Time.Advance(_Delay);
+        await a.Cache.RecoveryQueue.ProcessAsync(AbortToken);
+
+        // then — the write the clear superseded is not replayed, so the clear holds on every node
+        a.L2.UpsertAttempts.Should().Be(1, "the cleared write must not be replayed");
+        (await harness.SharedL2Backend.GetAsync<string>(key, AbortToken)).HasValue.Should().BeFalse();
+        (await a.Cache.GetAsync<string>(key, AbortToken)).HasValue.Should().BeFalse();
+        (await b.Cache.GetAsync<string>(key, AbortToken)).HasValue.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task should_drop_peer_stale_l1_copy_when_factory_write_publishes_invalidation()
     {
         // given — every dependency healthy; B holds a stale L1-only copy of the key

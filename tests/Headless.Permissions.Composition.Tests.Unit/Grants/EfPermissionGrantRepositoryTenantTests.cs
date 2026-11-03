@@ -226,6 +226,57 @@ public sealed class EfPermissionGrantRepositoryTenantTests : TestBase
     }
 
     [Fact]
+    public async Task should_replace_this_tenants_grant_with_a_denial_when_revoking_it()
+    {
+        // given
+        await _CreateSchemaAsync();
+        var grant = await _InsertAsync("tenant-a", isGranted: true);
+
+        // when
+        using (CurrentTenant.Change("tenant-a"))
+        {
+            await Store.RevokeAsync(_Permission, _ProviderName, _ProviderKey, AbortToken);
+        }
+
+        // then
+        var row = (await _RowsAsync("tenant-a")).Should().ContainSingle().Subject;
+        row.IsGranted.Should().BeFalse();
+        row.Id.Should().NotBe(grant.Id);
+    }
+
+    [Fact]
+    public async Task should_keep_the_deleted_record_when_the_insert_saved_with_it_fails()
+    {
+        // given a grant to flip, and another row whose id the replacement reuses so its insert fails
+        await _CreateSchemaAsync();
+        var grant = await _InsertAsync("tenant-a", isGranted: true);
+        var other = new PermissionGrantRecord(
+            Guid.NewGuid(),
+            "Users.Other",
+            _ProviderName,
+            _ProviderKey,
+            true,
+            "tenant-a"
+        );
+        var clashing = new PermissionGrantRecord(other.Id, _Permission, _ProviderName, _ProviderKey, false, "tenant-a");
+
+        using (CurrentTenant.Change("tenant-a"))
+        {
+            await Repository.InsertAsync(other, AbortToken);
+
+            // when
+            var save = () => Repository.SaveAsync([clashing], [grant], AbortToken);
+
+            // then the insert fails, and the delete committed with it is rolled back
+            await save.Should().ThrowAsync<DbUpdateException>();
+        }
+
+        var rows = await _RowsAsync("tenant-a");
+        rows.Should().HaveCount(2);
+        rows.Should().ContainSingle(x => x.Id == grant.Id).Which.IsGranted.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task should_leave_another_tenants_record_when_deleting_it_from_this_tenant()
     {
         // given

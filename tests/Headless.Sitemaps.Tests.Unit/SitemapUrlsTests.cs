@@ -374,6 +374,68 @@ public sealed class SitemapUrlsTests : SitemapTestBase
     }
 
     [Fact]
+    public async Task should_count_each_emitted_alternate_url_toward_the_shard_limit()
+    {
+        // Each entry writes one <url> per alternate, so 25,001 two-language entries emit 50,002 <url> elements:
+        // one more than a sitemap file may hold.
+        var urls = Enumerable.Range(0, (SitemapConstants.MaxSitemapUrls / 2) + 1).Select(_CreateRichUrl).ToList();
+
+        var (count, shards) = await _CollectShardsAsync(urls);
+
+        count.Should().Be(2);
+        shards.Select(s => s.Count).Should().Equal(SitemapConstants.MaxSitemapUrls / 2, 1);
+        _CountUrlElements(shards[0].Bytes).Should().Be(SitemapConstants.MaxSitemapUrls);
+        _CountUrlElements(shards[1].Bytes).Should().Be(2);
+    }
+
+    [Fact]
+    public async Task should_close_a_shard_before_an_entry_that_would_overflow_it()
+    {
+        // Three alternates per entry: 16,666 entries write 49,998 <url>, and the next entry's three would pass
+        // 50,000, so it opens the second shard instead of splitting.
+        string[] languages = ["en", "ar", "fr"];
+        var urls = Enumerable
+            .Range(0, (SitemapConstants.MaxSitemapUrls / 3) + 1)
+            .Select(i => new SitemapUrl(
+                languages.Select(language => new SitemapAlternateUrl
+                {
+                    Location = new Uri($"https://example.com/{language}/page{i}"),
+                    LanguageCode = language,
+                })
+            ))
+            .ToList();
+
+        var (count, shards) = await _CollectShardsAsync(urls);
+
+        count.Should().Be(2);
+        shards.Select(s => s.Count).Should().Equal(SitemapConstants.MaxSitemapUrls / 3, 1);
+        _CountUrlElements(shards[0].Bytes).Should().Be(SitemapConstants.MaxSitemapUrls / 3 * 3);
+        _CountUrlElements(shards[1].Bytes).Should().Be(3);
+    }
+
+    [Fact]
+    public async Task should_count_only_alternates_selected_by_write_alternate_language_codes()
+    {
+        // Only the "en" alternate gets its own <url>, so 50,000 entries fill one file exactly.
+        var urls = Enumerable
+            .Range(0, SitemapConstants.MaxSitemapUrls)
+            .Select(i => new SitemapUrl(
+                alternateLocations:
+                [
+                    new() { Location = new Uri($"https://example.com/en/page{i}"), LanguageCode = "en" },
+                    new() { Location = new Uri($"https://example.com/ar/page{i}"), LanguageCode = "ar" },
+                ],
+                options: new SitemapUrlOptions { WriteAlternateLanguageCodes = ["EN"] }
+            ))
+            .ToList();
+
+        var (count, shards) = await _CollectShardsAsync(urls);
+
+        count.Should().Be(1);
+        _CountUrlElements(shards[0].Bytes).Should().Be(SitemapConstants.MaxSitemapUrls);
+    }
+
+    [Fact]
     public async Task should_write_shard_bytes_identical_to_write_to_async_on_the_same_slice()
     {
         var urls = _CreateMixedUrls();
@@ -381,8 +443,10 @@ public sealed class SitemapUrlsTests : SitemapTestBase
         var (_, shards) = await _CollectShardsAsync(urls);
 
         shards.Should().HaveCount(2);
-        shards[0].Bytes.Should().Equal(await _WriteToBytesAsync([.. urls.Take(SitemapConstants.MaxSitemapUrls)]));
-        shards[1].Bytes.Should().Equal(await _WriteToBytesAsync([.. urls.Skip(SitemapConstants.MaxSitemapUrls)]));
+        // Five two-alternate entries sit in the first 50,000, so the first file closes five entries early.
+        shards[0].Count.Should().Be(SitemapConstants.MaxSitemapUrls - 5);
+        shards[0].Bytes.Should().Equal(await _WriteToBytesAsync([.. urls.Take(shards[0].Count)]));
+        shards[1].Bytes.Should().Equal(await _WriteToBytesAsync([.. urls.Skip(shards[0].Count)]));
     }
 
     [Fact]
@@ -624,6 +688,19 @@ public sealed class SitemapUrlsTests : SitemapTestBase
         await urls.WriteToAsync(stream, AbortToken);
 
         return stream.ToArray();
+    }
+
+    private static int _CountUrlElements(byte[] bytes)
+    {
+        var xml = Encoding.UTF8.GetString(bytes);
+        var count = 0;
+
+        for (var index = xml.IndexOf("<url>", StringComparison.Ordinal); index >= 0; count++)
+        {
+            index = xml.IndexOf("<url>", index + 1, StringComparison.Ordinal);
+        }
+
+        return count;
     }
 
     private static string _ReadHeader(byte[] bytes)

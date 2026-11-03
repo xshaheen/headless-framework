@@ -84,15 +84,18 @@ public sealed class SlugOptions
     /// <summary>
     /// Gets verbatim string substitutions applied before slug processing. Each key is replaced with its
     /// corresponding value using ordinal comparison. Accepts any <see cref="IReadOnlyDictionary{TKey,TValue}"/>.
-    /// The assigned dictionary is frozen internally using ordinal key comparison for lookup performance.
+    /// The assigned dictionary is frozen internally using ordinal key comparison for lookup performance, and
+    /// each key is normalized to Unicode NFD so that a composed key such as <c>ä</c> matches whether the input
+    /// arrives composed or decomposed.
     /// Defaults to common symbol expansions:
     /// <c>&amp;</c> to <c> and </c>, <c>+</c> to <c> plus </c>, <c>.</c> to <c> dot </c>, and
     /// <c>%</c> to <c> percent </c>.
     /// </summary>
+    /// <exception cref="ArgumentException">Two keys are the same text once normalized to NFD.</exception>
     public IReadOnlyDictionary<string, string> Replacements
     {
         get;
-        init => field = value as FrozenDictionary<string, string> ?? value.ToFrozenDictionary(StringComparer.Ordinal);
+        init => field = _NormalizeKeys(value);
     } = _DefaultReplacements;
 
     /// <summary>
@@ -121,6 +124,29 @@ public sealed class SlugOptions
         }
 
         return false;
+    }
+
+    // Slug.Create decomposes the input to NFD before it applies replacements, so a key must be NFD too or a
+    // composed key (U+00E4) never matches the decomposed text (a + U+0308).
+    private static FrozenDictionary<string, string> _NormalizeKeys(IReadOnlyDictionary<string, string> replacements)
+    {
+        if (
+            replacements is FrozenDictionary<string, string> frozen
+            && frozen.Keys.All(key => key.IsNormalized(NormalizationForm.FormD))
+        )
+        {
+            return frozen;
+        }
+
+        var normalized = new Dictionary<string, string>(replacements.Count, StringComparer.Ordinal);
+
+        foreach (var (key, value) in replacements)
+        {
+            // Add, not the indexer: two keys that normalize to the same text would otherwise drop one silently.
+            normalized.Add(key.Normalize(NormalizationForm.FormD), value);
+        }
+
+        return normalized.ToFrozenDictionary(StringComparer.Ordinal);
     }
 
     private static bool _IsInRange(UnicodeRange range, Rune rune)

@@ -2,6 +2,7 @@
 
 using Headless.Messaging;
 using Headless.Messaging.Internal;
+using Headless.Messaging.Transport;
 
 namespace Tests.Internal;
 

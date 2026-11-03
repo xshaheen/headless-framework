@@ -397,5 +397,11 @@ public sealed class PermissionGrantStoreUnitOfWorkTests : TestBase
             IReadOnlyCollection<PermissionGrantRecord> permissionGrants,
             CancellationToken cancellationToken = default
         );
+
+        public abstract Task SaveAsync(
+            IReadOnlyCollection<PermissionGrantRecord> inserted,
+            IReadOnlyCollection<PermissionGrantRecord> deleted,
+            CancellationToken cancellationToken = default
+        );
     }
 }

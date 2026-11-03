@@ -761,6 +761,39 @@ public sealed class MessageSenderTests : TestBase
     }
 
     [Fact]
+    public async Task should_keep_a_terminal_publish_failure_for_the_failed_retention_from_now_when_it_was_scheduled_far_ahead()
+    {
+        // A publish scheduled further ahead than the failed retention fails long after the row was
+        // stored. The collector purges Failed rows whose ExpiresAt has passed, so the expiry must
+        // count from the failure, not from Added.
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero));
+        var storage = Substitute.For<IDataStorage>();
+        var transportMessage = _CreateTransportMessage();
+        var serializer = Substitute.For<IMessageSerializer>();
+        serializer
+            .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(transportMessage));
+        var transport = Substitute.For<ITransport>();
+        transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
+        transport
+            .SendAsync(transportMessage, Arg.Any<CancellationToken>())
+            // ReSharper disable once NotResolvedInText
+            .Returns(OperateResult.Failed(new ArgumentNullException("param")));
+        var options = new MessagingOptions
+        {
+            RetryPolicy = { RetryStrategy = TestRetryStrategies.PermanentArgument(0), MaxPersistedRetries = 0 },
+        };
+        var sender = _CreateSender(storage, serializer, transport, options, timeProvider: clock);
+        var message = _CreateMediumMessage();
+        message.Added = clock.GetUtcNow().AddSeconds(-2L * options.FailedMessageExpiredAfter);
+
+        var result = await sender.SendAsync(message);
+
+        result.Succeeded.Should().BeFalse();
+        message.ExpiresAt.Should().Be(clock.GetUtcNow().AddSeconds(options.FailedMessageExpiredAfter));
+    }
+
+    [Fact]
     public async Task should_schedule_a_retry_when_the_transport_publish_times_out()
     {
         // given — the broker never answers, so the transport publish timeout cancels the send while the host runs.

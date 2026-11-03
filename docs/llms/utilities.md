@@ -887,6 +887,7 @@ libphonenumber-backed operations for phone numbers: formatting, normalization, r
 - Every formatting, normalization, and region member parses the number on each call. Cache the result when a hot path formats the same number repeatedly.
 - Inside a `Headless.*` namespace, a fully qualified `PhoneNumbers.X` now resolves to this package's `Headless.PhoneNumbers` namespace. Import libphonenumber with `using PhoneNumbers;` at file scope, or qualify it as `global::PhoneNumbers.X`.
 - Conversions to and from libphonenumber's `PhoneNumber` are explicit methods (`ToUtilsPhoneNumber()`, `PhoneNumber.FromPhoneNumber(...)`) because C# extension members cannot declare conversion operators.
+- `Number` is libphonenumber's national significant number, so it keeps a leading zero that a region dials as part of the subscriber number: `FromInternationalFormat("+39 06 1234 5678").Number` is `0612345678`, and `MobilePhoneNumberValidator.IsValid(..., out normalizedNumber)` returns the E.164 form (`+2250701234567` for Côte d'Ivoire). A national trunk prefix such as Egypt's `0` is not part of it.
 
 ### Install
 
@@ -1010,10 +1011,10 @@ XML sitemap generation utilities for SEO.
 
 ### API and behavior
 
-- `SitemapUrl` - URL entry with metadata (lastmod, changefreq, priority)
+- `SitemapUrl` - URL entry with metadata (lastmod, changefreq, priority). Every location (`SitemapUrl`, `SitemapAlternateUrl`, `SitemapImage`, `SitemapReference`) must be an absolute URI; a relative one throws `ArgumentException` when the object is created, not partway through writing a file
 - `SitemapUrlOptions` - Optional metadata passed to either `SitemapUrl` constructor instead of separate optional constructor parameters
 - `SitemapUrls` - Extension methods to write sitemap URLs: `WriteToAsync` writes one file to a stream, and `WriteAsync` splits any number of URLs into shards
-- `SitemapShard` - One shard of at most 50,000 URLs (`Index`, `Count`, `WriteToAsync(stream)`), valid only during its `onShard` call
+- `SitemapShard` - One shard of at most 50,000 `<url>` elements (`Index`, `Count` of `SitemapUrl` entries, `WriteToAsync(stream)`), valid only during its `onShard` call
 - `SitemapIndexBuilder` - Sitemap index generation for large sites
 - `SitemapAlternateUrl` - Localized/alternate URL support (hreflang)
 - `SitemapImage` - Image sitemap support
@@ -1054,7 +1055,7 @@ await urls.WriteToAsync(stream);
 
 #### Large Sitemaps
 
-A sitemap file holds at most `SitemapConstants.MaxSitemapUrls` (50,000) URLs. `WriteAsync` splits the input into shards of that size and calls `onShard` for each one, in order, as soon as it fills. Memory holds one shard's URL references at a time, and no shard XML unless the callback buffers it. It returns the shard count; build the sitemap index from it.
+A sitemap file holds at most `SitemapConstants.MaxSitemapUrls` (50,000) `<url>` elements. `WriteAsync` splits the input into shards of that size and calls `onShard` for each one, in order, as soon as it fills. A `SitemapUrl` with alternates writes one `<url>` per alternate it emits (those selected by `WriteAlternateLanguageCodes`, else all), and counts that many toward the limit; its entries never split across shards, so a shard closes early when the next entry would overflow it. Memory holds one shard's URL references at a time, and no shard XML unless the callback buffers it. It returns the shard count; build the sitemap index from it.
 
 ```csharp
 // sitemapUrls is an IEnumerable<SitemapUrl> or an IAsyncEnumerable<SitemapUrl>,
@@ -1171,7 +1172,13 @@ var slug = Slug.Create("Long Title That Needs Truncation", options);
 #### Character Replacements
 
 `Replacements` accepts any `IReadOnlyDictionary<string, string>` and replaces the default set entirely;
-the assigned dictionary is frozen internally (ordinal comparison) for lookup performance.
+the assigned dictionary is frozen internally (ordinal comparison) for lookup performance. Replacements run
+after the input is normalized to NFD, and each key is stored in NFD, so a key such as `ä` matches the
+composed and decomposed spellings alike (`["ä"] = "ae"` turns `Bär` into `baer`). Two keys that are the same
+text once normalized throw `ArgumentException` on assignment.
+
+`MaximumLength` counts UTF-16 code units. When the cut would split a surrogate pair (possible only when
+`AllowedRanges` is empty, which admits every character), the slug is one unit shorter instead.
 
 ```csharp
 var options = new SlugOptions

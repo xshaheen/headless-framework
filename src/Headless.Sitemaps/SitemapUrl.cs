@@ -12,10 +12,12 @@ public sealed class SitemapUrl
     /// <param name="location">The full URL of the page.</param>
     /// <param name="options">Optional metadata including last modified time, change frequency, priority, and images.</param>
     /// <exception cref="ArgumentNullException"><paramref name="location"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="location"/> is not an absolute URI.</exception>
     /// <exception cref="ArgumentOutOfRangeException"><see cref="SitemapUrlOptions.Priority"/> is not between 0.0 and 1.0.</exception>
     public SitemapUrl(Uri location, SitemapUrlOptions? options = null)
     {
         Argument.IsNotNull(location);
+        Argument.IsTrue(location.IsAbsoluteUri, SitemapConstants.AbsoluteLocationRequired, nameof(location));
 
         if (options?.Priority is not null)
         {

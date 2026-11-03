@@ -2,6 +2,7 @@
 
 using Azure.Messaging.ServiceBus;
 using Headless.Messaging.Internal;
+using Headless.Messaging.Transport;
 
 namespace Headless.Messaging.AzureServiceBus;
 

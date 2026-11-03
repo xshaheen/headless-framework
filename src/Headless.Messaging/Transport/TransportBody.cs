@@ -5,7 +5,7 @@ using System.Runtime.InteropServices;
 namespace Headless.Messaging.Transport;
 
 /// <summary>Hands a message body to a broker client that only accepts a byte array.</summary>
-internal static class TransportBody
+public static class TransportBody
 {
     /// <summary>
     /// Returns the body's backing array when the body spans the whole array, and a copy otherwise.

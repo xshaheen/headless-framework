@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Net.Sockets;
+using System.Security.Cryptography;
 using Headless.Blobs.SshNet;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -97,6 +99,28 @@ public sealed class SftpClientPoolTests : TestBase
 
         // then
         await act.Should().ThrowAsync<ObjectDisposedException>();
+    }
+
+    [Fact]
+    public async Task should_offer_the_private_key_on_every_new_connection_when_the_key_is_a_stream()
+    {
+        // given: key auth against a port nothing listens on, so each acquire builds its credentials, then fails to
+        // connect; the main pool and the read-stream pool each open connections of their own
+        using var rsa = RSA.Create(2048);
+        var options = _CreateValidOptions();
+        options.ConnectionString = "sftp://user@127.0.0.1:1";
+        options.PrivateKey = new MemoryStream(Encoding.ASCII.GetBytes(rsa.ExportRSAPrivateKeyPem()));
+        using var pool = new SftpClientPool(Options.Create(options), NullLogger<SftpClientPool>.Instance);
+
+        // when
+        var first = async () => await pool.AcquireAsync(AbortToken);
+        var second = async () => await pool.AcquireAsync(AbortToken);
+        var readStream = async () => await pool.ReadStreams.AcquireAsync(AbortToken);
+
+        // then: every attempt reaches the network instead of failing on a key stream the first one consumed
+        await first.Should().ThrowAsync<SocketException>();
+        await second.Should().ThrowAsync<SocketException>();
+        await readStream.Should().ThrowAsync<SocketException>();
     }
 
     private static SshBlobStorageOptions _CreateValidOptions()

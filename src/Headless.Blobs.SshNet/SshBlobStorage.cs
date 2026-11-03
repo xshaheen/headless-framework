@@ -367,7 +367,15 @@ internal sealed partial class SshBlobStorage(
         var client = await pool.AcquireAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            return await client.ExistsAsync(blobPath, cancellationToken).ConfigureAwait(false);
+            // SFTP's own exists answers true for a directory, but a directory is not a blob: GetBlobInfoAsync and the
+            // other providers report it missing, and a move must not treat a directory key as an occupied destination.
+            var file = await client.GetAsync(blobPath, cancellationToken).ConfigureAwait(false);
+
+            return !file.IsDirectory;
+        }
+        catch (SftpPathNotFoundException)
+        {
+            return false;
         }
         finally
         {

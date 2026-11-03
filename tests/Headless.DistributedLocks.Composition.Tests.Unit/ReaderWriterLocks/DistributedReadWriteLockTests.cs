@@ -549,6 +549,90 @@ public sealed class DistributedReadWriteLockTests : TestBase
     }
 
     [Fact]
+    public async Task should_release_committed_reader_when_read_acquire_is_cancelled_after_storage_commits()
+    {
+        // given - the store commits the reader entry, then the caller cancels before the reply lands
+        var storage = new InMemoryDistributedReadWriteLockStorage(_timeProvider);
+        var releaseObserver = new ReleaseObservingReaderWriterLockStorage(storage);
+        var provider = _CreateProvider(releaseObserver);
+        var resource = Faker.Random.AlphaNumeric(10);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        releaseObserver.AfterReadCommit = () =>
+        {
+            cts.Cancel();
+            return new OperationCanceledException(cts.Token);
+        };
+
+        // when
+        var act = async () =>
+            await provider.TryAcquireReadLockAsync(
+                resource,
+                new DistributedLockAcquireOptions { AcquireTimeout = _AcquireTimeout },
+                cts.Token
+            );
+
+        // then - the cancel surfaces and the committed reader no longer blocks a writer
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        releaseObserver.ReadReleaseCount.Should().Be(1);
+        await using var writer = await provider.TryAcquireWriteLockAsync(
+            resource,
+            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero },
+            AbortToken
+        );
+        writer.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task should_release_committed_reader_when_try_read_storage_faults_after_commit()
+    {
+        // given - try-once path; the store commits the reader entry, then the client sees a transient fault
+        var storage = new InMemoryDistributedReadWriteLockStorage(_timeProvider);
+        var releaseObserver = new ReleaseObservingReaderWriterLockStorage(storage);
+        var provider = _CreateProvider(releaseObserver);
+        var resource = Faker.Random.AlphaNumeric(10);
+        releaseObserver.AfterReadCommit = () => new TimeoutException("reply lost");
+
+        // when
+        var result = await provider.TryAcquireReadLockAsync(
+            resource,
+            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero },
+            AbortToken
+        );
+
+        // then
+        result.Should().BeNull();
+        releaseObserver.ReadReleaseCount.Should().Be(1);
+        (await provider.GetReaderCountAsync(resource, AbortToken)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_acquire_write_on_retry_when_first_write_attempt_faults_after_commit()
+    {
+        // given - the store commits the writer key, then the client sees a transient fault on the first attempt
+        var timeProvider = new TimerRecordingTimeProvider();
+        var storage = new InMemoryDistributedReadWriteLockStorage(timeProvider);
+        var releaseObserver = new ReleaseObservingReaderWriterLockStorage(storage);
+        var provider = _CreateProvider(releaseObserver, timeProvider: timeProvider);
+        var resource = Faker.Random.AlphaNumeric(10);
+        var faults = 1;
+        releaseObserver.AfterWriteCommit = () => faults-- > 0 ? new TimeoutException("reply lost") : null;
+
+        // when - the retry runs after the backoff
+        var acquireTask = provider.TryAcquireWriteLockAsync(
+            resource,
+            new DistributedLockAcquireOptions { AcquireTimeout = _AcquireTimeout },
+            AbortToken
+        );
+        var backoff = await _WaitForBackoffArmedAsync(timeProvider);
+        timeProvider.Advance(backoff);
+
+        // then - the orphaned grant was released, so the retry wins instead of colliding with its own key
+        await using var lease = await acquireTask.Bounded();
+        lease.Should().NotBeNull();
+        releaseObserver.WriteReleaseCount.Should().BePositive();
+    }
+
+    [Fact]
     public async Task should_throw_when_monitoring_uses_infinite_lease()
     {
         // given
@@ -576,16 +660,26 @@ public sealed class DistributedReadWriteLockTests : TestBase
     {
         public Action? OnTryAcquireWriteCancellation { get; set; }
 
+        /// <summary>Runs after the inner store commits a read acquire; a returned exception is thrown in place of the reply.</summary>
+        public Func<Exception?>? AfterReadCommit { get; set; }
+
+        /// <summary>Runs after the inner store commits a write acquire; a returned exception is thrown in place of the reply.</summary>
+        public Func<Exception?>? AfterWriteCommit { get; set; }
+
+        public int ReadReleaseCount { get; private set; }
+
         public int WriteReleaseCount { get; private set; }
 
-        public ValueTask<bool> TryAcquireReadAsync(
+        public async ValueTask<bool> TryAcquireReadAsync(
             string resource,
             string leaseId,
             TimeSpan? ttl = null,
             CancellationToken cancellationToken = default
         )
         {
-            return inner.TryAcquireReadAsync(resource, leaseId, ttl, cancellationToken);
+            var acquired = await inner.TryAcquireReadAsync(resource, leaseId, ttl, cancellationToken);
+
+            return AfterReadCommit?.Invoke() is { } failure ? throw failure : acquired;
         }
 
         public ValueTask<bool> TryExtendReadAsync(
@@ -604,10 +698,12 @@ public sealed class DistributedReadWriteLockTests : TestBase
             CancellationToken cancellationToken = default
         )
         {
+            ReadReleaseCount++;
+
             return inner.ReleaseReadAsync(resource, leaseId, cancellationToken);
         }
 
-        public ValueTask<bool> TryAcquireWriteAsync(
+        public async ValueTask<bool> TryAcquireWriteAsync(
             string resource,
             string leaseId,
             string waitingId,
@@ -620,7 +716,16 @@ public sealed class DistributedReadWriteLockTests : TestBase
             // OCE as Redis/StackExchange would when the token fires before the response lands.
             OnTryAcquireWriteCancellation?.Invoke();
             cancellationToken.ThrowIfCancellationRequested();
-            return inner.TryAcquireWriteAsync(resource, leaseId, waitingId, ttl, markerTtl, cancellationToken);
+            var acquired = await inner.TryAcquireWriteAsync(
+                resource,
+                leaseId,
+                waitingId,
+                ttl,
+                markerTtl,
+                cancellationToken
+            );
+
+            return AfterWriteCommit?.Invoke() is { } failure ? throw failure : acquired;
         }
 
         public ValueTask<bool> TryExtendWriteAsync(

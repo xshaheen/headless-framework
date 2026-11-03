@@ -241,10 +241,12 @@ internal sealed class KafkaConsumerClient : IConsumerClient
             }
         };
 
+        // The loop keeps calling Consume while paused instead of waiting at the pause gate: librdkafka counts
+        // max.poll.interval.ms between Consume calls whether or not the partitions are paused, so a pause longer than
+        // that would make the member leave its group. Paused partitions fetch nothing, Consume still serves rebalance
+        // callbacks, and a record that arrives anyway is rewound below.
         while (!cancellationToken.IsCancellationRequested)
         {
-            await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
-
             // A background handler left its record unsettled. Failing the listener, as an inline handler's throw
             // does, makes the consumer register rebuild the client, which reads again from the last committed offset.
             Volatile.Read(ref _handlerFailure)?.Throw();
@@ -293,8 +295,9 @@ internal sealed class KafkaConsumerClient : IConsumerClient
 
                 if (_pauseGate.IsPaused)
                 {
-                    // PauseAsync does not wait for a Consume already in progress, so the record it returned can
-                    // arrive after the pause. Rewind to it instead of dispatching it; the poll resumes there.
+                    // PauseAsync does not wait for a Consume already in progress, and a partition assigned during the
+                    // pause is not paused, so a record can still arrive. Rewind to it instead of dispatching it; the
+                    // poll resumes there.
                     _RewindUndispatched(consumerResult);
 
                     continue;
@@ -688,6 +691,14 @@ internal sealed class KafkaConsumerClient : IConsumerClient
             }
 
             consumerClient.Seek(consumerResult.TopicPartitionOffset);
+
+            // A partition assigned during the pause fetches until paused itself; without this the loop would fetch
+            // and rewind the same record on every poll. Checked under the lock ResumeAsync takes, so a resume that
+            // already ran is never undone.
+            if (_pauseGate.IsPaused)
+            {
+                consumerClient.Pause([consumerResult.TopicPartition]);
+            }
         }
     }
 

@@ -351,6 +351,18 @@ public sealed class PermissionGrantStoreCacheRaceTests : TestBase
             return Task.CompletedTask;
         }
 
+        public Task SaveAsync(
+            IReadOnlyCollection<PermissionGrantRecord> inserted,
+            IReadOnlyCollection<PermissionGrantRecord> deleted,
+            CancellationToken cancellationToken = default
+        )
+        {
+            Rows.RemoveAll(x => deleted.Any(g => g.Id == x.Id));
+            Rows.AddRange(inserted);
+
+            return Task.CompletedTask;
+        }
+
         // The writer's own reads inside the race are not cache fills, so they read the rows directly.
         public Task<List<PermissionGrantRecord>> GetListEnlistedAsync(
             IUnitOfWork unitOfWork,

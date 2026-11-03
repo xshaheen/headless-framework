@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Text.Encodings.Web;
 using System.Text.RegularExpressions;
 
 namespace Headless.Dashboard.Authentication;
@@ -58,6 +59,15 @@ internal static partial class DashboardSpaHelper
 
         // basePath is already normalized to start with '/'
         return pathBase + basePath;
+    }
+
+    /// <summary>
+    /// Builds the shell's <c>&lt;base&gt;</c> tag for the frontend base path, attribute-encoded: the path base can come
+    /// from a forwarded prefix header, so it may carry a quote or markup.
+    /// </summary>
+    internal static string BuildBaseTag(string frontendBasePath)
+    {
+        return $"""<base href="{HtmlEncoder.Default.Encode(frontendBasePath + "/")}" />""";
     }
 
     /// <summary>

@@ -49,7 +49,7 @@ internal sealed class MessageOutboxBuffer(IDispatcher dispatcher) : InMemoryWork
             if (message.ExpiresAt is not null)
             {
                 // Unclaimed Delayed work: a refusal leaves it for the delayed processor, so there is nothing to hand back.
-                _ = (dispatcher as ICommittedDelayedMessageDispatcher)?.EnqueueCommittedDelayedMessage(message);
+                _ = (dispatcher as ICommittedDelayedMessageDispatcher)?.HandOffCommittedDelayedMessage(message);
                 continue;
             }
 

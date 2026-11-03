@@ -165,6 +165,60 @@ public sealed class AwsSesEmailSenderTests : TestBase
         await _ses.DidNotReceive().SendEmailAsync(Arg.Any<SendEmailRequest>(), Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task should_quote_a_display_name_with_specials_when_simple_path()
+    {
+        var captured = _CaptureRequest(HttpStatusCode.OK);
+
+        var request = _Request() with
+        {
+            From = new EmailRequestAddress("from@example.com", "Acme, Inc."),
+            Destination = new EmailRequestDestination
+            {
+                ToAddresses = [new EmailRequestAddress("to@example.com", "Smith, John")],
+                CcAddresses = [new EmailRequestAddress("cc@example.com", "a <b>")],
+                BccAddresses = [new EmailRequestAddress("bcc@example.com")],
+            },
+        };
+
+        var result = await _sender.SendAsync(request, AbortToken);
+
+        result.Success.Should().BeTrue();
+        captured().FromEmailAddress.Should().Be("\"Acme, Inc.\" <from@example.com>");
+        captured().Destination.ToAddresses.Should().Equal("\"Smith, John\" <to@example.com>");
+        captured().Destination.CcAddresses.Should().Equal("\"a <b>\" <cc@example.com>");
+        captured().Destination.BccAddresses.Should().Equal("bcc@example.com");
+    }
+
+    [Fact]
+    public async Task should_encode_a_non_ascii_display_name_on_one_line_when_raw_path()
+    {
+        var captured = _CaptureRequest(HttpStatusCode.OK);
+        // Long enough that default 78-column folding would insert a CRLF into the envelope string.
+        var displayName = string.Concat(Enumerable.Repeat("متجر أكمي ", 8)).TrimEnd();
+
+        var request = _Request() with
+        {
+            From = new EmailRequestAddress("from@example.com", displayName),
+            Destination = new EmailRequestDestination
+            {
+                ToAddresses = [new EmailRequestAddress("to@example.com", displayName)],
+            },
+            Attachments = [new EmailRequestAttachment { Name = "a.txt", File = new byte[] { 1, 2, 3 } }],
+        };
+
+        var result = await _sender.SendAsync(request, AbortToken);
+
+        result.Success.Should().BeTrue();
+
+        foreach (var address in (string[])[captured().FromEmailAddress, .. captured().Destination.ToAddresses])
+        {
+            address.Should().StartWith("=?utf-8?").And.NotContain("\r").And.NotContain("\n");
+            address.Should().MatchRegex(@"^[\x20-\x7E]+$", "SES requires a 7-bit envelope address");
+            MimeKit.MailboxAddress.Parse(address).Name.Should().Be(displayName);
+        }
+    }
+
     private Func<SendEmailRequest> _CaptureRequest(HttpStatusCode status)
     {
         SendEmailRequest? captured = null;

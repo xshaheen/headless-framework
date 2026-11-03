@@ -7,48 +7,39 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Permissions;
 
-/// <summary>Clears or rewrites grant cache entries once a unit of work commits, never at write time.</summary>
+/// <summary>Rewrites grant cache entries with the status a write stored, once a unit of work commits.</summary>
 internal static class PermissionGrantCacheInvalidation
 {
     /// <summary>
-    /// Removes <paramref name="cacheKeys" /> after <paramref name="unitOfWork" /> commits. A rolled-back unit removes
-    /// nothing, so readers never cache a value the rollback discarded. A removal fault is logged, not thrown: the commit
-    /// is already durable, and the entry expires on its own.
+    /// The cache entries a repository write leaves behind: each written record's status, and an undefined status for
+    /// each deleted record. A deleted record is stored as undefined rather than removed, so a reader that loaded the row
+    /// before the delete cannot fill it back: readers fill only an absent entry.
     /// </summary>
-    public static void RemoveAfterCommit(
-        IUnitOfWork unitOfWork,
-        ICache<PermissionGrantCacheItem> cache,
-        ICurrentTenant currentTenant,
-        IReadOnlyCollection<string> cacheKeys,
-        ILogger logger
+    public static Dictionary<string, PermissionGrantCacheItem> WrittenItems(
+        IEnumerable<PermissionGrantRecord> written,
+        IEnumerable<PermissionGrantRecord> deleted
     )
     {
-        if (cacheKeys.Count == 0)
+        var items = new Dictionary<string, PermissionGrantCacheItem>(StringComparer.Ordinal);
+
+        foreach (var record in deleted)
         {
-            return;
+            items[CacheKey(record)] = new PermissionGrantCacheItem(isGranted: null);
         }
 
-        var tenantId = currentTenant.Id;
-        var tenantName = currentTenant.Name;
-
-        unitOfWork.OnCompleted(async () =>
+        // After the deletes, so a record written in the same call wins over a deleted one with the same key.
+        foreach (var record in written)
         {
-            try
-            {
-                // The cache is tenant-scoped through the current tenant, which the code completing the unit may no
-                // longer hold.
-                using (currentTenant.Change(tenantId, tenantName))
-                {
-                    await cache.RemoveAllAsync(cacheKeys).ConfigureAwait(false);
-                }
-            }
-#pragma warning disable CA1031 // The commit is durable; a cache fault must not turn it into a reported failure.
-            catch (Exception ex)
-#pragma warning restore CA1031
-            {
-                logger.LogFailedToInvalidateGrantCache(ex, cacheKeys.Count);
-            }
-        });
+            items[CacheKey(record)] = new PermissionGrantCacheItem(record.IsGranted);
+        }
+
+        return items;
+    }
+
+    /// <summary>Returns the cache key of <paramref name="record"/>.</summary>
+    public static string CacheKey(PermissionGrantRecord record)
+    {
+        return PermissionGrantCacheItem.CalculateCacheKey(record.Name, record.ProviderName, record.ProviderKey);
     }
 
     /// <summary>

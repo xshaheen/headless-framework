@@ -9,18 +9,25 @@ namespace Headless.Jobs.Infrastructure.Dashboard;
 
 internal static class JsonExampleGenerator
 {
+    // A request type may reference itself, directly or through another type (a tree node with a list of child
+    // nodes). Recursion here runs on the dashboard request thread, and a stack overflow cannot be caught, so it would
+    // end the host. The example therefore stops at a type already being built on the current path and leaves that
+    // member unset or its collection empty. The depth cap bounds generic shapes that never repeat an exact type
+    // (Node<T> holding Node<List<T>>).
+    private const int _MaxDepth = 16;
+
     private static object? _GenerateExample(Type type)
     {
-        return _Generate(type);
+        return _Generate(type, []);
     }
 
-    private static object? _Generate(Type type)
+    private static object? _Generate(Type type, HashSet<Type> path)
     {
         // Handle nullable types
         var underlyingType = Nullable.GetUnderlyingType(type);
         if (underlyingType != null)
         {
-            return _Generate(underlyingType);
+            return _Generate(underlyingType, path);
         }
 
         // Handle primitive types
@@ -32,9 +39,15 @@ internal static class JsonExampleGenerator
         // Handle arrays
         if (type.IsArray)
         {
-            var elementType = type.GetElementType();
-            var array = Array.CreateInstance(elementType!, 1);
-            array.SetValue(_Generate(elementType!), 0);
+            var elementType = type.GetElementType()!;
+            var element = _Generate(elementType, path);
+            var array = Array.CreateInstance(elementType, element is null ? 0 : 1);
+
+            if (element is not null)
+            {
+                array.SetValue(element, 0);
+            }
+
             return array;
         }
 
@@ -47,24 +60,48 @@ internal static class JsonExampleGenerator
             var elementType = type.GetGenericArguments()[0];
             var listType = typeof(List<>).MakeGenericType(elementType);
             var list = (IList)Activator.CreateInstance(listType)!;
-            list.Add(_Generate(elementType));
+            var element = _Generate(elementType, path);
+
+            if (element is not null)
+            {
+                list.Add(element);
+            }
+
             return list;
         }
 
         // Handle complex objects
         if (type.IsClass || type.IsValueType)
         {
-            var instance = Activator.CreateInstance(type)!;
-            foreach (var property in type.GetProperties())
+            if (path.Count >= _MaxDepth || !path.Add(type))
             {
-                if (property.CanWrite)
-                {
-                    var value = _Generate(property.PropertyType);
-                    property.SetValue(instance, value);
-                }
+                return null;
             }
 
-            return instance;
+            try
+            {
+                var instance = Activator.CreateInstance(type)!;
+                foreach (var property in type.GetProperties())
+                {
+                    if (property.CanWrite)
+                    {
+                        var value = _Generate(property.PropertyType, path);
+
+                        // A null value is a cut cycle; the constructor's own default reads better than an explicit
+                        // null, and a value-type property keeps its zero value either way.
+                        if (value is not null)
+                        {
+                            property.SetValue(instance, value);
+                        }
+                    }
+                }
+
+                return instance;
+            }
+            finally
+            {
+                path.Remove(type);
+            }
         }
 
         return _GetDefaultValue(type);

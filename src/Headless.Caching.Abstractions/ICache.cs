@@ -189,7 +189,8 @@ public interface ICache
     /// <exception cref="ArgumentException"><paramref name="key"/> is empty.</exception>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="expiration"/> is negative.</exception>
     /// <remarks>
-    /// An expiration of <see cref="TimeSpan.Zero"/> evicts the key and returns <c>0</c> without incrementing.
+    /// An expiration of <see cref="TimeSpan.Zero"/> evicts the key and returns <c>0</c> without incrementing. A
+    /// <see langword="null"/> expiration keeps the key's current expiration; a key the call creates gets none.
     /// </remarks>
     ValueTask<double> IncrementAsync(
         string key,
@@ -207,7 +208,8 @@ public interface ICache
     /// <exception cref="ArgumentException"><paramref name="key"/> is empty.</exception>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="expiration"/> is negative.</exception>
     /// <remarks>
-    /// An expiration of <see cref="TimeSpan.Zero"/> evicts the key and returns <c>0</c> without incrementing.
+    /// An expiration of <see cref="TimeSpan.Zero"/> evicts the key and returns <c>0</c> without incrementing. A
+    /// <see langword="null"/> expiration keeps the key's current expiration; a key the call creates gets none.
     /// </remarks>
     ValueTask<long> IncrementAsync(
         string key,
@@ -228,7 +230,8 @@ public interface ICache
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="expiration"/> is negative.</exception>
     /// <remarks>
     /// A <see cref="TimeSpan.Zero"/> expiration is treated as expire-immediately: the key is evicted and the method
-    /// returns <c>0</c> without storing. Note that a return of <c>0</c> is ambiguous when <c>0</c> is a legitimate
+    /// returns <c>0</c> without storing. A <see langword="null"/> expiration stores the value with no expiration; when
+    /// the store is left unchanged, the key keeps its current expiration. Note that a return of <c>0</c> is ambiguous when <c>0</c> is a legitimate
     /// stored value: storing <c>0</c> into an absent key also returns <c>0</c>, indistinguishable from the no-op
     /// result; callers that must tell these apart should check <see cref="ExistsAsync"/> first.
     /// </remarks>
@@ -251,7 +254,8 @@ public interface ICache
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="expiration"/> is negative.</exception>
     /// <remarks>
     /// A <see cref="TimeSpan.Zero"/> expiration is treated as expire-immediately: the key is evicted and the method
-    /// returns <c>0</c> without storing. Note that a return of <c>0</c> is ambiguous when <c>0</c> is a legitimate
+    /// returns <c>0</c> without storing. A <see langword="null"/> expiration stores the value with no expiration; when
+    /// the store is left unchanged, the key keeps its current expiration. Note that a return of <c>0</c> is ambiguous when <c>0</c> is a legitimate
     /// stored value: storing <c>0</c> into an absent key also returns <c>0</c>, indistinguishable from the no-op
     /// result; callers that must tell these apart should check <see cref="ExistsAsync"/> first. On the Redis
     /// provider the comparison and returned difference are computed in Lua with IEEE-754 doubles, so results are
@@ -276,7 +280,8 @@ public interface ICache
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="expiration"/> is negative.</exception>
     /// <remarks>
     /// A <see cref="TimeSpan.Zero"/> expiration is treated as expire-immediately: the key is evicted and the method
-    /// returns <c>0</c> without storing. Note that a return of <c>0</c> is ambiguous when <c>0</c> is a legitimate
+    /// returns <c>0</c> without storing. A <see langword="null"/> expiration stores the value with no expiration; when
+    /// the store is left unchanged, the key keeps its current expiration. Note that a return of <c>0</c> is ambiguous when <c>0</c> is a legitimate
     /// stored value: storing <c>0</c> into an absent key also returns <c>0</c>, indistinguishable from the no-op
     /// result; callers that must tell these apart should check <see cref="ExistsAsync"/> first.
     /// </remarks>
@@ -299,7 +304,8 @@ public interface ICache
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="expiration"/> is negative.</exception>
     /// <remarks>
     /// A <see cref="TimeSpan.Zero"/> expiration is treated as expire-immediately: the key is evicted and the method
-    /// returns <c>0</c> without storing. Note that a return of <c>0</c> is ambiguous when <c>0</c> is a legitimate
+    /// returns <c>0</c> without storing. A <see langword="null"/> expiration stores the value with no expiration; when
+    /// the store is left unchanged, the key keeps its current expiration. Note that a return of <c>0</c> is ambiguous when <c>0</c> is a legitimate
     /// stored value: storing <c>0</c> into an absent key also returns <c>0</c>, indistinguishable from the no-op
     /// result; callers that must tell these apart should check <see cref="ExistsAsync"/> first. On the Redis
     /// provider the comparison and returned difference are computed in Lua with IEEE-754 doubles, so results are

@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Messaging.Internal;
+using Headless.Checks;
+
+namespace Headless.Messaging.Transport;
 
 /// <summary>
 /// Sanitizes values originating from message broker wire data (transport headers, message
@@ -15,8 +17,12 @@ namespace Headless.Messaging.Internal;
 /// log output), and Unicode bidi overrides U+202A–U+202E / U+2066–U+2069 (which can
 /// visually reorder text in log viewers to hide malicious content).
 /// </para>
+/// <para>
+/// A transport passes every broker-supplied value it logs or puts in an exception message through
+/// <see cref="Sanitize"/>.
+/// </para>
 /// </summary>
-internal static class LogSanitizer
+public static class LogSanitizer
 {
     /// <summary>
     /// Sanitizes a string value to prevent log injection.
@@ -25,9 +31,15 @@ internal static class LogSanitizer
     /// Optionally truncates to <paramref name="maxLength"/> characters (appending "..." when truncated).
     /// Returns null if input is null.
     /// </summary>
+    /// <param name="value">The broker-supplied value.</param>
+    /// <param name="maxLength">The longest result before the truncation suffix; unlimited when omitted.</param>
+    /// <returns>The sanitized value, or <see langword="null"/> when <paramref name="value"/> is.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="maxLength"/> is negative.</exception>
     [return: NotNullIfNotNull(nameof(value))]
-    internal static string? Sanitize(string? value, int maxLength = int.MaxValue)
+    public static string? Sanitize(string? value, int maxLength = int.MaxValue)
     {
+        Argument.IsPositiveOrZero(maxLength);
+
         if (value is null)
         {
             return null;

@@ -47,7 +47,9 @@ class HttpService {
     const url = `${this.baseUrl}/api${endpoint}`;
     
     const headers: Record<string, string> = {
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      // The server refuses a state-changing request without this header: a cross-site form cannot send it.
+      'X-Requested-With': 'XMLHttpRequest'
     };
 
     // Add authentication header if available

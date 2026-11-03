@@ -542,6 +542,11 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
             return true;
         }
 
+        public bool HandOffCommittedDelayedMessage(MediumMessage message)
+        {
+            return EnqueueCommittedDelayedMessage(message);
+        }
+
         public ValueTask EnqueueToPublish(MediumMessage message, CancellationToken cancellationToken = default)
         {
             PublishCalls++;

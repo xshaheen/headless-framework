@@ -48,6 +48,17 @@ internal interface ICommittedDelayedMessageDispatcher
     /// Delayed work, but a row the caller claimed is Queued and leased to this node, so the caller must hand it back.
     /// </returns>
     bool EnqueueCommittedDelayedMessage(MediumMessage message);
+
+    /// <summary>
+    /// Offers a just-committed, unclaimed delayed row to the in-memory scheduler when it is due within the delayed
+    /// claim's lookahead, without waiting for capacity.
+    /// </summary>
+    /// <returns>
+    /// <see langword="false"/> when the row is due later than the lookahead, or the scheduler refused it (full or
+    /// stopping). Either way the row stays durable as Delayed work that the delayed processor claims once it comes
+    /// within the lookahead, so the caller has nothing to hand back.
+    /// </returns>
+    bool HandOffCommittedDelayedMessage(MediumMessage message);
 }
 
 /// <summary>

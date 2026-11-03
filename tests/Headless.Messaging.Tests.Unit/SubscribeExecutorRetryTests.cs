@@ -663,6 +663,25 @@ public sealed class SubscribeExecutorRetryTests : TestBase
     }
 
     [Fact]
+    public async Task should_keep_a_terminal_failure_for_the_failed_retention_from_now_when_the_row_was_stored_long_ago()
+    {
+        // A row stored longer ago than the failed retention (a long persisted-retry run, or a delayed
+        // consume) must still be kept for the full retention after it fails: the collector purges
+        // Failed rows whose ExpiresAt has passed, so an Added-based expiry deletes it at once.
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero));
+        var storage = Substitute.For<IDataStorage>();
+        var invoker = _AlwaysThrowing(new ArgumentException("invalid param"), out _);
+        var options = _OptionsCountingExhausted(() => { });
+        var executor = _CreateExecutor(invoker, storage, options, timeProvider: clock);
+        var message = _CreateMediumMessage();
+        message.Added = clock.GetUtcNow().AddSeconds(-2L * options.FailedMessageExpiredAfter);
+
+        await executor.ExecuteAsync(message, _EmptyScope, _CreateDescriptor(_Policy(3, 5)), AbortToken);
+
+        message.ExpiresAt.Should().Be(clock.GetUtcNow().AddSeconds(options.FailedMessageExpiredAfter));
+    }
+
+    [Fact]
     public async Task should_treat_a_throwing_fail_rule_as_matched()
     {
         var storage = Substitute.For<IDataStorage>();

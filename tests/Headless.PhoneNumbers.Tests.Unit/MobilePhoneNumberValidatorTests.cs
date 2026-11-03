@@ -88,6 +88,16 @@ public sealed class MobilePhoneNumberValidatorTests
     }
 
     [Fact]
+    public void should_keep_the_leading_zero_in_the_normalized_number_when_the_region_dials_it()
+    {
+        // Côte d'Ivoire mobile numbers carry a leading 0 after the calling code.
+        var result = MobilePhoneNumberValidator.IsValid("+2250701234567", out var normalized);
+
+        result.Should().BeTrue();
+        normalized.Should().Be("+2250701234567");
+    }
+
+    [Fact]
     public void should_throw_for_international_without_plus()
     {
         var act = () => MobilePhoneNumberValidator.IsValid("201001234567", out _);

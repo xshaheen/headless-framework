@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics.Metrics;
 using System.Reflection;
+using System.Threading.Channels;
 using Headless.DistributedLocks;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
@@ -15,6 +16,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
+using Tests.Helpers;
 
 namespace Tests.Processor;
 
@@ -348,6 +350,137 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var identities = await released.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
         identities.Select(identity => identity.StorageId).Should().BeEquivalentTo(messages.Select(m => m.StorageId));
         identities.Should().OnlyContain(identity => identity.Lane == lane && identity.Owner == "node-a");
+    }
+
+    [Theory]
+    [InlineData(MessageType.Publish)]
+    [InlineData(MessageType.Subscribe)]
+    public async Task should_keep_the_claim_of_rows_waiting_behind_a_slow_dispatch_live_until_their_turn(
+        MessageType direction
+    )
+    {
+        // given: one pickup claims three rows for 30 s, and the first row's dispatch outlasts that claim
+        var dispatchTimeout = TimeSpan.FromSeconds(30);
+        var renewalInterval = TimeSpan.FromSeconds(10);
+        var clock = new TimerArmedSignalClock(new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero));
+        var claimedUntil = clock.GetUtcNow() + dispatchTimeout;
+        var storage = Substitute.For<IDataStorage, IGracefulLeaseReleaseStorage>();
+        storage
+            .GetReceivedInboxOrphansOfNeedRetryAsync(
+                Arg.Any<MessageLane>(),
+                Arg.Any<IReadOnlyCollection<string>?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
+        var rows = Enumerable
+            .Range(0, 3)
+            .Select(_ =>
+            {
+                var message = _CreateMessage();
+                message.Owner = "node-a";
+                message.LockedUntil = claimedUntil;
+                return message;
+            })
+            .ToArray();
+        storage
+            .GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>(direction == MessageType.Publish ? rows : []));
+        storage
+            .GetReceivedMessagesOfNeedRetryAsync(
+                MessageLane.Bus,
+                Arg.Any<IReadOnlyCollection<string>?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>(direction == MessageType.Subscribe ? rows : []));
+
+        // The store slides a renewed lease forward from its own clock, which the fake clock stands in for.
+        var renewed = new ConcurrentQueue<Guid>();
+        var renewalCalls = Channel.CreateUnbounded<bool>();
+        ValueTask<bool> renew(NSubstitute.Core.CallInfo call)
+        {
+            var message = call.Arg<MediumMessage>();
+            message.LockedUntil = clock.GetUtcNow() + call.Arg<TimeSpan>();
+            renewed.Enqueue(message.StorageId);
+            renewalCalls.Writer.TryWrite(true);
+            return ValueTask.FromResult(true);
+        }
+
+        storage
+            .RenewPublishLeaseAsync(Arg.Any<MediumMessage>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns(renew);
+        storage
+            .RenewReceiveLeaseAsync(Arg.Any<MediumMessage>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns(renew);
+
+        var slowDispatch = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var leaseAtTurn = new ConcurrentDictionary<Guid, DateTimeOffset?>();
+        var slowDispatchStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        async Task dispatch(MediumMessage message)
+        {
+            leaseAtTurn[message.StorageId] = message.LockedUntil;
+            if (ReferenceEquals(message, rows[0]))
+            {
+                slowDispatchStarted.TrySetResult();
+                await slowDispatch.Task.Bounded();
+            }
+        }
+
+        async ValueTask<bool> dispatchReceived(MediumMessage message)
+        {
+            await dispatch(message);
+            return true;
+        }
+
+        var dispatcher = Substitute.For<IDispatcher, IRetryDispatcher>();
+        var retryDispatcher = (IRetryDispatcher)dispatcher;
+        retryDispatcher
+            .DispatchPublishedAsync(Arg.Any<MediumMessage>(), Arg.Any<CancellationToken>())
+            .Returns(call => new ValueTask(dispatch(call.Arg<MediumMessage>())));
+        retryDispatcher
+            .DispatchReceivedAsync(Arg.Any<MediumMessage>(), Arg.Any<CancellationToken>())
+            .Returns(call => dispatchReceived(call.Arg<MediumMessage>()));
+
+        var sut = new MessageNeedToRetryProcessor(
+            Options.Create(
+                new MessagingOptions
+                {
+                    RetryPolicy = { DispatchTimeout = dispatchTimeout, LeaseRenewalInterval = renewalInterval },
+                }
+            ),
+            Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.Zero, AdaptivePolling = false }),
+            NullLogger<MessageNeedToRetryProcessor>.Instance,
+            dispatcher,
+            Substitute.For<IDistributedLock>(),
+            Substitute.For<ICircuitBreakerMonitor>()
+        );
+        await using var context = new ProcessingContext(
+            new ServiceCollection().AddSingleton(storage).BuildServiceProvider(),
+            clock,
+            AbortToken
+        );
+
+        // when: the first dispatch runs past the claim's 30 s while the clock moves one renewal interval at a time
+        var cycle = _RunQuadrantCycleAsync(sut, context, direction, MessageLane.Bus);
+        await slowDispatchStarted.Task.Bounded();
+        for (var tick = 0; tick < 4; tick++)
+        {
+            await clock.AdvanceWhenArmedAsync(renewalInterval);
+
+            // One pass renews the two rows waiting behind the slow one.
+            await renewalCalls.Reader.ReadAsync(AbortToken).Bounded();
+            await renewalCalls.Reader.ReadAsync(AbortToken).Bounded();
+        }
+
+        clock.GetUtcNow().Should().BeAfter(claimedUntil);
+
+        slowDispatch.SetResult();
+        await cycle.Bounded();
+
+        // then: only the waiting rows were renewed, and each still held a live lease when its turn came
+        renewed.Should().NotContain(rows[0].StorageId);
+        leaseAtTurn.Should().HaveCount(3);
+        leaseAtTurn[rows[1].StorageId].Should().BeAfter(clock.GetUtcNow());
+        leaseAtTurn[rows[2].StorageId].Should().BeAfter(clock.GetUtcNow());
     }
 
     // Helpers use internal members exposed via InternalsVisibleTo — no reflection needed.

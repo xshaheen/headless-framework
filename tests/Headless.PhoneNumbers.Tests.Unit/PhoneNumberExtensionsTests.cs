@@ -62,6 +62,25 @@ public sealed class PhoneNumberExtensionsTests
         phoneNumber.Number.Should().Be("1018541323");
     }
 
+    [Theory]
+    [InlineData("+39 06 1234 5678", 39, "0612345678", "+39 06 1234 5678")] // Italy: the leading 0 is part of the number
+    [InlineData("+225 01 23 45 67 89", 225, "0123456789", "+225 01 23 45 6789")] // Côte d'Ivoire
+    public void should_keep_the_leading_zero_when_from_international_format_and_the_region_dials_it(
+        string internationalNumber,
+        int countryCode,
+        string nationalNumber,
+        string internationalFormat
+    )
+    {
+        // when
+        var phoneNumber = PhoneNumber.FromInternationalFormat(internationalNumber);
+
+        // then: the number round-trips instead of becoming a different subscriber without its leading zero
+        phoneNumber.CountryCode.Should().Be(countryCode);
+        phoneNumber.Number.Should().Be(nationalNumber);
+        phoneNumber.GetInternationalFormat().Should().Be(internationalFormat);
+    }
+
     [Fact]
     public void should_return_null_for_invalid_number_when_get_international_and_national_format()
     {

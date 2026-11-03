@@ -5,6 +5,7 @@ using Headless.MultiTenancy;
 using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Headless.Permissions;
 
@@ -16,7 +17,7 @@ namespace Headless.Permissions;
 /// <para>
 /// Each operation creates a short-lived, non-tracking context from
 /// <c>IDbContextFactory&lt;<typeparamref name="TContext"/>&gt;</c> and disposes it immediately. An enlisted operation's
-/// context runs on the caller's unit-of-work connection and transaction instead, and its cache removal waits for the
+/// context runs on the caller's unit-of-work connection and transaction instead, and its cache write waits for the
 /// unit to commit.
 /// </para>
 /// <para>
@@ -29,14 +30,17 @@ namespace Headless.Permissions;
 /// <typeparam name="TContext">The consumer's <see cref="DbContext"/> that maps the permissions entities.</typeparam>
 /// <param name="dbFactory">Factory used to create <typeparamref name="TContext"/> instances per operation.</param>
 /// <param name="cache">
-/// The permission-grant cache shared with <c>PermissionGrantStore</c>. A write here removes the affected cache
-/// key so a direct repository write (bypassing <c>IPermissionManager</c>) is reflected on the next read.
+/// The permission-grant cache shared with <c>PermissionGrantStore</c>. A write here stores the written status in the
+/// affected cache entry (undefined for a delete), so a direct repository write (bypassing <c>IPermissionManager</c>) is
+/// reflected on the next read. Storing rather than removing keeps out a reader that loaded the rows before the write:
+/// readers fill only an absent entry.
 /// </param>
 /// <param name="currentTenant">
-/// Scopes reads and deletes to the current tenant, and restores the write's tenant for a cache removal that runs after
+/// Scopes reads and deletes to the current tenant, and restores the write's tenant for a cache write that runs after
 /// the unit commits.
 /// </param>
-/// <param name="logger">Logs a cache removal that fails after the unit committed.</param>
+/// <param name="managementOptions">Supplies the cache entry lifetime the grant store uses.</param>
+/// <param name="logger">Logs a cache write that fails after the unit committed.</param>
 /// <param name="writeGuardBypass">
 /// Lets a host write (no ambient tenant, records without a tenant) through the Headless tenant write guard; absent when
 /// the host does not use Headless EF Core.
@@ -45,6 +49,7 @@ internal sealed class EfPermissionGrantRepository<TContext>(
     IDbContextFactory<TContext> dbFactory,
     ICache<PermissionGrantCacheItem> cache,
     ICurrentTenant currentTenant,
+    IOptions<PermissionManagementOptions> managementOptions,
     ILogger<EfPermissionGrantRepository<TContext>> logger,
     ITenantWriteGuardBypass? writeGuardBypass = null
 ) : IPermissionGrantRepository
@@ -52,6 +57,8 @@ internal sealed class EfPermissionGrantRepository<TContext>(
 {
     private const string _Owner = "the EF Core permissions storage";
     private const string _Operation = "permission grant";
+
+    private readonly TimeSpan _cacheExpiration = managementOptions.Value.GrantCacheExpiration;
 
     /// <summary>
     /// Returns the first grant record matching <paramref name="name"/>, <paramref name="providerName"/>,
@@ -135,7 +142,7 @@ internal sealed class EfPermissionGrantRepository<TContext>(
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
 
         await _WriteAsync(db, [permissionGrant], remove: false, cancellationToken).ConfigureAwait(false);
-        await cache.RemoveAsync(_CacheKey(permissionGrant), cancellationToken).ConfigureAwait(false);
+        await _WriteCacheAsync([permissionGrant], [], cancellationToken).ConfigureAwait(false);
     }
 
     public async Task InsertManyAsync(
@@ -148,7 +155,7 @@ internal sealed class EfPermissionGrantRepository<TContext>(
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
 
         await _WriteAsync(db, grants, remove: false, cancellationToken).ConfigureAwait(false);
-        await cache.RemoveAllAsync(grants.Select(_CacheKey), cancellationToken).ConfigureAwait(false);
+        await _WriteCacheAsync(grants, [], cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>Deletes the grant record when it belongs to the current tenant; another tenant's record is left alone.</summary>
@@ -175,7 +182,45 @@ internal sealed class EfPermissionGrantRepository<TContext>(
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
 
         await _WriteAsync(db, owned, remove: true, cancellationToken).ConfigureAwait(false);
-        await cache.RemoveAllAsync(owned.Select(_CacheKey), cancellationToken).ConfigureAwait(false);
+        await _WriteCacheAsync([], owned, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Deletes the supplied records that belong to the current tenant and inserts the new ones in one
+    /// <c>SaveChanges</c>, so both commit or neither does.
+    /// </summary>
+    public async Task SaveAsync(
+        IReadOnlyCollection<PermissionGrantRecord> inserted,
+        IReadOnlyCollection<PermissionGrantRecord> deleted,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var owned = _OwnedByCurrentTenant(deleted);
+
+        if (inserted.Count == 0 && owned.Count == 0)
+        {
+            return;
+        }
+
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+
+        using (_BeginHostWrite([.. inserted, .. owned]))
+        {
+            var set = db.Set<PermissionGrantRecord>();
+            set.RemoveRange(owned);
+            set.AddRange(inserted);
+
+            // One SaveChanges runs every statement in the transaction EF opens for it, and EF orders a delete before
+            // an insert that reuses its unique key, so a failing insert rolls the delete back.
+            await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await cache
+            .RemoveAllAsync(
+                inserted.Concat(owned).Select(_CacheKey).Distinct(StringComparer.Ordinal),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     public Task<List<PermissionGrantRecord>> GetListEnlistedAsync(
@@ -243,7 +288,7 @@ internal sealed class EfPermissionGrantRepository<TContext>(
             )
             .ConfigureAwait(false);
 
-        _RemoveFromCacheAfterCommit(unitOfWork, grants);
+        _WriteCacheAfterCommit(unitOfWork, grants, []);
     }
 
     public async Task DeleteManyEnlistedAsync(
@@ -275,7 +320,7 @@ internal sealed class EfPermissionGrantRepository<TContext>(
             )
             .ConfigureAwait(false);
 
-        _RemoveFromCacheAfterCommit(unitOfWork, owned);
+        _WriteCacheAfterCommit(unitOfWork, [], owned);
     }
 
     // The enlisted context is not the owner's, so an observed unit's owner (the EF save pipeline) cannot restore this
@@ -288,15 +333,35 @@ internal sealed class EfPermissionGrantRepository<TContext>(
         }
     }
 
-    private void _RemoveFromCacheAfterCommit(IUnitOfWork unitOfWork, IReadOnlyCollection<PermissionGrantRecord> grants)
+    private void _WriteCacheAfterCommit(
+        IUnitOfWork unitOfWork,
+        IReadOnlyCollection<PermissionGrantRecord> written,
+        IReadOnlyCollection<PermissionGrantRecord> deleted
+    )
     {
-        PermissionGrantCacheInvalidation.RemoveAfterCommit(
+        PermissionGrantCacheInvalidation.UpsertAfterCommit(
             unitOfWork,
             cache,
             currentTenant,
-            [.. grants.Select(_CacheKey)],
+            PermissionGrantCacheInvalidation.WrittenItems(written, deleted),
+            _cacheExpiration,
             logger
         );
+    }
+
+    private async Task _WriteCacheAsync(
+        IReadOnlyCollection<PermissionGrantRecord> written,
+        IReadOnlyCollection<PermissionGrantRecord> deleted,
+        CancellationToken cancellationToken
+    )
+    {
+        await cache
+            .UpsertAllAsync(
+                PermissionGrantCacheInvalidation.WrittenItems(written, deleted),
+                _cacheExpiration,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     /// <summary>The grant rows of the current tenant only; a null tenant selects the host's rows.</summary>
@@ -355,14 +420,5 @@ internal sealed class EfPermissionGrantRepository<TContext>(
         }
 
         return writeGuardBypass.BeginBypass();
-    }
-
-    private static string _CacheKey(PermissionGrantRecord permissionGrant)
-    {
-        return PermissionGrantCacheItem.CalculateCacheKey(
-            permissionGrant.Name,
-            permissionGrant.ProviderName,
-            permissionGrant.ProviderKey
-        );
     }
 }

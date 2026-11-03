@@ -14,7 +14,7 @@ namespace Headless.Messaging.Transport;
 /// The hash is SHA-256 rather than <see cref="string.GetHashCode()"/>, which is randomized per process, and it is taken
 /// from the original identity, so two identities that normalize to the same prefix still get different names.
 /// </remarks>
-internal static class BusNameBuilder
+public static class BusNameBuilder
 {
     /// <summary>Hex characters of the SHA-256 hash appended to a shortened or normalized name.</summary>
     public const int HashLength = 12;
@@ -130,16 +130,28 @@ internal static class BusNameBuilder
 /// </param>
 /// <param name="isAllowed">Whether the broker accepts a printable ASCII character in a name.</param>
 /// <param name="alphanumericBoundaries">Whether a name must start and end with an ASCII letter or digit.</param>
-internal sealed class BusNameRules(int maxLength, Func<char, bool> isAllowed, bool alphanumericBoundaries = false)
+/// <exception cref="ArgumentNullException"><paramref name="isAllowed"/> is <see langword="null"/>.</exception>
+/// <exception cref="ArgumentOutOfRangeException">
+/// <paramref name="maxLength"/> leaves no room for a readable character, the separator, and the hash.
+/// </exception>
+public sealed class BusNameRules(int maxLength, Func<char, bool> isAllowed, bool alphanumericBoundaries = false)
 {
     private readonly Func<char, bool> _isAllowed = Argument.IsNotNull(isAllowed);
 
     // A shortened name still needs room for one readable character, the separator, and the hash.
+    /// <summary>Gets the longest name the broker accepts.</summary>
     public int MaxLength { get; } = Argument.IsGreaterThan(maxLength, BusNameBuilder.HashLength + 1);
 
+    /// <summary>Gets whether a name must start and end with an ASCII letter or digit.</summary>
     public bool AlphanumericBoundaries { get; } = alphanumericBoundaries;
 
     // Non-ASCII, whitespace, and control characters are never kept, whatever the broker allows: they make names
     // unreadable in broker tooling, and keeping names ASCII means a byte limit and a character limit agree.
-    public bool IsAllowed(char c) => char.IsAsciiLetterOrDigit(c) || (c is > ' ' and < '\x7f' && _isAllowed(c));
+    /// <summary>Whether a built name may keep <paramref name="character"/>.</summary>
+    /// <param name="character">The character to check.</param>
+    /// <returns>
+    /// <see langword="true"/> for an ASCII letter or digit, or a printable ASCII character the broker accepts.
+    /// </returns>
+    public bool IsAllowed(char character) =>
+        char.IsAsciiLetterOrDigit(character) || (character is > ' ' and < '\x7f' && _isAllowed(character));
 }

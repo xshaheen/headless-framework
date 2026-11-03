@@ -97,9 +97,14 @@ public static class HeadlessPhoneNumberExtensions
         [return: NotNullIfNotNull(nameof(number))]
         public static PhoneNumber? FromPhoneNumber(UtilsPhoneNumber? number)
         {
+            // NationalNumber is a ulong, so it drops the leading zeros some regions dial as part of the subscriber
+            // number (Italy's 06..., Côte d'Ivoire's 07...); the national significant number restores them.
             return number is null
                 ? null
-                : new PhoneNumber(number.CountryCode, number.NationalNumber.ToString(CultureInfo.InvariantCulture));
+                : new PhoneNumber(
+                    number.CountryCode,
+                    PhoneNumberUtil.GetInstance().GetNationalSignificantNumber(number)
+                );
         }
 
         /// <summary>Parses an international-format number and returns its normalized canonical form.</summary>

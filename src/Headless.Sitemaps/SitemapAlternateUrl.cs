@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
+
 namespace Headless.Sitemaps;
 
 /// <summary>Represents a localized alternate URL node within a sitemap URL.</summary>
@@ -7,7 +9,18 @@ namespace Headless.Sitemaps;
 public sealed record SitemapAlternateUrl
 {
     /// <summary>Gets the alternate URL location.</summary>
-    public required Uri Location { get; init; }
+    /// <exception cref="ArgumentNullException">The value is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">The value is not an absolute URI.</exception>
+    public required Uri Location
+    {
+        get;
+        init
+        {
+            Argument.IsNotNull(value);
+            Argument.IsTrue(value.IsAbsoluteUri, SitemapConstants.AbsoluteLocationRequired, nameof(value));
+            field = value;
+        }
+    }
 
     /// <summary>
     /// Gets the language code in ISO 639-1 format, with an optional region code in ISO 3166-1 Alpha 2

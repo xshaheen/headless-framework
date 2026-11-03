@@ -1,14 +1,15 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Text.RegularExpressions;
+using Headless.Checks;
 
-namespace Headless.Messaging;
+namespace Headless.Messaging.Transport;
 
 /// <summary>
 /// Helpers that translate framework message names into broker-native identifiers. Transports use these
 /// so wildcard subscriptions and subject/queue names behave consistently across providers.
 /// </summary>
-internal static partial class TransportNaming
+public static partial class TransportNaming
 {
     private const int _MaxWildcardLength = 200;
     private const int _MaxWildcardCount = 10;
@@ -20,11 +21,14 @@ internal static partial class TransportNaming
     /// </summary>
     /// <param name="wildcard">The message-name pattern to convert.</param>
     /// <returns>An anchored regex pattern, or the escaped literal when the input contains no wildcards.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="wildcard"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">
     /// The pattern exceeds the maximum length (200) or contains too many wildcards (10).
     /// </exception>
     public static string WildcardToRegex(string wildcard)
     {
+        Argument.IsNotNull(wildcard);
+
         if (wildcard.Length > _MaxWildcardLength)
         {
             throw new ArgumentException(
@@ -76,9 +80,12 @@ internal static partial class TransportNaming
     /// with underscores. Returns the input unchanged when it contains none of them.
     /// </summary>
     /// <param name="name">The name to normalize.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
     public static string Normalize(string name)
     {
-        if (string.IsNullOrEmpty(name))
+        Argument.IsNotNull(name);
+
+        if (name.Length == 0)
         {
             return name;
         }
@@ -90,8 +97,11 @@ internal static partial class TransportNaming
     /// Normalizes a broker identity and appends a stable discriminator when normalization changes it.
     /// </summary>
     /// <param name="name">The broker identity to normalize.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
     public static string NormalizeDistinct(string name)
     {
+        Argument.IsNotNull(name);
+
         var normalized = Normalize(name);
         if (string.Equals(name, normalized, StringComparison.Ordinal))
         {

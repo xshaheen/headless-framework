@@ -5,11 +5,12 @@ using Headless.Coordination;
 using Headless.Jobs;
 using Headless.Jobs.Coordination;
 using Headless.Jobs.Infrastructure.Dashboard;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Tests.Dashboard;
 
-public sealed class MembershipDashboardBridgeTests
+public sealed class MembershipDashboardBridgeTests : TestBase
 {
     private static NodeIdentity _Identity(string node, long incarnation)
     {
@@ -21,9 +22,11 @@ public sealed class MembershipDashboardBridgeTests
         return new(_Identity(node, incarnation), state, role, new Dictionary<string, string>(StringComparer.Ordinal));
     }
 
-    private static (MembershipDashboardBridge Bridge, IJobsNotificationHubSender Sender) _Create()
+    private static (MembershipDashboardBridge Bridge, IJobsNotificationHubSender Sender) _Create(
+        params NodeMembershipEvent[] events
+    )
     {
-        var membership = new FakeMembership();
+        var membership = new FakeMembership(events);
         var sender = Substitute.For<IJobsNotificationHubSender>();
         var bridge = new MembershipDashboardBridge(membership, sender, NullLogger<MembershipDashboardBridge>.Instance);
 
@@ -91,6 +94,34 @@ public sealed class MembershipDashboardBridgeTests
     }
 
     [Fact]
+    public async Task should_keep_pushing_membership_changes_after_one_push_fails()
+    {
+        // A failed hub send (a backplane fault) loses that one push; the panel still gets every later change.
+        var (bridge, sender) = _Create(new NodeJoined(_Identity("node-a", 1)), new NodeJoined(_Identity("node-b", 2)));
+        var secondPush = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        sender
+            .UpdateNodesAsync(Arg.Is<object>(p => _ReadString(p, "identity") == "node-a@1"))
+            .Returns(Task.FromException(new InvalidOperationException("backplane unavailable")));
+        sender
+            .UpdateNodesAsync(Arg.Is<object>(p => _ReadString(p, "identity") == "node-b@2"))
+            .Returns(_ =>
+            {
+                secondPush.TrySetResult();
+                return Task.CompletedTask;
+            });
+
+        await bridge.StartAsync(AbortToken);
+        try
+        {
+            await secondPush.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+        }
+        finally
+        {
+            await bridge.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Fact]
     public void should_project_two_alive_nodes_with_role_and_state()
     {
         IReadOnlyList<NodeLivenessSnapshot> snapshot =
@@ -137,7 +168,7 @@ public sealed class MembershipDashboardBridgeTests
         views.Should().ContainSingle().Which.LastBeat.Should().Be("2026-06-07T10:00:00Z");
     }
 
-    private sealed class FakeMembership : INodeMembership
+    private sealed class FakeMembership(IReadOnlyList<NodeMembershipEvent> events) : INodeMembership
     {
         public NodeIdentity? Identity => null;
 
@@ -181,9 +212,13 @@ public sealed class MembershipDashboardBridgeTests
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default
         )
         {
-            await Task.CompletedTask.ConfigureAwait(false);
+            foreach (var membershipEvent in events)
+            {
+                yield return membershipEvent;
+            }
 
-            yield break;
+            // A live stream stays open until the host stops.
+            await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(false);
         }
     }
 }

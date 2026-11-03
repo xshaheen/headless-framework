@@ -207,7 +207,7 @@ Two independent questions, answered by two different things. **Durability** — 
 - **An enlisted publish ends execution-strategy replay only where a replay would not re-run it.** Replay re-runs the block that *owns* the unit. Inside `factory.RunAsync(db, …)` (owned mode) that block is yours: a transient failure anywhere in it replays the whole block with a fresh transaction and unit, the first attempt's row rolls back with its transaction, and the replayed block publishes again — so an enlisted publish there leaves the unit replayable, and a `RunAsync` block that publishes stays retriable under `EnableRetryOnFailure`. The exception is the `HeadlessDbContext` save pipeline's *own* save (no caller transaction): it enlists in observed mode, and its replay would resume after the handlers that already returned without re-running them, so the pipeline ends replay as soon as any handler returns. An enlisted publish into an observed-mode unit also calls `IUnitOfWork.PreventRetry()` before it writes, and that save is surfaced without replay; a fresh context and aggregate graph are needed to retry it. A `SaveChangesAsync` inside your own block that dispatched domain or integration events ends replay as well: its success clears the aggregate's events, so a replayed block would re-insert the aggregate with nothing left to dispatch and commit it without the handlers' rows; the save calls `PreventRetry()` before clearing them.
 - **The entity-emitted integration-event path is exempt even there.** `PreventRetry()` is also skipped when the publish carries `MessageOptions.IsRetainedForTransactionReplay`, which is `internal` and set only by `OutboxIntegrationEventDispatcher` — the bridge that publishes the integration events an entity emitted during `SaveChangesAsync`. The save pipeline retains those captured occurrences and re-publishes them on a replayed attempt, so a pipeline-owned save whose only enlisted publishes came from emitted integration events stays retriable. Application code cannot set the flag. A pipeline-owned save that mixes both — emitted integration events plus a `unit.Outbox` publish from a domain-event handler — is not retriable, because the handler's publish marked the unit.
 - **The default costs one storage write.** A `Durable` autonomous publish is stored first and dispatched by the relay, so high-rate events pay a storage write and a relay hop per message. Opt out per type and lane with `.OnBus(b => b.WithDeliveryMode(DeliveryMode.Direct))` (or `.OnQueue(...)`) on the contract, or per host with `DefaultDeliveryMode = DeliveryMode.Direct`; `Direct` gives up durability and atomicity and returns a receipt with no `StorageId`.
-- **A durable publish may wait up to about 100 ms after its row commits.** Once the row is stored (the standalone write, or the unit's commit for `unit.Outbox`), the publish hands the message to this host's in-process sender so it goes out without waiting for the relay. The hand-off goes through a bounded channel (`Environment.ProcessorCount * 500` slots). When a burst outruns the sender and the channel is full, the publish waits up to about 100 ms of real time for a free slot. If no slot frees in time, it drops the hand-off and returns normally: the row is committed, so the relay delivers it after `RetryPolicy.InitialDispatchGrace` (default 30 s) plus up to one retry poll (`RetryProcessor.BaseInterval`, default 60 s). The bound is per operation, not per message: a unit of work that commits N messages against a full channel waits about 100 ms in total, and `IUnitOfWork.CompleteAsync` returns after that wait. The publish's cancellation token does not cover the wait, because the row is already stored and the publish has succeeded. A host that is stopping drops the hand-off at once. Delayed and scheduled publishes never wait: they go to the scheduler queue only when it has room.
+- **A durable publish may wait up to about 100 ms after its row commits.** Once the row is stored (the standalone write, or the unit's commit for `unit.Outbox`), the publish hands the message to this host's in-process sender so it goes out without waiting for the relay. The hand-off goes through a bounded channel (`Environment.ProcessorCount * 500` slots). When a burst outruns the sender and the channel is full, the publish waits up to about 100 ms of real time for a free slot. If no slot frees in time, it drops the hand-off and returns normally: the row is committed, so the relay delivers it after `RetryPolicy.InitialDispatchGrace` (default 30 s) plus up to one retry poll (`RetryProcessor.BaseInterval`, default 60 s). The bound is per operation, not per message: a unit of work that commits N messages against a full channel waits about 100 ms in total, and `IUnitOfWork.CompleteAsync` returns after that wait. The publish's cancellation token does not cover the wait, because the row is already stored and the publish has succeeded. A host that is stopping drops the hand-off at once. Delayed and scheduled publishes never wait: one due within the delayed claim's two-minute lookahead goes to the scheduler queue when it has room; a later one stays in storage as `Delayed` work until the delayed processor claims it inside that window.
 - **Storage is mandatory**, so "no storage" is a configuration error raised by startup validation rather than another matrix column.
 - **Telemetry**: `headless.messaging.delivery.requested` and `headless.messaging.delivery.resolved` emit `durable` or `direct` only, and the `headless-delivery-requested` / `headless-delivery-resolved` headers carry the same names. Whether the row was written inside a transaction travels separately, in the framework-reserved `headless-delivery-coordinated` header, as the literal `"true"` or `"false"`. It is a three-state fact: an **absent** header means unrecorded, never "not coordinated" — rows written before this header existed read as unknown. The dashboard's message detail shows it as "Transaction coordinated" (`Yes` / `No` / `Not recorded`), `MessageView.IsCoordinated` is the monitoring projection, and `RecordedMessage.IsCoordinated` exposes it to tests. All three are `bool?`.
 - **Jobs follows the same rule.** `TransactionEnlistment` is gone from Jobs too: `unit.Jobs` enlists and the injected `IJobScheduler` never does. See [Enlisted Enqueue](jobs.md#enlisted-enqueue-atomic-enqueue).
@@ -706,6 +706,246 @@ A transport package adapts one broker to `Headless.Messaging`. Core already owns
 - `MyBrokerConsumerClient : IConsumerClient`
 - broker-specific pools, factories, or helpers when connection reuse matters
 
+### Public building blocks
+
+A transport written outside this repository reaches parity with the built-in ones through public API only; none of the built-in transports uses an internal of `Headless.Messaging` or `Headless.Messaging.Abstractions`. The seams live in `Headless.Messaging.Transport`, except `MessageQueueMarkerService`, which sits with the other registration types in `Headless.Messaging`:
+
+| Type | Use it to |
+| --- | --- |
+| `MessageQueueMarkerService` | Name the transport from its `IMessagesOptionsExtension` (one instance, registered as a singleton instance), so the test harness and the dashboard find it. |
+| `IMessageMetadataRegistry`, `MessageMetadata`, `MessageRouteKey` | Read the declared routes from the container: names, lanes, raw-payload and affinity flags, and the provider configs an application attached. |
+| `IMessageProviderConfigBuilder<TMessage>`, `IConsumerProviderConfigBuilder`, `ConsumerRegistryExtensions.ResolveConsumerConfig<TConfig>` | Attach a per-contract or per-consumer config from a `Use{Provider}` extension, and read the consumer config back when a client opens a subscription. |
+| `IProviderHeaderContributions`, `ProviderHeaderContribution`, `IProviderMissingPayloadValidation` | Optional capabilities of a per-contract config: headers computed from the payload at publish time, and refusing a publish with no payload. |
+| `TransportEnvelopeGate`, `EnvelopeArrival`, `NativeEnvelopeFacts` | Run the check every delivery passes before the core sees it, and complete the envelope of a raw-payload route from broker metadata. |
+| `ConsumerPauseGate`, `InFlightHandlerTracker` | Back `PauseAsync`/`ResumeAsync`, and drain running handlers before a client disposes what settlement needs. |
+| `BrokerConnectGuard`, `BrokerFailures`, `BrokerReachabilityReporter` | Classify connect and receive failures the way the core counts [broker reachability](#broker-reachability). |
+| `BusNameBuilder`, `BusNameRules`, `TransportNaming` | Derive broker-legal subscription, queue, and stream names that every process agrees on. |
+| `RedeliveryBackoff`, `DeliverByEnvelope`, `TransportBody`, `LogSanitizer` | Delay a redelivery, read the `DeliverWithin` deadline, hand a body to a client that only takes arrays, and sanitize broker-supplied text before it reaches a log. |
+| `ReplyListenerSupervisor`, `ReplyAddressGate`, `ReplyHandlerInvoker` | Keep a request/reply channel open across broker outages and hand replies to the core one at a time. |
+| `TransportMetrics`, `MessagingDiagnostics.Meter` | Record settlement failures and transport-side every-instance drops on the core's instruments, and add broker-specific instruments to the messaging meter. |
+
+Each provider interface states its evolution policy in its XML docs. An interface a provider implements grows through optional capability interfaces the core discovers by a type check, or through default interface members with a behavior-preserving fallback; existing members never gain parameters. The helper classes are sealed or static.
+
+A consumer client built on these pieces:
+
+```csharp
+using System.Globalization;
+using Headless.Messaging.Transport;
+using Headless.Threading;
+
+// Stands in for the broker's client library.
+public interface IMyBrokerSession : IAsyncDisposable
+{
+    Task<MyBrokerDelivery?> ReceiveAsync(CancellationToken cancellationToken);
+    Task AckAsync(long tag, CancellationToken cancellationToken);
+    Task NackAsync(long tag, CancellationToken cancellationToken);
+}
+
+public interface IMyBrokerConnector
+{
+    Task<IMyBrokerSession> ConnectAsync(string queue, CancellationToken cancellationToken);
+}
+
+public sealed record MyBrokerDelivery(long Tag, string Queue, long Offset, Dictionary<string, string?> Headers, byte[] Body);
+
+public sealed class MyBrokerConsumerClientFactory(IMyBrokerConnector connector, IServiceProvider services)
+    : IConsumerClientFactory
+{
+    // The broker accepts letters, digits, '-', '_', and '.', up to 120 characters.
+    private static readonly BusNameRules _QueueRules = new(maxLength: 120, isAllowed: static c => c is '-' or '_' or '.');
+
+    public async Task<IConsumerClient> CreateAsync(
+        ConsumerClientRequest request,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var queue = request.Lane == MessageLane.Bus
+            ? BusNameBuilder.Build(request, _QueueRules)
+            : request.SubscriptionName;
+
+        try
+        {
+            var session = await connector.ConnectAsync(queue, cancellationToken).ConfigureAwait(false);
+            var gate = services.GetService<TransportEnvelopeGate>() ?? TransportEnvelopeGate.Strict;
+
+            return new MyBrokerConsumerClient(request.Lane, session, gate);
+        }
+        catch (Exception e)
+        {
+            // Cancellation stays cancellation; anything else is a broker connection failure.
+            throw BrokerConnectGuard.ConnectFailure(e, cancellationToken);
+        }
+    }
+}
+
+public sealed class MyBrokerConsumerClient(MessageLane lane, IMyBrokerSession session, TransportEnvelopeGate envelopeGate)
+    : IConsumerClient
+{
+    private readonly ConsumerPauseGate _pauseGate = new();
+    private readonly InFlightHandlerTracker _inFlight = new();
+    private readonly BrokerReachabilityReporter _reachability = new();
+
+    // A lost broker is waited for in real time, never on the app clock a test host fakes.
+    private readonly ReconnectBackoff _backoff = new();
+
+    public BrokerAddress BrokerAddress { get; } = new("MyBroker", "broker.internal:5000");
+
+    public Func<TransportMessage, object?, Task>? OnMessageCallback { get; private set; }
+
+    public Action<LogMessageEventArgs>? OnLogCallback { get; private set; }
+
+    public void AttachCallbacks(Func<TransportMessage, object?, Task>? onMessage, Action<LogMessageEventArgs>? onLog)
+    {
+        OnMessageCallback = onMessage;
+        OnLogCallback = onLog;
+    }
+
+    public ValueTask SubscribeAsync(IEnumerable<string> messageNames, CancellationToken cancellationToken = default) =>
+        ValueTask.CompletedTask;
+
+    public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
+
+            MyBrokerDelivery? delivery;
+            try
+            {
+                delivery = await session.ReceiveAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception e) when (BrokerFailures.IsConnectivity(e))
+            {
+                // The session reconnects on its own; the host still learns the broker went away. A caught
+                // connectivity failure must never fall through to the success report below.
+                _reachability.ReportFailure(OnLogCallback, e);
+
+                if (!await _backoff.WaitAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    return;
+                }
+
+                continue;
+            }
+
+            _backoff.Reset();
+            _reachability.ReportSuccess(OnLogCallback);
+
+            if (delivery is null)
+            {
+                continue;
+            }
+
+            delivery.Headers[Headers.TransportAddress] = delivery.Queue;
+
+            try
+            {
+                envelopeGate.Admit(
+                    delivery.Headers,
+                    new EnvelopeArrival("MyBroker", lane, ArrivalName: null),
+                    delivery,
+                    static d => new NativeEnvelopeFacts(
+                        ProducerMessageId: null,
+                        PositionId: NativeEnvelopeFacts.Position(
+                            "mybroker",
+                            d.Queue,
+                            d.Offset.ToString(CultureInfo.InvariantCulture)
+                        ),
+                        StoredAt: null
+                    )
+                );
+            }
+            catch (InvalidDataException e)
+            {
+                // A malformed envelope never reaches a handler; settle it so the broker stops redelivering it.
+                OnLogCallback?.Invoke(
+                    new LogMessageEventArgs { LogType = MqLogType.ConsumeError, Reason = LogSanitizer.Sanitize(e.Message, 255) }
+                );
+                await session.AckAsync(delivery.Tag, CancellationToken.None).ConfigureAwait(false);
+                continue;
+            }
+
+            _inFlight.Track(_HandleAsync(delivery));
+        }
+    }
+
+    private async Task _HandleAsync(MyBrokerDelivery delivery)
+    {
+        try
+        {
+            await OnMessageCallback!(new TransportMessage(delivery.Headers, delivery.Body), delivery.Tag)
+                .ConfigureAwait(false);
+        }
+        catch (Exception e)
+        {
+            // The core settles every handler outcome itself, so a throw means nothing settled this delivery.
+            OnLogCallback?.Invoke(new LogMessageEventArgs { LogType = MqLogType.ConsumeError, Reason = e.Message });
+            await session.NackAsync(delivery.Tag, CancellationToken.None).ConfigureAwait(false);
+        }
+    }
+
+    public async ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default) =>
+        await session.AckAsync((long)sender!, cancellationToken).ConfigureAwait(false);
+
+    public async ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default) =>
+        await session.NackAsync((long)sender!, cancellationToken).ConfigureAwait(false);
+
+    public async ValueTask PauseAsync(CancellationToken cancellationToken = default) =>
+        await _pauseGate.PauseAsync().ConfigureAwait(false);
+
+    public async ValueTask ResumeAsync(CancellationToken cancellationToken = default) =>
+        await _pauseGate.ResumeAsync().ConfigureAwait(false);
+
+    public async ValueTask ShutdownAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
+    {
+        _pauseGate.Release();
+
+        // Handlers settle against the session, so they finish before it closes. The budget is real time.
+        await _inFlight.DrainAsync(timeout, TimeProvider.System).ConfigureAwait(false);
+        await DisposeAsync().ConfigureAwait(false);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _pauseGate.Release();
+        await session.DisposeAsync().ConfigureAwait(false);
+    }
+}
+```
+
+A per-contract config that computes a header from the payload, attached from the provider's own `Use{Provider}` extension:
+
+```csharp
+using Headless.Messaging.Transport;
+
+public sealed class MyBrokerMessageConfig<TMessage>(Func<TMessage, string?> partitionKey) : IProviderHeaderContributions
+    where TMessage : class
+{
+    public IReadOnlyList<ProviderHeaderContribution> HeaderContributions { get; } =
+        [new("mybroker-partition-key", payload => partitionKey((TMessage)payload))];
+}
+
+public static class MyBrokerMessageBuilderExtensions
+{
+    public static IQueueContractBuilder<TMessage> UseMyBroker<TMessage>(
+        this IQueueContractBuilder<TMessage> builder,
+        Func<TMessage, string?> partitionKey
+    )
+        where TMessage : class
+    {
+        ((IMessageProviderConfigBuilder<TMessage>)builder).SetMessageProviderConfig(
+            new MyBrokerMessageConfig<TMessage>(partitionKey)
+        );
+
+        return builder;
+    }
+}
+```
+
+Storage providers do not have this parity yet. `IDataStorage`, `IStorageTableNames`, and the optional storage capabilities are public, but inbox delivery coordination, the inbox transaction runners, and the shared relational engine are internal, so the built-in storage packages still compile against `Headless.Messaging` internals.
+
 ### Registration shape
 
 Register the broker through `MessagingSetupBuilder.RegisterExtension(...)` with an `IMessagesOptionsExtension` that adds:
@@ -765,7 +1005,7 @@ On the Bus lane, derive the broker-legal subscription name from the identity wit
 - **`RejectAsync(sender, redeliveryDelay, cancellationToken)`** is what the core calls for a delivery it could not admit (its store failed, or its circuit's half-open probe is out). The default implementation holds the delivery for `redeliveryDelay` in real time, then calls the plain `RejectAsync`; the token only cuts the wait short on shutdown, and the reject still runs with `CancellationToken.None`. That hold always runs on `TimeProvider.System`, because a default interface member cannot resolve the [back-off clock](#headlessmessagingtesting); a test transport that steps through the delay overrides the member, as the in-memory transport does. Override it when the broker can delay redelivery itself (a NAK delay, a visibility timeout, a negative-acknowledge delay, a pending-entry idle time), so the delivery is released at once.
 - **`DeadLetterAsync(sender, reason, description)`** settles a message poisoned on arrival after Core stored its poison row. Core calls it only for the delivery that stored the row; a redelivery of a message already recorded terminal is committed, so the dead-letter destination holds one copy per poisoned message. A redelivery that fails before admission (for example a contract-version mismatch during a rolling deploy after a lost ack) of a message whose inbox row already exists for the same tenant, message id, message name, consumer identity, and lane is committed as a duplicate: no poison row, no dead-letter, no `OnExhausted`, no circuit-breaker failure, and no request fault. An explicit receive-middleware `Reject` is the exception: it keeps its poison row and dead-letter even when the id matches admitted work. The default implementation calls `CommitAsync`, so a transport without a dead-letter destination needs no change. Override it when the broker can keep the message aside, and attach `reason` and `description` when the broker can carry them. Reason codes: `SubscriberNotFound`, `ReceiveRejected` (a receive middleware's `Reject`), `DeserializationFailed`, and `ReceiveFailed` (a contract-version mismatch, a receive middleware fault, or an undeclared outcome). An explicit `Reject` is `ReceiveRejected` whatever cause it carries. The description is the sanitized exception message capped at 1024 characters, except for `ReceiveFailed`, which carries only the exception type, because a middleware's own exception message can echo header values such as a signature or token.
 - **`PauseAsync` and `ResumeAsync`** serve circuit-breaker backpressure. They must be idempotent, safe to call concurrently, and stop new message pulls once `PauseAsync` returns. In-flight deliveries may complete. Pause and resume keep the long-running listener alive; a provider may cancel an in-flight broker receive to reach its pause gate, but it must install fresh receive state before reopening the gate.
-- **`OnLogCallback`** emits `MqLogType` events for connection failures, broker shutdown, consumer registration and cancellation, and receive-loop errors. Core relies on them to keep transport health and restart behavior accurate. Health is tracked per consumer client: `ConsumerCancelled`, `ConsumerShutdown`, `ServerConnError`, and `ConnectError` mark the client that raised them as degraded, and `ConsumerRegistered` clears only that client, never a sibling. A `ConsumerCancelled` raised while the circuit breaker has paused the client's subscription is the pause itself and changes nothing. `RedisConsumeError` and the other receive-error types are logged only. Every 30 seconds the transport check rebuilds each subscription that holds a degraded client and leaves the healthy subscriptions consuming; a failure that belongs to no subscription, such as a broker that refused a client before its subscription started or a generation that did not stop in time, rebuilds every subscription. A client that retries a lost broker inside its own receive loop, instead of failing the loop, reports each failed receive as `MqLogType.BrokerUnreachable` and the first successful receive after one as `MqLogType.BrokerReachable`; Core counts these toward [broker reachability](#broker-reachability) without rebuilding the client. Emit `MqLogType.SettlementFailed` when an ack did not reach the broker (for example a failed ack call or a closed channel) and record `MessagingMetrics`' settlement-failure counter; Core logs it as a warning (EventId 4120 `TransportSettlementFailed`). Do not throw from the settlement: the broker redelivers and the inbox deduplicates.
+- **`OnLogCallback`** emits `MqLogType` events for connection failures, broker shutdown, consumer registration and cancellation, and receive-loop errors. Core relies on them to keep transport health and restart behavior accurate. Health is tracked per consumer client: `ConsumerCancelled`, `ConsumerShutdown`, `ServerConnError`, and `ConnectError` mark the client that raised them as degraded, and `ConsumerRegistered` clears only that client, never a sibling. A `ConsumerCancelled` raised while the circuit breaker has paused the client's subscription is the pause itself and changes nothing. `RedisConsumeError` and the other receive-error types are logged only. Every 30 seconds the transport check rebuilds each subscription that holds a degraded client and leaves the healthy subscriptions consuming; a failure that belongs to no subscription, such as a broker that refused a client before its subscription started or a generation that did not stop in time, rebuilds every subscription. A client that retries a lost broker inside its own receive loop, instead of failing the loop, reports each failed receive as `MqLogType.BrokerUnreachable` and the first successful receive after one as `MqLogType.BrokerReachable`; Core counts these toward [broker reachability](#broker-reachability) without rebuilding the client. Emit `MqLogType.SettlementFailed` when an ack did not reach the broker (for example a failed ack call or a closed channel) and record it with `TransportMetrics.RecordSettlementFailure`; Core logs it as a warning (EventId 4120 `TransportSettlementFailed`). Do not throw from the settlement: the broker redelivers and the inbox deduplicates.
 - **`DisposeAsync`** disposes only resources owned by that client instance, never shared pools or connections still used elsewhere in the package.
 
 ### Provisioning: `ITransportTopologyProvisioner`
@@ -1534,7 +1774,7 @@ The collector obtains one fixed provider-clock history cutoff snapshot per invoc
 - `MessagingOptions.MinimumInboxGuarantee` defaults to `InboxGuarantee.Transactional` and sets the minimum inbox guarantee required by durable consumers. The guarantees are ordered `ProcessLocal` (0) < `Durable` (1) < `Transactional` (2); the configured storage must declare the selected guarantee or a stronger one. Selecting a weaker requirement is an explicit opt-down and does not change the provider's actual guarantees. Undefined values are rejected.
 - `MessagingInstrumentationOptions.IncludeTenantIdInMetricTags` defaults to `false`. Enable it only when the metrics backend and tenant population have an explicit cardinality budget; traces retain their separate tenant-tag policy.
 - `ConsumerThreadCount`, `SubscriberParallelExecuteThreadCount`, and `SubscriberParallelExecuteBufferFactor` accept 1 through 1,024; the subscriber thread-count × buffer-factor product must not exceed 100,000.
-- Consumer retries come from each consumer's failure policy (see [Consumer failure policy](#consumer-failure-policy)). Publish retries, the dispatch lease, and `OnExhausted` live under `RetryPolicy`; polling lives under `RetryProcessor`. `RetryBatchSize` (default 200) and `SchedulerBatchSize` (default 1,000) accept 1 through 100,000. `SchedulerBatchSize` also bounds the in-memory near-term scheduler queue; overflow remains durable as `Delayed` work.
+- Consumer retries come from each consumer's failure policy (see [Consumer failure policy](#consumer-failure-policy)). Publish retries, the dispatch lease, and `OnExhausted` live under `RetryPolicy`; polling lives under `RetryProcessor`. `RetryBatchSize` (default 200) and `SchedulerBatchSize` (default 1,000) accept 1 through 100,000. `SchedulerBatchSize` also bounds the in-memory near-term scheduler queue, which only holds messages due within the two-minute claim lookahead; overflow remains durable as `Delayed` work, and a host whose queue is full skips its delayed claim until the queue drains.
 - `UseStorageLock` coordinates retry processors through a messaging-keyed distributed lock provider.
 - `DeadNodeReconcileInterval` (default `null`, `> 0` when set) sets the always-on dead-owner recovery reconcile cadence (see [Dead-owner recovery](#dead-owner-recovery)). `null` means half the coordination `DeadRetentionWindow` (15 seconds with default coordination options), because relational membership providers keep a dead identity observable for only that window. On a host with a coordination provider, an explicit value above that ceiling is clamped to it and logs one warning per host (Coordination EventId 14, `DeadNodeReconcileIntervalClamped`, under the bridge's category); with only the `NullNodeMembership` fallback the bridge is a no-op and an explicit value is used as set. To reconcile less often, raise the coordination `DeadRetentionWindow`, which lifts the ceiling with it. Independent of `UseStorageLock`.
 - `ShutdownTimeout` (default 30 seconds, `> 0`, `<= 5m`) is one end-to-end messaging shutdown bound. Shutdown first quiesces every processor, then concurrently initiates all drains using the remaining portion of one monotonic deadline. Configure the generic host or orchestrator termination grace to exceed this value; an earlier kill intentionally falls back to normal lease-expiry recovery while eventual cleanup remains fault-observed.
@@ -1638,7 +1878,7 @@ With the framework default, a message that keeps failing runs 3 attempts at once
 
 **A failed success write is not a consumer failure.** When the handler succeeds but writing its `Succeeded` state throws, for example during a storage outage, the attempt ends without an immediate retry, without `OnExhausted`, and without a circuit-breaker failure, and logs EventId 122 (`ConsumerSucceededButStateWriteFailed`). The row stays as it was, and the retry processor picks it up once its lease is released or expires, which may run the handler again: delivery is at-least-once, as after a crash at that point. Under the `Transactional` inbox guarantee the success write commits with the handler's unit, so its failure rolls back the handler's effects, and running the handler again is the intended recovery.
 
-**Terminal failure.** A message the policy gives up on is stored as `Failed` with no `NextRetryAt`; there is no separate dead-letter status. It stays until its retention expires, and an operator re-executes it from the Messaging dashboard (`POST /api/received/reexecute`); a re-executed request runs as a plain Queue message and answers no caller (see [Deadlines](#deadlines-timeouts-and-clock-skew)). `RetryPolicy.OnExhausted` fires once for each terminal consume failure, and only on the node whose terminal write wins:
+**Terminal failure.** A message the policy gives up on is stored as `Failed` with no `NextRetryAt`; there is no separate dead-letter status. It stays until its retention (`FailedMessageExpiredAfter`, counted from the terminal write, not from when the row was stored) expires, and an operator re-executes it from the Messaging dashboard (`POST /api/received/reexecute`); a re-executed request runs as a plain Queue message and answers no caller (see [Deadlines](#deadlines-timeouts-and-clock-skew)). `RetryPolicy.OnExhausted` fires once for each terminal consume failure, and only on the node whose terminal write wins:
 
 - the policy's budget is spent;
 - a fail rule or the built-in permanent set matches;
@@ -1695,7 +1935,7 @@ pickup 3 (persisted retry #2):
 
 On PostgreSQL and SQL Server, the database clock decides due time as well as lease ownership: retry pickup compares `NextRetryAt`, and the delayed claim compares each scheduled `ExpiresAt`, against the database clock, and the store stamps `Added`, the initial-dispatch-grace `NextRetryAt`, the orphan-probe `NextRetryAt`, and failed-message `ExpiresAt` from that clock too. Core never hands the store an application-clock due time either: a retry transition passes a `RetryDelay`, and a circuit-open deferral passes the time left until the circuit's next probe, and the store adds that delay to its own clock in the same statement that writes the row, so a retry falls due after its configured delay by the database clock however far the application clock is skewed. A scheduled publish time is a genuine instant the caller chose, so it is stored as given and compared against the database clock. Retention stays on the application clock: a terminal row's `ExpiresAt` and the collector's cutoff that purges it are both the caller's, so they cannot drift from each other. InMemoryStorage uses its injected `TimeProvider` for all of these. The public `IDataStorage` SPI accepts a `DispatchTimeout` duration; PostgreSQL and SQL Server compare and stamp leases from one database-clock snapshot, read only after the rows the decision is about are locked, and InMemoryStorage uses its injected `TimeProvider`. A lease, a retry due time, a reserved attempt, or an operator action that waited for another transaction's row lock therefore decides on the clock as it stood when the lock was granted, never on a reading from before the wait: a transition of one row takes the row's lock before the statement that reads the clock, dead-owner reclaim locks the dead owners' rows before it compares their leases, and the claims and retention selections skip locked rows instead of waiting. A successful call returns the persisted `(LockedUntil, Owner)` identity on the message for fenced attempt and state writes. This eliminates client-clock skew from relational ownership, not duplicate delivery: genuine `DispatchTimeout` expiry permits a successor, and a process paused beyond its lease can resume already-running work alongside it. Delivery remains at-least-once.
 
-**A lease lasts as long as its attempt runs.** Retry pickup leases a whole batch (`RetryBatchSize`, default 200) in one claim, and the rows of a batch are dispatched one after another, so the claim's lease can run out before a row near the end of the batch starts. Reserving each attempt therefore also re-stamps the row's lease: the store sets `LockedUntil` to its own clock plus `DispatchTimeout` in the same fenced statement that reserves the attempt, and the attempt adopts the new `(LockedUntil, Owner)` identity, inbox attempt fence included, for every later fenced write (success, retry state, release, deferral). While the handler or the transport send runs, the attempt slides the lease forward every `RetryPolicy.LeaseRenewalInterval` (default a third of `DispatchTimeout`; an explicit value must be greater than zero and less than `DispatchTimeout`), fenced on the lease it holds and stamped from the store's clock. A renewal that finds the lease gone cancels the attempt's token (EventId 4131 `MessageLeaseLost`), and the attempt writes no state, even when the handler ignores its token and finishes: another node may own the row by then, and the row is recovered like a crashed attempt. A renewal that throws or that the store does not confirm within one interval, such as during a short database blip, says nothing about the lease, so it is logged (EventId 4129 `MessageLeaseRenewalFailed`) and retried on the next tick while the lease the attempt last confirmed is still live. Only once that lease could lapse before the next tick, which at the default cadence is the second failure in a row, does it cancel the attempt the same way (EventId 4130 `MessageLeaseRenewalFailedPastLease`). Tolerating a failure never revives a lease: the next renewal is still fenced on the identity the attempt holds. So `DispatchTimeout` now bounds how long a stalled or crashed attempt keeps its row, not how long a healthy one may run. A send cancelled this way may still have reached the broker, so the row's next dispatch can publish it again (at-least-once). The renewal cadence runs on the registered `TimeProvider`, the one-interval bound on each renewal call runs on the [back-off clock](#headlessmessagingtesting), and the lease deadline is always the store's. A third-party store that does not implement `RenewPublishLeaseAsync` / `RenewReceiveLeaseAsync` (their defaults throw `NotSupportedException`) keeps the lease its reservation stamped.
+**A lease lasts as long as its attempt runs.** Retry pickup leases a whole batch (`RetryBatchSize`, default 200) in one claim, and the rows of a batch are dispatched one after another, so the claim's lease can run out before a row near the end of the batch starts. Reserving each attempt therefore also re-stamps the row's lease: the store sets `LockedUntil` to its own clock plus `DispatchTimeout` in the same fenced statement that reserves the attempt, and the attempt adopts the new `(LockedUntil, Owner)` identity, inbox attempt fence included, for every later fenced write (success, retry state, release, deferral). While the handler or the transport send runs, the attempt slides the lease forward every `RetryPolicy.LeaseRenewalInterval` (default a third of `DispatchTimeout`; an explicit value must be greater than zero and less than `DispatchTimeout`), fenced on the lease it holds and stamped from the store's clock. A renewal that finds the lease gone cancels the attempt's token (EventId 4131 `MessageLeaseLost`), and the attempt writes no state, even when the handler ignores its token and finishes: another node may own the row by then, and the row is recovered like a crashed attempt. A renewal that throws or that the store does not confirm within one interval, such as during a short database blip, says nothing about the lease, so it is logged (EventId 4129 `MessageLeaseRenewalFailed`) and retried on the next tick while the lease the attempt last confirmed is still live. Only once that lease could lapse before the next tick, which at the default cadence is the second failure in a row, does it cancel the attempt the same way (EventId 4130 `MessageLeaseRenewalFailedPastLease`). Tolerating a failure never revives a lease: the next renewal is still fenced on the identity the attempt holds. So `DispatchTimeout` now bounds how long a stalled or crashed attempt keeps its row, not how long a healthy one may run. A send cancelled this way may still have reached the broker, so the row's next dispatch can publish it again (at-least-once). The renewal cadence runs on the registered `TimeProvider`, the one-interval bound on each renewal call runs on the [back-off clock](#headlessmessagingtesting), and the lease deadline is always the store's. Rows still waiting their turn in a claimed batch are renewed the same way, on the same cadence, until their dispatch takes them, so a slow or rate-limited row early in the batch does not let the claim on the rows behind it run out; a waiting row whose renewal finds the lease gone is left to its reservation, which skips it, and a renewal that throws is logged (EventId 4135 `ClaimedRetryLeaseRenewalFailed`) and retried on the next tick. A third-party store that does not implement `RenewPublishLeaseAsync` / `RenewReceiveLeaseAsync` (their defaults throw `NotSupportedException`) keeps the lease its claim or reservation stamped, so a row reached after its claim ran out is released for the next pickup.
 
 Inbox lease release and retry deferral also require the complete stored inbox attempt fence, including generation, incarnation, and attempt ID. Missing or mismatched fences leave the row unchanged. Admission uses the same identity validation as PostgreSQL and SQL Server: nonblank contract names, consumer identities, and message IDs up to 200 characters; contract versions up to 100 characters; nonnegative generations; and nonblank tenant IDs up to 200 characters. Blank tenant headers normalize to no tenant.
 
@@ -2656,6 +2896,8 @@ Headless disables Azure SDK auto-complete internally and settles messages explic
 
 Stopping a consumer stops every processor at once and returns within the shutdown budget (30 seconds when the client is disposed directly), even while a handler still runs. A handler still running past the budget can still settle its message, and the processors close, releasing the client's resources, once it returns.
 
+Pausing (the circuit breaker opening) starts every processor's stop and returns without waiting for it. The stop ends new receives at once but waits for in-flight handlers, and the circuit breaker pauses from inside the handler whose failure tripped it, so waiting would never return. A resume waits for that stop to finish before it starts the processors again.
+
 Structurally malformed envelopes, including envelopes with missing or invalid required Messaging headers, are moved to the entity's dead-letter subqueue after sanitized logging, with `DeadLetterReason` `MalformedEnvelope` and the exception type as `DeadLetterErrorDescription`; they never reach Core, so the subqueue is the only record of them. A message poisoned on arrival in Core is dead-lettered the same way, with Core's reason code (`SubscriberNotFound`, `ReceiveRejected`, `DeserializationFailed`, or `ReceiveFailed`) and its description. Retryable handler or custom-header hook failures are not classified as terminal malformed failures; they remain unsettled or are abandoned according to the runtime failure path.
 
 ### Install
@@ -2775,6 +3017,7 @@ Registers in-memory storage and monitoring services. State is lost when the proc
 - One idempotent producer, built on first publish, serves every publish in the process; disposal flushes it for up to `message.timeout.ms`. A fatal producer error discards it, and the next publish builds a new one.
 - Consumers use `cooperative-sticky` partition assignment by default, so a rebalance moves only the partitions that change owner.
 - A handler's settlement stores its offset; the background auto-commit sends stored offsets to the broker. A partition revoke waits up to 30 seconds for in-flight handlers on the revoked partitions, then commits synchronously. Shutdown waits, within the shutdown budget, for the poll loop to stop and for in-flight handlers to finish, including one the loop started after shutdown began; the loop stops within one `MessagingOptions.ConsumerPollTimeout`. It then closes the consumer, which commits the stored offsets synchronously.
+- A circuit-breaker pause pauses the assigned partitions and keeps the poll loop calling `Consume`, so the member stays in its group however long the circuit stays open: librdkafka counts `max.poll.interval.ms` (default 300 s) between `Consume` calls whether or not the partitions are paused, and a member that stops calling it leaves the group. A record that still arrives while paused, from a `Consume` already in progress or a partition assigned during the pause, is not dispatched: the client seeks back to it and pauses its partition, and the poll resumes there after `ResumeAsync`.
 - A record whose message callback throws without settling it is sought back, so Kafka redelivers it and the consumer keeps receiving. If that seek fails, the listener fails and Core rebuilds the client, which reads again from the last committed offset.
 - Consumer lag per assigned partition is reported as the `headless.messaging.kafka.consumer.lag` gauge on the `Headless.Messaging` meter once `MainConfig["statistics.interval.ms"]` is above zero. See [Consumer lag metric](#consumer-lag-metric).
 

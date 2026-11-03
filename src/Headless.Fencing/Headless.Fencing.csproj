@@ -6,6 +6,7 @@
     <RootNamespace>Headless.Fencing</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Fencing.Sql" />
     <InternalsVisibleTo Include="Headless.Fencing.PostgreSql" />
     <InternalsVisibleTo Include="Headless.Fencing.SqlServer" />
     <InternalsVisibleTo Include="Headless.Fencing.Sqlite" />
@@ -23,9 +24,10 @@
     <ProjectReference Include="..\Headless.Fencing.Abstractions\Headless.Fencing.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
     <ProjectReference Include="..\Headless.MultiTenancy.Abstractions\Headless.MultiTenancy.Abstractions.csproj" />
+    <!-- Contracts only, with no dependencies: grant durations are truncated to SqlPortable's microsecond precision
+         here, ahead of every provider, so the in-memory provider expires a lease at the same offset as the relational
+         ones. The relational store itself lives in Headless.Fencing.Sql. -->
     <ProjectReference Include="..\Headless.Sql.Abstractions\Headless.Sql.Abstractions.csproj" />
-    <ProjectReference Include="..\Headless.Sql\Headless.Sql.csproj" />
-    <ProjectReference Include="..\Headless.UnitOfWork\Headless.UnitOfWork.csproj" />
     <ProjectReference Include="..\Headless.UnitOfWork.Abstractions\Headless.UnitOfWork.Abstractions.csproj" />
   </ItemGroup>
 </Project>

@@ -383,35 +383,36 @@ internal sealed class MessagingMarkerService
 }
 
 /// <summary>
-/// A marker service used internally to verify that a message storage extension (e.g., SQL Server, PostgreSQL, MySQL, MongoDB)
-/// has been registered on a <see cref="IServiceCollection"/>.
+/// Names the message storage a storage provider registered, so the test harness and the dashboard can tell which one
+/// it is.
 /// </summary>
 /// <remarks>
-/// Initializes a new instance of the <see cref="MessageStorageMarkerService"/> class with the specified storage name.
+/// A storage provider adds exactly one instance, as a singleton, from its <see cref="IMessagesOptionsExtension"/>.
 /// </remarks>
-/// <param name="name">The name identifier for the storage extension.</param>
-internal sealed class MessageStorageMarkerService(string name)
+/// <param name="name">The storage's display name, such as <c>PostgreSql</c> or <c>SqlServer</c>.</param>
+/// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
+/// <exception cref="ArgumentException"><paramref name="name"/> is empty or white space.</exception>
+public sealed class MessageStorageMarkerService(string name)
 {
-    /// <summary>
-    /// Gets or sets the name identifier for the storage extension (e.g., "SqlServer", "PostgreSql", "MySql").
-    /// </summary>
-    public string Name { get; set; } = name;
+    /// <summary>Gets the storage's display name.</summary>
+    public string Name { get; } = Argument.IsNotNullOrWhiteSpace(name);
 }
 
 /// <summary>
-/// A marker service used internally to verify that a message transport extension (e.g., RabbitMQ, Kafka, Azure Service Bus, NATS)
-/// has been registered on a <see cref="IServiceCollection"/>.
+/// Names the message transport a transport provider registered. The messaging test harness finds the transport by it to
+/// swap in the in-memory one, and the dashboard shows the name.
 /// </summary>
 /// <remarks>
-/// Initializes a new instance of the <see cref="MessageQueueMarkerService"/> class with the specified message queue name.
+/// A transport provider adds exactly one instance, as a singleton built from the instance itself (not a factory), from
+/// its <see cref="IMessagesOptionsExtension"/>, because the registration is inspected before the container is built.
 /// </remarks>
-/// <param name="name">The name identifier for the message transport extension.</param>
-internal sealed class MessageQueueMarkerService(string name)
+/// <param name="name">The transport's display name, such as <c>RabbitMQ</c> or <c>Kafka</c>.</param>
+/// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
+/// <exception cref="ArgumentException"><paramref name="name"/> is empty or white space.</exception>
+public sealed class MessageQueueMarkerService(string name)
 {
-    /// <summary>
-    /// Gets or sets the name identifier for the message transport extension (e.g., "RabbitMQ", "Kafka", "AzureServiceBus").
-    /// </summary>
-    public string Name { get; set; } = name;
+    /// <summary>Gets the transport's display name.</summary>
+    public string Name { get; } = Argument.IsNotNullOrWhiteSpace(name);
 }
 
 /// <summary>

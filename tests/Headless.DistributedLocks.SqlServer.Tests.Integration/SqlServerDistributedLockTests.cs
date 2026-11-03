@@ -536,6 +536,57 @@ public sealed class SqlServerDistributedLockTests(SqlServerDistributedLockFixtur
     }
 
     [Fact]
+    public async Task should_wait_for_a_running_liveness_probe_before_tearing_its_connection_down()
+    {
+        // given (a probe owns the connection gate, so its command is in flight on the held connection)
+        var timeProvider = new FakeTimeProvider();
+        var probeOwnsGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var resumeProbe = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var storage = new SqlServerConnectionScopedLockStorage(
+            Options.Create(
+                new SqlServerDistributedLockOptions
+                {
+                    ConnectionString = fixture.ConnectionString,
+                    KeyPrefix = DistributedLockOptions.DefaultKeyPrefix,
+                    EnableFencing = false,
+                }
+            ),
+            Options.Create(new DistributedLocksStorageOptions()),
+            timeProvider
+        )
+        {
+            ProbeGateAcquiredAsync = async () =>
+            {
+                probeOwnsGate.TrySetResult();
+                await resumeProbe.Task.Bounded();
+            },
+        };
+        var resource = Faker.Random.AlphaNumeric(12);
+        var handle = await storage.TryAcquireAsync(
+            resource,
+            Guid.NewGuid().ToString("N"),
+            isShared: false,
+            observeLoss: true,
+            AbortToken
+        );
+        handle.Should().NotBeNull();
+
+        timeProvider.Advance(TimeSpan.FromSeconds(30));
+        await probeOwnsGate.Task.Bounded();
+
+        // when (the provider is torn down while the probe still runs)
+        var teardown = storage.DisposeAsync().AsTask();
+        var teardownWaitedForProbe = !teardown.IsCompleted;
+
+        resumeProbe.TrySetResult();
+        await teardown.WaitAsync(AbortToken).Bounded();
+
+        // then (the gate, token source, and connection outlived the probe, and the lock still reported as lost)
+        teardownWaitedForProbe.Should().BeTrue();
+        handle!.ConnectionLostToken.IsCancellationRequested.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task should_free_the_application_lock_when_its_release_throws()
     {
         // given (a release that fails before it reaches the server leaves the lock held on its session)
