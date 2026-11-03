@@ -236,7 +236,7 @@ public sealed class PermissionGrantStore(
             }
         }
 
-        await cache.UpsertAllAsync(cacheItems, _cacheExpiration, cancellationToken).ConfigureAwait(false);
+        await _FillCacheAsync(cacheItems, cancellationToken).ConfigureAwait(false);
         logger.LogFinishedSettingCacheItems(definitions.Length);
 
         return cacheItems;
@@ -455,8 +455,15 @@ public sealed class PermissionGrantStore(
         await repository.DeleteManyAsync(grants, cancellationToken).ConfigureAwait(false);
 
         var names = grants.ConvertAll(x => x.Name);
+
+        // Written as undefined rather than removed: a reader that loaded the rows before the delete fills only an
+        // absent entry, so an entry this write leaves in place keeps its stale load out.
         await cache
-            .RemoveAllAsync(_CacheKeys(names, providerName, providerKey), cancellationToken)
+            .UpsertAllAsync(
+                _CacheValues(names, providerName, providerKey, isGranted: null),
+                _cacheExpiration,
+                cancellationToken
+            )
             .ConfigureAwait(false);
 
         return names;
@@ -484,7 +491,7 @@ public sealed class PermissionGrantStore(
             )
             .ConfigureAwait(false);
 
-        _RemoveFromCacheAfterCommit(unitOfWork, distinctNames, providerName, providerKey);
+        _WriteCacheAfterCommit(unitOfWork, distinctNames, providerName, providerKey, isGranted: true);
     }
 
     public async Task RevokeEnlistedAsync(
@@ -509,7 +516,7 @@ public sealed class PermissionGrantStore(
             )
             .ConfigureAwait(false);
 
-        _RemoveFromCacheAfterCommit(unitOfWork, distinctNames, providerName, providerKey);
+        _WriteCacheAfterCommit(unitOfWork, distinctNames, providerName, providerKey, isGranted: false);
     }
 
     public async Task<IReadOnlyList<string>> DeleteEnlistedAsync(
@@ -534,7 +541,7 @@ public sealed class PermissionGrantStore(
         await repository.DeleteManyEnlistedAsync(unitOfWork, grants, cancellationToken).ConfigureAwait(false);
 
         var names = grants.ConvertAll(x => x.Name);
-        _RemoveFromCacheAfterCommit(unitOfWork, names, providerName, providerKey);
+        _WriteCacheAfterCommit(unitOfWork, names, providerName, providerKey, isGranted: null);
 
         return names;
     }
@@ -660,38 +667,80 @@ public sealed class PermissionGrantStore(
         CancellationToken cancellationToken
     )
     {
-        var cacheValues = new Dictionary<string, PermissionGrantCacheItem>(StringComparer.Ordinal);
-        var cacheItem = new PermissionGrantCacheItem(isGranted);
-
-        foreach (var name in distinctNames)
-        {
-            cacheValues[PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey)] = cacheItem;
-        }
-
         await cache
-            .UpsertAllAsync(cacheValues, expiration: _cacheExpiration, cancellationToken: cancellationToken)
+            .UpsertAllAsync(
+                _CacheValues(distinctNames, providerName, providerKey, isGranted),
+                expiration: _cacheExpiration,
+                cancellationToken: cancellationToken
+            )
             .ConfigureAwait(false);
     }
 
-    private void _RemoveFromCacheAfterCommit(
+    /// <summary>
+    /// Writes the committed status once the unit commits. Writing it rather than removing the entry keeps out a reader
+    /// that loaded the rows before the commit: readers fill only an absent entry.
+    /// </summary>
+    private void _WriteCacheAfterCommit(
         IUnitOfWork unitOfWork,
         IReadOnlyCollection<string> names,
         string providerName,
-        string providerKey
+        string providerKey,
+        bool? isGranted
     )
     {
-        PermissionGrantCacheInvalidation.RemoveAfterCommit(
+        PermissionGrantCacheInvalidation.UpsertAfterCommit(
             unitOfWork,
             cache,
             currentTenant,
-            _CacheKeys(names, providerName, providerKey),
+            _CacheValues(names, providerName, providerKey, isGranted),
+            _cacheExpiration,
             logger
         );
     }
 
-    private static string[] _CacheKeys(IEnumerable<string> names, string providerName, string providerKey)
+    private static Dictionary<string, PermissionGrantCacheItem> _CacheValues(
+        IEnumerable<string> names,
+        string providerName,
+        string providerKey,
+        bool? isGranted
+    )
     {
-        return [.. names.Select(name => PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey))];
+        var cacheItem = new PermissionGrantCacheItem(isGranted);
+        var cacheValues = new Dictionary<string, PermissionGrantCacheItem>(StringComparer.Ordinal);
+
+        foreach (var name in names)
+        {
+            cacheValues[PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey)] = cacheItem;
+        }
+
+        return cacheValues;
+    }
+
+    /// <summary>
+    /// Fills the entries a reader loaded from the repository, each only when absent. A writer stores its new status
+    /// after its write lands, so an entry present here was written by a writer at least as new as this load; an
+    /// unconditional write would let a load that read the rows before a concurrent revoke put the revoked grant back
+    /// for the whole cache expiration.
+    /// </summary>
+    private async Task _FillCacheAsync(
+        Dictionary<string, PermissionGrantCacheItem> cacheItems,
+        CancellationToken cancellationToken
+    )
+    {
+        if (cacheItems.Count == 0)
+        {
+            return;
+        }
+
+        // Issued together so a networked cache pipelines them instead of paying one round trip per entry in turn.
+        var inserts = new List<Task<bool>>(cacheItems.Count);
+
+        foreach (var (cacheKey, cacheItem) in cacheItems)
+        {
+            inserts.Add(cache.TryInsertAsync(cacheKey, cacheItem, _cacheExpiration, cancellationToken).AsTask());
+        }
+
+        await Task.WhenAll(inserts).ConfigureAwait(false);
     }
 
     private async Task<Dictionary<string, PermissionGrantStatus>> _GetCachedItemsAsync(
@@ -782,7 +831,7 @@ public sealed class PermissionGrantStore(
             cacheItems[cacheKey] = new PermissionGrantCacheItem(isGranted);
         }
 
-        await cache.UpsertAllAsync(cacheItems, _cacheExpiration, cancellationToken).ConfigureAwait(false);
+        await _FillCacheAsync(cacheItems, cancellationToken).ConfigureAwait(false);
         logger.LogFinishedSettingCacheItems(definitions.Length);
 
         return cacheItems;
@@ -811,7 +860,8 @@ public sealed class PermissionGrantStore(
             return PermissionGrantStatus.From(cached.Value?.IsGranted);
         }
 
-        var statuses = await _CacheAllAsync(providerName, providerKey, cancellationToken).ConfigureAwait(false);
+        var statuses = await _CacheAllAsync(providerName, providerKey, replace: false, cancellationToken)
+            .ConfigureAwait(false);
 
         return statuses.TryGetValue(permissionToFind, out var isGranted)
             ? PermissionGrantStatus.From(isGranted)
@@ -828,16 +878,20 @@ public sealed class PermissionGrantStore(
         Argument.IsNotNullOrWhiteSpace(providerKey);
         _EnsureKey(providerName, providerKey);
 
-        await _CacheAllAsync(providerName, providerKey, cancellationToken).ConfigureAwait(false);
+        await _CacheAllAsync(providerName, providerKey, replace: true, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
     /// Loads every grant for the provider target, writes one cache entry per known definition (a missing row caches
     /// as undefined), and returns the per-name grant value so callers can answer a lookup from the same load.
     /// </summary>
+    /// <param name="replace">
+    /// Overwrites present entries (an explicit refresh) instead of filling only absent ones (a cache miss).
+    /// </param>
     private async Task<Dictionary<string, bool?>> _CacheAllAsync(
         string providerName,
         string providerKey,
+        bool replace,
         CancellationToken cancellationToken
     )
     {
@@ -867,7 +921,14 @@ public sealed class PermissionGrantStore(
             statuses[permission.Name] = isGranted;
         }
 
-        await cache.UpsertAllAsync(cacheItems, _cacheExpiration, cancellationToken).ConfigureAwait(false);
+        if (replace)
+        {
+            await cache.UpsertAllAsync(cacheItems, _cacheExpiration, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            await _FillCacheAsync(cacheItems, cancellationToken).ConfigureAwait(false);
+        }
 
         logger.LogFinishedSettingCacheItemsForDefinitions(definitions.Count);
 
@@ -908,8 +969,9 @@ public sealed class PermissionGrantStore(
 /// <summary>
 /// Caching read/write layer over the permission grant repository. Reads are served from a
 /// tenant-scoped cache (<see cref="PermissionManagementOptions.GrantCacheExpiration"/>, 5 hours by default) and
-/// populated on first miss by loading all grants for the provider in a single repository call. Writes update both
-/// the repository and the cache atomically.
+/// populated on first miss by loading all grants for the provider in a single repository call. A miss fills only
+/// entries that are still absent, and every write stores the status it wrote (a delete stores undefined) instead of
+/// removing the entry, so a load that read the rows before a concurrent write cannot put the old status back.
 /// <para>
 /// An explicit <c>Revoke</c> writes a denial record (<c>IsGranted = false</c>) — it does NOT delete
 /// the row — so the cache can distinguish <c>Prohibited</c> from <c>Undefined</c>.
@@ -1037,7 +1099,7 @@ public interface IPermissionGrantStore
     Task RefreshAsync(string providerName, string providerKey, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Deletes every grant and denial of the provider target and removes their cache entries.
+    /// Deletes every grant and denial of the provider target and marks their cache entries undefined.
     /// </summary>
     /// <returns>The names whose records were deleted; empty when the target had none.</returns>
     /// <exception cref="NotSupportedException">This store does not implement the member.</exception>
@@ -1053,7 +1115,7 @@ public interface IPermissionGrantStore
     /// <summary>
     /// Batch grant inside <paramref name="unitOfWork" />'s transaction: the same writes as
     /// <see cref="GrantAsync(IReadOnlyCollection{string}, string, string, CancellationToken)"/>, with the cache
-    /// cleared after the unit commits instead of updated at write time.
+    /// updated after the unit commits instead of at write time.
     /// </summary>
     /// <param name="unitOfWork">The unit whose transaction holds the writes.</param>
     /// <param name="names">Must not be empty.</param>
@@ -1075,8 +1137,8 @@ public interface IPermissionGrantStore
 
     /// <summary>
     /// Batch revoke inside <paramref name="unitOfWork" />'s transaction: the same writes as
-    /// <see cref="RevokeAsync(IReadOnlyCollection{string}, string, string, CancellationToken)"/>, with the cache cleared
-    /// after the unit commits instead of updated at write time.
+    /// <see cref="RevokeAsync(IReadOnlyCollection{string}, string, string, CancellationToken)"/>, with the cache updated
+    /// after the unit commits instead of at write time.
     /// </summary>
     /// <param name="unitOfWork">The unit whose transaction holds the writes.</param>
     /// <param name="names">Must not be empty.</param>
@@ -1098,7 +1160,7 @@ public interface IPermissionGrantStore
 
     /// <summary>
     /// Deletes every grant and denial of the provider target inside <paramref name="unitOfWork" />'s transaction, and
-    /// clears their cache entries after the unit commits.
+    /// marks their cache entries undefined after the unit commits.
     /// </summary>
     /// <param name="unitOfWork">The unit whose transaction holds the delete.</param>
     /// <param name="providerName">The provider name.</param>
