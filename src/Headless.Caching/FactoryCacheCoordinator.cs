@@ -34,6 +34,13 @@ public sealed partial class FactoryCacheCoordinator(
         StringComparer.Ordinal
     );
 
+    // Counts releases of the per-key lock, striped by key hash. A get-or-add snapshots its key's stripe before its
+    // first store read; if the stripe is unchanged once it holds the lock, no in-process holder of that key released
+    // in between, so no in-process factory wrote after that read and the under-lock re-read (a network round trip on
+    // a remote or hybrid store) would only repeat it. A stripe shared by another key only costs an extra re-read.
+    private const int _KeyLockReleaseStripeCount = 1024;
+    private readonly long[] _keyLockReleases = new long[_KeyLockReleaseStripeCount];
+
     private readonly ILogger _logger = logger ?? NullLogger<FactoryCacheCoordinator>.Instance;
 
     // The owning cache's event hub. Constructed here (rather than by the provider) so a provider using a primary
@@ -245,6 +252,14 @@ public sealed partial class FactoryCacheCoordinator(
         // so all reads share one tier policy.
         var readOptions = FactoryCacheReadOptions.FromEntryOptions(options);
 
+        // Every read after the first repeats it for the same logical operation, so a multi-tier store records no
+        // per-tier hit or miss for it and its per-tier counters count one read per get-or-add.
+        var recheckOptions = readOptions with
+        {
+            IsRecheck = true,
+        };
+        var releasesBeforeRead = _ReadKeyLockReleases(key);
+
         // Force-refresh (SkipCacheRead): bypass every store read and go straight to the factory. NotFound makes
         // the freshness/stale checks below false, so the read short-circuits and the eager/sliding read-path
         // helpers never fire; the per-key lock and any distributed lease are still acquired/released normally,
@@ -295,7 +310,8 @@ public sealed partial class FactoryCacheCoordinator(
             {
                 // Same double-check the caller would run under the lock, minus the lock: a fresh entry is served
                 // as a hit; anything else (removed or overwritten since the write) falls through to the lock path.
-                entry = await _TryGetEntryAsync<T>(store, key, readOptions, cancellationToken).ConfigureAwait(false);
+                releasesBeforeRead = _ReadKeyLockReleases(key);
+                entry = await _TryGetEntryAsync<T>(store, key, recheckOptions, cancellationToken).ConfigureAwait(false);
                 now = _GetUtcNow();
 
                 if (entry.IsFresh(now))
@@ -351,10 +367,13 @@ public sealed partial class FactoryCacheCoordinator(
         try
         {
             // Force-refresh skips the under-lock re-check too: there is no cached value to honor, so go straight
-            // to the factory while still holding the per-key lock for single-flight.
-            if (!options.SkipCacheRead)
+            // to the factory while still holding the per-key lock for single-flight. The re-check also runs only
+            // when another in-process holder of this key released the lock since the last read; otherwise nothing
+            // in this process can have written in between. A write from another node in that window was never
+            // excluded without the distributed factory lock, whose own re-read below covers it.
+            if (!options.SkipCacheRead && _ReadKeyLockReleases(key) != releasesBeforeRead)
             {
-                entry = await _TryGetEntryAsync<T>(store, key, readOptions, cancellationToken).ConfigureAwait(false);
+                entry = await _TryGetEntryAsync<T>(store, key, recheckOptions, cancellationToken).ConfigureAwait(false);
                 now = _GetUtcNow();
 
                 if (entry.IsFresh(now))
@@ -438,7 +457,7 @@ public sealed partial class FactoryCacheCoordinator(
                 // tiers unconditionally, so a peer's fresh write must not short-circuit the forced factory run.
                 if (!options.SkipCacheRead)
                 {
-                    entry = await _TryGetEntryAsync<T>(store, key, readOptions, cancellationToken)
+                    entry = await _TryGetEntryAsync<T>(store, key, recheckOptions, cancellationToken)
                         .ConfigureAwait(false);
                     now = _GetUtcNow();
 
@@ -602,10 +621,23 @@ public sealed partial class FactoryCacheCoordinator(
                     await _ReleaseFactoryLockAsync(distributedLease, key).ConfigureAwait(false);
                 }
 
-                releaser.Dispose();
+                _ReleaseKeyLock(key, releaser);
             }
         }
     }
+
+    // Every release of the per-key lock goes through here so a waiting get-or-add sees that a holder may have
+    // written since its last read. The count moves before the release so the next holder always observes it.
+    private void _ReleaseKeyLock(string key, KeyedAsyncLock.Releaser releaser)
+    {
+        Interlocked.Increment(ref _keyLockReleases[_KeyLockReleaseStripe(key)]);
+        releaser.Dispose();
+    }
+
+    private long _ReadKeyLockReleases(string key) => Volatile.Read(ref _keyLockReleases[_KeyLockReleaseStripe(key)]);
+
+    private static int _KeyLockReleaseStripe(string key) =>
+        StringComparer.Ordinal.GetHashCode(key) & (_KeyLockReleaseStripeCount - 1);
 
     /// <inheritdoc />
     public void Dispose()

@@ -100,6 +100,147 @@ public sealed class HybridCacheTierMetricsTests : TestBase
             .Be(1);
     }
 
+    // A cold GetOrAddAsync on a key in neither tier is one logical miss per tier: the coordinator's re-checks
+    // repeat the first read and must not add tier misses of their own.
+    [Fact]
+    public async Task should_record_one_miss_per_tier_when_cold_get_or_add_runs_the_factory()
+    {
+        // given
+        var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        var l2Backing = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        var l2 = new InMemoryRemoteCacheAdapter(l2Backing);
+        var publisher = Substitute.For<IBus>();
+        publisher
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(default(PublishReceipt));
+
+        var cacheName = "test-" + Guid.NewGuid().ToString("N");
+        var cache = new HybridCache(
+            l1,
+            l2,
+            publisher,
+            new HybridCacheOptions { CacheName = cacheName },
+            timeProvider: _timeProvider
+        );
+        _disposables.Add(cache);
+        _disposables.Add(l1);
+        _disposables.Add(l2Backing);
+
+        var key = Faker.Random.AlphaNumeric(10);
+        using var metrics = new MetricCollector();
+
+        // when
+        var result = await cache.GetOrAddAsync<string>(
+            key,
+            _ => new ValueTask<string?>("factory"),
+            new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5) },
+            AbortToken
+        );
+
+        // then
+        result.Value.Should().Be("factory");
+
+        foreach (var tier in new[] { "l1", "l2" })
+        {
+            metrics
+                .Count(
+                    "headless.cache.requests",
+                    ("headless.cache.name", cacheName),
+                    ("headless.cache.outcome", "miss"),
+                    ("headless.cache.tier", tier)
+                )
+                .Should()
+                .Be(1, $"one logical miss on {tier}");
+        }
+    }
+
+    [Fact]
+    public async Task should_record_no_tier_metric_when_read_is_a_recheck()
+    {
+        // given
+        var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        var l2Backing = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        var l2 = new InMemoryRemoteCacheAdapter(l2Backing);
+        var cacheName = "test-" + Guid.NewGuid().ToString("N");
+        var cache = new HybridCache(
+            l1,
+            l2,
+            Substitute.For<IBus>(),
+            new HybridCacheOptions { CacheName = cacheName },
+            timeProvider: _timeProvider
+        );
+        _disposables.Add(cache);
+        _disposables.Add(l1);
+        _disposables.Add(l2Backing);
+
+        using var metrics = new MetricCollector();
+
+        // when
+        var entry = await ((IFactoryCacheStore)cache).TryGetEntryAsync<string>(
+            Faker.Random.AlphaNumeric(10),
+            new FactoryCacheReadOptions { IsRecheck = true },
+            AbortToken
+        );
+
+        // then
+        entry.Found.Should().BeFalse();
+        metrics.Count("headless.cache.requests", ("headless.cache.name", cacheName)).Should().Be(0);
+    }
+
+    // An L1 that is not an IFactoryCacheStore is read through its plain GetAsync; a first read that hits it records
+    // the l1 hit metric and the Events.Memory hit, while a coordinator re-check that hits it records neither.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task should_record_l1_hit_only_when_read_is_not_a_recheck_and_l1_is_not_a_factory_store(bool isRecheck)
+    {
+        // given
+        var key = Faker.Random.AlphaNumeric(10);
+        var l1 = Substitute.For<IInMemoryCache>();
+        l1.GetAsync<string>(key, Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<CacheValue<string>>(new CacheValue<string>("local", hasValue: true)));
+        var l2Backing = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        var l2 = new InMemoryRemoteCacheAdapter(l2Backing);
+        var cacheName = "test-" + Guid.NewGuid().ToString("N");
+        var cache = new HybridCache(
+            l1,
+            l2,
+            Substitute.For<IBus>(),
+            new HybridCacheOptions { CacheName = cacheName },
+            timeProvider: _timeProvider,
+            eventsConfig: new CacheEventsConfig()
+        );
+        _disposables.Add(cache);
+        _disposables.Add(l2Backing);
+
+        var memoryHits = 0;
+        using var subscription = cache.Events.Memory!.Hit.AddHandler(_ => Interlocked.Increment(ref memoryHits));
+        using var metrics = new MetricCollector();
+
+        // when
+        var entry = await ((IFactoryCacheStore)cache).TryGetEntryAsync<string>(
+            key,
+            new FactoryCacheReadOptions { IsRecheck = isRecheck },
+            AbortToken
+        );
+        await ((CacheEventsHub)cache.Events).DrainAsync(AbortToken);
+
+        // then
+        entry.Found.Should().BeTrue();
+        entry.Value.Should().Be("local");
+        var expected = isRecheck ? 0 : 1;
+        metrics
+            .Count(
+                "headless.cache.requests",
+                ("headless.cache.name", cacheName),
+                ("headless.cache.outcome", "hit"),
+                ("headless.cache.tier", "l1")
+            )
+            .Should()
+            .Be(expected);
+        Volatile.Read(ref memoryHits).Should().Be(expected);
+    }
+
     // Issue #693: the public CacheName (telemetry-only) and the framework-owned invalidation-routing identity
     // are separate. A default (unkeyed) hybrid never gets an InvalidationRoutingName, even when the user sets
     // CacheName for telemetry purposes — so outgoing invalidations must route with a null CacheName while the

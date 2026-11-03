@@ -198,7 +198,7 @@ await limiter.ResetAsync(attempt, cancellationToken);
 | --- | --- | --- |
 | `SubjectKey` | required | Base64 secret of at least 32 bytes. Subjects are HMAC-SHA256'd with it before they reach a cache key. |
 | `KeyPrefix` | `attempts` | First segment of every counter key. Change it when applications share one cache. |
-| `CacheName` | `null` | Named cache instance (`setup.AddNamed(name, ...)`) that holds the counters; `null` uses the default `ICache`. An empty or blank name fails options validation. |
+| `CacheName` | `null` | Named cache instance (`setup.AddNamed(name, ...)`) that holds the counters; `null` uses the registered `IRemoteCache` when there is one, otherwise the default `ICache`. An empty or blank name fails options validation. |
 
 ### Design and runtime behavior
 
@@ -206,6 +206,7 @@ await limiter.ResetAsync(attempt, cancellationToken);
 - `ThrowIfRejected(error)` throws `Headless.TooManyRequestsException`. With `Headless.Api` problem details registered, that maps to 429, the `Retry-After` header in whole seconds rounded up, and `retryAfter` plus the optional `error` in the body. Outside HTTP, catch it or read `IsAllowed` instead.
 - Lowering a quota's `Limit` applies to the running window on the next attempt. Changing its `Window` starts every subject on a fresh counter, because the window length is part of the key.
 - Cache keys have the shape `{KeyPrefix}:v1:{purpose}:{windowSeconds}:{windowNumber}:{fingerprint}`. The fingerprint is a base64url HMAC of the purpose and subject, so the same subject yields unrelated fingerprints under different purposes.
+- With `CacheName` `null` on a hybrid host (`AddRedisTier` plus `UseHybrid`), the counters go straight to the remote tier, not through the hybrid: the limiter only increments and reads the returned total, so a hybrid write would add a local-tier upsert and an every-instance invalidation broadcast to each attempt for a local copy nothing reads. The choice is `IServiceProvider.GetRemoteOrDefaultCache()` from `Headless.Caching.Abstractions`, the same one `Headless.Idempotency.Caching` makes. A hybrid whose remote tier is only a named instance (`RemoteCacheName`) registers no `IRemoteCache`, so the limiter counts through the hybrid; set `CacheName` to the remote instance's name to skip it.
 - The startup check only probes the registration: the default `ICache` when `CacheName` is `null`, otherwise the keyed `ICache` under that name. It resolves nothing and makes no round trip to the store, so an unreachable Redis still fails on the first attempt, not at startup. A missing registration throws `MissingRequiredServiceException` naming the `AddNamed` call to add.
 - A cache failure in `AcquireAsync` or `ResetAsync` propagates.
 - `AttemptResult` is publicly constructible, so a test can stub `IAttemptLimiter` without a cache: `new AttemptResult("otp-delivery", count: 6, limit: 5, retryAfter: TimeSpan.FromSeconds(30))` is a refusal. `ResetToken` is the opaque handle `ResetAsync` needs; a hand-built result has none, and the built-in limiter's `ResetAsync` throws `ArgumentException` for it. A custom `IAttemptLimiter` puts its own reset state in the token.

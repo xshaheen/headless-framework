@@ -163,6 +163,6 @@ internal sealed class CacheIdempotencyOptionsExtension(
 
         // The remote tier when there is one: a hybrid cache's default ICache answers reads from a local tier that can
         // lag behind the shared one, which would make every compare-and-swap against the shared tier fail.
-        return provider.GetService<IRemoteCache>() ?? provider.GetRequiredService<ICache>();
+        return provider.GetRemoteOrDefaultCache();
     }
 }
