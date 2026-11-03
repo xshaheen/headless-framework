@@ -1657,9 +1657,10 @@ public sealed class MessagePublisherDeliveryTests : TestBase
 
         public int SchedulerCalls { get; private set; }
 
-        public void EnqueueCommittedMessage(MediumMessage message)
+        public ValueTask EnqueueCommittedMessageAsync(MediumMessage message, long waitStartedAt)
         {
             CommittedMessages.Add(message);
+            return ValueTask.CompletedTask;
         }
 
         public bool IsSchedulerFull => false;
