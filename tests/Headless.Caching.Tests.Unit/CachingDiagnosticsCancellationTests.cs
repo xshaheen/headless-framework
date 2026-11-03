@@ -60,7 +60,7 @@ public sealed class CachingDiagnosticsCancellationTests : TestBase
 
         // when
         var resultTask = coordinator.GetOrAddAsync(_store, key, Factory, _CreateOptions(), cts.Token).AsTask();
-        await factoryStarted.Task;
+        await factoryStarted.Task.Bounded();
         await cts.CancelAsync();
         var act = async () => await resultTask;
 

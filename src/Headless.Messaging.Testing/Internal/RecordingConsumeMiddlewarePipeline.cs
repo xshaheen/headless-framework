@@ -30,36 +30,31 @@ internal sealed class RecordingConsumeMiddlewarePipeline(
     public Task<ConsumerExecutedResult> ExecuteAsync(
         ConsumerContext context,
         object messageInstance,
-        Type messageType,
         CancellationToken cancellationToken = default
     ) =>
         _ExecuteAndRecordAsync(
             context,
             messageInstance,
-            messageType,
-            () => inner.ExecuteAsync(context, messageInstance, messageType, cancellationToken),
+            () => inner.ExecuteAsync(context, messageInstance, cancellationToken),
             cancellationToken
         );
 
     public Task<ConsumerExecutedResult> ExecuteInScopeAsync(
         ConsumerContext context,
         object messageInstance,
-        Type messageType,
         IServiceProvider provider,
         CancellationToken cancellationToken = default
     ) =>
         _ExecuteAndRecordAsync(
             context,
             messageInstance,
-            messageType,
-            () => inner.ExecuteInScopeAsync(context, messageInstance, messageType, provider, cancellationToken),
+            () => inner.ExecuteInScopeAsync(context, messageInstance, provider, cancellationToken),
             cancellationToken
         );
 
     private async Task<ConsumerExecutedResult> _ExecuteAndRecordAsync(
         ConsumerContext context,
         object messageInstance,
-        Type messageType,
         Func<Task<ConsumerExecutedResult>> execute,
         CancellationToken cancellationToken
     )
@@ -89,7 +84,7 @@ internal sealed class RecordingConsumeMiddlewarePipeline(
         try
         {
             var result = await execute().ConfigureAwait(false);
-            _RecordUnlessCleared(context, messageInstance, messageType, generation, exception: null);
+            _RecordUnlessCleared(context, messageInstance, generation, exception: null);
             return result;
         }
         catch (OperationCanceledException)
@@ -98,7 +93,7 @@ internal sealed class RecordingConsumeMiddlewarePipeline(
         }
         catch (Exception ex)
         {
-            _RecordUnlessCleared(context, messageInstance, messageType, generation, ex);
+            _RecordUnlessCleared(context, messageInstance, generation, ex);
             throw;
         }
     }
@@ -114,7 +109,6 @@ internal sealed class RecordingConsumeMiddlewarePipeline(
     private void _RecordUnlessCleared(
         ConsumerContext context,
         object messageInstance,
-        Type messageType,
         long generation,
         Exception? exception
     )
@@ -125,7 +119,7 @@ internal sealed class RecordingConsumeMiddlewarePipeline(
         }
 
         store.Record(
-            _CreateRecordedMessage(context, messageInstance, messageType, exception),
+            _CreateRecordedMessage(context, messageInstance, exception),
             exception is null ? MessageObservationType.Consumed : MessageObservationType.Faulted
         );
     }
@@ -133,14 +127,16 @@ internal sealed class RecordingConsumeMiddlewarePipeline(
     private RecordedMessage _CreateRecordedMessage(
         ConsumerContext context,
         object messageInstance,
-        Type messageType,
         Exception? exception = null
     )
     {
+        // Record the consumer's declared message type, the type the delivery was deserialized into, rather than the
+        // instance's runtime type, so a handler of a base type sees that base type. The invoker refuses a descriptor
+        // without one, so the runtime type only stands in for a caller that hands the pipeline such a descriptor.
         return RecordedMessage.FromHeaders(
             context.MediumMessage.Origin.Headers,
             messageInstance,
-            messageType,
+            context.ConsumerDescriptor.MessageType ?? messageInstance.GetType(),
             store.GetUtcNow(),
             context.MediumMessage.Lane,
             exception

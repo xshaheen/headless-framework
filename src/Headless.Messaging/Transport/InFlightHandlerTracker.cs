@@ -138,6 +138,14 @@ internal sealed class InFlightHandlerTracker
             {
                 await all.WaitAsync(remaining, timeProvider, CancellationToken.None).ConfigureAwait(false);
             }
+            catch (TimeoutException) when (!all.IsCompleted)
+            {
+                // The timed-out wait resumes here on the thread firing its timer. Failing the drain from that thread would
+                // run the caller's teardown (a transport disposing its channel, which can block) on it and stall every
+                // other timer on its queue, including any that teardown waits on; yield to the thread pool first.
+                await Task.Yield();
+                throw;
+            }
             catch (Exception) when (all.IsFaulted || all.IsCanceled)
             {
                 // The handlers' own outcome, not the wait's: a handler that throws TimeoutException is a fault here.

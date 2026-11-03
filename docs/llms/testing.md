@@ -20,6 +20,7 @@ Typical unit test inherits from `TestBase`, which provides `Logger`, `Faker`, an
 ## Agent Rules
 
 - Use `Headless.Testing` for all unit tests. Inherit from `TestBase` to get `Logger` (ILogger), `Faker` (Bogus), and `AbortToken` (CancellationToken) for free.
+- Bound every wait on a signal another thread, timer, or handler completes with `.Bounded()`: `await released.Task.Bounded()`, `await gate.WaitAsync(AbortToken).Bounded()`. An `await` with no limit turns one regression into a hang of the whole test module until the runner's timeout, which names no test; the bound fails that one test instead. The limit is a ceiling for a stuck wait, never a timing assertion, so do not tighten it to check speed.
 - Use `RetryFactAttribute` / `RetryTheoryAttribute` for flaky tests (e.g., network-dependent). Set `MaxRetries` explicitly.
 - Use `FakeTimeProvider` (from `Microsoft.Extensions.TimeProvider.Testing`) to control time in tests: construct one, inject it wherever a `TimeProvider` is needed, and call `Advance(TimeSpan)` / `SetUtcNow(...)` to simulate time passing. The framework ships no clock wrapper of its own -- `TimeProvider` **is** the abstraction.
 - Use `TestCurrentUser` and `TestCurrentTenant` for faking auth/tenant context in unit tests.
@@ -57,6 +58,7 @@ Core testing utilities and base classes for xUnit tests.
 - `RecordedTestActivity.Start()` - Starts a fully recorded `Activity` on a private source and makes it `Activity.Current`, so a test can assert span tags without an OpenTelemetry pipeline; the listener samples only that source
 - `TelemetryRecorder(sourceName, spans, metrics)` - Records the stopped activities and the meter measurements (instrument, unit, value, tags) of one named source, through `Activities`, `Measurements`, and `Of(instrument)`. Use it instead of a hand-written listener that appends to a `List`: listeners are process-wide, so other tests running in parallel fire the callback on their own threads, and the recorder's queues are safe for that. It still receives those tests' telemetry for the same source name, so filter assertions by a tag unique to the test, or run the class in a non-parallel collection
 - `AddTestTimeProvider()` - Replaces the container's `TimeProvider` with a `FakeTimeProvider` and returns it
+- `task.Bounded(timeout?)` - Waits for a `Task`, `Task<T>`, `ValueTask`, or `ValueTask<T>` for at most `HeadlessTestTaskExtensions.DefaultTimeout` (30 s) or the given limit, and until the running test is cancelled. On expiry it throws a `TimeoutException` naming the awaited expression (`Waited 30 s for 'released.Task', which did not complete.`); a `TimeoutException` the task itself threw passes through unchanged. Lives in `System.Threading.Tasks`, so it needs no `using`
 - Assertion extensions for async operations
 - `AllBeSecretHashes(algorithmId)` - Asserts a string collection (for example a queried hash column) holds only PHC-encoded secret hashes of one algorithm; failures name the offending index and reason, never the value (see [hashing.md](hashing.md))
 

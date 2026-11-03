@@ -44,7 +44,6 @@
     <InternalsVisibleTo Include="Headless.Messaging.Aws.Tests.Unit" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="FastExpressionCompiler" />
     <PackageReference Include="Microsoft.Extensions.Diagnostics" />
     <PackageReference Include="Microsoft.Extensions.Options" />
     <PackageReference Include="OpenTelemetry.Api" />

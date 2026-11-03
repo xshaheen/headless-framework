@@ -49,6 +49,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
             Lane = MessageLane.Bus,
             ConsumerType = typeof(CancellationExecutorTestConsumer),
             MessageType = typeof(CancellationExecutorTestMessage),
+            MessageBinding = ConsumeMessageBinding.For<CancellationExecutorTestMessage>(),
             MessageName = "test.messageName",
             SubscriptionName = "test",
         };
@@ -281,7 +282,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
         );
         using var dispatch = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
         var execution = executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), dispatch.Token);
-        await awaiting.Task.WaitAsync(AbortToken);
+        await awaiting.Task.Bounded();
 
         // when — the host quiesces in bootstrapper order: the dispatcher cancels its token, then the reply listener
         // fails every pending call before the cancellation callbacks have run
@@ -488,6 +489,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
             Lane = MessageLane.Bus,
             ConsumerType = typeof(CancellationExecutorTestConsumer),
             MessageType = typeof(CancellationExecutorTestMessage),
+            MessageBinding = ConsumeMessageBinding.For<CancellationExecutorTestMessage>(),
             MessageName = "test.messageName",
             SubscriptionName = CancellationExecutorTestConsumer.Identity,
             ConsumerIdentity = CancellationExecutorTestConsumer.Identity,

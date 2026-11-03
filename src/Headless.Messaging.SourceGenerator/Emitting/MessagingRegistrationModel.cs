@@ -19,6 +19,9 @@ internal sealed record ConsumerRegistrationModel(ConsumerModel Consumer, string 
     /// <summary>Builds the class for one call, preferring the container's registration.</summary>
     public string FactoryName => "Create_" + MemberSuffix;
 
+    /// <summary>The cached constructor call of a class with one activation constructor.</summary>
+    public string ActivatorName => "Activator_" + MemberSuffix;
+
     /// <summary>Runs one delivery.</summary>
     public string DispatcherName => "Dispatch_" + MemberSuffix;
 

@@ -94,9 +94,9 @@ public sealed class JobsExecutionCancellationRegistryTests : TestBase
         var execution = executingHost
             .Services.GetRequiredService<JobsExecutionTaskHandler>()
             .ExecuteTaskAsync(context, isDue: false, AbortToken);
-        await started.Task.WaitAsync(AbortToken);
+        await started.Task.Bounded();
         var accepted = await cancellingHost.Services.GetRequiredService<IJobScheduler>().CancelAsync(jobId, AbortToken);
-        await execution.WaitAsync(AbortToken);
+        await execution.WaitAsync(AbortToken).Bounded();
 
         accepted.Should().BeTrue();
         context.Status.Should().Be(JobStatus.Cancelled);

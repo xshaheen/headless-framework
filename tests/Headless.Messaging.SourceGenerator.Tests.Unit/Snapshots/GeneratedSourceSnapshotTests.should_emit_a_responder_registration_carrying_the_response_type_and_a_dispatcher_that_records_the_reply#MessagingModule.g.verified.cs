@@ -19,11 +19,13 @@ namespace Messaging.SourceGenerator.Tests
             catalog.AddQueueResponder<global::Pricing.GetQuoteResponder, global::Pricing.GetQuote, global::Pricing.Quote>("pricing.get-quote", dispatch: Dispatch_Pricing_GetQuoteResponder);
         }
 
+        private static global::Microsoft.Extensions.DependencyInjection.ObjectFactory<global::Pricing.PricingDesk> Activator_Pricing_PricingDesk;
+
         private static global::Pricing.PricingDesk Create_Pricing_PricingDesk(global::System.IServiceProvider services, out bool created)
         {
             var registered = global::Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetService<global::Pricing.PricingDesk>(services);
             created = registered is null;
-            return registered ?? global::Microsoft.Extensions.DependencyInjection.ActivatorUtilities.CreateInstance<global::Pricing.PricingDesk>(services);
+            return registered ?? (Activator_Pricing_PricingDesk ??= global::Microsoft.Extensions.DependencyInjection.ActivatorUtilities.CreateFactory<global::Pricing.PricingDesk>(global::System.Type.EmptyTypes))(services, null);
         }
 
         private static async global::System.Threading.Tasks.ValueTask Dispatch_Pricing_PricingDesk(global::System.IServiceProvider services, global::Headless.Messaging.ConsumeContext context, global::System.Threading.CancellationToken cancellationToken)
@@ -69,11 +71,13 @@ namespace Messaging.SourceGenerator.Tests
             }
         }
 
+        private static global::Microsoft.Extensions.DependencyInjection.ObjectFactory<global::Pricing.GetQuoteResponder> Activator_Pricing_GetQuoteResponder;
+
         private static global::Pricing.GetQuoteResponder Create_Pricing_GetQuoteResponder(global::System.IServiceProvider services, out bool created)
         {
             var registered = global::Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetService<global::Pricing.GetQuoteResponder>(services);
             created = registered is null;
-            return registered ?? global::Microsoft.Extensions.DependencyInjection.ActivatorUtilities.CreateInstance<global::Pricing.GetQuoteResponder>(services);
+            return registered ?? (Activator_Pricing_GetQuoteResponder ??= global::Microsoft.Extensions.DependencyInjection.ActivatorUtilities.CreateFactory<global::Pricing.GetQuoteResponder>(global::System.Type.EmptyTypes))(services, null);
         }
 
         private static async global::System.Threading.Tasks.ValueTask Dispatch_Pricing_GetQuoteResponder(global::System.IServiceProvider services, global::Headless.Messaging.ConsumeContext context, global::System.Threading.CancellationToken cancellationToken)

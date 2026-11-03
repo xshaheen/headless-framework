@@ -48,6 +48,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             Lane = MessageLane.Bus,
             ConsumerType = typeof(CancellationExecutorTestConsumer),
             MessageType = typeof(CancellationExecutorTestMessage),
+            MessageBinding = ConsumeMessageBinding.For<CancellationExecutorTestMessage>(),
             MessageName = "test.messageName",
             SubscriptionName = "test-group",
             ConsumerIdentity = CancellationExecutorTestConsumer.Identity,

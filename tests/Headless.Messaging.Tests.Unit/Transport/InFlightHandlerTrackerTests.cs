@@ -62,6 +62,37 @@ public sealed class InFlightHandlerTrackerTests : TestBase
     }
 
     [Fact]
+    public async Task should_not_finish_a_timed_out_drain_on_the_thread_that_fires_its_timer()
+    {
+        // given
+        var timeProvider = new FakeTimeProvider();
+        var tracker = new InFlightHandlerTracker();
+        var handler = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        tracker.Track(handler.Task);
+        var drain = tracker.DrainAsync(TimeSpan.FromSeconds(10), timeProvider);
+        var advancingThread = Environment.CurrentManagedThreadId;
+        var advancing = true;
+        var finishedOnTimerThread = false;
+        _ = drain.ContinueWith(
+            _ =>
+                finishedOnTimerThread =
+                    Volatile.Read(ref advancing) && Environment.CurrentManagedThreadId == advancingThread,
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default
+        );
+
+        // when: FakeTimeProvider fires the drain's timeout timer inside Advance, on this thread
+        timeProvider.Advance(TimeSpan.FromSeconds(10));
+        Volatile.Write(ref advancing, false);
+
+        // then: the caller resumes elsewhere, so a blocking teardown after the drain cannot hold the timer thread
+        await FluentActions.Awaiting(() => drain).Should().ThrowAsync<TimeoutException>();
+        finishedOnTimerThread.Should().BeFalse();
+        handler.SetResult();
+    }
+
+    [Fact]
     public async Task should_throw_timeout_at_once_when_the_budget_is_spent_and_a_handler_still_runs()
     {
         // given
@@ -216,7 +247,7 @@ public sealed class InFlightHandlerTrackerTests : TestBase
 
         // when
         handler.SetResult();
-        await handler.Task;
+        await handler.Task.Bounded();
 
         // then — removal runs synchronously on completion for a source without async continuations
         tracker.Snapshot().Should().BeEmpty();

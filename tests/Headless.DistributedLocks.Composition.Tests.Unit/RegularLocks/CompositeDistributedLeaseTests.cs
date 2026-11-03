@@ -127,7 +127,7 @@ public sealed class CompositeDistributedLeaseTests : TestBase
         await using var sut = _Create([first, second], releaseOnDispose: false);
 
         var renewal = sut.RenewAsync(cancellationToken: cancellation.Token);
-        await allRenewalsStarted.Task.WaitAsync(AbortToken);
+        await allRenewalsStarted.Task.Bounded();
         await cancellation.CancelAsync();
 
         var act = async () => await renewal.Bounded();
@@ -267,7 +267,7 @@ public sealed class CompositeDistributedLeaseTests : TestBase
         await using var sut = _Create([first, second], releaseOnDispose: false);
 
         var renewal = sut.RenewAsync(cancellationToken: AbortToken);
-        await renewalStarted.Task.WaitAsync(AbortToken);
+        await renewalStarted.Task.Bounded();
         var release = sut.ReleaseAsync();
         await Task.Yield();
 
@@ -298,7 +298,7 @@ public sealed class CompositeDistributedLeaseTests : TestBase
         var sut = _Create([first, second], releaseOnDispose: false);
 
         var firstDispose = sut.DisposeAsync().AsTask();
-        await disposeStarted.Task.WaitAsync(AbortToken);
+        await disposeStarted.Task.Bounded();
         var secondDispose = sut.DisposeAsync().AsTask();
         allowDispose.TrySetResult();
         await Task.WhenAll(firstDispose, secondDispose);

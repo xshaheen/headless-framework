@@ -71,7 +71,7 @@ public sealed class JobsTaskSchedulerWorkerPoolTests : TestBase
                 async _ =>
                 {
                     Interlocked.Increment(ref started);
-                    await release.Task;
+                    await release.Task.Bounded();
                 },
                 JobPriority.Normal,
                 AbortToken
@@ -99,7 +99,7 @@ public sealed class JobsTaskSchedulerWorkerPoolTests : TestBase
                 async _ =>
                 {
                     Interlocked.Increment(ref cappedStarted);
-                    await releaseCapped.Task;
+                    await releaseCapped.Task.Bounded();
                 },
                 JobPriority.Normal,
                 AbortToken,
@@ -153,7 +153,7 @@ public sealed class JobsTaskSchedulerWorkerPoolTests : TestBase
                 async _ =>
                 {
                     order.Enqueue(id);
-                    await release.Task;
+                    await release.Task.Bounded();
                 },
                 JobPriority.Normal,
                 AbortToken,
@@ -207,7 +207,7 @@ public sealed class JobsTaskSchedulerWorkerPoolTests : TestBase
             await scheduler.QueueAsync(
                 async _ =>
                 {
-                    await release.Task;
+                    await release.Task.Bounded();
                     Interlocked.Increment(ref completed);
                 },
                 JobPriority.Normal,
@@ -269,7 +269,7 @@ public sealed class JobsTaskSchedulerWorkerPoolTests : TestBase
                 {
                     var now = Interlocked.Increment(ref running);
                     _SetMax(ref maxRunning, now);
-                    await release.Task;
+                    await release.Task.Bounded();
                     Interlocked.Decrement(ref running);
                     Interlocked.Increment(ref completed);
                 },
@@ -315,7 +315,7 @@ public sealed class JobsTaskSchedulerWorkerPoolTests : TestBase
             gate
         );
 
-        await done.Task;
+        await done.Task.Bounded();
     }
 
     private static async Task _WaitUntilAsync(Func<bool> condition)

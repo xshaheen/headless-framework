@@ -172,8 +172,13 @@ public abstract class FeaturesUnitOfWorkConformanceTests<TFixture>(TFixture fixt
             configureServices: services =>
             {
                 services.AddFeatureDefinitionProvider<SeatsFeatureDefinitionProvider>();
-                // The Edition provider reads the edition from the current principal when the key is left out.
+                // The Edition provider reads the edition from the current principal when the key is left out. The
+                // principal belongs to no tenant, so a write for a tenant learns that tenant's edition from the
+                // resolver instead.
                 services.AddSingleton(principal);
+                var editions = Substitute.For<ITenantEditionResolver>();
+                editions.GetEditionIdAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(_Edition);
+                services.AddSingleton(editions);
                 // The definition manager takes a lock only for the dynamic store, which these hosts leave off.
                 services.AddSingleton(Substitute.For<IDistributedLock>());
             }

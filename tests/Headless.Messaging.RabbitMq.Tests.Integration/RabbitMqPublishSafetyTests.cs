@@ -242,7 +242,7 @@ public sealed class RabbitMqPublishSafetyTests(RabbitMqFixture fixture) : TestBa
             async (_, sender) =>
             {
                 handlerStarted.TrySetResult();
-                await releaseHandler.Task;
+                await releaseHandler.Task.Bounded();
                 await consumer.CommitAsync(sender, CancellationToken.None);
             },
             _ => { }

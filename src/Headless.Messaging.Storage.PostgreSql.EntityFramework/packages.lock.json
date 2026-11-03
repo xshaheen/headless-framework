@@ -351,7 +351,6 @@
       "headless.messaging": {
         "type": "Project",
         "dependencies": {
-          "FastExpressionCompiler": "[6.0.0, )",
           "Headless.Coordination": "[1.0.0, )",
           "Headless.Coordination.Abstractions": "[1.0.0, )",
           "Headless.DistributedLocks.Abstractions": "[1.0.0, )",
@@ -485,12 +484,6 @@
           "Microsoft.EntityFrameworkCore.Relational": "[10.0.13, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.13, )"
         }
-      },
-      "FastExpressionCompiler": {
-        "type": "CentralTransitive",
-        "requested": "[6.0.0, )",
-        "resolved": "6.0.0",
-        "contentHash": "EvY3eiWFnSYAUd4F4zvt3VTe8z75XxfqEUW3Fp2SsM1El4rfSNzah49/DLk6VlkL5yOLHZXf6XL19HQrcgTDxg=="
       },
       "FluentValidation": {
         "type": "CentralTransitive",

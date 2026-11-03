@@ -169,7 +169,9 @@ public abstract record MessageOptions
     /// </summary>
     public string? CallbackName { get; init; }
 
-    internal Type? MessageType { get; init; }
+    // The declared contract when it differs from the publish call's type argument, as for a callback response; a handle
+    // rather than a Type so the publish pipeline can build the declared type's typed context without reflection.
+    internal MessageTypeHandle? MessageType { get; init; }
 
     // Only the EF outbox bridge can promise that the save pipeline retains this occurrence for transaction replay.
     internal bool IsRetainedForTransactionReplay { get; init; }

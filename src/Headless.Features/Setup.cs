@@ -173,17 +173,16 @@ public static class SetupFeatures
         /*
          * You need to provide a storage implementation for `IFeatureValueRecordRepository`
          */
+        // One resolution of the value cache, shared by the store and by storage providers that evict entries on a
+        // direct repository write; resolving it twice could hand them different instances.
+        services.TryAddSingleton(FeatureValueCache.Create);
         services.TryAddSingleton<IFeatureValueStore>(sp =>
         {
-            var options = sp.GetRequiredService<IOptions<FeatureManagementOptions>>().Value;
-            var cache = string.IsNullOrEmpty(options.FeatureValueCacheName)
-                ? sp.GetRequiredService<ICache>()
-                : sp.GetRequiredService<ICacheProvider>().GetCache(options.FeatureValueCacheName);
             return new FeatureValueStore(
                 sp.GetRequiredService<IFeatureDefinitionManager>(),
                 sp.GetRequiredService<IFeatureValueRecordRepository>(),
                 sp.GetRequiredService<IGuidGenerator>(),
-                cache,
+                sp.GetRequiredService<FeatureValueCache>().Cache,
                 sp.GetRequiredService<ILogger<FeatureValueStore>>()
             );
         });

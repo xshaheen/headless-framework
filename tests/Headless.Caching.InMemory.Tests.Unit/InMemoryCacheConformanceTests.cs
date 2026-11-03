@@ -8,10 +8,21 @@ namespace Tests;
 public sealed class InMemoryCacheConformanceTests : CacheConformanceTestsBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
+    private readonly TimerSignalingTimeProvider _clock;
+
+    public InMemoryCacheConformanceTests()
+    {
+        _clock = new TimerSignalingTimeProvider(_timeProvider);
+    }
 
     protected override ICache CreateCache(string keyPrefix)
     {
-        return new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
+        return new InMemoryCache(_clock, new InMemoryCacheOptions());
+    }
+
+    protected override Task WatchForTimer(TimeSpan dueTime)
+    {
+        return _clock.WatchForTimer(dueTime);
     }
 
     protected override ValueTask AdvancePastExpirationAsync(TimeSpan expiration)

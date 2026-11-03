@@ -210,14 +210,14 @@ public sealed class CompositeReadWriteLockAcquireTests : TestBase
             options,
             AbortToken
         );
-        await firstWantsB.Task.WaitAsync(AbortToken);
+        await firstWantsB.Task.Bounded();
 
         var secondTask = provider.TryAcquireAllAsync(
             [new("a", DistributedLockMode.Read), new("b", DistributedLockMode.Write)],
             options,
             AbortToken
         );
-        await secondWantsA.Task.WaitAsync(AbortToken);
+        await secondWantsA.Task.Bounded();
 
         // The second caller is blocked on "a" and has never asked for "b" -- so it cannot be holding the resource the
         // first caller is waiting for. That is the whole guarantee.
@@ -502,7 +502,7 @@ public sealed class CompositeReadWriteLockAcquireTests : TestBase
             AbortToken
         );
 
-        await secondStarted.Task.WaitAsync(AbortToken);
+        await secondStarted.Task.Bounded();
         timeProvider.Advance(TimeSpan.FromSeconds(5));
         await CompositeTestScheduler.DrainUntilAsync(() => first.RenewalCount == 1);
 #pragma warning disable CA2000 // Ownership transfers to the composite returned by the acquisition.
@@ -557,7 +557,7 @@ public sealed class CompositeReadWriteLockAcquireTests : TestBase
             AbortToken
         );
 
-        await secondStarted.Task.WaitAsync(AbortToken);
+        await secondStarted.Task.Bounded();
         timeProvider.Advance(TimeSpan.FromMinutes(1));
         await CompositeTestScheduler.DrainUntilAsync(() => first.RenewalCount == 1);
 #pragma warning disable CA2000 // Ownership transfers to the composite returned by the acquisition.
@@ -600,7 +600,7 @@ public sealed class CompositeReadWriteLockAcquireTests : TestBase
             AbortToken
         );
 
-        await secondStarted.Task.WaitAsync(AbortToken);
+        await secondStarted.Task.Bounded();
         timeProvider.Advance(TimeSpan.FromSeconds(5));
         var act = async () => await acquireTask.Bounded();
 

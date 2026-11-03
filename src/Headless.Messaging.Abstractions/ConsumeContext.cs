@@ -88,7 +88,11 @@ public record ConsumeContext
 
     internal object? Response { get; private set; }
 
-    internal Type? ResponseType { get; private set; }
+    internal Type? ResponseType => ResponseMessageType?.Type;
+
+    // Captured from SetResponse's type argument so the callback publish can build its typed publish context without
+    // reflection.
+    internal MessageTypeHandle? ResponseMessageType { get; private set; }
 
     internal string? ResponseCallbackName { get; private set; }
 
@@ -150,7 +154,7 @@ public record ConsumeContext
         _EnsureCallbackResponseAllowed();
 
         Response = value;
-        ResponseType = typeof(TResponse);
+        ResponseMessageType = MessageTypeHandle.For<TResponse>();
     }
 
     /// <summary>

@@ -10,19 +10,23 @@ namespace Headless.Features;
 /// <summary>EF Core implementation of <see cref="IFeatureValueRecordRepository"/>.</summary>
 /// <typeparam name="TContext">The <see cref="DbContext"/> type that owns the feature value entities.</typeparam>
 /// <param name="dbFactory">Factory used to create <typeparamref name="TContext"/> instances per operation.</param>
-/// <param name="cache">
-/// The feature-value cache shared with <c>FeatureValueStore</c>. A write here removes the affected cache key
-/// so a direct repository write (bypassing <c>IFeatureManager</c>) is reflected on the next read.
+/// <param name="valueCache">
+/// The feature-value cache shared with <c>FeatureValueStore</c>, the named one when
+/// <see cref="FeatureManagementOptions.FeatureValueCacheName"/> is set. A write here stores the written value in the
+/// affected cache entry (an empty item for a delete), so a direct repository write (bypassing <c>IFeatureManager</c>) is
+/// reflected on the next read and a concurrent reader's older load cannot overwrite it.
 /// </param>
 internal sealed class EfFeatureValueRecordRepository<TContext>(
     IDbContextFactory<TContext> dbFactory,
-    ICache cache,
+    FeatureValueCache valueCache,
     ILogger<EfFeatureValueRecordRepository<TContext>> logger
 ) : IFeatureValueRecordRepository
     where TContext : DbContext
 {
     private const string _Owner = "the EF Core features storage";
     private const string _Operation = "feature value";
+
+    private readonly ICache _cache = valueCache.Cache;
 
     /// <inheritdoc/>
     public async Task<FeatureValueRecord?> FindAsync(
@@ -108,7 +112,7 @@ internal sealed class EfFeatureValueRecordRepository<TContext>(
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
         db.Set<FeatureValueRecord>().Add(featureValue);
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        await cache.RemoveAsync(_CacheKey(featureValue), cancellationToken).ConfigureAwait(false);
+        await _WriteCacheAsync([featureValue], [], cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -117,7 +121,7 @@ internal sealed class EfFeatureValueRecordRepository<TContext>(
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
         db.Set<FeatureValueRecord>().Update(featureValue);
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        await cache.RemoveAsync(_CacheKey(featureValue), cancellationToken).ConfigureAwait(false);
+        await _WriteCacheAsync([featureValue], [], cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -129,7 +133,7 @@ internal sealed class EfFeatureValueRecordRepository<TContext>(
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
         db.Set<FeatureValueRecord>().RemoveRange(featureValues);
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        await cache.RemoveAllAsync(featureValues.Select(_CacheKey), cancellationToken).ConfigureAwait(false);
+        await _WriteCacheAsync([], featureValues, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -155,9 +159,7 @@ internal sealed class EfFeatureValueRecordRepository<TContext>(
         // One SaveChanges runs every statement in the transaction EF opens for it, so a failing row rolls back
         // the whole batch.
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        await cache
-            .RemoveAllAsync(inserted.Concat(updated).Concat(deleted).Select(_CacheKey), cancellationToken)
-            .ConfigureAwait(false);
+        await _WriteCacheAsync([.. inserted, .. updated], deleted, cancellationToken).ConfigureAwait(false);
     }
 
     public Task<List<FeatureValueRecord>> GetListEnlistedAsync(
@@ -244,20 +246,26 @@ internal sealed class EfFeatureValueRecordRepository<TContext>(
             )
             .ConfigureAwait(false);
 
-        FeatureValueCacheInvalidation.RemoveAfterCommit(
+        FeatureValueCacheInvalidation.UpsertAfterCommit(
             unitOfWork,
-            cache,
-            [.. inserted.Concat(updated).Concat(deleted).Select(_CacheKey)],
+            _cache,
+            FeatureValueCacheInvalidation.WrittenItems([.. inserted, .. updated], deleted),
             logger
         );
     }
 
-    private static string _CacheKey(FeatureValueRecord featureValue)
+    private async Task _WriteCacheAsync(
+        IReadOnlyCollection<FeatureValueRecord> written,
+        IReadOnlyCollection<FeatureValueRecord> deleted,
+        CancellationToken cancellationToken
+    )
     {
-        return FeatureValueCacheItem.CalculateCacheKey(
-            featureValue.Name,
-            featureValue.ProviderName,
-            featureValue.ProviderKey
-        );
+        await _cache
+            .UpsertAllAsync(
+                FeatureValueCacheInvalidation.WrittenItems(written, deleted),
+                FeatureValueCacheInvalidation.Expiration,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 }

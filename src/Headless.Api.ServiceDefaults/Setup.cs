@@ -4,7 +4,6 @@ using System.Buffers;
 using System.ComponentModel;
 using System.Net.Http.Headers;
 using System.Reflection;
-using FileSignatures;
 using FluentValidation;
 using FluentValidation.Resources;
 using Headless.Api;
@@ -169,9 +168,6 @@ public static class SetupApi
             builder.Services.TryAddSingleton<ICancellationTokenProvider, HttpContextCancellationTokenProvider>();
 
             builder.Services.TryAddSingleton<IPasswordGenerator, PasswordGenerator>();
-            builder.Services.TryAddSingleton<IFileFormatInspector>(_ => new FileFormatInspector(
-                FileFormatLocator.GetFormats()
-            ));
             builder.Services.TryAddSingleton<IMimeTypeProvider, MimeTypeProvider>();
             builder.Services.TryAddSingleton<IContentTypeProvider, ExtendedFileExtensionContentTypeProvider>();
 

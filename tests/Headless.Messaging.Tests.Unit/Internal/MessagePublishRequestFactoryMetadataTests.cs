@@ -41,7 +41,7 @@ public sealed class MessagePublishRequestFactoryMetadataTests
         // when
         var prepared = factory.Create(
             new ConcreteOrderEvent("order-1"),
-            new PublishOptions { MessageType = typeof(ConcreteOrderEvent) }
+            new PublishOptions { MessageType = MessageTypeHandle.For<ConcreteOrderEvent>() }
         );
 
         // then
