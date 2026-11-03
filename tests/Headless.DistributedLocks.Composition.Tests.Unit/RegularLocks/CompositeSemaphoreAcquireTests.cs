@@ -461,7 +461,7 @@ public sealed class CompositeSemaphoreAcquireTests : TestBase
             AbortToken
         );
 
-        await secondStarted.Task.WaitAsync(AbortToken);
+        await secondStarted.Task.Bounded();
         timeProvider.Advance(TimeSpan.FromSeconds(5));
         await CompositeTestScheduler.DrainUntilAsync(() => first.RenewalCount == 1);
         secondResult.SetResult(second);

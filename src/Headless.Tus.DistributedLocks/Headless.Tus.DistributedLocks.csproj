@@ -6,6 +6,9 @@
     <RootNamespace>Headless.Tus</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Tus.Tests.Unit" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\Headless.DistributedLocks.Abstractions\Headless.DistributedLocks.Abstractions.csproj" />
     <!-- TreatAsUsed: supplies the tusdotnet lock contracts this package implements. -->
     <ProjectReference Include="..\Headless.Tus\Headless.Tus.csproj" TreatAsUsed="true" />

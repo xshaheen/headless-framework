@@ -271,7 +271,7 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
             AbortToken
         );
 
-        await secondStarted.Task.WaitAsync(AbortToken);
+        await secondStarted.Task.Bounded();
         timeProvider.Advance(TimeSpan.FromSeconds(5));
         await CompositeTestScheduler.DrainUntilAsync(() => first.RenewalCount == 1);
         secondResult.SetResult(second);
@@ -330,14 +330,14 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
             AbortToken
         );
 
-        await started["B"].Task.WaitAsync(AbortToken);
+        await started["B"].Task.Bounded();
         timeProvider.Advance(TimeSpan.FromSeconds(4));
         results["B"].SetResult(leases["B"]);
-        await started["C"].Task.WaitAsync(AbortToken);
+        await started["C"].Task.Bounded();
         timeProvider.Advance(TimeSpan.FromSeconds(4));
         await CompositeTestScheduler.DrainUntilAsync(() => leases["A"].RenewalCount == 1);
         results["C"].SetResult(leases["C"]);
-        await started["D"].Task.WaitAsync(AbortToken);
+        await started["D"].Task.Bounded();
         timeProvider.Advance(TimeSpan.FromSeconds(4));
         results["D"].SetResult(leases["D"]);
 
@@ -369,7 +369,7 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
             AbortToken
         );
 
-        await secondStarted.Task.WaitAsync(AbortToken);
+        await secondStarted.Task.Bounded();
         timeProvider.Advance(TimeSpan.FromSeconds(10));
         var result = await acquireTask.Bounded();
 
@@ -410,9 +410,9 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
             AbortToken
         );
 
-        await secondStarted.Task.WaitAsync(AbortToken);
+        await secondStarted.Task.Bounded();
         timeProvider.Advance(TimeSpan.FromSeconds(5));
-        await renewalStarted.Task.WaitAsync(AbortToken);
+        await renewalStarted.Task.Bounded();
         timeProvider.Advance(TimeSpan.FromSeconds(5));
 
         var result = await acquireTask.Bounded();
@@ -452,7 +452,7 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
             AbortToken
         );
 
-        await secondStarted.Task.WaitAsync(AbortToken);
+        await secondStarted.Task.Bounded();
         timeProvider.Advance(TimeSpan.FromDays(1));
         await Task.Yield();
         first.RenewalCount.Should().Be(0);
@@ -491,7 +491,7 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
             AbortToken
         );
 
-        await secondStarted.Task.WaitAsync(AbortToken);
+        await secondStarted.Task.Bounded();
         timeProvider.Advance(TimeSpan.FromSeconds(59));
         await Task.Yield();
         first.RenewalCount.Should().Be(0);
@@ -535,7 +535,7 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
             AbortToken
         );
 
-        await secondStarted.Task.WaitAsync(AbortToken);
+        await secondStarted.Task.Bounded();
         first.MarkLost();
 
         var act = async () => await acquireTask.Bounded();
@@ -572,7 +572,7 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
             callerSource.Token
         );
 
-        await secondStarted.Task.WaitAsync(AbortToken);
+        await secondStarted.Task.Bounded();
         await callerSource.CancelAsync();
         var act = async () => await acquireTask.Bounded();
 
@@ -603,7 +603,7 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
             callerSource.Token
         );
 
-        await secondStarted.Task.WaitAsync(AbortToken);
+        await secondStarted.Task.Bounded();
         await callerSource.CancelAsync();
         var act = async () => await acquireTask.Bounded();
 
@@ -649,7 +649,7 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
             AbortToken
         );
 
-        await secondStarted.Task.WaitAsync(AbortToken);
+        await secondStarted.Task.Bounded();
         timeProvider.Advance(TimeSpan.FromSeconds(5));
         var act = async () => await acquireTask.Bounded();
 
@@ -711,9 +711,9 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
             AbortToken
         );
 
-        await thirdStarted.Task.WaitAsync(AbortToken);
+        await thirdStarted.Task.Bounded();
         timeProvider.Advance(TimeSpan.FromSeconds(5));
-        await allRenewalsStarted.Task.WaitAsync(AbortToken);
+        await allRenewalsStarted.Task.Bounded();
         var act = async () => await acquireTask.Bounded();
 
         await act.Should().ThrowAsync<LockHandleLostException>().Where(exception => exception.Resource == "B");
@@ -749,7 +749,7 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
             AbortToken
         );
 
-        await secondStarted.Task.WaitAsync(AbortToken);
+        await secondStarted.Task.Bounded();
         timeProvider.Advance(TimeSpan.FromSeconds(5));
         var act = async () => await acquireTask.Bounded();
 
@@ -910,7 +910,7 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
             });
 
         var acquireTask = provider.TryAcquireAllAsync(["A"], cancellationToken: callerSource.Token);
-        await providerCallStarted.Task.WaitAsync(AbortToken);
+        await providerCallStarted.Task.Bounded();
         await callerSource.CancelAsync();
         providerResult.TrySetException(providerError);
         var act = async () => await acquireTask.Bounded();
@@ -995,16 +995,16 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
             AbortToken
         );
 
-        await secondStarted.Task.WaitAsync(AbortToken);
+        await secondStarted.Task.Bounded();
 
         // Fire the renewal cadence, then let B be granted while A's renewal is still outstanding. Awaiting the child
         // and draining the scheduler before releasing the renewal pins the interleaving deterministically: the
         // coordinator observes a COMPLETED child while a renewal is in flight, which it must not mistake for an
         // interrupted wait.
         timeProvider.Advance(TimeSpan.FromMinutes(1));
-        await renewalStarted.Task.WaitAsync(AbortToken);
+        await renewalStarted.Task.Bounded();
         secondResult.SetResult(second);
-        await pendingSecond!.WaitAsync(AbortToken);
+        await pendingSecond!.WaitAsync(AbortToken).Bounded();
         await CompositeTestScheduler.DrainUntilAsync(() => first.RenewalCount == 1);
         renewalGate.TrySetResult(true);
 

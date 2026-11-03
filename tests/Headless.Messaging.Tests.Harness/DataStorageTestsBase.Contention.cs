@@ -38,7 +38,7 @@ public abstract partial class DataStorageTestsBase
                 Task.Run(
                     async () =>
                     {
-                        await start.Task;
+                        await start.Task.Bounded();
 
                         // A store that claims a row more than once would hand it out on every round, so the rounds
                         // are capped at the backlog size rather than left to loop until the test times out.

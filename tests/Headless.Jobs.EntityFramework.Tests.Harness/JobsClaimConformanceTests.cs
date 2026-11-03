@@ -1584,7 +1584,7 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
 
                 async Task<TimeJobEntity[]> claimAsync(IJobPersistenceProvider<TimeJobEntity, CronJobEntity> p)
                 {
-                    await gate.Task;
+                    await gate.Task.Bounded();
                     return await p.QueueTimeJobsAsync([peeked], ct).ToArrayAsync(ct);
                 }
 
@@ -1659,7 +1659,7 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
                 )
                 {
                     ClaimConflictRecorder.Claimant.Value = node;
-                    await gate.Task;
+                    await gate.Task.Bounded();
                     return (await persistence.QueueTimeJobsAsync([peek], ct).ToArrayAsync(ct)).Length;
                 }
 

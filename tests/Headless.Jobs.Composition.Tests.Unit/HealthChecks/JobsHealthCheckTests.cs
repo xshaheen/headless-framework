@@ -66,7 +66,7 @@ public sealed class JobsHealthCheckTests : TestBase
 
         // when
         var stopTask = host.StopAsync(AbortToken);
-        await blocker.StopEntered.Task.WaitAsync(AbortToken);
+        await blocker.StopEntered.Task.Bounded();
         var duringShutdown = await _CheckAsync(host.Services, _JobsCheck);
         blocker.ReleaseStop.TrySetResult();
         await stopTask;
@@ -259,7 +259,9 @@ public sealed class JobsHealthCheckTests : TestBase
     // The fingerprint drain that opens activation runs in the background after the host start.
     private static async Task _ActivatedAsync(IHost host)
     {
-        (await host.Services.GetRequiredService<JobsActivationBarrier>().WaitAsync(AbortToken)).Should().BeNull();
+        (await host.Services.GetRequiredService<JobsActivationBarrier>().WaitAsync(AbortToken).Bounded())
+            .Should()
+            .BeNull();
     }
 
     private static async Task<HealthReportEntry> _CheckAsync(IServiceProvider services, string name)

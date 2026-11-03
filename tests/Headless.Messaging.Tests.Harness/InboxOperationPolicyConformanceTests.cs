@@ -416,7 +416,7 @@ public abstract class InboxOperationPolicyConformanceTests : TestBase
             var claim = Task.Run(
                 async () =>
                 {
-                    await start.Task;
+                    await start.Task.Bounded();
                     return await storage.LeaseReceiveAndReserveAttemptAsync(
                         message,
                         TimeSpan.FromMinutes(5),
@@ -429,7 +429,7 @@ public abstract class InboxOperationPolicyConformanceTests : TestBase
             var purge = Task.Run(
                 async () =>
                 {
-                    await start.Task;
+                    await start.Task.Bounded();
                     return await storage
                         .GetInboxOperationsApi()
                         .PurgeAsync(_Request(message.InboxGeneration!.IncarnationId, StatusName.Scheduled), AbortToken);

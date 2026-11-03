@@ -402,7 +402,7 @@ public abstract partial class DataStorageTestsBase : TestBase
                 Task.Run(
                     async () =>
                     {
-                        await gate.Task;
+                        await gate.Task.Bounded();
                         return await _AdmitInboxAsync(storage, origin);
                     },
                     AbortToken

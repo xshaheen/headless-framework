@@ -24,6 +24,14 @@ public readonly record struct FactoryCacheReadOptions
     /// <summary>Gets a value indicating whether the distributed (L2) tier must not be read.</summary>
     public bool SkipDistributedRead { get; init; }
 
+    /// <summary>
+    /// Gets a value indicating whether the read repeats an earlier read of the same logical operation (the
+    /// coordinator's re-check after waiting for the per-key lock, an in-flight factory, or the distributed factory
+    /// lock). A multi-tier store records no per-tier hit or miss metric or event for it, so its per-tier counters
+    /// count one read per operation. Single-tier providers record none either way and ignore the flag.
+    /// </summary>
+    public bool IsRecheck { get; init; }
+
     /// <summary>Gets the default value that reads every tier (the historical read-both behavior).</summary>
     public static FactoryCacheReadOptions None => default;
 

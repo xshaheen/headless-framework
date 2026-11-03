@@ -22,7 +22,7 @@ public sealed class RedisBrokerFaultTests(RedisMessagingFixture fixture) : Broke
         CancellationToken cancellationToken
     )
     {
-        // A server of its own on a fixed host port: a restart must not disturb the collection's server, and the
+        // A server of its own at a stable address: a restart must not disturb the collection's server, and the
         // session must find the restarted server at the address it already holds.
 #pragma warning disable CA2000 // Ownership moves to the returned session, or the catch disposes it.
         var broker = new FixedPortRedisFixture();

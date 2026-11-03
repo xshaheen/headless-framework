@@ -150,7 +150,7 @@ Base package for the TUS stack: protocol-level helpers every deployment needs re
 
 ### Design constraints
 
-Cleanup targets **incomplete** uploads only — conforming Headless stores never report completed uploads as expired, so the job cannot destroy finished data. It binds to the `ITusExpirationStore` capability interface, not a concrete store; store packages forward the registration (`AddTusAzureStore` and `AddTusS3Store` do), and manually constructed stores register with `services.AddSingleton<ITusExpirationStore>(store)`. The default 5-minute interval trades reclaim latency against the store scan each pass performs. In multi-node deployments every node runs its own loop against the same store: deletions are idempotent so this is safe, but the scan load multiplies and the logged removal counts are per-node — wrap the pass in a distributed-lock single-flight guard if that matters.
+Cleanup targets **incomplete** uploads only — conforming Headless stores never report completed uploads as expired, so the job cannot destroy finished data. It binds to the `ITusExpirationStore` capability interface, not a concrete store; store packages forward the registration (`AddTusAzureStore` and `AddTusS3Store` do), and manually constructed stores register with `services.AddSingleton<ITusExpirationStore>(store)`. The default 5-minute interval trades reclaim latency against the store scan each pass performs. In multi-node deployments every node runs its own loop against the same store. When `AddDistributedLockTusLockProvider()` is registered, a node runs a pass only if it takes the cleanup lease (`{resourcePrefix}:expired-uploads-cleanup`, zero wait), and the lease stays held for 90% of the interval after the pass, so the store is swept about once per interval across the cluster and a node that loses the race skips its tick. The lease expires on its own, so a crashed node delays cleanup by at most one interval. Without the lock provider every node sweeps on every tick: deletions are idempotent so this is safe, but the scan load multiplies and the logged removal counts are per-node.
 
 #### Default content type
 
@@ -609,6 +609,7 @@ Distributed lock-based TUS file lock provider, using `Headless.DistributedLocks`
 - `DistributedLockTusFileLock` — `ITusFileLock` that calls `TryAcquireAsync` with zero wait; returns `false` immediately if another node holds the lock (tusdotnet returns `423 Locked` to the client)
 - Lock resource key format: `{resourcePrefix}-{fileId}` with prefix default `tus-file-lock`; give each TUS endpoint its own prefix when several endpoints (different stores/containers) share one `IDistributedLock` backend, so equal file ids cannot contend for the same lock
 - Compatible with any `IDistributedLock` backend (Redis, in-memory, etc.)
+- Single-flights expired-upload cleanup: with `AddTusExpiredUploadsCleanup()` also registered, one node per interval runs the sweep under the `{resourcePrefix}:expired-uploads-cleanup` lease
 - Single `AddDistributedLockTusLockProvider(resourcePrefix?)` extension on `IServiceCollection`
 - Best-effort mutual exclusion, not fencing: tusdotnet's `ITusFileLock` contract has no hook to observe a lease lost mid-request, so a holder that loses its lease during a backend partition keeps writing until the request ends — the auto-extending lease shrinks that window but cannot eliminate it. The store has to fence: `TusAzureStore` conditions every write on the blob ETag and `TusS3Store` on the state object's ETag, so such a holder's write fails with `412` instead of overwriting the new holder's data
 
@@ -665,4 +666,5 @@ None beyond registering an `IDistributedLock` provider. The lock acquires with `
 ### Runtime behavior
 
 - `AddDistributedLockTusLockProvider()` registers `ITusFileLockProvider` as a singleton (`DistributedLockTusLockProvider`).
+- It also registers (TryAdd) an internal gate that single-flights `AddTusExpiredUploadsCleanup` passes across nodes through the same `IDistributedLock`.
 - Requires `IDistributedLock` to be registered in DI before this call.

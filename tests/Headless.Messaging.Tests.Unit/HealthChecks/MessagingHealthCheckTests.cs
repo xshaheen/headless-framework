@@ -114,7 +114,7 @@ public sealed class MessagingHealthCheckTests : TestBase
 
         // when
         var stopTask = host.StopAsync(AbortToken);
-        await blocker.StopEntered.Task.WaitAsync(AbortToken);
+        await blocker.StopEntered.Task.Bounded();
         var duringShutdown = await _CheckAsync(host.Services, _MessagingCheck);
         var bootstrapperStillStarted = host.Services.GetRequiredService<IBootstrapper>().IsStarted;
         blocker.ReleaseStop.TrySetResult();

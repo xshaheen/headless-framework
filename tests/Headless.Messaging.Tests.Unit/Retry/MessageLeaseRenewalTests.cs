@@ -133,7 +133,7 @@ public sealed class MessageLeaseRenewalTests : TestBase
                 hung.TrySetCanceled(token);
             });
 
-            return await hung.Task;
+            return await hung.Task.Bounded();
         };
         await using var renewal = _Start();
         _clock.Advance(_Interval);

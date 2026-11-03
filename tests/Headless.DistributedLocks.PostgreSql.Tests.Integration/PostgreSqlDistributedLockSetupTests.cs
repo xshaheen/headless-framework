@@ -4,7 +4,9 @@ using Headless.DistributedLocks;
 using Headless.DistributedLocks.PostgreSql;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using Npgsql;
 
 namespace Tests;
 
@@ -65,5 +67,28 @@ public sealed class PostgreSqlDistributedLockSetupTests : TestBase
 
         // then
         act.Should().Throw<OptionsValidationException>();
+    }
+
+    [Fact]
+    public async Task should_leave_application_data_source_slot_to_the_application()
+    {
+        // given
+        await using var appDataSource = NpgsqlDataSource.Create("Host=app-db;Database=app");
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessDistributedLocks(setup =>
+            setup.UsePostgreSql(options =>
+            {
+                options.ConnectionString = "Host=lock-db;Database=locks";
+                options.EnablePushWakeup = false;
+            })
+        );
+
+        // when - Npgsql.DependencyInjection's AddNpgsqlDataSource registers with TryAdd
+        services.TryAddSingleton(appDataSource);
+        await using var provider = services.BuildServiceProvider();
+
+        // then
+        provider.GetRequiredService<NpgsqlDataSource>().Should().BeSameAs(appDataSource);
     }
 }

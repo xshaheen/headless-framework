@@ -14,7 +14,9 @@ namespace Headless.Blobs.SshNet;
 /// <remarks>
 /// Uses <see cref="System.Threading.Channels.Channel{T}"/> for lock-free, async-first connection reuse
 /// (Npgsql-style pooling). The pool creates new connections on demand up to
-/// <see cref="SshBlobStorageOptions.MaxPoolSize"/> and validates each client before returning it to a caller.
+/// <see cref="SshBlobStorageOptions.MaxPoolSize"/> (and, for open read streams, up to
+/// <see cref="SshBlobStorageOptions.MaxReadStreamConnections"/> in <see cref="ReadStreams"/>) and validates each
+/// client before returning it to a caller.
 /// Invalid or disconnected clients are disposed and replaced. Dispose the pool when the application shuts down
 /// to close all open SSH connections.
 /// </remarks>
@@ -24,22 +26,42 @@ internal sealed class SftpClientPool : IDisposable
     private readonly SemaphoreSlim _maxConnections;
     private readonly SshBlobStorageOptions _options;
     private readonly ILogger<SftpClientPool> _logger;
+    private readonly SftpClientPool? _readStreams;
     private volatile bool _disposed;
 
     public SftpClientPool(IOptions<SshBlobStorageOptions> options, ILogger<SftpClientPool> logger)
+        : this(options.Value, options.Value.MaxPoolSize, logger)
     {
-        _options = options.Value;
+        _readStreams = new SftpClientPool(_options, _options.MaxReadStreamConnections, logger);
+    }
+
+    private SftpClientPool(SshBlobStorageOptions options, int maxConnections, ILogger<SftpClientPool> logger)
+    {
+        _options = options;
         _logger = logger;
         _idle = Channel.CreateBounded<SftpClient>(
-            new BoundedChannelOptions(_options.MaxPoolSize)
+            new BoundedChannelOptions(maxConnections)
             {
                 SingleReader = false,
                 SingleWriter = false,
                 FullMode = BoundedChannelFullMode.Wait,
             }
         );
-        _maxConnections = new SemaphoreSlim(_options.MaxPoolSize, _options.MaxPoolSize);
+        _maxConnections = new SemaphoreSlim(maxConnections, maxConnections);
     }
+
+    /// <summary>
+    /// The separate set of connections, bounded by <see cref="SshBlobStorageOptions.MaxReadStreamConnections"/>, that
+    /// backs the streams <see cref="IBlobStorage.OpenReadStreamAsync"/> returns.
+    /// </summary>
+    /// <remarks>
+    /// A returned stream keeps its connection until the caller disposes it, so its hold time is the reader's pace, not
+    /// SFTP latency: a signed-URL download to a slow client holds it for the whole transfer. Serving those streams from
+    /// this pool means slow readers wait on each other and never starve the store's own uploads, deletes, or info
+    /// reads. Read-stream connections are disposed with the owning pool. On the read-stream pool itself this returns
+    /// the same instance.
+    /// </remarks>
+    public SftpClientPool ReadStreams => _readStreams ?? this;
 
     /// <summary>
     /// Acquires an SFTP client from the pool, reusing an idle connection when available or creating a new one.
@@ -47,15 +69,17 @@ internal sealed class SftpClientPool : IDisposable
     /// <param name="ct">Cancellation token. Passed to the connection semaphore and to the SSH handshake.</param>
     /// <returns>A connected <see cref="SftpClient"/>. The caller must return it via <see cref="ReleaseAsync"/> when done.</returns>
     /// <remarks>
-    /// The pool is bounded to <see cref="SshBlobStorageOptions.MaxPoolSize"/> connections and applies backpressure by
-    /// design: there is no acquire timeout, so when every slot is in use this call blocks until a slot frees or
-    /// <paramref name="ct"/> is cancelled. A slot is only ever returned by <see cref="ReleaseAsync"/> /
+    /// The pool is bounded (<see cref="SshBlobStorageOptions.MaxPoolSize"/> connections, or
+    /// <see cref="SshBlobStorageOptions.MaxReadStreamConnections"/> for <see cref="ReadStreams"/>) and applies
+    /// backpressure by design: there is no acquire timeout, so when every slot is in use this call blocks until a slot
+    /// frees or <paramref name="ct"/> is cancelled. A slot is only ever returned by <see cref="ReleaseAsync"/> /
     /// <see cref="Release"/> — the store releases it when an operation finishes, and for
-    /// <see cref="IBlobStorage.OpenReadStreamAsync"/> the returned stream owns the client until the caller disposes it.
-    /// A caller that never disposes an <c>OpenReadStreamAsync</c> result therefore permanently leaks a slot; after
-    /// <see cref="SshBlobStorageOptions.MaxPoolSize"/> such leaks every subsequent acquire blocks until its own
-    /// cancellation fires. Disposing acquired clients / download results is a caller responsibility; size
-    /// <see cref="SshBlobStorageOptions.MaxPoolSize"/> for peak concurrency and always pass a cancellation token.
+    /// <see cref="IBlobStorage.OpenReadStreamAsync"/> the returned stream owns its <see cref="ReadStreams"/> client until
+    /// the caller disposes it. A caller that never disposes an <c>OpenReadStreamAsync</c> result therefore permanently
+    /// leaks a read-stream slot; after <see cref="SshBlobStorageOptions.MaxReadStreamConnections"/> such leaks every
+    /// later <c>OpenReadStreamAsync</c> blocks until its own cancellation fires, while other operations keep their own
+    /// pool. Disposing acquired clients / download results is a caller responsibility; size both limits for peak
+    /// concurrency and always pass a cancellation token.
     /// </remarks>
     /// <exception cref="ObjectDisposedException">Thrown when the pool has been disposed.</exception>
     /// <exception cref="Renci.SshNet.Common.SshConnectionException">Thrown when a new SSH connection cannot be established.</exception>
@@ -63,47 +87,31 @@ internal sealed class SftpClientPool : IDisposable
     {
         Ensure.NotDisposed(_disposed, this);
 
-        // Try to get existing connection (non-blocking)
-        // Pooled clients hold a semaphore slot, so if validation fails we must release it
-        while (_idle.Reader.TryRead(out var client))
-        {
-            if (_Validate(client))
-            {
-                _logger.LogAcquiredPooledClient();
-                return client;
-            }
-
-            // Client invalid - dispose and release its semaphore slot
-            _DisposeClient(client);
-            _maxConnections.Release();
-        }
-
-        // No valid pooled connection - wait for available slot and create new
+        // The semaphore counts checked-out clients; an idle client holds no slot. Every acquire therefore waits on the
+        // semaphore first, and every release frees a slot after returning its client to the idle channel, which wakes
+        // exactly one waiter with an idle client ready for it. Letting idle clients keep their slots instead would leave
+        // a waiter parked on the semaphore while the client it needs sits idle, forever once nobody else acquires.
+        // Total connections stay within the limit: a new one is only created when no idle client exists.
         await _maxConnections.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            // Double-check pool after acquiring semaphore (someone may have returned a client)
             while (_idle.Reader.TryRead(out var client))
             {
                 if (_Validate(client))
                 {
-                    // Release the slot we acquired since pooled client has its own
-                    _maxConnections.Release();
-                    _logger.LogAcquiredPooledClientAfterWait();
+                    _logger.LogAcquiredPooledClient();
                     return client;
                 }
 
-                // Invalid pooled client - dispose and release its slot
-                // We keep the slot we acquired for creating a new connection
+                // Invalid pooled client: dispose it and create a replacement under the slot this call holds.
                 _DisposeClient(client);
-                _maxConnections.Release();
             }
 
             return await _CreateAndConnectAsync(ct).ConfigureAwait(false);
         }
         catch
         {
-            _maxConnections.Release();
+            _ReleaseSlot();
             throw;
         }
     }
@@ -132,21 +140,20 @@ internal sealed class SftpClientPool : IDisposable
         if (_disposed || !client.IsConnected)
         {
             _DisposeClient(client);
-            _ReleaseSlot();
-            return;
         }
-
-        if (!_idle.Writer.TryWrite(client))
+        else if (!_idle.Writer.TryWrite(client))
         {
             // Pool full (or completed by a concurrent dispose), dispose excess
             _logger.LogPoolFullDisposingExcess();
             _DisposeClient(client);
-            _ReleaseSlot();
         }
         else
         {
             _logger.LogReturnedClientToPool();
         }
+
+        // Free the slot only after the client is back in the idle channel, so the waiter it wakes finds it there.
+        _ReleaseSlot();
     }
 
     private void _ReleaseSlot()
@@ -310,6 +317,7 @@ internal sealed class SftpClientPool : IDisposable
         }
 
         _maxConnections.Dispose();
+        _readStreams?.Dispose();
 
         _logger.LogPoolDisposed();
     }

@@ -308,7 +308,7 @@ public abstract class ExpirationSweepTestsBase(IS3TestBackend backend) : TestBas
 
         // when - the job's first pass runs at startup
         await host.StartAsync(AbortToken);
-        var removed = await firstPass.Task.WaitAsync(AbortToken);
+        var removed = await firstPass.Task.Bounded();
         await host.StopAsync(AbortToken);
 
         // then

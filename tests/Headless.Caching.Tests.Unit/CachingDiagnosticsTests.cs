@@ -106,12 +106,12 @@ public sealed class CachingDiagnosticsTests : TestBase
 
         // when
         var resultTask = coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken).AsTask();
-        await factoryStarted.Task;
+        await factoryStarted.Task.Bounded();
         await timeoutRegistered;
         _timeProvider.Advance(TimeSpan.FromSeconds(1));
         var result = await resultTask;
         factoryGate.SetResult("fresh");
-        await backgroundFinished.Task;
+        await backgroundFinished.Task.Bounded();
 
         // then
         result.Value.Should().Be("stale");
@@ -203,7 +203,7 @@ public sealed class CachingDiagnosticsTests : TestBase
 
         // when
         var resultTask = coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken).AsTask();
-        await factoryStarted.Task;
+        await factoryStarted.Task.Bounded();
         await timeoutRegistered;
         _timeProvider.Advance(TimeSpan.FromSeconds(1));
         var act = async () => await resultTask;

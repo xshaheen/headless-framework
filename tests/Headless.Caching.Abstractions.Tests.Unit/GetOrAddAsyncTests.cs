@@ -120,14 +120,14 @@ public sealed class GetOrAddAsyncTests : TestBase
             {
                 Interlocked.Increment(ref factoryCallCount);
                 factoryStarted.TrySetResult();
-                await factoryCanComplete.Task;
+                await factoryCanComplete.Task.Bounded();
                 return "value";
             }
         }
 
         // when - start two concurrent requests
         var task1 = cache.GetOrAddAsync("same-key", slowFactory, _DefaultExpiration, AbortToken);
-        await factoryStarted.Task;
+        await factoryStarted.Task.Bounded();
 
         var task2Started = new TaskCompletionSource();
         var task2 = Task.Run(
@@ -138,7 +138,7 @@ public sealed class GetOrAddAsyncTests : TestBase
             },
             AbortToken
         );
-        await task2Started.Task;
+        await task2Started.Task.Bounded();
         await Task.Delay(50, AbortToken); // Give task2 time to block
 
         factoryCanComplete.SetResult();
@@ -167,7 +167,7 @@ public sealed class GetOrAddAsyncTests : TestBase
                     async _ =>
                     {
                         key1Started.SetResult();
-                        await bothAcquired.Task;
+                        await bothAcquired.Task.Bounded();
                         return "value1";
                     },
                     _DefaultExpiration,
@@ -185,7 +185,7 @@ public sealed class GetOrAddAsyncTests : TestBase
                     async _ =>
                     {
                         key2Started.SetResult();
-                        await bothAcquired.Task;
+                        await bothAcquired.Task.Bounded();
                         return "value2";
                     },
                     _DefaultExpiration,
@@ -225,7 +225,7 @@ public sealed class GetOrAddAsyncTests : TestBase
                     async _ =>
                     {
                         factory1Started.SetResult();
-                        await factory1CanComplete.Task;
+                        await factory1CanComplete.Task.Bounded();
                         return "value1";
                     },
                     _DefaultExpiration,
@@ -235,7 +235,7 @@ public sealed class GetOrAddAsyncTests : TestBase
             AbortToken
         );
 
-        await factory1Started.Task;
+        await factory1Started.Task.Bounded();
 
         var task2 = Task.Run(
             async () =>
@@ -332,7 +332,7 @@ public sealed class GetOrAddAsyncTests : TestBase
             );
 
         var assertion = act.Should().ThrowAsync<OperationCanceledException>();
-        await factoryReached.Task;
+        await factoryReached.Task.Bounded();
         await cts.CancelAsync();
         await assertion;
 

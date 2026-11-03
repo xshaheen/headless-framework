@@ -471,13 +471,13 @@ public sealed class KafkaConsumerClientTests : TestBase
             switch (offset)
             {
                 case 100:
-                    await releaseOffset100.Task.WaitAsync(AbortToken).ConfigureAwait(false);
+                    await releaseOffset100.Task.Bounded().ConfigureAwait(false);
                     await client.CommitAsync(sender).ConfigureAwait(false);
 
                     break;
 
                 case 101:
-                    await releaseOffset101.Task.WaitAsync(AbortToken).ConfigureAwait(false);
+                    await releaseOffset101.Task.Bounded().ConfigureAwait(false);
                     await client.CommitAsync(sender).ConfigureAwait(false);
 
                     break;
@@ -1034,7 +1034,7 @@ public sealed class KafkaConsumerClientTests : TestBase
         client.OnMessageCallback = async (_, _) =>
         {
             callbackEntered.TrySetResult();
-            await releaseCallback.Task;
+            await releaseCallback.Task.Bounded();
 
             throw new InvalidOperationException("callback failure");
         };
@@ -1045,7 +1045,7 @@ public sealed class KafkaConsumerClientTests : TestBase
             () => client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask(),
             AbortToken
         );
-        await callbackEntered.Task.WaitAsync(AbortToken);
+        await callbackEntered.Task.Bounded();
 
         // when: the revoke waits for the handler, which fails while the partition is still assigned
         var revokeTask = Task.Run(() => client.PartitionsRevoked([consumeResult.TopicPartitionOffset]), AbortToken);
@@ -1087,7 +1087,7 @@ public sealed class KafkaConsumerClientTests : TestBase
         client.OnMessageCallback = async (_, _) =>
         {
             callbackEntered.TrySetResult();
-            await releaseCallback.Task;
+            await releaseCallback.Task.Bounded();
             callbackFinished.TrySetResult();
 
             throw new InvalidOperationException("callback failure");
@@ -1099,12 +1099,12 @@ public sealed class KafkaConsumerClientTests : TestBase
             () => client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask(),
             AbortToken
         );
-        await callbackEntered.Task.WaitAsync(AbortToken);
+        await callbackEntered.Task.Bounded();
 
         // when: the partition goes without a drain (lost, or a revoke whose drain timed out), then the handler fails
         client.PartitionsLost([consumeResult.TopicPartitionOffset]);
         releaseCallback.SetResult();
-        await callbackFinished.Task.WaitAsync(AbortToken);
+        await callbackFinished.Task.Bounded();
         await Task.Delay(TimeSpan.FromMilliseconds(100), AbortToken);
 
         // then: the new owner reads the record from its committed offset, so this client neither seeks nor fails

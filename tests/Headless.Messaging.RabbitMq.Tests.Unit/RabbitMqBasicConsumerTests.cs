@@ -1054,7 +1054,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             async (_, _) =>
             {
                 handlerStarted.TrySetResult();
-                await releaseHandler.Task;
+                await releaseHandler.Task.Bounded();
             },
             args => _loggedEvents.Add(args),
             null,
@@ -1099,7 +1099,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             async (_, _) =>
             {
                 handlerStarted.TrySetResult();
-                await releaseHandler.Task;
+                await releaseHandler.Task.Bounded();
             },
             args => _loggedEvents.Add(args),
             null,
@@ -1141,7 +1141,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             {
                 Interlocked.Increment(ref dispatched);
                 handlerStarted.TrySetResult();
-                await releaseHandler.Task;
+                await releaseHandler.Task.Bounded();
             },
             args => _loggedEvents.Add(args),
             null,
@@ -1177,7 +1177,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             async (_, _) =>
             {
                 handlerStarted.TrySetResult();
-                await releaseHandler.Task;
+                await releaseHandler.Task.Bounded();
             },
             args => _loggedEvents.Add(args),
             null,

@@ -926,7 +926,14 @@ internal sealed class AwsBlobStorage(
 
         var stream = new ActionableStream(response.ResponseStream, response.Dispose);
 
-        return new(stream, location.Path, BlobStorageHelpers.ToUserMetadata(_ToDictionary(response.Metadata)));
+        // The GET response already carries the length and type, so forward them rather than make callers ask again.
+        return new(
+            stream,
+            location.Path,
+            BlobStorageHelpers.ToUserMetadata(_ToDictionary(response.Metadata)),
+            response.ContentLength,
+            string.IsNullOrEmpty(response.Headers.ContentType) ? null : response.Headers.ContentType
+        );
     }
 
     public async ValueTask<BlobInfo?> GetBlobInfoAsync(

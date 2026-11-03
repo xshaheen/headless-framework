@@ -42,14 +42,14 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
     /// <param name="options">Resolved provider options (polling fallback, command timeout, keepalive, key prefix).</param>
     /// <param name="storageOptions">Supplies the schema that holds the fence sequence.</param>
     /// <param name="dataSource">
-    /// The shared <see cref="NpgsqlDataSource"/> injected by <see cref="PostgresLockDataSource"/>. Not
+    /// The provider's own data source owner, never the application's unkeyed <see cref="NpgsqlDataSource"/>. Not
     /// disposed by this instance; disposal is owned by the DI registration.
     /// </param>
     /// <param name="timeProvider">Time source used for monitoring sleeps and keepalive cadence.</param>
     public PostgresConnectionScopedLockStorage(
         IOptions<PostgreSqlDistributedLockOptions> options,
         IOptions<DistributedLocksStorageOptions> storageOptions,
-        NpgsqlDataSource dataSource,
+        PostgresLockDataSource dataSource,
         TimeProvider timeProvider
     )
     {
@@ -57,7 +57,7 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
         _timeProvider = timeProvider;
         // The data source is owned and disposed by the DI registration (a single shared instance across the
         // Postgres consumers), so this storage never disposes it.
-        _dataSource = dataSource;
+        _dataSource = dataSource.DataSource;
         _connectionString = _dataSource.ConnectionString;
         _commandTimeoutSeconds = (int)_options.CommandTimeout.TotalSeconds;
         // Exclusive acquires draw their fencing token in the grant statement, on the session that holds the lock.

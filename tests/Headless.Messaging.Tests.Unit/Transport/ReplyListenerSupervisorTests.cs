@@ -263,7 +263,7 @@ public sealed class ReplyListenerSupervisorTests : TestBase
                 pass.ReleaseStarted.TrySetResult();
                 if (pass.HoldRelease is not null)
                 {
-                    await pass.HoldRelease.Task;
+                    await pass.HoldRelease.Task.Bounded();
                 }
 
                 pass.Released.TrySetResult();
