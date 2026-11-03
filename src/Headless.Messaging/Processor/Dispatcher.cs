@@ -309,8 +309,10 @@ internal sealed class Dispatcher
             }
             else
             {
-                // Per-message scope: scoped services resolved during ExecuteAsync (consumer, middleware,
-                // user OnExhausted callback) all share the same scope instance for this message.
+                // Per-message scope, surfaced to OnExhausted as FailedInfo.ServiceProvider. The consumer and its
+                // consume middleware do not run in it: every attempt, an immediate retry included, opens its own
+                // scope so a scoped service a failed attempt left dirty (a DbContext with tracked changes) never
+                // carries into the next attempt.
                 await using var dispatchScope = _scopeFactory.CreateAsyncScope();
                 await _executor
                     .ExecuteAsync(message, dispatchScope.ServiceProvider, descriptor, TasksCts.Token)

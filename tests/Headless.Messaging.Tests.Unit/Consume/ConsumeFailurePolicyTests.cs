@@ -1,7 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using Headless.Messaging;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.DependencyInjection;
 using Tests.Guarantees;
 using Tests.Simulation;
 
@@ -186,10 +188,78 @@ public sealed class ConsumeFailurePolicyTests : TestBase
         host.ConsumerCircuit().ConsecutiveFailures.Should().Be(0);
     }
 
+    [Fact]
+    public async Task should_run_each_attempt_in_its_own_scope_and_give_on_exhausted_the_dispatch_scope_when_immediate_retries_fail()
+    {
+        // given: two immediate retries and no delayed ones, so one dispatch runs all three attempts on the
+        // non-transactional tier; consume middleware tuned onto the consumer records the scoped state its attempt
+        // resolves, and OnExhausted records the one its FailedInfo.ServiceProvider resolves
+        var probe = new PipelineProbe { Behavior = static (_, _, _) => throw new InvalidOperationException("boom") };
+        var log = new ScopedStateLog();
+        await using var host = await PipelineHosts.StartAsync(
+            probe,
+            AbortToken,
+            setup =>
+            {
+                setup.DefaultFailurePolicy(policy => policy.Immediate(2));
+                setup.Tune(
+                    PipelineOrderConsumer.Identity,
+                    consumer => consumer.UseMiddleware<ScopedStateRecordingMiddleware>()
+                );
+                setup.Options.RetryPolicy.OnExhausted = (info, cancellationToken) =>
+                {
+                    log.Exhausted = info.ServiceProvider.GetRequiredService<ScopedState>();
+                    return probe.RecordExhaustedAsync(info, cancellationToken);
+                };
+            },
+            configureServices: services =>
+            {
+                services.AddScoped<ScopedState>();
+                services.AddSingleton(log);
+            }
+        );
+
+        // when
+        await host.EnqueueAsync(_OrderId, AbortToken);
+        await host.WithinBoundAsync(probe.WhenExhaustedAsync(1), AbortToken);
+
+        // then: an immediate retry never sees the scoped state a failed attempt left behind
+        probe.Attempts(_OrderId).Should().Be(3);
+        log.Attempts.Should().HaveCount(3).And.OnlyHaveUniqueItems();
+
+        // and: OnExhausted resolves from the per-message dispatch scope, which no attempt ran in
+        log.Exhausted.Should().NotBeNull();
+        log.Attempts.Should().NotContain(log.Exhausted!);
+    }
+
     // A cut-off attempt keeps its lease until the dispatch timeout runs out; one poll later the row is claimable.
     private static readonly TimeSpan _PastLease = TimeSpan.FromMinutes(5) + PipelineHosts.PollInterval;
 
     private sealed class OrderRejectedException() : Exception("The order was rejected.");
+
+    /// <summary>Registered scoped, so each DI scope resolves its own instance.</summary>
+    private sealed class ScopedState;
+
+    private sealed class ScopedStateLog
+    {
+        private readonly ConcurrentQueue<ScopedState> _attempts = new();
+
+        public IReadOnlyList<ScopedState> Attempts => [.. _attempts];
+
+        public ScopedState? Exhausted { get; set; }
+
+        public void Record(ScopedState state) => _attempts.Enqueue(state);
+    }
+
+    private sealed class ScopedStateRecordingMiddleware(ScopedState state, ScopedStateLog log)
+        : IConsumeMiddleware<ConsumeContext>
+    {
+        public ValueTask InvokeAsync(ConsumeContext context, Func<ValueTask> next)
+        {
+            log.Record(state);
+            return next();
+        }
+    }
 
     /// <summary>A failed row whose next retry lies ahead of the clock, so a retry scheduled earlier does not match.</summary>
     private static Func<MessageView, bool> _IsRetryScheduled(SimulationHost host) =>
