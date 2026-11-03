@@ -62,6 +62,27 @@ public sealed class PermissionGrantStoreTests : TestBase
                 }
             });
         _repository
+            .When(x =>
+                x.SaveAsync(
+                    Arg.Any<IReadOnlyCollection<PermissionGrantRecord>>(),
+                    Arg.Any<IReadOnlyCollection<PermissionGrantRecord>>(),
+                    Arg.Any<CancellationToken>()
+                )
+            )
+            .Do(call =>
+            {
+                // Deletes first, then inserts, as the real repositories commit them in one transaction.
+                foreach (var record in call.ArgAt<IReadOnlyCollection<PermissionGrantRecord>>(1))
+                {
+                    _rows.Remove(record.Name);
+                }
+
+                foreach (var record in call.ArgAt<IReadOnlyCollection<PermissionGrantRecord>>(0))
+                {
+                    _rows[record.Name] = record;
+                }
+            });
+        _repository
             .GetListAsync(
                 Arg.Any<IReadOnlyCollection<string>>(),
                 Arg.Any<string>(),
