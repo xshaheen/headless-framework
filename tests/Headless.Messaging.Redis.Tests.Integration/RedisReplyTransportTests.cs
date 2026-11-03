@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Net;
-using System.Net.Sockets;
 using System.Threading.Channels;
 using Headless.Messaging;
 using Headless.Messaging.Redis;
@@ -240,39 +238,39 @@ public sealed class RedisReplyTransportTests(RedisMessagingFixture fixture) : Te
 }
 
 /// <summary>
-/// A Redis server of one test's own, on a fixed host port reserved before it starts, so a client can be pointed at it
-/// while it is still down. It is never reused, so its state stays this test's.
+/// A Redis server of one test's own behind a <see cref="BrokerPortForwarder"/>, so a client can be pointed at its
+/// address while it is still down. It is never reused, so its state stays this test's.
 /// </summary>
 internal sealed class DelayedRedisServer : IAsyncDisposable
 {
     private const int _RedisPort = 6379;
 
-    private readonly int _port;
     private readonly RedisContainer _container;
+    private readonly BrokerPortForwarder _forwarder;
 
     public DelayedRedisServer()
     {
-        _port = _ReserveFreePort();
-        _container = new RedisBuilder(TestImages.Redis).WithPortBinding(_port, _RedisPort).Build();
+        _container = new RedisBuilder(TestImages.Redis).Build();
+        _forwarder = new BrokerPortForwarder(() => _container, _RedisPort);
     }
 
     /// <summary>The server's address, known before it starts.</summary>
-    public string ConnectionString => $"{_container.Hostname}:{_port}";
+    public string ConnectionString => _forwarder.Address;
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
         return _container.StartAsync(cancellationToken);
     }
 
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
-        return _container.DisposeAsync();
-    }
-
-    private static int _ReserveFreePort()
-    {
-        using var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        return ((IPEndPoint)listener.LocalEndpoint).Port;
+        try
+        {
+            await _container.DisposeAsync();
+        }
+        finally
+        {
+            await _forwarder.DisposeAsync();
+        }
     }
 }

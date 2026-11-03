@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
-using System.Net;
-using System.Net.Sockets;
 using System.Threading.Channels;
 using DotNet.Testcontainers.Builders;
 using Headless.Messaging;
@@ -422,22 +420,25 @@ public sealed class NatsReplyTransportTests(NatsFixture fixture) : TestBase
 }
 
 /// <summary>
-/// A NATS server of one test's own, on a fixed host port: a restart keeps the address clients already know, so they
-/// reconnect to the restarted server rather than lose it. It is never reused, so a restarted server stays this test's.
+/// A NATS server of one test's own behind a <see cref="BrokerPortForwarder"/>: a restart keeps the address clients
+/// already know, so they reconnect to the restarted server rather than lose it. It is never reused, so a restarted
+/// server stays this test's.
 /// </summary>
 internal sealed class RestartableNatsServer : IAsyncDisposable
 {
-    private readonly int _port;
     private readonly NatsContainer _container;
+    private readonly BrokerPortForwarder _forwarder;
 
     public RestartableNatsServer()
     {
-        _port = _ReserveFreePort();
-        _container = new NatsBuilder(TestImages.Nats).WithPortBinding(_port, NatsBuilder.NatsClientPort).Build();
+        _container = new NatsBuilder(TestImages.Nats)
+            .WithPortBinding(NatsBuilder.NatsClientPort, assignRandomHostPort: true)
+            .Build();
+        _forwarder = new BrokerPortForwarder(() => _container, NatsBuilder.NatsClientPort);
     }
 
     /// <summary>The server's address, known before it starts, so a client can be pointed at a server that is down.</summary>
-    public string ConnectionString => $"nats://{_container.Hostname}:{_port}";
+    public string ConnectionString => $"nats://{_forwarder.Address}";
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
@@ -450,15 +451,15 @@ internal sealed class RestartableNatsServer : IAsyncDisposable
         await _container.StartAsync(cancellationToken);
     }
 
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
-        return _container.DisposeAsync();
-    }
-
-    private static int _ReserveFreePort()
-    {
-        using var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        return ((IPEndPoint)listener.LocalEndpoint).Port;
+        try
+        {
+            await _container.DisposeAsync();
+        }
+        finally
+        {
+            await _forwarder.DisposeAsync();
+        }
     }
 }

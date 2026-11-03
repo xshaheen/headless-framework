@@ -1,11 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Globalization;
-using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using Headless.Messaging;
 using Headless.Messaging.Kafka;
-using Headless.Testing.Testcontainers;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Tests.Toxiproxy;
@@ -21,12 +19,7 @@ namespace Tests;
 internal sealed class ProxiedKafkaContainer : IAsyncDisposable
 {
     private const int _ProxiedPort = 9092;
-    private const int _InterBrokerPort = 9093;
-    private const int _ControllerPort = 9094;
     private const int _DirectPort = 9095;
-
-    // Any fixed base64 UUID; a KRaft log is formatted once for the cluster it names, and this broker never outlives its test.
-    private const string _ClusterId = "4L6g3nShT-eMCtK--X86sw";
 
     private readonly IContainer _container;
     private readonly KafkaProducerProvider _directProducers;
@@ -54,50 +47,32 @@ internal sealed class ProxiedKafkaContainer : IAsyncDisposable
     public string DirectBootstrap { get; }
 
     /// <summary>
-    /// Creates the route on <paramref name="toxiproxy"/>, then starts a broker that advertises it. The route is created
-    /// first because the broker must know the proxy's host port before it starts, and Toxiproxy dials its upstream only
-    /// when a client connects.
+    /// Starts a broker, then creates the route on <paramref name="toxiproxy"/> to the host port Docker published for it,
+    /// and only then lets the broker come up advertising the route. Toxiproxy dials its upstream only when a client
+    /// connects, and the broker reads its advertised addresses only once they are written, so no host port is chosen
+    /// before Docker binds it.
     /// </summary>
     public static async Task<ProxiedKafkaContainer> StartAsync(
         ToxiproxyServer toxiproxy,
         CancellationToken cancellationToken
     )
     {
-        var proxiedHostPort = BrokerHostPort.Reserve();
-        var directHostPort = BrokerHostPort.Reserve();
-        var proxy = await toxiproxy.CreateProxyAsync("kafka", proxiedHostPort, cancellationToken);
-        var host = proxy.Host;
-        var directBootstrap = $"{host}:{directHostPort.ToString(CultureInfo.InvariantCulture)}";
+        ToxiproxyProxy? proxy = null;
+        string? directBootstrap = null;
 
-        var container = new ContainerBuilder(TestImages.Kafka)
-            .WithPortBinding(proxiedHostPort, _ProxiedPort)
-            .WithPortBinding(directHostPort, _DirectPort)
-            .WithEnvironment("CLUSTER_ID", _ClusterId)
-            .WithEnvironment("KAFKA_NODE_ID", "1")
-            .WithEnvironment("KAFKA_PROCESS_ROLES", "broker,controller")
-            .WithEnvironment("KAFKA_CONTROLLER_QUORUM_VOTERS", $"1@localhost:{_ControllerPort}")
-            .WithEnvironment("KAFKA_CONTROLLER_LISTENER_NAMES", "CONTROLLER")
-            .WithEnvironment("KAFKA_INTER_BROKER_LISTENER_NAME", "BROKER")
-            .WithEnvironment(
-                "KAFKA_LISTENERS",
-                $"PLAINTEXT://0.0.0.0:{_ProxiedPort},BROKER://0.0.0.0:{_InterBrokerPort},"
-                    + $"CONTROLLER://0.0.0.0:{_ControllerPort},DIRECT://0.0.0.0:{_DirectPort}"
+        var container = SingleNodeKafka
+            .CreateBuilder(
+                [("PLAINTEXT", _ProxiedPort), ("DIRECT", _DirectPort)],
+                async (started, token) =>
+                {
+                    proxy = await toxiproxy.CreateProxyAsync("kafka", started.GetMappedPublicPort(_ProxiedPort), token);
+                    directBootstrap =
+                        $"{started.Hostname}:{started.GetMappedPublicPort(_DirectPort).ToString(CultureInfo.InvariantCulture)}";
+
+                    return $"PLAINTEXT://{proxy.Host}:{proxy.Port.ToString(CultureInfo.InvariantCulture)},"
+                        + $"DIRECT://{directBootstrap}";
+                }
             )
-            .WithEnvironment(
-                "KAFKA_ADVERTISED_LISTENERS",
-                $"PLAINTEXT://{host}:{proxy.Port.ToString(CultureInfo.InvariantCulture)},"
-                    + $"BROKER://localhost:{_InterBrokerPort},DIRECT://{directBootstrap}"
-            )
-            .WithEnvironment(
-                "KAFKA_LISTENER_SECURITY_PROTOCOL_MAP",
-                "PLAINTEXT:PLAINTEXT,BROKER:PLAINTEXT,CONTROLLER:PLAINTEXT,DIRECT:PLAINTEXT"
-            )
-            .WithEnvironment("KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR", "1")
-            .WithEnvironment("KAFKA_OFFSETS_TOPIC_NUM_PARTITIONS", "1")
-            .WithEnvironment("KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR", "1")
-            .WithEnvironment("KAFKA_TRANSACTION_STATE_LOG_MIN_ISR", "1")
-            .WithEnvironment("KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS", "0")
-            .WithWaitStrategy(Wait.ForUnixContainer().UntilMessageIsLogged("Kafka Server started"))
             .Build();
 
         try
@@ -110,7 +85,8 @@ internal sealed class ProxiedKafkaContainer : IAsyncDisposable
             throw;
         }
 
-        return new ProxiedKafkaContainer(container, proxy, directBootstrap);
+        // The startup callback set both before the broker's wait strategy let StartAsync return.
+        return new ProxiedKafkaContainer(container, proxy!, directBootstrap!);
     }
 
     /// <summary>Publishes over the listener that does not go through the route.</summary>
