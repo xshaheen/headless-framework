@@ -584,7 +584,8 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
 
         try
         {
-            JsonSerializer.Deserialize(jsonRequest, functionTypeContext.Item2, _dashboardOptions.DashboardJsonOptions);
+            // The job binds its payload with the request options, so only they can say whether it matches the type.
+            JsonSerializer.Deserialize(jsonRequest, functionTypeContext.Item2, _serializationOptions.SerializerOptions);
             return (jsonRequest, 1);
         }
 #pragma warning disable ERP022 // Unobserved exception in generic exception handler

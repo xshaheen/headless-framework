@@ -11,6 +11,9 @@ namespace Headless.Jobs.Endpoints;
 
 internal static class DashboardEndpoints
 {
+    /// <summary>The header every state-changing dashboard API request must carry.</summary>
+    internal const string RequestedWithHeader = "X-Requested-With";
+
     internal static void MapDashboardEndpoints<TTimeJob, TCronJob>(
         this IEndpointRouteBuilder endpoints,
         DashboardOptionsBuilder config
@@ -43,7 +46,8 @@ internal static class DashboardEndpoints
             .MapGroup("/api")
             .WithTags("Jobs Dashboard")
             .RequireCors("HeadlessJobsDashboardCORS")
-            .ExcludeFromDescription();
+            .ExcludeFromDescription()
+            .AddEndpointFilter(_RequireRequestedWithOnStateChange);
 
         // Apply authentication if configured
         if (config.Auth.Mode == AuthMode.Host)
@@ -394,7 +398,12 @@ internal static class DashboardEndpoints
 
         if (chainRoot is not null && !string.IsNullOrEmpty(timeZoneId))
         {
-            _ConvertChainTimesToUtc(chainRoot, TimeZoneInfo.FindSystemTimeZoneById(timeZoneId));
+            if (!TimeZoneInfo.TryFindSystemTimeZoneById(timeZoneId, out var timeZone))
+            {
+                return _UnknownTimeZone();
+            }
+
+            _ConvertChainTimesToUtc(chainRoot, timeZone);
         }
 
         // AddAsync returns the persisted entity and throws on failure; the dashboard reports it as success/failure data.
@@ -474,7 +483,11 @@ internal static class DashboardEndpoints
 
         if (timeJob.ExecutionTime is { } executionTime && !string.IsNullOrEmpty(timeZoneId))
         {
-            var tz = TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
+            if (!TimeZoneInfo.TryFindSystemTimeZoneById(timeZoneId, out var tz))
+            {
+                return _UnknownTimeZone();
+            }
+
             var unspecified = DateTime.SpecifyKind(executionTime, DateTimeKind.Unspecified);
             var utc = TimeZoneInfo.ConvertTimeToUtc(unspecified, tz);
             timeJob.ExecutionTime = DateTime.SpecifyKind(utc, DateTimeKind.Utc);
@@ -960,6 +973,36 @@ internal static class DashboardEndpoints
     internal static bool IsValidBatchSize(int count)
     {
         return count is >= 0 and <= DashboardOptionsBuilder.MaxBatchDeleteIds;
+    }
+
+    private static IResult _UnknownTimeZone()
+    {
+        return Results.BadRequest("timeZoneId is not a time zone this host knows.");
+    }
+
+    // A browser attaches the host's cookie to a cross-site <form> post, so under cookie host authentication another
+    // site could otherwise stop the scheduler or requeue and delete jobs. A form cannot set a request header, and a
+    // cross-origin script that sets one needs a CORS preflight the dashboard policy refuses, so the header limits
+    // state changes to the dashboard SPA, its only client. Reads need no header: they change nothing.
+    private static ValueTask<object?> _RequireRequestedWithOnStateChange(
+        EndpointFilterInvocationContext invocationContext,
+        EndpointFilterDelegate next
+    )
+    {
+        var request = invocationContext.HttpContext.Request;
+        var isRead =
+            HttpMethods.IsGet(request.Method)
+            || HttpMethods.IsHead(request.Method)
+            || HttpMethods.IsOptions(request.Method);
+
+        if (isRead || request.Headers.ContainsKey(RequestedWithHeader))
+        {
+            return next(invocationContext);
+        }
+
+        return ValueTask.FromResult<object?>(
+            Results.BadRequest($"State-changing dashboard requests must carry the {RequestedWithHeader} header.")
+        );
     }
 
     private static IResult? _GetPaginationError(int pageNumber, int pageSize)

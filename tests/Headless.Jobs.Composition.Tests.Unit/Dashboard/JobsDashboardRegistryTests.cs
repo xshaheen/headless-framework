@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Text.Json.Serialization;
 using Headless;
 using Headless.Jobs;
 using Headless.Jobs.Infrastructure.Dashboard;
@@ -239,6 +240,47 @@ public sealed class JobsDashboardRegistryTests : TestBase
         }
     }
 
+    [Fact]
+    public async Task should_validate_stored_requests_with_the_request_json_options_the_job_binds_with()
+    {
+        // The stored payload is written, and bound by the job, with the request options; a converter registered only
+        // there must count when the dashboard reports whether the payload matches the request type.
+        var serialization = new JobsRequestSerializationOptions
+        {
+            SerializerOptions = new JsonSerializerOptions { Converters = { new JsonStringEnumConverter() } },
+        };
+        var registry = JobFunctionRegistryBuilder.Build(
+            [],
+            [
+                new KeyValuePair<string, (string, Type)>(
+                    _FunctionName,
+                    (typeof(ColoredRequest).FullName!, typeof(ColoredRequest))
+                ),
+            ],
+            []
+        );
+        var (repository, persistence, _, serviceProvider) = _CreateRepository(registry, serialization: serialization);
+        using (serviceProvider)
+        {
+            var jobId = Guid.NewGuid();
+            persistence
+                .GetTimeJobByIdAsync(jobId, AbortToken)
+                .Returns(
+                    new TimeJobEntity
+                    {
+                        Id = jobId,
+                        Function = _FunctionName,
+                        Request = JobsHelper.CreateJobRequest(new ColoredRequest(RequestColor.Blue), serialization),
+                    }
+                );
+
+            var (json, validationState) = await repository.GetJobRequestByIdAsync(jobId, JobType.TimeJob, AbortToken);
+
+            json.Should().Contain("\"Blue\"");
+            validationState.Should().Be(1);
+        }
+    }
+
     private static JobFunctionRegistration _Registration() =>
         new()
         {
@@ -287,6 +329,14 @@ public sealed class JobsDashboardRegistryTests : TestBase
     }
 
     private sealed record DashboardRequest(string Value);
+
+    private enum RequestColor
+    {
+        Red,
+        Blue,
+    }
+
+    private sealed record ColoredRequest(RequestColor Color);
 
     private sealed class ExampleRequest
     {

@@ -144,14 +144,7 @@ public sealed class DashboardEndpointMetadataTests : TestBase
         manager
             .AddAsync(Arg.Any<TimeJobEntity>(), Arg.Any<CancellationToken>())
             .Returns(call => Task.FromResult(call.Arg<TimeJobEntity>()));
-        var body = System.Text.Encoding.UTF8.GetBytes("""{"function":"sandbox.quiet"}""");
-        var context = new DefaultHttpContext { RequestServices = app.Services };
-        context.Request.Method = HttpMethods.Post;
-        context.Request.QueryString = new QueryString(query);
-        context.Request.ContentType = "application/json";
-        context.Request.ContentLength = body.Length;
-        context.Request.Body = new MemoryStream(body);
-        context.Response.Body = new MemoryStream();
+        var context = _Request(app, HttpMethods.Post, query, """{"function":"sandbox.quiet"}""");
 
         await _GetEndpoint(app, "CreateChainJobs").RequestDelegate!(context);
 
@@ -178,20 +171,12 @@ public sealed class DashboardEndpointMetadataTests : TestBase
             .AddAsync(Arg.Any<TimeJobEntity>(), Arg.Any<CancellationToken>())
             .Returns(call => Task.FromResult(added = call.Arg<TimeJobEntity>()));
         // Asia/Tokyo has no daylight saving time, so +09:00 holds for any date.
-        var body = System.Text.Encoding.UTF8.GetBytes(
-            """
+        const string body = """
             {"function":"root","executionTime":"2026-03-01T09:00:00","children":[
               {"function":"child","executionTime":"2026-03-01T10:00:00","runCondition":0,"children":[
                 {"function":"grandchild","executionTime":"2026-03-01T11:00:00Z","runCondition":0}]}]}
-            """
-        );
-        var context = new DefaultHttpContext { RequestServices = app.Services };
-        context.Request.Method = HttpMethods.Post;
-        context.Request.QueryString = new QueryString("?timeZoneId=Asia/Tokyo");
-        context.Request.ContentType = "application/json";
-        context.Request.ContentLength = body.Length;
-        context.Request.Body = new MemoryStream(body);
-        context.Response.Body = new MemoryStream();
+            """;
+        var context = _Request(app, HttpMethods.Post, "?timeZoneId=Asia/Tokyo", body);
 
         await _GetEndpoint(app, "CreateChainJobs").RequestDelegate!(context);
 
@@ -200,6 +185,141 @@ public sealed class DashboardEndpointMetadataTests : TestBase
         var child = added.Children.Single();
         child.ExecutionTime.Should().Be(new DateTime(2026, 3, 1, 1, 0, 0, DateTimeKind.Utc));
         child.Children.Single().ExecutionTime.Should().Be(new DateTime(2026, 3, 1, 11, 0, 0, DateTimeKind.Utc));
+    }
+
+    [Theory]
+    [InlineData("StopJobHost", "")]
+    [InlineData("StartJobHost", "")]
+    [InlineData("RestartJobHost", "")]
+    [InlineData("CancelJob", "?id=6f9619ff-8b86-d011-b42d-00cf4fc964ff")]
+    [InlineData("RequeueJob", "?id=6f9619ff-8b86-d011-b42d-00cf4fc964ff")]
+    [InlineData("RequeueCronJobOccurrence", "?id=6f9619ff-8b86-d011-b42d-00cf4fc964ff")]
+    [InlineData("_RunCronJobOnDemand", "?id=6f9619ff-8b86-d011-b42d-00cf4fc964ff")]
+    [InlineData("DeleteTimeJob", "?id=6f9619ff-8b86-d011-b42d-00cf4fc964ff")]
+    public async Task should_refuse_a_state_changing_request_without_the_dashboard_request_header(
+        string endpointName,
+        string query
+    )
+    {
+        // A cross-site <form> posts with the host's cookie but cannot set a request header.
+        await using var app = _CreateApp(new DashboardOptionsBuilder().WithHostAuthentication());
+        var endpoint = (RouteEndpoint)_GetEndpoint(app, endpointName);
+        var method = endpoint.Metadata.GetMetadata<IHttpMethodMetadata>()!.HttpMethods.Single();
+        var context = _Request(app, method, query, body: null, forgeryHeader: false);
+
+        await endpoint.RequestDelegate!(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        app.Services.GetRequiredService<IJobsHostScheduler>().ReceivedCalls().Should().BeEmpty();
+        app.Services.GetRequiredService<IJobScheduler>().ReceivedCalls().Should().BeEmpty();
+        app.Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>().ReceivedCalls().Should().BeEmpty();
+        app.Services.GetRequiredService<IJobsDashboardRepository<TimeJobEntity, CronJobEntity>>()
+            .ReceivedCalls()
+            .Should()
+            .BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_run_a_state_changing_request_that_carries_the_dashboard_request_header()
+    {
+        await using var app = _CreateApp(new DashboardOptionsBuilder().WithHostAuthentication());
+        var context = _Request(app, HttpMethods.Post, query: "", body: null);
+
+        await _GetEndpoint(app, "StopJobHost").RequestDelegate!(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        await app.Services.GetRequiredService<IJobsHostScheduler>().Received(1).StopAsync();
+    }
+
+    [Fact]
+    public async Task should_serve_a_read_without_the_dashboard_request_header()
+    {
+        await using var app = _CreateApp(new DashboardOptionsBuilder().WithHostAuthentication());
+        var context = _Request(app, HttpMethods.Get, query: "", body: null, forgeryHeader: false);
+
+        await _GetEndpoint(app, "GetOptions").RequestDelegate!(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+    }
+
+    [Fact]
+    public async Task should_refuse_a_json_body_sent_as_a_form_content_type()
+    {
+        // A cross-site <form enctype="text/plain"> can shape its body into valid JSON.
+        await using var app = _CreateApp(new DashboardOptionsBuilder().WithNoAuth());
+        var manager = app.Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
+        var context = _Request(
+            app,
+            HttpMethods.Post,
+            query: "",
+            """{"function":"sandbox.quiet"}""",
+            contentType: "text/plain"
+        );
+
+        await _GetEndpoint(app, "CreateChainJobs").RequestDelegate!(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status415UnsupportedMediaType);
+        manager.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("CreateChainJobs")]
+    [InlineData("UpdateTimeJob")]
+    public async Task should_reject_an_unknown_time_zone_with_bad_request(string endpointName)
+    {
+        // The same case-insensitive camelCase options the dashboard registration installs, so executionTime binds.
+        await using var app = _CreateApp(
+            new DashboardOptionsBuilder()
+                .WithNoAuth()
+                .ConfigureDashboardJsonOptions(json =>
+                {
+                    json.PropertyNameCaseInsensitive = true;
+                    json.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
+                })
+        );
+        var manager = app.Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
+        var endpoint = (RouteEndpoint)_GetEndpoint(app, endpointName);
+        var method = endpoint.Metadata.GetMetadata<IHttpMethodMetadata>()!.HttpMethods.Single();
+        var context = _Request(
+            app,
+            method,
+            "?id=6f9619ff-8b86-d011-b42d-00cf4fc964ff&timeZoneId=Not/AZone",
+            """{"function":"sandbox.quiet","executionTime":"2026-03-01T09:00:00"}"""
+        );
+
+        await endpoint.RequestDelegate!(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        manager.ReceivedCalls().Should().BeEmpty();
+    }
+
+    private static DefaultHttpContext _Request(
+        WebApplication app,
+        string method,
+        string query,
+        string? body,
+        string contentType = "application/json",
+        bool forgeryHeader = true
+    )
+    {
+        var context = new DefaultHttpContext { RequestServices = app.Services };
+        context.Request.Method = method;
+        context.Request.QueryString = new QueryString(query);
+        if (forgeryHeader)
+        {
+            context.Request.Headers["X-Requested-With"] = "XMLHttpRequest";
+        }
+
+        if (body is not null)
+        {
+            var bytes = System.Text.Encoding.UTF8.GetBytes(body);
+            context.Request.ContentType = contentType;
+            context.Request.ContentLength = bytes.Length;
+            context.Request.Body = new MemoryStream(bytes);
+        }
+
+        context.Response.Body = new MemoryStream();
+        return context;
     }
 
     private static WebApplication _CreateApp(DashboardOptionsBuilder config)
