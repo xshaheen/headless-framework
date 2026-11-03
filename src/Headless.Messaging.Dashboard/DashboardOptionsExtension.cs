@@ -56,7 +56,10 @@ internal sealed class DashboardOptionsExtension(Action<MessagingDashboardOptions
         // can resolve it: the dashboard endpoints carry RequireCors metadata and would throw at request time
         // if the CORS middleware never ran. An unconfigured policy is empty (no origins) -> same-origin only.
         services.AddCors(options =>
-            options.AddPolicy("HeadlessMessagingDashboardCORS", Builder.CorsPolicyBuilder ?? (static _ => { }))
+            options.AddPolicy(
+                MessagingDashboardEndpoints.CorsPolicyName,
+                Builder.CorsPolicyBuilder ?? (static _ => { })
+            )
         );
 
         // If using host auth, ensure auth services exist
@@ -87,8 +90,13 @@ internal sealed class MessagingDashboardStartupFilter(MessagingDashboardOptionsB
         {
             next(app);
 
-            // Use the new app.Map branching pipeline (matches Jobs pattern)
-            app.UseMessagingDashboard(config);
+            // A host that mounted the dashboard on its own endpoints (MapHeadlessMessagingDashboard) has already mapped
+            // it by now: WebApplication maps endpoints before it builds the pipeline, and a Startup class maps them
+            // inside next(app).
+            if (!config.EndpointMounted)
+            {
+                app.UseMessagingDashboard(config);
+            }
         };
     }
 }

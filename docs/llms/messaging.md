@@ -2313,7 +2313,7 @@ Read [dashboards.md](dashboards.md) for the shared authentication modes and prod
 
 - **Real-Time Monitoring**: Live message throughput and latency metrics
 - **Message Explorer**: Search, filter, and inspect messages
-- **Hidden from application API documents**: every dashboard endpoint is excluded from API Explorer (`ExcludeFromDescription()`), because the dashboard runs in an `app.Map(basePath)` branch and a host's OpenAPI document would list its routes without the base path. The dashboard SPA is their only client.
+- **Hidden from application API documents**: every dashboard endpoint is excluded from API Explorer (`ExcludeFromDescription()`), because the dashboard SPA is their only client, and under the default `app.Map(basePath)` branch mount a host's OpenAPI document would list its routes without the base path.
 - **Failure Management**: View and retry failed messages
 - **Node Discovery**: Multi-instance cluster visibility through async `INodeDiscoveryProvider` operations with optional trailing cancellation tokens; implementations propagate caller-requested cancellation instead of converting it to an empty or not-found result
 - **Provider Capabilities**: The protected metadata endpoint and responsive footer dialog show every registered provider role. Transport cards report delivery lanes and topology, storage cards report delivery lanes and delayed scheduling, and coordination cards report cluster coordination without exposing physical resource names or credentials
@@ -2353,6 +2353,40 @@ builder.Services.AddHeadlessMessaging(setup =>
 });
 ```
 
+#### Mount on the host's endpoints
+
+By default the dashboard runs in an `app.Map(basePath)` branch that a startup filter appends after the host pipeline. The host's `UseRouting` and `UseAuthorization` find no endpoint there, so a host `FallbackPolicy` decides every dashboard request: under `WithHostAuthentication(policy)` the fallback, not the dashboard policy, refuses the browser's credential-less load of the SPA shell, and an operator who meets the dashboard policy but not a host-wide requirement (such as a tenant claim) is refused.
+
+Call `MapHeadlessMessagingDashboard()` to mount the dashboard on the host's endpoint routing instead. Calling it is the opt-in: the startup filter then adds no branch.
+
+```csharp
+builder.Services.AddHeadlessMessaging(setup =>
+{
+    // ... transport + storage registration ...
+    setup.UseDashboard(dashboard => dashboard.WithHostAuthentication("MessagingOperators"));
+});
+
+var app = builder.Build();
+app.UseAuthentication();
+app.UseAuthorization();
+app.MapHeadlessMessagingDashboard();
+```
+
+| Request | Branch mount (default) | `MapHeadlessMessagingDashboard()` |
+| --- | --- | --- |
+| SPA shell, deep links, static assets | Anonymous to the dashboard, but the host's fallback policy is never consulted | Endpoints marked `AllowAnonymous`; the host fallback does not apply. The shell carries only the base path, auth mode, session timeout, and polling interval |
+| `/api/auth/info`, `/api/auth/validate`, `/api/health` | Anonymous | `AllowAnonymous` |
+| Other `{basePath}/api/*`, host auth | `RequireAuthorization(policy)` inside the branch | `RequireAuthorization(policy)`, or the default policy when none is named, evaluated by the host's `UseAuthorization` |
+| Other `{basePath}/api/*`, Basic, API key, custom | `AuthMiddleware` in the branch | `AllowAnonymous` to the host, with an endpoint filter that checks the dashboard's own credential and returns 401; the dashboard owns access, as in the branch |
+| Other `{basePath}/api/*`, `WithNoAuth()` | Open | `AllowAnonymous` |
+| Unmatched `{basePath}/api/*` | 401 without the dashboard credential, otherwise the shell | 404, never the shell |
+
+Requirements and limits of the endpoint mount:
+
+- The host pipeline must run `UseAuthentication()` and `UseAuthorization()` for host authentication. It must run `UseCors()` only when `SetCorsOrigins(...)` or `SetCorsPolicy(...)` is configured: the dashboard attaches its CORS policy to its endpoints only then.
+- `PreDashboardMiddleware`, `CustomMiddleware`, and `PostDashboardMiddleware` configure the branch and have no place in the host pipeline, so `MapHeadlessMessagingDashboard()` throws `InvalidOperationException` when any is set. Apply endpoint conventions to the builder it returns instead, such as `.RequireHost(...)`.
+- It throws `InvalidOperationException` when `UseDashboard(...)` was not called, or on a second call.
+
 ### Configuration
 
 Configured through `MessagingDashboardOptionsBuilder` inside `UseDashboard(...)`. Authentication must be chosen explicitly — if no `WithXxx` auth method (including `WithNoAuth()`) is called, the host fails to start. No CORS policy is applied by default (same-origin only); use `SetCorsOrigins(...)` for the cross-origin SPA case.
@@ -2371,7 +2405,7 @@ Configured through `MessagingDashboardOptionsBuilder` inside `UseDashboard(...)`
 
 ### Runtime behavior
 
-Mounts the embedded web UI and monitoring API through an `IStartupFilter` (no explicit middleware call required), and registers the dashboard services. The dashboard package ships no discovery backend; node discovery comes from [Headless.Messaging.Dashboard.Consul](#headlessmessagingdashboardconsul) or [Headless.Messaging.Dashboard.K8s](#headlessmessagingdashboardk8s).
+Mounts the embedded web UI and monitoring API through an `IStartupFilter` (no explicit middleware call required), unless the host called `MapHeadlessMessagingDashboard()`, and registers the dashboard services. The dashboard package ships no discovery backend; node discovery comes from [Headless.Messaging.Dashboard.Consul](#headlessmessagingdashboardconsul) or [Headless.Messaging.Dashboard.K8s](#headlessmessagingdashboardk8s).
 
 Node lookups (30s), node counts (60s, 20s on discovery failure) and the metrics history (10m) are memoized in `MessagingDashboardCache`, a dashboard-owned in-process cache registered by `UseDashboard(...)` and injected into `ConsulNodeDiscoveryProvider` / `K8sNodeDiscoveryProvider`. The dashboard deliberately does not call `AddMemoryCache()`: registering the shared `IMemoryCache` from a framework package would put dashboard entries in the host's cache, where they compete for its size limit and are evictable by its compaction, purely as a side effect of adding a diagnostics UI. It is also not a `Headless.Caching` `ICache` — `AddHeadlessCaching` accepts exactly one call per service collection, so a registration here would throw for every consumer that configures caching themselves, or force the caching package on consumers who only wanted the dashboard. These values are per-node discovery results and metrics snapshots that must never leave the process, so a private in-process cache is the correct scope; this is the one sanctioned exception to the "do not use `IMemoryCache` directly" rule in [index.md](index.md).
 

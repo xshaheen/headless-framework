@@ -32,6 +32,10 @@ public sealed class MessagingDashboardOptionsBuilder
     // (see Validate) when this is false, so it cannot ship publicly by omission.
     internal bool AuthConfigured { get; private set; }
 
+    // Set by MapHeadlessMessagingDashboard. The startup filter reads it when the host pipeline is built, after the
+    // host has mapped its endpoints, and skips the app.Map branch so the dashboard is not mounted twice.
+    internal bool EndpointMounted { get; set; }
+
     // Custom Middleware Integration
 
     /// <summary>

@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace Headless.Dashboard.Authentication;
@@ -56,49 +54,14 @@ public sealed class AuthMiddleware(RequestDelegate next, string authenticationNa
             return;
         }
 
-        // Resolve this dashboard's auth service from the request scope
-        var authService = context.RequestServices.GetRequiredKeyedService<IAuthService>(authenticationName);
-
-        // Authenticate the request
-        var authResult = await authService.AuthenticateAsync(context, context.RequestAborted);
-
-        if (!authResult.IsAuthenticated)
+        if (!await DashboardRequestAuthentication.TryAuthenticateAsync(context, authenticationName, logger))
         {
-            // Log path only (no query string) — access_token may be in query params.
-            // CR/LF stripped so user-controlled path can't inject forged log entries.
-            var safePath = _SanitizeForLog(context.Request.Path.Value);
-            logger.LogAuthenticationFailed(safePath, authResult.ErrorMessage);
             context.Response.StatusCode = 401;
             await context.Response.WriteAsync("Unauthorized");
             return;
         }
 
-        // Set user information for downstream middleware
-        context.Items[UsernameKey] = authResult.Username;
-        context.Items[AuthenticatedKey] = true;
-        if (context.User.Identity?.IsAuthenticated != true)
-        {
-            context.User = new ClaimsPrincipal(
-                new ClaimsIdentity(
-                    [new Claim(ClaimTypes.Name, authResult.Username!)],
-                    authenticationType: nameof(AuthMiddleware)
-                )
-            );
-        }
-
         await next(context);
-    }
-
-    private static string _SanitizeForLog(string? value)
-    {
-        if (string.IsNullOrEmpty(value))
-        {
-            return string.Empty;
-        }
-
-        return value
-            .Replace("\r", string.Empty, StringComparison.Ordinal)
-            .Replace("\n", string.Empty, StringComparison.Ordinal);
     }
 
     private static bool _IsAnonymousAuthEndpoint(string path)
@@ -106,15 +69,4 @@ public sealed class AuthMiddleware(RequestDelegate next, string authenticationNa
         return string.Equals(path, "/api/auth/validate", StringComparison.OrdinalIgnoreCase)
             || string.Equals(path, "/api/auth/info", StringComparison.OrdinalIgnoreCase);
     }
-}
-
-internal static partial class AuthMiddlewareLog
-{
-    [LoggerMessage(
-        EventId = 1,
-        EventName = "AuthenticationFailed",
-        Level = LogLevel.Warning,
-        Message = "Authentication failed for {Path}: {Error}"
-    )]
-    internal static partial void LogAuthenticationFailed(this ILogger logger, string path, string? error);
 }
