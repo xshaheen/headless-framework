@@ -133,6 +133,25 @@ public sealed class EfPermissionGrantRepositoryUnitOfWorkTests : TestBase
     }
 
     [Fact]
+    public async Task should_write_the_replacement_status_to_the_cache_when_a_save_flips_a_grant()
+    {
+        // given
+        await using var owner = await _CreateOwnerAsync();
+        var grant = _Grant("Users.Create");
+        var denial = new PermissionGrantRecord(Guid.NewGuid(), "Users.Create", "Role", "admin", isGranted: false);
+        var key = PermissionGrantCacheItem.CalculateCacheKey("Users.Create", "Role", "admin");
+        await Repository.InsertAsync(grant, AbortToken);
+        var written = _RecordCacheWrites(key);
+
+        // when the grant is replaced by a denial in one save
+        await Repository.SaveAsync([denial], [grant], AbortToken);
+
+        // then the entry holds the denial; it is not removed, so a reader that loaded the grant cannot fill it back
+        written.Should().Equal(false);
+        await _cache.DidNotReceive().RemoveAllAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task should_mark_an_observed_unit_not_replayable_and_commit_with_the_callers_transaction()
     {
         // given a transaction the caller commits itself
