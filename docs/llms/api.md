@@ -692,6 +692,7 @@ Surface filtering runs before schema generation and is independent of API Explor
 - Registers no field-encryption or blind-index service and requires no `Headless:Encryption` configuration.
 - Registers all core primitives from `Headless.Api` including problem details, response compression, status-code rewriting, and default API conventions.
 - Registers no JWT, Identity, or authentication-scheme services; add `Headless.Api.Identity` or ASP.NET Core's own schemes and call their registration methods.
+- Registers `ICurrentUser` (`HttpCurrentUser`, reading `user_id`, `account_id`, `account_type`, and `role` claims from the request principal), replacing only the framework fallback `NullCurrentUser` that EF Core and relational audit-log storage register, in either call order; a consumer-registered `ICurrentUser` is kept.
 - Registers a fallback `IUserAgentParser` that identifies nothing (`TryAddSingleton`); `AddHeadlessUserAgentParser()` from `Headless.Api.UserAgent` replaces it in either call order.
 - Registers antiforgery services only when `options.Antiforgery.Enabled` is `true`.
 - Configures MVC and Minimal API JSON serializer defaults.
@@ -906,6 +907,7 @@ builder.Services
 ### Runtime behavior
 
 - `AddHeadless()` registers none of these services. `AddHeadlessLookupNormalizer()` removes any earlier `ILookupNormalizer` registration, so it wins whether it runs before or after `AddIdentityCore`.
+- `AddApiKey()` and `AddBasicSchema()` set `IdentityOptions.ClaimsIdentity.UserIdClaimType` to `user_id` (`UserClaimTypes.UserId`) and `RoleClaimType` to `role` (`UserClaimTypes.Roles`), so the principal Identity builds for a Basic or API-key caller carries the user id and roles `ICurrentUser` reads (idempotency scoping, permission grants, audit actor). They replace only Identity's defaults (`ClaimTypes.NameIdentifier`, `ClaimTypes.Role`); a claim type the application set explicitly is kept in either registration order, and then `ICurrentUser` does not see that claim. The setting is global to Identity, so cookie sign-ins through the same `SignInManager` carry the same claim types.
 - `AddApiKey()` and `AddBasicSchema()` replace `IAuthenticationSchemeProvider` with `DynamicAuthenticationSchemeProvider` and register `IHttpContextAccessor`, which it reads. A host that uses only a bearer scheme keeps ASP.NET Core's provider and selects the scheme through `AddAuthentication(defaultScheme)`.
 
 ---

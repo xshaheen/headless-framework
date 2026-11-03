@@ -50,6 +50,10 @@ internal sealed class RedisStreamManager(
     // An entry is dropped when the server answers NOGROUP, which is how a deleted stream or group shows up.
     private readonly ConcurrentDictionary<(string Stream, string Group), byte> _ensuredGroups = new();
 
+    // Whether each published-to stream has a consumer group. A stream with one keeps it for good (the transport never
+    // deletes a group), so that answer is cached for good; a stream without one is checked again later.
+    private readonly ConcurrentDictionary<string, StreamGroupCheck> _streamGroups = new(StringComparer.Ordinal);
+
     private readonly RedisMessagingOptions _options = options.Value;
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private IConnectionMultiplexer? _redis;
@@ -83,7 +87,12 @@ internal sealed class RedisStreamManager(
         var redis = _redis!;
 
         //The object returned from GetDatabase is a cheap pass - thru object, and does not need to be stored
-        await redis.GetDatabase().StreamAddAsync(stream, message, _CreateAddOptions()).ConfigureAwait(false);
+        var database = redis.GetDatabase();
+        var maxAge = await _HasConsumerGroupAsync(database, stream, cancellationToken).ConfigureAwait(false)
+            ? _options.StreamMaxAge
+            : _options.EveryInstanceStreamMaxAge;
+
+        await database.StreamAddAsync(stream, message, _CreateAddOptions(maxAge)).ConfigureAwait(false);
 
         if (_options.WakeConsumersOnPublish)
         {
@@ -641,9 +650,58 @@ internal sealed class RedisStreamManager(
         );
     }
 
-    private StreamAddOptions _CreateAddOptions()
+    // Only a consumer group reads an entry after the publish that added it has long passed: a group-less every-instance
+    // reader starts at the tail it found on subscribe, and a group starts at the entries added after its creation. So a
+    // stream with no group needs its entries only until the live every-instance readers have polled past them.
+    private async ValueTask<bool> _HasConsumerGroupAsync(
+        IDatabase database,
+        string stream,
+        CancellationToken cancellationToken
+    )
     {
-        if (_options.StreamMaxAge <= TimeSpan.Zero)
+        var now = _timeProvider.GetTimestamp();
+
+        // Rechecked at half the every-instance age: a group created since the last check reads only entries added after
+        // its creation, which are younger than that age, so the short trim in between never reaches them.
+        if (
+            _streamGroups.TryGetValue(stream, out var known)
+            && (
+                known.HasGroup
+                || _timeProvider.GetElapsedTime(known.CheckedAt, now) < _options.EveryInstanceStreamMaxAge / 2
+            )
+        )
+        {
+            return known.HasGroup;
+        }
+
+        bool hasGroup;
+
+        try
+        {
+            var groups = await database.StreamGroupInfoAsync(stream).WaitAsync(cancellationToken).ConfigureAwait(false);
+            hasGroup = groups.Length > 0;
+        }
+        catch (RedisServerException ex) when (ex.GetRedisErrorType() == RedisErrorTypes.NoGroupInfoExists)
+        {
+            // XINFO answers an absent stream with an error; the XADD that follows creates it without a group.
+            hasGroup = false;
+        }
+        catch (RedisServerException ex)
+        {
+            // A server that refuses XINFO, such as under an ACL without it, keeps the long retention: trimming a stream
+            // whose groups are unknown could drop entries a group has yet to read.
+            logger.LogStreamGroupCheckFailed(ex, stream);
+            hasGroup = true;
+        }
+
+        _streamGroups[stream] = new StreamGroupCheck(hasGroup, now);
+
+        return hasGroup;
+    }
+
+    private StreamAddOptions _CreateAddOptions(TimeSpan maxAge)
+    {
+        if (maxAge <= TimeSpan.Zero)
         {
             return default;
         }
@@ -652,7 +710,7 @@ internal sealed class RedisStreamManager(
         // "~" lets Redis trim whole internal nodes only, which keeps the trim cheap and only ever keeps entries longer.
         var minIdMilliseconds = Math.Max(
             0,
-            _timeProvider.GetUtcNow().ToUnixTimeMilliseconds() - _ToRedisMilliseconds(_options.StreamMaxAge)
+            _timeProvider.GetUtcNow().ToUnixTimeMilliseconds() - _ToRedisMilliseconds(maxAge)
         );
 
         return new StreamAddOptions
@@ -688,6 +746,8 @@ internal sealed class RedisStreamManager(
     {
         _redis = await connectionsPool.ConnectAsync(cancellationToken).ConfigureAwait(false);
     }
+
+    private readonly record struct StreamGroupCheck(bool HasGroup, long CheckedAt);
 }
 
 internal static partial class RedisStreamManagerLog
@@ -744,6 +804,14 @@ internal static partial class RedisStreamManagerLog
         Message = "Redis error when announcing a new entry on stream {Stream}; its consumers read it at their next poll"
     )]
     internal static partial void LogWakePublishFailed(this ILogger logger, Exception exception, string stream);
+
+    [LoggerMessage(
+        EventId = 8,
+        EventName = "StreamGroupCheckFailed",
+        Level = LogLevel.Warning,
+        Message = "Redis refused to list the consumer groups of stream {Stream}; it keeps entries for StreamMaxAge"
+    )]
+    internal static partial void LogStreamGroupCheckFailed(this ILogger logger, Exception exception, string stream);
 
     [LoggerMessage(
         EventId = 5,

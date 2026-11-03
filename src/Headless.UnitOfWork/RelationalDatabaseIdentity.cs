@@ -71,6 +71,69 @@ public static class RelationalDatabaseIdentity
     }
 
     /// <summary>
+    /// Returns whether the connection <paramref name="createConfigured" /> builds from <paramref name="configuration" />
+    /// reaches the same database as <paramref name="candidate" />, the unit's connection, and remembers a match on
+    /// <paramref name="unitOfWork" /> so later calls for the same configuration and connection in that unit return it
+    /// without building a connection or comparing again.
+    /// </summary>
+    /// <remarks>
+    /// A participant checks the same unit on every enlisted call, and both sides are fixed for the unit's life: the
+    /// configured side by the participant's configuration, the candidate by the unit. <paramref name="configuration" />
+    /// is the cache key, compared by reference, so it must build the same connection for as long as the unit lives;
+    /// pass the participant's long-lived store or options object. A unit that is no longer active is checked without
+    /// the cache.
+    /// </remarks>
+    /// <typeparam name="TConfiguration">The participant's configuration holder.</typeparam>
+    /// <param name="unitOfWork">The unit whose connection is checked.</param>
+    /// <param name="configuration">The participant's configuration, which is also the cache key.</param>
+    /// <param name="createConfigured">Builds the configured connection on a cache miss; it is never opened here.</param>
+    /// <param name="candidate">The unit of work's live connection.</param>
+    /// <returns><see langword="true" /> when both name the same database.</returns>
+    /// <exception cref="ArgumentNullException">An argument is <see langword="null" />.</exception>
+    public static bool IsSameDatabase<TConfiguration>(
+        IUnitOfWork unitOfWork,
+        TConfiguration configuration,
+        Func<TConfiguration, DbConnection> createConfigured,
+        DbConnection candidate
+    )
+        where TConfiguration : class
+    {
+        Argument.IsNotNull(unitOfWork);
+        Argument.IsNotNull(configuration);
+        Argument.IsNotNull(createConfigured);
+        Argument.IsNotNull(candidate);
+
+        // IUnitOfWork is a public interface, so an implementation that keeps no unit-local state can hand back null
+        // despite the annotation; such a unit is checked without the cache, like one that is no longer active.
+        var verdicts =
+            unitOfWork.State == UnitOfWorkState.Active
+                ? unitOfWork.GetOrAdd(static _ => new RelationalDatabaseVerdicts())
+                : null;
+
+        if (verdicts is null)
+        {
+            using var uncached = createConfigured(configuration);
+
+            return IsSameDatabase(uncached, candidate);
+        }
+
+        if (verdicts.Contains(configuration, candidate))
+        {
+            return true;
+        }
+
+        using var configured = createConfigured(configuration);
+        if (!IsSameDatabase(configured, candidate))
+        {
+            return false;
+        }
+
+        verdicts.Add(configuration, candidate);
+
+        return true;
+    }
+
+    /// <summary>
     /// The normalized data sources <paramref name="connection" /> can reach: its own <see cref="DbConnection.DataSource" />,
     /// or, when the provider reports none because the connection lists several hosts, one entry per listed host.
     /// </summary>

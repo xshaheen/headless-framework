@@ -752,10 +752,33 @@
           "OpenTelemetry.Instrumentation.Runtime": "[1.20.0, )"
         }
       },
+      "headless.auditlog": {
+        "type": "Project",
+        "dependencies": {
+          "FluentValidation": "[12.2.0, )",
+          "Headless.AuditLog.Abstractions": "[1.0.0, )",
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Context": "[1.0.0, )",
+          "Headless.Context.Abstractions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
+          "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
+          "Headless.Serializer.Json": "[1.0.0, )",
+          "Headless.Sql.Abstractions": "[1.0.0, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.13, )",
+          "Microsoft.Extensions.Options": "[10.0.13, )"
+        }
+      },
       "headless.auditlog.abstractions": {
         "type": "Project",
         "dependencies": {
           "Headless.Extensions": "[1.0.0, )"
+        }
+      },
+      "headless.auditlog.storage.postgresql": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.AuditLog": "[1.0.0, )",
+          "Headless.Sql.PostgreSql": "[1.0.0, )"
         }
       },
       "headless.caching": {
@@ -811,6 +834,52 @@
           "Headless.Checks": "[1.0.0, )",
           "Headless.UnitOfWork.Abstractions": "[1.0.0, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.13, )"
+        }
+      },
+      "headless.domain": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )"
+        }
+      },
+      "headless.domain.eventdispatcher": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Domain": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.13, )"
+        }
+      },
+      "headless.entityframework": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.AuditLog.Abstractions": "[1.0.0, )",
+          "Headless.Context": "[1.0.0, )",
+          "Headless.Context.Abstractions": "[1.0.0, )",
+          "Headless.Domain": "[1.0.0, )",
+          "Headless.Domain.EventDispatcher": "[1.0.0, )",
+          "Headless.EntityFramework.Primitives": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
+          "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
+          "Headless.UnitOfWork.EntityFramework": "[1.0.0, )",
+          "Microsoft.EntityFrameworkCore": "[10.0.13, )",
+          "Microsoft.EntityFrameworkCore.Relational": "[10.0.13, )",
+          "Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore": "[10.0.13, )"
+        }
+      },
+      "headless.entityframework.primitives": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.AuditLog.Abstractions": "[1.0.0, )",
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Domain": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Generator.Primitives.Abstractions": "[1.0.0, )",
+          "Headless.Primitives": "[1.0.0, )",
+          "Headless.Serializer.Json": "[1.0.0, )",
+          "Microsoft.EntityFrameworkCore": "[10.0.13, )",
+          "Microsoft.EntityFrameworkCore.Relational": "[10.0.13, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.13, )"
         }
       },
       "headless.extensions": {
@@ -915,6 +984,33 @@
           "Headless.Serializer.Abstractions": "[1.0.0, )"
         }
       },
+      "headless.sql": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Sql.Abstractions": "[1.0.0, )",
+          "Headless.UnitOfWork": "[1.0.0, )",
+          "Nito.AsyncEx": "[5.1.2, )",
+          "OpenTelemetry.Api": "[1.20.1, )"
+        }
+      },
+      "headless.sql.abstractions": {
+        "type": "Project"
+      },
+      "headless.sql.postgresql": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
+          "Headless.Sql": "[1.0.0, )",
+          "Headless.Sql.Abstractions": "[1.0.0, )",
+          "Headless.UnitOfWork": "[1.0.0, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.13, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.13, )",
+          "Npgsql": "[10.0.3, )"
+        }
+      },
       "headless.testing": {
         "type": "Project",
         "dependencies": {
@@ -931,10 +1027,31 @@
           "xunit.v3.extensibility.core": "[4.0.2, )"
         }
       },
+      "headless.unitofwork": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.UnitOfWork.Abstractions": "[1.0.0, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.13, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.13, )",
+          "Microsoft.Extensions.Options": "[10.0.13, )",
+          "Polly.Core": "[8.8.0, )"
+        }
+      },
       "headless.unitofwork.abstractions": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )"
+        }
+      },
+      "headless.unitofwork.entityframework": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.UnitOfWork": "[1.0.0, )",
+          "Microsoft.EntityFrameworkCore.Relational": "[10.0.13, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.13, )"
         }
       },
       "Asp.Versioning.Abstractions": {
@@ -1007,6 +1124,18 @@
           "Microsoft.OpenApi": "[2.12.2, 3.0.0)"
         }
       },
+      "Microsoft.EntityFrameworkCore.Relational": {
+        "type": "CentralTransitive",
+        "requested": "[10.0.13, )",
+        "resolved": "10.0.13",
+        "contentHash": "QU/sbTtDR5wVAJRVecC1GwM7mwH8bvKOZNm+lulzMr5rhjdb8DDEFIqqdhF08JIo51DPv5uQdZ1nXoZsD5pTag==",
+        "dependencies": {
+          "Microsoft.EntityFrameworkCore": "10.0.13",
+          "Microsoft.Extensions.Caching.Memory": "10.0.13",
+          "Microsoft.Extensions.Configuration.Abstractions": "10.0.13",
+          "Microsoft.Extensions.Logging": "10.0.13"
+        }
+      },
       "Microsoft.Extensions.Caching.Abstractions": {
         "type": "CentralTransitive",
         "requested": "[10.0.13, )",
@@ -1074,6 +1203,17 @@
           "Microsoft.Extensions.Hosting.Abstractions": "10.0.13",
           "Microsoft.Extensions.Logging.Abstractions": "10.0.13",
           "Microsoft.Extensions.Options": "10.0.13"
+        }
+      },
+      "Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore": {
+        "type": "CentralTransitive",
+        "requested": "[10.0.13, )",
+        "resolved": "10.0.13",
+        "contentHash": "si/fOXt1NXt0pyhwVBNDuN2RYF1SVOf8WEtbOp2BUabs2yjdxsgx6FOJ9bXYSUztIbBdDNa5h5Ocf/R7FuGHGg==",
+        "dependencies": {
+          "Microsoft.EntityFrameworkCore.Relational": "10.0.13",
+          "Microsoft.Extensions.Diagnostics.HealthChecks": "10.0.13",
+          "Microsoft.Extensions.Diagnostics.HealthChecks.Abstractions": "10.0.13"
         }
       },
       "Microsoft.Extensions.Hosting": {
@@ -1275,6 +1415,15 @@
         "requested": "[2.5.0, )",
         "resolved": "2.5.0",
         "contentHash": "l0OuzZ2T/botMbOvPGY6yp3v+69aMrt+wzST/tFdGnHEFVXbbdOFxu3bfo9XH1N1H0LCQlA3RmFvlPO8zA+faw=="
+      },
+      "Npgsql": {
+        "type": "CentralTransitive",
+        "requested": "[10.0.3, )",
+        "resolved": "10.0.3",
+        "contentHash": "7nb5YzXuvWWJxB0J8DiyL3we+X4FOctZrt0fIBnucOIaIevFEEwGQVZKtiu9olXdlNAK1eNgqSral6r/jlhI4w==",
+        "dependencies": {
+          "Microsoft.Extensions.Logging.Abstractions": "10.0.0"
+        }
       },
       "OpenMcdf": {
         "type": "CentralTransitive",

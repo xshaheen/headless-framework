@@ -179,7 +179,9 @@ public static class SetupApi
 
             builder.Services.TryAddSingleton<ICurrentLocale, CurrentCultureCurrentLocale>();
             builder.Services.TryAddSingleton<ICurrentPrincipalAccessor, HttpContextCurrentPrincipalAccessor>();
-            builder.Services.TryAddSingleton<ICurrentUser, HttpCurrentUser>();
+            // EF and relational audit-log storage register NullCurrentUser as a fallback for hosts without HTTP; a
+            // web host replaces it here whichever ran first, and a consumer-supplied ICurrentUser is kept.
+            builder.Services.AddOrReplaceFallbackSingleton<ICurrentUser, NullCurrentUser, HttpCurrentUser>();
             builder.Services.TryAddSingleton<ICurrentTimeZone, LocalCurrentTimeZone>();
             builder.Services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
             // Removes NullCurrentTenant fallback; preserves consumer-supplied ICurrentTenant.

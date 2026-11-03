@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.UnitOfWork.Internal;
+
 namespace Headless.Idempotency.InMemory;
 
 /// <summary>
