@@ -1171,6 +1171,73 @@ public sealed class DistributedLockTests : TestBase
     }
 
     [Fact]
+    public async Task should_not_publish_lock_released_when_a_try_once_lease_skips_the_wake_up()
+    {
+        // given
+        var provider = _CreateProvider();
+        var resource = Faker.Random.AlphaNumeric(10);
+        var acquiredLock = await provider.TryAcquireAsync(
+            resource,
+            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero, NotifyWaitersOnRelease = false },
+            AbortToken
+        );
+        acquiredLock.Should().NotBeNull();
+
+        // when
+        await acquiredLock!.DisposeAsync();
+
+        // then
+        (await provider.IsLockedAsync(resource, AbortToken))
+            .Should()
+            .BeFalse();
+        await _bus.DidNotReceiveWithAnyArgs()
+            .PublishAsync(Arg.Any<DistributedLockReleased>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_publish_lock_released_when_a_try_once_lease_keeps_the_default_wake_up()
+    {
+        // given
+        var provider = _CreateProvider();
+        var resource = Faker.Random.AlphaNumeric(10);
+        var acquiredLock = await provider.TryAcquireAsync(
+            resource,
+            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero },
+            AbortToken
+        );
+        acquiredLock.Should().NotBeNull();
+
+        // when
+        await acquiredLock!.DisposeAsync();
+
+        // then
+        await _bus.Received(1)
+            .PublishAsync(
+                Arg.Is<DistributedLockReleased>(m => m.Resource == resource),
+                Arg.Any<PublishOptions?>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_reject_skipping_the_wake_up_when_the_acquirer_waits()
+    {
+        // given
+        var provider = _CreateProvider();
+        var options = new DistributedLockAcquireOptions
+        {
+            AcquireTimeout = TimeSpan.FromSeconds(1),
+            NotifyWaitersOnRelease = false,
+        };
+
+        // when
+        var act = async () => await provider.TryAcquireAsync(Faker.Random.AlphaNumeric(10), options, AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*NotifyWaitersOnRelease*");
+    }
+
+    [Fact]
     public async Task should_release_without_publishing_when_bus_is_absent()
     {
         // given

@@ -56,6 +56,54 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
     }
 
     [Fact]
+    public async Task should_not_publish_the_release_wake_up_when_a_try_once_lease_skips_it()
+    {
+        // given
+        var provider = _CreateProvider();
+        var handle = await provider.TryAcquireAsync(
+            Faker.Random.AlphaNumeric(10),
+            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero, NotifyWaitersOnRelease = false },
+            AbortToken
+        );
+        handle.Should().NotBeNull();
+
+        // when
+        await handle!.DisposeAsync();
+
+        // then
+        _releaseSignal.PublishCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_publish_the_release_wake_up_by_default()
+    {
+        // given
+        var provider = _CreateProvider();
+        var handle = await provider.TryAcquireAsync(Faker.Random.AlphaNumeric(10), cancellationToken: AbortToken);
+        handle.Should().NotBeNull();
+
+        // when
+        await handle!.DisposeAsync();
+
+        // then
+        _releaseSignal.PublishCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_reject_skipping_the_release_wake_up_when_the_acquirer_waits()
+    {
+        // given
+        var provider = _CreateProvider();
+        var options = new DistributedLockAcquireOptions { NotifyWaitersOnRelease = false };
+
+        // when
+        var act = async () => await provider.TryAcquireAsync(Faker.Random.AlphaNumeric(10), options, AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*NotifyWaitersOnRelease*");
+    }
+
+    [Fact]
     public async Task should_issue_guid_formatted_lease_id()
     {
         var provider = _CreateProvider();

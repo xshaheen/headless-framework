@@ -231,4 +231,119 @@ public sealed class DeadOwnerRecoveryBridgeTests : TestBase
             yield break;
         }
     }
+
+    [Fact]
+    public async Task should_reconcile_from_the_heartbeat_snapshot_when_it_is_within_one_beat()
+    {
+        // given
+        var store = new FakeMembershipStore();
+        var timeProvider = new FakeTimeProvider();
+        using var membership = _CreateMembershipService(store, timeProvider);
+        var (bridge, reclaimer) = _CreateBridge(membership, timeProvider);
+        store.EnqueueSnapshot(_Dead("node-a", 5));
+        await membership.GetLivenessSnapshotAsync(AbortToken); // the heartbeat's read
+
+        // when
+        await bridge.ReconcileOnceAsync(AbortToken);
+
+        // then
+        store.ReadLivenessCalls.Should().Be(1);
+        await reclaimer.Received(1).ReclaimAsync(_Batch(_DefaultClusterTag("node-a", 5)), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_read_the_store_when_the_heartbeat_snapshot_is_older_than_one_beat()
+    {
+        // given (the reconcile interval is a minute, so only the beat bounds the reuse)
+        var store = new FakeMembershipStore();
+        var timeProvider = new FakeTimeProvider();
+        using var membership = _CreateMembershipService(store, timeProvider);
+        var (bridge, reclaimer) = _CreateBridge(membership, timeProvider);
+        store.EnqueueSnapshot();
+        await membership.GetLivenessSnapshotAsync(AbortToken);
+        store.EnqueueSnapshot(_Dead("node-b", 2));
+        timeProvider.Advance(new CoordinationOptions().HeartbeatInterval + TimeSpan.FromMilliseconds(1));
+
+        // when
+        await bridge.ReconcileOnceAsync(AbortToken);
+
+        // then
+        store.ReadLivenessCalls.Should().Be(2);
+        await reclaimer.Received(1).ReclaimAsync(_Batch(_DefaultClusterTag("node-b", 2)), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_read_the_store_instead_of_reusing_the_same_heartbeat_read_twice_when_the_clock_does_not_move()
+    {
+        // given (a frozen clock keeps the cached read inside its age bound forever)
+        var store = new FakeMembershipStore();
+        var timeProvider = new FakeTimeProvider();
+        using var membership = _CreateMembershipService(store, timeProvider);
+        var (bridge, reclaimer) = _CreateBridge(membership, timeProvider);
+        store.EnqueueSnapshot(_Dead("node-a", 5));
+        await membership.GetLivenessSnapshotAsync(AbortToken); // the heartbeat's read
+        await bridge.ReconcileOnceAsync(AbortToken); // decides from that read
+        store.EnqueueSnapshot(_Dead("node-a", 5), _Dead("node-b", 2)); // node-b dies after it
+
+        // when
+        await bridge.ReconcileOnceAsync(AbortToken);
+
+        // then
+        store.ReadLivenessCalls.Should().Be(2);
+        await reclaimer.Received(1).ReclaimAsync(_Batch(_DefaultClusterTag("node-b", 2)), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_read_the_store_when_no_snapshot_was_read_yet()
+    {
+        // given
+        var store = new FakeMembershipStore();
+        var timeProvider = new FakeTimeProvider();
+        using var membership = _CreateMembershipService(store, timeProvider);
+        var (bridge, _) = _CreateBridge(membership, timeProvider);
+
+        // when
+        await bridge.ReconcileOnceAsync(AbortToken);
+
+        // then
+        store.ReadLivenessCalls.Should().Be(1);
+    }
+
+    // The real MembershipService tags owners with its configured cluster, so expectations format them the same way.
+    private static string _DefaultClusterTag(string node, long incarnation)
+    {
+        return NodeOwnerTag.Format(CoordinationOptions.DefaultClusterName, _Identity(node, incarnation));
+    }
+
+    private static MembershipService _CreateMembershipService(FakeMembershipStore store, TimeProvider timeProvider)
+    {
+        var nodeIdProvider = Substitute.For<INodeIdProvider>();
+
+        return new MembershipService(
+            store,
+            nodeIdProvider,
+            new CoordinationOptions(),
+            new MembershipEventSource(NullLogger<MembershipEventSource>.Instance),
+            timeProvider,
+            hostApplicationLifetime: null,
+            NullLogger<MembershipService>.Instance
+        );
+    }
+
+    private static (DeadOwnerRecoveryBridge<IDeadOwnerReclaimer> Bridge, IDeadOwnerReclaimer Reclaimer) _CreateBridge(
+        MembershipService membership,
+        TimeProvider timeProvider
+    )
+    {
+        var reclaimer = Substitute.For<IDeadOwnerReclaimer>();
+        reclaimer.ReconcileInterval.Returns(TimeSpan.FromMinutes(1));
+        var bridge = new DeadOwnerRecoveryBridge<IDeadOwnerReclaimer>(
+            membership,
+            reclaimer,
+            timeProvider,
+            NullLogger<DeadOwnerRecoveryBridge<IDeadOwnerReclaimer>>.Instance
+        );
+
+        return (bridge, reclaimer);
+    }
 }

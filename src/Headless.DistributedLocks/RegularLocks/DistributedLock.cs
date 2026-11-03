@@ -166,6 +166,7 @@ public sealed class DistributedLock(
         Argument.IsLessThanOrEqualTo(resource.Length, _maxResourceNameLength, paramName: nameof(resource));
         options ??= new DistributedLockAcquireOptions();
         DistributedLockCoreHelpers.ValidateAcquireTimeout(options.AcquireTimeout);
+        DistributedLockCoreHelpers.ValidateReleaseNotification(options);
         cancellationToken.ThrowIfCancellationRequested();
 
         var timeUntilExpires = DistributedLockCoreHelpers.NormalizeTimeUntilExpires(
@@ -203,6 +204,7 @@ public sealed class DistributedLock(
                     monitorLease,
                     autoExtend,
                     leaseDuration,
+                    options.NotifyWaitersOnRelease,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -353,7 +355,8 @@ public sealed class DistributedLock(
             acquireTimestamp,
             releaseOnDispose,
             monitorLease,
-            autoExtend
+            autoExtend,
+            notifyWaitersOnRelease: true
         );
     }
 
@@ -366,6 +369,7 @@ public sealed class DistributedLock(
         bool monitorLease,
         bool autoExtend,
         TimeSpan leaseDuration,
+        bool notifyWaitersOnRelease,
         CancellationToken callerToken
     )
     {
@@ -452,7 +456,8 @@ public sealed class DistributedLock(
             acquireTimestamp,
             releaseOnDispose,
             monitorLease,
-            autoExtend
+            autoExtend,
+            notifyWaitersOnRelease
         );
     }
 
@@ -465,7 +470,8 @@ public sealed class DistributedLock(
         long acquireTimestamp,
         bool releaseOnDispose,
         bool monitorLease,
-        bool autoExtend
+        bool autoExtend,
+        bool notifyWaitersOnRelease
     )
     {
         var handle = new DisposableDistributedLock(
@@ -481,7 +487,8 @@ public sealed class DistributedLock(
             lockOptions,
             timeProvider,
             _DeregisterMonitor,
-            logger
+            logger,
+            notifyWaitersOnRelease
         );
 
         if (!monitorLease)
@@ -619,7 +626,17 @@ public sealed class DistributedLock(
     /// </remarks>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="resource"/> or <paramref name="leaseId"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when <paramref name="resource"/> or <paramref name="leaseId"/> is empty or whitespace.</exception>
-    public async Task ReleaseAsync(string resource, string leaseId, CancellationToken cancellationToken = default)
+    public Task ReleaseAsync(string resource, string leaseId, CancellationToken cancellationToken = default)
+    {
+        return ReleaseCoreAsync(resource, leaseId, notifyWaiters: true);
+    }
+
+    /// <summary>
+    /// Releases the lease, sending the release wake-up only when <paramref name="notifyWaiters"/> is
+    /// <see langword="true"/>. A handle acquired with <see cref="DistributedLockAcquireOptions.NotifyWaitersOnRelease"/>
+    /// off passes <see langword="false"/>, so a try-once resource nobody waits on sends no broadcast.
+    /// </summary>
+    internal async Task ReleaseCoreAsync(string resource, string leaseId, bool notifyWaiters)
     {
         Argument.IsNotNullOrWhiteSpace(resource);
         Argument.IsNotNullOrWhiteSpace(leaseId);
@@ -701,7 +718,7 @@ public sealed class DistributedLock(
 
         // Only publish if we actually removed the lock.
         // Publish notifies waiters immediately; if skipped, waiters retry via backoff.
-        if (removed && _bus is not null)
+        if (removed && notifyWaiters && _bus is not null)
         {
             DistributedLockCoreHelpers.PublishReleaseSignal(_bus, logger, resource, leaseId);
         }

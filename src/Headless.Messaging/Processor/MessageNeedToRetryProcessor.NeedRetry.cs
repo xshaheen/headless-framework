@@ -383,6 +383,9 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
                         TimeUntilExpires = state.CurrentInterval,
                         AcquireTimeout = TimeSpan.Zero,
                         Monitoring = LockMonitoringMode.AutoExtend,
+                        // Every acquirer of a retry lock tries once per tick and never waits, so a release
+                        // wake-up (a broadcast every instance receives) could never wake anyone.
+                        NotifyWaitersOnRelease = false,
                     },
                     context.CancellationToken
                 )

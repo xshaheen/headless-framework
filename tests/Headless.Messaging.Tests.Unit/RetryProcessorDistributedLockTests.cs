@@ -208,7 +208,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
     }
 
     [Fact]
-    public async Task should_request_auto_extend_when_acquiring_retry_locks()
+    public async Task should_request_auto_extend_without_release_wake_up_when_acquiring_retry_locks()
     {
         var captured = new ConcurrentBag<(string Resource, DistributedLockAcquireOptions Options)>();
         var fakeLock = Substitute.For<IDistributedLease>();
@@ -276,6 +276,8 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
                     call.Options.Monitoring == LockMonitoringMode.AutoExtend
                     && call.Options.AcquireTimeout == TimeSpan.Zero
                     && call.Options.TimeUntilExpires == processor.CurrentPollingInterval
+                    // No acquirer of a retry lock ever waits, so a release broadcast could wake nobody.
+                    && !call.Options.NotifyWaitersOnRelease
                 );
             return Task.CompletedTask;
         });

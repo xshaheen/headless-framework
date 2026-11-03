@@ -31,6 +31,10 @@ internal sealed class DeadOwnerRecoveryBridge<TReclaimer>(
     private readonly Lock _gate = new();
     private readonly HashSet<string> _reclaimed = new(StringComparer.Ordinal);
 
+    // Registered-clock instant the data behind the previous reconcile was current as of; a reused heartbeat read must
+    // have started after it, so no reconcile decides twice from one read.
+    private long _lastDecisionDataAt = long.MinValue;
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         await Task.WhenAll(_WatchLoopAsync(stoppingToken), _ReconcileLoopAsync(stoppingToken)).ConfigureAwait(false);
@@ -107,22 +111,30 @@ internal sealed class DeadOwnerRecoveryBridge<TReclaimer>(
     /// </summary>
     internal async Task ReconcileOnceAsync(CancellationToken cancellationToken)
     {
-        // Bound the snapshot read so a hung membership store cannot block the reconcile loop indefinitely; on
-        // timeout the read fails with OCE, the loop logs DeadNodeReconcileFailed, and the next tick retries. The
-        // bound is the reconcile interval, but never under a floor: a sub-second interval would otherwise fail every
-        // read that a busy database answers in more than one tick, and no reconcile would ever see a dead node. The
-        // bound is an I/O timeout, so it runs on the system clock; only the reconcile cadence follows the registered
-        // clock.
-        var interval = reclaimer.ReconcileInterval;
-        var timeout = interval > _MinimumSnapshotReadTimeout ? interval : _MinimumSnapshotReadTimeout;
-        using var timeoutCts = interval > TimeSpan.Zero ? new CancellationTokenSource(timeout) : null;
-        using var linkedCts = timeoutCts is null
-            ? null
-            : CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+        // The heartbeat reads this same snapshot every beat; reuse it while it is no older than one beat (and one
+        // reconcile interval) and newer than the data the previous reconcile used, and read the store otherwise
+        // (heartbeat stalled, failing, or not read since).
+        IReadOnlyList<NodeLivenessSnapshot> snapshot;
 
-        var snapshot = await membership
-            .GetLivenessSnapshotAsync(linkedCts?.Token ?? cancellationToken)
-            .ConfigureAwait(false);
+        if (
+            membership is MembershipService service
+            && service.TryGetRecentLivenessSnapshot(
+                reclaimer.ReconcileInterval,
+                _lastDecisionDataAt,
+                out var recent,
+                out var recentStartedAt
+            )
+        )
+        {
+            snapshot = recent;
+            _lastDecisionDataAt = recentStartedAt;
+        }
+        else
+        {
+            snapshot = await _ReadLivenessSnapshotAsync(cancellationToken).ConfigureAwait(false);
+            // Stamped after the read returns: only a read that starts later can hold newer data than this one.
+            _lastDecisionDataAt = timeProvider.GetTimestamp();
+        }
 
         var deadOwners = new HashSet<string>(StringComparer.Ordinal);
 
@@ -142,6 +154,26 @@ internal sealed class DeadOwnerRecoveryBridge<TReclaimer>(
 
         // Reclaim the whole dead set in one batch — the consumer collapses it into a single conditional write.
         await _TryReclaimAsync(deadOwners).ConfigureAwait(false);
+    }
+
+    private async Task<IReadOnlyList<NodeLivenessSnapshot>> _ReadLivenessSnapshotAsync(
+        CancellationToken cancellationToken
+    )
+    {
+        // Bound the snapshot read so a hung membership store cannot block the reconcile loop indefinitely; on
+        // timeout the read fails with OCE, the loop logs DeadNodeReconcileFailed, and the next tick retries. The
+        // bound is the reconcile interval, but never under a floor: a sub-second interval would otherwise fail every
+        // read that a busy database answers in more than one tick, and no reconcile would ever see a dead node. The
+        // bound is an I/O timeout, so it runs on the system clock; only the reconcile cadence follows the registered
+        // clock.
+        var interval = reclaimer.ReconcileInterval;
+        var timeout = interval > _MinimumSnapshotReadTimeout ? interval : _MinimumSnapshotReadTimeout;
+        using var timeoutCts = interval > TimeSpan.Zero ? new CancellationTokenSource(timeout) : null;
+        using var linkedCts = timeoutCts is null
+            ? null
+            : CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+
+        return await membership.GetLivenessSnapshotAsync(linkedCts?.Token ?? cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

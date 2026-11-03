@@ -16,7 +16,7 @@ namespace Headless.DistributedLocks.PostgreSql;
 /// <para>
 /// When <see cref="PostgreSqlDistributedLockOptions.EnablePushWakeup"/> is <see langword="true"/>, a
 /// background <see cref="Task"/> runs a persistent <c>LISTEN</c> loop on a dedicated connection from the
-/// shared <see cref="NpgsqlDataSource"/>. Release notifications sent via <see cref="PublishAsync"/> call
+/// shared lock connection source. Release notifications sent via <see cref="PublishAsync"/> call
 /// <c>pg_notify</c> on the <c>headless_distributed_locks_release</c> channel. Each arriving notification
 /// fans out to local waiters through the wrapped <see cref="PollingReleaseSignal"/>.
 /// </para>
@@ -35,7 +35,7 @@ internal sealed class PostgresReleaseSignal : IReleaseSignal, IAsyncDisposable
     private const string _Channel = "headless_distributed_locks_release";
     private readonly PollingReleaseSignal _local;
     private readonly ILogger<PostgresReleaseSignal> _logger;
-    private readonly NpgsqlDataSource _dataSource;
+    private readonly PostgresLockDataSource _dataSource;
     private readonly CancellationTokenSource _disposeTokenSource = new();
     private readonly Task? _listenerTask;
     private readonly int _commandTimeoutSeconds;
@@ -47,8 +47,8 @@ internal sealed class PostgresReleaseSignal : IReleaseSignal, IAsyncDisposable
     /// </summary>
     /// <param name="options">Provider options supplying command timeout and push-wakeup toggle.</param>
     /// <param name="dataSource">
-    /// The provider's own data source owner, never the application's unkeyed <see cref="NpgsqlDataSource"/>. Not
-    /// disposed here.
+    /// The provider's lock connection source injected by the DI registration, never the application's unkeyed
+    /// <see cref="NpgsqlDataSource"/> itself. Not disposed here.
     /// </param>
     /// <param name="timeProvider">
     /// The app clock, which paces the local polling fallback alongside the waiter's acquire timeout. The reconnect
@@ -67,7 +67,7 @@ internal sealed class PostgresReleaseSignal : IReleaseSignal, IAsyncDisposable
         _local = new PollingReleaseSignal(timeProvider);
         _commandTimeoutSeconds = (int)Options.CommandTimeout.TotalSeconds;
         // The data source is shared and owned by the DI registration; it is never disposed here.
-        _dataSource = dataSource.DataSource;
+        _dataSource = dataSource;
 
         if (Options.EnablePushWakeup)
         {
@@ -123,7 +123,7 @@ internal sealed class PostgresReleaseSignal : IReleaseSignal, IAsyncDisposable
 
     /// <summary>
     /// Cancels and awaits the background LISTEN loop (suppressing any faulted/cancelled exception), then
-    /// disposes the cancellation token source. The shared <see cref="NpgsqlDataSource"/> is not disposed.
+    /// disposes the cancellation token source. The shared connection source is not disposed.
     /// </summary>
     public async ValueTask DisposeAsync()
     {

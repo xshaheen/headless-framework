@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -36,6 +37,10 @@ internal sealed class MembershipService(
     // reference: a reader never sees an identity paired with another incarnation's anchor, and every transition
     // (renew, fail-stop, leave) is a compare-and-swap against the exact lease it observed.
     private volatile MembershipLease? _lease;
+
+    // The latest snapshot any caller read (the heartbeat reads one every beat), kept so the dead-owner bridges can
+    // reconcile from it instead of each repeating the same store read.
+    private volatile LivenessRead? _lastLivenessRead;
 
     public string ClusterName => options.ClusterName;
 
@@ -297,8 +302,76 @@ internal sealed class MembershipService(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        // Stamp before the read, so the recorded age never understates how old the data can be.
+        var readStartedAt = timeProvider.GetTimestamp();
+
         // The store SPI returns snapshots already sorted by identity; no service-side re-sort is needed.
-        return await store.ReadLivenessAsync(cancellationToken).ConfigureAwait(false);
+        var snapshot = await store.ReadLivenessAsync(cancellationToken).ConfigureAwait(false);
+
+        _RecordLivenessRead(new LivenessRead(snapshot, readStartedAt));
+
+        return snapshot;
+    }
+
+    /// <summary>
+    /// Returns the latest liveness snapshot read through this service when that read started after
+    /// <paramref name="startedAfter"/> and no longer ago than <paramref name="maxAge"/> and one
+    /// <see cref="CoordinationOptions.HeartbeatInterval"/>, whichever is shorter.
+    /// </summary>
+    /// <remarks>
+    /// A healthy heartbeat refreshes it every beat, so a caller polling slower than the beat reads no store at all.
+    /// A stalled or failing heartbeat lets it age out, and the caller then reads the store itself. Requiring a read
+    /// newer than <paramref name="startedAfter"/> (the caller's previous decision) means a caller never decides twice
+    /// from the same read: on a clock that does not move, the age check alone would let one read be reused forever.
+    /// </remarks>
+    /// <param name="maxAge">The caller's own bound on the read's age.</param>
+    /// <param name="startedAfter">A registered-clock timestamp the read must have started strictly after.</param>
+    /// <param name="snapshot">The reusable snapshot.</param>
+    /// <param name="startedAt">When the returned read started, for the caller's next <paramref name="startedAfter"/>.</param>
+    internal bool TryGetRecentLivenessSnapshot(
+        TimeSpan maxAge,
+        long startedAfter,
+        [NotNullWhen(true)] out IReadOnlyList<NodeLivenessSnapshot>? snapshot,
+        out long startedAt
+    )
+    {
+        var limit = maxAge < options.HeartbeatInterval ? maxAge : options.HeartbeatInterval;
+
+        if (
+            _lastLivenessRead is { } read
+            && read.StartedAt > startedAfter
+            && timeProvider.GetElapsedTime(read.StartedAt) <= limit
+        )
+        {
+            snapshot = read.Snapshot;
+            startedAt = read.StartedAt;
+
+            return true;
+        }
+
+        snapshot = null;
+        startedAt = 0;
+
+        return false;
+    }
+
+    private void _RecordLivenessRead(LivenessRead read)
+    {
+        // Concurrent readers can finish out of order; keep the read that started last so an older one finishing late
+        // never replaces newer data.
+        var current = _lastLivenessRead;
+
+        while (current is null || read.StartedAt >= current.StartedAt)
+        {
+            var observed = Interlocked.CompareExchange(ref _lastLivenessRead, read, current);
+
+            if (ReferenceEquals(observed, current))
+            {
+                return;
+            }
+
+            current = observed;
+        }
     }
 
     public IAsyncEnumerable<NodeMembershipEvent> WatchAsync(CancellationToken cancellationToken = default)
@@ -437,4 +510,7 @@ internal sealed class MembershipService(
     }
 
     private sealed record MembershipLease(NodeIdentity Identity, long AnchorTimestamp);
+
+    /// <summary>A liveness snapshot and the registered-clock timestamp taken just before its read started.</summary>
+    private sealed record LivenessRead(IReadOnlyList<NodeLivenessSnapshot> Snapshot, long StartedAt);
 }
