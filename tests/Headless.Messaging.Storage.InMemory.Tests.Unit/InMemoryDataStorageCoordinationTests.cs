@@ -273,6 +273,11 @@ public sealed class InMemoryDataStorageCoordinationTests : TestBase
             return true;
         }
 
+        public bool HandOffCommittedDelayedMessage(MediumMessage message)
+        {
+            return EnqueueCommittedDelayedMessage(message);
+        }
+
         public ValueTask EnqueueToPublish(MediumMessage message, CancellationToken cancellationToken = default)
         {
             throw new InvalidOperationException("Coordinated capture must not dispatch through the transport path.");

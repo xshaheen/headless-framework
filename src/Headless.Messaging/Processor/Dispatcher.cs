@@ -247,6 +247,22 @@ internal sealed class Dispatcher
         return _schedulerQueue.TryEnqueue(message, publishTime.Ticks);
     }
 
+    bool ICommittedDelayedMessageDispatcher.HandOffCommittedDelayedMessage(MediumMessage message)
+    {
+        // A row due after the claim lookahead would hold a scheduler slot until it is due, and a scheduler full of
+        // such rows stops this host claiming any Delayed row, including ones due now. The delayed claim picks the
+        // row up once it is within the lookahead, so leaving it in storage loses no time.
+        if (
+            message.ExpiresAt is { } publishTime
+            && publishTime - _timeProvider.GetUtcNow() >= RelationalDataStorage.DelayedMessageLookahead
+        )
+        {
+            return false;
+        }
+
+        return ((ICommittedDelayedMessageDispatcher)this).EnqueueCommittedDelayedMessage(message);
+    }
+
     async ValueTask ICommittedMessageDispatcher.EnqueueCommittedMessageAsync(MediumMessage message, long waitStartedAt)
     {
         if (_IsCancellationRequested())
