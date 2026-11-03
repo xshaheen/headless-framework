@@ -23,10 +23,12 @@ public static class Slug
     /// </returns>
     /// <remarks>
     /// The method normalizes the input to NFD before processing so that diacritic marks can be stripped as
-    /// non-spacing marks. Replacement pairs in <see cref="SlugOptions.Replacements"/> are applied first (for
-    /// example, <c>&amp;</c> becomes <c> and </c>). Characters outside
+    /// non-spacing marks. Replacement pairs in <see cref="SlugOptions.Replacements"/> are applied next, before
+    /// any character is filtered (for example, <c>&amp;</c> becomes <c> and </c>); their keys are stored in NFD,
+    /// so a composed key such as <c>ä</c> matches composed and decomposed input alike. Characters outside
     /// <see cref="SlugOptions.AllowedRanges"/> are collapsed to a single separator. The result is truncated
-    /// to <see cref="SlugOptions.MaximumLength"/> characters, and trailing separators are removed unless
+    /// to at most <see cref="SlugOptions.MaximumLength"/> UTF-16 code units, one fewer when the cut would split a
+    /// surrogate pair, and trailing separators are removed unless
     /// <see cref="SlugOptions.CanEndWithSeparator"/> is <see langword="true"/>.
     /// </remarks>
     [return: NotNullIfNotNull(nameof(text))]
@@ -94,9 +96,14 @@ public static class Slug
 
         text = sb.ToString();
 
-        if (options.MaximumLength > 0 && text.Length >= options.MaximumLength)
+        if (options.MaximumLength > 0 && text.Length > options.MaximumLength)
         {
-            text = text[..options.MaximumLength];
+            // Cut on a rune boundary: a lone high surrogate is invalid UTF-16, and IsNormalized below throws on it.
+            var cut = char.IsHighSurrogate(text[options.MaximumLength - 1])
+                ? options.MaximumLength - 1
+                : options.MaximumLength;
+
+            text = text[..cut];
         }
 
         if (options is { CanEndWithSeparator: false, Separator: not null })
