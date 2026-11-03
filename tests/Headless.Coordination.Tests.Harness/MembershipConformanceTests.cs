@@ -476,45 +476,61 @@ public abstract class MembershipConformanceTests<TFixture>(TFixture fixture) : T
 
     public virtual async Task should_agree_between_targeted_read_and_snapshot()
     {
-        var cluster = _Cluster();
-        await using var node = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
-        var identity = await node.Membership.RegisterAsync(AbortToken);
-        var store = node.Services.GetRequiredService<IMembershipStore>();
-        var unregistered = new NodeIdentity(new NodeId("node-z"), new NodeIncarnation(1));
-
         // Within the retention window the targeted read must equal the snapshot's per-identity state across every
         // classification — Alive, Suspected, and Dead-but-retained — and null exactly when the identity is absent
-        // from the snapshot. Each band stays inside the retention window, so the snapshot read's prune never
-        // deletes the row and masks a divergence; advancing the store clock walks the same row through all three
-        // states. Pinning each band to its expected literal stops the agreement assertion from passing vacuously
-        // when both paths classify the same wrong state.
-
-        // Alive immediately after register, plus the absent identity.
-        var aliveSnapshot = await node.Membership.GetLivenessSnapshotAsync(AbortToken);
-        var alive = await store.ReadNodeLivenessAsync(identity, AbortToken);
-        var absent = await store.ReadNodeLivenessAsync(unregistered, AbortToken);
-
-        alive.Should().Be(aliveSnapshot.FirstOrDefault(x => x.Identity == identity)?.State);
-        alive.Should().Be(NodeLivenessState.Alive);
-        absent.Should().Be(aliveSnapshot.FirstOrDefault(x => x.Identity == unregistered)?.State);
-        absent.Should().BeNull();
-
-        // Suspected.
-        await TimeProvider.System.Delay(CoordinationFixtureExtensions.SuspectedWait, AbortToken);
-        var suspectedSnapshot = await node.Membership.GetLivenessSnapshotAsync(AbortToken);
-        var suspected = await store.ReadNodeLivenessAsync(identity, AbortToken);
-        suspected.Should().Be(suspectedSnapshot.FirstOrDefault(x => x.Identity == identity)?.State);
-        suspected.Should().Be(NodeLivenessState.Suspected);
-
-        // Dead, still inside the retention window.
-        await TimeProvider.System.Delay(
-            CoordinationFixtureExtensions.DeadButRetainedWait - CoordinationFixtureExtensions.SuspectedWait,
-            AbortToken
+        // from the snapshot. Pinning each band to its expected literal stops the agreement assertion from passing
+        // vacuously when both paths classify the same wrong state.
+        //
+        // The store classifies on the database clock, which a test cannot fake. So each band gets its own node,
+        // configured so the band's far edge sits an hour past its near edge: the test only ever waits for at least
+        // a short time to pass, and a stall of any realistic length under suite load cannot carry a row out of its
+        // band, or past the retention cutoff that would make both reads null. The short threshold keeps the test
+        // fast; each wait past it carries a 3x margin for the database clock's resolution and for a container clock
+        // whose rate differs slightly from the host's.
+        var shortThreshold = TimeSpan.FromMilliseconds(200);
+        var aliveBand = await _ReadBothAsync(
+            options =>
+            {
+                options.SuspicionThreshold = TimeSpan.FromHours(1);
+                options.DeadThreshold = TimeSpan.FromHours(2);
+                options.DeadRetentionWindow = TimeSpan.FromHours(1);
+            },
+            wait: TimeSpan.Zero
         );
-        var deadSnapshot = await node.Membership.GetLivenessSnapshotAsync(AbortToken);
-        var dead = await store.ReadNodeLivenessAsync(identity, AbortToken);
-        dead.Should().Be(deadSnapshot.FirstOrDefault(x => x.Identity == identity)?.State);
-        dead.Should().Be(NodeLivenessState.Dead);
+
+        aliveBand.Targeted.Should().Be(aliveBand.Snapshot);
+        aliveBand.Targeted.Should().Be(NodeLivenessState.Alive);
+        aliveBand.Absent.Should().Be(aliveBand.AbsentInSnapshot);
+        aliveBand.Absent.Should().BeNull();
+
+        var suspectedBand = await _ReadBothAsync(
+            options =>
+            {
+                options.HeartbeatInterval = shortThreshold / 4;
+                options.SuspicionThreshold = shortThreshold;
+                options.DeadThreshold = TimeSpan.FromHours(1);
+                options.DeadRetentionWindow = TimeSpan.FromHours(1);
+            },
+            wait: shortThreshold * 3
+        );
+
+        suspectedBand.Targeted.Should().Be(suspectedBand.Snapshot);
+        suspectedBand.Targeted.Should().Be(NodeLivenessState.Suspected);
+
+        // Dead by beat age, not by leaving, still inside the retention window.
+        var deadBand = await _ReadBothAsync(
+            options =>
+            {
+                options.HeartbeatInterval = shortThreshold / 8;
+                options.SuspicionThreshold = shortThreshold / 2;
+                options.DeadThreshold = shortThreshold;
+                options.DeadRetentionWindow = TimeSpan.FromHours(1);
+            },
+            wait: shortThreshold * 3
+        );
+
+        deadBand.Targeted.Should().Be(deadBand.Snapshot);
+        deadBand.Targeted.Should().Be(NodeLivenessState.Dead);
     }
 
     public virtual async Task should_derive_is_alive_from_targeted_read()
@@ -549,4 +565,42 @@ public abstract class MembershipConformanceTests<TFixture>(TFixture fixture) : T
     {
         return "conformance-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
     }
+
+    private async Task<BandReads> _ReadBothAsync(Action<CoordinationOptions> configure, TimeSpan wait)
+    {
+        await using var node = await fixture.CreateNodeAsync(
+            _Cluster(),
+            "node-a",
+            MembershipLostBehavior.StopMembershipOnly,
+            schema: null,
+            configure,
+            AbortToken
+        );
+        var identity = await node.Membership.RegisterAsync(AbortToken);
+        var store = node.Services.GetRequiredService<IMembershipStore>();
+        var unregistered = new NodeIdentity(new NodeId("node-z"), new NodeIncarnation(1));
+
+        if (wait > TimeSpan.Zero)
+        {
+            await TimeProvider.System.Delay(wait, AbortToken);
+        }
+
+        var snapshot = await node.Membership.GetLivenessSnapshotAsync(AbortToken);
+        var targeted = await store.ReadNodeLivenessAsync(identity, AbortToken);
+        var absent = await store.ReadNodeLivenessAsync(unregistered, AbortToken);
+
+        return new BandReads(
+            targeted,
+            snapshot.FirstOrDefault(x => x.Identity == identity)?.State,
+            absent,
+            snapshot.FirstOrDefault(x => x.Identity == unregistered)?.State
+        );
+    }
+
+    private sealed record BandReads(
+        NodeLivenessState? Targeted,
+        NodeLivenessState? Snapshot,
+        NodeLivenessState? Absent,
+        NodeLivenessState? AbsentInSnapshot
+    );
 }
