@@ -402,7 +402,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
                 Interlocked.CompareExchange(ref maxRunning, now, seen);
             }
 
-            await blockingGate.Task.WaitAsync(AbortToken);
+            await blockingGate.Task.Bounded();
             Interlocked.Decrement(ref running);
             await client.CommitAsync(sender, AbortToken);
         };
@@ -544,7 +544,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
         client.OnMessageCallback = async (_, _) =>
         {
             started.TrySetResult();
-            await release.Task;
+            await release.Task.Bounded();
         };
 
         using var cts = new CancellationTokenSource();
@@ -585,7 +585,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
         client.OnMessageCallback = async (_, _) =>
         {
             started.TrySetResult();
-            await release.Task;
+            await release.Task.Bounded();
             throw handlerFault;
         };
 
@@ -695,7 +695,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
                 }
             }
 
-            await release.Task.WaitAsync(AbortToken);
+            await release.Task.Bounded();
 
             lock (lockObj)
             {

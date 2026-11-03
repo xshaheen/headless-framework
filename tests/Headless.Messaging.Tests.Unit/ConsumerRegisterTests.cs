@@ -172,7 +172,7 @@ public sealed class ConsumerRegisterTests : TestBase
         var shutdown = (
             (ValueTask)handleType.GetMethod("DisposeAsync")!.Invoke(handle, [TimeSpan.FromSeconds(5)])!
         ).AsTask();
-        await Task.WhenAll(firstStarted.Task, secondStarted.Task).WaitAsync(AbortToken);
+        await Task.WhenAll(firstStarted.Task, secondStarted.Task).WaitAsync(AbortToken).Bounded();
 
         release.TrySetResult();
         await shutdown;
@@ -895,13 +895,13 @@ public sealed class ConsumerRegisterTests : TestBase
         await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, [client])!;
 
         var resume = _InvokeResumeAsync(register, handle, 2).AsTask();
-        await resumeEntered.Task.WaitAsync(AbortToken);
+        await resumeEntered.Task.Bounded();
         var pause = _InvokePauseAsync(register, handle, 3).AsTask();
         pause.IsCompleted.Should().BeFalse();
 
         releaseResume.TrySetResult();
-        await resume.WaitAsync(AbortToken);
-        await pause.WaitAsync(AbortToken);
+        await resume.WaitAsync(AbortToken).Bounded();
+        await pause.WaitAsync(AbortToken).Bounded();
 
         await client.Received(1).ResumeAsync(Arg.Any<CancellationToken>());
         await client.Received(1).PauseAsync(Arg.Any<CancellationToken>());
@@ -1014,14 +1014,14 @@ public sealed class ConsumerRegisterTests : TestBase
         await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, [client])!;
 
         var pause = _InvokePauseAsync(register, handle, 3).AsTask();
-        await pauseEntered.Task.WaitAsync(AbortToken);
+        await pauseEntered.Task.Bounded();
 
         var resumeTask = _InvokeResumeAsync(register, handle, 3).AsTask();
         await (ValueTask)handleType.GetMethod("DisposeAsync")!.Invoke(handle, [TimeSpan.FromSeconds(1)])!;
         releasePause.TrySetResult();
 
-        await pause.WaitAsync(AbortToken);
-        await resumeTask.WaitAsync(AbortToken);
+        await pause.WaitAsync(AbortToken).Bounded();
+        await resumeTask.WaitAsync(AbortToken).Bounded();
 
         _GetIsPaused(handleType, handle).Should().BeTrue();
         await client.DidNotReceive().ResumeAsync(Arg.Any<CancellationToken>());
@@ -3591,7 +3591,7 @@ public sealed class ConsumerRegisterTests : TestBase
 
             if (_disposalGate is not null)
             {
-                await _disposalGate.Task;
+                await _disposalGate.Task.Bounded();
             }
 
             Volatile.Write(ref _disposed, 1);

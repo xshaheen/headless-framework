@@ -56,7 +56,7 @@ public sealed class JobsTaskSchedulerTests : TestBase
             async _ =>
             {
                 running.TrySetResult();
-                await release.Task;
+                await release.Task.Bounded();
             },
             JobPriority.Normal,
             AbortToken

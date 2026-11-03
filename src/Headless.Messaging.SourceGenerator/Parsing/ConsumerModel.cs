@@ -29,6 +29,12 @@ namespace Headless.Messaging.SourceGenerator.Models;
 /// The fully qualified (<c>global::</c>) name of the declared failure policy, which the module constructs through a
 /// generated factory; null when the consumer declares none and the host default applies.
 /// </param>
+/// <param name="HasSingleActivationConstructor">
+/// Whether the class has one public constructor, or one marked <c>[ActivatorUtilitiesConstructor]</c>. Only then does a
+/// factory cached from <c>ActivatorUtilities.CreateFactory</c> pick the constructor <c>ActivatorUtilities.CreateInstance</c>
+/// would; with several candidates <c>CreateFactory</c> throws, while <c>CreateInstance</c> picks the longest one it can
+/// resolve for each call.
+/// </param>
 internal sealed record ConsumerModel(
     string TypeName,
     string DisplayName,
@@ -40,7 +46,8 @@ internal sealed record ConsumerModel(
     HandlerDisposal Disposal,
     bool HasLifecycle,
     bool HasSubscriptionHook,
-    string? FailurePolicyTypeName
+    string? FailurePolicyTypeName,
+    bool HasSingleActivationConstructor
 );
 
 /// <summary>The lane a consumer attribute names.</summary>

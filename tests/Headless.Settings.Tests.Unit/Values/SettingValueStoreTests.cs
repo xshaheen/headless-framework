@@ -106,11 +106,10 @@ public sealed class SettingValueStoreTests : TestBase
         // then
         await _cache
             .Received(1)
-            .UpsertAllAsync(
-                Arg.Is<IDictionary<string, SettingValueCacheItem>>(d =>
-                    d.ContainsKey(cacheKey) && d[cacheKey].Value == expectedValue
-                ),
-                Arg.Any<TimeSpan>(),
+            .TryInsertAsync(
+                cacheKey,
+                Arg.Is<SettingValueCacheItem>(x => x.Value == expectedValue),
+                Arg.Any<TimeSpan?>(),
                 AbortToken
             );
     }
@@ -127,13 +126,12 @@ public sealed class SettingValueStoreTests : TestBase
 
         _cache.GetAsync(cacheKey, AbortToken).Returns(_ => cached);
         _cache
-            .UpsertAllAsync(Arg.Any<IDictionary<string, SettingValueCacheItem>>(), Arg.Any<TimeSpan?>(), AbortToken)
+            .TryInsertAsync(cacheKey, Arg.Any<SettingValueCacheItem?>(), Arg.Any<TimeSpan?>(), AbortToken)
             .Returns(call =>
             {
-                var items = call.Arg<IDictionary<string, SettingValueCacheItem>>();
-                cached = new CacheValue<SettingValueCacheItem>(items[cacheKey], hasValue: true);
+                cached = new CacheValue<SettingValueCacheItem>(call.Arg<SettingValueCacheItem?>(), hasValue: true);
 
-                return items.Count;
+                return true;
             });
 
         _definitionManager.GetAllAsync(AbortToken).Returns([new SettingDefinition(name)]);
@@ -154,7 +152,7 @@ public sealed class SettingValueStoreTests : TestBase
         await _repository.Received(1).GetListAsync(providerName, providerKey, AbortToken);
         await _cache
             .Received(1)
-            .UpsertAllAsync(Arg.Any<IDictionary<string, SettingValueCacheItem>>(), Arg.Any<TimeSpan?>(), AbortToken);
+            .TryInsertAsync(cacheKey, Arg.Any<SettingValueCacheItem?>(), Arg.Any<TimeSpan?>(), AbortToken);
     }
 
     #endregion
@@ -211,25 +209,22 @@ public sealed class SettingValueStoreTests : TestBase
             .Received(1)
             .UpsertAllAsync(
                 Arg.Is<IDictionary<string, SettingValueCacheItem>>(items =>
-                    items.Count == 2
+                    items.Count == 4
                     && items[SettingValueCacheItem.CalculateCacheKey("A", providerName, providerKey)].Value == "new-a"
                     && items[SettingValueCacheItem.CalculateCacheKey("C", providerName, providerKey)].Value == "new-c"
                 ),
                 Arg.Any<TimeSpan?>(),
                 AbortToken
             );
+        // a deleted (or never stored) name is written as empty rather than removed
         await _cache
             .Received(1)
-            .RemoveAllAsync(
-                Arg.Is<IEnumerable<string>>(keys =>
-                    keys.SequenceEqual(
-                        new[]
-                        {
-                            SettingValueCacheItem.CalculateCacheKey("B", providerName, providerKey),
-                            SettingValueCacheItem.CalculateCacheKey("D", providerName, providerKey),
-                        }
-                    )
+            .UpsertAllAsync(
+                Arg.Is<IDictionary<string, SettingValueCacheItem>>(items =>
+                    items[SettingValueCacheItem.CalculateCacheKey("B", providerName, providerKey)].Value == null
+                    && items[SettingValueCacheItem.CalculateCacheKey("D", providerName, providerKey)].Value == null
                 ),
+                Arg.Any<TimeSpan?>(),
                 AbortToken
             );
     }
@@ -263,7 +258,6 @@ public sealed class SettingValueStoreTests : TestBase
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<CancellationToken>()
             );
-        await _cache.DidNotReceive().RemoveAllAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -379,7 +373,15 @@ public sealed class SettingValueStoreTests : TestBase
         await _sut.DeleteAsync(name, providerName, providerKey, AbortToken);
 
         // then
-        await _cache.Received(1).RemoveAsync(cacheKey, AbortToken);
+        await _cache
+            .Received(1)
+            .UpsertAllAsync(
+                Arg.Is<IDictionary<string, SettingValueCacheItem>>(items =>
+                    items.Single().Key == cacheKey && items.Single().Value.Value == null
+                ),
+                Arg.Any<TimeSpan?>(),
+                AbortToken
+            );
     }
 
     [Fact]
@@ -399,7 +401,7 @@ public sealed class SettingValueStoreTests : TestBase
         await _repository
             .DidNotReceive()
             .DeleteAsync(Arg.Any<IReadOnlyCollection<SettingValueRecord>>(), Arg.Any<CancellationToken>());
-        await _cache.DidNotReceive().RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        _cache.ReceivedCalls().Should().BeEmpty();
     }
 
     #endregion

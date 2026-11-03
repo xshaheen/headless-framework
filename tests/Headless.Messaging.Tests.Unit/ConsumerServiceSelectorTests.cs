@@ -36,6 +36,9 @@ public sealed class ConsumerServiceSelectorTests
         descriptor.ConsumerType.Should().Be<SelectorTestConsumer>();
         descriptor.MethodName.Should().Be(nameof(IConsume<>.ConsumeAsync));
         descriptor.MessageName.Should().Be("test.messageName");
+        // The binding is what a delivery runs through; a registered consumer without one could not be consumed.
+        descriptor.MessageBinding.Should().BeSameAs(ConsumeMessageBinding.For<SelectorTestMessage>());
+        descriptor.MessageType.Should().Be<SelectorTestMessage>();
     }
 
     [Fact]
@@ -230,6 +233,7 @@ public sealed class ConsumerServiceSelectorTests
             ConsumerType = typeof(SelectorTestConsumer),
             MethodName = nameof(IConsume<>.ConsumeAsync),
             MessageType = typeof(SelectorTestMessage),
+            MessageBinding = ConsumeMessageBinding.For<SelectorTestMessage>(),
             MessageName = messageName,
             SubscriptionName = subscriptionName,
             Lane = MessageLane.Bus,

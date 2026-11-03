@@ -25,7 +25,7 @@ public sealed class Indexer(IMediaFileTextProviderResolver resolver)
     public Task<string> ExtractAsync(Stream file, string mimeTypeOrExtension, CancellationToken ct)
     {
         var provider = resolver.GetProvider(mimeTypeOrExtension);
-        return provider is null ? Task.FromResult(string.Empty) : provider.GetTextAsync(file, ct);
+        return provider is null ? Task.FromResult(string.Empty) : provider.GetTextAsync(file, cancellationToken: ct);
     }
 }
 ```
@@ -34,11 +34,11 @@ public sealed class Indexer(IMediaFileTextProviderResolver resolver)
 
 - Install `Headless.Media.Indexing` — it transitively includes `Headless.Media.Indexing.Abstractions`.
 - Three concrete providers ship: `PdfMediaFileTextProvider`, `WordDocumentMediaFileTextProvider`, `PresentationDocumentMediaFileTextProvider`. Call `AddMediaIndexing()` to register all three plus the resolver in one line.
-- The interface (`IMediaFileTextProvider`) has a single method: `Task<string> GetTextAsync(Stream fileStream, CancellationToken cancellationToken = default)`. There is **no** `SupportsMimeType` method on the interface. For format dispatch, inject `IMediaFileTextProviderResolver` and call `GetProvider(extensionOrMimeType)` — it returns the matching provider or `null`.
+- The interface (`IMediaFileTextProvider`) has a single method: `Task<string> GetTextAsync(Stream fileStream, long? contentLength = null, CancellationToken cancellationToken = default)`. There is **no** `SupportsMimeType` method on the interface. For format dispatch, inject `IMediaFileTextProviderResolver` and call `GetProvider(extensionOrMimeType)` — it returns the matching provider or `null`.
 - The `cancellationToken` is observed while buffering non-seekable streams and between pages/paragraphs/slides. The underlying PdfPig / Open XML parsers are synchronous, so a single-page (or the initial document) parse cannot be interrupted mid-call.
-- **PDF and non-seekable streams**: `PdfMediaFileTextProvider` requires a seekable stream. If the stream is not seekable (e.g., a blob-storage response stream), the provider automatically copies it into a `MemoryStream`, up to 100 MiB; a longer stream throws `InvalidDataException`. Prefer seekable streams when possible.
+- **Non-seekable streams**: PdfPig and Open XML both need a seekable stream. If the stream is not seekable (e.g., a blob-storage response stream or a request body), every provider copies it asynchronously into a `MemoryStream`, up to 100 MiB; a longer stream throws `InvalidDataException`. Pass `contentLength` when you know it (a blob download's `BlobDownloadResult.ContentLength`): the buffer is sized once instead of grown by doubling, and a stated length over 100 MiB is refused before any byte is read. Prefer seekable streams when possible.
 - **Size limits for untrusted uploads**: a .docx or .pptx is a zip, so a small file can inflate to gigabytes of XML. The Word and PowerPoint providers read at most 16 Mi characters from any one decompressed part (Open XML `MaxCharactersInPart`) and throw `XmlException` past it. Every provider throws `InvalidDataException` once the extracted text passes 16 Mi characters. The limits are fixed; catch these exceptions to treat an oversized document as unindexable.
-- **Word/PowerPoint are synchronous**: `WordDocumentMediaFileTextProvider` and `PresentationDocumentMediaFileTextProvider` wrap synchronous Open XML operations in `Task.FromResult` — they do not perform actual async I/O. If CPU load from these providers is a concern in high-throughput scenarios, offload to a background thread.
+- **Word/PowerPoint parse synchronously**: `WordDocumentMediaFileTextProvider` and `PresentationDocumentMediaFileTextProvider` read a non-seekable input asynchronously, then parse it with synchronous Open XML calls. If CPU load from these providers is a concern in high-throughput scenarios, offload to a background thread.
 - This package extracts **embedded text only** — it does not perform OCR. Scanned PDFs or image-only documents will return empty or incomplete text.
 - For unsupported formats, implement `IMediaFileTextProvider` and register it (via `TryAddEnumerable`) before calling `AddMediaIndexing()`; the built-in resolver only maps the three shipped formats, so custom formats need your own dispatch.
 - Do not reference concrete provider types (`PdfMediaFileTextProvider` etc.) in application service constructors — inject `IMediaFileTextProviderResolver` or `IEnumerable<IMediaFileTextProvider>` and dispatch by format.
@@ -55,7 +55,7 @@ The abstraction models each format handler as a separate service implementing `I
 
 ### Stream Ownership
 
-The providers **do not dispose** the stream passed to `GetTextAsync`. The caller retains ownership and is responsible for disposing it. For PDF, the provider may internally copy a non-seekable stream into a transient `MemoryStream` (which it disposes internally). For Word and PowerPoint, the stream is passed directly to Open XML's `Open` method and is expected to remain open and readable for the duration of the call.
+The providers **do not dispose** the stream passed to `GetTextAsync`. The caller retains ownership and is responsible for disposing it. Every provider copies a non-seekable stream into a transient `MemoryStream` (which it disposes internally); a seekable stream is passed directly to the parser and is expected to remain open and readable for the duration of the call.
 
 ---
 
@@ -65,7 +65,7 @@ Defines the interface for extracting text from media files for indexing.
 
 ### API and behavior
 
-- `IMediaFileTextProvider` — single-method interface: `Task<string> GetTextAsync(Stream fileStream, CancellationToken cancellationToken = default)`
+- `IMediaFileTextProvider` — single-method interface: `Task<string> GetTextAsync(Stream fileStream, long? contentLength = null, CancellationToken cancellationToken = default)`
 - `IMediaFileTextProviderResolver` — `GetProvider(string fileExtensionOrMimeType)` returns the provider for a format, or `null` when unsupported
 - Stream-based API keeps format-parsing details out of application code
 
@@ -94,7 +94,7 @@ public sealed class DocumentIndexer(IMediaFileTextProviderResolver resolver)
             return null;
         }
 
-        return await provider.GetTextAsync(fileStream, ct).ConfigureAwait(false);
+        return await provider.GetTextAsync(fileStream, cancellationToken: ct).ConfigureAwait(false);
     }
 }
 ```
@@ -126,9 +126,9 @@ Concrete text extraction implementations for PDF, Word (.docx), and PowerPoint (
 
 **PdfPig instead of iText**: PDF extraction uses [PdfPig](https://github.com/UglyToad/PdfPig) (`UglyToad.PdfPig`), an MIT-licensed pure .NET PDF reader. iText7 is AGPL-licensed, which imposes copyleft obligations on commercial applications; PdfPig avoids that constraint at no functional cost for text-extraction use cases.
 
-**Non-seekable stream buffering**: PdfPig's parser requires a seekable stream. When the caller passes a non-seekable stream (common with blob-storage response streams), `PdfMediaFileTextProvider` copies the content into a `MemoryStream` before opening the document, then disposes it. The copy stops with `InvalidDataException` past 100 MiB, so an unbounded body cannot exhaust memory. Word and PowerPoint providers use Open XML's `Open` method, which does not require seekable streams.
+**Non-seekable stream buffering**: PdfPig's parser requires a seekable stream. Open XML's package reader needs one too, and given a non-seekable stream it copies the whole body synchronously and without a limit. So when the caller passes a non-seekable stream (common with blob-storage response streams), every provider copies the content asynchronously into a `MemoryStream` before opening the document, then disposes it, sized from `contentLength` when given. The copy stops with `InvalidDataException` past 100 MiB, so an unbounded body cannot exhaust memory.
 
-**Synchronous Open XML wrappers**: `WordDocumentMediaFileTextProvider` and `PresentationDocumentMediaFileTextProvider` call synchronous Open XML APIs internally and return `Task.FromResult(...)`. The `async`-shaped signature satisfies the interface contract without adding overhead for formats that have no async parsing path.
+**Synchronous Open XML parsing**: `WordDocumentMediaFileTextProvider` and `PresentationDocumentMediaFileTextProvider` buffer a non-seekable input asynchronously, then call synchronous Open XML APIs; Open XML has no async parsing path.
 
 ### Install
 
@@ -164,7 +164,7 @@ public sealed class SearchIndexer(IMediaFileTextProviderResolver resolver)
             return string.Empty;
         }
 
-        return await provider.GetTextAsync(fileStream, cancellationToken).ConfigureAwait(false);
+        return await provider.GetTextAsync(fileStream, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 }
 ```

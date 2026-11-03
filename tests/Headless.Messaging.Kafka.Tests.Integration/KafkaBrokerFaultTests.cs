@@ -20,13 +20,13 @@ public sealed class KafkaBrokerFaultTests(KafkaFixture fixture) : BrokerFaultTes
         CancellationToken cancellationToken
     )
     {
-        // A broker of its own on a fixed host port: a restart must not disturb the collection's broker, and the
+        // A broker of its own at a stable address: a restart must not disturb the collection's broker, and the
         // session must find the restarted broker at the address it already holds.
         var broker = new FixedPortKafkaFixture();
 
         try
         {
-            await broker.StartAsync();
+            await broker.StartAsync(cancellationToken);
             var group = $"group-{Guid.NewGuid():N}";
             var session = await fixture.CreateConformanceSessionAsync(
                 cancellationToken,
@@ -49,12 +49,12 @@ public sealed class KafkaBrokerFaultTests(KafkaFixture fixture) : BrokerFaultTes
                     await broker.Container.StopAsync(token);
                     await broker.Container.StartAsync(token);
                 },
-                () => ((IAsyncDisposable)broker).DisposeAsync()
+                broker.DisposeAsync
             );
         }
         catch
         {
-            await ((IAsyncDisposable)broker).DisposeAsync();
+            await broker.DisposeAsync();
             throw;
         }
     }

@@ -1764,13 +1764,13 @@ public partial class SqlServerStorageTests(SqlServerTestFixture fixture) : DataS
                 {
                     firstMessages.AddRange(messages);
                     firstSchedulerEntered.SetResult();
-                    await releaseFirstScheduler.Task.WaitAsync(AbortToken);
+                    await releaseFirstScheduler.Task.Bounded();
                 },
                 AbortToken
             )
             .AsTask();
 
-        await firstSchedulerEntered.Task.WaitAsync(AbortToken);
+        await firstSchedulerEntered.Task.Bounded();
 
         await secondStorage.ScheduleMessagesOfDelayedAsync(
             (_, messages) =>
@@ -1782,7 +1782,7 @@ public partial class SqlServerStorageTests(SqlServerTestFixture fixture) : DataS
         );
 
         releaseFirstScheduler.SetResult();
-        await firstSchedule.WaitAsync(AbortToken);
+        await firstSchedule.WaitAsync(AbortToken).Bounded();
 
         // then
         firstMessages.Should().ContainSingle();

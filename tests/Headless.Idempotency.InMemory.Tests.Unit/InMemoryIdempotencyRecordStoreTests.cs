@@ -93,7 +93,7 @@ public sealed class InMemoryIdempotencyRecordStoreTests : TestBase
                 Task.Run(
                     async () =>
                     {
-                        await start.Task;
+                        await start.Task.Bounded();
 
                         return await _AdmitAsync(operations, _Fingerprint);
                     },

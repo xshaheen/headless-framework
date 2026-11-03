@@ -163,7 +163,7 @@ public sealed class AwsBlobContainerManagerTests : TestBase
         // Start the delete and park it inside the backend call; the ensured-cache entry was already evicted under
         // the per-bucket lock before the backend delete began.
         var deleteTask = sut.DeleteContainerAsync("bucket", AbortToken).AsTask();
-        await deleteBucketCalled.Task;
+        await deleteBucketCalled.Task.Bounded();
 
         // A concurrent ensure must not be served from the stale cache entry: it misses and waits on the per-bucket
         // lock held by the in-flight delete instead of reporting success for a bucket mid-deletion.

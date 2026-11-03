@@ -7,7 +7,8 @@ namespace Headless.Features;
 /// <summary>
 /// Base class for <see cref="IFeatureValueProvider"/> implementations that delegate persistence to an
 /// <see cref="IFeatureValueStore"/>. Subclasses override <see cref="Name"/> and may override
-/// <see cref="NormalizeProviderKey"/> to adapt the incoming key before storage lookups.
+/// <see cref="NormalizeProviderKey"/> (or <see cref="NormalizeProviderKeyAsync"/>, when it needs I/O) to adapt the
+/// incoming key before storage lookups.
 /// </summary>
 public abstract class StoreFeatureValueProvider(IFeatureValueStore store) : IFeatureValueProvider
 {
@@ -24,7 +25,7 @@ public abstract class StoreFeatureValueProvider(IFeatureValueStore store) : IFea
         CancellationToken cancellationToken = default
     )
     {
-        var pk = NormalizeProviderKey(providerKey);
+        var pk = await NormalizeProviderKeyAsync(providerKey, cancellationToken).ConfigureAwait(false);
 
         return await Store.GetOrDefaultAsync(feature.Name, Name, pk, cancellationToken).ConfigureAwait(false);
     }
@@ -37,10 +38,9 @@ public abstract class StoreFeatureValueProvider(IFeatureValueStore store) : IFea
     )
     {
         var names = features.Select(static x => x.Name).ToHashSet(StringComparer.Ordinal);
+        var pk = await NormalizeProviderKeyAsync(providerKey, cancellationToken).ConfigureAwait(false);
 
-        return await Store
-            .GetAllAsync(names, Name, NormalizeProviderKey(providerKey), cancellationToken)
-            .ConfigureAwait(false);
+        return await Store.GetAllAsync(names, Name, pk, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -51,7 +51,7 @@ public abstract class StoreFeatureValueProvider(IFeatureValueStore store) : IFea
         CancellationToken cancellationToken = default
     )
     {
-        var pk = NormalizeProviderKey(providerKey);
+        var pk = await NormalizeProviderKeyAsync(providerKey, cancellationToken).ConfigureAwait(false);
 
         await Store.SetAsync(feature.Name, value, Name, pk, cancellationToken).ConfigureAwait(false);
     }
@@ -63,7 +63,7 @@ public abstract class StoreFeatureValueProvider(IFeatureValueStore store) : IFea
         CancellationToken cancellationToken = default
     )
     {
-        var pk = NormalizeProviderKey(providerKey);
+        var pk = await NormalizeProviderKeyAsync(providerKey, cancellationToken).ConfigureAwait(false);
 
         await Store.DeleteAsync(feature.Name, Name, pk, cancellationToken).ConfigureAwait(false);
     }
@@ -86,7 +86,7 @@ public abstract class StoreFeatureValueProvider(IFeatureValueStore store) : IFea
             valuesByName[feature.Name] = value;
         }
 
-        var pk = NormalizeProviderKey(providerKey);
+        var pk = await NormalizeProviderKeyAsync(providerKey, cancellationToken).ConfigureAwait(false);
 
         await Store.SetAllAsync(valuesByName, Name, pk, cancellationToken).ConfigureAwait(false);
     }
@@ -105,24 +105,22 @@ public abstract class StoreFeatureValueProvider(IFeatureValueStore store) : IFea
     }
 
     /// <inheritdoc/>
-    public virtual Task<string?> GetOrDefaultEnlistedAsync(
+    public virtual async Task<string?> GetOrDefaultEnlistedAsync(
         IUnitOfWork unitOfWork,
         FeatureDefinition feature,
         string? providerKey,
         CancellationToken cancellationToken
     )
     {
-        return Store.GetOrDefaultEnlistedAsync(
-            unitOfWork,
-            feature.Name,
-            Name,
-            NormalizeProviderKey(providerKey),
-            cancellationToken
-        );
+        var pk = await NormalizeProviderKeyAsync(providerKey, cancellationToken).ConfigureAwait(false);
+
+        return await Store
+            .GetOrDefaultEnlistedAsync(unitOfWork, feature.Name, Name, pk, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
-    public virtual Task SetAllEnlistedAsync(
+    public virtual async Task SetAllEnlistedAsync(
         IUnitOfWork unitOfWork,
         IReadOnlyList<KeyValuePair<FeatureDefinition, string?>> values,
         string? providerKey,
@@ -136,29 +134,27 @@ public abstract class StoreFeatureValueProvider(IFeatureValueStore store) : IFea
             valuesByName[feature.Name] = value;
         }
 
-        return Store.SetAllEnlistedAsync(
-            unitOfWork,
-            valuesByName,
-            Name,
-            NormalizeProviderKey(providerKey),
-            cancellationToken
-        );
+        var pk = await NormalizeProviderKeyAsync(providerKey, cancellationToken).ConfigureAwait(false);
+
+        await Store.SetAllEnlistedAsync(unitOfWork, valuesByName, Name, pk, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
-    public virtual Task<IReadOnlyList<string>> DeleteAllEnlistedAsync(
+    public virtual async Task<IReadOnlyList<string>> DeleteAllEnlistedAsync(
         IUnitOfWork unitOfWork,
         string? providerKey,
         CancellationToken cancellationToken
     )
     {
-        return Store.DeleteEnlistedAsync(unitOfWork, Name, NormalizeProviderKey(providerKey), cancellationToken);
+        var pk = await NormalizeProviderKeyAsync(providerKey, cancellationToken).ConfigureAwait(false);
+
+        return await Store.DeleteEnlistedAsync(unitOfWork, Name, pk, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>The key the default reads use for <paramref name="providerKey"/>.</summary>
-    internal string? ResolveProviderKey(string? providerKey)
+    internal ValueTask<string?> ResolveProviderKeyAsync(string? providerKey, CancellationToken cancellationToken)
     {
-        return NormalizeProviderKey(providerKey);
+        return NormalizeProviderKeyAsync(providerKey, cancellationToken);
     }
 
     /// <summary>Transforms the caller-supplied <paramref name="providerKey"/> before passing it to the store. Returns <paramref name="providerKey"/> unchanged by default.</summary>
@@ -167,5 +163,20 @@ public abstract class StoreFeatureValueProvider(IFeatureValueStore store) : IFea
     protected virtual string? NormalizeProviderKey(string? providerKey)
     {
         return providerKey;
+    }
+
+    /// <summary>
+    /// Resolves the key every store operation uses. Calls <see cref="NormalizeProviderKey"/> by default; override it
+    /// instead when resolving the key needs I/O.
+    /// </summary>
+    /// <param name="providerKey">The raw provider key supplied by the caller.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>The normalized key to use in store operations, or <see langword="null"/>.</returns>
+    protected virtual ValueTask<string?> NormalizeProviderKeyAsync(
+        string? providerKey,
+        CancellationToken cancellationToken
+    )
+    {
+        return ValueTask.FromResult(NormalizeProviderKey(providerKey));
     }
 }

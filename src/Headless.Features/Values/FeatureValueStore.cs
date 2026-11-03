@@ -21,7 +21,7 @@ public sealed class FeatureValueStore(
     ILogger<FeatureValueStore> logger
 ) : IFeatureValueStore
 {
-    private readonly TimeSpan _cacheExpiration = TimeSpan.FromHours(5);
+    private readonly TimeSpan _cacheExpiration = FeatureValueCacheInvalidation.Expiration;
 
     // Concurrent misses for one provider key share one load: the first caller reads the repository and fills the
     // cache, and the others re-read the cache it filled. A waiter only ever uses what the cache holds for its own key,
@@ -199,11 +199,6 @@ public sealed class FeatureValueStore(
                     .ConfigureAwait(false);
             }
 
-            if (changes.RemovedCacheKeys.Count != 0)
-            {
-                await cache.RemoveAllAsync(changes.RemovedCacheKeys, cancellationToken).ConfigureAwait(false);
-            }
-
             return;
         }
     }
@@ -231,7 +226,9 @@ public sealed class FeatureValueStore(
                     changes.Deleted.Add(existing);
                 }
 
-                changes.RemovedCacheKeys.Add(cacheKey);
+                // Stored as empty rather than removed, so a reader that loaded the row before this delete cannot fill
+                // it back: readers fill only an absent entry.
+                changes.CacheItems[cacheKey] = new FeatureValueCacheItem(value: null);
 
                 continue;
             }
@@ -263,8 +260,6 @@ public sealed class FeatureValueStore(
         public List<FeatureValueRecord> Deleted { get; } = [];
 
         public Dictionary<string, FeatureValueCacheItem> CacheItems { get; } = new(StringComparer.Ordinal);
-
-        public List<string> RemovedCacheKeys { get; } = [];
     }
 
     /// <inheritdoc/>
@@ -288,11 +283,14 @@ public sealed class FeatureValueStore(
 
         await repository.DeleteAsync(features, cancellationToken).ConfigureAwait(false);
 
-        foreach (var featureValue in features)
-        {
-            var cacheKey = FeatureValueCacheItem.CalculateCacheKey(name, providerName, featureValue.ProviderKey);
-            await cache.RemoveAsync(cacheKey, cancellationToken).ConfigureAwait(false);
-        }
+        // Stored as empty rather than removed, so a reader that loaded the row before this delete cannot fill it back.
+        await cache
+            .UpsertAllAsync(
+                FeatureValueCacheInvalidation.WrittenItems([], features),
+                FeatureValueCacheInvalidation.Expiration,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -354,12 +352,7 @@ public sealed class FeatureValueStore(
             .SaveEnlistedAsync(unitOfWork, changes.Inserted, changes.Updated, changes.Deleted, cancellationToken)
             .ConfigureAwait(false);
 
-        FeatureValueCacheInvalidation.RemoveAfterCommit(
-            unitOfWork,
-            cache,
-            [.. changes.CacheItems.Keys, .. changes.RemovedCacheKeys],
-            logger
-        );
+        FeatureValueCacheInvalidation.UpsertAfterCommit(unitOfWork, cache, changes.CacheItems, logger);
     }
 
     /// <inheritdoc/>
@@ -384,10 +377,10 @@ public sealed class FeatureValueStore(
 
         await repository.SaveEnlistedAsync(unitOfWork, [], [], records, cancellationToken).ConfigureAwait(false);
 
-        FeatureValueCacheInvalidation.RemoveAfterCommit(
+        FeatureValueCacheInvalidation.UpsertAfterCommit(
             unitOfWork,
             cache,
-            [.. records.Select(x => FeatureValueCacheItem.CalculateCacheKey(x.Name, providerName, providerKey))],
+            FeatureValueCacheInvalidation.WrittenItems([], records),
             logger
         );
 
@@ -498,7 +491,7 @@ public sealed class FeatureValueStore(
             cacheItems[cacheKey] = new FeatureValueCacheItem(featureValue);
         }
 
-        await cache.UpsertAllAsync(cacheItems, _cacheExpiration, cancellationToken).ConfigureAwait(false);
+        await FeatureValueCacheInvalidation.FillAbsentAsync(cache, cacheItems, cancellationToken).ConfigureAwait(false);
 
         return cacheItems;
     }
@@ -546,7 +539,7 @@ public sealed class FeatureValueStore(
             }
         }
 
-        await cache.UpsertAllAsync(cacheItems, _cacheExpiration, cancellationToken).ConfigureAwait(false);
+        await FeatureValueCacheInvalidation.FillAbsentAsync(cache, cacheItems, cancellationToken).ConfigureAwait(false);
 
         return featureValueToFind;
     }

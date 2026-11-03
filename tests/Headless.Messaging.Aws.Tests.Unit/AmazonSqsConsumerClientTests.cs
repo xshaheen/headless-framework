@@ -631,7 +631,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         // Acquiring every permit waits for the fire-and-forget handler to release its own.
         for (var i = 0; i < concurrencyLimit; i++)
         {
-            await semaphore.WaitAsync(AbortToken);
+            await semaphore.WaitAsync(AbortToken).Bounded();
         }
 
         semaphore.Release(concurrencyLimit);
@@ -1020,7 +1020,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         // A second poll proves the loop finished dispatching the first batch.
         await secondPoll.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
         // The fire-and-forget handler holds the only permit until it has finished, so acquiring it waits for the handler.
-        await _GetSemaphore(client).WaitAsync(AbortToken);
+        await _GetSemaphore(client).WaitAsync(AbortToken).Bounded();
         await cts.CancelAsync();
 
         try
@@ -1258,7 +1258,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         // A second poll proves the loop finished dispatching the first batch.
         await secondPoll.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
         // The fire-and-forget handler holds the only permit until it has finished, so acquiring it waits for the handler.
-        await _GetSemaphore(client).WaitAsync(AbortToken);
+        await _GetSemaphore(client).WaitAsync(AbortToken).Bounded();
         await cts.CancelAsync();
 
         try

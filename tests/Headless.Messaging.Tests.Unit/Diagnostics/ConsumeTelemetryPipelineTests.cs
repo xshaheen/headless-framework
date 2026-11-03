@@ -80,7 +80,7 @@ public sealed class ConsumeTelemetryPipelineTests : TestBase
             .Returns(
                 new ConsumerExecutedResult(
                     result: null,
-                    resultType: null,
+                    resultMessageType: null,
                     msgId: "m-1",
                     callbackName: null,
                     callbackHeader: null
@@ -137,6 +137,7 @@ public sealed class ConsumeTelemetryPipelineTests : TestBase
             Lane = MessageLane.Bus,
             ConsumerType = typeof(PipelineTestConsumer),
             MessageType = typeof(PipelineTestMessage),
+            MessageBinding = ConsumeMessageBinding.For<PipelineTestMessage>(),
             MessageName = "test.pipeline.messageName",
             SubscriptionName = "test",
         };

@@ -814,9 +814,9 @@ public sealed class RetryBehaviorTests : TestBase
         using var hostStopping = new CancellationTokenSource();
 
         var execution = handler.ExecuteTaskAsync(context, isDue: false, hostStopping.Token);
-        await started.Task.WaitAsync(AbortToken);
+        await started.Task.Bounded();
         await hostStopping.CancelAsync();
-        await execution.WaitAsync(AbortToken);
+        await execution.WaitAsync(AbortToken).Bounded();
 
         context.Status.Should().Be(JobStatus.InProgress);
         await manager
@@ -840,9 +840,9 @@ public sealed class RetryBehaviorTests : TestBase
         using var hostStopping = new CancellationTokenSource();
 
         var execution = handler.ExecuteTaskAsync(context, isDue: false, hostStopping.Token);
-        await started.Task.WaitAsync(AbortToken);
+        await started.Task.Bounded();
         await hostStopping.CancelAsync();
-        await execution.WaitAsync(AbortToken);
+        await execution.WaitAsync(AbortToken).Bounded();
 
         invocations.Should().Be(1);
         context.RetryCount.Should().Be(0);
@@ -883,9 +883,9 @@ public sealed class RetryBehaviorTests : TestBase
         using var hostStopping = new CancellationTokenSource();
 
         var execution = handler.ExecuteTaskAsync(context, isDue: false, hostStopping.Token);
-        await started.Task.WaitAsync(AbortToken);
+        await started.Task.Bounded();
         await hostStopping.CancelAsync();
-        await execution.WaitAsync(AbortToken);
+        await execution.WaitAsync(AbortToken).Bounded();
 
         invocations.Should().Be(1);
         context.Status.Should().Be(JobStatus.InProgress);
@@ -937,9 +937,9 @@ public sealed class RetryBehaviorTests : TestBase
         };
 
         var execution = handler.ExecuteTaskAsync(context, isDue: false, cancellationToken: AbortToken);
-        await started.Task.WaitAsync(AbortToken);
+        await started.Task.Bounded();
         timeProvider.Advance(TimeSpan.FromSeconds(2));
-        await execution.WaitAsync(AbortToken);
+        await execution.WaitAsync(AbortToken).Bounded();
 
         context.Status.Should().Be(JobStatus.Cancelled);
         exhausted.Should().BeEmpty();
@@ -979,9 +979,9 @@ public sealed class RetryBehaviorTests : TestBase
         };
 
         var execution = handler.ExecuteTaskAsync(context, isDue: false, cancellationToken: AbortToken);
-        await started.Task.WaitAsync(AbortToken);
+        await started.Task.Bounded();
         timeProvider.Advance(TimeSpan.FromSeconds(2));
-        await execution.WaitAsync(AbortToken);
+        await execution.WaitAsync(AbortToken).Bounded();
 
         context.Status.Should().Be(JobStatus.Cancelled);
         await manager.Received(2).IsTimeJobCancellationRequestedAsync(context.JobId, Arg.Any<CancellationToken>());
@@ -1015,15 +1015,15 @@ public sealed class RetryBehaviorTests : TestBase
         {
             await using var registration = token.Register(() => cancellationObserved.TrySetResult());
             started.TrySetResult();
-            await complete.Task;
+            await complete.Task.Bounded();
         };
 
         var execution = handler.ExecuteTaskAsync(context, isDue: false, cancellationToken: AbortToken);
-        await started.Task.WaitAsync(AbortToken);
+        await started.Task.Bounded();
         timeProvider.Advance(TimeSpan.FromSeconds(2));
-        await cancellationObserved.Task.WaitAsync(AbortToken);
+        await cancellationObserved.Task.Bounded();
         complete.TrySetResult();
-        await execution.WaitAsync(AbortToken);
+        await execution.WaitAsync(AbortToken).Bounded();
 
         context.Status.Should().Be(JobStatus.Succeeded);
         await manager
@@ -1058,16 +1058,16 @@ public sealed class RetryBehaviorTests : TestBase
         {
             await using var registration = token.Register(() => cancellationObserved.TrySetResult());
             started.TrySetResult();
-            await fail.Task;
+            await fail.Task.Bounded();
             throw new InvalidOperationException("natural failure after cancellation request");
         };
 
         var execution = handler.ExecuteTaskAsync(context, isDue: false, cancellationToken: AbortToken);
-        await started.Task.WaitAsync(AbortToken);
+        await started.Task.Bounded();
         timeProvider.Advance(TimeSpan.FromSeconds(2));
-        await cancellationObserved.Task.WaitAsync(AbortToken);
+        await cancellationObserved.Task.Bounded();
         fail.TrySetResult();
-        await execution.WaitAsync(AbortToken);
+        await execution.WaitAsync(AbortToken).Bounded();
 
         context.Status.Should().Be(JobStatus.Failed);
         await manager
@@ -1151,11 +1151,11 @@ public sealed class RetryBehaviorTests : TestBase
         };
 
         var execution = handler.ExecuteTaskAsync(context, isDue: false, cancellationToken: AbortToken);
-        await started.Task.WaitAsync(AbortToken);
+        await started.Task.Bounded();
         timeProvider.Advance(TimeSpan.FromSeconds(2));
-        await transientFailureObserved.Task.WaitAsync(AbortToken);
+        await transientFailureObserved.Task.Bounded();
         timeProvider.Advance(TimeSpan.FromSeconds(2));
-        await execution.WaitAsync(AbortToken);
+        await execution.WaitAsync(AbortToken).Bounded();
 
         context.Status.Should().Be(JobStatus.Cancelled);
         Volatile.Read(ref observationCount).Should().Be(3);
@@ -1194,15 +1194,15 @@ public sealed class RetryBehaviorTests : TestBase
         context.CachedDelegate = async (_, _, _) =>
         {
             started.TrySetResult();
-            await complete.Task;
+            await complete.Task.Bounded();
         };
 
         var execution = handler.ExecuteTaskAsync(context, isDue: false, cancellationToken: AbortToken);
-        await started.Task.WaitAsync(AbortToken);
+        await started.Task.Bounded();
         timeProvider.Advance(TimeSpan.FromSeconds(2));
-        await observationBlocked.Task.WaitAsync(AbortToken);
+        await observationBlocked.Task.Bounded();
         complete.TrySetResult();
-        await execution.WaitAsync(AbortToken);
+        await execution.WaitAsync(AbortToken).Bounded();
 
         context.Status.Should().Be(JobStatus.Succeeded);
         Volatile.Read(ref observationCount).Should().Be(2);
@@ -1446,7 +1446,7 @@ public sealed class RetryBehaviorTests : TestBase
 
         try
         {
-            await started.Task.WaitAsync(AbortToken);
+            await started.Task.Bounded();
 
             // The renewal loop armed its cadence delay before the job started; one tick fires the second renewal,
             // which hangs. The app clock never moves again.

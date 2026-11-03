@@ -214,11 +214,6 @@ public sealed class SettingValueStore(
                     .ConfigureAwait(false);
             }
 
-            if (changes.RemovedCacheKeys.Count != 0)
-            {
-                await cache.RemoveAllAsync(changes.RemovedCacheKeys, cancellationToken).ConfigureAwait(false);
-            }
-
             return;
         }
     }
@@ -246,7 +241,9 @@ public sealed class SettingValueStore(
                     changes.Deleted.Add(existing);
                 }
 
-                changes.RemovedCacheKeys.Add(cacheKey);
+                // Stored as empty rather than removed, so a reader that loaded the row before this delete cannot fill
+                // it back: readers fill only an absent entry.
+                changes.CacheItems[cacheKey] = new SettingValueCacheItem(value: null);
 
                 continue;
             }
@@ -278,8 +275,6 @@ public sealed class SettingValueStore(
         public List<SettingValueRecord> Deleted { get; } = [];
 
         public Dictionary<string, SettingValueCacheItem> CacheItems { get; } = new(StringComparer.Ordinal);
-
-        public List<string> RemovedCacheKeys { get; } = [];
     }
 
     /// <inheritdoc/>
@@ -303,11 +298,14 @@ public sealed class SettingValueStore(
 
         await valueRepository.DeleteAsync(settings, cancellationToken).ConfigureAwait(false);
 
-        foreach (var setting in settings)
-        {
-            var cacheKey = SettingValueCacheItem.CalculateCacheKey(name, providerName, setting.ProviderKey);
-            await cache.RemoveAsync(cacheKey, cancellationToken).ConfigureAwait(false);
-        }
+        // Stored as empty rather than removed, so a reader that loaded the row before this delete cannot fill it back.
+        await cache
+            .UpsertAllAsync(
+                SettingValueCacheInvalidation.WrittenItems([], settings),
+                _cacheExpiration,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -369,10 +367,11 @@ public sealed class SettingValueStore(
             .SaveEnlistedAsync(unitOfWork, changes.Inserted, changes.Updated, changes.Deleted, cancellationToken)
             .ConfigureAwait(false);
 
-        SettingValueCacheInvalidation.RemoveAfterCommit(
+        SettingValueCacheInvalidation.UpsertAfterCommit(
             unitOfWork,
             cache,
-            [.. changes.CacheItems.Keys, .. changes.RemovedCacheKeys],
+            changes.CacheItems,
+            _cacheExpiration,
             logger
         );
     }
@@ -399,10 +398,11 @@ public sealed class SettingValueStore(
 
         await valueRepository.SaveEnlistedAsync(unitOfWork, [], [], records, cancellationToken).ConfigureAwait(false);
 
-        SettingValueCacheInvalidation.RemoveAfterCommit(
+        SettingValueCacheInvalidation.UpsertAfterCommit(
             unitOfWork,
             cache,
-            [.. records.Select(x => SettingValueCacheItem.CalculateCacheKey(x.Name, providerName, providerKey))],
+            SettingValueCacheInvalidation.WrittenItems([], records),
+            _cacheExpiration,
             logger
         );
 
@@ -511,7 +511,9 @@ public sealed class SettingValueStore(
             cacheItems[cacheKey] = new SettingValueCacheItem(settingValue);
         }
 
-        await cache.UpsertAllAsync(cacheItems, _cacheExpiration, cancellationToken).ConfigureAwait(false);
+        await SettingValueCacheInvalidation
+            .FillAbsentAsync(cache, cacheItems, _cacheExpiration, cancellationToken)
+            .ConfigureAwait(false);
 
         return cacheItems;
     }
@@ -557,7 +559,9 @@ public sealed class SettingValueStore(
             }
         }
 
-        await cache.UpsertAllAsync(cacheItems, _cacheExpiration, cancellationToken).ConfigureAwait(false);
+        await SettingValueCacheInvalidation
+            .FillAbsentAsync(cache, cacheItems, _cacheExpiration, cancellationToken)
+            .ConfigureAwait(false);
 
         return settingValueToFind;
     }

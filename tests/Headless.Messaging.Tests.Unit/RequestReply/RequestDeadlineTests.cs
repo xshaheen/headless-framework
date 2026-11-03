@@ -81,6 +81,7 @@ public sealed class RequestDeadlineTests : TestBase
             Lane = MessageLane.Bus,
             ConsumerType = typeof(QuoteResponder),
             MessageType = typeof(PriceQuoteRequest),
+            MessageBinding = ConsumeMessageBinding.For<PriceQuoteRequest>(),
             MessageName = ResponderExecutorHost.MessageName,
             SubscriptionName = "tests",
             ConsumerIdentity = QuoteResponder.Identity,

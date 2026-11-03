@@ -74,9 +74,13 @@ public static class SetupAttemptLimiter
             services.TryAddSingleton<IAttemptLimiter>(provider =>
             {
                 var options = provider.GetRequiredService<IOptions<AttemptLimiterOptions>>();
+
+                // The remote tier when there is one: the limiter only increments and reads the returned total, so a
+                // hybrid default would add a local write and an every-instance invalidation broadcast to each attempt
+                // for a local copy nothing reads.
                 var cache = options.Value.CacheName is { } name
                     ? provider.GetRequiredKeyedService<ICache>(name)
-                    : provider.GetRequiredService<ICache>();
+                    : provider.GetRemoteOrDefaultCache();
 
                 return new CacheAttemptLimiter(cache, provider.GetRequiredService<TimeProvider>(), options);
             });

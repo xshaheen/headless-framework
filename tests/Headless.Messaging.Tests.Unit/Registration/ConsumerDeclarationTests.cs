@@ -61,7 +61,7 @@ public sealed class ConsumerDeclarationTests : TestBase
                 new MessagingConsumerDeclaration(
                     typeof(TestMessagingModule).FullName!,
                     typeof(PriceCacheConsumer),
-                    typeof(PriceChanged),
+                    MessageTypeHandle.For<PriceChanged>(),
                     MessageLane.Bus,
                     "billing.price-cache",
                     EveryInstance: true,
@@ -71,7 +71,7 @@ public sealed class ConsumerDeclarationTests : TestBase
                 new MessagingConsumerDeclaration(
                     typeof(TestMessagingModule).FullName!,
                     typeof(IssueInvoiceConsumer),
-                    typeof(IssueInvoice),
+                    MessageTypeHandle.For<IssueInvoice>(),
                     MessageLane.Queue,
                     "billing.issue-invoice",
                     EveryInstance: false,

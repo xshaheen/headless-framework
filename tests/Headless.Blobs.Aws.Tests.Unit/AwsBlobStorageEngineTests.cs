@@ -672,6 +672,27 @@ public sealed class AwsBlobStorageEngineTests : TestBase
     }
 
     [Fact]
+    public async Task open_read_stream_forwards_the_length_and_content_type_from_the_get_response()
+    {
+        using var response = new GetObjectResponse
+        {
+            HttpStatusCode = HttpStatusCode.OK,
+            ResponseStream = new MemoryStream("hello"u8.ToArray()),
+            ContentLength = 5,
+        };
+        response.Headers.ContentType = "text/plain";
+        _s3.GetObjectAsync(Arg.Any<GetObjectRequest>(), Arg.Any<CancellationToken>()).Returns(response);
+
+        var sut = _CreateSut();
+
+        await using var result = await sut.OpenReadStreamAsync(new BlobLocation("bucket", "file.txt"), AbortToken);
+
+        result.Should().NotBeNull();
+        result.ContentLength.Should().Be(5);
+        result.ContentType.Should().Be("text/plain");
+    }
+
+    [Fact]
     public async Task open_read_stream_returns_null_when_bucket_missing()
     {
         _s3.GetObjectAsync(Arg.Any<GetObjectRequest>(), Arg.Any<CancellationToken>())

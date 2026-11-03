@@ -13,13 +13,14 @@ namespace Headless.Messaging.RabbitMq;
 /// model and dispatches them to the registered message handler.
 /// </summary>
 /// <remarks>
-/// When <paramref name="concurrent"/> is greater than zero, each delivery is dispatched on a
-/// <c>Task.Run</c> thread pool task and a semaphore limits the number of in-flight handlers.
-/// When <paramref name="concurrent"/> is zero, deliveries are handled sequentially on the calling
-/// thread. On header or body parsing failure, or when <paramref name="envelopeGate"/> finds the envelope malformed, the
-/// delivery is terminally rejected. When the callback throws without settling the delivery, the delivery is rejected
-/// with requeue. Every dispatched handler is tracked in both modes, so shutdown can stop dispatching
-/// and wait for the running ones before the channel closes.
+/// Each delivery is handled on a <c>Task.Run</c> thread pool task, and a semaphore limits the number of in-flight
+/// handlers to <paramref name="concurrent"/>; zero means one, so deliveries run one at a time in arrival order. The
+/// handler never runs inside the client's consumer dispatcher, because closing the channel waits for that dispatcher and
+/// a hung handler would then hold the close past the shutdown budget; the dispatcher only ever waits for a free slot,
+/// which stopping dispatching releases. On header or body parsing failure, or when <paramref name="envelopeGate"/> finds
+/// the envelope malformed, the delivery is terminally rejected. When the callback throws without settling the delivery,
+/// the delivery is rejected with requeue. Every dispatched handler is tracked, so shutdown can stop dispatching and wait
+/// for the running ones before the channel closes.
 /// </remarks>
 /// <param name="arrivalNames">
 /// The message name each subscribed routing key belongs to, built from the same routing keys the client bound, so a
@@ -41,11 +42,18 @@ internal sealed class RabbitMqBasicConsumer(
     internal const string TransportName = "RabbitMQ";
 
     private readonly TransportEnvelopeGate _envelopeGate = envelopeGate ?? TransportEnvelopeGate.Strict;
-    private readonly SemaphoreSlim _semaphore = new(concurrent);
-    private readonly bool _usingTaskRun = concurrent > 0;
+#pragma warning disable CA2213 // Fix makes the code worse: disposing it under a cancelled waiter can hang the channel close; see Dispose.
+    private readonly SemaphoreSlim _semaphore = new(Math.Max((byte)1, concurrent));
+#pragma warning restore CA2213
 
     // A delivery either registers before the drain takes its snapshot or sees dispatching stopped; none slips between.
     private readonly InFlightHandlerTracker _inFlightHandlers = new();
+
+    // Cancelled when dispatching stops. A delivery parked on the concurrency limit runs inside the client's consumer
+    // dispatcher, and closing the channel waits for that dispatcher; nothing else wakes the wait while a handler holds
+    // the last slot, so without this signal the close never completes.
+    private readonly CancellationTokenSource _stopping = new();
+    private int _disposed;
 
     // The delivery tags handed to the callback and not yet settled. The broker closes the channel over a tag it does not
     // know, so a second settlement of one delivery must never reach it. The client offsets tags across a channel
@@ -63,62 +71,47 @@ internal sealed class RabbitMqBasicConsumer(
         CancellationToken cancellationToken = default
     )
     {
-        if (_usingTaskRun)
+        if (!await _TryEnterSlotAsync(cancellationToken).ConfigureAwait(false))
         {
-            await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+            // Dispatching stopped while the delivery waited: it stays unacknowledged, and the broker returns it to the
+            // queue when the channel closes.
+            return;
+        }
 
-            if (!_TryBeginHandler(out var handlerDone))
-            {
-                _ReleaseSemaphore();
-                return;
-            }
+        if (!_TryBeginHandler(out var handlerDone))
+        {
+            _ReleaseSemaphore();
+            return;
+        }
 
-            // Copy of the body safe to use outside the RabbitMQ thread context
-            ReadOnlyMemory<byte> safeBody = body.ToArray();
-            _ObserveBackgroundHandler(
-                Task.Run(
-                    async () =>
+        // The client reuses the body's memory once this callback returns, and the handler outlives the callback.
+        ReadOnlyMemory<byte> safeBody = body.ToArray();
+        _ObserveBackgroundHandler(
+            Task.Run(
+                async () =>
+                {
+                    try
                     {
-                        try
-                        {
-                            await _Consume(
-                                    consumerTag,
-                                    deliveryTag,
-                                    redelivered,
-                                    exchange,
-                                    routingKey,
-                                    properties,
-                                    safeBody
-                                )
-                                .ConfigureAwait(false);
-                        }
-                        finally
-                        {
-                            _EndHandler(handlerDone);
-                            _ReleaseSemaphore();
-                        }
-                    },
-                    CancellationToken.None // Ensure semaphore release even if cancellation is requested during handler execution
-                )
-            );
-        }
-        else
-        {
-            if (!_TryBeginHandler(out var handlerDone))
-            {
-                return;
-            }
-
-            try
-            {
-                await _Consume(consumerTag, deliveryTag, redelivered, exchange, routingKey, properties, body)
-                    .ConfigureAwait(false);
-            }
-            finally
-            {
-                _EndHandler(handlerDone);
-            }
-        }
+                        await _Consume(
+                                consumerTag,
+                                deliveryTag,
+                                redelivered,
+                                exchange,
+                                routingKey,
+                                properties,
+                                safeBody
+                            )
+                            .ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        _EndHandler(handlerDone);
+                        _ReleaseSemaphore();
+                    }
+                },
+                CancellationToken.None // Ensure semaphore release even if cancellation is requested during handler execution
+            )
+        );
     }
 
     /// <summary>
@@ -127,9 +120,43 @@ internal sealed class RabbitMqBasicConsumer(
     /// closes.
     /// </summary>
     /// <exception cref="TimeoutException">A handler was still running when <paramref name="timeout"/> elapsed.</exception>
-    public Task DrainAsync(TimeSpan timeout, TimeProvider timeProvider)
+    public async Task DrainAsync(TimeSpan timeout, TimeProvider timeProvider)
     {
-        return _inFlightHandlers.DrainAsync(timeout, timeProvider);
+        if (Volatile.Read(ref _disposed) == 0)
+        {
+            await _stopping.CancelAsync().ConfigureAwait(false);
+        }
+
+        await _inFlightHandlers.DrainAsync(timeout, timeProvider).ConfigureAwait(false);
+    }
+
+    private async ValueTask<bool> _TryEnterSlotAsync(CancellationToken cancellationToken)
+    {
+        if (_stopping.IsCancellationRequested)
+        {
+            return false;
+        }
+
+        if (_semaphore.Wait(0, CancellationToken.None))
+        {
+            return true;
+        }
+
+        try
+        {
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _stopping.Token);
+            await _semaphore.WaitAsync(linked.Token).ConfigureAwait(false);
+            return true;
+        }
+        catch (OperationCanceledException) when (_stopping.IsCancellationRequested)
+        {
+            return false;
+        }
+        catch (ObjectDisposedException)
+        {
+            // The consumer was disposed while this delivery arrived: shutdown already stopped dispatching.
+            return false;
+        }
     }
 
     /// <summary>The number of handlers dispatched and not yet finished.</summary>
@@ -506,6 +533,16 @@ internal sealed class RabbitMqBasicConsumer(
 
     public void Dispose()
     {
-        _semaphore.Dispose();
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
+            return;
+        }
+
+        // Wakes a delivery still parked on the concurrency limit when the drain never ran. The semaphore is left
+        // undisposed on purpose: disposing it while that cancelled wait is still unwinding can leave the wait never
+        // completing, which holds the client's dispatcher and so the channel close. It holds no wait handle, because
+        // nothing reads AvailableWaitHandle, so nothing leaks.
+        _stopping.Cancel();
+        _stopping.Dispose();
     }
 }

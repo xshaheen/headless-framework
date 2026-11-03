@@ -68,6 +68,37 @@ public sealed class SftpClientPoolTests : TestBase
         await act.Should().NotThrowAsync();
     }
 
+    [Fact]
+    public void should_serve_read_streams_from_a_separate_pool()
+    {
+        // given
+        var options = Options.Create(_CreateValidOptions());
+        using var pool = new SftpClientPool(options, NullLogger<SftpClientPool>.Instance);
+
+        // when
+        var readStreams = pool.ReadStreams;
+
+        // then: a separate pool, whose own read-stream pool is itself (no further nesting)
+        readStreams.Should().NotBeSameAs(pool);
+        readStreams.ReadStreams.Should().BeSameAs(readStreams);
+    }
+
+    [Fact]
+    public async Task should_dispose_the_read_stream_pool_with_the_pool()
+    {
+        // given
+        var options = Options.Create(_CreateValidOptions());
+        var pool = new SftpClientPool(options, NullLogger<SftpClientPool>.Instance);
+        var readStreams = pool.ReadStreams;
+
+        // when
+        pool.Dispose();
+        var act = async () => await readStreams.AcquireAsync(AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<ObjectDisposedException>();
+    }
+
     private static SshBlobStorageOptions _CreateValidOptions()
     {
         return new SshBlobStorageOptions

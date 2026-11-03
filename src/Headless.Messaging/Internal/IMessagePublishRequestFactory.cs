@@ -120,7 +120,7 @@ internal sealed class MessagePublishRequestFactory(
         MessageLane lane = MessageLane.Bus
     )
     {
-        return Create(contentObj, options?.MessageType ?? typeof(T), options, delayTime, lane);
+        return Create(contentObj, options?.MessageType?.Type ?? typeof(T), options, delayTime, lane);
     }
 
     public PreparedPublishMessage Create(

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Transactions;
 using Headless.Messaging.Transport;
@@ -78,7 +79,7 @@ internal sealed class OutboxMessageWriter(
             }
 
             // No active unit of work (or no relational transaction on it): commit the durable row first.
-            // Dispatch after this boundary is non-blocking acceleration; retry/delayed pickup owns recovery.
+            // Dispatch after this boundary is acceleration with a bounded wait; retry/delayed pickup owns recovery.
             var immediateMessage = await _StoreMessageAsync(
                     storage,
                     publishRequest.MessageName,
@@ -100,9 +101,12 @@ internal sealed class OutboxMessageWriter(
                     immediateMessage
                 );
             }
-            else
+            else if (dispatcher is ICommittedMessageDispatcher committed)
             {
-                (dispatcher as ICommittedMessageDispatcher)?.EnqueueCommittedMessage(immediateMessage);
+                // Not linked to the caller's token: the row is stored, so cancelling now must not fail the publish.
+                await committed
+                    .EnqueueCommittedMessageAsync(immediateMessage, Stopwatch.GetTimestamp())
+                    .ConfigureAwait(false);
             }
 
             return immediateMessage.StorageId;

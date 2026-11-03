@@ -82,11 +82,11 @@ public sealed class RolePermissionGrantProviderTests : TestBase
     }
 
     [Fact]
-    public async Task should_return_granted_from_first_matching_role()
+    public async Task should_report_every_granting_role_in_ordinal_order_when_several_roles_grant()
     {
-        // given — two roles grant the permission; the user's role order decides which one is attributed
+        // given — two roles grant the permission; the user's roles are a set, so neither is "first"
         var permission = _CreatePermission("Users.Create");
-        var currentUser = _CreateCurrentUser(["Admin", "Manager"]);
+        var currentUser = _CreateCurrentUser(["Manager", "Admin"]);
 
         _grantStore
             .IsGrantedAsync(
@@ -108,7 +108,7 @@ public sealed class RolePermissionGrantProviderTests : TestBase
 
         // then
         result["Users.Create"].Status.Should().Be(PermissionGrantStatus.Granted);
-        result["Users.Create"].ProviderKeys.Should().Equal("Admin");
+        result["Users.Create"].ProviderKeys.Should().Equal("Admin", "Manager");
     }
 
     [Fact]
@@ -140,12 +140,17 @@ public sealed class RolePermissionGrantProviderTests : TestBase
         result["Users.Delete"].ProviderKeys.Should().Contain("User");
     }
 
-    [Fact]
-    public async Task should_keep_an_earlier_roles_decision_over_a_later_one()
+    [Theory]
+    [InlineData("Admin", "Manager")]
+    [InlineData("Manager", "Admin")]
+    public async Task should_return_prohibited_whatever_the_role_order_when_one_role_prohibits_and_another_grants(
+        string firstRole,
+        string secondRole
+    )
     {
-        // given — Admin prohibits, Manager grants; the earlier role's decision stands
+        // given — Admin prohibits, Manager grants; a prohibition from any role denies, as across providers
         var permission = _CreatePermission("Users.Delete");
-        var currentUser = _CreateCurrentUser(["Admin", "Manager"]);
+        var currentUser = _CreateCurrentUser([firstRole, secondRole]);
 
         _grantStore
             .IsGrantedAsync(

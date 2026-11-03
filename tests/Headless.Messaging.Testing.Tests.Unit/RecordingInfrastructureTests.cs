@@ -57,7 +57,10 @@ public sealed class RecordingInfrastructureTests : TestBase
         };
     }
 
-    private static ConsumerContext _MakeConsumerContext(MediumMessage medium)
+    private static ConsumerContext _MakeConsumerContext(MediumMessage medium) =>
+        _MakeConsumerContext(medium, typeof(SimplePayload));
+
+    private static ConsumerContext _MakeConsumerContext(MediumMessage medium, Type? messageType)
     {
         var descriptor = new ConsumerExecutorDescriptor
         {
@@ -65,6 +68,7 @@ public sealed class RecordingInfrastructureTests : TestBase
             ConsumerType = typeof(RecordingInfrastructureTests),
             MessageName = medium.Origin.Headers[Headers.MessageName]!,
             SubscriptionName = "test-group",
+            MessageType = messageType,
         };
 
         return new ConsumerContext(descriptor, medium);
@@ -277,7 +281,7 @@ public sealed class RecordingInfrastructureTests : TestBase
         var pipeline = new RecordingConsumeMiddlewarePipeline(inner, store);
 
         // when
-        await pipeline.ExecuteAsync(context, payload, typeof(SimplePayload), AbortToken);
+        await pipeline.ExecuteAsync(context, payload, AbortToken);
 
         // then
         store.Consumed.Should().ContainSingle();
@@ -322,12 +326,7 @@ public sealed class RecordingInfrastructureTests : TestBase
         );
 
         // when: no Published record ever arrives for it
-        var execute = pipeline.ExecuteAsync(
-            context,
-            new SimplePayload { Value = "late" },
-            typeof(SimplePayload),
-            AbortToken
-        );
+        var execute = pipeline.ExecuteAsync(context, new SimplePayload { Value = "late" }, AbortToken);
         await execute.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
 
         // then: the consumer ran, nothing was recorded, and the pipeline did not sit out the wait budget
@@ -356,12 +355,7 @@ public sealed class RecordingInfrastructureTests : TestBase
         );
 
         // when
-        var execution = pipeline.ExecuteAsync(
-            context,
-            new SimplePayload { Value = "orphan" },
-            typeof(SimplePayload),
-            AbortToken
-        );
+        var execution = pipeline.ExecuteAsync(context, new SimplePayload { Value = "orphan" }, AbortToken);
 
         // The budget's timer exists only once the wait has started, and nothing but this clock can end that wait,
         // so a consumer that has not run here proves the budget genuinely gates it — a cleared-round short-circuit
@@ -395,7 +389,7 @@ public sealed class RecordingInfrastructureTests : TestBase
         var pipeline = new RecordingConsumeMiddlewarePipeline(inner, store);
 
         // when
-        await pipeline.ExecuteAsync(context, new SimplePayload { Value = "ok" }, typeof(SimplePayload), AbortToken);
+        await pipeline.ExecuteAsync(context, new SimplePayload { Value = "ok" }, AbortToken);
 
         // then
         inner.CallCount.Should().Be(1);
@@ -415,7 +409,7 @@ public sealed class RecordingInfrastructureTests : TestBase
         var pipeline = new RecordingConsumeMiddlewarePipeline(inner, store);
 
         // when
-        var act = async () => await pipeline.ExecuteAsync(context, payload, typeof(SimplePayload), AbortToken);
+        var act = async () => await pipeline.ExecuteAsync(context, payload, AbortToken);
 
         // then
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("handler blew up");
@@ -438,7 +432,7 @@ public sealed class RecordingInfrastructureTests : TestBase
         // when
         try
         {
-            await pipeline.ExecuteAsync(context, payload, typeof(SimplePayload), AbortToken);
+            await pipeline.ExecuteAsync(context, payload, AbortToken);
         }
 #pragma warning disable ERP022 // Unobserved exception in generic exception handler
         catch
@@ -463,7 +457,7 @@ public sealed class RecordingInfrastructureTests : TestBase
         var pipeline = new RecordingConsumeMiddlewarePipeline(inner, store);
 
         // when
-        await pipeline.ExecuteAsync(context, payload, typeof(SimplePayload), AbortToken);
+        await pipeline.ExecuteAsync(context, payload, AbortToken);
 
         // then
         var recorded = store.Consumed.Single();
@@ -483,7 +477,7 @@ public sealed class RecordingInfrastructureTests : TestBase
         var pipeline = new RecordingConsumeMiddlewarePipeline(inner, store);
 
         // when
-        await pipeline.ExecuteAsync(context, payload, typeof(SimplePayload), AbortToken);
+        await pipeline.ExecuteAsync(context, payload, AbortToken);
 
         // then
         store.Consumed.Single().CorrelationId.Should().Be("corr-abc");
@@ -501,10 +495,44 @@ public sealed class RecordingInfrastructureTests : TestBase
         var pipeline = new RecordingConsumeMiddlewarePipeline(inner, store);
 
         // when
-        await pipeline.ExecuteAsync(context, payload, typeof(SimplePayload), AbortToken);
+        await pipeline.ExecuteAsync(context, payload, AbortToken);
 
         // then
         store.Consumed.Single().MessageType.Should().Be<SimplePayload>();
+    }
+
+    [Fact]
+    public async Task recording_consume_middleware_pipeline_records_the_declared_message_type_over_the_runtime_type()
+    {
+        // given: the consumer declares a base type and the delivered instance is a subtype of it
+        var store = new MessageObservationStore();
+        var context = _MakeConsumerContext(_MakeMediumMessage(), typeof(SimplePayload));
+        var payload = new DerivedPayload();
+        var inner = new FakePipeline(new ConsumerExecutedResult(null, null, "msg-1", null, null));
+        var pipeline = new RecordingConsumeMiddlewarePipeline(inner, store);
+
+        // when
+        await pipeline.ExecuteAsync(context, payload, AbortToken);
+
+        // then
+        store.Consumed.Single().MessageType.Should().Be<SimplePayload>();
+    }
+
+    [Fact]
+    public async Task recording_consume_middleware_pipeline_records_the_runtime_type_when_the_descriptor_declares_none()
+    {
+        // given
+        var store = new MessageObservationStore();
+        var context = _MakeConsumerContext(_MakeMediumMessage(), messageType: null);
+        var payload = new DerivedPayload();
+        var inner = new FakePipeline(new ConsumerExecutedResult(null, null, "msg-1", null, null));
+        var pipeline = new RecordingConsumeMiddlewarePipeline(inner, store);
+
+        // when
+        await pipeline.ExecuteAsync(context, payload, AbortToken);
+
+        // then
+        store.Consumed.Single().MessageType.Should().Be<DerivedPayload>();
     }
 
     [Fact]
@@ -519,7 +547,7 @@ public sealed class RecordingInfrastructureTests : TestBase
         var pipeline = new RecordingConsumeMiddlewarePipeline(inner, store);
 
         // when
-        await pipeline.ExecuteAsync(context, payload, typeof(SimplePayload), AbortToken);
+        await pipeline.ExecuteAsync(context, payload, AbortToken);
 
         // then
         inner.CallCount.Should().Be(1);
@@ -537,7 +565,7 @@ public sealed class RecordingInfrastructureTests : TestBase
         var pipeline = new RecordingConsumeMiddlewarePipeline(inner, store);
 
         // when
-        await pipeline.ExecuteAsync(context, payload, typeof(SimplePayload), AbortToken);
+        await pipeline.ExecuteAsync(context, payload, AbortToken);
 
         // then
         store.Consumed.Single().CorrelationId.Should().BeNull();
@@ -559,7 +587,7 @@ public sealed class RecordingInfrastructureTests : TestBase
         var payload = new SimplePayload { Value = "scoped" };
         var expected = new ConsumerExecutedResult(
             payload,
-            typeof(SimplePayload),
+            resultMessageType: null,
             "scope-message",
             "response.message",
             new Dictionary<string, string?>(StringComparer.Ordinal) { ["custom-response"] = "value" },
@@ -568,13 +596,7 @@ public sealed class RecordingInfrastructureTests : TestBase
         var inner = new FakePipeline(expected);
         var pipeline = new RecordingConsumeMiddlewarePipeline(inner, store);
 
-        var result = await pipeline.ExecuteInScopeAsync(
-            context,
-            payload,
-            typeof(SimplePayload),
-            scope.ServiceProvider,
-            AbortToken
-        );
+        var result = await pipeline.ExecuteInScopeAsync(context, payload, scope.ServiceProvider, AbortToken);
 
         result.Should().BeSameAs(expected);
         inner.ScopedCallCount.Should().Be(1);
@@ -606,14 +628,7 @@ public sealed class RecordingInfrastructureTests : TestBase
         var pipeline = new RecordingConsumeMiddlewarePipeline(inner, store);
         var payload = new SimplePayload();
 
-        var act = async () =>
-            await pipeline.ExecuteInScopeAsync(
-                context,
-                payload,
-                typeof(SimplePayload),
-                scope.ServiceProvider,
-                AbortToken
-            );
+        var act = async () => await pipeline.ExecuteInScopeAsync(context, payload, scope.ServiceProvider, AbortToken);
 
         (await act.Should().ThrowAsync<InvalidOperationException>()).Which.Should().BeSameAs(exception);
         store.Faulted.Should().ContainSingle().Which.Exception.Should().BeSameAs(exception);
@@ -635,14 +650,7 @@ public sealed class RecordingInfrastructureTests : TestBase
         var pipeline = new RecordingConsumeMiddlewarePipeline(inner, store);
         var payload = new SimplePayload();
 
-        var act = async () =>
-            await pipeline.ExecuteInScopeAsync(
-                context,
-                payload,
-                typeof(SimplePayload),
-                scope.ServiceProvider,
-                AbortToken
-            );
+        var act = async () => await pipeline.ExecuteInScopeAsync(context, payload, scope.ServiceProvider, AbortToken);
 
         (await act.Should().ThrowAsync<OperationCanceledException>()).Which.Should().BeSameAs(exception);
         store.Faulted.Should().BeEmpty();
@@ -756,7 +764,6 @@ public sealed class RecordingInfrastructureTests : TestBase
         public Task<ConsumerExecutedResult> ExecuteAsync(
             ConsumerContext context,
             object messageInstance,
-            Type messageType,
             CancellationToken cancellationToken = default
         )
         {
@@ -768,7 +775,6 @@ public sealed class RecordingInfrastructureTests : TestBase
         public Task<ConsumerExecutedResult> ExecuteInScopeAsync(
             ConsumerContext context,
             object messageInstance,
-            Type messageType,
             IServiceProvider provider,
             CancellationToken cancellationToken = default
         )
@@ -792,10 +798,12 @@ public sealed class RecordingInfrastructureTests : TestBase
 
     // ─── fixtures ────────────────────────────────────────────────────────────
 
-    private sealed class SimplePayload
+    private class SimplePayload
     {
         public string? Value { get; set; }
     }
+
+    private sealed class DerivedPayload : SimplePayload;
 
     /// <summary>
     /// A <see cref="FakeTimeProvider"/> that reports when a timer has been armed against it. Advancing before the

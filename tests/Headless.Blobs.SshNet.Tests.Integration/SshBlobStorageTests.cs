@@ -5,6 +5,8 @@ using Headless.Blobs.SshNet;
 using Headless.Hosting;
 using Headless.Serializer;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Renci.SshNet.Common;
 
 namespace Tests;
@@ -76,6 +78,83 @@ public sealed class SshBlobStorageTests(SshBlobStorageFixture fixture) : BlobSto
             TimeProvider.System,
             LoggerFactory.CreateLogger<SshBlobStorage>()
         );
+    }
+
+    [Fact]
+    public async Task pool_hands_a_returned_client_to_a_waiting_acquire()
+    {
+        // given: a full single-connection pool with a second acquire already waiting
+        var options = new SshBlobStorageOptions
+        {
+            ConnectionString = fixture.GetConnectionString(),
+            MaxPoolSize = 1,
+            MaxConcurrentOperations = 1,
+        };
+        using var pool = new SftpClientPool(
+            new OptionsWrapper<SshBlobStorageOptions>(options),
+            NullLogger<SftpClientPool>.Instance
+        );
+
+        var first = await pool.AcquireAsync(AbortToken);
+        var waiting = pool.AcquireAsync(AbortToken).AsTask();
+        waiting.IsCompleted.Should().BeFalse();
+
+        // when: the holder returns its still-connected client
+        await pool.ReleaseAsync(first);
+
+        // then: the waiter gets that client instead of staying parked (bounded so a regression fails, not hangs)
+        var second = await waiting.WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
+        second.Should().BeSameAs(first);
+        await pool.ReleaseAsync(second);
+    }
+
+    [Fact]
+    public async Task open_read_streams_do_not_block_store_operations()
+    {
+        // given: a store whose operation pool is as large as its read-stream pool, every read stream held open
+        var options = new SshBlobStorageOptions
+        {
+            ConnectionString = fixture.GetConnectionString(),
+            MaxPoolSize = 2,
+            MaxConcurrentOperations = 2,
+            MaxReadStreamConnections = 2,
+        };
+        using var pool = new SftpClientPool(
+            new OptionsWrapper<SshBlobStorageOptions>(options),
+            NullLogger<SftpClientPool>.Instance
+        );
+        await using var storage = new SshBlobStorage(
+            pool,
+            fixture.CrossOsNamingNormalizer,
+            new SystemJsonSerializer(),
+            new OptionsMonitorWrapper<SshBlobStorageOptions>(options),
+            TimeProvider.System,
+            LoggerFactory.CreateLogger<SshBlobStorage>()
+        );
+        await ResetAsync(storage);
+
+        var location = new BlobLocation(ContainerName, "held-open.txt");
+        await storage.UploadContentAsync(location, "payload", AbortToken);
+
+        await using var first = await storage.OpenReadStreamAsync(location, AbortToken);
+        await using var second = await storage.OpenReadStreamAsync(location, AbortToken);
+
+        // when: the store's own operations run while both streams stay open
+        using var bounded = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        bounded.CancelAfter(TimeSpan.FromSeconds(30));
+
+        var info = await storage.GetBlobInfoAsync(location, bounded.Token);
+        await storage.UploadContentAsync(new BlobLocation(ContainerName, "other.txt"), "other", bounded.Token);
+
+        // then: neither waited on the held read-stream connections
+        info.Should().NotBeNull();
+        (await storage.ExistsAsync(new BlobLocation(ContainerName, "other.txt"), bounded.Token)).Should().BeTrue();
+
+        // and a third read stream waits until one of the open streams is disposed
+        using var shortWait = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        shortWait.CancelAfter(TimeSpan.FromMilliseconds(500));
+        var blocked = async () => await storage.OpenReadStreamAsync(location, shortWait.Token);
+        await blocked.Should().ThrowAsync<OperationCanceledException>();
     }
 
     [Fact]

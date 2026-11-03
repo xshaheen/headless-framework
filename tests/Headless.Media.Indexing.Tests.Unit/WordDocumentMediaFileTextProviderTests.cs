@@ -3,6 +3,7 @@ using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
 using Headless.Checks;
+using Headless.IO;
 using Headless.Media.Indexing;
 using Headless.Testing.Tests;
 
@@ -21,7 +22,7 @@ public sealed class WordDocumentMediaFileTextProviderTests : TestBase
         await using var fileStream = File.OpenRead(wordFilePath);
 
         // when
-        var result = await _sut.GetTextAsync(fileStream, AbortToken);
+        var result = await _sut.GetTextAsync(fileStream, cancellationToken: AbortToken);
 
         // then
         result.Should().Contain("Lorem ipsum dolor"); // Replace with actual expected content
@@ -34,7 +35,7 @@ public sealed class WordDocumentMediaFileTextProviderTests : TestBase
         await using var stream = _CreateEmptyWordDocument();
 
         // when
-        var result = await _sut.GetTextAsync(stream, AbortToken);
+        var result = await _sut.GetTextAsync(stream, cancellationToken: AbortToken);
 
         // then
         result.Should().BeEmpty();
@@ -52,10 +53,26 @@ public sealed class WordDocumentMediaFileTextProviderTests : TestBase
         Argument.CanRead(stream);
         Argument.CanWrite(stream);
         // when
-        var result = await _sut.GetTextAsync(stream, AbortToken);
+        var result = await _sut.GetTextAsync(stream, cancellationToken: AbortToken);
 
         // then
         result.Should().Be(expectedText);
+    }
+
+    [Fact]
+    public async Task should_extract_text_from_a_non_seekable_stream()
+    {
+        // given: the shape of a blob download or a request body
+        var paragraphs = new[] { "First paragraph", "Second paragraph" };
+        await using var document = _CreateWordDocumentWithParagraphs(paragraphs);
+        document.Position = 0; // a non-seekable reader starts wherever the stream is
+        await using var stream = new NonSeekableStream(document);
+
+        // when
+        var result = await _sut.GetTextAsync(stream, document.Length, AbortToken);
+
+        // then
+        result.Should().Be(string.Join(Environment.NewLine, paragraphs) + Environment.NewLine);
     }
 
     [Fact]
@@ -65,7 +82,7 @@ public sealed class WordDocumentMediaFileTextProviderTests : TestBase
         await using var stream = _CreateWordDocumentWithRawBodyText(20 * 1024 * 1024);
 
         // when
-        var act = async () => await _sut.GetTextAsync(stream, AbortToken);
+        var act = async () => await _sut.GetTextAsync(stream, cancellationToken: AbortToken);
 
         // then
         await act.Should().ThrowAsync<XmlException>();

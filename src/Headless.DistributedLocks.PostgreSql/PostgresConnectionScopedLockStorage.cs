@@ -42,7 +42,8 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
     /// <param name="options">Resolved provider options (polling fallback, command timeout, keepalive, key prefix).</param>
     /// <param name="storageOptions">Supplies the schema that holds the fence sequence.</param>
     /// <param name="dataSource">
-    /// The shared <see cref="PostgresLockDataSource"/> connection source. Not
+    /// The provider's <see cref="PostgresLockDataSource"/> connection source, never the application's unkeyed
+    /// <see cref="NpgsqlDataSource"/> itself. Not
     /// disposed by this instance; disposal is owned by the DI registration.
     /// </param>
     /// <param name="timeProvider">Time source used for monitoring sleeps and keepalive cadence.</param>
