@@ -177,7 +177,7 @@ public sealed partial class FactoryCacheCoordinator
                     await _ReleaseFactoryLockAsync(distributedLease, key).ConfigureAwait(false);
                 }
 
-                releaser.Dispose();
+                _ReleaseKeyLock(key, releaser);
                 BackgroundOperationFinished?.Invoke();
             }
         }
@@ -265,7 +265,7 @@ public sealed partial class FactoryCacheCoordinator
                 await _ReleaseFactoryLockAsync(distributedLease, key).ConfigureAwait(false);
             }
 
-            releaser.Dispose();
+            _ReleaseKeyLock(key, releaser);
             BackgroundOperationFinished?.Invoke();
         }
     }

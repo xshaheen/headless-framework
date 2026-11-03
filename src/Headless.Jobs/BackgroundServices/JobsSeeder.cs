@@ -121,7 +121,7 @@ internal sealed class JobsSeeder(
         // from the seed owner and the function or declaration key, so simultaneous first-boot on N nodes converges on a
         // single row (PK dedup) — no duplicate schedules even without the lock. The optional lock below only removes the
         // redundant N-node scan/write storm; it is never the correctness boundary — per-row predicates,
-        // node@incarnation ownership, and per-job leases are.
+        // cluster/node@incarnation ownership, and per-job leases are.
         if (!schedulerOptions.UseStorageLock)
         {
             await internalJobsManager

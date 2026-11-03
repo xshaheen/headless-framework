@@ -4,9 +4,9 @@ namespace Headless.Coordination;
 
 /// <summary>Represents an incarnation-qualified node identity in the canonical <c>node@incarnation</c> format.</summary>
 /// <remarks>
-/// The <c>node@incarnation</c> format (such as <c>pod-a@3</c>) serves as the ownership stamp across
-/// coordinated resources. The monotonically increasing incarnation allows higher values to supersede lower values
-/// for the same node identifier, supporting stale-owner detection.
+/// The monotonically increasing incarnation allows higher values to supersede lower values for the same node
+/// identifier, supporting stale-owner detection. An identity is unique only within its cluster: stamp rows with the
+/// cluster-qualified <see cref="NodeOwnerTag"/>, not with this value alone.
 /// </remarks>
 [PublicAPI]
 public readonly record struct NodeIdentity(NodeId NodeId, NodeIncarnation Incarnation)

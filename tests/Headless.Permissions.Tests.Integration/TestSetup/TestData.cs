@@ -8,10 +8,15 @@ public static class TestData
 {
     public static readonly Faker Faker = new();
 
+    // Definition names are unique keys: a one-letter random name collides with a sibling often enough to throw a
+    // duplicate-name error, and a short one can match the 5-10 character name the "not defined" tests look up. Sixteen
+    // characters or more makes both practically impossible.
+    private static string _UniqueName(int maxLength) => Faker.Random.String2(16, maxLength);
+
     public static PermissionGroupDefinition AddGeneratedGroup(this IPermissionDefinitionContext context)
     {
         return context.AddGroup(
-            name: Faker.Random.String2(1, PermissionGroupDefinitionRecordConstants.NameMaxLength),
+            name: _UniqueName(PermissionGroupDefinitionRecordConstants.NameMaxLength),
             displayName: Faker.Random.String2(1, PermissionGroupDefinitionRecordConstants.DisplayNameMaxLength)
         );
     }
@@ -49,7 +54,7 @@ public static class TestData
     public static PermissionDefinition AddGeneratedDefinition(this PermissionGroupDefinition group)
     {
         return group.AddChild(
-            name: Faker.Random.String2(1, PermissionDefinitionRecordConstants.NameMaxLength),
+            name: _UniqueName(PermissionDefinitionRecordConstants.NameMaxLength),
             displayName: Faker.Random.String2(1, PermissionDefinitionRecordConstants.DisplayNameMaxLength),
             isEnabled: true
         );

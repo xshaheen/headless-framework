@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using System.Diagnostics;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Time.Testing;
@@ -27,7 +29,9 @@ public sealed class HeadlessTaskExtensionsTests : TestBase
 
         // then
         actionExecuted.Should().BeTrue();
-        elapsed.Should().BeGreaterThanOrEqualTo(delay);
+        // The runtime timer queue schedules on a millisecond tick count (about 15 ms on Windows), so a real delay
+        // can end slightly before the full span as the high-resolution Stopwatch measures it.
+        elapsed.Should().BeGreaterThanOrEqualTo(delay - TimeSpan.FromMilliseconds(20));
     }
 
     [Fact]

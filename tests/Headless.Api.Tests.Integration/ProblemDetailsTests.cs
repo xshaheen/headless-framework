@@ -593,7 +593,11 @@ public sealed class ProblemDetailsTests : TestBase
         jsonElement.GetProperty("traceId").GetString().Should().NotBeNullOrWhiteSpace();
         jsonElement.GetProperty("buildNumber").GetString().Should().NotBeNullOrWhiteSpace();
         jsonElement.GetProperty("commitNumber").GetString().Should().NotBeNullOrWhiteSpace();
-        jsonElement.GetProperty("timestamp").GetDateTimeOffset().Should().BeCloseTo(DateTimeOffset.UtcNow, 1.Seconds());
+        // The server stamps the response before the test reads the clock, so the stamp is at or before now; the lower
+        // bound is wide because a loaded run can stall between the two reads, and the check is "now", not latency.
+        var timestamp = jsonElement.GetProperty("timestamp").GetDateTimeOffset();
+        var now = DateTimeOffset.UtcNow;
+        timestamp.Should().BeOnOrBefore(now).And.BeAfter(now - 1.Minutes());
     }
 
     private WebApplicationFactory<Program> _CreateDefaultFactory(string environment)

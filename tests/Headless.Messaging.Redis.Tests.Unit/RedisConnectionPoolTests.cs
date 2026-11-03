@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Diagnostics;
 using Headless.Messaging.Redis;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Options;
@@ -29,19 +28,11 @@ public sealed class RedisConnectionPoolTests : TestBase
             }
         );
 
-        var stopwatch = Stopwatch.StartNew();
-
-        // when - constructor should return quickly since connections are lazy
-        // NOTE: This test will FAIL if constructor blocks for connection attempts
+        // when
         using var pool = new RedisConnectionPool(options, LoggerFactory);
 
-        stopwatch.Stop();
-
-        // then - constructor should complete within 100ms
-        // If this fails, it indicates the sync-over-async bug is present
-        stopwatch
-            .ElapsedMilliseconds.Should()
-            .BeLessThan(100, "constructor should not block waiting for Redis connections");
+        // then - connections open on first use, so the constructor starts none and cannot block on Redis
+        pool.CreatedConnectionCount.Should().Be(0, "constructor should not start Redis connections");
     }
 
     [Fact]

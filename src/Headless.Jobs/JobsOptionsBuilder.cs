@@ -293,7 +293,7 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
 
     /// <summary>
     /// Set by the durable operational-store provider to opt into coordinated membership: the node owner
-    /// becomes <c>node@incarnation</c> and dead-node recovery flows through Headless.Coordination. The core
+    /// becomes <c>cluster/node@incarnation</c> and dead-node recovery flows through Headless.Coordination. The core
     /// pipeline reacts by requiring a coordination provider and wiring the recovery bridge + startup gate.
     /// </summary>
     internal bool RequiresCoordinatedMembership { get; set; }
@@ -661,7 +661,7 @@ public sealed class SchedulerOptionsBuilder
     /// <summary>
     /// Identifies this node on the in-memory single-process path; defaults to <see cref="Environment.MachineName"/>.
     /// The durable (Coordination) path does NOT use this value — it stamps rows with the membership
-    /// <c>node@incarnation</c> owner, and node identity there (including K8s pod-collision handling via
+    /// <c>cluster/node@incarnation</c> owner, and node identity there (including K8s pod-collision handling via
     /// <c>POD_NAME</c>) is owned by <c>Headless.Coordination</c>'s node-id provider, not this option. This value
     /// only serves as the durable path's pre-registration display fallback.
     /// </summary>

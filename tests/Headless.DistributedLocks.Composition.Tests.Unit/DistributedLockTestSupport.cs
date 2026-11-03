@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using System.Diagnostics.Metrics;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
@@ -98,9 +99,11 @@ internal static class DistributedLockTestSupport
     /// process-wide and shared across parallel tests, so assert with <c>Contain</c>, not
     /// <c>ContainSingle</c>; exclusivity belongs on an isolated capturing logger.
     /// </summary>
-    public static List<string> CaptureFailedReasons(MeterListener listener, string instrumentName)
+    public static ConcurrentQueue<string> CaptureFailedReasons(MeterListener listener, string instrumentName)
     {
-        var reasons = new List<string>();
+        // A concurrent queue, because parallel tests record on this listener while the test enumerates it for an
+        // assertion; enumerating it takes a snapshot, where a locked List would throw "Collection was modified".
+        var reasons = new ConcurrentQueue<string>();
         // `headless.lock.failed` carries `headless.lock.reason`; same shape for the semaphore counter.
         var tagName = instrumentName.Replace(".failed", ".reason", StringComparison.Ordinal);
 
@@ -122,10 +125,7 @@ internal static class DistributedLockTestSupport
                 {
                     if (tag.Value is string reason && string.Equals(tag.Key, tagName, StringComparison.Ordinal))
                     {
-                        lock (reasons)
-                        {
-                            reasons.Add(reason);
-                        }
+                        reasons.Enqueue(reason);
                     }
                 }
             }

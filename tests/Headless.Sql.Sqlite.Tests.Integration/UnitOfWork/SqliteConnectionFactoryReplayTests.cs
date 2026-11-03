@@ -29,21 +29,18 @@ public sealed class SqliteConnectionFactoryReplayTests(SqliteUnitOfWorkFixture f
         await using var blocker = new SqliteConnection(fixture.ConnectionString);
         await blocker.OpenAsync(AbortToken);
         await using var holding = (SqliteTransaction)await blocker.BeginTransactionAsync(AbortToken);
-        var release = Task.Run(
-            async () =>
-            {
-                await Task.Delay(TimeSpan.FromMilliseconds(1500), AbortToken);
-                await holding.RollbackAsync(AbortToken);
-            },
-            AbortToken
-        );
 
         await factory.RunAsync(
-            _ =>
+            async ct =>
             {
-                Interlocked.Increment(ref connections);
+                // The writer lets go when the replay asks for its connection, not on a timer, so the first attempt
+                // is always busy and the replay never is, however late either one starts.
+                if (Interlocked.Increment(ref connections) == 2)
+                {
+                    await holding.RollbackAsync(ct);
+                }
 
-                return ValueTask.FromResult(new SqliteConnection(impatient));
+                return new SqliteConnection(impatient);
             },
             (unit, connection, ct) =>
                 SqliteUnitOfWorkFixture.InsertProbeRowAsync(
@@ -62,9 +59,8 @@ public sealed class SqliteConnectionFactoryReplayTests(SqliteUnitOfWorkFixture f
             },
             AbortToken
         );
-        await release;
 
-        connections.Should().BeGreaterThan(1, "the busy first attempt was replayed on a new connection");
+        connections.Should().Be(2, "the busy first attempt was replayed once on a new connection");
         (await fixture.CountProbeRowsAsync(AbortToken)).Should().Be(1);
     }
 
