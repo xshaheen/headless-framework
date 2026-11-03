@@ -895,7 +895,7 @@ Registered via `AddHeadlessBlobs(b => b.UseRedis(...))` or `AddNamed("name", i =
 - Named (`AddNamed ... UseRedis`): registers `IBlobStorage` and `IBlobContainerManager` each as keyed singleton (`name`); same `TryAdd` registrations for shared services.
 - No native presigned URL support. `IPresignedUrlBlobStorage` is registered for Redis stores only by `UseSignedUrlEndpoint` from `Headless.Blobs.SignedUrlEndpoint`.
 - A connection or timeout failure is retried up to 3 times with a jittered back-off from 50 ms up to 500 ms. The back-off runs on the system clock; the registered `TimeProvider` stamps blob times only, so a faked clock never stalls a retry.
-- `MoveAsync`, `DeleteAsync`, and the destination write of a cross-slot move retry only a command the client never sent. After a send, a timeout or dropped connection cannot say whether the script ran, and a re-run over its own effect would answer "source missing", "destination occupied", or "not found". Those calls throw the `RedisTimeoutException` or `RedisConnectionException` instead; check the blob before acting on the failure. Uploads, reads, listings, and copies keep the full retry.
+- `MoveAsync`, `DeleteAsync` (and each delete inside `BulkDeleteAsync` and `DeleteAllAsync`), and the destination write of a cross-slot move retry only a command the client never sent. After a send, a timeout or dropped connection cannot say whether the script ran, and a re-run over its own effect would answer "source missing", "destination occupied", or "not found". Those calls throw the `RedisTimeoutException` or `RedisConnectionException` instead; check the blob before acting on the failure. Uploads, reads, listings, and copies keep the full retry.
 
 ---
 
