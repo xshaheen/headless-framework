@@ -40,4 +40,15 @@ internal static class PostgresDataSourceFactory
 
         return NpgsqlDataSource.Create(builder);
     }
+
+    /// <summary>
+    /// Returns whether a connection string turns on Npgsql multiplexing, under which a connection has no bound physical
+    /// session: a session advisory lock would not stay with its holder, and Npgsql refuses the prepare and the
+    /// <c>LISTEN</c> wait the provider relies on.
+    /// </summary>
+    public static bool IsMultiplexing(string? connectionString)
+    {
+        return !string.IsNullOrWhiteSpace(connectionString)
+            && new NpgsqlConnectionStringBuilder(connectionString).Multiplexing;
+    }
 }
