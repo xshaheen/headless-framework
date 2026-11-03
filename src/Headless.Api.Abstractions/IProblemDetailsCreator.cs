@@ -171,8 +171,8 @@ public interface IProblemDetailsCreator
     ProblemDetails Unauthorized(string? detail = null, ErrorDescriptor? error = null);
 
     /// <summary>
-    /// Builds a normalized 408 <see cref="ProblemDetails"/> for request-timeout responses
-    /// (typically mapped from <see cref="System.TimeoutException"/>).
+    /// Builds a normalized 408 <see cref="ProblemDetails"/> for a client that did not send its request in time.
+    /// A <see cref="System.TimeoutException"/> thrown while serving the request is a server fault and maps to 503.
     /// </summary>
     /// <param name="detail">
     /// Optional detail message. Defaults to the framework's generic request-timeout message when <see langword="null"/>.

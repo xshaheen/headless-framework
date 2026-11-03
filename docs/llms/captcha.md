@@ -271,7 +271,7 @@ Bound from `Headless:Captcha:ReCaptchaV2` / `Headless:Captcha:ReCaptchaV3` when 
 
 ### Runtime behavior
 
-- Each `UseReCaptchaV2` / `UseReCaptchaV3` registration adds a named `HttpClient` (with the standard resilience handler) pointed at `VerifyBaseUrl`, configures `ReCaptchaOptions` (with FluentValidation, validated on start), and registers a keyed `ICaptchaVerifier` (v2) / keyed `IReCaptchaV3Verifier` + `ICaptchaVerifier` (v3) under the registration name. A default registration also adds the unkeyed verifier(s).
+- Each `UseReCaptchaV2` / `UseReCaptchaV3` registration adds a named `HttpClient` pointed at `VerifyBaseUrl`, whose resilience pipeline is derived from `OutboundEffect.Unsafe` (`Headless.Http.Resilience`): the siteverify POST is never retried, because a token is single-use and a replay fails verification, and a host-wide resilience handler (for example `AddHeadless()` service defaults) is removed from the client first so it cannot retry it either. It configures `ReCaptchaOptions` (with FluentValidation, validated on start), and registers a keyed `ICaptchaVerifier` (v2) / keyed `IReCaptchaV3Verifier` + `ICaptchaVerifier` (v3) under the registration name. A default registration also adds the unkeyed verifier(s).
 - Registers `ICaptchaLanguageCodeProvider` (`CultureInfoCaptchaLanguageCodeProvider`, transient, `TryAdd`) the first time a reCAPTCHA provider is added.
 - Tag helpers emit HTML/script output during Razor rendering. No background services.
 
@@ -367,6 +367,6 @@ Bound from `Headless:Captcha:Turnstile` when using the `IConfiguration` overload
 
 ### Runtime behavior
 
-- Each `UseTurnstile` registration adds a named `HttpClient` (with the standard resilience handler) pointed at `VerifyBaseUrl`, configures `TurnstileOptions` (with FluentValidation, validated on start), and registers a keyed `ITurnstileVerifier` + `ICaptchaVerifier` under the registration name. A default registration also adds the unkeyed `ITurnstileVerifier` / `ICaptchaVerifier`.
+- Each `UseTurnstile` registration adds a named `HttpClient` pointed at `VerifyBaseUrl`, whose resilience pipeline is derived from `OutboundEffect.Unsafe` (`Headless.Http.Resilience`): the siteverify POST is never retried, because a token is single-use and a replay fails verification, and a host-wide resilience handler (for example `AddHeadless()` service defaults) is removed from the client first so it cannot retry it either. It configures `TurnstileOptions` (with FluentValidation, validated on start), and registers a keyed `ITurnstileVerifier` + `ICaptchaVerifier` under the registration name. A default registration also adds the unkeyed `ITurnstileVerifier` / `ICaptchaVerifier`.
 - Registers `ICaptchaLanguageCodeProvider` (`CultureInfoCaptchaLanguageCodeProvider`, transient, `TryAdd`) the first time a Turnstile provider is added.
 - Tag helpers emit HTML/script output during Razor rendering. No background services.

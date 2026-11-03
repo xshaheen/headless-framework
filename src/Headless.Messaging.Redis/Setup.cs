@@ -28,8 +28,9 @@ public static class SetupMessagingRedis
     extension(MessagingSetupBuilder setup)
     {
         /// <summary>
-        /// Registers Redis Streams as the Bus and Queue transport, connecting to localhost on the default
-        /// Redis port with all other options at their defaults.
+        /// Registers Redis Streams as the Bus and Queue transport on the <see cref="IConnectionMultiplexer"/> registered
+        /// in the service collection, or on localhost at the default Redis port when none is registered, with all other
+        /// options at their defaults.
         /// </summary>
         /// <returns>The same <paramref name="setup"/> builder for chaining.</returns>
         public MessagingSetupBuilder UseRedis()
@@ -38,8 +39,8 @@ public static class SetupMessagingRedis
         }
 
         /// <summary>
-        /// Registers Redis Streams as the Bus and Queue transport using a StackExchange.Redis
-        /// comma-delimited configuration string.
+        /// Registers Redis Streams as the Bus and Queue transport on a connection of its own, opened from a
+        /// StackExchange.Redis comma-delimited configuration string.
         /// </summary>
         /// <param name="connection">
         /// A StackExchange.Redis <c>ConfigurationOptions</c> configuration string
@@ -149,10 +150,23 @@ public static class SetupMessagingRedis
         }
     }
 
-    private sealed class RedisMessagingOptionsPostConfigure : IPostConfigureOptions<RedisMessagingOptions>
+    private sealed class RedisMessagingOptionsPostConfigure(IServiceProvider services)
+        : IPostConfigureOptions<RedisMessagingOptions>
     {
         public void PostConfigure(string? name, RedisMessagingOptions options)
         {
+            // An app that registers a multiplexer for its other Redis packages shares it with messaging, so the host
+            // keeps one set of sockets per Redis server. Its own connection settings opt out.
+            if (options is { Configuration: null, ConnectionMultiplexer: null })
+            {
+                options.ConnectionMultiplexer = services.GetService<IConnectionMultiplexer>();
+            }
+
+            if (options.ConnectionMultiplexer is not null)
+            {
+                return;
+            }
+
             options.Configuration ??= new ConfigurationOptions();
 
             if (!options.Configuration.EndPoints.Any())

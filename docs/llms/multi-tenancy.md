@@ -496,6 +496,7 @@ These settings are catalog-wide: mixing a subdomain source with a custom-domain 
 - Unknown, disabled, and mismatch rejections are byte-identical by default, but not timing-identical. A disabled tenant that someone resolved recently answers from the cache, while an unknown identifier outside its negative-cache window costs a store round trip, so response latency can reveal that a disabled tenant exists. The framework does not equalize timing; rate limiting (see [DoS and rate limiting](#dos-and-rate-limiting)) caps how many samples a caller can collect.
 - No tenancy log event carries a raw host, route value, header value, or identifier; the misorder and timeout events name the source type and, for timeouts, the operator-supplied template only, and each fires once per process so it cannot be used to flood logs.
 - CDN caveats: host and route tenancy rely on the URL — including the host — being the cache key, so a CDN cache key that omits the host serves one tenant's response to another; and many CDNs refuse to cache responses that vary on unknown headers, so a header source's `Vary: X-Tenant` may disable caching at the edge.
+- In-app output caching (`AddOutputCache()` with `UseOutputCache()`, whatever the store) keys an entry by host, path, query, and its policy's vary-by rules and ignores the response `Vary` header, so on its own it would serve one header-selected tenant's cached response to another. Catalog resolution therefore adds an output-cache base policy that puts the resolved tenant id (empty for host context) into every key as the vary-by value `Headless.Tenant`. It only varies the key and never turns caching on for an endpoint. It reads the ambient tenant, so `UseOutputCache()` must run after `UseHeadlessTenantCatalogResolution()`; a request that reaches output caching first logs the Error-level `HEADLESS_TENANT_OUTPUT_CACHE_MISORDERED` event once per process, and its cached responses do not vary by tenant.
 
 #### Header source and perimeter controls
 
@@ -659,7 +660,7 @@ Missing ambient context or a missing required tenant on an Added entry uses `Hea
 
 `CrossTenantWriteException` is non-transient and must NOT be retried. Catch-all retry policies (for example `Policy.Handle<Exception>()`) should exclude it explicitly; retrying a cross-tenant write either fails identically or — if the ambient tenant context changes between attempts — persists the unsafe write.
 
-For intentional admin or host-level maintenance writes, keep the bypass narrow:
+For intentional admin or host-level maintenance writes, keep the bypass narrow. `AddHeadlessTenancy` and `AddHeadlessDbContextServices()` both register `ITenantWriteGuardBypass`, so a host without EF Core resolves it too:
 
 ```csharp
 var bypass = serviceProvider.GetRequiredService<ITenantWriteGuardBypass>();
@@ -948,6 +949,8 @@ using (currentTenant.Change(tenantId))
 
 Use `.RequireTenantOnPublish()` to require every publish to resolve a tenant identifier. When enabled, the publish wrapper checks `PublishOptions.TenantId` first, then falls back to the ambient `ICurrentTenant.Id`. If neither resolves a value, the publish fails with `Headless.MultiTenancy.MissingTenantContextException`. This is the messaging sibling of the EF write guard (#234) and the HTTP authorization requirement.
 
+Framework system messages are exempt: a publish marked `MessageOptions.IsSystemMessage = true` with no explicit and no ambient tenant goes out with no tenant header instead of failing. The framework marks its own host-level messages: HybridCache invalidations, so `ITenantCatalogCacheInvalidator` evictions and pre-authentication catalog lookups still reach peers; distributed lock release signals; and the Features, Settings, Permissions grant, and dynamic permission definition change announcements. The exemption never drops a tenant that exists: an ambient tenant is still stamped, and a system message that suppresses an existing ambient tenant is still rejected. Application messages leave the flag unset. See [Strict Publish Tenancy](messaging.md#strict-publish-tenancy).
+
 `MessagingOptions.TenantContextRequired` reports the configured state and has no public setter. It defaults to `false`. The raw-header integrity rules above (`ReservedTenantHeader`, `TenantIdMismatch`) always apply before the strict-tenancy fallback.
 
 To remediate a `MissingTenantContextException` from a background worker or `IHostedService`:
@@ -1091,7 +1094,7 @@ public sealed class OrderService(ICurrentTenant currentTenant)
 }
 ```
 
-`ICurrentTenant` and `ICurrentTenantAccessor` are contracts only — this package registers nothing, though it does ship the default `AsyncLocal`-backed implementations (`CurrentTenant`, `AsyncLocalCurrentTenantAccessor`); the seam packages register them. `ITenantStore`, `ITenantDirectory`, and `ICurrentTenantInfo` are also contracts only — `Headless.MultiTenancy`'s `Catalog(...)` builder wires the store implementation and the catalog service.
+`ICurrentTenant` and `ICurrentTenantAccessor` are contracts only — this package registers nothing, though it does ship the default `AsyncLocal`-backed implementations (`CurrentTenant`, `AsyncLocalCurrentTenantAccessor`, `TenantWriteGuardBypass`); the seam packages register them. `AddHeadlessTenancy` and `AddHeadlessDbContextServices()` both register `TenantWriteGuardBypass`. A store outside those paths that honours the write guard registers it with `services.TryAddSingleton<ITenantWriteGuardBypass, TenantWriteGuardBypass>()` instead of reimplementing the bypass. Keep it a singleton: the bypass state lives on the instance, so a scope begun on one instance is invisible to another. `ITenantStore`, `ITenantDirectory`, and `ICurrentTenantInfo` are also contracts only — `Headless.MultiTenancy`'s `Catalog(...)` builder wires the store implementation and the catalog service.
 
 ### Configuration
 
@@ -1201,6 +1204,7 @@ Custom validators implement `IHeadlessTenancyValidator` and register themselves 
 - Registers a singleton `TenantPostureManifest` via `services.AddSingleton(manifest)`.
 - Registers `HeadlessTenancyStartupValidator` as an `IHeadlessStartupValidator` (idempotent; safe to call multiple times).
 - Registers a default no-op scoped `ICurrentTenantInfo` (`NullCurrentTenantInfo`).
+- Registers `ITenantWriteGuardBypass` (`TenantWriteGuardBypass`) as a singleton through `TryAddSingleton`, so every tenancy host can resolve it, with or without EF Core. A registration made before `AddHeadlessTenancy` wins; `AddHeadlessDbContextServices()` uses `TryAddSingleton` too, so whichever path runs first supplies the one instance.
 - `Telemetry(...)` registers `TenantTelemetryOptions` with its validator (`ValidateOnStart`). Without it, the defaults apply.
 - `AddHeadlessTenancy` also invokes the caller's `configure` callback, which may register additional services from seam packages.
 - `Catalog(...)` registers `TenantCatalogOptions` (validated, `ValidateOnStart`), the selected storage provider's services, `ITenantCatalogService` (scoped, backed by `TenantCatalogService`), replaces the default `ICurrentTenantInfo` with the catalog-backed implementation, and registers `TenantCatalogPostureValidator`.

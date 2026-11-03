@@ -178,6 +178,28 @@ public sealed class RedisConnectionPoolTests : TestBase
     }
 
     [Fact]
+    public async Task should_return_the_shared_multiplexer_and_leave_it_open_on_dispose()
+    {
+        // given
+        var shared = Substitute.For<IConnectionMultiplexer>();
+        var options = Options.Create(
+            new RedisMessagingOptions { ConnectionMultiplexer = shared, ConnectionPoolSize = 3 }
+        );
+        var pool = new RedisConnectionPool(options, LoggerFactory);
+
+        // when
+        var first = await pool.ConnectAsync(AbortToken);
+        var second = await pool.ConnectAsync(AbortToken);
+        await pool.DisposeAsync();
+
+        // then
+        first.Should().BeSameAs(shared);
+        second.Should().BeSameAs(shared);
+        shared.DidNotReceive().Dispose();
+        await shared.DidNotReceive().DisposeAsync();
+    }
+
+    [Fact]
     public async Task should_throw_when_connect_called_after_sync_dispose()
     {
         // given

@@ -49,11 +49,16 @@ public class CouchbaseBucketContext(IBucket bucket, Transactions transactions, I
     /// <returns>A LINQ queryable targeting the specified scope and collection.</returns>
     public IQueryable<T> Query<T>(string scope, string collection, BucketQueryOptions options = BucketQueryOptions.None)
     {
-        var queryable =
-            _QueryMethod.MakeGenericMethod(typeof(T)).Invoke(this, [scope, collection, options])
-            ?? throw new InvalidOperationException("Cannot be null");
+        return QueryInvoker<T>.Invoke(this, scope, collection, options);
+    }
 
-        return (IQueryable<T>)queryable;
+    /// <summary>Binds the non-public overload once per document type instead of reflecting on every query.</summary>
+    private static class QueryInvoker<T>
+    {
+        public static readonly Func<BucketContext, string, string, BucketQueryOptions, IQueryable<T>> Invoke =
+            _QueryMethod
+                .MakeGenericMethod(typeof(T))
+                .CreateDelegate<Func<BucketContext, string, string, BucketQueryOptions, IQueryable<T>>>();
     }
 
     #endregion

@@ -233,8 +233,8 @@ public sealed class DynamicSettingDefinitionStore(
                     _options.CrossApplicationsCommonLockKey,
                     new DistributedLockAcquireOptions
                     {
-                        TimeUntilExpires = TimeSpan.FromMinutes(10),
-                        AcquireTimeout = TimeSpan.FromMinutes(5),
+                        TimeUntilExpires = _options.CrossApplicationsCommonLockExpiration,
+                        AcquireTimeout = _options.CrossApplicationsCommonLockAcquireTimeout,
                     },
                     cancellationToken
                 )

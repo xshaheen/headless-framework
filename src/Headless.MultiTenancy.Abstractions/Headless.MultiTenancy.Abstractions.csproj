@@ -14,10 +14,8 @@
     <ProjectReference Include="..\Headless.Primitives\Headless.Primitives.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <!-- HeadlessTenancyBuilder's constructor and TenantWriteGuardBypass are internal: the tenancy
-         root setup constructs the builder, and the EF write-guard seam registers the bypass. -->
+    <!-- HeadlessTenancyBuilder's constructor is internal: only the tenancy root setup constructs the builder. -->
     <InternalsVisibleTo Include="Headless.MultiTenancy" />
-    <InternalsVisibleTo Include="Headless.EntityFramework" />
     <InternalsVisibleTo Include="Headless.MultiTenancy.Tests.Unit" />
   </ItemGroup>
 </Project>

@@ -48,7 +48,13 @@ public sealed partial class HybridCache(
     CacheEventsConfig? eventsConfig = null
 ) : ICache, IFactoryCacheStore, IBufferCache, IAsyncDisposable
 {
-    private static readonly PublishOptions _InvalidationPublishOptions = new() { DeliveryMode = DeliveryMode.Direct };
+    // A system message: invalidations from host scope (catalog lookups, host writes, recovery replay) carry no tenant and
+    // must still reach peers when the host requires a tenant on every publish.
+    private static readonly PublishOptions _InvalidationPublishOptions = new()
+    {
+        DeliveryMode = DeliveryMode.Direct,
+        IsSystemMessage = true,
+    };
 
     private readonly ILogger _logger = logger ?? NullLogger<HybridCache>.Instance;
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;

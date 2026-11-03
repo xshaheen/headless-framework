@@ -2,9 +2,8 @@
 
 using System.Collections.Concurrent;
 using Headless.Threading;
-using Headless.UnitOfWork;
 
-namespace Headless.Fencing.InMemory;
+namespace Headless.UnitOfWork.Internal;
 
 /// <summary>
 /// A process-local table of immutable rows with one exclusive lock per key, the in-memory stand-in for a table whose

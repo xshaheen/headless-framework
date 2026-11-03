@@ -202,9 +202,10 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
     {
         var (connection, _) = _RequireLive(unitOfWork);
 
-        using var configured = _storage.CreateConnection();
         RelationalEnlistment.RequireSameDatabase(
-            configured,
+            unitOfWork,
+            _storage,
+            static storage => storage.CreateConnection(),
             connection,
             _storage.PackageName,
             UnitOfWorkLeasesFeature.Operation

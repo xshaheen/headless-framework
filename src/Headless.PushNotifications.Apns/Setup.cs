@@ -2,6 +2,7 @@
 
 using System.Net;
 using Headless.Checks;
+using Headless.Http.Resilience;
 using Headless.PushNotifications.Apns;
 using Headless.PushNotifications.Apns.Internal;
 using Microsoft.Extensions.Configuration;
@@ -273,7 +274,13 @@ public static class SetupApnsPushNotifications
             .SetHandlerLifetime(Timeout.InfiniteTimeSpan)
             // The factory's default loggers write the request URI, which carries the raw device token.
             .RemoveAllLoggers()
-            .AddStandardResilienceHandler(options => _ConfigureResilience(options, configureResilience));
+            // A push is not deduplicated by APNs, so the client is declared unsafe; _ConfigureResilience then narrows
+            // retry to pre-send faults. Declaring the effect also removes a host-wide resilience handler, whose stock
+            // retry would otherwise wrap this pipeline and resend 429 and 5xx responses.
+            .AddEffectResilienceHandler(
+                OutboundEffect.Unsafe,
+                configureResilience: options => _ConfigureResilience(options, configureResilience)
+            );
 
         // Channel management lives on its own host and port, so it gets its own client; it shares the primary
         // handler's authentication, proxy, and connection bound, and the same resilience rules.
@@ -296,7 +303,10 @@ public static class SetupApnsPushNotifications
             )
             .SetHandlerLifetime(Timeout.InfiniteTimeSpan)
             .RemoveAllLoggers()
-            .AddStandardResilienceHandler(options => _ConfigureResilience(options, configureResilience));
+            .AddEffectResilienceHandler(
+                OutboundEffect.Unsafe,
+                configureResilience: options => _ConfigureResilience(options, configureResilience)
+            );
 
         // One instance serves both service types, so the typed and shared paths share its HTTP client, provider
         // token, and options.

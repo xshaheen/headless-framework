@@ -2,6 +2,7 @@
 
 using Headless.Caching;
 using Headless.Checks;
+using Headless.Threading;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.Logging;
 
@@ -21,6 +22,12 @@ public sealed class FeatureValueStore(
 ) : IFeatureValueStore
 {
     private readonly TimeSpan _cacheExpiration = TimeSpan.FromHours(5);
+
+    // Concurrent misses for one provider key share one load: the first caller reads the repository and fills the
+    // cache, and the others re-read the cache it filled. A waiter only ever uses what the cache holds for its own key,
+    // so the lock decides ordering, never results. Static, so the store needs no disposal; distinct stores and keys
+    // merely share the striped lock table.
+    private static readonly KeyedAsyncLock _LoadLock = new();
 
     /// <summary>How many times a batch is planned and saved before a concurrent-writer collision is surfaced.</summary>
     private const int _MaxSaveAttempts = 3;
@@ -387,6 +394,21 @@ public sealed class FeatureValueStore(
         return records.ConvertAll(x => x.Name);
     }
 
+    /// <summary>
+    /// Reads the cached values of several (name, provider, key) entries in one cache call, without loading misses.
+    /// </summary>
+    /// <remarks>
+    /// A hit is exactly what <see cref="GetOrDefaultAsync"/> returns for that entry, so a caller may use it in place of
+    /// that call and fall back to it only on a miss.
+    /// </remarks>
+    internal ValueTask<IDictionary<string, CacheValue<FeatureValueCacheItem>>> GetCachedAsync(
+        IEnumerable<string> cacheKeys,
+        CancellationToken cancellationToken
+    )
+    {
+        return cache.GetAllAsync<FeatureValueCacheItem>(cacheKeys, cancellationToken);
+    }
+
     #region Helpers
 
     /// <summary>Returns feature values from the cache, fetching and caching any misses from the repository.</summary>
@@ -489,6 +511,22 @@ public sealed class FeatureValueStore(
         CancellationToken cancellationToken = default
     )
     {
+        using var loadLock = await _LoadLock
+            .LockAsync($"{providerName}\n{providerKey}", cancellationToken)
+            .ConfigureAwait(false);
+
+        var cached = await cache
+            .GetAsync<FeatureValueCacheItem>(
+                FeatureValueCacheItem.CalculateCacheKey(featureNameToFind, providerName, providerKey),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (cached.HasValue)
+        {
+            return cached.Value?.Value;
+        }
+
         var definitions = await featureDefinitionManager.GetFeaturesAsync(cancellationToken).ConfigureAwait(false);
         var dbValuesMap = await _GetProviderValuesMapAsync(providerName, providerKey, cancellationToken)
             .ConfigureAwait(false);

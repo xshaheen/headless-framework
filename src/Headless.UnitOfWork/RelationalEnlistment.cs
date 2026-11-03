@@ -3,6 +3,7 @@
 using System.ComponentModel;
 using System.Data;
 using System.Data.Common;
+using System.Diagnostics.CodeAnalysis;
 using Headless.Checks;
 
 namespace Headless.UnitOfWork;
@@ -94,12 +95,60 @@ public static class RelationalEnlistment
 
         if (!RelationalDatabaseIdentity.IsSameDatabase(configured, candidate))
         {
-            throw new InvalidOperationException(
-                $"The unit of work's connection targets database '{candidate.Database}' on '{candidate.DataSource}', "
-                    + $"but {owner} is configured for database '{configured.Database}' on '{configured.DataSource}'. "
-                    + $"An enlisted {operation} call runs in the unit's own transaction, so the unit must run on the "
-                    + "database the store is configured for."
-            );
+            _ThrowDatabaseMismatch(configured, candidate, owner, operation);
         }
+    }
+
+    /// <summary>
+    /// Throws unless the connection <paramref name="createConfigured" /> builds from <paramref name="configuration" />
+    /// reaches the database of <paramref name="candidate" />, the unit's connection. A match is remembered on
+    /// <paramref name="unitOfWork" />, so a store that checks the same unit on every enlisted call builds its configured
+    /// connection and compares once per unit.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="configuration" /> is the cache key, compared by reference; see
+    /// <see cref="RelationalDatabaseIdentity.IsSameDatabase{TConfiguration}" />.
+    /// </remarks>
+    /// <typeparam name="TConfiguration">The store's configuration holder.</typeparam>
+    /// <param name="unitOfWork">The unit whose connection is checked.</param>
+    /// <param name="configuration">The store's configuration, which is also the cache key.</param>
+    /// <param name="createConfigured">Builds the configured connection on a cache miss; it is never opened here.</param>
+    /// <param name="candidate">The unit of work's live connection.</param>
+    /// <param name="owner">The store's package, for messages.</param>
+    /// <param name="operation">What the call is, for messages.</param>
+    /// <exception cref="InvalidOperationException">The two connections name different databases.</exception>
+    public static void RequireSameDatabase<TConfiguration>(
+        IUnitOfWork unitOfWork,
+        TConfiguration configuration,
+        Func<TConfiguration, DbConnection> createConfigured,
+        DbConnection candidate,
+        string owner,
+        string operation
+    )
+        where TConfiguration : class
+    {
+        if (RelationalDatabaseIdentity.IsSameDatabase(unitOfWork, configuration, createConfigured, candidate))
+        {
+            return;
+        }
+
+        using var configured = createConfigured(configuration);
+        _ThrowDatabaseMismatch(configured, candidate, owner, operation);
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowDatabaseMismatch(
+        DbConnection configured,
+        DbConnection candidate,
+        string owner,
+        string operation
+    )
+    {
+        throw new InvalidOperationException(
+            $"The unit of work's connection targets database '{candidate.Database}' on '{candidate.DataSource}', "
+                + $"but {owner} is configured for database '{configured.Database}' on '{configured.DataSource}'. "
+                + $"An enlisted {operation} call runs in the unit's own transaction, so the unit must run on the "
+                + "database the store is configured for."
+        );
     }
 }

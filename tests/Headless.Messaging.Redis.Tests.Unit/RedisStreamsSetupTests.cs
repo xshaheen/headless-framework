@@ -87,9 +87,49 @@ public sealed class RedisStreamsSetupTests : TestBase
 
         // then - defaults should be applied
         options.StreamEntriesCount.Should().Be(100);
-        options.ConnectionPoolSize.Should().Be(10);
+        options.ConnectionPoolSize.Should().Be(1);
+        options.ConnectionMultiplexer.Should().BeNull();
         options.Configuration.Should().NotBeNull();
         options.Configuration!.EndPoints.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public async Task should_share_the_registered_multiplexer_when_no_connection_is_configured()
+    {
+        // given
+        var multiplexer = Substitute.For<IConnectionMultiplexer>();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(multiplexer);
+        services.AddHeadlessMessaging(opt => opt.UseRedis());
+
+        // when
+        await using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<RedisMessagingOptions>>().Value;
+        var connection = await provider.GetRequiredService<IRedisConnectionPool>().ConnectAsync(AbortToken);
+
+        // then
+        options.ConnectionMultiplexer.Should().BeSameAs(multiplexer);
+        options.Configuration.Should().BeNull();
+        connection.Should().BeSameAs(multiplexer);
+    }
+
+    [Fact]
+    public async Task should_keep_its_own_connection_when_a_connection_string_is_configured()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(Substitute.For<IConnectionMultiplexer>());
+        services.AddHeadlessMessaging(opt => opt.UseRedis("redis.example.com:6380"));
+
+        // when
+        await using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<RedisMessagingOptions>>().Value;
+
+        // then
+        options.ConnectionMultiplexer.Should().BeNull();
+        options.Configuration!.EndPoints.Should().ContainSingle();
     }
 
     [Fact]

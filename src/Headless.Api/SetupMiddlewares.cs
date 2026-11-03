@@ -6,8 +6,10 @@ using Headless.MultiTenancy;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 
 namespace Headless.Api;
 
@@ -198,6 +200,13 @@ public static class SetupMiddlewares
 
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IAuthorizationHandler, TenantIdentifierIntegrityHandler>()
+        );
+
+        // A source can select the tenant from outside the URL (a header, a cookie), which output caching never keys
+        // on, so the resolved tenant joins every output-cache key. Inert unless the host calls AddOutputCache().
+        services.TryAddSingleton<TenantOutputCachePolicy>();
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IConfigureOptions<OutputCacheOptions>, TenantOutputCacheOptionsSetup>()
         );
 
         return services;

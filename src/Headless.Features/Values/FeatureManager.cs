@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Caching;
 using Headless.Checks;
 using Headless.Context;
 using Headless.Features.Resources;
@@ -26,6 +27,10 @@ public sealed class FeatureManager(
     ILogger<FeatureManager>? logger = null
 ) : IFeatureManager, IUnitOfWorkFeatures
 {
+    // A system message: a change made from host scope carries no tenant, and its announcement must still reach peers
+    // when the host requires a tenant on every publish.
+    private static readonly PublishOptions _ChangedPublishOptions = new() { IsSystemMessage = true };
+
     private readonly ILogger _logger = logger ?? NullLogger<FeatureManager>.Instance;
 
     /// <inheritdoc/>
@@ -73,18 +78,31 @@ public sealed class FeatureManager(
         // so the first non-null value wins and lower providers are asked only about the still-unresolved names.
         var pending = definitions.Where(d => featureNames.Contains(d.Name)).ToList();
         var processedNames = new HashSet<string>(StringComparer.Ordinal);
+        var chain = providers.ToArray();
+        var cached = await _ReadCachedChainAsync(
+                chain,
+                pending,
+                providerName: null,
+                providerKey: null,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
 
-        foreach (var provider in providers)
+        for (var i = 0; i < chain.Length; i++)
         {
+            var provider = chain[i];
+
             if (processedNames.Count >= pending.Count)
             {
                 break;
             }
 
             var pendingForProvider = pending.Where(d => !processedNames.Contains(d.Name)).ToArray();
-            var values = await provider
-                .GetAllAsync(pendingForProvider, providerKey: null, cancellationToken)
-                .ConfigureAwait(false);
+            var values =
+                _TryAnswerFromCache(cached?[i], pendingForProvider)
+                ?? await provider
+                    .GetAllAsync(pendingForProvider, providerKey: null, cancellationToken)
+                    .ConfigureAwait(false);
 
             foreach (var value in values)
             {
@@ -553,7 +571,7 @@ public sealed class FeatureManager(
 
         try
         {
-            await bus.PublishAsync(message, cancellationToken: cancellationToken).ConfigureAwait(false);
+            await bus.PublishAsync(message, _ChangedPublishOptions, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
@@ -628,11 +646,20 @@ public sealed class FeatureManager(
             providers = providers.TakeWhile(c => string.Equals(c.Name, providerName, StringComparison.Ordinal));
         }
 
-        foreach (var provider in providers)
+        var chain = providers.ToArray();
+        var cached = unitOfWork is null
+            ? await _ReadCachedChainAsync(chain, [definition], providerName, providerKey, cancellationToken)
+                .ConfigureAwait(false)
+            : null;
+
+        for (var i = 0; i < chain.Length; i++)
         {
+            var provider = chain[i];
             var pk = string.Equals(provider.Name, providerName, StringComparison.Ordinal) ? providerKey : null;
-            var value = unitOfWork is null
-                ? await provider.GetOrDefaultAsync(definition, pk, cancellationToken).ConfigureAwait(false)
+            var value =
+                cached?[i] is { } entries && entries.TryGetValue(name, out var hit) && hit.HasValue ? hit.Value?.Value
+                : unitOfWork is null
+                    ? await provider.GetOrDefaultAsync(definition, pk, cancellationToken).ConfigureAwait(false)
                 : await provider
                     .GetOrDefaultEnlistedAsync(unitOfWork, definition, pk, cancellationToken)
                     .ConfigureAwait(false);
@@ -644,6 +671,145 @@ public sealed class FeatureManager(
         }
 
         return new(name, Value: null, Provider: null);
+    }
+
+    /// <summary>
+    /// Reads the cached entries of every built-in store provider in <paramref name="chain"/> for
+    /// <paramref name="features"/> in one cache call, indexed like the chain and keyed by feature name;
+    /// <see langword="null"/> when fewer than two providers read the default store's cache.
+    /// </summary>
+    /// <remarks>
+    /// With a distributed cache each provider read is a network round trip, and the walk would otherwise make one per
+    /// provider (tenant, then edition) for a feature set at neither. Only the sealed built-in providers qualify,
+    /// because their reads are the store's reads unchanged; a hit is what that read returns, so the walk keeps its
+    /// order and results and calls a provider only for a miss.
+    /// </remarks>
+    private static async Task<Dictionary<string, CacheValue<FeatureValueCacheItem>>?[]?> _ReadCachedChainAsync(
+        IFeatureValueReadProvider[] chain,
+        List<FeatureDefinition> features,
+        string? providerName,
+        string? providerKey,
+        CancellationToken cancellationToken
+    )
+    {
+        if (features.Count == 0)
+        {
+            return null;
+        }
+
+        FeatureValueStore? sharedStore = null;
+        string?[]? providerKeys = null;
+        bool[]? prefetched = null;
+        var count = 0;
+
+        for (var i = 0; i < chain.Length; i++)
+        {
+            if (
+                chain[i] is not (TenantFeatureValueProvider or EditionFeatureValueProvider)
+                || chain[i] is not StoreFeatureValueProvider { Store: FeatureValueStore store } storeProvider
+            )
+            {
+                continue;
+            }
+
+            if (sharedStore is not null && !ReferenceEquals(sharedStore, store))
+            {
+                return null;
+            }
+
+            sharedStore = store;
+            var pk = string.Equals(storeProvider.Name, providerName, StringComparison.Ordinal) ? providerKey : null;
+            providerKeys ??= new string?[chain.Length];
+            prefetched ??= new bool[chain.Length];
+            providerKeys[i] = storeProvider.ResolveProviderKey(pk);
+            prefetched[i] = true;
+            count++;
+        }
+
+        if (sharedStore is null || providerKeys is null || prefetched is null || count < 2)
+        {
+            return null;
+        }
+
+        // Flat, indexed (provider index * feature count + feature index).
+        var cacheKeys = new string[chain.Length * features.Count];
+        var allKeys = new List<string>(count * features.Count);
+
+        for (var i = 0; i < chain.Length; i++)
+        {
+            if (!prefetched[i])
+            {
+                continue;
+            }
+
+            for (var f = 0; f < features.Count; f++)
+            {
+                var cacheKey = FeatureValueCacheItem.CalculateCacheKey(
+                    features[f].Name,
+                    chain[i].Name,
+                    providerKeys[i]
+                );
+                cacheKeys[(i * features.Count) + f] = cacheKey;
+                allKeys.Add(cacheKey);
+            }
+        }
+
+        var entries = await sharedStore.GetCachedAsync(allKeys, cancellationToken).ConfigureAwait(false);
+        var result = new Dictionary<string, CacheValue<FeatureValueCacheItem>>?[chain.Length];
+
+        for (var i = 0; i < chain.Length; i++)
+        {
+            if (!prefetched[i])
+            {
+                continue;
+            }
+
+            var byName = new Dictionary<string, CacheValue<FeatureValueCacheItem>>(
+                features.Count,
+                StringComparer.Ordinal
+            );
+
+            for (var f = 0; f < features.Count; f++)
+            {
+                if (entries.TryGetValue(cacheKeys[(i * features.Count) + f], out var entry))
+                {
+                    byName[features[f].Name] = entry;
+                }
+            }
+
+            result[i] = byName;
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Answers a provider's batch read from its prefetched entries when every name is a hit, else returns
+    /// <see langword="null"/> so the provider reads (and loads its misses) itself.
+    /// </summary>
+    private static List<FeatureValue>? _TryAnswerFromCache(
+        Dictionary<string, CacheValue<FeatureValueCacheItem>>? entries,
+        FeatureDefinition[] features
+    )
+    {
+        if (entries is null)
+        {
+            return null;
+        }
+
+        var values = new List<FeatureValue>(features.Length);
+
+        foreach (var feature in features)
+        {
+            if (!entries.TryGetValue(feature.Name, out var entry) || !entry.HasValue)
+            {
+                return null;
+            }
+
+            values.Add(new FeatureValue(feature.Name, entry.Value?.Value));
+        }
+
+        return values;
     }
 }
 
