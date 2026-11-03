@@ -123,8 +123,8 @@ public sealed class ConsumerTuningBuilder : IConsumerProviderConfigBuilder
 
     /// <summary>
     /// Runs <typeparamref name="TMiddleware"/> around every delivery to this consumer on this host, inside the global and
-    /// per-message consume middleware. The middleware is resolved from the delivery's service scope; when it is not
-    /// registered yet, it is registered as scoped.
+    /// per-message consume middleware. The middleware is resolved from each attempt's own service scope, the one the
+    /// consumer runs in; when it is not registered yet, it is registered as scoped.
     /// </summary>
     /// <typeparam name="TMiddleware">
     /// The consume middleware type. It sees the untyped <see cref="ConsumeContext"/> because one consumer may handle

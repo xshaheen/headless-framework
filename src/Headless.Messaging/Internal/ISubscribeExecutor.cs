@@ -25,8 +25,10 @@ internal interface ISubscribeExecutor
     /// <param name="dispatchServices">
     /// The live per-message DI scope's <see cref="IServiceProvider"/>. The caller (Dispatcher) creates
     /// this scope and disposes it after the call returns. Surfaces to <c>FailedInfo.ServiceProvider</c>
-    /// when the retry budget exhausts. Transactional attempts own separate scopes that remain alive
-    /// through commit or rollback; their services are not exposed to the exhausted callback.
+    /// when the retry budget exhausts. The consumer and its consume middleware never run in it: every
+    /// attempt, transactional or not and immediate retries included, opens its own scope, so a scoped
+    /// service a failed attempt left dirty cannot carry into the retry. A transactional attempt's scope
+    /// stays alive through commit or rollback. No attempt's services reach the exhausted callback.
     /// </param>
     /// <param name="descriptor">Optional consumer descriptor; resolved from the message name when omitted.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
