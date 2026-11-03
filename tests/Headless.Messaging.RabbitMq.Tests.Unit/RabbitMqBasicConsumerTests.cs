@@ -816,7 +816,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
     }
 
     [Fact]
-    public void should_dispose_semaphore_on_dispose()
+    public void should_tolerate_a_second_dispose()
     {
         // given
         var consumer = new RabbitMqBasicConsumer(
@@ -1123,6 +1123,78 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
 
         // then
         await drain.Should().ThrowAsync<TimeoutException>();
+        releaseHandler.TrySetResult();
+    }
+
+    [Fact]
+    public async Task should_release_a_delivery_waiting_on_the_concurrency_limit_when_dispatching_stops()
+    {
+        // given: the only slot is held by a running handler, so the next delivery waits inside the client's dispatcher,
+        // which a channel close waits on
+        var handlerStarted = _CreateSignal();
+        var releaseHandler = _CreateSignal();
+        var dispatched = 0;
+        using var consumer = new RabbitMqBasicConsumer(
+            _channel,
+            1,
+            async (_, _) =>
+            {
+                Interlocked.Increment(ref dispatched);
+                handlerStarted.TrySetResult();
+                await releaseHandler.Task;
+            },
+            args => _loggedEvents.Add(args),
+            null,
+            _serviceProvider
+        );
+
+        await _DeliverAsync(consumer, 1ul);
+        await _WaitForSignalAsync(handlerStarted.Task);
+#pragma warning disable CA2025 // False positive: the test awaits this delivery below, before the consumer is disposed.
+        var waiting = _DeliverAsync(consumer, 2ul);
+#pragma warning restore CA2025
+        waiting.IsCompleted.Should().BeFalse();
+
+        // when
+        var drain = async () => await consumer.DrainAsync(TimeSpan.FromMilliseconds(50), TimeProvider.System);
+
+        // then: the waiting delivery returns undispatched while the first handler is still running
+        await drain.Should().ThrowAsync<TimeoutException>();
+        await waiting.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        Volatile.Read(ref dispatched).Should().Be(1);
+        releaseHandler.TrySetResult();
+    }
+
+    [Fact]
+    public async Task should_release_a_delivery_waiting_on_the_concurrency_limit_when_disposed()
+    {
+        // given
+        var handlerStarted = _CreateSignal();
+        var releaseHandler = _CreateSignal();
+        var consumer = new RabbitMqBasicConsumer(
+            _channel,
+            1,
+            async (_, _) =>
+            {
+                handlerStarted.TrySetResult();
+                await releaseHandler.Task;
+            },
+            args => _loggedEvents.Add(args),
+            null,
+            _serviceProvider
+        );
+
+        await _DeliverAsync(consumer, 1ul);
+        await _WaitForSignalAsync(handlerStarted.Task);
+#pragma warning disable CA2025 // Fix makes the test worse: disposing while this delivery waits is the behavior under test.
+        var waiting = _DeliverAsync(consumer, 2ul);
+#pragma warning restore CA2025
+
+        // when
+        consumer.Dispose();
+
+        // then
+        await waiting.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         releaseHandler.TrySetResult();
     }
 

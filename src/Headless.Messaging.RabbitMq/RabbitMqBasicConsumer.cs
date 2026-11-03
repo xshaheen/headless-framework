@@ -41,11 +41,19 @@ internal sealed class RabbitMqBasicConsumer(
     internal const string TransportName = "RabbitMQ";
 
     private readonly TransportEnvelopeGate _envelopeGate = envelopeGate ?? TransportEnvelopeGate.Strict;
+#pragma warning disable CA2213 // Fix makes the code worse: disposing it under a cancelled waiter can hang the channel close; see Dispose.
     private readonly SemaphoreSlim _semaphore = new(concurrent);
+#pragma warning restore CA2213
     private readonly bool _usingTaskRun = concurrent > 0;
 
     // A delivery either registers before the drain takes its snapshot or sees dispatching stopped; none slips between.
     private readonly InFlightHandlerTracker _inFlightHandlers = new();
+
+    // Cancelled when dispatching stops. A delivery parked on the concurrency limit runs inside the client's consumer
+    // dispatcher, and closing the channel waits for that dispatcher; nothing else wakes the wait while a handler holds
+    // the last slot, so without this signal the close never completes.
+    private readonly CancellationTokenSource _stopping = new();
+    private int _disposed;
 
     // The delivery tags handed to the callback and not yet settled. The broker closes the channel over a tag it does not
     // know, so a second settlement of one delivery must never reach it. The client offsets tags across a channel
@@ -65,7 +73,12 @@ internal sealed class RabbitMqBasicConsumer(
     {
         if (_usingTaskRun)
         {
-            await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+            if (!await _TryEnterSlotAsync(cancellationToken).ConfigureAwait(false))
+            {
+                // Dispatching stopped while the delivery waited: it stays unacknowledged, and the broker returns it to
+                // the queue when the channel closes.
+                return;
+            }
 
             if (!_TryBeginHandler(out var handlerDone))
             {
@@ -127,9 +140,43 @@ internal sealed class RabbitMqBasicConsumer(
     /// closes.
     /// </summary>
     /// <exception cref="TimeoutException">A handler was still running when <paramref name="timeout"/> elapsed.</exception>
-    public Task DrainAsync(TimeSpan timeout, TimeProvider timeProvider)
+    public async Task DrainAsync(TimeSpan timeout, TimeProvider timeProvider)
     {
-        return _inFlightHandlers.DrainAsync(timeout, timeProvider);
+        if (Volatile.Read(ref _disposed) == 0)
+        {
+            await _stopping.CancelAsync().ConfigureAwait(false);
+        }
+
+        await _inFlightHandlers.DrainAsync(timeout, timeProvider).ConfigureAwait(false);
+    }
+
+    private async ValueTask<bool> _TryEnterSlotAsync(CancellationToken cancellationToken)
+    {
+        if (_stopping.IsCancellationRequested)
+        {
+            return false;
+        }
+
+        if (_semaphore.Wait(0, CancellationToken.None))
+        {
+            return true;
+        }
+
+        try
+        {
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _stopping.Token);
+            await _semaphore.WaitAsync(linked.Token).ConfigureAwait(false);
+            return true;
+        }
+        catch (OperationCanceledException) when (_stopping.IsCancellationRequested)
+        {
+            return false;
+        }
+        catch (ObjectDisposedException)
+        {
+            // The consumer was disposed while this delivery arrived: shutdown already stopped dispatching.
+            return false;
+        }
     }
 
     /// <summary>The number of handlers dispatched and not yet finished.</summary>
@@ -506,6 +553,16 @@ internal sealed class RabbitMqBasicConsumer(
 
     public void Dispose()
     {
-        _semaphore.Dispose();
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
+            return;
+        }
+
+        // Wakes a delivery still parked on the concurrency limit when the drain never ran. The semaphore is left
+        // undisposed on purpose: disposing it while that cancelled wait is still unwinding can leave the wait never
+        // completing, which holds the client's dispatcher and so the channel close. It holds no wait handle, because
+        // nothing reads AvailableWaitHandle, so nothing leaks.
+        _stopping.Cancel();
+        _stopping.Dispose();
     }
 }
