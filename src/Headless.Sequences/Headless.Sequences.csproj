@@ -6,6 +6,7 @@
     <RootNamespace>Headless.Sequences</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Sequences.Sql" />
     <InternalsVisibleTo Include="Headless.Sequences.PostgreSql" />
     <InternalsVisibleTo Include="Headless.Sequences.SqlServer" />
     <InternalsVisibleTo Include="Headless.Sequences.Sqlite" />
@@ -21,9 +22,6 @@
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
     <ProjectReference Include="..\Headless.MultiTenancy.Abstractions\Headless.MultiTenancy.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Sequences.Abstractions\Headless.Sequences.Abstractions.csproj" />
-    <ProjectReference Include="..\Headless.Sql.Abstractions\Headless.Sql.Abstractions.csproj" />
-    <ProjectReference Include="..\Headless.Sql\Headless.Sql.csproj" />
-    <ProjectReference Include="..\Headless.UnitOfWork\Headless.UnitOfWork.csproj" />
     <ProjectReference Include="..\Headless.UnitOfWork.Abstractions\Headless.UnitOfWork.Abstractions.csproj" />
   </ItemGroup>
 </Project>

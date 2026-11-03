@@ -17,7 +17,7 @@
 [![GitHub Stars](https://img.shields.io/github/stars/xshaheen/headless-framework?style=social)](https://github.com/xshaheen/headless-framework)
 [![English](https://img.shields.io/badge/lang-English-2563EB?style=flat-square)](README.md)
 
-214 package &bull; نفس الـ setup في كل حتة &bull; بدّل أي provider بسطر واحد
+216 package &bull; نفس الـ setup في كل حتة &bull; بدّل أي provider بسطر واحد
 
 [ليه Headless](#ليه-headless) &bull; [ابدأ في 60 ثانية](#ابدأ-في-60-ثانية) &bull; [Setup واحد لكل المجالات](#setup-واحد-لكل-المجالات) &bull; [إيه اللي في الصندوق](#إيه-اللي-في-الصندوق) &bull; [فهرس الحزم](#فهرس-الحزم)
 
@@ -53,7 +53,7 @@ builder.Services.AddHeadlessCaching(setup => setup.UseRedis(...)); // production
 
 أي service أو repository أو handler بياخد `ICache` مش هيتأثر بالتعديل دا. ونفس الكلام على `IBlobStorage` بين S3 و Azure و Cloudflare R2 و FileSystem و Redis و SFTP، وعلى `IEmailSender` بين SES و Azure Communication Services و SMTP، وعلى الـ messaging بين 8 transports.
 
-**هتركّب 3 packages، مش 214.** الفهرس كبير عشان عدد الـ providers كبير. الخدمة اللي محتاجة caching بتركّب `Headless.Caching.Abstractions` و `Headless.Caching` وprovider واحد. والـ libraries بتاعة الـ domain والـ application بتعتمد على الـ Abstractions package لوحدها: `Headless.Caching.Abstractions` بتجرّ وراها package-ين بس، ومفيش فيهم أي dependency خارجية: `Headless.Checks` و `Headless.Primitives`.
+**هتركّب 3 packages، مش 216.** الفهرس كبير عشان عدد الـ providers كبير. الخدمة اللي محتاجة caching بتركّب `Headless.Caching.Abstractions` و `Headless.Caching` وprovider واحد. والـ libraries بتاعة الـ domain والـ application بتعتمد على الـ Abstractions package لوحدها: `Headless.Caching.Abstractions` بتجرّ وراها package-ين بس، ومفيش فيهم أي dependency خارجية: `Headless.Checks` و `Headless.Primitives`.
 
 **الـ tests مش محتاجة Docker عشان تبقى سريعة.** الـ caching والـ distributed locks والـ messaging فيهم in-memory providers؛ والـ emails والـ SMS والـ push notifications فيهم dev providers مش بتبعت حاجة؛ والـ blob storage بيشتغل على الـ file system المحلي. يعني الـ unit tests بتجرّب نفس الـ contract الحقيقي من غير containers. ولما تحتاج الـ backend الحقيقي، `Headless.Testing.Testcontainers` بتجهّزلك الـ fixtures. الـ repo نفسه ماشي على التقسيمة دي: 122 مشروع unit tests و 63 مشروع integration tests.
 
@@ -293,7 +293,7 @@ packages الـ providers دي packages عادية على NuGet. عشان تضي
 </div>
 
 <details dir="rtl" align="right">
-<summary><strong>كل الـ 214 package، مرتّبة حسب الـ domain</strong> — اضغط للعرض</summary>
+<summary><strong>كل الـ 216 package، مرتّبة حسب الـ domain</strong> — اضغط للعرض</summary>
 
 ### API & Web
 
@@ -631,6 +631,7 @@ Cluster membership وliveness tracking: اعرف مين من الـ nodes شغّ
 |---------|-------|
 | [Headless.Sequences.Abstractions](src/Headless.Sequences.Abstractions/README.md) | `ISequenceGenerator` و`SequenceRange` والـ accessor `unit.Sequences` |
 | [Headless.Sequences](src/Headless.Sequences/README.md) | الـ registration وسياسات الترقيم وتحديد مفتاح الـ tenant |
+| [Headless.Sequences.Sql](src/Headless.Sequences.Sql/README.md) | Counter store relational مشترك لـ providers الـ SQL |
 | [Headless.Sequences.PostgreSql](src/Headless.Sequences.PostgreSql/README.md) | Counters في PostgreSQL بـ upsert-increment واحد |
 | [Headless.Sequences.SqlServer](src/Headless.Sequences.SqlServer/README.md) | Counters في SQL Server بـ upsert محمي بـ range lock |
 | [Headless.Sequences.Sqlite](src/Headless.Sequences.Sqlite/README.md) | Counters في SQLite تحت الـ write lock بتاع الـ database |
@@ -643,6 +644,7 @@ Leases دائمة بين الـ processes بتوقف الـ writes بتاعة at
 |---------|-------|
 | [Headless.Fencing.Abstractions](src/Headless.Fencing.Abstractions/README.md) | `IFencedLeases` و`FencedLease` والـ accessor `unit.Leases` |
 | [Headless.Fencing](src/Headless.Fencing/README.md) | الـ registration، وتحديد الـ key، والـ sweep بتاع الـ leases اللي انتهت |
+| [Headless.Fencing.Sql](src/Headless.Fencing.Sql/README.md) | Lease store relational مشترك لـ providers الـ SQL |
 | [Headless.Fencing.InMemory](src/Headless.Fencing.InMemory/README.md) | Leases جوه الـ process للـ tests وللـ hosts اللي شغالة بـ instance واحدة |
 | [Headless.Fencing.PostgreSql](src/Headless.Fencing.PostgreSql/README.md) | Leases في PostgreSQL بـ sweep بيستخدم `SKIP LOCKED` |
 | [Headless.Fencing.SqlServer](src/Headless.Fencing.SqlServer/README.md) | Leases في SQL Server بـ sweep بيستخدم `READPAST` |

@@ -84,6 +84,7 @@ Headless.Fencing
 Headless.Fencing.Abstractions
 Headless.Fencing.InMemory
 Headless.Fencing.PostgreSql
+Headless.Fencing.Sql
 Headless.Fencing.SqlServer
 Headless.Fencing.Sqlite
 Headless.FluentValidation
@@ -173,6 +174,7 @@ Headless.Search.PostgreSql.EntityFramework
 Headless.Sequences
 Headless.Sequences.Abstractions
 Headless.Sequences.PostgreSql
+Headless.Sequences.Sql
 Headless.Sequences.SqlServer
 Headless.Sequences.Sqlite
 Headless.Serializer.Abstractions
