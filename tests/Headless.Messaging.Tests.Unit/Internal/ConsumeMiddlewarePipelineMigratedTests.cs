@@ -25,7 +25,6 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
         await pipeline.ExecuteAsync(
             _BuildConsumerContext(unitOfWork: unitOfWork),
             new MigratedConsumeMessage("order-1"),
-            typeof(MigratedConsumeMessage),
             AbortToken
         );
 
@@ -44,12 +43,7 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
 
         // when
         var act = () =>
-            pipeline.ExecuteAsync(
-                _BuildConsumerContext(),
-                new MigratedConsumeMessage("order-1"),
-                typeof(MigratedConsumeMessage),
-                AbortToken
-            );
+            pipeline.ExecuteAsync(_BuildConsumerContext(), new MigratedConsumeMessage("order-1"), AbortToken);
 
         // then
         await act.Should()
@@ -67,12 +61,7 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
         var pipeline = _BuildPipeline(services);
 
         // when
-        await pipeline.ExecuteAsync(
-            _BuildConsumerContext(),
-            new MigratedConsumeMessage("order-1"),
-            typeof(MigratedConsumeMessage),
-            AbortToken
-        );
+        await pipeline.ExecuteAsync(_BuildConsumerContext(), new MigratedConsumeMessage("order-1"), AbortToken);
 
         // then
         recorder.Calls.Should().Equal("dispatcher");
@@ -91,7 +80,6 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
         await pipeline.ExecuteAsync(
             _BuildConsumerContext(tenantHeader: "acme"),
             new MigratedConsumeMessage("order-1"),
-            typeof(MigratedConsumeMessage),
             AbortToken
         );
 
@@ -109,12 +97,7 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
         var pipeline = _BuildPipeline(services);
 
         // when
-        await pipeline.ExecuteAsync(
-            _BuildConsumerContext(),
-            new MigratedConsumeMessage("order-1"),
-            typeof(MigratedConsumeMessage),
-            AbortToken
-        );
+        await pipeline.ExecuteAsync(_BuildConsumerContext(), new MigratedConsumeMessage("order-1"), AbortToken);
 
         // then
         recorder.Calls.Should().Equal("handler.before", "dispatcher.throw", "handler.handled");
@@ -130,12 +113,7 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
 
         // when
         var act = async () =>
-            await pipeline.ExecuteAsync(
-                _BuildConsumerContext(),
-                new MigratedConsumeMessage("order-1"),
-                typeof(MigratedConsumeMessage),
-                AbortToken
-            );
+            await pipeline.ExecuteAsync(_BuildConsumerContext(), new MigratedConsumeMessage("order-1"), AbortToken);
 
         // then
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("dispatcher failed");
@@ -165,12 +143,7 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
 
         // when
         var act = async () =>
-            await pipeline.ExecuteAsync(
-                _BuildConsumerContext(),
-                new MigratedConsumeMessage("order-1"),
-                typeof(MigratedConsumeMessage),
-                AbortToken
-            );
+            await pipeline.ExecuteAsync(_BuildConsumerContext(), new MigratedConsumeMessage("order-1"), AbortToken);
 
         // then
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("dispatcher failed");
@@ -189,12 +162,7 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
         var pipeline = _BuildPipeline(services);
 
         // when
-        await pipeline.ExecuteAsync(
-            _BuildConsumerContext(),
-            new MigratedConsumeMessage("order-1"),
-            typeof(MigratedConsumeMessage),
-            AbortToken
-        );
+        await pipeline.ExecuteAsync(_BuildConsumerContext(), new MigratedConsumeMessage("order-1"), AbortToken);
 
         // then
         recorder.Calls.Should().Equal("bus.before", "typed.before", "dispatcher", "typed.after", "bus.after");
@@ -213,12 +181,7 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
         var pipeline = _BuildPipeline(services);
 
         // when
-        await pipeline.ExecuteAsync(
-            _BuildConsumerContext(),
-            new MigratedConsumeMessage("order-1"),
-            typeof(MigratedConsumeMessage),
-            AbortToken
-        );
+        await pipeline.ExecuteAsync(_BuildConsumerContext(), new MigratedConsumeMessage("order-1"), AbortToken);
 
         // then
         recorder
@@ -241,7 +204,6 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
         await pipeline.ExecuteAsync(
             _BuildConsumerContext(messageBinding: ConsumeMessageBinding.For<OtherMigratedConsumeMessage>()),
             new OtherMigratedConsumeMessage("other"),
-            typeof(OtherMigratedConsumeMessage),
             AbortToken
         );
 
@@ -259,18 +221,8 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
         var pipeline = _BuildPipeline(services);
 
         // when
-        await pipeline.ExecuteAsync(
-            _BuildConsumerContext(),
-            new MigratedConsumeMessage("first"),
-            typeof(MigratedConsumeMessage),
-            AbortToken
-        );
-        await pipeline.ExecuteAsync(
-            _BuildConsumerContext(),
-            new MigratedConsumeMessage("second"),
-            typeof(MigratedConsumeMessage),
-            AbortToken
-        );
+        await pipeline.ExecuteAsync(_BuildConsumerContext(), new MigratedConsumeMessage("first"), AbortToken);
+        await pipeline.ExecuteAsync(_BuildConsumerContext(), new MigratedConsumeMessage("second"), AbortToken);
 
         // then
         recorder.InstanceIds.Should().HaveCount(2);
@@ -290,7 +242,6 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
         await pipeline.ExecuteAsync(
             _BuildConsumerContext(lane: MessageLane.Queue),
             new MigratedConsumeMessage("order-1"),
-            typeof(MigratedConsumeMessage),
             AbortToken
         );
 
@@ -314,7 +265,6 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
         await pipeline.ExecuteAsync(
             _BuildConsumerContext(lane: MessageLane.Queue),
             new MigratedConsumeMessage("order-1"),
-            typeof(MigratedConsumeMessage),
             AbortToken
         );
 

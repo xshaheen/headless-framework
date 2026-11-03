@@ -33,25 +33,17 @@ internal sealed class ConsumeMiddlewarePipeline(
     public async Task<ConsumerExecutedResult> ExecuteAsync(
         ConsumerContext context,
         object messageInstance,
-        Type messageType,
         CancellationToken cancellationToken = default
     )
     {
         await using var scope = serviceProvider.CreateAsyncScope();
-        return await ExecuteInScopeAsync(
-                context,
-                messageInstance,
-                messageType,
-                scope.ServiceProvider,
-                cancellationToken
-            )
+        return await ExecuteInScopeAsync(context, messageInstance, scope.ServiceProvider, cancellationToken)
             .ConfigureAwait(false);
     }
 
     public async Task<ConsumerExecutedResult> ExecuteInScopeAsync(
         ConsumerContext context,
         object messageInstance,
-        Type messageType,
         IServiceProvider provider,
         CancellationToken cancellationToken = default
     )
@@ -401,7 +393,6 @@ internal interface IConsumeMiddlewarePipeline
     Task<ConsumerExecutedResult> ExecuteInScopeAsync(
         ConsumerContext context,
         object messageInstance,
-        Type messageType,
         IServiceProvider provider,
         CancellationToken cancellationToken = default
     );
@@ -409,7 +400,6 @@ internal interface IConsumeMiddlewarePipeline
     Task<ConsumerExecutedResult> ExecuteAsync(
         ConsumerContext context,
         object messageInstance,
-        Type messageType,
         CancellationToken cancellationToken = default
     );
 }

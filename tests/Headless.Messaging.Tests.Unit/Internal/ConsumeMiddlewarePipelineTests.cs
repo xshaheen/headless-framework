@@ -19,8 +19,7 @@ public sealed class ConsumeMiddlewarePipelineTests : TestBase
         context.MediumMessage.Origin.Headers[Headers.Intent] = "Unknown";
 
         // when
-        var act = () =>
-            pipeline.ExecuteAsync(context, new MiddlewarePayload("hi"), typeof(MiddlewarePayload), AbortToken);
+        var act = () => pipeline.ExecuteAsync(context, new MiddlewarePayload("hi"), AbortToken);
 
         // then
         await act.Should().ThrowExactlyAsync<InvalidOperationException>().WithMessage("*'Unknown'*");
@@ -36,8 +35,7 @@ public sealed class ConsumeMiddlewarePipelineTests : TestBase
         var context = _BuildConsumerContext(withBinding: false);
 
         // when
-        var act = () =>
-            pipeline.ExecuteAsync(context, new MiddlewarePayload("hi"), typeof(MiddlewarePayload), AbortToken);
+        var act = () => pipeline.ExecuteAsync(context, new MiddlewarePayload("hi"), AbortToken);
 
         // then
         await act.Should().ThrowExactlyAsync<InvalidOperationException>().WithMessage("*declares no message type*");
@@ -54,7 +52,7 @@ public sealed class ConsumeMiddlewarePipelineTests : TestBase
         context.MediumMessage.Origin.Headers[Headers.Intent] = "Queue";
 
         // when
-        await pipeline.ExecuteAsync(context, new MiddlewarePayload("hi"), typeof(MiddlewarePayload), AbortToken);
+        await pipeline.ExecuteAsync(context, new MiddlewarePayload("hi"), AbortToken);
 
         // then
         recorder.Calls.Should().Equal("dispatcher");
@@ -71,12 +69,7 @@ public sealed class ConsumeMiddlewarePipelineTests : TestBase
         var pipeline = _BuildPipeline(services);
 
         // when
-        await pipeline.ExecuteAsync(
-            _BuildConsumerContext(),
-            new MiddlewarePayload("hi"),
-            typeof(MiddlewarePayload),
-            AbortToken
-        );
+        await pipeline.ExecuteAsync(_BuildConsumerContext(), new MiddlewarePayload("hi"), AbortToken);
 
         // then
         recorder.Calls.Should().Equal("A.before", "B.before", "dispatcher", "B.after", "A.after");
@@ -92,12 +85,7 @@ public sealed class ConsumeMiddlewarePipelineTests : TestBase
         var pipeline = _BuildPipeline(services);
 
         // when
-        await pipeline.ExecuteAsync(
-            _BuildConsumerContext(),
-            new MiddlewarePayload("hi"),
-            typeof(MiddlewarePayload),
-            AbortToken
-        );
+        await pipeline.ExecuteAsync(_BuildConsumerContext(), new MiddlewarePayload("hi"), AbortToken);
 
         // then
         recorder.Calls.Should().Equal("dispatcher", "post-success.throw");
@@ -115,12 +103,7 @@ public sealed class ConsumeMiddlewarePipelineTests : TestBase
 
         // when
         var act = async () =>
-            await pipeline.ExecuteAsync(
-                _BuildConsumerContext(),
-                new MiddlewarePayload("hi"),
-                typeof(MiddlewarePayload),
-                cts.Token
-            );
+            await pipeline.ExecuteAsync(_BuildConsumerContext(), new MiddlewarePayload("hi"), cts.Token);
 
         // then
         await act.Should().NotThrowAsync();
@@ -138,12 +121,7 @@ public sealed class ConsumeMiddlewarePipelineTests : TestBase
 
         // when
         var act = async () =>
-            await pipeline.ExecuteAsync(
-                _BuildConsumerContext(),
-                new MiddlewarePayload("hi"),
-                typeof(MiddlewarePayload),
-                cts.Token
-            );
+            await pipeline.ExecuteAsync(_BuildConsumerContext(), new MiddlewarePayload("hi"), cts.Token);
 
         // then
         await act.Should().ThrowAsync<OperationCanceledException>();
@@ -162,12 +140,7 @@ public sealed class ConsumeMiddlewarePipelineTests : TestBase
 
         // when
         var act = async () =>
-            await pipeline.ExecuteAsync(
-                _BuildConsumerContext(),
-                new MiddlewarePayload("hi"),
-                typeof(MiddlewarePayload),
-                AbortToken
-            );
+            await pipeline.ExecuteAsync(_BuildConsumerContext(), new MiddlewarePayload("hi"), AbortToken);
 
         // then
         await act.Should().ThrowAsync<OperationCanceledException>();
@@ -192,12 +165,7 @@ public sealed class ConsumeMiddlewarePipelineTests : TestBase
         );
 
         // when
-        await pipeline.ExecuteAsync(
-            _BuildConsumerContext(),
-            new MiddlewarePayload("hi"),
-            typeof(MiddlewarePayload),
-            AbortToken
-        );
+        await pipeline.ExecuteAsync(_BuildConsumerContext(), new MiddlewarePayload("hi"), AbortToken);
 
         // then
         recorder
