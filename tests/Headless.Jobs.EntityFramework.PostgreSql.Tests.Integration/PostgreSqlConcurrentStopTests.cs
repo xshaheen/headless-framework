@@ -113,7 +113,11 @@ public sealed class PostgreSqlConcurrentStopTests(PostgreSqlJobsCoordinationFixt
                 var row = await _ReadAsync(peer, id, ct);
                 if (
                     row.Status == JobStatus.InProgress
-                    && string.Equals(row.OwnerId, nodeIdentity.ToString(), StringComparison.Ordinal)
+                    && string.Equals(
+                        row.OwnerId,
+                        node.Services.GetRequiredService<INodeMembership>().GetOwnerTag(),
+                        StringComparison.Ordinal
+                    )
                 )
                 {
                     (await _IsAliveAsync(peer, nodeIdentity, ct))

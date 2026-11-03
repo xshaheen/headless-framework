@@ -11,6 +11,18 @@ namespace Tests;
 public sealed class MembershipServiceTests : TestBase
 {
     [Fact]
+    public async Task should_qualify_the_local_owner_tag_with_the_configured_cluster()
+    {
+        var store = new FakeMembershipStore { NextIncarnation = new NodeIncarnation(3) };
+        using var sut = _CreateService(store, new CoordinationOptions { ClusterName = "orders" }, nodeId: "node-a");
+
+        await sut.RegisterAsync(AbortToken);
+
+        sut.ClusterName.Should().Be("orders");
+        sut.GetOwnerTag().Should().Be("orders/node-a@3");
+    }
+
+    [Fact]
     public async Task should_register_by_allocating_incarnation_and_writing_descriptor_without_heartbeating()
     {
         // given

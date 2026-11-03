@@ -44,7 +44,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     // descendant is a boundary — excluded from the in-tree walk, claimed independently.
     protected int MaxChainDepth { get; } = optionsBuilder.MaxChainDepth;
 
-    // Runtime owner accessor. Stamp/acquire sites read the current node@incarnation via TryGetStampOwner
+    // Runtime owner accessor. Stamp/acquire sites read the current cluster/node@incarnation via TryGetStampOwner
     // and refuse to touch rows when membership is not established (registration pending or membership lost).
     protected IJobsOwnerIdentity OwnerIdentity { get; } = ownerIdentity;
 

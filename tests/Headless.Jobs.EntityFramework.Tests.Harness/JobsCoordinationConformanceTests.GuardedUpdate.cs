@@ -90,7 +90,7 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>
 
         try
         {
-            var owner = host.Services.GetRequiredService<INodeMembership>().Identity!.Value.ToString();
+            var owner = host.Services.GetRequiredService<INodeMembership>().GetOwnerTag()!;
             var manager = host.Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
             var job = new TimeJobEntity
@@ -209,7 +209,7 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>
 
         try
         {
-            var owner = host.Services.GetRequiredService<INodeMembership>().Identity!.Value.ToString();
+            var owner = host.Services.GetRequiredService<INodeMembership>().GetOwnerTag()!;
             var manager = host.Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
             var child = new TimeJobEntity

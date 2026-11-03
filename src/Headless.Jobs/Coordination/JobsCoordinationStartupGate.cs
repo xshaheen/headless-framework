@@ -8,7 +8,7 @@ namespace Headless.Jobs.Coordination;
 
 /// <summary>
 /// Establishes the node's membership identity during host start so the durable scheduler stamps with a real
-/// <c>node@incarnation</c> owner from its first acquisition.
+/// <c>cluster/node@incarnation</c> owner from its first acquisition.
 /// </summary>
 /// <remarks>
 /// Runs in <see cref="IHostedLifecycleService.StartingAsync"/>, which executes before any

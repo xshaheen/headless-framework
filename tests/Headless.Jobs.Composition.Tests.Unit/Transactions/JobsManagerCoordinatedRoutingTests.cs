@@ -819,69 +819,88 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
     }
 
     [Fact]
-    public async Task cron_cache_invalidation_runs_on_the_commit_path_even_when_the_signal_channel_is_full()
+    public async Task full_signal_channel_drops_the_cron_signal_with_its_cache_invalidation_and_the_commit_completes()
     {
-        // The poll sweep reads through the cron-expressions cache, so a dropped invalidation would not be
-        // recovered by the sweep — it stays inline on the commit callback and never enters the drop-on-full channel.
+        // The cron-expressions cache feeds only the fingerprint sweep's zone set, which tolerates a stale entry until
+        // it expires, so the invalidation rides the drop-on-full channel like every other side effect.
         var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: true);
         _FillSignalChannel(sut);
-
-        await sut.Cron.AddAsync(_CronJob(), AbortToken);
-        await sut.Writer.DidNotReceive().InvalidateCronExpressionsCacheAsync();
-        await sut.Coordinator!.CommitAsync();
-
-        await sut.Writer.Received(1).InvalidateCronExpressionsCacheAsync();
-        sut.Signals.PendingCount.Should().Be(JobsPostCommitSignalService.Capacity);
-        sut.SignalsLogger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning && e.Exception == null);
-    }
-
-    [Fact]
-    public async Task stalled_cron_cache_invalidation_is_abandoned_after_the_bound_and_the_commit_completes()
-    {
-        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: true, timeProvider: timeProvider);
-        var invalidationStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var neverCompletes = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        sut.Writer.InvalidateCronExpressionsCacheAsync()
-            .Returns(_ =>
-            {
-                invalidationStarted.TrySetResult();
-
-                return neverCompletes.Task;
-            });
-
-        await sut.Cron.AddAsync(_CronJob(), AbortToken);
-        var drain = sut.Coordinator!.CommitAsync();
-        await invalidationStarted.Task.WaitAsync(_WaitTimeout, AbortToken);
-        await FakeClock.AdvanceUntilAsync(
-            timeProvider,
-            JobsPostCommitSignalService.SignalDeadline + TimeSpan.FromTicks(1),
-            drain,
-            AbortToken
-        );
-
-        var drainAction = async () => await drain;
-        await drainAction.Should().NotThrowAsync();
-        sut.Logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning && e.Exception == null);
-        // The restart + notify signal is still handed to the worker: only the cache call was abandoned.
-        sut.Signals.PendingCount.Should().Be(1);
-        neverCompletes.SetResult();
-    }
-
-    [Fact]
-    public async Task cron_cache_invalidation_failure_is_logged_and_the_commit_completes()
-    {
-        var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: true);
-        var boom = new InvalidOperationException("cache offline");
-        sut.Writer.InvalidateCronExpressionsCacheAsync().Returns(Task.FromException(boom));
 
         await sut.Cron.AddAsync(_CronJob(), AbortToken);
         var drain = () => sut.Coordinator!.CommitAsync();
 
         await drain.Should().NotThrowAsync();
+        sut.Coordinator!.SynchronousCommitCallbacks.Should().Be(1);
+        await sut.Writer.DidNotReceive().InvalidateCronExpressionsCacheAsync();
+        sut.Signals.PendingCount.Should().Be(JobsPostCommitSignalService.Capacity);
+        sut.SignalsLogger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning && e.Exception == null);
+    }
+
+    [Fact]
+    public async Task stalled_cron_cache_invalidation_arms_the_restart_first_and_the_worker_abandons_it_at_its_bound()
+    {
+        var sut = _CreateSut(
+            CoordinatorMode.LiveRelational,
+            withWriter: true,
+            timeProvider: new FakeTimeProvider(),
+            signalDeadline: TimeSpan.FromMilliseconds(50)
+        );
+        var neverCompletes = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        sut.Writer.InvalidateCronExpressionsCacheAsync().Returns(neverCompletes.Task);
+
+        await sut.Cron.AddAsync(_CronJob(), AbortToken);
+        await sut.Coordinator!.CommitAsync();
+        await _StartWorkerAsync(sut);
+
+        // The registered clock never advances; the bound still fires because it waits real time.
+        await sut.SignalsLogger.WaitForAsync(e => e.Level == LogLevel.Warning && e.Exception == null, AbortToken);
+        sut.Scheduler.Received(1).RestartIfNeeded(Arg.Any<DateTime>());
+        await sut.Notification.DidNotReceive().AddCronJobNotifyAsync(Arg.Any<CronJobEntity>());
+        neverCompletes.SetResult();
+    }
+
+    [Fact]
+    public async Task stalled_cron_cache_invalidation_never_holds_the_commit_when_the_registered_clock_is_frozen()
+    {
+        // A registered clock that never advances (a test host's FakeTimeProvider) must not turn a stalled cache into
+        // a commit that never returns: the commit callback only hands the work to the post-commit worker.
+        var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: true, timeProvider: new FakeTimeProvider());
+        var neverCompletes = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        sut.Writer.InvalidateCronExpressionsCacheAsync().Returns(neverCompletes.Task);
+
+        await sut.Cron.AddAsync(_CronJob(), AbortToken);
+
+        try
+        {
+            await sut.Coordinator!.CommitAsync().WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        }
+        finally
+        {
+            neverCompletes.SetResult();
+        }
+
+        sut.Signals.PendingCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task cron_cache_invalidation_failure_is_logged_and_the_notification_still_runs()
+    {
+        var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: true);
+        var cron = _CronJob();
+        var notified = _NotifiedCronJob(sut, cron);
+        var boom = new InvalidOperationException("cache offline");
+        sut.Writer.InvalidateCronExpressionsCacheAsync().Returns(Task.FromException(boom));
+
+        await sut.Cron.AddAsync(cron, AbortToken);
+        var drain = () => sut.Coordinator!.CommitAsync();
+
+        await drain.Should().NotThrowAsync();
+        await _StartWorkerAsync(sut);
+        await notified.Task.WaitAsync(_WaitTimeout, AbortToken);
+
         sut.Logger.Entries.Should()
             .ContainSingle(e => e.Level == LogLevel.Warning && ReferenceEquals(e.Exception, boom));
-        sut.Signals.PendingCount.Should().Be(1);
+        sut.Scheduler.Received(1).RestartIfNeeded(Arg.Any<DateTime>());
     }
 
     [Fact]
@@ -1174,7 +1193,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
     }
 
     [Fact]
-    public async Task cron_live_coordinator_writes_in_transaction_and_invalidates_the_cache_on_commit()
+    public async Task cron_live_coordinator_writes_in_transaction_and_invalidates_the_cache_after_commit()
     {
         var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: true);
         var cron = _CronJob();
@@ -1206,15 +1225,15 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
 
         await sut.Coordinator.CommitAsync();
 
-        // The cache invalidation is the one side effect that runs on the commit path; restart + notify are
-        // handed to the worker.
-        await sut.Writer.Received(1).InvalidateCronExpressionsCacheAsync();
+        // Every side effect, the cache invalidation included, is handed to the worker; the commit runs none.
+        await sut.Writer.DidNotReceive().InvalidateCronExpressionsCacheAsync();
         sut.Signals.PendingCount.Should().Be(1);
         sut.Scheduler.DidNotReceive().RestartIfNeeded(Arg.Any<DateTime>());
 
         await _StartWorkerAsync(sut);
         await notified.Task.WaitAsync(_WaitTimeout, AbortToken);
 
+        await sut.Writer.Received(1).InvalidateCronExpressionsCacheAsync();
         sut.Scheduler.Received(1).RestartIfNeeded(Arg.Any<DateTime>());
         await sut.Notification.Received(1).AddCronJobNotifyAsync(cron);
     }
@@ -1254,12 +1273,14 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
 
         await sut.Coordinator.CommitAsync();
 
-        // Cache invalidation fires exactly once for the batch on the commit path; one signal carries the rest.
-        await sut.Writer.Received(1).InvalidateCronExpressionsCacheAsync();
+        // One signal carries the whole batch, cache invalidation included.
+        await sut.Writer.DidNotReceive().InvalidateCronExpressionsCacheAsync();
         sut.Signals.PendingCount.Should().Be(1);
 
         await _StartWorkerAsync(sut);
         await notified.Task.WaitAsync(_WaitTimeout, AbortToken);
+
+        await sut.Writer.Received(1).InvalidateCronExpressionsCacheAsync();
 
         // Scheduler restarts once; notify fires per entity.
         sut.Scheduler.Received(1).RestartIfNeeded(Arg.Any<DateTime>());
@@ -1526,7 +1547,8 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         bool withWriter,
         bool dispatcherEnabled = false,
         TimeProvider? timeProvider = null,
-        IGuidGenerator? guidGenerator = null
+        IGuidGenerator? guidGenerator = null,
+        TimeSpan? signalDeadline = null
     )
     {
         var persistence = withWriter
@@ -1647,7 +1669,10 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
             TestActivationBarrier.Opened(),
             effectiveTimeProvider,
             signalsLogger
-        );
+        )
+        {
+            SignalDeadline = signalDeadline ?? JobsPostCommitSignalService.DefaultSignalDeadline,
+        };
         _workers.Add(signals);
 
         var manager = new JobsManager<TimeJobEntity, CronJobEntity>(

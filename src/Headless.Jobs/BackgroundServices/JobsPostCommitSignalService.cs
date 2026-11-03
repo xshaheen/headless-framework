@@ -44,10 +44,10 @@ internal sealed partial class JobsPostCommitSignalService(
     internal const int Capacity = 1024;
 
     /// <summary>
-    /// Per-signal bound. Matches the scheduler's fallback poll interval: a signal that has not finished by the time
-    /// the sweep would have found the row anyway has nothing left to accelerate.
+    /// Default per-signal bound. Matches the scheduler's fallback poll interval: a signal that has not finished by the
+    /// time the sweep would have found the row anyway has nothing left to accelerate.
     /// </summary>
-    internal static readonly TimeSpan SignalDeadline = TimeSpan.FromSeconds(30);
+    internal static readonly TimeSpan DefaultSignalDeadline = TimeSpan.FromSeconds(30);
 
     private readonly Channel<JobsPostCommitSignal> _channel = Channel.CreateBounded<JobsPostCommitSignal>(
         new BoundedChannelOptions(Capacity)
@@ -72,6 +72,13 @@ internal sealed partial class JobsPostCommitSignalService(
     private readonly ILogger<JobsPostCommitSignalService> _logger = Argument.IsNotNull(logger);
     private int _stopping;
     private int _disposed;
+
+    /// <summary>
+    /// Per-signal bound, <see cref="DefaultSignalDeadline" /> unless a test shortens it. It waits real time on the
+    /// system clock: a hung send is an I/O stall, and a registered clock that never advances must not turn it into a
+    /// worker that never takes another signal.
+    /// </summary>
+    internal TimeSpan SignalDeadline { get; init; } = DefaultSignalDeadline;
 
     /// <summary>Signals queued and not yet picked up by the worker.</summary>
     internal int PendingCount => _channel.Reader.Count;
@@ -241,7 +248,7 @@ internal sealed partial class JobsPostCommitSignalService(
             // the loop moves on to the next signal, and shutdown-budget exhaustion is the only cancellation the side
             // effects observe. That keeps one token per worker instead of one source per signal.
             work = signal.RunAsync(_timeProvider.GetUtcNow(), drainToken);
-            await work.WaitAsync(SignalDeadline, _timeProvider, drainToken).ConfigureAwait(false);
+            await work.WaitAsync(SignalDeadline, TimeProvider.System, drainToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (drainToken.IsCancellationRequested)
         {
