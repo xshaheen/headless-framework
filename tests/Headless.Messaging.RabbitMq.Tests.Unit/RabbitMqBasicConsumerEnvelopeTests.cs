@@ -216,12 +216,14 @@ public sealed class RabbitMqBasicConsumerEnvelopeTests : TestBase
             _arrivalNames
         );
 
-    private static Task _DeliverAsync(
+    // The handler runs after the delivering call returns, so the helper also waits for it before the test asserts.
+    private static async Task _DeliverAsync(
         RabbitMqBasicConsumer consumer,
         string routingKey,
         IReadOnlyBasicProperties properties
-    ) =>
-        consumer.HandleBasicDeliverAsync(
+    )
+    {
+        await consumer.HandleBasicDeliverAsync(
             "consumer-tag",
             _DeliveryTag,
             false,
@@ -231,6 +233,8 @@ public sealed class RabbitMqBasicConsumerEnvelopeTests : TestBase
             """{"value":1}"""u8.ToArray(),
             AbortToken
         );
+        await consumer.DrainAsync(TimeSpan.FromSeconds(5), TimeProvider.System);
+    }
 
     private static IReadOnlyBasicProperties _Properties(
         string? messageId,

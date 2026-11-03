@@ -1,10 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
-using System.Linq.Expressions;
-using System.Reflection;
 using System.Runtime.CompilerServices;
-using FastExpressionCompiler;
 using Headless.Checks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -17,20 +14,6 @@ internal sealed class PublishMiddlewarePipeline(
     ILogger<PublishMiddlewarePipeline>? logger = null
 ) : IPublishMiddlewarePipeline
 {
-    private static readonly ConcurrentDictionary<MiddlewareDispatchKey, PublishMiddlewareInvoker> _TypedInvokers =
-        new();
-
-    private static readonly ConditionalWeakTable<Type, PublishContextType> _ContextTypes = [];
-
-    private static readonly MethodInfo _CreateContextMethod = typeof(PublishMiddlewarePipeline).GetMethod(
-        nameof(_Create),
-        BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly
-    )!;
-
-    // Caches the IPublishMiddleware<TContext> closed service type per concrete PublishContext type, so the
-    // resolution path avoids running MakeGenericType on every publish.
-    private static readonly ConcurrentDictionary<Type, Type> _TypedMiddlewareServiceTypes = new();
-
     // Cache the tracked-type HashSet per (registry, direction). The registry instance is stable for
     // the application's lifetime, so we never recompute the set on the hot publish path.
     private static readonly ConditionalWeakTable<
@@ -57,30 +40,15 @@ internal sealed class PublishMiddlewarePipeline(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (options?.MessageType is { } declaredMessageType && declaredMessageType != typeof(T))
-        {
-            await ExecuteAsync(content, declaredMessageType, lane, options, decision, innerPublish, cancellationToken)
-                .ConfigureAwait(false);
-            return;
-        }
+        // A callback response names its declared contract through the options; the handle was captured from
+        // SetResponse's type argument, so the declared type's typed context is built without reflection.
+        PublishContext context =
+            options?.MessageType is { } declaredMessageType && declaredMessageType.Type != typeof(T)
+                ? declaredMessageType.Accept(
+                    new DeclaredContextFactory(content, lane, options, decision, cancellationToken)
+                )
+                : new PublishContext<T>(content, lane, options, decision, cancellationToken);
 
-        var context = new PublishContext<T>(content, lane, options, decision, cancellationToken);
-        await _ExecuteAsync(context, innerPublish).ConfigureAwait(false);
-    }
-
-    public async Task ExecuteAsync(
-        object? content,
-        Type declaredMessageType,
-        MessageLane lane,
-        MessageOptions? options,
-        DeliveryDecision decision,
-        Func<MessageOptions?, CancellationToken, Task> innerPublish,
-        CancellationToken cancellationToken = default
-    )
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        var context = _CreateContext(content, declaredMessageType, lane, options, decision, cancellationToken);
         await _ExecuteAsync(context, innerPublish).ConfigureAwait(false);
     }
 
@@ -127,49 +95,6 @@ internal sealed class PublishMiddlewarePipeline(
         await next().ConfigureAwait(false);
     }
 
-    private static PublishContext _CreateContext(
-        object? content,
-        Type declaredMessageType,
-        MessageLane lane,
-        MessageOptions? options,
-        DeliveryDecision decision,
-        CancellationToken cancellationToken
-    )
-    {
-        Argument.IsNotNull(declaredMessageType);
-        var create = _ContextTypes
-            .GetValue(
-                declaredMessageType,
-                static type => new PublishContextType(
-                    _CreateContextMethod.MakeGenericMethod(type).CreateDelegate<PublishContextFactory>()
-                )
-            )
-            .Create;
-
-        return create(content, content?.GetType() ?? declaredMessageType, lane, options, decision, cancellationToken);
-    }
-
-    private static PublishContext<TMessage> _Create<TMessage>(
-        object? content,
-        Type concreteMessageType,
-        MessageLane lane,
-        MessageOptions? options,
-        DeliveryDecision decision,
-        CancellationToken cancellationToken
-    )
-    {
-        // A null payload of a value-type contract becomes default(TMessage), as reflective construction bound it.
-        return new PublishContext<TMessage>(
-            content is null ? default : (TMessage)content,
-            concreteMessageType,
-            lane,
-            options,
-            decision,
-            deliveryFrozen: true,
-            cancellationToken
-        );
-    }
-
     private async ValueTask _InvokeAsync(
         object middleware,
         PublishContext context,
@@ -200,18 +125,9 @@ internal sealed class PublishMiddlewarePipeline(
 
     private static ValueTask _InvokeMiddlewareAsync(object middleware, PublishContext context, Func<ValueTask> next)
     {
-        if (middleware is IPublishMiddleware<PublishContext> busMiddleware)
-        {
-            return busMiddleware.InvokeAsync(context, next);
-        }
-
-        var invoker = _TypedInvokers.GetOrAdd(
-            new MiddlewareDispatchKey(middleware.GetType(), context.MessageType),
-            static (_, contextType) => _CompileTypedInvoker(contextType),
-            context.GetType()
-        );
-
-        return invoker(middleware, context, next);
+        return middleware is IPublishMiddleware<PublishContext> busMiddleware
+            ? busMiddleware.InvokeAsync(context, next)
+            : context.InvokeTypedMiddlewareAsync(middleware, next);
     }
 
     /// <summary>
@@ -225,13 +141,7 @@ internal sealed class PublishMiddlewarePipeline(
             return false;
         }
 
-        if (
-            _hasDirectMiddleware.GetOrAdd(
-                context.GetType(),
-                static (type, self) => self._HasAnyDirectMiddleware(type),
-                this
-            )
-        )
+        if (_HasDirectMiddleware(context))
         {
             return false;
         }
@@ -267,40 +177,32 @@ internal sealed class PublishMiddlewarePipeline(
 
     private object[] _ResolveDirectMiddleware(IServiceProvider provider, PublishContext context)
     {
-        var contextType = context.GetType();
-
-        if (
-            _serviceProbe is not null
-            && !_hasDirectMiddleware.GetOrAdd(
-                contextType,
-                static (type, self) => self._HasAnyDirectMiddleware(type),
-                this
-            )
-        )
+        if (_serviceProbe is not null && !_HasDirectMiddleware(context))
         {
             return [];
         }
 
-        var typedServiceType = _TypedMiddlewareServiceTypes.GetOrAdd(
-            contextType,
-            static contextType => typeof(IPublishMiddleware<>).MakeGenericType(contextType)
-        );
         var busMiddleware = provider.GetServices<IPublishMiddleware<PublishContext>>().Cast<object>();
         var typedMiddleware = provider
-            .GetServices(typedServiceType)
+            .GetServices(context.TypedMiddlewareServiceType)
             .Where(static middleware => middleware is not null)
             .Cast<object>();
 
         return [.. busMiddleware, .. typedMiddleware];
     }
 
-    private bool _HasAnyDirectMiddleware(Type contextType)
+    // Keyed by the typed middleware service type, which is one per closed context type.
+    private bool _HasDirectMiddleware(PublishContext context)
     {
-        var typedServiceType = _TypedMiddlewareServiceTypes.GetOrAdd(
-            contextType,
-            static type => typeof(IPublishMiddleware<>).MakeGenericType(type)
+        return _hasDirectMiddleware.GetOrAdd(
+            context.TypedMiddlewareServiceType,
+            static (serviceType, self) => self._HasAnyDirectMiddleware(serviceType),
+            this
         );
+    }
 
+    private bool _HasAnyDirectMiddleware(Type typedServiceType)
+    {
         return _serviceProbe!.IsService(typeof(IPublishMiddleware<PublishContext>))
             || _serviceProbe.IsService(typedServiceType);
     }
@@ -323,26 +225,6 @@ internal sealed class PublishMiddlewarePipeline(
         );
 
         return middleware.Where(current => !trackedTypes.Contains(current.GetType()));
-    }
-
-    private static PublishMiddlewareInvoker _CompileTypedInvoker(Type contextType)
-    {
-        var middlewareParam = Expression.Parameter(typeof(object), "middleware");
-        var contextParam = Expression.Parameter(typeof(PublishContext), "context");
-        var nextParam = Expression.Parameter(typeof(Func<ValueTask>), "next");
-        var serviceType = typeof(IPublishMiddleware<>).MakeGenericType(contextType);
-        var invokeMethod = serviceType.GetMethod(nameof(IPublishMiddleware<>.InvokeAsync))!;
-
-        var body = Expression.Call(
-            Expression.Convert(middlewareParam, serviceType),
-            invokeMethod,
-            Expression.Convert(contextParam, contextType),
-            nextParam
-        );
-
-        return Expression
-            .Lambda<PublishMiddlewareInvoker>(body, middlewareParam, contextParam, nextParam)
-            .CompileFast();
     }
 
     private static bool _ShouldRethrowOce(Exception exception, CancellationToken cancellationToken)
@@ -371,38 +253,34 @@ internal sealed class PublishMiddlewarePipeline(
         }
     }
 
-    private delegate ValueTask PublishMiddlewareInvoker(
-        object middleware,
-        PublishContext context,
-        Func<ValueTask> next
-    );
-
-    private delegate PublishContext PublishContextFactory(
+    // Builds the publish context of a declared contract that differs from the publish call's type argument. A null
+    // payload of a value-type contract cannot reach here: the handle only captures reference types.
+    private sealed class DeclaredContextFactory(
         object? content,
-        Type concreteMessageType,
         MessageLane lane,
         MessageOptions? options,
         DeliveryDecision decision,
         CancellationToken cancellationToken
-    );
-
-    // Bound once per declared message type, so a publish whose declared type differs from its payload type
-    // constructs its context without reflection.
-    private sealed record PublishContextType(PublishContextFactory Create);
+    ) : IMessageTypeVisitor<PublishContext>
+    {
+        public PublishContext Visit<TMessage>()
+            where TMessage : class
+        {
+            return new PublishContext<TMessage>(
+                (TMessage?)content,
+                content?.GetType() ?? typeof(TMessage),
+                lane,
+                options,
+                decision,
+                deliveryFrozen: true,
+                cancellationToken
+            );
+        }
+    }
 }
 
 internal interface IPublishMiddlewarePipeline
 {
-    Task ExecuteAsync(
-        object? content,
-        Type declaredMessageType,
-        MessageLane lane,
-        MessageOptions? options,
-        DeliveryDecision decision,
-        Func<MessageOptions?, CancellationToken, Task> innerPublish,
-        CancellationToken cancellationToken = default
-    );
-
     Task ExecuteAsync<T>(
         T? content,
         MessageLane lane,

@@ -45,10 +45,10 @@ public class ConsumeDispatchBenchmarks
         _payload = new BenchmarkPayload("payload");
         _context = _BuildConsumerContext(_payload);
 
-        // Warm up: the pipeline compiles and caches a per-message-type ConsumeContext factory on first use.
-        // Run one dispatch in setup so that one-time compile cost is excluded from the measured path.
+        // Warm up: the first dispatch resolves and caches the consumer's middleware chain and JITs the generic
+        // dispatch path. Run one dispatch in setup so that one-time cost is excluded from the measured path.
         _pipeline
-            .ExecuteAsync(_BuildConsumerContext(_payload), _payload, typeof(BenchmarkPayload), CancellationToken.None)
+            .ExecuteAsync(_BuildConsumerContext(_payload), _payload, CancellationToken.None)
             .GetAwaiter()
             .GetResult();
     }
@@ -62,7 +62,7 @@ public class ConsumeDispatchBenchmarks
     [Benchmark]
     public Task ExecuteDispatch()
     {
-        return _pipeline.ExecuteAsync(_context, _payload, typeof(BenchmarkPayload), CancellationToken.None);
+        return _pipeline.ExecuteAsync(_context, _payload, CancellationToken.None);
     }
 
     private static MessageConsumerDispatch _ReadGeneratedDispatch<TModule>()
@@ -80,6 +80,7 @@ public class ConsumeDispatchBenchmarks
         {
             ConsumerType = typeof(NoOpBenchmarkConsumer),
             MessageType = typeof(BenchmarkPayload),
+            MessageBinding = ConsumeMessageBinding.For<BenchmarkPayload>(),
             Lane = MessageLane.Bus,
             MessageName = "benchmark.payload",
             SubscriptionName = NoOpBenchmarkConsumer.Identity,

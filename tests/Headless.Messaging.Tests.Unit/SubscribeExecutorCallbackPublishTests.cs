@@ -157,7 +157,7 @@ public sealed class SubscribeExecutorCallbackPublishTests : TestBase
         var invoker = Substitute.For<ISubscribeInvoker>();
         var result = new ConsumerExecutedResult(
             new CallbackOrderShipped("order-1"),
-            typeof(CallbackOrderShipped),
+            MessageTypeHandle.For<CallbackOrderShipped>(),
             Guid.NewGuid().ToString(),
             _CallbackName,
             null
@@ -242,6 +242,7 @@ public sealed class SubscribeExecutorCallbackPublishTests : TestBase
             Lane = MessageLane.Bus,
             ConsumerType = typeof(CallbackOrderShippedConsumer),
             MessageType = typeof(CallbackOrderShipped),
+            MessageBinding = ConsumeMessageBinding.For<CallbackOrderShipped>(),
             MessageName = "test.messageName",
             SubscriptionName = "test-group",
             ConsumerIdentity = "tests.subscribe-callback",

@@ -87,8 +87,7 @@ public sealed class MessagingBuilder(IServiceCollection services)
             direction is MiddlewareDirection.Publish
                 ? (typeof(IPublishMiddleware<>), typeof(PublishContext))
                 : (typeof(IConsumeMiddleware<>), typeof(ConsumeContext));
-        var contextType = _GetMiddlewareContextType(typeof(T), middlewareDefinition, baseContextType);
-        var serviceType = middlewareDefinition.MakeGenericType(contextType);
+        var (serviceType, contextType) = _GetMiddlewareServiceType(typeof(T), middlewareDefinition, baseContextType);
 
         return _AddMiddleware<T>(direction, MiddlewareScope.Bus, serviceType, contextType, messageType: null, lane);
     }
@@ -102,7 +101,7 @@ public sealed class MessagingBuilder(IServiceCollection services)
         where TMiddleware : class, IPublishMiddleware<PublishContext<TMessage>>
     {
         var contextType = typeof(PublishContext<TMessage>);
-        var serviceType = typeof(IPublishMiddleware<>).MakeGenericType(contextType);
+        var serviceType = typeof(IPublishMiddleware<PublishContext<TMessage>>);
 
         return _AddMiddleware<TMiddleware>(
             MiddlewareDirection.Publish,
@@ -128,7 +127,7 @@ public sealed class MessagingBuilder(IServiceCollection services)
         where TMessage : class
     {
         var contextType = typeof(ConsumeContext<TMessage>);
-        var serviceType = typeof(IConsumeMiddleware<>).MakeGenericType(contextType);
+        var serviceType = typeof(IConsumeMiddleware<ConsumeContext<TMessage>>);
 
         return _AddMiddleware<TMiddleware>(
             MiddlewareDirection.Consume,
@@ -240,15 +239,20 @@ public sealed class MessagingBuilder(IServiceCollection services)
         return registry;
     }
 
-    private static Type _GetMiddlewareContextType(Type middlewareType, Type openMiddlewareType, Type baseContextType)
+    // Returns the closed middleware interface the type implements as its service type, so registration never closes a
+    // generic type itself.
+    private static (Type ServiceType, Type ContextType) _GetMiddlewareServiceType(
+        Type middlewareType,
+        Type openMiddlewareType,
+        Type baseContextType
+    )
     {
-        var contextTypes = middlewareType
+        var serviceTypes = middlewareType
             .GetInterfaces()
             .Where(type => type.IsGenericType && type.GetGenericTypeDefinition() == openMiddlewareType)
-            .Select(type => type.GetGenericArguments()[0])
             .ToArray();
 
-        if (contextTypes.Length == 0)
+        if (serviceTypes.Length == 0)
         {
             throw new ArgumentException(
                 $"Middleware `{middlewareType.FullName}` must implement `{openMiddlewareType.Name}`.",
@@ -256,7 +260,7 @@ public sealed class MessagingBuilder(IServiceCollection services)
             );
         }
 
-        if (contextTypes.Length > 1)
+        if (serviceTypes.Length > 1)
         {
             throw new ArgumentException(
                 $"Middleware `{middlewareType.FullName}` must implement exactly one `{openMiddlewareType.Name}` interface.",
@@ -264,7 +268,8 @@ public sealed class MessagingBuilder(IServiceCollection services)
             );
         }
 
-        var contextType = contextTypes[0];
+        var serviceType = serviceTypes[0];
+        var contextType = serviceType.GetGenericArguments()[0];
 
         if (!baseContextType.IsAssignableFrom(contextType))
         {
@@ -274,7 +279,7 @@ public sealed class MessagingBuilder(IServiceCollection services)
             );
         }
 
-        return contextType;
+        return (serviceType, contextType);
     }
 
     /// <summary>

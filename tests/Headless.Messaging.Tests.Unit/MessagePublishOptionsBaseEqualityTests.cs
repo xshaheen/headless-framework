@@ -14,7 +14,7 @@ public sealed class MessagePublishOptionsBaseEqualityTests
         {
             MessageName = "orders.placed",
             CorrelationId = "corr-1",
-            MessageType = typeof(SampleResponse),
+            MessageType = MessageTypeHandle.For<SampleResponse>(),
         };
         var withoutType = withType with { MessageType = null };
 
@@ -34,13 +34,13 @@ public sealed class MessagePublishOptionsBaseEqualityTests
         {
             MessageName = "orders.placed",
             CorrelationId = "corr-1",
-            MessageType = typeof(SampleResponse),
+            MessageType = MessageTypeHandle.For<SampleResponse>(),
         };
         var second = new PublishOptions
         {
             MessageName = "orders.placed",
             CorrelationId = "corr-1",
-            MessageType = typeof(SampleResponse),
+            MessageType = MessageTypeHandle.For<SampleResponse>(),
         };
 
         // when & then

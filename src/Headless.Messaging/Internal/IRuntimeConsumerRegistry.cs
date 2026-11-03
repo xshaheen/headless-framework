@@ -355,6 +355,7 @@ internal sealed class RuntimeConsumerRegistry(
             ConsumerType = method.DeclaringType ?? typeof(RuntimeConsumerRegistry),
             MethodName = method.Name,
             MessageType = typeof(TMessage),
+            MessageBinding = ConsumeMessageBinding.For<TMessage>(),
             MessageName = messageName,
             SubscriptionName = identity,
             Concurrency = concurrency,

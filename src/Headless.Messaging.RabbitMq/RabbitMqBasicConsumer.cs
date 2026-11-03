@@ -13,13 +13,14 @@ namespace Headless.Messaging.RabbitMq;
 /// model and dispatches them to the registered message handler.
 /// </summary>
 /// <remarks>
-/// When <paramref name="concurrent"/> is greater than zero, each delivery is dispatched on a
-/// <c>Task.Run</c> thread pool task and a semaphore limits the number of in-flight handlers.
-/// When <paramref name="concurrent"/> is zero, deliveries are handled sequentially on the calling
-/// thread. On header or body parsing failure, or when <paramref name="envelopeGate"/> finds the envelope malformed, the
-/// delivery is terminally rejected. When the callback throws without settling the delivery, the delivery is rejected
-/// with requeue. Every dispatched handler is tracked in both modes, so shutdown can stop dispatching
-/// and wait for the running ones before the channel closes.
+/// Each delivery is handled on a <c>Task.Run</c> thread pool task, and a semaphore limits the number of in-flight
+/// handlers to <paramref name="concurrent"/>; zero means one, so deliveries run one at a time in arrival order. The
+/// handler never runs inside the client's consumer dispatcher, because closing the channel waits for that dispatcher and
+/// a hung handler would then hold the close past the shutdown budget; the dispatcher only ever waits for a free slot,
+/// which stopping dispatching releases. On header or body parsing failure, or when <paramref name="envelopeGate"/> finds
+/// the envelope malformed, the delivery is terminally rejected. When the callback throws without settling the delivery,
+/// the delivery is rejected with requeue. Every dispatched handler is tracked, so shutdown can stop dispatching and wait
+/// for the running ones before the channel closes.
 /// </remarks>
 /// <param name="arrivalNames">
 /// The message name each subscribed routing key belongs to, built from the same routing keys the client bound, so a
@@ -42,9 +43,8 @@ internal sealed class RabbitMqBasicConsumer(
 
     private readonly TransportEnvelopeGate _envelopeGate = envelopeGate ?? TransportEnvelopeGate.Strict;
 #pragma warning disable CA2213 // Fix makes the code worse: disposing it under a cancelled waiter can hang the channel close; see Dispose.
-    private readonly SemaphoreSlim _semaphore = new(concurrent);
+    private readonly SemaphoreSlim _semaphore = new(Math.Max((byte)1, concurrent));
 #pragma warning restore CA2213
-    private readonly bool _usingTaskRun = concurrent > 0;
 
     // A delivery either registers before the drain takes its snapshot or sees dispatching stopped; none slips between.
     private readonly InFlightHandlerTracker _inFlightHandlers = new();
@@ -71,67 +71,47 @@ internal sealed class RabbitMqBasicConsumer(
         CancellationToken cancellationToken = default
     )
     {
-        if (_usingTaskRun)
+        if (!await _TryEnterSlotAsync(cancellationToken).ConfigureAwait(false))
         {
-            if (!await _TryEnterSlotAsync(cancellationToken).ConfigureAwait(false))
-            {
-                // Dispatching stopped while the delivery waited: it stays unacknowledged, and the broker returns it to
-                // the queue when the channel closes.
-                return;
-            }
+            // Dispatching stopped while the delivery waited: it stays unacknowledged, and the broker returns it to the
+            // queue when the channel closes.
+            return;
+        }
 
-            if (!_TryBeginHandler(out var handlerDone))
-            {
-                _ReleaseSemaphore();
-                return;
-            }
+        if (!_TryBeginHandler(out var handlerDone))
+        {
+            _ReleaseSemaphore();
+            return;
+        }
 
-            // Copy of the body safe to use outside the RabbitMQ thread context
-            ReadOnlyMemory<byte> safeBody = body.ToArray();
-            _ObserveBackgroundHandler(
-                Task.Run(
-                    async () =>
+        // The client reuses the body's memory once this callback returns, and the handler outlives the callback.
+        ReadOnlyMemory<byte> safeBody = body.ToArray();
+        _ObserveBackgroundHandler(
+            Task.Run(
+                async () =>
+                {
+                    try
                     {
-                        try
-                        {
-                            await _Consume(
-                                    consumerTag,
-                                    deliveryTag,
-                                    redelivered,
-                                    exchange,
-                                    routingKey,
-                                    properties,
-                                    safeBody
-                                )
-                                .ConfigureAwait(false);
-                        }
-                        finally
-                        {
-                            _EndHandler(handlerDone);
-                            _ReleaseSemaphore();
-                        }
-                    },
-                    CancellationToken.None // Ensure semaphore release even if cancellation is requested during handler execution
-                )
-            );
-        }
-        else
-        {
-            if (!_TryBeginHandler(out var handlerDone))
-            {
-                return;
-            }
-
-            try
-            {
-                await _Consume(consumerTag, deliveryTag, redelivered, exchange, routingKey, properties, body)
-                    .ConfigureAwait(false);
-            }
-            finally
-            {
-                _EndHandler(handlerDone);
-            }
-        }
+                        await _Consume(
+                                consumerTag,
+                                deliveryTag,
+                                redelivered,
+                                exchange,
+                                routingKey,
+                                properties,
+                                safeBody
+                            )
+                            .ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        _EndHandler(handlerDone);
+                        _ReleaseSemaphore();
+                    }
+                },
+                CancellationToken.None // Ensure semaphore release even if cancellation is requested during handler execution
+            )
+        );
     }
 
     /// <summary>

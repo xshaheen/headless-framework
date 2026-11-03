@@ -93,7 +93,7 @@ internal sealed class MessagePublisher(
     )
     {
         var coordination = _ResolveCoordination(unitOfWork);
-        var declaredMessageType = options?.MessageType ?? typeof(T);
+        var declaredMessageType = options?.MessageType?.Type ?? typeof(T);
         // An enlisted publish has no mode to resolve: durable capture is the mechanism it enlists through, so
         // the mode is Durable by construction and none of the three autonomous inputs may reach this path. A
         // type pinned Direct would otherwise turn every coordinated publish of that type into a refusal.

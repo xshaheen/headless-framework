@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging.Internal;
 using Headless.Reliability;
 
 namespace Headless.Messaging;
@@ -27,6 +28,12 @@ public sealed class ConsumerExecutorDescriptor
     /// whose payload stays as delivered.
     /// </summary>
     public Type? MessageType { get; init; }
+
+    /// <summary>
+    /// The typed consume code of <see cref="MessageType"/>, captured where that type was a generic argument. A delivery
+    /// runs through it, so a descriptor without one cannot be consumed.
+    /// </summary>
+    internal ConsumeMessageBinding? MessageBinding { get; init; }
 
     /// <summary>
     /// Message name for the consumer. Can be set directly or computed from attributes.
