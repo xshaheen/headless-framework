@@ -47,7 +47,8 @@ internal sealed class PostgresReleaseSignal : IReleaseSignal, IAsyncDisposable
     /// </summary>
     /// <param name="options">Provider options supplying command timeout and push-wakeup toggle.</param>
     /// <param name="dataSource">
-    /// The shared <see cref="NpgsqlDataSource"/> injected by the DI registration. Not disposed here.
+    /// The provider's own data source owner, never the application's unkeyed <see cref="NpgsqlDataSource"/>. Not
+    /// disposed here.
     /// </param>
     /// <param name="timeProvider">
     /// The app clock, which paces the local polling fallback alongside the waiter's acquire timeout. The reconnect
@@ -56,7 +57,7 @@ internal sealed class PostgresReleaseSignal : IReleaseSignal, IAsyncDisposable
     /// <param name="logger">Logger for listener reconnect and fanout-failure warnings.</param>
     public PostgresReleaseSignal(
         IOptions<PostgreSqlDistributedLockOptions> options,
-        NpgsqlDataSource dataSource,
+        PostgresLockDataSource dataSource,
         TimeProvider timeProvider,
         ILogger<PostgresReleaseSignal> logger
     )
@@ -66,7 +67,7 @@ internal sealed class PostgresReleaseSignal : IReleaseSignal, IAsyncDisposable
         _local = new PollingReleaseSignal(timeProvider);
         _commandTimeoutSeconds = (int)Options.CommandTimeout.TotalSeconds;
         // The data source is shared and owned by the DI registration; it is never disposed here.
-        _dataSource = dataSource;
+        _dataSource = dataSource.DataSource;
 
         if (Options.EnablePushWakeup)
         {

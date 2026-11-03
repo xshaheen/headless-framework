@@ -18,12 +18,12 @@ public sealed class DistributedLockCacheFactoryLockProviderTests : TestBase
         _SetupAcquire(lease: Substitute.For<IDistributedLease>());
 
         // when
-        await provider.TryAcquireAsync("users:42", TimeSpan.FromSeconds(1), AbortToken);
+        await provider.TryAcquireAsync("default", "users:42", TimeSpan.FromSeconds(1), AbortToken);
 
         // then
         await _distributedLock
             .Received(1)
-            .TryAcquireAsync("cache:factory:users:42", Arg.Any<DistributedLockAcquireOptions>(), AbortToken);
+            .TryAcquireAsync("cache:factory:default:users:42", Arg.Any<DistributedLockAcquireOptions>(), AbortToken);
     }
 
     [Fact]
@@ -34,12 +34,12 @@ public sealed class DistributedLockCacheFactoryLockProviderTests : TestBase
         _SetupAcquire(lease: Substitute.For<IDistributedLease>());
 
         // when
-        await provider.TryAcquireAsync("users:42", TimeSpan.FromSeconds(1), AbortToken);
+        await provider.TryAcquireAsync("default", "users:42", TimeSpan.FromSeconds(1), AbortToken);
 
         // then
         await _distributedLock
             .Received(1)
-            .TryAcquireAsync("myapp:locks:users:42", Arg.Any<DistributedLockAcquireOptions>(), AbortToken);
+            .TryAcquireAsync("myapp:locks:default:users:42", Arg.Any<DistributedLockAcquireOptions>(), AbortToken);
     }
 
     [Theory]
@@ -61,7 +61,7 @@ public sealed class DistributedLockCacheFactoryLockProviderTests : TestBase
             .Returns(Task.FromResult<IDistributedLease?>(Substitute.For<IDistributedLease>()));
 
         // when
-        await provider.TryAcquireAsync("key", timeout, AbortToken);
+        await provider.TryAcquireAsync("default", "key", timeout, AbortToken);
 
         // then
         capturedOptions.Should().NotBeNull();
@@ -76,7 +76,7 @@ public sealed class DistributedLockCacheFactoryLockProviderTests : TestBase
         _SetupAcquire(lease: null);
 
         // when
-        var releaser = await provider.TryAcquireAsync("key", TimeSpan.Zero, AbortToken);
+        var releaser = await provider.TryAcquireAsync("default", "key", TimeSpan.Zero, AbortToken);
 
         // then
         releaser.Should().BeNull();
@@ -91,7 +91,7 @@ public sealed class DistributedLockCacheFactoryLockProviderTests : TestBase
         _SetupAcquire(lease);
 
         // when
-        var releaser = await provider.TryAcquireAsync("key", TimeSpan.FromSeconds(1), AbortToken);
+        var releaser = await provider.TryAcquireAsync("default", "key", TimeSpan.FromSeconds(1), AbortToken);
         await releaser!.DisposeAsync();
 
         // then
@@ -114,7 +114,7 @@ public sealed class DistributedLockCacheFactoryLockProviderTests : TestBase
             .Returns(Task.FromResult<IDistributedLease?>(Substitute.For<IDistributedLease>()));
 
         // when
-        await provider.TryAcquireAsync("key", TimeSpan.FromSeconds(1), AbortToken);
+        await provider.TryAcquireAsync("default", "key", TimeSpan.FromSeconds(1), AbortToken);
 
         // then
         capturedOptions.Should().NotBeNull();
@@ -136,11 +136,81 @@ public sealed class DistributedLockCacheFactoryLockProviderTests : TestBase
             .Returns(Task.FromResult<IDistributedLease?>(Substitute.For<IDistributedLease>()));
 
         // when
-        await provider.TryAcquireAsync("key", TimeSpan.FromSeconds(1), AbortToken);
+        await provider.TryAcquireAsync("default", "key", TimeSpan.FromSeconds(1), AbortToken);
 
         // then — null TimeUntilExpires defers to the lock provider's own default lease duration
         capturedOptions.Should().NotBeNull();
         capturedOptions.TimeUntilExpires.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_bound_resource_name_for_key_longer_than_lock_name_limit()
+    {
+        // given
+        var provider = _CreateProvider();
+        var longKey = new string('k', 2_000);
+        string? resource = null;
+        _distributedLock
+            .TryAcquireAsync(
+                Arg.Do<string>(name => resource = name),
+                Arg.Any<DistributedLockAcquireOptions?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(Task.FromResult<IDistributedLease?>(Substitute.For<IDistributedLease>()));
+
+        // when
+        await provider.TryAcquireAsync("default", longKey, TimeSpan.FromSeconds(1), AbortToken);
+
+        // then
+        resource.Should().NotBeNull();
+        resource.Length.Should().BeLessThanOrEqualTo(255);
+        resource.Should().StartWith("cache:factory:sha256:");
+    }
+
+    [Fact]
+    public void should_map_each_long_key_to_a_stable_distinct_resource()
+    {
+        // given
+        var key = new string('k', 2_000);
+        var otherKey = key[..^1] + "x";
+
+        // when
+        var first = DistributedLockCacheFactoryLockProvider.BuildResource("cache:factory:", "default", key);
+        var second = DistributedLockCacheFactoryLockProvider.BuildResource("cache:factory:", "default", key);
+        var other = DistributedLockCacheFactoryLockProvider.BuildResource("cache:factory:", "default", otherKey);
+
+        // then
+        second.Should().Be(first);
+        other.Should().NotBe(first);
+    }
+
+    [Fact]
+    public void should_keep_resources_of_two_cache_instances_apart()
+    {
+        // when
+        var shortA = DistributedLockCacheFactoryLockProvider.BuildResource("cache:factory:", "a", "users:42");
+        var shortB = DistributedLockCacheFactoryLockProvider.BuildResource("cache:factory:", "b", "users:42");
+        var longKey = new string('k', 2_000);
+        var longA = DistributedLockCacheFactoryLockProvider.BuildResource("cache:factory:", "a", longKey);
+        var longB = DistributedLockCacheFactoryLockProvider.BuildResource("cache:factory:", "b", longKey);
+
+        // then
+        shortA.Should().Be("cache:factory:a:users:42");
+        shortB.Should().Be("cache:factory:b:users:42");
+        longB.Should().NotBe(longA);
+    }
+
+    [Fact]
+    public void should_keep_digest_form_within_bound_for_longest_allowed_prefix()
+    {
+        // given
+        var prefix = new string('p', DistributedLockCacheFactoryLockProvider.MaxResourcePrefixLength);
+
+        // when
+        var resource = DistributedLockCacheFactoryLockProvider.BuildResource(prefix, "default", new string('k', 500));
+
+        // then
+        resource.Should().HaveLength(DistributedLockCacheFactoryLockProvider.MaxReadableResourceLength);
     }
 
     private DistributedLockCacheFactoryLockProvider _CreateProvider(CacheFactoryLockOptions? options = null)

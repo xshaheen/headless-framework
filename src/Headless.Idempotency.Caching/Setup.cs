@@ -154,15 +154,40 @@ internal sealed class CacheIdempotencyOptionsExtension(
     {
         if (options.CacheName is { } name)
         {
-            return provider.GetKeyedService<ICache>(name)
+            var named =
+                provider.GetKeyedService<ICache>(name)
                 ?? throw new InvalidOperationException(
                     $"No cache is registered under the name '{name}' that CacheIdempotencyOptions.CacheName names. "
                         + "Register it through AddHeadlessCaching(setup => setup.AddNamed(...))."
                 );
+
+            return _RequireSingleTier(
+                named,
+                $"The cache registered under the name '{name}' that CacheIdempotencyOptions.CacheName names"
+            );
         }
 
         // The remote tier when there is one: a hybrid cache's default ICache answers reads from a local tier that can
         // lag behind the shared one, which would make every compare-and-swap against the shared tier fail.
-        return provider.GetRemoteOrDefaultCache();
+        return _RequireSingleTier(provider.GetRemoteOrDefaultCache(), "The default cache");
+    }
+
+    // The store reads a record and then compares-and-swaps against what it read, so both must reach one store. A
+    // multi-tier cache (hybrid) reads from a local copy that lags other replicas' writes to the shared tier, so a peer's
+    // completion reads as still pending and a shared-tier outage reads as the cache refusing the write. The tier
+    // markers are how a cache says it is one store.
+    private static ICache _RequireSingleTier(ICache cache, string subject)
+    {
+        if (cache is IRemoteCache or IInMemoryCache)
+        {
+            return cache;
+        }
+
+        throw new InvalidOperationException(
+            $"{subject} ({cache.GetType().Name}) is neither an {nameof(IRemoteCache)} nor an {nameof(IInMemoryCache)}. "
+                + "Idempotency records need a single-tier cache, because a hybrid cache serves reads from a local "
+                + "copy that lags the shared tier. Set CacheIdempotencyOptions.CacheName to the remote (Redis) "
+                + "instance, such as the one HybridCacheOptions.RemoteCacheName names."
+        );
     }
 }

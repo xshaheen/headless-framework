@@ -65,6 +65,32 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
         _lockProvider.IsHeld(key).Should().BeFalse();
     }
 
+    [Theory]
+    [InlineData(null, "default")]
+    [InlineData("orders", "orders")]
+    public async Task should_pass_cache_instance_name_to_lock_provider(string? cacheName, string expected)
+    {
+        // given
+        using var coordinator = new FactoryCacheCoordinator(
+            _timeProvider,
+            NullLogger<FactoryCacheCoordinator>.Instance,
+            _lockProvider,
+            cacheName
+        );
+
+        // when
+        await coordinator.GetOrAddAsync(
+            _store,
+            Faker.Random.AlphaNumeric(8),
+            static _ => ValueTask.FromResult<string?>("fresh"),
+            _CreateOptions(),
+            AbortToken
+        );
+
+        // then
+        _lockProvider.LastCacheName.Should().Be(expected);
+    }
+
     [Fact]
     public async Task should_serve_stale_without_running_factory_when_lock_held_elsewhere_with_fail_safe()
     {

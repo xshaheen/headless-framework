@@ -13,8 +13,9 @@ namespace Headless.DistributedLocks.PostgreSql;
 /// <remarks>
 /// Disposal ownership is centralized here: when the data source was built from a connection string it
 /// is owned and disposed on container teardown; when a <see cref="PostgreSqlDistributedLockOptions.DataSource"/>
-/// is injected it is the consumer's object and is never disposed. Consumers inject
-/// <see cref="DataSource"/> directly and must not dispose it.
+/// is injected it is the consumer's object and is never disposed. Consumers inject this owner and read
+/// <see cref="DataSource"/>; they must not dispose it. The data source is deliberately not registered as the unkeyed
+/// <see cref="NpgsqlDataSource"/>, which belongs to the application.
 /// </remarks>
 /// <remarks>
 /// Initializes the lock data source, adopting an injected <see cref="NpgsqlDataSource"/> (not owned) or

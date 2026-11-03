@@ -405,7 +405,7 @@ public sealed partial class FactoryCacheCoordinator(
                 try
                 {
                     distributedLease = await factoryLockProvider!
-                        .TryAcquireAsync(key, distributedLockTimeout, cancellationToken)
+                        .TryAcquireAsync(_cacheName, key, distributedLockTimeout, cancellationToken)
                         .ConfigureAwait(false);
                 }
                 catch (Exception exception) when (!IsCallerCancellation(exception, cancellationToken))
