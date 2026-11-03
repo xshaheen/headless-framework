@@ -232,6 +232,13 @@ public sealed class RedisConsumerConformanceTests(RedisMessagingFixture fixture)
             {
                 await Task.Delay(20, timeout.Token);
             }
+
+            // The client reports the error before it sends XACK, and XPENDING runs on another connection, so wait for
+            // the acknowledgement rather than reading the pending count once.
+            while ((await database.StreamPendingAsync(stream, group)).PendingMessageCount != 0)
+            {
+                await Task.Delay(20, timeout.Token);
+            }
         }
 
         (await database.StreamPendingAsync(stream, group)).PendingMessageCount.Should().Be(0);

@@ -47,6 +47,40 @@ public sealed class PermissionsHeadlessDbContextTests(PermissionsTestFixture fix
             .Match(factory => (factory is PooledDbContextFactory<HeadlessPermissionsDbContext>) == pooled);
     }
 
+    [Fact]
+    public async Task should_write_host_grants_through_the_tenant_write_guard_and_keep_tenant_writes_guarded()
+    {
+        // given the write guard on and no ambient tenant
+        await Fixture.ResetAsync();
+        using var host = CreateHost(builder =>
+            builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites()))
+        );
+        host.Services.GetRequiredService<IOptions<TenantGuardOptions>>().Value.GuardWrites.Should().BeTrue();
+        // A real host has a null tenant; the substitute's default for a string is empty, which the guard treats as missing.
+        host.Services.GetRequiredService<ICurrentTenant>().Id.Returns((string?)null);
+        var store = host.Services.GetRequiredService<IPermissionGrantStore>();
+        var repository = host.Services.GetRequiredService<IPermissionGrantRepository>();
+
+        // when the host grants, revokes, and grants again, which inserts and deletes host rows
+        await store.GrantAsync("Orders.Read", "R", "admin", AbortToken);
+        await store.RevokeAsync("Orders.Read", "R", "admin", AbortToken);
+        await store.GrantAsync("Orders.Read", "R", "admin", AbortToken);
+        var tenantRowFromHost = async () =>
+            await repository.InsertAsync(
+                new PermissionGrantRecord(Guid.NewGuid(), "Orders.Read", "R", "admin", isGranted: true, "t1"),
+                AbortToken
+            );
+
+        // then the host row is stored, and a tenant's row written without that tenant is still refused
+        var stored = await repository.GetListAsync("R", "admin", AbortToken);
+        stored
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .Match<PermissionGrantRecord>(x => x.IsGranted && x.TenantId == null);
+        await tenantRowFromHost.Should().ThrowAsync<MissingTenantContextException>();
+    }
+
     protected override void AddPermissionsDbContextFactory(IServiceCollection services)
     {
         if (_pooled)

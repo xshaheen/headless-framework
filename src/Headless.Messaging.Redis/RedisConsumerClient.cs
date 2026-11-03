@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Frozen;
+using System.Runtime.CompilerServices;
 using Headless.Checks;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Transport;
@@ -68,6 +69,13 @@ internal sealed class RedisConsumerClient(
     // Where an every-instance client's group-less reads start: each stream's tail when it subscribed.
     private StreamPosition[] _everyInstanceStart = [];
 
+    // When an every-instance client last read successfully, and whether the gap before its latest read was long enough
+    // for the publish-side trim to remove entries it had not read yet.
+    private long _lastEveryInstanceRead;
+    private int _everyInstanceGap;
+
+    private Func<CancellationToken, Task>? _onReestablished;
+
     public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
 
     public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
@@ -76,6 +84,11 @@ internal sealed class RedisConsumerClient(
     {
         OnMessageCallback = onMessage;
         OnLogCallback = onLog;
+    }
+
+    public void AttachReestablishedCallback(Func<CancellationToken, Task>? onReestablished)
+    {
+        _onReestablished = onReestablished;
     }
 
     public BrokerAddress BrokerAddress => new("redis", options.Value.DisplayEndpoint);
@@ -140,11 +153,21 @@ internal sealed class RedisConsumerClient(
             using var readCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _stopReading.Token);
 
             // An every-instance client resumes from the last id it read after a lost connection, so it misses nothing
-            // the stream still holds and has no gap to report through the re-established callback.
+            // the stream still holds. A stream no group reads holds entries only for EveryInstanceStreamMaxAge, so a
+            // read gap long enough for the trim to reach unread entries is reported through the re-established callback.
+            Volatile.Write(ref _lastEveryInstanceRead, _timeProvider.GetTimestamp());
             var reads =
                 kind is ConsumerSubscriptionKind.EveryInstance
                     ? _ConsumeMessages(
-                        redis.PollStreamsFromAsync(_everyInstanceStart, timeout, _ReportRead, readCts.Token),
+                        _ReportEveryInstanceGapsAsync(
+                            redis.PollStreamsFromAsync(
+                                _everyInstanceStart,
+                                timeout,
+                                _ReportEveryInstanceRead,
+                                readCts.Token
+                            ),
+                            readCts.Token
+                        ),
                         StreamPosition.NewMessages,
                         readCts.Token
                     )
@@ -274,6 +297,56 @@ internal sealed class RedisConsumerClient(
         }
     }
 
+    private void _ReportEveryInstanceRead(Exception? failure)
+    {
+        _ReportRead(failure);
+
+        if (failure is not null)
+        {
+            return;
+        }
+
+        var now = _timeProvider.GetTimestamp();
+        var previous = Interlocked.Exchange(ref _lastEveryInstanceRead, now);
+
+        // Half the age leaves room for clock skew between the publishers, whose clock sets the trim, and this process.
+        if (_timeProvider.GetElapsedTime(previous, now) >= options.Value.EveryInstanceStreamMaxAge / 2)
+        {
+            Volatile.Write(ref _everyInstanceGap, 1);
+        }
+    }
+
+    // Raises the signal before the entries read after the gap are dispatched, so a consumer that flushes its state on
+    // the signal does not flush what those entries just refreshed.
+    private async IAsyncEnumerable<IEnumerable<RedisStreamMessages>> _ReportEveryInstanceGapsAsync(
+        IAsyncEnumerable<IEnumerable<RedisStreamMessages>> reads,
+        [EnumeratorCancellation] CancellationToken cancellationToken
+    )
+    {
+        await foreach (var set in reads.WithCancellation(cancellationToken).ConfigureAwait(false))
+        {
+            if (Interlocked.Exchange(ref _everyInstanceGap, 0) != 0 && _onReestablished is { } onReestablished)
+            {
+                try
+                {
+                    await onReestablished(CancellationToken.None).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    OnLogCallback?.Invoke(
+                        new LogMessageEventArgs
+                        {
+                            LogType = MqLogType.ExceptionReceived,
+                            Reason = $"Reporting a Redis every-instance read gap failed: {ex}",
+                        }
+                    );
+                }
+            }
+
+            yield return set;
+        }
+    }
+
     private async Task _ListeningForMessagesAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
         //first time, we want to read our pending messages, in case we crashed and are recovering.
@@ -331,6 +404,14 @@ internal sealed class RedisConsumerClient(
                 {
                     await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
                     if (entry.IsNull)
+                    {
+                        return;
+                    }
+
+                    // CancelAsync marks the stop at once but cancels the linked read token from a later callback, so
+                    // a batch read before shutdown could still reach the handler. The entry stays pending in the
+                    // group, and the claim pass of another consumer delivers it.
+                    if (_stopReading.IsCancellationRequested)
                     {
                         return;
                     }

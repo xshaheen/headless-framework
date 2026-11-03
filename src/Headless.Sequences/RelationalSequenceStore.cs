@@ -57,8 +57,14 @@ internal sealed class RelationalSequenceStore(
     {
         var (connection, _) = _RequireLive(unitOfWork);
 
-        using var configured = _dialect.CreateConnection(_options.ConnectionString);
-        RelationalEnlistment.RequireSameDatabase(configured, connection, _packageName, _Operation);
+        RelationalEnlistment.RequireSameDatabase(
+            unitOfWork,
+            this,
+            static store => store._dialect.CreateConnection(store._options.ConnectionString),
+            connection,
+            _packageName,
+            _Operation
+        );
     }
 
     public async ValueTask<long> IncrementEnlistedAsync(

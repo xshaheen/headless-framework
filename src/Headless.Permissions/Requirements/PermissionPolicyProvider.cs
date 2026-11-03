@@ -104,6 +104,24 @@ public sealed class PermissionPolicyProvider : IAuthorizationPolicyProvider
         return _policies.GetOrAdd(policyName, policy);
     }
 
+    /// <summary>
+    /// Returns the permission <paramref name="policyName"/> checks when this provider resolved it from a permission
+    /// name, or <see langword="null"/> for a registered policy or an unknown name.
+    /// </summary>
+    internal async Task<string?> FindPermissionNameAsync(string policyName)
+    {
+        var policy = await GetPolicyAsync(policyName).ConfigureAwait(false);
+
+        // A registered policy is returned before the permission lookup, so only an instance this provider built and
+        // cached under the name is a permission policy, whose only requirement is the permission.
+        return
+            policy is not null
+            && _policies.TryGetValue(policyName, out var permissionPolicy)
+            && ReferenceEquals(policy, permissionPolicy)
+            ? ((PermissionRequirement)policy.Requirements[0]).PermissionName
+            : null;
+    }
+
     private string? _GetPermissionName(string policyName)
     {
         if (_prefix is null)

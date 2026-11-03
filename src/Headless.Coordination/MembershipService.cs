@@ -37,6 +37,8 @@ internal sealed class MembershipService(
     // (renew, fail-stop, leave) is a compare-and-swap against the exact lease it observed.
     private volatile MembershipLease? _lease;
 
+    public string ClusterName => options.ClusterName;
+
     public NodeIdentity? Identity => _lease is { } lease && !_IsPastFence(lease) ? lease.Identity : null;
 
     public CancellationToken LocalMembershipLostToken => _localMembershipLost.Token;

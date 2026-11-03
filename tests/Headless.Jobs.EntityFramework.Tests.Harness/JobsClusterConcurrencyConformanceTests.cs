@@ -394,8 +394,7 @@ public abstract class JobsClusterConcurrencyConformanceTests<TFixture>(TFixture 
     private static IJobPersistenceProvider<TimeJobEntity, CronJobEntity> _Store(IHost host) =>
         host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
-    private static string _Owner(IHost host) =>
-        host.Services.GetRequiredService<INodeMembership>().Identity!.Value.ToString();
+    private static string _Owner(IHost host) => host.Services.GetRequiredService<INodeMembership>().GetOwnerTag()!;
 
     private static TimeJobEntity _TimeJob(string function, DateTime executionTime) =>
         new()

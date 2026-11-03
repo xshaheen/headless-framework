@@ -88,44 +88,79 @@ internal sealed class FileSystemBlobStorage : IBlobStorage
             Directory.CreateDirectory(directory);
         }
 
-        // Write the content and the sidecar to temporary siblings, then rename each over its final path. A fault or
-        // cancellation while the body streams leaves the previous blob and its metadata untouched, and a reader
-        // opens either the old file or the new one, never a half-written file.
+        await _ReplaceBlobAsync(
+                fullPath,
+                async (contentTemp, sidecarTemp, ct) =>
+                {
+                    var streamOptions = new FileStreamOptions
+                    {
+                        Mode = FileMode.CreateNew,
+                        Access = FileAccess.Write,
+                        Share = FileShare.None,
+                        Options = FileOptions.Asynchronous,
+                    };
+
+                    var fileStream = new FileStream(contentTemp, streamOptions);
+
+                    try
+                    {
+                        if (content.CanSeek)
+                        {
+                            content.Position = 0;
+                        }
+
+                        await content.CopyToAsync(fileStream, ct).ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        await fileStream.DisposeAsync().ConfigureAwait(false);
+                    }
+
+                    await _WriteSidecarAsync(sidecarTemp, key, metadata, ct).ConfigureAwait(false);
+
+                    return true;
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Replaces the blob at <paramref name="fullPath"/> and its sidecar through temporary siblings that
+    /// <paramref name="writeAsync"/> fills; it returns whether it wrote a sidecar.
+    /// </summary>
+    /// <remarks>
+    /// Each temporary is renamed over its final path only after every write succeeded, so a fault or cancellation
+    /// midway leaves the previous blob and its metadata untouched, and a reader opens either the old file or the new
+    /// one, never a half-written file. The temporaries end in the sidecar suffix, so listings and deletes skip them.
+    /// </remarks>
+    private async ValueTask _ReplaceBlobAsync(
+        string fullPath,
+        Func<string, string, CancellationToken, ValueTask<bool>> writeAsync,
+        CancellationToken cancellationToken
+    )
+    {
         var contentTemp = BlobStorageHelpers.BuildTempUploadPath(fullPath);
         var sidecarTemp = BlobStorageHelpers.BuildTempUploadPath(fullPath);
 
         try
         {
-            var streamOptions = new FileStreamOptions
-            {
-                Mode = FileMode.CreateNew,
-                Access = FileAccess.Write,
-                Share = FileShare.None,
-                Options = FileOptions.Asynchronous,
-            };
-
-            var fileStream = new FileStream(contentTemp, streamOptions);
-
-            try
-            {
-                if (content.CanSeek)
-                {
-                    content.Position = 0;
-                }
-
-                await content.CopyToAsync(fileStream, cancellationToken).ConfigureAwait(false);
-            }
-            finally
-            {
-                await fileStream.DisposeAsync().ConfigureAwait(false);
-            }
-
-            await _WriteSidecarAsync(sidecarTemp, key, metadata, cancellationToken).ConfigureAwait(false);
+            var hasSidecar = await writeAsync(contentTemp, sidecarTemp, cancellationToken).ConfigureAwait(false);
+            var sidecarPath = fullPath + BlobStorageHelpers.SidecarSuffix;
 
             // Content first, then sidecar: a crash between the two renames pairs the new content with the old
             // metadata, the same window the provider documents for a crash between the two writes.
             File.Move(contentTemp, fullPath, overwrite: true);
-            File.Move(sidecarTemp, fullPath + BlobStorageHelpers.SidecarSuffix, overwrite: true);
+
+            if (hasSidecar)
+            {
+                File.Move(sidecarTemp, sidecarPath, overwrite: true);
+            }
+            else
+            {
+                // A blob replaced without metadata must not inherit the previous occupant's sidecar.
+                File.Delete(sidecarPath);
+            }
         }
         finally
         {
@@ -312,7 +347,7 @@ internal sealed class FileSystemBlobStorage : IBlobStorage
 
     #region Move / Copy
 
-    public ValueTask<bool> CopyAsync(
+    public async ValueTask<bool> CopyAsync(
         BlobLocation source,
         BlobLocation destination,
         CancellationToken cancellationToken = default
@@ -325,15 +360,15 @@ internal sealed class FileSystemBlobStorage : IBlobStorage
 
         if (string.Equals(sourcePath, destinationPath, StringComparison.Ordinal))
         {
-            // A resolved self-copy is a no-op: opening destinationPath with FileMode.Create would truncate the source.
-            return ValueTask.FromResult(true);
+            // A resolved self-copy is a no-op: the blob already holds the content and metadata a copy would write.
+            return true;
         }
 
         _logger.LogCopyingFile(sourcePath, destinationPath);
 
         if (!File.Exists(sourcePath))
         {
-            return ValueTask.FromResult(false);
+            return false;
         }
 
         // Same data-plane rule as UploadAsync: never auto-create the top-level container. Without this guard the
@@ -352,23 +387,30 @@ internal sealed class FileSystemBlobStorage : IBlobStorage
             Directory.CreateDirectory(destinationDirectory);
         }
 
-        File.Copy(sourcePath, destinationPath, overwrite: true);
-
-        // The sidecar moves with the blob: copy it when present, otherwise drop a stale destination sidecar so an
-        // overwrite without source metadata cannot resurrect the destination's old metadata.
+        // The sidecar moves with the blob: copy it when present; otherwise the replace drops a stale destination
+        // sidecar so an overwrite without source metadata cannot resurrect the destination's old metadata.
         var sourceSidecar = sourcePath + BlobStorageHelpers.SidecarSuffix;
-        var destinationSidecar = destinationPath + BlobStorageHelpers.SidecarSuffix;
 
-        if (File.Exists(sourceSidecar))
-        {
-            File.Copy(sourceSidecar, destinationSidecar, overwrite: true);
-        }
-        else if (File.Exists(destinationSidecar))
-        {
-            File.Delete(destinationSidecar);
-        }
+        await _ReplaceBlobAsync(
+                destinationPath,
+                (contentTemp, sidecarTemp, _) =>
+                {
+                    File.Copy(sourcePath, contentTemp);
 
-        return ValueTask.FromResult(true);
+                    if (!File.Exists(sourceSidecar))
+                    {
+                        return ValueTask.FromResult(false);
+                    }
+
+                    File.Copy(sourceSidecar, sidecarTemp);
+
+                    return ValueTask.FromResult(true);
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return true;
     }
 
     public async ValueTask<bool> MoveAsync(

@@ -322,6 +322,53 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
         context.Response.Body.Should().BeSameAs(originalBody);
     }
 
+    [Fact]
+    public async Task should_answer_409_in_flight_when_the_handler_fence_reports_a_stale_admission()
+    {
+        var operations = CreateAdmittingOperations();
+        operations
+            .ReleaseAsync(Arg.Any<IdempotentAdmission>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(IdempotentLeaseStatus.Stale));
+        var middleware = CreateMiddleware(operations: operations);
+        var context = CreateContext(idempotencyKey: "k1");
+        var originalBody = context.Response.Body;
+
+        await middleware.InvokeAsync(
+            context,
+            _ => throw new StaleAdmissionException(new IdempotencyKey(TestTenant, "k1"), 1, IdempotentLeaseStatus.Stale)
+        );
+
+        context.Response.Body.Should().BeSameAs(originalBody);
+        context.Response.StatusCode.Should().Be(StatusCodes.Status409Conflict);
+        var body = await ReadResponseAsync(context);
+        body.Should().Contain(HttpIdempotencyErrorCodes.InFlight);
+        CallCount(operations, nameof(IIdempotentOperations.ReleaseAsync)).Should().Be(1);
+        CallCount(operations, nameof(IIdempotentOperations.CompleteAsync)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_rethrow_a_stale_admission_when_the_handler_already_started_the_response()
+    {
+        var operations = CreateAdmittingOperations();
+        var middleware = CreateMiddleware(operations: operations);
+        var context = CreateContext(idempotencyKey: "k1");
+        context.Features.Set<IHttpResponseFeature>(new StartedResponseFeature());
+
+        var act = () =>
+            middleware.InvokeAsync(
+                context,
+                _ =>
+                    throw new StaleAdmissionException(
+                        new IdempotencyKey(TestTenant, "k1"),
+                        1,
+                        IdempotentLeaseStatus.Stale
+                    )
+            );
+
+        await act.Should().ThrowAsync<StaleAdmissionException>();
+        CallCount(operations, nameof(IIdempotentOperations.ReleaseAsync)).Should().Be(1);
+    }
+
     [Theory]
     [InlineData(OnStoreErrorBehavior.Throw)]
     [InlineData(OnStoreErrorBehavior.FailOpen)]

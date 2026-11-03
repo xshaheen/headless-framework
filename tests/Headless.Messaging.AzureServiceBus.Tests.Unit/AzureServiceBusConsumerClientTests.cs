@@ -901,7 +901,9 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
         // when a delivery succeeds
         await _DeliverAsync(client);
 
-        // then
+        // then: a probe peeks only after a back-off of about a second, so the flag that starts it is what shows a
+        // wrongly started probe while the test still runs
+        client.IsProbing.Should().BeFalse();
         _probedClient.DidNotReceiveWithAnyArgs().CreateReceiver(default!);
     }
 

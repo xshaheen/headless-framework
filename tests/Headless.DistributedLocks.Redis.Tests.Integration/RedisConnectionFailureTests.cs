@@ -16,7 +16,7 @@ public sealed class RedisConnectionFailureTests : TestBase
     public async Task should_throw_when_redis_unavailable_on_insert()
     {
         // given
-        var options = ConfigurationOptions.Parse("localhost:59999"); // Non-existent Redis
+        var options = ConfigurationOptions.Parse("127.0.0.1:1"); // Port 1: no container can hold it
         options.AbortOnConnectFail = false;
         options.ConnectTimeout = 100;
         options.SyncTimeout = 100;
@@ -41,7 +41,7 @@ public sealed class RedisConnectionFailureTests : TestBase
     public async Task should_throw_when_redis_unavailable_on_remove()
     {
         // given
-        var options = ConfigurationOptions.Parse("localhost:59999"); // Non-existent Redis
+        var options = ConfigurationOptions.Parse("127.0.0.1:1"); // Port 1: no container can hold it
         options.AbortOnConnectFail = false;
         options.ConnectTimeout = 100;
         options.SyncTimeout = 100;

@@ -2,6 +2,7 @@
 
 using System.Data.Common;
 using System.Net.Sockets;
+using Headless;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
 using Headless.UnitOfWork.Internal;
@@ -112,14 +113,7 @@ public sealed class RelationalTransientFaultsTests : TestBase
 
         RelationalTransientFaults.IsTransient(exception, CancellationToken.None).Should().BeTrue();
         SqlServerTransientFaults.GetErrorNumber(exception).Should().Be(2627);
-        SqlServerTransientFaults.GetErrorNumbers(exception).Should().Equal(2627, 1205);
-    }
-
-    [Fact]
-    public void should_fall_back_to_the_single_error_number_when_the_driver_exposes_no_collection()
-    {
-        SqlServerTransientFaults.GetErrorNumbers(new FakeDbException(number: 1205)).Should().Equal(1205);
-        SqlServerTransientFaults.GetErrorNumbers(new NumberlessDbException()).Should().BeEmpty();
+        RelationalFaults.GetSqlServerErrorNumbers(exception).Should().Equal(2627, 1205);
     }
 
     [Fact]
@@ -196,8 +190,6 @@ public sealed class RelationalTransientFaultsTests : TestBase
             .Should()
             .BeFalse();
     }
-
-    private sealed class NumberlessDbException() : DbException("fake database failure without an error number");
 
     private sealed class FakeDbException(
         string? sqlState = null,

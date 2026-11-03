@@ -293,6 +293,20 @@ public sealed class DialectRuntimeTests : TestBase
         PostgreSqlDialect.Instance.Classify(error).Should().Be(expected);
     }
 
+    [Theory]
+    [InlineData(new[] { 2627 }, SqlErrorKind.UniqueViolation)]
+    [InlineData(new[] { 2601 }, SqlErrorKind.UniqueViolation)]
+    [InlineData(new[] { 1205 }, SqlErrorKind.Deadlock)]
+    [InlineData(new[] { 3960 }, SqlErrorKind.SerializationConflict)]
+    [InlineData(new[] { 1222 }, SqlErrorKind.LockTimeout)]
+    [InlineData(new[] { 8152 }, SqlErrorKind.None)]
+    [InlineData(new[] { 8152, 2627 }, SqlErrorKind.UniqueViolation)] // a duplicate key behind an unclassified error
+    [InlineData(new[] { 1205, 2627 }, SqlErrorKind.Deadlock)] // the first error still decides when it is classified
+    public void should_classify_sql_server_errors_by_number(int[] numbers, SqlErrorKind expected)
+    {
+        SqlServerDialect.Instance.Classify(SqlClientExceptions.Create(numbers)).Should().Be(expected);
+    }
+
     [Fact]
     public void should_classify_foreign_exceptions_as_none()
     {

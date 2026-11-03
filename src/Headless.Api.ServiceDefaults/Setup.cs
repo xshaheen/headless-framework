@@ -48,31 +48,41 @@ namespace Headless.Api.ServiceDefaults;
 public static class SetupApi
 {
     private const string _HeadlessWildcardSourceName = "Headless.*";
-    private static int _globalSettingsConfigured;
+
+    // A lock rather than a flag swap: a concurrent caller must not return until the first call has finished applying
+    // the defaults, or it builds a host whose validators still use the stock messages and cascade mode.
+    private static readonly Lock _GlobalSettingsLock = new();
+    private static bool _globalSettingsConfigured;
 
     /// <summary>
     /// Applies one-time process-wide defaults: regex timeout, FluentValidation cascade mode, and the Headless Arabic
     /// (<c>ar</c>) and Egyptian Arabic (<c>ar-EG</c>) wording of FluentValidation's built-in messages. Idempotent —
-    /// subsequent calls are no-ops.
+    /// subsequent calls are no-ops, and a call made while another is applying the defaults returns once they are in
+    /// place.
     /// </summary>
     public static void ConfigureGlobalSettings()
     {
-        if (Interlocked.Exchange(ref _globalSettingsConfigured, 1) == 1)
+        lock (_GlobalSettingsLock)
         {
-            return;
+            if (_globalSettingsConfigured)
+            {
+                return;
+            }
+
+            AppDomain.CurrentDomain.SetData("REGEX_DEFAULT_MATCH_TIMEOUT", TimeSpan.FromSeconds(1));
+            ValidatorOptions.Global.LanguageManager.Enabled = true;
+
+            // A consumer may have installed its own ILanguageManager; only the stock manager type can take
+            // translations.
+            if (ValidatorOptions.Global.LanguageManager is LanguageManager languageManager)
+            {
+                languageManager.AddHeadlessArabicTranslations();
+                languageManager.AddHeadlessEgyptianArabicTranslations();
+            }
+
+            ValidatorOptions.Global.DefaultRuleLevelCascadeMode = CascadeMode.Stop;
+            _globalSettingsConfigured = true;
         }
-
-        AppDomain.CurrentDomain.SetData("REGEX_DEFAULT_MATCH_TIMEOUT", TimeSpan.FromSeconds(1));
-        ValidatorOptions.Global.LanguageManager.Enabled = true;
-
-        // A consumer may have installed its own ILanguageManager; only the stock manager type can take translations.
-        if (ValidatorOptions.Global.LanguageManager is LanguageManager languageManager)
-        {
-            languageManager.AddHeadlessArabicTranslations();
-            languageManager.AddHeadlessEgyptianArabicTranslations();
-        }
-
-        ValidatorOptions.Global.DefaultRuleLevelCascadeMode = CascadeMode.Stop;
     }
 
     /// <summary>
@@ -82,7 +92,10 @@ public static class SetupApi
     [EditorBrowsable(EditorBrowsableState.Never)]
     internal static void ResetForTesting()
     {
-        Volatile.Write(ref _globalSettingsConfigured, 0);
+        lock (_GlobalSettingsLock)
+        {
+            _globalSettingsConfigured = false;
+        }
     }
 
     extension(WebApplicationBuilder builder)
@@ -166,7 +179,9 @@ public static class SetupApi
 
             builder.Services.TryAddSingleton<ICurrentLocale, CurrentCultureCurrentLocale>();
             builder.Services.TryAddSingleton<ICurrentPrincipalAccessor, HttpContextCurrentPrincipalAccessor>();
-            builder.Services.TryAddSingleton<ICurrentUser, HttpCurrentUser>();
+            // EF and relational audit-log storage register NullCurrentUser as a fallback for hosts without HTTP; a
+            // web host replaces it here whichever ran first, and a consumer-supplied ICurrentUser is kept.
+            builder.Services.AddOrReplaceFallbackSingleton<ICurrentUser, NullCurrentUser, HttpCurrentUser>();
             builder.Services.TryAddSingleton<ICurrentTimeZone, LocalCurrentTimeZone>();
             builder.Services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
             // Removes NullCurrentTenant fallback; preserves consumer-supplied ICurrentTenant.

@@ -31,7 +31,8 @@ internal static class IdempotencyTestApp
         Action<HttpIdempotencyOptions>? configure = null,
         Action<WebApplication>? mapAdditionalEndpoints = null,
         string? tenantHeaderName = null,
-        TestHandlerGate? handlerGate = null
+        TestHandlerGate? handlerGate = null,
+        Action<WebApplication>? configureOuterPipeline = null
     )
     {
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Test" });
@@ -81,6 +82,9 @@ internal static class IdempotencyTestApp
 
         builder.Services.AddDeployStepsOnStartup(o => o.Seed = false);
         var app = builder.Build();
+
+        // Middleware that wraps idempotency, the way UseHeadless() puts response compression outermost.
+        configureOuterPipeline?.Invoke(app);
 
         // Ambient tenant from a caller-controlled header BEFORE idempotency, the way pre-auth catalog resolution
         // sets it from a host or header.

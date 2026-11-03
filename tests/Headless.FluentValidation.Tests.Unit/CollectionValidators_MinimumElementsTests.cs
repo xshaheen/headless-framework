@@ -44,7 +44,8 @@ public sealed class CollectionValidatorsMinimumElementsTests
     [Fact]
     public void should_have_error_when_elements_count_is_less_than_min()
     {
-        var min = _faker.Random.Int(1, 1000);
+        // At least 2, so a list one element short of min exists; Int(1, 0) throws when min draws 1.
+        var min = _faker.Random.Int(2, 1000);
         var extra = _faker.Random.Int(1, min - 1); // Ensure extra is less than min
         var sut = new TestModelValidator(min);
         var model = new TestModel { Elements = Enumerable.Range(1, min - extra) };

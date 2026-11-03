@@ -75,48 +75,88 @@ internal sealed partial class SshBlobStorage(
         // GetBlobInfoAsync uses to recover the blob's Created timestamp.
         var payload = BlobStorageHelpers.BuildEffectiveMetadata(metadata, timeProvider.GetUtcNow(), location.Path);
 
-        // Write the content and the sidecar to temporary siblings, then rename each over its final path, so a fault
-        // or cancellation while the body streams leaves the previous blob and its metadata untouched.
-        var contentTemp = BlobStorageHelpers.BuildTempUploadPath(blobPath);
-        var sidecarTemp = BlobStorageHelpers.BuildTempUploadPath(blobPath);
-
         var client = await pool.AcquireAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            try
-            {
-                // Content first, creating only container-relative parent directories on demand. The top-level
-                // container must already exist because explicit container lifecycle lives on IBlobContainerManager.
-                try
-                {
-                    await _WriteAllAsync(client, contentTemp, content, cancellationToken).ConfigureAwait(false);
-                }
-                catch (SftpPathNotFoundException e)
-                {
-                    logger.LogErrorSavingBlobCreatingDirectory(e, blobPath);
-                    await _EnsureParentDirectoryAsync(client, blobPath, cancellationToken).ConfigureAwait(false);
-                    await _WriteAllAsync(client, contentTemp, content, cancellationToken).ConfigureAwait(false);
-                }
+            await _ReplaceBlobAsync(
+                    client,
+                    blobPath,
+                    sidecarPath,
+                    async (contentTemp, sidecarTemp, ct) =>
+                    {
+                        // Content first, creating only container-relative parent directories on demand. The top-level
+                        // container must already exist because explicit container lifecycle lives on
+                        // IBlobContainerManager.
+                        try
+                        {
+                            await _WriteAllAsync(client, contentTemp, content, ct).ConfigureAwait(false);
+                        }
+                        catch (SftpPathNotFoundException e)
+                        {
+                            logger.LogErrorSavingBlobCreatingDirectory(e, blobPath);
+                            await _EnsureParentDirectoryAsync(client, blobPath, ct).ConfigureAwait(false);
+                            await _WriteAllAsync(client, contentTemp, content, ct).ConfigureAwait(false);
+                        }
 
-                await _WriteSidecarAsync(client, sidecarTemp, payload, cancellationToken).ConfigureAwait(false);
+                        await _WriteSidecarAsync(client, sidecarTemp, payload, ct).ConfigureAwait(false);
 
-                // Content rename first, then sidecar: a crash between the two pairs the new content with the old
-                // metadata rather than the reverse. Once the content is replaced the sidecar must follow, so its
-                // rename ignores cancellation.
-                await _ReplaceFileAsync(client, contentTemp, blobPath, cancellationToken).ConfigureAwait(false);
-                await _ReplaceFileAsync(client, sidecarTemp, sidecarPath, CancellationToken.None).ConfigureAwait(false);
-            }
-            finally
-            {
-                // A no-op after both renames. After a failure it removes the partial write; the request token may
-                // already be cancelled, so the cleanup does not use it.
-                await _DeleteTempFileAsync(client, contentTemp).ConfigureAwait(false);
-                await _DeleteTempFileAsync(client, sidecarTemp).ConfigureAwait(false);
-            }
+                        return true;
+                    },
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
         }
         finally
         {
             await pool.ReleaseAsync(client).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Replaces the blob at <paramref name="blobPath"/> and its sidecar through temporary siblings that
+    /// <paramref name="writeAsync"/> fills; it returns whether it wrote a sidecar.
+    /// </summary>
+    /// <remarks>
+    /// Each temporary is renamed over its final path only after every write succeeded, so a fault or cancellation
+    /// midway leaves the previous blob and its metadata untouched. The temporaries end in the sidecar suffix, so
+    /// listings and deletes skip them.
+    /// </remarks>
+    private async Task _ReplaceBlobAsync(
+        SftpClient client,
+        string blobPath,
+        string sidecarPath,
+        Func<string, string, CancellationToken, Task<bool>> writeAsync,
+        CancellationToken cancellationToken
+    )
+    {
+        var contentTemp = BlobStorageHelpers.BuildTempUploadPath(blobPath);
+        var sidecarTemp = BlobStorageHelpers.BuildTempUploadPath(blobPath);
+
+        try
+        {
+            var hasSidecar = await writeAsync(contentTemp, sidecarTemp, cancellationToken).ConfigureAwait(false);
+
+            // Content rename first, then sidecar: a crash between the two pairs the new content with the old
+            // metadata rather than the reverse. Once the content is replaced the sidecar must follow, so its
+            // rename or removal ignores cancellation.
+            await _ReplaceFileAsync(client, contentTemp, blobPath, cancellationToken).ConfigureAwait(false);
+
+            if (hasSidecar)
+            {
+                await _ReplaceFileAsync(client, sidecarTemp, sidecarPath, CancellationToken.None).ConfigureAwait(false);
+            }
+            else
+            {
+                // A blob replaced without metadata must not inherit the previous occupant's sidecar.
+                await _DeleteFileIfExistsAsync(client, sidecarPath, CancellationToken.None).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            // A no-op after the renames. After a failure it removes the partial write; the request token may already
+            // be cancelled, so the cleanup does not use it.
+            await _DeleteTempFileAsync(client, contentTemp).ConfigureAwait(false);
+            await _DeleteTempFileAsync(client, sidecarTemp).ConfigureAwait(false);
         }
     }
 

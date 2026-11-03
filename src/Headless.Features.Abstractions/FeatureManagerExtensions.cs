@@ -69,6 +69,28 @@ public static class FeatureManagerExtensions
                 .GetAllAsync(featureNames.ToHashSet(StringComparer.Ordinal), cancellationToken)
                 .ConfigureAwait(false);
 
+            return await featureManager
+                .IsEnabledAsync(requiresAll, featureNames, values, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Checks the <paramref name="requiresAll"/> policy against values already read with
+        /// <see cref="IFeatureManager.GetAllAsync(IReadOnlySet{string}, CancellationToken)"/>, so a caller holding
+        /// several feature checks can read every name once and evaluate each check from the same values.
+        /// </summary>
+        /// <param name="requiresAll">Whether every feature must be enabled, or at least one.</param>
+        /// <param name="featureNames">The feature names to evaluate, at least one.</param>
+        /// <param name="values">The batch read covering <paramref name="featureNames"/>.</param>
+        /// <param name="cancellationToken">The abort token.</param>
+        /// <exception cref="InvalidOperationException">A stored feature value is not a valid boolean string.</exception>
+        internal async Task<bool> IsEnabledAsync(
+            bool requiresAll,
+            string[] featureNames,
+            Dictionary<string, FeatureValue> values,
+            CancellationToken cancellationToken
+        )
+        {
             // Names are evaluated and parsed in order with the same short-circuit points as before: a value
             // after the decision is never parsed, so an invalid boolean there still goes unreported.
             foreach (var featureName in featureNames)

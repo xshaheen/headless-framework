@@ -11,6 +11,15 @@ using Microsoft.Extensions.Logging;
 
 namespace Tests.RegularLocks;
 
+// The lock instruments carry no resource tag and are process-wide, so a measurement from a test in another class would
+// count here; running these tests alone lets them assert exact counts instead of "at least one".
+[CollectionDefinition(Name, DisableParallelization = true)]
+public sealed class LockMetricsCollection
+{
+    public const string Name = "Lock metrics";
+}
+
+[Collection(LockMetricsCollection.Name)]
 public sealed class DistributedLocksDiagnosticsTests : TestBase
 {
     private readonly IGuidGenerator _guidGenerator = Substitute.For<IGuidGenerator>();
@@ -100,7 +109,7 @@ public sealed class DistributedLocksDiagnosticsTests : TestBase
         activity.DisplayName.Should().Be($"Lock: {resource}");
         activity.GetTagItem("headless.lock.resource").Should().Be(resource);
 
-        waitTimeRecorded.Should().BeGreaterThanOrEqualTo(1);
+        waitTimeRecorded.Should().Be(1);
     }
 
     [Fact]
@@ -177,7 +186,7 @@ public sealed class DistributedLocksDiagnosticsTests : TestBase
         activity.DisplayName.Should().Be($"Lock: {resource}");
         activity.GetTagItem("headless.lock.resource").Should().Be(resource);
 
-        lockFailedCount.Should().BeGreaterThanOrEqualTo(1);
-        waitTimeRecorded.Should().BeGreaterThanOrEqualTo(1);
+        lockFailedCount.Should().Be(1);
+        waitTimeRecorded.Should().Be(1);
     }
 }

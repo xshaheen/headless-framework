@@ -38,7 +38,7 @@ namespace Headless.Jobs;
 /// <b>Ownership and fencing vocabulary</b> used throughout the member docs:
 /// <list type="bullet">
 /// <item><description>
-/// <i>Owner</i> — the <c>node@incarnation</c> identity of the node holding a row, stored in <c>OwnerId</c>.
+/// <i>Owner</i> — the <c>cluster/node@incarnation</c> identity of the node holding a row, stored in <c>OwnerId</c>.
 /// </description></item>
 /// <item><description>
 /// <i>Lease</i> — <c>LockedUntil</c>, the UTC instant after which another node may reclaim the row. Providers
@@ -812,7 +812,7 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// <c>Skip</c> → <c>Skipped</c>.
     /// </summary>
     /// <param name="instanceIdentifier">
-    /// The dead node's <c>node@incarnation</c> owner identity. Only rows owned by exactly this identity are
+    /// The dead node's <c>cluster/node@incarnation</c> owner identity. Only rows owned by exactly this identity are
     /// considered, so a restarted node's new incarnation is never swept by its predecessor's cleanup.
     /// </param>
     /// <param name="cancellationToken">Token that aborts the sweep.</param>
@@ -1061,7 +1061,7 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// <c>OnNodeDeath</c> policy. The cron mirror of <see cref="ReleaseDeadNodeTimeJobResourcesAsync"/>.
     /// </summary>
     /// <param name="instanceIdentifier">
-    /// The dead node's <c>node@incarnation</c> owner identity. Only occurrences owned by exactly this identity are
+    /// The dead node's <c>cluster/node@incarnation</c> owner identity. Only occurrences owned by exactly this identity are
     /// considered.
     /// </param>
     /// <param name="cancellationToken">Token that aborts the sweep.</param>

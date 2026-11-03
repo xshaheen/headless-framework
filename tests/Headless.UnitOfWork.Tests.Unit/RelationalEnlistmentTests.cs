@@ -116,6 +116,138 @@ public sealed class RelationalEnlistmentTests : TestBase
             .WithMessage("*database 'orders'*Headless.Test is configured for database 'leases'*");
     }
 
+    [Fact]
+    public void should_build_and_compare_the_configured_connection_once_per_unit_when_it_matches()
+    {
+        using var candidate = new FakeConnection(ConnectionState.Open, "127.0.0.1", "leases");
+        var unit = _StatefulUnit();
+        var configuration = new ConfiguredDatabase("localhost", "leases");
+
+        RelationalEnlistment.RequireSameDatabase(
+            unit,
+            configuration,
+            ConfiguredDatabase.Create,
+            candidate,
+            "Headless.Test",
+            "test"
+        );
+        RelationalEnlistment.RequireSameDatabase(
+            unit,
+            configuration,
+            ConfiguredDatabase.Create,
+            candidate,
+            "Headless.Test",
+            "test"
+        );
+        RelationalDatabaseIdentity
+            .IsSameDatabase(unit, configuration, ConfiguredDatabase.Create, candidate)
+            .Should()
+            .BeTrue();
+
+        configuration.Created.Should().Be(1);
+    }
+
+    [Fact]
+    public void should_compare_again_for_another_configuration_or_connection()
+    {
+        using var candidate = new FakeConnection(ConnectionState.Open, "localhost", "leases");
+        using var otherCandidate = new FakeConnection(ConnectionState.Open, "localhost", "leases");
+        var unit = _StatefulUnit();
+        var configuration = new ConfiguredDatabase("localhost", "leases");
+        var otherConfiguration = new ConfiguredDatabase("localhost", "leases");
+
+        RelationalDatabaseIdentity
+            .IsSameDatabase(unit, configuration, ConfiguredDatabase.Create, candidate)
+            .Should()
+            .BeTrue();
+        RelationalDatabaseIdentity
+            .IsSameDatabase(unit, configuration, ConfiguredDatabase.Create, otherCandidate)
+            .Should()
+            .BeTrue();
+        RelationalDatabaseIdentity
+            .IsSameDatabase(unit, otherConfiguration, ConfiguredDatabase.Create, candidate)
+            .Should()
+            .BeTrue();
+
+        configuration.Created.Should().Be(2);
+        otherConfiguration.Created.Should().Be(1);
+    }
+
+    [Fact]
+    public void should_refuse_every_call_on_another_database_without_remembering_the_refusal()
+    {
+        using var candidate = new FakeConnection(ConnectionState.Open, "localhost", "orders");
+        var unit = _StatefulUnit();
+        var configuration = new ConfiguredDatabase("localhost", "leases");
+        var act = () =>
+            RelationalEnlistment.RequireSameDatabase(
+                unit,
+                configuration,
+                ConfiguredDatabase.Create,
+                candidate,
+                "Headless.Test",
+                "test"
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*database 'orders'*Headless.Test is configured for database 'leases'*");
+        act.Should().Throw<InvalidOperationException>();
+        RelationalDatabaseIdentity
+            .IsSameDatabase(unit, configuration, ConfiguredDatabase.Create, candidate)
+            .Should()
+            .BeFalse();
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void should_compare_on_every_call_when_the_unit_keeps_no_verdict(bool active)
+    {
+        // A unit that is no longer active refuses unit-local state, and a unit double may keep none at all.
+        using var candidate = new FakeConnection(ConnectionState.Open, "localhost", "leases");
+        var unit = Substitute.For<IUnitOfWork>();
+        unit.State.Returns(active ? UnitOfWorkState.Active : UnitOfWorkState.Completed);
+        var configuration = new ConfiguredDatabase("localhost", "leases");
+
+        RelationalDatabaseIdentity
+            .IsSameDatabase(unit, configuration, ConfiguredDatabase.Create, candidate)
+            .Should()
+            .BeTrue();
+        RelationalDatabaseIdentity
+            .IsSameDatabase(unit, configuration, ConfiguredDatabase.Create, candidate)
+            .Should()
+            .BeTrue();
+
+        configuration.Created.Should().Be(2);
+    }
+
+    private static IUnitOfWork _StatefulUnit()
+    {
+        var verdicts = new RelationalDatabaseVerdicts();
+        var unit = Substitute.For<IUnitOfWork>();
+        unit.State.Returns(UnitOfWorkState.Active);
+        unit.GetOrAdd(Arg.Any<Func<IUnitOfWork, RelationalDatabaseVerdicts>>()).Returns(verdicts);
+
+        return unit;
+    }
+
+    private sealed class ConfiguredDatabase(string dataSource, string database)
+    {
+        public string DataSource { get; } = dataSource;
+
+        public string Database { get; } = database;
+
+        public int Created { get; private set; }
+
+        public static DbConnection Create(ConfiguredDatabase configuration)
+        {
+            configuration.Created++;
+
+            return new FakeConnection(ConnectionState.Closed, configuration.DataSource, configuration.Database);
+        }
+    }
+
     private static (DbConnection, DbTransaction) _RequireLive(IUnitOfWork unit)
     {
         return RelationalEnlistment.RequireLive(
