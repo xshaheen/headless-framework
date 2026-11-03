@@ -205,10 +205,59 @@ public sealed class MailkitEmailSenderTests : TestBase
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
+    [Fact]
+    public async Task should_reconnect_and_send_when_pooled_connection_was_dropped_by_the_server()
+    {
+        // A pooled client still reports IsConnected after the server closed the idle session; only a round
+        // trip reveals it. The send must reconnect instead of failing on the dead socket.
+        using var client = new StaleConnectionSmtpClient();
+        var sender = _Sender(client);
+
+        var result = await sender.SendAsync(_Request(), AbortToken);
+
+        result.Success.Should().BeTrue();
+        result.ProviderMessageId.Should().Be("250 2.0.0 queued");
+        client.ConnectCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_discard_the_client_instead_of_pooling_it_when_send_fails()
+    {
+        using var client = new FakeSmtpClient(_ => Task.FromException(new IOException("connection reset")));
+        var pool = Substitute.For<ObjectPool<SmtpClient>>();
+        pool.Get().Returns(client);
+        var sender = _Sender(pool);
+
+        var result = await sender.SendAsync(_Request(), AbortToken);
+
+        result.Success.Should().BeFalse();
+        pool.DidNotReceive().Return(Arg.Any<SmtpClient>());
+    }
+
+    [Fact]
+    public async Task should_return_the_client_to_the_pool_when_send_succeeds()
+    {
+        using var client = new StaleConnectionSmtpClient();
+        var pool = Substitute.For<ObjectPool<SmtpClient>>();
+        pool.Get().Returns(client);
+        var sender = _Sender(pool);
+
+        var result = await sender.SendAsync(_Request(), AbortToken);
+
+        result.Success.Should().BeTrue();
+        pool.Received(1).Return(client);
+    }
+
     private static MailkitEmailSender _Sender(SmtpClient client)
     {
         var pool = Substitute.For<ObjectPool<SmtpClient>>();
         pool.Get().Returns(client);
+
+        return _Sender(pool);
+    }
+
+    private static MailkitEmailSender _Sender(ObjectPool<SmtpClient> pool)
+    {
         var options = Substitute.For<IOptionsMonitor<MailkitSmtpOptions>>();
         options
             .Get(Arg.Any<string>())
@@ -226,6 +275,61 @@ public sealed class MailkitEmailSenderTests : TestBase
             Subject = "subject",
             MessageText = "body",
         };
+    }
+
+    // A pooled client whose server closed the session while it sat idle: it still reports IsConnected, the
+    // next command fails the way MailKit fails on a closed socket, and only a fresh connect can send.
+    private sealed class StaleConnectionSmtpClient : SmtpClient
+    {
+        private bool _connected = true;
+        private bool _socketAlive;
+
+        public int ConnectCount { get; private set; }
+
+        public override bool IsConnected => _connected;
+
+        public override Task ConnectAsync(
+            string host,
+            int port = 0,
+            SecureSocketOptions options = SecureSocketOptions.Auto,
+            CancellationToken cancellationToken = default
+        )
+        {
+            ConnectCount++;
+            _connected = true;
+            _socketAlive = true;
+            return Task.CompletedTask;
+        }
+
+        public override Task DisconnectAsync(bool quit, CancellationToken cancellationToken = default)
+        {
+            _connected = false;
+            _socketAlive = false;
+            return Task.CompletedTask;
+        }
+
+        public override Task NoOpAsync(CancellationToken cancellationToken = default)
+        {
+            return _socketAlive ? Task.CompletedTask : _Dropped<object?>();
+        }
+
+        public override Task<string> SendAsync(
+            MimeKit.FormatOptions options,
+            MimeKit.MimeMessage message,
+            CancellationToken cancellationToken = default,
+            MailKit.ITransferProgress? progress = null
+        )
+        {
+            return _socketAlive ? Task.FromResult("250 2.0.0 queued") : _Dropped<string>();
+        }
+
+        private Task<T> _Dropped<T>()
+        {
+            _connected = false;
+            return Task.FromException<T>(
+                new MailKit.Net.Smtp.SmtpProtocolException("The SMTP server has unexpectedly disconnected.")
+            );
+        }
     }
 
     // A test double whose connect step is scripted; no network is touched. A fresh client reports
