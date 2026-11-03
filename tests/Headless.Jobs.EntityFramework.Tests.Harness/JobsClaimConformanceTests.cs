@@ -1132,6 +1132,95 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
         }
     }
 
+    public virtual async Task fallback_cron_sweep_leaves_occurrences_of_a_paused_definition_untouched()
+    {
+        var ct = AbortToken;
+
+        // An occurrence reclaimed to Idle after its definition was paused, and a lapsed Queued lease of one, are both
+        // fallback candidates by status; native and portable CAS sweeps must agree that a paused definition's
+        // occurrences stay where they are until it resumes.
+        foreach (var useNativeClaims in new[] { true, false })
+        {
+            var strategy = useNativeClaims ? "native" : "portable CAS";
+            await fixture.ResetDatabaseAsync(ct);
+            using var host = fixture.BuildHost(
+                $"fallback-paused-{(useNativeClaims ? "native" : "cas")}",
+                useNativeClaims: useNativeClaims
+            );
+            await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+            await host.StartAsync(ct);
+
+            try
+            {
+                var persistence = host.Services.GetRequiredService<
+                    IJobPersistenceProvider<TimeJobEntity, CronJobEntity>
+                >();
+                var executionTime = DateTime.UtcNow.AddMinutes(-2);
+                var pausedId = Guid.NewGuid();
+                var activeId = Guid.NewGuid();
+                await fixture.SeedCronJobAsync(
+                    pausedId,
+                    "paused",
+                    "* * * * *",
+                    NodeDeathPolicy.Retry,
+                    ct,
+                    isPaused: true
+                );
+                await fixture.SeedCronJobAsync(activeId, "active", "* * * * *", NodeDeathPolicy.Retry, ct);
+                var pausedIdle = Guid.NewGuid();
+                var pausedLapsed = Guid.NewGuid();
+                var activeIdle = Guid.NewGuid();
+                await fixture.SeedCronOccurrenceAsync(
+                    pausedIdle,
+                    pausedId,
+                    (int)JobStatus.Idle,
+                    null,
+                    NodeDeathPolicy.Retry,
+                    null,
+                    executionTime,
+                    ct
+                );
+                await fixture.SeedCronOccurrenceAsync(
+                    pausedLapsed,
+                    pausedId,
+                    (int)JobStatus.Queued,
+                    "old@1",
+                    NodeDeathPolicy.Retry,
+                    DateTime.UtcNow.AddMinutes(-1),
+                    executionTime.AddSeconds(1),
+                    ct
+                );
+                await fixture.SeedCronOccurrenceAsync(
+                    activeIdle,
+                    activeId,
+                    (int)JobStatus.Idle,
+                    null,
+                    NodeDeathPolicy.Retry,
+                    null,
+                    executionTime,
+                    ct
+                );
+
+                var occurrences = await persistence.QueueTimedOutCronJobOccurrencesAsync(ct).ToArrayAsync(ct);
+
+                occurrences
+                    .Select(x => x.Id)
+                    .Should()
+                    .Equal([activeIdle], $"the {strategy} fallback skips a paused definition's occurrences");
+                (await fixture.ReadCronOccurrenceAsync(pausedIdle, ct))
+                    .Should()
+                    .Be(((int)JobStatus.Idle, (string?)null), $"the {strategy} fallback leaves the Idle row alone");
+                (await fixture.ReadCronOccurrenceAsync(pausedLapsed, ct))
+                    .Should()
+                    .Be(((int)JobStatus.Queued, "old@1"), $"the {strategy} fallback leaves the lapsed row alone");
+            }
+            finally
+            {
+                await host.StopAsync(ct);
+            }
+        }
+    }
+
     public virtual async Task many_synchronized_workers_claim_each_fallback_cron_occurrence_once()
     {
         var ct = AbortToken;

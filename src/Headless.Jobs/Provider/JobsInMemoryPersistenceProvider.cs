@@ -1071,17 +1071,15 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         var now = _timeProvider.GetUtcNow();
         var affected = 0;
 
-        bool tryApply(Guid id, Action<TTimeJob> mutate)
+        // Swap against the row the decision was made on, not a fresh read: a terminal write or a lease renewal that
+        // lands after the scan replaces the row, so the swap fails and the job is left alone, as the EF reclaim's
+        // predicate-guarded UPDATE leaves it.
+        bool tryApply(TTimeJob decidedOn, Action<TTimeJob> mutate)
         {
-            if (!_timeJobs.TryGetValue(id, out var current))
-            {
-                return false;
-            }
-
-            var updated = _CloneTicker(current);
+            var updated = _CloneTicker(decidedOn);
             mutate(updated);
             updated.UpdatedAt = now;
-            if (!_TryUpdateTimeJob(id, updated, current))
+            if (!_TryUpdateTimeJob(decidedOn.Id, updated, decidedOn))
             {
                 return false;
             }
@@ -1103,7 +1101,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 // forever with a fresh budget each cycle.
                 case NodeDeathPolicy.Retry
                     when tryApply(
-                        job.Id,
+                        job,
                         t =>
                         {
                             t.OwnerId = null;
@@ -1116,7 +1114,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                     break;
                 case NodeDeathPolicy.MarkFailed
                     when tryApply(
-                        job.Id,
+                        job,
                         t =>
                         {
                             t.Status = JobStatus.Failed;
@@ -1129,7 +1127,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                     break;
                 case NodeDeathPolicy.Skip
                     when tryApply(
-                        job.Id,
+                        job,
                         t =>
                         {
                             t.Status = JobStatus.Skipped;
@@ -1670,17 +1668,15 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         var now = _timeProvider.GetUtcNow();
         var affected = 0;
 
-        bool tryApply(Guid id, Action<TTimeJob> mutate)
+        // Swap against the row the decision was made on, not a fresh read: a terminal write or a lease renewal that
+        // lands after the scan replaces the row, so the swap fails and the job is left alone, as the EF reclaim's
+        // predicate-guarded UPDATE leaves it.
+        bool tryApply(TTimeJob decidedOn, Action<TTimeJob> mutate)
         {
-            if (!_timeJobs.TryGetValue(id, out var current))
-            {
-                return false;
-            }
-
-            var updated = _CloneTicker(current);
+            var updated = _CloneTicker(decidedOn);
             mutate(updated);
             updated.UpdatedAt = now;
-            if (!_TryUpdateTimeJob(id, updated, current))
+            if (!_TryUpdateTimeJob(decidedOn.Id, updated, decidedOn))
             {
                 return false;
             }
@@ -1711,7 +1707,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 var consumesBudget = inProgressLapsed;
                 if (
                     tryApply(
-                        job.Id,
+                        job,
                         t =>
                         {
                             t.OwnerId = null;
@@ -1732,7 +1728,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             {
                 if (
                     tryApply(
-                        job.Id,
+                        job,
                         t =>
                         {
                             t.Status = JobStatus.Failed;
@@ -1750,7 +1746,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             {
                 if (
                     tryApply(
-                        job.Id,
+                        job,
                         t =>
                         {
                             t.Status = JobStatus.Skipped;
@@ -3258,6 +3254,8 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 _CanFallbackClaim(x.Status, x.LockedUntil, now)
                 && _runFilter.Allows(x.Function)
                 && x.ExecutionTime <= fallbackThreshold
+                // A paused definition's occurrence waits for resume, as on the relational providers.
+                && !(_cronJobs.TryGetValue(x.CronJobId, out var definition) && definition.IsPaused)
             ) // Only tasks older than 1 second
             .OrderBy(x => x.ExecutionTime)
             .ThenBy(x => x.Id)
@@ -3440,17 +3438,13 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         var now = _timeProvider.GetUtcNow();
         var affected = 0;
 
-        bool tryApply(Guid id, Action<CronJobOccurrenceEntity<TCronJob>> mutate)
+        // Swap against the row the decision was made on, not a fresh read (see the time-job reclaim).
+        bool tryApply(CronJobOccurrenceEntity<TCronJob> decidedOn, Action<CronJobOccurrenceEntity<TCronJob>> mutate)
         {
-            if (!_cronOccurrences.TryGetValue(id, out var current))
-            {
-                return false;
-            }
-
-            var updated = _CloneCronOccurrence(current);
+            var updated = _CloneCronOccurrence(decidedOn);
             mutate(updated);
             updated.UpdatedAt = now;
-            return _cronOccurrences.TryUpdate(id, updated, current);
+            return _cronOccurrences.TryUpdate(decidedOn.Id, updated, decidedOn);
         }
 
         var stalled = _cronOccurrences
@@ -3464,7 +3458,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 // Started attempt lost to a lapsed lease — consumes one retry-budget unit (mirrors EF).
                 case NodeDeathPolicy.Retry
                     when tryApply(
-                        occurrence.Id,
+                        occurrence,
                         t =>
                         {
                             t.OwnerId = null;
@@ -3477,7 +3471,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                     break;
                 case NodeDeathPolicy.MarkFailed
                     when tryApply(
-                        occurrence.Id,
+                        occurrence,
                         t =>
                         {
                             t.Status = JobStatus.Failed;
@@ -3490,7 +3484,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                     break;
                 case NodeDeathPolicy.Skip
                     when tryApply(
-                        occurrence.Id,
+                        occurrence,
                         t =>
                         {
                             t.Status = JobStatus.Skipped;
@@ -3682,17 +3676,13 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         var now = _timeProvider.GetUtcNow();
         var affected = 0;
 
-        bool tryApply(Guid id, Action<CronJobOccurrenceEntity<TCronJob>> mutate)
+        // Swap against the row the decision was made on, not a fresh read (see the time-job reclaim).
+        bool tryApply(CronJobOccurrenceEntity<TCronJob> decidedOn, Action<CronJobOccurrenceEntity<TCronJob>> mutate)
         {
-            if (!_cronOccurrences.TryGetValue(id, out var current))
-            {
-                return false;
-            }
-
-            var updated = _CloneCronOccurrence(current);
+            var updated = _CloneCronOccurrence(decidedOn);
             mutate(updated);
             updated.UpdatedAt = now;
-            return _cronOccurrences.TryUpdate(id, updated, current);
+            return _cronOccurrences.TryUpdate(decidedOn.Id, updated, decidedOn);
         }
 
         // Per-policy dead-node transition (#315, #316) — mirrors EF ReleaseDeadNodeOccurrenceResourcesAsync.
@@ -3717,7 +3707,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 var consumesBudget = inProgressLapsed;
                 if (
                     tryApply(
-                        occurrence.Id,
+                        occurrence,
                         o =>
                         {
                             o.OwnerId = null;
@@ -3738,7 +3728,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             {
                 if (
                     tryApply(
-                        occurrence.Id,
+                        occurrence,
                         o =>
                         {
                             o.Status = JobStatus.Failed;
@@ -3756,7 +3746,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             {
                 if (
                     tryApply(
-                        occurrence.Id,
+                        occurrence,
                         o =>
                         {
                             o.Status = JobStatus.Skipped;

@@ -446,6 +446,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                     var dbContext = claimTransaction.DbContext;
                     var transaction = claimTransaction.Transaction;
                     var mapping = CronOccurrenceRelationalMapping.Create<TDbContext, TCronJob>(dbContext);
+                    var definitionMapping = CronDefinitionRelationalMapping.Create<TDbContext, TCronJob>(dbContext);
                     var parts = await JobsClusterClaim
                         .PlanAsync<TTimeJob, TCronJob>(
                             dbContext,
@@ -466,6 +467,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                                     dbContext,
                                     transaction,
                                     mapping,
+                                    definitionMapping,
                                     _runFilter,
                                     owner,
                                     _leaseDuration,
@@ -697,6 +699,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         TDbContext dbContext,
         IDbContextTransaction transaction,
         CronOccurrenceRelationalMapping mapping,
+        CronDefinitionRelationalMapping definitionMapping,
         JobsRunFilter runFilter,
         string owner,
         TimeSpan leaseDuration,
@@ -707,6 +710,8 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         var dialect = PostgreSqlDialect.Instance;
         await using var command = _CreateCommand(dbContext, transaction);
 
+        // A paused definition's occurrence stays where it is: an occurrence reclaimed to Idle after the pause would
+        // otherwise be leased once per lease period only for the start transition to refuse it.
 #pragma warning disable CA2100 // SQL structure contains only provider-delimited EF metadata identifiers and fixed clauses; every runtime value remains a command parameter.
         command.CommandText = dialect.Render(
             new SqlClaimNext(
@@ -718,6 +723,10 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                        OR ({mapping.Status} = @queued
                            AND ({mapping.LockedUntil} IS NULL
                                 OR {mapping.LockedUntil} <= {SqlDialectTokens.Now})))
+                  AND {mapping.CronJobId} IN (
+                      SELECT {definitionMapping.Id}
+                      FROM {definitionMapping.Table}
+                      WHERE {definitionMapping.IsPaused} = FALSE)
                   {_RunnableClause(runFilter, mapping.Function)}{part.Filter}
                 """,
                 [mapping.ExecutionTime, mapping.Id],
