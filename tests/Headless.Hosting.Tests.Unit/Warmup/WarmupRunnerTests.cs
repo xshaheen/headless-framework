@@ -56,6 +56,7 @@ public sealed class WarmupRunnerTests : TestBase
         await _Runner(host).WaitForInitializationAsync(AbortToken).WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
 
         // then
+        _HasError(meanwhile).Should().BeTrue("the health check must name the last error before the retry succeeds");
         meanwhile.Exception!.Message.Should().Contain("Store (last error: The store is not reachable yet.)");
         warmup.Attempts.Should().Be(2);
         (await _CheckAsync(host.Services)).Status.Should().Be(HealthStatus.Healthy);
@@ -160,12 +161,24 @@ public sealed class WarmupRunnerTests : TestBase
     {
         // given
         var never = new TaskCompletionSource();
+        var store = new FlakyWarmup("Store", failures: int.MaxValue);
         using var host = _BuildHost(services =>
         {
             services.AddWarmup(_ => new BlockingWarmup("Cache", never.Task));
-            services.AddWarmup(_ => new FlakyWarmup("Store", failures: int.MaxValue));
+            services.AddWarmup(_ => store);
         });
         await host.StartAsync(AbortToken);
+
+        // The bounded wait below tests only the cancellation message, so let the store's first error be recorded
+        // first; on a starved thread pool the attempt may not run inside the bound.
+        await store.FirstFailure.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+
+        while (!_HasError(await _CheckAsync(host.Services)) && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(10), AbortToken);
+        }
+
         using var bounded = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
         bounded.CancelAfter(TimeSpan.FromSeconds(1));
 

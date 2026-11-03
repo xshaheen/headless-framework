@@ -13,14 +13,9 @@ public sealed class RedisHostPingWaitUntilTests : TestBase
     [Fact]
     public async Task should_not_be_ready_when_nothing_listens_on_the_port()
     {
-        // given - a port that was free a moment ago
-        int port;
-
-        using (var listener = new TcpListener(IPAddress.Loopback, 0))
-        {
-            listener.Start();
-            port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        }
+        // given - port 1 is privileged, so no test can bind it; a released ephemeral port can be handed to a
+        // listener in another test process running at the same time, which would then accept the ping
+        const int port = 1;
 
         // when
         var ready = await RedisHostPingWaitUntil.PingAsync("127.0.0.1", port);

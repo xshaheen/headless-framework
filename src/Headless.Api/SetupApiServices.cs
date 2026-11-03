@@ -81,7 +81,7 @@ public static class SetupApiServices
         /// <item><description><c>FluentValidation.ValidationException</c> → 422</description></item>
         /// <item><description><c>Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException</c> (matched by name) → 409</description></item>
         /// <item><description><c>Microsoft.EntityFrameworkCore.DbUpdateException</c> (matched by name) caused by a PostgreSQL, SQL Server, or SQLite unique-constraint violation → 409 with <c>g:unique_violation</c></description></item>
-        /// <item><description><see cref="TimeoutException"/> → 408</description></item>
+        /// <item><description><see cref="TimeoutException"/> → 503 without <c>Retry-After</c> (a server-side wait ran out, not a slow client)</description></item>
         /// <item><description><see cref="NotImplementedException"/> → 501</description></item>
         /// <item><description><see cref="Microsoft.AspNetCore.Http.BadHttpRequestException"/> → its <c>StatusCode</c> (400 for an unbindable body, 413 for an oversized one)</description></item>
         /// <item><description>Client-cancelled (<see cref="OperationCanceledException"/> with <c>RequestAborted</c>) → 499</description></item>

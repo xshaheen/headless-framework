@@ -551,6 +551,7 @@ public sealed class PermissionManagerTests : TestBase
                     && m.ProviderKey == providerKey
                     && m.OriginHostName == "prod/orders-7d"
                 ),
+                Arg.Is<PublishOptions>(static options => options.IsSystemMessage),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -582,6 +583,7 @@ public sealed class PermissionManagerTests : TestBase
                     && m.ProviderName == providerName
                     && m.ProviderKey == providerKey
                 ),
+                Arg.Is<PublishOptions>(static options => options.IsSystemMessage),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -602,7 +604,12 @@ public sealed class PermissionManagerTests : TestBase
 
         // then
         await act.Should().ThrowAsync<ConflictException>();
-        await _bus.DidNotReceive().PublishAsync(Arg.Any<PermissionGrantChangedMessage>(), Arg.Any<CancellationToken>());
+        await _bus.DidNotReceive()
+            .PublishAsync(
+                Arg.Any<PermissionGrantChangedMessage>(),
+                Arg.Any<PublishOptions>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -626,6 +633,7 @@ public sealed class PermissionManagerTests : TestBase
                     && m.ProviderName == providerName
                     && m.ProviderKey == providerKey
                 ),
+                Arg.Is<PublishOptions>(static options => options.IsSystemMessage),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -640,7 +648,12 @@ public sealed class PermissionManagerTests : TestBase
         await _sut.DeleteAsync("Role", "admin", AbortToken);
 
         // then
-        await _bus.DidNotReceive().PublishAsync(Arg.Any<PermissionGrantChangedMessage>(), Arg.Any<CancellationToken>());
+        await _bus.DidNotReceive()
+            .PublishAsync(
+                Arg.Any<PermissionGrantChangedMessage>(),
+                Arg.Any<PublishOptions>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -686,7 +699,11 @@ public sealed class PermissionManagerTests : TestBase
 
         _definitionManager.FindAsync(permissionName, AbortToken).Returns(permission);
         _grantProviderManager.ValueProviders.Returns([provider]);
-        _bus.PublishAsync(Arg.Any<PermissionGrantChangedMessage>(), Arg.Any<CancellationToken>())
+        _bus.PublishAsync(
+                Arg.Any<PermissionGrantChangedMessage>(),
+                Arg.Any<PublishOptions>(),
+                Arg.Any<CancellationToken>()
+            )
             .ThrowsAsync(new InvalidOperationException("broker down"));
 
         // when
@@ -710,7 +727,11 @@ public sealed class PermissionManagerTests : TestBase
         _grantProviderManager.ValueProviders.Returns([provider]);
 
         using var cts = new CancellationTokenSource();
-        _bus.PublishAsync(Arg.Any<PermissionGrantChangedMessage>(), Arg.Any<CancellationToken>())
+        _bus.PublishAsync(
+                Arg.Any<PermissionGrantChangedMessage>(),
+                Arg.Any<PublishOptions>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns<Task<PublishReceipt>>(async _ =>
             {
                 await cts.CancelAsync();

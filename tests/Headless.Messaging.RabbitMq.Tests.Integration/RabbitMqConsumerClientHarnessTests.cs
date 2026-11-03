@@ -100,9 +100,9 @@ public sealed class RabbitMqConsumerClientHarnessTests(RabbitMqFixture fixture) 
     }
 
     [Fact]
-    public override Task should_handle_concurrent_message_processing()
+    public override Task should_end_parallel_listening_calls_when_each_is_cancelled()
     {
-        return base.should_handle_concurrent_message_processing();
+        return base.should_end_parallel_listening_calls_when_each_is_cancelled();
     }
 
     [Fact]

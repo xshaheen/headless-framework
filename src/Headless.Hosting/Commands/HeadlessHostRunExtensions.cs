@@ -171,14 +171,17 @@ public static class HeadlessHostRunExtensions
                 // disposed client, say) must not turn a clean rollout into a failed exit.
                 var stopping = lifetime.ApplicationStopping.Register(() =>
                 {
-                    AppDomain.CurrentDomain.FirstChanceException -= recordThrownWhileStopping;
-
                     faulted.AddRange(
                         backgroundServices.Where(s =>
                             s.ExecuteTask is { IsFaulted: true } task
                             && !task.Exception!.InnerExceptions.All(ex => thrownWhileStopping.TryGetValue(ex, out _))
                         )
                     );
+
+                    // Unsubscribed only after the count: a service the stop faults on another thread can throw while
+                    // this callback runs, and an exception thrown between an earlier unsubscribe and the count would
+                    // fault its task unrecorded and read as a running fault.
+                    AppDomain.CurrentDomain.FirstChanceException -= recordThrownWhileStopping;
                 });
 
                 await using (stopping.ConfigureAwait(false))

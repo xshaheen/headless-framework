@@ -73,7 +73,7 @@ public sealed class PermissionManagerUnitOfWorkTests : TestBase
         await _provider
             .DidNotReceiveWithAnyArgs()
             .SetAsync(default(PermissionDefinition)!, default!, default, AbortToken);
-        await _bus.DidNotReceiveWithAnyArgs().PublishAsync(default(PermissionGrantChangedMessage), AbortToken);
+        await _bus.DidNotReceiveWithAnyArgs().PublishAsync(default(PermissionGrantChangedMessage), null, AbortToken);
 
         // and the announcement goes out when the unit commits
         await _CommitAsync();
@@ -85,6 +85,7 @@ public sealed class PermissionManagerUnitOfWorkTests : TestBase
                     && m.ProviderKey == _ProviderKey
                     && m.OriginHostName == "prod/orders-7d"
                 ),
+                Arg.Is<PublishOptions>(static options => options.IsSystemMessage),
                 CancellationToken.None
             );
     }
@@ -108,6 +109,7 @@ public sealed class PermissionManagerUnitOfWorkTests : TestBase
         await _bus.Received(1)
             .PublishAsync(
                 Arg.Is<PermissionGrantChangedMessage>(m => m.PermissionNames.Count == 2),
+                Arg.Is<PublishOptions>(static options => options.IsSystemMessage),
                 CancellationToken.None
             );
     }
@@ -125,11 +127,12 @@ public sealed class PermissionManagerUnitOfWorkTests : TestBase
 
         // then
         await _grantStore.DidNotReceiveWithAnyArgs().DeleteAsync(default!, default!, AbortToken);
-        await _bus.DidNotReceiveWithAnyArgs().PublishAsync(default(PermissionGrantChangedMessage), AbortToken);
+        await _bus.DidNotReceiveWithAnyArgs().PublishAsync(default(PermissionGrantChangedMessage), null, AbortToken);
         await _CommitAsync();
         await _bus.Received(1)
             .PublishAsync(
                 Arg.Is<PermissionGrantChangedMessage>(m => m.PermissionNames.Count == 2),
+                Arg.Is<PublishOptions>(static options => options.IsSystemMessage),
                 CancellationToken.None
             );
     }

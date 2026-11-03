@@ -3,13 +3,16 @@
 using System.Globalization;
 using Headless.Checks;
 using Headless.UnitOfWork;
+using Headless.UnitOfWork.Internal;
 
 namespace Headless.Fencing.InMemory;
 
 /// <summary>
 /// The in-memory lease store: one process-local table of lease rows, one exclusive lock per lease key, and one
 /// store-wide generation counter. Every verb takes its key's lock and only then reads the injected
-/// <see cref="TimeProvider" />, once, so a decision is never made on a clock read from before a lock wait.
+/// <see cref="TimeProvider" />, once, so a decision is never made on a clock read from before a lock wait. Inside one
+/// unit the reading never goes back behind one the unit already took, so a renewal in the unit that granted a lease
+/// never ends it earlier than the grant did.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -66,7 +69,7 @@ internal sealed class InMemoryLeaseStore(
     {
         using var held = await Table.LockAsync(key, cancellationToken).ConfigureAwait(false);
 
-        var (result, row) = _Grant(Table.Read(key), key, duration, takeover);
+        var (result, row) = _Grant(Table.Read(key), key, duration, takeover, timeProvider.GetUtcNow());
 
         if (row is not null)
         {
@@ -86,7 +89,7 @@ internal sealed class InMemoryLeaseStore(
     {
         var transaction = await _LockAsync(unitOfWork, key, cancellationToken).ConfigureAwait(false);
 
-        var (result, row) = _Grant(transaction.Read(key), key, duration, takeover);
+        var (result, row) = _Grant(transaction.Read(key), key, duration, takeover, transaction.Now(timeProvider));
 
         if (row is not null)
         {
@@ -100,11 +103,10 @@ internal sealed class InMemoryLeaseStore(
         InMemoryLease? existing,
         LeaseKey key,
         TimeSpan duration,
-        LeaseTakeover takeover
+        LeaseTakeover takeover,
+        DateTimeOffset now
     )
     {
-        var now = timeProvider.GetUtcNow();
-
         if (existing is { State: InMemoryLeaseState.Active } live && live.ExpiresAt > now)
         {
             return (LeaseGrantResult.Held(live.Generation, live.ExpiresAt, live.TakeoverCount), null);
@@ -155,7 +157,7 @@ internal sealed class InMemoryLeaseStore(
     {
         using var held = await Table.LockAsync(key, cancellationToken).ConfigureAwait(false);
 
-        var (result, row) = _Renew(Table.Read(key), generation, duration, progress);
+        var (result, row) = _Renew(Table.Read(key), generation, duration, progress, timeProvider.GetUtcNow());
 
         if (row is not null)
         {
@@ -176,7 +178,13 @@ internal sealed class InMemoryLeaseStore(
     {
         var transaction = await _LockAsync(unitOfWork, key, cancellationToken).ConfigureAwait(false);
 
-        var (result, row) = _Renew(transaction.Read(key), generation, duration, progress);
+        var (result, row) = _Renew(
+            transaction.Read(key),
+            generation,
+            duration,
+            progress,
+            transaction.Now(timeProvider)
+        );
 
         if (row is not null)
         {
@@ -194,7 +202,7 @@ internal sealed class InMemoryLeaseStore(
     {
         using var held = await Table.LockAsync(key, cancellationToken).ConfigureAwait(false);
 
-        var (status, row) = _End(Table.Read(key), generation, InMemoryLeaseState.Settled);
+        var (status, row) = _End(Table.Read(key), generation, InMemoryLeaseState.Settled, timeProvider.GetUtcNow());
 
         if (row is not null)
         {
@@ -213,7 +221,12 @@ internal sealed class InMemoryLeaseStore(
     {
         var transaction = await _LockAsync(unitOfWork, key, cancellationToken).ConfigureAwait(false);
 
-        var (status, row) = _End(transaction.Read(key), generation, InMemoryLeaseState.Settled);
+        var (status, row) = _End(
+            transaction.Read(key),
+            generation,
+            InMemoryLeaseState.Settled,
+            transaction.Now(timeProvider)
+        );
 
         if (row is not null)
         {
@@ -231,7 +244,7 @@ internal sealed class InMemoryLeaseStore(
     {
         using var held = await Table.LockAsync(key, cancellationToken).ConfigureAwait(false);
 
-        var (status, row) = _End(Table.Read(key), generation, InMemoryLeaseState.Released);
+        var (status, row) = _End(Table.Read(key), generation, InMemoryLeaseState.Released, timeProvider.GetUtcNow());
 
         if (row is not null)
         {
@@ -250,7 +263,12 @@ internal sealed class InMemoryLeaseStore(
     {
         var transaction = await _LockAsync(unitOfWork, key, cancellationToken).ConfigureAwait(false);
 
-        var (status, row) = _End(transaction.Read(key), generation, InMemoryLeaseState.Released);
+        var (status, row) = _End(
+            transaction.Read(key),
+            generation,
+            InMemoryLeaseState.Released,
+            transaction.Now(timeProvider)
+        );
 
         if (row is not null)
         {
@@ -260,14 +278,14 @@ internal sealed class InMemoryLeaseStore(
         return status;
     }
 
-    private (LeaseRenewalResult Result, InMemoryLease? Row) _Renew(
+    private static (LeaseRenewalResult Result, InMemoryLease? Row) _Renew(
         InMemoryLease? existing,
         long generation,
         TimeSpan duration,
-        LeaseProgress? progress
+        LeaseProgress? progress,
+        DateTimeOffset now
     )
     {
-        var now = timeProvider.GetUtcNow();
         var renewedUntil = _Add(now, duration);
 
         // Progress is written only in the row that extends the lease, so a refused renewal leaves it untouched.
@@ -289,14 +307,13 @@ internal sealed class InMemoryLeaseStore(
         };
     }
 
-    private (LeaseSettlementStatus Status, InMemoryLease? Row) _End(
+    private static (LeaseSettlementStatus Status, InMemoryLease? Row) _End(
         InMemoryLease? existing,
         long generation,
-        InMemoryLeaseState ended
+        InMemoryLeaseState ended,
+        DateTimeOffset now
     )
     {
-        var now = timeProvider.GetUtcNow();
-
         // A settled or released row at this generation reports its state whichever verb asked, so a retried
         // settlement reports success and a release after a settlement reports that the attempt settled.
         return _Classify(existing, generation, now) switch
@@ -334,7 +351,7 @@ internal sealed class InMemoryLeaseStore(
         // in this process. It guards nothing outside the process.
         var transaction = await _LockAsync(unitOfWork, key, cancellationToken).ConfigureAwait(false);
 
-        return _Classify(transaction.Read(key), generation, timeProvider.GetUtcNow());
+        return _Classify(transaction.Read(key), generation, transaction.Now(timeProvider));
     }
 
     #endregion
@@ -369,7 +386,7 @@ internal sealed class InMemoryLeaseStore(
         cancellationToken.ThrowIfCancellationRequested();
 
         var transaction = Table.Join(unitOfWork);
-        var now = timeProvider.GetUtcNow();
+        var now = transaction.Now(timeProvider);
         var cursor = after is null
             ? (LeaseCursor?)null
             : new LeaseCursor(after.ExpiresAt, after.TenantId ?? "", after.Resource);

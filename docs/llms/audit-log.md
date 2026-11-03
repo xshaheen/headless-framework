@@ -636,7 +636,7 @@ setup.UsePostgreSql((options, sp) =>
 - Registers the audit-log schema contribution; `resources provision` creates the table and indexes, and a host start verifies them.
 - Registers the shared relational writer from `Headless.AuditLog`, over the PostgreSQL dialect, as singleton.
 - Registers `IAuditLogStore` as scoped, and `IAuditLog<TContext>`, `IAuditLogWriter<TContext>`, and `IReadAuditLog<TContext>` as singletons, all from `Headless.AuditLog`.
-- Registers `IJsonSerializer`, `TimeProvider` (`TimeProvider.System`), `ICurrentTenant`, `ICurrentUser`, `ICorrelationIdProvider` as singletons if not already registered.
+- Registers `IJsonSerializer`, `TimeProvider` (`TimeProvider.System`), `ICurrentTenant`, `ICurrentUser`, `ICorrelationIdProvider` as singletons if not already registered. The `ICurrentTenant` and `ICurrentUser` fallbacks (`NullCurrentTenant`, `NullCurrentUser`) are registered by type, so `AddHeadless()` replaces them with the HTTP implementations in either call order.
 
 ---
 
@@ -729,4 +729,4 @@ setup.UseSqlServer((options, sp) =>
 - Registers the audit-log schema contribution; `resources provision` creates the table and indexes, and a host start verifies them.
 - Registers the shared relational writer from `Headless.AuditLog`, over the SQL Server dialect, as singleton.
 - Registers `IAuditLogStore` as scoped, and `IAuditLog<TContext>`, `IAuditLogWriter<TContext>`, and `IReadAuditLog<TContext>` as singletons, all from `Headless.AuditLog`.
-- Registers `IJsonSerializer`, `TimeProvider` (`TimeProvider.System`), `ICurrentTenant`, `ICurrentUser`, `ICorrelationIdProvider` as singletons if not already registered.
+- Registers `IJsonSerializer`, `TimeProvider` (`TimeProvider.System`), `ICurrentTenant`, `ICurrentUser`, `ICorrelationIdProvider` as singletons if not already registered. The `ICurrentTenant` and `ICurrentUser` fallbacks (`NullCurrentTenant`, `NullCurrentUser`) are registered by type, so `AddHeadless()` replaces them with the HTTP implementations in either call order.

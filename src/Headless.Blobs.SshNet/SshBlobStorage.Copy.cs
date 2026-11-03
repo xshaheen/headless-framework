@@ -17,7 +17,7 @@ internal sealed partial class SshBlobStorage
 
         if (string.Equals(sourcePath, destPath, StringComparison.Ordinal))
         {
-            // A resolved self-copy is a no-op: opening destPath with FileMode.Create would truncate the source.
+            // A resolved self-copy is a no-op: the blob already holds the content and metadata a copy would write.
             return true;
         }
 
@@ -46,27 +46,32 @@ internal sealed partial class SshBlobStorage
 
             await using (sourceStream.ConfigureAwait(false))
             {
-                await _EnsureParentDirectoryAsync(client, destPath, cancellationToken).ConfigureAwait(false);
+                await _ReplaceBlobAsync(
+                        client,
+                        destPath,
+                        destSidecar,
+                        async (contentTemp, sidecarTemp, ct) =>
+                        {
+                            await _EnsureParentDirectoryAsync(client, destPath, ct).ConfigureAwait(false);
+                            await _WriteAllAsync(client, contentTemp, sourceStream, ct).ConfigureAwait(false);
 
-                await using var destStream = await client
-                    .OpenAsync(destPath, FileMode.Create, FileAccess.Write, cancellationToken)
+                            // Move the sidecar with the blob. Without a source sidecar the replace drops any stale
+                            // destination sidecar, so the copy does not inherit the previous occupant's metadata.
+                            var sourceMetadata = await _ReadSidecarAsync(client, sourceSidecar, ct)
+                                .ConfigureAwait(false);
+
+                            if (sourceMetadata is null)
+                            {
+                                return false;
+                            }
+
+                            await _WriteSidecarAsync(client, sidecarTemp, sourceMetadata, ct).ConfigureAwait(false);
+
+                            return true;
+                        },
+                        cancellationToken
+                    )
                     .ConfigureAwait(false);
-
-                await sourceStream.CopyToAsync(destStream, cancellationToken).ConfigureAwait(false);
-            }
-
-            // Move the sidecar with the blob. If the source has no sidecar, drop any stale destination sidecar so the
-            // copied blob does not inherit the previous occupant's metadata.
-            var sourceMetadata = await _ReadSidecarAsync(client, sourceSidecar, cancellationToken)
-                .ConfigureAwait(false);
-
-            if (sourceMetadata is not null)
-            {
-                await _WriteSidecarAsync(client, destSidecar, sourceMetadata, cancellationToken).ConfigureAwait(false);
-            }
-            else
-            {
-                await _DeleteFileIfExistsAsync(client, destSidecar, cancellationToken).ConfigureAwait(false);
             }
 
             return true;

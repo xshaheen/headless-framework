@@ -196,12 +196,26 @@ public sealed class RedisStreamWakeTests : TestBase
         var readStartedAt = _timeProvider.GetTimestamp();
         _onWake!(_WakeChannel, RedisValue.EmptyString);
 
-        // when
+        // when: the wait finishes on a pool thread after the test regains control, so it can arm its final delay
+        // after any single advance; step the clock until it completes, staying short of the uncapped interval so a
+        // missing cap still fails
         var wait = wake.WaitAsync(pollDelay, readStartedAt, AbortToken);
-        _timeProvider.Advance(pollDelay);
+        var advanced = TimeSpan.Zero;
+        var step = TimeSpan.FromMilliseconds(1);
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+
+        while (
+            !wait.IsCompleted && advanced < RedisStreamWake.MinWokenReadInterval - step && DateTime.UtcNow < deadline
+        )
+        {
+            _timeProvider.Advance(step);
+            advanced += step;
+            await Task.Delay(TimeSpan.FromMilliseconds(5), AbortToken);
+        }
 
         // then
         await wait.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        advanced.Should().BeLessThan(RedisStreamWake.MinWokenReadInterval, "the woken read waits only the poll delay");
     }
 
     [Fact]

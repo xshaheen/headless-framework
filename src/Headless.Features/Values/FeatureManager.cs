@@ -27,6 +27,10 @@ public sealed class FeatureManager(
     ILogger<FeatureManager>? logger = null
 ) : IFeatureManager, IUnitOfWorkFeatures
 {
+    // A system message: a change made from host scope carries no tenant, and its announcement must still reach peers
+    // when the host requires a tenant on every publish.
+    private static readonly PublishOptions _ChangedPublishOptions = new() { IsSystemMessage = true };
+
     private readonly ILogger _logger = logger ?? NullLogger<FeatureManager>.Instance;
 
     /// <inheritdoc/>
@@ -567,7 +571,7 @@ public sealed class FeatureManager(
 
         try
         {
-            await bus.PublishAsync(message, cancellationToken: cancellationToken).ConfigureAwait(false);
+            await bus.PublishAsync(message, _ChangedPublishOptions, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {

@@ -109,6 +109,28 @@ public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
     }
 
     [Fact]
+    public async Task should_map_a_server_side_timeout_exception_to_normalized_503()
+    {
+        // given - a dependency call (cache factory, Redis, a database command) that timed out on the server
+        await using var app = await _CreateAppAsync(
+            handlerSetup: _ => { },
+            endpoint: () => throw new TimeoutException("cache factory timed out")
+        );
+        using var client = _CreateClient(app);
+
+        // when
+        using var response = await client.GetAsync("/throw", AbortToken);
+
+        // then - a server fault, never 408, which tells clients (and browsers, unprompted) to resend the request
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        response.Headers.RetryAfter.Should().BeNull();
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(AbortToken));
+        doc.RootElement.GetProperty("status").GetInt32().Should().Be(503);
+    }
+
+    [Fact]
     public async Task should_map_lock_acquisition_timeout_to_normalized_503_resource_busy()
     {
         // given

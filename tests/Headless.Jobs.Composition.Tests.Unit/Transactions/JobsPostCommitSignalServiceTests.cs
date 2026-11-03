@@ -391,6 +391,10 @@ public sealed class JobsPostCommitSignalServiceTests : TestBase
         var stop = service.StopAsync(shutdownBudget.Token);
         await shutdownBudget.CancelAsync();
         await stop.WaitAsync(_WaitTimeout, AbortToken);
+        // The stop can return before the worker parks in its wait on the side effect. Faulting it before then makes
+        // that wait rethrow the fault directly instead of observing the cancellation, so wait for the worker to log
+        // the abandon (its only Debug entry) first.
+        await logger.WaitForAsync(e => e.Level == LogLevel.Debug && e.Exception is null, AbortToken);
 
         var boom = new InvalidOperationException("late boom after shutdown");
         lateFault.SetException(boom);

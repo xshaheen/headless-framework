@@ -29,6 +29,10 @@ public sealed class SettingManager(
     ILogger<SettingManager>? logger = null
 ) : ISettingManager, IUnitOfWorkSettings
 {
+    // A system message: a change made from host scope carries no tenant, and its announcement must still reach peers
+    // when the host requires a tenant on every publish.
+    private static readonly PublishOptions _ChangedPublishOptions = new() { IsSystemMessage = true };
+
     private readonly ILogger _logger = logger ?? NullLogger<SettingManager>.Instance;
 
     /// <inheritdoc/>
@@ -647,7 +651,7 @@ public sealed class SettingManager(
 
         try
         {
-            await bus.PublishAsync(message, cancellationToken: cancellationToken).ConfigureAwait(false);
+            await bus.PublishAsync(message, _ChangedPublishOptions, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
