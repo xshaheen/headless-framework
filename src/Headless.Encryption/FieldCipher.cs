@@ -32,6 +32,10 @@ internal static class FieldCipher
     private const int _NonceOffset = 18;
     private const int _NonceLength = 12;
 
+    // Scope, purpose, and binding are short identifiers, so the derivation info and the authenticated data fit on the
+    // stack for every realistic call; a longer one falls back to the heap.
+    private const int _StackBufferLength = 256;
+
     private static ReadOnlySpan<byte> SubkeyInfoPrefix => "headless/fe/v1\0"u8;
 
     public static byte[] Seal(
@@ -51,7 +55,10 @@ internal static class FieldCipher
         var nonce = frame.AsSpan(_NonceOffset, _NonceLength);
         RandomNumberGenerator.Fill(nonce);
 
-        var aad = _AuthenticatedData(frame.AsSpan(0, _AuthenticatedHeaderLength), scope, purpose, binding);
+        var aadLength = _AuthenticatedDataLength(scope, purpose, binding);
+        var aad = aadLength <= _StackBufferLength ? stackalloc byte[_StackBufferLength] : new byte[aadLength];
+        aad = aad[..aadLength];
+        _WriteAuthenticatedData(aad, frame.AsSpan(0, _AuthenticatedHeaderLength), scope, purpose, binding);
         Span<byte> subkey = stackalloc byte[KeyLength];
 
         try
@@ -86,7 +93,10 @@ internal static class FieldCipher
     {
         var ciphertextLength = frame.Length - EncryptedValue.Overhead;
         var plaintext = new byte[ciphertextLength];
-        var aad = _AuthenticatedData(frame[.._AuthenticatedHeaderLength], scope, purpose, binding);
+        var aadLength = _AuthenticatedDataLength(scope, purpose, binding);
+        var aad = aadLength <= _StackBufferLength ? stackalloc byte[_StackBufferLength] : new byte[aadLength];
+        aad = aad[..aadLength];
+        _WriteAuthenticatedData(aad, frame[.._AuthenticatedHeaderLength], scope, purpose, binding);
         Span<byte> subkey = stackalloc byte[KeyLength];
 
         try
@@ -119,33 +129,42 @@ internal static class FieldCipher
 
     private static void _DeriveSubkey(ReadOnlySpan<byte> dataKey, string purpose, Span<byte> subkey)
     {
-        var info = new byte[SubkeyInfoPrefix.Length + Encoding.UTF8.GetByteCount(purpose)];
+        var infoLength = SubkeyInfoPrefix.Length + Encoding.UTF8.GetByteCount(purpose);
+        var info = infoLength <= _StackBufferLength ? stackalloc byte[_StackBufferLength] : new byte[infoLength];
+        info = info[..infoLength];
         SubkeyInfoPrefix.CopyTo(info);
-        Encoding.UTF8.GetBytes(purpose, info.AsSpan(SubkeyInfoPrefix.Length));
+        Encoding.UTF8.GetBytes(purpose, info[SubkeyInfoPrefix.Length..]);
 
         HKDF.DeriveKey(HashAlgorithmName.SHA256, dataKey, subkey, salt: [], info);
     }
 
-    private static byte[] _AuthenticatedData(
+    private static int _AuthenticatedDataLength(string scope, string purpose, ReadOnlySpan<byte> binding)
+    {
+        return _AuthenticatedHeaderLength
+            + 12
+            + Encoding.UTF8.GetByteCount(scope)
+            + Encoding.UTF8.GetByteCount(purpose)
+            + binding.Length;
+    }
+
+    private static void _WriteAuthenticatedData(
+        Span<byte> aad,
         ReadOnlySpan<byte> header,
         string scope,
         string purpose,
         ReadOnlySpan<byte> binding
     )
     {
-        var scopeLength = Encoding.UTF8.GetByteCount(scope);
-        var purposeLength = Encoding.UTF8.GetByteCount(purpose);
-        var aad = new byte[header.Length + 12 + scopeLength + purposeLength + binding.Length];
         var offset = header.Length;
 
         header.CopyTo(aad);
-        BinaryPrimitives.WriteInt32BigEndian(aad.AsSpan(offset), scopeLength);
-        offset += 4 + Encoding.UTF8.GetBytes(scope, aad.AsSpan(offset + 4));
-        BinaryPrimitives.WriteInt32BigEndian(aad.AsSpan(offset), purposeLength);
-        offset += 4 + Encoding.UTF8.GetBytes(purpose, aad.AsSpan(offset + 4));
-        BinaryPrimitives.WriteInt32BigEndian(aad.AsSpan(offset), binding.Length);
-        binding.CopyTo(aad.AsSpan(offset + 4));
-
-        return aad;
+        var scopeLength = Encoding.UTF8.GetBytes(scope, aad[(offset + 4)..]);
+        BinaryPrimitives.WriteInt32BigEndian(aad[offset..], scopeLength);
+        offset += 4 + scopeLength;
+        var purposeLength = Encoding.UTF8.GetBytes(purpose, aad[(offset + 4)..]);
+        BinaryPrimitives.WriteInt32BigEndian(aad[offset..], purposeLength);
+        offset += 4 + purposeLength;
+        BinaryPrimitives.WriteInt32BigEndian(aad[offset..], binding.Length);
+        binding.CopyTo(aad[(offset + 4)..]);
     }
 }

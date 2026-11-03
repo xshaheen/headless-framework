@@ -10,8 +10,8 @@ namespace Headless.Caching;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Safe to register as a singleton: the scope provider is invoked on each
-/// operation, so the scope can change between calls (for example per-request tenant context).
+/// Safe to register as a singleton: the scope provider is invoked once per operation (a multi-key operation reads
+/// it once for all its keys), so the scope can change between calls (for example per-request tenant context).
 /// </para>
 /// <para>
 /// The scope provider must return a non-null string. The resulting cache key format
@@ -120,11 +120,12 @@ public sealed class ScopedCache<T> : ICache<T>
     )
     {
         Argument.IsNotNull(value);
+        var scopePrefix = _Prefix();
         var scoped = new Dictionary<string, T>(value.Count, StringComparer.Ordinal);
 
         foreach (var (key, val) in value)
         {
-            scoped[_ScopeKey(key)] = val;
+            scoped[string.Concat(scopePrefix, key)] = val;
         }
 
         return _cache.UpsertAllAsync(scoped, expiration, cancellationToken);
@@ -191,13 +192,15 @@ public sealed class ScopedCache<T> : ICache<T>
     {
         Argument.IsNotNull(cacheKeys);
 
-        // Build a scoped->original mapping to reliably restore keys
+        // Build a scoped->original mapping to reliably restore keys. The scope is read once for the whole call:
+        // every key of one call belongs to the same scope, and a role check can pass hundreds of keys.
+        var scopePrefix = _Prefix();
         var keyMap = new Dictionary<string, string>(StringComparer.Ordinal);
         var scopedKeys = new List<string>();
 
         foreach (var key in cacheKeys)
         {
-            var scoped = _ScopeKey(key);
+            var scoped = string.Concat(scopePrefix, key);
             keyMap[scoped] = key;
             scopedKeys.Add(scoped);
         }
@@ -323,11 +326,12 @@ public sealed class ScopedCache<T> : ICache<T>
     public ValueTask<int> RemoveAllAsync(IEnumerable<string> cacheKeys, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNull(cacheKeys);
+        var scopePrefix = _Prefix();
         var scoped = new List<string>();
 
         foreach (var key in cacheKeys)
         {
-            scoped.Add(_ScopeKey(key));
+            scoped.Add(string.Concat(scopePrefix, key));
         }
 
         return _cache.RemoveAllAsync(scoped, cancellationToken);

@@ -2,13 +2,14 @@
 
 using Headless.Messaging;
 using Headless.Messaging.Redis;
+using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using StackExchange.Redis;
 
 namespace Tests;
 
 /// <summary>
-/// Pending-entry recovery, idle-consumer cleanup, stream trimming, batch reads, and the entry wire format, against a
+/// Pending-entry recovery, idle-consumer cleanup, stream trimming by reader kind, batch reads, and the entry wire format, against a
 /// real Redis server.
 /// </summary>
 [Collection<RedisMessagingFixture>]
@@ -181,6 +182,65 @@ public sealed class RedisRecoveryRetentionTests(RedisMessagingFixture fixture) :
         RedisMessage.Create(remaining[^1]).Id.Should().Be(message.Id);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task should_trim_a_bus_stream_by_the_every_instance_age_only_while_no_consumer_group_reads_it(
+        bool everyInstanceOnly
+    )
+    {
+        // given: two full internal nodes of ten-minute-old entries, past the every-instance age but far inside
+        // StreamMaxAge, on a Bus stream read either by an every-instance consumer alone or by a consumer group
+        var destination = $"signal-{Guid.NewGuid():N}";
+        var stream = RedisPhysicalAddress.BusStream(destination);
+        var database = (await fixture.GetAdminConnectionAsync()).GetDatabase();
+        var tenMinutesAgo = DateTimeOffset.UtcNow.AddMinutes(-10).ToUnixTimeMilliseconds();
+        for (var i = 1; i <= 200; i++)
+        {
+            await database.StreamAddAsync(stream, "old", i, messageId: $"{tenMinutesAgo}-{i}");
+        }
+
+        await using var session = await fixture.CreateSessionAsync(
+            MessageLane.Bus,
+            destination,
+            "billing.cache",
+            AbortToken,
+            request: everyInstanceOnly
+                ? new ConsumerClientRequest(
+                    "billing.cache",
+                    1,
+                    MessageLane.Bus,
+                    ConsumerSubscriptionKind.EveryInstance,
+                    Guid.NewGuid()
+                )
+                : null,
+            configure: options => options.EveryInstanceStreamMaxAge = TimeSpan.FromMinutes(2)
+        );
+        var message = _Message(destination, lane: MessageLane.Bus);
+
+        // when
+        (await session.PublishAsync(message, AbortToken))
+            .Succeeded.Should()
+            .BeTrue();
+
+        // then
+        (await database.StreamGroupInfoAsync(stream))
+            .Should()
+            .HaveCount(everyInstanceOnly ? 0 : 1);
+        var remaining = await database.StreamRangeAsync(stream);
+        RedisMessage.Create(remaining[^1]).Id.Should().Be(message.Id);
+
+        if (everyInstanceOnly)
+        {
+            remaining.Should().HaveCountLessThan(201);
+            remaining.Should().NotContain(entry => entry.Id == $"{tenMinutesAgo}-1");
+        }
+        else
+        {
+            remaining.Should().HaveCount(201);
+        }
+    }
+
     [Fact]
     public async Task should_drain_a_backlog_without_waiting_a_poll_interval_per_full_batch()
     {
@@ -245,14 +305,18 @@ public sealed class RedisRecoveryRetentionTests(RedisMessagingFixture fixture) :
         return (destination, RedisPhysicalAddress.QueueStream(destination));
     }
 
-    private static TransportMessage _Message(string destination, byte[]? body = null)
+    private static TransportMessage _Message(
+        string destination,
+        byte[]? body = null,
+        MessageLane lane = MessageLane.Queue
+    )
     {
         return new TransportMessage(
             new Dictionary<string, string?>(StringComparer.Ordinal)
             {
                 [Headers.MessageId] = Guid.NewGuid().ToString("N"),
                 [Headers.MessageName] = destination,
-                [Headers.Intent] = nameof(MessageLane.Queue),
+                [Headers.Intent] = lane.ToString(),
             },
             body ?? "recovery"u8.ToArray()
         );

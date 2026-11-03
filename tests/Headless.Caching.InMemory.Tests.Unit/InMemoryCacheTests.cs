@@ -110,6 +110,29 @@ public sealed class InMemoryCacheTests : TestBase
 #pragma warning restore REFL009
     }
 
+    // The first write starts the one background sweep a frozen test clock allows. That sweep resyncs the item counter
+    // on a pool thread, and when it races a later write it can leave the counter one low, which hides an over-cap cache
+    // from the write-path trigger. Run that sweep before the test's own writes and wait for it to finish.
+    private static async Task _SettleStartupSweepAsync(InMemoryCache cache)
+    {
+        await cache.UpsertAsync("startup-sweep", 0, TimeSpan.FromMinutes(5), AbortToken);
+        await cache.RemoveAsync("startup-sweep", AbortToken);
+
+        var running = typeof(InMemoryCache).GetField(
+            "_maintenanceRunning",
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+        );
+        running.Should().NotBeNull();
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+
+        while ((int)running!.GetValue(cache)! != 0 && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(5), AbortToken);
+        }
+
+        ((int)running.GetValue(cache)!).Should().Be(0, "the startup sweep must finish before the test writes");
+    }
+
     private static object _GetMemory(InMemoryCache cache)
     {
         var field = typeof(InMemoryCache).GetField(
@@ -2506,6 +2529,7 @@ public sealed class InMemoryCacheTests : TestBase
         // given — three live keys at the cap, one per write path that can either add or update
         const int maxItems = 3;
         using var cache = _CreateCache(new InMemoryCacheOptions { MaxItems = maxItems });
+        await _SettleStartupSweepAsync(cache);
         await cache.UpsertAsync("str", "v", TimeSpan.FromMinutes(5), AbortToken);
         await cache.IncrementAsync("counter", 1L, TimeSpan.FromMinutes(5), AbortToken);
         await cache.SetAddAsync("set", ["m0"], TimeSpan.FromMinutes(5), AbortToken);
@@ -2540,6 +2564,7 @@ public sealed class InMemoryCacheTests : TestBase
         // given — the cap is filled entirely through one write path
         const int maxItems = 3;
         using var cache = _CreateCache(new InMemoryCacheOptions { MaxItems = maxItems });
+        await _SettleStartupSweepAsync(cache);
 
         for (var i = 0; i < maxItems; i++)
         {
@@ -2589,6 +2614,7 @@ public sealed class InMemoryCacheTests : TestBase
         // given — a full cache with two removable keys
         const int maxItems = 3;
         using var cache = _CreateCache(new InMemoryCacheOptions { MaxItems = maxItems });
+        await _SettleStartupSweepAsync(cache);
         await cache.UpsertAsync("keep", 0, TimeSpan.FromMinutes(5), AbortToken);
         await cache.UpsertAsync("gone:1", 1, TimeSpan.FromMinutes(5), AbortToken);
         await cache.UpsertAsync("gone:2", 2, TimeSpan.FromMinutes(5), AbortToken);
@@ -2623,6 +2649,7 @@ public sealed class InMemoryCacheTests : TestBase
         // given
         const int maxItems = 3;
         using var cache = _CreateCache(new InMemoryCacheOptions { MaxItems = maxItems });
+        await _SettleStartupSweepAsync(cache);
 
         for (var i = 0; i < maxItems; i++)
         {
@@ -2650,6 +2677,7 @@ public sealed class InMemoryCacheTests : TestBase
         // in-flight writers
         const int maxItems = 1000;
         using var cache = _CreateCache(new InMemoryCacheOptions { MaxItems = maxItems });
+        await _SettleStartupSweepAsync(cache);
         var capacityEvictions = 0;
         using var _ = cache.Events.Eviction.AddHandler(e =>
         {
@@ -2711,6 +2739,7 @@ public sealed class InMemoryCacheTests : TestBase
         // given — two of three entries expire and a read reaps each of them
         const int maxItems = 3;
         using var cache = _CreateCache(new InMemoryCacheOptions { MaxItems = maxItems });
+        await _SettleStartupSweepAsync(cache);
         await cache.UpsertAsync("short1", 1, TimeSpan.FromSeconds(1), AbortToken);
         await cache.UpsertAsync("short2", 2, TimeSpan.FromSeconds(1), AbortToken);
         await cache.UpsertAsync("long", 3, TimeSpan.FromMinutes(5), AbortToken);
@@ -2734,6 +2763,7 @@ public sealed class InMemoryCacheTests : TestBase
         // given
         const int maxItems = 5;
         using var cache = _CreateCache(new InMemoryCacheOptions { MaxItems = maxItems });
+        await _SettleStartupSweepAsync(cache);
 
         await Task.WhenAll(
             Enumerable
@@ -2763,6 +2793,7 @@ public sealed class InMemoryCacheTests : TestBase
         // given
         const int maxItems = 3;
         using var cache = _CreateCache(new InMemoryCacheOptions { MaxItems = maxItems });
+        await _SettleStartupSweepAsync(cache);
         await cache.UpsertAsync("scalar", "not-a-set", TimeSpan.FromMinutes(5), AbortToken);
 
         var act = async () => await cache.SetAddAsync("scalar", ["member"], TimeSpan.FromMinutes(5), AbortToken);

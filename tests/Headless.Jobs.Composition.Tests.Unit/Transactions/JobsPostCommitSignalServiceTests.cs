@@ -23,6 +23,9 @@ public sealed class JobsPostCommitSignalServiceTests : TestBase
 {
     // Every wait on worker progress is bounded so a regression fails the test instead of hanging the run.
     private static readonly TimeSpan _WaitTimeout = TimeSpan.FromSeconds(30);
+
+    // Short enough that a test waits on the real bound rather than the 30-second default.
+    private static readonly TimeSpan _ShortDeadline = TimeSpan.FromMilliseconds(50);
     private readonly List<JobsPostCommitSignalService> _services = [];
 
     protected override async ValueTask DisposeAsyncCore()
@@ -90,8 +93,9 @@ public sealed class JobsPostCommitSignalServiceTests : TestBase
     [Fact]
     public async Task should_abandon_a_signal_that_ignores_cancellation_after_the_deadline_and_process_the_next_one()
     {
-        var timeProvider = new FakeTimeProvider();
-        var (service, logger) = _CreateService(timeProvider);
+        // The registered clock is frozen: the bound waits real time, so a test host's clock that nobody advances
+        // cannot keep the worker on a hung send.
+        var (service, logger) = _CreateService(new FakeTimeProvider(), _ShortDeadline);
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var neverCompletes = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var second = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -118,12 +122,7 @@ public sealed class JobsPostCommitSignalServiceTests : TestBase
 
         await service.StartAsync(AbortToken);
         await started.Task.WaitAsync(_WaitTimeout, AbortToken);
-        await FakeClock.AdvanceUntilAsync(
-            timeProvider,
-            JobsPostCommitSignalService.SignalDeadline + TimeSpan.FromTicks(1),
-            second.Task,
-            AbortToken
-        );
+        await second.Task.WaitAsync(_WaitTimeout, AbortToken);
 
         neverCompletes.Task.IsCompleted.Should().BeFalse();
         logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning && e.Exception == null);
@@ -135,8 +134,7 @@ public sealed class JobsPostCommitSignalServiceTests : TestBase
     [Fact]
     public async Task should_log_a_late_fault_from_an_abandoned_signal()
     {
-        var timeProvider = new FakeTimeProvider();
-        var (service, logger) = _CreateService(timeProvider);
+        var (service, logger) = _CreateService(new FakeTimeProvider(), _ShortDeadline);
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var lateFault = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         service.TrySignal(
@@ -152,12 +150,7 @@ public sealed class JobsPostCommitSignalServiceTests : TestBase
 
         await service.StartAsync(AbortToken);
         await started.Task.WaitAsync(_WaitTimeout, AbortToken);
-        await FakeClock.AdvanceUntilAsync(
-            timeProvider,
-            JobsPostCommitSignalService.SignalDeadline + TimeSpan.FromTicks(1),
-            logger.WaitForAsync(e => e.Level == LogLevel.Warning && e.Exception == null, AbortToken),
-            AbortToken
-        );
+        await logger.WaitForAsync(e => e.Level == LogLevel.Warning && e.Exception == null, AbortToken);
 
         var boom = new InvalidOperationException("late boom");
         lateFault.SetException(boom);
@@ -289,7 +282,7 @@ public sealed class JobsPostCommitSignalServiceTests : TestBase
     [Fact]
     public async Task should_report_a_signal_still_queued_when_stopped_before_activation()
     {
-        var (service, logger) = _CreateService(new FakeTimeProvider(), new JobsActivationBarrier());
+        var (service, logger) = _CreateService(new FakeTimeProvider(), barrier: new JobsActivationBarrier());
         using var drops = new DroppedSignalCounter();
         var processed = false;
         await service.StartAsync(AbortToken);
@@ -391,6 +384,10 @@ public sealed class JobsPostCommitSignalServiceTests : TestBase
         var stop = service.StopAsync(shutdownBudget.Token);
         await shutdownBudget.CancelAsync();
         await stop.WaitAsync(_WaitTimeout, AbortToken);
+        // The stop can return before the worker parks in its wait on the side effect. Faulting it before then makes
+        // that wait rethrow the fault directly instead of observing the cancellation, so wait for the worker to log
+        // the abandon (its only Debug entry) first.
+        await logger.WaitForAsync(e => e.Level == LogLevel.Debug && e.Exception is null, AbortToken);
 
         var boom = new InvalidOperationException("late boom after shutdown");
         lateFault.SetException(boom);
@@ -405,7 +402,7 @@ public sealed class JobsPostCommitSignalServiceTests : TestBase
     {
         var barrier = new JobsActivationBarrier();
         barrier.MarkFailed(new InvalidOperationException("activation failed"));
-        var (service, logger) = _CreateService(new FakeTimeProvider(), barrier);
+        var (service, logger) = _CreateService(new FakeTimeProvider(), barrier: barrier);
         using var drops = new DroppedSignalCounter();
         var processed = false;
 
@@ -436,7 +433,7 @@ public sealed class JobsPostCommitSignalServiceTests : TestBase
     [Fact]
     public async Task should_exit_when_stopped_before_activation()
     {
-        var (service, _) = _CreateService(new FakeTimeProvider(), new JobsActivationBarrier());
+        var (service, _) = _CreateService(new FakeTimeProvider(), barrier: new JobsActivationBarrier());
 
         await service.StartAsync(AbortToken);
         await service.StopAsync(AbortToken);
@@ -446,11 +443,15 @@ public sealed class JobsPostCommitSignalServiceTests : TestBase
 
     private (JobsPostCommitSignalService Service, CapturingLogger<JobsPostCommitSignalService> Logger) _CreateService(
         TimeProvider timeProvider,
+        TimeSpan? signalDeadline = null,
         JobsActivationBarrier? barrier = null
     )
     {
         var logger = new CapturingLogger<JobsPostCommitSignalService>();
-        var service = new JobsPostCommitSignalService(barrier ?? TestActivationBarrier.Opened(), timeProvider, logger);
+        var service = new JobsPostCommitSignalService(barrier ?? TestActivationBarrier.Opened(), timeProvider, logger)
+        {
+            SignalDeadline = signalDeadline ?? JobsPostCommitSignalService.DefaultSignalDeadline,
+        };
         _services.Add(service);
 
         return (service, logger);

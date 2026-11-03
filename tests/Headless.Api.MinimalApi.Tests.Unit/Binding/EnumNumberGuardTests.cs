@@ -271,7 +271,9 @@ public sealed class EnumNumberGuardTests : TestBase
     // The bytes one request allocates with the convention, less the bytes the same request allocates without it. Each
     // request gets a fresh context built outside the measured window, and both endpoints are warmed up first. Each side
     // reports its fewest bytes over many requests: a one-off allocation inside the window (a lazy cache, the JIT) can
-    // only raise a single request, while a cost the convention adds to every request raises the fewest too.
+    // only raise a single request, while a cost the convention adds to every request raises the fewest too. The two
+    // endpoints alternate inside one loop, so both sides run under the same JIT tier and PGO state: measured one after
+    // the other, a tier-up that lands between the phases gives the sides different costs for the same code.
     private static long _ExtraBytesPerRequest(Action<IEndpointRouteBuilder> map, Action<HttpRequest> arrange)
     {
         using var services = _CreateServices();
@@ -280,16 +282,25 @@ public sealed class EnumNumberGuardTests : TestBase
         var wrapped = new TestEndpointRouteBuilder(services);
         map(wrapped.MapGroup("").RejectEnumNumbers());
 
-        var withoutConvention = _BytesPerRequest(
-            MinimalApiTestHost.SingleEndpoint(plain).RequestDelegate!,
-            services,
-            arrange
-        );
-        var withConvention = _BytesPerRequest(
-            MinimalApiTestHost.SingleEndpoint(wrapped).RequestDelegate!,
-            services,
-            arrange
-        );
+        var withoutEndpoint = MinimalApiTestHost.SingleEndpoint(plain).RequestDelegate!;
+        var withEndpoint = MinimalApiTestHost.SingleEndpoint(wrapped).RequestDelegate!;
+
+        const int warmUp = 200;
+        const int measured = 500;
+        var withoutConvention = long.MaxValue;
+        var withConvention = long.MaxValue;
+
+        for (var i = 0; i < warmUp + measured; i++)
+        {
+            var without = _BytesPerRequest(withoutEndpoint, services, arrange);
+            var with = _BytesPerRequest(withEndpoint, services, arrange);
+
+            if (i >= warmUp)
+            {
+                withoutConvention = Math.Min(withoutConvention, without);
+                withConvention = Math.Min(withConvention, with);
+            }
+        }
 
         return withConvention - withoutConvention;
     }
@@ -300,34 +311,22 @@ public sealed class EnumNumberGuardTests : TestBase
         Action<HttpRequest> arrange
     )
     {
-        const int warmUp = 200;
-        const int measured = 500;
-        var fewest = long.MaxValue;
+        var context = MinimalApiTestHost.CreateHttpContext(services);
+        arrange(context.Request);
+        // The server parses the query before binding either way, so parse it outside the window. DefaultHttpContext
+        // creates its request-lifetime feature on first use, where Kestrel's connection already implements it, so
+        // touch it outside the window too.
+        _ = context.Request.Query.Count;
+        _ = context.RequestAborted;
 
-        for (var i = 0; i < warmUp + measured; i++)
-        {
-            var context = MinimalApiTestHost.CreateHttpContext(services);
-            arrange(context.Request);
-            // The server parses the query before binding either way, so parse it outside the window. DefaultHttpContext
-            // creates its request-lifetime feature on first use, where Kestrel's connection already implements it, so
-            // touch it outside the window too.
-            _ = context.Request.Query.Count;
-            _ = context.RequestAborted;
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        var task = endpoint(context);
+        var after = GC.GetAllocatedBytesForCurrentThread();
 
-            var before = GC.GetAllocatedBytesForCurrentThread();
-            var task = endpoint(context);
-            var after = GC.GetAllocatedBytesForCurrentThread();
+        task.IsCompletedSuccessfully.Should().BeTrue("the measured endpoints complete synchronously");
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
 
-            task.IsCompletedSuccessfully.Should().BeTrue("the measured endpoints complete synchronously");
-            context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
-
-            if (i >= warmUp)
-            {
-                fewest = Math.Min(fewest, after - before);
-            }
-        }
-
-        return fewest;
+        return after - before;
     }
 
     private static async Task<DefaultHttpContext> _InvokeAsync(

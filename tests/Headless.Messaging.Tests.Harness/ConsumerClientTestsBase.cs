@@ -189,7 +189,9 @@ public abstract class ConsumerClientTestsBase : TestBase
         completed.Should().Be(listeningTask, "Consumer should shutdown gracefully within timeout");
     }
 
-    public virtual async Task should_handle_concurrent_message_processing()
+    // Delivery under concurrency is covered by the transport conformance suites; this checks only that one client
+    // tolerates parallel ListeningAsync calls that are cancelled, wherever they are in their setup.
+    public virtual async Task should_end_parallel_listening_calls_when_each_is_cancelled()
     {
         // Skip if consumer doesn't support concurrent processing
         if (!Capabilities.SupportsConcurrentProcessing)
@@ -199,7 +201,6 @@ public abstract class ConsumerClientTestsBase : TestBase
 
         // given
         await using var consumer = await GetConsumerClientAsync();
-        var listenerStartCount = 0;
 
         consumer.AttachCallbacks(onMessage: (_, _) => Task.CompletedTask, onLog: null);
 
@@ -212,7 +213,6 @@ public abstract class ConsumerClientTestsBase : TestBase
             .Select(_ =>
                 Task.Run(async () =>
                 {
-                    Interlocked.Increment(ref listenerStartCount);
                     try
                     {
                         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
@@ -225,10 +225,11 @@ public abstract class ConsumerClientTestsBase : TestBase
                 })
             );
 
-        await Task.WhenAll(tasks);
-
-        // then — all 10 parallel listeners started without the consumer throwing
-        listenerStartCount.Should().Be(10);
+        // then - every call ends without a non-cancellation exception, and a call that ignores its cancellation fails
+        // the test rather than hanging the run
+        var all = Task.WhenAll(tasks);
+        var act = async () => await all.WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
+        await act.Should().NotThrowAsync();
     }
 
     public virtual async Task should_dispose_without_exception()

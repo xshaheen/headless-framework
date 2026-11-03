@@ -411,6 +411,8 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
             { "postgresql", "23505" },
             { "sqlserver", "2627" },
             { "sqlserver", "2601" },
+            // SqlClient's Number is the first error; a duplicate key reported behind another error still counts.
+            { "sqlserver-not-first", "2627" },
             { "sqlite", "2067" },
             { "sqlite", "1555" },
         };
@@ -421,6 +423,10 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         {
             "postgresql" => new Tests.Fakes.SqlStateDbException(code),
             "sqlserver" => new Microsoft.Data.SqlClient.SqlException(int.Parse(code, CultureInfo.InvariantCulture)),
+            "sqlserver-not-first" => new Microsoft.Data.SqlClient.SqlException(
+                8152,
+                int.Parse(code, CultureInfo.InvariantCulture)
+            ),
             "sqlite" => new Microsoft.Data.Sqlite.SqliteException(int.Parse(code, CultureInfo.InvariantCulture)),
             _ => new InvalidOperationException(code),
         };
@@ -576,7 +582,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
     }
 
     [Fact]
-    public async Task should_map_timeout_exception_to_408()
+    public async Task should_map_timeout_exception_to_503_without_retry_after()
     {
         // given
         var problemDetailsService = Substitute.For<IProblemDetailsService>();
@@ -587,9 +593,17 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         // when
         var result = await handler.TryHandleAsync(httpContext, new TimeoutException("timed out"), AbortToken);
 
-        // then
+        // then - a dependency that timed out on the server, not a client that was slow to send (408)
         result.Should().BeTrue();
-        httpContext.Response.StatusCode.Should().Be(StatusCodes.Status408RequestTimeout);
+        httpContext.Response.StatusCode.Should().Be(StatusCodes.Status503ServiceUnavailable);
+        httpContext.Response.Headers.RetryAfter.Should().BeEmpty();
+        await problemDetailsService
+            .Received(1)
+            .TryWriteAsync(
+                Arg.Is<ProblemDetailsContext>(c =>
+                    c.ProblemDetails.Status == 503 && !c.ProblemDetails.Extensions.ContainsKey("retryAfter")
+                )
+            );
     }
 
     [Fact]

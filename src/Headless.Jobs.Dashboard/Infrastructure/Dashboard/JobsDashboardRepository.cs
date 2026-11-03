@@ -601,9 +601,13 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
         {
             if (_functionRegistry.RequestTypes.TryGetValue(jobFunction.Key, out var functionTypeContext))
             {
-                // Example JSON is cached per request Type inside the generator (a Type's shape never changes at
-                // runtime), so repeated dashboard requests stop re-running reflection per function.
-                JsonExampleGenerator.TryGenerateExampleJson(functionTypeContext.Item2, out var exampleJson);
+                // Example JSON is cached per request Type and options inside the generator (a Type's shape never
+                // changes at runtime), so repeated dashboard requests stop re-running reflection per function.
+                JsonExampleGenerator.TryGenerateExampleJson(
+                    functionTypeContext.Item2,
+                    _serializationOptions.SerializerOptions,
+                    out var exampleJson
+                );
                 yield return (jobFunction.Key, (functionTypeContext.Item1, exampleJson, jobFunction.Priority));
             }
             else

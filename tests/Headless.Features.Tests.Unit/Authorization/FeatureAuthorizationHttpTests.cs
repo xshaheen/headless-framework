@@ -601,8 +601,17 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
     {
         var permissionManager = Substitute.For<IPermissionManager>();
         permissionManager
-            .GetAsync(Arg.Any<string>(), Arg.Any<ICurrentUser>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(call => new GrantedPermissionResult(call.ArgAt<string>(0), granted));
+            .GetAllAsync(
+                Arg.Any<IReadOnlyCollection<string>>(),
+                Arg.Any<ICurrentUser>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(call =>
+                call.ArgAt<IReadOnlyCollection<string>>(0)
+                    .Select(name => new GrantedPermissionResult(name, granted))
+                    .ToList()
+            );
 
         return permissionManager;
     }

@@ -58,7 +58,7 @@ public class TimeJobEntity<TTicker> : BaseJobEntity
     public virtual JobStatus Status { get; internal set; }
 
     /// <summary>
-    /// The <c>node@incarnation</c> identifier of the node that claimed and is executing this job,
+    /// The <c>cluster/node@incarnation</c> identifier of the node that claimed and is executing this job,
     /// or <see langword="null"/> when unleased.
     /// </summary>
     public virtual string? OwnerId { get; internal set; }

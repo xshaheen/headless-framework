@@ -108,6 +108,26 @@ public sealed class FieldEncryptorTests : TestBase
     }
 
     [Fact]
+    public async Task should_round_trip_and_bind_when_purpose_and_binding_are_longer_than_the_stack_buffer()
+    {
+        using var host = new EncryptionTestHost(_store);
+        var purpose = new string('p', 300);
+        var binding = Enumerable.Range(0, 400).Select(static i => (byte)i).ToArray();
+        var otherBinding = (byte[])binding.Clone();
+        otherBinding[^1] ^= 1;
+        var context = new FieldContext(purpose) { Scope = FieldContext.HostScope, Binding = binding };
+        var otherContext = new FieldContext(purpose) { Scope = FieldContext.HostScope, Binding = otherBinding };
+
+        var encrypted = await host.Encryptor.EncryptAsync(_NationalId, context, AbortToken);
+
+        (await host.Encryptor.DecryptStringAsync(encrypted, context, AbortToken)).Should().Be(_NationalId);
+
+        var swapped = () => host.Encryptor.DecryptAsync(encrypted, otherContext, AbortToken).AsTask();
+
+        await swapped.Should().ThrowAsync<FieldDecryptionException>();
+    }
+
+    [Fact]
     public async Task should_refuse_a_frame_with_any_flipped_bit()
     {
         using var host = new EncryptionTestHost(_store);
@@ -155,7 +175,9 @@ public sealed class FieldEncryptorTests : TestBase
 
         var act = () => host.Encryptor.EncryptAsync(_NationalId, new FieldContext(_Purpose), AbortToken).AsTask();
 
-        await act.Should().ThrowAsync<MissingTenantContextException>();
+        await act.Should()
+            .ThrowAsync<MissingTenantContextException>()
+            .WithMessage($"Encrypting or decrypting '{_Purpose}' needs a tenant*");
         _store.Snapshot().Should().BeEmpty();
     }
 

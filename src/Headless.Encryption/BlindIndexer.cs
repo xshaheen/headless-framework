@@ -13,6 +13,8 @@ namespace Headless.Encryption;
 /// </summary>
 internal sealed class BlindIndexer(DataKeyRing ring, ICurrentTenant currentTenant) : IBlindIndexer
 {
+    private const int _StackBufferLength = 256;
+
     // Labels the hash key apart from the cipher's subkeys. They derive from different keys already; the label keeps the
     // two uses distinct even if a key were ever shared.
     private static ReadOnlySpan<byte> SubkeyInfoPrefix => "headless/blind-index/v1\0"u8;
@@ -94,11 +96,17 @@ internal sealed class BlindIndexer(DataKeyRing ring, ICurrentTenant currentTenan
 
     private static byte[] _Hash(ReadOnlySpan<byte> lookupKey, BlindIndexContext context, string value)
     {
-        var info = new byte[SubkeyInfoPrefix.Length + Encoding.UTF8.GetByteCount(context.Purpose)];
+        // The purpose and a typical looked-up value are short, so both fit on the stack; a longer one uses the heap.
+        var infoLength = SubkeyInfoPrefix.Length + Encoding.UTF8.GetByteCount(context.Purpose);
+        var info = infoLength <= _StackBufferLength ? stackalloc byte[_StackBufferLength] : new byte[infoLength];
+        info = info[..infoLength];
         SubkeyInfoPrefix.CopyTo(info);
-        Encoding.UTF8.GetBytes(context.Purpose, info.AsSpan(SubkeyInfoPrefix.Length));
+        Encoding.UTF8.GetBytes(context.Purpose, info[SubkeyInfoPrefix.Length..]);
 
-        var input = Encoding.UTF8.GetBytes(value);
+        var inputLength = Encoding.UTF8.GetByteCount(value);
+        var input = inputLength <= _StackBufferLength ? stackalloc byte[_StackBufferLength] : new byte[inputLength];
+        input = input[..inputLength];
+        Encoding.UTF8.GetBytes(value, input);
         Span<byte> hashKey = stackalloc byte[HMACSHA256.HashSizeInBytes];
         Span<byte> hash = stackalloc byte[HMACSHA256.HashSizeInBytes];
 
@@ -120,7 +128,8 @@ internal sealed class BlindIndexer(DataKeyRing ring, ICurrentTenant currentTenan
         DataKeyScope.Resolve(
             context.Scope,
             currentTenant,
-            $"Computing the blind index '{context.Purpose}'",
+            "Computing the blind index",
+            context.Purpose,
             "BlindIndexContext.Host(purpose)",
             nameof(BlindIndexContext.Scope)
         );

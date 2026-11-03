@@ -2,6 +2,7 @@
 
 using Headless.Idempotency;
 using Headless.Testing.Tests;
+using Microsoft.AspNetCore.Http;
 
 namespace Tests;
 
@@ -266,5 +267,47 @@ public sealed class CaptureStreamTests : TestBase
         var act = () => capture.Position = 0;
 
         act.Should().Throw<NotSupportedException>();
+    }
+
+    [Fact]
+    public void should_keep_the_encoding_the_response_had_when_the_first_byte_left_and_ignore_later_labels()
+    {
+        IHeaderDictionary headers = new HeaderDictionary { ["Content-Encoding"] = "identity-from-handler" };
+        using var capture = new CaptureStream(new MemoryStream(), _Cap, headers);
+
+        capture.Forwarded.Should().BeFalse();
+        capture.Write([1, 2], 0, 2);
+        headers.ContentEncoding = "br"; // a compressor wrapping the capture labels the response after the bytes left
+        capture.WriteByte(3);
+
+        capture.Forwarded.Should().BeTrue();
+        capture.ContentEncodingOfCapture.ToString().Should().Be("identity-from-handler");
+    }
+
+    [Fact]
+    public async Task should_record_no_encoding_when_a_flush_starts_the_response_before_a_compressor_labels_it()
+    {
+        IHeaderDictionary headers = new HeaderDictionary();
+        await using var capture = new CaptureStream(new MemoryStream(), _Cap, headers);
+
+        await capture.FlushAsync(AbortToken);
+        headers.ContentEncoding = "gzip";
+        await capture.WriteAsync(new byte[] { 1 }, AbortToken);
+
+        capture.Forwarded.Should().BeTrue();
+        capture.ContentEncodingOfCapture.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void should_record_the_encoding_on_a_synchronous_flush_and_span_write()
+    {
+        IHeaderDictionary headers = new HeaderDictionary { ["Content-Encoding"] = "gzip" };
+        using var capture = new CaptureStream(new MemoryStream(), _Cap, headers);
+
+        capture.Flush();
+        headers.ContentEncoding = "br";
+        capture.Write(new ReadOnlySpan<byte>([1]));
+
+        capture.ContentEncodingOfCapture.ToString().Should().Be("gzip");
     }
 }

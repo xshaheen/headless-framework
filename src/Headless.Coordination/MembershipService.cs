@@ -42,6 +42,8 @@ internal sealed class MembershipService(
     // reconcile from it instead of each repeating the same store read.
     private volatile LivenessRead? _lastLivenessRead;
 
+    public string ClusterName => options.ClusterName;
+
     public NodeIdentity? Identity => _lease is { } lease && !_IsPastFence(lease) ? lease.Identity : null;
 
     public CancellationToken LocalMembershipLostToken => _localMembershipLost.Token;
