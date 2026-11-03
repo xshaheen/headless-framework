@@ -1784,6 +1784,7 @@ The collector obtains one fixed provider-clock history cutoff snapshot per invoc
   - **Sleep (Redis Streams, Amazon SQS)**: after a poll that returned nothing the client waits this long before it polls again, so the value sets an idle consumer's load. A Redis consumer client reads every subscribed stream once per interval (an `XREADGROUP` plus a consumer-group check per stream), so `100 ms` costs ten times the idle Redis load of the 1-second default. With `RedisMessagingOptions.WakeConsumersOnPublish` on (the default), a publish wakes the waiting consumer at once, so the interval only bounds how late a lost wake-up delivers; with it off, and on SQS, the interval is also the delivery latency of an idle consumer. A full batch is read again at once, so a backlog never waits on the interval.
   - **Ignored**: push transports (RabbitMQ, Azure Service Bus, Pulsar).
 - `DelayedMessagePollInterval` (default 60 seconds, `> 0`, `<= 2m`) is how long the delayed-message processor waits between polls of storage for delayed messages about to come due. A delayed message published by the running host is scheduled in memory at once; the poll schedules the ones that outlived a restart or were stored by another host. Each poll claims messages due within the next two minutes, so a longer interval could let a message come due between polls unclaimed. A shorter interval costs one storage query per poll for each outbox.
+- `BacklogSamplingInterval` (default `null`, off; `>= 1s` when set) turns on the backlog sampler, which reads the pending outbox and inbox rows once per interval for the `headless.messaging.backlog.*` gauges. Each tick is one `IMonitoringApi.GetBacklogAsync` query on the primary storage and one on each additional outbox; a metrics scrape never queries storage. See [Outbox and inbox backlog](#outbox-and-inbox-backlog).
 - `RequestReply.DefaultTimeout` (default 30 seconds, `> 0`, `<= 10m`) is the request timeout when a call sets no `RequestOptions.Timeout`. `RequestReply.IncludeExceptionDetailsInFaults` (default `false`) lets this host's responders put the exception type and message in fault replies; it applies whether or not the host calls `AddRequestReply`. `RequestReply.MaxPendingRequests` (default `null`, no limit; `> 0` when set) caps the calls waiting for a reply at once; a call over it throws `RequestNotSentException` without publishing. See [Request/reply](#requestreply).
 - Register middleware through `MessagingBuilder.AddBusPublishMiddleware<T>()`, `AddQueuePublishMiddleware<T>()`, `AddReceiveMiddleware<T>()`, `AddBusConsumeMiddleware<T>()`, `AddQueueConsumeMiddleware<T>()`, `AddPublishMiddlewareFor<TMiddleware,TMessage>(lane)`, `AddReceiveMiddlewareFor<TMiddleware,TMessage>(lane)`, and `AddConsumeMiddlewareFor<TMiddleware,TMessage>(lane)`. Middleware for one consumer attaches through `Tune(identity, c => c.UseMiddleware<T>())`.
 - Register all middleware while configuring services. The host freezes the middleware registry when messaging bootstraps and caches each (message type, lane) lookup afterwards, so registering a new middleware through the builder after the host has started throws `InvalidOperationException` instead of being ignored.
@@ -2540,6 +2541,7 @@ Transports that retry a lost broker inside their own receive loop (Azure Service
 - Creates database tables for outbox storage (via storage provider)
 - Establishes transport connections (via transport provider)
 - Opens one reply channel per process when the host calls `AddRequestReply` (see [Request/reply](#requestreply))
+- Reads each storage's backlog once per `BacklogSamplingInterval` when that option is set (see [Outbox and inbox backlog](#outbox-and-inbox-backlog))
 
 ---
 
@@ -2772,6 +2774,9 @@ All instruments register on the `Headless.Messaging` meter. Every duration is in
 | `headless.messaging.receive.outcomes` | Counter | `headless.messaging.receive.outcome` |
 | `headless.messaging.send.expired` | Counter | `headless.messaging.lane`; one per published message dropped without sending because its [`DeliverWithin` deadline](#delivery-deadline-deliverwithin) passed (relay or `Direct` send) |
 | `headless.messaging.every_instance.deliveries` | Counter | `messaging.consumer.group.name`, `headless.messaging.every_instance.outcome`, `error.type` |
+| `headless.messaging.outbox.terminal` | Counter (`{message}`) | `messaging.destination.name`, `headless.messaging.lane`, `error.type`. One per stored published message the framework stopped trying to send: its persisted retries were spent, its failure is not retried, its `DeliverWithin` deadline passed (also counted on `send.expired`), or no transport serves its lane. Counted once, by the writer whose terminal write landed |
+| `headless.messaging.backlog.pending` | ObservableGauge (`{message}`) | `headless.messaging.persistence.type` (`publish`/`consume`), `db.namespace` (the storage's database; absent for the in-memory storage). Off unless `BacklogSamplingInterval` is set; see [Outbox and inbox backlog](#outbox-and-inbox-backlog) |
+| `headless.messaging.backlog.oldest_age` | ObservableGauge (s) | As `backlog.pending`; how long the oldest pending row has waited, `0` when none waits |
 | `headless.messaging.settlement.failures` | Counter (`{failure}`) | `messaging.system` (`nats`, `rabbitmq`), `messaging.operation.name` = `ack`, `error.type` (`channel_closed` or the exception type). Counts acks that did not reach the broker; the broker redelivers and the inbox deduplicates |
 | `headless.messaging.inbox.*` | Counter | See the inbox lifecycle counters above |
 | `headless.messaging.operator.operations` | Counter | `headless.messaging.operator.target_kind`, `headless.messaging.operator.operation`, `headless.messaging.lane`, `headless.messaging.inbox.outcome`, `headless.messaging.inbox.provider` |
@@ -2796,6 +2801,31 @@ Spans follow the conventions too:
 A failed span carries `error.type` and an `Error` status. The framework emits no `settle` span: broker acknowledgement happens inside each transport client.
 
 Framework span attributes: `headless.messaging.lane` and `headless.messaging.destination.kind`, `tenant.id` (named and switched by `TenantTelemetryOptions`), `headless.messaging.retry_count` (suppressible), `headless.messaging.receive.outcome`, `headless.messaging.delivery.outcome` (`ambiguous`), plus per-phase duration attributes on the success events (`headless.messaging.persistence.duration_ms`, `send.duration_ms`, `receive.duration_ms`, `invoke.duration_ms`).
+
+### Outbox and inbox backlog
+
+Set `MessagingOptions.BacklogSamplingInterval` to report how much stored work is waiting. A background sampler starts with the processing server, waits one interval, then once per interval reads `IMonitoringApi.GetBacklogAsync()` on the primary storage and the published table of each initialized additional outbox, and keeps the result. The `headless.messaging.backlog.pending` and `headless.messaging.backlog.oldest_age` gauges report that last sample: a scrape never touches storage, and the gauges report nothing before the first sample. A failed read logs a warning (EventId 4137) and the storage's gauges keep its last sample; a storage provider whose monitoring API does not implement `GetBacklogAsync` is logged once (EventId 4136) and not read again.
+
+```csharp
+builder.Services.AddHeadlessMessaging(setup =>
+{
+    setup.Options.BacklogSamplingInterval = TimeSpan.FromSeconds(30);
+    // transport and storage as usual
+});
+```
+
+A row is pending when it is not terminal and not scheduled for later:
+
+| Status | Pending | Waits since |
+| --- | --- | --- |
+| `Scheduled` (stored, or between inline retries) | Yes | `Added` |
+| `Delayed` or `Queued` (published for a later time) | Once its publish time (`ExpiresAt`) has passed | The publish time |
+| `Failed` with a next retry (a persisted retry is due, for example after a broker outage spent the inline retries) | Yes | `Added` |
+| `Failed` without a next retry, or `Succeeded` | No: terminal | |
+
+The relational storages run one statement per read over both tables, naming each pending status so the engine can use the `(status, added)` index instead of reading every succeeded row, and measure the age on the database clock, so application clock skew does not move it. The in-memory storage uses the registered `TimeProvider`.
+
+Every replica runs its own sampler and reports the same storage-wide numbers, so aggregate the gauges across instances with `max`, never `sum`. Rows of other message versions sharing the tables count too, as they do in `GetStatisticsAsync`. To alert on a broker outage, watch `backlog.oldest_age` for `persistence.type = publish`; `headless.messaging.outbox.terminal` counts the published messages the framework gave up on, and `headless.messaging.inbox.terminal` the consumed ones.
 
 Provider-specific instruments also register on the `Headless.Messaging` meter: Kafka reports consumer lag as `headless.messaging.kafka.consumer.lag` (see [Consumer lag metric](#consumer-lag-metric)).
 

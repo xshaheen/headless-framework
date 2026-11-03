@@ -213,6 +213,7 @@ public static class SetupMessaging
         services.TryAddSingleton<MessageDelayedProcessor>();
         services.TryAddSingleton<CollectorProcessor>();
         services.TryAddSingleton<OutboxInitializationProcessor>();
+        services.TryAddSingleton<BacklogSamplingProcessor>();
 
         //Sender
         services.TryAddSingleton<IMessageSender, MessageSender>();

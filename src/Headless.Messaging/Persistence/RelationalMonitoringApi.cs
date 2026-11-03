@@ -129,6 +129,96 @@ internal sealed class RelationalMonitoringApi(
     }
 
     /// <summary>
+    /// Returns the pending rows of both tables and the age of the oldest of each, in one statement read on the
+    /// database clock. See <see cref="BacklogView"/> for which rows count.
+    /// </summary>
+    public ValueTask<BacklogView> GetBacklogAsync(CancellationToken cancellationToken = default)
+    {
+        return _GetBacklogAsync(includeReceived: true, cancellationToken);
+    }
+
+    /// <summary>
+    /// The published half of <see cref="GetBacklogAsync"/>, for an additional outbox, whose database holds no
+    /// received table. <see cref="BacklogView.ReceivedPending"/> is always zero.
+    /// </summary>
+    internal ValueTask<BacklogView> GetPublishedBacklogAsync(CancellationToken cancellationToken)
+    {
+        return _GetBacklogAsync(includeReceived: false, cancellationToken);
+    }
+
+    private async ValueTask<BacklogView> _GetBacklogAsync(bool includeReceived, CancellationToken cancellationToken)
+    {
+        // The pending predicate names each non-terminal status instead of negating the terminal ones, so both engines
+        // can seek the (status, added) index rather than scan the succeeded rows that make up most of a table. A
+        // delayed or queued row holds its publish time in ExpiresAt: it counts only once that time has come, and
+        // waits from then. The clock is the database's, read once for the whole statement.
+        var published = _BacklogSubquery(_publishedTable);
+        var sql = includeReceived
+            ? $"SELECT p.backlog_count, p.oldest_at, r.backlog_count, r.oldest_at, {SqlDialectTokens.Now} FROM {published} AS p CROSS JOIN {_BacklogSubquery(_receivedTable)} AS r;"
+            : $"SELECT p.backlog_count, p.oldest_at, {SqlDialectTokens.Now} FROM {published} AS p;";
+
+        await using var connection = _storage.CreateConnection();
+        return await RelationalCommand
+            .ExecuteReaderAsync(
+                connection,
+                transaction: null,
+                _dialect.Render(new SqlClockedStatement(sql)),
+                CommandTimeoutSeconds,
+                bind: null,
+                async (reader, ct) =>
+                {
+                    if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+                    {
+                        return new BacklogView { PublishedPending = 0, ReceivedPending = 0 };
+                    }
+
+                    var nowOrdinal = includeReceived ? 4 : 2;
+                    var now = await reader.GetFieldValueAsync<DateTimeOffset>(nowOrdinal, ct).ConfigureAwait(false);
+                    var oldestPublished = await _InstantAsync(reader, 1, ct).ConfigureAwait(false);
+
+                    if (!includeReceived)
+                    {
+                        return new BacklogView
+                        {
+                            PublishedPending = _Int64(reader, 0),
+                            ReceivedPending = 0,
+                            OldestPublishedPendingAge = _AgeSince(oldestPublished, now),
+                        };
+                    }
+
+                    var oldestReceived = await _InstantAsync(reader, 3, ct).ConfigureAwait(false);
+                    return new BacklogView
+                    {
+                        PublishedPending = _Int64(reader, 0),
+                        ReceivedPending = _Int64(reader, 2),
+                        OldestPublishedPendingAge = _AgeSince(oldestPublished, now),
+                        OldestReceivedPendingAge = _AgeSince(oldestReceived, now),
+                    };
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    private string _BacklogSubquery(string table)
+    {
+        const string scheduled = nameof(StatusName.Scheduled);
+        const string delayed = nameof(StatusName.Delayed);
+        const string queued = nameof(StatusName.Queued);
+        const string failed = nameof(StatusName.Failed);
+        const string now = SqlDialectTokens.Now;
+
+        return $"(SELECT COUNT(*) AS backlog_count, MIN(CASE WHEN {_t.StatusName} IN ('{delayed}','{queued}') AND {_t.ExpiresAt} IS NOT NULL THEN {_t.ExpiresAt} ELSE {_t.Added} END) AS oldest_at FROM {_dialect.ReadWithoutWaiting(table)} WHERE {_t.IntentType} IN (0, 1) AND ({_t.StatusName} = '{scheduled}' OR ({_t.StatusName} IN ('{delayed}','{queued}') AND ({_t.ExpiresAt} IS NULL OR {_t.ExpiresAt} <= {now})) OR ({_t.StatusName} = '{failed}' AND {_t.NextRetryAt} IS NOT NULL)))";
+    }
+
+    // A row stamped a little after the clock read (the engine's precision, or a commit racing the read) is not older
+    // than the read, so it reports no age rather than a negative one.
+    private static TimeSpan? _AgeSince(DateTimeOffset? since, DateTimeOffset now)
+    {
+        return since is { } value ? TimeSpan.FromTicks(Math.Max(0, (now - value).Ticks)) : null;
+    }
+
+    /// <summary>
     /// Returns a paginated list of messages from either the published or received table,
     /// filtered by the criteria in <paramref name="query"/> (status, name, consumer identity, content substring, intent type).
     /// </summary>

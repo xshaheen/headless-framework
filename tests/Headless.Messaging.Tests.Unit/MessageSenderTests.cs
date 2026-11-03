@@ -45,12 +45,15 @@ public sealed class MessageSenderTests : TestBase
         );
     }
 
-    private static MediumMessage _CreateMediumMessage(MessageLane lane = MessageLane.Bus)
+    private static MediumMessage _CreateMediumMessage(
+        MessageLane lane = MessageLane.Bus,
+        string name = "test.messageName"
+    )
     {
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             [Headers.MessageId] = Guid.NewGuid().ToString(),
-            [Headers.MessageName] = "test.messageName",
+            [Headers.MessageName] = name,
         };
 
         return new MediumMessage
@@ -2387,6 +2390,185 @@ public sealed class MessageSenderTests : TestBase
         // then
         result.Succeeded.Should().BeTrue();
         await transport.Received(1).SendAsync(transportMessage, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_count_one_terminal_publish_when_the_failure_is_not_retried()
+    {
+        // given: the strategy classifies the failure as permanent
+        var name = $"terminal.permanent.{Guid.NewGuid():N}";
+        var sender = _CreateTerminalSender(
+            // ReSharper disable once NotResolvedInText
+            OperateResult.Failed(new ArgumentNullException("param")),
+            TestRetryStrategies.PermanentArgument(0),
+            maxPersistedRetries: 0
+        );
+        var terminal = new List<(string? ErrorType, string? Lane)>();
+        using var listener = _ListenToOutboxTerminal(name, terminal);
+
+        // when
+        var result = await sender.SendAsync(_CreateMediumMessage(name: name));
+
+        // then
+        result.Succeeded.Should().BeFalse();
+        terminal
+            .Should()
+            .Equal((typeof(ArgumentNullException).FullName, LaneTagEnricher.ToTagValues(MessageLane.Bus).Lane));
+    }
+
+    [Fact]
+    public async Task should_count_one_terminal_publish_when_the_retries_are_spent()
+    {
+        // given: no persisted retry is left after the inline burst
+        var name = $"terminal.exhausted.{Guid.NewGuid():N}";
+        var sender = _CreateTerminalSender(
+            OperateResult.Failed(new TimeoutException("transient")),
+            TestRetryStrategies.FixedDelay(0, TimeSpan.Zero),
+            maxPersistedRetries: 0
+        );
+        var terminal = new List<(string? ErrorType, string? Lane)>();
+        using var listener = _ListenToOutboxTerminal(name, terminal);
+
+        // when
+        await sender.SendAsync(_CreateMediumMessage(MessageLane.Queue, name));
+
+        // then
+        terminal
+            .Should()
+            .Equal((typeof(TimeoutException).FullName, LaneTagEnricher.ToTagValues(MessageLane.Queue).Lane));
+    }
+
+    [Fact]
+    public async Task should_not_count_a_terminal_publish_when_the_failure_will_be_retried()
+    {
+        // given: a persisted retry is still left
+        var name = $"terminal.retried.{Guid.NewGuid():N}";
+        var sender = _CreateTerminalSender(
+            OperateResult.Failed(new TimeoutException("transient")),
+            TestRetryStrategies.FixedDelay(0, TimeSpan.FromSeconds(5)),
+            maxPersistedRetries: 1
+        );
+        var terminal = new List<(string? ErrorType, string? Lane)>();
+        using var listener = _ListenToOutboxTerminal(name, terminal);
+
+        // when
+        await sender.SendAsync(_CreateMediumMessage(name: name));
+
+        // then
+        terminal.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_not_count_a_terminal_publish_when_another_writer_already_ended_the_row()
+    {
+        // given: the terminal write is refused because the row is already terminal
+        var name = $"terminal.lost.{Guid.NewGuid():N}";
+        var storage = Substitute.For<IDataStorage>();
+        var sender = _CreateTerminalSender(
+            OperateResult.Failed(new TimeoutException("transient")),
+            TestRetryStrategies.FixedDelay(0, TimeSpan.Zero),
+            maxPersistedRetries: 0,
+            storage
+        );
+        storage
+            .ChangePublishRetryStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
+                Arg.Any<RetryDelay?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(false));
+        var terminal = new List<(string? ErrorType, string? Lane)>();
+        using var listener = _ListenToOutboxTerminal(name, terminal);
+
+        // when
+        await sender.SendAsync(_CreateMediumMessage(name: name));
+
+        // then
+        terminal.Should().BeEmpty();
+    }
+
+    private static MessageSender _CreateTerminalSender(
+        OperateResult sendResult,
+        Polly.Retry.RetryStrategyOptions retryStrategy,
+        int maxPersistedRetries,
+        IDataStorage? storage = null
+    )
+    {
+        var transportMessage = _CreateTransportMessage();
+        var serializer = Substitute.For<IMessageSerializer>();
+        serializer
+            .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(transportMessage));
+
+        var transport = Substitute.For<ITransport>();
+        transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
+        transport.SendAsync(transportMessage, Arg.Any<CancellationToken>()).Returns(sendResult);
+
+        return _CreateSender(
+            storage ?? Substitute.For<IDataStorage>(),
+            serializer,
+            transport,
+            new MessagingOptions
+            {
+                RetryPolicy = { RetryStrategy = retryStrategy, MaxPersistedRetries = maxPersistedRetries },
+            }
+        );
+    }
+
+    // The counter is process-wide and other tests publish too, so only measurements of this test's message count.
+    private static System.Diagnostics.Metrics.MeterListener _ListenToOutboxTerminal(
+        string destinationName,
+        List<(string? ErrorType, string? Lane)> terminal
+    )
+    {
+        var listener = new System.Diagnostics.Metrics.MeterListener
+        {
+            InstrumentPublished = (instrument, meterListener) =>
+            {
+                if (string.Equals(instrument.Name, MessagingMetrics.OutboxTerminalName, StringComparison.Ordinal))
+                {
+                    meterListener.EnableMeasurementEvents(instrument);
+                }
+            },
+        };
+        listener.SetMeasurementEventCallback<long>(
+            (_, _, tags, _) =>
+            {
+                string? destination = null;
+                string? errorType = null;
+                string? lane = null;
+                foreach (var tag in tags)
+                {
+                    switch (tag.Key)
+                    {
+                        case MessagingMetrics.TagDestinationName:
+                            destination = tag.Value?.ToString();
+                            break;
+                        case MessagingMetrics.TagErrorType:
+                            errorType = tag.Value?.ToString();
+                            break;
+                        case MessagingTags.Lane:
+                            lane = tag.Value?.ToString();
+                            break;
+                    }
+                }
+
+                if (string.Equals(destination, destinationName, StringComparison.Ordinal))
+                {
+                    lock (terminal)
+                    {
+                        terminal.Add((errorType, lane));
+                    }
+                }
+            }
+        );
+        listener.Start();
+        return listener;
     }
 
     private static System.Diagnostics.Metrics.MeterListener _ListenToSendExpired(List<string?> lanes)

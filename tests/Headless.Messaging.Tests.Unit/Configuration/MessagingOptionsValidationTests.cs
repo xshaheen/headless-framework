@@ -398,6 +398,39 @@ public sealed class MessagingOptionsValidationTests : TestBase
     }
 
     [Fact]
+    public void should_leave_the_backlog_sampler_off_when_no_interval_is_set()
+    {
+        // given
+        var options = new MessagingOptions();
+
+        // then
+        options.BacklogSamplingInterval.Should().BeNull();
+        new MessagingOptionsValidator().Validate(options).IsValid.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(-1_000, false)]
+    [InlineData(0, false)]
+    [InlineData(999, false)]
+    [InlineData(1_000, true)]
+    [InlineData(3_600_000, true)]
+    public void should_require_a_backlog_sampling_interval_of_at_least_one_second_when_set(int milliseconds, bool valid)
+    {
+        // given
+        var options = new MessagingOptions { BacklogSamplingInterval = TimeSpan.FromMilliseconds(milliseconds) };
+
+        // when
+        var result = new MessagingOptionsValidator().Validate(options);
+
+        // then
+        result.IsValid.Should().Be(valid);
+        if (!valid)
+        {
+            result.Errors.Should().OnlyContain(x => x.PropertyName == nameof(MessagingOptions.BacklogSamplingInterval));
+        }
+    }
+
+    [Fact]
     public void should_reject_messaging_options_with_invalid_transport_or_command_timeout()
     {
         new MessagingOptionsValidator()

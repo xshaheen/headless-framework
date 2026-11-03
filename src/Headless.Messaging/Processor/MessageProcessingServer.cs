@@ -21,9 +21,7 @@ internal sealed class MessageProcessingServer(
     private readonly MessageNeedToRetryProcessor _retryProcessor =
         provider.GetRequiredService<MessageNeedToRetryProcessor>();
 
-    private readonly TimeSpan _shutdownTimeout = provider
-        .GetRequiredService<IOptions<MessagingOptions>>()
-        .Value.ShutdownTimeout;
+    private readonly MessagingOptions _options = provider.GetRequiredService<IOptions<MessagingOptions>>().Value;
 
     private Task? _compositeTask;
     private ProcessingContext? _context;
@@ -74,9 +72,9 @@ internal sealed class MessageProcessingServer(
         return new InfiniteRetryProcessor(inner, loggerFactory);
     }
 
-    private IProcessor[] _GetProcessors()
+    private List<IProcessor> _GetProcessors()
     {
-        return
+        List<IProcessor> processors =
         [
             provider.GetRequiredService<TransportCheckProcessor>(),
             provider.GetRequiredService<MessageNeedToRetryProcessor>(),
@@ -84,11 +82,19 @@ internal sealed class MessageProcessingServer(
             provider.GetRequiredService<CollectorProcessor>(),
             provider.GetRequiredService<OutboxInitializationProcessor>(),
         ];
+
+        // Off by default: the sampler is never resolved, so it neither reads storage nor registers its gauges' source.
+        if (_options.BacklogSamplingInterval is not null)
+        {
+            processors.Add(provider.GetRequiredService<BacklogSamplingProcessor>());
+        }
+
+        return processors;
     }
 
     public ValueTask DisposeAsync()
     {
-        return _StopAsync(_shutdownTimeout);
+        return _StopAsync(_options.ShutdownTimeout);
     }
 
     void IProcessingServerShutdown.Quiesce()

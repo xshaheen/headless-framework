@@ -315,6 +315,19 @@ public sealed class MessagingOptions
     public TimeSpan DelayedMessagePollInterval { get; set; } = TimeSpan.FromSeconds(60);
 
     /// <summary>
+    /// Gets or sets how often the backlog sampler reads the pending outbox and inbox rows for the
+    /// <c>headless.messaging.backlog.pending</c> and <c>headless.messaging.backlog.oldest_age</c> gauges. Defaults to
+    /// <see langword="null"/>, which turns the sampler off.
+    /// </summary>
+    /// <remarks>
+    /// Each tick costs one <see cref="IMonitoringApi.GetBacklogAsync"/> query on the primary storage and one on each
+    /// additional outbox; the gauges report the last sample and never query storage themselves, so a metrics scrape
+    /// adds no load. The first sample is taken one interval after the host starts, and the gauges report nothing
+    /// before it. A failed sample is logged and the gauges keep the last good one. Must be at least one second.
+    /// </remarks>
+    public TimeSpan? BacklogSamplingInterval { get; set; }
+
+    /// <summary>
     /// Gets or sets the inbox guarantee required for durable consumers. Defaults to
     /// <see cref="InboxGuarantee.Transactional"/>; selecting a weaker guarantee is an explicit opt-down.
     /// </summary>
@@ -430,6 +443,7 @@ public sealed class MessagingOptions
         target.DeadNodeReconcileInterval = DeadNodeReconcileInterval;
         target.ConsumerPollTimeout = ConsumerPollTimeout;
         target.DelayedMessagePollInterval = DelayedMessagePollInterval;
+        target.BacklogSamplingInterval = BacklogSamplingInterval;
         target.MinimumInboxGuarantee = MinimumInboxGuarantee;
         target.DefaultDeliveryMode = DefaultDeliveryMode;
         target.MaxPoisonEnvelopeBytes = MaxPoisonEnvelopeBytes;
@@ -605,6 +619,12 @@ internal sealed class MessagingOptionsValidator : AbstractValidator<MessagingOpt
             .WithMessage("DelayedMessagePollInterval must be greater than zero.")
             .LessThanOrEqualTo(RelationalDataStorage.DelayedMessageLookahead)
             .WithMessage("DelayedMessagePollInterval must not exceed 2 minutes, the window each poll claims ahead.");
+        // Every tick is a storage query per outbox, so a sub-second cadence would load the database for no reading a
+        // metrics pipeline can use.
+        RuleFor(x => x.BacklogSamplingInterval)
+            .GreaterThanOrEqualTo(TimeSpan.FromSeconds(1))
+            .When(x => x.BacklogSamplingInterval.HasValue)
+            .WithMessage("BacklogSamplingInterval must be at least one second when set.");
         RuleFor(x => x.DefaultDeliveryMode).IsInEnum();
         RuleFor(x => x.MinimumInboxGuarantee)
             .IsInEnum()
