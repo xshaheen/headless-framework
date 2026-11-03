@@ -16,6 +16,7 @@ public sealed partial class FactoryCacheCoordinator
         CancellationTokenSource internalCts,
         CacheStoreEntry<T> staleCandidate,
         CacheEntryOptions options,
+        DateTime factoryStartedAt,
         KeyedAsyncLock.Releaser releaser,
         IAsyncDisposable? distributedLease
     )
@@ -28,6 +29,7 @@ public sealed partial class FactoryCacheCoordinator
             internalCts,
             staleCandidate,
             options,
+            factoryStartedAt,
             releaser,
             distributedLease
         );
@@ -43,6 +45,7 @@ public sealed partial class FactoryCacheCoordinator
         CancellationTokenSource internalCts,
         CacheStoreEntry<T> staleCandidate,
         CacheEntryOptions options,
+        DateTime factoryStartedAt,
         KeyedAsyncLock.Releaser releaser,
         IAsyncDisposable? distributedLease
     )
@@ -70,7 +73,8 @@ public sealed partial class FactoryCacheCoordinator
                             factoryTask,
                             internalCts,
                             staleCandidate,
-                            options
+                            options,
+                            factoryStartedAt
                         )
                 )
                 .ConfigureAwait(false);
@@ -152,7 +156,8 @@ public sealed partial class FactoryCacheCoordinator
         Task<CacheFactoryResult<T>> factoryTask,
         CancellationTokenSource internalCts,
         CacheStoreEntry<T> staleCandidate,
-        CacheEntryOptions options
+        CacheEntryOptions options,
+        DateTime factoryStartedAt
     )
     {
         try
@@ -167,6 +172,7 @@ public sealed partial class FactoryCacheCoordinator
                         context,
                         result,
                         sourceEntry: staleCandidate,
+                        factoryStartedAt,
                         CancellationToken.None
                     )
                     .ConfigureAwait(false);

@@ -197,6 +197,7 @@ public sealed partial class FactoryCacheCoordinator
 #pragma warning disable CA2000 // Ownership transfers to _CompleteEagerRefreshAsync, which disposes it in its finally.
         var internalCts = new CancellationTokenSource();
 #pragma warning restore CA2000
+        var factoryStartedAt = _GetUtcNow();
         var factoryTask = _RunDetachedFactoryAsync(token => factory(context, token), internalCts.Token);
         await _CompleteEagerRefreshAsync(
                 store,
@@ -205,6 +206,7 @@ public sealed partial class FactoryCacheCoordinator
                 sourceEntry,
                 factoryTask,
                 internalCts,
+                factoryStartedAt,
                 options,
                 releaser,
                 distributedLease
@@ -228,6 +230,7 @@ public sealed partial class FactoryCacheCoordinator
         CacheStoreEntry<T> sourceEntry,
         Task<CacheFactoryResult<T>> factoryTask,
         CancellationTokenSource internalCts,
+        DateTime factoryStartedAt,
         CacheEntryOptions options,
         KeyedAsyncLock.Releaser releaser,
         IAsyncDisposable? distributedLease
@@ -249,7 +252,16 @@ public sealed partial class FactoryCacheCoordinator
                     // The observe lambda runs inside the awaited race; the finally below disposes internalCts only
                     // when ctsTransferred is false (the factory was observed to completion), so the closure never
                     // touches a disposed CTS.
-                    () => _ObserveEagerFactoryAsync(store, key, context, sourceEntry, factoryTask, internalCts)
+                    () =>
+                        _ObserveEagerFactoryAsync(
+                            store,
+                            key,
+                            context,
+                            sourceEntry,
+                            factoryTask,
+                            internalCts,
+                            factoryStartedAt
+                        )
                 )
                 .ConfigureAwait(false);
         }
@@ -276,7 +288,8 @@ public sealed partial class FactoryCacheCoordinator
         CacheFactoryContext<T> context,
         CacheStoreEntry<T> sourceEntry,
         Task<CacheFactoryResult<T>> factoryTask,
-        CancellationTokenSource internalCts
+        CancellationTokenSource internalCts,
+        DateTime factoryStartedAt
     )
     {
         try
@@ -291,6 +304,7 @@ public sealed partial class FactoryCacheCoordinator
                         context,
                         result,
                         sourceEntry: sourceEntry,
+                        factoryStartedAt,
                         CancellationToken.None
                     )
                     .ConfigureAwait(false);

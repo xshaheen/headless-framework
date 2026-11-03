@@ -494,6 +494,7 @@ public sealed partial class FactoryCacheCoordinator(
 
             var factoryActivity = CachingDiagnostics.Start("cache.factory");
             var factoryStart = _timeProvider.GetTimestamp();
+            var factoryStartedAt = _GetUtcNow();
 
             try
             {
@@ -558,6 +559,7 @@ public sealed partial class FactoryCacheCoordinator(
                         factoryResult.InternalCancellationTokenSource,
                         staleCandidate,
                         options,
+                        factoryStartedAt,
                         releaser,
                         distributedLease
                     );
@@ -597,6 +599,7 @@ public sealed partial class FactoryCacheCoordinator(
                     context,
                     factoryResult.Value,
                     sourceEntry: entry,
+                    factoryStartedAt,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -684,13 +687,15 @@ public sealed partial class FactoryCacheCoordinator(
     // Persists a factory result as a fresh entry and returns the caller-facing value. Shared by the foreground
     // path, soft-timeout background completion, and eager refresh so conditional refresh (NotModified) and
     // adaptive options behave identically everywhere. A store-write failure on this path must propagate rather
-    // than activate fail-safe (which would discard the fresh result).
+    // than activate fail-safe (which would discard the fresh result). factoryStartedAt is the clock read taken just
+    // before the factory began reading its source.
     private async ValueTask<CacheValue<T>> _WriteFactoryResultAsync<T>(
         IFactoryCacheStore store,
         string key,
         CacheFactoryContext<T> context,
         CacheFactoryResult<T> result,
         CacheStoreEntry<T> sourceEntry,
+        DateTime factoryStartedAt,
         CancellationToken cancellationToken
     )
     {
@@ -733,9 +738,12 @@ public sealed partial class FactoryCacheCoordinator(
         var stamps = CacheEntryStamps.Compute(options, now);
 
         // A NotModified extension re-stamps the existing value rather than producing a new one, so it must keep the
-        // original birth time: carry the source entry's CreatedAt forward (falling back to now only if the source
-        // had none, e.g. a legacy/unframed reserve). A genuine new value write stamps CreatedAt = now.
-        var createdAt = result.IsNotModified ? sourceEntry.CreatedAt ?? stamps.CreatedAt : stamps.CreatedAt;
+        // original birth time: carry the source entry's CreatedAt forward (falling back to the factory start only if
+        // the source had none, e.g. a legacy/unframed reserve). A genuine new value is born when the factory started
+        // reading its source, not when it returned: a tag removal or clear issued while the factory ran postdates
+        // that instant, so it invalidates the value the factory read before it instead of being outlived by it.
+        // The expiry stamps still count from the write.
+        var createdAt = result.IsNotModified ? sourceEntry.CreatedAt ?? factoryStartedAt : factoryStartedAt;
 
         var entry = new CacheStoreEntryWrite<T>
         {

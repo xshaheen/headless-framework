@@ -144,30 +144,69 @@ public sealed class RedisCache(
     /// <inheritdoc />
     public ICacheEvents Events => _coordinator.EventsHub;
 
-    // #37: collapsed two volatile bool fields (_supportsMsetEx + _supportsMsetExChecked) into a single
-    // Lazy<bool> to make the check-and-set atomic, matching the _isClusterLazy pattern.
+    // A single Lazy<bool> keeps the check-and-set atomic instead of two volatile flags.
     private readonly Lazy<bool> _supportsMsetExLazy = new(() =>
         _DetectMsetexSupport(cacheOptions.ConnectionMultiplexer)
     );
 
-    private readonly Lazy<bool> _isClusterLazy = new(() => _CheckIsCluster(cacheOptions.ConnectionMultiplexer));
+    private const int _TopologyUnknown = 0;
+    private const int _TopologyStandalone = 1;
+    private const int _TopologyCluster = 2;
+
+    // Only a server that is connected reports its real ServerType, so the topology stays unknown (and is probed
+    // again on the next call) until one is. Caching an answer read while every endpoint was down would pin a
+    // cluster to the single-slot code paths for the process lifetime, failing every multi-key command.
+    private int _topology = _TopologyUnknown;
     private readonly IDatabase _database = cacheOptions.ConnectionMultiplexer.GetDatabase();
 
-    private bool IsCluster => _isClusterLazy.Value;
-
-    private static bool _CheckIsCluster(IConnectionMultiplexer connectionMultiplexer)
+    private bool IsCluster
     {
+        get
+        {
+            var topology = Volatile.Read(ref _topology);
+
+            if (topology is not _TopologyUnknown)
+            {
+                return topology is _TopologyCluster;
+            }
+
+            topology = _DetectTopology(cacheOptions.ConnectionMultiplexer);
+
+            if (topology is _TopologyUnknown)
+            {
+                // Nothing is connected: this call fails or waits in the multiplexer's backlog either way, and the
+                // next call asks again.
+                return false;
+            }
+
+            Volatile.Write(ref _topology, topology);
+
+            return topology is _TopologyCluster;
+        }
+    }
+
+    private static int _DetectTopology(IConnectionMultiplexer connectionMultiplexer)
+    {
+        var topology = _TopologyUnknown;
+
         foreach (var endpoint in connectionMultiplexer.GetEndPoints())
         {
             var server = connectionMultiplexer.GetServer(endpoint);
 
-            if (server is { IsConnected: true, ServerType: ServerType.Cluster })
+            if (!server.IsConnected)
             {
-                return true;
+                continue;
             }
+
+            if (server.ServerType is ServerType.Cluster)
+            {
+                return _TopologyCluster;
+            }
+
+            topology = _TopologyStandalone;
         }
 
-        return false;
+        return topology;
     }
 
     /// <inheritdoc />

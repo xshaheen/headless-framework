@@ -306,4 +306,31 @@ public sealed class InMemoryCacheTagTests : TestBase
         result.Value.Should().Be("value");
         result.IsStale.Should().BeTrue();
     }
+
+    [Fact]
+    public async Task should_miss_factory_value_when_remove_by_tag_lands_while_the_factory_runs()
+    {
+        using var cache = _CreateCache();
+        var tag = Faker.Random.AlphaNumeric(8);
+        var options = new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5), Tags = [tag] };
+        var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var factoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        async ValueTask<string?> factory(CancellationToken cancellationToken)
+        {
+            factoryStarted.SetResult();
+            return await factoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        // The factory read its source before the invalidation; the value it returns afterwards is already stale.
+        var getOrAdd = cache.GetOrAddAsync("key", factory, options, AbortToken).AsTask();
+        await factoryStarted.Task.Bounded();
+        _timeProvider.Advance(TimeSpan.FromSeconds(1));
+        await cache.RemoveByTagAsync(tag, AbortToken);
+        _timeProvider.Advance(TimeSpan.FromSeconds(1));
+        factoryGate.SetResult("read-before-invalidation");
+        (await getOrAdd).Value.Should().Be("read-before-invalidation");
+
+        (await cache.GetAsync<string>("key", AbortToken)).HasValue.Should().BeFalse();
+    }
 }
