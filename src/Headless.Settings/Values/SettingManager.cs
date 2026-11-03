@@ -507,7 +507,13 @@ public sealed class SettingManager(
         CancellationToken cancellationToken
     )
     {
-        if (providers.Count > 1 && !forceToSet && setting.IsInherited && value is not null)
+        if (
+            providers.Count > 1
+            && !forceToSet
+            && setting.IsInherited
+            && value is not null
+            && !_IsFallbackTenantUnknown(providerName, providerKey, providers)
+        )
         {
             var fallbackValue = await _CoreGetOrDefaultAsync(
                     setting,
@@ -536,6 +542,24 @@ public sealed class SettingManager(
         }
 
         return value;
+    }
+
+    /// <summary>
+    /// Whether the write names a user the ambient tenant may not hold. The Tenant provider below the User provider reads
+    /// the ambient tenant, so from host scope (no tenant) the comparison would run against the host's chain and could
+    /// drop a value that differs from what the user really inherits from their own tenant. Writing for the current user
+    /// (no key), or from inside the user's tenant, compares against the right chain.
+    /// </summary>
+    private bool _IsFallbackTenantUnknown(
+        string providerName,
+        string? providerKey,
+        List<ISettingValueReadProvider> providers
+    )
+    {
+        return providerKey is not null
+            && currentTenant.Id is null
+            && string.Equals(providerName, SettingValueProviderNames.User, StringComparison.Ordinal)
+            && providers.Exists(p => string.Equals(p.Name, SettingValueProviderNames.Tenant, StringComparison.Ordinal));
     }
 
     /// <inheritdoc/>

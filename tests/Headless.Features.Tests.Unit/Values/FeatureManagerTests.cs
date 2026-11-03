@@ -654,7 +654,7 @@ public sealed class FeatureManagerTests : TestBase
         principal.Principal.Returns(new ClaimsPrincipal());
         _valueProviderManager.ValueProviders.Returns([
             new TenantFeatureValueProvider(store, tenant),
-            new EditionFeatureValueProvider(store, principal),
+            new EditionFeatureValueProvider(store, principal, tenant),
         ]);
 
         var fromTenant = new FeatureDefinition("FromTenant");

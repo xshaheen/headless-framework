@@ -69,14 +69,16 @@ public sealed class FeatureValueStoreUnitOfWorkTests : TestBase
         await _CommitAsync();
         await _cache
             .Received(1)
-            .RemoveAllAsync(
-                Arg.Is<IEnumerable<string>>(keys =>
-                    keys.Order()
+            .UpsertAllAsync(
+                Arg.Is<IDictionary<string, FeatureValueCacheItem>>(items =>
+                    items
+                        .Keys.Order()
                         .SequenceEqual(
                             new[] { _CacheKey("A"), _CacheKey("B"), _CacheKey("C") }.Order(),
                             StringComparer.Ordinal
                         )
                 ),
+                Arg.Any<TimeSpan?>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -164,7 +166,13 @@ public sealed class FeatureValueStoreUnitOfWorkTests : TestBase
             );
         _cache.ReceivedCalls().Should().BeEmpty();
         await _CommitAsync();
-        await _cache.Received(1).RemoveAllAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>());
+        await _cache
+            .Received(1)
+            .UpsertAllAsync(
+                Arg.Any<IDictionary<string, FeatureValueCacheItem>>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -187,7 +195,11 @@ public sealed class FeatureValueStoreUnitOfWorkTests : TestBase
         // given
         _repository.GetListEnlistedAsync(_unit, Arg.Any<HashSet<string>>(), _Provider, _Key, AbortToken).Returns([]);
         _cache
-            .RemoveAllAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .UpsertAllAsync(
+                Arg.Any<IDictionary<string, FeatureValueCacheItem>>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            )
             .ThrowsAsync(new InvalidOperationException("cache down"));
         var values = new Dictionary<string, string?>(StringComparer.Ordinal) { ["A"] = "1" };
         await _sut.SetAllEnlistedAsync(_unit, values, _Provider, _Key, AbortToken);

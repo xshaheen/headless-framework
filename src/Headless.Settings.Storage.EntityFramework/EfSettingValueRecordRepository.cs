@@ -4,6 +4,7 @@ using Headless.Caching;
 using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Headless.Settings;
 
@@ -14,18 +15,23 @@ namespace Headless.Settings;
 /// <typeparam name="TContext">The <see cref="DbContext"/> type registered with the DI container.</typeparam>
 /// <param name="dbFactory">Factory used to create <typeparamref name="TContext"/> instances per operation.</param>
 /// <param name="cache">
-/// The setting-value cache shared with <c>SettingValueStore</c>. A write here removes the affected cache key
-/// so a direct repository write (bypassing <c>ISettingManager</c>) is reflected on the next read.
+/// The setting-value cache shared with <c>SettingValueStore</c>. A write here stores the written value in the affected
+/// cache entry (an empty item for a delete), so a direct repository write (bypassing <c>ISettingManager</c>) is
+/// reflected on the next read and a concurrent reader's older load cannot overwrite it.
 /// </param>
+/// <param name="options">Supplies the cache entry lifetime the value store uses.</param>
 internal sealed class EfSettingValueRecordRepository<TContext>(
     IDbContextFactory<TContext> dbFactory,
     ICache<SettingValueCacheItem> cache,
+    IOptions<SettingManagementOptions> options,
     ILogger<EfSettingValueRecordRepository<TContext>> logger
 ) : ISettingValueRecordRepository
     where TContext : DbContext
 {
     private const string _Owner = "the EF Core settings storage";
     private const string _Operation = "setting value";
+
+    private readonly TimeSpan _cacheExpiration = options.Value.ValueCacheExpiration;
 
     /// <inheritdoc/>
     public async Task<SettingValueRecord?> FindAsync(
@@ -111,7 +117,7 @@ internal sealed class EfSettingValueRecordRepository<TContext>(
 
         db.Set<SettingValueRecord>().Add(setting);
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        await cache.RemoveAsync(_CacheKey(setting), cancellationToken).ConfigureAwait(false);
+        await _WriteCacheAsync([setting], [], cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -121,7 +127,7 @@ internal sealed class EfSettingValueRecordRepository<TContext>(
 
         db.Set<SettingValueRecord>().Update(setting);
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        await cache.RemoveAsync(_CacheKey(setting), cancellationToken).ConfigureAwait(false);
+        await _WriteCacheAsync([setting], [], cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -134,7 +140,7 @@ internal sealed class EfSettingValueRecordRepository<TContext>(
 
         db.Set<SettingValueRecord>().RemoveRange(settings);
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        await cache.RemoveAllAsync(settings.Select(_CacheKey), cancellationToken).ConfigureAwait(false);
+        await _WriteCacheAsync([], settings, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -160,9 +166,7 @@ internal sealed class EfSettingValueRecordRepository<TContext>(
         // One SaveChanges runs every statement in the transaction EF opens for it, so a failing row rolls back
         // the whole batch.
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        await cache
-            .RemoveAllAsync(inserted.Concat(updated).Concat(deleted).Select(_CacheKey), cancellationToken)
-            .ConfigureAwait(false);
+        await _WriteCacheAsync([.. inserted, .. updated], deleted, cancellationToken).ConfigureAwait(false);
     }
 
     public Task<List<SettingValueRecord>> GetListEnlistedAsync(
@@ -249,16 +253,27 @@ internal sealed class EfSettingValueRecordRepository<TContext>(
             )
             .ConfigureAwait(false);
 
-        SettingValueCacheInvalidation.RemoveAfterCommit(
+        SettingValueCacheInvalidation.UpsertAfterCommit(
             unitOfWork,
             cache,
-            [.. inserted.Concat(updated).Concat(deleted).Select(_CacheKey)],
+            SettingValueCacheInvalidation.WrittenItems([.. inserted, .. updated], deleted),
+            _cacheExpiration,
             logger
         );
     }
 
-    private static string _CacheKey(SettingValueRecord setting)
+    private async Task _WriteCacheAsync(
+        IReadOnlyCollection<SettingValueRecord> written,
+        IReadOnlyCollection<SettingValueRecord> deleted,
+        CancellationToken cancellationToken
+    )
     {
-        return SettingValueCacheItem.CalculateCacheKey(setting.Name, setting.ProviderName, setting.ProviderKey);
+        await cache
+            .UpsertAllAsync(
+                SettingValueCacheInvalidation.WrittenItems(written, deleted),
+                _cacheExpiration,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 }

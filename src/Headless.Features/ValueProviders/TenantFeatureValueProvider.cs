@@ -8,7 +8,8 @@ namespace Headless.Features;
 /// Feature value provider that resolves values scoped to a tenant: an explicit <c>providerKey</c> when the
 /// caller supplies one, otherwise the ambient tenant from <see cref="ICurrentTenant"/>.
 /// <see cref="HandleContextAsync"/> additionally switches the active tenant so code that reads the ambient
-/// tenant (rather than the key) observes the requested one.
+/// tenant (rather than the key) observes the requested one; when that is another tenant than the caller's,
+/// <see cref="EditionFeatureValueProvider"/> stops trusting the caller's edition claim for it.
 /// </summary>
 [PublicAPI]
 public sealed class TenantFeatureValueProvider(IFeatureValueStore store, ICurrentTenant currentTenant)
@@ -41,12 +42,22 @@ public sealed class TenantFeatureValueProvider(IFeatureValueStore store, ICurren
             return base.HandleContextAsync(providerName, providerKey, cancellationToken);
         }
 
+        // Acting for another tenant: the current principal's claims (its edition) describe the caller's tenant, not
+        // this one, so the lower providers must not read them for it.
+        var switched = !string.Equals(providerKey, currentTenant.Id, StringComparison.Ordinal);
+        var previousSwitch = switched ? FeatureTenantSwitch.Enter(providerKey) : null;
+
         var asyncDisposable = DisposableFactory.Create(
             // ReSharper disable once NotDisposedResource -- the returned IAsyncDisposable is disposed by the caller, which restores the original tenant context.
-            currentTenant.Change(providerKey),
-            static tenantScope =>
+            (TenantScope: currentTenant.Change(providerKey), Switched: switched, PreviousSwitch: previousSwitch),
+            static scopes =>
             {
-                tenantScope.Dispose();
+                scopes.TenantScope.Dispose();
+
+                if (scopes.Switched)
+                {
+                    FeatureTenantSwitch.Restore(scopes.PreviousSwitch);
+                }
 
                 return ValueTask.CompletedTask;
             }
