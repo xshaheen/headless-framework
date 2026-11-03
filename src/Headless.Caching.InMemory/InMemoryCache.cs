@@ -488,7 +488,9 @@ public sealed class InMemoryCache
                 wasReplaced = false;
                 sizeDelta = 0;
 
-                if (existingEntry.IsExpired)
+                // An entry no read would serve (logically expired, or invalidated by a clear or tag marker) is
+                // absent to the caller, so replacing it would revive a value every read already reports gone.
+                if (!_IsServableAt(existingEntry, now))
                 {
                     return existingEntry;
                 }
@@ -570,7 +572,9 @@ public sealed class InMemoryCache
                 wasExpectedValue = false;
                 sizeDelta = 0;
 
-                if (existingEntry.IsExpired)
+                // No read sees the expected value on an entry that is logically expired or invalidated by a clear
+                // or tag marker, so it must not match.
+                if (!_IsServableAt(existingEntry, now))
                 {
                     return existingEntry;
                 }
@@ -1624,6 +1628,12 @@ public sealed class InMemoryCache
                 break;
             }
 
+            // A logically expired or clear/tag-invalidated entry reads as absent; its fail-safe reserve stays.
+            if (!_IsServableAt(existingEntry, now))
+            {
+                break;
+            }
+
             if (!_EqualsExpected(existingEntry.GetValue<T>(_tracksAccess), expected))
             {
                 break;
@@ -1846,6 +1856,16 @@ public sealed class InMemoryCache
     private bool _IsTagInvalidated(CacheEntry entry)
     {
         return CacheTagInvalidation.IsInvalidated(entry.CreatedAt, _NewestMarkerFor(entry));
+    }
+
+    /// <summary>
+    /// Returns whether a value read at <paramref name="now"/> would serve <paramref name="entry"/>: physically and
+    /// logically live and not invalidated by a tag or clear marker. Conditional writes decide presence with it so
+    /// they agree with reads.
+    /// </summary>
+    private bool _IsServableAt(CacheEntry entry, DateTime now)
+    {
+        return !entry.IsExpiredAt(now) && !entry.IsLogicallyExpiredAt(now) && !_IsTagInvalidated(entry);
     }
 
     public ValueTask<long> SetRemoveAsync<T>(
@@ -2437,6 +2457,8 @@ public sealed class InMemoryCache
 
         if (addOnly)
         {
+            var now = nowTicks >= 0 ? new DateTime(nowTicks, DateTimeKind.Utc) : _timeProvider.GetUtcNow().UtcDateTime;
+
             // AddOrUpdate retries by switching between the add and update factories when another writer wins the
             // race, so each factory must reset every captured outcome: a stale value from the abandoned attempt
             // would otherwise leak into the size accounting or the returned flag.
@@ -2455,7 +2477,10 @@ public sealed class InMemoryCache
                     wasUpdated = false;
                     inserted = false;
 
-                    if (existingEntry.IsExpired)
+                    // Insert-if-absent agrees with reads: an entry that is logically expired or invalidated by a
+                    // clear or tag marker is absent to every read, so it is overwritten rather than blocking the
+                    // insert until its physical reserve ends.
+                    if (!_IsServableAt(existingEntry, now))
                     {
                         sizeDelta = entry.Size - existingEntry.Size;
                         wasUpdated = true;

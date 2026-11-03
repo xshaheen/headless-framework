@@ -748,20 +748,23 @@ public abstract class CacheConformanceTestsBase : TestBase
         var cache = CreateCache(Faker.Random.AlphaNumeric(8));
         var key = Faker.Random.AlphaNumeric(10);
         var tag = Faker.Random.AlphaNumeric(8);
+        // A provider whose store keeps real time (Redis) advances by a real delay, so each wait leaves half a second
+        // of slack before the window it must stay inside: a 50 ms margin failed whenever a loaded machine ran the
+        // delay late.
         var options = new CacheEntryOptions
         {
-            Duration = TimeSpan.FromMilliseconds(700),
-            SlidingExpiration = TimeSpan.FromMilliseconds(150),
+            Duration = TimeSpan.FromSeconds(7),
+            SlidingExpiration = TimeSpan.FromMilliseconds(1500),
             Tags = [tag],
         };
 
         await cache.UpsertEntryAsync(key, "value", options, AbortToken);
-        await AdvanceAsync(TimeSpan.FromMilliseconds(100));
+        await AdvanceAsync(TimeSpan.FromMilliseconds(1000));
 
         // A tagged entry exercises the Redis full-frame fallback (the header-only read cannot recover tags).
         await cache.RefreshAsync(key, AbortToken);
 
-        await AdvanceAsync(TimeSpan.FromMilliseconds(90));
+        await AdvanceAsync(TimeSpan.FromMilliseconds(900));
         var refreshed = await cache.GetAsync<string>(key, AbortToken);
 
         refreshed.HasValue.Should().BeTrue();

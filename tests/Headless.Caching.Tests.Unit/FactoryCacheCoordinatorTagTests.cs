@@ -241,6 +241,114 @@ public sealed class FactoryCacheCoordinatorTagTests : TestBase
         entry!.CreatedAt.Should().Be(createdAt);
     }
 
+    [Fact]
+    public async Task should_stamp_created_at_with_the_factory_start_when_the_factory_takes_time()
+    {
+        // given — a tag removal landing while the factory reads its source must postdate the value's birth time
+        var factoryStartedAt = _timeProvider.GetUtcNow().UtcDateTime;
+        var options = new CacheEntryOptions { Duration = TimeSpan.FromMinutes(1), Tags = ["users"] };
+
+        // when — the factory runs for two seconds
+        await _CreateCoordinator()
+            .GetOrAddAsync(
+                _store,
+                "key",
+                _ =>
+                {
+                    _timeProvider.Advance(TimeSpan.FromSeconds(2));
+                    return ValueTask.FromResult<string?>("value");
+                },
+                options,
+                AbortToken
+            );
+
+        // then — born when the factory started; the expiry still counts from the write
+        var entry = _store.GetEntry("key")!;
+        entry.CreatedAt.Should().Be(factoryStartedAt);
+        entry.LogicalExpiresAt.Should().Be(factoryStartedAt.AddSeconds(2).AddMinutes(1));
+    }
+
+    [Fact]
+    public async Task should_stamp_created_at_with_the_factory_start_when_soft_timeout_completes_in_background()
+    {
+        // given — a stale reserve, so the soft timeout serves it and the factory finishes in the background
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry("key", "stale", now.AddSeconds(-1), now.AddMinutes(5), createdAt: now.AddMinutes(-1));
+        var coordinator = _CreateCoordinator();
+        var backgroundFinished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        coordinator.BackgroundOperationFinished = () => backgroundFinished.TrySetResult();
+        var timeoutRegistered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        coordinator.FactoryTimeoutTimerRegistered = () => timeoutRegistered.TrySetResult();
+        var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var factoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var options = new CacheEntryOptions
+        {
+            Duration = TimeSpan.FromMinutes(1),
+            IsFailSafeEnabled = true,
+            FactorySoftTimeout = TimeSpan.FromSeconds(1),
+            FactoryHardTimeout = TimeSpan.FromSeconds(10),
+            BackgroundFactoryCeiling = TimeSpan.FromSeconds(5),
+        };
+
+        async ValueTask<string?> factory(CancellationToken cancellationToken)
+        {
+            factoryStarted.SetResult();
+            return await factoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        // when
+        var resultTask = coordinator.GetOrAddAsync(_store, "key", factory, options, AbortToken).AsTask();
+        await factoryStarted.Task.Bounded();
+        await timeoutRegistered.Task.Bounded();
+        _timeProvider.Advance(TimeSpan.FromSeconds(1));
+        (await resultTask).IsStale.Should().BeTrue();
+        factoryGate.SetResult("fresh");
+        await backgroundFinished.Task.Bounded();
+
+        // then
+        var entry = _store.GetEntry("key")!;
+        entry.Value.Should().Be("fresh");
+        entry.CreatedAt.Should().Be(now);
+    }
+
+    [Fact]
+    public async Task should_stamp_created_at_with_the_factory_start_when_eager_refresh_takes_time()
+    {
+        // given — a fresh entry past its eager point
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(
+            "key",
+            "old",
+            now.AddMinutes(5),
+            now.AddMinutes(5),
+            eagerRefreshAt: now.AddSeconds(-1),
+            createdAt: now.AddMinutes(-1)
+        );
+        var coordinator = _CreateCoordinator();
+        var backgroundFinished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        coordinator.BackgroundOperationFinished = () => backgroundFinished.TrySetResult();
+        var options = new CacheEntryOptions { Duration = TimeSpan.FromMinutes(10), EagerRefreshThreshold = 0.5f };
+
+        // when — the refresh factory runs for two seconds
+        await coordinator.GetOrAddAsync(
+            _store,
+            "key",
+            _ =>
+            {
+                _timeProvider.Advance(TimeSpan.FromSeconds(2));
+                return ValueTask.FromResult<string?>("fresh");
+            },
+            options,
+            AbortToken
+        );
+        await backgroundFinished.Task.Bounded();
+
+        // then
+        var entry = _store.GetEntry("key")!;
+        entry.Value.Should().Be("fresh");
+        entry.CreatedAt.Should().Be(now);
+    }
+
     // Tracks every coordinator so it is disposed in teardown; inline fluent calls cannot take a `using`.
     private FactoryCacheCoordinator _CreateCoordinator()
     {
