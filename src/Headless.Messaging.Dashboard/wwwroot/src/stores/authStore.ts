@@ -118,15 +118,17 @@ export const useAuthStore = defineStore('auth', () => {
 
   /** The server answered 401, so the session is already gone; this only tells the user why they are back. */
   const handle401Error = () => {
+    // Only someone who had a session can lose it; a first visit lands on the sign-in page without that message.
+    const message = authStatus.value.authenticated ? SESSION_ENDED_MESSAGE : ''
     authService.clearSession()
     authStatus.value = {
       authenticated: false,
       username: '',
-      message: SESSION_ENDED_MESSAGE,
+      message,
       canOperate: false,
     }
     clearForm()
-    errorMessage.value = SESSION_ENDED_MESSAGE
+    errorMessage.value = message
   }
 
   const signInUrl = (returnPath?: string) => authService.getSignInUrl(returnPath)

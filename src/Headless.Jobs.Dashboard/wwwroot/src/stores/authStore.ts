@@ -100,10 +100,12 @@ export const useAuthStore = defineStore('auth', () => {
    * sends the user to the login page, which comes back to the current page after signing in.
    */
   const handleUnauthorized = async () => {
+    // Only someone who had a session can lose it; a first visit lands on the sign-in page without that message.
+    const hadSession = authStatus.value.authenticated;
     authService.expire();
     authStatus.value = authService.getStatus();
     clearForm();
-    errorMessage.value = SESSION_EXPIRED_MESSAGE;
+    errorMessage.value = hadSession ? SESSION_EXPIRED_MESSAGE : '';
 
     // Imported lazily: the router module imports this store.
     const { default: router } = await import('@/router');

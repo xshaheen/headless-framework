@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { httpService } from '@/services/http'
+import { useAuthStore } from '@/stores/authStore'
 import router from '@/router'
 
 const info = (authenticated: boolean) => ({
@@ -67,5 +68,16 @@ describe('router in host mode', () => {
     await vi.waitFor(() => expect(router.currentRoute.value.name).toBe('Login'))
 
     expect(router.currentRoute.value.query.redirect).toBe('/published')
+    expect(useAuthStore().errorMessage).toBe('Your session ended. Please sign in again.')
+  })
+
+  it('does not tell a visitor who never signed in that their session ended', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(info(false)).mockResolvedValue(unauthorized))
+    await router.push('/published')
+
+    await expect(httpService.get('/stats')).rejects.toThrow('Authentication required')
+    await vi.waitFor(() => expect(router.currentRoute.value.name).toBe('Login'))
+
+    expect(useAuthStore().errorMessage).toBe('')
   })
 })

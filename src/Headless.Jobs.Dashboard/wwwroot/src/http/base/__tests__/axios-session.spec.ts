@@ -77,11 +77,27 @@ describe('API requests', () => {
     const http = await load('host')
     const { useAuthStore } = await import('@/stores/authStore')
     const authStore = useAuthStore()
+    authStore.authStatus = { authenticated: true, username: 'operator', canOperate: true }
 
     await expect(http.get('/time-job/time-jobs')).rejects.toBeInstanceOf(AxiosError)
 
     expect(push).toHaveBeenCalledExactlyOnceWith({ name: 'Login', query: { redirect: '/time-jobs?page=2' } })
     expect(authStore.authStatus.authenticated).toBe(false)
     expect(authStore.errorMessage).toBe('Your session has ended. Please sign in again.')
+  })
+
+  it('does not tell a visitor who never signed in that their session ended', async () => {
+    adapter.mockImplementation(async (config) => {
+      const response = { ...(await ok(config)), status: 401, statusText: 'Unauthorized' }
+      throw new AxiosError('Unauthorized', AxiosError.ERR_BAD_REQUEST, config, null, response)
+    })
+    const http = await load('host')
+    const { useAuthStore } = await import('@/stores/authStore')
+    const authStore = useAuthStore()
+
+    await expect(http.get('/time-job/time-jobs')).rejects.toBeInstanceOf(AxiosError)
+
+    expect(push).toHaveBeenCalledExactlyOnceWith({ name: 'Login', query: { redirect: '/time-jobs?page=2' } })
+    expect(authStore.errorMessage).toBe('')
   })
 })
