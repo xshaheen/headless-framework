@@ -15,8 +15,13 @@ export const useConnectionStore = defineStore('connection', () => {
   const _healthCheckInterval = ref<ReturnType<typeof setInterval> | null>(null)
   const authStore = useAuthStore()
 
+  // A hub refused with 401 means the session is gone, the same as an API call answering 401.
+  JobNotificationHub.onUnauthorized = () => {
+    void authStore.handleUnauthorized()
+  }
+
   // The hub authenticates the signed-in credential, so a connection opened before sign-in is refused by the server.
-  // It starts once there is a credential and stops when the session ends (sign-out or session timeout).
+  // It starts once there is a session and stops when the session ends (sign-out, or a 401 from the server).
   function _canConnect(): boolean {
     return !requiresAuthentication() || authStore.isLoggedIn
   }

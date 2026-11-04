@@ -6,12 +6,22 @@ import { nextTick } from 'vue'
 const HUB_URL = '/jobs/dashboard/job-notification-hub'
 const CREDENTIAL = btoa('tester:fake')
 
+const { push, currentRoute } = vi.hoisted(() => ({
+  push: vi.fn(),
+  currentRoute: { value: { name: 'TimeJob', fullPath: '/time-jobs' } },
+}))
+
+vi.mock('@/router', () => ({ default: { push, currentRoute } }))
+
 interface FakeConnection {
   url: string
   state: signalR.HubConnectionState
   on: ReturnType<typeof vi.fn>
   start: ReturnType<typeof vi.fn>
   stop: ReturnType<typeof vi.fn>
+  onclose: ReturnType<typeof vi.fn>
+  /** The server drops the connection, as it does when the session the hub connected with expires. */
+  serverClose: () => Promise<void>
 }
 
 describe('notification hub lifecycle', () => {
@@ -19,7 +29,8 @@ describe('notification hub lifecycle', () => {
 
   beforeEach(() => {
     localStorage.clear()
-    window.JobsConfig = { basePath: '/jobs/dashboard', auth: { mode: 'basic', enabled: true, sessionTimeout: 60 } }
+    push.mockReset()
+    window.JobsConfig = { basePath: '/jobs/dashboard', auth: { mode: 'basic', enabled: true, signInAvailable: false } }
     setActivePinia(createPinia())
     built = []
     // Each built connection records its URL; start() marks it connected, as a real one would.
@@ -32,6 +43,7 @@ describe('notification hub lifecycle', () => {
       return this
     })
     vi.spyOn(signalR.HubConnectionBuilder.prototype, 'build').mockImplementation(() => {
+      const closeHandlers: Array<() => Promise<void> | void> = []
       const connection: FakeConnection = {
         url,
         state: signalR.HubConnectionState.Disconnected,
@@ -41,7 +53,13 @@ describe('notification hub lifecycle', () => {
         }),
         stop: vi.fn(async () => {
           connection.state = signalR.HubConnectionState.Disconnected
+          for (const handler of closeHandlers) await handler()
         }),
+        onclose: vi.fn((handler: () => Promise<void> | void) => closeHandlers.push(handler)),
+        serverClose: async () => {
+          connection.state = signalR.HubConnectionState.Disconnected
+          for (const handler of closeHandlers) await handler()
+        },
       }
       built.push(connection)
       return connection as unknown as signalR.HubConnection
@@ -96,7 +114,6 @@ describe('notification hub lifecycle', () => {
     expect(built.some((connection) => connection.start.mock.calls.length > 0)).toBe(false)
 
     localStorage.setItem('jobs_basic_auth', CREDENTIAL)
-    localStorage.setItem('jobs_signed_in_at', String(Date.now()))
     await authStore.initializeAuth()
     await nextTick()
     await vi.waitFor(() => expect(connectionStore.isInitialized).toBe(true))
@@ -104,7 +121,72 @@ describe('notification hub lifecycle', () => {
     expect(opened.url).toContain('access_token=')
 
     await authStore.logout()
-    await vi.waitFor(() => expect(opened.stop).toHaveBeenCalled())
-    expect(connectionStore.isInitialized).toBe(false)
+    await vi.waitFor(() => expect(connectionStore.isInitialized).toBe(false))
+    expect(opened.stop).toHaveBeenCalled()
+    // Closing it on sign-out is not a dropped connection, so nothing reconnects.
+    expect(opened.start).toHaveBeenCalledOnce()
+  })
+
+  it('does not reconnect after closing the connection itself', async () => {
+    localStorage.setItem('jobs_basic_auth', CREDENTIAL)
+    const { default: BaseHub } = await import('@/hub/base/baseHub')
+    const hub = new BaseHub()
+    await hub.startConnectionAsync()
+
+    await hub.stopConnectionAsync()
+
+    expect(built[0]!.start).toHaveBeenCalledOnce()
+  })
+
+  describe('in host mode', () => {
+    const session = (authenticated: boolean) =>
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ mode: 'host', enabled: true, authenticated, name: 'ops', canOperate: true }),
+      })
+
+    beforeEach(() => {
+      window.JobsConfig = { basePath: '/jobs/dashboard', auth: { mode: 'host', enabled: true, signInAvailable: true } }
+      vi.stubGlobal('fetch', session(true))
+    })
+
+    afterEach(() => {
+      vi.unstubAllGlobals()
+    })
+
+    const openSignedIn = async () => {
+      const { useConnectionStore } = await import('@/stores/connectionStore')
+      const { useAuthStore } = await import('@/stores/authStore')
+      const connectionStore = useConnectionStore()
+      const authStore = useAuthStore()
+      await authStore.initializeAuth()
+      await vi.waitFor(() => expect(connectionStore.isInitialized).toBe(true))
+      const opened = built.find((connection) => connection.start.mock.calls.length > 0)!
+      return { authStore, opened }
+    }
+
+    it('reconnects with the session cookie when the server closes the connection', async () => {
+      const { opened } = await openSignedIn()
+
+      await opened.serverClose()
+
+      expect(opened.url).toBe(HUB_URL)
+      expect(opened.start).toHaveBeenCalledTimes(2)
+      expect(opened.state).toBe(signalR.HubConnectionState.Connected)
+      expect(push).not.toHaveBeenCalled()
+    })
+
+    it('sends the user to sign in when reconnecting answers 401', async () => {
+      const { authStore, opened } = await openSignedIn()
+      opened.start.mockRejectedValueOnce(new signalR.HttpError('Unauthorized', 401))
+
+      await opened.serverClose()
+
+      await vi.waitFor(() =>
+        expect(push).toHaveBeenCalledExactlyOnceWith({ name: 'Login', query: { redirect: '/time-jobs' } }),
+      )
+      expect(authStore.isLoggedIn).toBe(false)
+    })
   })
 })

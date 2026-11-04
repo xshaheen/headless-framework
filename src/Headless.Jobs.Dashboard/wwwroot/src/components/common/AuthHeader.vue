@@ -1,272 +1,36 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
-import { useAuth } from '../../composables/useAuth'
+import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
 
 // Props
 interface Props {
-  showLoginForm?: boolean
   showUserInfo?: boolean
   showLogout?: boolean
 }
 
 withDefaults(defineProps<Props>(), {
-  showLoginForm: true,
   showUserInfo: true,
   showLogout: true
 })
 
-// Emits
-const emit = defineEmits<{
-  login: [success: boolean]
-  logout: []
-}>()
-
-// Auth stores and composables
+const router = useRouter()
 const authStore = useAuthStore()
-const {
-  isAuthenticated,
-  username,
-  isLoading,
-  errorMessage,
-  clearError
-} = useAuth()
 
-// Import alert composable for demonstration
-import { useAlert } from '@/composables/useAlert'
-const { showSuccess, showError, showInfo } = useAlert()
-
-// Local state
-const isLoginFormVisible = ref(false)
-const localUsername = ref('')
-const localPassword = ref('')
-const localApiKey = ref('')
-
-// Check authentication modes
-const isBasicAuthEnabled = computed(() => {
-  return window.JobsConfig?.auth?.mode === 'basic' || false
-})
-
-const isBearerAuthEnabled = computed(() => {
-  return window.JobsConfig?.auth?.mode === 'bearer' || false
-})
-
-const isHostAuthEnabled = computed(() => {
-  return window.JobsConfig?.auth?.mode === 'host' || false
-})
-
-const requiresAuth = computed(() => {
-  return window.JobsConfig?.auth?.enabled || false
-})
-
-const authMode = computed(() => {
-  if (isBasicAuthEnabled.value) return 'basic'
-  if (isBearerAuthEnabled.value) return 'bearer'
-  if (isHostAuthEnabled.value) return 'host'
-  return 'none'
-})
-
-// Show login form automatically if auth is required and user is not authenticated
-const shouldShowLoginForm = computed(() => {
-  if (requiresAuth.value && !isAuthenticated.value) {
-    return true
-  }
-  return isLoginFormVisible.value
-})
-
-// Methods
-const toggleLoginForm = () => {
-  if (requiresAuth.value) {
-    // If auth is required, we can't toggle - user must authenticate
-    return
-  }
-  isLoginFormVisible.value = !isLoginFormVisible.value
-}
-
-const handleLogin = async () => {
-  try {
-    // Set credentials in auth store
-    if (authMode.value === 'basic') {
-      authStore.credentials.username = localUsername.value
-      authStore.credentials.password = localPassword.value
-    } else if (authMode.value === 'bearer') {
-      authStore.credentials.apiKey = localApiKey.value
-    }
-    
-    // Attempt login
-    const success = await authStore.login()
-    
-    if (success) {
-      isLoginFormVisible.value = false
-      showSuccess('Login successful!')
-      emit('login', true)
-      
-      // Clear local form fields
-      localUsername.value = ''
-      localPassword.value = ''
-      localApiKey.value = ''
-    } else {
-      // Error message is handled by auth store
-      showError(authStore.errorMessage || 'Login failed')
-    }
-  } catch (error) {
-    console.error('Login error:', error)
-    showError('Login failed. Please try again.')
-  }
-}
-
+// Signs out of the dashboard only (in host mode the application session stays) and shows the signed-out page,
+// which signs in again only when the user asks.
 const handleLogout = async () => {
-  try {
-    // Use auth store logout for all modes
-    authStore.logout()
-    
-    showInfo('Logged out successfully')
-    emit('logout')
-  } catch (error) {
-    console.error('Logout error:', error)
-    showError('Logout failed')
-    emit('logout')
-  }
+  await authStore.logout()
+  await router.push({ name: 'Login' })
 }
-
-// Check auth status on mount
-onMounted(() => {
-  // If auth is required and user is not authenticated, show login form
-  if (requiresAuth.value && !isAuthenticated.value) {
-    isLoginFormVisible.value = true
-  }
-})
-
-// Watch for auth changes to auto-hide login form
-watch(isAuthenticated, (newValue) => {
-  if (newValue) {
-    isLoginFormVisible.value = false
-  } else if (requiresAuth.value) {
-    // If auth is required, show login form when user becomes unauthenticated
-    isLoginFormVisible.value = true
-  }
-})
-
-// No need for local clearError since it's provided by the composable
 </script>
 
 <template>
   <div class="auth-header">
-    <!-- Login Form -->
-    <div v-if="!isAuthenticated && showLoginForm" class="auth-section">
-      <div v-if="!shouldShowLoginForm" class="login-prompt">
-        <v-btn
-          color="primary"
-          variant="outlined"
-          size="small"
-          @click="toggleLoginForm"
-          class="login-btn"
-        >
-          <v-icon start>mdi-login</v-icon>
-          Login
-        </v-btn>
-      </div>
-      
-      <div v-else class="login-form">
-        <div v-if="requiresAuth" class="auth-notice">
-          <v-alert
-            type="info"
-            variant="tonal"
-            density="compact"
-            class="info-alert"
-          >
-            <span v-if="authMode === 'basic'">Basic Authentication Required</span>
-            <span v-else-if="authMode === 'bearer'">API Key Authentication Required</span>
-            <span v-else-if="authMode === 'host'">Host Authentication Required</span>
-            <span v-else>Authentication Required</span>
-          </v-alert>
-        </div>
-        
-        <div class="form-row">
-          <!-- Basic Auth Fields -->
-          <template v-if="authMode === 'basic'">
-            <v-text-field
-              v-model="localUsername"
-              label="Username"
-              variant="outlined"
-              density="compact"
-              size="small"
-              class="username-field"
-              :disabled="isLoading"
-              @keyup.enter="handleLogin"
-            />
-            <v-text-field
-              v-model="localPassword"
-              label="Password"
-              type="password"
-              variant="outlined"
-              density="compact"
-              size="small"
-              class="password-field"
-              :disabled="isLoading"
-              @keyup.enter="handleLogin"
-            />
-          </template>
-          
-          <!-- Bearer Token Field -->
-          <template v-else-if="authMode === 'bearer'">
-            <v-text-field
-              v-model="localApiKey"
-              label="API Key"
-              type="password"
-              variant="outlined"
-              density="compact"
-              size="small"
-              class="api-key-field"
-              :disabled="isLoading"
-              @keyup.enter="handleLogin"
-              placeholder="Enter your API key"
-            />
-          </template>
-          <v-btn
-            color="primary"
-            variant="elevated"
-            size="small"
-            @click="handleLogin"
-            :loading="isLoading"
-            :disabled="(authMode === 'basic' && (!localUsername || !localPassword)) || (authMode === 'bearer' && !localApiKey)"
-            class="submit-btn"
-          >
-            <v-icon start>mdi-login</v-icon>
-            Login
-          </v-btn>
-          <v-btn
-            v-if="!requiresAuth"
-            variant="text"
-            size="small"
-            @click="toggleLoginForm"
-            :disabled="isLoading"
-            class="cancel-btn"
-          >
-            Cancel
-          </v-btn>
-        </div>
-        
-        <!-- Error Message -->
-        <div v-if="errorMessage" class="error-message">
-          <v-alert
-            type="error"
-            variant="tonal"
-            density="compact"
-            class="error-alert"
-            @click="clearError"
-          >
-            {{ errorMessage }}
-          </v-alert>
-        </div>
-      </div>
-    </div>
-
-    <!-- User Info and Logout -->
-    <div v-if="isAuthenticated && showUserInfo" class="auth-section">
+    <div v-if="authStore.isLoggedIn && showUserInfo" class="auth-section">
       <div class="user-info">
         <v-icon class="user-icon">mdi-account-circle</v-icon>
-        <span class="username">{{ username }}</span>
+        <span class="username">{{ authStore.username }}</span>
+        <v-chip v-if="!authStore.canOperate" size="x-small" variant="tonal" class="ml-2">View only</v-chip>
         <v-divider vertical class="divider" />
         <v-btn
           v-if="showLogout"
@@ -277,7 +41,7 @@ watch(isAuthenticated, (newValue) => {
           class="logout-btn"
         >
           <v-icon start>mdi-logout</v-icon>
-          Logout
+          Sign out
         </v-btn>
       </div>
     </div>

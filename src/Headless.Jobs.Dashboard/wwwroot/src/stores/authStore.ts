@@ -1,54 +1,53 @@
 import { defineStore } from 'pinia';
 import { ref, computed, reactive } from 'vue';
 import { authService, SESSION_EXPIRED_MESSAGE, type AuthStatus, type LoginCredentials } from '@/services/auth';
+import { requiresAuthentication } from '@/utilities/pathResolver';
 
 export const useAuthStore = defineStore('auth', () => {
   // State
   const isInitialized = ref(false);
-  const authStatus = ref<AuthStatus>({
-    authenticated: false,
-    username: '',
-    message: ''
-  });
+  const authStatus = ref<AuthStatus>({ authenticated: false, username: '', message: '', canOperate: false });
   const errorMessage = ref('');
   const isLoading = ref(false);
-  const forceUpdate = ref(0); // Force reactivity trigger
+  // Set by an explicit sign-out, so the login page says so instead of asking to sign in as if for the first time.
+  const signedOut = ref(false);
 
-  // Form credentials
+  // Form credentials (Basic and API key modes)
   const credentials = reactive<LoginCredentials>({
     username: '',
     password: '',
     apiKey: '',
-    hostAccessKey: '',
-    customCredential: ''
   });
 
   // Computed properties
-  const isLoggedIn = computed(() => {
-    void forceUpdate.value; // Force reactivity
-    if (!isInitialized.value) return false;
-    return authStatus.value.authenticated;
-  });
+  const isLoggedIn = computed(() => isInitialized.value && authStatus.value.authenticated);
 
   const username = computed(() => authStatus.value.username || '');
+
+  // A dashboard without authentication has no operator boundary; otherwise the session decides.
+  const canOperate = computed(
+    () => !requiresAuthentication() || (isLoggedIn.value && authStatus.value.canOperate),
+  );
+
+  const clearForm = () => {
+    credentials.username = '';
+    credentials.password = '';
+    credentials.apiKey = '';
+  };
 
   // Actions
   const initializeAuth = async () => {
     try {
       isLoading.value = true;
-      
-      // Initialize the auth service
       await authService.initialize();
-      
-      // Get the current auth status
       authStatus.value = authService.getStatus();
-      
     } catch (error) {
       console.error('Auth initialization failed:', error);
       authStatus.value = {
         authenticated: false,
         username: '',
-        message: 'Authentication service unavailable'
+        message: 'Authentication service unavailable',
+        canOperate: false,
       };
       errorMessage.value = 'Failed to initialize authentication';
     } finally {
@@ -61,36 +60,22 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       isLoading.value = true;
       errorMessage.value = '';
-      
-      console.log('🔐 Attempting login...');
-      
+
       const success = await authService.login(credentials);
-      
+      authStatus.value = authService.getStatus();
+
       if (success) {
-        authStatus.value = authService.getStatus();
-        console.log('✅ Login successful:', authStatus.value);
-        
-        // Clear form
-        credentials.username = '';
-        credentials.password = '';
-        credentials.apiKey = '';
-        credentials.customCredential = '';
-        
+        signedOut.value = false;
+        clearForm();
         return true;
-      } else {
-        authStatus.value = authService.getStatus();
-        errorMessage.value = authStatus.value.message || 'Login failed';
-        console.log('❌ Login failed:', authStatus.value);
-        return false;
       }
+
+      errorMessage.value = authStatus.value.message || 'Login failed';
+      return false;
     } catch (error) {
-      console.error('❌ Login error:', error);
+      console.error('Login error:', error);
       errorMessage.value = 'Login failed';
-      authStatus.value = {
-        authenticated: false,
-        username: '',
-        message: 'Login failed'
-      };
+      authStatus.value = { authenticated: false, username: '', message: 'Login failed', canOperate: false };
       return false;
     } finally {
       isLoading.value = false;
@@ -99,80 +84,33 @@ export const useAuthStore = defineStore('auth', () => {
 
   const logout = async () => {
     try {
-      console.log('🚪 Logging out...');
-      
       await authService.logout();
-      authStatus.value = authService.getStatus();
-      
-      // Clear form and errors
-      credentials.username = '';
-      credentials.password = '';
-      credentials.apiKey = '';
-      credentials.customCredential = '';
-      errorMessage.value = '';
-      
-      console.log('✅ Logout successful');
     } catch (error) {
-      console.error('❌ Logout error:', error);
+      console.error('Logout error:', error);
     }
-  };
 
-  const revalidate = async () => {
-    try {
-      console.log('🔄 Revalidating authentication...');
-      
-      await authService.validateStoredCredentials();
-      authStatus.value = authService.getStatus();
-      
-      console.log('✅ Revalidation complete:', authStatus.value);
-    } catch (error) {
-      console.error('❌ Revalidation failed:', error);
-      authStatus.value = {
-        authenticated: false,
-        username: '',
-        message: 'Revalidation failed'
-      };
-    }
-  };
-
-  // Signs the user out and leaves the expiry message for the login page to show.
-  const markSessionExpired = () => {
-    authStatus.value = {
-      authenticated: false,
-      username: '',
-      message: SESSION_EXPIRED_MESSAGE
-    };
-
-    // Clear form
-    credentials.username = '';
-    credentials.password = '';
-    credentials.apiKey = '';
-    credentials.customCredential = '';
-    errorMessage.value = SESSION_EXPIRED_MESSAGE;
-
-    // Force reactivity update
-    forceUpdate.value++;
-  };
-
-  const handle401Error = () => {
-    console.log('🚨 Handling 401 error - clearing credentials');
-    
-    // Clear credentials and status
-    authService.logout();
-    markSessionExpired();
+    authStatus.value = authService.getStatus();
+    signedOut.value = true;
+    clearForm();
+    errorMessage.value = '';
   };
 
   /**
-   * Ends the session when the stored sign-in has outlived the configured session timeout.
-   * @returns true when the session expired; the caller sends the user to the login page.
+   * The server answered 401 (an API call, or the notification hub reconnecting): the session is gone. Forgets it and
+   * sends the user to the login page, which comes back to the current page after signing in.
    */
-  const enforceSessionTimeout = (): boolean => {
-    if (!authService.expireStaleSession()) {
-      return false;
-    }
+  const handleUnauthorized = async () => {
+    authService.expire();
+    authStatus.value = authService.getStatus();
+    clearForm();
+    errorMessage.value = SESSION_EXPIRED_MESSAGE;
 
-    markSessionExpired();
-    return true;
+    // Imported lazily: the router module imports this store.
+    const { default: router } = await import('@/router');
+    const current = router.currentRoute.value;
+    if (current.name !== 'Login') {
+      await router.push({ name: 'Login', query: { redirect: current.fullPath } });
+    }
   };
 
   const clearError = () => {
@@ -186,18 +124,18 @@ export const useAuthStore = defineStore('auth', () => {
     errorMessage,
     isLoading,
     credentials,
-    
+    signedOut,
+
     // Computed
     isLoggedIn,
     username,
-    
+    canOperate,
+
     // Actions
     initializeAuth,
     login,
     logout,
-    revalidate,
-    handle401Error,
-    enforceSessionTimeout,
-    clearError
+    handleUnauthorized,
+    clearError,
   };
 });

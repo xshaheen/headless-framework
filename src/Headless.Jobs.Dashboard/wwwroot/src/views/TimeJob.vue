@@ -10,6 +10,7 @@ import ChainJobsModal from '@/components/ChainJobsModal.vue'
 import JobNotificationHub, { methodName } from '@/hub/jobNotificationHub'
 import { formatDate } from '@/utilities/dateTimeParser'
 import { canRequeue } from '@/utilities/requeue'
+import { useAuthStore } from '@/stores/authStore'
 import { useConnectionStore } from '@/stores/connectionStore'
 import { useTimeZoneStore } from '@/stores/timeZoneStore'
 import PaginationFooter from '@/components/PaginationFooter.vue'
@@ -32,6 +33,9 @@ import type {
   GetTimeJobGraphDataRangeResponse,
   GetTimeJobGraphDataResponse,
 } from '@/http/services/types/timeJobService.types'
+
+// Write actions are shown only to a user who may operate; a view-only host session only reads.
+const authStore = useAuthStore()
 
 use([
   CanvasRenderer,
@@ -991,6 +995,7 @@ const canBeForceDeleted = ref<string[]>([])
             <div class="primary-actions">
               <div class="action-group">
                 <button
+                  v-if="authStore.canOperate"
                   class="premium-action-btn primary-action"
                   @click="
                     crudTimeJobDialog.open({
@@ -1006,7 +1011,11 @@ const canBeForceDeleted = ref<string[]>([])
                   <div class="btn-shine"></div>
                 </button>
 
-                <button class="premium-action-btn tertiary-action" @click="openChainJobsModal()">
+                <button
+                  v-if="authStore.canOperate"
+                  class="premium-action-btn tertiary-action"
+                  @click="openChainJobsModal()"
+                >
                   <div class="btn-icon">
                     <v-icon size="18">mdi-family-tree</v-icon>
                   </div>
@@ -1125,7 +1134,7 @@ const canBeForceDeleted = ref<string[]>([])
               </v-btn>
 
               <v-btn
-                v-if="selectedItems.size > 0"
+                v-if="selectedItems.size > 0 && authStore.canOperate"
                 size="small"
                 color="error"
                 variant="text"
@@ -1357,7 +1366,7 @@ const canBeForceDeleted = ref<string[]>([])
             </template>
 
             <template #[`item.actions`]="{ item }">
-              <div class="action-buttons-container">
+              <div v-if="authStore.canOperate" class="action-buttons-container">
                 <!-- Cancel Button -->
                 <div
                   class="action-btn-wrapper"

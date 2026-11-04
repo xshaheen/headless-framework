@@ -13,7 +13,11 @@ import JobProgressCell from '@/components/JobProgressCell.vue'
 import { applyJobProgress, type JobProgressNotification } from '@/utilities/job-progress'
 import { formatTime } from '@/utilities/dateTimeParser'
 import { canRequeue } from '@/utilities/requeue'
+import { useAuthStore } from '@/stores/authStore'
 import { format } from 'timeago.js'
+
+// Write actions are shown only to a user who may operate; a view-only host session only reads.
+const authStore = useAuthStore()
 
 const confirmDialog = useDialog<{ data: string }>().withComponent(
   () => import('@/components/common/ConfirmDialog.vue'),
@@ -428,7 +432,7 @@ const setRowProp = (propContext: { item: GetCronJobOccurrenceResponse }) => {
 
             <!-- Actions Column -->
             <template #[`item.actions`]="{ item }">
-              <div class="actions-cell">
+              <div v-if="authStore.canOperate" class="actions-cell">
                 <v-btn
                   v-if="canRequeue(item.status)"
                   @click="requeue(item.id)"
