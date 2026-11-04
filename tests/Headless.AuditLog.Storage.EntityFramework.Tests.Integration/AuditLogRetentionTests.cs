@@ -55,20 +55,23 @@ public sealed class AuditLogRetentionTests : TestBase
     [Fact]
     public async Task should_reject_append_only_because_migrations_own_the_table()
     {
-        // given
-        var (sp, conn) = await AuditIntegrationFixture.CreateAsync(
-            configure: null,
-            configureServices: services =>
-                services.Configure<AuditLogStorageOptions>(options => options.AppendOnly = true)
-        );
-        await using var _ = conn;
-        await using var __ = sp;
+        // given - the fixture builds the EF model, which reads the options, unless an earlier test in the run already
+        // built and cached that model; so the rejection lands in setup or in the read, and both belong to the act
+        var act = async () =>
+        {
+            var (sp, conn) = await AuditIntegrationFixture.CreateAsync(
+                configure: null,
+                configureServices: services =>
+                    services.Configure<AuditLogStorageOptions>(options => options.AppendOnly = true)
+            );
+            await using var ownedConnection = conn;
+            await using var ownedProvider = sp;
 
-        // when
-        var act = () => sp.GetRequiredService<IOptions<AuditLogStorageOptions>>().Value;
+            _ = sp.GetRequiredService<IOptions<AuditLogStorageOptions>>().Value;
+        };
 
         // then
-        act.Should().Throw<OptionsValidationException>().WithMessage("*AppendOnly*migration*");
+        await act.Should().ThrowAsync<OptionsValidationException>().WithMessage("*AppendOnly*migration*");
     }
 
     private static async Task _AddAsync(IServiceProvider sp, params (string Action, DateTime CreatedAt)[] entries)
