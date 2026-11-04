@@ -157,6 +157,32 @@ public sealed class RequireDashboardAuthenticationTests : TestBase
     }
 
     [Fact]
+    public async Task checks_the_credential_when_the_host_authenticates_before_its_own_routing()
+    {
+        // A host that calls UseRouting itself gets the WebApplication's implicit UseAuthentication ahead of routing,
+        // where the dashboard scheme, the host's only and so default scheme, sees no endpoint yet. The dashboard policy
+        // asks again after routing and must get a fresh answer, not that first NoResult.
+        await using var app = await _StartAsync(
+            services => services.AddDashboardAuthentication(_Name, _Basic("admin", "pass")),
+            endpoints => endpoints.MapGet(_Path, _UserName).RequireDashboardAuthentication(_Name),
+            pipeline =>
+            {
+                pipeline.UseRouting();
+                pipeline.UseAuthorization();
+            }
+        );
+        using var client = app.GetTestClient();
+
+        using var accepted = await _SendAsync(client, _Path, "Basic " + "admin:pass".ToBase64());
+        using var refused = await _SendAsync(client, _Path, "Basic " + "admin:wrong".ToBase64());
+
+        accepted.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await accepted.Content.ReadAsStringAsync(AbortToken)).Should().Be("admin");
+        refused.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        _FailureWarnings().Should().ContainSingle();
+    }
+
+    [Fact]
     public async Task strips_line_breaks_from_the_logged_path_of_a_failed_request()
     {
         await using var app = await _StartAsync(
@@ -330,7 +356,8 @@ public sealed class RequireDashboardAuthenticationTests : TestBase
 
     private async Task<WebApplication> _StartAsync(
         Action<IServiceCollection> configureServices,
-        Action<WebApplication> mapEndpoints
+        Action<WebApplication> mapEndpoints,
+        Action<WebApplication>? configurePipeline = null
     )
     {
         var builder = WebApplication.CreateSlimBuilder();
@@ -340,8 +367,16 @@ public sealed class RequireDashboardAuthenticationTests : TestBase
         configureServices(builder.Services);
 
         var app = builder.Build();
-        app.UseAuthentication();
-        app.UseAuthorization();
+        (
+            configurePipeline
+            ?? (
+                pipeline =>
+                {
+                    pipeline.UseAuthentication();
+                    pipeline.UseAuthorization();
+                }
+            )
+        )(app);
         app.MapGet(_HostProbePath, (HttpContext context) => "host:" + _NameOf(context));
         mapEndpoints(app);
 
