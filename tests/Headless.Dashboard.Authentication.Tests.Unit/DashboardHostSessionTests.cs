@@ -306,7 +306,8 @@ public sealed class DashboardHostSessionTests : TestBase
         await using var app = await _StartAsync(host =>
         {
             host.RevalidationInterval = TimeSpan.FromMinutes(5);
-            host.Revalidate = (_, user) => ValueTask.FromResult(user.Identity?.Name != "revoked");
+            host.Revalidate = (_, user) =>
+                ValueTask.FromResult(!string.Equals(user.Identity?.Name, "revoked", StringComparison.Ordinal));
         });
         using var client = _Client(app);
 
