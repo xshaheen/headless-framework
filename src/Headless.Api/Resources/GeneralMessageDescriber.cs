@@ -138,4 +138,13 @@ public static class GeneralMessageDescriber
     {
         return new(code: GeneralErrorCodes.CrossTenantWrite, description: Messages.g_cross_tenant_write);
     }
+
+    /// <summary>
+    /// Returns a descriptor for an operation that named a tenant other than the current tenant context
+    /// (<c>g:tenant_mismatch</c>).
+    /// </summary>
+    public static ErrorDescriptor TenantMismatch()
+    {
+        return new(code: GeneralErrorCodes.TenantMismatch, description: Messages.g_tenant_mismatch);
+    }
 }

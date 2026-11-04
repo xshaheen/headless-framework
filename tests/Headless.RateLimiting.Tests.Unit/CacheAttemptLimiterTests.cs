@@ -269,10 +269,72 @@ public sealed class CacheAttemptLimiterTests : TestBase
         await act.Should().ThrowAsync<ArgumentException>();
     }
 
-    private IAttemptLimiter _CreateLimiter(string? subjectKey = null)
+    [Fact]
+    public async Task should_report_the_limiter_unavailable_without_the_store_text_when_the_counter_store_fails()
+    {
+        // given - a store whose own message names the server, as a Redis connection failure does
+        var store = Substitute.For<ICache>();
+        var failure = new InvalidOperationException("It was not possible to connect to redis-prod-01:6379");
+        store
+            .IncrementAsync(Arg.Any<string>(), Arg.Any<long>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns<ValueTask<long>>(_ => throw failure);
+        var limiter = _CreateLimiter(cache: store);
+
+        // when
+        var act = async () => await limiter.AcquireAsync(_Purpose, _Subject, _FivePerMinute, AbortToken);
+
+        // then
+        var thrown = (await act.Should().ThrowAsync<AttemptLimiterUnavailableException>()).Which;
+        thrown.Purpose.Should().Be(_Purpose);
+        thrown.InnerException.Should().BeSameAs(failure);
+        thrown.Message.Should().NotContain("redis-prod-01");
+        thrown.Should().BeAssignableTo<ServiceUnavailableException>();
+    }
+
+    [Fact]
+    public async Task should_report_the_limiter_unavailable_when_a_reset_cannot_reach_the_counter_store()
+    {
+        // given
+        var limiter = _CreateLimiter();
+        var attempt = await limiter.AcquireAsync(_Purpose, _Subject, _FivePerMinute, AbortToken);
+        var store = Substitute.For<ICache>();
+        store
+            .RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns<ValueTask<bool>>(_ => throw new TimeoutException("redis timed out"));
+        var failingLimiter = _CreateLimiter(cache: store);
+
+        // when
+        var act = async () => await failingLimiter.ResetAsync(attempt, AbortToken);
+
+        // then
+        (await act.Should().ThrowAsync<AttemptLimiterUnavailableException>())
+            .Which.Purpose.Should()
+            .Be(_Purpose);
+    }
+
+    [Fact]
+    public async Task should_surface_the_callers_cancellation_as_cancellation()
+    {
+        // given
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+        var store = Substitute.For<ICache>();
+        store
+            .IncrementAsync(Arg.Any<string>(), Arg.Any<long>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns<ValueTask<long>>(call => throw new OperationCanceledException(call.Arg<CancellationToken>()));
+        var limiter = _CreateLimiter(cache: store);
+
+        // when
+        var act = async () => await limiter.AcquireAsync(_Purpose, _Subject, _FivePerMinute, cancellation.Token);
+
+        // then - an aborted request is reported as aborted, not as a store outage
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    private IAttemptLimiter _CreateLimiter(string? subjectKey = null, ICache? cache = null)
     {
         var services = new ServiceCollection();
-        services.AddSingleton<ICache>(_cache);
+        services.AddSingleton(cache ?? _cache);
         services.AddSingleton<TimeProvider>(_timeProvider);
         services.AddAttemptLimiter(options => options.SubjectKey = subjectKey ?? _SubjectKey);
 

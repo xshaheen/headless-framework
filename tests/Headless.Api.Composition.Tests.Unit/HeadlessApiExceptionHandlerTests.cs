@@ -555,6 +555,64 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
     }
 
     [Fact]
+    public async Task should_map_service_unavailable_to_503_with_no_store_and_without_retry_after()
+    {
+        // given
+        ProblemDetails? written = null;
+        var problemDetailsService = Substitute.For<IProblemDetailsService>();
+        problemDetailsService
+            .TryWriteAsync(Arg.Do<ProblemDetailsContext>(c => written = c.ProblemDetails))
+            .Returns(true);
+        var logger = new CapturingLogger<HeadlessApiExceptionHandler>();
+        var handler = _CreateHandler(problemDetailsService, _CreateRealCreator(), logger);
+        var httpContext = new DefaultHttpContext();
+        var error = new ErrorDescriptor("otp_unavailable", "Codes cannot be sent right now.");
+        var exception = new ServiceUnavailableException(
+            "The OTP store is unavailable.",
+            error,
+            new InvalidOperationException("redis-prod-01:6379 refused the connection")
+        );
+
+        // when
+        var result = await handler.TryHandleAsync(httpContext, exception, AbortToken);
+
+        // then
+        result.Should().BeTrue();
+        httpContext.Response.StatusCode.Should().Be(StatusCodes.Status503ServiceUnavailable);
+        httpContext.Response.Headers.CacheControl.ToString().Should().Be("no-store");
+        httpContext.Response.Headers.RetryAfter.Should().BeEmpty();
+        written!.Extensions["error"].Should().BeSameAs(error);
+        written.Detail.Should().NotContain("redis-prod-01");
+        logger.Entries.Should().Contain(e => e.EventId.Id == 5016 && e.Level == LogLevel.Warning);
+    }
+
+    [Fact]
+    public async Task should_map_tenant_mismatch_to_403_without_either_tenant_id()
+    {
+        // given
+        ProblemDetails? written = null;
+        var problemDetailsService = Substitute.For<IProblemDetailsService>();
+        problemDetailsService
+            .TryWriteAsync(Arg.Do<ProblemDetailsContext>(c => written = c.ProblemDetails))
+            .Returns(true);
+        var handler = _CreateHandler(problemDetailsService, _CreateRealCreator());
+        var httpContext = new DefaultHttpContext();
+
+        // when
+        var result = await handler.TryHandleAsync(
+            httpContext,
+            new TenantMismatchException("charity-b", "charity-a"),
+            AbortToken
+        );
+
+        // then
+        result.Should().BeTrue();
+        httpContext.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        ((ErrorDescriptor)written!.Extensions["error"]!).Code.Should().Be(GeneralErrorCodes.TenantMismatch);
+        written.Detail.Should().NotContain("charity-a").And.NotContain("charity-b");
+    }
+
+    [Fact]
     public async Task should_not_leak_the_locked_resource_name_into_the_response()
     {
         // given

@@ -78,9 +78,11 @@ public static class SetupApiServices
         /// <item><description><see cref="Headless.EntityNotFoundException"/> → 404</description></item>
         /// <item><description><see cref="Headless.MultiTenancy.CrossTenantWriteException"/> → 409 with <c>g:cross_tenant_write</c></description></item>
         /// <item><description><see cref="Headless.MultiTenancy.MissingTenantContextException"/> → 403 with <c>g:tenant_required</c></description></item>
+        /// <item><description><see cref="Headless.MultiTenancy.TenantMismatchException"/> → 403 with <c>g:tenant_mismatch</c></description></item>
         /// <item><description><c>FluentValidation.ValidationException</c> → 422</description></item>
         /// <item><description><c>Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException</c> (matched by name) → 409</description></item>
         /// <item><description><c>Microsoft.EntityFrameworkCore.DbUpdateException</c> (matched by name) caused by a PostgreSQL, SQL Server, or SQLite unique-constraint violation → 409 with <c>g:unique_violation</c></description></item>
+        /// <item><description><see cref="Headless.ServiceUnavailableException"/> and derived types → 503 with <c>Cache-Control: no-store</c> and the exception's descriptor, without <c>Retry-After</c></description></item>
         /// <item><description><see cref="TimeoutException"/> → 503 without <c>Retry-After</c> (a server-side wait ran out, not a slow client)</description></item>
         /// <item><description><see cref="NotImplementedException"/> → 501</description></item>
         /// <item><description><see cref="Microsoft.AspNetCore.Http.BadHttpRequestException"/> → its <c>StatusCode</c> (400 for an unbindable body, 413 for an oversized one)</description></item>

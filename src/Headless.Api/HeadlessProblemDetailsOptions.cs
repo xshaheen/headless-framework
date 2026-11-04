@@ -41,6 +41,8 @@ public sealed class HeadlessProblemDetailsOptions
         typeof(ValidationException),
         typeof(EntityNotFoundException),
         typeof(CrossTenantWriteException),
+        typeof(TenantMismatchException),
+        typeof(ServiceUnavailableException),
         typeof(TimeoutException),
         typeof(NotImplementedException),
         typeof(BadHttpRequestException),

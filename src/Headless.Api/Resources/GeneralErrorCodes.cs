@@ -79,4 +79,7 @@ public static class GeneralErrorCodes
 
     /// <summary>A tenant-owned write targeted a tenant other than the current tenant context. Maps to 409.</summary>
     public const string CrossTenantWrite = "g:cross_tenant_write";
+
+    /// <summary>An operation named a tenant other than the current tenant context. Maps to 403.</summary>
+    public const string TenantMismatch = "g:tenant_mismatch";
 }

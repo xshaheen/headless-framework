@@ -99,6 +99,7 @@ internal sealed partial class HeadlessApiExceptionHandler(
         ProblemDetails? problemDetails;
         int statusCode;
         int? retryAfterSeconds = null;
+        var noStore = false;
 
         try
         {
@@ -188,6 +189,17 @@ internal sealed partial class HeadlessApiExceptionHandler(
                     statusCode = StatusCodes.Status404NotFound;
                     break;
 
+                // An operation named a tenant other than the caller's. 403, like a missing tenant: the caller may not
+                // act here as it is; neither tenant id reaches the response.
+                case TenantMismatchException:
+                    var tenantMismatch = GeneralMessageDescriber.TenantMismatch();
+                    problemDetails = problemDetailsCreator.Forbidden(
+                        detail: tenantMismatch.Description,
+                        error: tenantMismatch
+                    );
+                    statusCode = StatusCodes.Status403Forbidden;
+                    break;
+
                 case CrossTenantWriteException:
                     _LogCrossTenantWriteException(logger, exception);
                     problemDetails = problemDetailsCreator.Conflict([GeneralMessageDescriber.CrossTenantWrite()]);
@@ -227,6 +239,15 @@ internal sealed partial class HeadlessApiExceptionHandler(
                         error: GeneralMessageDescriber.ResourceBusy()
                     );
                     statusCode = StatusCodes.Status503ServiceUnavailable;
+                    break;
+
+                // A dependency the request needs could not answer. no-store keeps a cache in front of the app from
+                // serving the outage to the next client after the dependency has recovered.
+                case ServiceUnavailableException unavailable:
+                    _LogServiceUnavailable(logger, exception);
+                    problemDetails = problemDetailsCreator.ServiceUnavailable(error: unavailable.Error);
+                    statusCode = StatusCodes.Status503ServiceUnavailable;
+                    noStore = true;
                     break;
 
                 // A TimeoutException is the server's own wait running out (a cache factory, Redis, a database command),
@@ -310,6 +331,11 @@ internal sealed partial class HeadlessApiExceptionHandler(
         if (retryAfterSeconds is { } seconds)
         {
             httpContext.Response.Headers.RetryAfter = seconds.ToString(CultureInfo.InvariantCulture);
+        }
+
+        if (noStore)
+        {
+            httpContext.Response.Headers.CacheControl = "no-store";
         }
 
         bool written;
@@ -536,6 +562,14 @@ internal sealed partial class HeadlessApiExceptionHandler(
             + "pipeline (after UseAuthentication() and before UseAuthorization())."
     )]
     private static partial void _LogTenantResolutionMiddlewareMissing(ILogger logger, string requestPath);
+
+    [LoggerMessage(
+        EventId = 5016,
+        EventName = "ServiceUnavailableException",
+        Level = LogLevel.Warning,
+        Message = "A dependency the request needs is unavailable"
+    )]
+    private static partial void _LogServiceUnavailable(ILogger logger, Exception exception);
 
     [LoggerMessage(
         EventId = 5004,

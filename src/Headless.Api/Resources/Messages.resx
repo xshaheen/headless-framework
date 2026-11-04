@@ -64,6 +64,9 @@
   <data name="g:cross_tenant_write" xml:space="preserve">
     <value>This write does not match the current tenant.</value>
   </data>
+  <data name="g:tenant_mismatch" xml:space="preserve">
+    <value>This operation is for a different tenant than the current one.</value>
+  </data>
   <data name="g:invalid_parameter_value" xml:space="preserve">
     <value>The value of '{0}' could not be read: it is malformed or not one of the accepted values.</value>
   </data>
