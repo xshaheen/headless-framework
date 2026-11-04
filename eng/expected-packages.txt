@@ -133,7 +133,6 @@ Headless.Messaging.Dashboard.K8s
 Headless.Messaging.InMemory
 Headless.Messaging.Kafka
 Headless.Messaging.Nats
-Headless.Messaging.Pulsar
 Headless.Messaging.Queue.Abstractions
 Headless.Messaging.RabbitMq
 Headless.Messaging.Redis

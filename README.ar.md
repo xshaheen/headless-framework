@@ -17,7 +17,7 @@
 [![GitHub Stars](https://img.shields.io/github/stars/xshaheen/headless-framework?style=social)](https://github.com/xshaheen/headless-framework)
 [![English](https://img.shields.io/badge/lang-English-2563EB?style=flat-square)](README.md)
 
-217 package &bull; نفس الـ setup في كل حتة &bull; بدّل أي provider بسطر واحد
+216 package &bull; نفس الـ setup في كل حتة &bull; بدّل أي provider بسطر واحد
 
 [ليه Headless](#ليه-headless) &bull; [ابدأ في 60 ثانية](#ابدأ-في-60-ثانية) &bull; [Setup واحد لكل المجالات](#setup-واحد-لكل-المجالات) &bull; [إيه اللي في الصندوق](#إيه-اللي-في-الصندوق) &bull; [فهرس الحزم](#فهرس-الحزم)
 
@@ -51,9 +51,9 @@ builder.Services.AddHeadlessCaching(setup => setup.UseRedis(...)); // production
 
 <div dir="rtl" align="right">
 
-أي service أو repository أو handler بياخد `ICache` مش هيتأثر بالتعديل دا. ونفس الكلام على `IBlobStorage` بين S3 و Azure و Cloudflare R2 و FileSystem و Redis و SFTP، وعلى `IEmailSender` بين SES و Azure Communication Services و SMTP، وعلى الـ messaging بين 8 transports.
+أي service أو repository أو handler بياخد `ICache` مش هيتأثر بالتعديل دا. ونفس الكلام على `IBlobStorage` بين S3 و Azure و Cloudflare R2 و FileSystem و Redis و SFTP، وعلى `IEmailSender` بين SES و Azure Communication Services و SMTP، وعلى الـ messaging بين 7 transports.
 
-**هتركّب 3 packages، مش 217.** الفهرس كبير عشان عدد الـ providers كبير. الخدمة اللي محتاجة caching بتركّب `Headless.Caching.Abstractions` و `Headless.Caching` وprovider واحد. والـ libraries بتاعة الـ domain والـ application بتعتمد على الـ Abstractions package لوحدها: `Headless.Caching.Abstractions` بتجرّ وراها package-ين بس، ومفيش فيهم أي dependency خارجية: `Headless.Checks` و `Headless.Primitives`.
+**هتركّب 3 packages، مش 216.** الفهرس كبير عشان عدد الـ providers كبير. الخدمة اللي محتاجة caching بتركّب `Headless.Caching.Abstractions` و `Headless.Caching` وprovider واحد. والـ libraries بتاعة الـ domain والـ application بتعتمد على الـ Abstractions package لوحدها: `Headless.Caching.Abstractions` بتجرّ وراها package-ين بس، ومفيش فيهم أي dependency خارجية: `Headless.Checks` و `Headless.Primitives`.
 
 **الـ tests مش محتاجة Docker عشان تبقى سريعة.** الـ caching والـ distributed locks والـ messaging فيهم in-memory providers؛ والـ emails والـ SMS والـ push notifications فيهم dev providers مش بتبعت حاجة؛ والـ blob storage بيشتغل على الـ file system المحلي. يعني الـ unit tests بتجرّب نفس الـ contract الحقيقي من غير containers. ولما تحتاج الـ backend الحقيقي، `Headless.Testing.Testcontainers` بتجهّزلك الـ fixtures. الـ repo نفسه ماشي على التقسيمة دي: 122 مشروع unit tests و 63 مشروع integration tests.
 
@@ -201,7 +201,7 @@ services.AddHeadless<Feature>(setup => setup.Use<Provider>(options => { ... }));
 | Permissions | `AddHeadlessPermissions` | `UseEntityFramework<TContext>`، `UsePostgreSql`، `UseSqlServer` |
 | Audit log | `AddHeadlessAuditLog` | `UseEntityFramework<TContext>`، `UsePostgreSql`، `UseSqlServer` |
 | CAPTCHA | `AddHeadlessCaptcha` | `UseReCaptchaV2`، `UseReCaptchaV3`، `UseTurnstile` |
-| Messaging | `AddHeadlessMessaging` | Transport: `UseRabbitMq`، `UseKafka`، `UseAws`، `UseAzureServiceBus`، `UseNats`، `UsePulsar`، `UseRedis`، `UseInMemory`. Storage: `UsePostgreSql`، `UseSqlServer`، `UseInMemoryStorage` |
+| Messaging | `AddHeadlessMessaging` | Transport: `UseRabbitMq`، `UseKafka`، `UseAws`، `UseAzureServiceBus`، `UseNats`، `UseRedis`، `UseInMemory`. Storage: `UsePostgreSql`، `UseSqlServer`، `UseInMemoryStorage` |
 | Background jobs | `AddHeadlessJobs` | Storage على EF Core مع atomic claims في PostgreSQL أو SQL Server |
 
 وقاعدتين بتيجوا مع الشكل دا:
@@ -216,7 +216,7 @@ services.AddHeadless<Feature>(setup => setup.Use<Provider>(options => { ... }));
 | **API host** | Setup بسطر واحد عن طريق `AddHeadless()`: Problem Details، وOpenTelemetry، وOpenAPI، وhealth checks، وcompression، وforwarded headers، وHSTS، وvalidation وقت الـ startup. وتكامل مع Minimal API و MVC، وfilters للـ FluentValidation، وHTTP idempotency بأسلوب Stripe. |
 | **Data** | Conventions للـ EF Core، وglobal filters، وsoft deletes، وbase types للـ DDD، وseed data. وconnection factories خام لـ PostgreSQL و SQL Server و SQLite. وCouchbase. ودعم geospatial عن طريق NetTopologySuite. |
 | **State & storage** | Caching (memory، وRedis، وhybrid L1/L2، وtagging، وحماية من الـ stampede). وblob storage على 6 backends. وdynamic settings وfeature flags وpermissions وaudit log، كل واحدة بـ 3 storage providers. |
-| **Distributed runtime** | Messaging بـ transactional outbox وretries وdelayed delivery فوق 8 transports. وbackground jobs بـ cron وretries وregistration بيتولّد وقت الـ compile. وdistributed locks، وfenced leases بترفض الـ write بتاع holder قديم، وidempotent admission دائم بيرجّع الـ result المتخزّن عند الـ retry. وattempt limiting لـ OTP وreset الـ password والـ PIN. وnode membership وliveness. وunit of work صريح بيعمل commit لرسايل الـ outbox والـ durable jobs مع الـ transaction ويبعتهم بعد الـ commit. |
+| **Distributed runtime** | Messaging بـ transactional outbox وretries وdelayed delivery فوق 7 transports. وbackground jobs بـ cron وretries وregistration بيتولّد وقت الـ compile. وdistributed locks، وfenced leases بترفض الـ write بتاع holder قديم، وidempotent admission دائم بيرجّع الـ result المتخزّن عند الـ retry. وattempt limiting لـ OTP وreset الـ password والـ PIN. وnode membership وliveness. وunit of work صريح بيعمل commit لرسايل الـ outbox والـ durable jobs مع الـ transaction ويبعتهم بعد الـ commit. |
 | **Integrations** | Emails، وSMS، وpush notifications، وCAPTCHA، وimage processing، واستخراج نصوص من الـ media، ومدفوعات Paymob، وresumable uploads عن طريق TUS، وsitemaps، وslugs، وبناء الـ URLs. |
 | **Multi-tenancy** | الـ tenant context بيسري في الـ HTTP resolution، وفي الـ query filters بتاعة EF Core، وفي cache الـ permissions، وفي headers الـ messaging، ومعاه tenant catalog اختياري. |
 | **Testing** | Base classes للـ xUnit v3، وbuilders بـ Bogus، وfixtures فوق `WebApplicationFactory` مع reset للـ database، وfixtures للـ Testcontainers، وtest harness للـ messaging بيتحقق من الـ published والـ consumed والـ faulted. |
@@ -293,7 +293,7 @@ packages الـ providers دي packages عادية على NuGet. عشان تضي
 </div>
 
 <details dir="rtl" align="right">
-<summary><strong>كل الـ 217 package، مرتّبة حسب الـ domain</strong> — اضغط للعرض</summary>
+<summary><strong>كل الـ 216 package، مرتّبة حسب الـ domain</strong> — اضغط للعرض</summary>
 
 ### API & Web
 
@@ -473,7 +473,7 @@ Content indexing واستخراج الـ metadata من ملفات الـ media �
 
 ### Messaging
 
-Message bus موزّع بـ transactional outbox، وretries، وdelayed delivery، وconsumers type-safe. 8 transports و3 storage backends.
+Message bus موزّع بـ transactional outbox، وretries، وdelayed delivery، وconsumers type-safe. 7 transports و3 storage backends.
 
 | Package | الوصف |
 |---------|-------|
@@ -496,7 +496,6 @@ Message bus موزّع بـ transactional outbox، وretries، وdelayed deliver
 | [Headless.Messaging.Aws](src/Headless.Messaging.Aws/README.md) | AWS SQS + SNS |
 | [Headless.Messaging.AzureServiceBus](src/Headless.Messaging.AzureServiceBus/README.md) | Azure Service Bus |
 | [Headless.Messaging.Nats](src/Headless.Messaging.Nats/README.md) | NATS مع JetStream |
-| [Headless.Messaging.Pulsar](src/Headless.Messaging.Pulsar/README.md) | Apache Pulsar |
 | [Headless.Messaging.Redis](src/Headless.Messaging.Redis/README.md) | Redis Streams للـ Bus و Queue lanes |
 | [Headless.Messaging.InMemory](src/Headless.Messaging.InMemory/README.md) | In-memory (للتطوير والـ tests) |
 

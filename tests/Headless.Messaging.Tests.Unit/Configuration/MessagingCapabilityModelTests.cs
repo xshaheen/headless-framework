@@ -269,7 +269,6 @@ public sealed class MessagingCapabilityModelTests : TestBase
 
     [Theory]
     [InlineData("NATS")]
-    [InlineData("Apache Pulsar")]
     [InlineData("RabbitMQ")]
     public void should_reject_same_name_dual_lane_route_when_provider_has_no_independent_topology(string provider)
     {
@@ -289,7 +288,6 @@ public sealed class MessagingCapabilityModelTests : TestBase
 
     [Theory]
     [InlineData("NATS")]
-    [InlineData("Apache Pulsar")]
     [InlineData("RabbitMQ")]
     public void should_reject_cross_contract_name_collision_when_provider_has_no_independent_topology(string provider)
     {

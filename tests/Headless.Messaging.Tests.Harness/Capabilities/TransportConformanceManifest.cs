@@ -241,9 +241,6 @@ public sealed record TransportConformanceProfile(
 [PublicAPI]
 public static class TransportConformanceManifest
 {
-    /// <summary>The open issue that builds the Pulsar reply channel request/reply needs.</summary>
-    private const string _PulsarReplyChannelIssueUrl = "https://github.com/xshaheen/headless-framework/issues/1071";
-
     /// <summary>The open issue that builds the Azure Service Bus reply channel request/reply needs.</summary>
     private const string _AzureServiceBusReplyChannelIssueUrl =
         "https://github.com/xshaheen/headless-framework/issues/1070";
@@ -529,71 +526,6 @@ public static class TransportConformanceManifest
                     TransportConformanceScenario.MessageExpiry,
                     ConformanceSupport.NotApplicable(
                         "Kafka retention deletes whole log segments on a topic-wide schedule; it is not a per-message time-to-live, and the provider sets none."
-                    )
-                )
-                .EnableRealBrokerLeaf(),
-            ["Pulsar"] = TransportConformanceProfile
-                .CreateDisabled("Pulsar")
-                .WithScenario(TransportConformanceScenario.ConnectionDropRecovery, ConformanceSupport.Supported)
-                .WithScenario(TransportConformanceScenario.PublishDuringOutage, ConformanceSupport.Supported)
-                .WithScenario(TransportConformanceScenario.RawPayloadConsumption, ConformanceSupport.Supported)
-                .WithScenario(
-                    TransportConformanceScenario.RoutingAffinityMappingOrRejection,
-                    ConformanceSupport.Supported
-                )
-                .WithRuntimeCapabilities(
-                    "Apache Pulsar",
-                    supportsBus: true,
-                    supportsQueue: true,
-                    supportsIndependentLaneTopology: true
-                )
-                .WithMalformedEnvelopeBound("Pulsar terminal acknowledgement", 1, TimeSpan.FromSeconds(10))
-                .WithScenario(
-                    TransportConformanceScenario.BrokerInterruptionRecovery,
-                    ConformanceSupport.Unsupported(
-                        "After a broker restart the producer does not recover within a minute, so the scenario cannot reach the consumer's bounded shutdown.",
-                        "https://github.com/xshaheen/headless-framework/issues/1269"
-                    )
-                )
-                .WithScenario(TransportConformanceScenario.StaleSettlement, ConformanceSupport.Supported)
-                .WithScenario(TransportConformanceScenario.HandlerFailureRedelivery, ConformanceSupport.Supported)
-                .WithScenario(TransportConformanceScenario.QueueRoundTrip, ConformanceSupport.Supported)
-                .WithScenario(TransportConformanceScenario.BusRoundTrip, ConformanceSupport.Supported)
-                .WithScenario(TransportConformanceScenario.HeaderRoundTrip, ConformanceSupport.Supported)
-                .WithScenario(TransportConformanceScenario.CommitSettlement, ConformanceSupport.Supported)
-                .WithScenario(TransportConformanceScenario.RejectRedelivery, ConformanceSupport.Supported)
-                .WithScenario(TransportConformanceScenario.ConsumerPauseRecovery, ConformanceSupport.Supported)
-                .WithScenario(TransportConformanceScenario.BoundedGracefulShutdown, ConformanceSupport.Supported)
-                .WithScenario(TransportConformanceScenario.BusConsumerIdentityFanOut, ConformanceSupport.Supported)
-                .WithScenario(TransportConformanceScenario.BusReplicaCompetition, ConformanceSupport.Supported)
-                .WithScenario(TransportConformanceScenario.QueueOwnership, ConformanceSupport.Supported)
-                .WithScenario(TransportConformanceScenario.SameNameLaneIsolation, ConformanceSupport.Supported)
-                .WithScenario(
-                    TransportConformanceScenario.MalformedEnvelopeTerminalSettlement,
-                    ConformanceSupport.Supported
-                )
-                .WithRequestReplyScenarios(
-                    ConformanceSupport.Unsupported(
-                        "The Pulsar reply channel is not built yet, so the provider rejects request/reply at startup.",
-                        _PulsarReplyChannelIssueUrl
-                    )
-                )
-                .WithScenario(TransportConformanceScenario.RequestReplyStartupRejection, ConformanceSupport.Supported)
-                .WithScenario(TransportConformanceScenario.HeaderBuilderFailureRedelivery, ConformanceSupport.Supported)
-                .WithScenario(
-                    TransportConformanceScenario.DeadLetterSingleCopy,
-                    ConformanceSupport.NotApplicable(
-                        "Pulsar's dead-letter topic is fed only by the client's redelivery budget, so a dead-letter acknowledges the message as a commit does."
-                    )
-                )
-                .WithScenario(TransportConformanceScenario.StandardHeaderRoundTrip, ConformanceSupport.Supported)
-                .WithScenario(TransportConformanceScenario.HandlerConcurrencyCap, ConformanceSupport.Supported)
-                .WithScenario(TransportConformanceScenario.PerKeyOrdering, ConformanceSupport.Supported)
-                .WithScenario(TransportConformanceScenario.BodySizeLimit, ConformanceSupport.Supported)
-                .WithScenario(
-                    TransportConformanceScenario.MessageExpiry,
-                    ConformanceSupport.NotApplicable(
-                        "Pulsar's message time-to-live is a namespace policy an operator sets; the provider sets none."
                     )
                 )
                 .EnableRealBrokerLeaf(),

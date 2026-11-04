@@ -17,7 +17,7 @@ public sealed class BrokerAddressDisplayTests
     [Fact]
     public void should_strip_credentials_from_absolute_uri_when_format()
     {
-        BrokerAddressDisplay.Format("pulsar://user:secret@broker:6650").Should().Be("pulsar://broker:6650");
+        BrokerAddressDisplay.Format("amqp://user:secret@broker:5672").Should().Be("amqp://broker:5672");
     }
 
     [Fact]

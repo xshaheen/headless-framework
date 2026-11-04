@@ -246,23 +246,6 @@
           "xunit.v3.core.mtp-v2": "[4.0.2]"
         }
       },
-      "Apache.Avro": {
-        "type": "Transitive",
-        "resolved": "1.12.1",
-        "contentHash": "OTn0ShyXdMnbJ/1LLNOjvQhwE6Q8LiNtM9B/k51UJa7viuotKhDEnmLIof87XfjUt2UJZFhjF366+B3cKs3k4g==",
-        "dependencies": {
-          "Newtonsoft.Json": "13.0.1",
-          "System.CodeDom": "8.0.0"
-        }
-      },
-      "AvroSchemaGenerator": {
-        "type": "Transitive",
-        "resolved": "2.9.2",
-        "contentHash": "Q1hFxvtVZ7OaQEL2i/D8o0iKVhPAQxyKMspd4I118FDEqkqPPWp1Fm6upyXwRsy9WIDExMH/iRdmInQzlcdtpA==",
-        "dependencies": {
-          "System.ComponentModel.Annotations": "5.0.0"
-        }
-      },
       "AWSSDK.Core": {
         "type": "Transitive",
         "resolved": "4.0.102.12",
@@ -294,43 +277,15 @@
         "resolved": "5.1.1",
         "contentHash": "rpYtIczkzGpf+EkZgDr9CClTdemhsrwA/W5hMoPjLkRFnXzH44zDLoovXeKtmxb1ykXK9aJVODSpiJml8CTw2g=="
       },
-      "DerConverter": {
-        "type": "Transitive",
-        "resolved": "3.0.0.82",
-        "contentHash": "6x9+tHjO7IqGtgLlPAc6P1gKGmSl4s5c35M2g6DoOWHWY5RRYRX5LioXD8347Uf4VIuNGoYvRowKiJFHhkkFRA=="
-      },
       "Fractions": {
         "type": "Transitive",
         "resolved": "8.3.2",
         "contentHash": "q0Xzg9nmBd1Y0fTn/EEG84dWqd02EogojtdBh/MUmtHhwIJBMJk3jo+4MRDCdLfi6lVDXD8UZBA0QkBH3FUh8A=="
       },
-      "FSharp.Core": {
-        "type": "Transitive",
-        "resolved": "10.1.401",
-        "contentHash": "/lvOK51KD8IangBYkfDVna3/HrE/r4VUnX3dI01KDspctoYXmind3POeoYkqWKeXHwiKlf6Hc9TxwSnoSCWcjw=="
-      },
-      "FSharp.UMX": {
-        "type": "Transitive",
-        "resolved": "1.1.0",
-        "contentHash": "0+4w4/yBL5z7w1/k198ooPbfMqkzMSXPRVZEVingnwAdjM//QIFG25eJbB3RtoSQAusBwV5B3VcSudxJejd5Bg==",
-        "dependencies": {
-          "FSharp.Core": "4.3.4"
-        }
-      },
-      "K4os.Compression.LZ4": {
-        "type": "Transitive",
-        "resolved": "1.3.6",
-        "contentHash": "RxGhoJBjZCgGeZgDqOP4Krs1cR9PHInbz6d2N19Dic0Y6ZACzVKbR3uSpqfEZf4RiUbHk9aiog2eS22nQPTc2A=="
-      },
       "librdkafka.redist": {
         "type": "Transitive",
         "resolved": "2.16.0",
         "contentHash": "cr/wX7+G/rqOwN88Imxxco+OMGG6XslgSFh9xMb3utHY7/iWfssD2AY9MF7rsGdGm+mGuRw+1IQ+Zslris9IoQ=="
-      },
-      "libsodium": {
-        "type": "Transitive",
-        "resolved": "1.0.22",
-        "contentHash": "KPD9SloJFclrsjnhABu7dzWrcyYkwPbvx5l1gRSPAX/0n+OBtSiVCKtGFv4n+ecWUHU0tCG9LSSwoZZx673zBQ=="
       },
       "Microsoft.ApplicationInsights": {
         "type": "Transitive",
@@ -433,11 +388,6 @@
           "Microsoft.Bcl.Cryptography": "10.0.2",
           "Microsoft.IdentityModel.Logging": "8.23.0"
         }
-      },
-      "Microsoft.IO.RecyclableMemoryStream": {
-        "type": "Transitive",
-        "resolved": "3.0.0",
-        "contentHash": "irv0HuqoH8Ig5i2fO+8dmDNdFdsrO+DoQcedwIlb810qpZHBNQHZLW7C/AHBQDgLLpw2T96vmMAy/aE4Yj55Sg=="
       },
       "Microsoft.SqlServer.Server": {
         "type": "Transitive",
@@ -556,49 +506,10 @@
           "OpenTelemetry.Api": "1.20.1"
         }
       },
-      "PemUtils": {
-        "type": "Transitive",
-        "resolved": "3.0.0.82",
-        "contentHash": "LtsJ8LPfBN65+/ONfkJg8ZqcAxm59xRy4o5ocn2m4mAYo0EmmVslZ4SwcAViwfYDPL08Hu/vBbO2qamhtadeyQ==",
-        "dependencies": {
-          "DerConverter": "3.0.0.82"
-        }
-      },
-      "Pipelines.Sockets.Unofficial": {
-        "type": "Transitive",
-        "resolved": "2.2.8",
-        "contentHash": "zG2FApP5zxSx6OcdJQLbZDk2AVlN2BNQD6MorwIfV6gVj0RRxWPEp2LXAxqDGZqeNV1Zp0BNPcNaey/GXmTdvQ=="
-      },
-      "protobuf-net": {
-        "type": "Transitive",
-        "resolved": "3.2.30",
-        "contentHash": "C/UTlmxEJHAHpqm8xQK1UyJKaIynVCSNG4mVrbLgnZ7ccH28nN49O8iMJvKEodTgVbnimvy+3mIiAdW6mATwnw==",
-        "dependencies": {
-          "protobuf-net.Core": "3.2.30"
-        }
-      },
-      "protobuf-net.Core": {
-        "type": "Transitive",
-        "resolved": "3.2.30",
-        "contentHash": "v2ZxxYrz+X212ukSx+uqkLuPu414bvmSAnTyf+PBUKR9ENJxO4P/csorA/27456MCp1JNoMssDj/f91RDiwBfQ=="
-      },
-      "protobuf-net.Reflection": {
-        "type": "Transitive",
-        "resolved": "3.2.12",
-        "contentHash": "bpNTENWPqP2mx1sJJ5C6qZ2xP+f/E3dQF9MYY+xZ+RHxe3sLg+sPyBSCcJDTCY0e4dVIwQ/02gS8m4tVClDoKQ==",
-        "dependencies": {
-          "protobuf-net.Core": "3.2.12"
-        }
-      },
       "RESPite": {
         "type": "Transitive",
         "resolved": "3.4.5",
         "contentHash": "EzMx67+IXC8lQRI78yeSBWKCTn9qvSIaale6XZ1RJLKpr2NJqmptgn3UqgguWqoeGUsoohiy3SWeiVLAj1n9DA=="
-      },
-      "Snappier": {
-        "type": "Transitive",
-        "resolved": "1.3.1",
-        "contentHash": "DOdDQiO8YZ5rBtVLY+6CmR1yp9WYoJRgEEktPBrR0tEj9QO2djA/zv0O3DX0OZpEAfosbY8pytQ9tQUogwQsEA=="
       },
       "System.ClientModel": {
         "type": "Transitive",
@@ -607,16 +518,6 @@
         "dependencies": {
           "System.Memory.Data": "10.0.9"
         }
-      },
-      "System.CodeDom": {
-        "type": "Transitive",
-        "resolved": "8.0.0",
-        "contentHash": "WTlRjL6KWIMr/pAaq3rYqh0TJlzpouaQ/W1eelssHgtlwHAH25jXTkUphTYx9HaIIf7XA6qs/0+YhtLEQRkJ+Q=="
-      },
-      "System.ComponentModel.Annotations": {
-        "type": "Transitive",
-        "resolved": "5.0.0",
-        "contentHash": "dMkqfy2el8A8/I76n2Hi1oBFEbG1SfxD2l5nhwXV3XjlnOmwxJlQbYpJH4W51odnU9sARCSAgv7S3CyAFMkpYg=="
       },
       "System.Configuration.ConfigurationManager": {
         "type": "Transitive",
@@ -695,16 +596,6 @@
         "type": "Transitive",
         "resolved": "18.0.0",
         "contentHash": "ptHVgcYmLejGuWXV7RMFoEqFKYMXnieOlWLPzEslfDtzZ9ngMhjYwykfqjBN2+fMEAEyobozkj07lKEpR4dssA=="
-      },
-      "zlib.net-mutliplatform": {
-        "type": "Transitive",
-        "resolved": "1.0.6",
-        "contentHash": "rMGP0xj8X6aj328GR502d8fGa1cug7im5vytrkhOTpJ8J+G/lE78zkofl9TCgwVNt/OwuF1iGDMV/rXZCOuglA=="
-      },
-      "ZstdNet": {
-        "type": "Transitive",
-        "resolved": "1.4.5",
-        "contentHash": "fi9aP1QY3ZenIMUW1pxdSjku6lYAUjScrwfXSXT1qyKtTdLxOIzeBMe+w/hQm0vMsvQnjcFInByMrIT7AlXUHA=="
       },
       "headless.api": {
         "type": "Project",
@@ -1077,15 +968,6 @@
           "Headless.Messaging.Queue.Abstractions": "[1.0.0, )",
           "NATS.Client.Core": "[3.3.2, )",
           "NATS.Client.JetStream": "[3.3.2, )"
-        }
-      },
-      "headless.messaging.pulsar": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Messaging": "[1.0.0, )",
-          "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
-          "Headless.Messaging.Queue.Abstractions": "[1.0.0, )",
-          "Pulsar.Client": "[3.19.9, )"
         }
       },
       "headless.messaging.queue.abstractions": {
@@ -1525,15 +1407,6 @@
         "resolved": "10.0.3",
         "contentHash": "7nb5YzXuvWWJxB0J8DiyL3we+X4FOctZrt0fIBnucOIaIevFEEwGQVZKtiu9olXdlNAK1eNgqSral6r/jlhI4w=="
       },
-      "NSec.Cryptography": {
-        "type": "CentralTransitive",
-        "requested": "[26.4.0, )",
-        "resolved": "26.4.0",
-        "contentHash": "0vsCtY5f+YgQROiWNqzgWp+l2pddfk9FkWoGV/bEo0MuEYPKlJWuoA8aOfO6qp3f+EnObKE3zSJhn1PspJeJVg==",
-        "dependencies": {
-          "libsodium": "[1.0.22, 1.0.23)"
-        }
-      },
       "OpenTelemetry": {
         "type": "CentralTransitive",
         "requested": "[1.20.1, )",
@@ -1554,28 +1427,6 @@
         "requested": "[8.8.0, )",
         "resolved": "8.8.0",
         "contentHash": "TewV9uNFsoRFggoFbTAGFwsMYPuckA+wTIpQPyhLL9BANRPQRENz2S4bwATrB3HBOakN5oKLFIllPiDnVecmJg=="
-      },
-      "Pulsar.Client": {
-        "type": "CentralTransitive",
-        "requested": "[3.19.9, )",
-        "resolved": "3.19.9",
-        "contentHash": "kkE+ceN55xbEVNf0Y2l6zRVCPsFDXbBPj6SExUXpeZAoIOJBfPUwekXiPKXRU9A1nRrjdW3Xldi6JJXCQE2crg==",
-        "dependencies": {
-          "Apache.Avro": "1.12.1",
-          "AvroSchemaGenerator": "2.9.2",
-          "FSharp.Core": "10.1.401",
-          "FSharp.UMX": "1.1.0",
-          "K4os.Compression.LZ4": "1.3.6",
-          "Microsoft.IO.RecyclableMemoryStream": "3.0.0",
-          "NSec.Cryptography": "22.4.0",
-          "PemUtils": "3.0.0.82",
-          "Pipelines.Sockets.Unofficial": "2.2.8",
-          "Snappier": "1.3.1",
-          "ZstdNet": "1.4.5",
-          "protobuf-net": "3.2.30",
-          "protobuf-net.Reflection": "3.2.12",
-          "zlib.net-mutliplatform": "1.0.6"
-        }
       },
       "RabbitMQ.Client": {
         "type": "CentralTransitive",

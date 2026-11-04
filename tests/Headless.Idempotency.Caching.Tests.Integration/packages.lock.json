@@ -765,7 +765,6 @@
           "Testcontainers.Minio": "[4.15.0, )",
           "Testcontainers.Nats": "[4.16.0, )",
           "Testcontainers.PostgreSql": "[4.16.0, )",
-          "Testcontainers.Pulsar": "[4.16.0, )",
           "Testcontainers.RabbitMq": "[4.16.0, )",
           "Testcontainers.Redis": "[4.16.0, )",
           "Testcontainers.XunitV3": "[4.16.0, )",
@@ -1133,15 +1132,6 @@
         "requested": "[4.16.0, )",
         "resolved": "4.16.0",
         "contentHash": "QqvFS8Oj+i6deH3QJOMd7jgFF9P3h7RZ37wOaoR97ZahMcSYMYCb+COR4nUVznT1d7EavEcZdUs1QV0ow69JiA==",
-        "dependencies": {
-          "Testcontainers": "4.16.0"
-        }
-      },
-      "Testcontainers.Pulsar": {
-        "type": "CentralTransitive",
-        "requested": "[4.16.0, )",
-        "resolved": "4.16.0",
-        "contentHash": "9a2C7ZwoLopYPD1yfnH8qL6IaH5MH4GRs2TbiWLD7mJcPoNXWsJvQ2b0ZPJP9LHQk+8tADtVeWQ+NhOVRN2l8w==",
         "dependencies": {
           "Testcontainers": "4.16.0"
         }
