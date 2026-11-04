@@ -2,7 +2,6 @@
 
 using Headless.Checks;
 using Headless.Dashboard.Authentication;
-using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Cors.Infrastructure;
 
 namespace Headless.Messaging.Dashboard;
@@ -33,27 +32,8 @@ public sealed class MessagingDashboardOptionsBuilder
     internal bool AuthConfigured { get; private set; }
 
     // Set by MapHeadlessMessagingDashboard. The startup filter reads it when the host pipeline is built, after the
-    // host has mapped its endpoints, and skips the app.Map branch so the dashboard is not mounted twice.
+    // host has mapped its endpoints, and fails the start when it is still false.
     internal bool EndpointMounted { get; set; }
-
-    // Custom Middleware Integration
-
-    /// <summary>
-    /// Optional middleware injected after authentication but before the Minimal API endpoints.
-    /// Useful for adding custom request inspection, logging, or authorization logic scoped to the dashboard.
-    /// </summary>
-    public Action<IApplicationBuilder>? CustomMiddleware { get; set; }
-
-    /// <summary>
-    /// Optional middleware injected at the very start of the dashboard branch, before static files
-    /// and authentication. Runs on every request that matches the dashboard base path.
-    /// </summary>
-    public Action<IApplicationBuilder>? PreDashboardMiddleware { get; set; }
-
-    /// <summary>
-    /// Optional middleware injected after all dashboard endpoints and the SPA fallback handler.
-    /// </summary>
-    public Action<IApplicationBuilder>? PostDashboardMiddleware { get; set; }
 
     /// <summary>
     /// The interval the /stats endpoint should be polled with (milliseconds). Default: 2000.

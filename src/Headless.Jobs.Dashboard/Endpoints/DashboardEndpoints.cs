@@ -14,6 +14,8 @@ internal static class DashboardEndpoints
     /// <summary>The header every state-changing dashboard API request must carry.</summary>
     internal const string RequestedWithHeader = "X-Requested-With";
 
+    internal const string CorsPolicyName = "HeadlessJobsDashboardCORS";
+
     internal static void MapDashboardEndpoints<TTimeJob, TCronJob>(
         this IEndpointRouteBuilder endpoints,
         DashboardOptionsBuilder config
@@ -21,13 +23,15 @@ internal static class DashboardEndpoints
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
         where TCronJob : CronJobEntity, new()
     {
-        // New authentication endpoints. Every dashboard endpoint is excluded from API descriptions: see the API group.
+        // The dashboard SPA is the only client of these endpoints, so every one is excluded from API descriptions.
+        var applyCors = config.CorsPolicyBuilder is not null;
+
         endpoints
             .MapGet("/api/auth/info", _GetAuthInfo)
             .WithName("GetAuthInfo")
             .WithSummary("Get authentication configuration")
             .WithTags("Jobs Dashboard")
-            .RequireCors("HeadlessJobsDashboardCORS")
+            .RequireDashboardCors(CorsPolicyName, applyCors)
             .AllowAnonymous()
             .ExcludeFromDescription();
 
@@ -36,34 +40,17 @@ internal static class DashboardEndpoints
             .WithName("ValidateAuth")
             .WithSummary("Validate authentication credentials")
             .WithTags("Jobs Dashboard")
-            .RequireCors("HeadlessJobsDashboardCORS")
+            .RequireDashboardCors(CorsPolicyName, applyCors)
             .AllowAnonymous()
             .ExcludeFromDescription();
 
-        // The dashboard runs in an app.Map(basePath) branch, so an application document would list these under the wrong
-        // path (/api/... instead of {basePath}/api/...); the dashboard SPA is their only client.
         var apiGroup = endpoints
             .MapGroup("/api")
             .WithTags("Jobs Dashboard")
-            .RequireCors("HeadlessJobsDashboardCORS")
+            .RequireDashboardCors(CorsPolicyName, applyCors)
             .ExcludeFromDescription()
+            .RequireDashboardAccess(config.Auth, DashboardOptionsBuilder.AuthenticationName)
             .AddEndpointFilter(_RequireRequestedWithOnStateChange);
-
-        // Apply authentication if configured
-        if (config.Auth.Mode == AuthMode.Host)
-        {
-            // For host authentication, use configured policy or default authorization
-            if (!string.IsNullOrEmpty(config.Auth.HostAuthorizationPolicy))
-            {
-                apiGroup.RequireAuthorization(config.Auth.HostAuthorizationPolicy);
-            }
-            else
-            {
-                apiGroup.RequireAuthorization();
-            }
-        }
-        // For other auth modes (Basic, Bearer, Custom), authentication is handled by AuthMiddleware
-        // API endpoints are automatically protected when auth is enabled
 
         // Options endpoint
         apiGroup
@@ -240,24 +227,12 @@ internal static class DashboardEndpoints
             .WithName("GetLiveNodes")
             .WithSummary("Get live cluster nodes from the coordination membership substrate");
 
-        // SignalR hub: the hub authenticates in OnConnectedAsync. Under host auth it also carries the API's
-        // authorization policy, so a host user the policy refuses gets no live job updates either.
-        var hub = endpoints.MapHub<JobsNotificationHub>(JobsNotificationHub.Path);
-        if (config.Auth.Mode == AuthMode.Host)
-        {
-            if (!string.IsNullOrEmpty(config.Auth.HostAuthorizationPolicy))
-            {
-                hub.RequireAuthorization(config.Auth.HostAuthorizationPolicy);
-            }
-            else
-            {
-                hub.RequireAuthorization();
-            }
-        }
-        else
-        {
-            hub.AllowAnonymous();
-        }
+        // The hub carries the API's access rule, so the host's UseAuthorization refuses an unauthorized client before
+        // SignalR adds its connection to Clients.All, where it would hear a broadcast before OnConnectedAsync ran.
+        endpoints
+            .MapHub<JobsNotificationHub>(JobsNotificationHub.Path)
+            .RequireDashboardCors(CorsPolicyName, applyCors)
+            .RequireDashboardAccess(config.Auth, DashboardOptionsBuilder.AuthenticationName);
     }
 
     #region Endpoint Handlers

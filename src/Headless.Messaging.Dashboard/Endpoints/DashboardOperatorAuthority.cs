@@ -62,13 +62,6 @@ internal static class DashboardOperatorAuthority
                         && !string.IsNullOrWhiteSpace(claim.Value)
                     )
                     ?.Value;
-
-            if (string.IsNullOrWhiteSpace(candidateActor))
-            {
-                candidateActor = httpContext.Items[AuthMiddleware.AuthenticatedKey] is true
-                    ? httpContext.Items[AuthMiddleware.UsernameKey] as string
-                    : null;
-            }
         }
 
         if (

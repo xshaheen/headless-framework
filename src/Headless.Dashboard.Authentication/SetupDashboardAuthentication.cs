@@ -15,7 +15,9 @@ namespace Headless.Dashboard.Authentication;
 /// <remarks>
 /// Each dashboard registers its authentication under its own name, so two dashboards in one host keep independent
 /// modes and credentials. The name selects the named <see cref="AuthConfig"/> options instance and the keyed
-/// <see cref="IAuthService"/>; pass the same name to <see cref="AuthMiddleware"/>.
+/// <see cref="IAuthService"/>, and names the authentication scheme and authorization policy registered with them:
+/// the scheme checks the dashboard's own credential through that service, and the policy requires a user the scheme
+/// signed in. A dashboard's endpoints carry that policy under Basic, API key, or custom authentication.
 /// </remarks>
 [PublicAPI]
 public static class SetupDashboardAuthentication
@@ -94,6 +96,8 @@ public static class SetupDashboardAuthentication
                     serviceProvider.GetRequiredService<ILogger<AuthService>>()
                 )
         );
+
+        DashboardEndpointAccess.AddDashboardScheme(services, name);
 
         return services;
     }
