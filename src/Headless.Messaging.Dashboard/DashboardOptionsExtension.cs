@@ -37,6 +37,19 @@ internal sealed class DashboardOptionsExtension(Action<MessagingDashboardOptions
             }
         );
 
+        // The host session is a SameSite=Strict cookie, which a browser never sends on a cross-origin request, so a
+        // cross-origin dashboard could not sign in at all; refusing the combination at start says so instead.
+        var corsConfigured = Builder.CorsPolicyBuilder is not null;
+        services
+            .AddOptions<AuthConfig>(MessagingDashboardOptionsBuilder.AuthenticationName)
+            .Validate(
+                config => config.Mode != AuthMode.Host || !corsConfigured,
+                "The Messaging dashboard's host authentication serves the dashboard from the host's own origin and "
+                    + "cannot be combined with SetCorsOrigins or SetCorsPolicy. Remove the CORS configuration, or use "
+                    + "WithBasicAuth or WithApiKey for a dashboard served from another origin."
+            )
+            .ValidateOnStart();
+
         services.AddSingleton<MessagingMetricsEventListener>();
         services.TryAddSingleton<MessagingDashboardCache>();
         services.TryAddSingleton<KeyedAsyncLock>();

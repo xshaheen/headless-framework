@@ -29,10 +29,25 @@ public sealed class HostEndpointMountTests : TestBase
     private const string _HostProbePath = "/host-probe";
     private const string _AuthenticationFailedEvent = "AuthenticationFailed";
 
+    private static readonly string[] _OperatorActions =
+    [
+        "/messaging/dashboard/api/published/requeue",
+        "/messaging/dashboard/api/published/delete",
+        "/messaging/dashboard/api/received/reexecute",
+        "/messaging/dashboard/api/received/delete",
+        "/messaging/dashboard/api/inbox/hold",
+        "/messaging/dashboard/api/inbox/release",
+        "/messaging/dashboard/api/scheduled/revoke",
+        "/messaging/dashboard/api/scheduled/dispatch-now",
+        "/messaging/dashboard/api/ping?endpoint=http%3A%2F%2Fnode%3A8080",
+    ];
+
     [Fact]
     public async Task should_serve_the_shell_and_assets_anonymously_while_the_host_fallback_refuses_other_paths()
     {
-        await using var app = await _StartAsync(dashboard => dashboard.WithHostAuthentication(TokenHandler.Policy));
+        await using var app = await _StartAsync(dashboard =>
+            dashboard.WithHostAuthentication(host => host.ViewPolicy = TokenHandler.Policy)
+        );
         using var client = app.GetTestClient();
 
         // The fallback policy is live for the host's own endpoints.
@@ -53,7 +68,15 @@ public sealed class HostEndpointMountTests : TestBase
             shell.StatusCode.Should().Be(HttpStatusCode.OK, shellPath);
             shell.Content.Headers.ContentType!.MediaType.Should().Be("text/html");
             var html = await shell.Content.ReadAsStringAsync(AbortToken);
-            html.Should().Contain("window.MessagingConfig = ").And.Contain("\"mode\":\"host\"");
+            const string configPrefix = "window.MessagingConfig = ";
+            html.Should().Contain(configPrefix);
+            var configStart = html.IndexOf(configPrefix, StringComparison.Ordinal) + configPrefix.Length;
+            var config = html[configStart..html.IndexOf(';', configStart)];
+            using var configDocument = JsonDocument.Parse(config);
+            var auth = configDocument.RootElement.GetProperty("auth");
+            auth.GetProperty("mode").GetString().Should().Be("host");
+            auth.GetProperty("signInAvailable").GetBoolean().Should().BeFalse();
+            auth.TryGetProperty("sessionTimeout", out _).Should().BeFalse();
         }
 
         using var asset = await _SendAsync(
@@ -67,9 +90,25 @@ public sealed class HostEndpointMountTests : TestBase
     }
 
     [Fact]
+    public async Task should_offer_sign_in_in_the_shell_when_a_challenge_scheme_is_configured()
+    {
+        await using var app = await _StartAsync(dashboard =>
+            dashboard.WithHostAuthentication(host => host.ChallengeScheme = TokenHandler.SchemeName)
+        );
+        using var client = app.GetTestClient();
+
+        using var shell = await _SendAsync(client, HttpMethod.Get, "/messaging/dashboard/", authorization: null);
+        var html = await shell.Content.ReadAsStringAsync(AbortToken);
+
+        html.Should().Contain("\"auth\":{\"mode\":\"host\",\"enabled\":true,\"signInAvailable\":true}");
+    }
+
+    [Fact]
     public async Task should_keep_the_auth_and_health_endpoints_anonymous()
     {
-        await using var app = await _StartAsync(dashboard => dashboard.WithHostAuthentication(TokenHandler.Policy));
+        await using var app = await _StartAsync(dashboard =>
+            dashboard.WithHostAuthentication(host => host.ViewPolicy = TokenHandler.Policy)
+        );
         using var client = app.GetTestClient();
 
         (await _SendAsync(client, HttpMethod.Get, "/messaging/dashboard/api/auth/info", authorization: null))
@@ -91,21 +130,34 @@ public sealed class HostEndpointMountTests : TestBase
     [Fact]
     public async Task should_apply_the_dashboard_policy_to_the_api_instead_of_the_host_fallback()
     {
-        await using var app = await _StartAsync(dashboard => dashboard.WithHostAuthentication(TokenHandler.Policy));
-        using var client = app.GetTestClient();
+        await using var app = await _StartAsync(dashboard =>
+            dashboard.WithHostAuthentication(host => host.ViewPolicy = TokenHandler.Policy)
+        );
+        using var client = MessagingDashboardHost.CreateClient(app);
 
         (await _SendAsync(client, HttpMethod.Get, "/messaging/dashboard/api/stats", authorization: null))
             .StatusCode.Should()
             .Be(HttpStatusCode.Unauthorized);
-        (await _SendAsync(client, HttpMethod.Get, "/messaging/dashboard/api/stats", "Token viewer;tenant-a"))
+
+        // The API authenticates only the dashboard session; the host's own credential is exchanged for one first.
+        (await _SendAsync(client, HttpMethod.Get, "/messaging/dashboard/api/stats", "Token operator"))
             .StatusCode.Should()
+            .Be(HttpStatusCode.Unauthorized);
+
+        // A host user the dashboard policy refuses gets no session.
+        (await MessagingDashboardHost.SignInAsync(client, "Token viewer;tenant-a", cancellationToken: AbortToken))
+            .Should()
             .Be(HttpStatusCode.Forbidden);
+        client.DefaultRequestHeaders.Contains("Cookie").Should().BeFalse();
 
         // A tenantless operator fails the host fallback but satisfies the dashboard policy.
         (await _SendAsync(client, HttpMethod.Get, _HostProbePath, "Token operator"))
             .StatusCode.Should()
             .Be(HttpStatusCode.Forbidden);
-        (await _SendAsync(client, HttpMethod.Get, "/messaging/dashboard/api/stats", "Token operator"))
+        (await MessagingDashboardHost.SignInAsync(client, "Token operator", cancellationToken: AbortToken))
+            .Should()
+            .Be(HttpStatusCode.NoContent);
+        (await _SendAsync(client, HttpMethod.Get, "/messaging/dashboard/api/stats", authorization: null))
             .StatusCode.Should()
             .Be(HttpStatusCode.OK);
     }
@@ -114,20 +166,120 @@ public sealed class HostEndpointMountTests : TestBase
     public async Task should_apply_the_default_policy_when_host_authentication_names_none()
     {
         await using var app = await _StartAsync(dashboard => dashboard.WithHostAuthentication());
-        using var client = app.GetTestClient();
+        using var client = MessagingDashboardHost.CreateClient(app);
 
         (await _SendAsync(client, HttpMethod.Get, "/messaging/dashboard/api/stats", authorization: null))
             .StatusCode.Should()
             .Be(HttpStatusCode.Unauthorized);
-        (await _SendAsync(client, HttpMethod.Get, "/messaging/dashboard/api/stats", "Token viewer"))
+        (await MessagingDashboardHost.SignInAsync(client, "Token viewer", cancellationToken: AbortToken))
+            .Should()
+            .Be(HttpStatusCode.NoContent);
+        (await _SendAsync(client, HttpMethod.Get, "/messaging/dashboard/api/stats", authorization: null))
             .StatusCode.Should()
             .Be(HttpStatusCode.OK);
     }
 
     [Fact]
+    public async Task should_refuse_every_operator_action_to_a_session_that_may_only_view()
+    {
+        // given - any signed-in host user may view; only the operator role may operate
+        await using var app = await _StartAsync(dashboard =>
+            dashboard.WithHostAuthentication(host => host.OperatePolicy = TokenHandler.Policy)
+        );
+        using var client = MessagingDashboardHost.CreateClient(app);
+        (await MessagingDashboardHost.SignInAsync(client, "Token viewer", cancellationToken: AbortToken))
+            .Should()
+            .Be(HttpStatusCode.NoContent);
+
+        // then - reads pass
+        foreach (var read in new[] { "/messaging/dashboard/api/stats", "/messaging/dashboard/api/published/Failed" })
+        {
+            (await _SendAsync(client, HttpMethod.Get, read, authorization: null))
+                .StatusCode.Should()
+                .Be(HttpStatusCode.OK, read);
+        }
+
+        // and every operator action is refused before its handler runs
+        foreach (var write in _OperatorActions)
+        {
+            using var content = new StringContent("[]", Encoding.UTF8, "application/json");
+            using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(write, UriKind.Relative))
+            {
+                Content = content,
+            };
+            using var response = await client.SendAsync(request, AbortToken);
+
+            response.StatusCode.Should().Be(HttpStatusCode.Forbidden, write);
+        }
+
+        using var info = await _SendAsync(client, HttpMethod.Get, "/messaging/dashboard/api/auth/info", null);
+        using var document = JsonDocument.Parse(await info.Content.ReadAsStringAsync(AbortToken));
+        document.RootElement.GetProperty("authenticated").GetBoolean().Should().BeTrue();
+        document.RootElement.GetProperty("name").GetString().Should().Be("viewer");
+        document.RootElement.GetProperty("canOperate").GetBoolean().Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_let_an_operator_session_reach_ping_and_refuse_a_write_without_the_requested_with_header()
+    {
+        // given
+        await using var app = await _StartAsync(dashboard =>
+            dashboard.WithHostAuthentication(host => host.OperatePolicy = TokenHandler.Policy)
+        );
+        using var client = MessagingDashboardHost.CreateClient(app);
+        (await MessagingDashboardHost.SignInAsync(client, "Token operator", cancellationToken: AbortToken))
+            .Should()
+            .Be(HttpStatusCode.NoContent);
+
+        // when - the operator pings; this host configures no node discovery, which only the handler reports
+        using var ping = await _SendAsync(
+            client,
+            HttpMethod.Post,
+            "/messaging/dashboard/api/ping?endpoint=http%3A%2F%2Fnode%3A8080",
+            authorization: null
+        );
+
+        // then
+        ping.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await ping.Content.ReadAsStringAsync(AbortToken)).Should().Contain("Node discovery is not configured");
+
+        // when - the same session posts without the header
+        client.DefaultRequestHeaders.Remove(MessagingDashboardHost.RequestedWithHeader);
+        using var unguarded = await _SendAsync(
+            client,
+            HttpMethod.Post,
+            "/messaging/dashboard/api/ping?endpoint=http%3A%2F%2Fnode%3A8080",
+            authorization: null
+        );
+
+        // then
+        unguarded.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await unguarded.Content.ReadAsStringAsync(AbortToken)).Should().Contain("X-Requested-With");
+    }
+
+    [Fact]
+    public async Task should_refuse_a_write_without_the_requested_with_header_under_basic_auth()
+    {
+        await using var app = await _StartAsync(dashboard => dashboard.WithBasicAuth("ops", "secret"));
+        using var client = app.GetTestClient();
+
+        using var response = await _SendAsync(
+            client,
+            HttpMethod.Post,
+            "/messaging/dashboard/api/ping?endpoint=http%3A%2F%2Fnode%3A8080",
+            "Basic " + "ops:secret".ToBase64()
+        );
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync(AbortToken)).Should().Contain("X-Requested-With");
+    }
+
+    [Fact]
     public async Task should_not_serve_the_shell_for_an_unmatched_api_path()
     {
-        await using var app = await _StartAsync(dashboard => dashboard.WithHostAuthentication(TokenHandler.Policy));
+        await using var app = await _StartAsync(dashboard =>
+            dashboard.WithHostAuthentication(host => host.ViewPolicy = TokenHandler.Policy)
+        );
         using var client = app.GetTestClient();
 
         using var response = await _SendAsync(client, HttpMethod.Get, "/messaging/dashboard/api/no-such-route", null);
@@ -280,14 +432,17 @@ public sealed class HostEndpointMountTests : TestBase
     public async Task should_honor_a_custom_base_path()
     {
         await using var app = await _StartAsync(dashboard =>
-            dashboard.SetBasePath("/ops/messages").WithHostAuthentication(TokenHandler.Policy)
+            dashboard.SetBasePath("/ops/messages").WithHostAuthentication(host => host.ViewPolicy = TokenHandler.Policy)
         );
-        using var client = app.GetTestClient();
+        using var client = MessagingDashboardHost.CreateClient(app);
 
         using var shell = await _SendAsync(client, HttpMethod.Get, "/ops/messages", authorization: null);
         shell.StatusCode.Should().Be(HttpStatusCode.OK);
         (await shell.Content.ReadAsStringAsync(AbortToken)).Should().Contain("\"basePath\":\"/ops/messages\"");
-        (await _SendAsync(client, HttpMethod.Get, "/ops/messages/api/stats", "Token operator"))
+        (await MessagingDashboardHost.SignInAsync(client, "Token operator", "/ops/messages", AbortToken))
+            .Should()
+            .Be(HttpStatusCode.NoContent);
+        (await _SendAsync(client, HttpMethod.Get, "/ops/messages/api/stats", authorization: null))
             .StatusCode.Should()
             .Be(HttpStatusCode.OK);
     }

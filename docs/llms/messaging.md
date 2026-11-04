@@ -2581,7 +2581,7 @@ Register the dashboard on the `MessagingSetupBuilder` with `UseDashboard(...)`, 
 builder.Services.AddHeadlessMessaging(setup =>
 {
     // ... transport + storage registration ...
-    setup.UseDashboard(dashboard => dashboard.WithHostAuthentication("MessagingOperators"));
+    setup.UseDashboard(dashboard => dashboard.WithHostAuthentication(host => host.ViewPolicy = "MessagingOperators"));
 });
 
 var app = builder.Build();

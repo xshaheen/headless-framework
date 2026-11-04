@@ -36,10 +36,14 @@ public sealed class PingServicesSecurityTests : TestBase
         var factory = new StubHttpClientFactory(handler);
         await using var app = _CreateTestApp([_RegisteredNode], factory);
         await app.StartAsync(AbortToken);
-        using var client = app.GetTestClient();
+        using var client = MessagingDashboardHost.CreateClient(app);
 
         // when
-        var response = await client.GetAsync($"/api/ping?endpoint={Uri.EscapeDataString(endpoint)}", AbortToken);
+        var response = await client.PostAsync(
+            $"/api/ping?endpoint={Uri.EscapeDataString(endpoint)}",
+            content: null,
+            AbortToken
+        );
 
         // then
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -72,11 +76,12 @@ public sealed class PingServicesSecurityTests : TestBase
         var factory = new StubHttpClientFactory(handler);
         await using var app = _CreateTestApp([node], factory);
         await app.StartAsync(AbortToken);
-        using var client = app.GetTestClient();
+        using var client = MessagingDashboardHost.CreateClient(app);
 
         // when
-        var response = await client.GetAsync(
+        var response = await client.PostAsync(
             $"/api/ping?endpoint={Uri.EscapeDataString("https://allowed")}",
+            content: null,
             AbortToken
         );
 
@@ -111,10 +116,14 @@ public sealed class PingServicesSecurityTests : TestBase
         var factory = new StubHttpClientFactory(handler);
         await using var app = _CreateTestApp([_RegisteredNode], factory);
         await app.StartAsync(AbortToken);
-        using var client = app.GetTestClient();
+        using var client = MessagingDashboardHost.CreateClient(app);
 
         // when
-        var response = await client.GetAsync($"/api/ping?endpoint={Uri.EscapeDataString(endpoint)}", AbortToken);
+        var response = await client.PostAsync(
+            $"/api/ping?endpoint={Uri.EscapeDataString(endpoint)}",
+            content: null,
+            AbortToken
+        );
 
         // then
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
@@ -135,11 +144,12 @@ public sealed class PingServicesSecurityTests : TestBase
         var factory = new StubHttpClientFactory(handler);
         await using var app = _CreateTestApp([_RegisteredNode], factory);
         await app.StartAsync(AbortToken);
-        using var client = app.GetTestClient();
+        using var client = MessagingDashboardHost.CreateClient(app);
 
         // when
-        var response = await client.GetAsync(
+        var response = await client.PostAsync(
             $"/api/ping?endpoint={Uri.EscapeDataString("http://allowed:8080")}",
+            content: null,
             AbortToken
         );
 
@@ -151,6 +161,56 @@ public sealed class PingServicesSecurityTests : TestBase
             .Which.Should()
             .Be(new Uri("http://allowed:8080/messaging/dashboard/api/health"));
         handler.Requests.Should().NotContain(uri => uri.Host == "evil.test");
+    }
+
+    [Fact]
+    public async Task should_not_route_a_get_ping()
+    {
+        // given
+        using var handler = new CapturingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("OK"),
+        });
+        var factory = new StubHttpClientFactory(handler);
+        await using var app = _CreateTestApp([_RegisteredNode], factory);
+        await app.StartAsync(AbortToken);
+        using var client = MessagingDashboardHost.CreateClient(app);
+
+        // when
+        using var response = await client.GetAsync(
+            $"/api/ping?endpoint={Uri.EscapeDataString("http://allowed:8080")}",
+            AbortToken
+        );
+
+        // then
+        response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+        handler.Requests.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_refuse_a_ping_without_the_requested_with_header()
+    {
+        // given
+        using var handler = new CapturingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("OK"),
+        });
+        var factory = new StubHttpClientFactory(handler);
+        await using var app = _CreateTestApp([_RegisteredNode], factory);
+        await app.StartAsync(AbortToken);
+        using var client = app.GetTestClient();
+
+        // when
+        using var response = await client.PostAsync(
+            $"/api/ping?endpoint={Uri.EscapeDataString("http://allowed:8080")}",
+            content: null,
+            AbortToken
+        );
+
+        // then - refused before the dashboard makes its outbound call
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        handler.Requests.Should().BeEmpty();
+        factory.RequestedNames.Should().BeEmpty();
     }
 
     [Fact]

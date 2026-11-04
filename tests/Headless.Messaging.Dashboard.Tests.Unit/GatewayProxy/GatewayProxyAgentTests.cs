@@ -2,6 +2,7 @@
 
 using System.Net;
 using System.Net.Http.Headers;
+using System.Security.Claims;
 using Headless.Messaging.Dashboard;
 using Headless.Testing.Tests;
 using Headless.Threading;
@@ -396,6 +397,124 @@ public sealed class GatewayProxyAgentTests : TestBase
     {
         // then
         GatewayProxyAgent.CookieNodeNsName.Should().Be("messaging.node.ns");
+    }
+
+    [Fact]
+    public async Task should_proxy_a_request_with_a_node_selection_under_basic_auth()
+    {
+        // given
+        using var downstream = new MockHttpMessageHandler(
+            new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("from-remote") }
+        );
+        await using var app = await _StartGatewayHostAsync(
+            dashboard => dashboard.WithBasicAuth("ops", "pass"),
+            downstream
+        );
+        using var client = MessagingDashboardHost.CreateClient(app);
+
+        // when
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            new Uri("/messaging/dashboard/api/stats", UriKind.Relative)
+        );
+        request.Headers.Authorization = new AuthenticationHeaderValue("Basic", "ops:pass".ToBase64());
+        request.Headers.Add("Cookie", $"{GatewayProxyAgent.CookieNodeName}=remote");
+        using var response = await client.SendAsync(request, AbortToken);
+
+        // then
+        (await response.Content.ReadAsStringAsync(AbortToken))
+            .Should()
+            .Be("from-remote");
+        downstream.Request!.RequestUri.Should().Be(new Uri("http://10.0.0.9:8080/messaging/dashboard/api/stats"));
+    }
+
+    [Fact]
+    public async Task should_serve_locally_and_clear_the_node_selection_under_host_auth()
+    {
+        // given
+        using var downstream = new MockHttpMessageHandler(
+            new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("from-remote") }
+        );
+        await using var app = await _StartGatewayHostAsync(
+            dashboard => dashboard.WithHostAuthentication(),
+            downstream,
+            services =>
+                services.AddTestBearer(token =>
+                    token == "operator"
+                        ? new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "operator")], "Test"))
+                        : null
+                )
+        );
+        using var client = MessagingDashboardHost.CreateClient(app);
+        (await MessagingDashboardHost.SignInAsync(client, "Bearer operator", cancellationToken: AbortToken))
+            .Should()
+            .Be(HttpStatusCode.NoContent);
+
+        // when
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            new Uri("/messaging/dashboard/api/stats", UriKind.Relative)
+        );
+        // A request's own Cookie header replaces the client's default, so it carries the session beside the selection.
+        var session = client.DefaultRequestHeaders.GetValues("Cookie");
+        request.Headers.Add(
+            "Cookie",
+            $"{session.Single()}; {GatewayProxyAgent.CookieNodeName}=remote; {GatewayProxyAgent.CookieNodeNsName}=ns"
+        );
+        using var response = await client.SendAsync(request, AbortToken);
+
+        // then
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await response.Content.ReadAsStringAsync(AbortToken)).Should().NotBe("from-remote");
+        downstream.Request.Should().BeNull();
+        var deleted = response.Headers.GetValues("Set-Cookie").ToArray();
+        deleted
+            .Should()
+            .Contain(cookie => cookie.StartsWith($"{GatewayProxyAgent.CookieNodeName}=;", StringComparison.Ordinal));
+        deleted
+            .Should()
+            .Contain(cookie => cookie.StartsWith($"{GatewayProxyAgent.CookieNodeNsName}=;", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// Starts a dashboard host with name-addressed discovery (the current node is <c>local</c>, <c>remote</c> is
+    /// another node), so a <see cref="GatewayProxyAgent.CookieNodeName"/> of <c>remote</c> asks the gateway to proxy.
+    /// </summary>
+    private static Task<Microsoft.AspNetCore.Builder.WebApplication> _StartGatewayHostAsync(
+        Action<MessagingDashboardOptionsBuilder> configureDashboard,
+        HttpMessageHandler downstream,
+        Action<IServiceCollection>? configureServices = null
+    )
+    {
+        var discovery = Substitute.For<INodeDiscoveryProvider>();
+        discovery
+            .GetNodeAsync("remote", null, Arg.Any<CancellationToken>())
+            .Returns(
+                Task.FromResult<Node?>(
+                    new Node
+                    {
+                        Id = "remote",
+                        Name = "remote",
+                        Address = "http://10.0.0.9",
+                        Port = 8080,
+                        Tags = "web",
+                    }
+                )
+            );
+
+        return MessagingDashboardHost.StartAsync(
+            configureDashboard,
+            configureHost: builder =>
+            {
+                builder.Services.AddSingleton(new CurrentNodeIdentity("local"));
+                builder.Services.AddSingleton(discovery);
+                builder.Services.AddSingleton<IRequestMapper, RequestMapper>();
+                builder.Services.AddSingleton<GatewayProxyAgent>();
+                builder.Services.AddHttpClient("GatewayProxy").ConfigurePrimaryHttpMessageHandler(() => downstream);
+                configureServices?.Invoke(builder.Services);
+            },
+            cancellationToken: AbortToken
+        );
     }
 
     private GatewayProxyAgentHarness _CreateAgent(

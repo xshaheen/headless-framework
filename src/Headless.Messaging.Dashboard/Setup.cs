@@ -30,12 +30,18 @@ public static class SetupMessagingDashboard
     /// <remarks>
     /// <para>
     /// The host's <c>UseAuthorization</c> evaluates the dashboard's access rule, never the host's fallback policy. The
-    /// SPA shell, its static assets, and the <c>/api/auth/info</c>, <c>/api/auth/validate</c>, and
-    /// <c>/api/health</c> endpoints are anonymous, so a browser loads the shell without a credential; the shell carries
-    /// only the base path, the auth mode, and the polling interval. Every other <c>{basePath}/api</c> endpoint requires
-    /// the policy <c>WithHostAuthentication(policy)</c> names, or the host's default policy when none is named. Under
-    /// Basic, API key, or custom authentication it requires the dashboard's own credential, checked by the dashboard's
-    /// authentication scheme; <c>WithNoAuth()</c> leaves it open.
+    /// SPA shell, its static assets, the sign-in endpoints (<c>/auth/sign-in</c>, <c>/api/auth/session</c>,
+    /// <c>/api/auth/sign-out</c>), and the <c>/api/auth/info</c>, <c>/api/auth/validate</c>, and <c>/api/health</c>
+    /// endpoints are anonymous, so a browser loads the shell without a credential; the shell carries only the base
+    /// path, the auth mode, whether sign-in is available, and the polling interval.
+    /// </para>
+    /// <para>
+    /// Under host authentication every other <c>{basePath}/api</c> endpoint requires the dashboard's session cookie,
+    /// issued from the host's own sign-in, for a user who passes the view policy, or the host's default policy when
+    /// none is named; the operator actions (requeue, delete, re-execute, hold, release, revoke, dispatch now, and
+    /// ping) also require the operate policy. Under Basic or API key authentication the API requires the dashboard's
+    /// own credential, checked by the dashboard's authentication scheme; <c>WithNoAuth()</c> leaves it open. In every
+    /// mode a state-changing request must carry <c>X-Requested-With</c>, or it is answered with <c>400</c>.
     /// </para>
     /// <para>
     /// The host's pipeline must run <c>UseAuthorization</c> between routing and endpoints (a <c>WebApplication</c>
@@ -109,12 +115,14 @@ public static class SetupMessagingDashboard
         var pathBase = httpContext.Request.PathBase.HasValue ? httpContext.Request.PathBase.Value : string.Empty;
         var frontendBasePath = DashboardSpaHelper.CombinePathBase(pathBase, basePath);
 
+        // Session state (signed in, operator name, may operate) is not here: the shell is anonymous and may load without
+        // the session cookie, so the SPA reads it from api/auth/info instead.
         var authInfo = new
         {
             mode = config.Auth.Mode.ToString().ToLowerInvariant(),
             enabled = config.Auth.IsEnabled,
-            // The server no longer expires browser sign-ins; 0 tells the SPA, which still reads this field, never to.
-            sessionTimeout = 0,
+            signInAvailable = config.Auth.Mode == AuthMode.Host
+                && !string.IsNullOrEmpty(config.Auth.Host.ChallengeScheme),
         };
 
         var envConfig = new

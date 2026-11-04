@@ -63,7 +63,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
 
         await using var app = _CreateTestApp(_dataStorage);
         await app.StartAsync(AbortToken);
-        using var client = app.GetTestClient();
+        using var client = MessagingDashboardHost.CreateClient(app);
 
         // when
         var response = await client.GetAsync($"/api/published/message/{messageId}", AbortToken);
@@ -116,7 +116,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
 
         await using var app = _CreateTestApp(_dataStorage);
         await app.StartAsync(AbortToken);
-        using var client = app.GetTestClient();
+        using var client = MessagingDashboardHost.CreateClient(app);
 
         // when
         var response = await client.GetAsync($"/api/published/message/{messageId}", AbortToken);
@@ -139,7 +139,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
 
         await using var app = _CreateTestApp(_dataStorage);
         await app.StartAsync(AbortToken);
-        using var client = app.GetTestClient();
+        using var client = MessagingDashboardHost.CreateClient(app);
 
         // when
         var response = await client.GetAsync($"/api/published/message/{messageId}", AbortToken);
@@ -182,7 +182,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
 
         await using var app = _CreateTestApp(_dataStorage);
         await app.StartAsync(AbortToken);
-        using var client = app.GetTestClient();
+        using var client = MessagingDashboardHost.CreateClient(app);
 
         // when
         var response = await client.GetAsync(
@@ -249,7 +249,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
 
         await using var app = _CreateTestApp(_dataStorage);
         await app.StartAsync(AbortToken);
-        using var client = app.GetTestClient();
+        using var client = MessagingDashboardHost.CreateClient(app);
 
         // when
         var response = await client.GetAsync("/api/published/Succeeded", AbortToken);
@@ -293,7 +293,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
 
         await using var app = _CreateTestApp(_dataStorage);
         await app.StartAsync(AbortToken);
-        using var client = app.GetTestClient();
+        using var client = MessagingDashboardHost.CreateClient(app);
 
         // when — lane omitted from query string
         var response = await client.GetAsync("/api/published/Succeeded?currentPage=2&perPage=20", AbortToken);
@@ -323,7 +323,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
 
         await using var app = _CreateTestApp(_dataStorage);
         await app.StartAsync(AbortToken);
-        using var client = app.GetTestClient();
+        using var client = MessagingDashboardHost.CreateClient(app);
 
         // when
         var response = await client.PostAsJsonAsync("/api/published/requeue", Array.Empty<long>(), AbortToken);
@@ -340,7 +340,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
 
         await using var app = _CreateTestApp(_dataStorage);
         await app.StartAsync(AbortToken);
-        using var client = app.GetTestClient();
+        using var client = MessagingDashboardHost.CreateClient(app);
 
         // when
         using var stringContent = new StringContent("null", Encoding.UTF8, "application/json");
@@ -362,7 +362,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
 
         await using var app = _CreateTestApp(_dataStorage);
         await app.StartAsync(AbortToken);
-        using var client = app.GetTestClient();
+        using var client = MessagingDashboardHost.CreateClient(app);
 
         // when
         var response = await client.PostAsJsonAsync("/api/published/delete", new[] { messageId }, AbortToken);
@@ -416,7 +416,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
 
         await using var app = _CreateTestApp(_dataStorage);
         await app.StartAsync(AbortToken);
-        using var client = app.GetTestClient();
+        using var client = MessagingDashboardHost.CreateClient(app);
 
         // when
         var response = await client.PostAsJsonAsync(
@@ -507,7 +507,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
 
         await using var app = _CreateTestApp(_dataStorage);
         await app.StartAsync(AbortToken);
-        using var client = app.GetTestClient();
+        using var client = MessagingDashboardHost.CreateClient(app);
 
         // when
         var response = await client.PostAsJsonAsync(
@@ -559,7 +559,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
 
         await using var app = _CreateTestApp(_dataStorage);
         await app.StartAsync(AbortToken);
-        using var client = app.GetTestClient();
+        using var client = MessagingDashboardHost.CreateClient(app);
 
         // when
         var response = await client.PostAsJsonAsync("/api/published/requeue", new[] { sentId }, AbortToken);

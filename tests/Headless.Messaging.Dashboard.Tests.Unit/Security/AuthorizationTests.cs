@@ -21,7 +21,9 @@ public sealed class AuthorizationTests : TestBase
     public void should_require_host_auth_with_policy()
     {
         // given & when
-        var builder = new MessagingDashboardOptionsBuilder().WithHostAuthentication("AdminOnly");
+        var builder = new MessagingDashboardOptionsBuilder().WithHostAuthentication(host =>
+            host.ViewPolicy = "AdminOnly"
+        );
 
         // then
         builder.Auth.Mode.Should().Be(AuthMode.Host);
@@ -73,19 +75,27 @@ public sealed class AuthorizationTests : TestBase
     }
 
     [Fact]
-    public async Task should_require_configured_host_policy_when_ping_endpoint()
+    public async Task should_require_the_session_view_and_operate_policies_when_ping_endpoint_uses_host_auth()
     {
         // given
-        var config = new MessagingDashboardOptionsBuilder().WithHostAuthentication("AdminOnly");
+        var config = new MessagingDashboardOptionsBuilder().WithHostAuthentication(host =>
+            host.ViewPolicy = "AdminOnly"
+        );
         await using var app = _CreateEndpointApp(config);
 
         // when
         var endpoint = _GetPingEndpoint(app);
-        var authorization = endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>();
+        var policies = endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>().Select(data => data.Policy);
 
-        // then
-        authorization.Should().ContainSingle(data => data.Policy == "AdminOnly");
+        // then - the dashboard session decides the request; the host policy is evaluated against its claims
+        policies
+            .Should()
+            .BeEquivalentTo(
+                MessagingDashboardOptionsBuilder.AuthenticationName + ".View",
+                MessagingDashboardOptionsBuilder.AuthenticationName + ".Operate"
+            );
         endpoint.Metadata.GetMetadata<IAllowAnonymous>().Should().BeNull();
+        endpoint.Metadata.GetMetadata<IHttpMethodMetadata>()!.HttpMethods.Should().Equal("POST");
     }
 
     [Fact]
@@ -156,10 +166,12 @@ public sealed class AuthorizationTests : TestBase
         // GET  /api/nodes
         // GET  /api/list-ns
         // GET  /api/list-svc/{namespace}
-        // GET  /api/ping
+        // POST /api/ping
 
         // When Host auth is configured, RequireAuthorization() is applied to the group.
-        var builder = new MessagingDashboardOptionsBuilder().WithHostAuthentication("DashboardAdmin");
+        var builder = new MessagingDashboardOptionsBuilder().WithHostAuthentication(host =>
+            host.ViewPolicy = "DashboardAdmin"
+        );
         builder.Auth.Host.ViewPolicy.Should().Be("DashboardAdmin");
     }
 

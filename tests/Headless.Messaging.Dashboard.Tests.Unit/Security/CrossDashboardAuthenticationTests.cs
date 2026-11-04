@@ -129,10 +129,35 @@ public sealed class CrossDashboardAuthenticationTests : TestBase
             .Be(HttpStatusCode.Unauthorized);
     }
 
-    private static Task<WebApplication> _StartHostAuthAsync()
+    [Fact]
+    public async Task a_messaging_session_does_not_authenticate_the_jobs_dashboard()
+    {
+        // given - both dashboards under host authentication in one host
+        await using var app = await _StartHostAuthAsync(messagingHostMode: true);
+        using var client = MessagingDashboardHost.CreateClient(app);
+
+        // when
+        (await MessagingDashboardHost.SignInAsync(client, "Token operator", cancellationToken: AbortToken))
+            .Should()
+            .Be(HttpStatusCode.NoContent);
+
+        // then - the Messaging session opens Messaging only
+        (await _GetAsync(client, "/messaging/dashboard/api/stats", authorization: null))
+            .Should()
+            .Be(HttpStatusCode.OK);
+        (await _GetAsync(client, "/jobs/dashboard/api/options", authorization: null))
+            .Should()
+            .Be(HttpStatusCode.Unauthorized);
+    }
+
+    private static Task<WebApplication> _StartHostAuthAsync(bool messagingHostMode = false)
     {
         return _StartAsync(
             jobs => jobs.WithHostAuthentication(TokenAuthenticationHandler.Policy),
+            messagingHostMode
+                ? dashboard =>
+                    dashboard.WithHostAuthentication(host => host.ViewPolicy = TokenAuthenticationHandler.Policy)
+                : null,
             configureHost: services =>
             {
                 services
@@ -150,11 +175,12 @@ public sealed class CrossDashboardAuthenticationTests : TestBase
 
     private static Task<WebApplication> _StartAsync(
         Action<DashboardOptionsBuilder> configureJobs,
+        Action<MessagingDashboardOptionsBuilder>? configureMessaging = null,
         Action<IServiceCollection>? configureHost = null
     )
     {
         return MessagingDashboardHost.StartAsync(
-            dashboard => dashboard.WithBasicAuth(_MessagingUser, _MessagingPassword),
+            configureMessaging ?? (dashboard => dashboard.WithBasicAuth(_MessagingUser, _MessagingPassword)),
             configureHost: builder =>
             {
                 configureHost?.Invoke(builder.Services);
