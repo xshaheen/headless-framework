@@ -5,6 +5,7 @@ using Headless.IO;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 
 namespace Headless.Blobs;
 
@@ -26,10 +27,12 @@ public static class SetupBlobSignedUrl
         /// one persisted key ring, and a URL outlives no key it was protected with. A store registered as an instance
         /// becomes container-disposed once it is decorated.
         /// <para>
-        /// The token in a URL's path is replaced by <c>***</c> in HTTP logging (<c>UseHttpLogging</c>) and in the
-        /// request activity's <c>url.path</c>, <c>http.target</c>, and <c>url.full</c> tags. ASP.NET Core's own
-        /// request scope (<c>RequestPath</c>) and its "Request starting" and "Request finished" lines are written
-        /// before any application code runs and still carry the token; the Blobs guide lists how to turn them off.
+        /// The token in a URL's path is replaced by <c>***</c> in HTTP logging (<c>UseHttpLogging</c>), in the
+        /// request activity's <c>url.path</c>, <c>http.target</c>, and <c>url.full</c> tags, and in ASP.NET Core's own
+        /// request scope (<c>RequestPath</c>) and its "Request starting" and "Request finished" lines. The hosting logs
+        /// are rewritten by decorating the registered <see cref="ILoggerFactory"/>, so a logger factory registered
+        /// after this call, such as Serilog's <c>UseSerilog</c>, replaces the decorator; the host then logs a warning
+        /// at startup. Call this after the logger factory is registered.
         /// </para>
         /// </remarks>
         public HeadlessBlobsSetupBuilder UseSignedUrlEndpoint(Action<BlobSignedUrlOptions> setupAction)
@@ -49,6 +52,21 @@ public static class SetupBlobSignedUrl
                 // a request outside the route prefix costs one path comparison.
                 services.TryAddSingleton<BlobSignedUrlPathRedactor>();
                 services.AddHttpLoggingInterceptor<BlobSignedUrlHttpLoggingInterceptor>();
+
+                // ASP.NET Core opens its request scope and writes its request lines before any middleware, through a
+                // logger it takes from this factory when the server starts.
+                if (!services.Any(static d => d.ServiceType == typeof(BlobSignedUrlLogRedactionMarker)))
+                {
+                    services.AddSingleton<BlobSignedUrlLogRedactionMarker>();
+                    services.TryDecorateWith<ILoggerFactory>(
+                        static (inner, provider) =>
+                            new BlobSignedUrlRedactingLoggerFactory(
+                                inner,
+                                provider.GetRequiredService<BlobSignedUrlPathRedactor>()
+                            )
+                    );
+                }
+
                 services.TryAddEnumerable(
                     ServiceDescriptor.Singleton<IStartupFilter, BlobSignedUrlTraceRedactionStartupFilter>()
                 );
@@ -81,6 +99,9 @@ public static class SetupBlobSignedUrl
             return setup;
         }
     }
+
+    /// <summary>Records that the logger factory was decorated, so a second registration does not wrap it twice.</summary>
+    private sealed class BlobSignedUrlLogRedactionMarker;
 
     private static IBlobStorage _Wrap(IBlobStorage inner, string? store, IServiceProvider provider)
     {

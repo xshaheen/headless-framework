@@ -16,6 +16,7 @@ namespace Tests;
 public sealed class SignedUrlRedactionHostTests : TestBase
 {
     private const string _HttpLoggingCategory = "Microsoft.AspNetCore.HttpLogging.HttpLoggingMiddleware";
+    private const string _HostingCategory = "Microsoft.AspNetCore.Hosting.Diagnostics";
 
     private static readonly BlobLocation _Report = new(SignedUrlTestApp.Container, "2026/q3.pdf");
 
@@ -77,6 +78,39 @@ public sealed class SignedUrlRedactionHostTests : TestBase
         httpLogs.Should().NotContain(message => message.Contains(token, StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task should_keep_the_token_out_of_the_hosting_request_scope_and_request_lines()
+    {
+        // given
+        using var logs = new CapturingLoggerProvider();
+        await using var app = await SignedUrlTestApp.StartAsync(
+            AbortToken,
+            configureBuilder: builder => builder.Logging.ClearProviders().AddProvider(logs)
+        );
+        await using var body = new MemoryStream("report-bytes"u8.ToArray());
+        await app.DefaultStorage.UploadAsync(_Report, body, cancellationToken: AbortToken);
+        var url = await ((IPresignedUrlBlobStorage)app.DefaultStorage).GetPresignedDownloadUrlAsync(
+            _Report,
+            TimeSpan.FromMinutes(15),
+            cancellationToken: AbortToken
+        );
+        var token = url.Segments[^1];
+        using var client = app.CreateClient();
+
+        // when
+        using var response = await client.GetAsync(url, AbortToken);
+        await logs.WaitForAsync(_HostingCategory, "Request finished", AbortToken);
+
+        // then - both request lines and the scope every entry of the request carries name the redacted path only
+        response.IsSuccessStatusCode.Should().BeTrue();
+        var hostingLines = logs.Messages(_HostingCategory);
+        hostingLines.Should().Contain(line => line.StartsWith("Request starting", StringComparison.Ordinal));
+        hostingLines.Should().Contain(line => line.StartsWith("Request finished", StringComparison.Ordinal));
+        hostingLines.Should().OnlyContain(line => line.Contains("/blobs/***", StringComparison.Ordinal));
+        logs.Scopes().Should().Contain(scope => scope.Contains("RequestPath:/blobs/***", StringComparison.Ordinal));
+        logs.All().Should().NotContain(text => text.Contains(token, StringComparison.Ordinal));
+    }
+
     /// <summary>Hands back the server activity of the request that carried the expected trace id.</summary>
     /// <remarks>
     /// The tracer listens process-wide, so it also hears requests that other tests send to their own hosts; the trace
@@ -103,9 +137,15 @@ public sealed class SignedUrlRedactionHostTests : TestBase
         }
     }
 
-    private sealed class CapturingLoggerProvider : ILoggerProvider
+    /// <summary>Records every entry's category, rendered message, and the text of each scope it was written under.</summary>
+    private sealed class CapturingLoggerProvider : ILoggerProvider, ISupportExternalScope
     {
-        private readonly ConcurrentQueue<(string Category, string Message)> _entries = new();
+        private readonly ConcurrentQueue<(string Category, string Message, string[] Scopes)> _entries = new();
+
+        private readonly ConcurrentQueue<(string Category, string Prefix, TaskCompletionSource Logged)> _waiters =
+            new();
+
+        private IExternalScopeProvider _scopes = new LoggerExternalScopeProvider();
 
         public IReadOnlyList<string> Messages(string category)
         {
@@ -117,19 +157,62 @@ public sealed class SignedUrlRedactionHostTests : TestBase
             ];
         }
 
+        public IReadOnlyList<string> Scopes() => [.. _entries.SelectMany(e => e.Scopes)];
+
+        public IReadOnlyList<string> All() => [.. _entries.SelectMany(e => e.Scopes.Prepend(e.Message))];
+
+        /// <summary>Completes once an entry of <paramref name="category"/> starting with <paramref name="prefix"/> is logged.</summary>
+        /// <remarks>The hosting layer writes "Request finished" after the response is sent, so the client can see the response first.</remarks>
+        public Task WaitForAsync(string category, string prefix, CancellationToken cancellationToken)
+        {
+            var logged = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _waiters.Enqueue((category, prefix, logged));
+
+            if (_Matches(category, prefix))
+            {
+                logged.TrySetResult();
+            }
+
+            return logged.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
+        }
+
+        private bool _Matches(string category, string prefix) =>
+            Messages(category).Any(m => m.StartsWith(prefix, StringComparison.Ordinal));
+
+        private void _Record(string category, string message, string[] scopes)
+        {
+            _entries.Enqueue((category, message, scopes));
+
+            foreach (var (waitCategory, prefix, logged) in _waiters)
+            {
+                if (
+                    string.Equals(waitCategory, category, StringComparison.Ordinal)
+                    && message.StartsWith(prefix, StringComparison.Ordinal)
+                )
+                {
+                    logged.TrySetResult();
+                }
+            }
+        }
+
         public ILogger CreateLogger(string categoryName)
         {
-            return new CapturingLogger(categoryName, _entries);
+            return new CapturingLogger(categoryName, this);
+        }
+
+        public void SetScopeProvider(IExternalScopeProvider scopeProvider)
+        {
+            _scopes = scopeProvider;
         }
 
         public void Dispose() { }
 
-        private sealed class CapturingLogger(string category, ConcurrentQueue<(string, string)> entries) : ILogger
+        private sealed class CapturingLogger(string category, CapturingLoggerProvider owner) : ILogger
         {
             public IDisposable? BeginScope<TState>(TState state)
                 where TState : notnull
             {
-                return null;
+                return owner._scopes.Push(state);
             }
 
             public bool IsEnabled(LogLevel logLevel)
@@ -145,7 +228,9 @@ public sealed class SignedUrlRedactionHostTests : TestBase
                 Func<TState, Exception?, string> formatter
             )
             {
-                entries.Enqueue((category, formatter(state, exception)));
+                var scopes = new List<string>();
+                owner._scopes.ForEachScope(static (scope, list) => list.Add(scope?.ToString() ?? ""), scopes);
+                owner._Record(category, formatter(state, exception), [.. scopes]);
             }
         }
     }
