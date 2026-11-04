@@ -207,7 +207,7 @@ describe('stats polling', () => {
 
   it('polls stats at the configured interval instead of a hard-coded one', async () => {
     window.MessagingConfig = {
-      basePath: '/messaging',
+      basePath: '/messaging/dashboard',
       statsPollingInterval: 7000,
       auth: { mode: 'none', enabled: false, sessionTimeout: 0 },
     }

@@ -115,7 +115,7 @@ app.MapGet(
             {
                 store = sandbox.Store.ToString(),
                 jobsDashboard = "/jobs/dashboard",
-                messagingDashboard = "/messaging",
+                messagingDashboard = "/messaging/dashboard",
                 jobsAuth = sandbox.JobsDashboardAuth.ToString().ToLowerInvariant(),
                 messagingAuth = string.IsNullOrEmpty(sandbox.MessagingDashboardPassword) ? "none" : "basic",
                 scenarios = SandboxScenarios.Descriptions,

@@ -19,7 +19,7 @@ Update the `target` in `vite.config.js` of development to specify the backend se
 ```
   server: {
     proxy: {
-      '^/messaging/api': {
+      '^/messaging/dashboard/api': {
         target: 'http://localhost:5000',  //backend
         changeOrigin: true
       }

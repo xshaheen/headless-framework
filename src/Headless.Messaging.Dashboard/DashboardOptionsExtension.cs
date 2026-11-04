@@ -97,7 +97,7 @@ public static class MessagingOptionsExtensions
         /// <summary>
         /// Registers the Messaging Dashboard UI: its authentication, CORS policy, and services. Mount it on the host's
         /// endpoints with <c>app.MapHeadlessMessagingDashboard()</c>, at the path configured via <c>SetBasePath</c>
-        /// (default: <c>/messaging</c>); a host that registers it without mapping it fails to start.
+        /// (default: <c>/messaging/dashboard</c>); a host that registers it without mapping it fails to start.
         /// </summary>
         /// <param name="configure">
         /// An action to configure the dashboard options. An authentication mode must be chosen explicitly

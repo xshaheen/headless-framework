@@ -10,7 +10,7 @@ import {
 } from '@/utilities/pathResolver'
 
 const baseConfig = {
-  basePath: '/messaging',
+  basePath: '/messaging/dashboard',
   auth: { mode: 'none' as const, enabled: false, sessionTimeout: 0 },
 }
 
@@ -21,30 +21,30 @@ afterEach(() => {
 
 describe('host access token fragments', () => {
   it('normalizes and removes an encoded token fragment in Host mode', () => {
-    window.history.replaceState(null, '', '/messaging/login?redirect=%2F#access_token=demo.jwt')
+    window.history.replaceState(null, '', '/messaging/dashboard/login?redirect=%2F#access_token=demo.jwt')
 
     expect(consumeHostAccessTokenFromFragment('host')).toBe('Bearer demo.jwt')
-    expect(window.location.pathname).toBe('/messaging/login')
+    expect(window.location.pathname).toBe('/messaging/dashboard/login')
     expect(window.location.search).toBe('?redirect=%2F')
     expect(window.location.hash).toBe('')
   })
 
   it('does not add a second Bearer prefix', () => {
-    window.history.replaceState(null, '', '/messaging/login#access_token=Bearer%20demo.jwt')
+    window.history.replaceState(null, '', '/messaging/dashboard/login#access_token=Bearer%20demo.jwt')
 
     expect(consumeHostAccessTokenFromFragment('host')).toBe('Bearer demo.jwt')
     expect(window.location.hash).toBe('')
   })
 
   it('removes but does not consume a token fragment outside Host mode', () => {
-    window.history.replaceState(null, '', '/messaging/login#access_token=demo.jwt')
+    window.history.replaceState(null, '', '/messaging/dashboard/login#access_token=demo.jwt')
 
     expect(consumeHostAccessTokenFromFragment('apikey')).toBeNull()
     expect(window.location.hash).toBe('')
   })
 
   it('ignores query-string tokens', () => {
-    window.history.replaceState(null, '', '/messaging/login?access_token=demo.jwt')
+    window.history.replaceState(null, '', '/messaging/dashboard/login?access_token=demo.jwt')
 
     expect(consumeHostAccessTokenFromFragment('host')).toBeNull()
   })
@@ -56,11 +56,11 @@ describe('with basePath only (no backend domain)', () => {
   })
 
   it('prefixes absolute paths with the base path', () => {
-    expect(resolvePath('/dashboard')).toBe('/messaging/dashboard')
+    expect(resolvePath('/published')).toBe('/messaging/dashboard/published')
   })
 
   it('joins relative paths under the base path', () => {
-    expect(resolvePath('dashboard')).toBe('/messaging/dashboard')
+    expect(resolvePath('published')).toBe('/messaging/dashboard/published')
   })
 
   it('passes fully-qualified URLs through unchanged', () => {
@@ -68,12 +68,12 @@ describe('with basePath only (no backend domain)', () => {
   })
 
   it('derives the API base from the base path', () => {
-    expect(getApiBaseUrl()).toBe('/messaging/api')
+    expect(getApiBaseUrl()).toBe('/messaging/dashboard/api')
   })
 
   it('builds API endpoint URLs regardless of a leading slash', () => {
-    expect(resolveApiUrl('/published')).toBe('/messaging/api/published')
-    expect(resolveApiUrl('published')).toBe('/messaging/api/published')
+    expect(resolveApiUrl('/published')).toBe('/messaging/dashboard/api/published')
+    expect(resolveApiUrl('published')).toBe('/messaging/dashboard/api/published')
   })
 })
 

@@ -26,7 +26,7 @@ describe('custom authentication login', () => {
   beforeEach(async () => {
     localStorage.clear()
     window.MessagingConfig = {
-      basePath: '/messaging',
+      basePath: '/messaging/dashboard',
       auth: { mode: 'custom', enabled: true, sessionTimeout: 60 },
     }
     await authService.initialize()
@@ -66,7 +66,7 @@ describe('custom authentication login', () => {
     await flush()
 
     expect(fetchMock).toHaveBeenCalledWith(
-      '/messaging/api/auth/validate',
+      '/messaging/dashboard/api/auth/validate',
       expect.objectContaining({ method: 'POST' }),
     )
     expect(authorizationOf(fetchMock.mock.calls[0])).toBe(CREDENTIAL)

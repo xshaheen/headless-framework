@@ -35,7 +35,10 @@ public sealed class DefaultCorsPipelineTests : TestBase
             .And.OnlyContain(e => e.Metadata.GetMetadata<ICorsMetadata>() == null);
 
         // when - a cross-origin request reaches the API
-        using var request = new HttpRequestMessage(HttpMethod.Get, new Uri("/messaging/api/health", UriKind.Relative));
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            new Uri("/messaging/dashboard/api/health", UriKind.Relative)
+        );
         request.Headers.Add("Origin", _AllowedOrigin);
         using var response = await client.SendAsync(request, AbortToken);
 
@@ -77,14 +80,17 @@ public sealed class DefaultCorsPipelineTests : TestBase
                 .DataSources.SelectMany(source => source.Endpoints)
                 .OfType<RouteEndpoint>()
                 .Where(endpoint =>
-                    endpoint.RoutePattern.RawText?.StartsWith("/messaging", StringComparison.Ordinal) == true
+                    endpoint.RoutePattern.RawText?.StartsWith("/messaging/dashboard", StringComparison.Ordinal) == true
                 ),
         ];
     }
 
     private static async Task<HttpResponseMessage> _GetHealthFromAsync(HttpClient client, string origin)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, new Uri("/messaging/api/health", UriKind.Relative));
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            new Uri("/messaging/dashboard/api/health", UriKind.Relative)
+        );
         request.Headers.Add("Origin", origin);
 
         return await client.SendAsync(request, AbortToken);

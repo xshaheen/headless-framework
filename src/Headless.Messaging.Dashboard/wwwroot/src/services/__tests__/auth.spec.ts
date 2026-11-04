@@ -5,7 +5,7 @@ describe('host authentication login', () => {
   beforeEach(() => {
     localStorage.clear()
     window.MessagingConfig = {
-      basePath: '/messaging',
+      basePath: '/messaging/dashboard',
       auth: { mode: 'host', enabled: true, sessionTimeout: 60 },
     }
   })

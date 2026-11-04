@@ -21,8 +21,8 @@ public sealed class ConsulDiscoveryOptions
     /// <summary>Default port used when registering this node (<c>5000</c>).</summary>
     public const int DefaultCurrentNodePort = 5000;
 
-    /// <summary>Default dashboard base path used for the Consul health-check URL (<c>/messaging</c>).</summary>
-    public const string DefaultMatchPath = "/messaging";
+    /// <summary>Default dashboard base path used for the Consul health-check URL (<c>/messaging/dashboard</c>).</summary>
+    public const string DefaultMatchPath = "/messaging/dashboard";
 
     /// <summary>Default scheme for the health-check endpoint URL (<c>http</c>).</summary>
     public const string DefaultScheme = "http";
@@ -49,7 +49,7 @@ public sealed class ConsulDiscoveryOptions
     /// </summary>
     public string? NodeName { get; set; }
 
-    /// <summary>Dashboard path segment appended to the health-check URL. Default: <c>/messaging</c>.</summary>
+    /// <summary>Dashboard path segment appended to the health-check URL. Default: <c>/messaging/dashboard</c>.</summary>
     public string MatchPath { get; set; } = DefaultMatchPath;
 
     /// <summary>URL scheme for the Consul health-check endpoint (<c>http</c> or <c>https</c>). Default: <c>http</c>.</summary>

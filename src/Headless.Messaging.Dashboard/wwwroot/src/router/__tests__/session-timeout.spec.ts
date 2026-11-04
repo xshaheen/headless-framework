@@ -21,7 +21,7 @@ describe('session timeout across navigation and requests', () => {
     localStorage.clear()
     setActivePinia(createPinia())
     window.MessagingConfig = {
-      basePath: '/messaging',
+      basePath: '/messaging/dashboard',
       auth: { mode: 'apikey', enabled: true, sessionTimeout: 30 },
     }
     await router.replace('/login')

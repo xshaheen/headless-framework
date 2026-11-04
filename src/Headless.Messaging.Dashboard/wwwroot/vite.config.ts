@@ -129,7 +129,7 @@ export default defineConfig(async ({ command, mode }) => {
     server: {
       proxy: {
         // Proxy API calls to the .NET demo backend
-        '/messaging/api': {
+        '/messaging/dashboard/api': {
           target: DEMO_BACKEND,
           changeOrigin: true,
           secure: false,

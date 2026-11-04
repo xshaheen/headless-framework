@@ -828,7 +828,7 @@ SANDBOX_PG_DATABASE ?= headless_sandbox
 # through the message storage, the in-memory store or the PostgreSQL tables the host creates as it starts, so it
 # fails until that storage answers. It takes the Messaging dashboard's Basic auth, which sandbox.env sets; the Jobs
 # dashboard's API was not used because its auth mode varies with Sandbox__JobsDashboardAuth.
-SANDBOX_USABLE_PATH ?= /messaging/api/stats
+SANDBOX_USABLE_PATH ?= /messaging/dashboard/api/stats
 SANDBOX_USER ?= sandbox
 STORE ?= memory
 TIMEOUT ?= 120
@@ -881,9 +881,9 @@ up: ## Build and start the dashboard sandbox in the background (STORE=memory|pos
 	echo "Sandbox starting (pid $$(cat "$(SANDBOX_PID)"), STORE=$(STORE))."; \
 	echo "  Jobs dashboard:      $(SANDBOX_URL)/jobs/dashboard"; \
 	if [ -n "$${Sandbox__MessagingDashboardPassword:-}" ]; then \
-	  echo "  Messaging dashboard: $(SANDBOX_URL)/messaging (Basic auth: user sandbox, password in $(SANDBOX_ENV))"; \
+	  echo "  Messaging dashboard: $(SANDBOX_URL)/messaging/dashboard (Basic auth: user sandbox, password in $(SANDBOX_ENV))"; \
 	else \
-	  echo "  Messaging dashboard: $(SANDBOX_URL)/messaging (no auth: the password in $(SANDBOX_ENV) is empty, so inbox and scheduled operations return 403; delete the file and rerun make up for Basic auth)"; fi; \
+	  echo "  Messaging dashboard: $(SANDBOX_URL)/messaging/dashboard (no auth: the password in $(SANDBOX_ENV) is empty, so inbox and scheduled operations return 403; delete the file and rerun make up for Basic auth)"; fi; \
 	echo "  Scenarios:           make seed SCENARIO=<name>; list them at $(SANDBOX_URL)/sandbox/scenarios"; \
 	echo "Next: make ready $(UP_ENV)"
 
@@ -891,7 +891,7 @@ up: ## Build and start the dashboard sandbox in the background (STORE=memory|pos
 ready: ## Wait until the sandbox and both dashboards answer, then until a read through the Messaging store succeeds (TIMEOUT=120 seconds); names what is not usable.
 	@url="$$(sed -n 's/.*url=\([^ ]*\).*/\1/p' "$(SANDBOX_STATE)" 2>/dev/null)"; url="$${url:-$(SANDBOX_URL)}"; \
 	deadline=$$(( $$(date +%s) + $(TIMEOUT) )); \
-	for path in /healthz /jobs/dashboard/ /messaging/; do \
+	for path in /healthz /jobs/dashboard/ /messaging/dashboard/; do \
 	  until curl -fsS -o /dev/null "$$url$$path" 2>/dev/null; do \
 	    if [ -f "$(SANDBOX_PID)" ] && ! kill -0 "$$(cat "$(SANDBOX_PID)")" 2>/dev/null; then \
 	      echo "Sandbox exited before $$path answered. Last log lines:"; tail -n 20 "$(SANDBOX_LOG)" 2>/dev/null || true; exit 1; fi; \

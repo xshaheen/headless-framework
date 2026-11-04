@@ -44,7 +44,7 @@ public sealed class PingServicesSecurityTests : TestBase
         // then
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         handler.Requests.Should().ContainSingle();
-        handler.Requests.Should().HaveElementAt(0, new Uri("http://allowed:8080/messaging/api/health"));
+        handler.Requests.Should().HaveElementAt(0, new Uri("http://allowed:8080/messaging/dashboard/api/health"));
         handler.CancellationTokens.Should().ContainSingle(token => token.CanBeCanceled);
         factory
             .RequestedNames.Should()
@@ -82,7 +82,11 @@ public sealed class PingServicesSecurityTests : TestBase
 
         // then
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        handler.Requests.Should().ContainSingle().Which.Should().Be(new Uri("https://allowed/messaging/api/health"));
+        handler
+            .Requests.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Be(new Uri("https://allowed/messaging/dashboard/api/health"));
     }
 
     [Theory]
@@ -145,7 +149,7 @@ public sealed class PingServicesSecurityTests : TestBase
             .Requests.Should()
             .ContainSingle()
             .Which.Should()
-            .Be(new Uri("http://allowed:8080/messaging/api/health"));
+            .Be(new Uri("http://allowed:8080/messaging/dashboard/api/health"));
         handler.Requests.Should().NotContain(uri => uri.Host == "evil.test");
     }
 
