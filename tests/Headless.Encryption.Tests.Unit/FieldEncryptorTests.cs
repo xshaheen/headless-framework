@@ -56,6 +56,29 @@ public sealed class FieldEncryptorTests : TestBase
     }
 
     [Fact]
+    public async Task should_round_trip_a_value_through_its_base64url_text()
+    {
+        using var host = new EncryptionTestHost(_store);
+        var context = FieldContext.Host(_Purpose);
+
+        var text = await host.Encryptor.EncryptToTextAsync(_NationalId, context, AbortToken);
+
+        EncryptedValue.Parse(text).ToBase64Url().Should().Be(text);
+        (await host.Encryptor.DecryptTextAsync(text, context, AbortToken)).Should().Be(_NationalId);
+    }
+
+    [Fact]
+    public async Task should_refuse_text_that_is_not_an_encrypted_value()
+    {
+        using var host = new EncryptionTestHost(_store);
+
+        var act = async () =>
+            await host.Encryptor.DecryptTextAsync("not-a-frame", FieldContext.Host(_Purpose), AbortToken);
+
+        await act.Should().ThrowAsync<FormatException>();
+    }
+
+    [Fact]
     public async Task should_refuse_a_value_copied_to_another_tenant()
     {
         using var host = new EncryptionTestHost(_store);

@@ -132,7 +132,7 @@ internal static class DistributedLockCoreServiceCollectionExtensions
         services.AddSingletonOptionValue<DistributedLockOptions>();
         services.TryAddSingleton(TimeProvider.System);
         services.AddHeadlessGuidGenerator();
-        services.AddNullReleaseSignal();
+        services.AddLocalReleaseSignal();
 
         // TryAddSingleton on the concrete + the public interface keeps repeated
         // AddHeadlessDistributedLocks(...) calls idempotent inside a single provider extension.
@@ -178,7 +178,7 @@ internal static class DistributedReadWriteLockCoreServiceCollectionExtensions
         services.AddSingletonOptionValue<DistributedLockOptions>();
         services.TryAddSingleton(TimeProvider.System);
         services.AddHeadlessGuidGenerator();
-        services.AddNullReleaseSignal();
+        services.AddLocalReleaseSignal();
 
         services.TryAddSingleton<DistributedReadWriteLock>(provider => new DistributedReadWriteLock(
             provider.GetRequiredService<TStorage>(),
@@ -218,7 +218,7 @@ internal static class DistributedSemaphoreCoreServiceCollectionExtensions
         services.AddSingletonOptionValue<DistributedLockOptions>();
         services.TryAddSingleton(TimeProvider.System);
         services.AddHeadlessGuidGenerator();
-        services.AddNullReleaseSignal();
+        services.AddLocalReleaseSignal();
 
         services.TryAddSingleton(provider => new DistributedSemaphoreProvider(
             provider.GetRequiredService<TStorage>(),
@@ -248,13 +248,30 @@ internal static class DistributedSemaphoreCoreServiceCollectionExtensions
 internal static class DistributedLockReleaseSignalServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers the default release signal, which sends nothing so waiters poll. <c>TryAdd</c> keeps a transport the
-    /// app registered first, and the messaging bridge replaces it from a cross-cutting extension that runs after the
-    /// provider.
+    /// Registers the default release signal, which wakes this process's waiters and logs once that other hosts poll.
+    /// <c>TryAdd</c> keeps a signal registered first, such as the in-process provider's silent one, and a cross-host
+    /// transport replaces it from a cross-cutting extension that runs after the provider.
     /// </summary>
-    internal static IServiceCollection AddNullReleaseSignal(this IServiceCollection services)
+    internal static IServiceCollection AddLocalReleaseSignal(this IServiceCollection services)
     {
-        services.TryAddSingleton<IDistributedLockReleaseSignal, NullDistributedLockReleaseSignal>();
+        services.TryAddSingleton<IDistributedLockReleaseSignal>(static sp => new LocalDistributedLockReleaseSignal(
+            sp,
+            sp.GetRequiredService<ILogger<LocalDistributedLockReleaseSignal>>()
+        ));
+
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the in-process release signal without its log line, for a provider that only ever runs in one process,
+    /// where a release has no other host to reach.
+    /// </summary>
+    internal static IServiceCollection AddSingleProcessReleaseSignal(this IServiceCollection services)
+    {
+        services.TryAddSingleton<IDistributedLockReleaseSignal>(static sp => new LocalDistributedLockReleaseSignal(
+            sp,
+            logger: null
+        ));
 
         return services;
     }

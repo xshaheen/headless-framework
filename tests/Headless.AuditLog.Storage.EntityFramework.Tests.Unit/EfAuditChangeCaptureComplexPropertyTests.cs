@@ -56,8 +56,74 @@ public class ComplexDbContext(DbContextOptions<ComplexDbContext> options) : DbCo
     }
 }
 
+/// <summary>Configures audit policy on whole complex properties, before their members are configured.</summary>
+public class ComplexPolicyDbContext(DbContextOptions<ComplexPolicyDbContext> options) : DbContext(options)
+{
+    public DbSet<ComplexCustomer> Customers => Set<ComplexCustomer>();
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        var customer = modelBuilder.Entity<ComplexCustomer>();
+        customer.IsAudited();
+        customer.Property(e => e.Id).ValueGeneratedNever();
+        customer.ComplexProperty(
+            e => e.Shipping,
+            shipping =>
+            {
+                shipping.IsAuditSensitive(SensitiveDataStrategy.Redact);
+                shipping.ComplexProperty(s => s.Geo, geo => geo.Property(g => g.Latitude).ExcludeFromAudit());
+            }
+        );
+        customer.ComplexProperty(e => e.Contact).ExcludeFromAudit();
+        customer.ComplexProperty(e => e.Backup);
+    }
+}
+
 public sealed partial class EfAuditChangeCaptureTests
 {
+    [Fact]
+    public async Task should_apply_a_whole_complex_property_policy_to_every_member_below_it()
+    {
+        // given
+        await using var conn = new SqliteConnection("Data Source=:memory:");
+        conn.Open();
+        await using var db = new ComplexPolicyDbContext(
+            new DbContextOptionsBuilder<ComplexPolicyDbContext>().UseSqlite(conn).Options
+        );
+        db.Database.EnsureCreated();
+        var customer = new ComplexCustomer
+        {
+            Id = Guid.NewGuid(),
+            Name = "Alice",
+            Shipping = new ShippingAddress
+            {
+                City = "Cairo",
+                Geo = new GeoPoint { Latitude = 30.04, Longitude = 31.23 },
+            },
+            Contact = new ContactCard { Phone = "555-0100", Note = "call after 5" },
+        };
+        db.Customers.Add(customer);
+        await db.SaveChangesAsync(AbortToken);
+
+        // when
+        customer.Shipping = new ShippingAddress
+        {
+            City = "Giza",
+            Geo = new GeoPoint { Latitude = 29.98, Longitude = 31.13 },
+        };
+        customer.Contact = new ContactCard { Phone = "555-0199", Note = "changed" };
+        db.ChangeTracker.DetectChanges();
+        var result = _Capture(_CreateSut(), db);
+
+        // then - the nested member inherits the sensitive marking, its own exclusion still wins, and the excluded
+        // complex property contributes nothing
+        var entry = result.Should().ContainSingle().Subject;
+        entry.ChangedFields.Should().BeEquivalentTo("Shipping.City", "Shipping.Geo.Longitude");
+        entry.NewValues.Should().ContainKey("Shipping.City").WhoseValue.Should().Be("***");
+        entry.NewValues.Should().ContainKey("Shipping.Geo.Longitude").WhoseValue.Should().Be("***");
+        entry.NewValues!.Keys.Should().NotContain(key => key.StartsWith("Contact.", StringComparison.Ordinal));
+    }
+
     private static (ComplexDbContext db, SqliteConnection conn) _CreateComplexDb()
     {
         var conn = new SqliteConnection("Data Source=:memory:");

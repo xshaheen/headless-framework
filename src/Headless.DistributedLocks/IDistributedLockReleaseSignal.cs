@@ -13,9 +13,10 @@ namespace Headless.DistributedLocks;
 /// poll, and storage stays the only authority on who holds the lock. So an implementation is best-effort.
 /// </para>
 /// <para>
-/// The default registration sends nothing, so waiters poll. <c>Headless.DistributedLocks.Messaging</c> supplies a
-/// messaging-bus implementation; register another implementation before <c>AddHeadlessDistributedLocks</c> to use a
-/// different transport.
+/// The default registration hands each release to this process's listeners only, so waiters on other hosts poll.
+/// <c>UseRedisReleaseSignal()</c> (<c>Headless.DistributedLocks.Redis</c>) and <c>UseMessagingReleaseSignal()</c>
+/// (<c>Headless.DistributedLocks.Messaging</c>) carry it to every host; register another implementation before
+/// <c>AddHeadlessDistributedLocks</c> to use a different transport.
 /// </para>
 /// </remarks>
 [PublicAPI]

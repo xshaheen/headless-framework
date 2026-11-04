@@ -5,7 +5,6 @@ using Headless.DistributedLocks;
 using Headless.DistributedLocks.InMemory;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 
 namespace Tests.RegularLocks;
@@ -850,8 +849,8 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         GC.KeepAlive(handle);
     }
 
-    private static NullDistributedLockReleaseSignal _SilentReleaseSignal()
+    private static IDistributedLockReleaseSignal _SilentReleaseSignal()
     {
-        return new NullDistributedLockReleaseSignal(NullLogger<NullDistributedLockReleaseSignal>.Instance);
+        return Substitute.For<IDistributedLockReleaseSignal>();
     }
 }

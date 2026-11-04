@@ -1779,9 +1779,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         return (
                 string.Equals(providerName, "Npgsql.EntityFrameworkCore.PostgreSQL", StringComparison.Ordinal)
                 || string.Equals(providerName, "Microsoft.EntityFrameworkCore.SqlServer", StringComparison.Ordinal)
-            )
-            && RelationalFaults.FindDatabaseException(exception) is { } databaseException
-            && RelationalFaults.IsUniqueViolation(databaseException);
+            ) && RelationalFaults.IsUniqueViolation(exception);
     }
 
     public async Task<CronJobEntity[]> GetAllCronJobExpressionsAsync(CancellationToken cancellationToken = default)

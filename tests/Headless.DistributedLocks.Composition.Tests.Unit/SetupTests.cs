@@ -6,13 +6,14 @@ using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
 
 public sealed class SetupTests : TestBase
 {
     [Fact]
-    public void should_resolve_the_silent_release_signal_and_contribute_no_messaging_when_no_transport_is_configured()
+    public void should_resolve_the_local_release_signal_and_contribute_no_messaging_when_no_transport_is_configured()
     {
         // given
         var services = new ServiceCollection();
@@ -22,12 +23,12 @@ public sealed class SetupTests : TestBase
         services.AddHeadlessDistributedLocks(setup => setup.UseInMemory());
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 
-        // then - releases announce nothing and waiters fall back to polling; the lock package declares no messaging
+        // then - releases wake only this process's waiters; the lock package declares no messaging
         provider.GetRequiredService<IDistributedLock>().Should().NotBeNull();
         provider
             .GetRequiredService<IDistributedLockReleaseSignal>()
             .Should()
-            .BeOfType<NullDistributedLockReleaseSignal>();
+            .BeOfType<LocalDistributedLockReleaseSignal>();
         services
             .Should()
             .NotContain(static d =>
@@ -91,7 +92,7 @@ public sealed class SetupTests : TestBase
     }
 
     [Fact]
-    public async Task should_log_the_absent_release_signal_and_still_release_without_a_transport()
+    public async Task should_not_log_the_absent_cross_host_signal_when_the_provider_runs_in_one_process()
     {
         // given
         using var logs = new EventNameLoggerProvider();
@@ -107,9 +108,40 @@ public sealed class SetupTests : TestBase
         // when
         var act = async () => await locks.ReleaseAsync(resource, handle!.LeaseId, AbortToken);
 
-        // then — waiters fall back to polling; the operator sees why, and nothing throws.
+        // then — an in-process lock has no other host to reach, so there is nothing to tell the operator.
         await act.Should().NotThrowAsync();
-        logs.EventNames.Should().Contain("ReleaseSignalAbsent");
+        logs.EventNames.Should().NotContain("CrossHostReleaseSignalAbsent");
+    }
+
+    [Fact]
+    public async Task should_wake_a_waiter_in_this_process_on_release_when_no_transport_is_configured()
+    {
+        // given - a frozen clock, so the waiter's backoff poll never fires and only the release can wake it
+        using var waiting = new EventSignalLoggerProvider("DelayBeforeRetry");
+        var services = new ServiceCollection();
+        services.AddLogging(builder => builder.SetMinimumLevel(LogLevel.Trace).AddProvider(waiting));
+        services.AddSingleton<TimeProvider>(new FakeTimeProvider());
+        services.AddHeadlessDistributedLocks(setup => setup.UseInMemory());
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        var locks = provider.GetRequiredService<IDistributedLock>();
+        var resource = Faker.Random.AlphaNumeric(10);
+        var holder = await locks.TryAcquireAsync(resource, cancellationToken: AbortToken);
+        holder.Should().NotBeNull();
+        var waiter = locks.TryAcquireAsync(
+            resource,
+            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromMinutes(1) },
+            AbortToken
+        );
+
+        // The waiter logs its backoff only after it registers for wake-ups, so a release from here on reaches it.
+        await waiting.Logged.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+
+        // when
+        await locks.ReleaseAsync(resource, holder!.LeaseId, AbortToken);
+        var acquired = await waiter.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+
+        // then
+        acquired.Should().NotBeNull();
     }
 
     [Fact]
@@ -166,6 +198,40 @@ public sealed class SetupTests : TestBase
     public void should_default_the_storage_schema_to_the_shared_headless_schema()
     {
         new DistributedLocksStorageOptions().Schema.Should().Be("headless");
+    }
+
+    /// <summary>Completes <see cref="Logged"/> the first time any logger writes the named event.</summary>
+    private sealed class EventSignalLoggerProvider(string eventName) : ILoggerProvider
+    {
+        private readonly TaskCompletionSource _logged = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task Logged => _logged.Task;
+
+        public ILogger CreateLogger(string categoryName) => new EventSignalLogger(eventName, _logged);
+
+        public void Dispose() { }
+
+        private sealed class EventSignalLogger(string eventName, TaskCompletionSource logged) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter
+            )
+            {
+                if (string.Equals(eventId.Name, eventName, StringComparison.Ordinal))
+                {
+                    logged.TrySetResult();
+                }
+            }
+        }
     }
 
     /// <summary>Records only the event names the lock primitives log, which is all these tests assert on.</summary>

@@ -171,7 +171,83 @@ public static class HeadlessAuditPolicyExtensions
         return builder;
     }
 
-    private static void _ConfigureSensitiveProperty(IMutableProperty property, SensitiveDataStrategy? strategy)
+    /// <summary>
+    /// Excludes every property of a complex property, nested complex properties included, from captured values and
+    /// changed fields. It applies to members configured before or after this call.
+    /// </summary>
+    /// <param name="builder">The complex property builder.</param>
+    /// <returns>The same builder so additional configuration can be chained.</returns>
+    public static ComplexPropertyBuilder ExcludeFromAudit(this ComplexPropertyBuilder builder)
+    {
+        builder.Metadata.SetAnnotation(HeadlessAuditAnnotations.PropertyIsExcluded, value: true);
+        return builder;
+    }
+
+    /// <summary>
+    /// Excludes every property of a complex property, nested complex properties included, from captured values and
+    /// changed fields. It applies to members configured before or after this call.
+    /// </summary>
+    /// <typeparam name="TComplex">The complex type.</typeparam>
+    /// <param name="builder">The complex property builder.</param>
+    /// <returns>The same builder so additional configuration can be chained.</returns>
+    public static ComplexPropertyBuilder<TComplex> ExcludeFromAudit<TComplex>(
+        this ComplexPropertyBuilder<TComplex> builder
+    )
+        where TComplex : notnull
+    {
+        builder.Metadata.SetAnnotation(HeadlessAuditAnnotations.PropertyIsExcluded, value: true);
+        return builder;
+    }
+
+    /// <summary>
+    /// Marks every property of a complex property, nested complex properties included, as sensitive and optionally
+    /// overrides the global sensitive-data strategy. A member's own <c>IsAuditSensitive</c> strategy, or a nearer
+    /// complex property's, wins over this one; it applies to members configured before or after this call.
+    /// </summary>
+    /// <param name="builder">The complex property builder.</param>
+    /// <param name="strategy">
+    /// The strategy for the members, or <see langword="null"/> to use
+    /// <see cref="AuditLogOptions.SensitiveDataStrategy"/>.
+    /// </param>
+    /// <returns>The same builder so additional configuration can be chained.</returns>
+    /// <exception cref="System.ComponentModel.InvalidEnumArgumentException">
+    /// <paramref name="strategy"/> is not a defined <see cref="SensitiveDataStrategy"/> value.
+    /// </exception>
+    public static ComplexPropertyBuilder IsAuditSensitive(
+        this ComplexPropertyBuilder builder,
+        SensitiveDataStrategy? strategy = null
+    )
+    {
+        _ConfigureSensitiveProperty(builder.Metadata, strategy);
+        return builder;
+    }
+
+    /// <summary>
+    /// Marks every property of a complex property, nested complex properties included, as sensitive and optionally
+    /// overrides the global sensitive-data strategy. A member's own <c>IsAuditSensitive</c> strategy, or a nearer
+    /// complex property's, wins over this one; it applies to members configured before or after this call.
+    /// </summary>
+    /// <typeparam name="TComplex">The complex type.</typeparam>
+    /// <param name="builder">The complex property builder.</param>
+    /// <param name="strategy">
+    /// The strategy for the members, or <see langword="null"/> to use
+    /// <see cref="AuditLogOptions.SensitiveDataStrategy"/>.
+    /// </param>
+    /// <returns>The same builder so additional configuration can be chained.</returns>
+    /// <exception cref="System.ComponentModel.InvalidEnumArgumentException">
+    /// <paramref name="strategy"/> is not a defined <see cref="SensitiveDataStrategy"/> value.
+    /// </exception>
+    public static ComplexPropertyBuilder<TComplex> IsAuditSensitive<TComplex>(
+        this ComplexPropertyBuilder<TComplex> builder,
+        SensitiveDataStrategy? strategy = null
+    )
+        where TComplex : notnull
+    {
+        _ConfigureSensitiveProperty(builder.Metadata, strategy);
+        return builder;
+    }
+
+    private static void _ConfigureSensitiveProperty(IMutableAnnotatable property, SensitiveDataStrategy? strategy)
     {
         if (strategy is not null)
         {

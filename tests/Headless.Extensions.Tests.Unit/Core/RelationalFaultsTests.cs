@@ -84,6 +84,22 @@ public sealed class RelationalFaultsTests : TestBase
     }
 
     [Fact]
+    public void should_recognize_a_unique_violation_wrapped_in_another_exception()
+    {
+        var wrapper = new InvalidOperationException("save failed", new FakeDbException(sqlState: "23505"));
+
+        RelationalFaults.IsUniqueViolation(wrapper).Should().BeTrue();
+    }
+
+    [Fact]
+    public void should_not_report_a_unique_violation_when_the_chain_carries_no_database_exception()
+    {
+        var exception = new InvalidOperationException("save failed", new IOException("connection reset"));
+
+        RelationalFaults.IsUniqueViolation(exception).Should().BeFalse();
+    }
+
+    [Fact]
     public void should_not_read_a_sql_server_duplicate_key_number_from_another_drivers_exception()
     {
         RelationalFaults.IsUniqueViolation(new FakeDbException(number: 2627)).Should().BeFalse();

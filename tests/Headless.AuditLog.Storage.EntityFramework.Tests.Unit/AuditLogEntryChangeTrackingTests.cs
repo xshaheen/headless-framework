@@ -69,4 +69,31 @@ public sealed class AuditLogEntryChangeTrackingTests : TestBase
             db.Entry(entry).State.Should().Be(EntityState.Unchanged);
         }
     }
+
+    [Fact]
+    public async Task should_store_the_json_columns_in_the_published_audit_format()
+    {
+        // given
+        var (db, conn) = AuditStoreDbContext.Create();
+        await using (conn)
+        await using (db)
+        {
+            Dictionary<string, object?> values = new(StringComparer.Ordinal)
+            {
+                ["status"] = AuditChangeType.Updated,
+                ["count"] = 3,
+                ["name"] = null,
+            };
+            var converter = db
+                .Model.FindEntityType(typeof(AuditLogEntry))!
+                .FindProperty(nameof(AuditLogEntry.NewValues))!
+                .GetValueConverter()!;
+
+            // when
+            var stored = converter.ConvertToProvider(values);
+
+            // then - an integrity hash that serializes with the published options reproduces the stored text
+            stored.Should().Be(JsonSerializer.Serialize(values, AuditLogJson.SerializerOptions));
+        }
+    }
 }
