@@ -143,6 +143,67 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
         return ValueTask.FromResult(stats);
     }
 
+    public ValueTask<BacklogView> GetBacklogAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var now = timeProvider.GetUtcNow();
+        var (publishedPending, oldestPublished) = _Backlog(storage.PublishedMessages.Values, now);
+        var (receivedPending, oldestReceived) = _Backlog(storage.ReceivedMessages.Values, now);
+
+        return ValueTask.FromResult(
+            new BacklogView
+            {
+                PublishedPending = publishedPending,
+                ReceivedPending = receivedPending,
+                OldestPublishedPendingAge = _AgeSince(oldestPublished, now),
+                OldestReceivedPendingAge = _AgeSince(oldestReceived, now),
+            }
+        );
+    }
+
+    private static (long Pending, DateTimeOffset? Oldest) _Backlog(
+        IEnumerable<MemoryMessage> messages,
+        DateTimeOffset now
+    )
+    {
+        long pending = 0;
+        DateTimeOffset? oldest = null;
+
+        foreach (var message in messages)
+        {
+            if (!_IsRecognizedLane(message.Lane))
+            {
+                continue;
+            }
+
+            var since = MessageBacklogState.PendingSince(
+                message.StatusName,
+                message.Added,
+                message.ExpiresAt,
+                message.NextRetryAt,
+                now
+            );
+            if (since is not { } pendingSince)
+            {
+                continue;
+            }
+
+            pending++;
+            if (oldest is null || pendingSince < oldest)
+            {
+                oldest = pendingSince;
+            }
+        }
+
+        return (pending, oldest);
+    }
+
+    private static TimeSpan? _AgeSince(DateTimeOffset? since, DateTimeOffset now)
+    {
+        return since is { } value ? TimeSpan.FromTicks(Math.Max(0, (now - value).Ticks)) : null;
+    }
+
     public ValueTask<IReadOnlyDictionary<DateTimeOffset, int>> GetHourlyFailedJobsAsync(
         MessageType type,
         CancellationToken cancellationToken = default

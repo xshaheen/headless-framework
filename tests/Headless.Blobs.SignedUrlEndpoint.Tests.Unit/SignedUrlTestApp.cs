@@ -42,10 +42,14 @@ internal sealed class SignedUrlTestApp : IAsyncDisposable
     /// the Blobs guide recommends for multi-replica hosts.
     /// </param>
     /// <param name="scopeBlobsByTenant">Scope both stores by the ambient tenant through the blob tenancy seam.</param>
+    /// <param name="configureBuilder">Adds services, such as logging or tracing, before the host is built.</param>
+    /// <param name="configurePipeline">Adds middleware ahead of the signed-URL endpoint.</param>
     public static async Task<SignedUrlTestApp> StartAsync(
         CancellationToken cancellationToken,
         bool persistKeysToBlobStorage = false,
-        bool scopeBlobsByTenant = false
+        bool scopeBlobsByTenant = false,
+        Action<WebApplicationBuilder>? configureBuilder = null,
+        Action<WebApplication>? configurePipeline = null
     )
     {
         var time = new FakeTimeProvider(DateTimeOffset.Parse("2026-09-26T10:00:00Z", CultureInfo.InvariantCulture));
@@ -79,7 +83,10 @@ internal sealed class SignedUrlTestApp : IAsyncDisposable
             builder.AddHeadlessTenancy(tenancy => tenancy.Blobs(blobs => blobs.ScopeByTenant()));
         }
 
+        configureBuilder?.Invoke(builder);
+
         var app = builder.Build();
+        configurePipeline?.Invoke(app);
         app.MapBlobSignedUrlEndpoint();
         await app.StartAsync(cancellationToken);
 

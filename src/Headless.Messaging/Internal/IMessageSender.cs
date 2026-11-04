@@ -477,6 +477,15 @@ internal sealed class MessageSender : IMessageSender
             .ConfigureAwait(false);
         executionState?.RecordLeaseTransition(affected, lockedUntil);
 
+        if (affected)
+        {
+            MessagingMetrics.RecordOutboxTerminal(
+                message.Origin.Name,
+                message.Lane,
+                MessagingTelemetry.ErrorTypeOf(ex)
+            );
+        }
+
         _logger.StoredMessageMissingLaneTransport(ex, message.StorageId, message.Lane.ToString("D"));
     }
 
@@ -522,6 +531,11 @@ internal sealed class MessageSender : IMessageSender
         if (affected)
         {
             MessagingMetrics.RecordSendExpired(message.Lane);
+            MessagingMetrics.RecordOutboxTerminal(
+                message.Origin.Name,
+                message.Lane,
+                MessagingTelemetry.ErrorTypeOf(expired)
+            );
             if (_logger.IsEnabled(LogLevel.Information))
             {
                 _logger.StoredMessageDeliverByExceeded(
@@ -759,6 +773,17 @@ internal sealed class MessageSender : IMessageSender
             )
             .ConfigureAwait(false);
         executionState?.RecordLeaseTransition(affected, lockedUntil);
+
+        // Stop and Exhausted both end the row; counting only a write that landed counts each message once, whichever
+        // replica's terminal write won.
+        if (affected && decision.Outcome != MessagingRetryDecision.Kind.Continue)
+        {
+            MessagingMetrics.RecordOutboxTerminal(
+                message.Origin.Name,
+                message.Lane,
+                MessagingTelemetry.ErrorTypeOf(ex)
+            );
+        }
 
         if (affected && decision.Outcome == MessagingRetryDecision.Kind.Exhausted)
         {

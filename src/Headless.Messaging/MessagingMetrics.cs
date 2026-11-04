@@ -1,8 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using Headless.Messaging.Internal;
+using Headless.Messaging.Processor;
 
 namespace Headless.Messaging;
 
@@ -45,6 +47,10 @@ internal static class MessagingMetrics
     internal const string RequestReplyRequestsName = "headless.messaging.request_reply.requests";
     internal const string RequestReplyDurationName = "headless.messaging.request_reply.duration";
     internal const string SettlementFailuresName = "headless.messaging.settlement.failures";
+    internal const string OutboxTerminalName = "headless.messaging.outbox.terminal";
+    internal const string ConsumeTerminalName = "headless.messaging.consume.terminal";
+    internal const string BacklogPendingName = "headless.messaging.backlog.pending";
+    internal const string BacklogOldestAgeName = "headless.messaging.backlog.oldest_age";
 
     // --- Attribute (tag) names --------------------------------------------------------------------------------
 
@@ -67,6 +73,14 @@ internal static class MessagingMetrics
     internal const string TagRequestReplyOutcome = "headless.messaging.request_reply.outcome";
     internal const string TagOperatorOperation = "headless.messaging.operator.operation";
     internal const string TagOperatorTargetKind = "headless.messaging.operator.target_kind";
+
+    // The database-conventions name for the database a storage reads; it tells one outbox's backlog from another's.
+    internal const string TagDbNamespace = "db.namespace";
+
+    // --- Persistence types ------------------------------------------------------------------------------------
+
+    internal const string PersistenceTypePublish = "publish";
+    internal const string PersistenceTypeConsume = "consume";
 
     // --- Operation names and types ----------------------------------------------------------------------------
 
@@ -91,6 +105,10 @@ internal static class MessagingMetrics
     // A settlement the transport could not send because the broker channel it belongs to had already closed. Not an
     // exception type, so it gets a convention-style snake_case value.
     internal const string ErrorTypeChannelClosed = "channel_closed";
+
+    // The conventions' fallback error.type when a failure carries no exception to name, such as a received envelope
+    // that arrived already marked failed.
+    internal const string ErrorTypeOther = "_OTHER";
 
     // --- Receive outcomes ------------------------------------------------------------------------------------
 
@@ -256,6 +274,37 @@ internal static class MessagingMetrics
         description: "Number of broker settlements, such as acknowledgements, that did not reach the broker; the broker redelivers the message."
     );
 
+    private static readonly Counter<long> _OutboxTerminal = MessagingDiagnostics.Meter.CreateCounter<long>(
+        OutboxTerminalName,
+        unit: "{message}",
+        description: "Number of stored published messages the framework stopped trying to send: retries spent, a failure that is not retried, a passed delivery deadline, or no transport for the message's lane."
+    );
+
+    private static readonly Counter<long> _ConsumeTerminal = MessagingDiagnostics.Meter.CreateCounter<long>(
+        ConsumeTerminalName,
+        unit: "{message}",
+        description: "Number of stored received messages the framework stopped trying to handle: retries spent, a failure that is not retried, a passed deadline, or a delivery stored as poison on arrival."
+    );
+
+    // Every running backlog sampler of the process. The gauges are created once, like the meter they belong to, and
+    // read whatever the samplers last stored: a collection never queries storage.
+    private static readonly ConcurrentDictionary<BacklogSamplingProcessor, byte> _BacklogSamplers = new();
+
+    private static readonly ObservableGauge<long> _BacklogPending = MessagingDiagnostics.Meter.CreateObservableGauge(
+        BacklogPendingName,
+        _ObserveBacklogPending,
+        unit: "{message}",
+        description: "Stored messages still waiting, per outbox and inbox, as of the backlog sampler's last read."
+    );
+
+    private static readonly ObservableGauge<double> _BacklogOldestAge =
+        MessagingDiagnostics.Meter.CreateObservableGauge(
+            BacklogOldestAgeName,
+            _ObserveBacklogOldestAge,
+            unit: "s",
+            description: "How long the oldest still-waiting stored message has waited, per outbox and inbox, as of the backlog sampler's last read; zero when none waits."
+        );
+
     /// <summary>Whether any messaging instrument currently has a subscribed listener.</summary>
     internal static bool AnyEnabled =>
         _ClientSentMessages.Enabled
@@ -278,7 +327,21 @@ internal static class MessagingMetrics
         || _RequestReplyDroppedReplies.Enabled
         || _RequestReplyRequests.Enabled
         || _RequestReplyDuration.Enabled
-        || _SettlementFailures.Enabled;
+        || _SettlementFailures.Enabled
+        || _OutboxTerminal.Enabled
+        || _ConsumeTerminal.Enabled
+        || _BacklogPending.Enabled
+        || _BacklogOldestAge.Enabled;
+
+    internal static void RegisterBacklogSampler(BacklogSamplingProcessor sampler)
+    {
+        _BacklogSamplers.TryAdd(sampler, 0);
+    }
+
+    internal static void UnregisterBacklogSampler(BacklogSamplingProcessor sampler)
+    {
+        _BacklogSamplers.TryRemove(sampler, out _);
+    }
 
     internal static void RecordInbox(
         InboxMetricKind kind,
@@ -486,7 +549,7 @@ internal static class MessagingMetrics
         var tags = new TagList
         {
             { TagDestinationName, destinationName },
-            { TagPersistenceType, isPublish ? "publish" : "consume" },
+            { TagPersistenceType, isPublish ? PersistenceTypePublish : PersistenceTypeConsume },
         };
         if (lane is { } definedLane)
         {
@@ -621,6 +684,75 @@ internal static class MessagingMetrics
         );
     }
 
+    /// <summary>
+    /// Records one stored published message the framework gave up on, once, by the writer whose terminal write landed:
+    /// its persisted retries were spent, its failure is not retried, its delivery deadline passed, or no transport
+    /// serves its lane. Tagged with the message name, lane, and the failure's <c>error.type</c>; ids never become tags.
+    /// </summary>
+    internal static void RecordOutboxTerminal(string destinationName, MessageLane lane, string errorType)
+    {
+        if (!_OutboxTerminal.Enabled)
+        {
+            return;
+        }
+
+        _OutboxTerminal.Add(
+            1,
+            new TagList
+            {
+                { TagDestinationName, destinationName },
+                { MessagingTags.Lane, LaneTagEnricher.ToTagValues(lane).Lane },
+                { TagErrorType, errorType },
+            }
+        );
+    }
+
+    /// <summary>
+    /// Records one stored received message the framework gave up on, once, by the delivery or attempt whose terminal
+    /// write landed: an inbox row, a poison row stored on arrival, or a runtime subscription's row. Tagged with the
+    /// consumer identity, lane, and the failure's <c>error.type</c>; it carries no inbox tags, because a poison or
+    /// runtime-subscription row has no inbox admission behind it.
+    /// </summary>
+    internal static void RecordConsumeTerminal(string consumerIdentity, MessageLane lane, string errorType)
+    {
+        if (!_ConsumeTerminal.Enabled)
+        {
+            return;
+        }
+
+        _ConsumeTerminal.Add(
+            1,
+            new TagList
+            {
+                { TagConsumerGroupName, consumerIdentity },
+                { MessagingTags.Lane, LaneTagEnricher.ToTagValues(lane).Lane },
+                { TagErrorType, errorType },
+            }
+        );
+    }
+
+    private static IEnumerable<Measurement<long>> _ObserveBacklogPending()
+    {
+        foreach (var sampler in _BacklogSamplers.Keys)
+        {
+            foreach (var measurement in sampler.Measurements)
+            {
+                yield return new Measurement<long>(measurement.Pending, measurement.Tags);
+            }
+        }
+    }
+
+    private static IEnumerable<Measurement<double>> _ObserveBacklogOldestAge()
+    {
+        foreach (var sampler in _BacklogSamplers.Keys)
+        {
+            foreach (var measurement in sampler.Measurements)
+            {
+                yield return new Measurement<double>(measurement.OldestAgeSeconds, measurement.Tags);
+            }
+        }
+    }
+
     private static Histogram<double> _CreateDurationHistogram(string name, string description)
     {
         return MessagingDiagnostics.Meter.CreateHistogram(
@@ -718,6 +850,10 @@ internal enum InboxMetricOutcome
     Replayed = 12,
     Expired = 13,
     FailedExpired = 14,
+
+    // A delivery stored as a poison row on arrival: no consumer attempt ran, so neither a spent budget nor an expiry
+    // describes it, and an operator tells malformed or unroutable input apart from handler failures by it.
+    FailedOnArrival = 15,
 }
 
 /// <summary>How inbox measurements treat the tenant dimension, resolved once from the host configuration.</summary>

@@ -164,6 +164,7 @@ public sealed class HttpIdempotencyOptions
     /// <summary>
     /// Determines whether idempotency processing applies to the current request.
     /// When <see langword="null"/>, all requests matching <see cref="Methods"/> that carry the header are processed.
+    /// To opt a single endpoint out, use <see cref="DisableResponseReplayAttribute"/> or <c>DisableResponseReplay()</c>.
     /// </summary>
     public Func<HttpContext, bool>? ShouldApply { get; set; }
 

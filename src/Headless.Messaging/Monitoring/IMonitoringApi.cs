@@ -59,6 +59,17 @@ public interface IMonitoringApi
     ValueTask<StatisticsView> GetStatisticsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Returns how many published and received rows are still waiting and how long the oldest of each has waited, in
+    /// one read of the storage. <see cref="BacklogView"/> defines which rows count.
+    /// </summary>
+    /// <remarks>
+    /// The messaging backlog sampler (<see cref="MessagingOptions.BacklogSamplingInterval"/>) calls this once per
+    /// tick.
+    /// </remarks>
+    /// <param name="cancellationToken">A token to cancel the query.</param>
+    ValueTask<BacklogView> GetBacklogAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Returns a paged list of message rows matching the supplied query filters.
     /// </summary>
     /// <param name="query">Filters and pagination parameters for the message listing.</param>

@@ -63,5 +63,26 @@ public static class HttpIdempotencyEndpointConventionBuilderExtensions
 
             return builder;
         }
+
+        /// <summary>
+        /// Keeps the endpoint, or every endpoint of the group, out of idempotent response replay by adding
+        /// <see cref="DisableResponseReplayAttribute"/>. The middleware passes its requests straight through, as it does
+        /// when <see cref="HttpIdempotencyOptions.ShouldApply"/> returns <see langword="false"/>: an idempotency key is
+        /// ignored, neither validated, admitted, stored, nor replayed, and a request without one is not refused.
+        /// </summary>
+        /// <remarks>
+        /// It wins over <c>WithIdempotency</c> and <c>RequireIdempotencyKey</c> on the endpoint or any group around it,
+        /// in either order, and removes the idempotency <see cref="Headless.Api.HttpContractMetadata"/> they attached, so
+        /// the endpoint documents no idempotency key or rejections.
+        /// </remarks>
+        /// <returns>The builder.</returns>
+        public TBuilder DisableResponseReplay()
+        {
+            builder.WithMetadata(new DisableResponseReplayAttribute());
+            // Route-group conventions run before the endpoint's own, so a contract a group attached is removed here.
+            builder.Add(HttpIdempotencyContract.Attach);
+
+            return builder;
+        }
     }
 }

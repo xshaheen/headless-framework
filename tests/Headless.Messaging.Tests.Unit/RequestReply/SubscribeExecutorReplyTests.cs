@@ -232,6 +232,69 @@ public sealed class SubscribeExecutorReplyTests : TestBase
         host.ExhaustedCalls.Should().Be(0);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task should_count_a_null_response_once_on_both_terminal_counters_only_when_its_write_lands(
+        bool writeLands
+    )
+    {
+        // given — an inbox row whose responder returns null, under a consumer identity only this test uses
+        using var inboxTerminal = new InboxTerminalRecorder();
+        using var consumeTerminal = new ConsumeTerminalRecorder();
+        await using var host = ResponderExecutorHost.Create(
+            configureServices: InboxTerminalRecorder.UseRunTag,
+            stateWriteTakesEffect: writeLands
+        );
+        host.OnInvoke(() => Task.FromResult(ResponderExecutorHost.Replied(null)));
+        var message = host.Request(TimeSpan.FromSeconds(30), tenantId: inboxTerminal.RunTenant, generation: 0);
+        var consumer = $"terminal-{Guid.NewGuid():N}";
+        message.InboxKey = message.InboxKey! with { ConsumerIdentity = consumer };
+
+        // when
+        await host.ExecuteAsync(message, AbortToken);
+
+        // then — the attempt ends Failed like a spent budget, counted once by the writer whose terminal write landed
+        inboxTerminal
+            .Outcomes.Should()
+            .Equal(writeLands ? [nameof(InboxMetricOutcome.FailedExhausted)] : Array.Empty<string?>());
+        consumeTerminal
+            .Of(consumer)
+            .Should()
+            .Equal(
+                writeLands
+                    ?
+                    [
+                        (
+                            LaneTagEnricher.ToTagValues(MessageLane.Queue).Lane,
+                            typeof(ResponderNullResponseException).FullName
+                        ),
+                    ]
+                    : Array.Empty<(string?, string?)>()
+            );
+    }
+
+    [Fact]
+    public async Task should_count_a_runtime_subscription_row_on_consume_terminal_but_not_on_inbox_terminal()
+    {
+        // given — a received row with no inbox key, as a runtime subscription stores it
+        using var inboxTerminal = new InboxTerminalRecorder();
+        using var consumeTerminal = new ConsumeTerminalRecorder();
+        await using var host = ResponderExecutorHost.Create(configureServices: InboxTerminalRecorder.UseRunTag);
+        host.OnInvoke(() => Task.FromResult(ResponderExecutorHost.Replied(null)));
+        var message = host.Request(TimeSpan.FromSeconds(30), tenantId: inboxTerminal.RunTenant);
+        var consumer = $"runtime-{Guid.NewGuid():N}";
+        message.Origin.Headers[Headers.ConsumerIdentity] = consumer;
+
+        // when
+        await host.ExecuteAsync(message, AbortToken);
+
+        // then — the row has no inbox, so only the consume counter hears its end
+        message.InboxKey.Should().BeNull();
+        inboxTerminal.Outcomes.Should().BeEmpty();
+        consumeTerminal.Of(consumer).Should().ContainSingle();
+    }
+
     [Fact]
     public async Task should_run_a_responder_reached_by_a_plain_enqueue_and_send_nothing()
     {

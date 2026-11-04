@@ -3,6 +3,7 @@
 using Headless.AuditLog;
 using Headless.Checks;
 using Headless.EntityFramework;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Microsoft.EntityFrameworkCore;
@@ -81,7 +82,7 @@ public static class HeadlessAuditPolicyExtensions
     /// </exception>
     public static PropertyBuilder IsAuditSensitive(this PropertyBuilder builder, SensitiveDataStrategy? strategy = null)
     {
-        _ConfigureSensitiveProperty(builder, strategy);
+        _ConfigureSensitiveProperty(builder.Metadata, strategy);
         return builder;
     }
 
@@ -103,21 +104,88 @@ public static class HeadlessAuditPolicyExtensions
         SensitiveDataStrategy? strategy = null
     )
     {
-        _ConfigureSensitiveProperty(builder, strategy);
+        _ConfigureSensitiveProperty(builder.Metadata, strategy);
         return builder;
     }
 
-    private static void _ConfigureSensitiveProperty(PropertyBuilder builder, SensitiveDataStrategy? strategy)
+    /// <summary>Excludes a property of a complex type from captured values and changed fields.</summary>
+    /// <param name="builder">The complex type property builder.</param>
+    /// <returns>The same builder so additional configuration can be chained.</returns>
+    public static ComplexTypePropertyBuilder ExcludeFromAudit(this ComplexTypePropertyBuilder builder)
     {
-        builder.HasAnnotation(HeadlessAuditAnnotations.PropertyIsSensitive, value: true);
+        return builder.HasAnnotation(HeadlessAuditAnnotations.PropertyIsExcluded, value: true);
+    }
+
+    /// <summary>Excludes a property of a complex type from captured values and changed fields.</summary>
+    /// <typeparam name="TProperty">The property type.</typeparam>
+    /// <param name="builder">The complex type property builder.</param>
+    /// <returns>The same builder so additional configuration can be chained.</returns>
+    public static ComplexTypePropertyBuilder<TProperty> ExcludeFromAudit<TProperty>(
+        this ComplexTypePropertyBuilder<TProperty> builder
+    )
+    {
+        builder.HasAnnotation(HeadlessAuditAnnotations.PropertyIsExcluded, value: true);
+        return builder;
+    }
+
+    /// <summary>
+    /// Marks a property of a complex type as sensitive and optionally overrides the global sensitive-data strategy.
+    /// </summary>
+    /// <param name="builder">The complex type property builder.</param>
+    /// <param name="strategy">
+    /// The property-specific strategy, or <see langword="null"/> to use
+    /// <see cref="AuditLogOptions.SensitiveDataStrategy"/>.
+    /// </param>
+    /// <returns>The same builder so additional configuration can be chained.</returns>
+    /// <exception cref="System.ComponentModel.InvalidEnumArgumentException">
+    /// <paramref name="strategy"/> is not a defined <see cref="SensitiveDataStrategy"/> value.
+    /// </exception>
+    public static ComplexTypePropertyBuilder IsAuditSensitive(
+        this ComplexTypePropertyBuilder builder,
+        SensitiveDataStrategy? strategy = null
+    )
+    {
+        _ConfigureSensitiveProperty(builder.Metadata, strategy);
+        return builder;
+    }
+
+    /// <summary>
+    /// Marks a property of a complex type as sensitive and optionally overrides the global sensitive-data strategy.
+    /// </summary>
+    /// <typeparam name="TProperty">The property type.</typeparam>
+    /// <param name="builder">The complex type property builder.</param>
+    /// <param name="strategy">
+    /// The property-specific strategy, or <see langword="null"/> to use
+    /// <see cref="AuditLogOptions.SensitiveDataStrategy"/>.
+    /// </param>
+    /// <returns>The same builder so additional configuration can be chained.</returns>
+    /// <exception cref="System.ComponentModel.InvalidEnumArgumentException">
+    /// <paramref name="strategy"/> is not a defined <see cref="SensitiveDataStrategy"/> value.
+    /// </exception>
+    public static ComplexTypePropertyBuilder<TProperty> IsAuditSensitive<TProperty>(
+        this ComplexTypePropertyBuilder<TProperty> builder,
+        SensitiveDataStrategy? strategy = null
+    )
+    {
+        _ConfigureSensitiveProperty(builder.Metadata, strategy);
+        return builder;
+    }
+
+    private static void _ConfigureSensitiveProperty(IMutableProperty property, SensitiveDataStrategy? strategy)
+    {
+        if (strategy is not null)
+        {
+            Argument.IsInEnum(strategy.Value);
+        }
+
+        property.SetAnnotation(HeadlessAuditAnnotations.PropertyIsSensitive, value: true);
 
         if (strategy is null)
         {
-            builder.Metadata.RemoveAnnotation(HeadlessAuditAnnotations.PropertySensitiveStrategy);
+            property.RemoveAnnotation(HeadlessAuditAnnotations.PropertySensitiveStrategy);
             return;
         }
 
-        Argument.IsInEnum(strategy.Value);
-        builder.HasAnnotation(HeadlessAuditAnnotations.PropertySensitiveStrategy, (int)strategy.Value);
+        property.SetAnnotation(HeadlessAuditAnnotations.PropertySensitiveStrategy, (int)strategy.Value);
     }
 }

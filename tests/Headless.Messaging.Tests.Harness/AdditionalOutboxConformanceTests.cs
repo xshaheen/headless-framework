@@ -318,6 +318,51 @@ public abstract class AdditionalOutboxConformanceTests : TestBase
         await outbox.Initializer.InitializeAsync(AbortToken);
     }
 
+    [Fact]
+    public async Task should_sample_the_backlog_of_each_outbox_tagged_with_its_database()
+    {
+        // given — rows committed while the host is stopped, so none is relayed: one on the primary, two on billing
+        var orders = await _CreateDatabaseAsync("orders");
+        var billing = await _CreateDatabaseAsync("billing");
+        using var host = _BuildHost(
+            orders,
+            billing,
+            setup =>
+            {
+                UseOutboxStorage<BillingOutboxDbContext>(setup.AddOutbox());
+                setup.Options.BacklogSamplingInterval = TimeSpan.FromMinutes(5);
+            }
+        );
+        await _InitializeAllOutboxesAsync(host);
+        await _PublishAsync<OrdersOutboxDbContext>(host.Services, $"orders-{Guid.NewGuid():N}");
+        await _PublishAsync<BillingOutboxDbContext>(host.Services, $"billing-{Guid.NewGuid():N}");
+        await _PublishAsync<BillingOutboxDbContext>(host.Services, $"billing-{Guid.NewGuid():N}");
+        var sampler = host.Services.GetRequiredService<BacklogSamplingProcessor>();
+
+        // when
+        await sampler.SampleAsync(AbortToken);
+
+        // then — the primary reports both of its tables, the additional outbox only its published one
+        sampler
+            .Measurements.Select(measurement =>
+                (
+                    Direction: tagValue(measurement, MessagingMetrics.TagPersistenceType),
+                    Database: tagValue(measurement, MessagingMetrics.TagDbNamespace),
+                    measurement.Pending
+                )
+            )
+            .Should()
+            .BeEquivalentTo([
+                (MessagingMetrics.PersistenceTypePublish, orders.Name, 1L),
+                (MessagingMetrics.PersistenceTypeConsume, orders.Name, 0L),
+                (MessagingMetrics.PersistenceTypePublish, billing.Name, 2L),
+            ]);
+
+        static string? tagValue(BacklogMeasurement measurement, string key) =>
+            measurement.Tags.SingleOrDefault(tag => string.Equals(tag.Key, key, StringComparison.Ordinal)).Value
+            as string;
+    }
+
     private IHost _BuildHost(
         TestDatabase primary,
         TestDatabase billing,
