@@ -34,7 +34,6 @@
     <ProjectReference Include="..\..\src\Headless.Messaging.InMemory\Headless.Messaging.InMemory.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.Kafka\Headless.Messaging.Kafka.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.Nats\Headless.Messaging.Nats.csproj" />
-    <ProjectReference Include="..\..\src\Headless.Messaging.Pulsar\Headless.Messaging.Pulsar.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.RabbitMq\Headless.Messaging.RabbitMq.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.Redis\Headless.Messaging.Redis.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.Storage.InMemory\Headless.Messaging.Storage.InMemory.csproj" />

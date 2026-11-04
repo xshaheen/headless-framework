@@ -30,7 +30,6 @@
     <InternalsVisibleTo Include="Headless.Messaging.Storage.SqlServer.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Messaging.Storage.SqlServer.Tests.Integration" />
     <InternalsVisibleTo Include="Headless.Messaging.Redis.Tests.Unit" />
-    <InternalsVisibleTo Include="Headless.Messaging.Pulsar.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Messaging.Nats.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Messaging.Kafka.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Messaging.RabbitMq.Tests.Unit" />

@@ -165,7 +165,7 @@ public sealed class SimulatedBroker
     /// <c>CustomHeadersBuilder</c> option does; none when null.
     /// </summary>
     /// <remarks>
-    /// A builder that throws is handled as Amazon SQS, Redis, and Pulsar handle it today: the delivery is settled as a
+    /// A builder that throws is handled as Amazon SQS and Redis handle it today: the delivery is settled as a
     /// malformed envelope, committed without reaching the core, whatever the exception.
     /// </remarks>
     public Action<IDictionary<string, string?>>? CustomHeadersBuilder { get; init; }
