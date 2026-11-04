@@ -231,6 +231,11 @@ const clearError = () => {
 }
 
 onMounted(() => {
+  // The sign-out marker rides in the URL so a reload of this page still says the user signed out.
+  if (router.currentRoute.value.query.signedOut !== undefined) {
+    authStore.signedOut = true
+  }
+
   // A signed-in user has nothing to do here. A signed-out one stays: nothing signs in again on its own.
   if (authStore.isLoggedIn) {
     router.push(redirectPath.value)

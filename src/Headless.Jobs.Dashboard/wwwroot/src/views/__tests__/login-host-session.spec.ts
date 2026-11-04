@@ -54,6 +54,14 @@ describe('Login in host mode', () => {
     expect(signInLink()?.getAttribute('href')).toBe('/jobs/dashboard/auth/sign-in?returnUrl=%2Fjobs%2Fdashboard%2F')
   })
 
+  it('still shows the signed-out page when the page is reloaded after sign-out', async () => {
+    query.value = { signedOut: '1' }
+    await mountLogin(true)
+
+    expect(document.body.textContent).toContain('You have signed out')
+    expect(signInLink()).toBeDefined()
+  })
+
   it('tells the operator to open the dashboard from the application when the host offers no sign-in', async () => {
     await mountLogin(false)
 

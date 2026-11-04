@@ -29,7 +29,7 @@ const handleLogout = async () => {
     return
   }
 
-  await router.push({ name: 'Login' })
+  await router.push({ name: 'Login', query: { signedOut: '1' } })
 }
 </script>
 
