@@ -61,6 +61,9 @@
   <data name="g:cross_tenant_write" xml:space="preserve">
     <value>عملية الكتابة لا تطابق الجهة الحالية.</value>
   </data>
+  <data name="g:tenant_mismatch" xml:space="preserve">
+    <value>هذه العملية تخص جهة غير الجهة الحالية.</value>
+  </data>
   <data name="g:invalid_parameter_value" xml:space="preserve">
     <value>تعذّرت قراءة قيمة '{0}': صيغتها غير صحيحة أو ليست من القيم المقبولة.</value>
   </data>

@@ -160,6 +160,62 @@ public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
     }
 
     [Fact]
+    public async Task should_map_service_unavailable_to_normalized_503_that_no_cache_stores()
+    {
+        // given - a dependency outage whose own text names the server
+        const string sentinel = "LEAKED-REDIS-HOST";
+        await using var app = await _CreateAppAsync(
+            handlerSetup: _ => { },
+            endpoint: () =>
+                throw new ServiceUnavailableException(
+                    "The counter store is unavailable.",
+                    error: null,
+                    new InvalidOperationException(sentinel + ":6379 refused the connection")
+                )
+        );
+        using var client = _CreateClient(app);
+
+        // when
+        using var response = await client.GetAsync("/throw", AbortToken);
+
+        // then - a cache in front of the app must not keep serving the outage after the dependency recovers
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        response.Headers.CacheControl!.NoStore.Should().BeTrue();
+        response.Headers.RetryAfter.Should().BeNull();
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+
+        var json = await response.Content.ReadAsStringAsync(AbortToken);
+        json.Should().NotContain(sentinel);
+
+        using var doc = JsonDocument.Parse(json);
+        doc.RootElement.GetProperty("status").GetInt32().Should().Be(503);
+    }
+
+    [Fact]
+    public async Task should_map_tenant_mismatch_exception_to_normalized_403_without_tenant_ids()
+    {
+        // given
+        await using var app = await _CreateAppAsync(
+            handlerSetup: _ => { },
+            endpoint: () => throw new TenantMismatchException("LEAKED-REQUESTED-TENANT", "LEAKED-CURRENT-TENANT")
+        );
+        using var client = _CreateClient(app);
+
+        // when
+        using var response = await client.GetAsync("/throw", AbortToken);
+
+        // then
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var json = await response.Content.ReadAsStringAsync(AbortToken);
+        json.Should().NotContain("LEAKED-");
+
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        root.GetProperty("status").GetInt32().Should().Be(403);
+        root.GetProperty("error").GetProperty("code").GetString().Should().Be(GeneralErrorCodes.TenantMismatch);
+    }
+
+    [Fact]
     public async Task should_map_cross_tenant_write_exception_to_normalized_409()
     {
         // given

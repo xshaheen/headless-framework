@@ -49,7 +49,18 @@ internal sealed class CacheAttemptLimiter(
         // The expiry only reclaims memory: the window number in the key is what closes the window, so the store
         // re-arming the TTL on every increment cannot stretch it. Expiring when the window closes keeps each
         // counter alive no longer than it can be read.
-        var count = await cache.IncrementAsync(cacheKey, 1L, retryAfter, cancellationToken).ConfigureAwait(false);
+        long count;
+
+        try
+        {
+            count = await cache.IncrementAsync(cacheKey, 1L, retryAfter, cancellationToken).ConfigureAwait(false);
+        }
+#pragma warning disable CA1031 // Any store failure leaves the attempt uncounted; it is rethrown as one typed, scrubbed exception.
+        catch (Exception exception) when (_IsStoreFailure(exception, cancellationToken))
+#pragma warning restore CA1031
+        {
+            throw new AttemptLimiterUnavailableException(purpose, exception);
+        }
 
         return new AttemptResult(purpose, count, quota.Limit, retryAfter, resetToken: cacheKey);
     }
@@ -65,7 +76,25 @@ internal sealed class CacheAttemptLimiter(
             throw new ArgumentException("The attempt carries no reset token from this limiter.", nameof(attempt));
         }
 
-        await cache.RemoveAsync(cacheKey, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await cache.RemoveAsync(cacheKey, cancellationToken).ConfigureAwait(false);
+        }
+#pragma warning disable CA1031 // Any store failure leaves the counter in place; it is rethrown as one typed, scrubbed exception.
+        catch (Exception exception) when (_IsStoreFailure(exception, cancellationToken))
+#pragma warning restore CA1031
+        {
+            throw new AttemptLimiterUnavailableException(attempt.Purpose, exception);
+        }
+    }
+
+    /// <summary>
+    /// Whether <paramref name="exception"/> is the store failing rather than the caller cancelling: the caller's own
+    /// cancellation must surface as cancellation, so the request is reported as aborted, not as a 503.
+    /// </summary>
+    private static bool _IsStoreFailure(Exception exception, CancellationToken cancellationToken)
+    {
+        return !(exception is OperationCanceledException && cancellationToken.IsCancellationRequested);
     }
 
     private string _Fingerprint(string purpose, string subject)
