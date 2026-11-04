@@ -260,6 +260,7 @@ public sealed class HostEndpointMountTests : TestBase
         // then - the credential is checked once routing knows the endpoint, and a failure is logged once
         right.StatusCode.Should().Be(HttpStatusCode.OK);
         wrong.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await wrong.Content.ReadAsStringAsync(AbortToken)).Should().BeEmpty();
         logs.Entries.Should().ContainSingle(entry => entry.EventName == _AuthenticationFailedEvent);
     }
 
