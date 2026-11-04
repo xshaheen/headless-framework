@@ -440,7 +440,7 @@ public sealed class GatewayProxyAgentTests : TestBase
             downstream,
             services =>
                 services.AddTestBearer(token =>
-                    token == "operator"
+                    string.Equals(token, "operator", StringComparison.Ordinal)
                         ? new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "operator")], "Test"))
                         : null
                 )
