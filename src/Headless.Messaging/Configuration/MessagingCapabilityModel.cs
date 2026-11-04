@@ -3,6 +3,7 @@
 using System.Diagnostics;
 using Headless.Checks;
 using Headless.Messaging.Internal;
+using Headless.Messaging.Transport;
 
 namespace Headless.Messaging;
 

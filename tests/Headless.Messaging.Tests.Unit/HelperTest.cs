@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Text.RegularExpressions;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
+using Headless.Messaging.Transport;
 
 namespace Tests;
 

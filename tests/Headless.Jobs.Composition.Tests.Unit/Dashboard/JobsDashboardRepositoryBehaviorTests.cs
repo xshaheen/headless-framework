@@ -208,7 +208,6 @@ public sealed class JobsDashboardRepositoryBehaviorTests : TestBase
                 Provider,
                 Substitute.For<IJobsHostScheduler>(),
                 Substitute.For<IJobsNotificationHubSender>(),
-                new DashboardOptionsBuilder(),
                 Substitute.For<IJobsDispatcher>(),
                 JobFunctionRegistryBuilder.Build([], [], []),
                 _timeProvider,

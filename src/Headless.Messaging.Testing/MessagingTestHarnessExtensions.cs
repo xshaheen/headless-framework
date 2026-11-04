@@ -76,7 +76,7 @@ public static class MessagingTestHarnessExtensions
 
     /// <summary>
     /// Replaces the broker transport the application registered through <c>AddHeadlessMessaging</c>, such as RabbitMQ,
-    /// Kafka, Amazon SQS, Azure Service Bus, NATS, Pulsar, or Redis, with the in-memory transport, so the application's
+    /// Kafka, Amazon SQS, Azure Service Bus, NATS, or Redis, with the in-memory transport, so the application's
     /// own registration runs in a test without a broker.
     /// </summary>
     /// <remarks>

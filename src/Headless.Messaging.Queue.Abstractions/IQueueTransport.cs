@@ -9,8 +9,7 @@ namespace Headless.Messaging;
 /// <para>
 /// Each <see cref="IQueueTransport"/> implementation maps the framework-side queue intent to a
 /// broker-native point-to-point primitive — RabbitMQ direct exchange, NATS queue groups, Azure
-/// Service Bus queue, AWS SQS, Kafka partition, Redis Streams consumer group, Pulsar
-/// shared/key-shared subscription, etc.
+/// Service Bus queue, AWS SQS, Kafka partition, Redis Streams consumer group, etc.
 /// </para>
 /// <para>
 /// Providers that cannot natively support work-queue delivery do not implement this interface,

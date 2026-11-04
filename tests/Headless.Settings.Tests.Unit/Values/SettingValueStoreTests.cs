@@ -20,6 +20,32 @@ public sealed class SettingValueStoreTests : TestBase
 
     public SettingValueStoreTests()
     {
+        // A write reads the written names back after its save and inserts them into an empty cache; a test that cares
+        // what the repository holds then overrides the read-back.
+        _repository
+            .GetListAsync(
+                Arg.Any<HashSet<string>>(),
+                Arg.Any<string>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns([]);
+        _cache
+            .GetAllAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+                ValueTask.FromResult<IDictionary<string, CacheValue<SettingValueCacheItem>>>(
+                    new Dictionary<string, CacheValue<SettingValueCacheItem>>(StringComparer.Ordinal)
+                )
+            );
+        _cache
+            .TryInsertAsync(
+                Arg.Any<string>(),
+                Arg.Any<SettingValueCacheItem?>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(true));
+
         var options = Options.Create(new SettingManagementOptions { ValueCacheExpiration = TimeSpan.FromHours(5) });
         _sut = new SettingValueStore(
             _repository,
@@ -167,9 +193,16 @@ public sealed class SettingValueStoreTests : TestBase
         const string providerKey = "tenant-1";
         var existingA = new SettingValueRecord(Guid.NewGuid(), "A", "old-a", providerName, providerKey);
         var existingB = new SettingValueRecord(Guid.NewGuid(), "B", "old-b", providerName, providerKey);
+        // the plan reads A and B; the read-back after the save sees A updated, B deleted, and C inserted
         _repository
             .GetListAsync(Arg.Any<HashSet<string>>(), providerName, providerKey, AbortToken)
-            .Returns([existingA, existingB]);
+            .Returns(
+                [existingA, existingB],
+                [
+                    new SettingValueRecord(existingA.Id, "A", "new-a", providerName, providerKey),
+                    new SettingValueRecord(Guid.NewGuid(), "C", "new-c", providerName, providerKey),
+                ]
+            );
         _guidGenerator.Create().Returns(Guid.NewGuid());
         var values = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
@@ -182,9 +215,9 @@ public sealed class SettingValueStoreTests : TestBase
         // when
         await _sut.SetAllAsync(values, providerName, providerKey, AbortToken);
 
-        // then
+        // then it reads once to plan the batch, once to read the saved rows back for the cache
         await _repository
-            .Received(1)
+            .Received(2)
             .GetListAsync(
                 Arg.Is<HashSet<string>>(names => names.SetEquals(new[] { "A", "B", "C", "D" })),
                 providerName,
@@ -205,27 +238,17 @@ public sealed class SettingValueStoreTests : TestBase
                 ),
                 AbortToken
             );
-        await _cache
-            .Received(1)
-            .UpsertAllAsync(
-                Arg.Is<IDictionary<string, SettingValueCacheItem>>(items =>
-                    items.Count == 4
-                    && items[SettingValueCacheItem.CalculateCacheKey("A", providerName, providerKey)].Value == "new-a"
-                    && items[SettingValueCacheItem.CalculateCacheKey("C", providerName, providerKey)].Value == "new-c"
-                ),
-                Arg.Any<TimeSpan?>(),
-                AbortToken
-            );
         // a deleted (or never stored) name is written as empty rather than removed
-        await _cache
-            .Received(1)
-            .UpsertAllAsync(
-                Arg.Is<IDictionary<string, SettingValueCacheItem>>(items =>
-                    items[SettingValueCacheItem.CalculateCacheKey("B", providerName, providerKey)].Value == null
-                    && items[SettingValueCacheItem.CalculateCacheKey("D", providerName, providerKey)].Value == null
-                ),
-                Arg.Any<TimeSpan?>(),
-                AbortToken
+        _InsertedValues()
+            .Should()
+            .Equal(
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    [SettingValueCacheItem.CalculateCacheKey("A", providerName, providerKey)] = "new-a",
+                    [SettingValueCacheItem.CalculateCacheKey("B", providerName, providerKey)] = null,
+                    [SettingValueCacheItem.CalculateCacheKey("C", providerName, providerKey)] = "new-c",
+                    [SettingValueCacheItem.CalculateCacheKey("D", providerName, providerKey)] = null,
+                }
             );
     }
 
@@ -251,13 +274,7 @@ public sealed class SettingValueStoreTests : TestBase
 
         // then a reader keeps seeing the values the store still holds
         await act.Should().ThrowAsync<InvalidOperationException>();
-        await _cache
-            .DidNotReceive()
-            .UpsertAllAsync(
-                Arg.Any<IDictionary<string, SettingValueCacheItem>>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<CancellationToken>()
-            );
+        _cache.ReceivedCalls().Should().BeEmpty();
     }
 
     [Fact]
@@ -372,16 +389,10 @@ public sealed class SettingValueStoreTests : TestBase
         // when
         await _sut.DeleteAsync(name, providerName, providerKey, AbortToken);
 
-        // then
-        await _cache
-            .Received(1)
-            .UpsertAllAsync(
-                Arg.Is<IDictionary<string, SettingValueCacheItem>>(items =>
-                    items.Single().Key == cacheKey && items.Single().Value.Value == null
-                ),
-                Arg.Any<TimeSpan?>(),
-                AbortToken
-            );
+        // then the entry is written as empty rather than removed
+        _InsertedValues()
+            .Should()
+            .Equal(new Dictionary<string, string?>(StringComparer.Ordinal) { [cacheKey] = null });
     }
 
     [Fact]
@@ -519,4 +530,23 @@ public sealed class SettingValueStoreTests : TestBase
     }
 
     #endregion
+
+    /// <summary>The value each cache key was inserted with, read from the calls the cache received.</summary>
+    private Dictionary<string, string?> _InsertedValues()
+    {
+        return _cache
+            .ReceivedCalls()
+            .Where(call =>
+                string.Equals(
+                    call.GetMethodInfo().Name,
+                    nameof(ICache<SettingValueCacheItem>.TryInsertAsync),
+                    StringComparison.Ordinal
+                )
+            )
+            .ToDictionary(
+                call => (string)call.GetArguments()[0]!,
+                call => ((SettingValueCacheItem)call.GetArguments()[1]!).Value,
+                StringComparer.Ordinal
+            );
+    }
 }

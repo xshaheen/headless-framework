@@ -194,6 +194,113 @@ public sealed class KafkaConsumerClientOffsetCommitTests : TestBase
     }
 
     [Fact]
+    public async Task should_keep_polling_while_paused_so_the_member_stays_in_its_group()
+    {
+        // given: librdkafka evicts a member that stops calling Consume for max.poll.interval.ms, paused or not
+        var consumer = Substitute.For<IConsumer<string, byte[]>>();
+        var calls = 0;
+        consumer
+            .Consume(Arg.Any<TimeSpan>())
+            .Returns(_ =>
+            {
+                Interlocked.Increment(ref calls);
+                Thread.Sleep(5);
+                return null!;
+            });
+        await using var client = _CreateClient(consumer, concurrency: 1);
+        client.PartitionsAssigned([_Partition]);
+        client.AttachCallbacks((_, _) => Task.CompletedTask, _ => { });
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var listening = Task.Run(
+            () => client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask(),
+            AbortToken
+        );
+
+        try
+        {
+            await _WaitUntilAsync(() => Volatile.Read(ref calls) > 0);
+
+            // when
+            await client.PauseAsync(AbortToken);
+            var callsAtPause = Volatile.Read(ref calls);
+
+            // then
+            await _WaitUntilAsync(() => Volatile.Read(ref calls) >= callsAtPause + 5);
+        }
+        finally
+        {
+            await client.ResumeAsync(AbortToken);
+            await cts.CancelAsync();
+            await listening.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+        }
+    }
+
+    [Fact]
+    public async Task should_pause_a_partition_whose_record_arrives_while_paused()
+    {
+        // given: a partition assigned during the pause still fetches, so its record reaches the paused loop
+        var record = _CreateConsumeResult(4);
+        var consumer = Substitute.For<IConsumer<string, byte[]>>();
+        var paused = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        consumer
+            .Consume(Arg.Any<TimeSpan>())
+            .Returns(_ =>
+            {
+                if (paused.Task.IsCompleted)
+                {
+                    return record;
+                }
+
+                Thread.Sleep(5);
+                return null!;
+            });
+        await using var client = _CreateClient(consumer, concurrency: 1);
+        client.PartitionsAssigned([_Partition]);
+        var dispatched = 0;
+        client.AttachCallbacks(
+            (_, _) =>
+            {
+                Interlocked.Increment(ref dispatched);
+                return Task.CompletedTask;
+            },
+            _ => { }
+        );
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var listening = Task.Run(
+            () => client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask(),
+            AbortToken
+        );
+
+        try
+        {
+            // when
+            await client.PauseAsync(AbortToken);
+            paused.TrySetResult();
+            await _WaitUntilAsync(() =>
+                consumer
+                    .ReceivedCalls()
+                    .Any(c =>
+                        string.Equals(c.GetMethodInfo().Name, nameof(IConsumer<,>.Pause), StringComparison.Ordinal)
+                        && c.GetArguments()[0] is IEnumerable<TopicPartition> partitions
+                        && partitions.Contains(_Partition)
+                    )
+            );
+
+            // then
+            consumer.Received().Seek(Arg.Is<TopicPartitionOffset>(x => x.Offset == 4 && x.Partition == 0));
+            Volatile.Read(ref dispatched).Should().Be(0);
+        }
+        finally
+        {
+            await client.ResumeAsync(AbortToken);
+            await cts.CancelAsync();
+            await listening.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+        }
+    }
+
+    [Fact]
     public async Task should_rewind_instead_of_dispatching_a_record_fetched_while_pausing()
     {
         // given

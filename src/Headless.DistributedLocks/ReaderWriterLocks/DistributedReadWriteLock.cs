@@ -477,11 +477,10 @@ internal sealed class DistributedReadWriteLock(
         var gotLock = false;
         var retryAttempt = 0;
         var isFirstAttempt = true;
-        // A waiting marker is only planted by the Lua write-acquire script after it observes a
-        // contended state (i.e., TryAcquireWrite returned false). For Read mode the storage never
-        // plants a marker; for Write mode the first false return is what triggers the placeholder.
-        // Tracking this lets the finally block skip a wasted round-trip when no marker exists.
-        var waitingMarkerPlanted = false;
+        // Set when the store may hold state for this lease that a failed acquire must remove: the writer-waiting
+        // marker a contended write plants, or a grant (reader entry or writer key) the store committed before the
+        // client saw a cancellation or fault. A routine contended read leaves nothing, so it skips the round trip.
+        var releaseOnFailure = false;
         ReleaseWaiterRegistry.Entry? releaseWaiter = null;
 
         // Taken before each attempt; after the loop it is the send time of the attempt that won, which is the
@@ -503,13 +502,10 @@ internal sealed class DistributedReadWriteLock(
                 }
                 catch (OperationCanceledException)
                 {
-                    // The storage call may have planted the writer-waiting marker server-side
-                    // before the client observed cancellation. Mark it as potentially planted so
-                    // the finally block issues the idempotent cleanup release.
-                    if (mode == ReaderWriterLockMode.Write)
-                    {
-                        waitingMarkerPlanted = true;
-                    }
+                    // The store may have committed this attempt (a reader entry, the writer key, or the
+                    // writer-waiting marker) before the client observed cancellation, so the finally block
+                    // issues the idempotent release.
+                    releaseOnFailure = true;
 
                     if (cancellationToken.IsCancellationRequested)
                     {
@@ -520,14 +516,14 @@ internal sealed class DistributedReadWriteLock(
                 }
                 catch (Exception e) when (e is not (ObjectDisposedException or InvalidOperationException))
                 {
-                    // Same rationale as the cancellation catch — Lua may have planted the marker
-                    // before the client-side exception surfaced. Cleanup is idempotent.
-                    if (mode == ReaderWriterLockMode.Write)
-                    {
-                        waitingMarkerPlanted = true;
-                    }
-
                     logger.LogErrorAcquiringLockElapsed(e, resource, leaseId, timeProvider, timestamp);
+
+                    // A transient failure can surface after the store committed this attempt. Release it before
+                    // retrying, as the mutex does: a stranded reader entry blocks every writer until its TTL, and a
+                    // stranded writer key makes every retry of this lease report contention. The exit release
+                    // still runs, because this one can fail in the same outage.
+                    await _ReleaseOrphanLeaseAsync(mode, resource, leaseId).ConfigureAwait(false);
+                    releaseOnFailure = true;
                 }
 
                 if (gotLock)
@@ -537,7 +533,7 @@ internal sealed class DistributedReadWriteLock(
 
                 if (mode == ReaderWriterLockMode.Write)
                 {
-                    waitingMarkerPlanted = true;
+                    releaseOnFailure = true;
                 }
 
                 if (cts.IsCancellationRequested)
@@ -563,9 +559,9 @@ internal sealed class DistributedReadWriteLock(
         {
             _releaseWaiters.Exit(resource, releaseWaiter);
 
-            if (!gotLock && waitingMarkerPlanted)
+            if (!gotLock && releaseOnFailure)
             {
-                await _CleanupWaitingMarkerAsync(mode, resource, leaseId).ConfigureAwait(false);
+                await _ReleaseOrphanLeaseAsync(mode, resource, leaseId).ConfigureAwait(false);
             }
         }
 
@@ -630,14 +626,10 @@ internal sealed class DistributedReadWriteLock(
         }
         catch (OperationCanceledException)
         {
-            // The storage call may have planted the writer-waiting marker server-side before the
-            // client observed cancellation. Run the idempotent cleanup BEFORE rethrowing so a
-            // caller-cancelled try-once doesn't strand the marker until TTL expiry. This mirrors
-            // the cleanup performed by the post-loop block below for non-cancelled paths.
-            if (mode == ReaderWriterLockMode.Write)
-            {
-                await _CleanupWaitingMarkerAsync(mode, resource, leaseId).ConfigureAwait(false);
-            }
+            // The store may have committed the attempt (a reader entry, the writer key, or the
+            // writer-waiting marker) before the client observed cancellation. Run the idempotent
+            // release BEFORE rethrowing so a caller-cancelled try-once doesn't strand it until TTL expiry.
+            await _ReleaseOrphanLeaseAsync(mode, resource, leaseId).ConfigureAwait(false);
 
             if (callerToken.IsCancellationRequested)
             {
@@ -655,6 +647,13 @@ internal sealed class DistributedReadWriteLock(
         {
             logger.LogErrorAcquiringLockElapsed(e, resource, leaseId, timeProvider, timestamp);
             gotLock = false;
+
+            // A transient failure can surface after the store committed a reader entry, which would then block
+            // every writer until its TTL. Write mode is released by the contended branch below.
+            if (mode == ReaderWriterLockMode.Read)
+            {
+                await _ReleaseOrphanLeaseAsync(mode, resource, leaseId).ConfigureAwait(false);
+            }
         }
 
         var timeWaitedForLock = timeProvider.GetElapsedTime(timestamp);
@@ -663,16 +662,13 @@ internal sealed class DistributedReadWriteLock(
         if (!gotLock)
         {
             // Only writers can plant the waiting marker (the Lua write-acquire script does it
-            // after a contended return). Read-mode contention never touches the writer key, so
-            // running cleanup for it is a pointless round trip. `_CleanupWaitingMarkerAsync`
-            // already short-circuits on non-Write mode, but mirroring the guarded shape here
-            // keeps the intent obvious. The caller-cancel catch above performs its own cleanup
-            // and rethrows before reaching here when applicable; this branch handles the
-            // non-cancelled return paths (routine contention and safety-deadline stall,
-            // distinguished below by `safetyDeadlineFired`).
+            // after a contended return). Routine read contention leaves nothing behind, so it
+            // skips the round trip; a read that was cancelled or faulted was released in its
+            // catch above. This branch handles the non-cancelled return paths (routine contention
+            // and safety-deadline stall, distinguished below by `safetyDeadlineFired`).
             if (mode == ReaderWriterLockMode.Write)
             {
-                await _CleanupWaitingMarkerAsync(mode, resource, leaseId).ConfigureAwait(false);
+                await _ReleaseOrphanLeaseAsync(mode, resource, leaseId).ConfigureAwait(false);
             }
 
             if (safetyDeadlineFired)
@@ -778,17 +774,25 @@ internal sealed class DistributedReadWriteLock(
         return handle;
     }
 
-    private async Task _CleanupWaitingMarkerAsync(ReaderWriterLockMode mode, string resource, string leaseId)
+    /// <summary>
+    /// Best-effort release of whatever a failed acquire may have left in the store for <paramref name="leaseId"/>:
+    /// the reader entry for Read, and the writer key or writer-waiting marker for Write. Both store calls
+    /// compare on the lease id, so they are idempotent and never touch another holder's lease.
+    /// </summary>
+    private async Task _ReleaseOrphanLeaseAsync(ReaderWriterLockMode mode, string resource, string leaseId)
     {
-        if (mode != ReaderWriterLockMode.Write)
-        {
-            return;
-        }
-
         try
         {
             using var cleanupCts = timeProvider.CreateCancellationTokenSource(_WaitingMarkerCleanupTimeout);
-            await _storage.ReleaseWriteAsync(resource, leaseId, cleanupCts.Token).ConfigureAwait(false);
+
+            if (mode == ReaderWriterLockMode.Read)
+            {
+                await _storage.ReleaseReadAsync(resource, leaseId, cleanupCts.Token).ConfigureAwait(false);
+            }
+            else
+            {
+                await _storage.ReleaseWriteAsync(resource, leaseId, cleanupCts.Token).ConfigureAwait(false);
+            }
         }
         catch (Exception exception)
         {

@@ -77,6 +77,65 @@ public sealed class PostgreSqlDistributedLocksSharedConnectionTests : TestBase
     }
 
     [Fact]
+    public async Task should_use_the_shared_connection_string_when_the_registered_data_source_multiplexes()
+    {
+        // given
+        await using var appDataSource = NpgsqlDataSource.Create("Host=localhost;Database=app;Multiplexing=true");
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(appDataSource);
+        services.AddPostgreSqlSql("Host=localhost;Database=shared");
+        services.AddHeadlessDistributedLocks(setup => setup.UsePostgreSql());
+
+        await using var provider = services.BuildServiceProvider();
+
+        // when
+        var options = provider.GetRequiredService<IOptions<PostgreSqlDistributedLockOptions>>().Value;
+
+        // then
+        options.DataSource.Should().BeNull();
+        options.ConnectionString.Should().Be("Host=localhost;Database=shared");
+    }
+
+    [Fact]
+    public async Task should_fail_validation_naming_multiplexing_when_the_only_source_multiplexes()
+    {
+        // given
+        await using var appDataSource = NpgsqlDataSource.Create("Host=localhost;Database=app;Multiplexing=true");
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(appDataSource);
+        services.AddHeadlessDistributedLocks(setup => setup.UsePostgreSql());
+
+        await using var provider = services.BuildServiceProvider();
+
+        // when
+        var act = () => provider.GetRequiredService<IOptions<PostgreSqlDistributedLockOptions>>().Value;
+
+        // then
+        act.Should().Throw<OptionsValidationException>().WithMessage("*Multiplexing*");
+    }
+
+    [Fact]
+    public void should_fail_validation_naming_multiplexing_when_the_connection_string_multiplexes()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessDistributedLocks(setup =>
+            setup.UsePostgreSql("Host=localhost;Database=own;Multiplexing=true")
+        );
+
+        using var provider = services.BuildServiceProvider();
+
+        // when
+        var act = () => provider.GetRequiredService<IOptions<PostgreSqlDistributedLockOptions>>().Value;
+
+        // then
+        act.Should().Throw<OptionsValidationException>().WithMessage("*Multiplexing*");
+    }
+
+    [Fact]
     public async Task should_not_register_its_own_data_source_as_the_container_data_source()
     {
         // given

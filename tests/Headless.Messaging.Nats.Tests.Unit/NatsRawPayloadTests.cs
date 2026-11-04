@@ -321,9 +321,9 @@ public sealed class NatsRawPayloadTests : TestBase
             new MessageRouteKey(typeof(object), name, MessageLane.Bus),
             typeof(object),
             version,
-            CorrelationSelector: null,
+            correlationSelector: null,
             new Dictionary<Type, object>(),
-            RawPayload: raw
+            rawPayload: raw
         );
 
     private static HashSet<string> _NoShards() => new(StringComparer.Ordinal);

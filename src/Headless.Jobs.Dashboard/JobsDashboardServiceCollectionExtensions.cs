@@ -20,7 +20,8 @@ internal static class JobsDashboardServiceCollectionExtensions
     private static readonly JsonSerializerOptions _JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        // The config lands in an inline script and carries the request's path base, so escape markup characters.
+        Encoder = JavaScriptEncoder.Default,
     };
 
     internal static void AddDashboardService<TTimeJob, TCronJob>(
@@ -154,7 +155,7 @@ internal static class JobsDashboardServiceCollectionExtensions
                                 var htmlContent = await reader.ReadToEndAsync().ConfigureAwait(false);
 
                                 // Inject the base tag and other replacements into the HTML
-                                htmlContent = _ReplaceBasePath(htmlContent, context, basePath, config);
+                                htmlContent = ReplaceBasePath(htmlContent, context, basePath, config);
 
                                 context.Response.ContentType = ContentTypes.Texts.Html;
                                 context.Response.StatusCode = 200;
@@ -167,7 +168,7 @@ internal static class JobsDashboardServiceCollectionExtensions
         );
     }
 
-    private static string _ReplaceBasePath(
+    internal static string ReplaceBasePath(
         string htmlContent,
         HttpContext httpContext,
         string basePath,
@@ -200,13 +201,12 @@ internal static class JobsDashboardServiceCollectionExtensions
             auth = authInfo,
         };
 
-        // Serialize without over-escaping, but make sure it won't break </script>
         var json = JsonSerializer.Serialize(envConfig, _JsonOptions);
 
         json = DashboardSpaHelper.SanitizeForInlineScript(json);
 
         // Add base tag for proper asset loading
-        var baseTag = $"""<base href="{frontendBasePath}/" />""";
+        var baseTag = DashboardSpaHelper.BuildBaseTag(frontendBasePath);
 
         // Inline bootstrap: set JobsConfig and derive __dynamic_base__ (vite-plugin-dynamic-base)
         var script = $$"""

@@ -109,7 +109,6 @@ public sealed class JobsDashboardRepositoryTests : TestBase
             persistence,
             Substitute.For<IJobsHostScheduler>(),
             Substitute.For<IJobsNotificationHubSender>(),
-            new DashboardOptionsBuilder(),
             Substitute.For<IJobsDispatcher>(),
             JobFunctionRegistryBuilder.Build([], [], []),
             timeProvider,

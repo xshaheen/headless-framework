@@ -1,6 +1,6 @@
 ---
 domain: Messaging
-packages: Messaging.Abstractions, Messaging.Bus.Abstractions, Messaging.Queue.Abstractions, Messaging, Messaging.Dashboard, Messaging.Dashboard.Consul, Messaging.Dashboard.K8s, Messaging.Aws, Messaging.AzureServiceBus, Messaging.InMemory, Messaging.Storage.InMemory, Messaging.Kafka, Messaging.Nats, Messaging.Pulsar, Messaging.RabbitMq, Messaging.Redis, Messaging.SourceGenerator, Messaging.Storage.PostgreSql, Messaging.Storage.PostgreSql.EntityFramework, Messaging.Storage.SqlServer, Messaging.Storage.SqlServer.EntityFramework, Messaging.Testing
+packages: Messaging.Abstractions, Messaging.Bus.Abstractions, Messaging.Queue.Abstractions, Messaging, Messaging.Dashboard, Messaging.Dashboard.Consul, Messaging.Dashboard.K8s, Messaging.Aws, Messaging.AzureServiceBus, Messaging.InMemory, Messaging.Storage.InMemory, Messaging.Kafka, Messaging.Nats, Messaging.RabbitMq, Messaging.Redis, Messaging.SourceGenerator, Messaging.Storage.PostgreSql, Messaging.Storage.PostgreSql.EntityFramework, Messaging.Storage.SqlServer, Messaging.Storage.SqlServer.EntityFramework, Messaging.Testing
 ---
 
 # Messaging
@@ -120,8 +120,8 @@ This is the production default: `Headless.Messaging.RabbitMq` for transport and 
 - **Retry pressure is quadrant-isolated**: Published-Bus, Published-Queue, Received-Bus, and Received-Queue own independent atomic claims, workers, lock resources, counters, failure state, cadence, and adaptive interval. `IRetryProcessorMonitor` remains an aggregate compatibility projection (maximum interval, backed off when any quadrant is backed off, reset all four); that aggregate never drives runtime scheduling or lock TTL.
 - **Distributed lock**: see [Distributed Lock Integration](#distributed-lock-integration) for when to enable, when to skip, and the two-layer model (per-row `LockedUntil` lease + coarse-grained distributed lock).
 - **Never write framework metadata through provider hatches**. For publish options, use typed properties; raw `Headers.TenantId` is accepted only by the tenant-integrity path and should not be authored directly.
-- **Treat provider hatches as physical broker routing/configuration**. Message-side hatches live only on the lane builders of a contract: `.OnBus(b => b.UseNats(...) / .UseAzureServiceBus(...) / .UseAws(...))` and `.OnQueue(q => q.UseNats(...) / .UseAzureServiceBus(...) / .UseAws(...) / .UseKafka(...))`. Consumer-side hatches live only on `Tune(identity, c => ...)`: `c.UseRabbitMq(...)`, `c.UseKafka(...)`, `c.UseNats(...)`, and `c.UsePulsar(...)`.
-- **Kafka, RabbitMQ, NATS, and Pulsar expose consumer-side hatches**. AWS and Azure Service Bus expose message-side hatches only.
+- **Treat provider hatches as physical broker routing/configuration**. Message-side hatches live only on the lane builders of a contract: `.OnBus(b => b.UseNats(...) / .UseAzureServiceBus(...) / .UseAws(...))` and `.OnQueue(q => q.UseNats(...) / .UseAzureServiceBus(...) / .UseAws(...) / .UseKafka(...))`. Consumer-side hatches live only on `Tune(identity, c => ...)`: `c.UseRabbitMq(...)`, `c.UseKafka(...)`, and `c.UseNats(...)`.
+- **Kafka, RabbitMQ, and NATS expose consumer-side hatches**. AWS and Azure Service Bus expose message-side hatches only.
 - **Keep this canonical guide aligned with public messaging behavior.** Package READMEs remain small discovery pages and do not mirror this reference.
 
 ## Core Concepts
@@ -138,7 +138,7 @@ This is the production default: `Headless.Messaging.RabbitMq` for transport and 
 - **Header validation**: a custom or provider-contributed header name must be 1 to 255 printable ASCII characters (`!` through `~`) other than `:`, the names every transport can carry: NATS rejects a key with a space, `:`, or a non-ASCII character, and AMQP limits a name to 255 bytes. A name outside the rule throws `InvalidOperationException` at the publish call instead of failing later in the transport, where an outbox publish would fail on every retry. Custom header values and framework/provider-stamped header values reject control characters before publish. This includes explicit `MessageId`, `CorrelationId`, `CallbackName`, and typed `TenantId`.
 - **Explicit message names**: `PublishOptions.MessageName` follows the same validator as registered message mappings. Invalid dot shapes and invalid characters are rejected before publish.
 - **Contract version**: `Message<T>(name, version)` is the normal authority and defaults to version `"1"`. `PublishOptions.ContractVersion` is an explicit per-send override for controlled compatibility work. Consumers validate the header before deserialization, expose it through `ConsumeContext.ContractVersion`, and treat a missing header as version `"1"` for legacy or external producers, except on a `RawPayload()` lane, which fills in the contract's own version.
-- **Transport address**: `ConsumeContext.TransportAddress` is the native address the delivery arrived on: the NATS subject (shard token included), the Kafka or Pulsar topic, the RabbitMQ routing key, the Azure Service Bus entity path, the Amazon SQS queue URL, or the Redis stream key. Read routing tokens such as a tenant or a run identifier from it instead of the payload. It is `null` on the in-memory transport. Each broker consumer client stamps `headless-transport-address` on receipt and overwrites any wire value, so a producer cannot choose it; it is stored with the received message, so a retry from storage sees the original address.
+- **Transport address**: `ConsumeContext.TransportAddress` is the native address the delivery arrived on: the NATS subject (shard token included), the Kafka topic, the RabbitMQ routing key, the Azure Service Bus entity path, the Amazon SQS queue URL, or the Redis stream key. Read routing tokens such as a tenant or a run identifier from it instead of the payload. It is `null` on the in-memory transport. Each broker consumer client stamps `headless-transport-address` on receipt and overwrites any wire value, so a producer cannot choose it; it is stored with the received message, so a retry from storage sees the original address.
 - **Correlation and causation**: `PublishOptions.CorrelationId` wins. If absent, the contract's `CorrelateBy(...)` selector runs against the payload. If absent, publishes inside a consumer preserve ambient `ConsumeContext.CorrelationId`. If absent, the message id becomes the root correlation id. `PublishOptions.CausationId` wins for the immediate parent; otherwise an ambient consume context contributes its current message id. Consumers read it from `ConsumeContext.CausationId`.
 - **Tenant integrity**: use `MessageOptions.TenantId` or ambient tenancy. Do not write `Headers.TenantId` directly.
 - **Captured business context**: `MessageOptions.SuppressAmbientBusinessContext = true` disables ambient consume correlation/causation and tenant fallback when forwarding an emission snapshot. Explicit options and registered contract/selector resolution remain authoritative; `Activity` trace propagation is unchanged. A captured null tenant still fails when `TenantContextRequired` is enabled. The EF bridge sets this option and maps the captured occurrence ID to `MessageId`; it never allocates a replacement message identity at drain.
@@ -207,7 +207,7 @@ Two independent questions, answered by two different things. **Durability** — 
 - **An enlisted publish ends execution-strategy replay only where a replay would not re-run it.** Replay re-runs the block that *owns* the unit. Inside `factory.RunAsync(db, …)` (owned mode) that block is yours: a transient failure anywhere in it replays the whole block with a fresh transaction and unit, the first attempt's row rolls back with its transaction, and the replayed block publishes again — so an enlisted publish there leaves the unit replayable, and a `RunAsync` block that publishes stays retriable under `EnableRetryOnFailure`. The exception is the `HeadlessDbContext` save pipeline's *own* save (no caller transaction): it enlists in observed mode, and its replay would resume after the handlers that already returned without re-running them, so the pipeline ends replay as soon as any handler returns. An enlisted publish into an observed-mode unit also calls `IUnitOfWork.PreventRetry()` before it writes, and that save is surfaced without replay; a fresh context and aggregate graph are needed to retry it. A `SaveChangesAsync` inside your own block that dispatched domain or integration events ends replay as well: its success clears the aggregate's events, so a replayed block would re-insert the aggregate with nothing left to dispatch and commit it without the handlers' rows; the save calls `PreventRetry()` before clearing them.
 - **The entity-emitted integration-event path is exempt even there.** `PreventRetry()` is also skipped when the publish carries `MessageOptions.IsRetainedForTransactionReplay`, which is `internal` and set only by `OutboxIntegrationEventDispatcher` — the bridge that publishes the integration events an entity emitted during `SaveChangesAsync`. The save pipeline retains those captured occurrences and re-publishes them on a replayed attempt, so a pipeline-owned save whose only enlisted publishes came from emitted integration events stays retriable. Application code cannot set the flag. A pipeline-owned save that mixes both — emitted integration events plus a `unit.Outbox` publish from a domain-event handler — is not retriable, because the handler's publish marked the unit.
 - **The default costs one storage write.** A `Durable` autonomous publish is stored first and dispatched by the relay, so high-rate events pay a storage write and a relay hop per message. Opt out per type and lane with `.OnBus(b => b.WithDeliveryMode(DeliveryMode.Direct))` (or `.OnQueue(...)`) on the contract, or per host with `DefaultDeliveryMode = DeliveryMode.Direct`; `Direct` gives up durability and atomicity and returns a receipt with no `StorageId`.
-- **A durable publish may wait up to about 100 ms after its row commits.** Once the row is stored (the standalone write, or the unit's commit for `unit.Outbox`), the publish hands the message to this host's in-process sender so it goes out without waiting for the relay. The hand-off goes through a bounded channel (`Environment.ProcessorCount * 500` slots). When a burst outruns the sender and the channel is full, the publish waits up to about 100 ms of real time for a free slot. If no slot frees in time, it drops the hand-off and returns normally: the row is committed, so the relay delivers it after `RetryPolicy.InitialDispatchGrace` (default 30 s) plus up to one retry poll (`RetryProcessor.BaseInterval`, default 60 s). The bound is per operation, not per message: a unit of work that commits N messages against a full channel waits about 100 ms in total, and `IUnitOfWork.CompleteAsync` returns after that wait. The publish's cancellation token does not cover the wait, because the row is already stored and the publish has succeeded. A host that is stopping drops the hand-off at once. Delayed and scheduled publishes never wait: they go to the scheduler queue only when it has room.
+- **A durable publish may wait up to about 100 ms after its row commits.** Once the row is stored (the standalone write, or the unit's commit for `unit.Outbox`), the publish hands the message to this host's in-process sender so it goes out without waiting for the relay. The hand-off goes through a bounded channel (`Environment.ProcessorCount * 500` slots). When a burst outruns the sender and the channel is full, the publish waits up to about 100 ms of real time for a free slot. If no slot frees in time, it drops the hand-off and returns normally: the row is committed, so the relay delivers it after `RetryPolicy.InitialDispatchGrace` (default 30 s) plus up to one retry poll (`RetryProcessor.BaseInterval`, default 60 s). The bound is per operation, not per message: a unit of work that commits N messages against a full channel waits about 100 ms in total, and `IUnitOfWork.CompleteAsync` returns after that wait. The publish's cancellation token does not cover the wait, because the row is already stored and the publish has succeeded. A host that is stopping drops the hand-off at once. Delayed and scheduled publishes never wait: one due within the delayed claim's two-minute lookahead goes to the scheduler queue when it has room; a later one stays in storage as `Delayed` work until the delayed processor claims it inside that window.
 - **Storage is mandatory**, so "no storage" is a configuration error raised by startup validation rather than another matrix column.
 - **Telemetry**: `headless.messaging.delivery.requested` and `headless.messaging.delivery.resolved` emit `durable` or `direct` only, and the `headless-delivery-requested` / `headless-delivery-resolved` headers carry the same names. Whether the row was written inside a transaction travels separately, in the framework-reserved `headless-delivery-coordinated` header, as the literal `"true"` or `"false"`. It is a three-state fact: an **absent** header means unrecorded, never "not coordinated" — rows written before this header existed read as unknown. The dashboard's message detail shows it as "Transaction coordinated" (`Yes` / `No` / `Not recorded`), `MessageView.IsCoordinated` is the monitoring projection, and `RecordedMessage.IsCoordinated` exposes it to tests. All three are `bool?`.
 - **Jobs follows the same rule.** `TransactionEnlistment` is gone from Jobs too: `unit.Jobs` enlists and the injected `IJobScheduler` never does. See [Enlisted Enqueue](jobs.md#enlisted-enqueue-atomic-enqueue).
@@ -240,7 +240,7 @@ Where the deadline is enforced, and what each drop leaves behind:
 | An operator force-reprocesses (replays) a received message | Consumer runs | The replayed generation drops `headless-deliver-by` and runs: the operator is working past the publisher's deadline on purpose. The delivered generation keeps its deadline |
 
 - **Dropped rows are stored as `Failed` with a reason, not as a separate status.** The dashboard and monitoring API show them among failed messages: the stored envelope's `headless-exception` header names `MessageDeliverByExceededException`, and a received row's `ExceptionInfo` carries the `deliver_by_exceeded` reason. Requeuing a dropped published row does not deliver it, because the stored deadline still applies at the relay; to run a dropped received message anyway, force-reprocess it (the replay row above).
-- **Native broker TTL.** RabbitMQ (`BasicProperties.Expiration`) and Azure Service Bus (`ServiceBusMessage.TimeToLive`) receive the remaining time at send, so a message nobody consumes in time expires inside the broker instead of waiting in a queue. The framework never sees a broker expiry, so it is not logged and not counted on `send.expired` or `receive.outcomes`; use the broker's own metrics for it. With RabbitMQ dead-lettering enabled (`QueueArguments.EnableDeadLettering`), or a Service Bus entity that dead-letters on message expiration, an expired message goes to the dead-letter queue like any other broker expiry rather than disappearing. RabbitMQ expires a per-message TTL only when the message reaches the head of its queue, so behind a backlog the consumer check is what drops it. Kafka, Pulsar, Redis Streams, NATS JetStream, Amazon SQS, and the in-memory transport have no per-message TTL the framework sets; the relay and consumer checks above still apply on them, so a late message is dropped by the consumer instead of by the broker.
+- **Native broker TTL.** RabbitMQ (`BasicProperties.Expiration`) and Azure Service Bus (`ServiceBusMessage.TimeToLive`) receive the remaining time at send, so a message nobody consumes in time expires inside the broker instead of waiting in a queue. The framework never sees a broker expiry, so it is not logged and not counted on `send.expired` or `receive.outcomes`; use the broker's own metrics for it. With RabbitMQ dead-lettering enabled (`QueueArguments.EnableDeadLettering`), or a Service Bus entity that dead-letters on message expiration, an expired message goes to the dead-letter queue like any other broker expiry rather than disappearing. RabbitMQ expires a per-message TTL only when the message reaches the head of its queue, so behind a backlog the consumer check is what drops it. Kafka, Redis Streams, NATS JetStream, Amazon SQS, and the in-memory transport have no per-message TTL the framework sets; the relay and consumer checks above still apply on them, so a late message is dropped by the consumer instead of by the broker.
 - **Requests use their own deadline.** `RequestOptions` has no `DeliverWithin`: a request's timeout already travels as `headless-request-deadline` and is enforced as described in [Deadlines, timeouts, and clock skew](#deadlines-timeouts-and-clock-skew). A `DeliverWithin` that publish middleware sets on a request is ignored, so a request is never dropped before it is sent while its caller waits for a reply.
 
 ## Choosing a Provider
@@ -253,7 +253,6 @@ Where the deadline is enforced, and what each drop leaves behind:
 | Azure Service Bus | Azure-hosted topics/queues, sessions, managed operations | Non-Azure deployments | PartitionKey is limited to 128 chars and must match SessionId when sessions are enabled |
 | AWS SNS/SQS | AWS-native pub-sub and queue workloads | Non-AWS deployments | FIFO entities use MessageGroupId and deduplication ids |
 | NATS | Subject-based routing, lightweight broker, JetStream | Complex per-consumer storage-specific routing | Subject shards must be a single safe token |
-| Pulsar | Pulsar-native durable transport with shared subscriptions | Projects not already on Pulsar | Requires Pulsar topic and subscription provisioning |
 | Redis | Redis Streams transport | Workloads requiring a broker-native dead-letter queue | Durable streams, pending-entry reclaim after 60 s, and age-bounded streams (7 days by default) |
 
 ## Provider Capabilities
@@ -265,7 +264,6 @@ Where the deadline is enforced, and what each drop leaves behind:
 | InMemory | One copy per consumer identity | One owned copy | Yes | None | None | In-process reply channel |
 | Kafka | No | Topic; Kafka consumer group named after the message | Not applicable; Queue-only | `OnQueue` only: `UseKafka(k => k.PartitionBy(...))` | `UseKafka(k => k.WithIsolationLevel(...))` | No; startup fails |
 | NATS | Interest-retained lane stream, one durable per consumer identity | Work-queue-retained lane stream | Yes | `UseNats(n => n.SubjectShard(...))` | `UseNats(n => n.Sharded())` | Core NATS subject outside JetStream |
-| Pulsar | Lane topic + identity subscription | Lane topic + owned subscription | Yes | None | `UsePulsar(p => p.KeyShared().DeadLetter(...).AckTimeout(...))` | Not yet; startup fails |
 | RabbitMQ | Lane topic exchange, one queue per consumer identity | Lane direct exchange | Yes | None | `UseRabbitMq(r => r.PrefetchCount(...))` | Exclusive reply queue |
 | Redis | Lane Redis Stream + Redis consumer group named after the identity | Lane Redis Stream + Redis consumer group named after the message | Yes | None | None | Pub/sub channel |
 
@@ -282,7 +280,6 @@ On the Bus lane a consumer identity is the broker subscription name. Every provi
 | InMemory | `{identity}`, unchanged | None | The process |
 | Kafka (Queue only) | Consumer group `{message-name}` | 249 characters; letters, digits, `.`, `-`, `_` (the topic rules) | Topic names, through `MessageNamePrefix` |
 | NATS | Durable `bus-{identity}-{subject}` per subject | 255 characters; printable ASCII except `.`, `*`, `>`, `/`, `\` | Account; streams follow the message names |
-| Pulsar | Subscription `headless-bus-{identity}` on each topic | 255 characters; letters, digits, `-`, `=`, `:`, `.`, `_` | Tenant and namespace in the topic name |
 | RabbitMQ | Queue `bus.{identity}` | 255 characters; letters, digits, `.`, `-`, `_` | Virtual host |
 | Redis | Consumer group `{identity}` on each stream | No limit; printable ASCII without spaces | Stream keys follow the message names; database or ACL |
 
@@ -293,7 +290,6 @@ Broker-backed providers keep names ASCII and replace whitespace and control char
 | Provider | Supported configured destination | Native key | Key bounds / prerequisites |
 | --- | --- | --- | --- |
 | Kafka | Queue topic | UTF-8 string key | Nonempty, no controls; verified deterministic partitioner and fixed partition count |
-| Pulsar | Bus or Queue topic | Native message key | Nonempty, no controls; built-in key hashing and fixed topology |
 | Azure Service Bus | Session-enabled Bus subscription or Queue | `SessionId` | At most 128 UTF-16 code units; matching raw `SessionId` / `PartitionKey` |
 | AWS | FIFO SNS topic or SQS queue | `MessageGroupId` | `.fifo` destination; 1–128 ASCII characters `!`–`~`, without spaces |
 | NATS, RabbitMQ, Redis, InMemory | Unsupported in current topology | None | Required declarations and keyed requests reject deterministically |
@@ -360,7 +356,6 @@ A runtime subscription sets `RuntimeSubscriptionOptions.EveryInstance = true`.
 | NATS | Core subscription on the Bus subject, not a JetStream consumer; a subject that a sharded identity's `name.>` wildcard already covers is not subscribed again, so one publish arrives once. The client reconnects on its own and reports the recovery with the reconnect signal. A consumer slower than the publish rate overflows the subscription's pending channel (`NatsOpts.SubPendingChannelCapacity`, 1024 by default), which drops the newest messages: each drop counts as `dropped` with `error.type` = `overflow`, and a burst of drops raises the reconnect signal once, after a one-second quiet window | Nothing |
 | RabbitMQ | Server-named exclusive, non-durable queue bound to the Bus exchange, on a connection of its own without automatic recovery. The queue's message TTL is a fixed 60 seconds, not `QueueArguments.MessageTTL`, so a stalled or paused queue never hands the process older per-process state. A lost channel or a consumer the broker cancels (an operator deleted the queue) fails the listener, and the core rebuilds the client with a new queue and raises the reconnect signal | Nothing |
 | Redis | Group-less polled stream read from each stream's tail at subscribe time, then from the last id read. A stream no consumer group reads keeps entries for `EveryInstanceStreamMaxAge` (5 minutes by default), and a reader that could not read for half of that raises the reconnect signal before it reads on | Nothing |
-| Pulsar | Non-durable, exclusive subscription starting at the latest message; Pulsar.Client reconnects on its own, and the transport reports each recovery within about a second | Nothing |
 | Azure Service Bus | Subscription named from the identity and instance id with `AutoDeleteOnIdle` of 5 minutes, created on subscribe, kept across client rebuilds, and deleted when the host disposes its services after a graceful stop, each delete bounded by its own 30-second timeout; recreated if Azure deleted it during a long disconnect, and the reconnect signal is raised only when the subscription was actually recreated. Needs `AutoProvision` and Manage rights: with `AutoProvision` off, startup fails | The subscription, for up to 5 minutes |
 | AWS SNS/SQS | Not supported: no idle auto-delete, so a crash would leak the queue and its subscription | Startup fails |
 | Kafka | Not applicable: Kafka has no Bus lane | Not applicable |
@@ -376,20 +371,19 @@ Transports declare support with `MessagingProviderCapabilities.Transport(..., su
 | InMemory | Process-local channels | Shared in-process conformance | Restart loses all state |
 | Kafka | Queue-only topics; one Kafka consumer group per message | Ownership, startup rejection, and bounded poison-offset advancement | A Bus consumer fails startup; configure partitions for the workload |
 | NATS | Lane-qualified subjects, streams, retention, and durables | Identity/replica isolation and malformed terminal acknowledgement (`AckTerminate`) | Grant stream and consumer provisioning permissions |
-| Pulsar | Lane-qualified topics and Bus subscriptions | Identity/replica isolation and malformed terminal ACK | Grant topic and subscription creation permissions |
 | RabbitMQ | Lane-qualified exchanges, routing keys, and owned queues, created by `resources provision` | Identity/replica isolation, malformed terminal reject, publish before any consumer, and the shutdown drain | Run `resources provision` with `configure` permission on the shared topology; the running host needs it only for its per-process queues (see [Runtime create rights](#runtime-create-rights)) |
 | Redis | Lane-qualified Streams for both lanes | Routing, ownership, settlement, and poison handling | Size Redis memory for `StreamMaxAge` of traffic on streams a consumer group reads, and `EveryInstanceStreamMaxAge` of traffic on the rest; the provider creates the Redis consumer groups and trims the streams |
 
 #### Runtime create rights
 
-**Which transports provision at deploy time today:** RabbitMQ only. AWS SNS/SQS, Azure Service Bus, Kafka, NATS, Pulsar, and Redis Streams still create their topology at runtime, as each provider section below describes, so `resources provision` creates nothing for them yet and their runtime identity keeps every create right those sections list.
+**Which transports provision at deploy time today:** RabbitMQ only. AWS SNS/SQS, Azure Service Bus, Kafka, NATS, and Redis Streams still create their topology at runtime, as each provider section below describes, so `resources provision` creates nothing for them yet and their runtime identity keeps every create right those sections list.
 
 A host start never creates the shared topology of a transport that offers it as a [provisioned resource](utilities.md#resource-provisioning): the deployment creates it with `resources provision`, and the running host only checks that it exists, once, after it starts (see [Topology check](#topology-check)). A consumer started against a reachable broker that lacks its queue fails when it starts consuming, with a `ResourceProvisioningException` that names `resources provision`; an unreachable broker is retried as before. Some objects belong to one process or to a subscription added while the host runs, so no deploy step can know them, and the running host keeps creating them:
 
 | Provider | Created by `resources provision` | Still created by the running host |
 | --- | --- | --- |
 | RabbitMQ | The Bus and Queue lane exchanges; one durable queue per competing Bus consumer identity and per Queue-lane message the host consumes or registers, with its bindings; the `.dlx` exchanges and `.dlq` queues when dead-lettering is on | An every-instance consumer's exclusive queue and its binding; the request/reply `headless.reply.*` queue; the queue and bindings of an `IRuntimeSubscriber` subscription. The runtime user needs `configure` on `headless.reply.*`, on the server-named every-instance queues, and on the runtime subscriptions' queues, plus `write` on the Bus exchange to bind them |
-| AWS, Azure Service Bus, Kafka, NATS, Pulsar, Redis | Not yet a provisioned resource | Everything, as described for the provider below |
+| AWS, Azure Service Bus, Kafka, NATS, Redis | Not yet a provisioned resource | Everything, as described for the provider below |
 
 `ConsumerClientRequest.ProvisionsTopology` tells a transport which case a client is: `false` for a consumer registered before the host was built, `true` when the subscription includes one an `IRuntimeSubscriber` added.
 
@@ -421,7 +415,7 @@ Omit an unused cancellation token, or pass `default` or `cancellationToken: defa
 - Dashboard and monitoring JSON expose `lane`, `requestedDeliveryMode`, `resolvedDeliveryMode`, and the nullable `isCoordinated`. Storage uses the `IntentType` column and the `headless-intent` header with `Bus = 0` and `Queue = 1`.
 - `Delay` and `ScheduledAt` are mutually exclusive one-shot schedules. Both require storage, so they work on every durable publish, enlisted or not, and `Direct` is rejected before side effects. `ScheduledAt` accepts past instants and normalizes eligibility to UTC microseconds. Dispatch is best-effort after that not-before instant, with no upper latency bound. The relative-delay header travels with the message; transports do not interpret it. Absolute-only schedules omit that header.
 - Keep `PublishReceipt.StorageId` to revoke a schedule through `IMessageRevoker.RevokeAsync` after the publishing transaction commits. Token cancellation cancels the current request; it does not revoke an accepted message. `Revoked` means deletion won before reservation, `NotFound` means no matching row in the configured storage version, and `AttemptReserved` means dispatch, terminal, or retry state prevented deletion. The last outcome is not proof of delivery. Unscheduled rows with initial-dispatch grace are also ineligible. A claim alone does not prevent revocation. Deletion retains no audit record and has no tenant filter; applications must authorize access to handles. Providers without `IMessageRevocationStorage` throw a provider-naming `NotSupportedException`.
-- Redis uses Streams for both lanes. AWS Bus consumer identities, RabbitMQ, NATS JetStream, and Pulsar use the physical topologies above.
+- Redis uses Streams for both lanes. AWS Bus consumer identities, RabbitMQ, and NATS JetStream use the physical topologies above.
 
 Messaging provides not-before delivery, revocable until reservation. Keyed identity, replace, reschedule, tenant scoping, and transactional business deadlines belong to Jobs. See [Enlisted Enqueue (Atomic Enqueue)](jobs.md#enlisted-enqueue-atomic-enqueue), which commits an order, a message, and a reminder job together.
 
@@ -433,7 +427,7 @@ Every transport `Use{Provider}(...)` (except `UseInMemory()`, which has no optio
 - `Use{Provider}(Action<TOptions> configure)` — imperative configuration.
 - `Use{Provider}(Action<TOptions, IServiceProvider> configure)` — imperative configuration with access to the resolved service provider (for example to pull a secret, connection string, or credential from DI while configuring).
 
-Options are validated on start through their FluentValidation validators. Each provider keeps the `{ProviderToken}MessagingOptions` naming shape (`AmazonSqsMessagingOptions`, `AzureServiceBusMessagingOptions`, `KafkaMessagingOptions`, `NatsMessagingOptions`, `PulsarMessagingOptions`, `RabbitMqMessagingOptions`, `RedisMessagingOptions`).
+Options are validated on start through their FluentValidation validators. Each provider keeps the `{ProviderToken}MessagingOptions` naming shape (`AmazonSqsMessagingOptions`, `AzureServiceBusMessagingOptions`, `KafkaMessagingOptions`, `NatsMessagingOptions`, `RabbitMqMessagingOptions`, `RedisMessagingOptions`).
 
 ### Storage Providers
 
@@ -633,7 +627,6 @@ The message id keys inbox deduplication, so a raw message's id must be the same 
 | Kafka | `kafka:{topic}:{partition}:{offset}:{timestampMs}` | Same id; the timestamp guards against a recreated topic. It is the producer's create time unless the topic uses `message.timestamp.type=LogAppendTime`, so a producer that replays records with fixed timestamps into a recreated topic can collide with old inbox rows; use `LogAppendTime` on raw topics |
 | Azure Service Bus | `asb:{entityPath}:{sequenceNumber}:{enqueuedTicks}` | Same id |
 | Amazon SQS | `sqs:{MessageId}` | Same id: SQS keeps its message id across receives |
-| Pulsar | `pulsar:{topic}:{ledger}:{entry}:{partition}:{batch}` | Same id |
 | Redis | `redis:{streamKey}:{entryId}` | Same id |
 | RabbitMQ | none | A delivery tag changes on every redelivery and restarts on every channel, so it is never used. A raw RabbitMQ delivery without `headless-msg-id` or `message-id` is terminally rejected (it dead-letters where a dead-letter exchange is configured) |
 
@@ -668,7 +661,6 @@ On a raw lane the address Headless derives from the message name is part of the 
 | RabbitMQ | Exchange `{ExchangeName}.{bus\|queue}`, routing key `{bus\|queue}.{name}`; set the AMQP `message-id` property | AMQP headers, string or UTF-8 byte values |
 | Azure Service Bus | Bus: topic `TopicPath` with the native `Subject` set to `{name}`; Queue: queue `{name}` | Application properties, string values |
 | AWS | Bus: SNS topic `bus-{name}`; Queue: SQS queue `queue-{name}`. `.` becomes `-` and `:` becomes `_` | One String attribute `headless-aws-headers-v1` holding a JSON object of strings. On a raw lane it is optional, and other attributes are ignored |
-| Pulsar | Topic `headless-{bus\|queue}-{name}` (a `tenant/namespace/` prefix in the name is kept in front) | Message properties |
 | Redis | Stream `headless:messaging:{bus\|queue}:{name}`; the `body` field holds the body bytes | A `headers` field holding a JSON object of strings; optional on a raw lane. An entry without `body` is malformed |
 
 On AWS, SNS raw message delivery does not tell the SQS queue which topic a message came from. A raw Bus contract therefore needs its consumer identity's queue to itself: startup fails when that queue also carries another message.
@@ -693,7 +685,7 @@ services.AddHeadlessMessaging(setup =>
 });
 ```
 
-A builder is user code that may depend on a service that is briefly down, so every provider treats a builder exception as a retryable failure: the consumer client hands the delivery back to the broker for redelivery instead of settling it. NATS negatively acknowledges it, RabbitMQ requeues it, Kafka seeks back to the record, Pulsar negatively acknowledges it, Amazon SQS releases it with a 3-second visibility timeout, Azure Service Bus abandons it, and Redis Streams leaves the entry pending for the claim pass. The broker's own delivery limit ends a builder that keeps failing: NATS `MaxDeliver`, a RabbitMQ quorum queue's delivery limit, an SQS redrive policy's `maxReceiveCount`, the Azure Service Bus entity's `MaxDeliveryCount`, or a Pulsar dead-letter policy (`DeadLetter(...)`). Kafka and Redis Streams have no delivery limit, so a builder that never succeeds is redelivered without end (on Redis, until `StreamMaxAge` trims the entry); a transport-enforced budget is tracked in #1288. An envelope the transport's own check finds malformed still settles terminally.
+A builder is user code that may depend on a service that is briefly down, so every provider treats a builder exception as a retryable failure: the consumer client hands the delivery back to the broker for redelivery instead of settling it. NATS negatively acknowledges it, RabbitMQ requeues it, Kafka seeks back to the record, Amazon SQS releases it with a 3-second visibility timeout, Azure Service Bus abandons it, and Redis Streams leaves the entry pending for the claim pass. The broker's own delivery limit ends a builder that keeps failing: NATS `MaxDeliver`, a RabbitMQ quorum queue's delivery limit, an SQS redrive policy's `maxReceiveCount`, or the Azure Service Bus entity's `MaxDeliveryCount`. Kafka and Redis Streams have no delivery limit, so a builder that never succeeds is redelivered without end (on Redis, until `StreamMaxAge` trims the entry); a transport-enforced budget is tracked in #1288. An envelope the transport's own check finds malformed still settles terminally.
 
 ## Writing a Transport Provider
 
@@ -705,6 +697,246 @@ A transport package adapts one broker to `Headless.Messaging`. Core already owns
 - `MyBrokerConsumerClientFactory : IConsumerClientFactory`
 - `MyBrokerConsumerClient : IConsumerClient`
 - broker-specific pools, factories, or helpers when connection reuse matters
+
+### Public building blocks
+
+A transport written outside this repository reaches parity with the built-in ones through public API only; none of the built-in transports uses an internal of `Headless.Messaging` or `Headless.Messaging.Abstractions`. The seams live in `Headless.Messaging.Transport`, except `MessageQueueMarkerService`, which sits with the other registration types in `Headless.Messaging`:
+
+| Type | Use it to |
+| --- | --- |
+| `MessageQueueMarkerService` | Name the transport from its `IMessagesOptionsExtension` (one instance, registered as a singleton instance), so the test harness and the dashboard find it. |
+| `IMessageMetadataRegistry`, `MessageMetadata`, `MessageRouteKey` | Read the declared routes from the container: names, lanes, raw-payload and affinity flags, and the provider configs an application attached. |
+| `IMessageProviderConfigBuilder<TMessage>`, `IConsumerProviderConfigBuilder`, `ConsumerRegistryExtensions.ResolveConsumerConfig<TConfig>` | Attach a per-contract or per-consumer config from a `Use{Provider}` extension, and read the consumer config back when a client opens a subscription. |
+| `IProviderHeaderContributions`, `ProviderHeaderContribution`, `IProviderMissingPayloadValidation` | Optional capabilities of a per-contract config: headers computed from the payload at publish time, and refusing a publish with no payload. |
+| `TransportEnvelopeGate`, `EnvelopeArrival`, `NativeEnvelopeFacts` | Run the check every delivery passes before the core sees it, and complete the envelope of a raw-payload route from broker metadata. |
+| `ConsumerPauseGate`, `InFlightHandlerTracker` | Back `PauseAsync`/`ResumeAsync`, and drain running handlers before a client disposes what settlement needs. |
+| `BrokerConnectGuard`, `BrokerFailures`, `BrokerReachabilityReporter` | Classify connect and receive failures the way the core counts [broker reachability](#broker-reachability). |
+| `BusNameBuilder`, `BusNameRules`, `TransportNaming` | Derive broker-legal subscription, queue, and stream names that every process agrees on. |
+| `RedeliveryBackoff`, `DeliverByEnvelope`, `TransportBody`, `LogSanitizer` | Delay a redelivery, read the `DeliverWithin` deadline, hand a body to a client that only takes arrays, and sanitize broker-supplied text before it reaches a log. |
+| `ReplyListenerSupervisor`, `ReplyAddressGate`, `ReplyHandlerInvoker` | Keep a request/reply channel open across broker outages and hand replies to the core one at a time. |
+| `TransportMetrics`, `MessagingDiagnostics.Meter` | Record settlement failures and transport-side every-instance drops on the core's instruments, and add broker-specific instruments to the messaging meter. |
+
+Each provider interface states its evolution policy in its XML docs. An interface a provider implements grows through optional capability interfaces the core discovers by a type check, or through default interface members with a behavior-preserving fallback; existing members never gain parameters. The helper classes are sealed or static.
+
+A consumer client built on these pieces:
+
+```csharp
+using System.Globalization;
+using Headless.Messaging.Transport;
+using Headless.Threading;
+
+// Stands in for the broker's client library.
+public interface IMyBrokerSession : IAsyncDisposable
+{
+    Task<MyBrokerDelivery?> ReceiveAsync(CancellationToken cancellationToken);
+    Task AckAsync(long tag, CancellationToken cancellationToken);
+    Task NackAsync(long tag, CancellationToken cancellationToken);
+}
+
+public interface IMyBrokerConnector
+{
+    Task<IMyBrokerSession> ConnectAsync(string queue, CancellationToken cancellationToken);
+}
+
+public sealed record MyBrokerDelivery(long Tag, string Queue, long Offset, Dictionary<string, string?> Headers, byte[] Body);
+
+public sealed class MyBrokerConsumerClientFactory(IMyBrokerConnector connector, IServiceProvider services)
+    : IConsumerClientFactory
+{
+    // The broker accepts letters, digits, '-', '_', and '.', up to 120 characters.
+    private static readonly BusNameRules _QueueRules = new(maxLength: 120, isAllowed: static c => c is '-' or '_' or '.');
+
+    public async Task<IConsumerClient> CreateAsync(
+        ConsumerClientRequest request,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var queue = request.Lane == MessageLane.Bus
+            ? BusNameBuilder.Build(request, _QueueRules)
+            : request.SubscriptionName;
+
+        try
+        {
+            var session = await connector.ConnectAsync(queue, cancellationToken).ConfigureAwait(false);
+            var gate = services.GetService<TransportEnvelopeGate>() ?? TransportEnvelopeGate.Strict;
+
+            return new MyBrokerConsumerClient(request.Lane, session, gate);
+        }
+        catch (Exception e)
+        {
+            // Cancellation stays cancellation; anything else is a broker connection failure.
+            throw BrokerConnectGuard.ConnectFailure(e, cancellationToken);
+        }
+    }
+}
+
+public sealed class MyBrokerConsumerClient(MessageLane lane, IMyBrokerSession session, TransportEnvelopeGate envelopeGate)
+    : IConsumerClient
+{
+    private readonly ConsumerPauseGate _pauseGate = new();
+    private readonly InFlightHandlerTracker _inFlight = new();
+    private readonly BrokerReachabilityReporter _reachability = new();
+
+    // A lost broker is waited for in real time, never on the app clock a test host fakes.
+    private readonly ReconnectBackoff _backoff = new();
+
+    public BrokerAddress BrokerAddress { get; } = new("MyBroker", "broker.internal:5000");
+
+    public Func<TransportMessage, object?, Task>? OnMessageCallback { get; private set; }
+
+    public Action<LogMessageEventArgs>? OnLogCallback { get; private set; }
+
+    public void AttachCallbacks(Func<TransportMessage, object?, Task>? onMessage, Action<LogMessageEventArgs>? onLog)
+    {
+        OnMessageCallback = onMessage;
+        OnLogCallback = onLog;
+    }
+
+    public ValueTask SubscribeAsync(IEnumerable<string> messageNames, CancellationToken cancellationToken = default) =>
+        ValueTask.CompletedTask;
+
+    public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
+
+            MyBrokerDelivery? delivery;
+            try
+            {
+                delivery = await session.ReceiveAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception e) when (BrokerFailures.IsConnectivity(e))
+            {
+                // The session reconnects on its own; the host still learns the broker went away. A caught
+                // connectivity failure must never fall through to the success report below.
+                _reachability.ReportFailure(OnLogCallback, e);
+
+                if (!await _backoff.WaitAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    return;
+                }
+
+                continue;
+            }
+
+            _backoff.Reset();
+            _reachability.ReportSuccess(OnLogCallback);
+
+            if (delivery is null)
+            {
+                continue;
+            }
+
+            delivery.Headers[Headers.TransportAddress] = delivery.Queue;
+
+            try
+            {
+                envelopeGate.Admit(
+                    delivery.Headers,
+                    new EnvelopeArrival("MyBroker", lane, ArrivalName: null),
+                    delivery,
+                    static d => new NativeEnvelopeFacts(
+                        ProducerMessageId: null,
+                        PositionId: NativeEnvelopeFacts.Position(
+                            "mybroker",
+                            d.Queue,
+                            d.Offset.ToString(CultureInfo.InvariantCulture)
+                        ),
+                        StoredAt: null
+                    )
+                );
+            }
+            catch (InvalidDataException e)
+            {
+                // A malformed envelope never reaches a handler; settle it so the broker stops redelivering it.
+                OnLogCallback?.Invoke(
+                    new LogMessageEventArgs { LogType = MqLogType.ConsumeError, Reason = LogSanitizer.Sanitize(e.Message, 255) }
+                );
+                await session.AckAsync(delivery.Tag, CancellationToken.None).ConfigureAwait(false);
+                continue;
+            }
+
+            _inFlight.Track(_HandleAsync(delivery));
+        }
+    }
+
+    private async Task _HandleAsync(MyBrokerDelivery delivery)
+    {
+        try
+        {
+            await OnMessageCallback!(new TransportMessage(delivery.Headers, delivery.Body), delivery.Tag)
+                .ConfigureAwait(false);
+        }
+        catch (Exception e)
+        {
+            // The core settles every handler outcome itself, so a throw means nothing settled this delivery.
+            OnLogCallback?.Invoke(new LogMessageEventArgs { LogType = MqLogType.ConsumeError, Reason = e.Message });
+            await session.NackAsync(delivery.Tag, CancellationToken.None).ConfigureAwait(false);
+        }
+    }
+
+    public async ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default) =>
+        await session.AckAsync((long)sender!, cancellationToken).ConfigureAwait(false);
+
+    public async ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default) =>
+        await session.NackAsync((long)sender!, cancellationToken).ConfigureAwait(false);
+
+    public async ValueTask PauseAsync(CancellationToken cancellationToken = default) =>
+        await _pauseGate.PauseAsync().ConfigureAwait(false);
+
+    public async ValueTask ResumeAsync(CancellationToken cancellationToken = default) =>
+        await _pauseGate.ResumeAsync().ConfigureAwait(false);
+
+    public async ValueTask ShutdownAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
+    {
+        _pauseGate.Release();
+
+        // Handlers settle against the session, so they finish before it closes. The budget is real time.
+        await _inFlight.DrainAsync(timeout, TimeProvider.System).ConfigureAwait(false);
+        await DisposeAsync().ConfigureAwait(false);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _pauseGate.Release();
+        await session.DisposeAsync().ConfigureAwait(false);
+    }
+}
+```
+
+A per-contract config that computes a header from the payload, attached from the provider's own `Use{Provider}` extension:
+
+```csharp
+using Headless.Messaging.Transport;
+
+public sealed class MyBrokerMessageConfig<TMessage>(Func<TMessage, string?> partitionKey) : IProviderHeaderContributions
+    where TMessage : class
+{
+    public IReadOnlyList<ProviderHeaderContribution> HeaderContributions { get; } =
+        [new("mybroker-partition-key", payload => partitionKey((TMessage)payload))];
+}
+
+public static class MyBrokerMessageBuilderExtensions
+{
+    public static IQueueContractBuilder<TMessage> UseMyBroker<TMessage>(
+        this IQueueContractBuilder<TMessage> builder,
+        Func<TMessage, string?> partitionKey
+    )
+        where TMessage : class
+    {
+        ((IMessageProviderConfigBuilder<TMessage>)builder).SetMessageProviderConfig(
+            new MyBrokerMessageConfig<TMessage>(partitionKey)
+        );
+
+        return builder;
+    }
+}
+```
+
+Storage providers do not have this parity yet. `IDataStorage`, `IStorageTableNames`, and the optional storage capabilities are public, but inbox delivery coordination, the inbox transaction runners, and the shared relational engine are internal, so the built-in storage packages still compile against `Headless.Messaging` internals.
 
 ### Registration shape
 
@@ -765,7 +997,7 @@ On the Bus lane, derive the broker-legal subscription name from the identity wit
 - **`RejectAsync(sender, redeliveryDelay, cancellationToken)`** is what the core calls for a delivery it could not admit (its store failed, or its circuit's half-open probe is out). The default implementation holds the delivery for `redeliveryDelay` in real time, then calls the plain `RejectAsync`; the token only cuts the wait short on shutdown, and the reject still runs with `CancellationToken.None`. That hold always runs on `TimeProvider.System`, because a default interface member cannot resolve the [back-off clock](#headlessmessagingtesting); a test transport that steps through the delay overrides the member, as the in-memory transport does. Override it when the broker can delay redelivery itself (a NAK delay, a visibility timeout, a negative-acknowledge delay, a pending-entry idle time), so the delivery is released at once.
 - **`DeadLetterAsync(sender, reason, description)`** settles a message poisoned on arrival after Core stored its poison row. Core calls it only for the delivery that stored the row; a redelivery of a message already recorded terminal is committed, so the dead-letter destination holds one copy per poisoned message. A redelivery that fails before admission (for example a contract-version mismatch during a rolling deploy after a lost ack) of a message whose inbox row already exists for the same tenant, message id, message name, consumer identity, and lane is committed as a duplicate: no poison row, no dead-letter, no `OnExhausted`, no circuit-breaker failure, and no request fault. An explicit receive-middleware `Reject` is the exception: it keeps its poison row and dead-letter even when the id matches admitted work. The default implementation calls `CommitAsync`, so a transport without a dead-letter destination needs no change. Override it when the broker can keep the message aside, and attach `reason` and `description` when the broker can carry them. Reason codes: `SubscriberNotFound`, `ReceiveRejected` (a receive middleware's `Reject`), `DeserializationFailed`, and `ReceiveFailed` (a contract-version mismatch, a receive middleware fault, or an undeclared outcome). An explicit `Reject` is `ReceiveRejected` whatever cause it carries. The description is the sanitized exception message capped at 1024 characters, except for `ReceiveFailed`, which carries only the exception type, because a middleware's own exception message can echo header values such as a signature or token.
 - **`PauseAsync` and `ResumeAsync`** serve circuit-breaker backpressure. They must be idempotent, safe to call concurrently, and stop new message pulls once `PauseAsync` returns. In-flight deliveries may complete. Pause and resume keep the long-running listener alive; a provider may cancel an in-flight broker receive to reach its pause gate, but it must install fresh receive state before reopening the gate.
-- **`OnLogCallback`** emits `MqLogType` events for connection failures, broker shutdown, consumer registration and cancellation, and receive-loop errors. Core relies on them to keep transport health and restart behavior accurate. Health is tracked per consumer client: `ConsumerCancelled`, `ConsumerShutdown`, `ServerConnError`, and `ConnectError` mark the client that raised them as degraded, and `ConsumerRegistered` clears only that client, never a sibling. A `ConsumerCancelled` raised while the circuit breaker has paused the client's subscription is the pause itself and changes nothing. `RedisConsumeError` and the other receive-error types are logged only. Every 30 seconds the transport check rebuilds each subscription that holds a degraded client and leaves the healthy subscriptions consuming; a failure that belongs to no subscription, such as a broker that refused a client before its subscription started or a generation that did not stop in time, rebuilds every subscription. A client that retries a lost broker inside its own receive loop, instead of failing the loop, reports each failed receive as `MqLogType.BrokerUnreachable` and the first successful receive after one as `MqLogType.BrokerReachable`; Core counts these toward [broker reachability](#broker-reachability) without rebuilding the client. Emit `MqLogType.SettlementFailed` when an ack did not reach the broker (for example a failed ack call or a closed channel) and record `MessagingMetrics`' settlement-failure counter; Core logs it as a warning (EventId 4120 `TransportSettlementFailed`). Do not throw from the settlement: the broker redelivers and the inbox deduplicates.
+- **`OnLogCallback`** emits `MqLogType` events for connection failures, broker shutdown, consumer registration and cancellation, and receive-loop errors. Core relies on them to keep transport health and restart behavior accurate. Health is tracked per consumer client: `ConsumerCancelled`, `ConsumerShutdown`, `ServerConnError`, and `ConnectError` mark the client that raised them as degraded, and `ConsumerRegistered` clears only that client, never a sibling. A `ConsumerCancelled` raised while the circuit breaker has paused the client's subscription is the pause itself and changes nothing. `RedisConsumeError` and the other receive-error types are logged only. Every 30 seconds the transport check rebuilds each subscription that holds a degraded client and leaves the healthy subscriptions consuming; a failure that belongs to no subscription, such as a broker that refused a client before its subscription started or a generation that did not stop in time, rebuilds every subscription. A client that retries a lost broker inside its own receive loop, instead of failing the loop, reports each failed receive as `MqLogType.BrokerUnreachable` and the first successful receive after one as `MqLogType.BrokerReachable`; Core counts these toward [broker reachability](#broker-reachability) without rebuilding the client. Emit `MqLogType.SettlementFailed` when an ack did not reach the broker (for example a failed ack call or a closed channel) and record it with `TransportMetrics.RecordSettlementFailure`; Core logs it as a warning (EventId 4120 `TransportSettlementFailed`). Do not throw from the settlement: the broker redelivers and the inbox deduplicates.
 - **`DisposeAsync`** disposes only resources owned by that client instance, never shared pools or connections still used elsewhere in the package.
 
 ### Provisioning: `ITransportTopologyProvisioner`
@@ -1356,7 +1588,6 @@ No request id, correlation id, or instance id is a metric dimension.
 | NATS | Supported | A core NATS subscription, outside JetStream, on the subject `headless.reply.{32 hex}`, on a pooled connection |
 | Redis | Supported | A pub/sub subscription to the literal channel `headless.reply.{32 hex}`; `PUBLISH` writes no key |
 | Azure Service Bus | Not yet: startup fails until its reply channel ships | |
-| Pulsar | Not yet: startup fails until its reply channel ships | |
 | Kafka | No: startup fails | Kafka has no per-process address short of a partition per instance |
 | AWS SNS/SQS | No: startup fails | AWS has no .NET temporary-queue client, and per-process queues are billed |
 
@@ -1534,7 +1765,7 @@ The collector obtains one fixed provider-clock history cutoff snapshot per invoc
 - `MessagingOptions.MinimumInboxGuarantee` defaults to `InboxGuarantee.Transactional` and sets the minimum inbox guarantee required by durable consumers. The guarantees are ordered `ProcessLocal` (0) < `Durable` (1) < `Transactional` (2); the configured storage must declare the selected guarantee or a stronger one. Selecting a weaker requirement is an explicit opt-down and does not change the provider's actual guarantees. Undefined values are rejected.
 - `MessagingInstrumentationOptions.IncludeTenantIdInMetricTags` defaults to `false`. Enable it only when the metrics backend and tenant population have an explicit cardinality budget; traces retain their separate tenant-tag policy.
 - `ConsumerThreadCount`, `SubscriberParallelExecuteThreadCount`, and `SubscriberParallelExecuteBufferFactor` accept 1 through 1,024; the subscriber thread-count × buffer-factor product must not exceed 100,000.
-- Consumer retries come from each consumer's failure policy (see [Consumer failure policy](#consumer-failure-policy)). Publish retries, the dispatch lease, and `OnExhausted` live under `RetryPolicy`; polling lives under `RetryProcessor`. `RetryBatchSize` (default 200) and `SchedulerBatchSize` (default 1,000) accept 1 through 100,000. `SchedulerBatchSize` also bounds the in-memory near-term scheduler queue; overflow remains durable as `Delayed` work.
+- Consumer retries come from each consumer's failure policy (see [Consumer failure policy](#consumer-failure-policy)). Publish retries, the dispatch lease, and `OnExhausted` live under `RetryPolicy`; polling lives under `RetryProcessor`. `RetryBatchSize` (default 200) and `SchedulerBatchSize` (default 1,000) accept 1 through 100,000. `SchedulerBatchSize` also bounds the in-memory near-term scheduler queue, which only holds messages due within the two-minute claim lookahead; overflow remains durable as `Delayed` work, and a host whose queue is full skips its delayed claim until the queue drains.
 - `UseStorageLock` coordinates retry processors through a messaging-keyed distributed lock provider.
 - `DeadNodeReconcileInterval` (default `null`, `> 0` when set) sets the always-on dead-owner recovery reconcile cadence (see [Dead-owner recovery](#dead-owner-recovery)). `null` means half the coordination `DeadRetentionWindow` (15 seconds with default coordination options), because relational membership providers keep a dead identity observable for only that window. On a host with a coordination provider, an explicit value above that ceiling is clamped to it and logs one warning per host (Coordination EventId 14, `DeadNodeReconcileIntervalClamped`, under the bridge's category); with only the `NullNodeMembership` fallback the bridge is a no-op and an explicit value is used as set. To reconcile less often, raise the coordination `DeadRetentionWindow`, which lifts the ceiling with it. Independent of `UseStorageLock`.
 - `ShutdownTimeout` (default 30 seconds, `> 0`, `<= 5m`) is one end-to-end messaging shutdown bound. Shutdown first quiesces every processor, then concurrently initiates all drains using the remaining portion of one monotonic deadline. Configure the generic host or orchestrator termination grace to exceed this value; an earlier kill intentionally falls back to normal lease-expiry recovery while eventual cleanup remains fault-observed.
@@ -1542,7 +1773,7 @@ The collector obtains one fixed provider-clock history cutoff snapshot per invoc
 - `ConsumerPollTimeout` (default 1 second, `> 0`, `<= 30s`) is the listening timeout every consumer client receives. Its meaning depends on the transport:
   - **Wait bound (Kafka, in-memory)**: one poll blocks up to this long and returns as soon as a message arrives, so the value does not delay delivery; a longer value only slows the reaction to shutdown. Kafka's blocking poll does not observe cancellation, which is why the bound stays inside the default `ShutdownTimeout`.
   - **Sleep (Redis Streams, Amazon SQS)**: after a poll that returned nothing the client waits this long before it polls again, so the value sets an idle consumer's load. A Redis consumer client reads every subscribed stream once per interval (an `XREADGROUP` plus a consumer-group check per stream), so `100 ms` costs ten times the idle Redis load of the 1-second default. With `RedisMessagingOptions.WakeConsumersOnPublish` on (the default), a publish wakes the waiting consumer at once, so the interval only bounds how late a lost wake-up delivers; with it off, and on SQS, the interval is also the delivery latency of an idle consumer. A full batch is read again at once, so a backlog never waits on the interval.
-  - **Ignored**: push transports (RabbitMQ, Azure Service Bus, Pulsar).
+  - **Ignored**: push transports (RabbitMQ, Azure Service Bus).
 - `DelayedMessagePollInterval` (default 60 seconds, `> 0`, `<= 2m`) is how long the delayed-message processor waits between polls of storage for delayed messages about to come due. A delayed message published by the running host is scheduled in memory at once; the poll schedules the ones that outlived a restart or were stored by another host. Each poll claims messages due within the next two minutes, so a longer interval could let a message come due between polls unclaimed. A shorter interval costs one storage query per poll for each outbox.
 - `RequestReply.DefaultTimeout` (default 30 seconds, `> 0`, `<= 10m`) is the request timeout when a call sets no `RequestOptions.Timeout`. `RequestReply.IncludeExceptionDetailsInFaults` (default `false`) lets this host's responders put the exception type and message in fault replies; it applies whether or not the host calls `AddRequestReply`. `RequestReply.MaxPendingRequests` (default `null`, no limit; `> 0` when set) caps the calls waiting for a reply at once; a call over it throws `RequestNotSentException` without publishing. See [Request/reply](#requestreply).
 - Register middleware through `MessagingBuilder.AddBusPublishMiddleware<T>()`, `AddQueuePublishMiddleware<T>()`, `AddReceiveMiddleware<T>()`, `AddBusConsumeMiddleware<T>()`, `AddQueueConsumeMiddleware<T>()`, `AddPublishMiddlewareFor<TMiddleware,TMessage>(lane)`, `AddReceiveMiddlewareFor<TMiddleware,TMessage>(lane)`, and `AddConsumeMiddlewareFor<TMiddleware,TMessage>(lane)`. Middleware for one consumer attaches through `Tune(identity, c => c.UseMiddleware<T>())`.
@@ -1632,13 +1863,13 @@ builder.Services.AddHeadlessMessaging(setup =>
 
 With the framework default, a message that keeps failing runs 3 attempts at once, then 5 more after about 30 s, 60 s, 120 s, 240 s, and 480 s (each ±20% and each later by up to one poll interval), then fails terminally: 8 attempts.
 
-**Before the inbox admits a delivery, the policy does not apply.** It counts attempts of a stored row. When the inbox row cannot be written, for example while the messaging storage database is down, the consumer retries the write in process three times, about 250 ms, 500 ms, and 1 s apart (jittered, under two seconds in total, so well inside every broker's lock or visibility window), and logs each retry (EventId 4134, `InboxAdmissionRetrying`). A blip that short costs no redelivery. If the write still fails, the delivery goes back to the broker before any attempt runs, with a redelivery delay of about 1 s that doubles, up to 30 s, for each further delivery in a row that the consumer client could not admit, and starts over once one is admitted. Transports whose broker can delay a redelivery use that: a NATS `NAK` delay, the SQS visibility timeout, Pulsar's `NegativeAckRedeliveryDelay`, and the Redis pending-entry idle time (`PendingClaimMinIdleTime`). Azure Service Bus, RabbitMQ, Kafka, and InMemory hold the delivery for the delay before they abandon, requeue, or seek back. The in-process retries and the InMemory hold run on the [back-off clock](#headlessmessagingtesting), which is `TimeProvider.System` unless a test replaces it. A host that stops cuts the wait short and rejects at once. The failure is also reported to the consumer's circuit breaker, so when its transient predicate accepts the exception (the default accepts an unreachable, overloaded, or failing-over database on PostgreSQL, SQL Server, and SQLite), a lasting outage opens the circuit and pauses the client instead of cycling deliveries through the broker. A failure the predicate does not accept never closes a half-open circuit: the store failed before the consumer ran, so it says nothing about the dependency the probe tests, and the probe is only released. The broker still counts each redelivery against its own limit, such as `MaxDeliver` on NATS (no limit by default), the max delivery count on Azure Service Bus, or a redrive policy's `maxReceiveCount` on SQS, and the policy's retry count does not move. The delays stretch that limit over minutes rather than milliseconds; they do not remove it, so size the broker limit for the storage outage you expect to ride out. A budget sized to ride out an outage of something the handler calls, such as a blob store or an API, says nothing about an outage of the messaging storage itself.
+**Before the inbox admits a delivery, the policy does not apply.** It counts attempts of a stored row. When the inbox row cannot be written, for example while the messaging storage database is down, the consumer retries the write in process three times, about 250 ms, 500 ms, and 1 s apart (jittered, under two seconds in total, so well inside every broker's lock or visibility window), and logs each retry (EventId 4134, `InboxAdmissionRetrying`). A blip that short costs no redelivery. If the write still fails, the delivery goes back to the broker before any attempt runs, with a redelivery delay of about 1 s that doubles, up to 30 s, for each further delivery in a row that the consumer client could not admit, and starts over once one is admitted. Transports whose broker can delay a redelivery use that: a NATS `NAK` delay, the SQS visibility timeout, and the Redis pending-entry idle time (`PendingClaimMinIdleTime`). Azure Service Bus, RabbitMQ, Kafka, and InMemory hold the delivery for the delay before they abandon, requeue, or seek back. The in-process retries and the InMemory hold run on the [back-off clock](#headlessmessagingtesting), which is `TimeProvider.System` unless a test replaces it. A host that stops cuts the wait short and rejects at once. The failure is also reported to the consumer's circuit breaker, so when its transient predicate accepts the exception (the default accepts an unreachable, overloaded, or failing-over database on PostgreSQL, SQL Server, and SQLite), a lasting outage opens the circuit and pauses the client instead of cycling deliveries through the broker. A failure the predicate does not accept never closes a half-open circuit: the store failed before the consumer ran, so it says nothing about the dependency the probe tests, and the probe is only released. The broker still counts each redelivery against its own limit, such as `MaxDeliver` on NATS (no limit by default), the max delivery count on Azure Service Bus, or a redrive policy's `maxReceiveCount` on SQS, and the policy's retry count does not move. The delays stretch that limit over minutes rather than milliseconds; they do not remove it, so size the broker limit for the storage outage you expect to ride out. A budget sized to ride out an outage of something the handler calls, such as a blob store or an API, says nothing about an outage of the messaging storage itself.
 
 **Classification.** Fail rules see the handler's own exception, unwrapped from the executor's `SubscriberExecutionFailedException`. A failure ends at once, without its remaining retries, when a fail rule matches or the exception is in the built-in permanent set: `ArgumentException` and its subtypes, `NotSupportedException`, and `SubscriberNotFoundException`. A `FailWhen` predicate that throws counts as a match and is logged (EventId 111, `FailurePolicyRuleThrew`). Every other exception is retried. A cancellation of the consume token, such as host shutdown, is not a failure: once that token is cancelled, any `OperationCanceledException` that ends the attempt writes nothing, whatever token it carries, and the row is picked up again later. An `OperationCanceledException` raised while the consume token is live is an ordinary failure: fail rules see it and the policy retries it. That covers one the handler throws, such as an `HttpClient` timeout or a handler-owned `CancelAfter`, and one the transactional inbox's commit work raises after the handler, such as a consumer `SaveChanges` interceptor's `HttpClient` timeout; the latter reaches fail rules and `OnExhausted` unwrapped. To end such a cancellation at once, declare `FailOn<OperationCanceledException>()`, which also matches `TaskCanceledException`.
 
 **A failed success write is not a consumer failure.** When the handler succeeds but writing its `Succeeded` state throws, for example during a storage outage, the attempt ends without an immediate retry, without `OnExhausted`, and without a circuit-breaker failure, and logs EventId 122 (`ConsumerSucceededButStateWriteFailed`). The row stays as it was, and the retry processor picks it up once its lease is released or expires, which may run the handler again: delivery is at-least-once, as after a crash at that point. Under the `Transactional` inbox guarantee the success write commits with the handler's unit, so its failure rolls back the handler's effects, and running the handler again is the intended recovery.
 
-**Terminal failure.** A message the policy gives up on is stored as `Failed` with no `NextRetryAt`; there is no separate dead-letter status. It stays until its retention expires, and an operator re-executes it from the Messaging dashboard (`POST /api/received/reexecute`); a re-executed request runs as a plain Queue message and answers no caller (see [Deadlines](#deadlines-timeouts-and-clock-skew)). `RetryPolicy.OnExhausted` fires once for each terminal consume failure, and only on the node whose terminal write wins:
+**Terminal failure.** A message the policy gives up on is stored as `Failed` with no `NextRetryAt`; there is no separate dead-letter status. It stays until its retention (`FailedMessageExpiredAfter`, counted from the terminal write, not from when the row was stored) expires, and an operator re-executes it from the Messaging dashboard (`POST /api/received/reexecute`); a re-executed request runs as a plain Queue message and answers no caller (see [Deadlines](#deadlines-timeouts-and-clock-skew)). `RetryPolicy.OnExhausted` fires once for each terminal consume failure, and only on the node whose terminal write wins:
 
 - the policy's budget is spent;
 - a fail rule or the built-in permanent set matches;
@@ -1695,7 +1926,7 @@ pickup 3 (persisted retry #2):
 
 On PostgreSQL and SQL Server, the database clock decides due time as well as lease ownership: retry pickup compares `NextRetryAt`, and the delayed claim compares each scheduled `ExpiresAt`, against the database clock, and the store stamps `Added`, the initial-dispatch-grace `NextRetryAt`, the orphan-probe `NextRetryAt`, and failed-message `ExpiresAt` from that clock too. Core never hands the store an application-clock due time either: a retry transition passes a `RetryDelay`, and a circuit-open deferral passes the time left until the circuit's next probe, and the store adds that delay to its own clock in the same statement that writes the row, so a retry falls due after its configured delay by the database clock however far the application clock is skewed. A scheduled publish time is a genuine instant the caller chose, so it is stored as given and compared against the database clock. Retention stays on the application clock: a terminal row's `ExpiresAt` and the collector's cutoff that purges it are both the caller's, so they cannot drift from each other. InMemoryStorage uses its injected `TimeProvider` for all of these. The public `IDataStorage` SPI accepts a `DispatchTimeout` duration; PostgreSQL and SQL Server compare and stamp leases from one database-clock snapshot, read only after the rows the decision is about are locked, and InMemoryStorage uses its injected `TimeProvider`. A lease, a retry due time, a reserved attempt, or an operator action that waited for another transaction's row lock therefore decides on the clock as it stood when the lock was granted, never on a reading from before the wait: a transition of one row takes the row's lock before the statement that reads the clock, dead-owner reclaim locks the dead owners' rows before it compares their leases, and the claims and retention selections skip locked rows instead of waiting. A successful call returns the persisted `(LockedUntil, Owner)` identity on the message for fenced attempt and state writes. This eliminates client-clock skew from relational ownership, not duplicate delivery: genuine `DispatchTimeout` expiry permits a successor, and a process paused beyond its lease can resume already-running work alongside it. Delivery remains at-least-once.
 
-**A lease lasts as long as its attempt runs.** Retry pickup leases a whole batch (`RetryBatchSize`, default 200) in one claim, and the rows of a batch are dispatched one after another, so the claim's lease can run out before a row near the end of the batch starts. Reserving each attempt therefore also re-stamps the row's lease: the store sets `LockedUntil` to its own clock plus `DispatchTimeout` in the same fenced statement that reserves the attempt, and the attempt adopts the new `(LockedUntil, Owner)` identity, inbox attempt fence included, for every later fenced write (success, retry state, release, deferral). While the handler or the transport send runs, the attempt slides the lease forward every `RetryPolicy.LeaseRenewalInterval` (default a third of `DispatchTimeout`; an explicit value must be greater than zero and less than `DispatchTimeout`), fenced on the lease it holds and stamped from the store's clock. A renewal that finds the lease gone cancels the attempt's token (EventId 4131 `MessageLeaseLost`), and the attempt writes no state, even when the handler ignores its token and finishes: another node may own the row by then, and the row is recovered like a crashed attempt. A renewal that throws or that the store does not confirm within one interval, such as during a short database blip, says nothing about the lease, so it is logged (EventId 4129 `MessageLeaseRenewalFailed`) and retried on the next tick while the lease the attempt last confirmed is still live. Only once that lease could lapse before the next tick, which at the default cadence is the second failure in a row, does it cancel the attempt the same way (EventId 4130 `MessageLeaseRenewalFailedPastLease`). Tolerating a failure never revives a lease: the next renewal is still fenced on the identity the attempt holds. So `DispatchTimeout` now bounds how long a stalled or crashed attempt keeps its row, not how long a healthy one may run. A send cancelled this way may still have reached the broker, so the row's next dispatch can publish it again (at-least-once). The renewal cadence runs on the registered `TimeProvider`, the one-interval bound on each renewal call runs on the [back-off clock](#headlessmessagingtesting), and the lease deadline is always the store's. A third-party store that does not implement `RenewPublishLeaseAsync` / `RenewReceiveLeaseAsync` (their defaults throw `NotSupportedException`) keeps the lease its reservation stamped.
+**A lease lasts as long as its attempt runs.** Retry pickup leases a whole batch (`RetryBatchSize`, default 200) in one claim, and the rows of a batch are dispatched one after another, so the claim's lease can run out before a row near the end of the batch starts. Reserving each attempt therefore also re-stamps the row's lease: the store sets `LockedUntil` to its own clock plus `DispatchTimeout` in the same fenced statement that reserves the attempt, and the attempt adopts the new `(LockedUntil, Owner)` identity, inbox attempt fence included, for every later fenced write (success, retry state, release, deferral). While the handler or the transport send runs, the attempt slides the lease forward every `RetryPolicy.LeaseRenewalInterval` (default a third of `DispatchTimeout`; an explicit value must be greater than zero and less than `DispatchTimeout`), fenced on the lease it holds and stamped from the store's clock. A renewal that finds the lease gone cancels the attempt's token (EventId 4131 `MessageLeaseLost`), and the attempt writes no state, even when the handler ignores its token and finishes: another node may own the row by then, and the row is recovered like a crashed attempt. A renewal that throws or that the store does not confirm within one interval, such as during a short database blip, says nothing about the lease, so it is logged (EventId 4129 `MessageLeaseRenewalFailed`) and retried on the next tick while the lease the attempt last confirmed is still live. Only once that lease could lapse before the next tick, which at the default cadence is the second failure in a row, does it cancel the attempt the same way (EventId 4130 `MessageLeaseRenewalFailedPastLease`). Tolerating a failure never revives a lease: the next renewal is still fenced on the identity the attempt holds. So `DispatchTimeout` now bounds how long a stalled or crashed attempt keeps its row, not how long a healthy one may run. A send cancelled this way may still have reached the broker, so the row's next dispatch can publish it again (at-least-once). The renewal cadence runs on the registered `TimeProvider`, the one-interval bound on each renewal call runs on the [back-off clock](#headlessmessagingtesting), and the lease deadline is always the store's. Rows still waiting their turn in a claimed batch are renewed the same way, on the same cadence, until their dispatch takes them, so a slow or rate-limited row early in the batch does not let the claim on the rows behind it run out; a waiting row whose renewal finds the lease gone is left to its reservation, which skips it, and a renewal that throws is logged (EventId 4135 `ClaimedRetryLeaseRenewalFailed`) and retried on the next tick. A third-party store that does not implement `RenewPublishLeaseAsync` / `RenewReceiveLeaseAsync` (their defaults throw `NotSupportedException`) keeps the lease its claim or reservation stamped, so a row reached after its claim ran out is released for the next pickup.
 
 Inbox lease release and retry deferral also require the complete stored inbox attempt fence, including generation, incarnation, and attempt ID. Missing or mismatched fences leave the row unchanged. Admission uses the same identity validation as PostgreSQL and SQL Server: nonblank contract names, consumer identities, and message IDs up to 200 characters; contract versions up to 100 characters; nonnegative generations; and nonblank tenant IDs up to 200 characters. Blank tenant headers normalize to no tenant.
 
@@ -2024,7 +2255,6 @@ Message ordering guarantees depend on the transport provider and configuration:
 - **AWS SQS**: FIFO queues provide strict ordering; standard queues do not
 - **Redis Streams**: Ordered within a stream, but parallel consumers may process out of order
 - **NATS**: Ordering preserved per subject, but concurrent consumers introduce variability
-- **Pulsar**: Ordered within partitions when using partition key
 - **InMemory**: FIFO ordering with single consumer thread
 
 ### Configuration Impact on Ordering
@@ -2246,7 +2476,7 @@ Known limitations:
 
 An Azure Service Bus processor reports no success while idle, so after a failed receive the client peeks its entity on a real-time back-off (about 1 second, doubling to 30) until a peek reaches Service Bus or a message arrives, then reports the broker reachable. A peek locks and settles nothing; a client with no failure never peeks.
 
-Transports that retry a lost broker inside their own receive loop (Azure Service Bus, Amazon SQS, Pulsar, Redis Streams) report through `OnLogCallback` with `MqLogType.BrokerUnreachable` (`14`) on each failed receive and `MqLogType.BrokerReachable` (`15`) on the first receive that succeeds after one. These leave the client running instead of rebuilding it, and log `TransportBrokerUnreachable` (event 132, Warning) and `TransportBrokerReachable` (event 123, Information). The warning stops once a failure run makes the broker unreachable, so a client that retries every second does not log every retry; the next run after a success logs again.
+Transports that retry a lost broker inside their own receive loop (Azure Service Bus, Amazon SQS, Redis Streams) report through `OnLogCallback` with `MqLogType.BrokerUnreachable` (`14`) on each failed receive and `MqLogType.BrokerReachable` (`15`) on the first receive that succeeds after one. These leave the client running instead of rebuilding it, and log `TransportBrokerUnreachable` (event 132, Warning) and `TransportBrokerReachable` (event 123, Information). The warning stops once a failure run makes the broker unreachable, so a client that retries every second does not log every retry; the next run after a success logs again.
 
 ### Host manifest
 
@@ -2577,7 +2807,7 @@ All instruments register on the `Headless.Messaging` meter. Every duration is in
 
 Each phase maps to one operation: the transport send is `send`, the transport delivery to the receive stage is `receive`, and the subscriber invocation from the inbox is `process`, so `messaging.client.sent.messages` counts every send attempt and `messaging.client.consumed.messages` counts every delivery once. The count of `messaging.process.duration` is the number of subscriber invocations; filter it by `error.type` for failures. An every-instance delivery runs its consumer inside the receive span, so it records no `process` measurement.
 
-`messaging.system` is the transport's `BrokerAddress.Name`: `kafka`, `pulsar`, `rabbitmq`, `servicebus`, `aws_sqs`, and `aws.sns` are the conventions' well-known values; `nats`, `redis`, and `in_memory` are the framework's values for systems the conventions do not list. A process measurement takes it from the transport registered for the message's lane. `server.address` and `server.port` come from the first broker in `BrokerAddress.Endpoint`.
+`messaging.system` is the transport's `BrokerAddress.Name`: `kafka`, `rabbitmq`, `servicebus`, `aws_sqs`, and `aws.sns` are the conventions' well-known values; `nats`, `redis`, and `in_memory` are the framework's values for systems the conventions do not list. A process measurement takes it from the transport registered for the message's lane. `server.address` and `server.port` come from the first broker in `BrokerAddress.Endpoint`.
 
 Spans follow the conventions too:
 
@@ -2690,6 +2920,8 @@ Registers SNS/SQS clients, bus/queue transports, and AWS consumer client service
 Headless disables Azure SDK auto-complete internally and settles messages explicitly after durable receive storage and handler outcome.
 
 Stopping a consumer stops every processor at once and returns within the shutdown budget (30 seconds when the client is disposed directly), even while a handler still runs. A handler still running past the budget can still settle its message, and the processors close, releasing the client's resources, once it returns.
+
+Pausing (the circuit breaker opening) starts every processor's stop and returns without waiting for it. The stop ends new receives at once but waits for in-flight handlers, and the circuit breaker pauses from inside the handler whose failure tripped it, so waiting would never return. A resume waits for that stop to finish before it starts the processors again.
 
 Structurally malformed envelopes, including envelopes with missing or invalid required Messaging headers, are moved to the entity's dead-letter subqueue after sanitized logging, with `DeadLetterReason` `MalformedEnvelope` and the exception type as `DeadLetterErrorDescription`; they never reach Core, so the subqueue is the only record of them. A message poisoned on arrival in Core is dead-lettered the same way, with Core's reason code (`SubscriberNotFound`, `ReceiveRejected`, `DeserializationFailed`, or `ReceiveFailed`) and its description. Retryable handler or custom-header hook failures are not classified as terminal malformed failures; they remain unsettled or are abandoned according to the runtime failure path.
 
@@ -2810,6 +3042,7 @@ Registers in-memory storage and monitoring services. State is lost when the proc
 - One idempotent producer, built on first publish, serves every publish in the process; disposal flushes it for up to `message.timeout.ms`. A fatal producer error discards it, and the next publish builds a new one.
 - Consumers use `cooperative-sticky` partition assignment by default, so a rebalance moves only the partitions that change owner.
 - A handler's settlement stores its offset; the background auto-commit sends stored offsets to the broker. A partition revoke waits up to 30 seconds for in-flight handlers on the revoked partitions, then commits synchronously. Shutdown waits, within the shutdown budget, for the poll loop to stop and for in-flight handlers to finish, including one the loop started after shutdown began; the loop stops within one `MessagingOptions.ConsumerPollTimeout`. It then closes the consumer, which commits the stored offsets synchronously.
+- A circuit-breaker pause pauses the assigned partitions and keeps the poll loop calling `Consume`, so the member stays in its group however long the circuit stays open: librdkafka counts `max.poll.interval.ms` (default 300 s) between `Consume` calls whether or not the partitions are paused, and a member that stops calling it leaves the group. A record that still arrives while paused, from a `Consume` already in progress or a partition assigned during the pause, is not dispatched: the client seeks back to it and pauses its partition, and the poll resumes there after `ResumeAsync`.
 - A record whose message callback throws without settling it is sought back, so Kafka redelivers it and the consumer keeps receiving. If that seek fails, the listener fails and Core rebuilds the client, which reads again from the last committed offset.
 - Consumer lag per assigned partition is reported as the `headless.messaging.kafka.consumer.lag` gauge on the `Headless.Messaging` meter once `MainConfig["statistics.interval.ms"]` is above zero. See [Consumer lag metric](#consumer-lag-metric).
 
@@ -3046,74 +3279,6 @@ Configure NATS servers, credentials, stream behavior, durable names, and connect
 ### Runtime behavior
 
 Registers NATS connection pool, transports, consumer factory, stream provisioning, and the processing server that creates owned declared streams at host start.
-
-## Headless.Messaging.Pulsar
-
-### API and behavior
-
-- `setup.UsePulsar(...)`.
-- Pulsar bus and queue transport support.
-- TLS-related options through provider configuration.
-- Configurable negative-ack redelivery with a one-minute default and a validated 100-millisecond minimum.
-- Producer settings through `PulsarMessagingOptions.Producer`: compression, batching and its publish delay, and send timeout.
-- Consumer hatch: `Tune(identity, c => c.UsePulsar(pulsar => pulsar.KeyShared().DeadLetter(maxRedeliveryCount: 5).AckTimeout(TimeSpan.FromMinutes(1))))`.
-- Shutdown stops receiving, then lets the receive loop stop and in-flight handlers settle, including one the loop started after shutdown began, within the shutdown budget (30 seconds on a plain dispose) before it closes the consumer.
-- Consumer startup honors host cancellation while acquiring the client and subscribing, while preserving configured timeouts.
-- Request/reply is not supported yet: a host that sends requests or declares a responder fails startup until the provider's reply channel ships. See [Request/reply](#requestreply).
-
-### Design constraints
-
-Bus topics insert `headless-bus-` before the local topic name and use one lane-qualified `headless-bus-{consumer-identity}` subscription per consumer identity. Queue topics insert `headless-queue-` and use one owned `headless-queue` subscription per physical topic. Replicas within a subscription compete; distinct Bus consumer identities each receive one copy. Malformed transport envelopes are terminally acknowledged so they cannot create negative-ack redelivery storms. A handler still running when the shutdown budget runs out never acknowledges its message, so the broker redelivers it after the consumer closes (at-least-once). Negative-ack redelivery uses one fixed delay: Pulsar.Client 3.19 has no redelivery backoff. Producers batch by key (`BatchBuilder.KeyBased`): the broker dispatches a batch whole, by its first message's key, so a batch holds one key and a `Key_Shared` subscription still places every message by its own key. Message chunking is not offered: with Pulsar.Client 3.19.4 a chunked message read through a `Shared` subscription, which every competing and Bus consumer uses, arrives truncated to its first chunk. Keep payloads under the broker's `maxMessageSize` (5 MB by default).
-
-### Install
-
-```bash
-dotnet add package Headless.Messaging.Pulsar
-```
-
-### Setup and use
-
-```csharp
-setup.UsePulsar(options => options.ServiceUrl = "pulsar://localhost:6650");
-
-services.ConfigureMessaging(messaging =>
-    messaging.Message<OrderPlaced>("persistent://public/default/orders.placed")
-);
-```
-
-A `[BusConsumer("orders.projection")]` consumer of `OrderPlaced` subscribes as `headless-bus-orders.projection`.
-
-```csharp
-setup.Tune("orders.projection", consumer => consumer.UsePulsar(pulsar => pulsar
-    .KeyShared()
-    .DeadLetter(maxRedeliveryCount: 5)
-    .AckTimeout(TimeSpan.FromMinutes(1))));
-```
-
-### Configuration
-
-`RoutingAffinityKey` on publish/enqueue options maps to the native Pulsar message key on registered Bus and Queue routes. The optional `PulsarMessagingHeaders.PulsarKey` adapter must agree. The configured client uses its built-in key hashing; Headless adds no key-length limit beyond broker message limits. Keep routing configuration and partition topology fixed while relying on placement. The key alone does not select a `Key_Shared` subscription, guarantee FIFO, or prevent concurrent handling; the consumer hatch below selects `Key_Shared`.
-
-Configure service URL, authentication, TLS, negative-ack redelivery, and producer settings through `PulsarMessagingOptions`. `Producer` applies to every producer the transport creates, and each default matches Pulsar.Client: `CompressionType` (`None`; also `LZ4`, `ZLib`, `ZStd`, `Snappy`, decompressed transparently by consumers), `EnableBatching` (`true`), `BatchingMaxPublishDelay` (1 ms; each publish waits for its own send, so a longer delay adds up to that much latency per publish in exchange for larger batches), and `SendTimeout` (30 seconds; `TimeSpan.Zero` waits indefinitely, and a send that times out fails the publish). `NegativeAckRedeliveryDelay` defaults to one minute and must be at least 100 milliseconds; smaller values fail startup validation instead of being silently clamped by Pulsar.Client.
-
-The consumer hatch, `Tune(identity, c => c.UsePulsar(...))`, sets three options. Each `UsePulsar` call replaces the Pulsar settings of an earlier one for the same consumer.
-
-| Option | Default | Effect |
-| --- | --- | --- |
-| `KeyShared()` | `Shared` subscription | Subscribes with `Key_Shared` and an auto-split key hash range: the broker sends every message with one key (the publish-side `RoutingAffinityKey`) to the same consumer, in publish order. An every-instance consumer subscribes exclusively, so `KeyShared()` on one fails its creation with `InvalidOperationException` |
-| `DeadLetter(maxRedeliveryCount, deadLetterTopic = null)` | No dead-letter policy; a rejected message is redelivered forever | After `maxRedeliveryCount` redeliveries the message moves to `deadLetterTopic`, by default `{topic}-{subscription}-DLQ` for each subscribed topic. `maxRedeliveryCount` must be positive |
-| `AckTimeout(TimeSpan)` | Off, or 30 seconds with `DeadLetter` | Pulsar.Client asks the broker to redeliver a message still unacknowledged after the timeout. Must be at least one second, the shortest Pulsar.Client accepts |
-
-- **`DeadLetter` without `AckTimeout` turns on a 30-second ack timeout.** Pulsar.Client 3.19.4 sets it whenever a dead-letter policy is present and the ack timeout is zero.
-- **Broker redeliveries come only from failures before the core settles a message.** The consumer negatively acknowledges a message when the messaging core cannot admit it (for example while storage is down or the consumer's circuit breaker is open), when the `CustomHeadersBuilder` throws, or when the core's callback throws without settling it. A handler failure retries from storage, so it never counts toward `maxRedeliveryCount`. A dead-lettered message was never stored, and nothing in the framework consumes the dead-letter topic.
-- **Shutdown bounds the consumer close.** Closing waits for the broker's answer, which a consumer that just reconnected after a broker restart can wait on past the caller's budget, so the close gets what the handler drain left of the shutdown budget; a close still running then finishes in the background, and the broker reclaims the subscription when the connection drops. A receive or connection probe stuck in the client after a broker restart no longer holds the stop either.
-- **`AckTimeout` bounds admission, not handler time.** The consumer acknowledges a message once the core has stored or skipped it, before the handler runs.
-- **`Key_Shared` keeps per-key order only up to the consumer client.** Handlers run in key order only with `Concurrency(1)` and a single dispatcher thread.
-- **Every consumer of one subscription must set the same options.** The Queue subscription (`headless-queue`) is shared by every consumer of the queue message in every process, and the broker refuses a consumer whose subscription type differs from the one already attached. Two consumers of one subscription in the same host with different Pulsar options fail creation with `InvalidOperationException`.
-
-### Runtime behavior
-
-Registers Pulsar connection factory, transports, and consumer client factory.
 
 ## Headless.Messaging.RabbitMq
 
@@ -3441,7 +3606,7 @@ EF execution-strategy retries are allowed only before handler entry. After entry
 - `RunInUnitOfWorkAsync(...)` creates a service scope, begins a resource-less unit of work on it, and hands the delegate **both** that scope's `IServiceProvider` and the `IUnitOfWork` itself — `Func<IServiceProvider, IUnitOfWork, Task>`, plus a `Task<TResult>` overload. Publish through the unit's `Outbox` inside the delegate to exercise an enlisted publish against a live commit or rollback.
 - `ResetAsync()` drains in-flight publish and consume work before clearing a shared harness.
 - `IServiceProvider.ResetMessagingHarnessAsync()` resolves the registered harness and calls `ResetAsync()`, and does nothing when no harness is registered. A shared test host resets through it, for example `await server.Services.ResetMessagingHarnessAsync(cancellationToken)` on a `HeadlessTestServer`, which carries no messaging dependency of its own.
-- `IServiceCollection.ReplaceMessagingTransportWithInMemory()` swaps the broker transport an application registered through `AddHeadlessMessaging` (RabbitMQ, Kafka, Amazon SQS, Azure Service Bus, NATS, Pulsar, Redis, or a custom `IMessagesOptionsExtension`) for the in-memory transport, so the application's own registration runs in a test with no broker. Call it after `AddHeadlessMessaging` and before `AddMessagingTestHarness()`.
+- `IServiceCollection.ReplaceMessagingTransportWithInMemory()` swaps the broker transport an application registered through `AddHeadlessMessaging` (RabbitMQ, Kafka, Amazon SQS, Azure Service Bus, NATS, Redis, or a custom `IMessagesOptionsExtension`) for the in-memory transport, so the application's own registration runs in a test with no broker. Call it after `AddHeadlessMessaging` and before `AddMessagingTestHarness()`.
 - Messaging's failure waits run on a back-off clock registered apart from the app clock under `MessagingOptions.BackoffClockServiceKey`, `TimeProvider.System` by default: the in-process inbox admission retries, the in-memory transport's redelivery delay and shutdown drain, the timeout around each lease renewal, `TransportPublishTimeout`, and `RetryPolicy.OnExhaustedTimeout`. A test steps through them without sleeping by registering its own clock under that key, before or after `AddHeadlessMessaging`, and advancing it: `services.AddKeyedSingleton<TimeProvider>(MessagingOptions.BackoffClockServiceKey, backoffClock)`. It can be the app clock's `FakeTimeProvider` or a separate one; a separate one steps a failure wait without moving due times, leases, or retention. `ResetAsync()` polls on the system clock regardless, and the default `IConsumerClient.RejectAsync(sender, redeliveryDelay, ...)` hold, which a broker transport without a native delay uses, always waits real time.
 - `TestConsumer<T>` captures consume contexts without custom handler logic. It is generic and carries no consumer attribute, so the generator cannot register it; attach it as a runtime subscription, for example `subscriber.SubscribeAsync<OrderPlaced>((context, _, ct) => testConsumer.ConsumeAsync(context, ct), new RuntimeSubscriptionOptions { HandlerId = "tests.order-placed" })`.
 

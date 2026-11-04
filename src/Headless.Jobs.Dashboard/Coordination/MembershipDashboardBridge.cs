@@ -37,7 +37,17 @@ internal sealed class MembershipDashboardBridge(
             // The await foreach disposes the underlying enumerator on exit/cancellation, releasing the subscription.
             await foreach (var membershipEvent in membership.WatchAsync(stoppingToken).ConfigureAwait(false))
             {
-                await HandleEventAsync(membershipEvent).ConfigureAwait(false);
+                // One failed push (a backplane fault) loses that change only; the read endpoint stays authoritative,
+                // and ending the loop would stop every later push until the host restarts.
+                try
+                {
+                    await HandleEventAsync(membershipEvent).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                    when (ex is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
+                {
+                    logger.MembershipDashboardPushFailed(ex);
+                }
             }
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -90,4 +100,12 @@ internal static partial class MembershipDashboardBridgeLog
         Message = "Dashboard membership watch loop failed; the live-nodes panel will not receive push updates"
     )]
     internal static partial void MembershipDashboardWatchFailed(this ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 2021,
+        EventName = "MembershipDashboardPushFailed",
+        Level = LogLevel.Warning,
+        Message = "Dashboard membership push failed; the live-nodes panel misses this change until its next refresh"
+    )]
+    internal static partial void MembershipDashboardPushFailed(this ILogger logger, Exception exception);
 }

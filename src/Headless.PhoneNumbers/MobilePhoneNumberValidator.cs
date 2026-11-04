@@ -103,12 +103,9 @@ public static class MobilePhoneNumberValidator
             return false;
         }
 
-        // Direct invariant interpolation: a FormattableString wrapper (boxing the two ints) plus
-        // ToString(CultureInfo) used to allocate twice where string.Create writes the same bytes once.
-        normalizedNumber = string.Create(
-            CultureInfo.InvariantCulture,
-            $"+{maybePhoneNumber.CountryCode}{maybePhoneNumber.NationalNumber}"
-        );
+        // E.164 keeps the leading zeros some regions dial as part of the subscriber number (Côte d'Ivoire's 07...),
+        // which interpolating the ulong NationalNumber drops.
+        normalizedNumber = util.Format(maybePhoneNumber, PhoneNumberFormat.E164);
 
         return true;
     }

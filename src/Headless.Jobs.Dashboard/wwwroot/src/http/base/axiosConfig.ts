@@ -21,6 +21,9 @@ axiosInstance.interceptors.request.use(
       throw new CanceledError('Session expired; request canceled', undefined, config);
     }
 
+    // The server refuses a state-changing request without this header: a cross-site form cannot send it.
+    config.headers.set('X-Requested-With', 'XMLHttpRequest');
+
     // Get auth headers from localStorage (using correct keys)
     const apiKey = localStorage.getItem('jobs_api_key');
     const basicAuth = localStorage.getItem('jobs_basic_auth');

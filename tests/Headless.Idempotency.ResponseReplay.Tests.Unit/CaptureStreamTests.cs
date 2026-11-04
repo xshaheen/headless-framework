@@ -170,6 +170,24 @@ public sealed class CaptureStreamTests : TestBase
     }
 
     [Fact]
+    public void dispose_keeps_the_captured_bytes_until_the_buffer_is_returned()
+    {
+        var capture = new CaptureStream(Stream.Null, _Cap);
+        capture.Write([1, 2, 3], 0, 3);
+
+        capture.Dispose();
+
+        capture.CapturedSpan.ToArray().Should().Equal(1, 2, 3);
+        capture.CapturedBytes.Should().Equal(1, 2, 3);
+
+        capture.ReturnBuffer();
+        capture.ReturnBuffer();
+
+        capture.CapturedSpan.IsEmpty.Should().BeTrue();
+        capture.CanWrite.Should().BeFalse();
+    }
+
+    [Fact]
     public void writing_to_disposed_stream_throws_object_disposed_exception()
     {
         var inner = new MemoryStream();

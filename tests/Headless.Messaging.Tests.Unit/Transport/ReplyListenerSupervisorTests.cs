@@ -83,6 +83,20 @@ public sealed class ReplyListenerSupervisorTests : TestBase
     }
 
     [Fact]
+    public void should_reject_a_null_address_or_liveness_check_when_a_pass_reports_ready()
+    {
+        // A public building block for outside transports: a null slips past the compiler from a nullable-oblivious
+        // caller, and handing out a null address would fail every later reply far from the bug.
+        var nullAddress = () => _supervisor.Ready(null!, static () => true);
+        var nullLiveness = () => _supervisor.Ready(_Address, null!);
+        var nullAddressOnly = () => _supervisor.Ready(null!);
+
+        nullAddress.Should().Throw<ArgumentNullException>();
+        nullLiveness.Should().Throw<ArgumentNullException>();
+        nullAddressOnly.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
     public async Task should_withdraw_the_address_and_back_off_before_the_next_pass_when_the_channel_is_lost()
     {
         // given

@@ -13,7 +13,7 @@ namespace Tests.Grants;
 
 /// <summary>
 /// The EF grant repository's enlisted members on a real SQLite unit: they read the unit's own uncommitted rows, roll
-/// back with it, and clear the grant cache only after it commits.
+/// back with it, and write the grant cache only after it commits.
 /// </summary>
 public sealed class EfPermissionGrantRepositoryUnitOfWorkTests : TestBase
 {
@@ -76,11 +76,13 @@ public sealed class EfPermissionGrantRepositoryUnitOfWorkTests : TestBase
     }
 
     [Fact]
-    public async Task should_commit_inserts_and_deletes_and_clear_the_cache_after_each_commit()
+    public async Task should_commit_inserts_and_deletes_and_write_the_cache_after_each_commit()
     {
         // given
         await using var owner = await _CreateOwnerAsync();
         var grant = _Grant("Users.Create");
+        var key = PermissionGrantCacheItem.CalculateCacheKey("Users.Create", "Role", "admin");
+        var written = _RecordCacheWrites(key);
 
         // when a unit inserts
         await using (var unit = await Factory.BeginAsync(owner, AbortToken))
@@ -99,13 +101,54 @@ public sealed class EfPermissionGrantRepositoryUnitOfWorkTests : TestBase
             await unit.CompleteAsync(AbortToken);
         }
 
-        // then
+        // then each commit stores the committed status (undefined for the delete) instead of removing the entry
         afterInsert.Should().ContainSingle();
         (await Repository.GetListAsync("Role", "admin", AbortToken)).Should().BeEmpty();
+        written.Should().Equal(true, null);
+        await _cache.DidNotReceive().RemoveAllAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_write_the_stored_status_to_the_cache_on_a_direct_write()
+    {
+        // given
+        await using var owner = await _CreateOwnerAsync();
+        var grant = _Grant("Users.Create");
+        var prohibited = new PermissionGrantRecord(Guid.NewGuid(), "Users.Delete", "Role", "admin", isGranted: false);
+        var grantKey = PermissionGrantCacheItem.CalculateCacheKey("Users.Create", "Role", "admin");
+        var prohibitedKey = PermissionGrantCacheItem.CalculateCacheKey("Users.Delete", "Role", "admin");
+        var grantWrites = _RecordCacheWrites(grantKey);
+        var prohibitedWrites = _RecordCacheWrites(prohibitedKey);
+
+        // when the rows are inserted one by one and in a batch, then deleted, outside a unit
+        await Repository.InsertAsync(grant, AbortToken);
+        await Repository.InsertManyAsync([prohibited], AbortToken);
+        await Repository.DeleteManyAsync([grant, prohibited], AbortToken);
+
+        // then each write stores what it wrote (a delete stores an undefined status) instead of removing the entry
+        grantWrites.Should().Equal(true, null);
+        prohibitedWrites.Should().Equal(false, null);
+        await _cache.DidNotReceive().RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _cache.DidNotReceive().RemoveAllAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_write_the_replacement_status_to_the_cache_when_a_save_flips_a_grant()
+    {
+        // given
+        await using var owner = await _CreateOwnerAsync();
+        var grant = _Grant("Users.Create");
+        var denial = new PermissionGrantRecord(Guid.NewGuid(), "Users.Create", "Role", "admin", isGranted: false);
         var key = PermissionGrantCacheItem.CalculateCacheKey("Users.Create", "Role", "admin");
-        await _cache
-            .Received(2)
-            .RemoveAllAsync(Arg.Is<IEnumerable<string>>(keys => keys.Single() == key), Arg.Any<CancellationToken>());
+        await Repository.InsertAsync(grant, AbortToken);
+        var written = _RecordCacheWrites(key);
+
+        // when the grant is replaced by a denial in one save
+        await Repository.SaveAsync([denial], [grant], AbortToken);
+
+        // then the entry holds the denial; it is not removed, so a reader that loaded the grant cannot fill it back
+        written.Should().Equal(false);
+        await _cache.DidNotReceive().RemoveAllAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -148,6 +191,23 @@ public sealed class EfPermissionGrantRepositoryUnitOfWorkTests : TestBase
     private static PermissionGrantRecord _Grant(string name)
     {
         return new PermissionGrantRecord(Guid.NewGuid(), name, "Role", "admin", isGranted: true);
+    }
+
+    /// <summary>Collects the status each cache write stores under <paramref name="key"/>, in call order.</summary>
+    private List<bool?> _RecordCacheWrites(string key)
+    {
+        var written = new List<bool?>();
+        _cache
+            .When(x =>
+                x.UpsertAllAsync(
+                    Arg.Is<IDictionary<string, PermissionGrantCacheItem>>(items => items.ContainsKey(key)),
+                    Arg.Any<TimeSpan?>(),
+                    Arg.Any<CancellationToken>()
+                )
+            )
+            .Do(call => written.Add(call.Arg<IDictionary<string, PermissionGrantCacheItem>>()[key].IsGranted));
+
+        return written;
     }
 
     public sealed class GrantsDbContext(DbContextOptions<GrantsDbContext> options) : DbContext(options)

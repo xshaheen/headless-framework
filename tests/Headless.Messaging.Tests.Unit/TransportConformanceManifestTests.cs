@@ -42,7 +42,6 @@ public sealed class TransportConformanceManifestTests : TestBase
             "RabbitMQ",
             "AWS/LocalStack",
             "Kafka",
-            "Pulsar",
             "Azure Service Bus",
             "Azure Service Bus Emulator",
             "InMemory",

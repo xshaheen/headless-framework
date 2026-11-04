@@ -264,7 +264,7 @@ public sealed class PermissionGrantStore(
     {
         _EnsureKey(providerName, providerKey, name);
 
-        var tenantId = _GrantTenantId();
+        var tenantId = _WriteTenantId();
 
         var permissionGrant = await repository
             .FindAsync(name, providerName, providerKey, cancellationToken)
@@ -272,20 +272,23 @@ public sealed class PermissionGrantStore(
 
         if (permissionGrant is not null)
         {
-            // Update existing record to granted if it was previously denied
+            // Replace a denial with a grant; both writes commit together so the explicit state is never lost
             if (!permissionGrant.IsGranted)
             {
-                await repository.DeleteAsync(permissionGrant, cancellationToken).ConfigureAwait(false);
                 await repository
-                    .InsertAsync(
-                        new PermissionGrantRecord(
-                            guidGenerator.Create(),
-                            name,
-                            providerName,
-                            providerKey,
-                            isGranted: true,
-                            tenantId
-                        ),
+                    .SaveAsync(
+                        inserted:
+                        [
+                            new PermissionGrantRecord(
+                                guidGenerator.Create(),
+                                name,
+                                providerName,
+                                providerKey,
+                                isGranted: true,
+                                tenantId
+                            ),
+                        ],
+                        deleted: [permissionGrant],
                         cancellationToken
                     )
                     .ConfigureAwait(false);
@@ -312,14 +315,7 @@ public sealed class PermissionGrantStore(
                 .ConfigureAwait(false);
         }
 
-        await cache
-            .UpsertAsync(
-                cacheKey: PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey),
-                cacheValue: new PermissionGrantCacheItem(isGranted: true),
-                expiration: _cacheExpiration,
-                cancellationToken: cancellationToken
-            )
-            .ConfigureAwait(false);
+        await _SyncCacheAsync([name], providerName, providerKey, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task GrantAsync(
@@ -337,13 +333,12 @@ public sealed class PermissionGrantStore(
                 providerName,
                 providerKey,
                 isGranted: true,
-                _GrantTenantId(),
+                _WriteTenantId(),
                 cancellationToken
             )
             .ConfigureAwait(false);
 
-        await _UpsertCacheAsync(distinctNames, providerName, providerKey, isGranted: true, cancellationToken)
-            .ConfigureAwait(false);
+        await _SyncCacheAsync(distinctNames, providerName, providerKey, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task RevokeAsync(
@@ -355,26 +350,31 @@ public sealed class PermissionGrantStore(
     {
         _EnsureKey(providerName, providerKey, name);
 
+        var tenantId = _WriteTenantId();
+
         var permissionGrant = await repository
             .FindAsync(name, providerName, providerKey, cancellationToken)
             .ConfigureAwait(false);
 
         if (permissionGrant is not null)
         {
-            // Update existing grant to explicit denial
+            // Replace a grant with an explicit denial; both writes commit together so the explicit state is never lost
             if (permissionGrant.IsGranted)
             {
-                await repository.DeleteAsync(permissionGrant, cancellationToken).ConfigureAwait(false);
                 await repository
-                    .InsertAsync(
-                        new PermissionGrantRecord(
-                            guidGenerator.Create(),
-                            name,
-                            providerName,
-                            providerKey,
-                            isGranted: false,
-                            permissionGrant.TenantId
-                        ),
+                    .SaveAsync(
+                        inserted:
+                        [
+                            new PermissionGrantRecord(
+                                guidGenerator.Create(),
+                                name,
+                                providerName,
+                                providerKey,
+                                isGranted: false,
+                                permissionGrant.TenantId
+                            ),
+                        ],
+                        deleted: [permissionGrant],
                         cancellationToken
                     )
                     .ConfigureAwait(false);
@@ -387,7 +387,6 @@ public sealed class PermissionGrantStore(
         else
         {
             // Insert explicit denial
-            var tenantId = currentTenant.Id;
             await repository
                 .InsertAsync(
                     new PermissionGrantRecord(
@@ -403,14 +402,7 @@ public sealed class PermissionGrantStore(
                 .ConfigureAwait(false);
         }
 
-        await cache
-            .UpsertAsync(
-                cacheKey: PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey),
-                cacheValue: new PermissionGrantCacheItem(isGranted: false),
-                expiration: _cacheExpiration,
-                cancellationToken: cancellationToken
-            )
-            .ConfigureAwait(false);
+        await _SyncCacheAsync([name], providerName, providerKey, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task RevokeAsync(
@@ -428,13 +420,12 @@ public sealed class PermissionGrantStore(
                 providerName,
                 providerKey,
                 isGranted: false,
-                currentTenant.Id,
+                _WriteTenantId(),
                 cancellationToken
             )
             .ConfigureAwait(false);
 
-        await _UpsertCacheAsync(distinctNames, providerName, providerKey, isGranted: false, cancellationToken)
-            .ConfigureAwait(false);
+        await _SyncCacheAsync(distinctNames, providerName, providerKey, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<string>> DeleteAsync(
@@ -456,15 +447,7 @@ public sealed class PermissionGrantStore(
 
         var names = grants.ConvertAll(x => x.Name);
 
-        // Written as undefined rather than removed: a reader that loaded the rows before the delete fills only an
-        // absent entry, so an entry this write leaves in place keeps its stale load out.
-        await cache
-            .UpsertAllAsync(
-                _CacheValues(names, providerName, providerKey, isGranted: null),
-                _cacheExpiration,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
+        await _SyncCacheAsync(names, providerName, providerKey, cancellationToken).ConfigureAwait(false);
 
         return names;
     }
@@ -486,12 +469,12 @@ public sealed class PermissionGrantStore(
                 providerName,
                 providerKey,
                 isGranted: true,
-                _GrantTenantId(),
+                _WriteTenantId(),
                 cancellationToken
             )
             .ConfigureAwait(false);
 
-        _WriteCacheAfterCommit(unitOfWork, distinctNames, providerName, providerKey, isGranted: true);
+        _SyncCacheAfterCommit(unitOfWork, distinctNames, providerName, providerKey);
     }
 
     public async Task RevokeEnlistedAsync(
@@ -511,12 +494,12 @@ public sealed class PermissionGrantStore(
                 providerName,
                 providerKey,
                 isGranted: false,
-                currentTenant.Id,
+                _WriteTenantId(),
                 cancellationToken
             )
             .ConfigureAwait(false);
 
-        _WriteCacheAfterCommit(unitOfWork, distinctNames, providerName, providerKey, isGranted: false);
+        _SyncCacheAfterCommit(unitOfWork, distinctNames, providerName, providerKey);
     }
 
     public async Task<IReadOnlyList<string>> DeleteEnlistedAsync(
@@ -541,7 +524,7 @@ public sealed class PermissionGrantStore(
         await repository.DeleteManyEnlistedAsync(unitOfWork, grants, cancellationToken).ConfigureAwait(false);
 
         var names = grants.ConvertAll(x => x.Name);
-        _WriteCacheAfterCommit(unitOfWork, names, providerName, providerKey, isGranted: null);
+        _SyncCacheAfterCommit(unitOfWork, names, providerName, providerKey);
 
         return names;
     }
@@ -553,9 +536,10 @@ public sealed class PermissionGrantStore(
     /// tenant, so the record must carry that same tenant: any other value writes a row the lookup never sees and leaves
     /// a cache entry that misreports it.
     /// </summary>
-    private string? _GrantTenantId()
+    private string? _WriteTenantId()
     {
-        // SQL Server ignores trailing spaces when comparing keys, so a padded tenant id would share a tenant's rows.
+        // SQL Server ignores trailing spaces when comparing keys, so a padded tenant id would share a tenant's rows. A
+        // denial is as tenant-scoped as a grant, so every write path checks it before touching storage.
         return Argument.IsPortableKey(currentTenant.Id, paramName: "tenantId");
     }
 
@@ -577,7 +561,8 @@ public sealed class PermissionGrantStore(
     /// <summary>
     /// Writes <paramref name="isGranted" /> for every name: a record holding the opposite state is replaced (grants
     /// are insert-only, so replacing is delete then insert), a name with no record gets one, and a name already in that
-    /// state is left alone. With a unit, every read and write runs inside its transaction.
+    /// state is left alone. With a unit, every read and write runs inside its transaction; without one, every write
+    /// commits in a single repository transaction.
     /// </summary>
     /// <param name="newTenantId">
     /// The tenant stamped on new records. A grant also stamps it on a replaced denial; a revoke keeps the replaced
@@ -605,31 +590,21 @@ public sealed class PermissionGrantStore(
         // whether there is work to do — every name has to be classified.
         var flippedRecords = existGrantRecords.Where(x => x.IsGranted != isGranted).ToList();
 
-        if (flippedRecords.Count > 0)
-        {
-            var replacements = flippedRecords.ConvertAll(x => new PermissionGrantRecord(
-                guidGenerator.Create(),
-                x.Name,
-                providerName,
-                providerKey,
-                isGranted,
-                isGranted ? newTenantId : x.TenantId
-            ));
+        var replacements = flippedRecords.ConvertAll(x => new PermissionGrantRecord(
+            guidGenerator.Create(),
+            x.Name,
+            providerName,
+            providerKey,
+            isGranted,
+            isGranted ? newTenantId : x.TenantId
+        ));
 
-            if (unitOfWork is null)
-            {
-                await repository.DeleteManyAsync(flippedRecords, cancellationToken).ConfigureAwait(false);
-                await repository.InsertManyAsync(replacements, cancellationToken).ConfigureAwait(false);
-            }
-            else
-            {
-                await repository
-                    .DeleteManyEnlistedAsync(unitOfWork, flippedRecords, cancellationToken)
-                    .ConfigureAwait(false);
-                await repository
-                    .InsertManyEnlistedAsync(unitOfWork, replacements, cancellationToken)
-                    .ConfigureAwait(false);
-            }
+        if (unitOfWork is not null && flippedRecords.Count > 0)
+        {
+            await repository
+                .DeleteManyEnlistedAsync(unitOfWork, flippedRecords, cancellationToken)
+                .ConfigureAwait(false);
+            await repository.InsertManyEnlistedAsync(unitOfWork, replacements, cancellationToken).ConfigureAwait(false);
         }
 
         var newRecords = distinctNames
@@ -644,76 +619,73 @@ public sealed class PermissionGrantStore(
             ))
             .AsArray();
 
-        if (newRecords.Length == 0)
+        if (unitOfWork is null)
         {
+            // Without a unit, the replaced records and the new ones commit in one repository transaction: two commits
+            // could drop an explicit grant or denial when the second one fails.
+            if (flippedRecords.Count > 0)
+            {
+                await repository
+                    .SaveAsync([.. replacements, .. newRecords], flippedRecords, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            else if (newRecords.Length > 0)
+            {
+                await repository.InsertManyAsync(newRecords, cancellationToken).ConfigureAwait(false);
+            }
+
             return;
         }
 
-        if (unitOfWork is null)
-        {
-            await repository.InsertManyAsync(newRecords, cancellationToken).ConfigureAwait(false);
-        }
-        else
+        if (newRecords.Length > 0)
         {
             await repository.InsertManyEnlistedAsync(unitOfWork, newRecords, cancellationToken).ConfigureAwait(false);
         }
     }
 
-    private async Task _UpsertCacheAsync(
-        HashSet<string> distinctNames,
-        string providerName,
-        string providerKey,
-        bool isGranted,
-        CancellationToken cancellationToken
-    )
-    {
-        await cache
-            .UpsertAllAsync(
-                _CacheValues(distinctNames, providerName, providerKey, isGranted),
-                expiration: _cacheExpiration,
-                cancellationToken: cancellationToken
-            )
-            .ConfigureAwait(false);
-    }
-
     /// <summary>
-    /// Writes the committed status once the unit commits. Writing it rather than removing the entry keeps out a reader
-    /// that loaded the rows before the commit: readers fill only an absent entry.
+    /// Brings the cache entries of <paramref name="names" /> to the statuses the repository holds after this write.
+    /// Storing what the repository holds, rather than the status this call wrote, keeps the last committed status
+    /// cached when another writer's cache write lands after this one; storing a status rather than removing the entry
+    /// keeps out a reader that loaded the rows before the write, because readers fill only an absent entry.
     /// </summary>
-    private void _WriteCacheAfterCommit(
-        IUnitOfWork unitOfWork,
+    private ValueTask _SyncCacheAsync(
         IReadOnlyCollection<string> names,
         string providerName,
         string providerKey,
-        bool? isGranted
+        CancellationToken cancellationToken
     )
     {
-        PermissionGrantCacheInvalidation.UpsertAfterCommit(
-            unitOfWork,
+        return PermissionGrantCacheInvalidation.SyncAsync(
             cache,
-            currentTenant,
-            _CacheValues(names, providerName, providerKey, isGranted),
+            repository,
+            names,
+            providerName,
+            providerKey,
             _cacheExpiration,
-            logger
+            cancellationToken
         );
     }
 
-    private static Dictionary<string, PermissionGrantCacheItem> _CacheValues(
-        IEnumerable<string> names,
+    /// <summary>Runs <see cref="_SyncCacheAsync" /> once the unit commits.</summary>
+    private void _SyncCacheAfterCommit(
+        IUnitOfWork unitOfWork,
+        IReadOnlyCollection<string> names,
         string providerName,
-        string providerKey,
-        bool? isGranted
+        string providerKey
     )
     {
-        var cacheItem = new PermissionGrantCacheItem(isGranted);
-        var cacheValues = new Dictionary<string, PermissionGrantCacheItem>(StringComparer.Ordinal);
-
-        foreach (var name in names)
-        {
-            cacheValues[PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey)] = cacheItem;
-        }
-
-        return cacheValues;
+        PermissionGrantCacheInvalidation.SyncAfterCommit(
+            unitOfWork,
+            cache,
+            repository,
+            currentTenant,
+            names,
+            providerName,
+            providerKey,
+            _cacheExpiration,
+            logger
+        );
     }
 
     /// <summary>
@@ -860,8 +832,7 @@ public sealed class PermissionGrantStore(
             return PermissionGrantStatus.From(cached.Value?.IsGranted);
         }
 
-        var statuses = await _CacheAllAsync(providerName, providerKey, replace: false, cancellationToken)
-            .ConfigureAwait(false);
+        var statuses = await _CacheAllAsync(providerName, providerKey, cancellationToken).ConfigureAwait(false);
 
         return statuses.TryGetValue(permissionToFind, out var isGranted)
             ? PermissionGrantStatus.From(isGranted)
@@ -878,20 +849,23 @@ public sealed class PermissionGrantStore(
         Argument.IsNotNullOrWhiteSpace(providerKey);
         _EnsureKey(providerName, providerKey);
 
-        await _CacheAllAsync(providerName, providerKey, replace: true, cancellationToken).ConfigureAwait(false);
+        var definitions = await permissionDefinitionManager
+            .GetPermissionsAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        // Swapped in like a write's cache update, not overwritten: a refresh that loaded the rows before a concurrent
+        // write would otherwise put the old status back over the write's.
+        await _SyncCacheAsync(definitions.Select(x => x.Name).ToList(), providerName, providerKey, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <summary>
     /// Loads every grant for the provider target, writes one cache entry per known definition (a missing row caches
     /// as undefined), and returns the per-name grant value so callers can answer a lookup from the same load.
     /// </summary>
-    /// <param name="replace">
-    /// Overwrites present entries (an explicit refresh) instead of filling only absent ones (a cache miss).
-    /// </param>
     private async Task<Dictionary<string, bool?>> _CacheAllAsync(
         string providerName,
         string providerKey,
-        bool replace,
         CancellationToken cancellationToken
     )
     {
@@ -921,14 +895,7 @@ public sealed class PermissionGrantStore(
             statuses[permission.Name] = isGranted;
         }
 
-        if (replace)
-        {
-            await cache.UpsertAllAsync(cacheItems, _cacheExpiration, cancellationToken).ConfigureAwait(false);
-        }
-        else
-        {
-            await _FillCacheAsync(cacheItems, cancellationToken).ConfigureAwait(false);
-        }
+        await _FillCacheAsync(cacheItems, cancellationToken).ConfigureAwait(false);
 
         logger.LogFinishedSettingCacheItemsForDefinitions(definitions.Count);
 

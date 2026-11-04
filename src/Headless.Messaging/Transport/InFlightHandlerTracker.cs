@@ -14,7 +14,7 @@ namespace Headless.Messaging.Transport;
 /// is redelivered, which is the at-least-once contract every transport already gives a crash. The drain only narrows
 /// that window for a graceful stop.
 /// </remarks>
-internal sealed class InFlightHandlerTracker
+public sealed class InFlightHandlerTracker
 {
     private readonly Lock _lock = new();
     private readonly Dictionary<Task, object?> _handlers = [];

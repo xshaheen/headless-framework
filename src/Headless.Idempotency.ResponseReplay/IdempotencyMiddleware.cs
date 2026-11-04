@@ -393,131 +393,144 @@ internal sealed partial class IdempotencyMiddleware(
         );
 
         var originalBody = context.Response.Body;
+
+        // The middleware owns the capture's rental, not the handler: a handler that disposes Response.Body only ends
+        // writing to it, and the bytes it sent are read below before the rental goes back to the pool.
         await using var captureStream = new CaptureStream(
             originalBody,
             options.MaxBodySizeForHashing,
             context.Response.Headers
         );
-        context.Response.Body = captureStream;
-
-        using var renewalStop = new CancellationTokenSource();
-        var renewal = _RenewWhileRunningAsync(admission, options.InFlightLease, request.Key, renewalStop.Token);
 
         try
         {
-            await next(context).ConfigureAwait(false);
-        }
-        catch (Exception handlerEx)
-        {
+            context.Response.Body = captureStream;
+
+            using var renewalStop = new CancellationTokenSource();
+            var renewal = _RenewWhileRunningAsync(admission, options.InFlightLease, request.Key, renewalStop.Token);
+
+            try
+            {
+                await next(context).ConfigureAwait(false);
+            }
+            catch (Exception handlerEx)
+            {
+                context.Response.Body = originalBody;
+                LogHandlerThrew(request.Key, handlerEx);
+                await renewalStop.CancelAsync().ConfigureAwait(false);
+                await renewal.ConfigureAwait(false);
+                await _ReleaseAsync(context, admission, request.Key, options, rethrowOnFailure: false)
+                    .ConfigureAwait(false);
+
+                // The handler's fence (or recovery point) found that another attempt owns the key now: the same conflict an
+                // in-flight admission reports, so it gets the same 409 instead of surfacing as an unhandled 500. The handler
+                // rolled its unit back, and a retry is admitted, waits, or replays like any other concurrent request.
+                if (handlerEx is StaleAdmissionException && !context.Response.HasStarted)
+                {
+                    LogHandlerAdmissionStale(request.Key);
+                    context.Response.Clear();
+                    var pd = problemDetailsCreator.Conflict(IdempotencyMessageDescriber.InFlight());
+                    await Results.Problem(pd).ExecuteAsync(context).ConfigureAwait(false);
+                    return;
+                }
+
+                throw;
+            }
+
             context.Response.Body = originalBody;
-            LogHandlerThrew(request.Key, handlerEx);
+
+            // Stop renewing before settling, so a renewal cannot race the completion that ends the lease.
+            // The loop catches its own failures, so awaiting it only waits for the in-flight renewal to finish.
             await renewalStop.CancelAsync().ConfigureAwait(false);
             await renewal.ConfigureAwait(false);
-            await _ReleaseAsync(context, admission, request.Key, options, rethrowOnFailure: false)
-                .ConfigureAwait(false);
 
-            // The handler's fence (or recovery point) found that another attempt owns the key now: the same conflict an
-            // in-flight admission reports, so it gets the same 409 instead of surfacing as an unhandled 500. The handler
-            // rolled its unit back, and a retry is admitted, waits, or replays like any other concurrent request.
-            if (handlerEx is StaleAdmissionException && !context.Response.HasStarted)
+            var shouldStore =
+                (options.ShouldCacheResponse ?? DefaultCachePredicate.Instance)(context)
+                && !captureStream.TruncatedCapture;
+
+            if (!shouldStore)
             {
-                LogHandlerAdmissionStale(request.Key);
-                context.Response.Clear();
-                var pd = problemDetailsCreator.Conflict(IdempotencyMessageDescriber.InFlight());
-                await Results.Problem(pd).ExecuteAsync(context).ConfigureAwait(false);
+                await _ReleaseAsync(context, admission, request.Key, options, rethrowOnFailure: true)
+                    .ConfigureAwait(false);
                 return;
             }
 
-            throw;
-        }
-
-        context.Response.Body = originalBody;
-
-        // Stop renewing before settling, so a renewal cannot race the completion that ends the lease.
-        // The loop catches its own failures, so awaiting it only waits for the in-flight renewal to finish.
-        await renewalStop.CancelAsync().ConfigureAwait(false);
-        await renewal.ConfigureAwait(false);
-
-        var shouldStore =
-            (options.ShouldCacheResponse ?? DefaultCachePredicate.Instance)(context) && !captureStream.TruncatedCapture;
-
-        if (!shouldStore)
-        {
-            await _ReleaseAsync(context, admission, request.Key, options, rethrowOnFailure: true).ConfigureAwait(false);
-            return;
-        }
-
-        var capturedHeaders = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
-        foreach (var header in context.Response.Headers)
-        {
-            if (!options.ReplayHeaderAllowlist.Contains(header.Key))
+            var capturedHeaders = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+            foreach (var header in context.Response.Headers)
             {
-                continue;
-            }
-
-            var values = header.Value;
-
-            // Store the coding of the captured bytes, not the response's final label: response compression that wraps
-            // this middleware labels the shared headers but encodes after the capture, so its Content-Encoding would
-            // sit beside plain bytes. Left off, the replay goes through that compressor again, which encodes it for
-            // whatever the retry accepts.
-            if (
-                captureStream.Forwarded
-                && string.Equals(
-                    header.Key,
-                    Microsoft.Net.Http.Headers.HeaderNames.ContentEncoding,
-                    StringComparison.OrdinalIgnoreCase
-                )
-            )
-            {
-                values = captureStream.ContentEncodingOfCapture;
-                if (StringValues.IsNullOrEmpty(values))
+                if (!options.ReplayHeaderAllowlist.Contains(header.Key))
                 {
                     continue;
                 }
-            }
 
-            capturedHeaders[header.Key] = values.ToArray()!;
-        }
+                var values = header.Value;
 
-        // The frame is assembled in a pooled writer and handed over as one exact-size array: CompleteAsync's
-        // signature takes memory the callee may read after the call returns, so the capture path pays one copy
-        // out of the pool instead of renting memory a deferring store would see zeroed.
-        using var frame = new PooledByteBufferWriter(captureStream.CapturedSpan.Length + 256);
-        IdempotencyResponseSnapshot.WriteTo(
-            frame,
-            context.Response.StatusCode,
-            capturedHeaders,
-            captureStream.CapturedSpan
-        );
-        var payload = frame.WrittenSpan.ToArray();
-
-        try
-        {
-            // CancellationToken.None: the handler already ran, so a client disconnect must not strand the admission
-            // pending until its lease expires, which would turn every retry into a 409 for that long.
-            await operations
-                .CompleteAsync(
-                    admission,
-                    payload,
-                    IdempotencyResponseSnapshot.Contract,
-                    cancellationToken: CancellationToken.None
+                // Store the coding of the captured bytes, not the response's final label: response compression that wraps
+                // this middleware labels the shared headers but encodes after the capture, so its Content-Encoding would
+                // sit beside plain bytes. Left off, the replay goes through that compressor again, which encodes it for
+                // whatever the retry accepts.
+                if (
+                    captureStream.Forwarded
+                    && string.Equals(
+                        header.Key,
+                        Microsoft.Net.Http.Headers.HeaderNames.ContentEncoding,
+                        StringComparison.OrdinalIgnoreCase
+                    )
                 )
-                .ConfigureAwait(false);
-        }
-        catch (StaleAdmissionException staleEx)
-        {
-            // The lease expired or was taken over while the handler ran; the fence refused this result so only the
-            // owning attempt's response is stored. Nothing the client can act on, so it is logged, never thrown.
-            LogCompletionRefused(request.Key, staleEx);
-        }
-        catch (Exception storeEx)
-        {
-            LogCompletionFailed(request.Key, storeEx);
-            if (_ShouldRethrowAfterHandler(context, options))
-            {
-                throw;
+                {
+                    values = captureStream.ContentEncodingOfCapture;
+                    if (StringValues.IsNullOrEmpty(values))
+                    {
+                        continue;
+                    }
+                }
+
+                capturedHeaders[header.Key] = values.ToArray()!;
             }
+
+            // The frame is assembled in a pooled writer and handed over as one exact-size array: CompleteAsync's
+            // signature takes memory the callee may read after the call returns, so the capture path pays one copy
+            // out of the pool instead of renting memory a deferring store would see zeroed.
+            using var frame = new PooledByteBufferWriter(captureStream.CapturedSpan.Length + 256);
+            IdempotencyResponseSnapshot.WriteTo(
+                frame,
+                context.Response.StatusCode,
+                capturedHeaders,
+                captureStream.CapturedSpan
+            );
+            var payload = frame.WrittenSpan.ToArray();
+
+            try
+            {
+                // CancellationToken.None: the handler already ran, so a client disconnect must not strand the admission
+                // pending until its lease expires, which would turn every retry into a 409 for that long.
+                await operations
+                    .CompleteAsync(
+                        admission,
+                        payload,
+                        IdempotencyResponseSnapshot.Contract,
+                        cancellationToken: CancellationToken.None
+                    )
+                    .ConfigureAwait(false);
+            }
+            catch (StaleAdmissionException staleEx)
+            {
+                // The lease expired or was taken over while the handler ran; the fence refused this result so only the
+                // owning attempt's response is stored. Nothing the client can act on, so it is logged, never thrown.
+                LogCompletionRefused(request.Key, staleEx);
+            }
+            catch (Exception storeEx)
+            {
+                LogCompletionFailed(request.Key, storeEx);
+                if (_ShouldRethrowAfterHandler(context, options))
+                {
+                    throw;
+                }
+            }
+        }
+        finally
+        {
+            captureStream.ReturnBuffer();
         }
     }
 
@@ -578,14 +591,17 @@ internal sealed partial class IdempotencyMiddleware(
                 await Task.Delay(interval, timeProvider, stopToken).ConfigureAwait(false);
 
                 using var callCts = CancellationTokenSource.CreateLinkedTokenSource(stopToken);
-                var renewTask = operations.RenewAsync(admission, lease, callCts.Token).AsTask();
+                Task<IdempotentLeaseRenewal>? renewTask = null;
                 IdempotentLeaseRenewal result;
 
                 try
                 {
+                    // Started inside the try: a store that throws before returning its task is a renewal failure
+                    // like any other, not a fault of the loop.
+                    renewTask = operations.RenewAsync(admission, lease, callCts.Token).AsTask();
                     result = await renewTask.WaitAsync(interval, timeProvider, stopToken).ConfigureAwait(false);
                 }
-                catch (TimeoutException)
+                catch (TimeoutException) when (renewTask is { IsCompleted: false })
                 {
                     // Cancel the abandoned call so it releases its connection, and observe its outcome so a late
                     // failure is not reported as an unobserved task exception.
@@ -599,9 +615,19 @@ internal sealed partial class IdempotencyMiddleware(
                     LogRenewalTimedOut(key, interval);
                     continue;
                 }
-                catch (Exception renewEx) when (!stopToken.IsCancellationRequested)
+                catch (Exception renewEx)
+                    when (renewEx is not OperationCanceledException || !stopToken.IsCancellationRequested)
                 {
+                    // The loop never decides the request's outcome: once the handler finished, a renewal that fails
+                    // (even one that lost the race with the stop) is only logged, and the completion's fence settles
+                    // a lease this attempt no longer holds.
                     LogRenewalFailed(key, renewEx);
+
+                    if (stopToken.IsCancellationRequested)
+                    {
+                        return;
+                    }
+
                     continue;
                 }
 

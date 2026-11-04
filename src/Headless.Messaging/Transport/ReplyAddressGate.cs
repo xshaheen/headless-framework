@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
+
 namespace Headless.Messaging.Transport;
 
 /// <summary>
@@ -9,15 +11,19 @@ namespace Headless.Messaging.Transport;
 /// </summary>
 /// <remarks>
 /// Each condition a listener passes runs under the gate's lock, the same lock a retraction takes, so a provider's
-/// connection check and the address it guards change together.
+/// connection check and the address it guards change together. <see cref="ReplyListenerSupervisor"/> owns one gate per
+/// listener; a provider whose broker client re-establishes the channel on its own withdraws and republishes the address
+/// through <see cref="ReplyListenerSupervisor.Address"/>.
 /// </remarks>
-internal sealed class ReplyAddressGate
+public sealed class ReplyAddressGate
 {
     private readonly Lock _lock = new();
     private TaskCompletionSource<string> _address = _NewSource();
     private bool _closed;
 
     /// <summary>Waits for the current address.</summary>
+    /// <param name="cancellationToken">Ends the wait early.</param>
+    /// <exception cref="ObjectDisposedException">The listener that owns the gate closed.</exception>
     public ValueTask<string> WaitAsync(CancellationToken cancellationToken)
     {
         TaskCompletionSource<string> address;
@@ -30,8 +36,11 @@ internal sealed class ReplyAddressGate
     }
 
     /// <summary>Hands <paramref name="address"/> to every waiting and future caller.</summary>
+    /// <exception cref="ArgumentNullException"><paramref name="address"/> is <see langword="null"/>.</exception>
     public void Publish(string address)
     {
+        Argument.IsNotNull(address);
+
         lock (_lock)
         {
             _address.TrySetResult(address);
@@ -39,8 +48,14 @@ internal sealed class ReplyAddressGate
     }
 
     /// <summary>Hands <paramref name="address"/> out only while <paramref name="isLive"/> holds under the lock.</summary>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="address"/> or <paramref name="isLive"/> is <see langword="null"/>.
+    /// </exception>
     public void Publish(string address, Func<bool> isLive)
     {
+        Argument.IsNotNull(address);
+        Argument.IsNotNull(isLive);
+
         lock (_lock)
         {
             if (isLive())
@@ -63,8 +78,11 @@ internal sealed class ReplyAddressGate
     }
 
     /// <summary>Withdraws a handed-out address unless <paramref name="isStillLive"/> holds under the lock.</summary>
+    /// <exception cref="ArgumentNullException"><paramref name="isStillLive"/> is <see langword="null"/>.</exception>
     public void Retract(Func<bool> isStillLive)
     {
+        Argument.IsNotNull(isStillLive);
+
         lock (_lock)
         {
             if (_closed || !_address.Task.IsCompleted || isStillLive())
@@ -80,7 +98,7 @@ internal sealed class ReplyAddressGate
     /// Fails a caller still waiting for an address with <see cref="ObjectDisposedException"/> and stops any later
     /// retraction from opening a new wait.
     /// </summary>
-    public void FailOnDispose(string objectName)
+    internal void FailOnDispose(string objectName)
     {
         lock (_lock)
         {

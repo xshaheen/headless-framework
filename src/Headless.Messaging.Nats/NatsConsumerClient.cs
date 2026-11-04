@@ -850,7 +850,7 @@ internal sealed class NatsConsumerClient(
 
     /// <summary>
     /// Doubles the reconnect backoff, then returns a jittered delay within <c>[floor, 30s]</c>, so consumers that lose
-    /// the connection at the same instant do not retry in lockstep. The AWS SQS, Pulsar and Redis transports all jitter
+    /// the connection at the same instant do not retry in lockstep. The AWS SQS and Redis transports both jitter
     /// their equivalent loops; <see cref="ReconnectBackoff.Jitter"/> explains the band.
     /// </summary>
     internal static TimeSpan NextBackoff(TimeSpan current, TimeSpan floor = default)
@@ -1081,10 +1081,10 @@ internal sealed class NatsConsumerClient(
         {
             // Not rethrown: the message is already handled, and JetStream redelivers an unacknowledged one after its
             // ack wait, which the inbox deduplicates. The operator still needs to see that settlement is failing.
-            MessagingMetrics.RecordSettlementFailure(
+            TransportMetrics.RecordSettlementFailure(
                 "nats",
-                MessagingMetrics.OperationNameAck,
-                MessagingTelemetry.ErrorTypeOf(ex)
+                TransportMetrics.OperationAck,
+                TransportMetrics.ErrorTypeOf(ex)
             );
             OnLogCallback?.Invoke(
                 new LogMessageEventArgs

@@ -425,6 +425,12 @@ public abstract class SqlServerClaimConformanceTestsBase<TFixture>(TFixture fixt
     }
 
     [Fact]
+    public override Task fallback_cron_sweep_leaves_occurrences_of_a_paused_definition_untouched()
+    {
+        return base.fallback_cron_sweep_leaves_occurrences_of_a_paused_definition_untouched();
+    }
+
+    [Fact]
     public override Task many_synchronized_workers_claim_each_fallback_cron_occurrence_once()
     {
         return base.many_synchronized_workers_claim_each_fallback_cron_occurrence_once();

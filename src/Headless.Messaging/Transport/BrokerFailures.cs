@@ -14,12 +14,13 @@ namespace Headless.Messaging.Transport;
 /// Only a reachability failure may count toward the host's readiness: a missing topic, a rejected message, or one too
 /// large is a problem with that message, and counting it would let one bad message take the host out of rotation.
 /// </remarks>
-internal static class BrokerFailures
+public static class BrokerFailures
 {
     /// <summary>
     /// Whether <paramref name="exception" /> or any exception it wraps is a socket, I/O, HTTP transport, or timeout
     /// failure.
     /// </summary>
+    /// <param name="exception">The failure to classify; <see langword="null"/> is not a connectivity failure.</param>
     public static bool IsConnectivity(Exception? exception)
     {
         for (var current = exception; current is not null; current = current.InnerException)

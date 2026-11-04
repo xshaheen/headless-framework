@@ -438,7 +438,6 @@ Testcontainers fixtures for integration testing.
   - `HeadlessRabbitMqFixture`
   - `HeadlessNatsFixture`
   - `HeadlessKafkaFixture`
-  - `HeadlessPulsarFixture`
   - `HeadlessAzuriteFixture`
   - `HeadlessLocalStackFixture`
   - `HeadlessMinioFixture`

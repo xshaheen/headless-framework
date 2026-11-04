@@ -3,6 +3,7 @@
 using Headless;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
+using Headless.Messaging.Transport;
 using Headless.MultiTenancy;
 using Microsoft.Extensions.Options;
 
@@ -156,9 +157,9 @@ public sealed class MessagePublishRequestFactoryTests
         act.Should().Throw<InvalidOperationException>().WithMessage("*affinity*conflicts*native-key*");
     }
 
-    private sealed class AffinityContributor : Headless.Messaging.IProviderHeaderContributions
+    private sealed class AffinityContributor : Headless.Messaging.Transport.IProviderHeaderContributions
     {
-        public IReadOnlyList<Headless.Messaging.ProviderHeaderContribution> HeaderContributions { get; } =
+        public IReadOnlyList<Headless.Messaging.Transport.ProviderHeaderContribution> HeaderContributions { get; } =
         [new("native-key", static _ => "order-42")];
     }
 

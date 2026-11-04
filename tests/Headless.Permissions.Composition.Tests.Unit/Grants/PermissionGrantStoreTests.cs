@@ -22,6 +22,10 @@ public sealed class PermissionGrantStoreTests : TestBase
     private readonly ICurrentTenant _currentTenant;
     private readonly PermissionGrantStore _sut;
 
+    // The rows the repository holds, by name. Writes land here, and a read by name returns them, so a write's read-back
+    // after its commit sees what it stored; a test that configures the read itself overrides this.
+    private readonly Dictionary<string, PermissionGrantRecord> _rows = new(StringComparer.Ordinal);
+
     public PermissionGrantStoreTests()
     {
         _definitionManager = Substitute.For<IPermissionDefinitionManager>();
@@ -30,6 +34,87 @@ public sealed class PermissionGrantStoreTests : TestBase
         _cache = Substitute.For<ICache<PermissionGrantCacheItem>>();
         _currentTenant = Substitute.For<ICurrentTenant>();
         var logger = Substitute.For<ILogger<PermissionGrantStore>>();
+
+        _repository
+            .When(x => x.InsertAsync(Arg.Any<PermissionGrantRecord>(), Arg.Any<CancellationToken>()))
+            .Do(call => _rows[call.Arg<PermissionGrantRecord>().Name] = call.Arg<PermissionGrantRecord>());
+        _repository
+            .When(x => x.InsertManyAsync(Arg.Any<IEnumerable<PermissionGrantRecord>>(), Arg.Any<CancellationToken>()))
+            .Do(call =>
+            {
+                foreach (var record in call.Arg<IEnumerable<PermissionGrantRecord>>())
+                {
+                    _rows[record.Name] = record;
+                }
+            });
+        _repository
+            .When(x => x.DeleteAsync(Arg.Any<PermissionGrantRecord>(), Arg.Any<CancellationToken>()))
+            .Do(call => _rows.Remove(call.Arg<PermissionGrantRecord>().Name));
+        _repository
+            .When(x =>
+                x.DeleteManyAsync(Arg.Any<IReadOnlyCollection<PermissionGrantRecord>>(), Arg.Any<CancellationToken>())
+            )
+            .Do(call =>
+            {
+                foreach (var record in call.Arg<IReadOnlyCollection<PermissionGrantRecord>>())
+                {
+                    _rows.Remove(record.Name);
+                }
+            });
+        _repository
+            .When(x =>
+                x.SaveAsync(
+                    Arg.Any<IReadOnlyCollection<PermissionGrantRecord>>(),
+                    Arg.Any<IReadOnlyCollection<PermissionGrantRecord>>(),
+                    Arg.Any<CancellationToken>()
+                )
+            )
+            .Do(call =>
+            {
+                // Deletes first, then inserts, as the real repositories commit them in one transaction.
+                foreach (var record in call.ArgAt<IReadOnlyCollection<PermissionGrantRecord>>(1))
+                {
+                    _rows.Remove(record.Name);
+                }
+
+                foreach (var record in call.ArgAt<IReadOnlyCollection<PermissionGrantRecord>>(0))
+                {
+                    _rows[record.Name] = record;
+                }
+            });
+        _repository
+            .GetListAsync(
+                Arg.Any<IReadOnlyCollection<string>>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(call =>
+            {
+                List<PermissionGrantRecord> rows =
+                [
+                    .. _rows.Values.Where(x => call.ArgAt<IReadOnlyCollection<string>>(0).Contains(x.Name)),
+                ];
+
+                return rows;
+            });
+
+        // A write brings each entry to the stored status by inserting into an empty cache.
+        _cache
+            .GetAllAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+                ValueTask.FromResult<IDictionary<string, CacheValue<PermissionGrantCacheItem>>>(
+                    new Dictionary<string, CacheValue<PermissionGrantCacheItem>>(StringComparer.Ordinal)
+                )
+            );
+        _cache
+            .TryInsertAsync(
+                Arg.Any<string>(),
+                Arg.Any<PermissionGrantCacheItem?>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(true));
 
         _sut = new PermissionGrantStore(
             _definitionManager,
@@ -107,35 +192,35 @@ public sealed class PermissionGrantStoreTests : TestBase
         var revoked = _CreatePermission("Users.Delete");
         var undefined = _CreatePermission("Users.Read");
         _definitionManager.GetPermissionsAsync(AbortToken).Returns([granted, revoked, undefined]);
-        _repository
-            .GetListAsync(_ProviderName, _ProviderKey, AbortToken)
-            .Returns([
-                new PermissionGrantRecord(Guid.NewGuid(), granted.Name, _ProviderName, _ProviderKey, true),
-                new PermissionGrantRecord(Guid.NewGuid(), revoked.Name, _ProviderName, _ProviderKey, false),
-            ]);
+        _rows[granted.Name] = new PermissionGrantRecord(
+            Guid.NewGuid(),
+            granted.Name,
+            _ProviderName,
+            _ProviderKey,
+            true
+        );
+        _rows[revoked.Name] = new PermissionGrantRecord(
+            Guid.NewGuid(),
+            revoked.Name,
+            _ProviderName,
+            _ProviderKey,
+            false
+        );
 
         // when
         await _sut.RefreshAsync(_ProviderName, _ProviderKey, AbortToken);
 
         // then
         await _cache.DidNotReceive().GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
-        await _cache
-            .Received(1)
-            .UpsertAllAsync(
-                Arg.Is<IDictionary<string, PermissionGrantCacheItem>>(d =>
-                    d.Count == 3
-                    && d[
-                        PermissionGrantCacheItem.CalculateCacheKey(granted.Name, _ProviderName, _ProviderKey)
-                    ].IsGranted == true
-                    && d[
-                        PermissionGrantCacheItem.CalculateCacheKey(revoked.Name, _ProviderName, _ProviderKey)
-                    ].IsGranted == false
-                    && d[
-                        PermissionGrantCacheItem.CalculateCacheKey(undefined.Name, _ProviderName, _ProviderKey)
-                    ].IsGranted == null
-                ),
-                Arg.Any<TimeSpan>(),
-                AbortToken
+        _InsertedStatuses()
+            .Should()
+            .Equal(
+                new Dictionary<string, bool?>(StringComparer.Ordinal)
+                {
+                    [_CacheKey(granted.Name)] = true,
+                    [_CacheKey(revoked.Name)] = false,
+                    [_CacheKey(undefined.Name)] = null,
+                }
             );
     }
 
@@ -502,9 +587,16 @@ public sealed class PermissionGrantStoreTests : TestBase
         // when
         await _sut.GrantAsync(permissionName, _ProviderName, _ProviderKey, AbortToken);
 
-        // then
-        await _repository.Received(1).DeleteAsync(deniedRecord, AbortToken);
-        await _repository.Received(1).InsertAsync(Arg.Is<PermissionGrantRecord>(static r => r.IsGranted), AbortToken);
+        // then — the denial and its replacement commit together, never as two separate writes
+        await _repository
+            .Received(1)
+            .SaveAsync(
+                Arg.Is<IReadOnlyCollection<PermissionGrantRecord>>(r => r.Single().Id == newId && r.Single().IsGranted),
+                Arg.Is<IReadOnlyCollection<PermissionGrantRecord>>(r => r.Single() == deniedRecord),
+                AbortToken
+            );
+        await _repository.DidNotReceive().DeleteAsync(Arg.Any<PermissionGrantRecord>(), Arg.Any<CancellationToken>());
+        await _repository.DidNotReceive().InsertAsync(Arg.Any<PermissionGrantRecord>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -546,14 +638,9 @@ public sealed class PermissionGrantStoreTests : TestBase
         await _sut.GrantAsync(permissionName, _ProviderName, _ProviderKey, cancellationToken: AbortToken);
 
         // then
-        await _cache
-            .Received(1)
-            .UpsertAsync(
-                cacheKey,
-                Arg.Is<PermissionGrantCacheItem>(static c => c.IsGranted == true),
-                Arg.Any<TimeSpan>(),
-                AbortToken
-            );
+        _InsertedStatuses()
+            .Should()
+            .Equal(new Dictionary<string, bool?>(StringComparer.Ordinal) { [cacheKey] = true });
     }
 
     [Fact]
@@ -594,11 +681,12 @@ public sealed class PermissionGrantStoreTests : TestBase
 
         // then — both the replaced denial and the new record carry the current tenant
         await _repository
-            .Received(2)
-            .InsertManyAsync(
-                Arg.Is<IEnumerable<PermissionGrantRecord>>(static records =>
-                    records.All(static r => r.TenantId == "tenant-a")
+            .Received(1)
+            .SaveAsync(
+                Arg.Is<IReadOnlyCollection<PermissionGrantRecord>>(static records =>
+                    records.Count == 2 && records.All(static r => r.TenantId == "tenant-a")
                 ),
+                Arg.Any<IReadOnlyCollection<PermissionGrantRecord>>(),
                 AbortToken
             );
     }
@@ -613,6 +701,24 @@ public sealed class PermissionGrantStoreTests : TestBase
         var single = async () => await _sut.GrantAsync("Users.Create", _ProviderName, _ProviderKey, AbortToken);
         var batch = async () =>
             await _sut.GrantAsync(["Users.Create", "Users.Delete"], _ProviderName, _ProviderKey, AbortToken);
+
+        // then
+        await single.Should().ThrowExactlyAsync<ArgumentException>();
+        await batch.Should().ThrowExactlyAsync<ArgumentException>();
+        _repository.ReceivedCalls().Should().BeEmpty();
+        _cache.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_refuse_a_padded_current_tenant_when_revoking_before_touching_storage()
+    {
+        // given — a denial is tenant-scoped like a grant, so a padded id would share another tenant's rows too
+        _currentTenant.Id.Returns("acme ");
+
+        // when
+        var single = async () => await _sut.RevokeAsync("Users.Create", _ProviderName, _ProviderKey, AbortToken);
+        var batch = async () =>
+            await _sut.RevokeAsync(["Users.Create", "Users.Delete"], _ProviderName, _ProviderKey, AbortToken);
 
         // then
         await single.Should().ThrowExactlyAsync<ArgumentException>();
@@ -681,9 +787,11 @@ public sealed class PermissionGrantStoreTests : TestBase
             new(Guid.NewGuid(), "Users.Update", _ProviderName, _ProviderKey, false),
         };
 
-        _repository
-            .GetListAsync(Arg.Any<IReadOnlyCollection<string>>(), _ProviderName, _ProviderKey, AbortToken)
-            .Returns(existingRecords);
+        foreach (var record in existingRecords)
+        {
+            _rows[record.Name] = record;
+        }
+
         _guidGenerator.Create().Returns(Guid.NewGuid());
 
         // when
@@ -692,28 +800,23 @@ public sealed class PermissionGrantStoreTests : TestBase
         // then
         await _repository
             .Received(1)
-            .DeleteManyAsync(
+            .SaveAsync(
+                Arg.Is<IReadOnlyCollection<PermissionGrantRecord>>(static records =>
+                    records.Count == 1 && records.All(static r => r.Name == "Users.Update" && r.IsGranted)
+                ),
                 Arg.Is<IReadOnlyCollection<PermissionGrantRecord>>(static r =>
                     r.Count == 1 && r.All(static x => x.Name == "Users.Update")
                 ),
                 AbortToken
             );
-        await _repository
-            .Received(1)
-            .InsertManyAsync(
-                Arg.Is<IEnumerable<PermissionGrantRecord>>(static records =>
-                    records.All(static r => r.Name == "Users.Update" && r.IsGranted)
-                ),
-                AbortToken
-            );
-        await _cache
-            .Received(1)
-            .UpsertAllAsync(
-                Arg.Is<IDictionary<string, PermissionGrantCacheItem>>(static d =>
-                    d.Count == 2 && d.Values.All(static v => v.IsGranted == true)
-                ),
-                Arg.Any<TimeSpan>(),
-                AbortToken
+        _InsertedStatuses()
+            .Should()
+            .Equal(
+                new Dictionary<string, bool?>(StringComparer.Ordinal)
+                {
+                    [_CacheKey("Users.Create")] = true,
+                    [_CacheKey("Users.Update")] = true,
+                }
             );
     }
 
@@ -728,39 +831,43 @@ public sealed class PermissionGrantStoreTests : TestBase
             new(Guid.NewGuid(), "Users.Delete", _ProviderName, _ProviderKey, true),
         };
 
-        _repository
-            .GetListAsync(Arg.Any<IReadOnlyCollection<string>>(), _ProviderName, _ProviderKey, AbortToken)
-            .Returns(existingRecords);
+        foreach (var record in existingRecords)
+        {
+            _rows[record.Name] = record;
+        }
+
         _guidGenerator.Create().Returns(Guid.NewGuid());
 
         // when
         await _sut.GrantAsync(permissionNames, _ProviderName, _ProviderKey, cancellationToken: AbortToken);
 
-        // then — the denial is converted and the missing name is inserted
+        // then — the denial is converted and the missing name is inserted, in one write
         await _repository
             .Received(1)
-            .InsertManyAsync(
-                Arg.Is<IEnumerable<PermissionGrantRecord>>(static records =>
-                    records.All(static r => r.Name == "Users.Update" && r.IsGranted)
+            .SaveAsync(
+                Arg.Is<IReadOnlyCollection<PermissionGrantRecord>>(static records =>
+                    records.Count == 2
+                    && records.All(static r => r.IsGranted)
+                    && records
+                        .Select(static r => r.Name)
+                        .Order(StringComparer.Ordinal)
+                        .SequenceEqual(new[] { "Users.Create", "Users.Update" })
+                ),
+                Arg.Is<IReadOnlyCollection<PermissionGrantRecord>>(static r =>
+                    r.Count == 1 && r.All(static x => x.Name == "Users.Update")
                 ),
                 AbortToken
             );
-        await _repository
-            .Received(1)
-            .InsertManyAsync(
-                Arg.Is<IEnumerable<PermissionGrantRecord>>(static records =>
-                    records.All(static r => r.Name == "Users.Create" && r.IsGranted)
-                ),
-                AbortToken
-            );
-        await _cache
-            .Received(1)
-            .UpsertAllAsync(
-                Arg.Is<IDictionary<string, PermissionGrantCacheItem>>(static d =>
-                    d.Count == 3 && d.Values.All(static v => v.IsGranted == true)
-                ),
-                Arg.Any<TimeSpan>(),
-                AbortToken
+        await _repository.DidNotReceive().InsertManyAsync(Arg.Any<IEnumerable<PermissionGrantRecord>>(), AbortToken);
+        _InsertedStatuses()
+            .Should()
+            .Equal(
+                new Dictionary<string, bool?>(StringComparer.Ordinal)
+                {
+                    [_CacheKey("Users.Create")] = true,
+                    [_CacheKey("Users.Update")] = true,
+                    [_CacheKey("Users.Delete")] = true,
+                }
             );
     }
 
@@ -770,23 +877,20 @@ public sealed class PermissionGrantStoreTests : TestBase
         // given
         string[] permissionNames = ["Users.Create", "Users.Update"];
 
-        _repository
-            .GetListAsync(Arg.Any<IReadOnlyCollection<string>>(), _ProviderName, _ProviderKey, AbortToken)
-            .Returns([]);
         _guidGenerator.Create().Returns(Guid.NewGuid());
 
         // when
         await _sut.GrantAsync(permissionNames, _ProviderName, _ProviderKey, cancellationToken: AbortToken);
 
         // then
-        await _cache
-            .Received(1)
-            .UpsertAllAsync(
-                Arg.Is<IDictionary<string, PermissionGrantCacheItem>>(static d =>
-                    d.Count == 2 && d.Values.All(static v => v.IsGranted == true)
-                ),
-                Arg.Any<TimeSpan>(),
-                AbortToken
+        _InsertedStatuses()
+            .Should()
+            .Equal(
+                new Dictionary<string, bool?>(StringComparer.Ordinal)
+                {
+                    [_CacheKey("Users.Create")] = true,
+                    [_CacheKey("Users.Update")] = true,
+                }
             );
     }
 
@@ -844,9 +948,18 @@ public sealed class PermissionGrantStoreTests : TestBase
         // when
         await _sut.RevokeAsync(permissionName, _ProviderName, _ProviderKey, AbortToken);
 
-        // then
-        await _repository.Received(1).DeleteAsync(grantedRecord, AbortToken);
-        await _repository.Received(1).InsertAsync(Arg.Is<PermissionGrantRecord>(static r => !r.IsGranted), AbortToken);
+        // then — the grant and its replacing denial commit together, never as two separate writes
+        await _repository
+            .Received(1)
+            .SaveAsync(
+                Arg.Is<IReadOnlyCollection<PermissionGrantRecord>>(r =>
+                    r.Single().Id == newId && !r.Single().IsGranted && r.Single().TenantId == "tenant-1"
+                ),
+                Arg.Is<IReadOnlyCollection<PermissionGrantRecord>>(r => r.Single() == grantedRecord),
+                AbortToken
+            );
+        await _repository.DidNotReceive().DeleteAsync(Arg.Any<PermissionGrantRecord>(), Arg.Any<CancellationToken>());
+        await _repository.DidNotReceive().InsertAsync(Arg.Any<PermissionGrantRecord>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -893,14 +1006,9 @@ public sealed class PermissionGrantStoreTests : TestBase
         await _sut.RevokeAsync(permissionName, _ProviderName, _ProviderKey, AbortToken);
 
         // then
-        await _cache
-            .Received(1)
-            .UpsertAsync(
-                cacheKey,
-                Arg.Is<PermissionGrantCacheItem>(static c => c.IsGranted == false),
-                Arg.Any<TimeSpan>(),
-                AbortToken
-            );
+        _InsertedStatuses()
+            .Should()
+            .Equal(new Dictionary<string, bool?>(StringComparer.Ordinal) { [cacheKey] = false });
     }
 
     #endregion RevokeAsync - Single
@@ -929,18 +1037,18 @@ public sealed class PermissionGrantStoreTests : TestBase
         // then
         await _repository
             .Received(1)
-            .DeleteManyAsync(
+            .SaveAsync(
+                Arg.Is<IReadOnlyCollection<PermissionGrantRecord>>(static records =>
+                    records.Count == 2 && records.All(static r => !r.IsGranted)
+                ),
                 Arg.Is<IReadOnlyCollection<PermissionGrantRecord>>(static r =>
                     r.Count == 2 && r.All(static x => x.IsGranted)
                 ),
                 AbortToken
             );
         await _repository
-            .Received(1)
-            .InsertManyAsync(
-                Arg.Is<IEnumerable<PermissionGrantRecord>>(static records => records.All(static r => !r.IsGranted)),
-                AbortToken
-            );
+            .DidNotReceive()
+            .DeleteManyAsync(Arg.Any<IReadOnlyCollection<PermissionGrantRecord>>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -949,9 +1057,6 @@ public sealed class PermissionGrantStoreTests : TestBase
         // given
         string[] permissionNames = ["Users.Create", "Users.Update"];
 
-        _repository
-            .GetListAsync(Arg.Any<IReadOnlyCollection<string>>(), _ProviderName, _ProviderKey, AbortToken)
-            .Returns([]);
         _guidGenerator.Create().Returns(Guid.NewGuid());
         _currentTenant.Id.Returns("tenant-1");
 
@@ -959,14 +1064,14 @@ public sealed class PermissionGrantStoreTests : TestBase
         await _sut.RevokeAsync(permissionNames, _ProviderName, _ProviderKey, AbortToken);
 
         // then
-        await _cache
-            .Received(1)
-            .UpsertAllAsync(
-                Arg.Is<IDictionary<string, PermissionGrantCacheItem>>(static d =>
-                    d.Count == 2 && d.Values.All(static v => v.IsGranted == false)
-                ),
-                Arg.Any<TimeSpan>(),
-                AbortToken
+        _InsertedStatuses()
+            .Should()
+            .Equal(
+                new Dictionary<string, bool?>(StringComparer.Ordinal)
+                {
+                    [_CacheKey("Users.Create")] = false,
+                    [_CacheKey("Users.Update")] = false,
+                }
             );
     }
 
@@ -1097,4 +1202,28 @@ public sealed class PermissionGrantStoreTests : TestBase
     }
 
     #endregion Surrounding white space
+
+    /// <summary>The status each cache key was inserted with, read from the calls the cache received.</summary>
+    private Dictionary<string, bool?> _InsertedStatuses()
+    {
+        return _cache
+            .ReceivedCalls()
+            .Where(call =>
+                string.Equals(
+                    call.GetMethodInfo().Name,
+                    nameof(ICache<PermissionGrantCacheItem>.TryInsertAsync),
+                    StringComparison.Ordinal
+                )
+            )
+            .ToDictionary(
+                call => (string)call.GetArguments()[0]!,
+                call => ((PermissionGrantCacheItem)call.GetArguments()[1]!).IsGranted,
+                StringComparer.Ordinal
+            );
+    }
+
+    private static string _CacheKey(string name)
+    {
+        return PermissionGrantCacheItem.CalculateCacheKey(name, _ProviderName, _ProviderKey);
+    }
 }

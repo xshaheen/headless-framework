@@ -159,6 +159,69 @@ public sealed class SqlServerPermissionsStorageTests(SqlServerPermissionsFixture
     }
 
     [Fact]
+    public async Task should_replace_a_grant_with_a_denial_in_one_save()
+    {
+        // given
+        await _DropSchemaAsync();
+        using var host = _CreateHost();
+        await host.StartAsync(AbortToken);
+        var grantRepository = host.Services.GetRequiredService<IPermissionGrantRepository>();
+        var granted = new PermissionGrantRecord(
+            Guid.NewGuid(),
+            "Flip.Permission",
+            "Role",
+            "flip-admin",
+            isGranted: true
+        );
+        await grantRepository.InsertAsync(granted, AbortToken);
+        var denial = new PermissionGrantRecord(
+            Guid.NewGuid(),
+            "Flip.Permission",
+            "Role",
+            "flip-admin",
+            isGranted: false
+        );
+
+        // when — the denial reuses the grant's unique key, so the delete has to run first
+        await grantRepository.SaveAsync([denial], [granted], AbortToken);
+
+        // then
+        var stored = await grantRepository.GetListAsync("Role", "flip-admin", AbortToken);
+        stored.Should().ContainSingle().Which.Id.Should().Be(denial.Id);
+        stored[0].IsGranted.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_keep_the_deleted_grant_when_its_replacement_cannot_be_inserted()
+    {
+        // given — the replacement's id collides with another row, so its insert fails after the delete ran
+        await _DropSchemaAsync();
+        using var host = _CreateHost();
+        await host.StartAsync(AbortToken);
+        var grantRepository = host.Services.GetRequiredService<IPermissionGrantRepository>();
+        var granted = new PermissionGrantRecord(
+            Guid.NewGuid(),
+            "Flip.Permission",
+            "Role",
+            "flip-admin",
+            isGranted: true
+        );
+        var other = new PermissionGrantRecord(Guid.NewGuid(), "Flip.Other", "Role", "flip-admin", isGranted: true);
+        await grantRepository.InsertManyAsync([granted, other], AbortToken);
+        var denial = new PermissionGrantRecord(other.Id, "Flip.Permission", "Role", "flip-admin", isGranted: false);
+
+        // when
+        var act = () => grantRepository.SaveAsync([denial], [granted], AbortToken);
+
+        // then — the delete rolled back with the insert, so the explicit grant is still there
+        await act.Should().ThrowAsync<SqlException>().Where(x => x.Number == 2601 || x.Number == 2627);
+        var stored = await grantRepository.FindAsync("Flip.Permission", "Role", "flip-admin", AbortToken);
+        stored.Should().NotBeNull();
+        stored!.Id.Should().Be(granted.Id);
+        stored.IsGranted.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task should_not_enumerate_permission_grants_when_insertion_is_already_cancelled()
     {
         // given

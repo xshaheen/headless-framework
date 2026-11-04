@@ -37,6 +37,11 @@ public sealed class SettingValueStoreConcurrentFillTests : TestBase
         var guidGenerator = Substitute.For<IGuidGenerator>();
         guidGenerator.Create().Returns(_ => Guid.NewGuid());
 
+        // A writer reads the names it wrote back after its save, to bring the cache to what the repository holds.
+        _repository
+            .GetListAsync(Arg.Any<HashSet<string>>(), _ProviderName, _ProviderKey, Arg.Any<CancellationToken>())
+            .Returns(_ => _Snapshot());
+
         _sut = new SettingValueStore(
             _repository,
             _definitionManager,

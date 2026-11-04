@@ -59,6 +59,7 @@ public sealed class DashboardEndpointLimitsTests : TestBase
         await using var services = new ServiceCollection().AddLogging().BuildServiceProvider();
         context.RequestServices = services;
         context.Response.Body = new MemoryStream();
+        context.Request.ContentType = "application/json";
         context.Request.Body = new MemoryStream(body);
 
         var (value, error) = await DashboardRequestBodyReader.ReadAsync<object>(context, null, AbortToken);
@@ -75,6 +76,7 @@ public sealed class DashboardEndpointLimitsTests : TestBase
         await using var services = new ServiceCollection().AddLogging().BuildServiceProvider();
         context.RequestServices = services;
         context.Response.Body = new MemoryStream();
+        context.Request.ContentType = "application/json";
         context.Request.Body = new MemoryStream("{"u8.ToArray());
 
         var (value, error) = await DashboardRequestBodyReader.ReadAsync<object>(context, null, AbortToken);

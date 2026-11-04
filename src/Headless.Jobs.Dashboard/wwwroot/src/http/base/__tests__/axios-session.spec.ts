@@ -58,6 +58,15 @@ describe('API request session check', () => {
     expect(push).not.toHaveBeenCalled()
   })
 
+  it('marks every request with the header the server requires on state changes', async () => {
+    const http = await load()
+
+    await http.post('/job-host/stop')
+
+    expect(adapter).toHaveBeenCalledOnce()
+    expect(adapter.mock.calls[0]![0].headers.get('X-Requested-With')).toBe('XMLHttpRequest')
+  })
+
   it('cancels the request and sends the user to the login page once the session has expired', async () => {
     const http = await load()
     vi.setSystemTime(SIGNED_IN + 15 * MINUTE)

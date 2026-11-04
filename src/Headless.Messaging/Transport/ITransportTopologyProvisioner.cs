@@ -24,6 +24,11 @@ namespace Headless.Messaging.Transport;
 /// <see cref="ConsumerClientRequest.ProvisionsTopology"/> is set, and otherwise declare nothing for them: the running
 /// host calls <see cref="VerifyAsync"/> once after it starts, as <see cref="StartupCheck"/> says.
 /// </para>
+/// <para>
+/// <b>Evolution policy:</b> this is a transport-provider extension point, so it evolves additively. New members ship as default
+/// interface methods with a behavior-preserving fallback, and existing members never gain parameters; new topology
+/// facts arrive as properties of <see cref="MessagingTopology"/>.
+/// </para>
 /// </remarks>
 [PublicAPI]
 public interface ITransportTopologyProvisioner

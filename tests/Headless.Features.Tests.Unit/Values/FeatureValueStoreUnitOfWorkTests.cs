@@ -27,6 +27,23 @@ public sealed class FeatureValueStoreUnitOfWorkTests : TestBase
         guidGenerator.Create().Returns(_ => Guid.NewGuid());
         _unit.OnCompleted(Arg.Do<Func<ValueTask>>(_afterCommit.Add)).Returns(Substitute.For<IDisposable>());
 
+        // After the commit the store reads the written names back and inserts them into an empty cache.
+        _cache
+            .GetAllAsync<FeatureValueCacheItem>(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+                ValueTask.FromResult<IDictionary<string, CacheValue<FeatureValueCacheItem>>>(
+                    new Dictionary<string, CacheValue<FeatureValueCacheItem>>(StringComparer.Ordinal)
+                )
+            );
+        _cache
+            .TryInsertAsync(
+                Arg.Any<string>(),
+                Arg.Any<FeatureValueCacheItem?>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(true));
+
         _sut = new FeatureValueStore(
             Substitute.For<IFeatureDefinitionManager>(),
             _repository,
@@ -66,20 +83,24 @@ public sealed class FeatureValueStoreUnitOfWorkTests : TestBase
             );
         _cache.ReceivedCalls().Should().BeEmpty();
 
+        // the committed rows, read back after the commit
+        _repository
+            .GetListAsync(Arg.Any<HashSet<string>>(), _Provider, _Key, Arg.Any<CancellationToken>())
+            .Returns([
+                new FeatureValueRecord(existing.Id, "A", "2", _Provider, _Key),
+                new FeatureValueRecord(Guid.NewGuid(), "B", "1", _Provider, _Key),
+            ]);
+
         await _CommitAsync();
-        await _cache
-            .Received(1)
-            .UpsertAllAsync(
-                Arg.Is<IDictionary<string, FeatureValueCacheItem>>(items =>
-                    items
-                        .Keys.Order()
-                        .SequenceEqual(
-                            new[] { _CacheKey("A"), _CacheKey("B"), _CacheKey("C") }.Order(),
-                            StringComparer.Ordinal
-                        )
-                ),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<CancellationToken>()
+        _InsertedValues()
+            .Should()
+            .BeEquivalentTo(
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    [_CacheKey("A")] = "2",
+                    [_CacheKey("B")] = "1",
+                    [_CacheKey("C")] = null,
+                }
             );
     }
 
@@ -165,13 +186,17 @@ public sealed class FeatureValueStoreUnitOfWorkTests : TestBase
                 AbortToken
             );
         _cache.ReceivedCalls().Should().BeEmpty();
+        _repository.GetListAsync(Arg.Any<HashSet<string>>(), _Provider, _Key, Arg.Any<CancellationToken>()).Returns([]);
+
         await _CommitAsync();
-        await _cache
-            .Received(1)
-            .UpsertAllAsync(
-                Arg.Any<IDictionary<string, FeatureValueCacheItem>>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<CancellationToken>()
+        _InsertedValues()
+            .Should()
+            .BeEquivalentTo(
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    [_CacheKey("A")] = null,
+                    [_CacheKey("B")] = null,
+                }
             );
     }
 
@@ -195,11 +220,7 @@ public sealed class FeatureValueStoreUnitOfWorkTests : TestBase
         // given
         _repository.GetListEnlistedAsync(_unit, Arg.Any<HashSet<string>>(), _Provider, _Key, AbortToken).Returns([]);
         _cache
-            .UpsertAllAsync(
-                Arg.Any<IDictionary<string, FeatureValueCacheItem>>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<CancellationToken>()
-            )
+            .GetAllAsync<FeatureValueCacheItem>(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("cache down"));
         var values = new Dictionary<string, string?>(StringComparer.Ordinal) { ["A"] = "1" };
         await _sut.SetAllEnlistedAsync(_unit, values, _Provider, _Key, AbortToken);
@@ -227,6 +248,21 @@ public sealed class FeatureValueStoreUnitOfWorkTests : TestBase
         // then
         await act.Should().ThrowExactlyAsync<ArgumentException>();
         _repository.ReceivedCalls().Should().BeEmpty();
+    }
+
+    /// <summary>The value each cache key was inserted with, read from the calls the cache received.</summary>
+    private Dictionary<string, string?> _InsertedValues()
+    {
+        return _cache
+            .ReceivedCalls()
+            .Where(call =>
+                string.Equals(call.GetMethodInfo().Name, nameof(ICache.TryInsertAsync), StringComparison.Ordinal)
+            )
+            .ToDictionary(
+                call => (string)call.GetArguments()[0]!,
+                call => ((FeatureValueCacheItem)call.GetArguments()[1]!).Value,
+                StringComparer.Ordinal
+            );
     }
 
     private static string _CacheKey(string name)

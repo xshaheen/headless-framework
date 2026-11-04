@@ -2,6 +2,7 @@
 
 using Headless.Checks;
 using Headless.Messaging.AzureServiceBus;
+using Headless.Messaging.Transport;
 
 namespace Headless.Messaging;
 

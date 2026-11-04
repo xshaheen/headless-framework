@@ -401,10 +401,10 @@ internal sealed class RabbitMqBasicConsumer(
             return;
         }
 
-        MessagingMetrics.RecordSettlementFailure(
+        TransportMetrics.RecordSettlementFailure(
             "rabbitmq",
-            MessagingMetrics.OperationNameAck,
-            MessagingMetrics.ErrorTypeChannelClosed
+            TransportMetrics.OperationAck,
+            TransportMetrics.ErrorTypeChannelClosed
         );
         logCallback(
             new LogMessageEventArgs

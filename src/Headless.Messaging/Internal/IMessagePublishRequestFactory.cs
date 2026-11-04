@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using Headless.Checks;
 using Headless.Messaging.RequestReply;
+using Headless.Messaging.Transport;
 using Headless.MultiTenancy;
 using Microsoft.Extensions.Options;
 

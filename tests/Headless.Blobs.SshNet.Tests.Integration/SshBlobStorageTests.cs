@@ -190,6 +190,30 @@ public sealed class SshBlobStorageTests(SshBlobStorageFixture fixture) : BlobSto
     }
 
     [Fact]
+    public async Task should_not_report_a_directory_key_as_an_existing_blob()
+    {
+        // given: a blob whose key puts it under the "docs" directory
+        await using var storage = GetStorage();
+        await ResetAsync(storage);
+
+        await using (var body = new MemoryStream("content"u8.ToArray()))
+        {
+            await storage.UploadAsync(
+                new BlobLocation(ContainerName, "docs/a.txt"),
+                body,
+                cancellationToken: AbortToken
+            );
+        }
+
+        // when
+        var exists = await storage.ExistsAsync(new BlobLocation(ContainerName, "docs"), AbortToken);
+
+        // then: the directory is not a blob, as GetBlobInfoAsync and every other provider agree
+        exists.Should().BeFalse();
+        (await storage.ExistsAsync(new BlobLocation(ContainerName, "docs/a.txt"), AbortToken)).Should().BeTrue();
+    }
+
+    [Fact]
     public async Task should_drop_the_destination_metadata_when_copying_a_blob_without_a_sidecar()
     {
         // given: a source written out-of-band (no sidecar) and a destination that carries metadata

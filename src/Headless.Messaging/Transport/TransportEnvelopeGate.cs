@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Security.Cryptography;
+using Headless.Checks;
 using Headless.Messaging.Internal;
 
 namespace Headless.Messaging.Transport;
@@ -26,8 +27,12 @@ namespace Headless.Messaging.Transport;
 /// A malformed delivery surfaces as <see cref="InvalidDataException"/>, which every consumer client already settles
 /// terminally without a handler callback.
 /// </para>
+/// <para>
+/// The core registers one gate built from the message catalog. A consumer client resolves it from the container and
+/// falls back to <see cref="Strict"/> when it is built without one.
+/// </para>
 /// </remarks>
-internal sealed class TransportEnvelopeGate
+public sealed class TransportEnvelopeGate
 {
     /// <summary>A gate with no raw routes, for consumer clients built without a container.</summary>
     public static TransportEnvelopeGate Strict { get; } = new([]);
@@ -37,8 +42,11 @@ internal sealed class TransportEnvelopeGate
 
     private readonly Dictionary<(MessageLane Lane, string Name), RawRoute> _rawRoutes;
 
+    /// <summary>Creates a gate that completes the raw routes of <paramref name="metadataRegistry"/>.</summary>
+    /// <param name="metadataRegistry">The message catalog the core registers.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="metadataRegistry"/> is <see langword="null"/>.</exception>
     public TransportEnvelopeGate(IMessageMetadataRegistry metadataRegistry)
-        : this(metadataRegistry.GetAll()) { }
+        : this(Argument.IsNotNull(metadataRegistry).GetAll()) { }
 
     internal TransportEnvelopeGate(IEnumerable<MessageMetadata> routes)
     {
@@ -64,6 +72,9 @@ internal sealed class TransportEnvelopeGate
         messageName is not null && _rawRoutes.ContainsKey((lane, messageName));
 
     /// <summary>Completes and checks a delivery that needs no broker metadata to be completed.</summary>
+    /// <param name="headers">The delivery's headers, after any custom headers builder ran; completed in place.</param>
+    /// <param name="arrival">Where the delivery arrived.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="headers"/> is <see langword="null"/>.</exception>
     /// <exception cref="InvalidDataException">The delivery is malformed.</exception>
     public void Admit(IDictionary<string, string?> headers, in EnvelopeArrival arrival)
     {
@@ -80,6 +91,9 @@ internal sealed class TransportEnvelopeGate
     /// <param name="facts">
     /// Reads the broker metadata that completes a raw envelope. It runs at most once, and only when a header is missing.
     /// </param>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="headers"/> or <paramref name="facts"/> is <see langword="null"/>.
+    /// </exception>
     /// <exception cref="InvalidDataException">The delivery is malformed.</exception>
     public void Admit<TState>(
         IDictionary<string, string?> headers,
@@ -88,6 +102,9 @@ internal sealed class TransportEnvelopeGate
         Func<TState, NativeEnvelopeFacts> facts
     )
     {
+        Argument.IsNotNull(headers);
+        Argument.IsNotNull(facts);
+
         var headerName = _NonBlank(headers, Headers.MessageName);
         RawRoute? raw;
 
@@ -226,13 +243,17 @@ internal sealed class TransportEnvelopeGate
 }
 
 /// <summary>Where a delivery arrived, as its consumer client knows it.</summary>
+/// <remarks>
+/// The positional members never change; what a later gate needs to know about an address arrives as another
+/// init-only property that defaults to the behavior a client that does not set it already gets.
+/// </remarks>
 /// <param name="Transport">The transport's display name, used in malformed-envelope reasons.</param>
 /// <param name="Lane">The lane of the subscription the delivery arrived on.</param>
 /// <param name="ArrivalName">
 /// The message name the delivery's address belongs to, from a lookup the client built when it subscribed; or
 /// <see langword="null"/> when the address does not name one message.
 /// </param>
-internal readonly record struct EnvelopeArrival(string Transport, MessageLane Lane, string? ArrivalName)
+public readonly record struct EnvelopeArrival(string Transport, MessageLane Lane, string? ArrivalName)
 {
     /// <summary>
     /// Whether the address names the contract even when the route is not raw, as an external subscription does.
@@ -247,6 +268,7 @@ internal readonly record struct EnvelopeArrival(string Transport, MessageLane La
 }
 
 /// <summary>Broker metadata that completes a raw envelope.</summary>
+/// <remarks>The positional members never change; a new fact arrives as an init-only property.</remarks>
 /// <param name="ProducerMessageId">
 /// The producer's own idempotency key in the broker's native field, such as <c>Nats-Msg-Id</c> or an AMQP
 /// <c>message-id</c>.
@@ -256,7 +278,7 @@ internal readonly record struct EnvelopeArrival(string Transport, MessageLane La
 /// after the stream, topic, or entity is recreated. See <see cref="Position"/>.
 /// </param>
 /// <param name="StoredAt">When the broker stored the message.</param>
-internal readonly record struct NativeEnvelopeFacts(
+public readonly record struct NativeEnvelopeFacts(
     string? ProducerMessageId,
     string? PositionId,
     DateTimeOffset? StoredAt
@@ -267,8 +289,14 @@ internal readonly record struct NativeEnvelopeFacts(
     /// longer than the message id limit, which long topic or stream names can produce, is replaced by a SHA-256 of itself,
     /// so it stays deterministic.
     /// </summary>
+    /// <param name="transport">The transport's prefix, such as <c>kafka</c>.</param>
+    /// <param name="parts">The broker coordinates of the stored message, such as topic, partition, and offset.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="transport"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="transport"/> is empty or white space.</exception>
     public static string Position(string transport, params ReadOnlySpan<string> parts)
     {
+        Argument.IsNotNullOrWhiteSpace(transport);
+
         var position = transport + ":" + string.Join(':', parts);
 
         if (position.Length <= MessageOptions.MessageIdMaxLength)

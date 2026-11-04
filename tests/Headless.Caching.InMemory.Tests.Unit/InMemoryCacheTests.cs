@@ -491,7 +491,7 @@ public sealed class InMemoryCacheTests : TestBase
         var exists = await cache.ExistsAsync(key, AbortToken);
         var expiration = await cache.GetExpirationAsync(key, AbortToken);
         var count = await cache.GetCountAsync(cancellationToken: AbortToken);
-        var keys = await cache.GetAllKeysByPrefixAsync("", AbortToken);
+        var keys = await cache.GetAllKeysByPrefixAsync(key, AbortToken);
 
         // then
         cached.HasValue.Should().BeFalse();

@@ -27,18 +27,25 @@ internal sealed class SftpClientPool : IDisposable
     private readonly SshBlobStorageOptions _options;
     private readonly ILogger<SftpClientPool> _logger;
     private readonly SftpClientPool? _readStreams;
+    private readonly PrivateKeyFile? _privateKey;
     private volatile bool _disposed;
 
     public SftpClientPool(IOptions<SshBlobStorageOptions> options, ILogger<SftpClientPool> logger)
-        : this(options.Value, options.Value.MaxPoolSize, logger)
+        : this(options.Value, options.Value.MaxPoolSize, logger, _ReadPrivateKey(options.Value))
     {
-        _readStreams = new SftpClientPool(_options, _options.MaxReadStreamConnections, logger);
+        _readStreams = new SftpClientPool(_options, _options.MaxReadStreamConnections, logger, _privateKey);
     }
 
-    private SftpClientPool(SshBlobStorageOptions options, int maxConnections, ILogger<SftpClientPool> logger)
+    private SftpClientPool(
+        SshBlobStorageOptions options,
+        int maxConnections,
+        ILogger<SftpClientPool> logger,
+        PrivateKeyFile? privateKey
+    )
     {
         _options = options;
         _logger = logger;
+        _privateKey = privateKey;
         _idle = Channel.CreateBounded<SftpClient>(
             new BoundedChannelOptions(maxConnections)
             {
@@ -171,7 +178,7 @@ internal sealed class SftpClientPool : IDisposable
 
     private async ValueTask<SftpClient> _CreateAndConnectAsync(CancellationToken ct)
     {
-        var connectionInfo = _BuildConnectionInfo(_options);
+        var connectionInfo = _BuildConnectionInfo(_options, _privateKey);
         var client = new SftpClient(connectionInfo);
 
         _logger.LogCreatingConnection(connectionInfo.Host, connectionInfo.Port);
@@ -183,7 +190,15 @@ internal sealed class SftpClientPool : IDisposable
         return client;
     }
 
-    private static ConnectionInfo _BuildConnectionInfo(SshBlobStorageOptions options)
+    // Reading the key consumes (and disposes) the option's stream, so it is read once, when the owning pool is created,
+    // and every connection of both pools offers the same parsed key. Parsing it per connection would authenticate only
+    // the first one.
+    private static PrivateKeyFile? _ReadPrivateKey(SshBlobStorageOptions options)
+    {
+        return options.PrivateKey is null ? null : new PrivateKeyFile(options.PrivateKey, options.PrivateKeyPassPhrase);
+    }
+
+    private static ConnectionInfo _BuildConnectionInfo(SshBlobStorageOptions options, PrivateKeyFile? privateKey)
     {
         Argument.IsNotNull(options);
 
@@ -207,14 +222,9 @@ internal sealed class SftpClientPool : IDisposable
             authenticationMethods.Add(new PasswordAuthenticationMethod(username, password));
         }
 
-        if (options.PrivateKey is not null)
+        if (privateKey is not null)
         {
-            authenticationMethods.Add(
-                new PrivateKeyAuthenticationMethod(
-                    username,
-                    new PrivateKeyFile(options.PrivateKey, options.PrivateKeyPassPhrase)
-                )
-            );
+            authenticationMethods.Add(new PrivateKeyAuthenticationMethod(username, privateKey));
         }
 
         if (authenticationMethods.Count == 0)
@@ -317,7 +327,13 @@ internal sealed class SftpClientPool : IDisposable
         }
 
         _maxConnections.Dispose();
-        _readStreams?.Dispose();
+
+        // Only the owning pool disposes the key; the read-stream pool shares it and has no read-stream pool of its own.
+        if (_readStreams is not null)
+        {
+            _readStreams.Dispose();
+            _privateKey?.Dispose();
+        }
 
         _logger.LogPoolDisposed();
     }

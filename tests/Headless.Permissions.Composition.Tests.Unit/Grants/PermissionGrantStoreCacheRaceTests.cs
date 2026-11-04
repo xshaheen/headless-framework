@@ -14,7 +14,8 @@ namespace Tests.Grants;
 /// <summary>
 /// A reader that misses the cache loads the rows, then fills the cache. A write that lands between the load and the
 /// fill must win: the fill must not put the pre-write status back for the whole cache expiration. Each test runs the
-/// write from inside the reader's repository load, the exact interleaving, on a real in-memory cache.
+/// write from inside the reader's repository load, the exact interleaving, on a real in-memory cache. Two writers race
+/// the same way: the one that commits last must win, even when the other one reaches the cache after it.
 /// </summary>
 public sealed class PermissionGrantStoreCacheRaceTests : TestBase
 {
@@ -181,6 +182,22 @@ public sealed class PermissionGrantStoreCacheRaceTests : TestBase
     }
 
     [Fact]
+    public async Task should_cache_the_last_committed_status_when_the_first_writer_updates_the_cache_last()
+    {
+        // given a grant whose insert lets a revoke commit and update the cache before the grant returns
+        _repository.DuringNextWrite = () => _sut.RevokeAsync(_Permission, _ProviderName, _ProviderKey, AbortToken);
+
+        // when the grant then updates the cache
+        await _sut.GrantAsync(_Permission, _ProviderName, _ProviderKey, AbortToken);
+
+        // then the cache holds what the repository kept, the revoke's denial
+        _repository.Rows.Should().ContainSingle().Which.IsGranted.Should().BeFalse();
+        (await _sut.IsGrantedAsync(_Permission, _ProviderName, _ProviderKey, AbortToken))
+            .Should()
+            .Be(PermissionGrantStatus.Prohibited);
+    }
+
+    [Fact]
     public async Task should_replace_cached_statuses_on_an_explicit_refresh()
     {
         // given a cached grant and a revoke written straight to storage, bypassing the store
@@ -233,13 +250,16 @@ public sealed class PermissionGrantStoreCacheRaceTests : TestBase
 
     /// <summary>
     /// One tenant's rows in memory. A read that loads rows for a cache fill returns what it read before running
-    /// <see cref="DuringNextLoad" />, the write racing it.
+    /// <see cref="DuringNextLoad" />, the write racing it. A single insert lands its row, then runs
+    /// <see cref="DuringNextWrite" />, a second writer racing it, before it returns.
     /// </summary>
     private sealed class RacingGrantRepository : IPermissionGrantRepository
     {
         public List<PermissionGrantRecord> Rows { get; } = [];
 
         public Func<Task>? DuringNextLoad { get; set; }
+
+        public Func<Task>? DuringNextWrite { get; set; }
 
         public Task<PermissionGrantRecord?> FindAsync(
             string name,
@@ -288,11 +308,20 @@ public sealed class PermissionGrantStoreCacheRaceTests : TestBase
             );
         }
 
-        public Task InsertAsync(PermissionGrantRecord permissionGrant, CancellationToken cancellationToken = default)
+        public async Task InsertAsync(
+            PermissionGrantRecord permissionGrant,
+            CancellationToken cancellationToken = default
+        )
         {
             Rows.Add(permissionGrant);
 
-            return Task.CompletedTask;
+            var racingWrite = DuringNextWrite;
+            DuringNextWrite = null;
+
+            if (racingWrite is not null)
+            {
+                await racingWrite();
+            }
         }
 
         public Task InsertManyAsync(
@@ -318,6 +347,18 @@ public sealed class PermissionGrantStoreCacheRaceTests : TestBase
         )
         {
             Rows.RemoveAll(x => permissionGrants.Any(g => g.Id == x.Id));
+
+            return Task.CompletedTask;
+        }
+
+        public Task SaveAsync(
+            IReadOnlyCollection<PermissionGrantRecord> inserted,
+            IReadOnlyCollection<PermissionGrantRecord> deleted,
+            CancellationToken cancellationToken = default
+        )
+        {
+            Rows.RemoveAll(x => deleted.Any(g => g.Id == x.Id));
+            Rows.AddRange(inserted);
 
             return Task.CompletedTask;
         }

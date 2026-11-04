@@ -47,6 +47,23 @@ public sealed class RedisCacheTagTests(RedisCacheFixture fixture) : RedisCacheTe
     }
 
     [Fact]
+    public async Task should_not_count_tag_and_clear_markers_as_entries()
+    {
+        await FlushAsync();
+        var prefix = $"{Faker.Random.AlphaNumeric(8)}:";
+        using var cache = CreateCache(prefix);
+        await cache.UpsertAsync(Faker.Random.AlphaNumeric(10), "value", TimeSpan.FromMinutes(5), AbortToken);
+
+        await cache.RemoveByTagAsync(Faker.Random.AlphaNumeric(8), AbortToken);
+        await cache.ClearAsync(AbortToken);
+
+        // The markers live under the instance prefix, so the prefix scan sees them; they are not entries.
+        (await cache.GetCountAsync(cancellationToken: AbortToken))
+            .Should()
+            .Be(1);
+    }
+
+    [Fact]
     public async Task should_write_tag_marker_raise_only()
     {
         await FlushAsync();

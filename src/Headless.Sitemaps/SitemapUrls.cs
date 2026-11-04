@@ -165,13 +165,28 @@ public static class SitemapUrls
         private readonly List<SitemapUrl> _buffer = new(capacity);
         private int _shardCount;
 
-        public ValueTask AddAsync(SitemapUrl url, CancellationToken cancellationToken)
-        {
-            _buffer.Add(url);
+        // The limit is on <url> elements, not SitemapUrl entries: an entry with alternates writes one <url> per
+        // emitted alternate.
+        private int _urlNodeCount;
 
-            return _buffer.Count == SitemapConstants.MaxSitemapUrls
-                ? _FlushAsync(cancellationToken)
-                : ValueTask.CompletedTask;
+        public async ValueTask AddAsync(SitemapUrl url, CancellationToken cancellationToken)
+        {
+            var urlNodes = _CountUrlNodes(url);
+
+            // Close the shard before an entry that would overflow it. An entry that alone exceeds the limit still
+            // gets a shard of its own, because one entry's alternates cannot be split across files.
+            if (_buffer.Count > 0 && _urlNodeCount + urlNodes > SitemapConstants.MaxSitemapUrls)
+            {
+                await _FlushAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            _buffer.Add(url);
+            _urlNodeCount += urlNodes;
+
+            if (_urlNodeCount >= SitemapConstants.MaxSitemapUrls)
+            {
+                await _FlushAsync(cancellationToken).ConfigureAwait(false);
+            }
         }
 
         public async ValueTask<int> CompleteAsync(CancellationToken cancellationToken)
@@ -199,7 +214,27 @@ public static class SitemapUrls
 
             _shardCount++;
             _buffer.Clear();
+            _urlNodeCount = 0;
         }
+    }
+
+    private static int _CountUrlNodes(SitemapUrl sitemapUrl)
+    {
+        return sitemapUrl.AlternateLocations is null ? 1 : _GetEmittedAlternates(sitemapUrl).Count();
+    }
+
+    // The alternates that get their own <url> entry. Shared by the writer and the shard counter so the count a
+    // shard is cut on always matches what the writer emits.
+    private static IEnumerable<SitemapAlternateUrl> _GetEmittedAlternates(SitemapUrl sitemapUrl)
+    {
+        var alternateLocations = sitemapUrl.AlternateLocations ?? [];
+        var languageCodes = sitemapUrl.WriteAlternateLanguageCodes;
+
+        return languageCodes is null
+            ? alternateLocations
+            : alternateLocations.Where(alt =>
+                languageCodes.Contains(alt.LanguageCode, StringComparer.OrdinalIgnoreCase)
+            );
     }
 
     private static async Task _WriteUrlNodeAsync(
@@ -238,13 +273,7 @@ public static class SitemapUrls
         }
 
         // write with alternates
-        var filteredAlternates = sitemapUrl.WriteAlternateLanguageCodes is null
-            ? alternateLocations
-            : alternateLocations.Where(predicate: alt =>
-                sitemapUrl.WriteAlternateLanguageCodes!.Contains(alt.LanguageCode, StringComparer.OrdinalIgnoreCase)
-            );
-
-        foreach (var url in filteredAlternates)
+        foreach (var url in _GetEmittedAlternates(sitemapUrl))
         {
             cancellationToken.ThrowIfCancellationRequested();
 

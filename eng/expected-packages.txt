@@ -84,6 +84,7 @@ Headless.Fencing
 Headless.Fencing.Abstractions
 Headless.Fencing.InMemory
 Headless.Fencing.PostgreSql
+Headless.Fencing.Sql
 Headless.Fencing.SqlServer
 Headless.Fencing.Sqlite
 Headless.FluentValidation
@@ -131,7 +132,6 @@ Headless.Messaging.Dashboard.K8s
 Headless.Messaging.InMemory
 Headless.Messaging.Kafka
 Headless.Messaging.Nats
-Headless.Messaging.Pulsar
 Headless.Messaging.Queue.Abstractions
 Headless.Messaging.RabbitMq
 Headless.Messaging.Redis
@@ -173,6 +173,7 @@ Headless.Search.PostgreSql.EntityFramework
 Headless.Sequences
 Headless.Sequences.Abstractions
 Headless.Sequences.PostgreSql
+Headless.Sequences.Sql
 Headless.Sequences.SqlServer
 Headless.Sequences.Sqlite
 Headless.Serializer.Abstractions

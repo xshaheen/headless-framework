@@ -13,6 +13,10 @@ namespace Headless.Messaging;
 /// Extensions are registered through <see cref="MessagingSetupBuilder.RegisterExtension(IMessagesOptionsExtension)"/>
 /// and are executed during the <c>AddHeadlessMessaging()</c> service registration process.
 /// This allows modular and composable configuration of storage backends, transport implementations, and other messaging components.
+/// <para>
+/// <b>Evolution policy:</b> providers implement it, and it never gains a required member: anything new arrives as a default
+/// interface method with a behavior-preserving fallback.
+/// </para>
 /// </remarks>
 public interface IMessagesOptionsExtension
 {

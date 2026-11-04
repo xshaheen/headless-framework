@@ -432,7 +432,6 @@ public sealed class JobsTraceLinkTests : TestBase
                 _Store,
                 Substitute.For<IJobsHostScheduler>(),
                 Substitute.For<IJobsNotificationHubSender>(),
-                new DashboardOptionsBuilder(),
                 dispatcher,
                 _provider.GetRequiredService<JobFunctionRegistry>(),
                 _time,

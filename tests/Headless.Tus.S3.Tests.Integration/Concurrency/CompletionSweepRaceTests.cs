@@ -171,6 +171,56 @@ public abstract class CompletionSweepRaceTestsBase(IS3TestBackend backend) : Tes
         (await _store.FileExistAsync(fileId, AbortToken)).Should().BeFalse();
     }
 
+    public virtual async Task should_finish_a_committing_upload_on_the_resent_final_patch_after_the_multipart_lifetime()
+    {
+        // given - a provider that aborts incomplete multipart uploads after an hour, and a final PATCH that completed
+        // the multipart upload into the finished object, moved the state on, and then failed its record write
+        var store = new TusS3Store(
+            _client.S3,
+            new TusS3StoreOptions
+            {
+                Bucket = _options.Bucket,
+                Prefix = _options.Prefix,
+                PartSize = _options.PartSize,
+                Provider = _options.Provider,
+                MultipartUploadLifetime = TimeSpan.FromHours(1),
+            },
+            loggerFactory: LoggerFactory,
+            timeProvider: _clock
+        );
+        var content = Faker.Random.Bytes(7 * _MiB);
+        var fileId = await store.CreateFileAsync(content.Length, metadata: null, AbortToken);
+        (await _AppendAsync(fileId, content[..(3 * _MiB)], store)).Should().Be(3 * _MiB);
+        var recordKey = _raw.Keys.CompletedRecord(fileId);
+        _client.Gate.FailWhen(request =>
+            string.Equals(S3Operation.Of(request), S3Operation.PutObject, StringComparison.Ordinal)
+            && (request.RequestUri?.AbsolutePath ?? "").EndsWith(recordKey, StringComparison.Ordinal)
+        );
+
+        var (_, recordError) = await _Settle(_AppendAsync(fileId, content[(3 * _MiB)..], store));
+        recordError.Should().BeAssignableTo<AmazonS3Exception>();
+        _client.Gate.FailWhen(null);
+        var committing = await _raw.ReadStateAsync(fileId, AbortToken);
+        committing!.Status.Should().Be(TusS3UploadStatus.Committing);
+        committing.MultipartUploadId.Should().NotBeNull();
+
+        // when - the client comes back once the provider's abort window has passed
+        _clock.Advance(TimeSpan.FromHours(2));
+
+        // then - the upload still exists, because its parts already became the finished object
+        (await store.FileExistAsync(fileId, AbortToken))
+            .Should()
+            .BeTrue();
+
+        // and the re-sent final PATCH records it with the original bytes
+        (await _AppendAsync(fileId, content[(3 * _MiB)..], store))
+            .Should()
+            .Be(4 * _MiB);
+        (await _raw.ReadCompletedRecordAsync(fileId, AbortToken))!.UploadLength.Should().Be(content.Length);
+        (await _raw.ReadFinishedObjectAsync(fileId, AbortToken)).Should().Equal(content);
+        (await _raw.ReadStateAsync(fileId, AbortToken)).Should().BeNull();
+    }
+
     private async Task<string> _CreateExpiringUploadAsync(byte[] content, int stored)
     {
         var fileId = await _store.CreateFileAsync(content.Length, metadata: null, AbortToken);
@@ -190,13 +240,13 @@ public abstract class CompletionSweepRaceTestsBase(IS3TestBackend backend) : Tes
         }
     }
 
-    private async Task<long> _AppendAsync(string fileId, byte[] body)
+    private async Task<long> _AppendAsync(string fileId, byte[] body, TusS3Store? store = null)
     {
         // Leave the test's thread first, so the append reaches the gate before the test waits for it.
         await Task.Yield();
         await using var stream = new MemoryStream(body, writable: false);
 
-        return await _store.AppendDataAsync(fileId, stream, AbortToken);
+        return await (store ?? _store).AppendDataAsync(fileId, stream, AbortToken);
     }
 
     private static async Task<(long? Appended, Exception? Error)> _Settle(Task<long> append)
@@ -232,6 +282,10 @@ public sealed class MinioCompletionSweepRaceTests(TusS3MinioFixture fixture) : C
     [Fact]
     public override Task should_remove_a_committing_upload_once_past_its_expiry_and_the_grace() =>
         base.should_remove_a_committing_upload_once_past_its_expiry_and_the_grace();
+
+    [Fact]
+    public override Task should_finish_a_committing_upload_on_the_resent_final_patch_after_the_multipart_lifetime() =>
+        base.should_finish_a_committing_upload_on_the_resent_final_patch_after_the_multipart_lifetime();
 }
 
 [Collection<TusS3LocalStackFixture>]
@@ -253,4 +307,8 @@ public sealed class LocalStackCompletionSweepRaceTests(TusS3LocalStackFixture fi
     [Fact]
     public override Task should_remove_a_committing_upload_once_past_its_expiry_and_the_grace() =>
         base.should_remove_a_committing_upload_once_past_its_expiry_and_the_grace();
+
+    [Fact]
+    public override Task should_finish_a_committing_upload_on_the_resent_final_patch_after_the_multipart_lifetime() =>
+        base.should_finish_a_committing_upload_on_the_resent_final_patch_after_the_multipart_lifetime();
 }

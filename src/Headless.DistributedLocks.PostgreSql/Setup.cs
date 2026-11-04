@@ -6,6 +6,7 @@ using Headless.DistributedLocks.PostgreSql;
 using Headless.Hosting;
 using Headless.Hosting.Schema;
 using Headless.Sql;
+using Headless.Sql.PostgreSql;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -37,6 +38,11 @@ public static class SetupDistributedLocksPostgreSql
         /// holder surface faster. The active connection monitor detects a dead holder either way.
         /// </para>
         /// <para>
+        /// A registered data source that sets <c>Multiplexing</c> is skipped in favour of the <c>AddPostgreSqlSql</c>
+        /// connection: multiplexing binds no physical connection, so it cannot hold a session advisory lock. Validation
+        /// fails at startup, naming the setting, when the source the lock ends up with multiplexes.
+        /// </para>
+        /// <para>
         /// Options resolution throws <see cref="InvalidOperationException"/> when no <see cref="NpgsqlDataSource"/> is
         /// registered and <c>AddPostgreSqlSql</c> was not called or registered another provider's connection.
         /// </para>
@@ -47,12 +53,20 @@ public static class SetupDistributedLocksPostgreSql
                 static (options, services) =>
                 {
                     // The application's own data source wins, so locks draw from the pool (and the settings) the
-                    // application already configured instead of opening a second one against the same server.
+                    // application already configured instead of opening a second one against the same server. A
+                    // multiplexing one cannot hold a session lock, so the shared connection string serves instead when
+                    // one is registered; with none, the multiplexing source stays and validation names the setting.
                     if (services.GetService<NpgsqlDataSource>() is { } dataSource)
                     {
-                        options.DataSource = dataSource;
+                        if (
+                            !PostgresDataSourceFactory.IsMultiplexing(dataSource.ConnectionString)
+                            || services.GetService<ISqlConnectionFactory>() is not NpgsqlConnectionFactory
+                        )
+                        {
+                            options.DataSource = dataSource;
 
-                        return;
+                            return;
+                        }
                     }
 
                     options.ConnectionString = services.GetPostgreSqlConnectionString();

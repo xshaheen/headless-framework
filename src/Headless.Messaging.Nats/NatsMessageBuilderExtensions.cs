@@ -2,6 +2,7 @@
 
 using Headless.Checks;
 using Headless.Messaging.Nats;
+using Headless.Messaging.Transport;
 using NATS.Client.JetStream.Models;
 
 namespace Headless.Messaging;

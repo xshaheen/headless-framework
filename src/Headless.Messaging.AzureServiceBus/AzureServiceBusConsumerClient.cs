@@ -62,6 +62,9 @@ internal sealed class AzureServiceBusConsumerClient(
 
     private int _disposed;
     private int _hasStartedProcessing;
+
+    // The processors' stop the last pause started, which the next resume waits for before restarting them.
+    private Task _pendingStop = Task.CompletedTask;
     private ServiceBusAdministrationClient? _administrationClient;
 
 #pragma warning disable CA2213 // Justification: shared client owned and disposed by AzureServiceBusClientPool
@@ -342,9 +345,29 @@ internal sealed class AzureServiceBusConsumerClient(
             return;
         }
 
-        foreach (var processor in _GetProcessors())
+        // A processor's stop does not return until every handler it dispatched has returned, and the circuit breaker
+        // pauses from inside the handler whose failure tripped it. Awaiting the stop there would wait on the caller
+        // itself forever, so the pause only starts it and the next resume waits for it.
+        Volatile.Write(ref _pendingStop, _StopProcessorsAsync([.. _GetProcessors()]));
+    }
+
+    private async Task _StopProcessorsAsync(List<ServiceBusProcessorFacade> processors)
+    {
+        try
         {
-            await processor.StopProcessingAsync(cancellationToken).ConfigureAwait(false);
+            // Not the caller's token: the stop outlives the pause call that started it.
+            await Task.WhenAll(processors.ConvertAll(static processor => processor.StopProcessingAsync()))
+                .ConfigureAwait(false);
+        }
+        catch (Exception e)
+        {
+            OnLogCallback?.Invoke(
+                new LogMessageEventArgs
+                {
+                    LogType = MqLogType.ConsumeError,
+                    Reason = $"Failed to stop Azure Service Bus processors for a pause: {e.GetBaseException()}",
+                }
+            );
         }
     }
 
@@ -366,6 +389,10 @@ internal sealed class AzureServiceBusConsumerClient(
         {
             return;
         }
+
+        // A processor still stopping reports IsProcessing and would be skipped, then finish stopping and stay stopped.
+        // The stop never faults: its failure is logged where it runs.
+        await Volatile.Read(ref _pendingStop).ConfigureAwait(false);
 
         foreach (var processor in _GetProcessors())
         {

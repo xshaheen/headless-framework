@@ -413,8 +413,8 @@ public sealed class RedisConsumerClientRawPayloadTests : TestBase
             new MessageRouteKey(typeof(object), name, MessageLane.Queue),
             typeof(object),
             version,
-            CorrelationSelector: null,
+            correlationSelector: null,
             new Dictionary<Type, object>(),
-            RawPayload: raw
+            rawPayload: raw
         );
 }
