@@ -13,7 +13,7 @@ packages: Testing, Testing.AspNetCore, Testing.Testcontainers, EntityFramework.T
 - `Headless.Testing.AspNetCore` -- `HeadlessTestServer<TProgram>`, a `WebApplicationFactory<TProgram>` wrapper with deterministic time, DI-scope helpers, readiness polling, and Respawner-based database reset. Used for ASP.NET Core integration tests.
 - `Headless.Testing.Testcontainers` -- pre-configured Docker container fixtures (e.g., `HeadlessRedisFixture`). Used for integration tests requiring real infrastructure.
 - `Headless.EntityFramework.Testing` -- `TenantIsolationDbAssertions`, which prove a tenant-owned EF Core entity is invisible and unwritable to another tenant. Pairs with `TenantWorld` and `TenantIsolationHttpAssertions` from `Headless.Testing`; see [Tenant isolation](#tenant-isolation).
-- `Headless.Messaging.Testing` -- `MessagingTestHarness` that records messages at the transport boundary (covers outboxed and direct-published) and exposes typed `WaitForPublishedAsync`/`WaitForConsumedAsync`/`WaitForFaultedAsync`/`WaitForExhaustedAsync` APIs.
+- `Headless.Messaging.Testing` -- `MessagingTestHarness` that records messages at the transport boundary (covers outboxed and direct-published) and exposes typed `WaitForPublishedAsync`/`WaitForConsumedAsync`/`WaitForFaultedAsync`/`WaitForTerminalAsync` APIs.
 
 Typical unit test inherits from `TestBase`, which provides `Logger`, `Faker`, and `AbortToken` out of the box. Integration tests typically build a shared xUnit collection fixture around `HeadlessTestServer<TProgram>` plus any required Testcontainers fixtures, then derive per-test classes from an `IntegrationTestBase : TestBase` that resets fixture state per test.
 

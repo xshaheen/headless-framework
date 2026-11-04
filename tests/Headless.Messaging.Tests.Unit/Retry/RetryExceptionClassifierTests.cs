@@ -43,7 +43,7 @@ public sealed class RetryExceptionClassifierTests : TestBase
     {
         // InvalidOperationException is commonly thrown for transient conditions (circuit-breaker,
         // pool exhaustion, lock contention) — classifying it as permanent would silently suppress
-        // retries and OnExhausted for recoverable failures.
+        // retries and OnTerminal for recoverable failures.
         RetryExceptionClassifier.IsPermanent(new InvalidOperationException("transient")).Should().BeFalse();
     }
 

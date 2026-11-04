@@ -25,11 +25,11 @@ internal interface ISubscribeExecutor
     /// <param name="message">The message to execute.</param>
     /// <param name="dispatchServices">
     /// The live per-message DI scope's <see cref="IServiceProvider"/>. The caller (Dispatcher) creates
-    /// this scope and disposes it after the call returns. Surfaces to <c>FailedInfo.ServiceProvider</c>
+    /// this scope and disposes it after the call returns. Surfaces to <c>TerminalMessageInfo.ServiceProvider</c>
     /// when the retry budget exhausts. The consumer and its consume middleware never run in it: every
     /// attempt, transactional or not and immediate retries included, opens its own scope, so a scoped
     /// service a failed attempt left dirty cannot carry into the retry. A transactional attempt's scope
-    /// stays alive through commit or rollback. No attempt's services reach the exhausted callback.
+    /// stays alive through commit or rollback. No attempt's services reach the terminal callback.
     /// </param>
     /// <param name="descriptor">Optional consumer descriptor; resolved from the message name when omitted.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
@@ -315,8 +315,8 @@ internal sealed class SubscribeExecutor(
                 return MessagingRetryAttempt.Completed(OperateResult.Success);
             }
 
-            // The recovery transition would exhaust the request, raising the exhausted callback and faulting a caller
-            // that is gone; an expired request ends silently instead, as it does at any other attempt start.
+            // The recovery transition would exhaust the request, reporting a spent budget and faulting a caller that is
+            // gone; an expired request ends as expired instead, as it does at any other attempt start.
             if (RequestEnvelope.IsExpired(message.Lane, message.Origin.Headers, timeProvider.GetUtcNow()))
             {
                 return await _EndExpiredRequestAsync(
@@ -656,7 +656,7 @@ internal sealed class SubscribeExecutor(
         // outright rather than discarded.
         message.ExpiresAt = timeProvider.GetUtcNow().AddSeconds(_options.SucceedMessageExpiredAfter);
 
-        // Mirror the failure path's SkippingOnExhaustedAlreadyTerminal log: when storage proves
+        // Mirror the failure path's SkippingOnTerminalAlreadyTerminal log: when storage proves
         // the row is already terminal (typically Failed/NULL after a prior exhausted attempt),
         // surface the asymmetry for operators. Use CancellationToken.None so the must-complete
         // success-write semantics align with the publish-path's MessageSender._SetSuccessfulState.
@@ -782,8 +782,9 @@ internal sealed class SubscribeExecutor(
 
     /// <summary>
     /// Ends a stored message whose delivery deadline (<c>MessageOptions.DeliverWithin</c>) passed before an attempt
-    /// could run: terminal Failed with the expiry reason, no consumer invocation, no exhausted callback, and no
-    /// circuit-breaker report — nobody can deliver the message anymore, so its expiry is not a consumer failure.
+    /// could run: terminal Failed with the expiry reason, no consumer invocation, and no circuit-breaker report —
+    /// nobody can deliver the message anymore, so its expiry is not a consumer failure. The terminal callback fires
+    /// with <see cref="MessageTerminalReason.DeliveryDeadlineExpired"/>.
     /// </summary>
     private async Task<MessagingRetryAttempt> _EndDeliverByExceededAsync(
         MediumMessage message,
@@ -821,7 +822,7 @@ internal sealed class SubscribeExecutor(
     )
     {
         // A fail rule or the built-in permanent set ends the message without spending the remaining retries. It is
-        // still a terminal failure, so it fires OnExhausted like a spent budget; a host-shutdown cancellation never
+        // still a terminal failure, so it fires OnTerminal like a spent budget; a host-shutdown cancellation never
         // gets that far because _SetFailedState writes nothing for it.
         await _SetFailedState(
                 message,
@@ -865,6 +866,7 @@ internal sealed class SubscribeExecutor(
 
         _LogRetryDecision(message, ex, decision, budget, budgetSpent);
         var originalInlineAttempts = message.InlineAttempts;
+        var terminalReason = _TerminalReasonOf(decision, budgetSpent);
 
         message.Origin.AddOrUpdateException(ex);
         message.HasUnpersistedOriginChanges = true;
@@ -899,6 +901,7 @@ internal sealed class SubscribeExecutor(
                     state,
                     originalRetries,
                     originalInlineAttempts,
+                    terminalReason,
                     executionState,
                     cancellationToken
                 )
@@ -918,6 +921,7 @@ internal sealed class SubscribeExecutor(
                 state,
                 originalRetries: message.Retries,
                 originalInlineAttempts,
+                terminalReason,
                 executionState,
                 cancellationToken
             )
@@ -932,20 +936,21 @@ internal sealed class SubscribeExecutor(
         RetryNextState state,
         int originalRetries,
         int originalInlineAttempts,
+        MessageTerminalReason terminalReason,
         RetryExecutionState? executionState,
         CancellationToken cancellationToken
     )
     {
         // Concurrent-Exhausted CAS guard: when two inverse-order pickups race to terminal-write,
         // the `Retries=@OriginalRetries` predicate inside ChangeReceiveStateAsync acts as the CAS
-        // token. The first writer that wins sees `affected=true` and fires OnExhausted; the loser
-        // sees `affected=false` and emits SkippingOnExhaustedAlreadyTerminal below. The per-row
+        // token. The first writer that wins sees `affected=true` and fires OnTerminal; the loser
+        // sees `affected=false` and emits SkippingOnTerminalAlreadyTerminal below. The per-row
         // Retries counter is the single source of truth — no extra CAS over the terminal-status
         // field is needed.
         //
         // Use CancellationToken.None for the terminal state write. If host shutdown fires between
         // computing the Exhausted decision and persisting it, we still want the row to land in its
-        // terminal Failed/NULL state and OnExhausted to fire — otherwise on next pickup we'd re-invoke
+        // terminal Failed/NULL state and OnTerminal to fire — otherwise on next pickup we'd re-invoke
         // the consumer as if the budget wasn't exhausted. The IsCancellation guard above already
         // short-circuited true host-shutdown OCEs; from this point on we are committed. Mirrors the
         // publish path (IMessageSender._SetFailedState) which makes the same choice for the same
@@ -974,7 +979,7 @@ internal sealed class SubscribeExecutor(
         executionState?.RecordLeaseTransition(affected, lockedUntil);
 
         // The terminal write took effect, so this attempt owns the request's outcome and answers it, before the
-        // exhausted callback runs so the caller is not held up by it. An expired request's caller is gone.
+        // terminal callback runs so the caller is not held up by it. An expired request's caller is gone.
         if (
             affected
             && decision.Outcome is not MessagingRetryDecision.Kind.Continue
@@ -1003,16 +1008,18 @@ internal sealed class SubscribeExecutor(
             );
         }
 
-        if (affected && decision.Outcome == MessagingRetryDecision.Kind.Exhausted)
+        if (affected && decision.Outcome != MessagingRetryDecision.Kind.Continue)
         {
-            // #6 — shared OnExhausted body lives in RetryHelper; only MessageType varies per path.
+            // Every terminal write that landed reaches the callback once: a spent budget, a permanent failure, and an
+            // expired deadline alike. The shared body lives in RetryHelper; only MessageType varies per path.
             await RetryHelper
-                .RunOnExhaustedAsync(
+                .RunOnTerminalAsync(
                     _retryPolicy,
                     message,
                     ex,
                     dispatchServices,
                     MessageType.Subscribe,
+                    terminalReason,
                     logger,
                     _backoffClock,
                     cancellationToken
@@ -1022,13 +1029,13 @@ internal sealed class SubscribeExecutor(
         else if (!affected)
         {
             // Storage proves the row is already terminal — a redelivered message, or a racing writer
-            // that won the terminal CAS. Every terminal consume failure (budget spent, fail rule,
-            // built-in permanent, deserialization, unregistered consumer) fires OnExhausted once, from
-            // the writer whose terminal write lands; this loser stops silently. The skip is logged only
-            // for a terminal decision, so a lost non-terminal write adds no noise.
-            if (decision.Outcome == MessagingRetryDecision.Kind.Exhausted)
+            // that won the terminal CAS. Every terminal consume outcome (budget spent, fail rule,
+            // built-in permanent, deserialization, unregistered consumer, expired deadline) fires
+            // OnTerminal once, from the writer whose terminal write lands; this loser stops silently.
+            // The skip is logged only for a terminal decision, so a lost non-terminal write adds no noise.
+            if (decision.Outcome != MessagingRetryDecision.Kind.Continue)
             {
-                logger.SkippingOnExhaustedAlreadyTerminal(message.StorageId);
+                logger.SkippingOnTerminalAlreadyTerminal(message.StorageId);
             }
 
             _ReleaseHalfOpenProbe(message);
@@ -1148,6 +1155,17 @@ internal sealed class SubscribeExecutor(
             message.Origin.Headers.TryGetValue(Headers.TenantId, out var tenantId) ? tenantId : null,
             _inboxMetricPolicy.TenantTagName
         );
+    }
+
+    // A silent expiry ends a request whose caller gave up or a message past its delivery deadline. An Exhausted decision
+    // that spent no budget comes from a fail rule, the built-in permanent set, a payload that cannot deserialize, or an
+    // unregistered consumer; any other Stop (a responder's null response) cannot succeed on retry either.
+    private static MessageTerminalReason _TerminalReasonOf(MessagingRetryDecision decision, bool budgetSpent)
+    {
+        return decision.IsSilentExpiry ? MessageTerminalReason.DeliveryDeadlineExpired
+            : decision.Outcome == MessagingRetryDecision.Kind.Exhausted && budgetSpent
+                ? MessageTerminalReason.RetriesExhausted
+            : MessageTerminalReason.PermanentFailure;
     }
 
     private void _LogRetryDecision(

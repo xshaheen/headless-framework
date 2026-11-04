@@ -436,7 +436,7 @@ internal sealed partial class RelationalDataStorage
     /// The row's identity is a partial unique index over non-inbox rows keyed by the consumer it was delivered to, so a
     /// redelivery to the same consumer finds the same row. The first delivery is one insert. A
     /// redelivery locks the existing row and rewrites it only while it is neither terminal (a redelivered message must
-    /// not turn a Succeeded row back to Failed and fire OnExhausted again) nor leased (releasing the lease of an
+    /// not turn a Succeeded row back to Failed and fire OnTerminal again) nor leased (releasing the lease of an
     /// in-flight attempt would let the retry processor pick the row up mid-attempt). The rewrite never resets the
     /// durable retry counters.
     /// </remarks>

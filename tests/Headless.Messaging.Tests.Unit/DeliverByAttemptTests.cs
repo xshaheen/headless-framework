@@ -18,7 +18,8 @@ namespace Tests;
 /// <summary>
 /// A stored message can wait in the inbox, behind retries, or for a crashed attempt's lease long after its delivery
 /// deadline. Every attempt start checks it on the consumer host's clock and ends an expired message without running
-/// the consumer, firing the exhausted callback, or counting against the circuit; an operator replay drops the deadline.
+/// the consumer or counting against the circuit, and reports it to OnTerminal as expired; an operator replay drops the
+/// deadline.
 /// </summary>
 [Collection(RequestReplyCollection.Name)]
 public sealed class DeliverByAttemptTests : TestBase
@@ -43,12 +44,12 @@ public sealed class DeliverByAttemptTests : TestBase
         // when
         var result = await host.ExecuteAsync(message, AbortToken);
 
-        // then — terminal with the reason, and silent: no consumer, no exhausted callback
+        // then — terminal with the reason: no consumer, and reported as expired
         result.Succeeded.Should().BeFalse();
         result.Exception.Should().BeOfType<MessageDeliverByExceededException>();
         host.Invoker.ReceivedCalls().Should().BeEmpty();
         host.StateWrites().Should().ContainSingle().Which.Should().Be((StatusName.Failed, (RetryDelay?)null));
-        host.ExhaustedCalls.Should().Be(0);
+        host.Exhausted.Should().ContainSingle().Which.Reason.Should().Be(MessageTerminalReason.DeliveryDeadlineExpired);
         message.ExceptionInfo.Should().Contain("deliver_by_exceeded");
     }
 
@@ -152,11 +153,11 @@ public sealed class DeliverByAttemptTests : TestBase
         await runner.DidNotReceiveWithAnyArgs().ExecuteAsync(default!, default!, Arg.Any<CancellationToken>());
         host.Invoker.ReceivedCalls().Should().BeEmpty();
         host.StateWrites().Should().ContainSingle().Which.Should().Be((StatusName.Failed, (RetryDelay?)null));
-        host.ExhaustedCalls.Should().Be(0);
+        host.Exhausted.Should().ContainSingle().Which.Reason.Should().Be(MessageTerminalReason.DeliveryDeadlineExpired);
     }
 
     [Fact]
-    public async Task should_end_crash_recovered_message_as_expired_without_the_exhausted_callback()
+    public async Task should_end_crash_recovered_message_as_expired_instead_of_exhausted()
     {
         // given — the process died during the final inline attempt, and the row is picked up after the deadline
         await using var host = ResponderExecutorHost.Create();
@@ -175,7 +176,7 @@ public sealed class DeliverByAttemptTests : TestBase
         result.Exception.Should().BeOfType<MessageDeliverByExceededException>();
         host.Invoker.ReceivedCalls().Should().BeEmpty();
         host.StateWrites().Should().ContainSingle().Which.Should().Be((StatusName.Failed, (RetryDelay?)null));
-        host.ExhaustedCalls.Should().Be(0);
+        host.Exhausted.Should().ContainSingle().Which.Reason.Should().Be(MessageTerminalReason.DeliveryDeadlineExpired);
     }
 
     [Fact]

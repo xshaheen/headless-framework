@@ -35,7 +35,7 @@ public sealed class GracefulShutdownTests : TestBase
         // when: the host stops with the attempt running
         await host.ShutDownAsync(AbortToken);
 
-        // then: the cut-off attempt wrote no state and fired no OnExhausted
+        // then: the cut-off attempt wrote no state and fired no OnTerminal
         var cutOff = (await host.ReceivedRowsAsync(AbortToken)).Should().ContainSingle().Subject;
         cutOff.StatusName.Should().NotBe(StatusName.Failed).And.NotBe(StatusName.Succeeded);
         cutOff.Retries.Should().Be(0, "a shutdown cancellation is not a failed attempt");

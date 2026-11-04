@@ -165,7 +165,7 @@ public static class MessagingGuarantees
             "MSG-RETRY-04",
             GuaranteeArea.DispatchRetry,
             realSystem: false,
-            "A failing publish gets (inline + 1) x (persisted + 1) attempts, then ends Failed with no next retry and fires OnExhausted once."
+            "A failing publish gets (inline + 1) x (persisted + 1) attempts, then ends Failed with no next retry and fires OnTerminal once."
         ),
         _NoTestYet(
             "MSG-RETRY-05",
@@ -233,7 +233,7 @@ public static class MessagingGuarantees
             "MSG-CONSUME-01",
             GuaranteeArea.Consume,
             realSystem: false,
-            "A failing handler runs 1 + immediate + delayed attempts, then the row is Failed with no next retry and OnExhausted fires once."
+            "A failing handler runs 1 + immediate + delayed attempts, then the row is Failed with no next retry and OnTerminal fires once."
         ),
         _Bound(
             "MSG-CONSUME-02",
@@ -245,13 +245,13 @@ public static class MessagingGuarantees
             "MSG-CONSUME-03",
             GuaranteeArea.Consume,
             realSystem: false,
-            "A fail rule, permanent exception, undeserializable payload, or missing consumer fails the row at once and fires OnExhausted once."
+            "A fail rule, permanent exception, undeserializable payload, or missing consumer fails the row at once and fires OnTerminal once."
         ),
         _Bound(
             "MSG-CONSUME-04",
             GuaranteeArea.Consume,
             realSystem: false,
-            "When storage refuses a state write because the row is already terminal, the caller stops: no second OnExhausted and no breaker failure."
+            "When storage refuses a state write because the row is already terminal, the caller stops: no second OnTerminal and no breaker failure."
         ),
         _Bound(
             "MSG-CONSUME-05",
@@ -263,7 +263,7 @@ public static class MessagingGuarantees
             "MSG-CONSUME-06",
             GuaranteeArea.Consume,
             realSystem: false,
-            "Shutdown during an attempt writes no state and fires no OnExhausted, and the row is retried after restart."
+            "Shutdown during an attempt writes no state and fires no OnTerminal, and the row is retried after restart."
         ),
         _Bound(
             "MSG-CONSUME-07",
@@ -355,7 +355,7 @@ public static class MessagingGuarantees
             "MSG-INBOX-04",
             GuaranteeArea.Inbox,
             realSystem: false,
-            "A redelivery of an already-admitted message is committed as a duplicate: no poison row, dead-letter, OnExhausted, or breaker failure."
+            "A redelivery of an already-admitted message is committed as a duplicate: no poison row, dead-letter, OnTerminal, or breaker failure."
         ),
         _Bound(
             "MSG-INBOX-05",
@@ -520,7 +520,7 @@ public static class MessagingGuarantees
             "MSG-RR-05",
             GuaranteeArea.RequestReply,
             realSystem: false,
-            "A request past its deadline is not handled on any attempt and ends with no reply, OnExhausted, or breaker failure."
+            "A request past its deadline is not handled on any attempt and ends with no reply or breaker failure; OnTerminal fires once as an expired deadline."
         ),
         _NoTestYet(
             "MSG-RR-06",
@@ -628,6 +628,12 @@ public static class MessagingGuarantees
             GuaranteeArea.Observability,
             realSystem: false,
             "Log event IDs are unique across the messaging assemblies."
+        ),
+        _Bound(
+            "MSG-OBS-02",
+            GuaranteeArea.Observability,
+            realSystem: false,
+            "Every terminal outcome the framework stores, on publish or consume, fires OnTerminal once with its reason and the envelope's tenant, and a callback that throws does not break the pipeline."
         ),
     ];
 

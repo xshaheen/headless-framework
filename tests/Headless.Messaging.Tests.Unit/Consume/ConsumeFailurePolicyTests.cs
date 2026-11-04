@@ -11,7 +11,7 @@ namespace Tests.Consume;
 
 /// <summary>
 /// A failing handler on the real consume pipeline, against the simulated broker and store: how many attempts it gets,
-/// how its row ends, and how often <c>OnExhausted</c> fires.
+/// how its row ends, and how often <c>OnTerminal</c> fires.
 /// </summary>
 public sealed class ConsumeFailurePolicyTests : TestBase
 {
@@ -23,7 +23,7 @@ public sealed class ConsumeFailurePolicyTests : TestBase
 
     [Fact]
     [Guarantee("MSG-CONSUME-01")]
-    public async Task should_retry_a_throwing_handler_per_policy_then_leave_its_row_terminal_and_fire_on_exhausted_once()
+    public async Task should_retry_a_throwing_handler_per_policy_then_leave_its_row_terminal_and_fire_on_terminal_once()
     {
         // given: one immediate and two delayed retries, so four attempts in all
         var probe = new PipelineProbe { Behavior = static (_, _, _) => throw new InvalidOperationException("boom") };
@@ -54,7 +54,7 @@ public sealed class ConsumeFailurePolicyTests : TestBase
         row.NextRetryAt.Should().BeNull("a spent policy leaves no retry scheduled");
         probe.Exhausted.Should().ContainSingle().Which.StorageId.Should().Be(row.StorageId);
 
-        // and: nothing runs it again, and OnExhausted does not fire twice
+        // and: nothing runs it again, and OnTerminal does not fire twice
         await host.RunForAsync(TimeSpan.FromMinutes(2), AbortToken);
         probe.Attempts(_OrderId).Should().Be(4);
         probe.Exhausted.Should().ContainSingle();
@@ -64,7 +64,7 @@ public sealed class ConsumeFailurePolicyTests : TestBase
     [InlineData(false)]
     [InlineData(true)]
     [Guarantee("MSG-CONSUME-03")]
-    public async Task should_fail_the_row_at_once_and_fire_on_exhausted_once_when_a_fail_rule_or_permanent_exception_matches(
+    public async Task should_fail_the_row_at_once_and_fire_on_terminal_once_when_a_fail_rule_or_permanent_exception_matches(
         bool permanent
     )
     {
@@ -131,7 +131,7 @@ public sealed class ConsumeFailurePolicyTests : TestBase
 
     [Fact]
     [Guarantee("MSG-CONSUME-04")]
-    public async Task should_stop_without_on_exhausted_or_a_breaker_failure_when_the_store_refuses_the_terminal_write()
+    public async Task should_stop_without_on_terminal_or_a_breaker_failure_when_the_store_refuses_the_terminal_write()
     {
         // given: a transient failure the fail rule ends at once, and a terminal write the store refuses because another
         // writer already made the row terminal
@@ -155,7 +155,7 @@ public sealed class ConsumeFailurePolicyTests : TestBase
         await host.WaitForCallsAsync(StorageOperation.ChangeReceiveRetryState, 1, AbortToken);
         await host.RunForAsync(TimeSpan.FromSeconds(5), AbortToken);
 
-        // then: the losing writer stops: no OnExhausted, no breaker failure, and no further attempt
+        // then: the losing writer stops: no OnTerminal, no breaker failure, and no further attempt
         host.Storage.AppliedFaults.Should().ContainSingle().Which.Fault.Kind.Should().Be(StoreFaultKind.Refuse);
         probe.Exhausted.Should().BeEmpty();
         probe.Attempts(_OrderId).Should().Be(1);
@@ -181,7 +181,7 @@ public sealed class ConsumeFailurePolicyTests : TestBase
         await host.WaitForCallsAsync(StorageOperation.ChangeReceiveRetryState, 1, AbortToken);
         await host.RunForAsync(TimeSpan.FromSeconds(5), AbortToken);
 
-        // then: the failed write is no consumer failure: no inline retry, no OnExhausted, no breaker failure
+        // then: the failed write is no consumer failure: no inline retry, no OnTerminal, no breaker failure
         host.Storage.AppliedFaults.Should().ContainSingle().Which.Fault.Kind.Should().Be(StoreFaultKind.Fail);
         probe.Attempts(_OrderId).Should().Be(1);
         probe.Exhausted.Should().BeEmpty();
@@ -189,11 +189,11 @@ public sealed class ConsumeFailurePolicyTests : TestBase
     }
 
     [Fact]
-    public async Task should_run_each_attempt_in_its_own_scope_and_give_on_exhausted_the_dispatch_scope_when_immediate_retries_fail()
+    public async Task should_run_each_attempt_in_its_own_scope_and_give_on_terminal_the_dispatch_scope_when_immediate_retries_fail()
     {
         // given: two immediate retries and no delayed ones, so one dispatch runs all three attempts on the
         // non-transactional tier; consume middleware tuned onto the consumer records the scoped state its attempt
-        // resolves, and OnExhausted records the one its FailedInfo.ServiceProvider resolves
+        // resolves, and OnTerminal records the one its TerminalMessageInfo.ServiceProvider resolves
         var probe = new PipelineProbe { Behavior = static (_, _, _) => throw new InvalidOperationException("boom") };
         var log = new ScopedStateLog();
         await using var host = await PipelineHosts.StartAsync(
@@ -206,7 +206,7 @@ public sealed class ConsumeFailurePolicyTests : TestBase
                     PipelineOrderConsumer.Identity,
                     consumer => consumer.UseMiddleware<ScopedStateRecordingMiddleware>()
                 );
-                setup.Options.RetryPolicy.OnExhausted = (info, cancellationToken) =>
+                setup.Options.RetryPolicy.OnTerminal = (info, cancellationToken) =>
                 {
                     log.Exhausted = info.ServiceProvider.GetRequiredService<ScopedState>();
                     return probe.RecordExhaustedAsync(info, cancellationToken);
@@ -227,7 +227,7 @@ public sealed class ConsumeFailurePolicyTests : TestBase
         probe.Attempts(_OrderId).Should().Be(3);
         log.Attempts.Should().HaveCount(3).And.OnlyHaveUniqueItems();
 
-        // and: OnExhausted resolves from the per-message dispatch scope, which no attempt ran in
+        // and: OnTerminal resolves from the per-message dispatch scope, which no attempt ran in
         log.Exhausted.Should().NotBeNull();
         log.Attempts.Should().NotContain(log.Exhausted!);
     }

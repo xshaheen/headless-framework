@@ -119,11 +119,11 @@ public enum MessageObservationType
     Faulted = 2,
 
     /// <summary>
-    /// The message failed for good and the framework invoked <c>RetryPolicy.OnExhausted</c>: the retry budget was
-    /// spent, a fail rule or the built-in permanent set ended it, its payload failed to deserialize, its consumer is no
-    /// longer registered, or it was poisoned on arrival.
+    /// The stored message ended and the framework invoked <c>RetryPolicy.OnTerminal</c>: the retry budget was spent,
+    /// a permanent failure ended it (a fail rule, the built-in permanent set, an undeserializable payload, an
+    /// unregistered consumer, or poison on arrival), its delivery deadline passed, or no transport serves its lane.
     /// Recorded BEFORE the user-supplied callback runs, so a hanging or throwing callback
     /// cannot lose the observation.
     /// </summary>
-    Exhausted = 3,
+    Terminal = 3,
 }

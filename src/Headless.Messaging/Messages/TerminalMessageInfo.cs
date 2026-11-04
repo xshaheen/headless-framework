@@ -3,11 +3,11 @@
 namespace Headless.Messaging;
 
 /// <summary>
-/// Contains information about a message that has failed processing and exceeded the retry threshold.
-/// This class is used when invoking the <see cref="RetryPolicyOptions.OnExhausted"/> callback.
+/// Describes a stored message the framework gave up on, after its terminal state was persisted.
+/// Passed to the <see cref="RetryPolicyOptions.OnTerminal"/> callback.
 /// </summary>
 [PublicAPI]
-public sealed class FailedInfo
+public sealed class TerminalMessageInfo
 {
     /// <summary>
     /// Gets the live per-message dispatch scope's <see cref="IServiceProvider"/>. Use it to resolve
@@ -17,7 +17,7 @@ public sealed class FailedInfo
     /// <remarks>
     /// <para>
     /// The provider is owned by the dispatch scope that ran the message; the scope is disposed
-    /// immediately after the <see cref="RetryPolicyOptions.OnExhausted"/> callback completes.
+    /// immediately after the <see cref="RetryPolicyOptions.OnTerminal"/> callback completes.
     /// Resolve services synchronously inside the callback and complete all async work via
     /// <see langword="await"/> before returning. Capturing the provider into a <c>Task.Run</c>,
     /// <c>async void</c> lambda, or any work that outlives the callback will hit
@@ -50,20 +50,30 @@ public sealed class FailedInfo
     public required MessageLane Lane { get; init; }
 
     /// <summary>
-    /// Gets the exception that triggered the exhausted retry decision.
+    /// Gets the exception that ended delivery, or <see langword="null"/> when no exception caused it.
     /// </summary>
-    public required Exception Exception { get; init; }
+    public required Exception? Exception { get; init; }
+
+    /// <summary>Gets why the framework stopped delivering the message.</summary>
+    public required MessageTerminalReason Reason { get; init; }
+
+    /// <summary>
+    /// Gets the tenant id carried by <see cref="Headers.TenantId"/>, or <see langword="null"/> when absent.
+    /// This is the envelope's tenant, not the ambient tenant of the dispatching host.
+    /// </summary>
+    public required string? TenantId { get; init; }
 
     /// <summary>
     /// Gets the storage row identifier of the failed message. Use this together with
     /// <c>Message.Id</c> to correlate dead-letter writes back to the original persisted row.
+    /// <see cref="Guid.Empty"/> for a message poisoned on arrival, whose row the receive path stores without one.
     /// </summary>
     public required Guid StorageId { get; init; }
 
     /// <summary>
-    /// Gets the final persisted-retry count at the moment <see cref="RetryPolicyOptions.OnExhausted"/>
+    /// Gets the final persisted-retry count at the moment <see cref="RetryPolicyOptions.OnTerminal"/>
     /// fires. Mirrors <c>MediumMessage.Retries</c>; counts persisted-retry pickups only — inline
-    /// retries do not advance it.
+    /// retries do not advance it. Zero for a message poisoned on arrival.
     /// </summary>
     public required int RetryCount { get; init; }
 }

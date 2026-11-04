@@ -38,16 +38,16 @@ public sealed class RequestDeadlineTests : TestBase
         // when
         var result = await host.ExecuteAsync(message, AbortToken);
 
-        // then — terminal, silent: no handler, no exhausted callback, no reply
+        // then — terminal: no handler and no reply, reported as expired
         result.Succeeded.Should().BeFalse();
         host.Invoker.ReceivedCalls().Should().BeEmpty();
         host.StateWrites().Should().ContainSingle().Which.Should().Be((StatusName.Failed, (RetryDelay?)null));
-        host.ExhaustedCalls.Should().Be(0);
+        host.Exhausted.Should().ContainSingle().Which.Reason.Should().Be(MessageTerminalReason.DeliveryDeadlineExpired);
         host.Replies.Sent.Should().BeEmpty();
     }
 
     [Fact]
-    public async Task should_end_a_crash_recovered_request_as_expired_without_the_exhausted_callback_or_a_fault()
+    public async Task should_end_a_crash_recovered_request_as_expired_without_a_fault()
     {
         // given — the process died during the request's final inline attempt, and the row is picked up after the
         // deadline: the reserved attempt count already covers the whole inline budget
@@ -59,11 +59,11 @@ public sealed class RequestDeadlineTests : TestBase
         // when
         var result = await host.ExecuteAsync(message, AbortToken, _Responder(new FailurePolicyBuilder().Immediate(1)));
 
-        // then — ended as expired: no handler, no exhausted callback, no fault to a caller that is gone
+        // then — ended as expired: no handler, no fault to a caller that is gone, reported as expired
         result.Succeeded.Should().BeFalse();
         host.Invoker.ReceivedCalls().Should().BeEmpty();
         host.StateWrites().Should().ContainSingle().Which.Should().Be((StatusName.Failed, (RetryDelay?)null));
-        host.ExhaustedCalls.Should().Be(0);
+        host.Exhausted.Should().ContainSingle().Which.Reason.Should().Be(MessageTerminalReason.DeliveryDeadlineExpired);
         host.Replies.Sent.Should().BeEmpty();
     }
 
@@ -197,7 +197,7 @@ public sealed class RequestDeadlineTests : TestBase
         // when
         var result = await host.ExecuteAsync(host.Request(TimeSpan.FromSeconds(30)), AbortToken);
 
-        // then — the caller gets the fault at once, and the terminal failure fires the exhausted callback
+        // then — the caller gets the fault at once, and the terminal failure fires the terminal callback
         result.Succeeded.Should().BeFalse();
         host.Invoker.ReceivedCalls().Should().ContainSingle();
         host.StateWrites().Should().ContainSingle().Which.Should().Be((StatusName.Failed, (RetryDelay?)null));
@@ -300,7 +300,7 @@ public sealed class RequestDeadlineTests : TestBase
         // when
         var result = await host.Executor.ExecuteAsync(message, host.Provider, descriptor: null, AbortToken);
 
-        // then — terminal, with the exhausted callback a lost consumer always gets, and no fault to anyone
+        // then — terminal, with the terminal callback a lost consumer always gets, and no fault to anyone
         result.Succeeded.Should().BeFalse();
         host.Invoker.ReceivedCalls().Should().BeEmpty();
         host.StateWrites().Should().ContainSingle().Which.Should().Be((StatusName.Failed, (RetryDelay?)null));

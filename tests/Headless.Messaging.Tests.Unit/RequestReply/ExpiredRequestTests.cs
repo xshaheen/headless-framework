@@ -11,8 +11,8 @@ namespace Tests.RequestReply;
 
 /// <summary>
 /// A request whose deadline passes before its responder gets to it, on the real pipeline against the simulated broker
-/// and store: the responder never runs, and the request ends with no reply, no <c>OnExhausted</c>, and no failure
-/// counted against the responder's circuit.
+/// and store: the responder never runs, and the request ends with no reply and no failure counted against the
+/// responder's circuit, reported once to <c>OnTerminal</c> as an expired deadline.
 /// </summary>
 [Collection(RequestReplyCollection.Name)]
 public sealed class ExpiredRequestTests : TestBase
@@ -25,7 +25,7 @@ public sealed class ExpiredRequestTests : TestBase
     {
         // given: the request's admission reaches the store only after its deadline
         var desk = new ExpiringQuoteDesk();
-        var exhausted = new ConcurrentQueue<FailedInfo>();
+        var exhausted = new ConcurrentQueue<TerminalMessageInfo>();
         await using var host = await _StartAsync(desk, exhausted, setup => { });
         var admissionDelay = _RequestTimeout * 2;
         host.Faults.DelayStoreCommit(StorageOperation.AdmitReceivedMessage, admissionDelay);
@@ -42,7 +42,7 @@ public sealed class ExpiredRequestTests : TestBase
 
         // then
         desk.Attempts.Should().Be(0);
-        _AssertEndedQuietly(host, exhausted);
+        _AssertEndedAsExpired(host, exhausted);
     }
 
     [Fact]
@@ -54,7 +54,7 @@ public sealed class ExpiredRequestTests : TestBase
         {
             FirstAttempt = static cancellationToken => Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken),
         };
-        var exhausted = new ConcurrentQueue<FailedInfo>();
+        var exhausted = new ConcurrentQueue<TerminalMessageInfo>();
         var host = await _StartAsync(desk, exhausted, static _ => { });
         var call = _RequestAsync(host, "sku-1");
         await host.WithinBoundAsync(desk.FirstAttemptStarted.Task, AbortToken);
@@ -64,7 +64,7 @@ public sealed class ExpiredRequestTests : TestBase
         await host.ShutDownAsync(AbortToken);
         await host.DisposeAsync();
         await call.Awaiting(static pending => pending).Should().ThrowAsync<Exception>();
-        var restartedExhausted = new ConcurrentQueue<FailedInfo>();
+        var restartedExhausted = new ConcurrentQueue<TerminalMessageInfo>();
         await using var restarted = await SimulationHost.RestartAsync(
             host,
             setup => _Configure(setup, restartedExhausted, static _ => { }),
@@ -76,14 +76,14 @@ public sealed class ExpiredRequestTests : TestBase
 
         // then: the recovered attempt found the request expired and ended it without running the responder
         desk.Attempts.Should().Be(1);
-        _AssertEndedQuietly(restarted, restartedExhausted);
-        exhausted.Should().BeEmpty();
+        _AssertEndedAsExpired(restarted, restartedExhausted);
+        exhausted.Should().BeEmpty("the stopped host wrote no terminal state for the attempt shutdown cut off");
     }
 
-    private static void _AssertEndedQuietly(SimulationHost host, ConcurrentQueue<FailedInfo> exhausted)
+    private static void _AssertEndedAsExpired(SimulationHost host, ConcurrentQueue<TerminalMessageInfo> exhausted)
     {
         host.Broker.Events.Should().NotContain(e => e.Kind == BrokerEventKind.ReplySent);
-        exhausted.Should().BeEmpty();
+        exhausted.Should().ContainSingle().Which.Reason.Should().Be(MessageTerminalReason.DeliveryDeadlineExpired);
         host.GetRequiredService<ICircuitBreakerMonitor>()
             .GetSnapshot(MessageLane.Queue, ExpiringQuoteDesk.Identity)!
             .ConsecutiveFailures.Should()
@@ -102,7 +102,7 @@ public sealed class ExpiredRequestTests : TestBase
 
     private static Task<SimulationHost> _StartAsync(
         ExpiringQuoteDesk desk,
-        ConcurrentQueue<FailedInfo> exhausted,
+        ConcurrentQueue<TerminalMessageInfo> exhausted,
         Action<MessagingSetupBuilder> configure
     )
     {
@@ -115,7 +115,7 @@ public sealed class ExpiredRequestTests : TestBase
 
     private static void _Configure(
         MessagingSetupBuilder setup,
-        ConcurrentQueue<FailedInfo> exhausted,
+        ConcurrentQueue<TerminalMessageInfo> exhausted,
         Action<MessagingSetupBuilder> configure
     )
     {
@@ -123,7 +123,7 @@ public sealed class ExpiredRequestTests : TestBase
         setup.AddRequestReply();
         setup.Options.RetryProcessor.AdaptivePolling = false;
         setup.Options.RetryProcessor.BaseInterval = PipelineHosts.PollInterval;
-        setup.Options.RetryPolicy.OnExhausted = (info, _) =>
+        setup.Options.RetryPolicy.OnTerminal = (info, _) =>
         {
             exhausted.Enqueue(info);
             return Task.CompletedTask;

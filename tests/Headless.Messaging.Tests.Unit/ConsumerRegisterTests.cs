@@ -1419,7 +1419,7 @@ public sealed class ConsumerRegisterTests : TestBase
         string messageId,
         byte[] body,
         Action<MessagingOptions>? configureOptions = null,
-        Func<FailedInfo, CancellationToken, Task>? onExhausted = null,
+        Func<TerminalMessageInfo, CancellationToken, Task>? onTerminal = null,
         ICircuitBreakerStateManager? circuitBreaker = null,
         IReadOnlyDictionary<string, string?>? publisherHeaders = null,
         Action<IServiceCollection>? configureServices = null,
@@ -1474,9 +1474,9 @@ public sealed class ConsumerRegisterTests : TestBase
             }
 
             configureOptions?.Invoke(setup.Options);
-            if (onExhausted is not null)
+            if (onTerminal is not null)
             {
-                setup.Options.RetryPolicy.OnExhausted = onExhausted;
+                setup.Options.RetryPolicy.OnTerminal = onTerminal;
             }
         });
 
@@ -1758,7 +1758,7 @@ public sealed class ConsumerRegisterTests : TestBase
             middleware,
             "receive-skip",
             "{}"u8.ToArray(),
-            onExhausted: (_, _) =>
+            onTerminal: (_, _) =>
             {
                 exhaustedFired = true;
                 return Task.CompletedTask;
@@ -1769,7 +1769,7 @@ public sealed class ConsumerRegisterTests : TestBase
         run.Client.CommitCount.Should().Be(1);
         run.Client.RejectCount.Should().Be(0);
         run.Storage.ReceivedExceptionRows.Should().BeEmpty("a skip must not persist any row");
-        exhaustedFired.Should().BeFalse("a skip must not fire OnExhausted");
+        exhaustedFired.Should().BeFalse("a skip must not fire OnTerminal");
         outcomes.Values.Should().Contain("skipped").And.NotContain("no_responder");
         await circuitBreaker
             .DidNotReceive()
@@ -1801,7 +1801,7 @@ public sealed class ConsumerRegisterTests : TestBase
             null,
             "receive-expired-request",
             "{}"u8.ToArray(),
-            onExhausted: (_, _) =>
+            onTerminal: (_, _) =>
             {
                 exhaustedFired = true;
                 return Task.CompletedTask;
@@ -1850,7 +1850,7 @@ public sealed class ConsumerRegisterTests : TestBase
             null,
             $"receive-deliver-by-expired-{lane}",
             "{}"u8.ToArray(),
-            onExhausted: (_, _) =>
+            onTerminal: (_, _) =>
             {
                 exhaustedFired = true;
                 return Task.CompletedTask;
@@ -2173,7 +2173,7 @@ public sealed class ConsumerRegisterTests : TestBase
     [Fact]
     public async Task receive_explicit_reject_stores_poison_row_and_releases_probe()
     {
-        FailedInfo? exhausted = null;
+        TerminalMessageInfo? exhausted = null;
         var cause = new InvalidOperationException("bad envelope");
         var middleware = new RecordingReceiveMiddleware
         {
@@ -2190,7 +2190,7 @@ public sealed class ConsumerRegisterTests : TestBase
             middleware,
             "receive-reject",
             "{}"u8.ToArray(),
-            onExhausted: (info, _) =>
+            onTerminal: (info, _) =>
             {
                 exhausted = info;
                 return Task.CompletedTask;
@@ -2201,7 +2201,8 @@ public sealed class ConsumerRegisterTests : TestBase
         run.Client.CommitCount.Should().Be(1);
         run.Storage.ReceivedExceptionRows.Should().ContainSingle("reject stores the received-exception row");
         exhausted.Should().NotBeNull();
-        exhausted!.Exception.Should().BeSameAs(cause, "OnExhausted receives the reject cause");
+        exhausted!.Exception.Should().BeSameAs(cause, "OnTerminal receives the reject cause");
+        exhausted.Reason.Should().Be(MessageTerminalReason.PermanentFailure);
         exhausted.StorageId.Should().Be(Guid.Empty);
         exhausted.RetryCount.Should().Be(0);
         await circuitBreaker
@@ -2213,7 +2214,7 @@ public sealed class ConsumerRegisterTests : TestBase
     [Fact]
     public async Task receive_thrown_middleware_exception_reports_breaker_failure()
     {
-        FailedInfo? exhausted = null;
+        TerminalMessageInfo? exhausted = null;
         var middleware = new RecordingReceiveMiddleware
         {
             Behavior = (_, _) => throw new InvalidOperationException("middleware fault"),
@@ -2225,7 +2226,7 @@ public sealed class ConsumerRegisterTests : TestBase
             middleware,
             "receive-fault",
             "{}"u8.ToArray(),
-            onExhausted: (info, _) =>
+            onTerminal: (info, _) =>
             {
                 exhausted = info;
                 return Task.CompletedTask;
@@ -2244,14 +2245,14 @@ public sealed class ConsumerRegisterTests : TestBase
     [Fact]
     public async Task receive_undeclared_outcome_rejects_naming_the_middleware_type()
     {
-        FailedInfo? exhausted = null;
+        TerminalMessageInfo? exhausted = null;
         var middleware = new RecordingReceiveMiddleware { Behavior = (_, _) => ValueTask.CompletedTask };
 
         await using var run = await _RunReceiveDeliveryAsync(
             middleware,
             "receive-undeclared",
             "{}"u8.ToArray(),
-            onExhausted: (info, _) =>
+            onTerminal: (info, _) =>
             {
                 exhausted = info;
                 return Task.CompletedTask;
@@ -2262,7 +2263,7 @@ public sealed class ConsumerRegisterTests : TestBase
         run.Storage.ReceivedExceptionRows.Should().ContainSingle();
         exhausted.Should().NotBeNull();
         exhausted!
-            .Exception.Message.Should()
+            .Exception!.Message.Should()
             .Contain(nameof(RecordingReceiveMiddleware), "the fault must name the middleware type");
     }
 
@@ -2588,14 +2589,14 @@ public sealed class ConsumerRegisterTests : TestBase
     public async Task receive_redelivery_of_an_admitted_message_failing_the_contract_check_is_committed_as_a_duplicate()
     {
         // given - the first delivery was admitted to the inbox; its acknowledgement was lost
-        FailedInfo? exhausted = null;
+        TerminalMessageInfo? exhausted = null;
         var circuitBreaker = Substitute.For<ICircuitBreakerStateManager>();
         circuitBreaker.TryAcquireHalfOpenProbe(Arg.Any<string>()).Returns(1L);
         await using var run = await _RunReceiveDeliveryAsync(
             null,
             "admitted-redelivery",
             "{}"u8.ToArray(),
-            onExhausted: (info, _) =>
+            onTerminal: (info, _) =>
             {
                 exhausted = info;
                 return Task.CompletedTask;

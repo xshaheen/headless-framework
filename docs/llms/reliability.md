@@ -21,7 +21,7 @@ packages: Reliability.Abstractions
 - Use `ShouldFail(exception, out ruleException)` in a runtime and log a non-null `ruleException`; the short overload hides a broken rule.
 - Persist `GetDelayedRetryBaseDelay` where a schedule is stored, and use `GetDelayedRetryDelay` to wait. Jitter cannot be stored, and the base delay is deterministic.
 - Do not build a parallel retry loop around a definition. Messaging and Jobs execute it.
-- Treat a handler's own cancellation as a failure. Messaging and Jobs retry an `OperationCanceledException` raised while the runtime's token is live, such as an `HttpClient` timeout or a `CancelAfter`, within the policy's budget. Declare `FailOn<OperationCanceledException>()` to end it at once; the rule also matches `TaskCanceledException`. Once the runtime's own token is cancelled (host shutdown, a durable job cancel, lease loss), any `OperationCanceledException` that ends the attempt, whatever token it carries, never reaches the policy, is never retried, and never writes `Failed` or fires `OnExhausted`.
+- Treat a handler's own cancellation as a failure. Messaging and Jobs retry an `OperationCanceledException` raised while the runtime's token is live, such as an `HttpClient` timeout or a `CancelAfter`, within the policy's budget. Declare `FailOn<OperationCanceledException>()` to end it at once; the rule also matches `TaskCanceledException`. Once the runtime's own token is cancelled (host shutdown, a durable job cancel, lease loss), any `OperationCanceledException` that ends the attempt, whatever token it carries, never reaches the policy, is never retried, and never writes `Failed` or fires the terminal callback (`OnTerminal` in Messaging, `OnExhausted` in Jobs).
 
 ## Core Concepts
 
@@ -54,7 +54,7 @@ An exception that no rule matches is retryable. Rules accumulate; a repeated `Fa
 
 ## Messaging and Jobs
 
-One policy type works for a message consumer and for a job. Both runtimes resolve it the same way, end a failure in the same `Failed` state, and report it once through `OnExhausted`. They differ in where a delayed retry waits.
+One policy type works for a message consumer and for a job. Both runtimes resolve it the same way, end a failure in the same `Failed` state, and report it once through a terminal callback (`OnTerminal` in Messaging, `OnExhausted` in Jobs). They differ in where a delayed retry waits.
 
 ### Where to set a policy
 
@@ -86,7 +86,7 @@ For a job, a scheduling call's `WithRetries` and `WithRetryIntervals` then overr
 | Exceptions that end a failure at once | Fail rules, plus `ArgumentException` (and subtypes), `NotSupportedException`, and `SubscriberNotFoundException` | Fail rules; `TerminateExecutionException` keeps its own meaning and never reaches the policy |
 | Cancellation | After the consume token is cancelled (host shutdown), any cancellation writes nothing, whatever token it carries; one raised while the consume token is live, by the handler or the transactional inbox's commit work, is classified and retried like any other failure | After the run's token is cancelled, any cancellation is the executor's, whatever token it carries: durable cancel writes `Cancelled`, host shutdown and lease loss write nothing; one the handler raises while the token is live is classified and retried like any other failure |
 | Terminal state | `Failed`, with no `NextRetryAt` | `Failed` |
-| Terminal callback | `MessagingOptions.RetryPolicy.OnExhausted` | `JobsRetryOptions.OnExhausted` |
+| Terminal callback | `MessagingOptions.RetryPolicy.OnTerminal` | `JobsRetryOptions.OnExhausted` |
 | Operator recovery | Re-execute from the Messaging dashboard | `IJobScheduler.RequeueAsync` / `RequeueOccurrenceAsync`, or the requeue button on the Jobs dashboard |
 | Invalid policy type | HM005 build error | HF023 build error |
 | Not allowed on | Every-instance consumers (HM010 at build time, startup error otherwise) | Nothing |

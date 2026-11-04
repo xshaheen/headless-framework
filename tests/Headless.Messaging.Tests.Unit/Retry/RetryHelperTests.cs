@@ -80,7 +80,7 @@ public sealed class RetryHelperTests : TestBase
         // sleeping (the lease is sized to DispatchTimeout). ResolveNextState MUST force
         // IsInlineRetryInFlight = false so the call site advances MediumMessage.Retries; otherwise
         // the row sits with NextRetryAt set but Retries unchanged across every pickup, never
-        // consuming the persisted budget and never firing OnExhausted.
+        // consuming the persisted budget and never firing OnTerminal.
         var policy = _Policy(maxRetryAttempts: 5);
         policy.InitialDispatchGrace = TimeSpan.FromSeconds(30);
         policy.DispatchTimeout = TimeSpan.FromMinutes(5);
@@ -289,16 +289,16 @@ public sealed class RetryHelperTests : TestBase
         RetryHelper.IsCancellation(oce, cts.Token).Should().BeFalse();
     }
 
-    // ─── InvokeOnExhaustedAsync: timeout + exception absorption + CTS-on-timeout ──────────────
+    // ─── InvokeOnTerminalAsync: timeout + exception absorption + CTS-on-timeout ──────────────
 
     [Fact]
-    public async Task should_swallow_callback_throw_and_log_when_invoke_on_exhausted()
+    public async Task should_swallow_callback_throw_and_log_when_invoke_on_terminal()
     {
-        var failed = _FailedInfo();
+        var failed = _TerminalMessageInfo();
         var logger = Substitute.For<ILogger>();
 
         // Should NOT throw — exception is logged and absorbed.
-        await RetryHelper.InvokeOnExhaustedAsync(
+        await RetryHelper.InvokeOnTerminalAsync(
             (_, _) => throw new InvalidOperationException("callback fault"),
             failed,
             timeout: TimeSpan.FromSeconds(1),
@@ -312,18 +312,18 @@ public sealed class RetryHelperTests : TestBase
     }
 
     [Fact]
-    public async Task should_cancel_callback_token_on_host_shutdown_when_invoke_on_exhausted()
+    public async Task should_cancel_callback_token_on_host_shutdown_when_invoke_on_terminal()
     {
         // Host-shutdown OCE branch: when WaitAsync observes the supplied (host) cancellation
         // token, the callback's linked CTS must be cancelled so a cooperative callback unwinds
         // cleanly. The method must not propagate the OCE.
-        var failed = _FailedInfo();
+        var failed = _TerminalMessageInfo();
 
         using var hostCts = new CancellationTokenSource();
         var observedCallbackCt = CancellationToken.None;
         var callbackCancelled = new TaskCompletionSource<bool>();
 
-        await RetryHelper.InvokeOnExhaustedAsync(
+        await RetryHelper.InvokeOnTerminalAsync(
             async (info, ct) =>
             {
                 observedCallbackCt = ct;
@@ -357,12 +357,12 @@ public sealed class RetryHelperTests : TestBase
     }
 
     [Fact]
-    public async Task should_cancel_callback_token_on_timeout_when_invoke_on_exhausted()
+    public async Task should_cancel_callback_token_on_timeout_when_invoke_on_terminal()
     {
-        var failed = _FailedInfo();
+        var failed = _TerminalMessageInfo();
         var observedCancellation = new TaskCompletionSource<bool>();
 
-        await RetryHelper.InvokeOnExhaustedAsync(
+        await RetryHelper.InvokeOnTerminalAsync(
             async (_, ct) =>
             {
                 ct.Register(() => observedCancellation.TrySetResult(true));
@@ -386,17 +386,17 @@ public sealed class RetryHelperTests : TestBase
     // ─── orphan-callback CTS disposal race — must complete with OCE, not ObjectDisposedException ─
 
     [Fact]
-    public async Task should_observe_oce_not_object_disposed_when_invoke_on_exhausted_orphan_callback()
+    public async Task should_observe_oce_not_object_disposed_when_invoke_on_terminal_orphan_callback()
     {
         // After timeout, the callback Task is orphaned but still holds callbackCts.Token. The
         // helper must NOT dispose the CTS while the orphan is still running — otherwise the
         // orphan's `Task.Delay(_, ct)` throws ObjectDisposedException instead of OCE.
-        var failed = _FailedInfo();
+        var failed = _TerminalMessageInfo();
 
         Exception? observedException = null;
         var observed = new TaskCompletionSource<bool>();
 
-        await RetryHelper.InvokeOnExhaustedAsync(
+        await RetryHelper.InvokeOnTerminalAsync(
             async (_, ct) =>
             {
                 try
@@ -433,14 +433,14 @@ public sealed class RetryHelperTests : TestBase
     // ─── shutdown OCE filter widening — accept linked callbackCts.Token, not just host token ──
 
     [Fact]
-    public async Task should_treat_inner_token_oce_as_shutdown_when_invoke_on_exhausted_host_token_cancelled()
+    public async Task should_treat_inner_token_oce_as_shutdown_when_invoke_on_terminal_host_token_cancelled()
     {
         // A cooperative callback awaiting Task.Delay(_, ct) (where ct is the linked callbackCts.Token)
         // throws an OCE bound to callbackCts.Token — not to the outer host token. Token-identity
         // against the host token alone fails. The widened filter must also accept callbackCts.Token
         // when the host token is cancelled, so the shutdown path takes effect (debug log) rather
         // than ExecutedThresholdCallbackFailed (warning).
-        var failed = _FailedInfo();
+        var failed = _TerminalMessageInfo();
 
         // Pre-cancel the host token so the link fires immediately when WaitAsync observes it.
         using var hostCts = new CancellationTokenSource();
@@ -449,7 +449,7 @@ public sealed class RetryHelperTests : TestBase
         var logger = Substitute.For<ILogger>();
         logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
 
-        await RetryHelper.InvokeOnExhaustedAsync(
+        await RetryHelper.InvokeOnTerminalAsync(
             async (_, ct) =>
             {
                 // The pre-cancelled host token has propagated through the linked CTS — Task.Delay
@@ -464,7 +464,7 @@ public sealed class RetryHelperTests : TestBase
             cancellationToken: hostCts.Token
         );
 
-        // Shutdown path: OnExhaustedCallbackCancelledAtShutdown emitted, NOT
+        // Shutdown path: OnTerminalCallbackCancelledAtShutdown emitted, NOT
         // ExecutedThresholdCallbackFailed (which would mis-blame a cooperative callback).
         // Generated logger calls translate to ILogger.Log with EventId carrying the event name.
         var receivedCalls = logger.ReceivedCalls().ToList();
@@ -476,9 +476,9 @@ public sealed class RetryHelperTests : TestBase
                     && c.GetArguments()
                         .OfType<EventId>()
                         .Any(e =>
-                            string.Equals(e.Name, "OnExhaustedCallbackCancelledAtShutdown", StringComparison.Ordinal)
+                            string.Equals(e.Name, "OnTerminalCallbackCancelledAtShutdown", StringComparison.Ordinal)
                         ),
-                because: "the shutdown path must emit OnExhaustedCallbackCancelledAtShutdown"
+                because: "the shutdown path must emit OnTerminalCallbackCancelledAtShutdown"
             );
 
         receivedCalls
@@ -501,7 +501,7 @@ public sealed class RetryHelperTests : TestBase
         return policy;
     }
 
-    private static FailedInfo _FailedInfo()
+    private static TerminalMessageInfo _TerminalMessageInfo()
     {
         return new()
         {
@@ -509,6 +509,8 @@ public sealed class RetryHelperTests : TestBase
             MessageType = MessageType.Subscribe,
             ServiceProvider = new ServiceCollection().BuildServiceProvider(),
             Exception = new InvalidOperationException("orig"),
+            Reason = MessageTerminalReason.RetriesExhausted,
+            TenantId = null,
             StorageId = Guid.Empty,
             RetryCount = 0,
             Lane = MessageLane.Bus,

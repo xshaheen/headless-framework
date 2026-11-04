@@ -27,13 +27,13 @@ public sealed class PipelineOrderConsumer(PipelineProbe probe, TimeProvider cloc
 
 /// <summary>
 /// What a pipeline test observes from the outside: each handler attempt, each completed handler, and each
-/// <c>OnExhausted</c> call, each one awaitable so a test waits on the effect instead of on time.
+/// <c>OnTerminal</c> call, each one awaitable so a test waits on the effect instead of on time.
 /// </summary>
 public sealed class PipelineProbe
 {
     private readonly ConcurrentDictionary<string, int> _attempts = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, int> _completions = new(StringComparer.Ordinal);
-    private readonly ConcurrentQueue<FailedInfo> _exhausted = new();
+    private readonly ConcurrentQueue<TerminalMessageInfo> _exhausted = new();
     private readonly ConcurrentQueue<string> _timeline = new();
     private readonly Lock _gate = new();
     private readonly List<(Func<bool> Reached, TaskCompletionSource Signal)> _waiters = [];
@@ -42,8 +42,8 @@ public sealed class PipelineProbe
     public Func<string, int, CancellationToken, ValueTask> Behavior { get; set; } =
         static (_, _, _) => ValueTask.CompletedTask;
 
-    /// <summary>Gets every <c>OnExhausted</c> call, oldest first.</summary>
-    public IReadOnlyList<FailedInfo> Exhausted => [.. _exhausted];
+    /// <summary>Gets every <c>OnTerminal</c> call, oldest first.</summary>
+    public IReadOnlyList<TerminalMessageInfo> Exhausted => [.. _exhausted];
 
     /// <summary>Gets each attempt and its outcome with the simulated time it started, oldest first, for a failure message.</summary>
     public IReadOnlyList<string> Timeline => [.. _timeline];
@@ -60,7 +60,7 @@ public sealed class PipelineProbe
     /// <summary>Completes once the handler has returned <paramref name="count"/> times for <paramref name="id"/>.</summary>
     public Task WhenCompletedAsync(string id, int count) => _When(() => Completions(id) >= count);
 
-    /// <summary>Completes once <c>OnExhausted</c> has been called <paramref name="count"/> times.</summary>
+    /// <summary>Completes once <c>OnTerminal</c> has been called <paramref name="count"/> times.</summary>
     public Task WhenExhaustedAsync(int count) => _When(() => _exhausted.Count >= count);
 
     internal async ValueTask HandleAsync(string id, DateTimeOffset startedAt, CancellationToken cancellationToken)
@@ -83,9 +83,9 @@ public sealed class PipelineProbe
         _Notify();
     }
 
-    internal Task RecordExhaustedAsync(FailedInfo info, CancellationToken _)
+    internal Task RecordExhaustedAsync(TerminalMessageInfo info, CancellationToken _)
     {
-        _timeline.Enqueue($"  OnExhausted for row {info.StorageId}");
+        _timeline.Enqueue($"  OnTerminal for row {info.StorageId}");
         _exhausted.Enqueue(info);
         _Notify();
         return Task.CompletedTask;
@@ -166,7 +166,7 @@ internal static class PipelineHosts
         setup.AddConsumer<PipelineOrderConsumer>();
         setup.Options.RetryProcessor.AdaptivePolling = false;
         setup.Options.RetryProcessor.BaseInterval = PollInterval;
-        setup.Options.RetryPolicy.OnExhausted = probe.RecordExhaustedAsync;
+        setup.Options.RetryPolicy.OnTerminal = probe.RecordExhaustedAsync;
         configure?.Invoke(setup);
     }
 
