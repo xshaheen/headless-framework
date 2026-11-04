@@ -23,14 +23,15 @@ internal static class DashboardEndpoints
         // The dashboard SPA is the only client of these endpoints, so every one is excluded from API descriptions.
         var applyCors = config.CorsPolicyBuilder is not null;
 
+        const string authenticationName = DashboardOptionsBuilder.AuthenticationName;
+
+        // The shared sign-in endpoints (auth/sign-in, api/auth/info, api/auth/session, api/auth/sign-out). Mapping them
+        // also moves the host-mode API and hub below onto the dashboard's session cookie. The empty-prefix group only
+        // carries the CORS policy that Basic and API key dashboards may use.
         endpoints
-            .MapGet("/api/auth/info", _GetAuthInfo)
-            .WithName("GetAuthInfo")
-            .WithSummary("Get authentication configuration")
-            .WithTags("Jobs Dashboard")
+            .MapGroup(string.Empty)
             .RequireDashboardCors(CorsPolicyName, applyCors)
-            .AllowAnonymous()
-            .ExcludeFromDescription();
+            .MapDashboardAuthEndpoints(authenticationName);
 
         endpoints
             .MapPost("/api/auth/validate", _ValidateAuth)
@@ -46,7 +47,7 @@ internal static class DashboardEndpoints
             .WithTags("Jobs Dashboard")
             .RequireDashboardCors(CorsPolicyName, applyCors)
             .ExcludeFromDescription()
-            .RequireDashboardAuthentication(DashboardOptionsBuilder.AuthenticationName)
+            .RequireDashboardAuthentication(authenticationName)
             .RequireDashboardRequestIntegrity();
 
         // Options endpoint
@@ -74,23 +75,27 @@ internal static class DashboardEndpoints
         apiGroup
             .MapPost("/time-job/add", _CreateChainJobs<TTimeJob, TCronJob>)
             .WithName("CreateChainJobs")
+            .RequireDashboardOperation(authenticationName)
             .WithSummary("Create chain jobs")
             .WithMetadata(new RequestSizeLimitAttribute(DashboardOptionsBuilder.MaxRequestBodyBytes));
 
         apiGroup
             .MapPut("/time-job/update", _UpdateTimeJob<TTimeJob, TCronJob>)
             .WithName("UpdateTimeJob")
+            .RequireDashboardOperation(authenticationName)
             .WithSummary("Update time job")
             .WithMetadata(new RequestSizeLimitAttribute(DashboardOptionsBuilder.MaxRequestBodyBytes));
 
         apiGroup
             .MapDelete("/time-job/delete", _DeleteTimeJob<TTimeJob, TCronJob>)
             .WithName("DeleteTimeJob")
+            .RequireDashboardOperation(authenticationName)
             .WithSummary("Delete time job");
 
         apiGroup
             .MapDelete("/time-job/delete-batch", _DeleteTimeJobsBatch<TTimeJob, TCronJob>)
             .WithName("DeleteTimeJobsBatch")
+            .RequireDashboardOperation(authenticationName)
             .WithSummary("Delete multiple time jobs")
             .WithMetadata(new RequestSizeLimitAttribute(DashboardOptionsBuilder.MaxRequestBodyBytes));
 
@@ -128,40 +133,51 @@ internal static class DashboardEndpoints
         apiGroup
             .MapPost("/cron-job/add", _AddCronJob<TTimeJob, TCronJob>)
             .WithName("AddCronJob")
+            .RequireDashboardOperation(authenticationName)
             .WithSummary("Add cron job")
             .WithMetadata(new RequestSizeLimitAttribute(DashboardOptionsBuilder.MaxRequestBodyBytes));
 
         apiGroup
             .MapPut("/cron-job/update", _UpdateCronJob<TTimeJob, TCronJob>)
             .WithName("UpdateCronJob")
+            .RequireDashboardOperation(authenticationName)
             .WithSummary("Update cron job")
             .WithMetadata(new RequestSizeLimitAttribute(DashboardOptionsBuilder.MaxRequestBodyBytes));
 
         apiGroup
             .MapPost("/cron-job/run", _RunCronJobOnDemand<TTimeJob, TCronJob>)
             .WithName("_RunCronJobOnDemand")
+            .RequireDashboardOperation(authenticationName)
             .WithSummary("Run cron job on demand");
 
         apiGroup
             .MapDelete("/cron-job/delete", _DeleteCronJob<TTimeJob, TCronJob>)
             .WithName("DeleteCronJob")
+            .RequireDashboardOperation(authenticationName)
             .WithSummary("Delete cron job");
 
         apiGroup
             .MapDelete("/cron-job-occurrence/delete", _DeleteCronJobOccurrence<TTimeJob, TCronJob>)
             .WithName("DeleteCronJobOccurrence")
+            .RequireDashboardOperation(authenticationName)
             .WithSummary("Delete cron job occurrence");
 
         apiGroup
             .MapPost("/cron-job-occurrence/requeue", RequeueCronJobOccurrenceAsync)
             .WithName("RequeueCronJobOccurrence")
+            .RequireDashboardOperation(authenticationName)
             .WithSummary("Requeue a failed cron job occurrence");
 
         // Job operations
-        apiGroup.MapPost("/job/cancel", CancelJobAsync).WithName("CancelJob").WithSummary("Cancel job by ID");
+        apiGroup
+            .MapPost("/job/cancel", CancelJobAsync)
+            .WithName("CancelJob")
+            .RequireDashboardOperation(authenticationName)
+            .WithSummary("Cancel job by ID");
         apiGroup
             .MapPost("/job/requeue", RequeueJobAsync)
             .WithName("RequeueJob")
+            .RequireDashboardOperation(authenticationName)
             .WithSummary("Requeue a failed time job by ID");
 
         // Literal "id" segment (not a route parameter): the SPA calls "job-request/id" and supplies
@@ -185,16 +201,19 @@ internal static class DashboardEndpoints
         apiGroup
             .MapPost("/job-host/stop", _StopJobHost<TTimeJob, TCronJob>)
             .WithName("StopJobHost")
+            .RequireDashboardOperation(authenticationName)
             .WithSummary("Stop job host");
 
         apiGroup
             .MapPost("/job-host/start", _StartJobHost<TTimeJob, TCronJob>)
             .WithName("StartJobHost")
+            .RequireDashboardOperation(authenticationName)
             .WithSummary("Start job host");
 
         apiGroup
             .MapPost("/job-host/restart", _RestartJobHost<TTimeJob, TCronJob>)
             .WithName("RestartJobHost")
+            .RequireDashboardOperation(authenticationName)
             .WithSummary("Restart job host");
 
         apiGroup
@@ -224,34 +243,76 @@ internal static class DashboardEndpoints
             .WithName("GetLiveNodes")
             .WithSummary("Get live cluster nodes from the coordination membership substrate");
 
-        // The hub carries the API's access rule, so the host's UseAuthorization refuses an unauthorized client before
+        // The hub carries the API's view rule, so the host's UseAuthorization refuses an unauthorized client before
         // SignalR adds its connection to Clients.All, where it would hear a broadcast before OnConnectedAsync ran.
-        endpoints
-            .MapHub<JobsNotificationHub>(JobsNotificationHub.Path)
+        // Closing on authentication expiry ends a connection whose session lapsed; the SPA reconnects with the current
+        // cookie or returns to sign-in.
+        var hub = endpoints
+            .MapHub<JobsNotificationHub>(
+                JobsNotificationHub.Path,
+                options => options.CloseOnAuthenticationExpiration = true
+            )
             .RequireDashboardCors(CorsPolicyName, applyCors)
-            .RequireDashboardAuthentication(DashboardOptionsBuilder.AuthenticationName);
+            .RequireDashboardAuthentication(authenticationName);
+
+        // A sibling subdomain is same-site, so the browser still sends it the Strict session cookie on a WebSocket
+        // handshake; refusing a foreign Origin stops such a page from reading job data over the hub.
+        if (config.Auth.Mode == AuthMode.Host)
+        {
+            hub.Add(_RefuseCrossOriginRequests);
+        }
+    }
+
+    private static void _RefuseCrossOriginRequests(EndpointBuilder endpoint)
+    {
+        if (endpoint.RequestDelegate is not { } next)
+        {
+            return;
+        }
+
+        endpoint.RequestDelegate = context =>
+        {
+            if (_IsSameOriginOrNoOrigin(context.Request))
+            {
+                return next(context);
+            }
+
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            return Task.CompletedTask;
+        };
+    }
+
+    /// <summary>
+    /// Whether <paramref name="request"/> carries no <c>Origin</c> header, or one naming the request's own scheme,
+    /// host, and port. A non-browser client sends no <c>Origin</c>; a browser always sends it on a cross-origin request.
+    /// </summary>
+    private static bool _IsSameOriginOrNoOrigin(HttpRequest request)
+    {
+        var origins = request.Headers.Origin;
+        if (origins.Count == 0)
+        {
+            return true;
+        }
+
+        if (
+            origins.Count != 1
+            || !Uri.TryCreate(origins[0], UriKind.Absolute, out var origin)
+            || !request.Host.HasValue
+        )
+        {
+            return false;
+        }
+
+        var requestPort =
+            request.Host.Port
+            ?? (string.Equals(request.Scheme, "https", StringComparison.OrdinalIgnoreCase) ? 443 : 80);
+
+        return string.Equals(origin.Scheme, request.Scheme, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(origin.Host, request.Host.Host, StringComparison.OrdinalIgnoreCase)
+            && origin.Port == requestPort;
     }
 
     #region Endpoint Handlers
-
-    private static IResult _GetAuthInfo(
-        [FromKeyedServices(DashboardOptionsBuilder.AuthenticationName)] IAuthService authService,
-        DashboardOptionsBuilder dashboardOptions
-    )
-    {
-        var authInfo = authService.GetAuthInfo();
-
-        // Return in format expected by frontend
-        var response = new
-        {
-            mode = authInfo.Mode.ToString().ToLower(CultureInfo.InvariantCulture),
-            enabled = authInfo.IsEnabled,
-            // The server no longer expires browser sign-ins; 0 tells the SPA, which still reads this field, never to.
-            sessionTimeout = 0,
-        };
-
-        return Results.Json(response, dashboardOptions.DashboardJsonOptions);
-    }
 
     private static async Task<IResult> _ValidateAuth(
         HttpContext context,

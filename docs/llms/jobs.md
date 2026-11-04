@@ -1580,7 +1580,7 @@ builder.Services.AddHeadlessJobs(options =>
         dashboard.WithBasicAuth("admin", "secret"); // username/password
         dashboard.WithApiKey("my-api-key"); // Bearer token / query param
         dashboard.WithHostAuthentication(); // delegate to host auth
-        dashboard.WithHostAuthentication("AdminPolicy"); // host auth + policy
+        dashboard.WithHostAuthentication(host => host.ViewPolicy = "AdminPolicy"); // host auth + policy
         // Or opt out explicitly with dashboard.WithNoAuth() — isolated development environments only.
     })
 );

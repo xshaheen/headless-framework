@@ -106,8 +106,10 @@ internal static class JobsDashboardServiceCollectionExtensions
         {
             mode = config.Auth.Mode.ToString().ToLowerInvariant(),
             enabled = config.Auth.IsEnabled,
-            // The server no longer expires browser sign-ins; 0 tells the SPA, which still reads this field, never to.
-            sessionTimeout = 0,
+            // Only a configured challenge scheme can sign in a host user who arrives without a host session; without
+            // one the host's own app exchanges its credential for a session, and the SPA offers no sign-in button.
+            signInAvailable = config.Auth.Mode == AuthMode.Host
+                && !string.IsNullOrEmpty(config.Auth.Host.ChallengeScheme),
         };
 
         var envConfig = new

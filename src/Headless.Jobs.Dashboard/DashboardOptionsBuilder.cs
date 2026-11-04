@@ -136,18 +136,23 @@ public sealed class DashboardOptionsBuilder
     }
 
     /// <summary>
-    /// Delegates authentication to the host application's ASP.NET Core authentication middleware.
-    /// When <paramref name="policy"/> is specified, the named authorization policy is enforced;
-    /// otherwise the default authorization policy applies.
+    /// Delegates sign-in to the host application. A host user signs in to the dashboard once, through
+    /// <c>{basePath}/auth/sign-in</c> or by posting the host's own credential to <c>{basePath}/api/auth/session</c>, and
+    /// the dashboard API and hub then authenticate with the dashboard's own session cookie alone.
     /// </summary>
-    /// <param name="policy">
-    /// Optional authorization policy name (e.g., <c>"AdminPolicy"</c>). Pass <see langword="null"/>
-    /// or an empty string to use the default policy.
+    /// <remarks>
+    /// The session cookie is <c>SameSite=Strict</c> and host-only, so the dashboard SPA must be served from the API's
+    /// own origin: host authentication cannot be combined with <see cref="SetCorsOrigins"/>,
+    /// <see cref="SetCorsPolicy"/>, or <see cref="SetBackendDomain"/>.
+    /// </remarks>
+    /// <param name="configure">
+    /// Optional callback that sets the view and operate policies, the sign-in challenge scheme, and the session's
+    /// cookie name and lifetimes. Left unset, the host's default policy decides both viewing and operating.
     /// </param>
-    public DashboardOptionsBuilder WithHostAuthentication(string? policy = null)
+    public DashboardOptionsBuilder WithHostAuthentication(Action<DashboardHostAuthenticationOptions>? configure = null)
     {
         Auth.Mode = AuthMode.Host;
-        Auth.Host.ViewPolicy = policy;
+        configure?.Invoke(Auth.Host);
         AuthConfigured = true;
         return this;
     }
@@ -175,6 +180,17 @@ public sealed class DashboardOptionsBuilder
                 "Dashboard authentication was not configured. Secure the dashboard with WithBasicAuth, WithApiKey, "
                     + "or WithHostAuthentication, or call WithNoAuth() to explicitly run it "
                     + "unauthenticated (development or trusted-network use only)."
+            );
+        }
+
+        // The session cookie never leaves the API's own origin, so a cross-origin SPA could never sign in, and a CORS
+        // policy that allows credentials would let another origin ride the session.
+        if (Auth.Mode == AuthMode.Host && (CorsPolicyBuilder is not null || !string.IsNullOrEmpty(BackendDomain)))
+        {
+            throw new InvalidOperationException(
+                "Host authentication serves the Jobs dashboard from the host's own origin only. Remove "
+                    + "SetCorsOrigins, SetCorsPolicy, and SetBackendDomain, or secure a cross-origin dashboard with "
+                    + "WithBasicAuth or WithApiKey."
             );
         }
 

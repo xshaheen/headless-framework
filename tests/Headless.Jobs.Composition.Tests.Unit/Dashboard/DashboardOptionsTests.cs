@@ -95,16 +95,70 @@ public sealed class DashboardOptionsTests : TestBase
         builder.Auth.ApiKey.Should().Be("secret-key");
     }
 
-    [Theory]
-    [InlineData(null)]
-    [InlineData("DashboardAdmin")]
-    public void should_configure_host_authentication(string? policy)
+    [Fact]
+    public void should_configure_host_authentication_with_the_host_defaults()
     {
-        var builder = new DashboardOptionsBuilder().WithHostAuthentication(policy);
+        var builder = new DashboardOptionsBuilder().WithHostAuthentication();
 
         builder.AuthConfigured.Should().BeTrue();
         builder.Auth.Mode.Should().Be(AuthMode.Host);
-        builder.Auth.Host.ViewPolicy.Should().Be(policy);
+        builder.Auth.Host.ViewPolicy.Should().BeNull();
+        builder.Auth.Host.OperatePolicy.Should().BeNull();
+        builder.Auth.Host.SessionLifetime.Should().Be(DashboardHostAuthenticationOptions.DefaultSessionLifetime);
+        ((Action)builder.Validate).Should().NotThrow();
+    }
+
+    [Fact]
+    public void should_configure_the_host_policies_and_session()
+    {
+        var builder = new DashboardOptionsBuilder().WithHostAuthentication(host =>
+        {
+            host.ViewPolicy = "Viewers";
+            host.OperatePolicy = "Operators";
+            host.ChallengeScheme = "oidc";
+            host.SessionIdleTimeout = TimeSpan.FromMinutes(5);
+        });
+
+        builder.Auth.Mode.Should().Be(AuthMode.Host);
+        builder.Auth.Host.ViewPolicy.Should().Be("Viewers");
+        builder.Auth.Host.OperatePolicy.Should().Be("Operators");
+        builder.Auth.Host.ChallengeScheme.Should().Be("oidc");
+        builder.Auth.Host.SessionIdleTimeout.Should().Be(TimeSpan.FromMinutes(5));
+    }
+
+    public static TheoryData<string> CrossOriginSettings => ["origins", "policy", "backend"];
+
+    [Theory]
+    [MemberData(nameof(CrossOriginSettings))]
+    public void should_refuse_host_authentication_with_a_cross_origin_setting(string setting)
+    {
+        var builder = _WithCrossOrigin(new DashboardOptionsBuilder().WithHostAuthentication(), setting);
+
+        ((Action)builder.Validate)
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*host's own origin*SetCorsOrigins*SetBackendDomain*");
+    }
+
+    [Theory]
+    [MemberData(nameof(CrossOriginSettings))]
+    public void should_keep_cross_origin_settings_under_a_dashboard_credential(string setting)
+    {
+        var basic = _WithCrossOrigin(new DashboardOptionsBuilder().WithBasicAuth("ops", "secret"), setting);
+        var apiKey = _WithCrossOrigin(new DashboardOptionsBuilder().WithApiKey("secret"), setting);
+
+        ((Action)basic.Validate).Should().NotThrow();
+        ((Action)apiKey.Validate).Should().NotThrow();
+    }
+
+    private static DashboardOptionsBuilder _WithCrossOrigin(DashboardOptionsBuilder builder, string setting)
+    {
+        return setting switch
+        {
+            "origins" => builder.SetCorsOrigins("https://ops.example.com"),
+            "policy" => builder.SetCorsPolicy(static policy => policy.AllowAnyOrigin()),
+            _ => builder.SetBackendDomain("https://api.example.com"),
+        };
     }
 
     [Fact]

@@ -79,7 +79,7 @@ public sealed class DashboardRegistrationTests : TestBase
     }
 
     [Fact]
-    public void should_add_auth_services_and_configured_cors_when_host_auth_is_selected()
+    public void should_add_auth_services_and_the_session_scheme_when_host_auth_is_selected()
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -87,9 +87,7 @@ public sealed class DashboardRegistrationTests : TestBase
         services.AddHeadlessJobs(options =>
             options
                 .DisableBackgroundServices()
-                .AddDashboard(dashboard =>
-                    dashboard.WithHostAuthentication("Operators").SetCorsOrigins("https://ops.example.com")
-                )
+                .AddDashboard(dashboard => dashboard.WithHostAuthentication(host => host.ViewPolicy = "Operators"))
         );
 
         services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IAuthenticationService));
@@ -98,12 +96,65 @@ public sealed class DashboardRegistrationTests : TestBase
         using var provider = services.BuildServiceProvider();
         var dashboard = provider.GetRequiredService<DashboardOptionsBuilder>();
         dashboard.Auth.Mode.Should().Be(AuthMode.Host);
-        dashboard.Auth.Host.ViewPolicy.Should().Be("Operators");
         provider
-            .GetRequiredKeyedService<IAuthService>(DashboardOptionsBuilder.AuthenticationName)
-            .GetAuthInfo()
-            .Mode.Should()
-            .Be(AuthMode.Host);
+            .GetRequiredService<IOptionsMonitor<AuthConfig>>()
+            .Get(DashboardOptionsBuilder.AuthenticationName)
+            .Host.ViewPolicy.Should()
+            .Be("Operators");
+        provider
+            .GetRequiredService<IOptions<AuthenticationOptions>>()
+            .Value.SchemeMap.Should()
+            .ContainKey(DashboardOptionsBuilder.AuthenticationName + ".Session");
+        provider
+            .GetRequiredService<IOptions<CorsOptions>>()
+            .Value.GetPolicy("HeadlessJobsDashboardCORS")
+            .Should()
+            .BeNull();
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void should_fail_registration_when_host_auth_is_combined_with_a_cross_origin_setting(bool cors)
+    {
+        var services = new ServiceCollection();
+
+        var act = () =>
+            services.AddHeadlessJobs(options =>
+                options
+                    .DisableBackgroundServices()
+                    .AddDashboard(dashboard =>
+                    {
+                        dashboard.WithHostAuthentication();
+                        if (cors)
+                        {
+                            dashboard.SetCorsOrigins("https://ops.example.com");
+                        }
+                        else
+                        {
+                            dashboard.SetBackendDomain("https://api.example.com");
+                        }
+                    })
+            );
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*host's own origin*");
+    }
+
+    [Fact]
+    public void should_add_the_configured_cors_policy_under_basic_auth()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        services.AddHeadlessJobs(options =>
+            options
+                .DisableBackgroundServices()
+                .AddDashboard(dashboard =>
+                    dashboard.WithBasicAuth("ops", "secret").SetCorsOrigins("https://ops.example.com")
+                )
+        );
+
+        using var provider = services.BuildServiceProvider();
         provider
             .GetRequiredService<IOptions<CorsOptions>>()
             .Value.GetPolicy("HeadlessJobsDashboardCORS")!

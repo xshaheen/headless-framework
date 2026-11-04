@@ -26,7 +26,7 @@ internal static class SandboxJobsDashboardAuth
                 dashboard.WithApiKey(secret);
                 break;
             case SandboxJobsAuth.Host:
-                dashboard.WithHostAuthentication(SandboxHostAuthentication.Policy);
+                dashboard.WithHostAuthentication(host => host.ViewPolicy = SandboxHostAuthentication.Policy);
                 break;
             default:
                 throw new InvalidOperationException(
