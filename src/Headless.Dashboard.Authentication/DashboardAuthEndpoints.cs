@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
@@ -24,28 +23,9 @@ internal static class DashboardAuthEndpoints
     // The dashboard SPA reads these field names; the host's own JSON options must not rename them.
     private static readonly JsonSerializerOptions _JsonOptions = new(JsonSerializerDefaults.Web);
 
-    /// <summary>
-    /// Maps the dashboard's auth endpoints on <paramref name="dashboard"/>, the route group at the dashboard's base
-    /// path. Mapping them also moves the dashboard's host-mode endpoints onto its session: from then on
-    /// <c>RequireDashboardAuthentication</c> and <c>RequireDashboardOperation</c> attach the session's view and
-    /// operate policies instead of the host policy itself.
-    /// </summary>
-    /// <exception cref="InvalidOperationException">
-    /// No <c>AddDashboardAuthentication</c> call registered <paramref name="authenticationName"/>.
-    /// </exception>
-    internal static IEndpointRouteBuilder MapDashboardAuthEndpoints(
-        this IEndpointRouteBuilder dashboard,
-        string authenticationName
-    )
+    /// <summary>Maps the auth endpoints on <paramref name="dashboard"/>, the route group at the dashboard's base path.</summary>
+    internal static void Map(IEndpointRouteBuilder dashboard, string authenticationName)
     {
-        var registry =
-            dashboard.ServiceProvider.GetService<DashboardSessionEndpointRegistry>()
-            ?? throw new InvalidOperationException(
-                $"No dashboard authentication is registered under '{authenticationName}'. Call "
-                    + $"AddDashboardAuthentication(\"{authenticationName}\", ...) before mapping its auth endpoints."
-            );
-        registry.Add(authenticationName);
-
         dashboard
             .MapGet("/api/auth/info", _Handler(_GetInfoAsync, authenticationName))
             .AllowAnonymous()
@@ -67,8 +47,6 @@ internal static class DashboardAuthEndpoints
             .MapGet(_SignInPath, _Handler(_SignInAsync, authenticationName))
             .AllowAnonymous()
             .ExcludeFromDescription();
-
-        return dashboard;
     }
 
     // A lambda returning Task<IResult> binds to the RequestDelegate overload, which discards the result.
@@ -95,14 +73,34 @@ internal static class DashboardAuthEndpoints
         {
             // Basic and API key send their credential on every request, so an anonymous call has no session to report.
             var open = auth.Mode == AuthMode.None;
-            return Results.Json(new AuthInfoResponse(mode, auth.IsEnabled, false, open, null, open), _JsonOptions);
+            return Results.Json(
+                new AuthInfoResponse(
+                    mode,
+                    auth.IsEnabled,
+                    SignInAvailable: false,
+                    Authenticated: open,
+                    Name: null,
+                    CanOperate: open
+                ),
+                _JsonOptions
+            );
         }
 
         var signInAvailable = !string.IsNullOrEmpty(auth.Host.ChallengeScheme);
         var session = await DashboardHostSession.AuthenticateAsync(context, authenticationName).ConfigureAwait(false);
         if (session is not { Succeeded: true, Principal: { } principal })
         {
-            return Results.Json(new AuthInfoResponse(mode, true, signInAvailable, false, null, false), _JsonOptions);
+            return Results.Json(
+                new AuthInfoResponse(
+                    mode,
+                    Enabled: true,
+                    signInAvailable,
+                    Authenticated: false,
+                    Name: null,
+                    CanOperate: false
+                ),
+                _JsonOptions
+            );
         }
 
         var hostSchemes = DashboardHostSession.GetHostSchemes(session.Properties);
@@ -125,7 +123,14 @@ internal static class DashboardAuthEndpoints
                 .ConfigureAwait(false);
 
         return Results.Json(
-            new AuthInfoResponse(mode, true, signInAvailable, true, principal.Identity?.Name, canOperate),
+            new AuthInfoResponse(
+                mode,
+                Enabled: true,
+                signInAvailable,
+                Authenticated: true,
+                principal.Identity?.Name,
+                canOperate
+            ),
             _JsonOptions
         );
     }
@@ -264,14 +269,4 @@ internal static class DashboardAuthEndpoints
         string? Name,
         bool CanOperate
     );
-}
-
-/// <summary>The dashboards whose auth endpoints are mapped, so their host-mode endpoints authorize the session.</summary>
-internal sealed class DashboardSessionEndpointRegistry
-{
-    private readonly ConcurrentDictionary<string, bool> _names = new(StringComparer.Ordinal);
-
-    internal void Add(string authenticationName) => _names.TryAdd(authenticationName, true);
-
-    internal bool Contains(string authenticationName) => _names.ContainsKey(authenticationName);
 }

@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -115,6 +116,44 @@ public static class SetupDashboardAuthentication
     }
 
     /// <summary>
+    /// Maps the sign-in endpoints of the dashboard registered under <paramref name="authenticationName"/> on
+    /// <paramref name="dashboard"/>, the route group at the dashboard's base path: <c>GET api/auth/info</c>,
+    /// <c>POST api/auth/session</c>, <c>POST api/auth/sign-out</c>, and <c>GET auth/sign-in</c>.
+    /// </summary>
+    /// <remarks>
+    /// Under <see cref="AuthMode.Host"/>, <see cref="RequireDashboardAuthentication{TBuilder}"/> and
+    /// <see cref="RequireDashboardOperation{TBuilder}"/> accept only a dashboard session, and these endpoints are the
+    /// only way to get one: <c>api/auth/session</c> exchanges the host's credential, such as a bearer token, and
+    /// <c>auth/sign-in</c> signs in the host user, challenging the host's sign-in when there is none. A dashboard that
+    /// supports host authentication must map them. <c>api/auth/info</c> reports the mode and the session state to the
+    /// dashboard's frontend in every mode; the other three answer <c>404</c> outside host mode. All four are
+    /// anonymous, and the two <c>POST</c> endpoints require the <c>X-Requested-With</c> header.
+    /// </remarks>
+    /// <param name="dashboard">The route group at the dashboard's base path.</param>
+    /// <param name="authenticationName">The name passed to <c>AddDashboardAuthentication</c>.</param>
+    /// <returns>The same <paramref name="dashboard"/> for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="dashboard"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="authenticationName"/> is <see langword="null"/>, empty, or white space.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// No <c>AddDashboardAuthentication</c> call registered <paramref name="authenticationName"/>.
+    /// </exception>
+    public static IEndpointRouteBuilder MapDashboardAuthEndpoints(
+        this IEndpointRouteBuilder dashboard,
+        string authenticationName
+    )
+    {
+        Argument.IsNotNull(dashboard);
+        Argument.IsNotNullOrWhiteSpace(authenticationName);
+
+        _EnsureRegistered(dashboard.ServiceProvider, authenticationName);
+        DashboardAuthEndpoints.Map(dashboard, authenticationName);
+
+        return dashboard;
+    }
+
+    /// <summary>
     /// Protects the endpoints of <paramref name="builder"/> with the dashboard authentication registered under
     /// <paramref name="authenticationName"/>, so the host's <c>UseAuthorization</c> evaluates it before the endpoint or
     /// a SignalR hub runs and the host's fallback policy never decides a dashboard request.
@@ -123,11 +162,11 @@ public static class SetupDashboardAuthentication
     /// The mode of the <see cref="AuthConfig"/> named <paramref name="authenticationName"/> decides the rule when the
     /// host builds its endpoints: <see cref="AuthMode.None"/> allows anonymous access; Basic and API key modes require
     /// a user the dashboard's authentication scheme signed in with the dashboard's own credential, and refuse any other
-    /// request with <c>401</c>. Under <see cref="AuthMode.Host"/>, a dashboard that maps its session endpoints requires
-    /// a dashboard session whose user passes <see cref="DashboardHostAuthenticationOptions.ViewPolicy"/>, or the host's
-    /// default policy when it is empty, and answers <c>401</c> without a session and <c>403</c> when the policy
-    /// refuses; a dashboard that does not map them requires that host policy of the request's own host user. Put the
-    /// rule on the dashboard's protected group only; endpoints the sign-in flow calls without a credential, such as
+    /// request with <c>401</c>. Under <see cref="AuthMode.Host"/>, it requires a dashboard session whose user passes
+    /// <see cref="DashboardHostAuthenticationOptions.ViewPolicy"/>, or the host's default policy when it is empty, and
+    /// answers <c>401</c> without a session and <c>403</c> when the policy refuses; the host's own sign-in does not
+    /// open the endpoint, so the dashboard must map <see cref="MapDashboardAuthEndpoints"/> to issue that session. Put
+    /// the rule on the dashboard's protected group only; endpoints the sign-in flow calls without a credential, such as
     /// the shell and <c>/api/auth/info</c>, stay <c>AllowAnonymous</c>.
     /// </remarks>
     /// <typeparam name="TBuilder">The endpoint convention builder, such as a route group.</typeparam>
@@ -157,16 +196,9 @@ public static class SetupDashboardAuthentication
                 case AuthMode.None:
                     endpoint.Metadata.Add(new AllowAnonymousAttribute());
                     break;
-                case AuthMode.Host when _UsesSession(endpoint, authenticationName):
-                    endpoint.Metadata.Add(
-                        new AuthorizeAttribute(DashboardHostSession.ViewPolicyName(authenticationName))
-                    );
-                    break;
                 case AuthMode.Host:
                     endpoint.Metadata.Add(
-                        string.IsNullOrEmpty(auth.Host.ViewPolicy)
-                            ? new AuthorizeAttribute()
-                            : new AuthorizeAttribute(auth.Host.ViewPolicy)
+                        new AuthorizeAttribute(DashboardHostSession.ViewPolicyName(authenticationName))
                     );
                     break;
                 default:
@@ -184,8 +216,7 @@ public static class SetupDashboardAuthentication
     /// <paramref name="authenticationName"/>. Apply it beside <see cref="RequireDashboardAuthentication{TBuilder}"/>.
     /// </summary>
     /// <remarks>
-    /// Under <see cref="AuthMode.Host"/>, on a dashboard that maps its session endpoints, the session's user must also
-    /// pass <see cref="DashboardHostAuthenticationOptions.OperatePolicy"/>, or the view policy when it is empty, and is
+    /// Under <see cref="AuthMode.Host"/>, the session's user must also pass <see cref="DashboardHostAuthenticationOptions.OperatePolicy"/>, or the view policy when it is empty, and is
     /// refused with <c>403</c> otherwise. Other modes add nothing: Basic and API key share one credential for viewing
     /// and operating, and <see cref="AuthMode.None"/> is open.
     /// </remarks>
@@ -211,7 +242,7 @@ public static class SetupDashboardAuthentication
         {
             var auth = _GetRegisteredConfig(endpoint, authenticationName);
 
-            if (auth.Mode == AuthMode.Host && _UsesSession(endpoint, authenticationName))
+            if (auth.Mode == AuthMode.Host)
             {
                 endpoint.Metadata.Add(
                     new AuthorizeAttribute(DashboardHostSession.OperatePolicyName(authenticationName))
@@ -224,10 +255,17 @@ public static class SetupDashboardAuthentication
 
     private static AuthConfig _GetRegisteredConfig(EndpointBuilder endpoint, string authenticationName)
     {
+        _EnsureRegistered(endpoint.ApplicationServices, authenticationName);
+
+        return endpoint.ApplicationServices.GetRequiredService<IOptionsMonitor<AuthConfig>>().Get(authenticationName);
+    }
+
+    private static void _EnsureRegistered(IServiceProvider services, string authenticationName)
+    {
         // An unconfigured name reads as a default AuthConfig whose mode is None, which would publish the endpoint
         // openly; AddDashboardAuthentication registers a scheme under every name it configures, so a missing scheme
         // means a typo or a missing registration, and the endpoint must fail closed.
-        var schemes = endpoint.ApplicationServices.GetRequiredService<IOptions<AuthenticationOptions>>().Value;
+        var schemes = services.GetRequiredService<IOptions<AuthenticationOptions>>().Value;
         if (!schemes.SchemeMap.ContainsKey(authenticationName))
         {
             throw new InvalidOperationException(
@@ -236,15 +274,6 @@ public static class SetupDashboardAuthentication
                     + "require it."
             );
         }
-
-        return endpoint.ApplicationServices.GetRequiredService<IOptionsMonitor<AuthConfig>>().Get(authenticationName);
-    }
-
-    private static bool _UsesSession(EndpointBuilder endpoint, string authenticationName)
-    {
-        return endpoint
-            .ApplicationServices.GetRequiredService<DashboardSessionEndpointRegistry>()
-            .Contains(authenticationName);
     }
 
     private static IServiceCollection _AddDashboardAuthenticationCore(IServiceCollection services, string name)
@@ -259,7 +288,6 @@ public static class SetupDashboardAuthentication
                 )
         );
 
-        services.TryAddSingleton<DashboardSessionEndpointRegistry>();
         DashboardEndpointAccess.AddDashboardScheme(services, name);
         DashboardHostSession.AddSessionScheme(services, name);
         DashboardHostAuthorization.AddSessionPolicies(services, name);

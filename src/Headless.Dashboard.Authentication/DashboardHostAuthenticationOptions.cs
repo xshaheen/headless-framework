@@ -112,12 +112,12 @@ internal sealed partial class DashboardHostAuthenticationOptionsValidator
             .WithMessage("RevalidationInterval must be positive.");
 
         RuleFor(x => x.SessionCookieName)
-            .Must(name => _CookieNameRegex().IsMatch(name!))
+            .Must(name => _CookieNameRegex.IsMatch(name!))
             .When(x => !string.IsNullOrEmpty(x.SessionCookieName))
             .WithMessage("SessionCookieName must be a cookie name token: letters, digits, and !#$%&'*+-.^_`|~.");
     }
 
     // RFC 6265 cookie names are RFC 7230 tokens; anything else is dropped or mangled by browsers.
     [GeneratedRegex(@"^[A-Za-z0-9!#$%&'*+\-.^_`|~]+$", RegexOptions.None, matchTimeoutMilliseconds: 100)]
-    private static partial Regex _CookieNameRegex();
+    private static partial Regex _CookieNameRegex { get; }
 }

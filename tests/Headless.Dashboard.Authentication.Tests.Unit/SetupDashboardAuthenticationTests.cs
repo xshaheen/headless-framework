@@ -205,7 +205,9 @@ public sealed class SetupDashboardAuthenticationTests : TestBase
         };
 
     [Theory]
+#pragma warning disable xUnit1044 // The rows are option mutations; this theory does not need per-row enumeration in Test Explorer.
     [MemberData(nameof(InvalidHostOptions))]
+#pragma warning restore xUnit1044
     public void add_dashboard_authentication_rejects_invalid_host_session_options(
         string property,
         Action<DashboardHostAuthenticationOptions> configure
