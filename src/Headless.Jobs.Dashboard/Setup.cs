@@ -1,11 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Headless.Coordination;
 using Headless.Dashboard.Authentication;
 using Headless.Jobs.Coordination;
 using Headless.Jobs.Infrastructure.Dashboard;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
@@ -19,8 +21,8 @@ public static class SetupJobsDashboard
     /// SignalR hub for real-time updates and a configurable authentication layer.
     /// </summary>
     /// <remarks>
-    /// The dashboard is auto-injected into the ASP.NET Core middleware pipeline via an
-    /// <c>IStartupFilter</c>; no manual <c>app.Use…</c> call is required. To secure the dashboard,
+    /// Mount the dashboard on the host's endpoints with <see cref="MapHeadlessJobsDashboard"/>; a host that registers it
+    /// without mapping it fails to start. To secure the dashboard,
     /// use <see cref="DashboardOptionsBuilder.WithBasicAuth"/>, <see cref="DashboardOptionsBuilder.WithApiKey"/>,
     /// <see cref="DashboardOptionsBuilder.WithHostAuthentication"/>, or
     /// <see cref="DashboardOptionsBuilder.WithCustomAuth"/>. When coordination-based node membership
@@ -82,21 +84,6 @@ public static class SetupJobsDashboard
                 }
             );
 
-            // Add authentication services if using host authentication
-            if (dashboardConfig.Auth.Mode == AuthMode.Host)
-            {
-                var hasAuthenticationService = services.Any(s =>
-                    s.ServiceType == typeof(Microsoft.AspNetCore.Authentication.IAuthenticationService)
-                    || string.Equals(s.ServiceType.Name, "IAuthenticationSchemeProvider", StringComparison.Ordinal)
-                );
-
-                if (!hasAuthenticationService)
-                {
-                    services.AddAuthentication();
-                    services.AddAuthorization();
-                }
-            }
-
             services.AddDashboardService<TTimeJob, TCronJob>(dashboardConfig, requestSerializationOptions);
             services.AddSingleton<DashboardOptionsBuilder>(_ => dashboardConfig);
 
@@ -109,14 +96,12 @@ public static class SetupJobsDashboard
                 sp.GetRequiredService<ILogger<MembershipDashboardBridge>>()
             ));
 
-            // Auto-inject dashboard middleware pipeline via IStartupFilter
-            services.AddTransient<IStartupFilter>(_ => new JobsDashboardStartupFilter<TTimeJob, TCronJob>(
-                dashboardConfig
-            ));
+            dashboardConfig.MapEndpoints = group => group.MapDashboard<TTimeJob, TCronJob>(dashboardConfig);
+            services.AddTransient<IStartupFilter>(_ => new JobsDashboardStartupFilter(dashboardConfig));
 
             // A browser cannot put a header on a WebSocket, so under host auth the hub's credential arrives as
-            // access_token. It must become the Authorization header before the host's own authentication runs,
-            // which is ahead of the dashboard branch, so this filter prepends to the whole pipeline.
+            // access_token. It must become the Authorization header before the host's own authentication runs, so
+            // this filter prepends to the whole pipeline.
             if (dashboardConfig.Auth.Mode == AuthMode.Host)
             {
                 services.AddTransient<IStartupFilter>(_ => new HubAccessTokenStartupFilter(dashboardConfig.BasePath));
@@ -124,6 +109,70 @@ public static class SetupJobsDashboard
         };
 
         return jobsConfiguration;
+    }
+
+    /// <summary>
+    /// Mounts the Jobs dashboard registered by <c>AddDashboard(...)</c> on the host's endpoint routing, under its base
+    /// path: the API, the SignalR hub, and the SPA. This is the only way the dashboard is served: a host that
+    /// registers it and never calls this method fails to start.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The host's <c>UseAuthorization</c> evaluates the dashboard's access rule, never the host's fallback policy. The
+    /// SPA shell, its static assets, and the <c>/api/auth/info</c> and <c>/api/auth/validate</c> endpoints are
+    /// anonymous, so a browser loads the shell without a credential. Every other <c>{basePath}/api</c> endpoint and the
+    /// hub require the policy <see cref="DashboardOptionsBuilder.WithHostAuthentication"/> names, or the host's
+    /// default policy when none is named. Under Basic, API key, or custom authentication they require the dashboard's
+    /// own credential, checked by the dashboard's authentication scheme; <see cref="DashboardOptionsBuilder.WithNoAuth"/>
+    /// leaves them open.
+    /// </para>
+    /// <para>
+    /// The host's pipeline must run <c>UseAuthorization</c> between routing and endpoints (a <c>WebApplication</c>
+    /// adds it when the host does not), <c>UseAuthentication</c> before it for host authentication, and
+    /// <c>UseCors</c> only when <c>SetCorsOrigins</c> or <c>SetCorsPolicy</c> was configured. Host-specific behavior
+    /// for the dashboard, such as rate limiting or an extra policy, goes on the returned builder.
+    /// </para>
+    /// <para>
+    /// A host that calls <c>UseAuthentication</c> must also call <c>UseAuthorization</c> after it: the
+    /// <c>UseAuthorization</c> a <c>WebApplication</c> adds on its own runs ahead of the host's
+    /// <c>UseAuthentication</c>, before host authentication has signed the user in.
+    /// </para>
+    /// <para>
+    /// The <c>Headless</c> prefix marks the Headless-owned dashboard, as <c>AddHeadlessJobs</c> does.
+    /// </para>
+    /// </remarks>
+    /// <param name="endpoints">The host's endpoint route builder, such as the <c>WebApplication</c>.</param>
+    /// <returns>A builder for conventions that apply to every dashboard endpoint.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// The dashboard is not registered through <c>AddDashboard(...)</c>, it is already mapped, or its base path is the
+    /// root.
+    /// </exception>
+    public static IEndpointConventionBuilder MapHeadlessJobsDashboard(this IEndpointRouteBuilder endpoints)
+    {
+        Argument.IsNotNull(endpoints);
+
+        var config = endpoints.ServiceProvider.GetService<DashboardOptionsBuilder>();
+        if (config?.MapEndpoints is not { } mapEndpoints)
+        {
+            throw new InvalidOperationException(
+                "The Jobs dashboard is not registered. Call AddDashboard(...) inside AddHeadlessJobs(...) before "
+                    + "MapHeadlessJobsDashboard()."
+            );
+        }
+
+        var basePath = DashboardSpaHelper.NormalizeMountBasePath(config.BasePath, nameof(MapHeadlessJobsDashboard));
+
+        if (config.EndpointMounted)
+        {
+            throw new InvalidOperationException("MapHeadlessJobsDashboard() was already called for this host.");
+        }
+
+        config.EndpointMounted = true;
+
+        var group = endpoints.MapGroup(basePath);
+        mapEndpoints(group);
+
+        return group;
     }
 }
 
@@ -187,16 +236,27 @@ internal sealed class HubAccessTokenStartupFilter(string basePath) : IStartupFil
     }
 }
 
-internal sealed class JobsDashboardStartupFilter<TTimeJob, TCronJob>(DashboardOptionsBuilder config) : IStartupFilter
-    where TTimeJob : TimeJobEntity<TTimeJob>, new()
-    where TCronJob : CronJobEntity, new()
+/// <summary>
+/// Fails the host's start when the dashboard is registered but never mapped, so a missing
+/// <c>MapHeadlessJobsDashboard()</c> call is not a dashboard that silently answers 404.
+/// </summary>
+internal sealed class JobsDashboardStartupFilter(DashboardOptionsBuilder config) : IStartupFilter
 {
     public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next)
     {
         return app =>
         {
             next(app);
-            app.UseDashboardWithEndpoints<TTimeJob, TCronJob>(config);
+
+            // The host has mapped its endpoints by now: WebApplication maps them before it builds the pipeline, and a
+            // Startup class maps them inside next(app).
+            if (!config.EndpointMounted)
+            {
+                throw new InvalidOperationException(
+                    "The Jobs dashboard is registered through AddDashboard(...) but not mapped. Call "
+                        + "app.MapHeadlessJobsDashboard() on the host's endpoints."
+                );
+            }
         };
     }
 }

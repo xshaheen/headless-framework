@@ -4,7 +4,7 @@ ASP.NET Core demo for Messaging Dashboard host authentication.
 
 ## Shows
 
-- `UseDashboard(d => d.WithHostAuthentication(policy))`.
+- `UseDashboard(d => d.WithHostAuthentication(policy))`, mounted with `app.MapHeadlessMessagingDashboard()`.
 - OpenID Connect plus cookie authentication for dashboard access.
 - A custom authentication scheme variant.
 - Anonymous dashboard registration as a commented alternative.

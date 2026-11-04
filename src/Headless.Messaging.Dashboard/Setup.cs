@@ -2,10 +2,12 @@
 
 using System.Reflection;
 using System.Text.Encodings.Web;
+using Headless.Checks;
 using Headless.Dashboard.Authentication;
-using Headless.Http;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 
 namespace Headless.Messaging.Dashboard;
@@ -21,92 +23,75 @@ public static class SetupMessagingDashboard
     };
 
     /// <summary>
-    /// Configure the Messaging Dashboard middleware pipeline using app.Map branching.
-    /// Matches the Jobs Dashboard middleware pipeline pattern.
+    /// Mounts the Messaging Dashboard registered by <c>UseDashboard(...)</c> on the host's endpoint routing, under its
+    /// base path. This is the only way the dashboard is served: a host that registers it and never calls this method
+    /// fails to start.
     /// </summary>
-    internal static void UseMessagingDashboard(this IApplicationBuilder app, MessagingDashboardOptionsBuilder config)
+    /// <remarks>
+    /// <para>
+    /// The host's <c>UseAuthorization</c> evaluates the dashboard's access rule, never the host's fallback policy. The
+    /// SPA shell, its static assets, and the <c>/api/auth/info</c>, <c>/api/auth/validate</c>, and
+    /// <c>/api/health</c> endpoints are anonymous, so a browser loads the shell without a credential; the shell carries
+    /// only the base path, the auth mode, and the polling interval. Every other <c>{basePath}/api</c> endpoint requires
+    /// the policy <c>WithHostAuthentication(policy)</c> names, or the host's default policy when none is named. Under
+    /// Basic, API key, or custom authentication it requires the dashboard's own credential, checked by the dashboard's
+    /// authentication scheme; <c>WithNoAuth()</c> leaves it open.
+    /// </para>
+    /// <para>
+    /// The host's pipeline must run <c>UseAuthorization</c> between routing and endpoints (a <c>WebApplication</c>
+    /// adds it when the host does not), <c>UseAuthentication</c> before it for host authentication, and
+    /// <c>UseCors</c> only when <c>SetCorsOrigins</c> or <c>SetCorsPolicy</c> was configured. Host-specific behavior
+    /// for the dashboard, such as rate limiting or an extra policy, goes on the returned builder.
+    /// </para>
+    /// <para>
+    /// A host that calls <c>UseAuthentication</c> must also call <c>UseAuthorization</c> after it: the
+    /// <c>UseAuthorization</c> a <c>WebApplication</c> adds on its own runs ahead of the host's
+    /// <c>UseAuthentication</c>, before host authentication has signed the user in.
+    /// </para>
+    /// <para>
+    /// The <c>Headless</c> prefix marks the Headless-owned dashboard, as <c>AddHeadlessMessaging</c> does.
+    /// </para>
+    /// </remarks>
+    /// <param name="endpoints">The host's endpoint route builder, such as the <c>WebApplication</c>.</param>
+    /// <returns>A builder for conventions that apply to every dashboard endpoint.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// The dashboard is not registered through <c>UseDashboard(...)</c>, it is already mapped, or its base path is the
+    /// root.
+    /// </exception>
+    public static IEndpointConventionBuilder MapHeadlessMessagingDashboard(this IEndpointRouteBuilder endpoints)
     {
-        var assembly = Assembly.GetExecutingAssembly();
-        var embeddedFileProvider = new EmbeddedFileProvider(assembly, _EmbeddedFileNamespace);
+        Argument.IsNotNull(endpoints);
 
-        var basePath = DashboardSpaHelper.NormalizeBasePath(config.BasePath);
+        var config =
+            endpoints.ServiceProvider.GetService<MessagingDashboardOptionsBuilder>()
+            ?? throw new InvalidOperationException(
+                "The Messaging dashboard is not registered. Call UseDashboard(...) inside AddHeadlessMessaging(...) "
+                    + "before MapHeadlessMessagingDashboard()."
+            );
 
-        app.Map(
-            basePath,
-            dashboardApp =>
-            {
-                // Execute pre-dashboard middleware
-                config.PreDashboardMiddleware?.Invoke(dashboardApp);
-
-                // CRITICAL: Serve static files FIRST, before any authentication
-                dashboardApp.UseStaticFiles(
-                    new StaticFileOptions
-                    {
-                        FileProvider = embeddedFileProvider,
-                        OnPrepareResponse = ctx =>
-                        {
-                            if (
-                                ctx.File.Name.EndsWith(".js", StringComparison.Ordinal)
-                                || ctx.File.Name.EndsWith(".css", StringComparison.Ordinal)
-                                || ctx.File.Name.EndsWith(".ico", StringComparison.Ordinal)
-                                || ctx.File.Name.EndsWith(".png", StringComparison.Ordinal)
-                            )
-                            {
-                                ctx.Context.Response.Headers.CacheControl = "public,max-age=3600";
-                            }
-                        },
-                    }
-                );
-
-                // Endpoints carry RequireCors metadata, so the CORS middleware must always run (an endpoint
-                // with CORS metadata and no middleware throws at request time). The registered policy is empty
-                // by default (same-origin only) and reflects the configured origins when
-                // SetCorsOrigins / SetCorsPolicy was used.
-                dashboardApp.UseRouting();
-                dashboardApp.UseCors("HeadlessMessagingDashboardCORS");
-
-                // Add authentication + authorization middleware
-                if (config.Auth.IsEnabled)
-                {
-                    dashboardApp.UseMiddleware<AuthMiddleware>(MessagingDashboardOptionsBuilder.AuthenticationName);
-                }
-
-                dashboardApp.UseAuthorization();
-
-                // Execute custom middleware if provided
-                config.CustomMiddleware?.Invoke(dashboardApp);
-
-                // Map Minimal API endpoints
-                dashboardApp.UseEndpoints(endpoints => endpoints.MapMessagingDashboardEndpoints(config));
-
-                // Execute post-dashboard middleware
-                config.PostDashboardMiddleware?.Invoke(dashboardApp);
-
-                // SPA fallback: serve modified index.html for unmatched routes
-                dashboardApp.Use(
-                    async (context, next) =>
-                    {
-                        await next().ConfigureAwait(false);
-
-                        if (context.Response.StatusCode == 404)
-                        {
-                            var file = embeddedFileProvider.GetFileInfo("index.html");
-                            if (file.Exists)
-                            {
-                                await using var stream = file.CreateReadStream();
-                                var htmlContent = await stream.GetAllTextAsync().ConfigureAwait(false);
-
-                                htmlContent = _ReplaceBasePath(htmlContent, context, basePath, config);
-
-                                context.Response.ContentType = ContentTypes.Texts.Html;
-                                context.Response.StatusCode = 200;
-                                await context.Response.WriteAsync(htmlContent).ConfigureAwait(false);
-                            }
-                        }
-                    }
-                );
-            }
+        var basePath = DashboardSpaHelper.NormalizeMountBasePath(
+            config.BasePath,
+            nameof(MapHeadlessMessagingDashboard)
         );
+
+        if (config.EndpointMounted)
+        {
+            throw new InvalidOperationException("MapHeadlessMessagingDashboard() was already called for this host.");
+        }
+
+        config.EndpointMounted = true;
+
+        var embeddedFileProvider = new EmbeddedFileProvider(Assembly.GetExecutingAssembly(), _EmbeddedFileNamespace);
+        var group = endpoints.MapGroup(basePath);
+
+        group.MapMessagingDashboardEndpoints(config);
+        group.MapDashboardSpa(
+            "Messaging_Spa",
+            embeddedFileProvider,
+            (html, context) => _ReplaceBasePath(html, context, basePath, config)
+        );
+
+        return group;
     }
 
     private static string _ReplaceBasePath(

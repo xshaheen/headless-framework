@@ -1485,7 +1485,7 @@ Read [dashboards.md](dashboards.md) for the shared authentication modes and prod
 
 - **Contract and lineage visibility**: function descriptors expose `ContractVersion`; time-job, cron-definition, and occurrence views show version, correlation, causation, and tenant fields. Occurrences show their own snapshotted function. Add/update forms submit the selected descriptor version, and request inspection reports an unsupported stored version before attempting deserialization. Live occurrence updates retain the same metadata.
 - **Embedded SPA**: served from the host process, no separate deployment.
-- **Hidden from application API documents**: every dashboard endpoint is excluded from API Explorer (`ExcludeFromDescription()`), because the dashboard runs in an `app.Map(basePath)` branch and a host's OpenAPI document would list its routes without the base path. The dashboard SPA is their only client.
+- **Hidden from application API documents**: every dashboard endpoint is excluded from API Explorer (`ExcludeFromDescription()`), because the dashboard SPA is their only client.
 - **Authentication options**: `WithBasicAuth(username, password)`, `WithApiKey(apiKey)`, `WithHostAuthentication(policy?)` (delegates to host app's auth), or explicit no-auth mode for isolated development dashboards.
 - **Safe host-auth handoff**: fragment-delivered access tokens are removed from the URL, then validated only after the SPA initializes the host authentication configuration.
 - **Predictable timestamp display**: explicit ISO UTC offsets are preserved, zone-less values are treated as UTC, and invalid values render empty instead of `NaN`.
@@ -1543,10 +1543,27 @@ builder.Services.AddHeadlessJobs(options =>
     })
 );
 
-// No app.MapJobs() or app.UseJobs() — the dashboard middleware is injected via IStartupFilter.
 var app = builder.Build();
+app.UseAuthentication();
+app.UseAuthorization();
+app.MapHeadlessJobsDashboard();
 app.Run();
 ```
+
+`MapHeadlessJobsDashboard()` is the only mount: a host that registers the dashboard with `AddDashboard(...)` and never maps it fails to start with `InvalidOperationException`. It maps a `{basePath}` group on the host's endpoint routing, so the host's `UseAuthorization` evaluates the dashboard's rule and never the host's fallback policy:
+
+| Request | Rule |
+| --- | --- |
+| SPA shell, deep links, static assets | `AllowAnonymous` |
+| `/api/auth/info`, `/api/auth/validate` | `AllowAnonymous` |
+| Other `{basePath}/api/*` and the `{basePath}/job-notification-hub` hub, `WithHostAuthentication(policy)` | That policy, or the host's default policy when none is named |
+| The same, Basic, API key, custom | The dashboard's own credential, checked by its authentication scheme; an empty `401` otherwise, before SignalR opens a hub connection |
+| The same, `WithNoAuth()` | `AllowAnonymous` |
+| Unmatched `{basePath}/api/*` | `404`, never the shell |
+
+- The host pipeline must run `UseAuthorization()` (a `WebApplication` adds it when the host does not), and `UseAuthentication()` before it for host authentication. A host that calls `UseAuthentication()` must also call `UseAuthorization()` after it: the `UseAuthorization` a `WebApplication` adds on its own runs ahead of the host's `UseAuthentication`, so host authentication would not have signed the user in yet. It must run `UseCors()` only when `SetCorsOrigins(...)` or `SetCorsPolicy(...)` is configured: the dashboard registers and attaches its CORS policy only then.
+- Host-specific behavior for the dashboard, such as rate limiting, goes on the builder `MapHeadlessJobsDashboard()` returns.
+- It throws `InvalidOperationException` when `AddDashboard(...)` was not called, on a second call, or when the base path is the root, where the SPA route would answer every unmatched GET in the host.
 
 ### Configuration
 
@@ -1569,11 +1586,11 @@ builder.Services.AddHeadlessJobs(options =>
 );
 ```
 
-Auth detection is automatic: explicit `WithNoAuth()` → public; basic auth → username/password login UI; API key → bearer token; host auth → delegates to the host's authentication middleware.
+Auth detection is automatic: explicit `WithNoAuth()` → public; basic auth → username/password login UI; API key → bearer token; host auth → delegates to the host's authentication and authorization.
 
 ### Runtime behavior
 
-- Mounts dashboard HTTP API and SignalR hub under `SetBasePath` path via `IStartupFilter` (no explicit `app.Use…` call needed).
+- `MapHeadlessJobsDashboard()` maps the dashboard HTTP API, the SignalR hub, and the SPA under the `SetBasePath` path.
 - Authenticates with its own configuration, registered under `DashboardOptionsBuilder.AuthenticationName`, so a Messaging dashboard in the same host can use another mode. The live-update hub authenticates the same credential in every mode; see [Jobs live-update hub](dashboards.md#jobs-live-update-hub).
 - Subscribes to `Headless.Coordination` membership events for live-node push updates.
 - A committed time-job or cron-job delete, single or batch, pushes `RemoveTimeJobNotification` or `RemoveCronJobNotification` for each requested id, so every open dashboard drops the rows; the dashboard that issued the delete also reloads its list itself. A failed notification is logged (event 3239) and never fails the delete.

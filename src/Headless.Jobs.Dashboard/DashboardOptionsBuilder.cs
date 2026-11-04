@@ -2,15 +2,15 @@
 
 using Headless.Checks;
 using Headless.Dashboard.Authentication;
-using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Cors.Infrastructure;
+using Microsoft.AspNetCore.Routing;
 
 namespace Headless.Jobs;
 
 /// <summary>
 /// Configuration builder for the Jobs dashboard registered by <c>AddDashboard</c>. Controls the
-/// base path, CORS policy, backend domain, authentication mode, middleware hooks, and JSON options
-/// for the dashboard SPA and its API endpoints.
+/// base path, CORS policy, backend domain, authentication mode, and JSON options for the dashboard SPA and its API
+/// endpoints.
 /// </summary>
 public sealed class DashboardOptionsBuilder
 {
@@ -36,14 +36,13 @@ public sealed class DashboardOptionsBuilder
     // (see Validate) when this is false, so it cannot ship publicly by omission.
     internal bool AuthConfigured { get; private set; }
 
-    /// <summary>Optional custom middleware inserted into the dashboard pipeline.</summary>
-    public Action<IApplicationBuilder>? CustomMiddleware { get; set; }
+    // Set by AddDashboard, which knows the job entity types the endpoints are generic over, so the non-generic
+    // MapHeadlessJobsDashboard can map them.
+    internal Action<IEndpointRouteBuilder>? MapEndpoints { get; set; }
 
-    /// <summary>Middleware executed before the dashboard request handler.</summary>
-    public Action<IApplicationBuilder>? PreDashboardMiddleware { get; set; }
-
-    /// <summary>Middleware executed after the dashboard request handler.</summary>
-    public Action<IApplicationBuilder>? PostDashboardMiddleware { get; set; }
+    // Set by MapHeadlessJobsDashboard. The startup filter reads it when the host pipeline is built, after the host has
+    // mapped its endpoints, and fails the start when it is still false.
+    internal bool EndpointMounted { get; set; }
 
     /// <summary>
     /// JsonSerializerOptions specifically for Dashboard API endpoints.

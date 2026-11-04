@@ -8,7 +8,7 @@ namespace Headless.Dashboard.Authentication;
 /// Defines authentication operations for dashboards.
 /// </summary>
 /// <remarks>
-/// Consumed by <see cref="AuthMiddleware"/> on protected API requests. Implementations
+/// Consumed by the dashboard's authentication scheme on protected API and hub requests. Implementations
 /// are keyed by the dashboard's authentication name and resolved from the request service scope, so they
 /// can use scoped dependencies.
 /// </remarks>

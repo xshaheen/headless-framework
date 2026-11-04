@@ -98,4 +98,6 @@ app.MapGet(
     }
 );
 
+app.MapHeadlessMessagingDashboard();
+
 await app.RunAsync();

@@ -19,4 +19,6 @@ var app = builder.Build();
 
 app.UseRouting();
 app.MapControllers();
+app.MapHeadlessMessagingDashboard();
+
 await app.RunAsync();

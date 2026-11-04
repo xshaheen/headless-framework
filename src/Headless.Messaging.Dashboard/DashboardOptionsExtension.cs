@@ -50,35 +50,25 @@ internal sealed class DashboardOptionsExtension(Action<MessagingDashboardOptions
             .ConfigurePrimaryHttpMessageHandler(static () => new HttpClientHandler { AllowAutoRedirect = false });
 
         services.AddRouting();
-        services.AddAuthorization();
 
-        // Always register the named policy so the CORS middleware (UseCors, unconditional in the pipeline)
-        // can resolve it: the dashboard endpoints carry RequireCors metadata and would throw at request time
-        // if the CORS middleware never ran. An unconfigured policy is empty (no origins) -> same-origin only.
-        services.AddCors(options =>
-            options.AddPolicy("HeadlessMessagingDashboardCORS", Builder.CorsPolicyBuilder ?? (static _ => { }))
-        );
-
-        // If using host auth, ensure auth services exist
-        if (Builder.Auth.Mode == AuthMode.Host)
+        // The dashboard endpoints name this policy only when SetCorsOrigins or SetCorsPolicy configured one, because the
+        // host's pipeline runs UseCors only if the host adds it, and an endpoint with CORS metadata and no CORS
+        // middleware throws at request time.
+        if (Builder.CorsPolicyBuilder is { } corsPolicyBuilder)
         {
-            var hasAuthService = services.Any(s =>
-                s.ServiceType == typeof(Microsoft.AspNetCore.Authentication.IAuthenticationService)
-                || string.Equals(s.ServiceType.Name, "IAuthenticationSchemeProvider", StringComparison.Ordinal)
+            services.AddCors(options =>
+                options.AddPolicy(MessagingDashboardEndpoints.CorsPolicyName, corsPolicyBuilder)
             );
-
-            if (!hasAuthService)
-            {
-                services.AddAuthentication();
-                services.AddAuthorization();
-            }
         }
 
-        // Auto-inject middleware pipeline via IStartupFilter
         services.AddTransient<IStartupFilter>(_ => new MessagingDashboardStartupFilter(Builder));
     }
 }
 
+/// <summary>
+/// Fails the host's start when the dashboard is registered but never mapped, so a missing
+/// <c>MapHeadlessMessagingDashboard()</c> call is not a dashboard that silently answers 404.
+/// </summary>
 internal sealed class MessagingDashboardStartupFilter(MessagingDashboardOptionsBuilder config) : IStartupFilter
 {
     public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next)
@@ -87,8 +77,15 @@ internal sealed class MessagingDashboardStartupFilter(MessagingDashboardOptionsB
         {
             next(app);
 
-            // Use the new app.Map branching pipeline (matches Jobs pattern)
-            app.UseMessagingDashboard(config);
+            // The host has mapped its endpoints by now: WebApplication maps them before it builds the pipeline, and a
+            // Startup class maps them inside next(app).
+            if (!config.EndpointMounted)
+            {
+                throw new InvalidOperationException(
+                    "The Messaging dashboard is registered through UseDashboard(...) but not mapped. Call "
+                        + "app.MapHeadlessMessagingDashboard() on the host's endpoints."
+                );
+            }
         };
     }
 }
@@ -98,9 +95,9 @@ public static class MessagingOptionsExtensions
     extension(MessagingSetupBuilder setup)
     {
         /// <summary>
-        /// Enables the Messaging Dashboard UI, wiring up static-file serving, authentication, CORS,
-        /// and all dashboard API endpoints. The dashboard is mounted at the path configured via
-        /// <c>SetBasePath</c> (default: <c>/messaging</c>).
+        /// Registers the Messaging Dashboard UI: its authentication, CORS policy, and services. Mount it on the host's
+        /// endpoints with <c>app.MapHeadlessMessagingDashboard()</c>, at the path configured via <c>SetBasePath</c>
+        /// (default: <c>/messaging</c>); a host that registers it without mapping it fails to start.
         /// </summary>
         /// <param name="configure">
         /// An action to configure the dashboard options. An authentication mode must be chosen explicitly

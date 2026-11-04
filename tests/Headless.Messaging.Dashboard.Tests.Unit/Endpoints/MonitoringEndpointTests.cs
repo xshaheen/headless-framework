@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Dashboard.Authentication;
 using Headless.Messaging;
 using Headless.Messaging.Dashboard;
 using Headless.Messaging.Persistence;
@@ -9,7 +8,6 @@ using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 
 namespace Tests.Endpoints;
 
@@ -286,10 +284,7 @@ public sealed class MonitoringEndpointTests : TestBase
         appBuilder.WebHost.UseTestServer();
 
         appBuilder.Services.AddSingleton(config);
-        appBuilder.Services.AddKeyedScoped<IAuthService>(
-            MessagingDashboardOptionsBuilder.AuthenticationName,
-            (sp, _) => new AuthService(config.Auth, sp.GetRequiredService<ILogger<AuthService>>())
-        );
+        MessagingDashboardHost.AddDashboardAuthentication(appBuilder.Services, config);
         appBuilder.Services.AddSingleton(dataStorage);
         appBuilder.Services.AddSingleton<MessagingMetricsEventListener>();
         // Stats endpoint resolves MethodMatcherCache to compute subscriber count.

@@ -107,4 +107,6 @@ app.MapPost(
 app.UseAuthentication();
 app.UseAuthorization();
 
+app.MapHeadlessMessagingDashboard();
+
 await app.RunAsync();

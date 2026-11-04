@@ -3,11 +3,10 @@
 using System.Reflection;
 using System.Text.Encodings.Web;
 using Headless.Dashboard.Authentication;
-using Headless.Http;
 using Headless.Jobs.Endpoints;
 using Headless.Jobs.Infrastructure;
-using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 
@@ -57,114 +56,30 @@ internal static class JobsDashboardServiceCollectionExtensions
         services.AddRouting();
         services.AddSignalR();
 
-        services.AddAuthorization();
-
-        // Always register the named policy so the CORS middleware (UseCors, unconditional in the pipeline)
-        // can resolve it: the dashboard endpoints carry RequireCors metadata, and an endpoint with CORS
-        // metadata whose middleware never ran throws at request time. When the consumer configured no policy,
-        // register an empty one (no origins) -> same-origin only.
-        services.AddCors(options =>
-            options.AddPolicy("HeadlessJobsDashboardCORS", config.CorsPolicyBuilder ?? (static _ => { }))
-        );
+        // The dashboard endpoints name this policy only when SetCorsOrigins or SetCorsPolicy configured one, because the
+        // host's pipeline runs UseCors only if the host adds it.
+        if (config.CorsPolicyBuilder is { } corsPolicyBuilder)
+        {
+            services.AddCors(options => options.AddPolicy(DashboardEndpoints.CorsPolicyName, corsPolicyBuilder));
+        }
     }
 
-    internal static void UseDashboardWithEndpoints<TTimeJob, TCronJob>(
-        this IApplicationBuilder app,
+    /// <summary>Maps the dashboard API, its SignalR hub, and the SPA under the host group at the base path.</summary>
+    internal static void MapDashboard<TTimeJob, TCronJob>(
+        this IEndpointRouteBuilder group,
         DashboardOptionsBuilder config
     )
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
         where TCronJob : CronJobEntity, new()
     {
-        // Get the assembly and set up the embedded file provider
-        var assembly = Assembly.GetExecutingAssembly();
-        var embeddedFileProvider = new EmbeddedFileProvider(assembly, _EmbeddedFileNamespace);
-
-        // Validate and normalize base path
         var basePath = DashboardSpaHelper.NormalizeBasePath(config.BasePath);
+        var embeddedFileProvider = new EmbeddedFileProvider(Assembly.GetExecutingAssembly(), _EmbeddedFileNamespace);
 
-        // Map a branch for the basePath to properly isolate dashboard
-        app.Map(
-            basePath,
-            dashboardApp =>
-            {
-                // Execute pre-dashboard middleware
-                config.PreDashboardMiddleware?.Invoke(dashboardApp);
-
-                // CRITICAL: Serve static files FIRST, before any authentication
-                // This ensures static assets (JS, CSS, images) are served without auth challenges
-                dashboardApp.UseStaticFiles(
-                    new StaticFileOptions
-                    {
-                        FileProvider = embeddedFileProvider,
-                        OnPrepareResponse = ctx =>
-                        {
-                            // Cache static assets for 1 hour
-                            if (
-                                ctx.File.Name.EndsWith(".js", StringComparison.Ordinal)
-                                || ctx.File.Name.EndsWith(".css", StringComparison.Ordinal)
-                                || ctx.File.Name.EndsWith(".ico", StringComparison.Ordinal)
-                                || ctx.File.Name.EndsWith(".png", StringComparison.Ordinal)
-                            )
-                            {
-                                ctx.Context.Response.Headers.CacheControl = "public,max-age=3600";
-                            }
-                        },
-                    }
-                );
-
-                // Endpoints carry RequireCors metadata, so the CORS middleware must always run (an endpoint
-                // with CORS metadata and no middleware throws at request time). The registered policy is empty
-                // by default (same-origin only) and reflects the configured origins when
-                // SetCorsOrigins / SetCorsPolicy was used.
-                dashboardApp.UseRouting();
-                dashboardApp.UseCors("HeadlessJobsDashboardCORS");
-
-                // Add authentication + authorization middleware
-                if (config.Auth.IsEnabled)
-                {
-                    dashboardApp.UseMiddleware<AuthMiddleware>(DashboardOptionsBuilder.AuthenticationName);
-                }
-
-                dashboardApp.UseAuthorization();
-
-                // Execute custom middleware if provided
-                config.CustomMiddleware?.Invoke(dashboardApp);
-
-                // Map Minimal API endpoints and SignalR hub
-                dashboardApp.UseEndpoints(endpoints => endpoints.MapDashboardEndpoints<TTimeJob, TCronJob>(config));
-
-                // Execute post-dashboard middleware
-                config.PostDashboardMiddleware?.Invoke(dashboardApp);
-
-                // SPA fallback middleware: if no route is matched, serve the modified index.html
-                dashboardApp.Use(
-                    async (context, next) =>
-                    {
-                        await next().ConfigureAwait(false);
-
-                        if (
-                            context.Response.StatusCode == StatusCodes.Status404NotFound
-                            && !context.Request.Path.StartsWithSegments("/api", StringComparison.OrdinalIgnoreCase)
-                        )
-                        {
-                            var file = embeddedFileProvider.GetFileInfo("index.html");
-                            if (file.Exists)
-                            {
-                                await using var stream = file.CreateReadStream();
-                                using var reader = new StreamReader(stream);
-                                var htmlContent = await reader.ReadToEndAsync().ConfigureAwait(false);
-
-                                // Inject the base tag and other replacements into the HTML
-                                htmlContent = ReplaceBasePath(htmlContent, context, basePath, config);
-
-                                context.Response.ContentType = ContentTypes.Texts.Html;
-                                context.Response.StatusCode = 200;
-                                await context.Response.WriteAsync(htmlContent).ConfigureAwait(false);
-                            }
-                        }
-                    }
-                );
-            }
+        group.MapDashboardEndpoints<TTimeJob, TCronJob>(config);
+        group.MapDashboardSpa(
+            "Jobs_Spa",
+            embeddedFileProvider,
+            (html, context) => ReplaceBasePath(html, context, basePath, config)
         );
     }
 

@@ -101,4 +101,6 @@ app.MapPost(
 app.UseAuthentication();
 app.UseAuthorization();
 
+app.MapHeadlessJobsDashboard();
+
 await app.RunAsync();

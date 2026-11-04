@@ -19,7 +19,8 @@ Read [jobs.md](jobs.md) for the Jobs dashboard and [messaging.md](messaging.md) 
 - Prefer host authentication when the application already has an authorization policy. It keeps identity, audit, and revocation in the host's security boundary.
 - Never embed production credentials or API keys in source, examples, logs, or frontend configuration.
 - `AuthMode.None` makes the dashboard public. Use it only in an isolated development environment.
-- Configure authentication through `UseDashboard(...)`; do not add `AuthMiddleware` manually when the owning dashboard package already wires it.
+- Configure authentication through the owning dashboard builder (`UseDashboard(...)` or `AddDashboard(...)`), then mount the dashboard on the host's endpoints with `MapHeadlessMessagingDashboard()` or `MapHeadlessJobsDashboard()`. That call is the only mount: a host that registers a dashboard and never maps it fails to start.
+- Mount on the host's endpoints, so the host's `UseAuthorization` evaluates the dashboard's own rule and never the host's fallback policy. A host fallback policy that requires a tenant claim, for example, does not lock out a tenantless operator.
 - Each dashboard owns its authentication. A host that runs the Jobs and Messaging dashboards can give them different modes and credentials; neither registration overrides the other.
 
 ## Choosing an authentication mode
@@ -34,7 +35,7 @@ Read [jobs.md](jobs.md) for the Jobs dashboard and [messaging.md](messaging.md) 
 
 ## Headless.Dashboard.Authentication
 
-Shared authentication primitives and middleware used by both dashboard packages.
+Shared authentication primitives used by both dashboard packages: the per-dashboard `IAuthService`, the authentication scheme and policy that check a dashboard's own credential, and the endpoint convention that applies them.
 
 ### Setup
 
@@ -55,6 +56,11 @@ builder.Services.AddHeadlessMessaging(setup =>
         dashboard.WithSessionTimeout(30);
     });
 });
+
+var app = builder.Build();
+app.UseAuthentication();
+app.UseAuthorization();
+app.MapHeadlessMessagingDashboard();
 ```
 
 For a standalone integration:
@@ -63,7 +69,7 @@ For a standalone integration:
 dotnet add package Headless.Dashboard.Authentication
 ```
 
-Register the authentication under a name your dashboard owns, and pass the same name to the middleware:
+Register the authentication under a name your dashboard owns, and protect the dashboard's endpoints with the same name:
 
 ```csharp
 builder.Services.AddDashboardAuthentication("Reports.Dashboard", config =>
@@ -74,16 +80,14 @@ builder.Services.AddDashboardAuthentication("Reports.Dashboard", config =>
 
 var app = builder.Build();
 
-app.Map("/reports", dashboardApp =>
-{
-    dashboardApp.UseRouting();
-    // Protects the branch's /api/* requests with the "Reports.Dashboard" configuration.
-    dashboardApp.UseMiddleware<AuthMiddleware>("Reports.Dashboard");
-    dashboardApp.UseEndpoints(endpoints => { /* the dashboard's endpoints */ });
-});
+var reports = app.MapGroup("/reports");
+// The sign-in flow calls these before it has a credential.
+reports.MapGet("/api/auth/info", ReportsEndpoints.GetAuthInfo).AllowAnonymous();
+// Every other endpoint requires the "Reports.Dashboard" credential; the host's UseAuthorization checks it.
+reports.MapGroup("/api").RequireDashboardAuthentication("Reports.Dashboard").MapGet("/runs", ReportsEndpoints.GetRuns);
 ```
 
-`AddDashboardAuthentication(name, IConfiguration)` and `AddDashboardAuthentication(name, Action<AuthConfig, IServiceProvider>)` take the same name. A blank name throws `ArgumentException`.
+`AddDashboardAuthentication(name, IConfiguration)` and `AddDashboardAuthentication(name, Action<AuthConfig, IServiceProvider>)` take the same name. A blank name throws `ArgumentException`. Each registration adds an authentication scheme and an authorization policy, both named `name`; registering one name twice adds them once.
 
 ### Configuration
 
@@ -94,17 +98,20 @@ The dashboard builders expose `WithNoAuth()`, `WithBasicAuth(...)`, `WithApiKey(
 ### Design and runtime behavior
 
 - Credential comparisons are constant-time.
-- Authentication is per dashboard. `AddDashboardAuthentication(name, …)` configures the `AuthConfig` options instance named `name` and registers a scoped `IAuthService` keyed by `name`; `AuthMiddleware`, the `/api/auth/info` and `/api/auth/validate` endpoints, and the Jobs hub resolve the service by that key. Nothing registers an unkeyed `IAuthService` or a raw `AuthConfig` singleton.
+- Authentication is per dashboard. `AddDashboardAuthentication(name, …)` configures the `AuthConfig` options instance named `name` and registers a scoped `IAuthService` keyed by `name`; the dashboard's authentication scheme, the `/api/auth/info` and `/api/auth/validate` endpoints, and the Jobs hub resolve the service by that key. Nothing registers an unkeyed `IAuthService` or a raw `AuthConfig` singleton.
+- `RequireDashboardAuthentication(name)` reads the named `AuthConfig` when the host builds its endpoints. `None` allows anonymous access. `Host` requires `HostAuthorizationPolicy`, or the host's default policy when it is empty. Basic, API key, and Custom require a user the dashboard's scheme signed in, and refuse any other request with an empty `401`. The scheme checks a credential only on an endpoint that convention marked with its name, so a host whose only registered scheme is a dashboard's (which ASP.NET Core then makes the default) does not check or log a dashboard credential on its own requests.
+- On success in Basic, API key, or Custom mode, `HttpContext.User` for that request is the dashboard identity: one `Name` claim with the `AuthResult.Username`, authentication type `name`. It replaces a host sign-in on that request, so a Messaging operator action records the dashboard credential's user.
 - The Jobs dashboard's name is `DashboardOptionsBuilder.AuthenticationName` (`"Headless.Jobs.Dashboard"`) and the Messaging dashboard's is `MessagingDashboardOptionsBuilder.AuthenticationName` (`"Headless.Messaging.Dashboard"`). To replace one dashboard's `IAuthService`, register yours with `AddKeyedScoped<IAuthService, TService>(name)` before the dashboard registers; the registration keeps an existing keyed service.
 - In Basic, API-key, and Custom modes, the `access_token` query parameter counts as a credential only on a request routed to a SignalR hub endpoint (its routing metadata, not its path, decides). Every other request must send the `Authorization` header. Host mode differs; see [Jobs live-update hub](#jobs-live-update-hub).
-- The middleware authenticates every path under `/api/` except `/api/auth/info` and `/api/auth/validate`, which the login flow calls before it has a credential, and every request routed to a SignalR hub endpoint (the Jobs hub and its negotiate route), which it refuses with `401` before SignalR opens a connection. It does not check the static application shell and its assets. No path under `/api/` is exempt because of its extension or a segment such as `/assets/` or `/negotiate`.
+- Each dashboard maps a `{base path}` group: its `/api` group and the Jobs hub carry the dashboard's rule; `/api/auth/info`, `/api/auth/validate`, Messaging's `/api/health`, the SPA shell, and its assets are anonymous. An unmatched `{base path}/api/...` path is a `404`, never the shell, so no path under `/api/` is exempt because of its extension or a segment such as `/assets/` or `/negotiate`. Any other unmatched `GET` under the base path returns the shell, so client routes deep-link. Both map methods refuse the root base path, where the shell would answer every unmatched `GET` in the host.
+- The host pipeline must run `UseAuthorization` between routing and endpoints (a `WebApplication` adds it when the host does not), and `UseAuthentication` before it for host authentication. A host that calls `UseAuthentication()` must also call `UseAuthorization()` after it: the `UseAuthorization` a `WebApplication` adds on its own runs ahead of the host's `UseAuthentication`, so host authentication would not have signed the user in yet. The dashboards attach CORS metadata only when `SetCorsOrigins` or `SetCorsPolicy` configured a policy; then the host must also run `UseCors()`. Add host-specific behavior, such as rate limiting, to the builder the map method returns.
 - `AuthInfo` exposes mode, enabled state, and session timeout to the frontend; it never exposes credentials.
 - Both dashboard SPAs enforce `WithSessionTimeout(minutes)` in the browser: the sign-in time is stored with the credentials, and once it is older than the timeout the SPA clears them and returns to the login page with "Session expired. Please log in again." It checks at load, on every navigation, and before every API request. Mode `None` and a non-positive timeout never expire. The timeout is a client-side convenience, not a server credential lifetime: a credential copied out of the browser stays valid until the host changes it.
 - With `WithCustomAuth(...)`, the login page asks for one credential and sends it unchanged as the `Authorization` header (and as the Jobs hub's `access_token`); the validator receives that header value.
 
 ### Jobs live-update hub
 
-The Jobs dashboard pushes job status, progress, and node changes over a SignalR hub at `{base path}/job-notification-hub`. The SPA connects over WebSockets only, and a browser cannot set headers on a WebSocket, so it sends the signed-in credential as the `access_token` query parameter. `AuthMiddleware` authenticates the negotiate and connect requests with the Jobs dashboard's own auth service and refuses a failed one with `401`, so an unauthenticated client never joins the hub and hears no broadcast; the hub checks the connection again when it opens. A refused client sees changes only after a reload. When auth is on, the SPA opens the hub only after sign-in, with the credential just stored, and closes it on sign-out or session timeout.
+The Jobs dashboard pushes job status, progress, and node changes over a SignalR hub at `{base path}/job-notification-hub`. The SPA connects over WebSockets only, and a browser cannot set headers on a WebSocket, so it sends the signed-in credential as the `access_token` query parameter. The hub carries the API's rule, so the host's `UseAuthorization` refuses an unauthorized negotiate or connect request with `401` before SignalR creates a connection: an unauthenticated client never joins the hub and hears no broadcast. The hub checks the connection again when it opens. A refused client sees changes only after a reload. When auth is on, the SPA opens the hub only after sign-in, with the credential just stored, and closes it on sign-out or session timeout.
 
 | Mode | `access_token` the SPA sends | How the server checks it |
 | --- | --- | --- |

@@ -141,4 +141,7 @@ app.MapPost(
     }
 );
 
+app.MapHeadlessJobsDashboard();
+app.MapHeadlessMessagingDashboard();
+
 await app.RunAsync();

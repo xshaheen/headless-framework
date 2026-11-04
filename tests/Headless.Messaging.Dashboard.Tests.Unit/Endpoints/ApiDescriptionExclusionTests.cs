@@ -1,13 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Dashboard.Authentication;
 using Headless.Messaging.Dashboard;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http.Metadata;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 
 namespace Tests.Endpoints;
 
@@ -16,7 +14,7 @@ public sealed class ApiDescriptionExclusionTests : TestBase
     [Fact]
     public async Task should_exclude_every_dashboard_endpoint_from_application_api_descriptions()
     {
-        // The dashboard runs in an app.Map(basePath) branch, so a host document would list these under the wrong path.
+        // The dashboard SPA is the only client of these endpoints, so a host's API document must not list them.
         await using var app = _CreateApp();
 
         var endpoints = ((IEndpointRouteBuilder)app)
@@ -39,10 +37,7 @@ public sealed class ApiDescriptionExclusionTests : TestBase
 
         var builder = WebApplication.CreateSlimBuilder();
         builder.Services.AddSingleton(config);
-        builder.Services.AddKeyedScoped<IAuthService>(
-            MessagingDashboardOptionsBuilder.AuthenticationName,
-            (sp, _) => new AuthService(config.Auth, sp.GetRequiredService<ILogger<AuthService>>())
-        );
+        MessagingDashboardHost.AddDashboardAuthentication(builder.Services, config);
         builder.Services.AddSingleton(Substitute.For<IRequestMapper>());
         builder.Services.AddSingleton(Substitute.For<IHttpClientFactory>());
         builder.Services.AddSingleton<MessagingDashboardCache>();

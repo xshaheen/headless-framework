@@ -16,3 +16,4 @@ dotnet add package Headless.Messaging.Dashboard
 
 - [Headless Framework](https://github.com/xshaheen/headless-framework#readme)
 - [Messaging guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/messaging.md#headlessmessagingdashboard)
+- [Mount on the host's endpoints](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/messaging.md#mount-on-the-hosts-endpoints), so the host's authorization evaluates the dashboard policy instead of its fallback policy

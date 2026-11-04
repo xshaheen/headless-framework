@@ -1,74 +1,92 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Dashboard.Authentication;
-using Headless.Messaging.Dashboard;
+using System.Net;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Cors.Infrastructure;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.TestHost;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 
 namespace Tests.Endpoints;
 
 /// <summary>
-/// Regression coverage for the default (unconfigured) CORS pipeline. Dashboard endpoints carry
-/// <c>RequireCors</c> metadata; if the CORS middleware is skipped when no policy was configured, ASP.NET
-/// Core throws at request time for every endpoint instead of just falling back to same-origin. Unlike
-/// <see cref="HealthEndpointTests"/> (which hand-wires <c>UseCors</c> directly), this test goes through the
-/// real production pipeline (<c>SetupMessagingDashboard.UseMessagingDashboard</c>) so it actually exercises
-/// the conditional this bug lived in.
+/// The dashboard names its CORS policy on its endpoints only when one was configured. An endpoint with CORS metadata
+/// and no CORS middleware throws at request time, and the host adds <c>UseCors</c> only when it wants it, so a host
+/// that configured no policy must work without <c>UseCors</c>.
 /// </summary>
 public sealed class DefaultCorsPipelineTests : TestBase
 {
+    private const string _AllowedOrigin = "https://ops.example";
+
     [Fact]
-    public async Task should_not_500_when_health_endpoint_no_cors_policy_is_configured()
+    public async Task should_carry_no_cors_metadata_and_serve_a_host_without_use_cors_when_no_policy_is_configured()
     {
-        // given - a builder with no SetCorsOrigins / SetCorsPolicy call (the shipped default)
-        var config = new MessagingDashboardOptionsBuilder().WithNoAuth();
-        config.CorsPolicyBuilder.Should().BeNull();
-
-        var builder = WebApplication.CreateSlimBuilder();
-        builder.WebHost.UseTestServer();
-
-        builder.Services.AddSingleton(config);
-        builder.Services.AddKeyedScoped<IAuthService>(
-            MessagingDashboardOptionsBuilder.AuthenticationName,
-            (sp, _) => new AuthService(config.Auth, sp.GetRequiredService<ILogger<AuthService>>())
+        // given - no SetCorsOrigins / SetCorsPolicy call (the shipped default) and no UseCors in the host
+        await using var app = await MessagingDashboardHost.StartAsync(
+            dashboard => dashboard.WithNoAuth(),
+            cancellationToken: AbortToken
         );
-
-        // The endpoint data source eagerly binds every mapped endpoint's metadata (not just the one under
-        // test) the first time authorization/routing initializes, so the other endpoints' DI dependencies
-        // (e.g. the gateway proxy's IHttpClientFactory) must resolve even though this test never calls them.
-        builder.Services.AddSingleton(Substitute.For<IRequestMapper>());
-        builder.Services.AddSingleton(Substitute.For<IHttpClientFactory>());
-        builder.Services.AddSingleton<MessagingDashboardCache>();
-        builder.Services.AddSingleton(Substitute.For<INodeDiscoveryProvider>());
-        builder.Services.AddSingleton(new CurrentNodeIdentity("test-node"));
-        builder.Services.AddSingleton<GatewayProxyAgent>();
-
-        builder.Services.AddRouting();
-        builder.Services.AddAuthorization();
-
-        // Mirrors DashboardOptionsExtensions' production registration: always register the named policy,
-        // falling back to an empty (same-origin-only) policy when the consumer configured none.
-        builder.Services.AddCors(options =>
-            options.AddPolicy("HeadlessMessagingDashboardCORS", config.CorsPolicyBuilder ?? (static _ => { }))
-        );
-
-        await using var app = builder.Build();
-
-        // Exercise the real production pipeline entrypoint, not a hand-wired stand-in.
-        app.UseMessagingDashboard(config);
-
-        await app.StartAsync(AbortToken);
         using var client = app.GetTestClient();
 
-        // when
-        var response = await client.GetAsync("/messaging/api/health", AbortToken);
+        // then - no dashboard endpoint names a CORS policy
+        _DashboardEndpoints(app)
+            .Should()
+            .NotBeEmpty()
+            .And.OnlyContain(e => e.Metadata.GetMetadata<ICorsMetadata>() == null);
 
-        // then - must succeed (same-origin request, no CORS header needed) rather than 500
-        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
-        var body = await response.Content.ReadAsStringAsync(AbortToken);
-        body.Should().Be("OK");
+        // when - a cross-origin request reaches the API
+        using var request = new HttpRequestMessage(HttpMethod.Get, new Uri("/messaging/api/health", UriKind.Relative));
+        request.Headers.Add("Origin", _AllowedOrigin);
+        using var response = await client.SendAsync(request, AbortToken);
+
+        // then - it is served, without a CORS grant
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await response.Content.ReadAsStringAsync(AbortToken)).Should().Be("OK");
+        response.Headers.Contains("Access-Control-Allow-Origin").Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_grant_only_the_configured_origin_when_the_host_adds_use_cors()
+    {
+        // given
+        await using var app = await MessagingDashboardHost.StartAsync(
+            dashboard => dashboard.WithNoAuth().SetCorsOrigins(_AllowedOrigin),
+            configurePipeline: host => host.UseCors(),
+            cancellationToken: AbortToken
+        );
+        using var client = app.GetTestClient();
+
+        _DashboardEndpoints(app).Should().Contain(e => e.Metadata.GetMetadata<ICorsMetadata>() != null);
+
+        // when
+        using var allowed = await _GetHealthFromAsync(client, _AllowedOrigin);
+        using var other = await _GetHealthFromAsync(client, "https://other.example");
+
+        // then
+        allowed.StatusCode.Should().Be(HttpStatusCode.OK);
+        allowed.Headers.GetValues("Access-Control-Allow-Origin").Should().Equal(_AllowedOrigin);
+        other.StatusCode.Should().Be(HttpStatusCode.OK);
+        other.Headers.Contains("Access-Control-Allow-Origin").Should().BeFalse();
+    }
+
+    private static RouteEndpoint[] _DashboardEndpoints(WebApplication app)
+    {
+        return
+        [
+            .. ((IEndpointRouteBuilder)app)
+                .DataSources.SelectMany(source => source.Endpoints)
+                .OfType<RouteEndpoint>()
+                .Where(endpoint =>
+                    endpoint.RoutePattern.RawText?.StartsWith("/messaging", StringComparison.Ordinal) == true
+                ),
+        ];
+    }
+
+    private static async Task<HttpResponseMessage> _GetHealthFromAsync(HttpClient client, string origin)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, new Uri("/messaging/api/health", UriKind.Relative));
+        request.Headers.Add("Origin", origin);
+
+        return await client.SendAsync(request, AbortToken);
     }
 }

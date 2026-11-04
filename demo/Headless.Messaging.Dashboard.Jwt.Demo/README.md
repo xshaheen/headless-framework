@@ -5,7 +5,7 @@ ASP.NET Core demo for protecting the Messaging Dashboard with JWT bearer authent
 ## Shows
 
 - JWT bearer authentication and an authorization policy.
-- `UseDashboard(d => d.WithHostAuthentication(policy))`.
+- `UseDashboard(d => d.WithHostAuthentication(policy))`, mounted with `app.MapHeadlessMessagingDashboard()`.
 - In-memory messaging transport and storage.
 - A hosted service that publishes demo messages.
 - `/security/createToken` endpoint for demo token creation.

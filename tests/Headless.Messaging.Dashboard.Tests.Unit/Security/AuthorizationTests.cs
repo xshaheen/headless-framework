@@ -100,8 +100,28 @@ public sealed class AuthorizationTests : TestBase
 
         // then
         endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>().Should().BeEmpty();
+        endpoint.Metadata.GetMetadata<IAllowAnonymous>().Should().NotBeNull();
         config.AuthConfigured.Should().BeTrue();
         config.Auth.Mode.Should().Be(AuthMode.None);
+    }
+
+    [Theory]
+    [InlineData(AuthMode.Basic)]
+    [InlineData(AuthMode.ApiKey)]
+    public async Task should_require_the_dashboard_policy_when_ping_endpoint_uses_a_builtin_credential(AuthMode mode)
+    {
+        // given
+        await using var app = _CreateEndpointApp(BuiltInCredential.For(mode).Config);
+
+        // when
+        var endpoint = _GetPingEndpoint(app);
+
+        // then - the dashboard's own policy, never the host's fallback, decides the request
+        endpoint
+            .Metadata.GetOrderedMetadata<IAuthorizeData>()
+            .Should()
+            .ContainSingle(data => data.Policy == MessagingDashboardOptionsBuilder.AuthenticationName);
+        endpoint.Metadata.GetMetadata<IAllowAnonymous>().Should().BeNull();
     }
 
     [Fact]
@@ -118,7 +138,7 @@ public sealed class AuthorizationTests : TestBase
     public void protected_api_group_exists_for_data_endpoints()
     {
         // Document which endpoints are behind the protected /api group
-        // (protected by AuthMiddleware when auth is enabled):
+        // (protected by the dashboard's authentication scheme and policy when auth is enabled):
         //
         // GET  /api/metrics-realtime
         // GET  /api/meta
@@ -184,6 +204,7 @@ public sealed class AuthorizationTests : TestBase
     {
         var builder = WebApplication.CreateSlimBuilder();
         builder.Services.AddRouting();
+        MessagingDashboardHost.AddDashboardAuthentication(builder.Services, config);
 
         builder.Services.AddAuthorizationBuilder().AddPolicy("AdminOnly", policy => policy.RequireAssertion(_ => true));
 

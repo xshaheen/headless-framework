@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
-using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Text.Json.Serialization;
@@ -14,7 +13,6 @@ using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 
 namespace Tests.Endpoints;
 
@@ -239,36 +237,6 @@ public sealed class ScheduledDeliveryEndpointTests : TestBase
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(AbortToken));
         document.RootElement.GetProperty("code").GetString().Should().Be("g:operator_actor_required");
-        _dataStorage.DidNotReceive().GetScheduledDeliveryOperationsApi();
-    }
-
-    [Fact]
-    public async Task should_return_403_with_remedy_under_no_auth_mode_when_scheduled_revoke()
-    {
-        var config = new MessagingDashboardOptionsBuilder().WithNoAuth();
-        await using var app = _CreateTestApp(
-            _dataStorage,
-            authenticate: false,
-            config: config,
-            useAuthenticationMiddleware: true
-        );
-        await app.StartAsync(AbortToken);
-        using var client = app.GetTestClient();
-        var response = await client.PostAsJsonAsync(
-            "/api/scheduled/revoke",
-            new
-            {
-                operationId = Guid.NewGuid(),
-                storageId = Guid.NewGuid(),
-                expectedDueAt = DateTimeOffset.UtcNow.ToString("o"),
-                reason = "Dashboard revoke",
-            },
-            AbortToken
-        );
-
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(AbortToken));
-        document.RootElement.GetProperty("code").GetString().Should().Be("g:operator_actor_required");
         document
             .RootElement.GetProperty("remedy")
             .GetString()
@@ -282,9 +250,12 @@ public sealed class ScheduledDeliveryEndpointTests : TestBase
         _dataStorage.DidNotReceive().GetScheduledDeliveryOperationsApi();
     }
 
-    [Fact]
-    public async Task should_authorize_scheduled_mutation_with_builtin_api_key_identity()
+    [Theory]
+    [InlineData(AuthMode.ApiKey)]
+    [InlineData(AuthMode.Basic)]
+    public async Task should_attribute_scheduled_mutation_to_the_builtin_credential_actor(AuthMode mode)
     {
+        var credential = BuiltInCredential.For(mode);
         var operationId = Guid.NewGuid();
         var storageId = Guid.NewGuid();
         var dueAt = DateTimeOffset.UtcNow.AddMinutes(10);
@@ -297,22 +268,17 @@ public sealed class ScheduledDeliveryEndpointTests : TestBase
             "orders.created",
             "msg-1",
             MessageLane.Bus,
-            "api-user",
+            credential.Actor,
             "Dashboard revoke",
             DateTimeOffset.UtcNow
         );
         _operations
             .RevokeAsync(Arg.Any<ScheduledDeliveryOperationRequest>(), Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult(result));
-        await using var app = _CreateTestApp(
-            _dataStorage,
-            authenticate: false,
-            config: new MessagingDashboardOptionsBuilder().WithApiKey("secret"),
-            useAuthenticationMiddleware: true
-        );
+        await using var app = _CreateTestApp(_dataStorage, authenticate: false, config: credential.Config);
         await app.StartAsync(AbortToken);
         using var client = app.GetTestClient();
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "secret");
+        client.DefaultRequestHeaders.Authorization = credential.Header;
         var response = await client.PostAsJsonAsync(
             "/api/scheduled/revoke",
             new
@@ -329,7 +295,7 @@ public sealed class ScheduledDeliveryEndpointTests : TestBase
         await _operations
             .Received(1)
             .RevokeAsync(
-                Arg.Is<ScheduledDeliveryOperationRequest>(request => request.Actor == "api-user"),
+                Arg.Is<ScheduledDeliveryOperationRequest>(request => request.Actor == credential.Actor),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -413,7 +379,6 @@ public sealed class ScheduledDeliveryEndpointTests : TestBase
         IDataStorage dataStorage,
         bool authenticate = true,
         MessagingDashboardOptionsBuilder? config = null,
-        bool useAuthenticationMiddleware = false,
         bool customizeHostJson = false,
         ClaimsPrincipal? principal = null
     )
@@ -432,10 +397,7 @@ public sealed class ScheduledDeliveryEndpointTests : TestBase
         }
 
         appBuilder.Services.AddSingleton(config);
-        appBuilder.Services.AddKeyedScoped<IAuthService>(
-            MessagingDashboardOptionsBuilder.AuthenticationName,
-            (sp, _) => new AuthService(config.Auth, sp.GetRequiredService<ILogger<AuthService>>())
-        );
+        MessagingDashboardHost.AddDashboardAuthentication(appBuilder.Services, config);
         appBuilder.Services.AddSingleton(dataStorage);
         appBuilder.Services.AddSingleton<MessagingMetricsEventListener>();
 
@@ -470,6 +432,7 @@ public sealed class ScheduledDeliveryEndpointTests : TestBase
 
         var app = appBuilder.Build();
         app.UseRouting();
+        app.UseAuthentication();
         if (principal is not null)
         {
             app.Use(
@@ -481,11 +444,7 @@ public sealed class ScheduledDeliveryEndpointTests : TestBase
             );
         }
 
-        if (useAuthenticationMiddleware)
-        {
-            app.UseMiddleware<AuthMiddleware>(MessagingDashboardOptionsBuilder.AuthenticationName);
-        }
-        else if (authenticate && principal is null)
+        if (authenticate && principal is null)
         {
             app.Use(
                 (context, next) =>

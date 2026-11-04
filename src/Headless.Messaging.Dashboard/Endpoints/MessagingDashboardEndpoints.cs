@@ -39,14 +39,18 @@ public static partial class MessagingDashboardEndpoints
         },
     };
 
+    internal const string CorsPolicyName = "HeadlessMessagingDashboardCORS";
+
+    /// <summary>Maps the dashboard API under the host group at the dashboard's base path.</summary>
+    /// <param name="endpoints">The host's route group at the base path.</param>
+    /// <param name="config">The dashboard configuration.</param>
     internal static void MapMessagingDashboardEndpoints(
         this IEndpointRouteBuilder endpoints,
         MessagingDashboardOptionsBuilder config
     )
     {
-        // The dashboard runs in an app.Map(basePath) branch, so an application document would list its endpoints under
-        // the wrong path (/api/... instead of {basePath}/api/...); the dashboard SPA is their only client, so every one
-        // is excluded from API descriptions.
+        // The dashboard SPA is the only client of these endpoints, so every one is excluded from API descriptions.
+        var applyCors = config.CorsPolicyBuilder is not null;
 
         // Auth endpoints (always anonymous)
         endpoints
@@ -54,18 +58,18 @@ public static partial class MessagingDashboardEndpoints
             .WithName("Messaging_GetAuthInfo")
             .WithSummary("Get authentication configuration")
             .WithTags("Messaging Dashboard")
-            .RequireCors("HeadlessMessagingDashboardCORS")
             .AllowAnonymous()
-            .ExcludeFromDescription();
+            .ExcludeFromDescription()
+            .RequireDashboardCors(CorsPolicyName, applyCors);
 
         endpoints
             .MapPost("/api/auth/validate", _ValidateAuth)
             .WithName("Messaging_ValidateAuth")
             .WithSummary("Validate authentication credentials")
             .WithTags("Messaging Dashboard")
-            .RequireCors("HeadlessMessagingDashboardCORS")
             .AllowAnonymous()
-            .ExcludeFromDescription();
+            .ExcludeFromDescription()
+            .RequireDashboardCors(CorsPolicyName, applyCors);
 
         // Always-anonymous endpoints
         endpoints
@@ -73,30 +77,19 @@ public static partial class MessagingDashboardEndpoints
             .WithName("Messaging_Health")
             .WithSummary("Health check endpoint")
             .WithTags("Messaging Dashboard")
-            .RequireCors("HeadlessMessagingDashboardCORS")
             .AllowAnonymous()
-            .ExcludeFromDescription();
+            .ExcludeFromDescription()
+            .RequireDashboardCors(CorsPolicyName, applyCors);
 
-        // Protected API group with gateway proxy filter
+        // Authorization runs before endpoint filters, so the gateway proxy filter never forwards an unauthorized
+        // request to another node.
         var apiGroup = endpoints
             .MapGroup("/api")
             .WithTags("Messaging Dashboard")
-            .RequireCors("HeadlessMessagingDashboardCORS")
-            .AddEndpointFilter<GatewayProxyEndpointFilter>()
-            .ExcludeFromDescription();
-
-        // Apply host auth if configured
-        if (config.Auth.Mode == AuthMode.Host)
-        {
-            if (!string.IsNullOrEmpty(config.Auth.HostAuthorizationPolicy))
-            {
-                apiGroup.RequireAuthorization(config.Auth.HostAuthorizationPolicy);
-            }
-            else
-            {
-                apiGroup.RequireAuthorization();
-            }
-        }
+            .ExcludeFromDescription()
+            .RequireDashboardAuthentication(MessagingDashboardOptionsBuilder.AuthenticationName);
+        apiGroup.RequireDashboardCors(CorsPolicyName, applyCors);
+        apiGroup.AddEndpointFilter<GatewayProxyEndpointFilter>();
 
         // Metrics & stats
         apiGroup
