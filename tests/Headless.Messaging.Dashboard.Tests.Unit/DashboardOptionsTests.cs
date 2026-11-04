@@ -131,26 +131,19 @@ public sealed class DashboardOptionsTests : TestBase
     [InlineData(false)]
     public async Task should_start_when_a_builtin_credential_is_combined_with_cors(bool basic)
     {
-        // when
-        await using var app = await MessagingDashboardHost.StartAsync(
-            dashboard =>
-            {
-                if (basic)
-                {
-                    dashboard.WithBasicAuth("ops", "pass");
-                }
-                else
-                {
-                    dashboard.WithApiKey("secret");
-                }
+        // given
+        Action<MessagingDashboardOptionsBuilder> configure = basic
+            ? dashboard => dashboard.WithBasicAuth("ops", "pass").SetCorsOrigins("https://ops.example")
+            : dashboard => dashboard.WithApiKey("secret").SetCorsOrigins("https://ops.example");
 
-                dashboard.SetCorsOrigins("https://ops.example");
-            },
-            cancellationToken: AbortToken
-        );
+        // when
+        var act = async () =>
+        {
+            await using var app = await MessagingDashboardHost.StartAsync(configure, cancellationToken: AbortToken);
+        };
 
         // then
-        app.Should().NotBeNull();
+        await act.Should().NotThrowAsync();
     }
 
     [Fact]

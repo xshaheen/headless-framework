@@ -2,18 +2,16 @@
 
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Net.Http.Headers;
 
 namespace Headless.Dashboard.Authentication;
 
 /// <summary>Guards dashboard endpoints against cross-site requests that change state.</summary>
 internal static class DashboardRequestIntegrity
 {
-    /// <summary>The header every state-changing dashboard request must carry.</summary>
-    internal const string RequestedWithHeader = "X-Requested-With";
-
     /// <summary>
     /// Refuses a state-changing request to the endpoints of <paramref name="builder"/> with <c>400</c> unless it
-    /// carries <see cref="RequestedWithHeader"/>.
+    /// carries the <c>X-Requested-With</c> header.
     /// </summary>
     internal static TBuilder RequireDashboardRequestIntegrity<TBuilder>(this TBuilder builder)
         where TBuilder : IEndpointConventionBuilder
@@ -36,13 +34,13 @@ internal static class DashboardRequestIntegrity
             || HttpMethods.IsHead(request.Method)
             || HttpMethods.IsOptions(request.Method);
 
-        if (isRead || request.Headers.ContainsKey(RequestedWithHeader))
+        if (isRead || request.Headers.ContainsKey(HeaderNames.XRequestedWith))
         {
             return next(invocationContext);
         }
 
         return ValueTask.FromResult<object?>(
-            Results.BadRequest($"State-changing dashboard requests must carry the {RequestedWithHeader} header.")
+            Results.BadRequest($"State-changing dashboard requests must carry the {HeaderNames.XRequestedWith} header.")
         );
     }
 }

@@ -14,6 +14,14 @@ function isUnauthorized(error: unknown): boolean {
     return message.includes('401') || message.includes('Unauthorized');
 }
 
+/** The server refused the hub with 401. The session is gone, so retrying cannot connect until the user signs in. */
+export class HubUnauthorizedError extends Error {
+    constructor() {
+        super('The notification hub refused the connection: the session has ended.');
+        this.name = 'HubUnauthorizedError';
+    }
+}
+
 class BaseHub {
     public connection: signalR.HubConnection;
 
@@ -56,7 +64,6 @@ class BaseHub {
             .withUrl(finalHubUrl, { transport: signalR.HttpTransportType.WebSockets })
             .withAutomaticReconnect({
                 nextRetryDelayInMilliseconds: retryContext => {
-                    // Exponential backoff with max 3 retries
                     if (retryContext.previousRetryCount >= 3) {
                         return null;
                     }
@@ -80,8 +87,10 @@ class BaseHub {
         try {
             await this.startConnectionAsync();
         } catch (err) {
-            // Not an auth failure; the connection store's health check retries later.
-            console.error('SignalR: reconnect after close failed', err);
+            // A refused session already sent the user to sign in; any other failure is retried by the health check.
+            if (!(err instanceof HubUnauthorizedError)) {
+                console.error('SignalR: reconnect after close failed', err);
+            }
         }
     }
 
@@ -138,9 +147,9 @@ class BaseHub {
             await this.connection.start();
         } catch (err) {
             if (isUnauthorized(err)) {
-                // Retrying cannot succeed without signing in again.
+                // Thrown rather than returned so no caller mistakes the refused connection for an open one.
                 this.onUnauthorized?.();
-                return;
+                throw new HubUnauthorizedError();
             }
 
             throw err;

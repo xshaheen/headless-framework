@@ -90,9 +90,9 @@ const handleLogout = async () => {
     showInfo('Signed out')
     emit('logout')
   } catch (error) {
-    console.error('Logout error:', error)
-    showError('Logout failed')
-    emit('logout')
+    // The server did not end the session, so the operator is still signed in and stays on this page.
+    console.error('Sign-out failed:', error)
+    showError('Sign-out failed. You are still signed in; please try again.')
   }
 }
 

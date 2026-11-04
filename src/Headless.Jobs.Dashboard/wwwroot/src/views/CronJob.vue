@@ -30,7 +30,6 @@ import {
 import VChart, { THEME_KEY } from 'vue-echarts'
 import { describeCron } from '@/utilities/cron'
 
-// Write actions are shown only to a user who may operate; a view-only host session only reads.
 const authStore = useAuthStore()
 
 // Helper function to get readable cron expression (6-part format with seconds)

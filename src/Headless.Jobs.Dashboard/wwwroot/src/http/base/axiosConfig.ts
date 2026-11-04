@@ -2,17 +2,15 @@ import { useAuthStore } from '@/stores/authStore';
 import { useAlertStore } from '@/stores/alertStore';
 import axios, { AxiosError, type AxiosInstance, type AxiosResponse, type InternalAxiosRequestConfig } from 'axios';
 import { getApiBaseUrl } from '@/utilities/pathResolver';
-import { getAuthorizationHeader } from '@/services/auth';
+import { getAuthorizationHeader, REQUESTED_WITH_HEADER } from '@/services/auth';
 
 const axiosInstance: AxiosInstance = axios.create({
   baseURL: getApiBaseUrl(),
 });
 
-// Request Interceptor: mark the request and attach the stored credential
 axiosInstance.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
-    // The server refuses a state-changing request without this header: a cross-site form cannot send it.
-    config.headers.set('X-Requested-With', 'XMLHttpRequest');
+    config.headers.set(REQUESTED_WITH_HEADER);
 
     // Basic and API key send their stored credential. Host mode sends none: the browser carries the session cookie.
     const authorization = getAuthorizationHeader();

@@ -88,4 +88,25 @@ describe('Login in host mode', () => {
     expect(push).not.toHaveBeenCalled()
     expect(window.location.pathname).toBe('/jobs/dashboard/login')
   })
+  it('keeps the operator signed in when the server does not end the session', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) =>
+        url.endsWith('/api/auth/sign-out')
+          ? { ok: false, status: 500, json: async () => ({}) }
+          : { ok: true, status: 200, json: async () => ({ ...signedOutInfo, authenticated: true, name: 'ops' }) },
+      ),
+    )
+    window.JobsConfig = { basePath: '/jobs/dashboard', auth: { mode: 'host', enabled: true, signInAvailable: true } }
+    const { createPinia, setActivePinia } = await import('pinia')
+    setActivePinia(createPinia())
+    const { useAuthStore } = await import('@/stores/authStore')
+    const authStore = useAuthStore()
+    await authStore.initializeAuth()
+
+    await expect(authStore.logout()).rejects.toThrow('Sign-out failed with status 500')
+
+    expect(authStore.isLoggedIn).toBe(true)
+    expect(authStore.signedOut).toBe(false)
+  })
 })

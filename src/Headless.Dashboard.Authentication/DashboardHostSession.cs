@@ -177,9 +177,19 @@ internal static class DashboardHostSession
             },
             OnCheckSlidingExpiration = context =>
             {
-                if (_Now(context.Options) >= _AbsoluteExpires(context.Properties))
+                if (!context.ShouldRenew)
+                {
+                    return Task.CompletedTask;
+                }
+
+                var now = _Now(context.Options);
+                if (now >= _AbsoluteExpires(context.Properties))
                 {
                     context.ShouldRenew = false;
+                }
+                else
+                {
+                    _CapRenewal(context.Properties, now, context.Options.ExpireTimeSpan);
                 }
 
                 return Task.CompletedTask;
@@ -220,7 +230,20 @@ internal static class DashboardHostSession
         }
 
         context.Properties.Items[_ValidatedAtKey] = _Format(now);
+        _CapRenewal(context.Properties, now, context.Options.ExpireTimeSpan);
         context.ShouldRenew = true;
+    }
+
+    // The cookie handler gives a renewed ticket the same issued-to-expires span as the ticket it replaces. Narrowing
+    // that span near the end of the session keeps the renewed cookie, and the Jobs hub connection that closes at its
+    // expiry, inside the absolute lifetime. Only IssuedUtc moves, so the current request's own expiry is unchanged.
+    private static void _CapRenewal(AuthenticationProperties properties, DateTimeOffset now, TimeSpan idleTimeout)
+    {
+        var remaining = _AbsoluteExpires(properties) - now;
+        if (remaining < idleTimeout && properties.ExpiresUtc is { } expires)
+        {
+            properties.IssuedUtc = expires - remaining;
+        }
     }
 
     private static Task _EndAsync(CookieValidatePrincipalContext context, string scheme)

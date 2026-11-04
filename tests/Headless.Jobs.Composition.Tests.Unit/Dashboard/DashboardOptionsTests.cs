@@ -130,18 +130,6 @@ public sealed class DashboardOptionsTests : TestBase
 
     [Theory]
     [MemberData(nameof(CrossOriginSettings))]
-    public void should_refuse_host_authentication_with_a_cross_origin_setting(string setting)
-    {
-        var builder = _WithCrossOrigin(new DashboardOptionsBuilder().WithHostAuthentication(), setting);
-
-        ((Action)builder.Validate)
-            .Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage("*host's own origin*SetCorsOrigins*SetBackendDomain*");
-    }
-
-    [Theory]
-    [MemberData(nameof(CrossOriginSettings))]
     public void should_keep_cross_origin_settings_under_a_dashboard_credential(string setting)
     {
         var basic = _WithCrossOrigin(new DashboardOptionsBuilder().WithBasicAuth("ops", "secret"), setting);

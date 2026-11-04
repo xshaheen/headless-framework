@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Globalization;
 using System.Net;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
@@ -114,6 +115,9 @@ public sealed class DashboardHostSessionTests : TestBase
     [InlineData("%2F%2Fevil.example%2Fdash%2F")]
     [InlineData("%2Fother%2Fpage")]
     [InlineData("%2Fdashboard")]
+    [InlineData("%2Fdash%2F..%2Fother")]
+    [InlineData("%2Fdash%2F%252e%252e%2Fother")]
+    [InlineData("%2Fdash%2F.%2F..%2F..%2Fother%3Fq%3D1")]
     public async Task redirects_to_the_dashboard_root_when_the_return_url_is_absolute_or_off_base(string returnUrl)
     {
         await using var app = await _StartAsync();
@@ -271,6 +275,79 @@ public sealed class DashboardHostSessionTests : TestBase
     }
 
     [Fact]
+    public async Task never_renews_a_session_past_its_lifetime()
+    {
+        await using var app = await _StartAsync(host =>
+        {
+            host.SessionIdleTimeout = TimeSpan.FromMinutes(30);
+            host.SessionLifetime = TimeSpan.FromHours(1);
+        });
+        using var client = _Client(app);
+        var signedInAt = _time.GetUtcNow();
+        var cookie = await _SignInAsync(client, "viewer");
+
+        _time.Advance(TimeSpan.FromMinutes(20));
+        cookie = await _RenewedAsync(client, cookie);
+        _time.Advance(TimeSpan.FromMinutes(20));
+        cookie = await _RenewedAsync(client, cookie);
+
+        // The Jobs hub closes a connection at this expiry, so it must not run past the lifetime either.
+        using var response = await _SendAsync(client, HttpMethod.Get, "/dash/api/expires", cookie: cookie);
+        var expires = DateTimeOffset.Parse(
+            await response.Content.ReadAsStringAsync(AbortToken),
+            CultureInfo.InvariantCulture
+        );
+        expires.Should().Be(signedInAt + TimeSpan.FromHours(1));
+    }
+
+    [Fact]
+    public async Task refuses_a_session_to_a_host_user_the_host_revalidation_refuses()
+    {
+        await using var app = await _StartAsync(host =>
+        {
+            host.RevalidationInterval = TimeSpan.FromMinutes(5);
+            host.Revalidate = (_, user) => ValueTask.FromResult(user.Identity?.Name != "revoked");
+        });
+        using var client = _Client(app);
+
+        using var exchange = await _SendAsync(client, HttpMethod.Post, "/dash/api/auth/session", bearer: "revoked");
+        using var signIn = await _SendAsync(
+            client,
+            HttpMethod.Get,
+            "/dash/auth/sign-in?returnUrl=%2Fdash%2F",
+            bearer: "revoked",
+            requestedWith: false
+        );
+
+        exchange.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        _SetCookie(exchange, _CookieName).Should().BeNull();
+        signIn.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        _SetCookie(signIn, _CookieName).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task issues_a_session_only_from_the_schemes_a_view_policy_lists()
+    {
+        await using var app = await _StartAsync(host => host.ViewPolicy = "ViewersFromHostCookie");
+        using var client = _Client(app);
+        using var hostLogin = await _SendAsync(client, HttpMethod.Post, "/host/login?role=viewer");
+        var hostCookie = _Cookie(_SetCookie(hostLogin, ".AspNetCore." + _HostCookieScheme)!);
+
+        using var fromBearer = await _SendAsync(client, HttpMethod.Post, "/dash/api/auth/session", bearer: "viewer");
+        using var fromHostCookie = await _SendAsync(
+            client,
+            HttpMethod.Post,
+            "/dash/api/auth/session",
+            cookie: hostCookie
+        );
+
+        fromBearer.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        _SetCookie(fromBearer, _CookieName).Should().BeNull();
+        fromHostCookie.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        (await _NameAsync(client, _Cookie(_SetCookie(fromHostCookie, _CookieName)!))).Should().Be("viewer");
+    }
+
+    [Fact]
     public async Task ends_a_session_left_idle_past_its_idle_timeout()
     {
         await using var app = await _StartAsync(host => host.SessionIdleTimeout = TimeSpan.FromMinutes(30));
@@ -318,29 +395,31 @@ public sealed class DashboardHostSessionTests : TestBase
         });
         using var client = _Client(app);
         var cookie = await _SignInAsync(client, "viewer");
+        // Issuing the session runs the same check, so a user it refuses cannot simply sign in again.
+        calls.Should().Be(1);
 
         _time.Advance(TimeSpan.FromMinutes(2));
         (await _SendAsync(client, HttpMethod.Get, "/dash/api/stats", cookie: cookie))
             .StatusCode.Should()
             .Be(HttpStatusCode.OK);
-        calls.Should().Be(0);
+        calls.Should().Be(1);
 
         _time.Advance(TimeSpan.FromMinutes(4));
         cookie = await _RenewedAsync(client, cookie);
-        calls.Should().Be(1);
+        calls.Should().Be(2);
 
         _time.Advance(TimeSpan.FromMinutes(1));
         (await _SendAsync(client, HttpMethod.Get, "/dash/api/stats", cookie: cookie))
             .StatusCode.Should()
             .Be(HttpStatusCode.OK);
-        calls.Should().Be(1);
+        calls.Should().Be(2);
 
         allowed = false;
         _time.Advance(TimeSpan.FromMinutes(5));
         using var refused = await _SendAsync(client, HttpMethod.Get, "/dash/api/stats", cookie: cookie);
 
         refused.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        calls.Should().Be(2);
+        calls.Should().Be(3);
         _IsDeletion(_SetCookie(refused, _CookieName)).Should().BeTrue();
     }
 
@@ -542,6 +621,10 @@ public sealed class DashboardHostSessionTests : TestBase
             .AddPolicy(_ViewersPolicy, policy => policy.RequireRole("viewer", "operator"))
             .AddPolicy(_OperatorsPolicy, policy => policy.RequireRole("operator"))
             .AddPolicy(
+                "ViewersFromHostCookie",
+                policy => policy.AddAuthenticationSchemes(_HostCookieScheme).RequireRole("viewer", "operator")
+            )
+            .AddPolicy(
                 "OperatorsFromIdp",
                 policy => policy.AddAuthenticationSchemes(_ChallengeScheme).RequireRole("operator")
             );
@@ -591,6 +674,13 @@ public sealed class DashboardHostSessionTests : TestBase
         var api = dashboard.MapGroup("/api").RequireDashboardAuthentication(name).RequireDashboardRequestIntegrity();
         api.MapGet("/stats", (HttpContext context) => context.User.Identity?.Name ?? "<anonymous>");
         api.MapGet("/result", () => Results.Ok());
+        api.MapGet(
+            "/expires",
+            (HttpContext context) =>
+                context
+                    .Features.Get<IAuthenticateResultFeature>()
+                    ?.AuthenticateResult?.Properties?.ExpiresUtc?.ToString("O", CultureInfo.InvariantCulture)
+        );
         api.MapPost("/requeue", () => "requeued").RequireDashboardOperation(name);
     }
 

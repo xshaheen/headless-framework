@@ -6,6 +6,8 @@
  * comes from api/auth/info.
  */
 
+import { getBaseUrl } from '@/utilities/pathResolver'
+
 export type AuthMode = 'none' | 'basic' | 'apikey' | 'host'
 
 export interface AuthConfig {
@@ -34,11 +36,8 @@ const BASIC_KEY = 'messaging_basic_auth'
 const API_KEY_KEY = 'messaging_api_key'
 const CREDENTIAL_KEYS = [BASIC_KEY, API_KEY_KEY] as const
 
-const DEFAULT_BASE_PATH = '/messaging/dashboard'
-
-function getBaseUrl(): string {
-  const config = window.MessagingConfig
-  return (config?.backendDomain || config?.basePath || DEFAULT_BASE_PATH).replace(/\/+$/, '')
+function getAuthBaseUrl(): string {
+  return getBaseUrl().replace(/\/+$/, '')
 }
 
 interface AuthInfo {
@@ -144,18 +143,18 @@ class AuthService {
 
   /**
    * Ends the dashboard session. In host mode the server deletes the dashboard cookie; the host application's own
-   * session stays, and nothing signs in again until the operator chooses Sign in.
+   * session stays, and nothing signs in again until the operator chooses Sign in. Throws when the server did not end
+   * the session, which then stays signed in here too.
    */
   async signOut(): Promise<void> {
     if (this.config?.mode === 'host') {
-      try {
-        await fetch(`${getBaseUrl()}/api/auth/sign-out`, {
-          method: 'POST',
-          credentials: 'same-origin',
-          headers: { ...REQUESTED_WITH_HEADER },
-        })
-      } catch (error) {
-        console.error('Sign-out failed:', error)
+      const response = await fetch(`${getAuthBaseUrl()}/api/auth/sign-out`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { ...REQUESTED_WITH_HEADER },
+      })
+      if (!response.ok) {
+        throw new Error(`Sign-out failed with status ${response.status}`)
       }
     }
 
@@ -173,7 +172,7 @@ class AuthService {
    * host's scheme, then redirects back to the return path, which must be a local path under the dashboard base.
    */
   getSignInUrl(returnPath: string = '/'): string {
-    const base = (window.MessagingConfig?.basePath || DEFAULT_BASE_PATH).replace(/\/+$/, '')
+    const base = getAuthBaseUrl()
     const path = returnPath.startsWith('/') ? returnPath : `/${returnPath}`
     return `${base}/auth/sign-in?returnUrl=${encodeURIComponent(`${base}${path}`)}`
   }
@@ -214,7 +213,7 @@ class AuthService {
   }
 
   private async fetchHostSession(): Promise<AuthStatus> {
-    const response = await fetch(`${getBaseUrl()}/api/auth/info`, {
+    const response = await fetch(`${getAuthBaseUrl()}/api/auth/info`, {
       method: 'GET',
       credentials: 'same-origin',
       headers: { ...REQUESTED_WITH_HEADER },
@@ -240,7 +239,7 @@ class AuthService {
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), 5000)
 
-      const response = await fetch(`${getBaseUrl()}/api/auth/validate`, {
+      const response = await fetch(`${getAuthBaseUrl()}/api/auth/validate`, {
         method: 'POST',
         headers: authHeader
           ? { ...REQUESTED_WITH_HEADER, Authorization: authHeader }

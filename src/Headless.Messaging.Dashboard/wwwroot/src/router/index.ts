@@ -92,14 +92,19 @@ router.beforeEach(async (to, _from, next) => {
   }
 })
 
+// Requests in flight when the session ends all answer 401; only the first may navigate.
+let redirecting: Promise<unknown> | null = null
+
 // The server answered 401: its session ended (host mode) or it refused the stored credential. Ask to sign in again and
 // come back to the page the operator was on.
 window.addEventListener('auth:logout', () => {
   useAuthStore().handle401Error()
 
   const current = router.currentRoute.value
-  if (current.name !== 'Login') {
-    void router.push({ name: 'Login', query: { redirect: current.fullPath } })
+  if (!redirecting && current.name !== 'Login') {
+    redirecting = router.push({ name: 'Login', query: { redirect: current.fullPath } }).finally(() => {
+      redirecting = null
+    })
   }
 })
 

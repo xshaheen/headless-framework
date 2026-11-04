@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
+import { useAlert } from '@/composables/useAlert'
 
 // Props
 interface Props {
@@ -15,11 +16,19 @@ withDefaults(defineProps<Props>(), {
 
 const router = useRouter()
 const authStore = useAuthStore()
+const { showError } = useAlert()
 
 // Signs out of the dashboard only (in host mode the application session stays) and shows the signed-out page,
-// which signs in again only when the user asks.
+// which signs in again only when the user asks. A sign-out the server refused leaves the user where they are.
 const handleLogout = async () => {
-  await authStore.logout()
+  try {
+    await authStore.logout()
+  } catch (error) {
+    console.error('Sign-out failed:', error)
+    showError('Sign-out failed. You are still signed in; please try again.')
+    return
+  }
+
   await router.push({ name: 'Login' })
 }
 </script>
@@ -58,86 +67,6 @@ const handleLogout = async () => {
 .auth-section {
   display: flex;
   align-items: center;
-}
-
-/* Login Form Styles */
-.login-prompt {
-  display: flex;
-  align-items: center;
-}
-
-.login-btn {
-  font-weight: 500;
-  text-transform: none;
-  letter-spacing: 0.5px;
-  border-radius: 8px;
-  transition: all 0.3s ease;
-}
-
-.login-btn:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-}
-
-.login-form {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 400px;
-}
-
-.auth-notice {
-  margin-bottom: 8px;
-}
-
-.info-alert {
-  font-size: 0.875rem;
-}
-
-.form-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.username-field,
-.password-field,
-.api-key-field {
-  flex: 1;
-  min-width: 120px;
-}
-
-.submit-btn {
-  font-weight: 600;
-  text-transform: none;
-  letter-spacing: 0.5px;
-  border-radius: 8px;
-  transition: all 0.3s ease;
-}
-
-.submit-btn:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-}
-
-.cancel-btn {
-  font-weight: 500;
-  text-transform: none;
-  color: #757575;
-}
-
-.error-message {
-  margin-top: 4px;
-}
-
-.error-alert {
-  cursor: pointer;
-  transition: all 0.3s ease;
-}
-
-.error-alert:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
 /* User Info Styles */
@@ -180,32 +109,9 @@ const handleLogout = async () => {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
-/* Responsive Design */
-@media (max-width: 768px) {
-  .login-form {
-    min-width: 300px;
-  }
-  
-  .form-row {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 8px;
-  }
-  
-  .username-field,
-  .password-field,
-  .api-key-field {
-    min-width: auto;
-  }
-}
-
 @media (max-width: 480px) {
-  .login-form {
-    min-width: 250px;
-  }
-  
   .auth-header {
     gap: 12px;
   }
 }
-</style> 
+</style>

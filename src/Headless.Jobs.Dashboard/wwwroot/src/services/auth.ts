@@ -7,7 +7,7 @@
  */
 
 import type { JobsAuthMode } from '@/types/jobs-config';
-import { getApiBaseUrl, getAuthMode } from '@/utilities/pathResolver';
+import { getApiBaseUrl, getAuthMode, requiresAuthentication } from '@/utilities/pathResolver';
 
 export interface AuthStatus {
   authenticated: boolean;
@@ -35,19 +35,17 @@ const API_KEY_KEY = 'jobs_api_key';
 
 const CREDENTIAL_KEYS = [BASIC_AUTH_KEY, API_KEY_KEY];
 
-// The server refuses a state-changing request without this header: a cross-site form cannot send it.
-const REQUESTED_WITH = { 'X-Requested-With': 'XMLHttpRequest' };
+/** The server refuses a state-changing request without this header: a cross-site form cannot send it. */
+export const REQUESTED_WITH_HEADER = { 'X-Requested-With': 'XMLHttpRequest' } as const;
 
 export const SESSION_EXPIRED_MESSAGE = 'Your session has ended. Please sign in again.';
-
-const isAuthEnabled = (): boolean => !!window.JobsConfig?.auth?.enabled;
 
 /**
  * The Authorization header value for API calls, or null when the mode sends none. Reads the injected config directly
  * so it works before the auth service is initialized, which is when the first API requests can fire.
  */
 export function getAuthorizationHeader(): string | null {
-  if (!isAuthEnabled()) {
+  if (!requiresAuthentication()) {
     return null;
   }
 
@@ -73,7 +71,7 @@ export function getAuthorizationHeader(): string | null {
  * `Bearer:<key>` for an API key. Host mode sends none, because the session cookie rides the WebSocket handshake.
  */
 export function getHubAccessToken(): string | null {
-  if (!isAuthEnabled()) {
+  if (!requiresAuthentication()) {
     return null;
   }
 
@@ -155,19 +153,22 @@ class AuthService {
 
   /**
    * Ends the dashboard session. In host mode this deletes the dashboard's session cookie on the server; the host's
-   * own session stays, and nothing signs in again until the user chooses to.
+   * own session stays, and nothing signs in again until the user chooses to. Throws when the server did not end the
+   * session, which then stays signed in here too.
    */
   async logout(): Promise<void> {
-    this.clearCredentials();
-    this.status = { authenticated: false, canOperate: false };
-
     if (this.mode === 'host') {
-      try {
-        await fetch(`${getApiBaseUrl()}/auth/sign-out`, { method: 'POST', headers: { ...REQUESTED_WITH } });
-      } catch (error) {
-        console.error('Sign-out failed:', error);
+      const response = await fetch(`${getApiBaseUrl()}/auth/sign-out`, {
+        method: 'POST',
+        headers: { ...REQUESTED_WITH_HEADER },
+      });
+      if (!response.ok) {
+        throw new Error(`Sign-out failed with status ${response.status}`);
       }
     }
+
+    this.clearCredentials();
+    this.status = { authenticated: false, canOperate: false };
   }
 
   /** Forgets the session after the server answered 401, without another round trip. */

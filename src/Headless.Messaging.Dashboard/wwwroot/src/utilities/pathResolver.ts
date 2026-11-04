@@ -75,6 +75,12 @@ export function getApiBaseUrl(): string {
   return `${config.basePath}/api`
 }
 
+/** The origin-relative root (or backend domain) the dashboard's API and auth endpoints live under. */
+export function getBaseUrl(): string {
+  const config = window.MessagingConfig
+  return config?.backendDomain || config?.basePath || '/messaging/dashboard'
+}
+
 export function requiresAuthentication(): boolean {
   const config = window.MessagingConfig
   return config?.auth?.enabled || false

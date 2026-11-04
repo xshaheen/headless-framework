@@ -34,7 +34,6 @@ import type {
   GetTimeJobGraphDataResponse,
 } from '@/http/services/types/timeJobService.types'
 
-// Write actions are shown only to a user who may operate; a view-only host session only reads.
 const authStore = useAuthStore()
 
 use([

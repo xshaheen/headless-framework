@@ -113,9 +113,10 @@ public sealed class DashboardRegistrationTests : TestBase
     }
 
     [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public void should_fail_registration_when_host_auth_is_combined_with_a_cross_origin_setting(bool cors)
+    [InlineData("origins")]
+    [InlineData("policy")]
+    [InlineData("backend")]
+    public void should_fail_registration_when_host_auth_is_combined_with_a_cross_origin_setting(string setting)
     {
         var services = new ServiceCollection();
 
@@ -126,18 +127,18 @@ public sealed class DashboardRegistrationTests : TestBase
                     .AddDashboard(dashboard =>
                     {
                         dashboard.WithHostAuthentication();
-                        if (cors)
+                        _ = setting switch
                         {
-                            dashboard.SetCorsOrigins("https://ops.example.com");
-                        }
-                        else
-                        {
-                            dashboard.SetBackendDomain("https://api.example.com");
-                        }
+                            "origins" => dashboard.SetCorsOrigins("https://ops.example.com"),
+                            "policy" => dashboard.SetCorsPolicy(static policy => policy.AllowAnyOrigin()),
+                            _ => dashboard.SetBackendDomain("https://api.example.com"),
+                        };
                     })
             );
 
-        act.Should().Throw<InvalidOperationException>().WithMessage("*host's own origin*");
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*host's own origin*SetCorsOrigins*SetBackendDomain*");
     }
 
     [Fact]

@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
 import JobNotificationHub from '../hub/jobNotificationHub'
+import { HubUnauthorizedError } from '../hub/base/baseHub'
 import { useAuthStore } from './authStore'
 import { requiresAuthentication } from '@/utilities/pathResolver'
 
@@ -146,19 +147,22 @@ export const useConnectionStore = defineStore('connection', () => {
         setBackendHealthy(true)
         _startHealthCheck()
         return
-      } catch {
-        // Connection attempt failed
-        if (attempt === maxRetries) {
-          // All connection attempts failed. WebSocket will not be available.
+      } catch (error) {
+        // A refused session cannot connect on a retry, and neither can one that ended while this loop waited.
+        if (attempt === maxRetries || error instanceof HubUnauthorizedError) {
           setConnectionState('Disconnected')
           setBackendHealthy(false)
           _isInitialized.value = false
           return
         }
-        
-        // Retry after a delay
+
         const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000)
         await new Promise(resolve => setTimeout(resolve, delay))
+        if (!_canConnect()) {
+          setConnectionState('Disconnected')
+          setBackendHealthy(false)
+          return
+        }
       }
     }
   }

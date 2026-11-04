@@ -3,6 +3,7 @@
  */
 
 import { authService, REQUESTED_WITH_HEADER } from './auth'
+import { getBaseUrl } from '@/utilities/pathResolver'
 
 /**
  * Thrown for any non-2xx, non-401 response. Carries the parsed JSON body (or raw text) so
@@ -25,8 +26,7 @@ class HttpService {
   private baseUrl: string
 
   constructor() {
-    const config = window.MessagingConfig
-    this.baseUrl = config?.backendDomain || config?.basePath || '/messaging/dashboard'
+    this.baseUrl = getBaseUrl()
   }
 
   /**
@@ -69,7 +69,6 @@ class HttpService {
       ...REQUESTED_WITH_HEADER,
     }
 
-    // Basic and API key only; in host mode the session cookie authenticates the request.
     const authHeader = authService.getAuthHeader()
     if (authHeader) {
       headers['Authorization'] = authHeader

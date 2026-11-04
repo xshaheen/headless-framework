@@ -118,7 +118,6 @@
         </div>
       </v-form>
 
-      <!-- Host mode: the host signs the user in; the dashboard keeps only its own session cookie -->
       <div v-else-if="authMode === 'host'" class="host-auth-section">
         <div class="host-auth-message">
           <v-icon size="48" color="info" class="mb-3">mdi-shield-account</v-icon>
@@ -215,7 +214,6 @@ const isFormValid = computed(() => {
   return false
 })
 
-// Handle login (Basic and API key)
 const handleLogin = async () => {
   if (!form.value?.validate()) return
 

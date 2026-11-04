@@ -61,13 +61,7 @@ internal static class DashboardAuthEndpoints
     private static async Task<IResult> _GetInfoAsync(HttpContext context, string authenticationName)
     {
         var auth = _Config(context, authenticationName);
-        var mode = auth.Mode switch
-        {
-            AuthMode.Basic => "basic",
-            AuthMode.ApiKey => "apikey",
-            AuthMode.Host => "host",
-            _ => "none",
-        };
+        var mode = auth.Mode.ToString().ToLowerInvariant();
 
         if (auth.Mode != AuthMode.Host)
         {
@@ -86,7 +80,7 @@ internal static class DashboardAuthEndpoints
             );
         }
 
-        var signInAvailable = !string.IsNullOrEmpty(auth.Host.ChallengeScheme);
+        var signInAvailable = auth.SignInAvailable;
         var session = await DashboardHostSession.AuthenticateAsync(context, authenticationName).ConfigureAwait(false);
         if (session is not { Succeeded: true, Principal: { } principal })
         {
@@ -103,24 +97,18 @@ internal static class DashboardAuthEndpoints
             );
         }
 
-        var hostSchemes = DashboardHostSession.GetHostSchemes(session.Properties);
+        var viewPolicy = DashboardHostAuthorization.HostPolicyName(auth.Host, operate: false);
+        var operatePolicy = DashboardHostAuthorization.HostPolicyName(auth.Host, operate: true);
         var canOperate =
             await DashboardHostAuthorization
-                .PassesHostPolicyAsync(
-                    context,
-                    principal,
-                    hostSchemes,
-                    DashboardHostAuthorization.HostPolicyName(auth.Host, operate: false)
-                )
+                .PassesHostPolicyAsync(context, principal, session.Properties, viewPolicy)
                 .ConfigureAwait(false)
-            && await DashboardHostAuthorization
-                .PassesHostPolicyAsync(
-                    context,
-                    principal,
-                    hostSchemes,
-                    DashboardHostAuthorization.HostPolicyName(auth.Host, operate: true)
-                )
-                .ConfigureAwait(false);
+            && (
+                string.Equals(viewPolicy, operatePolicy, StringComparison.Ordinal)
+                || await DashboardHostAuthorization
+                    .PassesHostPolicyAsync(context, principal, session.Properties, operatePolicy)
+                    .ConfigureAwait(false)
+            );
 
         return Results.Json(
             new AuthInfoResponse(
@@ -229,6 +217,13 @@ internal static class DashboardAuthEndpoints
             return false;
         }
 
+        // A new session counts as freshly revalidated, so a user the host's revalidation now refuses must not get one;
+        // otherwise signing in again would undo the revocation for a whole revalidation interval.
+        if (host.Revalidate is { } revalidate && !await revalidate(context, hostUser.Principal).ConfigureAwait(false))
+        {
+            return false;
+        }
+
         await DashboardHostSession
             .SignInAsync(context, authenticationName, host, hostUser.Principal, hostUser.Schemes)
             .ConfigureAwait(false);
@@ -247,6 +242,15 @@ internal static class DashboardAuthEndpoints
             return fallback;
         }
 
+        // The browser removes dot segments, including encoded ones, when it follows the redirect, so a path that carries
+        // one could leave the base path after passing the prefix check below.
+        var pathEnd = returnUrl.IndexOfAny(['?', '#']);
+        var path = pathEnd >= 0 ? returnUrl[..pathEnd] : returnUrl;
+        if (_HasDotSegment(Uri.UnescapeDataString(path)))
+        {
+            return fallback;
+        }
+
         var underBase =
             string.Equals(returnUrl, basePath, StringComparison.OrdinalIgnoreCase)
             || returnUrl.StartsWith(fallback, StringComparison.OrdinalIgnoreCase)
@@ -254,6 +258,19 @@ internal static class DashboardAuthEndpoints
             || returnUrl.StartsWith(basePath + "#", StringComparison.OrdinalIgnoreCase);
 
         return underBase ? returnUrl : fallback;
+    }
+
+    private static bool _HasDotSegment(string path)
+    {
+        foreach (var segment in path.Split('/', '\\'))
+        {
+            if (segment is "." or "..")
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static AuthConfig _Config(HttpContext context, string authenticationName)

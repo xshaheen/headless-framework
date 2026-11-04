@@ -77,15 +77,17 @@ public sealed class DashboardHostAuthenticationOptions
     public TimeSpan SessionLifetime { get; set; } = DefaultSessionLifetime;
 
     /// <summary>
-    /// Gets or sets how often <see cref="Revalidate"/> runs for one session. Required when
+    /// Gets or sets how often <see cref="Revalidate"/> runs for one session cookie: at most once per interval, so
+    /// concurrent requests that arrive together after the interval may each run it. Required when
     /// <see cref="Revalidate"/> is set.
     /// </summary>
     public TimeSpan? RevalidationInterval { get; set; }
 
     /// <summary>
     /// Gets or sets a callback that confirms a session's user is still allowed in, for example that the account is
-    /// not disabled. It receives the request and the session's principal, runs at most once per
-    /// <see cref="RevalidationInterval"/> for a session, and ends the session when it returns <see langword="false"/>.
+    /// not disabled. It receives the request and the session's principal, and ends the session when it returns
+    /// <see langword="false"/>. It runs at most once per <see cref="RevalidationInterval"/> per session cookie, so
+    /// concurrent requests that arrive together after the interval may each run it.
     /// </summary>
     public Func<HttpContext, ClaimsPrincipal, ValueTask<bool>>? Revalidate { get; set; }
 }

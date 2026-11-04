@@ -121,8 +121,7 @@ public static class SetupMessagingDashboard
         {
             mode = config.Auth.Mode.ToString().ToLowerInvariant(),
             enabled = config.Auth.IsEnabled,
-            signInAvailable = config.Auth.Mode == AuthMode.Host
-                && !string.IsNullOrEmpty(config.Auth.Host.ChallengeScheme),
+            signInAvailable = config.Auth.SignInAvailable,
         };
 
         var envConfig = new

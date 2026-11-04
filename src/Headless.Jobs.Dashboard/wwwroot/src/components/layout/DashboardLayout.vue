@@ -31,7 +31,6 @@ const dashboardStore = useDashboardStore()
 // Connection store
 const connectionStore = useConnectionStore()
 
-// Auth store: the host controls are write actions, shown only to a user who may operate.
 const authStore = useAuthStore()
 
 // Time zone store

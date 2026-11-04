@@ -33,7 +33,6 @@ export function useAuth() {
     }
   })
 
-  // Basic and API key only: host mode keeps no credential in the browser.
   const authToken = computed(() => {
     try {
       return (

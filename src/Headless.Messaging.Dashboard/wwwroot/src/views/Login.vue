@@ -117,7 +117,6 @@
         </div>
       </v-form>
 
-      <!-- Host mode: the host application's sign-in issues the dashboard session -->
       <div v-else-if="authMode === 'host'" class="host-auth-section">
         <div class="host-auth-message">
           <template v-if="isSignedOut">
@@ -181,12 +180,12 @@ const authMode = computed(() => getAuthMode())
 const signInAvailable = computed(() => window.MessagingConfig?.auth?.signInAvailable === true)
 const isSignedOut = computed(() => router.currentRoute.value.query.signedOut !== undefined)
 
-// Only a local path goes back to the server as the return path; anything else returns to the overview.
+const isLocalReturnPath = (path: unknown): path is string =>
+  typeof path === 'string' && path.startsWith('/') && !path.startsWith('//')
+
 const redirectPath = computed(() => {
   const redirect = router.currentRoute.value.query.redirect
-  return typeof redirect === 'string' && redirect.startsWith('/') && !redirect.startsWith('//')
-    ? redirect
-    : '/'
+  return isLocalReturnPath(redirect) ? redirect : '/'
 })
 
 const signInHref = computed(() => authStore.signInUrl(redirectPath.value))

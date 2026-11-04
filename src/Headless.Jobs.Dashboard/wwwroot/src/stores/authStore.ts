@@ -12,7 +12,6 @@ export const useAuthStore = defineStore('auth', () => {
   // Set by an explicit sign-out, so the login page says so instead of asking to sign in as if for the first time.
   const signedOut = ref(false);
 
-  // Form credentials (Basic and API key modes)
   const credentials = reactive<LoginCredentials>({
     username: '',
     password: '',
@@ -24,7 +23,6 @@ export const useAuthStore = defineStore('auth', () => {
 
   const username = computed(() => authStatus.value.username || '');
 
-  // A dashboard without authentication has no operator boundary; otherwise the session decides.
   const canOperate = computed(
     () => !requiresAuthentication() || (isLoggedIn.value && authStatus.value.canOperate),
   );
@@ -82,12 +80,9 @@ export const useAuthStore = defineStore('auth', () => {
     }
   };
 
+  /** Throws, leaving the session in place, when the server did not end it. */
   const logout = async () => {
-    try {
-      await authService.logout();
-    } catch (error) {
-      console.error('Logout error:', error);
-    }
+    await authService.logout();
 
     authStatus.value = authService.getStatus();
     signedOut.value = true;
@@ -99,19 +94,37 @@ export const useAuthStore = defineStore('auth', () => {
    * The server answered 401 (an API call, or the notification hub reconnecting): the session is gone. Forgets it and
    * sends the user to the login page, which comes back to the current page after signing in.
    */
+  // Requests in flight when the session ends all answer 401; only the first may change state or navigate.
+  let redirecting: Promise<unknown> | null = null;
+
   const handleUnauthorized = async () => {
-    // Only someone who had a session can lose it; a first visit lands on the sign-in page without that message.
-    const hadSession = authStatus.value.authenticated;
     authService.expire();
-    authStatus.value = authService.getStatus();
     clearForm();
-    errorMessage.value = hadSession ? SESSION_EXPIRED_MESSAGE : '';
+
+    // Only someone who had a session can lose it; a first visit lands on the sign-in page without that message, and
+    // a later 401 of the same burst leaves the first one's message in place.
+    if (authStatus.value.authenticated) {
+      authStatus.value = authService.getStatus();
+      errorMessage.value = SESSION_EXPIRED_MESSAGE;
+    }
 
     // Imported lazily: the router module imports this store.
     const { default: router } = await import('@/router');
+    if (redirecting) {
+      await redirecting;
+      return;
+    }
+
     const current = router.currentRoute.value;
     if (current.name !== 'Login') {
-      await router.push({ name: 'Login', query: { redirect: current.fullPath } });
+      redirecting = (async () => {
+        try {
+          await router.push({ name: 'Login', query: { redirect: current.fullPath } });
+        } finally {
+          redirecting = null;
+        }
+      })();
+      await redirecting;
     }
   };
 

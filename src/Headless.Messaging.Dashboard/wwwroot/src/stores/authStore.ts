@@ -16,7 +16,6 @@ export const useAuthStore = defineStore('auth', () => {
   const errorMessage = ref('')
   const isLoading = ref(false)
 
-  // Form credentials for Basic and API key modes; host mode has no form.
   const credentials = reactive<LoginCredentials>({
     username: '',
     password: '',
@@ -26,7 +25,6 @@ export const useAuthStore = defineStore('auth', () => {
   // Computed properties
   const isLoggedIn = computed(() => isInitialized.value && authStatus.value.authenticated)
   const username = computed(() => authStatus.value.username || '')
-  // An open dashboard lets everyone operate, and the router never initializes auth for one.
   const canOperate = computed(
     () =>
       !window.MessagingConfig?.auth?.enabled || (isLoggedIn.value && authStatus.value.canOperate),
@@ -89,16 +87,12 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  /** Throws, leaving the session in place, when the server did not end it. */
   const logout = async () => {
-    try {
-      await authService.signOut()
-    } catch (error) {
-      console.error('Logout error:', error)
-    } finally {
-      authStatus.value = authService.getStatus()
-      clearForm()
-      errorMessage.value = ''
-    }
+    await authService.signOut()
+    authStatus.value = authService.getStatus()
+    clearForm()
+    errorMessage.value = ''
   }
 
   const revalidate = async () => {
@@ -118,17 +112,20 @@ export const useAuthStore = defineStore('auth', () => {
 
   /** The server answered 401, so the session is already gone; this only tells the user why they are back. */
   const handle401Error = () => {
-    // Only someone who had a session can lose it; a first visit lands on the sign-in page without that message.
-    const message = authStatus.value.authenticated ? SESSION_ENDED_MESSAGE : ''
     authService.clearSession()
-    authStatus.value = {
-      authenticated: false,
-      username: '',
-      message,
-      canOperate: false,
-    }
     clearForm()
-    errorMessage.value = message
+
+    // Only someone who had a session can lose it; a first visit lands on the sign-in page without that message, and
+    // a later 401 of the same burst leaves the first one's message in place.
+    if (authStatus.value.authenticated) {
+      authStatus.value = {
+        authenticated: false,
+        username: '',
+        message: SESSION_ENDED_MESSAGE,
+        canOperate: false,
+      }
+      errorMessage.value = SESSION_ENDED_MESSAGE
+    }
   }
 
   const signInUrl = (returnPath?: string) => authService.getSignInUrl(returnPath)

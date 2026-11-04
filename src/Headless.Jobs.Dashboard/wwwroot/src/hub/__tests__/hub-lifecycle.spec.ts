@@ -177,6 +177,34 @@ describe('notification hub lifecycle', () => {
       expect(push).not.toHaveBeenCalled()
     })
 
+    it('neither marks the hub connected nor retries when the first connection answers 401', async () => {
+      const failing = built.length
+      vi.spyOn(signalR.HubConnectionBuilder.prototype, 'build').mockImplementation(() => {
+        const connection = {
+          url: HUB_URL,
+          state: signalR.HubConnectionState.Disconnected,
+          on: vi.fn(),
+          start: vi.fn().mockRejectedValue(new signalR.HttpError('Unauthorized', 401)),
+          stop: vi.fn(),
+          onclose: vi.fn(),
+        }
+        built.push(connection as unknown as FakeConnection)
+        return connection as unknown as signalR.HubConnection
+      })
+      const { useConnectionStore } = await import('@/stores/connectionStore')
+      const { useAuthStore } = await import('@/stores/authStore')
+      const connectionStore = useConnectionStore()
+      await useAuthStore().initializeAuth()
+
+      await vi.waitFor(() => expect(push).toHaveBeenCalledOnce())
+      await connectionStore.initializeConnectionWithRetry()
+
+      const attempts = built.slice(failing).reduce((count, connection) => count + connection.start.mock.calls.length, 0)
+      expect(attempts).toBe(1)
+      expect(connectionStore.isInitialized).toBe(false)
+      expect(connectionStore.connectionState).toBe('Disconnected')
+    })
+
     it('sends the user to sign in when reconnecting answers 401', async () => {
       const { authStore, opened } = await openSignedIn()
       opened.start.mockRejectedValueOnce(new signalR.HttpError('Unauthorized', 401))

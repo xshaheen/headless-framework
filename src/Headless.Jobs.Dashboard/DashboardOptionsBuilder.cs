@@ -151,8 +151,11 @@ public sealed class DashboardOptionsBuilder
     /// </param>
     public DashboardOptionsBuilder WithHostAuthentication(Action<DashboardHostAuthenticationOptions>? configure = null)
     {
+        var host = new DashboardHostAuthenticationOptions();
+        configure?.Invoke(host);
+
         Auth.Mode = AuthMode.Host;
-        configure?.Invoke(Auth.Host);
+        Auth.Host = host;
         AuthConfigured = true;
         return this;
     }

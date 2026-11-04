@@ -27,6 +27,12 @@ namespace Headless.Messaging.Dashboard;
 /// </remarks>
 public sealed class GatewayProxyEndpointFilter(IServiceProvider serviceProvider) : IEndpointFilter
 {
+    private static readonly string[] _NodeSelectionCookies =
+    [
+        GatewayProxyAgent.CookieNodeName,
+        GatewayProxyAgent.CookieNodeNsName,
+    ];
+
     public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
     {
         var httpContext = context.HttpContext;
@@ -40,7 +46,6 @@ public sealed class GatewayProxyEndpointFilter(IServiceProvider serviceProvider)
         var agent = serviceProvider.GetService<GatewayProxyAgent>();
         if (agent is not null && await agent.Invoke(httpContext).ConfigureAwait(false))
         {
-            // Proxy handled it — return empty result to skip endpoint handler
             return Results.Empty;
         }
 
@@ -58,15 +63,12 @@ public sealed class GatewayProxyEndpointFilter(IServiceProvider serviceProvider)
 
     private static void _ClearNodeSelection(HttpContext httpContext)
     {
-        var cookies = httpContext.Request.Cookies;
-        if (cookies.ContainsKey(GatewayProxyAgent.CookieNodeName))
+        foreach (var name in _NodeSelectionCookies)
         {
-            httpContext.Response.Cookies.Delete(GatewayProxyAgent.CookieNodeName);
-        }
-
-        if (cookies.ContainsKey(GatewayProxyAgent.CookieNodeNsName))
-        {
-            httpContext.Response.Cookies.Delete(GatewayProxyAgent.CookieNodeNsName);
+            if (httpContext.Request.Cookies.ContainsKey(name))
+            {
+                httpContext.Response.Cookies.Delete(name);
+            }
         }
     }
 }

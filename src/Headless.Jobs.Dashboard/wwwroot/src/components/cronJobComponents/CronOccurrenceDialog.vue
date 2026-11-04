@@ -16,7 +16,6 @@ import { canRequeue } from '@/utilities/requeue'
 import { useAuthStore } from '@/stores/authStore'
 import { format } from 'timeago.js'
 
-// Write actions are shown only to a user who may operate; a view-only host session only reads.
 const authStore = useAuthStore()
 
 const confirmDialog = useDialog<{ data: string }>().withComponent(

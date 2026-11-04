@@ -85,6 +85,21 @@ describe('host mode session', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
+  it('stays signed in when the server does not end the session', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({ authenticated: true, name: 'ops@acme', canOperate: true, mode: 'host' }),
+      )
+      .mockResolvedValueOnce({ ok: false, status: 500, headers: new Headers() })
+    vi.stubGlobal('fetch', fetchMock)
+    await authService.initialize()
+
+    await expect(authService.signOut()).rejects.toThrow('Sign-out failed with status 500')
+
+    expect(authService.isAuthenticated()).toBe(true)
+  })
+
   it('builds the sign-in URL with the return path under the dashboard base', () => {
     expect(authService.getSignInUrl('/published?tab=failed')).toBe(
       '/messaging/dashboard/auth/sign-in?returnUrl=%2Fmessaging%2Fdashboard%2Fpublished%3Ftab%3Dfailed',

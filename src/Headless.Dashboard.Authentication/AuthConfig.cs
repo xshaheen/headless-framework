@@ -40,6 +40,13 @@ public sealed class AuthConfig
     /// Gets a value indicating whether authentication is enabled.
     /// </summary>
     public bool IsEnabled => Mode != AuthMode.None;
+
+    /// <summary>
+    /// Gets a value indicating whether the dashboard can send a signed-out user to the host's sign-in: only host mode
+    /// signs in through the host, and only when <see cref="DashboardHostAuthenticationOptions.ChallengeScheme"/> names
+    /// the scheme to challenge.
+    /// </summary>
+    public bool SignInAvailable => Mode == AuthMode.Host && !string.IsNullOrEmpty(Host.ChallengeScheme);
 }
 
 /// <summary>

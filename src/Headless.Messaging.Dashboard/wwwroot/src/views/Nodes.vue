@@ -48,8 +48,7 @@
         <p class="mt-1 text-caption text-disabled">
           Node discovery requires a service registry (Consul or Kubernetes).
           <br />
-          Configure with <code>.UseConsulDiscovery()</code> or <code>.UseK8sDiscovery()</code> in
-          your dashboard setup.
+          Configure with <code>.UseConsulDiscovery()</code> or <code>.UseK8sDiscovery()</code> in your dashboard setup.
         </p>
       </div>
 
@@ -103,12 +102,7 @@
                   --
                 </span>
                 <span v-else-if="pingResults[node.name] === -1" class="text-error"> Failed </span>
-                <v-chip
-                  v-else
-                  size="x-small"
-                  :color="getLatencyColor(pingResults[node.name])"
-                  variant="tonal"
-                >
+                <v-chip v-else size="x-small" :color="getLatencyColor(pingResults[node.name])" variant="tonal">
                   {{ pingResults[node.name] }}ms
                 </v-chip>
               </td>
@@ -161,9 +155,7 @@ interface NodeInfo {
 
 // --- Cookie helpers ---
 const getCookie = (name: string): string | null => {
-  const m = document.cookie.match(
-    new RegExp('(?:^|;\\s*)' + name.split('.').join('\\.') + '=([^;]*)'),
-  )
+  const m = document.cookie.match(new RegExp('(?:^|;\\s*)' + name.split('.').join('\\.') + '=([^;]*)'))
   return m ? decodeURIComponent(m[1]) : null
 }
 
@@ -273,9 +265,7 @@ async function pingNode(node: NodeInfo) {
   pingingNodes.add(node.name)
   try {
     const hasScheme = node.address.startsWith('http://') || node.address.startsWith('https://')
-    const endpoint = hasScheme
-      ? `${node.address}:${node.port}`
-      : `http://${node.address}:${node.port}`
+    const endpoint = hasScheme ? `${node.address}:${node.port}` : `http://${node.address}:${node.port}`
     const result = await httpService.post<string>(`/ping?endpoint=${encodeURIComponent(endpoint)}`)
     const latency = parseInt(String(result), 10)
     pingResults[node.name] = isNaN(latency) ? -1 : latency

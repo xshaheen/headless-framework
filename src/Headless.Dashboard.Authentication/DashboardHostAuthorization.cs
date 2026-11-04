@@ -50,20 +50,51 @@ internal static class DashboardHostAuthorization
     /// named <paramref name="policyName"/>, or the host's default policy when it is <see langword="null"/>.
     /// </summary>
     /// <exception cref="InvalidOperationException">The host registers no policy named <paramref name="policyName"/>.</exception>
-    internal static async Task<bool> PassesHostPolicyAsync(
+    internal static Task<bool> PassesHostPolicyAsync(
         HttpContext context,
         ClaimsPrincipal user,
         IReadOnlyCollection<string> authenticatedSchemes,
         string? policyName
     )
     {
+        return _PassesHostPolicyAsync(context, user, authenticatedSchemes, sessionProperties: null, policyName);
+    }
+
+    /// <summary>
+    /// Whether the session <paramref name="user"/>, whose ticket carries <paramref name="sessionProperties"/>, passes
+    /// the host policy named <paramref name="policyName"/>, or the host's default policy when it is
+    /// <see langword="null"/>.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The host registers no policy named <paramref name="policyName"/>.</exception>
+    internal static Task<bool> PassesHostPolicyAsync(
+        HttpContext context,
+        ClaimsPrincipal user,
+        AuthenticationProperties? sessionProperties,
+        string? policyName
+    )
+    {
+        return _PassesHostPolicyAsync(context, user, authenticatedSchemes: null, sessionProperties, policyName);
+    }
+
+    private static async Task<bool> _PassesHostPolicyAsync(
+        HttpContext context,
+        ClaimsPrincipal user,
+        IReadOnlyCollection<string>? authenticatedSchemes,
+        AuthenticationProperties? sessionProperties,
+        string? policyName
+    )
+    {
         var policy = await _GetHostPolicyAsync(context, policyName).ConfigureAwait(false);
 
         // A policy that names its schemes trusts only users those schemes authenticated; a session issued from any
-        // other host scheme must not inherit that trust through copied claims.
-        if (policy.AuthenticationSchemes.Count > 0 && !policy.AuthenticationSchemes.Any(authenticatedSchemes.Contains))
+        // other host scheme must not inherit that trust through copied claims. Only such a policy reads the schemes.
+        if (policy.AuthenticationSchemes.Count > 0)
         {
-            return false;
+            var schemes = authenticatedSchemes ?? DashboardHostSession.GetHostSchemes(sessionProperties);
+            if (!policy.AuthenticationSchemes.Any(schemes.Contains))
+            {
+                return false;
+            }
         }
 
         var authorization = context.RequestServices.GetRequiredService<IAuthorizationService>();
@@ -212,7 +243,7 @@ internal static class DashboardHostAuthorization
                 await PassesHostPolicyAsync(
                         httpContext,
                         context.User,
-                        DashboardHostSession.GetHostSchemes(session.Properties),
+                        session.Properties,
                         HostPolicyName(host, requirement.Operate)
                     )
                     .ConfigureAwait(false)
