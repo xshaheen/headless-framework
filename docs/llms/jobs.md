@@ -1561,7 +1561,7 @@ app.Run();
 | The same, `WithNoAuth()` | `AllowAnonymous` |
 | Unmatched `{basePath}/api/*` | `404`, never the shell |
 
-- The host pipeline must run `UseAuthorization()` (a `WebApplication` adds it when the host does not), and `UseAuthentication()` before it for host authentication. It must run `UseCors()` only when `SetCorsOrigins(...)` or `SetCorsPolicy(...)` is configured: the dashboard registers and attaches its CORS policy only then.
+- The host pipeline must run `UseAuthorization()` (a `WebApplication` adds it when the host does not), and `UseAuthentication()` before it for host authentication. A host that calls `UseAuthentication()` must also call `UseAuthorization()` after it: the `UseAuthorization` a `WebApplication` adds on its own runs ahead of the host's `UseAuthentication`, so host authentication would not have signed the user in yet. It must run `UseCors()` only when `SetCorsOrigins(...)` or `SetCorsPolicy(...)` is configured: the dashboard registers and attaches its CORS policy only then.
 - Host-specific behavior for the dashboard, such as rate limiting, goes on the builder `MapHeadlessJobsDashboard()` returns.
 - It throws `InvalidOperationException` when `AddDashboard(...)` was not called, on a second call, or when the base path is the root, where the SPA route would answer every unmatched GET in the host.
 

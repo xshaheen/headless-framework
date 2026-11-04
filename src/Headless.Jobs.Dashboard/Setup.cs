@@ -133,6 +133,11 @@ public static class SetupJobsDashboard
     /// for the dashboard, such as rate limiting or an extra policy, goes on the returned builder.
     /// </para>
     /// <para>
+    /// A host that calls <c>UseAuthentication</c> must also call <c>UseAuthorization</c> after it: the
+    /// <c>UseAuthorization</c> a <c>WebApplication</c> adds on its own runs ahead of the host's
+    /// <c>UseAuthentication</c>, before host authentication has signed the user in.
+    /// </para>
+    /// <para>
     /// The <c>Headless</c> prefix marks the Headless-owned dashboard, as <c>AddHeadlessJobs</c> does.
     /// </para>
     /// </remarks>

@@ -2601,7 +2601,7 @@ The host's `UseAuthorization` evaluates the dashboard's rule and never the host'
 
 Requirements and limits:
 
-- The host pipeline must run `UseAuthorization()` (a `WebApplication` adds it when the host does not), and `UseAuthentication()` before it for host authentication. It must run `UseCors()` only when `SetCorsOrigins(...)` or `SetCorsPolicy(...)` is configured: the dashboard registers and attaches its CORS policy only then.
+- The host pipeline must run `UseAuthorization()` (a `WebApplication` adds it when the host does not), and `UseAuthentication()` before it for host authentication. A host that calls `UseAuthentication()` must also call `UseAuthorization()` after it: the `UseAuthorization` a `WebApplication` adds on its own runs ahead of the host's `UseAuthentication`, so host authentication would not have signed the user in yet. It must run `UseCors()` only when `SetCorsOrigins(...)` or `SetCorsPolicy(...)` is configured: the dashboard registers and attaches its CORS policy only then.
 - Host-specific behavior for the dashboard, such as `.RequireHost(...)` or rate limiting, goes on the builder `MapHeadlessMessagingDashboard()` returns.
 - It throws `InvalidOperationException` when `UseDashboard(...)` was not called, or on a second call.
 - It throws `InvalidOperationException` when the base path is the root (`SetBasePath("/")` or an empty path). At the root, the SPA route would answer every unmatched GET in the host with the shell, which hides the host's own 404s. Mount the dashboard under a path such as `/messaging`.
