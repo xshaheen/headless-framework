@@ -12,6 +12,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
+using Tests.Guarantees;
 
 #pragma warning disable MA0015 // Specify the parameter name in ArgumentException
 namespace Tests;
@@ -690,12 +691,11 @@ public sealed class MessageSenderTests : TestBase
     }
 
     [Fact]
-    public async Task should_persist_failed_without_invoking_on_exhausted_when_exception_is_permanent()
+    public async Task should_persist_failed_and_report_permanent_failure_when_exception_is_permanent()
     {
         // given — strategy classifies the exception as permanent (returns Stop). The sender
-        // must persist Failed with nextRetryAt=null (no future retry scheduled) and must NOT
-        // invoke OnExhausted (Stop is a non-exhaustion terminal state — the retry budget was
-        // never consumed because the exception is non-retryable).
+        // must persist Failed with nextRetryAt=null (no future retry scheduled) and report the
+        // row to OnTerminal as a permanent failure: the budget was never spent, but the row ended.
         var storage = Substitute.For<IDataStorage>();
         storage
             .ChangePublishStateAsync(
@@ -723,7 +723,7 @@ public sealed class MessageSenderTests : TestBase
             // ReSharper disable once NotResolvedInText
             .Returns(OperateResult.Failed(new ArgumentNullException("param")));
 
-        var callbackInvoked = false;
+        MessageTerminalReason? reason = null;
         var sender = _CreateSender(
             storage,
             serializer,
@@ -734,9 +734,9 @@ public sealed class MessageSenderTests : TestBase
                 {
                     RetryStrategy = TestRetryStrategies.PermanentArgument(0),
                     MaxPersistedRetries = 0,
-                    OnExhausted = (_, _) =>
+                    OnTerminal = (info, _) =>
                     {
-                        callbackInvoked = true;
+                        reason = info.Reason;
                         return Task.CompletedTask;
                     },
                 },
@@ -746,9 +746,9 @@ public sealed class MessageSenderTests : TestBase
         // when
         var result = await sender.SendAsync(_CreateMediumMessage());
 
-        // then — Stop classification: persisted as Failed with null nextRetryAt, no OnExhausted.
+        // then — Stop classification: persisted as Failed with null nextRetryAt, reported as permanent.
         result.Succeeded.Should().BeFalse();
-        callbackInvoked.Should().BeFalse();
+        reason.Should().Be(MessageTerminalReason.PermanentFailure);
         await storage
             .Received()
             .ChangePublishRetryStateAsync(
@@ -982,7 +982,7 @@ public sealed class MessageSenderTests : TestBase
     {
         // given — IHostApplicationLifetime.ApplicationStopping is signalled and the transport
         // surfaces an OCE bound to that same token. The sender must classify this as cancellation
-        // (non-retryable), NOT invoke OnExhausted, and NOT write a state transition. The row's
+        // (non-retryable), NOT invoke OnTerminal, and NOT write a state transition. The row's
         // existing NextRetryAt remains and the persisted retry processor picks it up on restart.
         var storage = Substitute.For<IDataStorage>();
         storage
@@ -1023,7 +1023,7 @@ public sealed class MessageSenderTests : TestBase
                 {
                     RetryStrategy = TestRetryStrategies.FixedDelay(0, TimeSpan.Zero),
                     MaxPersistedRetries = 4,
-                    OnExhausted = (_, _) =>
+                    OnTerminal = (_, _) =>
                     {
                         callbackInvoked = true;
                         return Task.CompletedTask;
@@ -1036,7 +1036,7 @@ public sealed class MessageSenderTests : TestBase
         // when
         var result = await sender.SendAsync(_CreateMediumMessage());
 
-        // then — Shutdown OCE: no state write, no OnExhausted. Row keeps prior NextRetryAt/Status.
+        // then — Shutdown OCE: no state write, no OnTerminal. Row keeps prior NextRetryAt/Status.
         result.Succeeded.Should().BeFalse();
         callbackInvoked.Should().BeFalse();
         await storage
@@ -1054,11 +1054,11 @@ public sealed class MessageSenderTests : TestBase
     }
 
     [Fact]
-    public async Task should_skip_on_exhausted_when_publish_state_change_reports_already_terminal()
+    public async Task should_skip_on_terminal_when_publish_state_change_reports_already_terminal()
     {
         // given — X1 contract: a broker redelivery (or any path where the row reached terminal
         // state by another worker) means ChangePublishStateAsync's conditional UPDATE matches zero
-        // rows and returns false. The sender MUST skip OnExhausted in that case so the callback is
+        // rows and returns false. The sender MUST skip OnTerminal in that case so the callback is
         // not invoked twice for the same logical exhaustion. The Subscribe path has the same
         // guarantee; this test pins the publish-side mirror.
         var storage = Substitute.For<IDataStorage>();
@@ -1098,7 +1098,7 @@ public sealed class MessageSenderTests : TestBase
                 {
                     RetryStrategy = TestRetryStrategies.FixedDelay(0, TimeSpan.Zero),
                     MaxPersistedRetries = 0,
-                    OnExhausted = (_, _) =>
+                    OnTerminal = (_, _) =>
                     {
                         callbackInvoked = true;
                         return Task.CompletedTask;
@@ -1151,11 +1151,11 @@ public sealed class MessageSenderTests : TestBase
     }
 
     [Fact]
-    public async Task should_resolve_same_scoped_service_as_dispatch_scope_when_on_exhausted_callback()
+    public async Task should_resolve_same_scoped_service_as_dispatch_scope_when_on_terminal_callback()
     {
         // given — a Scoped marker service. The Dispatcher creates a per-message scope and
         // passes its IServiceProvider; MessageSender must surface that SAME provider via
-        // FailedInfo.ServiceProvider so OnExhausted sees the live scope.
+        // TerminalMessageInfo.ServiceProvider so OnTerminal sees the live scope.
         var rootServices = new ServiceCollection();
         rootServices.AddScoped<ScopedMarker>();
         var rootProvider = rootServices.BuildServiceProvider();
@@ -1199,7 +1199,7 @@ public sealed class MessageSenderTests : TestBase
                 {
                     RetryStrategy = TestRetryStrategies.ZeroDelay(0),
                     MaxPersistedRetries = 0,
-                    OnExhausted = (info, _) =>
+                    OnTerminal = (info, _) =>
                     {
                         observed = info.ServiceProvider.GetRequiredService<ScopedMarker>();
                         return Task.CompletedTask;
@@ -1815,7 +1815,7 @@ public sealed class MessageSenderTests : TestBase
             {
                 RetryStrategy = TestRetryStrategies.ZeroDelay(2),
                 MaxPersistedRetries = 1,
-                OnExhausted = (_, _) =>
+                OnTerminal = (_, _) =>
                 {
                     Interlocked.Increment(ref exhaustedCalls);
                     return Task.CompletedTask;
@@ -1854,7 +1854,7 @@ public sealed class MessageSenderTests : TestBase
     }
 
     [Fact]
-    public async Task should_cut_off_a_hung_on_exhausted_callback_on_the_backoff_clock_while_the_app_clock_is_frozen()
+    public async Task should_cut_off_a_hung_on_terminal_callback_on_the_backoff_clock_while_the_app_clock_is_frozen()
     {
         // given a frozen app clock, the default real back-off clock, and a callback that never returns
         var storage = Substitute.For<IDataStorage>();
@@ -1868,8 +1868,8 @@ public sealed class MessageSenderTests : TestBase
             {
                 RetryStrategy = TestRetryStrategies.ZeroDelay(2),
                 MaxPersistedRetries = 1,
-                OnExhaustedTimeout = TimeSpan.FromMilliseconds(50),
-                OnExhausted = (_, _) =>
+                OnTerminalTimeout = TimeSpan.FromMilliseconds(50),
+                OnTerminal = (_, _) =>
                 {
                     callbackEntered.TrySetResult();
                     return hung.Task;
@@ -2000,7 +2000,7 @@ public sealed class MessageSenderTests : TestBase
     }
 
     [Fact]
-    public async Task should_not_invoke_on_exhausted_when_another_sender_already_ended_the_over_cap_row()
+    public async Task should_not_invoke_on_terminal_when_another_sender_already_ended_the_over_cap_row()
     {
         // given — a second sender raced the same over-cap row and its terminal write lost the compare-and-set
         var storage = Substitute.For<IDataStorage>();
@@ -2013,7 +2013,7 @@ public sealed class MessageSenderTests : TestBase
             {
                 RetryStrategy = TestRetryStrategies.ZeroDelay(2),
                 MaxPersistedRetries = 1,
-                OnExhausted = (_, _) =>
+                OnTerminal = (_, _) =>
                 {
                     Interlocked.Increment(ref exhaustedCalls);
                     return Task.CompletedTask;
@@ -2211,7 +2211,7 @@ public sealed class MessageSenderTests : TestBase
         var serializer = Substitute.For<IMessageSerializer>();
         var transport = Substitute.For<ITransport>();
         transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
-        var callbackInvoked = false;
+        MessageTerminalReason? reason = null;
         var sender = _CreateSender(
             storage,
             serializer,
@@ -2222,9 +2222,9 @@ public sealed class MessageSenderTests : TestBase
                 {
                     RetryStrategy = TestRetryStrategies.ZeroDelay(3),
                     MaxPersistedRetries = 2,
-                    OnExhausted = (_, _) =>
+                    OnTerminal = (info, _) =>
                     {
-                        callbackInvoked = true;
+                        reason = info.Reason;
                         return Task.CompletedTask;
                     },
                 },
@@ -2240,7 +2240,7 @@ public sealed class MessageSenderTests : TestBase
         // when
         var result = await sender.SendAsync(message);
 
-        // then — terminal Failed with the reason, no serialization, no transport attempt, no retry, no callback
+        // then — terminal Failed with the reason, no serialization, no transport attempt, no retry; reported as expired
         result.Succeeded.Should().BeFalse();
         result.Exception.Should().BeOfType<MessageDeliverByExceededException>();
         await serializer
@@ -2262,7 +2262,7 @@ public sealed class MessageSenderTests : TestBase
         message.Origin.Headers[Headers.Exception].Should().Be(nameof(MessageDeliverByExceededException));
         message.ExceptionInfo.Should().Contain("deliver_by_exceeded");
         message.ExpiresAt.Should().BeAfter(DateTimeOffset.UtcNow);
-        callbackInvoked.Should().BeFalse();
+        reason.Should().Be(MessageTerminalReason.DeliveryDeadlineExpired);
         expired.Should().Contain("queue");
     }
 
@@ -2318,7 +2318,7 @@ public sealed class MessageSenderTests : TestBase
         var serializer = Substitute.For<IMessageSerializer>();
         var transport = Substitute.For<ITransport>();
         transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
-        var callbackInvoked = false;
+        MessageTerminalReason? reason = null;
         var sender = _CreateSender(
             storage,
             serializer,
@@ -2329,9 +2329,9 @@ public sealed class MessageSenderTests : TestBase
                 {
                     RetryStrategy = TestRetryStrategies.ZeroDelay(0),
                     MaxPersistedRetries = 0,
-                    OnExhausted = (_, _) =>
+                    OnTerminal = (info, _) =>
                     {
-                        callbackInvoked = true;
+                        reason = info.Reason;
                         return Task.CompletedTask;
                     },
                 },
@@ -2347,9 +2347,9 @@ public sealed class MessageSenderTests : TestBase
         // when
         var result = await sender.SendAsync(message);
 
-        // then — the would-be exhaustion becomes a silent expiry
+        // then — the would-be exhaustion is reported as an expiry instead
         result.Exception.Should().BeOfType<MessageDeliverByExceededException>();
-        callbackInvoked.Should().BeFalse();
+        reason.Should().Be(MessageTerminalReason.DeliveryDeadlineExpired);
         await transport.DidNotReceiveWithAnyArgs().SendAsync(default!, Arg.Any<CancellationToken>());
         await storage
             .Received(1)
@@ -2490,6 +2490,196 @@ public sealed class MessageSenderTests : TestBase
 
         // then
         terminal.Should().BeEmpty();
+    }
+
+    [Fact]
+    [Guarantee("MSG-OBS-02")]
+    public async Task should_report_retries_exhausted_with_the_envelope_tenant_when_the_publish_budget_is_spent()
+    {
+        // given: no inline or persisted retry is left after the first failed send
+        var calls = new ConcurrentQueue<TerminalMessageInfo>();
+        var sender = _CreateRecordingTerminalSender(
+            OperateResult.Failed(new TimeoutException("transient")),
+            TestRetryStrategies.FixedDelay(0, TimeSpan.Zero),
+            calls
+        );
+        var message = _CreateTenantMessage("tenant-a");
+
+        // when
+        await sender.SendAsync(message);
+
+        // then
+        var info = calls.Should().ContainSingle().Subject;
+        info.Reason.Should().Be(MessageTerminalReason.RetriesExhausted);
+        info.TenantId.Should().Be("tenant-a");
+        info.MessageType.Should().Be(MessageType.Publish);
+        info.StorageId.Should().Be(message.StorageId);
+        info.Exception.Should().BeOfType<TimeoutException>();
+    }
+
+    [Fact]
+    [Guarantee("MSG-OBS-02")]
+    public async Task should_report_permanent_failure_when_the_retry_classification_ends_the_publish_at_once()
+    {
+        // given: the strategy treats the argument failure as non-retryable, so the budget is never spent
+        var calls = new ConcurrentQueue<TerminalMessageInfo>();
+        var sender = _CreateRecordingTerminalSender(
+            // ReSharper disable once NotResolvedInText
+            OperateResult.Failed(new ArgumentNullException("param")),
+            TestRetryStrategies.PermanentArgument(3),
+            calls,
+            maxPersistedRetries: 5
+        );
+
+        // when
+        await sender.SendAsync(_CreateTenantMessage("tenant-a"));
+
+        // then
+        var info = calls.Should().ContainSingle().Subject;
+        info.Reason.Should().Be(MessageTerminalReason.PermanentFailure);
+        info.TenantId.Should().Be("tenant-a");
+        info.Exception.Should().BeOfType<ArgumentNullException>();
+    }
+
+    [Fact]
+    [Guarantee("MSG-OBS-02")]
+    public async Task should_report_delivery_deadline_expired_when_a_stored_publish_outlives_its_deadline()
+    {
+        // given: the row comes due after its delivery deadline
+        var calls = new ConcurrentQueue<TerminalMessageInfo>();
+        var sender = _CreateRecordingTerminalSender(OperateResult.Success, TestRetryStrategies.ZeroDelay(3), calls);
+        var message = _CreateTenantMessage("tenant-a");
+        message.Origin.Headers[Headers.DeliverBy] = DateTimeOffset
+            .UtcNow.AddSeconds(-1)
+            .ToString("O", CultureInfo.InvariantCulture);
+
+        // when
+        await sender.SendAsync(message);
+
+        // then
+        var info = calls.Should().ContainSingle().Subject;
+        info.Reason.Should().Be(MessageTerminalReason.DeliveryDeadlineExpired);
+        info.TenantId.Should().Be("tenant-a");
+        info.Exception.Should().BeOfType<MessageDeliverByExceededException>();
+    }
+
+    [Fact]
+    [Guarantee("MSG-OBS-02")]
+    public async Task should_report_no_transport_when_no_registered_transport_serves_the_stored_lane()
+    {
+        // given: a host with a queue transport only, and a stored bus message
+        var calls = new ConcurrentQueue<TerminalMessageInfo>();
+        var storage = Substitute.For<IDataStorage>();
+        var serializer = Substitute.For<IMessageSerializer>();
+        serializer
+            .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(_CreateTransportMessage()));
+        var sender = _CreateSenderWithTransports(
+            storage,
+            serializer,
+            new MessagingOptions { RetryPolicy = { OnTerminal = _Record(calls) } },
+            busTransport: null,
+            queueTransport: Substitute.For<IQueueTransport>()
+        );
+        var message = _CreateTenantMessage("tenant-a");
+
+        // when
+        await sender.SendAsync(message);
+
+        // then
+        var info = calls.Should().ContainSingle().Subject;
+        info.Reason.Should().Be(MessageTerminalReason.NoTransport);
+        info.TenantId.Should().Be("tenant-a");
+        info.Lane.Should().Be(MessageLane.Bus);
+    }
+
+    [Fact]
+    [Guarantee("MSG-OBS-02")]
+    public async Task should_not_report_a_terminal_publish_when_another_writer_already_ended_the_row()
+    {
+        // given: the expiry write is refused because the row is already terminal
+        var calls = new ConcurrentQueue<TerminalMessageInfo>();
+        var storage = Substitute.For<IDataStorage>();
+        var sender = _CreateRecordingTerminalSender(
+            OperateResult.Success,
+            TestRetryStrategies.ZeroDelay(3),
+            calls,
+            storage: storage
+        );
+        storage
+            .ChangePublishRetryStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
+                Arg.Any<RetryDelay?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(false));
+        var message = _CreateTenantMessage("tenant-a");
+        message.Origin.Headers[Headers.DeliverBy] = DateTimeOffset
+            .UtcNow.AddSeconds(-1)
+            .ToString("O", CultureInfo.InvariantCulture);
+
+        // when
+        await sender.SendAsync(message);
+
+        // then
+        calls.Should().BeEmpty();
+    }
+
+    private static MediumMessage _CreateTenantMessage(string tenantId)
+    {
+        var message = _CreateMediumMessage();
+        message.Origin.Headers[Headers.TenantId] = tenantId;
+        return message;
+    }
+
+    private static Func<TerminalMessageInfo, CancellationToken, Task> _Record(
+        ConcurrentQueue<TerminalMessageInfo> calls
+    )
+    {
+        return (info, _) =>
+        {
+            calls.Enqueue(info);
+            return Task.CompletedTask;
+        };
+    }
+
+    private static MessageSender _CreateRecordingTerminalSender(
+        OperateResult sendResult,
+        Polly.Retry.RetryStrategyOptions retryStrategy,
+        ConcurrentQueue<TerminalMessageInfo> calls,
+        int maxPersistedRetries = 0,
+        IDataStorage? storage = null
+    )
+    {
+        var transportMessage = _CreateTransportMessage();
+        var serializer = Substitute.For<IMessageSerializer>();
+        serializer
+            .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(transportMessage));
+
+        var transport = Substitute.For<ITransport>();
+        transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
+        transport.SendAsync(transportMessage, Arg.Any<CancellationToken>()).Returns(sendResult);
+
+        return _CreateSender(
+            storage ?? Substitute.For<IDataStorage>(),
+            serializer,
+            transport,
+            new MessagingOptions
+            {
+                RetryPolicy =
+                {
+                    RetryStrategy = retryStrategy,
+                    MaxPersistedRetries = maxPersistedRetries,
+                    OnTerminal = _Record(calls),
+                },
+            }
+        );
     }
 
     private static MessageSender _CreateTerminalSender(

@@ -4,7 +4,7 @@ namespace Headless.Messaging.Internal;
 
 /// <summary>
 /// Carries the caller-supplied reason of an explicit <see cref="ReceiveContext.Reject(string, Exception?)"/>
-/// into the poison-on-arrival row and the exhausted callback when no cause exception was provided.
+/// into the poison-on-arrival row and the terminal callback when no cause exception was provided.
 /// The type name is what operators see in the stored exception header, so it is distinct from
 /// framework faults.
 /// </summary>

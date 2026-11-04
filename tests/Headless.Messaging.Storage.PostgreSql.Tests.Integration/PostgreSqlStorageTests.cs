@@ -335,6 +335,19 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
 
         _EnsureInitialized();
         await TestMessagingSchema.ApplyAsync(fixture.ConnectionString, cancellationToken: AbortToken);
+
+        // Other classes in this collection share the tables and do not all clean up after themselves, so a test that
+        // counts rows (the backlog reads) starts from empty tables rather than from whatever ran before it.
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                """
+                TRUNCATE TABLE headless.messaging_published;
+                TRUNCATE TABLE headless.messaging_received;
+                """,
+                cancellationToken: AbortToken
+            )
+        );
     }
 
     /// <inheritdoc />

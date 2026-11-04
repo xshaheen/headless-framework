@@ -214,7 +214,7 @@ public static class ReceiveMiddlewareOutcomeConformance
     )
     {
         ConformanceReceiveConsumer.Reset();
-        var onExhaustedTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var onTerminalTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         var services = new ServiceCollection();
         services.AddLogging(builder =>
@@ -229,9 +229,9 @@ public static class ReceiveMiddlewareOutcomeConformance
             configureStorage(setup);
             setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
             setup.Options.Version = "v1";
-            setup.Options.RetryPolicy.OnExhausted = (_, _) =>
+            setup.Options.RetryPolicy.OnTerminal = (_, _) =>
             {
-                onExhaustedTcs.TrySetResult(true);
+                onTerminalTcs.TrySetResult(true);
                 return Task.CompletedTask;
             };
         });
@@ -256,8 +256,8 @@ public static class ReceiveMiddlewareOutcomeConformance
             cancellationToken
         );
 
-        var exhaustedFired = await onExhaustedTcs.Task.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
-        exhaustedFired.Should().BeTrue("Reject outcome must trigger OnExhausted");
+        var exhaustedFired = await onTerminalTcs.Task.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
+        exhaustedFired.Should().BeTrue("Reject outcome must trigger OnTerminal");
         ConformanceReceiveConsumer.InvocationCount.Should().Be(0, "Reject outcome must not invoke consumer");
 
         var storage = provider.GetRequiredService<IDataStorage>();

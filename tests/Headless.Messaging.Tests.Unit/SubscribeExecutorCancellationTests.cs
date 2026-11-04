@@ -174,7 +174,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
         // given — simulate app-shutdown cancellation:
         //   OperationCanceledException where CancellationToken.IsCancellationRequested = true.
         // The executor must classify this as cancellation, NOT invoke
-        // OnExhausted, and NOT write a state transition. The row keeps its prior NextRetryAt and
+        // OnTerminal, and NOT write a state transition. The row keeps its prior NextRetryAt and
         // the persisted retry processor picks it up on restart.
         var storage = Substitute.For<IDataStorage>();
         storage
@@ -209,7 +209,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
                 {
                     RetryStrategy = TestRetryStrategies.FixedDelay(0, TimeSpan.Zero),
                     MaxPersistedRetries = 0,
-                    OnExhausted = (_, _) =>
+                    OnTerminal = (_, _) =>
                     {
                         callbackInvoked = true;
                         return Task.CompletedTask;
@@ -224,7 +224,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
         var executionState = new RetryExecutionState();
         var result = await executor.ExecuteRetryAsync(message, _EmptyScope, executionState, descriptor, cts.Token);
 
-        // then — Shutdown OCE: no state write, no OnExhausted. Row keeps prior NextRetryAt/Status.
+        // then — Shutdown OCE: no state write, no OnTerminal. Row keeps prior NextRetryAt/Status.
         result.Succeeded.Should().BeFalse();
         executionState.LeaseClearedByTransition.Should().BeFalse();
         message.Retries.Should().Be(0);
@@ -378,15 +378,15 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
             );
     }
 
-    private static MessagingOptions _ExhaustingOptions(Action onExhausted)
+    private static MessagingOptions _ExhaustingOptions(Action onTerminal)
     {
         return new MessagingOptions
         {
             RetryPolicy =
             {
-                OnExhausted = (_, _) =>
+                OnTerminal = (_, _) =>
                 {
-                    onExhausted();
+                    onTerminal();
                     return Task.CompletedTask;
                 },
             },

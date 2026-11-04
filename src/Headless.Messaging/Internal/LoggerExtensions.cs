@@ -23,7 +23,7 @@ internal static partial class LoggerExtensions
         EventId = 3,
         EventName = "ExecutedThresholdCallbackFailed",
         Level = LogLevel.Warning,
-        Message = "RetryPolicy.OnExhausted action raised an exception: {Message}"
+        Message = "RetryPolicy.OnTerminal action raised an exception: {Message}"
     )]
     internal static partial void ExecutedThresholdCallbackFailed(
         this ILogger logger,
@@ -422,6 +422,26 @@ internal static partial class LoggerExtensions
         Guid storageId
     );
 
+    // One Error line per message the framework gives up on, whatever the reason, so an operator can alert on a single
+    // event id instead of on each path's own warning. It carries the envelope's tenant so the line can be routed to
+    // the tenant it belongs to.
+    [LoggerMessage(
+        EventId = 4137,
+        EventName = "MessageTerminal",
+        Level = LogLevel.Error,
+        Message = "Stored message {StorageId} (id '{MessageId}', {MessageType}) ended with {Reason} after {Retries} persisted retries; tenant '{TenantId}'."
+    )]
+    internal static partial void MessageTerminal(
+        this ILogger logger,
+        Exception? exception,
+        Guid storageId,
+        string messageId,
+        MessageType messageType,
+        MessageTerminalReason reason,
+        string? tenantId,
+        int retries
+    );
+
     [LoggerMessage(
         EventId = 4125,
         EventName = "StoredMessageDeliverByExceeded",
@@ -621,19 +641,19 @@ internal static partial class LoggerExtensions
 
     [LoggerMessage(
         EventId = 66,
-        EventName = "SkippingOnExhaustedAlreadyTerminal",
+        EventName = "SkippingOnTerminalAlreadyTerminal",
         Level = LogLevel.Information,
-        Message = "Skipping OnExhausted: message {StorageId} already terminal"
+        Message = "Skipping OnTerminal: message {StorageId} already terminal"
     )]
-    internal static partial void SkippingOnExhaustedAlreadyTerminal(this ILogger logger, Guid storageId);
+    internal static partial void SkippingOnTerminalAlreadyTerminal(this ILogger logger, Guid storageId);
 
     [LoggerMessage(
         EventId = 67,
-        EventName = "OnExhaustedTimedOut",
+        EventName = "OnTerminalTimedOut",
         Level = LogLevel.Warning,
-        Message = "RetryPolicy.OnExhausted callback for message {StorageId} did not complete within {TimeoutSeconds}s. The callback is orphaned; the dispatch loop has resumed."
+        Message = "RetryPolicy.OnTerminal callback for message {StorageId} did not complete within {TimeoutSeconds}s. The callback is orphaned; the dispatch loop has resumed."
     )]
-    internal static partial void OnExhaustedTimedOut(this ILogger logger, Guid storageId, double timeoutSeconds);
+    internal static partial void OnTerminalTimedOut(this ILogger logger, Guid storageId, double timeoutSeconds);
 
     [LoggerMessage(
         EventId = 72,
@@ -702,11 +722,11 @@ internal static partial class LoggerExtensions
 
     [LoggerMessage(
         EventId = 70,
-        EventName = "SkippingPoisonedOnExhaustedAlreadyTerminal",
+        EventName = "SkippingPoisonedOnTerminalAlreadyTerminal",
         Level = LogLevel.Information,
-        Message = "Skipping poisoned-message OnExhausted: message {MessageId} already terminal"
+        Message = "Skipping poisoned-message OnTerminal: message {MessageId} already terminal"
     )]
-    internal static partial void SkippingPoisonedOnExhaustedAlreadyTerminal(this ILogger logger, string messageId);
+    internal static partial void SkippingPoisonedOnTerminalAlreadyTerminal(this ILogger logger, string messageId);
 
     [LoggerMessage(
         EventId = 71,
@@ -718,19 +738,19 @@ internal static partial class LoggerExtensions
 
     [LoggerMessage(
         EventId = 95,
-        EventName = "OnExhaustedCallbackCancelledAtShutdown",
+        EventName = "OnTerminalCallbackCancelledAtShutdown",
         Level = LogLevel.Debug,
-        Message = "RetryPolicy.OnExhausted callback for message {StorageId} was cancelled by host shutdown."
+        Message = "RetryPolicy.OnTerminal callback for message {StorageId} was cancelled by host shutdown."
     )]
-    internal static partial void OnExhaustedCallbackCancelledAtShutdown(this ILogger logger, Guid storageId);
+    internal static partial void OnTerminalCallbackCancelledAtShutdown(this ILogger logger, Guid storageId);
 
     [LoggerMessage(
         EventId = 96,
-        EventName = "OnExhaustedCallbackOrphaned",
+        EventName = "OnTerminalCallbackOrphaned",
         Level = LogLevel.Warning,
-        Message = "RetryPolicy.OnExhausted callback for message {StorageId} timed out and is orphaned. Scope-bound services (FailedInfo.ServiceProvider) may become invalid once the dispatch scope disposes; cooperative callbacks should honor the supplied CancellationToken."
+        Message = "RetryPolicy.OnTerminal callback for message {StorageId} timed out and is orphaned. Scope-bound services (TerminalMessageInfo.ServiceProvider) may become invalid once the dispatch scope disposes; cooperative callbacks should honor the supplied CancellationToken."
     )]
-    internal static partial void OnExhaustedCallbackOrphaned(this ILogger logger, Guid storageId);
+    internal static partial void OnTerminalCallbackOrphaned(this ILogger logger, Guid storageId);
 
     [LoggerMessage(
         EventId = 74,

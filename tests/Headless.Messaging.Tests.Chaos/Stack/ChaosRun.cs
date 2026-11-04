@@ -361,7 +361,7 @@ public sealed class ChaosRun : IAsyncDisposable
             options.RetryProcessor.BaseInterval = TimeSpan.FromSeconds(1);
             options.RetryPolicy.DispatchTimeout = DispatchTimeout;
             options.RetryPolicy.InitialDispatchGrace = TimeSpan.FromSeconds(10);
-            options.RetryPolicy.OnExhausted = (failed, _) =>
+            options.RetryPolicy.OnTerminal = (failed, _) =>
             {
                 if (failed.Message.Headers.TryGetValue(Headers.MessageId, out var messageId) && messageId is not null)
                 {

@@ -223,13 +223,13 @@ public sealed class SubscribeExecutorReplyTests : TestBase
         // when
         var result = await host.ExecuteAsync(host.Request(TimeSpan.FromSeconds(30)), AbortToken);
 
-        // then — terminal, with no ok reply and no exhausted callback
+        // then — terminal, with no ok reply, reported as a permanent failure
         result.Succeeded.Should().BeFalse();
         host.Invoker.ReceivedCalls().Should().ContainSingle();
         host.StateWrites().Should().ContainSingle().Which.Should().Be((StatusName.Failed, (RetryDelay?)null));
         host.FaultCodes().Should().Equal(RequestFaultCodes.NullResponse);
         host.Replies.Sent.Should().ContainSingle();
-        host.ExhaustedCalls.Should().Be(0);
+        host.Exhausted.Should().ContainSingle().Which.Reason.Should().Be(MessageTerminalReason.PermanentFailure);
     }
 
     [Theory]

@@ -694,9 +694,9 @@ Without the guard, a query over a tenant-owned entity with a required tenant col
 
 `GuardTenantReads()` is the only registration API. `TenantGuardOptions.GuardReads` reports the configured state and has no public setter. When the seam records `guard-tenant-reads` but `GuardReads` resolves to false, for example because a later registration replaced `IOptions<TenantGuardOptions>`, host startup fails with `HEADLESS_TENANCY_EF_READ_GUARD_DISABLED`; the write guard reports `HEADLESS_TENANCY_EF_WRITE_GUARD_DISABLED` the same way.
 
-## Messaging Exhausted Callbacks
+## Messaging Terminal Callbacks
 
-When messaging tenant propagation is enabled, exhausted callbacks restore `ICurrentTenant` from the message envelope before invoking `RetryPolicy.OnExhausted`. This applies to publish failures, consume failures, and poisoned-on-arrival messages that bypass normal consumer execution. Missing, whitespace, or oversized tenant headers resolve to no tenant, matching consume-side lenient header handling.
+When messaging tenant propagation is enabled, terminal callbacks restore `ICurrentTenant` from the message envelope before invoking `RetryPolicy.OnTerminal`. This applies to every terminal reason on publish and consume, including poisoned-on-arrival messages that bypass normal consumer execution. `TerminalMessageInfo.TenantId` carries the same envelope tenant whether or not propagation is enabled. Missing, whitespace, or oversized tenant headers resolve to no tenant, matching consume-side lenient header handling.
 
 ### Defense Layers and Known Gaps
 

@@ -130,7 +130,7 @@ internal sealed partial class ConsumerRegister
             {
                 // A request is settled here, before the receive stage and inbox admission, when no work may run for
                 // it: its caller already stopped waiting, or no responder can answer it. Like a receive skip, it leaves
-                // no storage row, fires no exhausted callback, and its probe is released by the finally below.
+                // no storage row, fires no terminal callback, and its probe is released by the finally below.
                 if (
                     RequestEnvelope.IsRequest(lane, transportMessage.Headers)
                     && _ResolveUnservableRequestOutcome(lane, transportMessage, executor, consumerIdentity)
@@ -234,7 +234,7 @@ internal sealed partial class ConsumerRegister
 
                 if (receiveOutcome.Result == ReceiveRingResult.Skipped)
                 {
-                    // Skip commits and drops: no storage row, no exhausted callback, and the
+                    // Skip commits and drops: no storage row, no terminal callback, and the
                     // half-open probe is released by the callback's finally (neither success nor
                     // failure — a header-based filter decision must not advance the breaker).
                     if (_logger.IsEnabled(LogLevel.Information))
@@ -355,7 +355,7 @@ internal sealed partial class ConsumerRegister
             {
                 // A message the inbox already admitted for this consumer is a redelivery of work that ran, for example
                 // a lost acknowledgement redelivered to a node on another contract version during a rolling deploy.
-                // It is committed as a duplicate: no poison row, dead-letter, fault reply, exhausted callback, or
+                // It is committed as a duplicate: no poison row, dead-letter, fault reply, terminal callback, or
                 // breaker report, and the finally releases the probe. Without a consumer no inbox row can exist. An
                 // explicit receive-middleware Reject is the middleware's verdict on this delivery, so it keeps its
                 // poison row and dead-letter even when the id matches admitted work: a forged copy of a known message
@@ -491,46 +491,30 @@ internal sealed partial class ConsumerRegister
                         .ConfigureAwait(false);
                 }
 
-                var bypassCallback = _options.RetryPolicy.OnExhausted;
-
-                if (stored && bypassCallback is not null)
+                if (stored)
                 {
-                    // Poisoned-on-arrival messages bypass the normal Dispatcher scope,
-                    // so we create a fresh async scope here instead of using the root provider.
-                    // RetryHelper.InvokeOnExhaustedAsync applies the configured OnExhaustedTimeout
-                    // and swallows handler exceptions; pass the subscription/host shutdown token so a
-                    // cooperative callback can short-circuit when the consumer is stopping.
-                    await using var exhaustedScope = serviceScopeFactory.CreateAsyncScope();
-
-                    using var tenantScope = TenantContextScope.ChangeFromEnvelope(
-                        exhaustedScope.ServiceProvider,
-                        message,
-                        _logger
-                    );
+                    // Poisoned-on-arrival messages bypass the normal Dispatcher scope, so the callback gets a fresh
+                    // async scope instead of the root provider. RetryHelper applies the configured OnTerminalTimeout
+                    // and swallows handler exceptions; the subscription/host shutdown token lets a cooperative
+                    // callback short-circuit when the consumer is stopping. The message never reached a consumer, so
+                    // it ends as a permanent failure with no retries spent; storageId is the storage's "no row
+                    // identifier" sentinel because no MediumMessage exists on this path.
+                    await using var terminalScope = serviceScopeFactory.CreateAsyncScope();
 
                     await RetryHelper
-                        .InvokeOnExhaustedAsync(
-                            bypassCallback,
-                            new FailedInfo
-                            {
-                                ServiceProvider = exhaustedScope.ServiceProvider,
-                                MessageType = MessageType.Subscribe,
-                                Message = message,
-                                Lane = lane,
-                                Exception =
-                                    dispatchBypassException
-                                    ?? new InvalidOperationException(
-                                        exceptionInfo ?? "Received message contains exception information."
-                                    ),
-                                // Poisoned-on-arrival messages bypass the dispatch scope and have
-                                // no associated MediumMessage; storageId is the storage's
-                                // sentinel here too (Guid.Empty == "no row identifier"), and the
-                                // retry count is zero because no consume attempt ever ran.
-                                StorageId = Guid.Empty,
-                                RetryCount = 0,
-                            },
-                            _options.RetryPolicy.OnExhaustedTimeout,
+                        .RunOnTerminalAsync(
+                            _options.RetryPolicy,
+                            message,
+                            lane,
                             storageId: Guid.Empty,
+                            retryCount: 0,
+                            dispatchBypassException
+                                ?? new InvalidOperationException(
+                                    exceptionInfo ?? "Received message contains exception information."
+                                ),
+                            terminalScope.ServiceProvider,
+                            MessageType.Subscribe,
+                            MessageTerminalReason.PermanentFailure,
                             _logger,
                             _backoffClock,
                             hostShutdownToken
@@ -541,7 +525,7 @@ internal sealed partial class ConsumerRegister
                 {
                     if (_logger.IsEnabled(LogLevel.Information))
                     {
-                        _logger.SkippingPoisonedOnExhaustedAlreadyTerminal(message.Id);
+                        _logger.SkippingPoisonedOnTerminalAlreadyTerminal(message.Id);
                     }
                 }
 

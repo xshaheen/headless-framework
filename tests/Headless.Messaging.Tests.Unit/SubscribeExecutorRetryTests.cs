@@ -534,7 +534,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         message.Retries.Should().Be(17);
     }
 
-    // ─── Terminal failures and OnExhausted ──────────────────────────────────────────────────────────
+    // ─── Terminal failures and OnTerminal ──────────────────────────────────────────────────────────
 
     [Fact]
     public async Task should_not_rerun_a_succeeded_handler_when_its_success_write_fails()
@@ -542,7 +542,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         // given — the handler succeeds, then storage fails the success write once; the policy allows inline retries.
         var storage = Substitute.For<IDataStorage>();
         var invoker = _Succeeding(out var invocations);
-        var exhausted = new List<FailedInfo>();
+        var exhausted = new List<TerminalMessageInfo>();
         var circuitBreaker = Substitute.For<ICircuitBreakerStateManager>();
         var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(exhausted.Add), circuitBreaker);
         var writes = _CaptureWrites(storage);
@@ -581,11 +581,11 @@ public sealed class SubscribeExecutorRetryTests : TestBase
     }
 
     [Fact]
-    public async Task should_fail_after_one_attempt_and_fire_on_exhausted_once_when_a_fail_rule_matches()
+    public async Task should_fail_after_one_attempt_and_fire_on_terminal_once_when_a_fail_rule_matches()
     {
         var storage = Substitute.For<IDataStorage>();
         var invoker = _AlwaysThrowing(new InvalidOperationException("declined"), out var invocations);
-        var exhausted = new List<FailedInfo>();
+        var exhausted = new List<TerminalMessageInfo>();
         var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(exhausted.Add));
         var writes = _CaptureWrites(storage);
         var message = _CreateMediumMessage();
@@ -602,11 +602,11 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         writes.Should().ContainSingle().Which.Should().Match<StateWrite>(write => _IsTerminal(write));
         message.Retries.Should().Be(0, "a matched fail rule skips the remaining retries");
         exhausted.Should().ContainSingle();
-        exhausted[0].Exception.GetBaseException().Should().BeOfType<InvalidOperationException>();
+        exhausted[0].Exception!.GetBaseException().Should().BeOfType<InvalidOperationException>();
     }
 
     [Fact]
-    public async Task should_cut_off_a_hung_on_exhausted_callback_on_the_backoff_clock_while_the_app_clock_is_frozen()
+    public async Task should_cut_off_a_hung_on_terminal_callback_on_the_backoff_clock_while_the_app_clock_is_frozen()
     {
         // given a frozen app clock, the default real back-off clock, and a callback that never returns
         var storage = Substitute.For<IDataStorage>();
@@ -617,8 +617,8 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         {
             RetryPolicy =
             {
-                OnExhaustedTimeout = TimeSpan.FromMilliseconds(50),
-                OnExhausted = (_, _) =>
+                OnTerminalTimeout = TimeSpan.FromMilliseconds(50),
+                OnTerminal = (_, _) =>
                 {
                     callbackEntered.TrySetResult();
                     return hung.Task;
@@ -747,14 +747,14 @@ public sealed class SubscribeExecutorRetryTests : TestBase
     }
 
     [Fact]
-    public async Task should_treat_message_deserialization_exception_as_terminal_and_fire_on_exhausted_once()
+    public async Task should_treat_message_deserialization_exception_as_terminal_and_fire_on_terminal_once()
     {
         var storage = Substitute.For<IDataStorage>();
         var invoker = _AlwaysThrowing(
             new MessageDeserializationException("Stage B payload deserialization failed"),
             out var invocations
         );
-        var exhausted = new List<FailedInfo>();
+        var exhausted = new List<TerminalMessageInfo>();
         var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(exhausted.Add));
         var writes = _CaptureWrites(storage);
         var message = _CreateMediumMessage();
@@ -772,7 +772,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .Which.Should()
             .Match<StateWrite>(write => _IsTerminal(write) && write.LockedUntil == null);
         exhausted.Should().ContainSingle();
-        exhausted[0].Exception.GetBaseException().Should().BeOfType<MessageDeserializationException>();
+        exhausted[0].Exception!.GetBaseException().Should().BeOfType<MessageDeserializationException>();
     }
 
     [Fact]
@@ -797,12 +797,12 @@ public sealed class SubscribeExecutorRetryTests : TestBase
     }
 
     [Fact]
-    public async Task should_fail_a_row_whose_consumer_is_no_longer_registered_and_fire_on_exhausted_once()
+    public async Task should_fail_a_row_whose_consumer_is_no_longer_registered_and_fire_on_terminal_once()
     {
         // given — a stored row of a consumer identity this host does not register, handed over without a lease.
         var storage = Substitute.For<IDataStorage>();
         var invoker = Substitute.For<ISubscribeInvoker>();
-        var exhausted = new List<FailedInfo>();
+        var exhausted = new List<TerminalMessageInfo>();
         var options = _OptionsCountingExhausted(exhausted.Add);
         options.RetryPolicy.DispatchTimeout = TimeSpan.FromSeconds(23);
         var executor = _CreateExecutor(invoker, storage, options);
@@ -846,7 +846,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
     }
 
     [Fact]
-    public async Task should_fire_on_exhausted_only_on_the_node_that_wins_the_terminal_write()
+    public async Task should_fire_on_terminal_only_on_the_node_that_wins_the_terminal_write()
     {
         // given — two nodes run the final attempt of the same row; storage lets only the first terminal write land.
         var storage = Substitute.For<IDataStorage>();
@@ -883,11 +883,11 @@ public sealed class SubscribeExecutorRetryTests : TestBase
     }
 
     [Fact]
-    public async Task should_resolve_same_scoped_service_as_dispatch_scope_when_on_exhausted_callback()
+    public async Task should_resolve_same_scoped_service_as_dispatch_scope_when_on_terminal_callback()
     {
         // given — a Scoped marker service. The caller (Dispatcher) creates a scope and
         // passes its IServiceProvider; the executor must surface that SAME provider through
-        // FailedInfo.ServiceProvider so OnExhausted sees the live per-message scope.
+        // TerminalMessageInfo.ServiceProvider so OnTerminal sees the live per-message scope.
         var rootServices = new ServiceCollection();
         rootServices.AddScoped<ScopedMarker>();
         var rootProvider = rootServices.BuildServiceProvider();
@@ -916,7 +916,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
     }
 
     [Fact]
-    public async Task should_skip_on_exhausted_when_status_already_failed_when_redelivered()
+    public async Task should_skip_on_terminal_when_status_already_failed_when_redelivered()
     {
         // given — redelivery where storage is already terminal: the terminal write affects no row.
         var storage = Substitute.For<IDataStorage>();
@@ -937,7 +937,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         );
 
         // then
-        exhausted.Should().Be(0, "OnExhausted must be skipped if storage update returned false");
+        exhausted.Should().Be(0, "OnTerminal must be skipped if storage update returned false");
     }
 
     // ─── Cancellation ───────────────────────────────────────────────────────────────────────────────
@@ -988,7 +988,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             new TaskCanceledException("HttpClient timeout", new TimeoutException(), clientTimeout.Token),
             out var invocations
         );
-        var exhausted = new List<FailedInfo>();
+        var exhausted = new List<TerminalMessageInfo>();
         var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(exhausted.Add));
         var writes = _CaptureWrites(storage);
 
@@ -1006,7 +1006,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         writes.Count(_IsTerminal).Should().Be(1);
         writes[^1].Should().Match<StateWrite>(write => _IsTerminal(write));
         exhausted.Should().ContainSingle();
-        exhausted[0].Exception.InnerException.Should().BeOfType<TaskCanceledException>();
+        exhausted[0].Exception!.InnerException.Should().BeOfType<TaskCanceledException>();
     }
 
     [Fact]
@@ -1113,7 +1113,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             new TaskCanceledException("HttpClient timeout", null, clientTimeout.Token),
             out var invocations
         );
-        var exhausted = new List<FailedInfo>();
+        var exhausted = new List<TerminalMessageInfo>();
         var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(exhausted.Add));
         var writes = _CaptureWrites(storage);
         var message = _CreateMediumMessage();
@@ -1133,7 +1133,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         message.Retries.Should().Be(0);
         exhausted.Should().ContainSingle();
         exhausted[0].Exception.Should().BeOfType<SubscriberExecutionFailedException>();
-        exhausted[0].Exception.InnerException.Should().BeOfType<TaskCanceledException>();
+        exhausted[0].Exception!.InnerException.Should().BeOfType<TaskCanceledException>();
     }
 
     [Fact]
@@ -1145,7 +1145,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         await clientTimeout.CancelAsync();
         var storage = Substitute.For<IDataStorage>();
         var invoker = _SucceedingInScope(out var invocations);
-        var exhausted = new List<FailedInfo>();
+        var exhausted = new List<TerminalMessageInfo>();
         var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(exhausted.Add));
         var writes = _CaptureWrites(storage);
         var message = _CreateTransactionalInboxMessage();
@@ -1179,7 +1179,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         await clientTimeout.CancelAsync();
         var storage = Substitute.For<IDataStorage>();
         var invoker = _SucceedingInScope(out var invocations);
-        var exhausted = new List<FailedInfo>();
+        var exhausted = new List<TerminalMessageInfo>();
         var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(exhausted.Add));
         var writes = _CaptureWrites(storage);
         var message = _CreateTransactionalInboxMessage();
@@ -1555,20 +1555,20 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         return invoker;
     }
 
-    private static MessagingOptions _OptionsCountingExhausted(Action onExhausted)
+    private static MessagingOptions _OptionsCountingExhausted(Action onTerminal)
     {
-        return _OptionsCountingExhausted(_ => onExhausted());
+        return _OptionsCountingExhausted(_ => onTerminal());
     }
 
-    private static MessagingOptions _OptionsCountingExhausted(Action<FailedInfo> onExhausted)
+    private static MessagingOptions _OptionsCountingExhausted(Action<TerminalMessageInfo> onTerminal)
     {
         return new MessagingOptions
         {
             RetryPolicy =
             {
-                OnExhausted = (info, _) =>
+                OnTerminal = (info, _) =>
                 {
-                    onExhausted(info);
+                    onTerminal(info);
                     return Task.CompletedTask;
                 },
             },

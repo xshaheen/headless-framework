@@ -171,14 +171,14 @@ internal static class RetryHelper
     /// <see cref="Task.WaitAsync(TimeSpan,TimeProvider,CancellationToken)"/>, measured on
     /// <paramref name="backoffClock"/>.
     /// On timeout the callback is orphaned (continues running in the background) and a
-    /// <c>OnExhaustedTimedOut</c> log event is emitted. Exceptions thrown by the callback
+    /// <c>OnTerminalTimedOut</c> log event is emitted. Exceptions thrown by the callback
     /// are caught and logged so they cannot crash the dispatch loop. Cancellation observed
     /// on the supplied token is treated like any other callback exception — logged and absorbed.
     /// </summary>
     /// <remarks>
     /// On timeout, the linked CTS attached to the callback's <see cref="CancellationToken"/> is
     /// cancelled — this gives a cooperative callback a chance to short-circuit before the surrounding
-    /// dispatch scope is disposed and <see cref="FailedInfo.ServiceProvider"/> becomes invalid. A
+    /// dispatch scope is disposed and <see cref="TerminalMessageInfo.ServiceProvider"/> becomes invalid. A
     /// callback that ignores its CT is still orphaned (we cannot abort an unmanaged Task), but the
     /// well-behaved case lands cleanly.
     /// </remarks>
@@ -186,9 +186,9 @@ internal static class RetryHelper
     /// The messaging back-off clock (<see cref="MessagingOptions.BackoffClockServiceKey"/>), not the app clock: the
     /// timeout cuts off a hung callback, which must happen in real time even when a test freezes the app clock.
     /// </param>
-    public static async Task InvokeOnExhaustedAsync(
-        Func<FailedInfo, CancellationToken, Task> callback,
-        FailedInfo failedInfo,
+    public static async Task InvokeOnTerminalAsync(
+        Func<TerminalMessageInfo, CancellationToken, Task> callback,
+        TerminalMessageInfo terminalInfo,
         TimeSpan timeout,
         Guid storageId,
         ILogger logger,
@@ -218,7 +218,7 @@ internal static class RetryHelper
             Task callbackTask;
             try
             {
-                callbackTask = callback(failedInfo, callbackCts.Token);
+                callbackTask = callback(terminalInfo, callbackCts.Token);
             }
             catch (Exception syncEx)
             {
@@ -231,12 +231,12 @@ internal static class RetryHelper
             }
             catch (TimeoutException)
             {
-                logger.OnExhaustedTimedOut(storageId, timeout.TotalSeconds);
-                // Orphan warning: scope-bound services (FailedInfo.ServiceProvider) may become
+                logger.OnTerminalTimedOut(storageId, timeout.TotalSeconds);
+                // Orphan warning: scope-bound services (TerminalMessageInfo.ServiceProvider) may become
                 // invalid after the dispatch scope disposes. The orphaned callback continues running
                 // in the background; an uncooperative callback that ignores the CT may race scope
                 // disposal.
-                logger.OnExhaustedCallbackOrphaned(storageId);
+                logger.OnTerminalCallbackOrphaned(storageId);
 
                 // Signal the callback to stop touching scope-bound services. A cooperative callback
                 // observes the token and unwinds; an uncooperative one is orphaned and may still
@@ -273,7 +273,7 @@ internal static class RetryHelper
                 // fires first). Both indicate shutdown — accept either token-identity.
                 // Cancel the linked CTS so a cooperative callback sees cancellation and unwinds
                 // cleanly instead of touching a disposed scope. Not a callback fault — debug log only.
-                logger.OnExhaustedCallbackCancelledAtShutdown(storageId);
+                logger.OnTerminalCallbackCancelledAtShutdown(storageId);
                 try
                 {
                     await callbackCts.CancelAsync().ConfigureAwait(false);
@@ -300,54 +300,104 @@ internal static class RetryHelper
     }
 
     /// <summary>
-    /// End-to-end <c>OnExhausted</c> invocation: enters the message's tenant context, builds the
-    /// <see cref="FailedInfo"/> envelope around the configured callback, and applies the configured
-    /// timeout / cancellation contract. Both the publish path (<c>MessageSender</c>) and the consume
-    /// path (<c>SubscribeExecutor</c>) share this body; the only per-path knob is
-    /// <paramref name="messageType"/>.
+    /// End-to-end <c>OnTerminal</c> invocation for a stored row: logs the terminal outcome, enters the message's
+    /// tenant context, builds the <see cref="TerminalMessageInfo"/> around the configured callback, and applies the
+    /// configured timeout / cancellation contract. The publish path (<c>MessageSender</c>) and the consume path
+    /// (<c>SubscribeExecutor</c>) share this body; only <paramref name="messageType"/> and <paramref name="reason"/>
+    /// vary.
     /// </summary>
     /// <remarks>
-    /// Returns immediately when <see cref="RetryPolicyOptions.OnExhausted"/> is <see langword="null"/>.
-    /// All callback failures (synchronous throw, async fault, timeout, shutdown) are absorbed via
-    /// <see cref="InvokeOnExhaustedAsync"/> — see that method for the cancellation/timeout contract.
+    /// Callers invoke this only after their terminal write landed, so each message reaches it once whichever replica
+    /// won the write. All callback failures (synchronous throw, async fault, timeout, shutdown) are absorbed via
+    /// <see cref="InvokeOnTerminalAsync"/> — see that method for the cancellation/timeout contract.
     /// </remarks>
     /// <param name="backoffClock">
-    /// The messaging back-off clock that bounds the callback by <see cref="RetryPolicyOptions.OnExhaustedTimeout"/>.
+    /// The messaging back-off clock that bounds the callback by <see cref="RetryPolicyOptions.OnTerminalTimeout"/>.
     /// </param>
-    public static async Task RunOnExhaustedAsync(
+    public static Task RunOnTerminalAsync(
         RetryPolicyOptions policy,
         MediumMessage message,
-        Exception exception,
+        Exception? exception,
         IServiceProvider dispatchServices,
         MessageType messageType,
+        MessageTerminalReason reason,
         ILogger logger,
         TimeProvider backoffClock,
         CancellationToken cancellationToken
     )
     {
-        var callback = policy.OnExhausted;
+        return RunOnTerminalAsync(
+            policy,
+            message.Origin,
+            message.Lane,
+            message.StorageId,
+            message.Retries,
+            exception,
+            dispatchServices,
+            messageType,
+            reason,
+            logger,
+            backoffClock,
+            cancellationToken
+        );
+    }
+
+    /// <summary>
+    /// The <c>OnTerminal</c> body over the envelope itself, for a terminal row that has no <see cref="MediumMessage"/>
+    /// in hand (a message poisoned on arrival). Returns after logging when no callback is configured.
+    /// </summary>
+    public static async Task RunOnTerminalAsync(
+        RetryPolicyOptions policy,
+        Message message,
+        MessageLane lane,
+        Guid storageId,
+        int retryCount,
+        Exception? exception,
+        IServiceProvider services,
+        MessageType messageType,
+        MessageTerminalReason reason,
+        ILogger logger,
+        TimeProvider backoffClock,
+        CancellationToken cancellationToken
+    )
+    {
+        // The same lenient reading the tenant scope uses, so the callback, the log line, and ICurrentTenant agree on
+        // which tenant a malformed header names: none.
+        var tenantId = TenantContextScope.ResolveTenantId(message.Headers, logger: null);
+
+        logger.MessageTerminal(
+            exception,
+            storageId,
+            LogSanitizer.Sanitize(message.Id),
+            messageType,
+            reason,
+            tenantId is null ? null : LogSanitizer.Sanitize(tenantId),
+            retryCount
+        );
+
+        var callback = policy.OnTerminal;
         if (callback is null)
         {
             return;
         }
 
-        // Use the live dispatch scope so scoped services resolved by the callback are the same
-        // instances seen during the consume/send attempt. The caller (Dispatcher) owns this scope.
-        using var tenantScope = TenantContextScope.ChangeFromEnvelope(dispatchServices, message.Origin, logger);
-        await InvokeOnExhaustedAsync(
+        using var tenantScope = TenantContextScope.ChangeFromEnvelope(services, message, logger);
+        await InvokeOnTerminalAsync(
                 callback,
-                new FailedInfo
+                new TerminalMessageInfo
                 {
-                    ServiceProvider = dispatchServices,
+                    ServiceProvider = services,
                     MessageType = messageType,
-                    Message = message.Origin,
-                    Lane = message.Lane,
+                    Message = message,
+                    Lane = lane,
                     Exception = exception,
-                    StorageId = message.StorageId,
-                    RetryCount = message.Retries,
+                    Reason = reason,
+                    TenantId = tenantId,
+                    StorageId = storageId,
+                    RetryCount = retryCount,
                 },
-                policy.OnExhaustedTimeout,
-                message.StorageId,
+                policy.OnTerminalTimeout,
+                storageId,
                 logger,
                 backoffClock,
                 cancellationToken
@@ -374,7 +424,7 @@ internal static class RetryHelper
         // the Polly pipeline must hand control to the persisted-retry path without sleeping.
         // Otherwise the call site would skip the Retries++ increment (gated on
         // !IsInlineRetryInFlight), the row would sit with NextRetryAt set but Retries unchanged,
-        // and the persisted budget would never be consumed — OnExhausted would never fire.
+        // and the persisted budget would never be consumed — OnTerminal would never fire.
         var inlineBudgetWouldOversleep =
             decision.Outcome == MessagingRetryDecision.Kind.Continue && decision.Delay >= policy.DispatchTimeout;
 

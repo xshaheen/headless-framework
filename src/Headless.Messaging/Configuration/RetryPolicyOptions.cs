@@ -9,7 +9,7 @@ namespace Headless.Messaging;
 
 /// <summary>
 /// Configures publish retries, the dispatch lease and grace shared by publishing and consuming, and the
-/// <see cref="OnExhausted"/> callback.
+/// <see cref="OnTerminal"/> callback.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -79,7 +79,7 @@ public sealed class RetryPolicyOptions
     /// <para>
     /// Persisted publish pickups burst inline retries on each pickup. Total observable publish attempts =
     /// <c>(RetryStrategy.MaxRetryAttempts + 1) × (MaxPersistedRetries + 1)</c>; with defaults this is
-    /// <c>(2 + 1) × (15 + 1) = 48</c> attempts before <see cref="OnExhausted"/> fires.
+    /// <c>(2 + 1) × (15 + 1) = 48</c> attempts before <see cref="OnTerminal"/> fires.
     /// </para>
     /// <para>
     /// Set to 0 to disable persisted publish retry (failure becomes terminal after the inline budget is consumed).
@@ -146,19 +146,19 @@ public sealed class RetryPolicyOptions
 
     /// <summary>
     /// Gets or sets the upper bound on how long the framework will await the
-    /// <see cref="OnExhausted"/> callback before logging a timeout and continuing.
+    /// <see cref="OnTerminal"/> callback before logging a timeout and continuing.
     /// Default is 30 seconds.
     /// </summary>
     /// <remarks>
     /// A callback that does not return within this window is observed via <c>Task.WaitAsync</c>
-    /// and a <c>OnExhaustedTimedOut</c> log event is emitted. The orphaned callback continues
+    /// and a <c>OnTerminalTimedOut</c> log event is emitted. The orphaned callback continues
     /// running in the background but the dispatch loop is no longer blocked by it. Keep callbacks
     /// short and honor the supplied <see cref="CancellationToken"/> to avoid leaking resources.
     /// The window runs on the messaging back-off clock (<see cref="MessagingOptions.BackoffClockServiceKey"/>,
     /// <see cref="TimeProvider.System"/> by default), not the registered <see cref="TimeProvider"/>, so a frozen app
     /// clock in a test does not keep a hung callback running forever.
     /// </remarks>
-    public TimeSpan OnExhaustedTimeout { get; set; } = TimeSpan.FromSeconds(30);
+    public TimeSpan OnTerminalTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
     /// Returns <see langword="true"/> when more inline publish attempts remain within the policy
@@ -187,65 +187,78 @@ public sealed class RetryPolicyOptions
         target.InitialDispatchGrace = InitialDispatchGrace;
         target.DispatchTimeout = DispatchTimeout;
         target.LeaseRenewalInterval = LeaseRenewalInterval;
-        target.OnExhausted = OnExhausted;
-        target.OnExhaustedTimeout = OnExhaustedTimeout;
+        target.OnTerminal = OnTerminal;
+        target.OnTerminalTimeout = OnTerminalTimeout;
     }
 
     /// <summary>
-    /// Gets or sets the callback invoked once for each message that fails for good.
+    /// Gets or sets the callback invoked once for each stored message the framework gives up on, with the reason in
+    /// <see cref="TerminalMessageInfo.Reason"/> and the envelope's tenant in <see cref="TerminalMessageInfo.TenantId"/>.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// On publish it fires when the retry budget
-    /// <c>(RetryStrategy.MaxRetryAttempts + 1) × (MaxPersistedRetries + 1)</c> is consumed; a permanent failure there
-    /// short-circuits the budget and does not invoke this callback.
+    /// It fires for every terminal outcome the framework persists, on publish and on consume:
+    /// </para>
+    /// <list type="bullet">
+    /// <item><description>
+    /// <see cref="MessageTerminalReason.RetriesExhausted"/>: the publish budget
+    /// <c>(RetryStrategy.MaxRetryAttempts + 1) × (MaxPersistedRetries + 1)</c> or the consumer's failure policy budget
+    /// is spent, or a request's remaining retries could no longer finish before its response deadline.
+    /// </description></item>
+    /// <item><description>
+    /// <see cref="MessageTerminalReason.PermanentFailure"/>: a failure the publish retry classification calls
+    /// non-retryable, a consumer fail rule, the built-in permanent set (for example an argument validation error), a
+    /// payload that fails to deserialize, a consumer that is no longer registered, a responder's null response, or a
+    /// message poisoned on arrival.
+    /// </description></item>
+    /// <item><description>
+    /// <see cref="MessageTerminalReason.DeliveryDeadlineExpired"/>: a stored message's delivery deadline
+    /// (<c>MessageOptions.DeliverWithin</c>) or a stored request's response deadline passed before it could be sent or
+    /// consumed.
+    /// </description></item>
+    /// <item><description>
+    /// <see cref="MessageTerminalReason.NoTransport"/>: no registered transport can send a stored message's lane.
+    /// </description></item>
+    /// </list>
+    /// <para>
+    /// It fires only when this node's terminal write lands: a node that finds the row already terminal (a redelivery,
+    /// or a racing replica that won the write) skips it, so each stored message reaches it once. A host-shutdown
+    /// cancellation is not a failure and never invokes it.
     /// </para>
     /// <para>
-    /// On consume it fires for every terminal failure: the consumer's failure policy budget is spent, one of its fail
-    /// rules matches, the failure is in the built-in permanent set (for example an argument validation error), the
-    /// payload fails to deserialize at execution, the stored message's consumer is no longer registered, or the message
-    /// is poisoned on arrival. It fires only when this node's terminal write wins: a node that finds the row already
-    /// terminal skips it. A host-shutdown cancellation is not a failure and never invokes it.
+    /// It never fires for a message that has no stored row to end: a direct send (which is not stored), or a delivery
+    /// whose deadline had already passed when a consumer received it, which is dropped before the inbox stores it.
+    /// Watch <c>headless.messaging.send.expired</c> and <c>headless.messaging.receive.outcomes</c> for those.
     /// </para>
     /// <para>
-    /// The callback runs inside the live dispatch scope carried by <see cref="FailedInfo.ServiceProvider"/> and is
-    /// awaited before the dispatch scope is disposed.
+    /// It is best-effort across crashes: the terminal write commits first and the callback runs after it, so a process
+    /// that dies between the two never invokes it for that message, and nothing replays it on restart. Treat it as a
+    /// notification, not as the record of terminal messages; the stored <c>Failed</c> row is that record.
     /// </para>
     /// <para>
-    /// Delivery is <b>at-least-once</b>: under broker redelivery, partial failures, or crash-recover
-    /// this callback MAY fire more than once for the same message. The handler MUST be idempotent
-    /// — use <c>Message.Id</c> as the dedupe key. The framework makes best-effort to skip
-    /// re-firing when storage proves the row is already in a terminal state, but does not
-    /// guarantee single-fire under all broker semantics.
-    /// </para>
-    /// <para>
-    /// The supplied <see cref="CancellationToken"/> reflects host shutdown — handle it to fail
-    /// fast on stop. Throwing from the callback is caught and logged; it does not crash the
-    /// dispatch loop.
+    /// The callback runs inside the live dispatch scope carried by <see cref="TerminalMessageInfo.ServiceProvider"/>
+    /// and is awaited before the dispatch scope is disposed. The supplied <see cref="CancellationToken"/> reflects host
+    /// shutdown — handle it to fail fast on stop. Throwing from the callback is caught and logged; it does not crash
+    /// the dispatch loop.
     /// </para>
     /// <para>
     /// Scope nuance: for poisoned-on-arrival messages (failed to deserialize or no subscriber
     /// registered) no consume execution ever runs, so the framework creates a fresh DI scope for
-    /// the callback instead of reusing a dispatch scope. <see cref="FailedInfo.ServiceProvider"/>
+    /// the callback instead of reusing a dispatch scope. <see cref="TerminalMessageInfo.ServiceProvider"/>
     /// is still valid for the duration of the callback in both paths, but services resolved on
     /// the bypass path will be fresh instances unrelated to any (never-happened) consume.
     /// </para>
     /// <para>
-    /// On host crash between the terminal storage write and the callback completion, OnExhausted
-    /// may NOT fire for that message — handlers must tolerate at-most-once delivery in addition to
-    /// the documented at-least-once contract above.
-    /// </para>
-    /// <para>
     /// <b>Resource lifetime:</b> the supplied <see cref="CancellationToken"/> is the framework's
-    /// signal that the dispatch scope is winding down (timeout via <see cref="OnExhaustedTimeout"/>
+    /// signal that the dispatch scope is winding down (timeout via <see cref="OnTerminalTimeout"/>
     /// or host shutdown). Callbacks MUST observe the token and unwind promptly; do NOT capture or
-    /// retain <see cref="FailedInfo.ServiceProvider"/> beyond the awaited window because the
+    /// retain <see cref="TerminalMessageInfo.ServiceProvider"/> beyond the awaited window because the
     /// dispatch scope is disposed once this method returns or the timeout fires (whichever comes
     /// first). An orphaned callback that touches scope-bound services after timeout will race
     /// scope disposal and may observe <see cref="ObjectDisposedException"/>.
     /// </para>
     /// </remarks>
-    public Func<FailedInfo, CancellationToken, Task>? OnExhausted { get; set; }
+    public Func<TerminalMessageInfo, CancellationToken, Task>? OnTerminal { get; set; }
 }
 
 internal sealed class RetryPolicyOptionsValidator : AbstractValidator<RetryPolicyOptions>
@@ -284,10 +297,10 @@ internal sealed class RetryPolicyOptionsValidator : AbstractValidator<RetryPolic
                 "LeaseRenewalInterval must be less than DispatchTimeout, so a renewal lands before the lease ends."
             )
             .When(x => x.LeaseRenewalInterval is not null);
-        RuleFor(x => x.OnExhaustedTimeout)
+        RuleFor(x => x.OnTerminalTimeout)
             .GreaterThan(TimeSpan.Zero)
-            .WithMessage("OnExhaustedTimeout must be greater than zero.")
+            .WithMessage("OnTerminalTimeout must be greater than zero.")
             .LessThanOrEqualTo(TimeSpan.FromHours(1))
-            .WithMessage("OnExhaustedTimeout must not exceed 1 hour.");
+            .WithMessage("OnTerminalTimeout must not exceed 1 hour.");
     }
 }

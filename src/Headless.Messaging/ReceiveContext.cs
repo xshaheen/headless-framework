@@ -174,7 +174,7 @@ public sealed class ReceiveContext
 
     /// <summary>
     /// Declares a skip outcome: the delivery is committed and dropped without consumer invocation,
-    /// storage, or an exhausted callback. Use for cheap header-based filtering on shared topics.
+    /// storage, or an terminal callback. Use for cheap header-based filtering on shared topics.
     /// </summary>
     /// <param name="reason">A human-readable reason recorded in logs and telemetry.</param>
     /// <exception cref="ArgumentException">Thrown when <paramref name="reason"/> is null or whitespace.</exception>
@@ -198,7 +198,7 @@ public sealed class ReceiveContext
 
     /// <summary>
     /// Declares a reject outcome: the delivery is committed as poison-on-arrival with the received
-    /// (untransformed) envelope and the exhausted callback fires with the supplied cause. Use when
+    /// (untransformed) envelope and the terminal callback fires with the supplied cause. Use when
     /// the envelope is determined unprocessable — a deterministic payload defect must not burn retry budget.
     /// </summary>
     /// <param name="reason">A human-readable reason recorded in logs and telemetry.</param>
@@ -272,7 +272,7 @@ internal enum ReceiveOutcome
     /// <summary>No outcome declared yet; the pipeline treats a return without one as a reject.</summary>
     None,
 
-    /// <summary>Commit the delivery without consumer invocation, storage, or an exhausted callback.</summary>
+    /// <summary>Commit the delivery without consumer invocation, storage, or an terminal callback.</summary>
     Skip,
 
     /// <summary>Commit the delivery as poison-on-arrival with the received envelope.</summary>

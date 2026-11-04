@@ -539,31 +539,31 @@ public sealed class MessagingOptionsValidationTests : TestBase
     }
 
     [Fact]
-    public void should_reject_retry_policy_with_non_positive_on_exhausted_timeout()
+    public void should_reject_retry_policy_with_non_positive_on_terminal_timeout()
     {
         // given
-        var options = new RetryPolicyOptions { OnExhaustedTimeout = TimeSpan.Zero };
+        var options = new RetryPolicyOptions { OnTerminalTimeout = TimeSpan.Zero };
 
         // when
         var result = new RetryPolicyOptionsValidator().Validate(options);
 
         // then
         result.IsValid.Should().BeFalse();
-        result.Errors.Should().Contain(x => x.PropertyName == nameof(RetryPolicyOptions.OnExhaustedTimeout));
+        result.Errors.Should().Contain(x => x.PropertyName == nameof(RetryPolicyOptions.OnTerminalTimeout));
     }
 
     [Fact]
-    public void should_reject_retry_policy_when_on_exhausted_timeout_exceeds_one_hour()
+    public void should_reject_retry_policy_when_on_terminal_timeout_exceeds_one_hour()
     {
         // given
-        var options = new RetryPolicyOptions { OnExhaustedTimeout = TimeSpan.FromHours(2) };
+        var options = new RetryPolicyOptions { OnTerminalTimeout = TimeSpan.FromHours(2) };
 
         // when
         var result = new RetryPolicyOptionsValidator().Validate(options);
 
         // then
         result.IsValid.Should().BeFalse();
-        result.Errors.Should().Contain(x => x.PropertyName == nameof(RetryPolicyOptions.OnExhaustedTimeout));
+        result.Errors.Should().Contain(x => x.PropertyName == nameof(RetryPolicyOptions.OnTerminalTimeout));
     }
 
     [Fact]

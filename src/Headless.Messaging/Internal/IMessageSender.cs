@@ -17,13 +17,13 @@ internal interface IMessageSender
     /// <summary>
     /// Publishes a single outbox message using the sender's root service provider for
     /// scoped service resolution. Prefer <see cref="SendAsync(MediumMessage, IServiceProvider)"/>
-    /// to surface the live per-message dispatch scope to the exhausted callback.
+    /// to surface the live per-message dispatch scope to the terminal callback.
     /// </summary>
     Task<OperateResult> SendAsync(MediumMessage message);
 
     /// <summary>
     /// Publishes a single outbox message and threads the caller's per-message DI scope through
-    /// to the retry pipeline so that <c>OnExhausted</c>'s <c>FailedInfo.ServiceProvider</c>
+    /// to the retry pipeline so that <c>OnTerminal</c>'s <c>TerminalMessageInfo.ServiceProvider</c>
     /// reflects the SAME scope used while sending. The caller (Dispatcher) owns this scope's
     /// lifetime.
     /// </summary>
@@ -125,7 +125,7 @@ internal sealed class MessageSender : IMessageSender
         // state. The row keeps its prior NextRetryAt/Status and the persisted retry processor picks
         // it up on restart.
         return _retryPipeline.ExecuteAsync(
-            (_, ct) => _SendWithoutRetryAsync(message, executionState, ct),
+            (_, ct) => _SendWithoutRetryAsync(message, dispatchServices, executionState, ct),
             (inlineRetries, exception, delay, strategyFailed, ct) =>
                 _HandleRetryAsync(
                     message,
@@ -146,6 +146,7 @@ internal sealed class MessageSender : IMessageSender
 
     private async Task<MessagingRetryAttempt> _SendWithoutRetryAsync(
         MediumMessage message,
+        IServiceProvider dispatchServices,
         RetryExecutionState? executionState,
         CancellationToken cancellationToken
     )
@@ -173,11 +174,12 @@ internal sealed class MessageSender : IMessageSender
                 return MessagingRetryAttempt.Completed(OperateResult.Success);
             }
 
-            // The recovery transition would exhaust the row and fire the exhausted callback for a message nobody may
-            // deliver anymore; past its deadline it ends as expired instead, as at any other dispatch.
+            // The recovery transition would report a spent budget for a message nobody may deliver anymore; past its
+            // deadline it ends as expired instead, as at any other dispatch.
             if (DeliverByEnvelope.IsExpired(message.Origin.Headers, _timeProvider.GetUtcNow()))
             {
-                return await _EndDeliverByExceededAsync(message, executionState).ConfigureAwait(false);
+                return await _EndDeliverByExceededAsync(message, dispatchServices, executionState)
+                    .ConfigureAwait(false);
             }
 
             return recoveryAttempt;
@@ -201,7 +203,7 @@ internal sealed class MessageSender : IMessageSender
         // passed can never be delivered, so it ends here instead of spending a transport attempt.
         if (DeliverByEnvelope.IsExpired(message.Origin.Headers, _timeProvider.GetUtcNow()))
         {
-            return await _EndDeliverByExceededAsync(message, executionState).ConfigureAwait(false);
+            return await _EndDeliverByExceededAsync(message, dispatchServices, executionState).ConfigureAwait(false);
         }
 
         var transportMsg =
@@ -209,7 +211,7 @@ internal sealed class MessageSender : IMessageSender
             ?? await _serializer
                 .SerializeToTransportMessageAsync(message.Origin, cancellationToken)
                 .ConfigureAwait(false);
-        var selected = await _ResolveTransportAsync(message, executionState).ConfigureAwait(false);
+        var selected = await _ResolveTransportAsync(message, dispatchServices, executionState).ConfigureAwait(false);
         if (selected.Result is { } failure)
         {
             return MessagingRetryAttempt.Completed(failure);
@@ -410,6 +412,7 @@ internal sealed class MessageSender : IMessageSender
 
     private async Task<(ITransport? Transport, OperateResult? Result)> _ResolveTransportAsync(
         MediumMessage message,
+        IServiceProvider dispatchServices,
         RetryExecutionState? executionState
     )
     {
@@ -421,7 +424,8 @@ internal sealed class MessageSender : IMessageSender
                     $"Stored message {message.StorageId} has unsupported MessageLane value '{(short)message.Lane}'."
                 )
             );
-            await _MarkMissingLaneTransportFailedAsync(message, ex, executionState).ConfigureAwait(false);
+            await _MarkMissingLaneTransportFailedAsync(message, ex, dispatchServices, executionState)
+                .ConfigureAwait(false);
             return (null, OperateResult.Failed(ex));
         }
 
@@ -429,9 +433,19 @@ internal sealed class MessageSender : IMessageSender
         {
             MessageLane.Bus when _busTransport.Value is { } busTransport => (busTransport, null),
             MessageLane.Queue when _queueTransport.Value is { } queueTransport => (queueTransport, null),
-            MessageLane.Bus => await _MissingTransportAsync(message, nameof(IBusTransport), executionState)
+            MessageLane.Bus => await _MissingTransportAsync(
+                    message,
+                    nameof(IBusTransport),
+                    dispatchServices,
+                    executionState
+                )
                 .ConfigureAwait(false),
-            MessageLane.Queue => await _MissingTransportAsync(message, nameof(IQueueTransport), executionState)
+            MessageLane.Queue => await _MissingTransportAsync(
+                    message,
+                    nameof(IQueueTransport),
+                    dispatchServices,
+                    executionState
+                )
                 .ConfigureAwait(false),
             _ => throw new UnreachableException(),
         };
@@ -440,19 +454,21 @@ internal sealed class MessageSender : IMessageSender
     private async Task<(ITransport? Transport, OperateResult? Result)> _MissingTransportAsync(
         MediumMessage message,
         string transportType,
+        IServiceProvider dispatchServices,
         RetryExecutionState? executionState
     )
     {
         var ex = new InvalidOperationException(
             $"Stored message {message.StorageId} requires {transportType}, but no matching transport is registered."
         );
-        await _MarkMissingLaneTransportFailedAsync(message, ex, executionState).ConfigureAwait(false);
+        await _MarkMissingLaneTransportFailedAsync(message, ex, dispatchServices, executionState).ConfigureAwait(false);
         return (null, OperateResult.Failed(ex));
     }
 
     private async Task _MarkMissingLaneTransportFailedAsync(
         MediumMessage message,
         Exception ex,
+        IServiceProvider dispatchServices,
         RetryExecutionState? executionState
     )
     {
@@ -477,6 +493,8 @@ internal sealed class MessageSender : IMessageSender
             .ConfigureAwait(false);
         executionState?.RecordLeaseTransition(affected, lockedUntil);
 
+        _logger.StoredMessageMissingLaneTransport(ex, message.StorageId, message.Lane.ToString("D"));
+
         if (affected)
         {
             MessagingMetrics.RecordOutboxTerminal(
@@ -484,18 +502,20 @@ internal sealed class MessageSender : IMessageSender
                 message.Lane,
                 MessagingTelemetry.ErrorTypeOf(ex)
             );
+            await _RunOnTerminalAsync(message, ex, dispatchServices, MessageTerminalReason.NoTransport)
+                .ConfigureAwait(false);
         }
-
-        _logger.StoredMessageMissingLaneTransport(ex, message.StorageId, message.Lane.ToString("D"));
     }
 
     /// <summary>
     /// Ends a published row whose delivery deadline passed: terminal <see cref="StatusName.Failed"/> with the expiry
-    /// reason on the envelope, no transport attempt, no retry, and no exhausted callback. Retention follows
+    /// reason on the envelope, no transport attempt, and no retry. <see cref="RetryPolicyOptions.OnTerminal"/> fires
+    /// with <see cref="MessageTerminalReason.DeliveryDeadlineExpired"/> when this write lands. Retention follows
     /// <see cref="MessagingOptions.FailedMessageExpiredAfter"/> like any terminal publish failure.
     /// </summary>
     private async Task<MessagingRetryAttempt> _EndDeliverByExceededAsync(
         MediumMessage message,
+        IServiceProvider dispatchServices,
         RetryExecutionState? executionState
     )
     {
@@ -544,6 +564,9 @@ internal sealed class MessageSender : IMessageSender
                     deadline
                 );
             }
+
+            await _RunOnTerminalAsync(message, expired, dispatchServices, MessageTerminalReason.DeliveryDeadlineExpired)
+                .ConfigureAwait(false);
         }
 
         return MessagingRetryAttempt.Completed(OperateResult.Failed(expired));
@@ -785,38 +808,55 @@ internal sealed class MessageSender : IMessageSender
             );
         }
 
-        if (affected && decision.Outcome == MessagingRetryDecision.Kind.Exhausted)
+        if (affected && decision.Outcome != MessagingRetryDecision.Kind.Continue)
         {
-            // Forward _shutdownToken so the callback's CT honors host shutdown — matching the
-            // contract documented on RetryPolicyOptions.OnExhausted and the consume path's behavior.
-            // #6 — the tenant-scope + FailedInfo + InvokeOnExhaustedAsync trio is identical between
-            // publish and consume paths except for MessageType; the shared body lives in RetryHelper.
-            await RetryHelper
-                .RunOnExhaustedAsync(
-                    _retryPolicy,
+            // Stop is a failure the retry classification calls non-retryable; Exhausted spent the budget. Both end
+            // the row, so both reach the callback, once, from the writer whose terminal write landed.
+            await _RunOnTerminalAsync(
                     message,
                     ex,
                     dispatchServices,
-                    MessageType.Publish,
-                    _logger,
-                    _backoffClock,
-                    _shutdownToken
+                    decision.Outcome == MessagingRetryDecision.Kind.Exhausted
+                        ? MessageTerminalReason.RetriesExhausted
+                        : MessageTerminalReason.PermanentFailure
                 )
                 .ConfigureAwait(false);
         }
         else if (!affected)
         {
             // Storage proves the row is already terminal — only log when the decision would
-            // otherwise have fired the callback (Stop never fires OnExhausted regardless).
-            if (decision.Outcome == MessagingRetryDecision.Kind.Exhausted)
+            // otherwise have fired the callback.
+            if (decision.Outcome != MessagingRetryDecision.Kind.Continue)
             {
-                _logger.SkippingOnExhaustedAlreadyTerminal(message.StorageId);
+                _logger.SkippingOnTerminalAlreadyTerminal(message.StorageId);
             }
 
             return MessagingRetryDecision.Stop;
         }
 
         return decision;
+    }
+
+    // Forward _shutdownToken so the callback's token honors host shutdown, matching the contract documented on
+    // RetryPolicyOptions.OnTerminal and the consume path. Callers invoke this only after their terminal write landed.
+    private Task _RunOnTerminalAsync(
+        MediumMessage message,
+        Exception exception,
+        IServiceProvider dispatchServices,
+        MessageTerminalReason reason
+    )
+    {
+        return RetryHelper.RunOnTerminalAsync(
+            _retryPolicy,
+            message,
+            exception,
+            dispatchServices,
+            MessageType.Publish,
+            reason,
+            _logger,
+            _backoffClock,
+            _shutdownToken
+        );
     }
 
     // A row from an additional outbox lives in that outbox's database; every other published row is the primary's.

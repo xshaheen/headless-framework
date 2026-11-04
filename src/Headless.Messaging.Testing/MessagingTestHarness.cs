@@ -144,7 +144,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         var busRecorded = _DecorateBusTransport(services, store);
         var queueRecorded = _DecorateQueueTransport(services, store);
         _DecoratePipeline(services, store, awaitPublishedRecord: busRecorded || queueRecorded);
-        _DecorateOnExhausted(services, store);
+        _DecorateOnTerminal(services, store);
 
         // Register the harness itself — does NOT own the ServiceProvider.
         services.AddSingleton(sp => new MessagingTestHarness(sp, store, ownsSp: false));
@@ -164,12 +164,13 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     public IReadOnlyCollection<RecordedMessage> Faulted => _store.Faulted;
 
     /// <summary>
-    /// Gets a snapshot of all messages that failed for good: the framework invoked <c>RetryPolicy.OnExhausted</c>
-    /// because the retry budget was spent, a fail rule or the built-in permanent set ended the message, the payload
-    /// failed to deserialize, the consumer is no longer registered, or the message was poisoned on arrival.
+    /// Gets a snapshot of all stored messages the framework gave up on: it invoked <c>RetryPolicy.OnTerminal</c>
+    /// because the retry budget was spent, a permanent failure ended the message (a fail rule, the built-in permanent
+    /// set, an undeserializable payload, an unregistered consumer, or poison on arrival), its delivery deadline
+    /// passed, or no transport serves its lane.
     /// Observed BEFORE the user-supplied callback runs.
     /// </summary>
-    public IReadOnlyCollection<RecordedMessage> Exhausted => _store.Exhausted;
+    public IReadOnlyCollection<RecordedMessage> Terminal => _store.Terminal;
 
     // -------------------------------------------------------------------------
     // Awaitable assertions — Published
@@ -364,22 +365,22 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     }
 
     // -------------------------------------------------------------------------
-    // Awaitable assertions — Exhausted
+    // Awaitable assertions — Terminal
     // -------------------------------------------------------------------------
 
     /// <summary>
     /// Waits until a message of type <typeparamref name="T"/> fails for good (the framework invoked
-    /// <c>RetryPolicy.OnExhausted</c>; see <see cref="Exhausted"/> for every terminal path), or throws
+    /// <c>RetryPolicy.OnTerminal</c>; see <see cref="Terminal"/> for every terminal path), or throws
     /// <see cref="MessageObservationTimeoutException"/> if <paramref name="timeout"/> elapses.
     /// </summary>
-    public Task<RecordedMessage> WaitForExhaustedAsync<T>(
+    public Task<RecordedMessage> WaitForTerminalAsync<T>(
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default
     )
     {
         return _store.WaitForAsync(
             typeof(T),
-            MessageObservationType.Exhausted,
+            MessageObservationType.Terminal,
             lane: null,
             predicate: null,
             timeout ?? DefaultTimeout,
@@ -391,7 +392,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     /// Waits until a message of type <typeparamref name="T"/> that failed for good satisfies <paramref name="predicate"/>,
     /// or throws <see cref="MessageObservationTimeoutException"/> if <paramref name="timeout"/> elapses.
     /// </summary>
-    public Task<RecordedMessage> WaitForExhaustedAsync<T>(
+    public Task<RecordedMessage> WaitForTerminalAsync<T>(
         Func<T, bool> predicate,
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default
@@ -399,7 +400,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     {
         return _store.WaitForAsync(
             typeof(T),
-            MessageObservationType.Exhausted,
+            MessageObservationType.Terminal,
             lane: null,
             obj => predicate((T)obj),
             timeout ?? DefaultTimeout,
@@ -412,7 +413,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     /// for the given <paramref name="lane"/> (Bus vs Queue), or throws
     /// <see cref="MessageObservationTimeoutException"/> if <paramref name="timeout"/> elapses.
     /// </summary>
-    public Task<RecordedMessage> WaitForExhaustedAsync<T>(
+    public Task<RecordedMessage> WaitForTerminalAsync<T>(
         MessageLane lane,
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default
@@ -420,7 +421,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     {
         return _store.WaitForAsync(
             typeof(T),
-            MessageObservationType.Exhausted,
+            MessageObservationType.Terminal,
             lane,
             predicate: null,
             timeout ?? DefaultTimeout,
@@ -844,17 +845,17 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     }
 
     /// <summary>
-    /// Wraps <c>RetryPolicy.OnExhausted</c> with a recording decorator that captures the
+    /// Wraps <c>RetryPolicy.OnTerminal</c> with a recording decorator that captures the
     /// observation BEFORE invoking the user-supplied callback. <c>PostConfigure</c> runs after
     /// all <c>Configure&lt;MessagingOptions&gt;</c> calls (including the harness's own and the
     /// caller's), so the wrap is always the outermost layer.
     /// </summary>
-    private static void _DecorateOnExhausted(IServiceCollection services, MessageObservationStore store)
+    private static void _DecorateOnTerminal(IServiceCollection services, MessageObservationStore store)
     {
         services.PostConfigure<MessagingOptions>(opt =>
         {
-            var original = opt.RetryPolicy.OnExhausted;
-            opt.RetryPolicy.OnExhausted = async (info, ct) =>
+            var original = opt.RetryPolicy.OnTerminal;
+            opt.RetryPolicy.OnTerminal = async (info, ct) =>
             {
                 // Record FIRST so a hanging or throwing user callback doesn't lose the observation.
                 var payload = info.Message.Value ?? info.Message;
@@ -867,7 +868,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
                         info.Lane,
                         info.Exception
                     ),
-                    MessageObservationType.Exhausted
+                    MessageObservationType.Terminal
                 );
 
                 if (original is not null)

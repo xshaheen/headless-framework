@@ -27,7 +27,7 @@ public sealed class FailingConsumer : IConsume<OrderCreatedEvent>
     // Transient exception so the default RetryExceptionClassifier does NOT short-circuit to Stop.
     // The classifier (RetryExceptionClassifier.IsPermanent) now unwraps SubscriberExecutionFailedException
     // and treats InvalidOperationException as permanent — using TimeoutException keeps the failure
-    // retryable so the exhaustion budget governs the terminal transition (and OnExhausted fires).
+    // retryable so the exhaustion budget governs the terminal transition (and OnTerminal fires).
     public ValueTask ConsumeAsync(ConsumeContext<OrderCreatedEvent> context, CancellationToken cancellationToken)
     {
         throw new TimeoutException("Test failure");
@@ -504,10 +504,10 @@ public sealed class EndToEndTests : TestBase
         harness.Consumed.Should().ContainSingle();
     }
 
-    // ─── Test 8: WaitForExhaustedAsync observes user OnExhausted callback ──────────
+    // ─── Test 8: WaitForTerminalAsync observes user OnTerminal callback ──────────
 
     [Fact]
-    public async Task wait_for_exhausted_observes_user_callback_invocation()
+    public async Task wait_for_terminal_observes_user_callback_invocation()
     {
         // given — single-attempt budget so failure becomes terminal immediately
         var userCallbackFired = 0;
@@ -522,7 +522,7 @@ public sealed class EndToEndTests : TestBase
                 });
                 // A policy with no retries: the first failure is terminal.
                 options.DefaultFailurePolicy(static _ => { });
-                options.Options.RetryPolicy.OnExhausted = (_, _) =>
+                options.Options.RetryPolicy.OnTerminal = (_, _) =>
                 {
                     Interlocked.Increment(ref userCallbackFired);
                     return Task.CompletedTask;
@@ -532,9 +532,9 @@ public sealed class EndToEndTests : TestBase
 
         // when
         await harness.Publisher.PublishAsync(new OrderCreatedEvent("ORD-EXH", 1m), cancellationToken: AbortToken);
-        var recorded = await harness.WaitForExhaustedAsync<OrderCreatedEvent>(TimeSpan.FromSeconds(5), AbortToken);
+        var recorded = await harness.WaitForTerminalAsync<OrderCreatedEvent>(TimeSpan.FromSeconds(5), AbortToken);
 
-        // then — observation captures the exhausted message and its exception
+        // then — observation captures the terminal message and its exception
         recorded.MessageType.Should().Be<OrderCreatedEvent>();
         recorded.Message.Should().BeOfType<OrderCreatedEvent>().Which.OrderId.Should().Be("ORD-EXH");
         // The exception is the pipeline-wrapped failure; the original "Test failure" is the inner.
@@ -545,14 +545,14 @@ public sealed class EndToEndTests : TestBase
         await TestHelpers.WaitForAsync(() => userCallbackFired == 1, TimeSpan.FromSeconds(5));
         userCallbackFired.Should().Be(1);
 
-        harness.Exhausted.Should().ContainSingle();
+        harness.Terminal.Should().ContainSingle();
         harness.Faulted.Should().NotBeEmpty();
     }
 
     // ─── Test 8b: a fail rule's terminal failure is recorded like a spent budget ─────
 
     [Fact]
-    public async Task wait_for_exhausted_observes_a_fail_rule_terminal_failure()
+    public async Task wait_for_terminal_observes_a_fail_rule_terminal_failure()
     {
         // given — retries are configured, but the fail rule ends the message on its first failure.
         await using var harness = await _CreateHarnessAsync(
@@ -574,19 +574,19 @@ public sealed class EndToEndTests : TestBase
 
         // when
         await harness.Publisher.PublishAsync(new OrderCreatedEvent("ORD-RULE", 1m), cancellationToken: AbortToken);
-        var recorded = await harness.WaitForExhaustedAsync<OrderCreatedEvent>(TimeSpan.FromSeconds(5), AbortToken);
+        var recorded = await harness.WaitForTerminalAsync<OrderCreatedEvent>(TimeSpan.FromSeconds(5), AbortToken);
 
         // then — one attempt, recorded as the terminal-failure outcome.
         recorded.Message.Should().BeOfType<OrderCreatedEvent>().Which.OrderId.Should().Be("ORD-RULE");
         recorded.Exception!.GetBaseException().Should().BeOfType<TimeoutException>();
-        harness.Exhausted.Should().ContainSingle();
+        harness.Terminal.Should().ContainSingle();
         harness.Faulted.Should().ContainSingle("the matched fail rule skips the immediate retries");
     }
 
-    // ─── Test 9: WaitForExhaustedAsync survives a hanging user callback ───────────
+    // ─── Test 9: WaitForTerminalAsync survives a hanging user callback ───────────
 
     [Fact]
-    public async Task wait_for_exhausted_records_before_user_callback_runs()
+    public async Task wait_for_terminal_records_before_user_callback_runs()
     {
         // given — user callback hangs; observation must still be visible
         using var hangGate = new ManualResetEventSlim(initialState: false);
@@ -601,8 +601,8 @@ public sealed class EndToEndTests : TestBase
                 });
                 // A policy with no retries: the first failure is terminal.
                 options.DefaultFailurePolicy(static _ => { });
-                options.Options.RetryPolicy.OnExhaustedTimeout = TimeSpan.FromMilliseconds(200);
-                options.Options.RetryPolicy.OnExhausted = async (_, ct) =>
+                options.Options.RetryPolicy.OnTerminalTimeout = TimeSpan.FromMilliseconds(200);
+                options.Options.RetryPolicy.OnTerminal = async (_, ct) =>
                 {
                     // Park the callback until the test releases it (or the timeout fires).
                     await Task.Run(() => hangGate.Wait(ct), ct);
@@ -614,7 +614,7 @@ public sealed class EndToEndTests : TestBase
         {
             // when
             await harness.Publisher.PublishAsync(new OrderCreatedEvent("ORD-HANG", 1m), cancellationToken: AbortToken);
-            var recorded = await harness.WaitForExhaustedAsync<OrderCreatedEvent>(TimeSpan.FromSeconds(5), AbortToken);
+            var recorded = await harness.WaitForTerminalAsync<OrderCreatedEvent>(TimeSpan.FromSeconds(5), AbortToken);
 
             // then — the observation arrived even though the user callback is still parked
             recorded.Message.Should().BeOfType<OrderCreatedEvent>().Which.OrderId.Should().Be("ORD-HANG");

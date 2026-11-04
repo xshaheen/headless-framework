@@ -49,12 +49,11 @@ builder.Services.AddHeadlessMessaging(setup =>
     //setup.Options.EnablePublishParallelSend = true;
     // (commit-coordination registration follows AddHeadlessMessaging, below)
 
-    //setup.Options.RetryPolicy.OnExhausted = (failed, ct) =>
+    //setup.Options.RetryPolicy.OnTerminal = (terminal, ct) =>
     //{
-    //    var logger = failed.ServiceProvider.GetRequiredService<ILogger<Program>>();
-    //    logger.LogError($@"A message of type {failed.MessageType} failed after consuming the retry budget
-    //        (MaxRetryAttempts={setup.Options.RetryPolicy.RetryStrategy.MaxRetryAttempts}, MaxPersistedRetries={setup.Options.RetryPolicy.MaxPersistedRetries}),
-    //        requiring manual troubleshooting. Message name: {failed.Message.GetName()}");
+    //    var logger = terminal.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    //    logger.LogError($@"A {terminal.MessageType} message ended with {terminal.Reason} for tenant '{terminal.TenantId}',
+    //        requiring manual troubleshooting. Message name: {terminal.Message.GetName()}");
     //    return Task.CompletedTask;
     //};
     //setup.Options.JsonSerializerOptions.Encoder = JavaScriptEncoder.Create(UnicodeRanges.All);

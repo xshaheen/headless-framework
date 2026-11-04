@@ -359,7 +359,7 @@ internal sealed class Dispatcher
             }
             else
             {
-                // Per-message scope, surfaced to OnExhausted as FailedInfo.ServiceProvider. The consumer and its
+                // Per-message scope, surfaced to OnTerminal as TerminalMessageInfo.ServiceProvider. The consumer and its
                 // consume middleware do not run in it: every attempt, an immediate retry included, opens its own
                 // scope so a scoped service a failed attempt left dirty (a DbContext with tracked changes) never
                 // carries into the next attempt.

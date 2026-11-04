@@ -101,7 +101,7 @@ internal sealed class ResponderExecutorHost : IAsyncDisposable
         IDataStorage storage,
         ISubscribeInvoker invoker,
         SubscribeExecutor executor,
-        ConcurrentQueue<FailedInfo> exhausted
+        ConcurrentQueue<TerminalMessageInfo> exhausted
     )
     {
         Exhausted = exhausted;
@@ -126,7 +126,7 @@ internal sealed class ResponderExecutorHost : IAsyncDisposable
     public SubscribeExecutor Executor { get; }
 
     /// <summary>Every call the host's exhausted-retry callback received.</summary>
-    public ConcurrentQueue<FailedInfo> Exhausted { get; }
+    public ConcurrentQueue<TerminalMessageInfo> Exhausted { get; }
 
     public int ExhaustedCalls => Exhausted.Count;
 
@@ -148,7 +148,7 @@ internal sealed class ResponderExecutorHost : IAsyncDisposable
     {
         var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 2, 12, 0, 0, TimeSpan.Zero));
         var replies = new RecordingReplyTransport();
-        var exhausted = new ConcurrentQueue<FailedInfo>();
+        var exhausted = new ConcurrentQueue<TerminalMessageInfo>();
 
         services ??= new ServiceCollection();
         services.AddLogging();
@@ -171,13 +171,13 @@ internal sealed class ResponderExecutorHost : IAsyncDisposable
 
         var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<MessagingOptions>>().Value;
-        var userOnExhausted = options.RetryPolicy.OnExhausted;
-        options.RetryPolicy.OnExhausted = async (info, cancellationToken) =>
+        var userOnTerminal = options.RetryPolicy.OnTerminal;
+        options.RetryPolicy.OnTerminal = async (info, cancellationToken) =>
         {
             exhausted.Enqueue(info);
-            if (userOnExhausted is not null)
+            if (userOnTerminal is not null)
             {
-                await userOnExhausted(info, cancellationToken);
+                await userOnTerminal(info, cancellationToken);
             }
         };
 

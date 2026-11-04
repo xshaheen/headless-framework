@@ -21,7 +21,8 @@ internal readonly record struct MessagingRetryDecision
     /// <summary>
     /// Whether the decision ends a delivery nobody can use anymore: a request whose caller already stopped waiting,
     /// or a message past its delivery deadline. Nobody can consume the result, and the expiry is no consumer failure,
-    /// so it fires neither the exhausted callback, a fault reply, nor a breaker report.
+    /// so it sends no fault reply and makes no breaker report; the terminal callback still fires, with
+    /// <see cref="MessageTerminalReason.DeliveryDeadlineExpired"/>.
     /// </summary>
     public bool IsSilentExpiry { get; init; }
 

@@ -14,7 +14,7 @@ internal sealed class MessageObservationStore(TimeProvider? timeProvider = null)
     private readonly ConcurrentQueue<RecordedMessage> _published = new();
     private readonly ConcurrentQueue<RecordedMessage> _consumed = new();
     private readonly ConcurrentQueue<RecordedMessage> _faulted = new();
-    private readonly ConcurrentQueue<RecordedMessage> _exhausted = new();
+    private readonly ConcurrentQueue<RecordedMessage> _terminal = new();
 
     private readonly ConcurrentDictionary<
         (Type, MessageObservationType, MessageLane),
@@ -52,7 +52,7 @@ internal sealed class MessageObservationStore(TimeProvider? timeProvider = null)
     public IReadOnlyCollection<RecordedMessage> Faulted => _faulted.ToArray();
 
     /// <summary>Gets all messages recorded as failed for good so far. Each access allocates a snapshot array.</summary>
-    public IReadOnlyCollection<RecordedMessage> Exhausted => _exhausted.ToArray();
+    public IReadOnlyCollection<RecordedMessage> Terminal => _terminal.ToArray();
 
     /// <summary>Records a message and signals any waiting tasks that match.</summary>
     public void Record(RecordedMessage message, MessageObservationType type)
@@ -238,7 +238,7 @@ internal sealed class MessageObservationStore(TimeProvider? timeProvider = null)
 
         while (_faulted.TryDequeue(out _)) { }
 
-        while (_exhausted.TryDequeue(out _)) { }
+        while (_terminal.TryDequeue(out _)) { }
 
         _typeIndex.Clear();
         _typeOnlyIndex.Clear();
@@ -307,7 +307,7 @@ internal sealed class MessageObservationStore(TimeProvider? timeProvider = null)
             MessageObservationType.Published => _published,
             MessageObservationType.Consumed => _consumed,
             MessageObservationType.Faulted => _faulted,
-            MessageObservationType.Exhausted => _exhausted,
+            MessageObservationType.Terminal => _terminal,
             _ => throw new ArgumentOutOfRangeException(nameof(type), type, message: null),
         };
     }
