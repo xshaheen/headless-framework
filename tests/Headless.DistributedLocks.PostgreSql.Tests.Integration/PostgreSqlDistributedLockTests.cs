@@ -173,6 +173,9 @@ public sealed class PostgreSqlDistributedLockTests(PostgreSqlDistributedLockFixt
 
         var releaseNotifications = 0;
         var sentinelSeen = false;
+        // The channel is shared by every lock test running against this database, so only a notification for
+        // this test's resource counts; another test's release is not this provider publishing.
+        var resource = Faker.Random.AlphaNumeric(12);
         listener.Notification += (_, args) =>
         {
             if (!string.Equals(args.Channel, channel, StringComparison.Ordinal))
@@ -188,7 +191,7 @@ public sealed class PostgreSqlDistributedLockTests(PostgreSqlDistributedLockFixt
             {
                 sentinelSeen = true;
             }
-            else
+            else if (args.Payload.Contains(resource, StringComparison.Ordinal))
             {
                 releaseNotifications++;
             }
@@ -202,7 +205,6 @@ public sealed class PostgreSqlDistributedLockTests(PostgreSqlDistributedLockFixt
 
         await using var provider = _CreateProvider(options => options.EnablePushWakeup = false);
         var locks = provider.GetRequiredService<IDistributedLock>();
-        var resource = Faker.Random.AlphaNumeric(12);
         await using var handle = await locks.AcquireAsync(resource, cancellationToken: AbortToken);
 
         await handle.ReleaseAsync();
