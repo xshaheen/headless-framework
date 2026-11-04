@@ -1,7 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '../stores/authStore'
 import { getBasePath, requiresAuthentication } from '@/utilities/pathResolver'
-import { SESSION_EXPIRED_EVENT } from '@/services/auth'
 
 const router = createRouter({
   history: createWebHistory(getBasePath()),
@@ -86,11 +85,6 @@ router.beforeEach(async (to, _from, next) => {
     }
   }
 
-  if (authStore.enforceSessionTimeout()) {
-    next({ name: 'Login', query: { redirect: to.fullPath } })
-    return
-  }
-
   if (authStore.isLoggedIn) {
     next()
   } else {
@@ -98,9 +92,10 @@ router.beforeEach(async (to, _from, next) => {
   }
 })
 
-// An API request that found the sign-in expired already cleared the credentials; show why and ask to sign in again.
-window.addEventListener(SESSION_EXPIRED_EVENT, () => {
-  useAuthStore().markSessionExpired()
+// The server answered 401: its session ended (host mode) or it refused the stored credential. Ask to sign in again and
+// come back to the page the operator was on.
+window.addEventListener('auth:logout', () => {
+  useAuthStore().handle401Error()
 
   const current = router.currentRoute.value
   if (current.name !== 'Login') {

@@ -16,6 +16,7 @@
             @update:model-value="onNamespaceChange"
           />
           <v-btn
+            v-if="authStore.canOperate"
             size="small"
             variant="outlined"
             color="secondary"
@@ -47,7 +48,8 @@
         <p class="mt-1 text-caption text-disabled">
           Node discovery requires a service registry (Consul or Kubernetes).
           <br />
-          Configure with <code>.UseConsulDiscovery()</code> or <code>.UseK8sDiscovery()</code> in your dashboard setup.
+          Configure with <code>.UseConsulDiscovery()</code> or <code>.UseK8sDiscovery()</code> in
+          your dashboard setup.
         </p>
       </div>
 
@@ -101,12 +103,18 @@
                   --
                 </span>
                 <span v-else-if="pingResults[node.name] === -1" class="text-error"> Failed </span>
-                <v-chip v-else size="x-small" :color="getLatencyColor(pingResults[node.name])" variant="tonal">
+                <v-chip
+                  v-else
+                  size="x-small"
+                  :color="getLatencyColor(pingResults[node.name])"
+                  variant="tonal"
+                >
                   {{ pingResults[node.name] }}ms
                 </v-chip>
               </td>
               <td>
                 <v-btn
+                  v-if="authStore.canOperate"
                   size="x-small"
                   variant="text"
                   color="primary"
@@ -117,6 +125,7 @@
                   Ping
                 </v-btn>
                 <v-btn
+                  v-if="canSwitchNodes"
                   size="x-small"
                   variant="text"
                   color="warning"
@@ -139,6 +148,8 @@ defineOptions({ name: 'NodesView' })
 import { ref, reactive, onMounted } from 'vue'
 import { httpService } from '@/services/http'
 import { useAlertStore } from '@/stores/alertStore'
+import { useAuthStore } from '@/stores/authStore'
+import { isHostMode } from '@/utilities/pathResolver'
 import TableSkeleton from '@/components/common/TableSkeleton.vue'
 
 interface NodeInfo {
@@ -150,7 +161,9 @@ interface NodeInfo {
 
 // --- Cookie helpers ---
 const getCookie = (name: string): string | null => {
-  const m = document.cookie.match(new RegExp('(?:^|;\\s*)' + name.split('.').join('\\.') + '=([^;]*)'))
+  const m = document.cookie.match(
+    new RegExp('(?:^|;\\s*)' + name.split('.').join('\\.') + '=([^;]*)'),
+  )
   return m ? decodeURIComponent(m[1]) : null
 }
 
@@ -160,6 +173,10 @@ const setCookie = (name: string, value: string) => {
 
 // --- State ---
 const alertStore = useAlertStore()
+const authStore = useAuthStore()
+
+// In host mode the server serves every request itself and drops the node selection, so switching would do nothing.
+const canSwitchNodes = !isHostMode()
 const isLoading = ref(false)
 const nodes = ref<NodeInfo[]>([])
 const pingResults = reactive<Record<string, number>>({})
@@ -256,8 +273,10 @@ async function pingNode(node: NodeInfo) {
   pingingNodes.add(node.name)
   try {
     const hasScheme = node.address.startsWith('http://') || node.address.startsWith('https://')
-    const endpoint = hasScheme ? `${node.address}:${node.port}` : `http://${node.address}:${node.port}`
-    const result = await httpService.get<string>(`/ping?endpoint=${encodeURIComponent(endpoint)}`)
+    const endpoint = hasScheme
+      ? `${node.address}:${node.port}`
+      : `http://${node.address}:${node.port}`
+    const result = await httpService.post<string>(`/ping?endpoint=${encodeURIComponent(endpoint)}`)
     const latency = parseInt(String(result), 10)
     pingResults[node.name] = isNaN(latency) ? -1 : latency
   } catch (error) {
