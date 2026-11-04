@@ -54,31 +54,4 @@ internal static class DashboardEndpointAccess
     {
         return configured ? builder.RequireCors(policyName) : builder;
     }
-
-    /// <summary>
-    /// Protects <paramref name="builder"/>'s endpoints the way <paramref name="auth"/> says: anonymous under
-    /// <see cref="AuthMode.None"/>, the host's named policy (or its default policy) under <see cref="AuthMode.Host"/>,
-    /// and the dashboard's own scheme and policy under Basic, API key, or custom authentication. Each sets authorization
-    /// metadata, so the host's fallback policy never decides a dashboard request.
-    /// </summary>
-    internal static TBuilder RequireDashboardAccess<TBuilder>(
-        this TBuilder builder,
-        AuthConfig auth,
-        string authenticationName
-    )
-        where TBuilder : IEndpointConventionBuilder
-    {
-        switch (auth.Mode)
-        {
-            case AuthMode.None:
-                return builder.AllowAnonymous();
-            case AuthMode.Host when string.IsNullOrEmpty(auth.HostAuthorizationPolicy):
-                return builder.RequireAuthorization();
-            case AuthMode.Host:
-                return builder.RequireAuthorization(auth.HostAuthorizationPolicy!);
-            default:
-                builder.WithMetadata(new DashboardEndpointMetadata(authenticationName));
-                return builder.RequireAuthorization(authenticationName);
-        }
-    }
 }

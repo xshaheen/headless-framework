@@ -79,4 +79,6 @@ var app = builder.Build();
 // Configure middleware pipeline
 app.UseRouting();
 app.MapControllers();
+app.MapHeadlessMessagingDashboard();
+
 await app.RunAsync();

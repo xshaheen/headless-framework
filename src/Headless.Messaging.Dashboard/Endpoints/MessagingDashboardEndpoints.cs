@@ -87,7 +87,7 @@ public static partial class MessagingDashboardEndpoints
             .MapGroup("/api")
             .WithTags("Messaging Dashboard")
             .ExcludeFromDescription()
-            .RequireDashboardAccess(config.Auth, MessagingDashboardOptionsBuilder.AuthenticationName);
+            .RequireDashboardAuthentication(MessagingDashboardOptionsBuilder.AuthenticationName);
         apiGroup.RequireDashboardCors(CorsPolicyName, applyCors);
         apiGroup.AddEndpointFilter<GatewayProxyEndpointFilter>();
 

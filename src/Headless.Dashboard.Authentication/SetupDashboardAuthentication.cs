@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -83,6 +85,62 @@ public static class SetupDashboardAuthentication
 
             return _AddDashboardAuthenticationCore(services, name);
         }
+    }
+
+    /// <summary>
+    /// Protects the endpoints of <paramref name="builder"/> with the dashboard authentication registered under
+    /// <paramref name="authenticationName"/>, so the host's <c>UseAuthorization</c> evaluates it before the endpoint or
+    /// a SignalR hub runs and the host's fallback policy never decides a dashboard request.
+    /// </summary>
+    /// <remarks>
+    /// The mode of the <see cref="AuthConfig"/> named <paramref name="authenticationName"/> decides the rule when the
+    /// host builds its endpoints: <see cref="AuthMode.None"/> allows anonymous access; <see cref="AuthMode.Host"/>
+    /// requires <see cref="AuthConfig.HostAuthorizationPolicy"/>, or the host's default policy when it is empty; Basic,
+    /// API key, and custom modes require a user the dashboard's authentication scheme signed in with the dashboard's
+    /// own credential, and refuse any other request with <c>401</c>. Put the rule on the dashboard's protected group
+    /// only; endpoints the sign-in flow calls without a credential, such as the shell and <c>/api/auth/info</c>, stay
+    /// <c>AllowAnonymous</c>.
+    /// </remarks>
+    /// <typeparam name="TBuilder">The endpoint convention builder, such as a route group.</typeparam>
+    /// <param name="builder">The endpoints to protect.</param>
+    /// <param name="authenticationName">The name passed to <c>AddDashboardAuthentication</c>.</param>
+    /// <returns>The same <paramref name="builder"/> for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="builder"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="authenticationName"/> is <see langword="null"/>, empty, or white space.
+    /// </exception>
+    public static TBuilder RequireDashboardAuthentication<TBuilder>(this TBuilder builder, string authenticationName)
+        where TBuilder : IEndpointConventionBuilder
+    {
+        Argument.IsNotNull(builder);
+        Argument.IsNotNullOrWhiteSpace(authenticationName);
+
+        builder.Add(endpoint =>
+        {
+            var auth = endpoint
+                .ApplicationServices.GetRequiredService<IOptionsMonitor<AuthConfig>>()
+                .Get(authenticationName);
+
+            switch (auth.Mode)
+            {
+                case AuthMode.None:
+                    endpoint.Metadata.Add(new AllowAnonymousAttribute());
+                    break;
+                case AuthMode.Host:
+                    endpoint.Metadata.Add(
+                        string.IsNullOrEmpty(auth.HostAuthorizationPolicy)
+                            ? new AuthorizeAttribute()
+                            : new AuthorizeAttribute(auth.HostAuthorizationPolicy)
+                    );
+                    break;
+                default:
+                    endpoint.Metadata.Add(new DashboardEndpointMetadata(authenticationName));
+                    endpoint.Metadata.Add(new AuthorizeAttribute(authenticationName));
+                    break;
+            }
+        });
+
+        return builder;
     }
 
     private static IServiceCollection _AddDashboardAuthenticationCore(IServiceCollection services, string name)

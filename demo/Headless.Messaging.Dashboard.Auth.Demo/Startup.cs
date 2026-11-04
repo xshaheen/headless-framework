@@ -30,7 +30,11 @@ public class Startup
         app.UseAuthentication();
         app.UseAuthorization();
         app.UseCookiePolicy();
-        app.UseEndpoints(endpoints => endpoints.MapControllers());
+        app.UseEndpoints(endpoints =>
+        {
+            endpoints.MapControllers();
+            endpoints.MapHeadlessMessagingDashboard();
+        });
     }
 
     public IServiceCollection AddMessagingWithOpenIdAuthorization(IServiceCollection services)

@@ -71,4 +71,6 @@ await using (var scope = app.Services.CreateAsyncScope())
 app.UseRouting();
 app.MapControllers();
 
+app.MapHeadlessMessagingDashboard();
+
 await app.RunAsync();

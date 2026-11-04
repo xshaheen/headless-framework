@@ -49,7 +49,7 @@ internal static class DashboardEndpoints
             .WithTags("Jobs Dashboard")
             .RequireDashboardCors(CorsPolicyName, applyCors)
             .ExcludeFromDescription()
-            .RequireDashboardAccess(config.Auth, DashboardOptionsBuilder.AuthenticationName)
+            .RequireDashboardAuthentication(DashboardOptionsBuilder.AuthenticationName)
             .AddEndpointFilter(_RequireRequestedWithOnStateChange);
 
         // Options endpoint
@@ -232,7 +232,7 @@ internal static class DashboardEndpoints
         endpoints
             .MapHub<JobsNotificationHub>(JobsNotificationHub.Path)
             .RequireDashboardCors(CorsPolicyName, applyCors)
-            .RequireDashboardAccess(config.Auth, DashboardOptionsBuilder.AuthenticationName);
+            .RequireDashboardAuthentication(DashboardOptionsBuilder.AuthenticationName);
     }
 
     #region Endpoint Handlers

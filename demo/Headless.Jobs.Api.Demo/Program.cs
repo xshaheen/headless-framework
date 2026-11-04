@@ -66,4 +66,6 @@ app.MapPost(
         }
     }
 );
+app.MapHeadlessJobsDashboard();
+
 await app.RunAsync();
