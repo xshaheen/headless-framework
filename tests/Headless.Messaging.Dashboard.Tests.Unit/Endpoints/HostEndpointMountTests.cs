@@ -189,6 +189,16 @@ public sealed class HostEndpointMountTests : TestBase
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*CustomMiddleware*");
     }
 
+    [Theory]
+    [InlineData("/")]
+    [InlineData("")]
+    public async Task should_reject_the_root_base_path(string basePath)
+    {
+        var act = () => _StartAsync(dashboard => dashboard.SetBasePath(basePath).WithNoAuth());
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*root path*");
+    }
+
     [Fact]
     public async Task should_reject_mapping_without_the_dashboard_registration()
     {

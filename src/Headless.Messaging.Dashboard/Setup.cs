@@ -130,8 +130,8 @@ public static class SetupMessagingDashboard
     /// <param name="endpoints">The host's endpoint route builder, such as the <c>WebApplication</c>.</param>
     /// <returns>A builder for conventions that apply to every dashboard endpoint.</returns>
     /// <exception cref="InvalidOperationException">
-    /// The dashboard is not registered through <c>UseDashboard(...)</c>, it is already mapped, or a branch-only
-    /// middleware hook is configured.
+    /// The dashboard is not registered through <c>UseDashboard(...)</c>, it is already mapped, its base path is the
+    /// root, or a branch-only middleware hook is configured.
     /// </exception>
     public static IEndpointConventionBuilder MapHeadlessMessagingDashboard(this IEndpointRouteBuilder endpoints)
     {
@@ -157,6 +157,19 @@ public static class SetupMessagingDashboard
             );
         }
 
+        var basePath = DashboardSpaHelper.NormalizeBasePath(config.BasePath);
+
+        // At the root, the SPA catch-all would answer every unmatched GET in the host with the shell, hiding the
+        // host's own 404s and routing mistakes.
+        if (basePath is "" or "/")
+        {
+            throw new InvalidOperationException(
+                "MapHeadlessMessagingDashboard() cannot mount the dashboard at the root path, because its SPA route "
+                    + "would answer every unmatched GET in the host. Call SetBasePath(...) with a path such as "
+                    + "\"/messaging\"."
+            );
+        }
+
         if (config.EndpointMounted)
         {
             throw new InvalidOperationException("MapHeadlessMessagingDashboard() was already called for this host.");
@@ -165,7 +178,6 @@ public static class SetupMessagingDashboard
         config.EndpointMounted = true;
 
         var embeddedFileProvider = new EmbeddedFileProvider(Assembly.GetExecutingAssembly(), _EmbeddedFileNamespace);
-        var basePath = DashboardSpaHelper.NormalizeBasePath(config.BasePath);
         var group = endpoints.MapGroup(basePath);
 
         group.MapMessagingDashboardEndpoints(config, hostEndpointMount: true);

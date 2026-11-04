@@ -2386,6 +2386,7 @@ Requirements and limits of the endpoint mount:
 - The host pipeline must run `UseAuthentication()` and `UseAuthorization()` for host authentication. It must run `UseCors()` only when `SetCorsOrigins(...)` or `SetCorsPolicy(...)` is configured: the dashboard attaches its CORS policy to its endpoints only then.
 - `PreDashboardMiddleware`, `CustomMiddleware`, and `PostDashboardMiddleware` configure the branch and have no place in the host pipeline, so `MapHeadlessMessagingDashboard()` throws `InvalidOperationException` when any is set. Apply endpoint conventions to the builder it returns instead, such as `.RequireHost(...)`.
 - It throws `InvalidOperationException` when `UseDashboard(...)` was not called, or on a second call.
+- It throws `InvalidOperationException` when the base path is the root (`SetBasePath("/")` or an empty path). At the root, the SPA route would answer every unmatched GET in the host with the shell, which hides the host's own 404s. Mount the dashboard under a path such as `/messaging`.
 
 ### Configuration
 
