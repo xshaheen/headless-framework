@@ -57,7 +57,7 @@ internal sealed class BacklogSamplingProcessor : IProcessor, IDisposable
 
         foreach (var source in sources)
         {
-            if (source.Unsupported || !source.IsReady())
+            if (!source.IsReady())
             {
                 continue;
             }
@@ -66,12 +66,6 @@ internal sealed class BacklogSamplingProcessor : IProcessor, IDisposable
             {
                 var backlog = await source.Read(cancellationToken).ConfigureAwait(false);
                 source.Measurements = source.Measure(backlog);
-            }
-            catch (NotSupportedException ex)
-            {
-                // A provider that does not report its backlog never will in this process: stop asking it.
-                _logger.BacklogSamplingUnsupported(ex, source.Name);
-                source.Unsupported = true;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -165,8 +159,6 @@ internal sealed class BacklogSamplingProcessor : IProcessor, IDisposable
 
         public BacklogMeasurement[] Measurements { get; set; } = [];
 
-        public bool Unsupported { get; set; }
-
         public BacklogMeasurement[] Measure(BacklogView backlog)
         {
             var published = new BacklogMeasurement(
@@ -211,22 +203,10 @@ internal sealed record BacklogMeasurement(long Pending, double OldestAgeSeconds,
 internal static partial class BacklogSamplingProcessorLog
 {
     [LoggerMessage(
-        EventId = 4137,
+        EventId = 4136,
         EventName = "BacklogSampleFailed",
         Level = LogLevel.Warning,
         Message = "Reading the message backlog of {StorageName} failed; its backlog gauges keep the last sample."
     )]
     internal static partial void BacklogSampleFailed(this ILogger logger, Exception exception, string storageName);
-
-    [LoggerMessage(
-        EventId = 4136,
-        EventName = "BacklogSamplingUnsupported",
-        Level = LogLevel.Warning,
-        Message = "The messaging storage {StorageName} does not report its backlog; the backlog sampler stops reading it."
-    )]
-    internal static partial void BacklogSamplingUnsupported(
-        this ILogger logger,
-        Exception exception,
-        string storageName
-    );
 }

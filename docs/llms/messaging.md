@@ -2802,7 +2802,7 @@ Framework span attributes: `headless.messaging.lane` and `headless.messaging.des
 
 ### Outbox and inbox backlog
 
-Set `MessagingOptions.BacklogSamplingInterval` to report how much stored work is waiting. A background sampler starts with the processing server, waits one interval, then once per interval reads `IMonitoringApi.GetBacklogAsync()` on the primary storage and the published table of each initialized additional outbox, and keeps the result. The `headless.messaging.backlog.pending` and `headless.messaging.backlog.oldest_age` gauges report that last sample: a scrape never touches storage, and the gauges report nothing before the first sample. A failed read logs a warning (EventId 4137) and the storage's gauges keep its last sample; a storage provider whose monitoring API does not implement `GetBacklogAsync` is logged once (EventId 4136) and not read again.
+Set `MessagingOptions.BacklogSamplingInterval` to report how much stored work is waiting. A background sampler starts with the processing server, waits one interval, then once per interval reads `IMonitoringApi.GetBacklogAsync()` on the primary storage and the published table of each initialized additional outbox, and keeps the result. The `headless.messaging.backlog.pending` and `headless.messaging.backlog.oldest_age` gauges report that last sample: a scrape never touches storage, and the gauges report nothing before the first sample. A failed read logs a warning (EventId 4136) and the storage's gauges keep its last sample. Every storage provider implements `IMonitoringApi.GetBacklogAsync`; the member has no default.
 
 ```csharp
 builder.Services.AddHeadlessMessaging(setup =>

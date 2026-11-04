@@ -9,17 +9,9 @@ namespace Headless.Messaging;
 /// Exposes message row lookups, aggregate statistics, and hourly throughput histograms.
 /// </summary>
 /// <remarks>
-/// <para>
 /// Resolved from DI via <c>IDataStorage.GetMonitoringApi()</c>. All queries operate on the
 /// same underlying storage tables as the outbox and retry processors; results reflect the live
 /// state of those tables at query time.
-/// </para>
-/// <para>
-/// Each messaging storage provider implements this interface. New members arrive as default interface members, so
-/// adding one does not break an existing provider: the default composes the answer from the existing members when it
-/// can, and otherwise throws <see cref="NotSupportedException"/> naming the capability until the provider implements
-/// it.
-/// </para>
 /// </remarks>
 [PublicAPI]
 public interface IMonitoringApi
@@ -72,18 +64,10 @@ public interface IMonitoringApi
     /// </summary>
     /// <remarks>
     /// The messaging backlog sampler (<see cref="MessagingOptions.BacklogSamplingInterval"/>) calls this once per
-    /// tick. The default implementation throws, because no existing member can count pending rows; the relational and
-    /// in-memory storages implement it.
+    /// tick.
     /// </remarks>
     /// <param name="cancellationToken">A token to cancel the query.</param>
-    /// <exception cref="NotSupportedException">The storage provider does not report its backlog.</exception>
-    ValueTask<BacklogView> GetBacklogAsync(CancellationToken cancellationToken = default)
-    {
-        throw new NotSupportedException(
-            $"The messaging storage's monitoring API '{GetType().FullName}' does not report the message backlog "
-                + $"({nameof(GetBacklogAsync)})."
-        );
-    }
+    ValueTask<BacklogView> GetBacklogAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Returns a paged list of message rows matching the supplied query filters.

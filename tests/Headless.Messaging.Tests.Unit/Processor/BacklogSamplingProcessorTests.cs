@@ -150,25 +150,6 @@ public sealed class BacklogSamplingProcessorTests : TestBase
     }
 
     [Fact]
-    public async Task should_stop_reading_a_storage_when_it_does_not_report_its_backlog()
-    {
-        // given
-        var monitoring = Substitute.For<IMonitoringApi>();
-        monitoring
-            .GetBacklogAsync(Arg.Any<CancellationToken>())
-            .Returns<ValueTask<BacklogView>>(_ => throw new NotSupportedException("no backlog"));
-        using var sampler = _CreateSampler(monitoring);
-
-        // when
-        await sampler.SampleAsync(AbortToken);
-        await sampler.SampleAsync(AbortToken);
-
-        // then
-        await monitoring.Received(1).GetBacklogAsync(Arg.Any<CancellationToken>());
-        sampler.Measurements.Should().BeEmpty();
-    }
-
-    [Fact]
     public async Task should_propagate_cancellation_when_the_sample_is_canceled()
     {
         // given
