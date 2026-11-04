@@ -29,7 +29,7 @@ public sealed class DashboardRegistrationTests : TestBase
     }
 
     [Fact]
-    public void should_wire_the_repository_pipeline_and_same_origin_cors_when_no_auth_is_selected()
+    public void should_wire_the_repository_pipeline_and_no_cors_policy_when_no_auth_is_selected()
     {
         var services = new ServiceCollection();
 
@@ -70,10 +70,12 @@ public sealed class DashboardRegistrationTests : TestBase
             .DashboardJsonOptions.Converters.Should()
             .ContainSingle(converter => converter is StringToByteArrayConverter);
 
-        var cors = provider.GetRequiredService<IOptions<CorsOptions>>().Value;
-        var policy = cors.GetPolicy("HeadlessJobsDashboardCORS");
-        policy.Should().NotBeNull();
-        policy!.Origins.Should().BeEmpty("the dashboard defaults to same-origin access");
+        // Same-origin by default: no policy, so the host needs no UseCors for the dashboard's endpoints.
+        provider
+            .GetRequiredService<IOptions<CorsOptions>>()
+            .Value.GetPolicy("HeadlessJobsDashboardCORS")
+            .Should()
+            .BeNull();
     }
 
     [Fact]

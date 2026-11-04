@@ -2,7 +2,6 @@
 
 using Headless.Dashboard.Authentication;
 using Headless.Jobs;
-using Headless.Jobs.Endpoints;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
@@ -16,6 +15,8 @@ namespace Tests.Dashboard;
 
 public sealed class DashboardEndpointMetadataTests : TestBase
 {
+    private const string _BasePath = "/jobs/dashboard";
+
     [Fact]
     public async Task should_apply_the_configured_host_policy_to_dashboard_api_and_hub_endpoints()
     {
@@ -34,13 +35,52 @@ public sealed class DashboardEndpointMetadataTests : TestBase
             .ContainSingle(data => data.Policy == "DashboardAdmin");
     }
 
-    [Fact]
-    public async Task should_leave_the_hub_anonymous_when_the_hub_authenticates_the_dashboard_credential_itself()
+    [Theory]
+    [InlineData(AuthMode.Basic)]
+    [InlineData(AuthMode.ApiKey)]
+    [InlineData(AuthMode.Custom)]
+    public async Task should_apply_the_dashboard_policy_to_the_api_and_hub_under_a_dashboard_credential(AuthMode mode)
     {
-        await using var app = _CreateApp(new DashboardOptionsBuilder().WithApiKey("secret"));
+        // The hub carries the API's rule, so the host's UseAuthorization refuses a client before SignalR adds it to
+        // Clients.All, where it would hear a broadcast before the hub's OnConnectedAsync ran.
+        var config = mode switch
+        {
+            AuthMode.Basic => new DashboardOptionsBuilder().WithBasicAuth("ops", "secret"),
+            AuthMode.ApiKey => new DashboardOptionsBuilder().WithApiKey("secret"),
+            _ => new DashboardOptionsBuilder().WithCustomAuth((_, _) => true),
+        };
+        await using var app = _CreateApp(config);
 
+        foreach (var endpoint in new[] { _GetEndpoint(app, "GetOptions"), _GetHubEndpoint(app) })
+        {
+            endpoint.Metadata.GetMetadata<IAllowAnonymous>().Should().BeNull();
+            endpoint
+                .Metadata.GetOrderedMetadata<IAuthorizeData>()
+                .Should()
+                .ContainSingle(data => data.Policy == DashboardOptionsBuilder.AuthenticationName);
+        }
+    }
+
+    [Fact]
+    public async Task should_leave_the_api_and_hub_anonymous_when_no_auth_is_selected()
+    {
+        await using var app = _CreateApp(new DashboardOptionsBuilder().WithNoAuth());
+
+        _GetEndpoint(app, "GetOptions").Metadata.GetMetadata<IAllowAnonymous>().Should().NotBeNull();
         _GetHubEndpoint(app).Metadata.GetMetadata<IAllowAnonymous>().Should().NotBeNull();
-        _GetHubEndpoint(app).Metadata.GetOrderedMetadata<IAuthorizeData>().Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("Jobs_Spa")]
+    [InlineData("GetAuthInfo")]
+    [InlineData("ValidateAuth")]
+    public async Task should_keep_the_shell_and_auth_endpoints_anonymous_under_a_dashboard_credential(
+        string endpointName
+    )
+    {
+        await using var app = _CreateApp(new DashboardOptionsBuilder().WithBasicAuth("ops", "secret"));
+
+        _GetEndpoint(app, endpointName).Metadata.GetMetadata<IAllowAnonymous>().Should().NotBeNull();
     }
 
     [Fact]
@@ -52,14 +92,6 @@ public sealed class DashboardEndpointMetadataTests : TestBase
 
         authorization.Should().ContainSingle();
         authorization[0].Policy.Should().BeNull();
-    }
-
-    [Fact]
-    public async Task should_not_attach_host_authorization_metadata_when_auth_is_handled_by_dashboard_middleware()
-    {
-        await using var app = _CreateApp(new DashboardOptionsBuilder().WithApiKey("secret"));
-
-        _GetEndpoint(app, "GetOptions").Metadata.GetOrderedMetadata<IAuthorizeData>().Should().BeEmpty();
     }
 
     [Theory]
@@ -86,7 +118,9 @@ public sealed class DashboardEndpointMetadataTests : TestBase
         await using var app = _CreateApp(new DashboardOptionsBuilder().WithNoAuth());
         var names = _Endpoints(app)
             .OfType<RouteEndpoint>()
-            .Where(endpoint => endpoint.RoutePattern.RawText?.StartsWith("/api", StringComparison.Ordinal) is true)
+            .Where(endpoint =>
+                endpoint.RoutePattern.RawText?.StartsWith(_BasePath + "/api", StringComparison.Ordinal) is true
+            )
             .Select(endpoint => endpoint.Metadata.GetMetadata<IEndpointNameMetadata>()?.EndpointName)
             .ToArray();
 
@@ -102,12 +136,14 @@ public sealed class DashboardEndpointMetadataTests : TestBase
     [Fact]
     public async Task should_exclude_every_dashboard_api_endpoint_from_application_api_descriptions()
     {
-        // The dashboard runs in an app.Map(basePath) branch, so a host document would list these under the wrong path.
+        // The dashboard SPA is the only client of these endpoints, so a host's API document never lists them.
         await using var app = _CreateApp(new DashboardOptionsBuilder().WithHostAuthentication());
 
         var api = _Endpoints(app)
             .OfType<RouteEndpoint>()
-            .Where(endpoint => endpoint.RoutePattern.RawText?.StartsWith("/api", StringComparison.Ordinal) is true)
+            .Where(endpoint =>
+                endpoint.RoutePattern.RawText?.StartsWith(_BasePath + "/api", StringComparison.Ordinal) is true
+            )
             .ToArray();
 
         api.Should()
@@ -120,8 +156,8 @@ public sealed class DashboardEndpointMetadataTests : TestBase
     }
 
     [Theory]
-    [InlineData("RequeueJob", "/api/job/requeue")]
-    [InlineData("RequeueCronJobOccurrence", "/api/cron-job-occurrence/requeue")]
+    [InlineData("RequeueJob", "/jobs/dashboard/api/job/requeue")]
+    [InlineData("RequeueCronJobOccurrence", "/jobs/dashboard/api/cron-job-occurrence/requeue")]
     public async Task should_map_requeue_as_a_post_endpoint(string endpointName, string route)
     {
         await using var app = _CreateApp(new DashboardOptionsBuilder().WithNoAuth());
@@ -330,6 +366,18 @@ public sealed class DashboardEndpointMetadataTests : TestBase
         builder.Services.AddCors();
         builder.Services.AddSingleton(config);
         builder.Services.AddKeyedSingleton(DashboardOptionsBuilder.AuthenticationName, Substitute.For<IAuthService>());
+        // The endpoints read the mode from this named AuthConfig when the host builds them, as AddDashboard registers it.
+        builder.Services.AddDashboardAuthentication(
+            DashboardOptionsBuilder.AuthenticationName,
+            auth =>
+            {
+                auth.Mode = config.Auth.Mode;
+                auth.BasicCredentials = config.Auth.BasicCredentials;
+                auth.ApiKey = config.Auth.ApiKey;
+                auth.CustomValidator = config.Auth.CustomValidator;
+                auth.HostAuthorizationPolicy = config.Auth.HostAuthorizationPolicy;
+            }
+        );
         builder.Services.AddSingleton(new JobsExecutionContext());
         builder.Services.AddSingleton(JobFunctionRegistryBuilder.Build([], [], []));
         builder.Services.AddSingleton(new SchedulerOptionsBuilder());
@@ -342,8 +390,11 @@ public sealed class DashboardEndpointMetadataTests : TestBase
             .Services.AddAuthorizationBuilder()
             .AddPolicy("DashboardAdmin", policy => policy.RequireAssertion(_ => true));
 
+        // AddDashboard sets this delegate; these tests register substitutes instead of the Jobs services.
+        config.MapEndpoints = group => group.MapDashboard<TimeJobEntity, CronJobEntity>(config);
+
         var app = builder.Build();
-        app.MapDashboardEndpoints<TimeJobEntity, CronJobEntity>(config);
+        app.MapHeadlessJobsDashboard();
         return app;
     }
 
@@ -364,7 +415,11 @@ public sealed class DashboardEndpointMetadataTests : TestBase
         return _Endpoints(app)
             .Single(endpoint =>
                 endpoint is RouteEndpoint routeEndpoint
-                && string.Equals(routeEndpoint.RoutePattern.RawText, "/job-notification-hub", StringComparison.Ordinal)
+                && string.Equals(
+                    routeEndpoint.RoutePattern.RawText,
+                    _BasePath + "/job-notification-hub",
+                    StringComparison.Ordinal
+                )
             );
     }
 
