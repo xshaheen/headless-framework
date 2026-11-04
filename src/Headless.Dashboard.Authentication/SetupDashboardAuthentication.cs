@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
@@ -109,6 +110,10 @@ public static class SetupDashboardAuthentication
     /// <exception cref="ArgumentException">
     /// <paramref name="authenticationName"/> is <see langword="null"/>, empty, or white space.
     /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// When the host builds its endpoints: no <c>AddDashboardAuthentication</c> call registered
+    /// <paramref name="authenticationName"/>.
+    /// </exception>
     public static TBuilder RequireDashboardAuthentication<TBuilder>(this TBuilder builder, string authenticationName)
         where TBuilder : IEndpointConventionBuilder
     {
@@ -117,6 +122,19 @@ public static class SetupDashboardAuthentication
 
         builder.Add(endpoint =>
         {
+            // An unconfigured name reads as a default AuthConfig whose mode is None, which would publish the endpoint
+            // openly; AddDashboardAuthentication registers a scheme under every name it configures, so a missing scheme
+            // means a typo or a missing registration, and the endpoint must fail closed.
+            var schemes = endpoint.ApplicationServices.GetRequiredService<IOptions<AuthenticationOptions>>().Value;
+            if (!schemes.SchemeMap.ContainsKey(authenticationName))
+            {
+                throw new InvalidOperationException(
+                    $"No dashboard authentication is registered under '{authenticationName}'. Call "
+                        + $"AddDashboardAuthentication(\"{authenticationName}\", ...) before mapping endpoints that "
+                        + "require it."
+                );
+            }
+
             var auth = endpoint
                 .ApplicationServices.GetRequiredService<IOptionsMonitor<AuthConfig>>()
                 .Get(authenticationName);
