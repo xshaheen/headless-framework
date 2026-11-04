@@ -11,8 +11,7 @@ namespace Headless.DistributedLocks;
 /// </summary>
 /// <remarks>
 /// This provider is not distributed and does not coordinate across application instances.
-/// Waiters fall back to polling backoff unless a release signal transport is configured, such as
-/// <c>UseMessagingReleaseSignal()</c> from <c>Headless.DistributedLocks.Messaging</c>.
+/// A release wakes the waiters in this process at once, without any release signal transport.
 /// </remarks>
 [PublicAPI]
 public static class SetupDistributedLocksInMemory
@@ -37,6 +36,8 @@ public static class SetupDistributedLocksInMemory
 
     private static IServiceCollection _AddInMemoryDistributedLocksCore(IServiceCollection services)
     {
+        // Before the core registrations, whose default signal logs that other hosts poll: an in-process lock has none.
+        services.AddSingleProcessReleaseSignal();
         services.AddDistributedLockCore<InMemoryDistributedLockStorage>();
         services.AddDistributedReadWriteLockCore<InMemoryDistributedReadWriteLockStorage>();
         services.AddDistributedSemaphoreCore<InMemoryDistributedSemaphoreStorage>();

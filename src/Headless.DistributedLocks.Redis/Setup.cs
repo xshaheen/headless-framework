@@ -17,7 +17,8 @@ namespace Headless.DistributedLocks;
 /// </summary>
 /// <remarks>
 /// Requires <see cref="IConnectionMultiplexer"/> to be registered in the service collection.
-/// Waiters fall back to polling backoff unless a release signal transport is configured:
+/// A release wakes the waiters in the releasing process at once; waiters on other hosts fall back to polling backoff
+/// unless a release signal transport is configured:
 /// <c>UseRedisReleaseSignal()</c> here, or <c>UseMessagingReleaseSignal()</c> from
 /// <c>Headless.DistributedLocks.Messaging</c>.
 /// <c>UseRedis</c> also contributes the <c>distributed-locks-redis</c> readiness health check, which pings Redis

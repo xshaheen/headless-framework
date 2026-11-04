@@ -195,11 +195,11 @@ internal static partial class RegularLockLoggerExtensions
 
     [LoggerMessage(
         EventId = 16,
-        EventName = "ReleaseSignalAbsent",
-        Level = LogLevel.Warning,
-        Message = "No lock release signal registered; lock-release wake-ups will fall back to polling backoff. Call UseMessagingReleaseSignal() from Headless.DistributedLocks.Messaging for push-based latency."
+        EventName = "CrossHostReleaseSignalAbsent",
+        Level = LogLevel.Information,
+        Message = "No cross-host lock release signal registered; a release wakes waiters in this process only, and waiters on other hosts wake on their polling backoff. Call UseRedisReleaseSignal() from Headless.DistributedLocks.Redis or UseMessagingReleaseSignal() from Headless.DistributedLocks.Messaging to wake them at once."
     )]
-    internal static partial void LogReleaseSignalAbsent(this ILogger logger);
+    internal static partial void LogCrossHostReleaseSignalAbsent(this ILogger logger);
 
     [LoggerMessage(
         EventId = 19,

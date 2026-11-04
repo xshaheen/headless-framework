@@ -5,8 +5,8 @@ using Headless;
 using Headless.DistributedLocks;
 using Headless.DistributedLocks.InMemory;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 
 namespace Tests.RegularLocks;
@@ -27,7 +27,7 @@ public sealed class DistributedLockTests : TestBase
         DistributedLockOptions? options = null,
         IDistributedLockStorage? storage = null,
         ILogger<DistributedLock>? logger = null,
-        bool useNullSignal = false,
+        bool useSilentSignal = false,
         TimeProvider? timeProvider = null
     )
     {
@@ -36,9 +36,8 @@ public sealed class DistributedLockTests : TestBase
 
         return new DistributedLock(
             storage ?? _storage,
-            useNullSignal
-                ? new NullDistributedLockReleaseSignal(NullLogger<NullDistributedLockReleaseSignal>.Instance)
-                : _releaseSignal,
+            // A signal that announces nothing, so a waiter can only wake on its poll.
+            useSilentSignal ? Substitute.For<IDistributedLockReleaseSignal>() : _releaseSignal,
             options,
             _guidGenerator,
             timeProvider ?? _timeProvider,
@@ -1231,7 +1230,7 @@ public sealed class DistributedLockTests : TestBase
     public async Task should_release_when_no_release_transport_is_configured()
     {
         // given
-        var provider = _CreateProvider(useNullSignal: true);
+        var provider = _CreateProvider(useSilentSignal: true);
         var resource = Faker.Random.AlphaNumeric(10);
         var acquiredLock = await provider.TryAcquireAsync(resource, cancellationToken: AbortToken);
 
@@ -1278,7 +1277,7 @@ public sealed class DistributedLockTests : TestBase
     public async Task should_acquire_waiting_lock_with_polling_when_no_release_transport_is_configured()
     {
         // given
-        var provider = _CreateProvider(useNullSignal: true);
+        var provider = _CreateProvider(useSilentSignal: true);
         var resource = Faker.Random.AlphaNumeric(10);
         await using var existing = await provider.AcquireAsync(resource, cancellationToken: AbortToken);
 
@@ -1305,17 +1304,37 @@ public sealed class DistributedLockTests : TestBase
     }
 
     [Fact]
-    public void should_log_warning_once_when_no_release_transport_is_configured()
+    public void should_log_once_when_the_default_signal_reaches_no_other_host()
     {
         // given
         var captured = new List<int>();
-        var logger = new DistributedLockTestSupport.CapturingLogger<NullDistributedLockReleaseSignal>(captured);
+        var logger = new DistributedLockTestSupport.CapturingLogger<LocalDistributedLockReleaseSignal>(captured);
 
         // when
-        _ = new NullDistributedLockReleaseSignal(logger);
+        _ = new LocalDistributedLockReleaseSignal(new ServiceCollection().BuildServiceProvider(), logger);
 
-        // then - the operator sees why waiters fall back to polling
+        // then - the operator sees why waiters on other hosts fall back to polling
         captured.Should().ContainSingle().Which.Should().Be(16);
+    }
+
+    [Fact]
+    public void should_hand_each_release_to_every_local_listener_when_the_default_signal_announces()
+    {
+        // given
+        var first = Substitute.For<IDistributedLockReleaseListener>();
+        var second = Substitute.For<IDistributedLockReleaseListener>();
+        var services = new ServiceCollection();
+        services.AddSingleton(first);
+        services.AddSingleton(second);
+        using var serviceProvider = services.BuildServiceProvider();
+        var signal = new LocalDistributedLockReleaseSignal(serviceProvider, logger: null);
+
+        // when
+        signal.Announce("resource", "lease");
+
+        // then
+        first.Received(1).OnReleased("resource", "lease");
+        second.Received(1).OnReleased("resource", "lease");
     }
 
     #endregion

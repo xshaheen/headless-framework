@@ -23,8 +23,8 @@ namespace Headless.DistributedLocks;
 /// </para>
 /// <para>
 /// Wake-up model mirrors <see cref="DistributedLock"/>: each confirmed release is announced through the
-/// registered <see cref="IDistributedLockReleaseSignal"/> so blocked acquirers are woken immediately. With the
-/// default signal, which sends nothing, callers fall back to polling.
+/// registered <see cref="IDistributedLockReleaseSignal"/> so blocked acquirers are woken immediately. The default
+/// signal wakes only this process's waiters; waiters on other hosts fall back to polling.
 /// </para>
 /// <para>
 /// This class also implements <see cref="IDistributedLockReleaseListener"/> so it participates in the same

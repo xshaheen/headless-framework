@@ -26,7 +26,7 @@ namespace Headless.DistributedLocks;
 /// Wake-up model: after each confirmed release the provider hands a best-effort announcement to the registered
 /// <see cref="IDistributedLockReleaseSignal"/>; a transport such as <c>Headless.DistributedLocks.Messaging</c>
 /// delivers it to every host, so blocked acquirers wake immediately instead of waiting for the next backoff
-/// interval. The default signal sends nothing, and callers fall back to polling.
+/// interval. The default signal wakes only this process's waiters; waiters on other hosts fall back to polling.
 /// </para>
 /// <para>
 /// Monitoring: if <see cref="DistributedLockAcquireOptions.Monitoring"/> is
