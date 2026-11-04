@@ -31,9 +31,10 @@ public sealed class AuthConfig
     public string? ApiKey { get; set; }
 
     /// <summary>
-    /// Gets or sets the authorization policy name for host mode. When <see langword="null"/>, the default policy is used.
+    /// Gets or sets the settings that apply under <see cref="AuthMode.Host"/>: the view and operate policies, the
+    /// sign-in challenge scheme, and the session's cookie and lifetime. Other modes ignore them.
     /// </summary>
-    public string? HostAuthorizationPolicy { get; set; }
+    public DashboardHostAuthenticationOptions Host { get; set; } = new();
 
     /// <summary>
     /// Gets a value indicating whether authentication is enabled.
@@ -58,5 +59,10 @@ internal sealed class AuthConfigValidator : AbstractValidator<AuthConfig>
             .NotEmpty()
             .When(x => x.Mode == AuthMode.ApiKey)
             .WithMessage("ApiKey is required for ApiKey authentication mode");
+
+        RuleFor(x => x.Host)
+            .NotNull()
+            .SetValidator(new DashboardHostAuthenticationOptionsValidator())
+            .When(x => x.Mode == AuthMode.Host);
     }
 }

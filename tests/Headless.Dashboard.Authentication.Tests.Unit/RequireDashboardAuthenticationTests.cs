@@ -112,11 +112,38 @@ public sealed class RequireDashboardAuthenticationTests : TestBase
     }
 
     [Fact]
+    public async Task adds_nothing_to_an_operator_action_outside_a_session_backed_host_mode()
+    {
+        // Basic and API key share one credential for viewing and operating, so the dashboard credential is enough.
+        await using var app = await _StartAsync(
+            services => services.AddDashboardAuthentication(_Name, _Basic("admin", "pass")),
+            endpoints =>
+                endpoints
+                    .MapPost(_Path, _UserName)
+                    .RequireDashboardAuthentication(_Name)
+                    .RequireDashboardOperation(_Name)
+        );
+        using var client = app.GetTestClient();
+
+        using var response = await _SendAsync(client, _Path, "Basic " + "admin:pass".ToBase64(), HttpMethod.Post);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await response.Content.ReadAsStringAsync(AbortToken)).Should().Be("admin");
+    }
+
+    [Fact]
     public async Task neither_challenges_nor_logs_a_host_endpoint_when_the_dashboard_scheme_is_the_only_scheme()
     {
-        // The only registered scheme becomes the host's default, so the host's UseAuthentication runs it on every
-        // request, including requests that never reach the dashboard.
-        await using var app = await _StartSingleAsync(_Basic("admin", "pass"));
+        // A host may make the dashboard scheme its default, so the host's UseAuthentication runs it on every request,
+        // including requests that never reach the dashboard.
+        await using var app = await _StartAsync(
+            services =>
+            {
+                services.AddAuthentication(_Name);
+                services.AddDashboardAuthentication(_Name, _Basic("admin", "pass"));
+            },
+            endpoints => endpoints.MapGet(_Path, _UserName).RequireDashboardAuthentication(_Name)
+        );
         using var client = app.GetTestClient();
 
         using var probe = await _SendAsync(client, _HostProbePath, "Basic " + "admin:wrong".ToBase64());
@@ -322,7 +349,7 @@ public sealed class RequireDashboardAuthenticationTests : TestBase
                     auth =>
                     {
                         auth.Mode = AuthMode.Host;
-                        auth.HostAuthorizationPolicy = policy;
+                        auth.Host.ViewPolicy = policy;
                     }
                 );
             },

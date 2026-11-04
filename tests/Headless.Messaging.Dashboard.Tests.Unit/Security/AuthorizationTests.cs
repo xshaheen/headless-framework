@@ -26,7 +26,7 @@ public sealed class AuthorizationTests : TestBase
         // then
         builder.Auth.Mode.Should().Be(AuthMode.Host);
         builder.Auth.IsEnabled.Should().BeTrue();
-        builder.Auth.HostAuthorizationPolicy.Should().Be("AdminOnly");
+        builder.Auth.Host.ViewPolicy.Should().Be("AdminOnly");
     }
 
     [Fact]
@@ -160,7 +160,7 @@ public sealed class AuthorizationTests : TestBase
 
         // When Host auth is configured, RequireAuthorization() is applied to the group.
         var builder = new MessagingDashboardOptionsBuilder().WithHostAuthentication("DashboardAdmin");
-        builder.Auth.HostAuthorizationPolicy.Should().Be("DashboardAdmin");
+        builder.Auth.Host.ViewPolicy.Should().Be("DashboardAdmin");
     }
 
     [Fact]

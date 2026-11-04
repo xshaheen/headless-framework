@@ -185,6 +185,72 @@ public sealed class SetupDashboardAuthenticationTests : TestBase
         act.Should().NotThrow();
     }
 
+    public static TheoryData<string, Action<DashboardHostAuthenticationOptions>> InvalidHostOptions =>
+        new()
+        {
+            {
+                "SessionIdleTimeout",
+                host =>
+                {
+                    host.SessionIdleTimeout = TimeSpan.FromHours(9);
+                    host.SessionLifetime = TimeSpan.FromHours(8);
+                }
+            },
+            { "SessionIdleTimeout", host => host.SessionIdleTimeout = TimeSpan.Zero },
+            { "SessionLifetime", host => host.SessionLifetime = TimeSpan.FromMinutes(-1) },
+            { "RevalidationInterval", host => host.Revalidate = (_, _) => ValueTask.FromResult(true) },
+            { "RevalidationInterval", host => host.RevalidationInterval = TimeSpan.Zero },
+            { "SessionCookieName", host => host.SessionCookieName = "dashboard session" },
+            { "SessionCookieName", host => host.SessionCookieName = "dashboard;path=/" },
+        };
+
+    [Theory]
+    [MemberData(nameof(InvalidHostOptions))]
+    public void add_dashboard_authentication_rejects_invalid_host_session_options(
+        string property,
+        Action<DashboardHostAuthenticationOptions> configure
+    )
+    {
+        var act = () =>
+            _ResolveConfig(cfg =>
+            {
+                cfg.Mode = AuthMode.Host;
+                configure(cfg.Host);
+            });
+
+        act.Should().Throw<OptionsValidationException>().WithMessage($"*{property}*");
+    }
+
+    [Fact]
+    public void add_dashboard_authentication_accepts_valid_host_session_options()
+    {
+        var act = () =>
+            _ResolveConfig(cfg =>
+            {
+                cfg.Mode = AuthMode.Host;
+                cfg.Host.SessionIdleTimeout = TimeSpan.FromMinutes(10);
+                cfg.Host.SessionLifetime = TimeSpan.FromMinutes(10);
+                cfg.Host.RevalidationInterval = TimeSpan.FromMinutes(5);
+                cfg.Host.Revalidate = (_, _) => ValueTask.FromResult(true);
+                cfg.Host.SessionCookieName = "__Host-ops-dashboard";
+            });
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void add_dashboard_authentication_ignores_host_session_options_outside_host_mode()
+    {
+        var act = () =>
+            _ResolveConfig(cfg =>
+            {
+                cfg.Mode = AuthMode.None;
+                cfg.Host.SessionIdleTimeout = TimeSpan.Zero;
+            });
+
+        act.Should().NotThrow();
+    }
+
     private static void _ResolveConfig(Action<AuthConfig> setupAction)
     {
         var services = new ServiceCollection();

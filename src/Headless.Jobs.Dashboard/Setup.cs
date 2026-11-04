@@ -77,7 +77,7 @@ public static class SetupJobsDashboard
                     auth.Mode = dashboardConfig.Auth.Mode;
                     auth.BasicCredentials = dashboardConfig.Auth.BasicCredentials;
                     auth.ApiKey = dashboardConfig.Auth.ApiKey;
-                    auth.HostAuthorizationPolicy = dashboardConfig.Auth.HostAuthorizationPolicy;
+                    auth.Host = dashboardConfig.Auth.Host;
                 }
             );
 

@@ -104,7 +104,7 @@ public sealed class DashboardOptionsTests : TestBase
 
         builder.AuthConfigured.Should().BeTrue();
         builder.Auth.Mode.Should().Be(AuthMode.Host);
-        builder.Auth.HostAuthorizationPolicy.Should().Be(policy);
+        builder.Auth.Host.ViewPolicy.Should().Be(policy);
     }
 
     [Fact]

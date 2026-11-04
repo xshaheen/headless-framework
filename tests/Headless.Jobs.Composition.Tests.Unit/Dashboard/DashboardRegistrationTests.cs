@@ -98,7 +98,7 @@ public sealed class DashboardRegistrationTests : TestBase
         using var provider = services.BuildServiceProvider();
         var dashboard = provider.GetRequiredService<DashboardOptionsBuilder>();
         dashboard.Auth.Mode.Should().Be(AuthMode.Host);
-        dashboard.Auth.HostAuthorizationPolicy.Should().Be("Operators");
+        dashboard.Auth.Host.ViewPolicy.Should().Be("Operators");
         provider
             .GetRequiredKeyedService<IAuthService>(DashboardOptionsBuilder.AuthenticationName)
             .GetAuthInfo()

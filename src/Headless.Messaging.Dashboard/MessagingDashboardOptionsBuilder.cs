@@ -115,7 +115,7 @@ public sealed class MessagingDashboardOptionsBuilder
     public MessagingDashboardOptionsBuilder WithHostAuthentication(string? policy = null)
     {
         Auth.Mode = AuthMode.Host;
-        Auth.HostAuthorizationPolicy = policy;
+        Auth.Host.ViewPolicy = policy;
         AuthConfigured = true;
         return this;
     }

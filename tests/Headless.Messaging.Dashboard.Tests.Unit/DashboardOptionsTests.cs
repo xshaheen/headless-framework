@@ -82,7 +82,7 @@ public sealed class DashboardOptionsTests : TestBase
         // then
         builder.Auth.Mode.Should().Be(AuthMode.Host);
         builder.Auth.IsEnabled.Should().BeTrue();
-        builder.Auth.HostAuthorizationPolicy.Should().Be("AdminOnly");
+        builder.Auth.Host.ViewPolicy.Should().Be("AdminOnly");
     }
 
     [Fact]
@@ -93,7 +93,7 @@ public sealed class DashboardOptionsTests : TestBase
 
         // then
         builder.Auth.Mode.Should().Be(AuthMode.Host);
-        builder.Auth.HostAuthorizationPolicy.Should().BeNull();
+        builder.Auth.Host.ViewPolicy.Should().BeNull();
     }
 
     [Fact]

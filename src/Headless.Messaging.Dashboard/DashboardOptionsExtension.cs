@@ -33,7 +33,7 @@ internal sealed class DashboardOptionsExtension(Action<MessagingDashboardOptions
                 config.Mode = auth.Mode;
                 config.BasicCredentials = auth.BasicCredentials;
                 config.ApiKey = auth.ApiKey;
-                config.HostAuthorizationPolicy = auth.HostAuthorizationPolicy;
+                config.Host = auth.Host;
             }
         );
 
