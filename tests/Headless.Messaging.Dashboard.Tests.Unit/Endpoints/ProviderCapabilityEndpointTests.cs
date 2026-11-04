@@ -1,13 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Dashboard.Authentication;
 using Headless.Messaging;
 using Headless.Messaging.Dashboard;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 
 namespace Tests.Endpoints;
 
@@ -106,10 +104,7 @@ public sealed class ProviderCapabilityEndpointTests : TestBase
         var builder = WebApplication.CreateSlimBuilder();
         builder.WebHost.UseTestServer();
         builder.Services.AddSingleton(config);
-        builder.Services.AddKeyedScoped<IAuthService>(
-            MessagingDashboardOptionsBuilder.AuthenticationName,
-            (sp, _) => new AuthService(config.Auth, sp.GetRequiredService<ILogger<AuthService>>())
-        );
+        MessagingDashboardHost.AddDashboardAuthentication(builder.Services, config);
         builder.Services.AddSingleton(Substitute.For<IRequestMapper>());
         builder.Services.AddSingleton(Substitute.For<IHttpClientFactory>());
         builder.Services.AddSingleton<MessagingDashboardCache>();

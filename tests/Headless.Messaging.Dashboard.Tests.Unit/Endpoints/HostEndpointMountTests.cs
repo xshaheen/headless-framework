@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using System.Net;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
@@ -10,22 +11,23 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Tests.Endpoints;
 
 /// <summary>
-/// The dashboard mounted on the host's endpoint routing, in a host whose fallback policy requires an authenticated user
-/// with a tenant claim. The host's own authorization must evaluate the dashboard's endpoints by their own metadata, not
-/// by the fallback policy.
+/// The dashboard mounted on the host's endpoint routing. Most hosts here have a fallback policy that requires an
+/// authenticated user with a tenant claim: the host's own authorization must evaluate the dashboard's endpoints by
+/// their own metadata, not by the fallback policy.
 /// </summary>
 public sealed class HostEndpointMountTests : TestBase
 {
     private const string _HostProbePath = "/host-probe";
+    private const string _AuthenticationFailedEvent = "AuthenticationFailed";
 
     [Fact]
     public async Task should_serve_the_shell_and_assets_anonymously_while_the_host_fallback_refuses_other_paths()
@@ -132,15 +134,133 @@ public sealed class HostEndpointMountTests : TestBase
         (await _SendAsync(client, HttpMethod.Get, "/messaging/api/stats", authorization: null))
             .StatusCode.Should()
             .Be(HttpStatusCode.Unauthorized);
-        (await _SendAsync(client, HttpMethod.Get, "/messaging/api/stats", "Basic " + "ops:wrong".ToBase64()))
-            .StatusCode.Should()
-            .Be(HttpStatusCode.Unauthorized);
+
+        // A wrong credential is the scheme's challenge: a bare 401 with no body.
+        using var wrong = await _SendAsync(
+            client,
+            HttpMethod.Get,
+            "/messaging/api/stats",
+            "Basic " + "ops:wrong".ToBase64()
+        );
+        wrong.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await wrong.Content.ReadAsStringAsync(AbortToken)).Should().BeEmpty();
+
+        // The right credential carries no tenant claim, so the host fallback would refuse it.
         (await _SendAsync(client, HttpMethod.Get, "/messaging/api/stats", "Basic " + credential.ToBase64()))
             .StatusCode.Should()
             .Be(HttpStatusCode.OK);
         (await _SendAsync(client, HttpMethod.Get, "/messaging", authorization: null))
             .StatusCode.Should()
             .Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task should_leave_host_endpoints_unchallenged_when_the_host_has_no_scheme_of_its_own()
+    {
+        // given - the dashboard's scheme is the only one, so it is the host's default and UseAuthentication runs it on
+        // every request.
+        using var logs = new RecordingLoggerProvider();
+        await using var app = await MessagingDashboardHost.StartAsync(
+            dashboard => dashboard.WithBasicAuth("ops", "secret"),
+            configureHost: builder => builder.Logging.AddProvider(logs),
+            configurePipeline: host =>
+            {
+                host.UseAuthentication();
+                host.UseAuthorization();
+                host.MapGet(_HostProbePath, () => "host");
+            },
+            cancellationToken: AbortToken
+        );
+        using var client = app.GetTestClient();
+
+        // when - host requests with no credential and with a wrong dashboard credential
+        foreach (var authorization in new[] { null, "Basic " + "ops:wrong".ToBase64() })
+        {
+            using var response = await _SendAsync(client, HttpMethod.Get, _HostProbePath, authorization);
+
+            // then
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            response.Headers.WwwAuthenticate.Should().BeEmpty();
+            (await response.Content.ReadAsStringAsync(AbortToken)).Should().Be("host");
+        }
+
+        logs.Entries.Should().NotContain(entry => entry.EventName == _AuthenticationFailedEvent);
+
+        // The same wrong credential on the dashboard API is checked and logged once.
+        (await _SendAsync(client, HttpMethod.Get, "/messaging/api/stats", "Basic " + "ops:wrong".ToBase64()))
+            .StatusCode.Should()
+            .Be(HttpStatusCode.Unauthorized);
+        logs.Entries.Should()
+            .ContainSingle(entry => entry.EventName == _AuthenticationFailedEvent)
+            .Which.Level.Should()
+            .Be(LogLevel.Warning);
+    }
+
+    [Fact]
+    public async Task should_accept_the_dashboard_credential_when_a_host_without_its_own_scheme_calls_use_routing()
+    {
+        // given - a host with no scheme of its own that calls UseRouting itself: the WebApplication then adds its
+        // implicit UseAuthentication ahead of routing, where no endpoint is known yet.
+        await using var app = await MessagingDashboardHost.StartAsync(
+            dashboard => dashboard.WithBasicAuth("ops", "secret"),
+            configurePipeline: host =>
+            {
+                host.UseRouting();
+                host.UseAuthorization();
+            },
+            cancellationToken: AbortToken
+        );
+        using var client = app.GetTestClient();
+
+        // when
+        using var response = await _SendAsync(
+            client,
+            HttpMethod.Get,
+            "/messaging/api/stats",
+            "Basic " + "ops:secret".ToBase64()
+        );
+
+        // then
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task should_check_the_dashboard_credential_when_the_host_authenticates_before_routing()
+    {
+        // given - a host with no scheme of its own that calls UseAuthentication ahead of UseRouting, so the dashboard
+        // scheme first runs where no endpoint is known yet.
+        using var logs = new RecordingLoggerProvider();
+        await using var app = await MessagingDashboardHost.StartAsync(
+            dashboard => dashboard.WithBasicAuth("ops", "secret"),
+            configureHost: builder => builder.Logging.AddProvider(logs),
+            configurePipeline: host =>
+            {
+                host.UseAuthentication();
+                host.UseRouting();
+                host.UseAuthorization();
+            },
+            cancellationToken: AbortToken
+        );
+        using var client = app.GetTestClient();
+
+        // when
+        using var right = await _SendAsync(
+            client,
+            HttpMethod.Get,
+            "/messaging/api/stats",
+            "Basic " + "ops:secret".ToBase64()
+        );
+        using var wrong = await _SendAsync(
+            client,
+            HttpMethod.Get,
+            "/messaging/api/stats",
+            "Basic " + "ops:wrong".ToBase64()
+        );
+
+        // then - the credential is checked once routing knows the endpoint, and a failure is logged once
+        right.StatusCode.Should().Be(HttpStatusCode.OK);
+        wrong.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        logs.Entries.Should().ContainSingle(entry => entry.EventName == _AuthenticationFailedEvent);
     }
 
     [Fact]
@@ -160,33 +280,55 @@ public sealed class HostEndpointMountTests : TestBase
     }
 
     [Fact]
-    public async Task should_skip_the_branch_mount_once_the_dashboard_is_mapped_on_host_endpoints()
+    public async Task should_serve_a_startup_host_that_maps_the_dashboard_inside_use_endpoints()
     {
-        var config = new MessagingDashboardOptionsBuilder().WithNoAuth();
-        config.EndpointMounted = true;
-        var app = new ApplicationBuilder(new ServiceCollection().BuildServiceProvider());
-        var nextRan = false;
+        // A Startup-style host maps its endpoints while the pipeline is built, inside the startup filter's next(app).
+        using var host = await new HostBuilder()
+            .ConfigureWebHost(web =>
+                web.UseTestServer()
+                    .ConfigureServices(services =>
+                        services.AddHeadlessMessaging(setup =>
+                        {
+                            setup.UseInMemory();
+                            setup.UseInMemoryStorage();
+                            setup.UseDashboard(dashboard => dashboard.WithBasicAuth("ops", "secret"));
+                        })
+                    )
+                    .Configure(app =>
+                    {
+                        app.UseRouting();
+                        app.UseAuthentication();
+                        app.UseAuthorization();
+                        app.UseEndpoints(endpoints => endpoints.MapHeadlessMessagingDashboard());
+                    })
+            )
+            .StartAsync(AbortToken);
+        using var client = host.GetTestClient();
 
-        new MessagingDashboardStartupFilter(config).Configure(_ => nextRan = true)(app);
-        var pipeline = app.Build();
-        var context = new DefaultHttpContext { Request = { Path = "/messaging/api/health" } };
-        await pipeline(context);
-
-        nextRan.Should().BeTrue();
-        context.Response.StatusCode.Should().Be(StatusCodes.Status404NotFound);
+        (await _SendAsync(client, HttpMethod.Get, "/messaging", authorization: null))
+            .StatusCode.Should()
+            .Be(HttpStatusCode.OK);
+        (await _SendAsync(client, HttpMethod.Get, "/messaging/api/stats", authorization: null))
+            .StatusCode.Should()
+            .Be(HttpStatusCode.Unauthorized);
+        (await _SendAsync(client, HttpMethod.Get, "/messaging/api/stats", "Basic " + "ops:secret".ToBase64()))
+            .StatusCode.Should()
+            .Be(HttpStatusCode.OK);
     }
 
     [Fact]
-    public async Task should_reject_branch_only_middleware_hooks()
+    public async Task should_fail_the_start_when_the_dashboard_is_registered_but_never_mapped()
     {
         var act = () =>
-            _StartAsync(dashboard =>
-            {
-                dashboard.WithNoAuth();
-                dashboard.CustomMiddleware = _ => { };
-            });
+            MessagingDashboardHost.StartAsync(
+                dashboard => dashboard.WithNoAuth(),
+                mapDashboard: false,
+                cancellationToken: AbortToken
+            );
 
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*CustomMiddleware*");
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*not mapped*MapHeadlessMessagingDashboard()*");
     }
 
     [Theory]
@@ -221,41 +363,37 @@ public sealed class HostEndpointMountTests : TestBase
         act.Should().Throw<InvalidOperationException>().WithMessage("*already*");
     }
 
-    private static async Task<WebApplication> _StartAsync(Action<MessagingDashboardOptionsBuilder> configureDashboard)
+    /// <summary>
+    /// Starts a host with its own <see cref="TokenHandler"/> scheme, an operator policy, and a fallback policy that
+    /// requires a tenant claim, plus one host endpoint at <see cref="_HostProbePath"/>.
+    /// </summary>
+    private static Task<WebApplication> _StartAsync(Action<MessagingDashboardOptionsBuilder> configureDashboard)
     {
-        var builder = WebApplication.CreateSlimBuilder();
-        builder.WebHost.UseTestServer();
-        builder.Logging.ClearProviders();
-
-        builder
-            .Services.AddAuthentication(TokenHandler.SchemeName)
-            .AddScheme<AuthenticationSchemeOptions, TokenHandler>(TokenHandler.SchemeName, _ => { });
-        builder
-            .Services.AddAuthorizationBuilder()
-            .AddPolicy(TokenHandler.Policy, policy => policy.RequireRole("operator"))
-            .SetFallbackPolicy(
-                new AuthorizationPolicyBuilder()
-                    .RequireAuthenticatedUser()
-                    .RequireClaim(TokenHandler.TenantClaim)
-                    .Build()
-            );
-
-        builder.Services.AddHeadlessMessaging(setup =>
-        {
-            setup.UseInMemory();
-            setup.UseInMemoryStorage();
-            setup.UseDashboard(configureDashboard);
-        });
-
-        var app = builder.Build();
-        app.UseAuthentication();
-        app.UseAuthorization();
-        app.MapGet(_HostProbePath, () => "host");
-        app.MapHeadlessMessagingDashboard();
-
-        await app.StartAsync(AbortToken);
-
-        return app;
+        return MessagingDashboardHost.StartAsync(
+            configureDashboard,
+            configureHost: builder =>
+            {
+                builder
+                    .Services.AddAuthentication(TokenHandler.SchemeName)
+                    .AddScheme<AuthenticationSchemeOptions, TokenHandler>(TokenHandler.SchemeName, _ => { });
+                builder
+                    .Services.AddAuthorizationBuilder()
+                    .AddPolicy(TokenHandler.Policy, policy => policy.RequireRole("operator"))
+                    .SetFallbackPolicy(
+                        new AuthorizationPolicyBuilder()
+                            .RequireAuthenticatedUser()
+                            .RequireClaim(TokenHandler.TenantClaim)
+                            .Build()
+                    );
+            },
+            configurePipeline: app =>
+            {
+                app.UseAuthentication();
+                app.UseAuthorization();
+                app.MapGet(_HostProbePath, () => "host");
+            },
+            cancellationToken: AbortToken
+        );
     }
 
     private static async Task<HttpResponseMessage> _SendAsync(
@@ -306,6 +444,48 @@ public sealed class HostEndpointMountTests : TestBase
             var identity = new ClaimsIdentity(claims, SchemeName);
 
             return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(new(identity), SchemeName)));
+        }
+    }
+
+    private sealed record LogEntry(string Category, LogLevel Level, string? EventName);
+
+    /// <summary>Records every log entry the host writes, so a test can assert what was and was not logged.</summary>
+    private sealed class RecordingLoggerProvider : ILoggerProvider
+    {
+        private readonly ConcurrentQueue<LogEntry> _entries = new();
+
+        public IReadOnlyCollection<LogEntry> Entries => _entries;
+
+        public ILogger CreateLogger(string categoryName)
+        {
+            return new RecordingLogger(categoryName, _entries);
+        }
+
+        public void Dispose() { }
+
+        private sealed class RecordingLogger(string category, ConcurrentQueue<LogEntry> entries) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull
+            {
+                return null;
+            }
+
+            public bool IsEnabled(LogLevel logLevel)
+            {
+                return true;
+            }
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter
+            )
+            {
+                entries.Enqueue(new LogEntry(category, logLevel, eventId.Name));
+            }
         }
     }
 }

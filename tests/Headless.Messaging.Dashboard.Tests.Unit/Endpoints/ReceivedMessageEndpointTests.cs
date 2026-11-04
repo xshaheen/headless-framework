@@ -14,7 +14,6 @@ using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 
 namespace Tests.Endpoints;
 
@@ -325,7 +324,6 @@ public sealed class ReceivedMessageEndpointTests : TestBase
             _dataStorage,
             authenticate: false,
             config: new MessagingDashboardOptionsBuilder().WithApiKey("secret"),
-            useAuthenticationMiddleware: true,
             customizeHostJson: customizeHostJson
         );
         await app.StartAsync(AbortToken);
@@ -578,28 +576,17 @@ public sealed class ReceivedMessageEndpointTests : TestBase
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
-    [Fact]
-    public async Task should_authorize_inbox_query_with_builtin_api_key_identity()
+    [Theory]
+    [InlineData(AuthMode.ApiKey)]
+    [InlineData(AuthMode.Basic)]
+    public async Task should_attribute_inbox_query_to_the_builtin_credential_actor(AuthMode mode)
     {
-        var operations = Substitute.For<IInboxOperationsApi>();
-        operations
-            .QueryAsync(
-                Arg.Any<InboxGenerationQuery>(),
-                Arg.Any<OperatorAuthorizationContext>(),
-                Arg.Any<CancellationToken>()
-            )
-            .Returns(ValueTask.FromResult(new IndexPage<InboxGenerationView>([], 0, 20, 0)));
-        _dataStorage.GetInboxOperationsApi().Returns(operations);
-        var config = new MessagingDashboardOptionsBuilder().WithApiKey("secret");
-        await using var app = _CreateTestApp(
-            _dataStorage,
-            authenticate: false,
-            config: config,
-            useAuthenticationMiddleware: true
-        );
+        var credential = BuiltInCredential.For(mode);
+        var operations = _SubstituteInboxQuery();
+        await using var app = _CreateTestApp(_dataStorage, authenticate: false, config: credential.Config);
         await app.StartAsync(AbortToken);
         using var client = app.GetTestClient();
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "secret");
+        client.DefaultRequestHeaders.Authorization = credential.Header;
 
         var response = await client.GetAsync("/api/inbox", AbortToken);
 
@@ -608,9 +595,57 @@ public sealed class ReceivedMessageEndpointTests : TestBase
             .Received(1)
             .QueryAsync(
                 Arg.Any<InboxGenerationQuery>(),
-                Arg.Is<OperatorAuthorizationContext>(authorization => authorization.Actor == "api-user"),
+                Arg.Is<OperatorAuthorizationContext>(authorization => authorization.Actor == credential.Actor),
                 Arg.Any<CancellationToken>()
             );
+    }
+
+    [Fact]
+    public async Task should_attribute_inbox_query_to_the_builtin_credential_actor_over_a_host_signed_in_user()
+    {
+        // given - the host has already signed in its own user when the request reaches the dashboard
+        var credential = BuiltInCredential.For(AuthMode.ApiKey);
+        var operations = _SubstituteInboxQuery();
+        var hostUser = new ClaimsPrincipal(
+            new ClaimsIdentity([new Claim(ClaimTypes.Name, "host-operator")], authenticationType: "test")
+        );
+        await using var app = _CreateTestApp(
+            _dataStorage,
+            authenticate: false,
+            config: credential.Config,
+            principal: hostUser
+        );
+        await app.StartAsync(AbortToken);
+        using var client = app.GetTestClient();
+        client.DefaultRequestHeaders.Authorization = credential.Header;
+
+        // when
+        var response = await client.GetAsync("/api/inbox", AbortToken);
+
+        // then - the dashboard credential's user replaces the host user for this request
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        await operations
+            .Received(1)
+            .QueryAsync(
+                Arg.Any<InboxGenerationQuery>(),
+                Arg.Is<OperatorAuthorizationContext>(authorization => authorization.Actor == credential.Actor),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_refuse_inbox_query_with_a_wrong_builtin_credential()
+    {
+        var credential = BuiltInCredential.For(AuthMode.ApiKey);
+        await using var app = _CreateTestApp(_dataStorage, authenticate: false, config: credential.Config);
+        await app.StartAsync(AbortToken);
+        using var client = app.GetTestClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "wrong");
+
+        var response = await client.GetAsync("/api/inbox", AbortToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        _dataStorage.DidNotReceive().GetInboxOperationsApi();
     }
 
     [Theory]
@@ -686,7 +721,6 @@ public sealed class ReceivedMessageEndpointTests : TestBase
         await using var app = _CreateTestApp(
             _dataStorage,
             config: new MessagingDashboardOptionsBuilder().WithHostAuthentication("InboxOperator"),
-            useAuthenticationMiddleware: true,
             principal: principal
         );
         await app.StartAsync(AbortToken);
@@ -747,7 +781,6 @@ public sealed class ReceivedMessageEndpointTests : TestBase
             config: authenticated
                 ? new MessagingDashboardOptionsBuilder().WithHostAuthentication("InboxOperator")
                 : null,
-            useAuthenticationMiddleware: authenticated,
             principal: principal
         );
         await app.StartAsync(AbortToken);
@@ -794,7 +827,6 @@ public sealed class ReceivedMessageEndpointTests : TestBase
         await using var app = _CreateTestApp(
             _dataStorage,
             config: new MessagingDashboardOptionsBuilder().WithHostAuthentication("InboxOperator"),
-            useAuthenticationMiddleware: true,
             principal: new ClaimsPrincipal(identity)
         );
         await app.StartAsync(AbortToken);
@@ -846,11 +878,25 @@ public sealed class ReceivedMessageEndpointTests : TestBase
         _dataStorage.DidNotReceive().GetInboxOperationsApi();
     }
 
+    private IInboxOperationsApi _SubstituteInboxQuery()
+    {
+        var operations = Substitute.For<IInboxOperationsApi>();
+        operations
+            .QueryAsync(
+                Arg.Any<InboxGenerationQuery>(),
+                Arg.Any<OperatorAuthorizationContext>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(new IndexPage<InboxGenerationView>([], 0, 20, 0)));
+        _dataStorage.GetInboxOperationsApi().Returns(operations);
+
+        return operations;
+    }
+
     private static WebApplication _CreateTestApp(
         IDataStorage dataStorage,
         bool authenticate = true,
         MessagingDashboardOptionsBuilder? config = null,
-        bool useAuthenticationMiddleware = false,
         bool customizeHostJson = false,
         ClaimsPrincipal? principal = null
     )
@@ -869,10 +915,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
         }
 
         appBuilder.Services.AddSingleton(config);
-        appBuilder.Services.AddKeyedScoped<IAuthService>(
-            MessagingDashboardOptionsBuilder.AuthenticationName,
-            (sp, _) => new AuthService(config.Auth, sp.GetRequiredService<ILogger<AuthService>>())
-        );
+        MessagingDashboardHost.AddDashboardAuthentication(appBuilder.Services, config);
         appBuilder.Services.AddSingleton(dataStorage);
         appBuilder.Services.AddSingleton<MessagingMetricsEventListener>();
 
@@ -918,6 +961,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
 
         var app = appBuilder.Build();
         app.UseRouting();
+        app.UseAuthentication();
         if (principal is not null)
         {
             app.Use(
@@ -929,11 +973,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
             );
         }
 
-        if (useAuthenticationMiddleware)
-        {
-            app.UseMiddleware<AuthMiddleware>(MessagingDashboardOptionsBuilder.AuthenticationName);
-        }
-        else if (authenticate && principal is null)
+        if (authenticate && principal is null)
         {
             app.Use(
                 (context, next) =>

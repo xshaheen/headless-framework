@@ -193,6 +193,7 @@ public sealed class PingServicesSecurityTests : TestBase
             MessagingDashboardOptionsBuilder.AuthenticationName,
             Substitute.For<IAuthService>()
         );
+        MessagingDashboardHost.AddDashboardAuthentication(builder.Services, config);
         builder.Services.AddSingleton(discoveryProvider);
         builder.Services.AddSingleton(httpClientFactory);
         builder.Services.AddSingleton(Substitute.For<IRequestMapper>());

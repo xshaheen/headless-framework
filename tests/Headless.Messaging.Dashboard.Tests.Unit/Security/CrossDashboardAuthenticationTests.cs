@@ -1,17 +1,14 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
-using System.Net.Http.Headers;
 using System.Net.WebSockets;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
 using Headless.Jobs;
-using Headless.Messaging;
 using Headless.Messaging.Dashboard;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -156,34 +153,34 @@ public sealed class CrossDashboardAuthenticationTests : TestBase
         );
     }
 
-    private static async Task<WebApplication> _StartAsync(
+    private static Task<WebApplication> _StartAsync(
         Action<DashboardOptionsBuilder> configureJobs,
         Action<IServiceCollection>? configureHost = null
     )
     {
-        var builder = WebApplication.CreateSlimBuilder();
-        builder.WebHost.UseTestServer();
-        builder.Logging.ClearProviders();
+        return MessagingDashboardHost.StartAsync(
+            dashboard => dashboard.WithBasicAuth(_MessagingUser, _MessagingPassword),
+            configureHost: builder =>
+            {
+                configureHost?.Invoke(builder.Services);
+                builder.Services.AddHeadlessJobs(options =>
+                    options.DisableBackgroundServices().AddDashboard(configureJobs)
+                );
+            },
+            configurePipeline: app =>
+            {
+                if (configureHost is not null)
+                {
+                    // After UseAuthentication: a WebApplication adds UseAuthorization ahead of the host's own middleware
+                    // when the host does not call it, which would authorize before the host signs anyone in.
+                    app.UseAuthentication();
+                    app.UseAuthorization();
+                }
 
-        configureHost?.Invoke(builder.Services);
-
-        builder.Services.AddHeadlessJobs(options => options.DisableBackgroundServices().AddDashboard(configureJobs));
-        builder.Services.AddHeadlessMessaging(setup =>
-        {
-            setup.UseInMemory();
-            setup.UseInMemoryStorage();
-            setup.UseDashboard(dashboard => dashboard.WithBasicAuth(_MessagingUser, _MessagingPassword));
-        });
-
-        var app = builder.Build();
-        if (configureHost is not null)
-        {
-            app.UseAuthentication();
-        }
-
-        await app.StartAsync(AbortToken);
-
-        return app;
+                app.MapHeadlessJobsDashboard();
+            },
+            cancellationToken: AbortToken
+        );
     }
 
     private static async Task<HttpStatusCode> _GetAsync(HttpClient client, string path, string? authorization)
@@ -229,8 +226,8 @@ public sealed class CrossDashboardAuthenticationTests : TestBase
         }
         catch (InvalidOperationException)
         {
-            // TestServer reports a refused upgrade (401 from the dashboard auth middleware, 401/403 from host
-            // authorization) as a failed connect.
+            // TestServer reports a refused upgrade (401 from the dashboard's scheme, 401/403 from host authorization)
+            // as a failed connect.
             return HubOutcome.Refused;
         }
 
