@@ -24,7 +24,7 @@ describe('provider capabilities outside the overview', () => {
 
   beforeEach(() => {
     window.MessagingConfig = {
-      basePath: '/messaging',
+      basePath: '/messaging/dashboard',
       auth: { mode: 'none', enabled: false, sessionTimeout: 0 },
     }
   })

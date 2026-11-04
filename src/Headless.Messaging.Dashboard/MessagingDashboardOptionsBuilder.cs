@@ -19,7 +19,7 @@ public sealed class MessagingDashboardOptionsBuilder
     /// </summary>
     public const string AuthenticationName = "Headless.Messaging.Dashboard";
 
-    internal string BasePath { get; set; } = "/messaging";
+    internal string BasePath { get; set; } = "/messaging/dashboard";
     internal Action<CorsPolicyBuilder>? CorsPolicyBuilder { get; set; }
 
     /// <summary>
@@ -41,7 +41,7 @@ public sealed class MessagingDashboardOptionsBuilder
     internal int StatsPollingInterval { get; set; } = 2000;
 
     /// <summary>
-    /// Set the base path for the dashboard. Default: <c>/messaging</c>.
+    /// Set the base path for the dashboard. Default: <c>/messaging/dashboard</c>.
     /// </summary>
     public MessagingDashboardOptionsBuilder SetBasePath(string basePath)
     {

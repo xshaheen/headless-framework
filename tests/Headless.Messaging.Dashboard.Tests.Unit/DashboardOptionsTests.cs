@@ -25,7 +25,7 @@ public sealed class DashboardOptionsTests : TestBase
         var builder = new MessagingDashboardOptionsBuilder();
 
         // then
-        builder.BasePath.Should().Be("/messaging");
+        builder.BasePath.Should().Be("/messaging/dashboard");
     }
 
     [Fact]

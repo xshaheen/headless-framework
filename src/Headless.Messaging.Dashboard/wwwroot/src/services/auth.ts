@@ -228,7 +228,7 @@ class AuthService {
 
       // Get the correct base URL with base path
       const config = window.MessagingConfig
-      const baseUrl = config?.backendDomain || config?.basePath || '/messaging'
+      const baseUrl = config?.backendDomain || config?.basePath || '/messaging/dashboard'
       const url = `${baseUrl}/api/auth/validate`
 
       // Add timeout to prevent hanging

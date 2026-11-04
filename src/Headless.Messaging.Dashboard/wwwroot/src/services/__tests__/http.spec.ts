@@ -4,7 +4,7 @@ import { httpService, HttpError } from '@/services/http'
 
 describe('http service outcome handling', () => {
   beforeEach(() => {
-    window.MessagingConfig = { basePath: '/messaging' }
+    window.MessagingConfig = { basePath: '/messaging/dashboard' }
   })
 
   afterEach(() => {

@@ -496,7 +496,7 @@ public sealed class GatewayProxyAgentTests : TestBase
     {
         var context = new DefaultHttpContext();
         context.Response.Body = new MemoryStream();
-        context.Request.Path = "/messaging/api/stats";
+        context.Request.Path = "/messaging/dashboard/api/stats";
         context.Request.QueryString = new QueryString("");
 
         return context;

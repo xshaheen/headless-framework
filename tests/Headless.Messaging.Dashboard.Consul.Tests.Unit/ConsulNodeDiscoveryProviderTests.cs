@@ -160,7 +160,7 @@ public sealed class ConsulNodeDiscoveryProviderTests : TestBase
         await provider.RegisterNodeAsync(AbortToken);
 
         // then
-        handler.LastBody.Should().Contain("http://node.internal:5000/messaging/api/health");
+        handler.LastBody.Should().Contain("http://node.internal:5000/messaging/dashboard/api/health");
     }
 
     private static ConsulNodeDiscoveryProvider _CreateProvider(MessagingDashboardCache cache)

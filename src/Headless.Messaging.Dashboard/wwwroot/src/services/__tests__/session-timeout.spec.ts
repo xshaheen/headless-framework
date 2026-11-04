@@ -7,7 +7,7 @@ type AuthMode = 'none' | 'basic' | 'apikey' | 'host' | 'custom'
 const MINUTE = 60_000
 
 const configure = (mode: AuthMode, sessionTimeout: number, enabled = mode !== 'none') => {
-  window.MessagingConfig = { basePath: '/messaging', auth: { mode, enabled, sessionTimeout } }
+  window.MessagingConfig = { basePath: '/messaging/dashboard', auth: { mode, enabled, sessionTimeout } }
 }
 
 const validateOk = () =>
@@ -46,7 +46,7 @@ describe('session timeout', () => {
     vi.advanceTimersByTime(59 * MINUTE)
     await httpService.get('/stats')
     expect(fetchMock).toHaveBeenLastCalledWith(
-      '/messaging/api/stats',
+      '/messaging/dashboard/api/stats',
       expect.objectContaining({
         headers: expect.objectContaining({ Authorization: `Bearer ${['fake', 'key'].join('-')}` }),
       }),

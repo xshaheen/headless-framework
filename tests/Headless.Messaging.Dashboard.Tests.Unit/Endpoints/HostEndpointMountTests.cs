@@ -40,7 +40,14 @@ public sealed class HostEndpointMountTests : TestBase
             .StatusCode.Should()
             .Be(HttpStatusCode.Unauthorized);
 
-        foreach (var shellPath in new[] { "/messaging", "/messaging/", "/messaging/published/failed" })
+        foreach (
+            var shellPath in new[]
+            {
+                "/messaging/dashboard",
+                "/messaging/dashboard/",
+                "/messaging/dashboard/published/failed",
+            }
+        )
         {
             using var shell = await _SendAsync(client, HttpMethod.Get, shellPath, authorization: null);
             shell.StatusCode.Should().Be(HttpStatusCode.OK, shellPath);
@@ -49,7 +56,12 @@ public sealed class HostEndpointMountTests : TestBase
             html.Should().Contain("window.MessagingConfig = ").And.Contain("\"mode\":\"host\"");
         }
 
-        using var asset = await _SendAsync(client, HttpMethod.Get, "/messaging/logo.svg", authorization: null);
+        using var asset = await _SendAsync(
+            client,
+            HttpMethod.Get,
+            "/messaging/dashboard/logo.svg",
+            authorization: null
+        );
         asset.StatusCode.Should().Be(HttpStatusCode.OK);
         asset.Content.Headers.ContentType!.MediaType.Should().Be("image/svg+xml");
     }
@@ -60,18 +72,18 @@ public sealed class HostEndpointMountTests : TestBase
         await using var app = await _StartAsync(dashboard => dashboard.WithHostAuthentication(TokenHandler.Policy));
         using var client = app.GetTestClient();
 
-        (await _SendAsync(client, HttpMethod.Get, "/messaging/api/auth/info", authorization: null))
+        (await _SendAsync(client, HttpMethod.Get, "/messaging/dashboard/api/auth/info", authorization: null))
             .StatusCode.Should()
             .Be(HttpStatusCode.OK);
-        (await _SendAsync(client, HttpMethod.Get, "/messaging/api/health", authorization: null))
+        (await _SendAsync(client, HttpMethod.Get, "/messaging/dashboard/api/health", authorization: null))
             .StatusCode.Should()
             .Be(HttpStatusCode.OK);
 
         // validate is reachable anonymously and reports the caller's own state.
-        (await _SendAsync(client, HttpMethod.Post, "/messaging/api/auth/validate", authorization: null))
+        (await _SendAsync(client, HttpMethod.Post, "/messaging/dashboard/api/auth/validate", authorization: null))
             .StatusCode.Should()
             .Be(HttpStatusCode.Unauthorized);
-        (await _SendAsync(client, HttpMethod.Post, "/messaging/api/auth/validate", "Token operator"))
+        (await _SendAsync(client, HttpMethod.Post, "/messaging/dashboard/api/auth/validate", "Token operator"))
             .StatusCode.Should()
             .Be(HttpStatusCode.OK);
     }
@@ -82,10 +94,10 @@ public sealed class HostEndpointMountTests : TestBase
         await using var app = await _StartAsync(dashboard => dashboard.WithHostAuthentication(TokenHandler.Policy));
         using var client = app.GetTestClient();
 
-        (await _SendAsync(client, HttpMethod.Get, "/messaging/api/stats", authorization: null))
+        (await _SendAsync(client, HttpMethod.Get, "/messaging/dashboard/api/stats", authorization: null))
             .StatusCode.Should()
             .Be(HttpStatusCode.Unauthorized);
-        (await _SendAsync(client, HttpMethod.Get, "/messaging/api/stats", "Token viewer;tenant-a"))
+        (await _SendAsync(client, HttpMethod.Get, "/messaging/dashboard/api/stats", "Token viewer;tenant-a"))
             .StatusCode.Should()
             .Be(HttpStatusCode.Forbidden);
 
@@ -93,7 +105,7 @@ public sealed class HostEndpointMountTests : TestBase
         (await _SendAsync(client, HttpMethod.Get, _HostProbePath, "Token operator"))
             .StatusCode.Should()
             .Be(HttpStatusCode.Forbidden);
-        (await _SendAsync(client, HttpMethod.Get, "/messaging/api/stats", "Token operator"))
+        (await _SendAsync(client, HttpMethod.Get, "/messaging/dashboard/api/stats", "Token operator"))
             .StatusCode.Should()
             .Be(HttpStatusCode.OK);
     }
@@ -104,10 +116,10 @@ public sealed class HostEndpointMountTests : TestBase
         await using var app = await _StartAsync(dashboard => dashboard.WithHostAuthentication());
         using var client = app.GetTestClient();
 
-        (await _SendAsync(client, HttpMethod.Get, "/messaging/api/stats", authorization: null))
+        (await _SendAsync(client, HttpMethod.Get, "/messaging/dashboard/api/stats", authorization: null))
             .StatusCode.Should()
             .Be(HttpStatusCode.Unauthorized);
-        (await _SendAsync(client, HttpMethod.Get, "/messaging/api/stats", "Token viewer"))
+        (await _SendAsync(client, HttpMethod.Get, "/messaging/dashboard/api/stats", "Token viewer"))
             .StatusCode.Should()
             .Be(HttpStatusCode.OK);
     }
@@ -118,7 +130,7 @@ public sealed class HostEndpointMountTests : TestBase
         await using var app = await _StartAsync(dashboard => dashboard.WithHostAuthentication(TokenHandler.Policy));
         using var client = app.GetTestClient();
 
-        using var response = await _SendAsync(client, HttpMethod.Get, "/messaging/api/no-such-route", null);
+        using var response = await _SendAsync(client, HttpMethod.Get, "/messaging/dashboard/api/no-such-route", null);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         (await response.Content.ReadAsStringAsync(AbortToken)).Should().NotContain("MessagingConfig");
@@ -131,7 +143,7 @@ public sealed class HostEndpointMountTests : TestBase
         await using var app = await _StartAsync(dashboard => dashboard.WithBasicAuth("ops", "secret"));
         using var client = app.GetTestClient();
 
-        (await _SendAsync(client, HttpMethod.Get, "/messaging/api/stats", authorization: null))
+        (await _SendAsync(client, HttpMethod.Get, "/messaging/dashboard/api/stats", authorization: null))
             .StatusCode.Should()
             .Be(HttpStatusCode.Unauthorized);
 
@@ -139,17 +151,17 @@ public sealed class HostEndpointMountTests : TestBase
         using var wrong = await _SendAsync(
             client,
             HttpMethod.Get,
-            "/messaging/api/stats",
+            "/messaging/dashboard/api/stats",
             "Basic " + "ops:wrong".ToBase64()
         );
         wrong.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         (await wrong.Content.ReadAsStringAsync(AbortToken)).Should().BeEmpty();
 
         // The right credential carries no tenant claim, so the host fallback would refuse it.
-        (await _SendAsync(client, HttpMethod.Get, "/messaging/api/stats", "Basic " + credential.ToBase64()))
+        (await _SendAsync(client, HttpMethod.Get, "/messaging/dashboard/api/stats", "Basic " + credential.ToBase64()))
             .StatusCode.Should()
             .Be(HttpStatusCode.OK);
-        (await _SendAsync(client, HttpMethod.Get, "/messaging", authorization: null))
+        (await _SendAsync(client, HttpMethod.Get, "/messaging/dashboard", authorization: null))
             .StatusCode.Should()
             .Be(HttpStatusCode.OK);
     }
@@ -187,7 +199,7 @@ public sealed class HostEndpointMountTests : TestBase
         logs.Entries.Should().NotContain(entry => entry.EventName == _AuthenticationFailedEvent);
 
         // The same wrong credential on the dashboard API is checked and logged once.
-        (await _SendAsync(client, HttpMethod.Get, "/messaging/api/stats", "Basic " + "ops:wrong".ToBase64()))
+        (await _SendAsync(client, HttpMethod.Get, "/messaging/dashboard/api/stats", "Basic " + "ops:wrong".ToBase64()))
             .StatusCode.Should()
             .Be(HttpStatusCode.Unauthorized);
         logs.Entries.Should()
@@ -216,7 +228,7 @@ public sealed class HostEndpointMountTests : TestBase
         using var response = await _SendAsync(
             client,
             HttpMethod.Get,
-            "/messaging/api/stats",
+            "/messaging/dashboard/api/stats",
             "Basic " + "ops:secret".ToBase64()
         );
 
@@ -247,13 +259,13 @@ public sealed class HostEndpointMountTests : TestBase
         using var right = await _SendAsync(
             client,
             HttpMethod.Get,
-            "/messaging/api/stats",
+            "/messaging/dashboard/api/stats",
             "Basic " + "ops:secret".ToBase64()
         );
         using var wrong = await _SendAsync(
             client,
             HttpMethod.Get,
-            "/messaging/api/stats",
+            "/messaging/dashboard/api/stats",
             "Basic " + "ops:wrong".ToBase64()
         );
 
@@ -306,13 +318,13 @@ public sealed class HostEndpointMountTests : TestBase
             .StartAsync(AbortToken);
         using var client = host.GetTestClient();
 
-        (await _SendAsync(client, HttpMethod.Get, "/messaging", authorization: null))
+        (await _SendAsync(client, HttpMethod.Get, "/messaging/dashboard", authorization: null))
             .StatusCode.Should()
             .Be(HttpStatusCode.OK);
-        (await _SendAsync(client, HttpMethod.Get, "/messaging/api/stats", authorization: null))
+        (await _SendAsync(client, HttpMethod.Get, "/messaging/dashboard/api/stats", authorization: null))
             .StatusCode.Should()
             .Be(HttpStatusCode.Unauthorized);
-        (await _SendAsync(client, HttpMethod.Get, "/messaging/api/stats", "Basic " + "ops:secret".ToBase64()))
+        (await _SendAsync(client, HttpMethod.Get, "/messaging/dashboard/api/stats", "Basic " + "ops:secret".ToBase64()))
             .StatusCode.Should()
             .Be(HttpStatusCode.OK);
     }

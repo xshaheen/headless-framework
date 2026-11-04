@@ -39,8 +39,12 @@ public sealed class CrossDashboardAuthenticationTests : TestBase
             .StatusCode.Should()
             .Be(HttpStatusCode.OK);
 
-        (await _GetAsync(client, "/messaging/api/stats", authorization: null)).Should().Be(HttpStatusCode.Unauthorized);
-        (await _GetAsync(client, "/messaging/api/stats", $"Basic {_MessagingBasic}")).Should().Be(HttpStatusCode.OK);
+        (await _GetAsync(client, "/messaging/dashboard/api/stats", authorization: null))
+            .Should()
+            .Be(HttpStatusCode.Unauthorized);
+        (await _GetAsync(client, "/messaging/dashboard/api/stats", $"Basic {_MessagingBasic}"))
+            .Should()
+            .Be(HttpStatusCode.OK);
     }
 
     [Fact]
@@ -59,11 +63,13 @@ public sealed class CrossDashboardAuthenticationTests : TestBase
             .Should()
             .Be(HttpStatusCode.OK);
 
-        (await _GetAsync(client, "/messaging/api/stats", $"Basic {_MessagingBasic}")).Should().Be(HttpStatusCode.OK);
-        (await _GetAsync(client, "/messaging/api/stats", $"Bearer {_JobsApiKey}"))
+        (await _GetAsync(client, "/messaging/dashboard/api/stats", $"Basic {_MessagingBasic}"))
+            .Should()
+            .Be(HttpStatusCode.OK);
+        (await _GetAsync(client, "/messaging/dashboard/api/stats", $"Bearer {_JobsApiKey}"))
             .Should()
             .Be(HttpStatusCode.Unauthorized);
-        (await _PostAsync(client, "/messaging/api/auth/validate", $"Bearer {_JobsApiKey}"))
+        (await _PostAsync(client, "/messaging/dashboard/api/auth/validate", $"Bearer {_JobsApiKey}"))
             .Should()
             .Be(HttpStatusCode.Unauthorized);
 
