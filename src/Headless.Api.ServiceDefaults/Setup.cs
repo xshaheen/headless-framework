@@ -323,6 +323,7 @@ public static class SetupApi
                         .AddAspNetCoreInstrumentation()
                         .AddHttpClientInstrumentation()
                         .AddRuntimeInstrumentation()
+                        .AddMeter(builder.Environment.ApplicationName, builder.Environment.ApplicationName + ".*")
                         .AddMeter(_HeadlessWildcardSourceName);
 
                     options.OpenTelemetry.ConfigureMetrics?.Invoke(metrics);
@@ -330,7 +331,9 @@ public static class SetupApi
                 .WithTracing(tracing =>
                 {
                     tracing
-                        .AddSource(builder.Environment.ApplicationName)
+                        // The app's own sources are conventionally named after it ("Shop.Api.Orders"), so the wildcard
+                        // picks them up without an AddSource per feature, as Headless.* does for the framework's.
+                        .AddSource(builder.Environment.ApplicationName, builder.Environment.ApplicationName + ".*")
                         .AddAspNetCoreInstrumentation()
                         .AddHttpClientInstrumentation()
                         .AddSource(_HeadlessWildcardSourceName)

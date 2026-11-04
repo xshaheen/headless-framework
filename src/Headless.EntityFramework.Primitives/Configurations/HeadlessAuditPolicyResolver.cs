@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.AuditLog;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 
 namespace Headless.EntityFramework;
@@ -83,11 +84,36 @@ internal static class HeadlessAuditPolicyResolver
         }
     }
 
+    /// <summary>
+    /// Resolves the capture policy of one scalar property. A complex property's policy applies to every member below
+    /// it: any excluded ancestor excludes the member, and the nearest sensitive marking, the member's own first, then
+    /// each enclosing complex property from the innermost out, decides whether it is sensitive and with which strategy.
+    /// Resolving here, not when the policy is configured, keeps the result independent of configuration order.
+    /// </summary>
     public static AuditPropertyPolicy ResolveProperty(AuditablePropertyPath path, Type clrType, AuditLogOptions options)
     {
         var property = path.Property;
-        var isSensitive = property.FindAnnotation(HeadlessAuditAnnotations.PropertyIsSensitive) is { Value: true };
         var isExcluded = property.FindAnnotation(HeadlessAuditAnnotations.PropertyIsExcluded) is { Value: true };
+        IReadOnlyAnnotatable? sensitiveSource = property.FindAnnotation(HeadlessAuditAnnotations.PropertyIsSensitive)
+            is { Value: true }
+            ? property
+            : null;
+
+        for (var i = path.ComplexChain.Length - 1; i >= 0; i--)
+        {
+            var ancestor = path.ComplexChain[i];
+            isExcluded |= ancestor.FindAnnotation(HeadlessAuditAnnotations.PropertyIsExcluded) is { Value: true };
+
+            if (
+                sensitiveSource is null
+                && ancestor.FindAnnotation(HeadlessAuditAnnotations.PropertyIsSensitive) is { Value: true }
+            )
+            {
+                sensitiveSource = ancestor;
+            }
+        }
+
+        var isSensitive = sensitiveSource is not null;
 
         var isCaptured = !(
             (property.PropertyInfo is null && !isSensitive) // Unconfigured shadow and field-only properties.
@@ -100,7 +126,7 @@ internal static class HeadlessAuditPolicyResolver
 
         if (isSensitive)
         {
-            strategy = property.FindAnnotation(HeadlessAuditAnnotations.PropertySensitiveStrategy)
+            strategy = sensitiveSource!.FindAnnotation(HeadlessAuditAnnotations.PropertySensitiveStrategy)
                 is { Value: int value }
                 ? (SensitiveDataStrategy)value
                 : options.SensitiveDataStrategy;

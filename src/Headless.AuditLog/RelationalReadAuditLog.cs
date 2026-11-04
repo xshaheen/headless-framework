@@ -2,7 +2,6 @@
 
 using System.Data.Common;
 using Headless.Primitives;
-using Headless.Serializer;
 using Headless.Sql;
 
 namespace Headless.AuditLog;
@@ -216,7 +215,7 @@ internal sealed class RelationalReadAuditLog<TContext>(RelationalAuditLogTable t
             return default;
         }
 
-        return JsonSerializer.Deserialize<T>(reader.GetString(ordinal), JsonConstants.DefaultInternalJsonOptions);
+        return JsonSerializer.Deserialize<T>(reader.GetString(ordinal), AuditLogJson.SerializerOptions);
     }
 }
 #pragma warning restore CA2100

@@ -105,6 +105,22 @@ public sealed class BlindIndexConverterTests : TestBase
         (await act.Should().ThrowAsync<Exception>()).Which.ToString().Should().Contain(nameof(FormatException));
     }
 
+    [Fact]
+    public async Task should_map_both_shapes_to_a_text_column_by_convention()
+    {
+        // given
+        await using var db = new ConventionContext(
+            new DbContextOptionsBuilder<ConventionContext>().UseSqlite(_connection).Options
+        );
+        var entity = db.Model.FindEntityType(typeof(Contact))!;
+
+        // then
+        entity.FindProperty(nameof(Contact.PhoneIndex))!.GetValueConverter().Should().BeOfType<BlindIndexConverter>();
+        entity.FindProperty(nameof(Contact.EmailIndex))!.GetValueConverter().Should().BeOfType<BlindIndexConverter>();
+        entity.FindProperty(nameof(Contact.EmailIndex))!.IsNullable.Should().BeTrue();
+        entity.FindProperty(nameof(Contact.PhoneIndex))!.GetColumnType().Should().Be("TEXT");
+    }
+
     private TestContext _Context() => new(new DbContextOptionsBuilder<TestContext>().UseSqlite(_connection).Options);
 
     private static BlindIndex _Index(int keyVersion)
@@ -134,6 +150,21 @@ public sealed class BlindIndexConverterTests : TestBase
             contact.Property(c => c.Id).ValueGeneratedNever();
             contact.Property(c => c.PhoneIndex).HasConversion<BlindIndexConverter>();
             contact.Property(c => c.EmailIndex).HasConversion<BlindIndexConverter>();
+        }
+    }
+
+    private sealed class ConventionContext(DbContextOptions<ConventionContext> options) : DbContext(options)
+    {
+        public DbSet<Contact> Contacts => Set<Contact>();
+
+        protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+        {
+            configurationBuilder.AddBlindIndexConversions();
+        }
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            modelBuilder.Entity<Contact>().Property(c => c.Id).ValueGeneratedNever();
         }
     }
 }

@@ -96,13 +96,22 @@ public static class RelationalFaults
     /// Server <c>SqlException</c>, or <c>SQLITE_CONSTRAINT_UNIQUE</c> (2067) or <c>SQLITE_CONSTRAINT_PRIMARYKEY</c>
     /// (1555) on <c>Microsoft.Data.Sqlite</c>.
     /// </summary>
-    /// <param name="exception">The database exception to read; find it in a wrapped failure with <see cref="FindDatabaseException" />.</param>
+    /// <remarks>
+    /// The database exception is found with <see cref="FindDatabaseException" />, so a failure can be passed as thrown,
+    /// such as EF Core's <c>DbUpdateException</c> in an exception filter.
+    /// </remarks>
+    /// <param name="exception">The failure, as thrown, or the database exception itself.</param>
     /// <returns><see langword="true" /> when the statement failed on a duplicate key.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="exception" /> is <see langword="null" />.</exception>
-    public static bool IsUniqueViolation(DbException exception)
+    public static bool IsUniqueViolation(Exception exception)
     {
         Argument.IsNotNull(exception);
 
+        return FindDatabaseException(exception) is { } databaseException && _IsUniqueViolation(databaseException);
+    }
+
+    private static bool _IsUniqueViolation(DbException exception)
+    {
         if (string.Equals(exception.SqlState, SqlErrorCodes.PostgreSql.UniqueViolation, StringComparison.Ordinal))
         {
             return true;
