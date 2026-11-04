@@ -25,8 +25,9 @@ public enum SandboxJobsAuth
     ApiKey = 2,
 
     /// <summary>
-    /// Host auth through a fake sandbox scheme: <c>Bearer &lt;secret&gt;</c> signs in an operator the dashboard policy
-    /// admits, and <c>Bearer viewer-&lt;secret&gt;</c> a viewer it refuses.
+    /// Host auth through a fake sandbox scheme: <c>Bearer &lt;secret&gt;</c> signs in an operator who may view and
+    /// operate, and <c>Bearer viewer-&lt;secret&gt;</c> a viewer who may only view. The <c>/sandbox/sign-in</c> page
+    /// exchanges either token for a dashboard session.
     /// </summary>
     Host = 4,
 }
@@ -54,7 +55,7 @@ public sealed class SandboxSettings
 
     /// <summary>
     /// Jobs dashboard auth mode. The default is <see cref="SandboxJobsAuth.None"/>; the other modes make the sign-in,
-    /// session-timeout, and live-update journeys walkable under that mode.
+    /// session, and live-update journeys walkable under that mode.
     /// </summary>
     public SandboxJobsAuth JobsDashboardAuth { get; set; } = SandboxJobsAuth.None;
 
