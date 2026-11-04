@@ -31,25 +31,22 @@ public sealed class AuthConfig
     public string? ApiKey { get; set; }
 
     /// <summary>
-    /// Gets or sets a custom validation delegate. Receives the authorization header value and
-    /// an <see cref="IServiceProvider"/> to resolve scoped services.
+    /// Gets or sets the settings that apply under <see cref="AuthMode.Host"/>: the view and operate policies, the
+    /// sign-in challenge scheme, and the session's cookie and lifetime. Other modes ignore them.
     /// </summary>
-    public Func<string, IServiceProvider, bool>? CustomValidator { get; set; }
-
-    /// <summary>
-    /// Gets or sets the session timeout in minutes. The default is 60 minutes.
-    /// </summary>
-    public int SessionTimeoutMinutes { get; set; } = 60;
-
-    /// <summary>
-    /// Gets or sets the authorization policy name for host mode. When <see langword="null"/>, the default policy is used.
-    /// </summary>
-    public string? HostAuthorizationPolicy { get; set; }
+    public DashboardHostAuthenticationOptions Host { get; set; } = new();
 
     /// <summary>
     /// Gets a value indicating whether authentication is enabled.
     /// </summary>
     public bool IsEnabled => Mode != AuthMode.None;
+
+    /// <summary>
+    /// Gets a value indicating whether the dashboard can send a signed-out user to the host's sign-in: only host mode
+    /// signs in through the host, and only when <see cref="DashboardHostAuthenticationOptions.ChallengeScheme"/> names
+    /// the scheme to challenge.
+    /// </summary>
+    public bool SignInAvailable => Mode == AuthMode.Host && !string.IsNullOrEmpty(Host.ChallengeScheme);
 }
 
 /// <summary>
@@ -70,9 +67,9 @@ internal sealed class AuthConfigValidator : AbstractValidator<AuthConfig>
             .When(x => x.Mode == AuthMode.ApiKey)
             .WithMessage("ApiKey is required for ApiKey authentication mode");
 
-        RuleFor(x => x.CustomValidator)
+        RuleFor(x => x.Host)
             .NotNull()
-            .When(x => x.Mode == AuthMode.Custom)
-            .WithMessage("CustomValidator is required for Custom authentication mode");
+            .SetValidator(new DashboardHostAuthenticationOptionsValidator())
+            .When(x => x.Mode == AuthMode.Host);
     }
 }

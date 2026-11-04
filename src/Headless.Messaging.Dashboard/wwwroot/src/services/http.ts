@@ -2,7 +2,8 @@
  * Clean, simple HTTP service for Messaging Dashboard
  */
 
-import { authService, SESSION_EXPIRED_EVENT } from './auth'
+import { authService, REQUESTED_WITH_HEADER } from './auth'
+import { getBaseUrl } from '@/utilities/pathResolver'
 
 /**
  * Thrown for any non-2xx, non-401 response. Carries the parsed JSON body (or raw text) so
@@ -25,8 +26,7 @@ class HttpService {
   private baseUrl: string
 
   constructor() {
-    const config = window.MessagingConfig
-    this.baseUrl = config?.backendDomain || config?.basePath || '/messaging/dashboard'
+    this.baseUrl = getBaseUrl()
   }
 
   /**
@@ -63,17 +63,12 @@ class HttpService {
   private async request<T>(method: string, endpoint: string, data?: unknown): Promise<T> {
     const url = `${this.baseUrl}/api${endpoint}`
 
-    // An expired sign-in must not reach the server: the router listens for the event and sends the user to sign in.
-    if (authService.expireSessionIfStale()) {
-      window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT))
-      throw new Error('Session expired')
-    }
-
+    // Sent on every request, not only writes, so no state-changing call can go out without it.
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
+      ...REQUESTED_WITH_HEADER,
     }
 
-    // Add authentication header if available
     const authHeader = authService.getAuthHeader()
     if (authHeader) {
       headers['Authorization'] = authHeader
@@ -82,6 +77,7 @@ class HttpService {
     const config: RequestInit = {
       method,
       headers,
+      credentials: 'same-origin',
       body: data ? JSON.stringify(data) : undefined,
     }
 
@@ -92,8 +88,8 @@ class HttpService {
       // without a usable actor (403), a stale fence (404/409), or a JSON validation failure (422)
       // all carry a parsed body the caller renders in place, never a logout.
       if (response.status === 401) {
-        console.warn('Authentication failed, logging out')
-        authService.logout()
+        console.warn('Authentication failed, signing out')
+        authService.clearSession()
         window.dispatchEvent(new CustomEvent('auth:logout'))
         throw new Error('Authentication required')
       }

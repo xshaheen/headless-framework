@@ -61,7 +61,7 @@ public sealed class ScheduledDeliveryEndpointTests : TestBase
 
         await using var app = _CreateTestApp(_dataStorage);
         await app.StartAsync(AbortToken);
-        using var client = app.GetTestClient();
+        using var client = MessagingDashboardHost.CreateClient(app);
 
         // when
         var response = await client.GetAsync("/api/scheduled?perPage=500&currentPage=1", AbortToken);
@@ -123,7 +123,7 @@ public sealed class ScheduledDeliveryEndpointTests : TestBase
 
         await using var app = _CreateTestApp(_dataStorage);
         await app.StartAsync(AbortToken);
-        using var client = app.GetTestClient();
+        using var client = MessagingDashboardHost.CreateClient(app);
 
         // when
         var response = await client.PostAsJsonAsync(
@@ -171,7 +171,7 @@ public sealed class ScheduledDeliveryEndpointTests : TestBase
 
         await using var app = _CreateTestApp(_dataStorage);
         await app.StartAsync(AbortToken);
-        using var client = app.GetTestClient();
+        using var client = MessagingDashboardHost.CreateClient(app);
         var response = await client.PostAsJsonAsync(
             "/api/scheduled/revoke",
             new
@@ -197,7 +197,7 @@ public sealed class ScheduledDeliveryEndpointTests : TestBase
     {
         await using var app = _CreateTestApp(_dataStorage, authenticate: false);
         await app.StartAsync(AbortToken);
-        using var client = app.GetTestClient();
+        using var client = MessagingDashboardHost.CreateClient(app);
         using var request = new HttpRequestMessage(
             string.Equals(path, "/api/scheduled", StringComparison.Ordinal) ? HttpMethod.Get : HttpMethod.Post,
             path
@@ -221,7 +221,7 @@ public sealed class ScheduledDeliveryEndpointTests : TestBase
         );
         await using var app = _CreateTestApp(_dataStorage, authenticate: false, principal: principal);
         await app.StartAsync(AbortToken);
-        using var client = app.GetTestClient();
+        using var client = MessagingDashboardHost.CreateClient(app);
         var response = await client.PostAsJsonAsync(
             "/api/scheduled/revoke",
             new
@@ -277,7 +277,7 @@ public sealed class ScheduledDeliveryEndpointTests : TestBase
             .Returns(ValueTask.FromResult(result));
         await using var app = _CreateTestApp(_dataStorage, authenticate: false, config: credential.Config);
         await app.StartAsync(AbortToken);
-        using var client = app.GetTestClient();
+        using var client = MessagingDashboardHost.CreateClient(app);
         client.DefaultRequestHeaders.Authorization = credential.Header;
         var response = await client.PostAsJsonAsync(
             "/api/scheduled/revoke",
@@ -307,7 +307,7 @@ public sealed class ScheduledDeliveryEndpointTests : TestBase
     {
         await using var app = _CreateTestApp(_dataStorage);
         await app.StartAsync(AbortToken);
-        using var client = app.GetTestClient();
+        using var client = MessagingDashboardHost.CreateClient(app);
         using var content = new StringContent("{}", Encoding.UTF8, "text/plain");
 
         using var response = await client.PostAsync(path, content, AbortToken);
@@ -323,7 +323,7 @@ public sealed class ScheduledDeliveryEndpointTests : TestBase
     {
         await using var app = _CreateTestApp(_dataStorage);
         await app.StartAsync(AbortToken);
-        using var client = app.GetTestClient();
+        using var client = MessagingDashboardHost.CreateClient(app);
         using var content = new StringContent("{", Encoding.UTF8, "application/json");
 
         using var response = await client.PostAsync(path, content, AbortToken);
@@ -356,7 +356,7 @@ public sealed class ScheduledDeliveryEndpointTests : TestBase
             .Returns(ValueTask.FromResult(result));
         await using var app = _CreateTestApp(_dataStorage, customizeHostJson: true);
         await app.StartAsync(AbortToken);
-        using var client = app.GetTestClient();
+        using var client = MessagingDashboardHost.CreateClient(app);
         var response = await client.PostAsJsonAsync(
             "/api/scheduled/revoke",
             new

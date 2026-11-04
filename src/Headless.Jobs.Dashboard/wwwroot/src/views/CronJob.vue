@@ -19,6 +19,7 @@ import {
 import JobNotificationHub, { methodName } from '@/hub/jobNotificationHub'
 import { useConnectionStore } from '@/stores/connectionStore'
 import { useTimeZoneStore } from '@/stores/timeZoneStore'
+import { useAuthStore } from '@/stores/authStore'
 import {
   TitleComponent,
   TooltipComponent,
@@ -28,6 +29,8 @@ import {
 } from 'echarts/components'
 import VChart, { THEME_KEY } from 'vue-echarts'
 import { describeCron } from '@/utilities/cron'
+
+const authStore = useAuthStore()
 
 // Helper function to get readable cron expression (6-part format with seconds)
 const getReadableCronExpression = (expression: string): string =>
@@ -1151,6 +1154,7 @@ const refreshData = async () => {
             <div class="primary-actions">
               <div class="action-group">
                 <button
+                  v-if="authStore.canOperate"
                   class="premium-action-btn primary-action"
                   @click="
                     crudCronJobDialog.open({
@@ -1288,7 +1292,7 @@ const refreshData = async () => {
                 </div>
 
                 <!-- Edit Button -->
-                <div class="action-btn-wrapper">
+                <div v-if="authStore.canOperate" class="action-btn-wrapper">
                   <v-tooltip location="top">
                     <template v-slot:activator="{ props }">
                       <button
@@ -1305,7 +1309,7 @@ const refreshData = async () => {
                 </div>
 
                 <!-- Run Button -->
-                <div class="action-btn-wrapper">
+                <div v-if="authStore.canOperate" class="action-btn-wrapper">
                   <v-tooltip location="top">
                     <template v-slot:activator="{ props }">
                       <button
@@ -1322,7 +1326,7 @@ const refreshData = async () => {
                 </div>
 
                 <!-- Delete Button -->
-                <div class="action-btn-wrapper">
+                <div v-if="authStore.canOperate" class="action-btn-wrapper">
                   <v-tooltip location="top">
                     <template v-slot:activator="{ props }">
                       <button

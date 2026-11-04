@@ -5,9 +5,10 @@ declare global {
       backendDomain?: string
       statsPollingInterval?: number
       auth: {
-        mode: 'none' | 'basic' | 'apikey' | 'host' | 'custom'
+        mode: 'none' | 'basic' | 'apikey' | 'host'
         enabled: boolean
-        sessionTimeout: number
+        /** Host mode only: whether the server can send a signed-out operator through the host's sign-in. */
+        signInAvailable?: boolean
       }
     }
   }

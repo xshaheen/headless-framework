@@ -209,7 +209,7 @@ describe('stats polling', () => {
     window.MessagingConfig = {
       basePath: '/messaging/dashboard',
       statsPollingInterval: 7000,
-      auth: { mode: 'none', enabled: false, sessionTimeout: 0 },
+      auth: { mode: 'none', enabled: false },
     }
     const get = vi.spyOn(httpService, 'get').mockResolvedValue({})
     const statsCalls = () => get.mock.calls.filter(([endpoint]) => endpoint === '/stats').length

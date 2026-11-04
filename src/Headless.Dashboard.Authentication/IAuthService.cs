@@ -29,7 +29,7 @@ public interface IAuthService
     /// <summary>
     /// Gets a snapshot of the active authentication configuration for the dashboard frontend.
     /// </summary>
-    /// <returns>An <see cref="AuthInfo"/> describing the active mode and session settings.</returns>
+    /// <returns>An <see cref="AuthInfo"/> describing the active mode and whether authentication is enabled.</returns>
     AuthInfo GetAuthInfo();
 }
 
@@ -99,9 +99,4 @@ public sealed class AuthInfo
     /// <see cref="AuthMode.None"/>.
     /// </summary>
     public bool IsEnabled { get; init; }
-
-    /// <summary>
-    /// Gets the session timeout in minutes after which an authenticated session is invalidated.
-    /// </summary>
-    public int SessionTimeoutMinutes { get; init; }
 }

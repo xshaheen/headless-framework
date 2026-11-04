@@ -11,21 +11,14 @@ public class Startup
     {
         // AddMessagingWithOpenIdAuthorization(services);
         // AddMessagingWithAnonymousAccess(services);
-        // AddMessagingWithCustomAuthorization(services);
-        AddMessagingWithOpenIdAndCustomAuthorization(services);
-
-        services.AddCors(x =>
-            x.AddDefaultPolicy(p =>
-                p.WithOrigins("https://localhost:5001").AllowCredentials().AllowAnyHeader().AllowAnyMethod()
-            )
-        );
+        // AddMessagingWithCustomScheme(services);
+        AddMessagingWithOpenIdAndCustomScheme(services);
 
         services.AddControllers();
     }
 
     public void Configure(IApplicationBuilder app)
     {
-        app.UseCors();
         app.UseRouting();
         app.UseAuthentication();
         app.UseAuthorization();
@@ -41,17 +34,12 @@ public class Startup
     {
         const string dashboardAuthorizationPolicy = "DashboardAuthorizationPolicy";
 
+        // The dashboard evaluates its policies against the claims it copied into its own session, so this one lists
+        // no authentication scheme: the host's cookie, filled by the OpenID Connect sign-in, is the default scheme.
         services
             .AddAuthorization(options =>
-            {
-                options.AddPolicy(
-                    dashboardAuthorizationPolicy,
-                    policy =>
-                        policy
-                            .AddAuthenticationSchemes(OpenIdConnectDefaults.AuthenticationScheme)
-                            .RequireAuthenticatedUser()
-                );
-            })
+                options.AddPolicy(dashboardAuthorizationPolicy, policy => policy.RequireAuthenticatedUser())
+            )
             .AddAuthentication(opt => opt.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme)
             .AddCookie()
             .AddOpenIdConnect(options =>
@@ -75,13 +63,25 @@ public class Startup
             setup.UseInMemoryStorage();
             setup.UseInMemory();
 
-            setup.UseDashboard(d => d.WithHostAuthentication(dashboardAuthorizationPolicy));
+            // Opening {basePath}/auth/sign-in without a host sign-in challenges OpenID Connect once, then returns to
+            // the dashboard with its session cookie set.
+            setup.UseDashboard(d =>
+                d.WithHostAuthentication(host =>
+                {
+                    host.ViewPolicy = dashboardAuthorizationPolicy;
+                    host.ChallengeScheme = OpenIdConnectDefaults.AuthenticationScheme;
+                })
+            );
         });
 
         return services;
     }
 
-    public IServiceCollection AddMessagingWithCustomAuthorization(IServiceCollection services)
+    // Host mode over the application's own authentication handler, which reads an X-Base-Token header. The browser
+    // cannot send that header on a page load, so the operator exchanges it once for a dashboard session:
+    // POST {basePath}/api/auth/session with X-Base-Token and X-Requested-With, then open {basePath}/. The policy lists
+    // the scheme, so a session passes it only when that scheme authenticated the user it was issued for.
+    public IServiceCollection AddMessagingWithCustomScheme(IServiceCollection services)
     {
         const string myDashboardAuthenticationPolicy = "MyDashboardAuthenticationPolicy";
 
@@ -109,13 +109,17 @@ public class Startup
             setup.UseInMemoryStorage();
             setup.UseInMemory();
 
-            setup.UseDashboard(d => d.WithHostAuthentication(myDashboardAuthenticationPolicy));
+            setup.UseDashboard(d =>
+                d.WithHostAuthentication(host => host.ViewPolicy = myDashboardAuthenticationPolicy)
+            );
         });
 
         return services;
     }
 
-    public IServiceCollection AddMessagingWithOpenIdAndCustomAuthorization(IServiceCollection services)
+    // OpenID Connect sign-in for operators in a browser, and the custom header scheme for a session exchange, under one
+    // policy that accepts a user either scheme authenticated.
+    public IServiceCollection AddMessagingWithOpenIdAndCustomScheme(IServiceCollection services)
     {
         const string dashboardAuthorizationPolicy = "DashboardAuthorizationPolicy";
 
@@ -156,7 +160,13 @@ public class Startup
         services.AddHeadlessMessaging(setup =>
         {
             setup.AddModule<Headless.Messaging.Dashboard.Auth.Demo.MessagingModule>();
-            setup.UseDashboard(d => d.WithHostAuthentication(dashboardAuthorizationPolicy));
+            setup.UseDashboard(d =>
+                d.WithHostAuthentication(host =>
+                {
+                    host.ViewPolicy = dashboardAuthorizationPolicy;
+                    host.ChallengeScheme = OpenIdConnectDefaults.AuthenticationScheme;
+                })
+            );
             setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
             setup.UseInMemoryStorage();
             setup.UseInMemory();

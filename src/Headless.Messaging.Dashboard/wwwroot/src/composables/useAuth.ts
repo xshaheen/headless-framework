@@ -35,11 +35,11 @@ export function useAuth() {
 
   const authToken = computed(() => {
     try {
-      const apiKey = localStorage.getItem('messaging_api_key')
-      const basicAuth = localStorage.getItem('messaging_basic_auth')
-      const hostAccessKey = localStorage.getItem('messaging_host_access_key')
-      const customCredential = localStorage.getItem('messaging_custom_auth')
-      return apiKey || basicAuth || hostAccessKey || customCredential || ''
+      return (
+        localStorage.getItem('messaging_api_key') ||
+        localStorage.getItem('messaging_basic_auth') ||
+        ''
+      )
     } catch {
       return ''
     }
@@ -84,7 +84,7 @@ export function useAuth() {
     error.value = ''
 
     try {
-      authStore.logout()
+      await authStore.logout()
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Logout failed'
       error.value = errorMsg

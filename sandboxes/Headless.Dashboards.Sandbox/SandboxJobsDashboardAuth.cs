@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Security.Cryptography;
 using Headless.Jobs;
 
 namespace Headless.Dashboards.Sandbox;
@@ -10,11 +9,6 @@ internal static class SandboxJobsDashboardAuth
 {
     public static void Configure(DashboardOptionsBuilder dashboard, SandboxSettings sandbox)
     {
-        if (sandbox.JobsDashboardSessionTimeoutMinutes is { } minutes)
-        {
-            dashboard.WithSessionTimeout(minutes);
-        }
-
         if (sandbox.JobsDashboardAuth == SandboxJobsAuth.None)
         {
             dashboard.WithNoAuth();
@@ -32,14 +26,11 @@ internal static class SandboxJobsDashboardAuth
                 dashboard.WithApiKey(secret);
                 break;
             case SandboxJobsAuth.Host:
-                dashboard.WithHostAuthentication(SandboxHostAuthentication.Policy);
-                break;
-            case SandboxJobsAuth.Custom:
-                var expected = Encoding.UTF8.GetBytes(secret);
-                dashboard.WithCustomAuth(
-                    (credential, _) =>
-                        CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(credential), expected)
-                );
+                dashboard.WithHostAuthentication(host =>
+                {
+                    host.ViewPolicy = SandboxHostAuthentication.ViewPolicy;
+                    host.OperatePolicy = SandboxHostAuthentication.OperatePolicy;
+                });
                 break;
             default:
                 throw new InvalidOperationException(

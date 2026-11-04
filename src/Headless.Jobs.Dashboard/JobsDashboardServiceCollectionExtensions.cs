@@ -106,7 +106,9 @@ internal static class JobsDashboardServiceCollectionExtensions
         {
             mode = config.Auth.Mode.ToString().ToLowerInvariant(),
             enabled = config.Auth.IsEnabled,
-            sessionTimeout = config.Auth.SessionTimeoutMinutes,
+            // Only a configured challenge scheme can sign in a host user who arrives without a host session; without
+            // one the host's own app exchanges its credential for a session, and the SPA offers no sign-in button.
+            signInAvailable = config.Auth.SignInAvailable,
         };
 
         var envConfig = new

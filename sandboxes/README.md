@@ -23,19 +23,22 @@ make down                                 # stop what `up` started
 
 Messaging uses Basic auth because inbox and scheduled operations refuse an anonymous operator.
 
-Each dashboard has its own auth, so the two modes can differ. To walk the Jobs sign-in, session-timeout, or live-update
+Each dashboard has its own auth, so the two modes can differ. To walk the Jobs sign-in, session, or live-update
 journeys under auth, set these before `make up` (`make down` first if it is running):
 
 | Variable | Values |
 | --- | --- |
-| `Sandbox__JobsDashboardAuth` | `None` (default), `Basic`, `ApiKey`, `Custom`, or `Host` |
-| `Sandbox__JobsDashboardSecret` | The password, API key, or custom credential. Defaults to the Messaging password in `sandbox.env`. |
-| `Sandbox__JobsDashboardSessionTimeoutMinutes` | Session timeout; set `1` to see the session expire within a minute |
+| `Sandbox__JobsDashboardAuth` | `None` (default), `Basic`, `ApiKey`, or `Host` |
+| `Sandbox__JobsDashboardSecret` | The password, API key, or host token secret. Defaults to the Messaging password in `sandbox.env`. |
 
-Basic uses the user `sandbox`. `Host` stands in for an application's own sign-in with a fake scheme: on the Jobs login page, enter `Bearer <secret>` to sign in as `sandbox-operator`, whom the dashboard's `SandboxOperators` policy admits, or `Bearer viewer-<secret>` to sign in as `sandbox-viewer`, whom it refuses. `GET /` reports both modes as `jobsAuth` and `messagingAuth`.
+Basic uses the user `sandbox`. `Host` stands in for an application that signs its users in with a bearer token, through a fake scheme that has no sign-in redirect. Open `http://127.0.0.1:5300/sandbox/sign-in` and enter `<secret>` to sign in as `sandbox-operator`, or `viewer-<secret>` to sign in as `sandbox-viewer`. The page posts the token as `Authorization: Bearer ...` with `X-Requested-With: XMLHttpRequest` to `/jobs/dashboard/api/auth/session`, which sets the dashboard's session cookie, then opens the dashboard. The viewer passes the `SandboxViewers` view policy only, so the dashboard hides write actions and refuses them with `403`; the operator also passes the `SandboxOperators` operate policy. The cookie is `Secure`, and browsers and curl accept that on loopback. The session ends after 30 minutes without a dashboard request or 8 hours after sign-in, and the dashboard's sign-out ends it at once. `GET /` reports both modes as `jobsAuth` and `messagingAuth`.
 
 ```sh
-Sandbox__JobsDashboardAuth=Basic Sandbox__JobsDashboardSessionTimeoutMinutes=1 make up
+Sandbox__JobsDashboardAuth=Host make up
+# Without a browser: exchange the token, then call the API with the session cookie alone.
+curl -si -c jar -X POST -H "Authorization: Bearer $SECRET" -H 'X-Requested-With: XMLHttpRequest' \
+  http://127.0.0.1:5300/jobs/dashboard/api/auth/session
+curl -s -b jar http://127.0.0.1:5300/jobs/dashboard/api/auth/info
 ```
 
 `GET /sandbox/scenarios` lists the scenarios and what each creates; `POST /sandbox/scenarios/{name}` runs one. Each

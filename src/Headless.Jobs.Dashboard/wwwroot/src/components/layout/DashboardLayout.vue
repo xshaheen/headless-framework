@@ -7,6 +7,7 @@ import { ConfirmDialogProps } from '../common/confirm-dialog-props'
 import { useDashboardStore } from '../../stores/dashboardStore'
 import { useConnectionStore } from '../../stores/connectionStore'
 import { useTimeZoneStore } from '@/stores/timeZoneStore'
+import { useAuthStore } from '@/stores/authStore'
 import AuthHeader from '../common/AuthHeader.vue'
 
 const navigationLinks = [
@@ -29,6 +30,8 @@ const dashboardStore = useDashboardStore()
 
 // Connection store
 const connectionStore = useConnectionStore()
+
+const authStore = useAuthStore()
 
 // Time zone store
 const timeZoneStore = useTimeZoneStore()
@@ -252,21 +255,6 @@ function navigateToDashboard() {
   router.push('/')
 }
 
-// Auth event handlers
-function handleAuthLogin(success: boolean) {
-  if (success) {
-    // Reload initial data after successful login
-    loadInitialData()
-  }
-}
-
-function handleAuthLogout() {
-  // Handle logout - could redirect to login page or refresh
-  if (typeof window !== 'undefined') {
-    window.location.reload()
-  }
-}
-
 </script>
 
 <template>
@@ -367,13 +355,7 @@ function handleAuthLogout() {
 
             <!-- Auth Header Component -->
             <div v-if="isAuthEnabled" class="auth-container">
-              <AuthHeader
-                :show-login-form="true"
-                :show-user-info="true"
-                :show-logout="true"
-                @login="handleAuthLogin"
-                @logout="handleAuthLogout"
-              />
+              <AuthHeader :show-user-info="true" :show-logout="true" />
             </div>
           </div>
         </div>
@@ -434,7 +416,7 @@ function handleAuthLogout() {
 
             <!-- Action Buttons -->
             <v-btn
-              v-if="!tickerHostStatus && isServicesReady"
+              v-if="!tickerHostStatus && isServicesReady && authStore.canOperate"
               color="success"
               variant="tonal"
               size="small"
@@ -447,7 +429,7 @@ function handleAuthLogout() {
               Start
             </v-btn>
 
-            <template v-if="tickerHostStatus && isServicesReady">
+            <template v-if="tickerHostStatus && isServicesReady && authStore.canOperate">
               <v-btn
                 color="warning"
                 variant="tonal"

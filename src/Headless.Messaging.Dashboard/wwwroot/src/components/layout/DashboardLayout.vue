@@ -106,10 +106,15 @@ function navigateToDashboard() {
   router.push('/')
 }
 
+// Host mode shows the signed-out page and waits there for the operator to choose Sign in, because the host
+// application's session outlives the dashboard's. Basic and API key reload into the empty sign-in state.
 function handleAuthLogout() {
-  if (typeof window !== 'undefined') {
-    window.location.reload()
+  if (window.MessagingConfig?.auth?.mode === 'host') {
+    void router.push({ name: 'Login', query: { signedOut: '1' } })
+    return
   }
+
+  window.location.reload()
 }
 </script>
 

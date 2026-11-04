@@ -3,6 +3,7 @@
 using Headless.Dashboard.Authentication;
 using Headless.Messaging.Dashboard;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.Options;
 
 namespace Tests;
 
@@ -74,50 +75,75 @@ public sealed class DashboardOptionsTests : TestBase
     }
 
     [Fact]
-    public void should_set_mode_and_policy_when_with_host_authentication()
+    public void should_set_mode_and_host_options_when_with_host_authentication()
     {
         // given & when
-        var builder = new MessagingDashboardOptionsBuilder().WithHostAuthentication("AdminOnly");
+        var builder = new MessagingDashboardOptionsBuilder().WithHostAuthentication(host =>
+        {
+            host.ViewPolicy = "Viewers";
+            host.OperatePolicy = "Operators";
+            host.ChallengeScheme = "oidc";
+            host.SessionIdleTimeout = TimeSpan.FromMinutes(10);
+        });
 
         // then
         builder.Auth.Mode.Should().Be(AuthMode.Host);
         builder.Auth.IsEnabled.Should().BeTrue();
-        builder.Auth.HostAuthorizationPolicy.Should().Be("AdminOnly");
+        builder.Auth.Host.ViewPolicy.Should().Be("Viewers");
+        builder.Auth.Host.OperatePolicy.Should().Be("Operators");
+        builder.Auth.Host.ChallengeScheme.Should().Be("oidc");
+        builder.Auth.Host.SessionIdleTimeout.Should().Be(TimeSpan.FromMinutes(10));
+        builder.Auth.Host.SessionLifetime.Should().Be(DashboardHostAuthenticationOptions.DefaultSessionLifetime);
     }
 
     [Fact]
-    public void should_use_default_when_with_host_authentication_without_policy()
+    public void should_use_default_when_with_host_authentication_without_options()
     {
         // given & when
         var builder = new MessagingDashboardOptionsBuilder().WithHostAuthentication();
 
         // then
         builder.Auth.Mode.Should().Be(AuthMode.Host);
-        builder.Auth.HostAuthorizationPolicy.Should().BeNull();
+        builder.Auth.Host.ViewPolicy.Should().BeNull();
+        builder.Auth.Host.OperatePolicy.Should().BeNull();
+        builder.Auth.Host.ChallengeScheme.Should().BeNull();
     }
 
-    [Fact]
-    public void should_set_mode_and_validator_when_with_custom_auth()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task should_fail_the_start_when_host_authentication_is_combined_with_cors(bool useOrigins)
     {
-        // given & when
-        var builder = new MessagingDashboardOptionsBuilder().WithCustomAuth(
-            (token, _) => string.Equals(token, "valid", StringComparison.Ordinal)
-        );
+        // given
+        Action<MessagingDashboardOptionsBuilder> configure = useOrigins
+            ? dashboard => dashboard.WithHostAuthentication().SetCorsOrigins("https://ops.example")
+            : dashboard => dashboard.WithHostAuthentication().SetCorsPolicy(cors => cors.AllowAnyOrigin());
+
+        // when
+        var act = () => MessagingDashboardHost.StartAsync(configure, cancellationToken: AbortToken);
 
         // then
-        builder.Auth.Mode.Should().Be(AuthMode.Custom);
-        builder.Auth.IsEnabled.Should().BeTrue();
-        builder.Auth.CustomValidator.Should().NotBeNull();
+        await act.Should().ThrowAsync<OptionsValidationException>().WithMessage("*SetCorsOrigins or SetCorsPolicy*");
     }
 
-    [Fact]
-    public void should_set_timeout_when_with_session_timeout()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task should_start_when_a_builtin_credential_is_combined_with_cors(bool basic)
     {
-        // given & when
-        var builder = new MessagingDashboardOptionsBuilder().WithSessionTimeout(30);
+        // given
+        Action<MessagingDashboardOptionsBuilder> configure = basic
+            ? dashboard => dashboard.WithBasicAuth("ops", "pass").SetCorsOrigins("https://ops.example")
+            : dashboard => dashboard.WithApiKey("secret").SetCorsOrigins("https://ops.example");
+
+        // when
+        var act = async () =>
+        {
+            await using var app = await MessagingDashboardHost.StartAsync(configure, cancellationToken: AbortToken);
+        };
 
         // then
-        builder.Auth.SessionTimeoutMinutes.Should().Be(30);
+        await act.Should().NotThrowAsync();
     }
 
     [Fact]
@@ -127,14 +153,12 @@ public sealed class DashboardOptionsTests : TestBase
         var builder = new MessagingDashboardOptionsBuilder()
             .SetBasePath("/custom")
             .SetStatsPollingInterval(3000)
-            .WithBasicAuth("admin", "pass")
-            .WithSessionTimeout(120);
+            .WithBasicAuth("admin", "pass");
 
         // then
         builder.BasePath.Should().Be("/custom");
         builder.StatsPollingInterval.Should().Be(3000);
         builder.Auth.Mode.Should().Be(AuthMode.Basic);
-        builder.Auth.SessionTimeoutMinutes.Should().Be(120);
     }
 
     [Fact]

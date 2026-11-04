@@ -48,7 +48,7 @@ builder.Services.AddHttpClient();
 builder.Services.AddHeadlessJobs(options =>
     options
         .AddModule<Headless.Jobs.Dashboard.Jwt.Demo.JobsModule>()
-        .AddDashboard(d => d.WithHostAuthentication(dashboardPolicy))
+        .AddDashboard(d => d.WithHostAuthentication(host => host.ViewPolicy = dashboardPolicy))
 );
 
 builder.Services.AddHostedService<DemoJobSeeder>();

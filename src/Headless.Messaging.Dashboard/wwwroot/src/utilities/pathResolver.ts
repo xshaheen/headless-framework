@@ -2,6 +2,8 @@
  * Utility functions for resolving paths using the Messaging configuration
  */
 
+import type { AuthMode } from '@/services/auth'
+
 /**
  * Resolve a path relative to the Messaging base path
  */
@@ -73,12 +75,18 @@ export function getApiBaseUrl(): string {
   return `${config.basePath}/api`
 }
 
+/** The origin-relative root (or backend domain) the dashboard's API and auth endpoints live under. */
+export function getBaseUrl(): string {
+  const config = window.MessagingConfig
+  return config?.backendDomain || config?.basePath || '/messaging/dashboard'
+}
+
 export function requiresAuthentication(): boolean {
   const config = window.MessagingConfig
   return config?.auth?.enabled || false
 }
 
-export type AuthMode = 'basic' | 'apikey' | 'host' | 'custom' | 'none'
+export type { AuthMode } from '@/services/auth'
 
 export function getAuthMode(): AuthMode {
   const config = window.MessagingConfig
@@ -86,31 +94,9 @@ export function getAuthMode(): AuthMode {
   return config.auth.mode
 }
 
-/**
- * Consume a fragment-delivered access token for Host authentication.
- * The fragment is removed before the token is returned so it does not remain in browser history.
- */
-export function consumeHostAccessTokenFromFragment(
-  authMode: AuthMode = getAuthMode(),
-): string | null {
-  const fragment = new URLSearchParams(window.location.hash.slice(1))
-
-  if (!fragment.has('access_token')) {
-    return null
-  }
-
-  const token = fragment.get('access_token')?.trim()
-  window.history.replaceState(
-    window.history.state,
-    '',
-    `${window.location.pathname}${window.location.search}`,
-  )
-
-  if (authMode !== 'host' || !token) {
-    return null
-  }
-
-  return token.startsWith('Bearer ') ? token : `Bearer ${token}`
+/** True in host mode, where the server serves every request locally and never relays to another node. */
+export function isHostMode(): boolean {
+  return getAuthMode() === 'host'
 }
 
 // Matches the server default of MessagingDashboardOptionsBuilder.SetStatsPollingInterval.

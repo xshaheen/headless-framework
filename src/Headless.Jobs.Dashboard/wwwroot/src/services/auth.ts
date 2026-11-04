@@ -1,98 +1,81 @@
 /**
- * Clean, simple authentication service for Jobs Dashboard
+ * Authentication service for the Jobs Dashboard.
+ *
+ * Basic and API key modes keep the credential in localStorage and send it on every request. Host mode keeps nothing
+ * in the browser: the server issues an HttpOnly session cookie from the host's own sign-in, the browser sends it on
+ * every same-origin request, and the session state comes from `api/auth/info`.
  */
 
-// Extend window interface for TypeScript
-declare global {
-  interface Window {
-    JobsConfig?: {
-      basePath: string;
-      backendDomain?: string;
-      auth: {
-        mode: string;
-        enabled: boolean;
-        sessionTimeout: number;
-      };
-    };
-  }
-}
-
-export interface AuthConfig {
-  mode: 'none' | 'basic' | 'apikey' | 'host' | 'custom';
-  enabled: boolean;
-  sessionTimeout: number;
-}
+import type { JobsAuthMode } from '@/types/jobs-config';
+import { getApiBaseUrl, getAuthMode, requiresAuthentication } from '@/utilities/pathResolver';
 
 export interface AuthStatus {
   authenticated: boolean;
   username?: string;
   message?: string;
+  /** Whether the signed-in user may run write actions. Only host mode can sign in a user who may only view. */
+  canOperate: boolean;
 }
 
 export interface LoginCredentials {
   username?: string;
   password?: string;
   apiKey?: string;
-  hostAccessKey?: string;
-  customCredential?: string;
+}
+
+/** The server's `GET api/auth/info` answer. */
+interface SessionInfo {
+  authenticated: boolean;
+  name: string | null;
+  canOperate: boolean;
 }
 
 const BASIC_AUTH_KEY = 'jobs_basic_auth';
 const API_KEY_KEY = 'jobs_api_key';
-const HOST_ACCESS_KEY_KEY = 'jobs_host_access_key';
-// Custom mode hands the Authorization header value to the host's validator untouched, so the credential is stored
-// and sent verbatim with no scheme prefix.
-const CUSTOM_CREDENTIAL_KEY = 'jobs_custom_credential';
-const SIGNED_IN_AT_KEY = 'jobs_signed_in_at';
 
-export const SESSION_EXPIRED_MESSAGE = 'Session expired. Please log in again.';
+const CREDENTIAL_KEYS = [BASIC_AUTH_KEY, API_KEY_KEY];
 
-const CREDENTIAL_KEYS = [BASIC_AUTH_KEY, API_KEY_KEY, HOST_ACCESS_KEY_KEY, CUSTOM_CREDENTIAL_KEY];
+/** The server refuses a state-changing request without this header: a cross-site form cannot send it. */
+export const REQUESTED_WITH_HEADER = { 'X-Requested-With': 'XMLHttpRequest' } as const;
 
-const hasAnyStoredCredential = (): boolean => CREDENTIAL_KEYS.some((key) => !!localStorage.getItem(key));
+export const SESSION_EXPIRED_MESSAGE = 'Your session has ended. Please sign in again.';
 
 /**
- * Whether the stored sign-in is older than the server's session timeout (window.JobsConfig.auth.sessionTimeout, in
- * minutes). Reads the injected config directly so it works before the auth service is initialized, which is when
- * the first API requests can fire. Mode none, disabled auth, and a non-positive timeout never expire. Stored
- * credentials without a readable sign-in time count as expired, so a session of unknown age is not trusted.
+ * The Authorization header value for API calls, or null when the mode sends none. Reads the injected config directly
+ * so it works before the auth service is initialized, which is when the first API requests can fire.
  */
-export function isSessionExpired(now: number = Date.now()): boolean {
-  const auth = window.JobsConfig?.auth;
-  if (!auth || !auth.enabled || auth.mode === 'none') {
-    return false;
+export function getAuthorizationHeader(): string | null {
+  if (!requiresAuthentication()) {
+    return null;
   }
 
-  const timeoutMinutes = Number(auth.sessionTimeout);
-  if (!Number.isFinite(timeoutMinutes) || timeoutMinutes <= 0) {
-    return false;
-  }
+  switch (getAuthMode()) {
+    case 'basic': {
+      const basicAuth = localStorage.getItem(BASIC_AUTH_KEY);
+      return basicAuth ? `Basic ${basicAuth}` : null;
+    }
 
-  if (!hasAnyStoredCredential()) {
-    return false;
-  }
+    case 'apikey': {
+      const apiKey = localStorage.getItem(API_KEY_KEY);
+      return apiKey ? `Bearer ${apiKey}` : null;
+    }
 
-  const signedInAt = Number(localStorage.getItem(SIGNED_IN_AT_KEY));
-  if (!Number.isFinite(signedInAt) || signedInAt <= 0) {
-    return true;
+    default:
+      return null;
   }
-
-  return now - signedInAt >= timeoutMinutes * 60_000;
 }
 
 /**
  * The credential the notification hub sends as its access_token query parameter, since a browser cannot set headers
- * on a WebSocket. Reads the injected config directly, because the hub connection is built when its module loads,
- * before the auth service is initialized. Each value is what the server accepts for the mode: the Base64 Basic
- * credential, `Bearer:<key>` for an API key, and the host access key or custom credential verbatim.
+ * on a WebSocket. Each value is what the server accepts for the mode: the Base64 Basic credential, and
+ * `Bearer:<key>` for an API key. Host mode sends none, because the session cookie rides the WebSocket handshake.
  */
 export function getHubAccessToken(): string | null {
-  const auth = window.JobsConfig?.auth;
-  if (!auth?.enabled) {
+  if (!requiresAuthentication()) {
     return null;
   }
 
-  switch (auth.mode) {
+  switch (getAuthMode()) {
     case 'basic':
       return localStorage.getItem(BASIC_AUTH_KEY) || null;
 
@@ -101,199 +84,144 @@ export function getHubAccessToken(): string | null {
       return apiKey ? `Bearer:${apiKey}` : null;
     }
 
-    case 'host':
-      return localStorage.getItem(HOST_ACCESS_KEY_KEY) || null;
-
-    case 'custom':
-      return localStorage.getItem(CUSTOM_CREDENTIAL_KEY) || null;
-
     default:
       return null;
   }
 }
 
 class AuthService {
-  private config: AuthConfig | null = null;
-  private status: AuthStatus = { authenticated: false };
+  private mode: JobsAuthMode = 'none';
+  private status: AuthStatus = { authenticated: false, canOperate: false };
 
-  /**
-   * Initialize authentication service
-   */
   async initialize(): Promise<void> {
-    try {
-      // Get auth configuration from window (injected by backend)
-      const windowConfig = window.JobsConfig?.auth;
-      
-      if (!windowConfig) {
-        throw new Error('No auth configuration found');
-      }
-      
-      this.config = {
-        mode: windowConfig.mode as 'none' | 'basic' | 'apikey' | 'host' | 'custom',
-        enabled: windowConfig.enabled,
-        sessionTimeout: windowConfig.sessionTimeout
-      };
-      
-      // If no auth required, set as authenticated
-      if (!this.config.enabled) {
-        this.status = { authenticated: true, username: 'anonymous' };
-        return;
-      }
+    const windowConfig = window.JobsConfig?.auth;
+    if (!windowConfig) {
+      console.error('Auth initialization failed: no auth configuration found');
+      this.status = { authenticated: false, canOperate: false, message: 'Authentication service unavailable' };
+      return;
+    }
 
-      // For now, just check if we have stored credentials without validating
-      // This prevents hanging on API calls during initialization
-      if (this.hasStoredCredentials()) {
-        // Set as authenticated for now - validation will happen on first API call
-        const username = this.getStoredUsername();
-        this.status = { authenticated: true, username: username || 'user' };
-      } else {
-        // No stored credentials - user needs to log in
-        this.status = { authenticated: false, message: 'Please log in' };
-      }
-    } catch (error) {
-      console.error('Auth initialization failed:', error);
-      this.status = { authenticated: false, message: 'Authentication service unavailable' };
+    this.mode = windowConfig.mode;
+
+    if (!windowConfig.enabled || this.mode === 'none') {
+      this.status = { authenticated: true, username: 'anonymous', canOperate: true };
+      return;
+    }
+
+    if (this.mode === 'host') {
+      this.status = await this.fetchSession();
+      return;
+    }
+
+    // Basic and API key: trust the stored credential until the first API call, which answers 401 when it is wrong.
+    // The server applies no separate operate policy in these modes, so a signed-in user may operate.
+    if (this.hasStoredCredentials()) {
+      this.status = { authenticated: true, username: this.getStoredUsername() || 'user', canOperate: true };
+    } else {
+      this.status = { authenticated: false, canOperate: false };
     }
   }
 
-  /**
-   * Login with credentials
-   */
+  /** Signs in with a Basic or API key credential. Host mode signs in through the host's sign-in page instead. */
   async login(credentials: LoginCredentials): Promise<boolean> {
-    try {
-      if (!this.config) {
-        await this.initialize();
-      }
+    const config = window.JobsConfig?.auth;
+    if (!config) {
+      this.status = { authenticated: false, canOperate: false, message: 'Authentication service unavailable' };
+      return false;
+    }
 
-      if (!this.config) {
-        return false;
-      }
+    this.mode = config.mode;
+    if (!config.enabled) {
+      return true;
+    }
 
-      if (!this.config.enabled) {
-        return true;
-      }
+    if (this.mode !== 'basic' && this.mode !== 'apikey') {
+      return false;
+    }
 
-      // Store credentials based on auth mode
-      this.storeCredentials(credentials);
+    this.storeCredentials(credentials);
+    const result = await this.validateCredentials();
+    this.status = result;
 
-      // Validate with backend
-      const result = await this.validateCredentials();
-      
-      if (result.authenticated) {
-        this.status = result;
-        return true;
-      }
-
-      // Clear invalid credentials
+    if (!result.authenticated) {
       this.clearCredentials();
-      this.status = result;
-      return false;
-    } catch (error) {
-      console.error('Login failed:', error);
-      this.status = { authenticated: false, message: 'Login failed' };
-      return false;
-    }
-  }
-
-  /**
-   * Logout
-   */
-  logout(): void {
-    this.clearCredentials();
-    this.status = { authenticated: false };
-  }
-
-  /**
-   * Clears stored credentials when the session has outlived the configured timeout.
-   * @returns true when the session was expired and cleared.
-   */
-  expireStaleSession(now: number = Date.now()): boolean {
-    if (!isSessionExpired(now)) {
       return false;
     }
 
-    this.clearCredentials();
-    this.status = { authenticated: false, message: SESSION_EXPIRED_MESSAGE };
     return true;
   }
 
   /**
-   * Get current authentication status
+   * Ends the dashboard session. In host mode this deletes the dashboard's session cookie on the server; the host's
+   * own session stays, and nothing signs in again until the user chooses to. Throws when the server did not end the
+   * session, which then stays signed in here too.
    */
+  async logout(): Promise<void> {
+    if (this.mode === 'host') {
+      const response = await fetch(`${getApiBaseUrl()}/auth/sign-out`, {
+        method: 'POST',
+        headers: { ...REQUESTED_WITH_HEADER },
+      });
+      if (!response.ok) {
+        throw new Error(`Sign-out failed with status ${response.status}`);
+      }
+    }
+
+    this.clearCredentials();
+    this.status = { authenticated: false, canOperate: false };
+  }
+
+  /** Forgets the session after the server answered 401, without another round trip. */
+  expire(): void {
+    this.clearCredentials();
+    this.status = { authenticated: false, canOperate: false, message: SESSION_EXPIRED_MESSAGE };
+  }
+
   getStatus(): AuthStatus {
     return { ...this.status };
   }
 
-  /**
-   * Get authentication configuration
-   */
-  getConfig(): AuthConfig | null {
-    return this.config ? { ...this.config } : null;
-  }
-
-  /**
-   * Check if user is authenticated
-   */
   isAuthenticated(): boolean {
     return this.status.authenticated;
   }
 
-  /**
-   * Get authorization header for API calls
-   */
-  getAuthHeader(): string | null {
-    if (!this.config?.enabled) {
-      return null;
-    }
+  private async fetchSession(): Promise<AuthStatus> {
+    try {
+      const response = await fetch(`${getApiBaseUrl()}/auth/info`, { headers: { Accept: 'application/json' } });
+      if (!response.ok) {
+        return { authenticated: false, canOperate: false, message: `Server error: ${response.status}` };
+      }
 
-    switch (this.config.mode) {
-      case 'basic':
-        const basicAuth = localStorage.getItem('jobs_basic_auth');
-        return basicAuth ? `Basic ${basicAuth}` : null;
-      
-      case 'apikey':
-        const apiKey = localStorage.getItem('jobs_api_key');
-        return apiKey ? `Bearer ${apiKey}` : null;
-      
-      case 'host':
-        const hostAccessKey = localStorage.getItem('jobs_host_access_key');
-        return hostAccessKey || null;
+      const info = (await response.json()) as Partial<SessionInfo>;
+      if (info.authenticated !== true) {
+        return { authenticated: false, canOperate: false };
+      }
 
-      case 'custom':
-        return localStorage.getItem(CUSTOM_CREDENTIAL_KEY) || null;
-      
-      default:
-        return null;
+      return {
+        authenticated: true,
+        username: typeof info.name === 'string' && info.name ? info.name : 'user',
+        canOperate: info.canOperate === true,
+      };
+    } catch (error) {
+      console.error('Session lookup failed:', error);
+      return { authenticated: false, canOperate: false, message: 'Authentication service unavailable' };
     }
   }
-
-  /**
-   * Get access token for SignalR (WebSocket limitation)
-   */
-  getAccessToken(): string | null {
-    return getHubAccessToken();
-  }
-
 
   private async validateCredentials(): Promise<AuthStatus> {
     try {
-      const authHeader = this.getAuthHeader();
-      
-      // Get the correct base URL with base path
-      const config = window.JobsConfig;
-      const baseUrl = config?.backendDomain || config?.basePath || '/jobs/dashboard';
-      const url = `${baseUrl}/api/auth/validate`;
-      
+      const authHeader = getAuthorizationHeader();
+
       // Add timeout to prevent hanging
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
-      
-      const response = await fetch(url, {
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+      const response = await fetch(`${getApiBaseUrl()}/auth/validate`, {
         method: 'POST',
-        headers: authHeader ? { 'Authorization': authHeader } : {},
-        signal: controller.signal
+        headers: authHeader ? { Authorization: authHeader } : {},
+        signal: controller.signal,
       });
-      
+
       clearTimeout(timeoutId);
 
       if (response.ok) {
@@ -301,39 +229,34 @@ class AuthService {
         return {
           authenticated: result.authenticated,
           username: result.username,
-          message: result.message
+          message: result.message,
+          canOperate: result.authenticated === true,
         };
       }
 
-      return { authenticated: false, message: `Server error: ${response.status}` };
+      return { authenticated: false, canOperate: false, message: `Server error: ${response.status}` };
     } catch (error) {
       console.error('Credential validation failed:', error);
-      return { authenticated: false, message: 'Validation failed' };
-    }
-  }
-
-  /**
-   * Validate stored credentials (public method)
-   */
-  async validateStoredCredentials(): Promise<void> {
-    const result = await this.validateCredentials();
-    this.status = result;
-    
-    if (!result.authenticated) {
-      this.clearCredentials();
+      return { authenticated: false, canOperate: false, message: 'Validation failed' };
     }
   }
 
   private hasStoredCredentials(): boolean {
-    return hasAnyStoredCredential();
+    switch (this.mode) {
+      case 'basic':
+        return !!localStorage.getItem(BASIC_AUTH_KEY);
+      case 'apikey':
+        return !!localStorage.getItem(API_KEY_KEY);
+      default:
+        return false;
+    }
   }
 
   private getStoredUsername(): string | null {
-    const basicAuth = localStorage.getItem('jobs_basic_auth');
+    const basicAuth = localStorage.getItem(BASIC_AUTH_KEY);
     if (basicAuth) {
       try {
-        const decoded = atob(basicAuth);
-        return decoded.split(':')[0];
+        return atob(basicAuth).split(':')[0] ?? null;
       } catch {
         return null;
       }
@@ -344,36 +267,18 @@ class AuthService {
   private storeCredentials(credentials: LoginCredentials): void {
     this.clearCredentials();
 
-    switch (this.config?.mode) {
+    switch (this.mode) {
       case 'basic':
         if (credentials.username && credentials.password) {
-          const encoded = btoa(`${credentials.username}:${credentials.password}`);
-          localStorage.setItem('jobs_basic_auth', encoded);
+          localStorage.setItem(BASIC_AUTH_KEY, btoa(`${credentials.username}:${credentials.password}`));
         }
         break;
-      
+
       case 'apikey':
         if (credentials.apiKey) {
-          localStorage.setItem('jobs_api_key', credentials.apiKey);
+          localStorage.setItem(API_KEY_KEY, credentials.apiKey);
         }
         break;
-      
-      case 'host':
-        if (credentials.hostAccessKey) {
-          localStorage.setItem('jobs_host_access_key', credentials.hostAccessKey);
-        }
-        break;
-
-      case 'custom':
-        if (credentials.customCredential) {
-          localStorage.setItem(CUSTOM_CREDENTIAL_KEY, credentials.customCredential);
-        }
-        break;
-    }
-
-    // The session timeout counts from here, the moment the credential is stored.
-    if (hasAnyStoredCredential()) {
-      localStorage.setItem(SIGNED_IN_AT_KEY, String(Date.now()));
     }
   }
 
@@ -381,9 +286,7 @@ class AuthService {
     for (const key of CREDENTIAL_KEYS) {
       localStorage.removeItem(key);
     }
-    localStorage.removeItem(SIGNED_IN_AT_KEY);
   }
 }
 
-// Export singleton instance
 export const authService = new AuthService();

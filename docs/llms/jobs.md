@@ -1486,8 +1486,8 @@ Read [dashboards.md](dashboards.md) for the shared authentication modes and prod
 - **Contract and lineage visibility**: function descriptors expose `ContractVersion`; time-job, cron-definition, and occurrence views show version, correlation, causation, and tenant fields. Occurrences show their own snapshotted function. Add/update forms submit the selected descriptor version, and request inspection reports an unsupported stored version before attempting deserialization. Live occurrence updates retain the same metadata.
 - **Embedded SPA**: served from the host process, no separate deployment.
 - **Hidden from application API documents**: every dashboard endpoint is excluded from API Explorer (`ExcludeFromDescription()`), because the dashboard SPA is their only client.
-- **Authentication options**: `WithBasicAuth(username, password)`, `WithApiKey(apiKey)`, `WithHostAuthentication(policy?)` (delegates to host app's auth), or explicit no-auth mode for isolated development dashboards.
-- **Safe host-auth handoff**: fragment-delivered access tokens are removed from the URL, then validated only after the SPA initializes the host authentication configuration.
+- **Authentication options**: `WithBasicAuth(username, password)`, `WithApiKey(apiKey)`, `WithHostAuthentication(host => ...)` (a dashboard session issued from the host's own sign-in, with separate view and operate policies), or explicit no-auth mode for isolated development dashboards.
+- **Host sessions**: in host mode the SPA asks `GET /api/auth/info` whether a session exists. Without one it shows a Sign in link to `/auth/sign-in` when `ChallengeScheme` is set; an application that signs in with a bearer token posts it to `/api/auth/session` first. No token goes into a URL or browser storage, and write actions are hidden when the session may not operate. See [Host sessions](dashboards.md#host-sessions).
 - **Predictable timestamp display**: explicit ISO UTC offsets are preserved, zone-less values are treated as UTC, and invalid values render empty instead of `NaN`.
 - **Responsive operational layout**: content cards shrink within mobile viewports while wide data tables retain their own overflow boundary.
 - **Live cluster view**: `GET /api/nodes` returns live node projections from `Headless.Coordination` membership; `NodeJoined` / `NodeLeft` / `NodeSuspected` push updates over SignalR — no polling required. A push the hub fails to send is logged and dropped; later membership changes still push.
@@ -1502,12 +1502,14 @@ Read [dashboards.md](dashboards.md) for the shared authentication modes and prod
 - **Requeue**: `Failed` time jobs and cron occurrences show a requeue button. `POST /api/job/requeue?id=…` and `POST /api/cron-job-occurrence/requeue?id=…` call `IJobScheduler.RequeueAsync` and `RequeueOccurrenceAsync`; HTTP 200 means the row was requeued, and HTTP 400 carries the refusal's `JobRequeueOutcome` name. See [Requeue a failed job](#requeue-a-failed-job).
 - **Storage-reduced cron graphs**: bundled providers select distinct UTC dates and aggregate status counts in storage;
   the dashboard does not load a cron job's lifetime occurrence entities to render its bounded history graph.
-- **Fluent builder**: `SetBasePath(path)`, `SetBackendDomain(domain)`, `SetCorsOrigins(origins)`, `SetCorsPolicy(policy)`.
+- **Fluent builder**: `SetBasePath(path)`, `SetBackendDomain(domain)`, `SetCorsOrigins(origins)`, `SetCorsPolicy(policy)`. The last three serve a cross-origin SPA and work only with Basic or API key: host mode fails at startup with any of them.
 - **Pair with OpenTelemetry**: Dashboard for operational triage; the built-in OpenTelemetry instrumentation for trace-level diagnostics.
 
 ### Design constraints
 
-The dashboard exposes operational endpoints that can create, update, delete, run, cancel, requeue, start, stop, and restart jobs. Authentication must be chosen explicitly — if no auth method (including `WithNoAuth()`) is called, the host fails to start, so the dashboard never ships publicly by omission. Treat `WithNoAuth()` as development-only unless the dashboard is isolated behind trusted network controls; production deployments should use `WithHostAuthentication(...)`, `WithBasicAuth(...)`, or `WithApiKey(...)`. No CORS policy is applied by default (same-origin only); use `SetCorsOrigins(...)` when the SPA is served cross-origin.
+The dashboard exposes operational endpoints that can create, update, delete, run, cancel, requeue, start, stop, and restart jobs. Authentication must be chosen explicitly — if no auth method (including `WithNoAuth()`) is called, the host fails to start, so the dashboard never ships publicly by omission. Treat `WithNoAuth()` as development-only unless the dashboard is isolated behind trusted network controls; production deployments should use `WithHostAuthentication(...)`, `WithBasicAuth(...)`, or `WithApiKey(...)`. No CORS policy is applied by default (same-origin only); use `SetCorsOrigins(...)` when the SPA is served cross-origin under Basic or API key. Host mode is same-origin only.
+
+In host mode every state-changing `/api` endpoint (create, update, delete, run, cancel, requeue, start, stop, restart) also requires the operate policy, `OperatePolicy` or the view policy when it is unset. Reads, including a job's request payload, need only the view policy.
 
 Cron-occurrence graph selection remains history-derived: it first chooses the same inclusive UTC date window from
 distinct occurrence dates, then zero-fills gaps. `IJobPersistenceProvider.GetCronOccurrenceGraphStatusCountsAsync`,
@@ -1520,7 +1522,7 @@ existing list APIs.
 
 Dashboard API inputs are bounded: paginated queries accept page sizes from 1 through 100, JSON request bodies are limited to 1 MiB, and batch deletion accepts at most 500 IDs. Collection endpoints use the paginated routes. Time-job pages are ordered by execution time and cron-definition pages by creation time, newest first, then by `Id`, so rows that share a time (one batch enqueue, one seed) keep one order across pages and each row appears on exactly one page.
 
-Every state-changing `/api` request (`POST`, `PUT`, `PATCH`, `DELETE`) must carry an `X-Requested-With` header, and a request body must be sent as `application/json`. A request without the header gets `400`; a body with another content type gets `415`. The SPA sends both. They keep a cross-site page from driving the dashboard with a browser's host cookie (`WithHostAuthentication` with a cookie scheme): a cross-site `<form>` can set neither, and a cross-site script that sets the header needs a CORS preflight the dashboard policy refuses. A custom `SetCorsPolicy` for a cross-origin SPA must allow the header; `SetCorsOrigins` allows any header.
+Every state-changing `/api` request (`POST`, `PUT`, `PATCH`, `DELETE`) must carry an `X-Requested-With` header, and a request body must be sent as `application/json`. A request without the header gets `400`; a body with another content type gets `415`. The SPA sends both. They keep a cross-site page from driving the dashboard with the browser's dashboard session cookie: a cross-site `<form>` can set neither, and a cross-site script that sets the header needs a CORS preflight the dashboard policy refuses. A custom `SetCorsPolicy` for a cross-origin SPA must allow the header; `SetCorsOrigins` allows any header.
 
 The function list's request example is serialized, and a stored request is checked against its request type (request inspection's match result), with the host's request JSON options (`ConfigureRequestJsonOptions`), the options a job deserializes its payload with. A naming policy or a request-type converter therefore shapes the example the same way, and an operator who submits the example unchanged creates a job whose payload binds. A request JSON body the dashboard receives is stored as written, so an edited payload must use the same names.
 
@@ -1539,7 +1541,11 @@ builder.Services.AddHeadlessJobs(options =>
     options.AddDashboard(dashboard =>
     {
         dashboard.SetBasePath("/jobs-dashboard");
-        dashboard.WithHostAuthentication(); // or WithBasicAuth / WithApiKey
+        dashboard.WithHostAuthentication(host =>
+        {
+            host.ViewPolicy = "JobsViewers";
+            host.OperatePolicy = "JobsOperators";
+        }); // or WithBasicAuth / WithApiKey
     })
 );
 
@@ -1555,9 +1561,10 @@ app.Run();
 | Request | Rule |
 | --- | --- |
 | SPA shell, deep links, static assets | `AllowAnonymous` |
-| `/api/auth/info`, `/api/auth/validate` | `AllowAnonymous` |
-| Other `{basePath}/api/*` and the `{basePath}/job-notification-hub` hub, `WithHostAuthentication(policy)` | That policy, or the host's default policy when none is named |
-| The same, Basic, API key, custom | The dashboard's own credential, checked by its authentication scheme; an empty `401` otherwise, before SignalR opens a hub connection |
+| `/auth/sign-in`, `/api/auth/info`, `/api/auth/session`, `/api/auth/sign-out`, `/api/auth/validate` | `AllowAnonymous` |
+| Other `{basePath}/api/*` and the `{basePath}/job-notification-hub` hub, `WithHostAuthentication(...)` | The dashboard session cookie, for a user who passes `ViewPolicy` (or the host's default policy); `401` without a session, `403` when the policy refuses |
+| Non-`GET` `{basePath}/api/*`, `WithHostAuthentication(...)` | Also `OperatePolicy`, or `ViewPolicy` when it is unset; `403` when it refuses |
+| Other `{basePath}/api/*` and the hub, Basic, API key | The dashboard's own credential, checked by its authentication scheme; an empty `401` otherwise, before SignalR opens a hub connection |
 | The same, `WithNoAuth()` | `AllowAnonymous` |
 | Unmatched `{basePath}/api/*` | `404`, never the shell |
 
@@ -1571,27 +1578,42 @@ app.Run();
 builder.Services.AddHeadlessJobs(options =>
     options.AddDashboard(dashboard =>
     {
-        // Path and domain
         dashboard.SetBasePath("/jobs");
-        dashboard.SetBackendDomain("https://api.example.com");
-        dashboard.SetCorsOrigins("https://admin.example.com"); // needed only when the SPA is cross-origin
 
-        // Authentication — required, pick one:
-        dashboard.WithBasicAuth("admin", "secret"); // username/password
-        dashboard.WithApiKey("my-api-key"); // Bearer token / query param
-        dashboard.WithHostAuthentication(); // delegate to host auth
-        dashboard.WithHostAuthentication("AdminPolicy"); // host auth + policy
+        // Authentication — required, pick one. Host mode: a dashboard session from the host's own sign-in.
+        dashboard.WithHostAuthentication(host =>
+        {
+            host.ViewPolicy = "JobsViewers"; // read the dashboard; null uses the host's default policy
+            host.OperatePolicy = "JobsOperators"; // run write actions; null uses ViewPolicy
+            host.ChallengeScheme = "oidc"; // where the Sign in link sends a user who is not signed in
+            host.SessionIdleTimeout = TimeSpan.FromMinutes(30);
+            host.SessionLifetime = TimeSpan.FromHours(8);
+        });
+        // Or dashboard.WithBasicAuth("admin", "secret") or dashboard.WithApiKey("my-api-key").
         // Or opt out explicitly with dashboard.WithNoAuth() — isolated development environments only.
     })
 );
 ```
 
-Auth detection is automatic: explicit `WithNoAuth()` → public; basic auth → username/password login UI; API key → bearer token; host auth → delegates to the host's authentication and authorization.
+A Basic or API-key dashboard whose SPA is served from another origin adds the cross-origin settings, which host mode refuses:
+
+```csharp
+builder.Services.AddHeadlessJobs(options =>
+    options.AddDashboard(dashboard =>
+    {
+        dashboard.SetBackendDomain("https://api.example.com");
+        dashboard.SetCorsOrigins("https://admin.example.com");
+        dashboard.WithApiKey(builder.Configuration["JobsDashboard:ApiKey"]!);
+    })
+);
+```
+
+The SPA follows the mode: `WithNoAuth()` opens without sign-in; Basic shows a username and password form; API key asks for the key; host mode signs in through the host and shows a signed-out page after sign-out. [dashboards.md](dashboards.md#configuration) lists every host option.
 
 ### Runtime behavior
 
 - `MapHeadlessJobsDashboard()` maps the dashboard HTTP API, the SignalR hub, and the SPA under the `SetBasePath` path.
-- Authenticates with its own configuration, registered under `DashboardOptionsBuilder.AuthenticationName`, so a Messaging dashboard in the same host can use another mode. The live-update hub authenticates the same credential in every mode; see [Jobs live-update hub](dashboards.md#jobs-live-update-hub).
+- Authenticates with its own configuration, registered under `DashboardOptionsBuilder.AuthenticationName`, so a Messaging dashboard in the same host can use another mode. The live-update hub authenticates the same credential as the API: the session cookie in host mode, closed when the session expires, and the `access_token` query parameter under Basic or API key; see [Jobs live-update hub](dashboards.md#jobs-live-update-hub).
 - Subscribes to `Headless.Coordination` membership events for live-node push updates.
 - A committed time-job or cron-job delete, single or batch, pushes `RemoveTimeJobNotification` or `RemoveCronJobNotification` for each requested id, so every open dashboard drops the rows; the dashboard that issued the delete also reloads its list itself. A failed notification is logged (event 3239) and never fails the delete.
 - Serves embedded frontend SPA assets; requires Node 22 on `PATH` when building from source (build target `make dashboards`).

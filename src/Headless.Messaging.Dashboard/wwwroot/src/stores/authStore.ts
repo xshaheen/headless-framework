@@ -1,11 +1,8 @@
 import { defineStore } from 'pinia'
 import { ref, computed, reactive } from 'vue'
-import {
-  authService,
-  SESSION_EXPIRED_MESSAGE,
-  type AuthStatus,
-  type LoginCredentials,
-} from '@/services/auth'
+import { authService, type AuthStatus, type LoginCredentials } from '@/services/auth'
+
+const SESSION_ENDED_MESSAGE = 'Your session ended. Please sign in again.'
 
 export const useAuthStore = defineStore('auth', () => {
   // State
@@ -14,47 +11,44 @@ export const useAuthStore = defineStore('auth', () => {
     authenticated: false,
     username: '',
     message: '',
+    canOperate: false,
   })
   const errorMessage = ref('')
   const isLoading = ref(false)
-  const forceUpdate = ref(0)
 
-  // Form credentials
   const credentials = reactive<LoginCredentials>({
     username: '',
     password: '',
     apiKey: '',
-    hostAccessKey: '',
-    customCredential: '',
   })
 
   // Computed properties
-  const isLoggedIn = computed(() => {
-    void forceUpdate.value // Force reactivity
-    if (!isInitialized.value) return false
-    return authStatus.value.authenticated
-  })
-
+  const isLoggedIn = computed(() => isInitialized.value && authStatus.value.authenticated)
   const username = computed(() => authStatus.value.username || '')
+  const canOperate = computed(
+    () =>
+      !window.MessagingConfig?.auth?.enabled || (isLoggedIn.value && authStatus.value.canOperate),
+  )
+
+  const clearForm = () => {
+    credentials.username = ''
+    credentials.password = ''
+    credentials.apiKey = ''
+  }
 
   // Actions
   const initializeAuth = async () => {
     try {
       isLoading.value = true
-
-      const isExpired = authService.expireSessionIfStale()
       await authService.initialize()
       authStatus.value = authService.getStatus()
-
-      if (isExpired) {
-        markSessionExpired()
-      }
     } catch (error) {
       console.error('Auth initialization failed:', error)
       authStatus.value = {
         authenticated: false,
         username: '',
         message: 'Authentication service unavailable',
+        canOperate: false,
       }
       errorMessage.value = 'Failed to initialize authentication'
     } finally {
@@ -69,22 +63,15 @@ export const useAuthStore = defineStore('auth', () => {
       errorMessage.value = ''
 
       const success = await authService.login(credentials)
+      authStatus.value = authService.getStatus()
 
       if (success) {
-        authStatus.value = authService.getStatus()
-
-        // Clear form
-        credentials.username = ''
-        credentials.password = ''
-        credentials.apiKey = ''
-        credentials.customCredential = ''
-
+        clearForm()
         return true
-      } else {
-        authStatus.value = authService.getStatus()
-        errorMessage.value = authStatus.value.message || 'Login failed'
-        return false
       }
+
+      errorMessage.value = authStatus.value.message || 'Login failed'
+      return false
     } catch (error) {
       console.error('Login error:', error)
       errorMessage.value = 'Login failed'
@@ -92,6 +79,7 @@ export const useAuthStore = defineStore('auth', () => {
         authenticated: false,
         username: '',
         message: 'Login failed',
+        canOperate: false,
       }
       return false
     } finally {
@@ -99,20 +87,12 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  /** Throws, leaving the session in place, when the server did not end it. */
   const logout = async () => {
-    try {
-      authService.logout()
-      authStatus.value = authService.getStatus()
-
-      // Clear form and errors
-      credentials.username = ''
-      credentials.password = ''
-      credentials.apiKey = ''
-      credentials.customCredential = ''
-      errorMessage.value = ''
-    } catch (error) {
-      console.error('Logout error:', error)
-    }
+    await authService.signOut()
+    authStatus.value = authService.getStatus()
+    clearForm()
+    errorMessage.value = ''
   }
 
   const revalidate = async () => {
@@ -125,38 +105,30 @@ export const useAuthStore = defineStore('auth', () => {
         authenticated: false,
         username: '',
         message: 'Revalidation failed',
+        canOperate: false,
       }
     }
   }
 
+  /** The server answered 401, so the session is already gone; this only tells the user why they are back. */
   const handle401Error = () => {
-    authService.logout()
-    authStatus.value = {
-      authenticated: false,
-      username: '',
-      message: 'Session expired. Please log in again.',
+    authService.clearSession()
+    clearForm()
+
+    // Only someone who had a session can lose it; a first visit lands on the sign-in page without that message, and
+    // a later 401 of the same burst leaves the first one's message in place.
+    if (authStatus.value.authenticated) {
+      authStatus.value = {
+        authenticated: false,
+        username: '',
+        message: SESSION_ENDED_MESSAGE,
+        canOperate: false,
+      }
+      errorMessage.value = SESSION_ENDED_MESSAGE
     }
-
-    credentials.username = ''
-    credentials.password = ''
-    credentials.apiKey = ''
-    errorMessage.value = 'Session expired. Please log in again.'
-
-    forceUpdate.value++
   }
 
-  // The stored credentials are already gone; this only tells the user why they are back on the login page.
-  const markSessionExpired = () => {
-    authStatus.value = { authenticated: false, username: '', message: SESSION_EXPIRED_MESSAGE }
-    errorMessage.value = SESSION_EXPIRED_MESSAGE
-  }
-
-  /** Expires a sign-in older than the configured session timeout. Returns true when it did. */
-  const enforceSessionTimeout = (): boolean => {
-    if (!authService.expireSessionIfStale()) return false
-    markSessionExpired()
-    return true
-  }
+  const signInUrl = (returnPath?: string) => authService.getSignInUrl(returnPath)
 
   const clearError = () => {
     errorMessage.value = ''
@@ -173,6 +145,7 @@ export const useAuthStore = defineStore('auth', () => {
     // Computed
     isLoggedIn,
     username,
+    canOperate,
 
     // Actions
     initializeAuth,
@@ -180,8 +153,7 @@ export const useAuthStore = defineStore('auth', () => {
     logout,
     revalidate,
     handle401Error,
-    markSessionExpired,
-    enforceSessionTimeout,
+    signInUrl,
     clearError,
   }
 })

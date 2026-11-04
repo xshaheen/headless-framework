@@ -110,29 +110,28 @@ public sealed class MessagingDashboardOptionsBuilder
         return this;
     }
 
-    /// <summary>Use the host application's existing authentication system.</summary>
-    /// <param name="policy">Optional authorization policy name. If null, uses the default policy.</param>
-    public MessagingDashboardOptionsBuilder WithHostAuthentication(string? policy = null)
+    /// <summary>
+    /// Signs host users into the dashboard with its own session cookie, issued from the host application's sign-in.
+    /// </summary>
+    /// <remarks>
+    /// The dashboard must be served from the host's own origin: host mode cannot be combined with
+    /// <see cref="SetCorsOrigins"/> or <see cref="SetCorsPolicy"/>, and the host fails to start when it is. The gateway
+    /// proxy does not forward host-mode requests to other nodes; each node serves its own data.
+    /// </remarks>
+    /// <param name="configure">
+    /// Configures the view and operate policies, the sign-in challenge scheme, and the session's cookie and lifetime.
+    /// When <see langword="null"/>, the host's default policy decides both viewing and operating.
+    /// </param>
+    public MessagingDashboardOptionsBuilder WithHostAuthentication(
+        Action<DashboardHostAuthenticationOptions>? configure = null
+    )
     {
+        var host = new DashboardHostAuthenticationOptions();
+        configure?.Invoke(host);
+
         Auth.Mode = AuthMode.Host;
-        Auth.HostAuthorizationPolicy = policy;
+        Auth.Host = host;
         AuthConfigured = true;
-        return this;
-    }
-
-    /// <summary>Configure custom authentication with validation function.</summary>
-    public MessagingDashboardOptionsBuilder WithCustomAuth(Func<string, IServiceProvider, bool> validator)
-    {
-        Auth.Mode = AuthMode.Custom;
-        Auth.CustomValidator = validator;
-        AuthConfigured = true;
-        return this;
-    }
-
-    /// <summary>Set session timeout in minutes.</summary>
-    public MessagingDashboardOptionsBuilder WithSessionTimeout(int minutes)
-    {
-        Auth.SessionTimeoutMinutes = minutes;
         return this;
     }
 
@@ -143,7 +142,7 @@ public sealed class MessagingDashboardOptionsBuilder
         {
             throw new InvalidOperationException(
                 "Dashboard authentication was not configured. Secure the dashboard with WithBasicAuth, WithApiKey, "
-                    + "WithHostAuthentication, or WithCustomAuth, or call WithNoAuth() to explicitly run it "
+                    + "or WithHostAuthentication, or call WithNoAuth() to explicitly run it "
                     + "unauthenticated (development or trusted-network use only)."
             );
         }

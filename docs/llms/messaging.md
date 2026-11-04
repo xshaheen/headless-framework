@@ -76,7 +76,7 @@ This is the production default: `Headless.Messaging.RabbitMq` for transport and 
 - **Use `InMemory` + `InMemoryStorage` only for dev/testing**, never in production. Data is lost on restart.
 - **OpenTelemetry is native to `Messaging`** (no satellite package). Subscribe traces/metrics with `AddMessagingInstrumentation()` on the `TracerProviderBuilder`/`MeterProviderBuilder`, and configure enrichers/suppression via `setup.Instrumentation` inside `AddHeadlessMessaging(...)`.
 - **Add `Messaging.Testing`** in test projects for integration testing with awaitable assertions. Use `AddMessagingTestHarness()` to decorate an existing host's DI container (WebApplicationFactory, IHost), after `ReplaceMessagingTransportWithInMemory()` when that host registers a broker, or `MessagingTestHarness.CreateAsync()` for standalone harness.
-- **Add `Messaging.Dashboard`** when monitoring UI is needed; it exposes operational message actions and requires an explicit authentication choice (the host fails to start otherwise), so configure `WithBasicAuth`, `WithApiKey`, `WithHostAuthentication`, or `WithCustomAuth` — and `SetCorsOrigins` if the SPA is served cross-origin — before production exposure.
+- **Add `Messaging.Dashboard`** when monitoring UI is needed; it exposes operational message actions and requires an explicit authentication choice (the host fails to start otherwise), so configure `WithBasicAuth`, `WithApiKey`, or `WithHostAuthentication` — and, under Basic or API key only, `SetCorsOrigins` if the SPA is served cross-origin — before production exposure.
 - **Consumers declare themselves with one lane attribute**: put exactly one of `[BusConsumer("owner.name")]` or `[QueueConsumer("owner.name")]` on a class that implements `IConsume<T>`. The messages it handles are exactly the `IConsume<T>` interfaces it implements; one class may handle several. `[BusConsumer]` also takes `EveryInstance = true` (see [Every-instance Bus delivery](#every-instance-bus-delivery)). No fluent call declares a consumer, and nothing registers a consumer by scanning assemblies at runtime.
 - **The consumer identity is the consumer's durable name**: `owner.name` form, at most 200 characters, first segment naming the owning module. On the Bus lane it is the broker subscription name, so processes that register the same identity compete for each message wherever the module runs. It also keys the consumer's inbox rows, circuit breaker, metrics, `Tune`, configuration, and `ConsumeOnly`. Renaming it starts a new consumer with empty inbox history. Intentional reprocessing uses an explicit linked inbox generation; changing a schema version is not a dedupe-reset mechanism.
 - **A message has at most one Queue consumer**: the Queue lane is point-to-point and its destination is keyed by the message name. A second Queue consumer for one message fails the build (HM004) within an assembly and fails startup across assemblies. Use `[BusConsumer]` for fan-out.
@@ -2571,18 +2571,20 @@ Read [dashboards.md](dashboards.md) for the shared authentication modes and prod
 - **Node Discovery**: Multi-instance cluster visibility through async `INodeDiscoveryProvider` operations with optional trailing cancellation tokens; implementations propagate caller-requested cancellation instead of converting it to an empty or not-found result
 - **Provider Capabilities**: The protected metadata endpoint and responsive footer dialog show every registered provider role. Transport cards report delivery lanes and topology, storage cards report delivery lanes and delayed scheduling, and coordination cards report cluster coordination without exposing physical resource names or credentials
 - **Performance Metrics**: Consumer processing stats and bottlenecks
-- **Five authentication modes** (the same modes as the Jobs Dashboard, via `Headless.Dashboard.Authentication`): none, Basic, API key, host-app auth, custom. The configuration is the dashboard's own, registered under `MessagingDashboardOptionsBuilder.AuthenticationName`, so a Jobs dashboard in the same host can use another mode.
+- **Four authentication modes** (the same modes as the Jobs Dashboard, via `Headless.Dashboard.Authentication`): none, Basic, API key, and host sessions with separate view and operate policies. The configuration is the dashboard's own, registered under `MessagingDashboardOptionsBuilder.AuthenticationName`, so a Jobs dashboard in the same host can use another mode.
 - **Scheduled-delivery operator actions**: `GET /api/scheduled` lists pending scheduled deliveries (published rows in `Delayed`/`Queued` with no inline attempt, retry, or persisted retry time, presented as one `Pending` state); `POST /api/scheduled/revoke` and `POST /api/scheduled/dispatch-now` are audited, fenced mutations sharing the inbox operator ledger. These are operator actions on an existing schedule, not a way to create, reschedule, or replay one — see the `Headless.Messaging` package section for the storage-side contract.
 
 ### Design constraints
 
-The dashboard exposes operational endpoints for inspecting, retrying, re-executing, and deleting message records. Its protected `/api/meta` response also projects sanitized registered-provider descriptors; deployment state remains operator-owned and is never inferred by the dashboard. Treat `WithNoAuth()` as development-only unless the dashboard is isolated behind trusted network controls. Production deployments should use `WithHostAuthentication(...)`, `WithBasicAuth(...)`, `WithApiKey(...)`, or `WithCustomAuth(...)`, and should set an explicit CORS policy before exposing the dashboard cross-origin.
+The dashboard exposes operational endpoints for inspecting, retrying, re-executing, and deleting message records. Its protected `/api/meta` response also projects sanitized registered-provider descriptors; deployment state remains operator-owned and is never inferred by the dashboard. Treat `WithNoAuth()` as development-only unless the dashboard is isolated behind trusted network controls. Production deployments should use `WithHostAuthentication(...)`, `WithBasicAuth(...)`, or `WithApiKey(...)`. A cross-origin SPA needs an explicit CORS policy and Basic or API key: host mode is same-origin only and fails at startup with `SetCorsOrigins` or `SetCorsPolicy`.
+
+In host mode the eight operator writes (`published/requeue`, `published/delete`, `received/reexecute`, `received/delete`, `inbox/hold`, `inbox/release`, `scheduled/revoke`, `scheduled/dispatch-now`) and `POST /api/ping` also require the operate policy, `OperatePolicy` or the view policy when it is unset. Every read, message bodies included, needs only the view policy, so give `ViewPolicy` only to users who may see payloads. Every state-changing `/api` request must carry an `X-Requested-With` header in every mode, or it gets `400`; the SPA sends it.
 
 The dashboard shows every stored payload in full to anyone it authorizes, which is one reason a payload must never carry a secret. See [Never put a secret in a message payload](#agent-rules).
 
 Inbox query and operation JSON uses camelCase properties and named string enum values, such as `"Failed"`, `"Succeeded"`, and `"Queue"`, independently of the host's JSON configuration. Operation requests must send `expectedStatus` as a string; responses use the same format for status, lane, operation type, and outcome, including conflict and not-found results.
 
-Inbox and scheduled-delivery operations share one actor resolver and require an authenticated principal with a stable audit actor. The primary identity's name is used first, then its `NameIdentifier` or `sub` claim. Under Basic, API key, or custom authentication the primary identity is the dashboard identity, named by the credential's username, even when the host also signed a user in. An unauthenticated request returns HTTP 401 and ends the dashboard session. An authenticated principal with no usable name -- the no-auth mode's `anonymous` identity or the Host mode's shared `host-user` placeholder -- returns HTTP 403 with error code `g:operator_actor_required` and a body naming the remedy (configure Basic or Host authentication with a name or `sub` claim); the dashboard stays signed in. **Behavior change:** the inbox `host-user` case previously returned 401; it now returns 403, and `WithNoAuth()` deployments can no longer perform any operator action (inbox or scheduled-delivery), read-only monitoring is unaffected. ApiKey and Custom identities (`api-user`, `custom-user`) are accepted as before and attribute actions to the deployment's shared secret identity. Authorization retains the host's claims and role mappings. Operation bodies require a JSON content type; unsupported media types return HTTP 415 and malformed JSON returns HTTP 422.
+Inbox and scheduled-delivery operations share one actor resolver and require an authenticated principal with a stable audit actor. The primary identity's name is used first, then its `NameIdentifier` or `sub` claim. Under Basic or API key authentication the primary identity is the dashboard identity, named by the credential's username, even when the host also signed a user in. In host mode it is the session's copy of the host user, so the action records the host user's name or `sub`. An unauthenticated request returns HTTP 401 and ends the dashboard session. An authenticated principal with no usable name -- the no-auth mode's `anonymous` identity or a host user with no name, `NameIdentifier`, or `sub` claim -- returns HTTP 403 with error code `g:operator_actor_required` and a body naming the remedy (configure Basic or Host authentication with a name or `sub` claim); the dashboard stays signed in. **Behavior change:** the inbox `host-user` case previously returned 401; it now returns 403, and `WithNoAuth()` deployments can no longer perform any operator action (inbox or scheduled-delivery), read-only monitoring is unaffected. The API-key identity (`api-user`) is accepted and attributes actions to the deployment's shared secret identity. Authorization retains the host's claims and role mappings. Operation bodies require a JSON content type; unsupported media types return HTTP 415 and malformed JSON returns HTTP 422.
 
 The legacy `POST /api/published/requeue` and `POST /api/published/delete` bulk endpoints reject any id that matches the pending-scheduled-delivery predicate: each rejected id is reported in the response's `rejected` array alongside a message pointing at the audited `/api/scheduled/revoke` and `/api/scheduled/dispatch-now` actions, and the remaining ids are processed exactly as before. This fencing runs under the host principal, not the operator actor requirement, so it still functions under `WithNoAuth()` for non-pending rows.
 
@@ -2602,7 +2604,14 @@ Register the dashboard on the `MessagingSetupBuilder` with `UseDashboard(...)`, 
 builder.Services.AddHeadlessMessaging(setup =>
 {
     // ... transport + storage registration ...
-    setup.UseDashboard(dashboard => dashboard.WithHostAuthentication("MessagingOperators"));
+    setup.UseDashboard(dashboard =>
+        dashboard.WithHostAuthentication(host =>
+        {
+            host.ViewPolicy = "MessagingViewers";
+            host.OperatePolicy = "MessagingOperators";
+            host.ChallengeScheme = "oidc"; // omit when the app signs in with a bearer token and uses the session exchange
+        })
+    );
 });
 
 var app = builder.Build();
@@ -2615,10 +2624,11 @@ The host's `UseAuthorization` evaluates the dashboard's rule and never the host'
 
 | Request | Rule |
 | --- | --- |
-| SPA shell, deep links, static assets | `AllowAnonymous`. The shell carries only the base path, auth mode, session timeout, and polling interval |
-| `/api/auth/info`, `/api/auth/validate`, `/api/health` | `AllowAnonymous` |
-| Other `{basePath}/api/*`, `WithHostAuthentication(policy)` | That policy, or the host's default policy when none is named |
-| Other `{basePath}/api/*`, Basic, API key, custom | The dashboard's own credential, checked by its authentication scheme; an empty `401` otherwise |
+| SPA shell, deep links, static assets | `AllowAnonymous`. The shell carries only the base path, auth mode, whether sign-in is available, and polling interval |
+| `/auth/sign-in`, `/api/auth/info`, `/api/auth/session`, `/api/auth/sign-out`, `/api/auth/validate`, `/api/health` | `AllowAnonymous` |
+| Other `{basePath}/api/*`, `WithHostAuthentication(...)` | The dashboard session cookie, for a user who passes `ViewPolicy` (or the host's default policy); `401` without a session, `403` when the policy refuses |
+| Operator writes and `POST /api/ping`, `WithHostAuthentication(...)` | Also `OperatePolicy`, or `ViewPolicy` when it is unset |
+| Other `{basePath}/api/*`, Basic, API key | The dashboard's own credential, checked by its authentication scheme; an empty `401` otherwise |
 | Other `{basePath}/api/*`, `WithNoAuth()` | `AllowAnonymous` |
 | Unmatched `{basePath}/api/*` | `404`, never the shell |
 
@@ -2628,7 +2638,7 @@ Requirements and limits:
 - Host-specific behavior for the dashboard, such as `.RequireHost(...)` or rate limiting, goes on the builder `MapHeadlessMessagingDashboard()` returns.
 - It throws `InvalidOperationException` when `UseDashboard(...)` was not called, or on a second call.
 - It throws `InvalidOperationException` when the base path is the root (`SetBasePath("/")` or an empty path). At the root, the SPA route would answer every unmatched GET in the host with the shell, which hides the host's own 404s. Mount the dashboard under a path such as `/messaging/dashboard`.
-- The gateway proxy forwards a request for another node with its full path, base path included, to the same route on that node.
+- The gateway proxy forwards a request for another node with its full path, base path included, to the same route on that node. It forwards every header except `Cookie`, so relaying works under Basic and API key. In host mode it does not relay: each node serves its own data, the proxy clears the node-selection cookies, and the SPA hides node switching. [dashboards.md](dashboards.md#host-sessions) covers sign-in, the session exchange, and a multi-instance host's shared Data Protection key ring.
 
 ### Configuration
 
@@ -2639,12 +2649,10 @@ Configured through `MessagingDashboardOptionsBuilder` inside `UseDashboard(...)`
 | `WithNoAuth()` | (no default — auth is required) | Explicitly opt out of authentication; development or trusted-network use only. |
 | `WithBasicAuth(username, password)` | — | HTTP Basic authentication. |
 | `WithApiKey(apiKey)` | — | API-key authentication. |
-| `WithHostAuthentication(policy?)` | — | Reuse the host app's auth, with an optional authorization policy. |
-| `WithCustomAuth(validator)` | — | Custom `(token, services) => bool` validation. |
-| `WithSessionTimeout(minutes)` | `60` | Auth session lifetime. |
+| `WithHostAuthentication(configure?)` | host default policy | A dashboard session issued from the host's own sign-in; `configure` sets `ViewPolicy`, `OperatePolicy`, `ChallengeScheme`, `SessionCookieName`, `SessionIdleTimeout` (30 minutes), `SessionLifetime` (8 hours), `RevalidationInterval`, and `Revalidate`. See [dashboards.md](dashboards.md#configuration). |
 | `SetBasePath(path)` | `/messaging/dashboard` | Dashboard URL path. |
 | `SetStatsPollingInterval(ms)` | `2000` | How often the overview polls `/stats` and the real-time metrics; a non-positive value falls back to 2000. Each node caches the storage counts behind `/stats` for 5 seconds and shares them across every open tab, so a shorter interval does not refresh those counts faster. |
-| `SetCorsPolicy(builder)` | none | CORS policy for cross-origin access. |
+| `SetCorsOrigins(origins)` / `SetCorsPolicy(builder)` | none | CORS for a cross-origin SPA; Basic or API key only. |
 
 ### Runtime behavior
 

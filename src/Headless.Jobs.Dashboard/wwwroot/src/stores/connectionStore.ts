@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
 import JobNotificationHub from '../hub/jobNotificationHub'
+import { HubUnauthorizedError } from '../hub/base/baseHub'
 import { useAuthStore } from './authStore'
 import { requiresAuthentication } from '@/utilities/pathResolver'
 
@@ -15,8 +16,13 @@ export const useConnectionStore = defineStore('connection', () => {
   const _healthCheckInterval = ref<ReturnType<typeof setInterval> | null>(null)
   const authStore = useAuthStore()
 
+  // A hub refused with 401 means the session is gone, the same as an API call answering 401.
+  JobNotificationHub.onUnauthorized = () => {
+    void authStore.handleUnauthorized()
+  }
+
   // The hub authenticates the signed-in credential, so a connection opened before sign-in is refused by the server.
-  // It starts once there is a credential and stops when the session ends (sign-out or session timeout).
+  // It starts once there is a session and stops when the session ends (sign-out, or a 401 from the server).
   function _canConnect(): boolean {
     return !requiresAuthentication() || authStore.isLoggedIn
   }
@@ -141,19 +147,22 @@ export const useConnectionStore = defineStore('connection', () => {
         setBackendHealthy(true)
         _startHealthCheck()
         return
-      } catch {
-        // Connection attempt failed
-        if (attempt === maxRetries) {
-          // All connection attempts failed. WebSocket will not be available.
+      } catch (error) {
+        // A refused session cannot connect on a retry, and neither can one that ended while this loop waited.
+        if (attempt === maxRetries || error instanceof HubUnauthorizedError) {
           setConnectionState('Disconnected')
           setBackendHealthy(false)
           _isInitialized.value = false
           return
         }
-        
-        // Retry after a delay
+
         const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000)
         await new Promise(resolve => setTimeout(resolve, delay))
+        if (!_canConnect()) {
+          setConnectionState('Disconnected')
+          setBackendHealthy(false)
+          return
+        }
       }
     }
   }

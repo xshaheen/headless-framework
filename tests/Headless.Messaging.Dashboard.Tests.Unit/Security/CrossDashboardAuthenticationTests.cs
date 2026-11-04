@@ -7,24 +7,28 @@ using System.Text.Encodings.Web;
 using Headless.Jobs;
 using Headless.Messaging.Dashboard;
 using Headless.Testing.Tests;
-using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace Tests.Security;
 
 /// <summary>
-/// One host runs the Jobs and Messaging dashboards with different auth modes. Each dashboard's API and the Jobs
-/// live-update hub must accept that dashboard's own credential and refuse the other's.
+/// One host runs the Jobs and Messaging dashboards, with different auth modes or both under host authentication. Each
+/// dashboard's API and the Jobs live-update hub must accept that dashboard's own credential or session and refuse the
+/// other's.
 /// </summary>
 public sealed class CrossDashboardAuthenticationTests : TestBase
 {
     private const string _JobsApiKey = "jobs-key";
     private const string _MessagingUser = "ops";
     private const string _MessagingPassword = "messaging-pass";
+    private const string _HostPolicy = "Operators";
+    private const string _JobsBase = "/jobs/dashboard";
+    private const string _MessagingBase = "/messaging/dashboard";
+    private const string _JobsApi = "/jobs/dashboard/api/options";
+    private const string _MessagingApi = "/messaging/dashboard/api/stats";
+    private const string _JobsNegotiate = "/jobs/dashboard/job-notification-hub/negotiate?negotiateVersion=1";
 
     private static readonly string _MessagingBasic = $"{_MessagingUser}:{_MessagingPassword}".ToBase64();
 
@@ -95,77 +99,137 @@ public sealed class CrossDashboardAuthenticationTests : TestBase
     }
 
     [Fact]
-    public async Task jobs_hub_accepts_a_custom_credential_verbatim()
+    public async Task jobs_hub_negotiates_under_host_auth_only_with_a_jobs_session()
     {
-        await using var app = await _StartAsync(jobs =>
-            jobs.WithCustomAuth((credential, _) => string.Equals(credential, "Token abc", StringComparison.Ordinal))
-        );
-
-        (await _HubStatusAsync(app, "Token abc")).Should().Be(HubOutcome.Authenticated);
-        (await _HubStatusAsync(app, "Token other")).Should().Be(HubOutcome.Refused);
-    }
-
-    [Fact]
-    public async Task jobs_hub_under_host_auth_signs_in_the_access_token_and_enforces_the_host_policy()
-    {
+        // given - both dashboards under host authentication in one host
         await using var app = await _StartHostAuthAsync();
+        using var client = MessagingDashboardHost.CreateClient(app);
+        var jobsSession = await _SessionAsync(client, _JobsBase, "Bearer operator");
 
-        (await _HubStatusAsync(app, "Token operator")).Should().Be(HubOutcome.Authenticated);
-        (await _HubStatusAsync(app, "Token viewer")).Should().Be(HubOutcome.Refused);
-        (await _HubStatusAsync(app, accessToken: null)).Should().Be(HubOutcome.Refused);
-    }
-
-    [Fact]
-    public async Task jobs_host_auth_copies_access_token_only_onto_hub_requests_without_an_authorization_header()
-    {
-        await using var app = await _StartHostAuthAsync();
-        using var client = app.GetTestClient();
-        const string negotiate = "/jobs/dashboard/job-notification-hub/negotiate?negotiateVersion=1";
-
-        // The SPA negotiates before it opens the WebSocket, so the negotiate endpoint takes the token too.
-        (await _PostAsync(client, $"{negotiate}&access_token=Token%20operator", authorization: null))
+        // then - the session cookie opens the hub; the host's bearer token does not, in a header or the query
+        (await _PostAsync(client, _JobsNegotiate, authorization: null, cookie: jobsSession))
             .Should()
             .Be(HttpStatusCode.OK);
-        // A header the client sent wins over the query token.
-        (await _PostAsync(client, $"{negotiate}&access_token=Token%20operator", "Token viewer"))
+        (await _PostAsync(client, _JobsNegotiate, authorization: null)).Should().Be(HttpStatusCode.Unauthorized);
+        (await _PostAsync(client, _JobsNegotiate, "Bearer operator")).Should().Be(HttpStatusCode.Unauthorized);
+        (
+            await _PostAsync(
+                client,
+                $"{_JobsNegotiate}&access_token={UrlEncoder.Default.Encode("Bearer operator")}",
+                authorization: null
+            )
+        )
+            .Should()
+            .Be(HttpStatusCode.Unauthorized);
+        (await _HubStatusAsync(app, "Bearer operator")).Should().Be(HubOutcome.Refused);
+    }
+
+    [Fact]
+    public async Task each_dashboard_session_opens_only_its_own_dashboard()
+    {
+        // given - both dashboards under host authentication in one host, one session each
+        await using var app = await _StartHostAuthAsync();
+        using var client = MessagingDashboardHost.CreateClient(app);
+        var jobsSession = await _SessionAsync(client, _JobsBase, "Bearer operator");
+        var messagingSession = await _SessionAsync(client, _MessagingBase, "Bearer operator");
+
+        // then - each session opens its own dashboard
+        (await _GetAsync(client, _JobsApi, authorization: null, cookie: jobsSession))
+            .Should()
+            .Be(HttpStatusCode.OK);
+        (await _GetAsync(client, _MessagingApi, authorization: null, cookie: messagingSession))
+            .Should()
+            .Be(HttpStatusCode.OK);
+
+        // and - neither opens the other dashboard's API or the Jobs hub
+        (await _GetAsync(client, _MessagingApi, authorization: null, cookie: jobsSession))
+            .Should()
+            .Be(HttpStatusCode.Unauthorized);
+        (await _GetAsync(client, _JobsApi, authorization: null, cookie: messagingSession))
+            .Should()
+            .Be(HttpStatusCode.Unauthorized);
+        (await _PostAsync(client, _JobsNegotiate, authorization: null, cookie: messagingSession))
+            .Should()
+            .Be(HttpStatusCode.Unauthorized);
+
+        // and - one dashboard's ticket under the other's cookie name is protected for another scheme, so it is refused
+        (await _GetAsync(client, _MessagingApi, authorization: null, cookie: _Rename(jobsSession, messagingSession)))
+            .Should()
+            .Be(HttpStatusCode.Unauthorized);
+        (await _GetAsync(client, _JobsApi, authorization: null, cookie: _Rename(messagingSession, jobsSession)))
+            .Should()
+            .Be(HttpStatusCode.Unauthorized);
+
+        // and - a browser sends both cookies on every request, and each dashboard still reads only its own
+        var both = $"{jobsSession}; {messagingSession}";
+        (await _GetAsync(client, _JobsApi, authorization: null, cookie: both)).Should().Be(HttpStatusCode.OK);
+        (await _GetAsync(client, _MessagingApi, authorization: null, cookie: both)).Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task a_host_user_the_view_policy_refuses_gets_no_session_from_either_dashboard()
+    {
+        await using var app = await _StartHostAuthAsync();
+        using var client = MessagingDashboardHost.CreateClient(app);
+
+        (await MessagingDashboardHost.SignInAsync(client, "Bearer viewer", _JobsBase, AbortToken))
             .Should()
             .Be(HttpStatusCode.Forbidden);
-        // The dashboard API never accepts a query credential.
-        (await _GetAsync(client, "/jobs/dashboard/api/options?access_token=Token%20operator", authorization: null))
+        (await MessagingDashboardHost.SignInAsync(client, "Bearer viewer", _MessagingBase, AbortToken))
             .Should()
-            .Be(HttpStatusCode.Unauthorized);
-        // A token with a control character is not copied into a header.
-        (await _PostAsync(client, $"{negotiate}&access_token=Token%20operator%0d%0aX-Injected:%201", null))
-            .Should()
-            .Be(HttpStatusCode.Unauthorized);
+            .Be(HttpStatusCode.Forbidden);
     }
 
     private static Task<WebApplication> _StartHostAuthAsync()
     {
         return _StartAsync(
-            jobs => jobs.WithHostAuthentication(TokenAuthenticationHandler.Policy),
+            jobs => jobs.WithHostAuthentication(host => host.ViewPolicy = _HostPolicy),
+            dashboard => dashboard.WithHostAuthentication(host => host.ViewPolicy = _HostPolicy),
             configureHost: services =>
             {
-                services
-                    .AddAuthentication(TokenAuthenticationHandler.SchemeName)
-                    .AddScheme<AuthenticationSchemeOptions, TokenAuthenticationHandler>(
-                        TokenAuthenticationHandler.SchemeName,
-                        _ => { }
-                    );
-                services
-                    .AddAuthorizationBuilder()
-                    .AddPolicy(TokenAuthenticationHandler.Policy, policy => policy.RequireRole("operator"));
+                // The token names the host user's role.
+                services.AddTestBearer(token => new ClaimsPrincipal(
+                    new ClaimsIdentity(
+                        [new Claim(ClaimTypes.Name, token), new Claim(ClaimTypes.Role, token)],
+                        MessagingDashboardHost.TestBearerScheme
+                    )
+                ));
+                services.AddAuthorizationBuilder().AddPolicy(_HostPolicy, policy => policy.RequireRole("operator"));
             }
         );
     }
 
+    /// <summary>
+    /// Exchanges <paramref name="authorization"/> for the session of the dashboard at <paramref name="basePath"/> and
+    /// returns its cookie as a request header value, so each request names the sessions it carries.
+    /// </summary>
+    private static async Task<string> _SessionAsync(HttpClient client, string basePath, string authorization)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            new Uri($"{basePath}/api/auth/session", UriKind.Relative)
+        );
+        request.Headers.TryAddWithoutValidation("Authorization", authorization);
+        using var response = await client.SendAsync(request, AbortToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        return response.Headers.GetValues("Set-Cookie").Single().Split(';')[0];
+    }
+
+    /// <summary>The value of the <paramref name="session"/> cookie under the name of <paramref name="other"/>.</summary>
+    private static string _Rename(string session, string other)
+    {
+        return $"{other[..other.IndexOf('=', StringComparison.Ordinal)]}={session[(session.IndexOf('=', StringComparison.Ordinal) + 1)..]}";
+    }
+
     private static Task<WebApplication> _StartAsync(
         Action<DashboardOptionsBuilder> configureJobs,
+        Action<MessagingDashboardOptionsBuilder>? configureMessaging = null,
         Action<IServiceCollection>? configureHost = null
     )
     {
         return MessagingDashboardHost.StartAsync(
-            dashboard => dashboard.WithBasicAuth(_MessagingUser, _MessagingPassword),
+            configureMessaging ?? (dashboard => dashboard.WithBasicAuth(_MessagingUser, _MessagingPassword)),
             configureHost: builder =>
             {
                 configureHost?.Invoke(builder.Services);
@@ -189,29 +253,44 @@ public sealed class CrossDashboardAuthenticationTests : TestBase
         );
     }
 
-    private static async Task<HttpStatusCode> _GetAsync(HttpClient client, string path, string? authorization)
+    private static async Task<HttpStatusCode> _GetAsync(
+        HttpClient client,
+        string path,
+        string? authorization,
+        string? cookie = null
+    )
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(path, UriKind.Relative));
-        _SetAuthorization(request, authorization);
+        _SetHeaders(request, authorization, cookie);
         using var response = await client.SendAsync(request, AbortToken);
 
         return response.StatusCode;
     }
 
-    private static async Task<HttpStatusCode> _PostAsync(HttpClient client, string path, string? authorization)
+    private static async Task<HttpStatusCode> _PostAsync(
+        HttpClient client,
+        string path,
+        string? authorization,
+        string? cookie = null
+    )
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(path, UriKind.Relative));
-        _SetAuthorization(request, authorization);
+        _SetHeaders(request, authorization, cookie);
         using var response = await client.SendAsync(request, AbortToken);
 
         return response.StatusCode;
     }
 
-    private static void _SetAuthorization(HttpRequestMessage request, string? authorization)
+    private static void _SetHeaders(HttpRequestMessage request, string? authorization, string? cookie)
     {
         if (authorization is not null)
         {
             request.Headers.TryAddWithoutValidation("Authorization", authorization);
+        }
+
+        if (cookie is not null)
+        {
+            request.Headers.TryAddWithoutValidation("Cookie", cookie);
         }
     }
 
@@ -312,33 +391,5 @@ public sealed class CrossDashboardAuthenticationTests : TestBase
 
         /// <summary>Authentication or authorization refused the WebSocket upgrade.</summary>
         Refused = 2,
-    }
-
-    /// <summary>A host scheme that signs in <c>Authorization: Token &lt;role&gt;</c> as a user in that role.</summary>
-    private sealed class TokenAuthenticationHandler(
-        IOptionsMonitor<AuthenticationSchemeOptions> options,
-        ILoggerFactory logger,
-        UrlEncoder encoder
-    ) : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
-    {
-        public const string SchemeName = "Token";
-        public const string Policy = "Operators";
-
-        protected override Task<AuthenticateResult> HandleAuthenticateAsync()
-        {
-            var header = Request.Headers.Authorization.ToString();
-            if (!header.StartsWith("Token ", StringComparison.Ordinal))
-            {
-                return Task.FromResult(AuthenticateResult.NoResult());
-            }
-
-            var role = header["Token ".Length..];
-            var identity = new ClaimsIdentity(
-                [new Claim(ClaimTypes.Name, role), new Claim(ClaimTypes.Role, role)],
-                SchemeName
-            );
-
-            return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(new(identity), SchemeName)));
-        }
     }
 }

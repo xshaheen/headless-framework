@@ -117,92 +117,40 @@
         </div>
       </v-form>
 
-      <!-- Host Auth Form -->
       <div v-else-if="authMode === 'host'" class="host-auth-section">
         <div class="host-auth-message">
-          <v-icon size="48" color="info" class="mb-3">mdi-shield-account</v-icon>
-          <h3>Host Authentication</h3>
-          <p>This dashboard uses your application's existing authentication system.</p>
+          <template v-if="isSignedOut">
+            <v-icon size="48" color="info" class="mb-3">mdi-logout-variant</v-icon>
+            <h3>You have signed out</h3>
+            <p>
+              You have signed out of the Messaging dashboard. Your application session is unchanged.
+            </p>
+          </template>
+          <template v-else>
+            <v-icon size="48" color="info" class="mb-3">mdi-shield-account</v-icon>
+            <h3>Sign in with your application</h3>
+            <p>This dashboard uses your application's sign-in.</p>
+          </template>
         </div>
 
-        <v-form ref="form" class="login-form mt-4" @submit.prevent="handleLogin">
-          <v-text-field
-            v-model="authStore.credentials.hostAccessKey"
-            label="Access Key"
-            placeholder="Bearer xyz123 or ApiKey abc456"
-            prepend-inner-icon="mdi-key-variant"
-            :rules="rules.hostAccessKey"
-            variant="outlined"
-            class="mb-6 login-input"
-            :disabled="authStore.isLoading"
-            autofocus
-            @input="authStore.clearError()"
-            @keyup.enter="handleLogin"
-          />
-
-          <v-btn
-            type="submit"
-            color="primary"
-            size="large"
-            block
-            :loading="authStore.isLoading"
-            :disabled="!isFormValid || authStore.isLoading"
-            class="login-btn"
-          >
-            <v-icon start>mdi-shield-key</v-icon>
-            {{ authStore.isLoading ? 'Setting Access Key...' : 'Set Access Key' }}
-          </v-btn>
-
-          <div class="auth-help-text">
-            <v-icon size="small" class="mr-1">mdi-information-outline</v-icon>
-            Enter your full access key (including Bearer/ApiKey prefix) for API calls
-          </div>
-        </v-form>
-      </div>
-
-      <!-- Custom Auth Form -->
-      <v-form
-        v-else-if="authMode === 'custom'"
-        ref="form"
-        class="login-form"
-        @submit.prevent="handleLogin"
-      >
-        <v-text-field
-          v-model="authStore.credentials.customCredential"
-          :type="showPassword ? 'text' : 'password'"
-          label="Credential"
-          placeholder="Enter your credential"
-          prepend-inner-icon="mdi-key-variant"
-          :append-inner-icon="showPassword ? 'mdi-eye' : 'mdi-eye-off'"
-          :rules="rules.customCredential"
-          variant="outlined"
-          class="mb-4"
-          :disabled="authStore.isLoading"
-          autofocus
-          @click:append-inner="showPassword = !showPassword"
-          @input="clearError"
-          @keyup.enter="handleLogin"
-        />
-
         <v-btn
-          type="submit"
+          v-if="signInAvailable"
+          :href="signInHref"
           color="primary"
           size="large"
           block
-          :loading="authStore.isLoading"
-          :disabled="!isFormValid"
           class="login-btn"
           elevation="0"
         >
-          <v-icon start>mdi-shield-key</v-icon>
-          {{ authStore.isLoading ? 'Authenticating...' : 'Authenticate' }}
+          <v-icon start>mdi-login-variant</v-icon>
+          Sign in
         </v-btn>
 
-        <div class="auth-help-text">
+        <div v-else class="auth-help-text">
           <v-icon size="small" class="mr-1">mdi-information-outline</v-icon>
-          Enter the credential your application accepts; it is sent as the Authorization header
+          Open the dashboard from your application to sign in.
         </div>
-      </v-form>
+      </div>
 
       <!-- No Auth Message -->
       <div v-else class="no-auth-message">
@@ -220,7 +168,7 @@ defineOptions({ name: 'LoginView' })
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
-import { consumeHostAccessTokenFromFragment, getAuthMode } from '@/utilities/pathResolver'
+import { getAuthMode } from '@/utilities/pathResolver'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -229,6 +177,18 @@ const form = ref()
 const showPassword = ref(false)
 
 const authMode = computed(() => getAuthMode())
+const signInAvailable = computed(() => window.MessagingConfig?.auth?.signInAvailable === true)
+const isSignedOut = computed(() => router.currentRoute.value.query.signedOut !== undefined)
+
+const isLocalReturnPath = (path: unknown): path is string =>
+  typeof path === 'string' && path.startsWith('/') && !path.startsWith('//')
+
+const redirectPath = computed(() => {
+  const redirect = router.currentRoute.value.query.redirect
+  return isLocalReturnPath(redirect) ? redirect : '/'
+})
+
+const signInHref = computed(() => authStore.signInUrl(redirectPath.value))
 
 const rules = {
   username: [
@@ -240,11 +200,6 @@ const rules = {
     (v: string) => !!v || 'API key is required',
     (v: string) => v.length >= 10 || 'API key must be at least 10 characters',
   ],
-  customCredential: [(v: string) => !!v || 'Credential is required'],
-  hostAccessKey: [
-    (v: string) => !!v || 'Access key is required',
-    (v: string) => v.length >= 10 || 'Access key must be at least 10 characters',
-  ],
 }
 
 const isFormValid = computed(() => {
@@ -255,10 +210,6 @@ const isFormValid = computed(() => {
     )
   } else if (authMode.value === 'apikey') {
     return (authStore.credentials.apiKey?.length || 0) >= 10
-  } else if (authMode.value === 'host') {
-    return (authStore.credentials.hostAccessKey?.length || 0) >= 10
-  } else if (authMode.value === 'custom') {
-    return (authStore.credentials.customCredential?.length || 0) >= 1
   }
   return false
 })
@@ -268,8 +219,7 @@ const handleLogin = async () => {
 
   const success = await authStore.login()
   if (success) {
-    const redirect = router.currentRoute.value.query.redirect as string
-    router.push(redirect || '/')
+    router.push(redirectPath.value)
   }
 }
 
@@ -280,23 +230,14 @@ const clearError = () => {
 }
 
 onMounted(async () => {
-  const token = consumeHostAccessTokenFromFragment(authMode.value)
-
-  if (authStore.isLoggedIn) {
-    router.push('/')
-    return
+  // The router guard skips this page, so a direct load of it has not asked the server for the session yet.
+  if (!authStore.isInitialized) {
+    await authStore.initializeAuth()
   }
 
-  if (!token) {
-    return
-  }
-
-  authStore.credentials.hostAccessKey = token
-  const success = await authStore.login()
-  authStore.credentials.hostAccessKey = ''
-
-  if (success) {
-    router.push('/')
+  // After signing out the page stays put: signing in again is the operator's choice.
+  if (authStore.isLoggedIn && !isSignedOut.value) {
+    router.push(redirectPath.value)
   }
 })
 </script>
@@ -320,7 +261,8 @@ onMounted(async () => {
   left: 0;
   right: 0;
   bottom: 0;
-  background: radial-gradient(circle at 20% 80%, rgba(120, 119, 198, 0.3) 0%, transparent 50%),
+  background:
+    radial-gradient(circle at 20% 80%, rgba(120, 119, 198, 0.3) 0%, transparent 50%),
     radial-gradient(circle at 80% 20%, rgba(255, 119, 198, 0.15) 0%, transparent 50%),
     radial-gradient(circle at 40% 40%, rgba(120, 219, 255, 0.1) 0%, transparent 50%);
   pointer-events: none;

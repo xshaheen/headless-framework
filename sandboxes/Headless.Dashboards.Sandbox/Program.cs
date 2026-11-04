@@ -141,6 +141,11 @@ app.MapPost(
     }
 );
 
+if (sandbox.JobsDashboardAuth == SandboxJobsAuth.Host)
+{
+    SandboxHostAuthentication.MapSignInPage(app, "/jobs/dashboard");
+}
+
 app.MapHeadlessJobsDashboard();
 app.MapHeadlessMessagingDashboard();
 

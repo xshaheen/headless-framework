@@ -1,53 +1,21 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import {
-  consumeHostAccessTokenFromFragment,
   getApiBaseUrl,
   getAuthMode,
   getBasePath,
   getStatsPollingInterval,
+  isHostMode,
   resolveApiUrl,
   resolvePath,
 } from '@/utilities/pathResolver'
 
 const baseConfig = {
   basePath: '/messaging/dashboard',
-  auth: { mode: 'none' as const, enabled: false, sessionTimeout: 0 },
+  auth: { mode: 'none' as const, enabled: false },
 }
 
 afterEach(() => {
   delete window.MessagingConfig
-  window.history.replaceState(null, '', '/')
-})
-
-describe('host access token fragments', () => {
-  it('normalizes and removes an encoded token fragment in Host mode', () => {
-    window.history.replaceState(null, '', '/messaging/dashboard/login?redirect=%2F#access_token=demo.jwt')
-
-    expect(consumeHostAccessTokenFromFragment('host')).toBe('Bearer demo.jwt')
-    expect(window.location.pathname).toBe('/messaging/dashboard/login')
-    expect(window.location.search).toBe('?redirect=%2F')
-    expect(window.location.hash).toBe('')
-  })
-
-  it('does not add a second Bearer prefix', () => {
-    window.history.replaceState(null, '', '/messaging/dashboard/login#access_token=Bearer%20demo.jwt')
-
-    expect(consumeHostAccessTokenFromFragment('host')).toBe('Bearer demo.jwt')
-    expect(window.location.hash).toBe('')
-  })
-
-  it('removes but does not consume a token fragment outside Host mode', () => {
-    window.history.replaceState(null, '', '/messaging/dashboard/login#access_token=demo.jwt')
-
-    expect(consumeHostAccessTokenFromFragment('apikey')).toBeNull()
-    expect(window.location.hash).toBe('')
-  })
-
-  it('ignores query-string tokens', () => {
-    window.history.replaceState(null, '', '/messaging/dashboard/login?access_token=demo.jwt')
-
-    expect(consumeHostAccessTokenFromFragment('host')).toBeNull()
-  })
 })
 
 describe('with basePath only (no backend domain)', () => {
@@ -116,6 +84,18 @@ describe('polling interval', () => {
       expect(getStatsPollingInterval()).toBe(2000)
     },
   )
+})
+
+describe('host mode detection', () => {
+  it.each([
+    ['host', true],
+    ['basic', false],
+    ['apikey', false],
+    ['none', false],
+  ] as const)('reports host mode for %s as %s', (mode, expected) => {
+    window.MessagingConfig = { ...baseConfig, auth: { mode, enabled: mode !== 'none' } }
+    expect(isHostMode()).toBe(expected)
+  })
 })
 
 describe('without configuration', () => {

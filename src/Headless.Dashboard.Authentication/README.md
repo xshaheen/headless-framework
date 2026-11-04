@@ -4,7 +4,7 @@ Shared authentication package for Headless dashboards (Jobs and Messaging).
 
 ## Why use this package
 
-Provides a unified authentication system with 5 modes so both Jobs and Messaging dashboards share the same auth model and login UI without duplicating code.
+Provides one authentication model for the Jobs and Messaging dashboards: host sessions with separate view and operate policies, Basic, API key, or none, so both dashboards share the same sign-in behavior without duplicating code.
 
 ## Install
 

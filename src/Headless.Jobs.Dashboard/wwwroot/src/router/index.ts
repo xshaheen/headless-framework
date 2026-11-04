@@ -33,50 +33,24 @@ const router = createRouter({
 })
 
 // Navigation guard for authentication
-router.beforeEach(async (to, from, next) => {
-  // Always allow access to login page
-  if (to.name === 'Login') {
-    next();
-    return;
-  }
-  
-  // Check if authentication is required globally
-  const authRequired = requiresAuthentication();
-  
+router.beforeEach(async (to) => {
   // If no authentication is required globally, allow all routes
-  if (!authRequired) {
-    next();
-    return;
-  }
-  
-  // Authentication is required - get auth store
-  const authStore = useAuthStore();
-  
-  // Initialize auth if not already done
-  if (!authStore.isInitialized) {
-    try {
-      await authStore.initializeAuth();
-    } catch (error) {
-      console.error('Auth initialization failed:', error);
-      next({ name: 'Login' });
-      return;
-    }
-  }
-  
-  // Covers app start (the first navigation) and every later route change.
-  if (authStore.enforceSessionTimeout()) {
-    next({ name: 'Login', query: { redirect: to.fullPath } });
-    return;
+  if (!requiresAuthentication()) {
+    return true;
   }
 
-  // Check authentication status
-  const isAuthenticated = authStore.isLoggedIn;
-  
-  if (isAuthenticated) {
-    next();
-  } else {
-    next({ name: 'Login', query: { redirect: to.fullPath } });
+  // The first navigation learns the session (in host mode, from the server) before any route renders, so the login
+  // page can also send a signed-in user on.
+  const authStore = useAuthStore();
+  if (!authStore.isInitialized) {
+    await authStore.initializeAuth();
   }
+
+  if (to.name === 'Login' || authStore.isLoggedIn) {
+    return true;
+  }
+
+  return { name: 'Login', query: { redirect: to.fullPath } };
 })
 
 export default router

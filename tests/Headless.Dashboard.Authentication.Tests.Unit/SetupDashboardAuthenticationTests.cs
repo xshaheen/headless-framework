@@ -83,12 +83,7 @@ public sealed class SetupDashboardAuthenticationTests : TestBase
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(
-                new Dictionary<string, string?>(StringComparer.Ordinal)
-                {
-                    ["Mode"] = "ApiKey",
-                    ["ApiKey"] = "secret",
-                    ["SessionTimeoutMinutes"] = "15",
-                }
+                new Dictionary<string, string?>(StringComparer.Ordinal) { ["Mode"] = "ApiKey", ["ApiKey"] = "secret" }
             )
             .Build();
         var services = new ServiceCollection();
@@ -99,7 +94,7 @@ public sealed class SetupDashboardAuthenticationTests : TestBase
         using var provider = services.BuildServiceProvider();
         var config = provider.GetRequiredService<IOptionsMonitor<AuthConfig>>().Get(_Name);
         config.Mode.Should().Be(AuthMode.ApiKey);
-        config.SessionTimeoutMinutes.Should().Be(15);
+        config.ApiKey.Should().Be("secret");
         provider.GetRequiredService<IOptionsMonitor<AuthConfig>>().Get(_OtherName).Mode.Should().Be(AuthMode.None);
     }
 
@@ -152,11 +147,19 @@ public sealed class SetupDashboardAuthenticationTests : TestBase
     }
 
     [Fact]
-    public void add_dashboard_authentication_throws_for_custom_mode_without_validator()
+    public void add_dashboard_authentication_fails_startup_for_a_configured_custom_mode()
     {
-        var act = () => _ResolveConfig(cfg => cfg.Mode = AuthMode.Custom);
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>(StringComparer.Ordinal) { ["Mode"] = "Custom" })
+            .Build();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddDashboardAuthentication(_Name, configuration);
 
-        act.Should().Throw<OptionsValidationException>().WithMessage("*CustomValidator*");
+        using var provider = services.BuildServiceProvider();
+        var act = () => provider.GetRequiredService<IStartupValidator>().Validate();
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*Mode*");
     }
 
     [Theory]
@@ -182,14 +185,69 @@ public sealed class SetupDashboardAuthenticationTests : TestBase
         act.Should().NotThrow();
     }
 
-    [Fact]
-    public void add_dashboard_authentication_passes_for_custom_with_validator()
+    public static TheoryData<string, Action<DashboardHostAuthenticationOptions>> InvalidHostOptions =>
+        new()
+        {
+            {
+                "SessionIdleTimeout",
+                host =>
+                {
+                    host.SessionIdleTimeout = TimeSpan.FromHours(9);
+                    host.SessionLifetime = TimeSpan.FromHours(8);
+                }
+            },
+            { "SessionIdleTimeout", host => host.SessionIdleTimeout = TimeSpan.Zero },
+            { "SessionLifetime", host => host.SessionLifetime = TimeSpan.FromMinutes(-1) },
+            { "RevalidationInterval", host => host.Revalidate = (_, _) => ValueTask.FromResult(true) },
+            { "RevalidationInterval", host => host.RevalidationInterval = TimeSpan.Zero },
+            { "SessionCookieName", host => host.SessionCookieName = "dashboard session" },
+            { "SessionCookieName", host => host.SessionCookieName = "dashboard;path=/" },
+        };
+
+    [Theory]
+#pragma warning disable xUnit1044 // The rows are option mutations; this theory does not need per-row enumeration in Test Explorer.
+    [MemberData(nameof(InvalidHostOptions))]
+#pragma warning restore xUnit1044
+    public void add_dashboard_authentication_rejects_invalid_host_session_options(
+        string property,
+        Action<DashboardHostAuthenticationOptions> configure
+    )
     {
         var act = () =>
             _ResolveConfig(cfg =>
             {
-                cfg.Mode = AuthMode.Custom;
-                cfg.CustomValidator = (_, _) => true;
+                cfg.Mode = AuthMode.Host;
+                configure(cfg.Host);
+            });
+
+        act.Should().Throw<OptionsValidationException>().WithMessage($"*{property}*");
+    }
+
+    [Fact]
+    public void add_dashboard_authentication_accepts_valid_host_session_options()
+    {
+        var act = () =>
+            _ResolveConfig(cfg =>
+            {
+                cfg.Mode = AuthMode.Host;
+                cfg.Host.SessionIdleTimeout = TimeSpan.FromMinutes(10);
+                cfg.Host.SessionLifetime = TimeSpan.FromMinutes(10);
+                cfg.Host.RevalidationInterval = TimeSpan.FromMinutes(5);
+                cfg.Host.Revalidate = (_, _) => ValueTask.FromResult(true);
+                cfg.Host.SessionCookieName = "__Host-ops-dashboard";
+            });
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void add_dashboard_authentication_ignores_host_session_options_outside_host_mode()
+    {
+        var act = () =>
+            _ResolveConfig(cfg =>
+            {
+                cfg.Mode = AuthMode.None;
+                cfg.Host.SessionIdleTimeout = TimeSpan.Zero;
             });
 
         act.Should().NotThrow();

@@ -1,3 +1,5 @@
+import type { JobsAuthMode } from '@/types/jobs-config';
+
 /**
  * Utility functions for resolving paths using the Jobs configuration
  */
@@ -129,38 +131,22 @@ export function requiresAuthentication(): boolean {
   return config?.auth?.enabled || false;
 }
 
-export function getAuthMode(): 'basic' | 'apikey' | 'host' | 'custom' | 'none' {
+export function getAuthMode(): JobsAuthMode {
   const config = window.JobsConfig;
   if (!config?.auth) return 'none';
-  
-  return config.auth.mode as 'basic' | 'apikey' | 'host' | 'custom' | 'none';
+
+  return config.auth.mode;
 }
 
 /**
- * Consume a fragment-delivered access token for Host authentication.
- * The fragment is removed before the token is returned so it does not remain in browser history.
+ * The host-mode sign-in page, which signs the host's signed-in user in to the dashboard and redirects back.
+ * @param returnPath - The router path to come back to, relative to the base path (e.g. '/time-jobs?page=2').
+ *   The server follows only a local URL under the dashboard's base path, so the base path is prepended here.
  */
-export function consumeHostAccessTokenFromFragment(
-  authMode: 'basic' | 'apikey' | 'host' | 'custom' | 'none' = getAuthMode(),
-): string | null {
-  const fragment = new URLSearchParams(window.location.hash.slice(1));
-
-  if (!fragment.has('access_token')) {
-    return null;
-  }
-
-  const token = fragment.get('access_token')?.trim();
-  window.history.replaceState(
-    window.history.state,
-    '',
-    `${window.location.pathname}${window.location.search}`,
-  );
-
-  if (authMode !== 'host' || !token) {
-    return null;
-  }
-
-  return token.startsWith('Bearer ') ? token : `Bearer ${token}`;
+export function getSignInUrl(returnPath: string = '/'): string {
+  const base = getBasePath().replace(/\/+$/, '');
+  const path = returnPath.startsWith('/') ? returnPath : `/${returnPath}`;
+  return `${base}/auth/sign-in?returnUrl=${encodeURIComponent(`${base}${path}`)}`;
 }
 
 /**

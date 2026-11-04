@@ -57,7 +57,7 @@ builder.Services.AddHeadlessMessaging(setup =>
     setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
     setup.UseInMemoryStorage();
     setup.UseInMemory();
-    setup.UseDashboard(d => d.WithHostAuthentication(dashboardPolicy));
+    setup.UseDashboard(d => d.WithHostAuthentication(host => host.ViewPolicy = dashboardPolicy));
 });
 
 builder.Services.AddHostedService<DemoMessagePublisher>();

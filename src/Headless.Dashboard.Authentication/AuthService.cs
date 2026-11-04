@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 namespace Headless.Dashboard.Authentication;
 
 /// <summary>
-/// Authenticates requests using one of five modes: None, Basic, ApiKey, Host, or Custom.
+/// Authenticates requests using one of four modes: None, Basic, ApiKey, or Host.
 /// </summary>
 /// <remarks>
 /// The service does not re-validate <paramref name="config"/>. Credential completeness is enforced
@@ -57,7 +57,6 @@ public sealed class AuthService(AuthConfig config, ILogger<AuthService> logger) 
             {
                 AuthMode.Basic => await _AuthenticateBasicAsync(authHeader),
                 AuthMode.ApiKey => await _AuthenticateApiKeyAsync(authHeader),
-                AuthMode.Custom => await _AuthenticateCustomAsync(authHeader, context.RequestServices),
                 _ => AuthResult.Failure("Invalid authentication mode"),
             };
         }
@@ -71,12 +70,7 @@ public sealed class AuthService(AuthConfig config, ILogger<AuthService> logger) 
     /// <inheritdoc/>
     public AuthInfo GetAuthInfo()
     {
-        return new AuthInfo
-        {
-            Mode = config.Mode,
-            IsEnabled = config.IsEnabled,
-            SessionTimeoutMinutes = config.SessionTimeoutMinutes,
-        };
+        return new AuthInfo { Mode = config.Mode, IsEnabled = config.IsEnabled };
     }
 
     private static string? _GetAuthorizationValue(HttpContext context)
@@ -159,25 +153,6 @@ public sealed class AuthService(AuthConfig config, ILogger<AuthService> logger) 
         catch
         {
             return Task.FromResult(AuthResult.Failure("Invalid bearer token format"));
-        }
-#pragma warning restore ERP022
-    }
-
-    private Task<AuthResult> _AuthenticateCustomAsync(string authHeader, IServiceProvider serviceProvider)
-    {
-        try
-        {
-            if (config.CustomValidator?.Invoke(authHeader, serviceProvider) == true)
-            {
-                return Task.FromResult(AuthResult.Success("custom-user"));
-            }
-
-            return Task.FromResult(AuthResult.Failure("Custom authentication failed"));
-        }
-#pragma warning disable ERP022 // Any failure, including in the custom validator, rejects the request instead of throwing.
-        catch
-        {
-            return Task.FromResult(AuthResult.Failure("Custom authentication error"));
         }
 #pragma warning restore ERP022
     }

@@ -19,6 +19,8 @@ namespace Tests.Endpoints;
 
 public sealed class ReceivedMessageEndpointTests : TestBase
 {
+    private const string _HostToken = "Bearer host-user-token";
+
     private readonly IMonitoringApi _monitoringApi = Substitute.For<IMonitoringApi>();
     private readonly IDataStorage _dataStorage = Substitute.For<IDataStorage>();
 
@@ -50,7 +52,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
 
         await using var app = _CreateTestApp(_dataStorage);
         await app.StartAsync(AbortToken);
-        using var client = app.GetTestClient();
+        using var client = MessagingDashboardHost.CreateClient(app);
 
         // when
         var response = await client.GetAsync($"/api/received/message/{messageId}", AbortToken);
@@ -80,7 +82,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
 
         await using var app = _CreateTestApp(_dataStorage);
         await app.StartAsync(AbortToken);
-        using var client = app.GetTestClient();
+        using var client = MessagingDashboardHost.CreateClient(app);
 
         // when
         var response = await client.GetAsync($"/api/received/message/{messageId}", AbortToken);
@@ -123,7 +125,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
 
         await using var app = _CreateTestApp(_dataStorage);
         await app.StartAsync(AbortToken);
-        using var client = app.GetTestClient();
+        using var client = MessagingDashboardHost.CreateClient(app);
 
         // when
         var response = await client.GetAsync(
@@ -180,7 +182,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
 
         await using var app = _CreateTestApp(_dataStorage);
         await app.StartAsync(AbortToken);
-        using var client = app.GetTestClient();
+        using var client = MessagingDashboardHost.CreateClient(app);
 
         // when — lane omitted from query string
         var response = await client.GetAsync(
@@ -214,7 +216,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
 
         await using var app = _CreateTestApp(_dataStorage);
         await app.StartAsync(AbortToken);
-        using var client = app.GetTestClient();
+        using var client = MessagingDashboardHost.CreateClient(app);
 
         // when
         var response = await client.PostAsJsonAsync("/api/received/reexecute", Array.Empty<long>(), AbortToken);
@@ -231,7 +233,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
 
         await using var app = _CreateTestApp(_dataStorage);
         await app.StartAsync(AbortToken);
-        using var client = app.GetTestClient();
+        using var client = MessagingDashboardHost.CreateClient(app);
 
         // when
         using var stringContent = new StringContent("null", Encoding.UTF8, "application/json");
@@ -327,7 +329,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
             customizeHostJson: customizeHostJson
         );
         await app.StartAsync(AbortToken);
-        using var client = app.GetTestClient();
+        using var client = MessagingDashboardHost.CreateClient(app);
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "secret");
 
         var response = await client.GetAsync("/api/inbox?currentPage=1&perPage=20", AbortToken);
@@ -410,7 +412,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
 
         await using var app = _CreateTestApp(_dataStorage);
         await app.StartAsync(AbortToken);
-        using var client = app.GetTestClient();
+        using var client = MessagingDashboardHost.CreateClient(app);
 
         // when
         var response = await client.PostAsJsonAsync(
@@ -477,7 +479,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
         _dataStorage.GetInboxOperationsApi().Returns(operations);
         await using var app = _CreateTestApp(_dataStorage);
         await app.StartAsync(AbortToken);
-        using var client = app.GetTestClient();
+        using var client = MessagingDashboardHost.CreateClient(app);
 
         var response = await client.PostAsJsonAsync(
             path,
@@ -537,7 +539,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
         _dataStorage.GetInboxOperationsApi().Returns(operations);
         await using var app = _CreateTestApp(_dataStorage);
         await app.StartAsync(AbortToken);
-        using var client = app.GetTestClient();
+        using var client = MessagingDashboardHost.CreateClient(app);
         using var status = JsonDocument.Parse(statusJson);
 
         using var response = await client.PostAsJsonAsync(
@@ -561,7 +563,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
     {
         await using var app = _CreateTestApp(_dataStorage, authenticate: false);
         await app.StartAsync(AbortToken);
-        using var client = app.GetTestClient();
+        using var client = MessagingDashboardHost.CreateClient(app);
         var response = await client.PostAsJsonAsync(
             "/api/received/delete",
             new
@@ -585,7 +587,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
         var operations = _SubstituteInboxQuery();
         await using var app = _CreateTestApp(_dataStorage, authenticate: false, config: credential.Config);
         await app.StartAsync(AbortToken);
-        using var client = app.GetTestClient();
+        using var client = MessagingDashboardHost.CreateClient(app);
         client.DefaultRequestHeaders.Authorization = credential.Header;
 
         var response = await client.GetAsync("/api/inbox", AbortToken);
@@ -616,7 +618,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
             principal: hostUser
         );
         await app.StartAsync(AbortToken);
-        using var client = app.GetTestClient();
+        using var client = MessagingDashboardHost.CreateClient(app);
         client.DefaultRequestHeaders.Authorization = credential.Header;
 
         // when
@@ -639,7 +641,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
         var credential = BuiltInCredential.For(AuthMode.ApiKey);
         await using var app = _CreateTestApp(_dataStorage, authenticate: false, config: credential.Config);
         await app.StartAsync(AbortToken);
-        using var client = app.GetTestClient();
+        using var client = MessagingDashboardHost.CreateClient(app);
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "wrong");
 
         var response = await client.GetAsync("/api/inbox", AbortToken);
@@ -720,11 +722,16 @@ public sealed class ReceivedMessageEndpointTests : TestBase
         _dataStorage.GetInboxOperationsApi().Returns(operations);
         await using var app = _CreateTestApp(
             _dataStorage,
-            config: new MessagingDashboardOptionsBuilder().WithHostAuthentication("InboxOperator"),
+            config: new MessagingDashboardOptionsBuilder().WithHostAuthentication(host =>
+                host.ViewPolicy = "InboxOperator"
+            ),
             principal: principal
         );
         await app.StartAsync(AbortToken);
-        using var client = app.GetTestClient();
+        using var client = MessagingDashboardHost.CreateClient(app);
+        (await MessagingDashboardHost.SignInAsync(client, _HostToken, basePath: "", AbortToken))
+            .Should()
+            .Be(HttpStatusCode.NoContent);
 
         using var query = await client.GetAsync("/api/inbox", AbortToken);
         using var mutation = await client.PostAsJsonAsync(
@@ -779,12 +786,21 @@ public sealed class ReceivedMessageEndpointTests : TestBase
         await using var app = _CreateTestApp(
             _dataStorage,
             config: authenticated
-                ? new MessagingDashboardOptionsBuilder().WithHostAuthentication("InboxOperator")
+                ? new MessagingDashboardOptionsBuilder().WithHostAuthentication(host =>
+                    host.ViewPolicy = "InboxOperator"
+                )
                 : null,
             principal: principal
         );
         await app.StartAsync(AbortToken);
-        using var client = app.GetTestClient();
+        using var client = MessagingDashboardHost.CreateClient(app);
+        if (authenticated)
+        {
+            // The session copies only the authenticated identity: the untrusted subject never reaches the dashboard.
+            (await MessagingDashboardHost.SignInAsync(client, _HostToken, basePath: "", AbortToken))
+                .Should()
+                .Be(HttpStatusCode.NoContent);
+        }
 
         using var query = await client.GetAsync("/api/inbox", AbortToken);
         using var content = new StringContent("{}", Encoding.UTF8, "text/plain");
@@ -826,17 +842,24 @@ public sealed class ReceivedMessageEndpointTests : TestBase
         identity.AddClaim(new Claim(claimType, value));
         await using var app = _CreateTestApp(
             _dataStorage,
-            config: new MessagingDashboardOptionsBuilder().WithHostAuthentication("InboxOperator"),
+            config: new MessagingDashboardOptionsBuilder().WithHostAuthentication(host =>
+                host.ViewPolicy = "InboxOperator"
+            ),
             principal: new ClaimsPrincipal(identity)
         );
         await app.StartAsync(AbortToken);
-        using var client = app.GetTestClient();
+        using var client = MessagingDashboardHost.CreateClient(app);
+
+        // A host user the inbox policy refuses gets no dashboard session, so the API never sees the request as theirs.
+        (await MessagingDashboardHost.SignInAsync(client, _HostToken, basePath: "", AbortToken))
+            .Should()
+            .Be(HttpStatusCode.Forbidden);
 
         using var query = await client.GetAsync("/api/inbox", AbortToken);
         using var mutation = await client.PostAsJsonAsync("/api/inbox/hold", new { }, AbortToken);
 
-        query.StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        mutation.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        query.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        mutation.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         _dataStorage.DidNotReceive().GetInboxOperationsApi();
     }
 
@@ -850,7 +873,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
     {
         await using var app = _CreateTestApp(_dataStorage);
         await app.StartAsync(AbortToken);
-        using var client = app.GetTestClient();
+        using var client = MessagingDashboardHost.CreateClient(app);
         using var content = new StringContent("{}", Encoding.UTF8);
         content.Headers.ContentType = contentType is null ? null : new MediaTypeHeaderValue(contentType);
 
@@ -869,7 +892,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
     {
         await using var app = _CreateTestApp(_dataStorage);
         await app.StartAsync(AbortToken);
-        using var client = app.GetTestClient();
+        using var client = MessagingDashboardHost.CreateClient(app);
         using var content = new StringContent("{", Encoding.UTF8, "application/json");
 
         using var response = await client.PostAsync(path, content, AbortToken);
@@ -931,19 +954,9 @@ public sealed class ReceivedMessageEndpointTests : TestBase
         appBuilder.Services.AddAuthorization();
         if (config.Auth.Mode == AuthMode.Host)
         {
-            appBuilder
-                .Services.AddAuthentication("test")
-                .AddCookie(
-                    "test",
-                    options =>
-                    {
-                        options.Events.OnRedirectToAccessDenied = context =>
-                        {
-                            context.Response.StatusCode = 403;
-                            return Task.CompletedTask;
-                        };
-                    }
-                );
+            appBuilder.Services.AddTestBearer(token =>
+                string.Equals(token, _HostToken["Bearer ".Length..], StringComparison.Ordinal) ? principal : null
+            );
             appBuilder
                 .Services.AddAuthorizationBuilder()
                 .AddPolicy(
@@ -962,7 +975,8 @@ public sealed class ReceivedMessageEndpointTests : TestBase
         var app = appBuilder.Build();
         app.UseRouting();
         app.UseAuthentication();
-        if (principal is not null)
+        // Under host authentication the principal is the host user the session is issued for, never the request's user.
+        if (principal is not null && config.Auth.Mode != AuthMode.Host)
         {
             app.Use(
                 (context, next) =>

@@ -33,11 +33,22 @@ internal sealed class DashboardOptionsExtension(Action<MessagingDashboardOptions
                 config.Mode = auth.Mode;
                 config.BasicCredentials = auth.BasicCredentials;
                 config.ApiKey = auth.ApiKey;
-                config.CustomValidator = auth.CustomValidator;
-                config.SessionTimeoutMinutes = auth.SessionTimeoutMinutes;
-                config.HostAuthorizationPolicy = auth.HostAuthorizationPolicy;
+                config.Host = auth.Host;
             }
         );
+
+        // The host session is a SameSite=Strict cookie, which a browser never sends on a cross-origin request, so a
+        // cross-origin dashboard could not sign in at all; refusing the combination at start says so instead.
+        var corsConfigured = Builder.CorsPolicyBuilder is not null;
+        services
+            .AddOptions<AuthConfig>(MessagingDashboardOptionsBuilder.AuthenticationName)
+            .Validate(
+                config => config.Mode != AuthMode.Host || !corsConfigured,
+                "The Messaging dashboard's host authentication serves the dashboard from the host's own origin and "
+                    + "cannot be combined with SetCorsOrigins or SetCorsPolicy. Remove the CORS configuration, or use "
+                    + "WithBasicAuth or WithApiKey for a dashboard served from another origin."
+            )
+            .ValidateOnStart();
 
         services.AddSingleton<MessagingMetricsEventListener>();
         services.TryAddSingleton<MessagingDashboardCache>();
@@ -101,7 +112,7 @@ public static class MessagingOptionsExtensions
         /// </summary>
         /// <param name="configure">
         /// An action to configure the dashboard options. An authentication mode must be chosen explicitly
-        /// (<c>WithBasicAuth</c>, <c>WithApiKey</c>, <c>WithHostAuthentication</c>, <c>WithCustomAuth</c>, or an
+        /// (<c>WithBasicAuth</c>, <c>WithApiKey</c>, <c>WithHostAuthentication</c>, or an
         /// explicit <c>WithNoAuth()</c> opt-out) or the host fails to start.
         /// </param>
         /// <returns>The builder for chaining.</returns>

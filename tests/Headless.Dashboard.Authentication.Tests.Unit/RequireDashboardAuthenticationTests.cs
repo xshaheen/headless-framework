@@ -77,30 +77,6 @@ public sealed class RequireDashboardAuthenticationTests : TestBase
     }
 
     [Fact]
-    public async Task authenticates_through_the_custom_validator_with_the_raw_credential()
-    {
-        var seen = new ConcurrentQueue<string>();
-        await using var app = await _StartSingleAsync(auth =>
-        {
-            auth.Mode = AuthMode.Custom;
-            auth.CustomValidator = (credential, _) =>
-            {
-                seen.Enqueue(credential);
-                return string.Equals(credential, "Token let-me-in", StringComparison.Ordinal);
-            };
-        });
-        using var client = app.GetTestClient();
-
-        using var accepted = await _SendAsync(client, _Path, "Token let-me-in");
-        using var refused = await _SendAsync(client, _Path, "Token nope");
-
-        accepted.StatusCode.Should().Be(HttpStatusCode.OK);
-        (await accepted.Content.ReadAsStringAsync(AbortToken)).Should().Be("custom-user");
-        refused.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        seen.Should().Equal("Token let-me-in", "Token nope");
-    }
-
-    [Fact]
     public async Task leaves_the_endpoint_anonymous_when_the_mode_is_none()
     {
         await using var app = await _StartSingleAsync(auth => auth.Mode = AuthMode.None);
@@ -113,34 +89,93 @@ public sealed class RequireDashboardAuthenticationTests : TestBase
     }
 
     [Fact]
-    public async Task applies_the_named_host_policy_under_host_mode()
+    public async Task opens_a_host_mode_endpoint_only_to_a_session_whose_user_passes_the_named_host_policy()
     {
         await using var app = await _StartHostModeAsync(TokenHandler.Policy);
-        using var client = app.GetTestClient();
+        using var client = _HttpsClient(app);
 
-        (await _SendAsync(client, _Path, authorization: null)).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        (await _SendAsync(client, _Path, "Token viewer")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        using var operatorResponse = await _SendAsync(client, _Path, "Token operator");
-        operatorResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        (await operatorResponse.Content.ReadAsStringAsync(AbortToken)).Should().Be("operator");
+        // The host's own credential does not open the endpoint; only the session exchanged for it does.
+        (await _SendAsync(client, _Path, "Token operator"))
+            .StatusCode.Should()
+            .Be(HttpStatusCode.Unauthorized);
+        (await _ExchangeAsync(client, "Token viewer")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var session = await _SessionAsync(client, "Token operator");
+
+        using var response = await _SendAsync(client, _Path, authorization: null, cookie: session);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await response.Content.ReadAsStringAsync(AbortToken)).Should().Be("operator");
     }
 
     [Fact]
-    public async Task applies_the_host_default_policy_under_host_mode_without_a_named_policy()
+    public async Task opens_a_host_mode_endpoint_to_a_session_under_the_host_default_policy_without_a_named_policy()
     {
         await using var app = await _StartHostModeAsync(policy: null);
-        using var client = app.GetTestClient();
+        using var client = _HttpsClient(app);
+        var session = await _SessionAsync(client, "Token viewer");
 
         (await _SendAsync(client, _Path, authorization: null)).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        (await _SendAsync(client, _Path, "Token viewer")).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await _SendAsync(client, _Path, authorization: null, cookie: session))
+            .StatusCode.Should()
+            .Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task refuses_the_host_user_on_a_host_mode_endpoint_whose_auth_endpoints_are_not_mapped()
+    {
+        // Without the auth endpoints no session can be issued, and the host's own sign-in never stands in for one.
+        await using var app = await _StartHostModeAsync(TokenHandler.Policy, mapAuthEndpoints: false);
+        using var client = _HttpsClient(app);
+
+        (await _SendAsync(client, _Path, "Token operator")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await _ExchangeAsync(client, "Token operator")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task refuses_to_map_the_auth_endpoints_of_an_unregistered_name()
+    {
+        var act = () =>
+            _StartAsync(
+                services => services.AddDashboardAuthentication("registered", _ApiKey("secret")),
+                endpoints => endpoints.MapGroup("/typo").MapDashboardAuthEndpoints("typo")
+            );
+
+        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*'typo'*AddDashboardAuthentication*");
+    }
+
+    [Fact]
+    public async Task adds_nothing_to_an_operator_action_outside_a_session_backed_host_mode()
+    {
+        // Basic and API key share one credential for viewing and operating, so the dashboard credential is enough.
+        await using var app = await _StartAsync(
+            services => services.AddDashboardAuthentication(_Name, _Basic("admin", "pass")),
+            endpoints =>
+                endpoints
+                    .MapPost(_Path, _UserName)
+                    .RequireDashboardAuthentication(_Name)
+                    .RequireDashboardOperation(_Name)
+        );
+        using var client = app.GetTestClient();
+
+        using var response = await _SendAsync(client, _Path, "Basic " + "admin:pass".ToBase64(), HttpMethod.Post);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await response.Content.ReadAsStringAsync(AbortToken)).Should().Be("admin");
     }
 
     [Fact]
     public async Task neither_challenges_nor_logs_a_host_endpoint_when_the_dashboard_scheme_is_the_only_scheme()
     {
-        // The only registered scheme becomes the host's default, so the host's UseAuthentication runs it on every
-        // request, including requests that never reach the dashboard.
-        await using var app = await _StartSingleAsync(_Basic("admin", "pass"));
+        // A host may make the dashboard scheme its default, so the host's UseAuthentication runs it on every request,
+        // including requests that never reach the dashboard.
+        await using var app = await _StartAsync(
+            services =>
+            {
+                services.AddAuthentication(_Name);
+                services.AddDashboardAuthentication(_Name, _Basic("admin", "pass"));
+            },
+            endpoints => endpoints.MapGet(_Path, _UserName).RequireDashboardAuthentication(_Name)
+        );
         using var client = app.GetTestClient();
 
         using var probe = await _SendAsync(client, _HostProbePath, "Basic " + "admin:wrong".ToBase64());
@@ -330,7 +365,7 @@ public sealed class RequireDashboardAuthenticationTests : TestBase
         );
     }
 
-    private Task<WebApplication> _StartHostModeAsync(string? policy)
+    private Task<WebApplication> _StartHostModeAsync(string? policy, bool mapAuthEndpoints = true)
     {
         return _StartAsync(
             services =>
@@ -346,12 +381,49 @@ public sealed class RequireDashboardAuthenticationTests : TestBase
                     auth =>
                     {
                         auth.Mode = AuthMode.Host;
-                        auth.HostAuthorizationPolicy = policy;
+                        auth.Host.ViewPolicy = policy;
                     }
                 );
             },
-            endpoints => endpoints.MapGet(_Path, _UserName).RequireDashboardAuthentication(_Name)
+            endpoints =>
+            {
+                if (mapAuthEndpoints)
+                {
+                    endpoints.MapGroup("/dashboard-a").MapDashboardAuthEndpoints(_Name);
+                }
+
+                endpoints.MapGet(_Path, _UserName).RequireDashboardAuthentication(_Name);
+            }
         );
+    }
+
+    private static HttpClient _HttpsClient(WebApplication app)
+    {
+        var client = app.GetTestClient();
+        // The session cookie is Secure, so the cookie handler issues and reads it only on an https request.
+        client.BaseAddress = new Uri("https://localhost");
+        return client;
+    }
+
+    private async Task<HttpResponseMessage> _ExchangeAsync(HttpClient client, string hostCredential)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            new Uri("/dashboard-a/api/auth/session", UriKind.Relative)
+        );
+        request.Headers.TryAddWithoutValidation("Authorization", hostCredential);
+        request.Headers.TryAddWithoutValidation("X-Requested-With", "XMLHttpRequest");
+
+        return await client.SendAsync(request, AbortToken);
+    }
+
+    /// <summary>Exchanges <paramref name="hostCredential"/> for a session and returns its cookie as a request header value.</summary>
+    private async Task<string> _SessionAsync(HttpClient client, string hostCredential)
+    {
+        using var response = await _ExchangeAsync(client, hostCredential);
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        return response.Headers.GetValues("Set-Cookie").Single().Split(';')[0];
     }
 
     private async Task<WebApplication> _StartAsync(
@@ -436,13 +508,19 @@ public sealed class RequireDashboardAuthenticationTests : TestBase
         HttpClient client,
         string path,
         string? authorization,
-        HttpMethod? method = null
+        HttpMethod? method = null,
+        string? cookie = null
     )
     {
         using var request = new HttpRequestMessage(method ?? HttpMethod.Get, new Uri(path, UriKind.Relative));
         if (authorization is not null)
         {
             request.Headers.TryAddWithoutValidation("Authorization", authorization);
+        }
+
+        if (cookie is not null)
+        {
+            request.Headers.TryAddWithoutValidation("Cookie", cookie);
         }
 
         return await client.SendAsync(request, AbortToken);

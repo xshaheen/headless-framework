@@ -42,6 +42,9 @@ const authMode = computed(() => {
   return 'none'
 })
 
+// Host mode signs in on the login page through the host application, so the header has no form for it.
+const hasCredentialForm = computed(() => authMode.value === 'basic' || authMode.value === 'apikey')
+
 const shouldShowLoginForm = computed(() => {
   if (requiresAuth.value && !isAuthenticated.value) {
     return true
@@ -83,13 +86,13 @@ const handleLogin = async () => {
 
 const handleLogout = async () => {
   try {
-    authStore.logout()
-    showInfo('Logged out successfully')
+    await authStore.logout()
+    showInfo('Signed out')
     emit('logout')
   } catch (error) {
-    console.error('Logout error:', error)
-    showError('Logout failed')
-    emit('logout')
+    // The server did not end the session, so the operator is still signed in and stays on this page.
+    console.error('Sign-out failed:', error)
+    showError('Sign-out failed. You are still signed in; please try again.')
   }
 }
 
@@ -110,7 +113,7 @@ watch(isAuthenticated, (newValue) => {
 
 <template>
   <div class="auth-header">
-    <div v-if="!isAuthenticated && showLoginForm" class="auth-section">
+    <div v-if="!isAuthenticated && showLoginForm && hasCredentialForm" class="auth-section">
       <div v-if="!shouldShowLoginForm" class="login-prompt">
         <v-btn
           color="primary"
@@ -193,7 +196,13 @@ watch(isAuthenticated, (newValue) => {
         </div>
 
         <div v-if="errorMessage" class="error-message">
-          <v-alert type="error" variant="tonal" density="compact" class="error-alert" @click="clearError">
+          <v-alert
+            type="error"
+            variant="tonal"
+            density="compact"
+            class="error-alert"
+            @click="clearError"
+          >
             {{ errorMessage }}
           </v-alert>
         </div>
@@ -214,7 +223,7 @@ watch(isAuthenticated, (newValue) => {
           @click="handleLogout"
         >
           <v-icon start>mdi-logout</v-icon>
-          Logout
+          Sign out
         </v-btn>
       </div>
     </div>

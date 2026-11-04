@@ -1,15 +1,15 @@
+export type JobsAuthMode = 'none' | 'basic' | 'apikey' | 'host';
+
 declare global {
   interface Window {
     JobsConfig?: {
       basePath: string;
       backendDomain?: string;
       auth: {
-        mode: 'none' | 'basic' | 'apikey' | 'host' | 'custom';
+        mode: JobsAuthMode;
         enabled: boolean;
-        sessionTimeout: number;
+        signInAvailable: boolean;
       };
     };
   }
 }
-
-export {};

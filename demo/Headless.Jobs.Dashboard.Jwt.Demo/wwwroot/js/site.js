@@ -22,7 +22,24 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
     }
 
     const token = await res.json();
-    window.open(`/jobs/dashboard/login#access_token=${encodeURIComponent(token)}`, '_blank');
+    // Exchange the app's bearer token for the dashboard's own session cookie, then open the dashboard.
+    // The token never goes into a URL or browser storage; the cookie is HttpOnly and lasts until the
+    // dashboard session's idle timeout or absolute lifetime ends.
+    const session = await fetch('/jobs/dashboard/api/auth/session', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+    });
+
+    if (session.status !== 204) {
+      error.textContent = session.status === 403 ? 'Not allowed to view the dashboard' : 'Dashboard sign-in failed';
+      error.style.display = 'block';
+      return;
+    }
+
+    window.location.assign('/jobs/dashboard/');
   } catch {
     error.textContent = 'Request failed';
     error.style.display = 'block';

@@ -1,51 +1,68 @@
 /**
- * Clean, simple authentication service for Messaging Dashboard
+ * Authentication for the Messaging Dashboard.
+ *
+ * Basic and API key modes keep the credential in localStorage and send it as the Authorization header. Host mode keeps
+ * nothing in the browser: the server's HttpOnly session cookie rides every same-origin request, and the session state
+ * comes from api/auth/info.
  */
 
+import { getBaseUrl } from '@/utilities/pathResolver'
+
+export type AuthMode = 'none' | 'basic' | 'apikey' | 'host'
+
 export interface AuthConfig {
-  mode: 'none' | 'basic' | 'apikey' | 'host' | 'custom'
+  mode: AuthMode
   enabled: boolean
-  sessionTimeout: number
+  signInAvailable: boolean
 }
 
 export interface AuthStatus {
   authenticated: boolean
   username?: string
   message?: string
+  canOperate: boolean
 }
 
 export interface LoginCredentials {
   username?: string
   password?: string
   apiKey?: string
-  hostAccessKey?: string
-  customCredential?: string
 }
 
-export const SESSION_EXPIRED_MESSAGE = 'Session expired. Please log in again.'
+/** The header the server requires on every state-changing request, so a cross-site form cannot make one. */
+export const REQUESTED_WITH_HEADER = { 'X-Requested-With': 'XMLHttpRequest' } as const
 
-/** Dispatched on window when an API request finds the stored sign-in older than the configured session timeout. */
-export const SESSION_EXPIRED_EVENT = 'auth:session-expired'
+const BASIC_KEY = 'messaging_basic_auth'
+const API_KEY_KEY = 'messaging_api_key'
+const CREDENTIAL_KEYS = [BASIC_KEY, API_KEY_KEY] as const
 
-const CREDENTIAL_KEYS = [
-  'messaging_basic_auth',
-  'messaging_api_key',
-  'messaging_host_access_key',
-  'messaging_custom_auth',
-] as const
+function getAuthBaseUrl(): string {
+  return getBaseUrl().replace(/\/+$/, '')
+}
 
-const SIGNED_IN_AT_KEY = 'messaging_signed_in_at'
+interface AuthInfo {
+  authenticated: boolean
+  name: string | null
+  canOperate: boolean
+}
+
+function parseAuthInfo(value: unknown): AuthInfo | null {
+  if (typeof value !== 'object' || value === null) return null
+  const info = value as Record<string, unknown>
+  if (typeof info.authenticated !== 'boolean' || typeof info.canOperate !== 'boolean') return null
+  return {
+    authenticated: info.authenticated,
+    name: typeof info.name === 'string' ? info.name : null,
+    canOperate: info.canOperate,
+  }
+}
 
 class AuthService {
   private config: AuthConfig | null = null
-  private status: AuthStatus = { authenticated: false }
+  private status: AuthStatus = { authenticated: false, canOperate: false }
 
-  /**
-   * Initialize authentication service
-   */
   async initialize(): Promise<void> {
     try {
-      // Get auth configuration from window (injected by backend)
       const windowConfig = window.MessagingConfig?.auth
 
       if (!windowConfig) {
@@ -53,33 +70,42 @@ class AuthService {
       }
 
       this.config = {
-        mode: windowConfig.mode as AuthConfig['mode'],
+        mode: windowConfig.mode,
         enabled: windowConfig.enabled,
-        sessionTimeout: windowConfig.sessionTimeout,
+        signInAvailable: windowConfig.signInAvailable === true,
       }
 
-      // If no auth required, set as authenticated
       if (!this.config.enabled) {
-        this.status = { authenticated: true, username: 'anonymous' }
+        this.status = { authenticated: true, username: 'anonymous', canOperate: true }
         return
       }
 
-      // Check if we have stored credentials without validating
+      if (this.config.mode === 'host') {
+        this.status = await this.fetchHostSession()
+        return
+      }
+
+      // Basic and API key share one credential for viewing and operating, so a signed-in user may operate.
       if (this.hasStoredCredentials()) {
-        const username = this.getStoredUsername()
-        this.status = { authenticated: true, username: username || 'user' }
+        this.status = {
+          authenticated: true,
+          username: this.getStoredUsername() || 'user',
+          canOperate: true,
+        }
       } else {
-        this.status = { authenticated: false, message: 'Please log in' }
+        this.status = { authenticated: false, message: 'Please log in', canOperate: false }
       }
     } catch (error) {
       console.error('Auth initialization failed:', error)
-      this.status = { authenticated: false, message: 'Authentication service unavailable' }
+      this.status = {
+        authenticated: false,
+        message: 'Authentication service unavailable',
+        canOperate: false,
+      }
     }
   }
 
-  /**
-   * Login with credentials
-   */
+  /** Signs in with a Basic or API key credential. Host mode signs in through {@link getSignInUrl} instead. */
   async login(credentials: LoginCredentials): Promise<boolean> {
     try {
       if (!this.config) {
@@ -94,127 +120,91 @@ class AuthService {
         return true
       }
 
-      // Store credentials based on auth mode
-      this.storeCredentials(credentials)
+      if (this.config.mode === 'host') {
+        return false
+      }
 
-      // Validate with backend
+      this.storeCredentials(credentials)
       const result = await this.validateCredentials()
+      this.status = result
 
       if (result.authenticated) {
-        this.status = result
         return true
       }
 
-      // Clear invalid credentials
       this.clearCredentials()
-      this.status = result
       return false
     } catch (error) {
       console.error('Login failed:', error)
-      this.status = { authenticated: false, message: 'Login failed' }
+      this.status = { authenticated: false, message: 'Login failed', canOperate: false }
       return false
     }
   }
 
   /**
-   * Logout
+   * Ends the dashboard session. In host mode the server deletes the dashboard cookie; the host application's own
+   * session stays, and nothing signs in again until the operator chooses Sign in. Throws when the server did not end
+   * the session, which then stays signed in here too.
    */
-  logout(): void {
+  async signOut(): Promise<void> {
+    if (this.config?.mode === 'host') {
+      const response = await fetch(`${getAuthBaseUrl()}/api/auth/sign-out`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { ...REQUESTED_WITH_HEADER },
+      })
+      if (!response.ok) {
+        throw new Error(`Sign-out failed with status ${response.status}`)
+      }
+    }
+
+    this.clearSession()
+  }
+
+  /** Forgets the local session without calling the server, for a request the server already answered with 401. */
+  clearSession(): void {
     this.clearCredentials()
-    this.status = { authenticated: false }
+    this.status = { authenticated: false, canOperate: false }
   }
 
   /**
-   * Clears the stored credentials when the sign-in is older than the configured session timeout, so the next request
-   * or navigation has to sign in again. Returns true when it expired the session.
+   * The host-mode sign-in URL. It is a top-level navigation: the server signs the host user in, or challenges the
+   * host's scheme, then redirects back to the return path, which must be a local path under the dashboard base.
    */
-  expireSessionIfStale(now: number = Date.now()): boolean {
-    if (!this.isSessionExpired(now)) {
-      return false
-    }
-
-    this.clearCredentials()
-    this.status = { authenticated: false, message: SESSION_EXPIRED_MESSAGE }
-    return true
+  getSignInUrl(returnPath: string = '/'): string {
+    const base = getAuthBaseUrl()
+    const path = returnPath.startsWith('/') ? returnPath : `/${returnPath}`
+    return `${base}/auth/sign-in?returnUrl=${encodeURIComponent(`${base}${path}`)}`
   }
 
-  /**
-   * Reads the configuration the server injected rather than the initialized copy, because a request can run before
-   * initialize() does. Mode none and a non-positive timeout never expire.
-   */
-  private isSessionExpired(now: number): boolean {
-    const auth = window.MessagingConfig?.auth
-    if (!auth?.enabled || auth.mode === 'none') {
-      return false
-    }
-
-    const timeoutMinutes = auth.sessionTimeout
-    if (!Number.isFinite(timeoutMinutes) || timeoutMinutes <= 0) {
-      return false
-    }
-
-    if (!this.hasStoredCredentials()) {
-      return false
-    }
-
-    // Credentials without a sign-in time have no provable age, so they are treated as expired.
-    const signedInAt = Number(localStorage.getItem(SIGNED_IN_AT_KEY))
-    if (!Number.isFinite(signedInAt) || signedInAt <= 0) {
-      return true
-    }
-
-    return now - signedInAt >= timeoutMinutes * 60_000
-  }
-
-  /**
-   * Get current authentication status
-   */
   getStatus(): AuthStatus {
     return { ...this.status }
   }
 
-  /**
-   * Get authentication configuration
-   */
   getConfig(): AuthConfig | null {
     return this.config ? { ...this.config } : null
   }
 
-  /**
-   * Check if user is authenticated
-   */
   isAuthenticated(): boolean {
     return this.status.authenticated
   }
 
-  /**
-   * Get authorization header for API calls
-   */
+  /** The Authorization header for Basic and API key modes; none in host mode, where the cookie authenticates. */
   getAuthHeader(): string | null {
-    if (!this.config?.enabled) {
+    const auth = window.MessagingConfig?.auth
+    if (!auth?.enabled) {
       return null
     }
 
-    switch (this.config.mode) {
+    switch (auth.mode) {
       case 'basic': {
-        const basicAuth = localStorage.getItem('messaging_basic_auth')
+        const basicAuth = localStorage.getItem(BASIC_KEY)
         return basicAuth ? `Basic ${basicAuth}` : null
       }
 
       case 'apikey': {
-        const apiKey = localStorage.getItem('messaging_api_key')
+        const apiKey = localStorage.getItem(API_KEY_KEY)
         return apiKey ? `Bearer ${apiKey}` : null
-      }
-
-      case 'host': {
-        const hostAccessKey = localStorage.getItem('messaging_host_access_key')
-        return hostAccessKey || null
-      }
-
-      // The server's custom validator receives the raw Authorization value, so the credential goes out verbatim.
-      case 'custom': {
-        const customCredential = localStorage.getItem('messaging_custom_auth')
-        return customCredential || null
       }
 
       default:
@@ -222,22 +212,38 @@ class AuthService {
     }
   }
 
+  private async fetchHostSession(): Promise<AuthStatus> {
+    const response = await fetch(`${getAuthBaseUrl()}/api/auth/info`, {
+      method: 'GET',
+      credentials: 'same-origin',
+      headers: { ...REQUESTED_WITH_HEADER },
+    })
+
+    const info = response.ok ? parseAuthInfo(await response.json()) : null
+    if (!info) {
+      return {
+        authenticated: false,
+        message: 'Authentication service unavailable',
+        canOperate: false,
+      }
+    }
+
+    return info.authenticated
+      ? { authenticated: true, username: info.name ?? undefined, canOperate: info.canOperate }
+      : { authenticated: false, canOperate: false }
+  }
+
   private async validateCredentials(): Promise<AuthStatus> {
     try {
       const authHeader = this.getAuthHeader()
-
-      // Get the correct base URL with base path
-      const config = window.MessagingConfig
-      const baseUrl = config?.backendDomain || config?.basePath || '/messaging/dashboard'
-      const url = `${baseUrl}/api/auth/validate`
-
-      // Add timeout to prevent hanging
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), 5000)
 
-      const response = await fetch(url, {
+      const response = await fetch(`${getAuthBaseUrl()}/api/auth/validate`, {
         method: 'POST',
-        headers: authHeader ? { Authorization: authHeader } : {},
+        headers: authHeader
+          ? { ...REQUESTED_WITH_HEADER, Authorization: authHeader }
+          : { ...REQUESTED_WITH_HEADER },
         signal: controller.signal,
       })
 
@@ -246,22 +252,24 @@ class AuthService {
       if (response.ok) {
         const result = await response.json()
         return {
-          authenticated: result.authenticated,
+          authenticated: result.authenticated === true,
           username: result.username,
           message: result.message,
+          canOperate: result.authenticated === true,
         }
       }
 
-      return { authenticated: false, message: `Server error: ${response.status}` }
+      return {
+        authenticated: false,
+        message: `Server error: ${response.status}`,
+        canOperate: false,
+      }
     } catch (error) {
       console.error('Credential validation failed:', error)
-      return { authenticated: false, message: 'Validation failed' }
+      return { authenticated: false, message: 'Validation failed', canOperate: false }
     }
   }
 
-  /**
-   * Validate stored credentials (public method)
-   */
   async validateStoredCredentials(): Promise<void> {
     const result = await this.validateCredentials()
     this.status = result
@@ -276,11 +284,10 @@ class AuthService {
   }
 
   private getStoredUsername(): string | null {
-    const basicAuth = localStorage.getItem('messaging_basic_auth')
+    const basicAuth = localStorage.getItem(BASIC_KEY)
     if (basicAuth) {
       try {
-        const decoded = atob(basicAuth)
-        return decoded.split(':')[0]
+        return atob(basicAuth).split(':')[0] ?? null
       } catch {
         return null
       }
@@ -294,32 +301,15 @@ class AuthService {
     switch (this.config?.mode) {
       case 'basic':
         if (credentials.username && credentials.password) {
-          const encoded = btoa(`${credentials.username}:${credentials.password}`)
-          localStorage.setItem('messaging_basic_auth', encoded)
+          localStorage.setItem(BASIC_KEY, btoa(`${credentials.username}:${credentials.password}`))
         }
         break
 
       case 'apikey':
         if (credentials.apiKey) {
-          localStorage.setItem('messaging_api_key', credentials.apiKey)
+          localStorage.setItem(API_KEY_KEY, credentials.apiKey)
         }
         break
-
-      case 'host':
-        if (credentials.hostAccessKey) {
-          localStorage.setItem('messaging_host_access_key', credentials.hostAccessKey)
-        }
-        break
-
-      case 'custom':
-        if (credentials.customCredential) {
-          localStorage.setItem('messaging_custom_auth', credentials.customCredential)
-        }
-        break
-    }
-
-    if (this.hasStoredCredentials()) {
-      localStorage.setItem(SIGNED_IN_AT_KEY, Date.now().toString())
     }
   }
 
@@ -327,9 +317,7 @@ class AuthService {
     for (const key of CREDENTIAL_KEYS) {
       localStorage.removeItem(key)
     }
-    localStorage.removeItem(SIGNED_IN_AT_KEY)
   }
 }
 
-// Export singleton instance
 export const authService = new AuthService()

@@ -88,23 +88,25 @@
                 </v-chip>
               </td>
               <td class="text-no-wrap">
-                <v-btn
-                  icon="mdi-cancel"
-                  size="x-small"
-                  variant="text"
-                  color="error"
-                  title="Revoke"
-                  @click="confirmAction('revoke', row)"
-                />
-                <v-btn
-                  icon="mdi-clock-fast"
-                  size="x-small"
-                  variant="text"
-                  color="primary"
-                  title="Dispatch now"
-                  :disabled="!canDispatchNow(row)"
-                  @click="confirmAction('dispatch-now', row)"
-                />
+                <template v-if="authStore.canOperate">
+                  <v-btn
+                    icon="mdi-cancel"
+                    size="x-small"
+                    variant="text"
+                    color="error"
+                    title="Revoke"
+                    @click="confirmAction('revoke', row)"
+                  />
+                  <v-btn
+                    icon="mdi-clock-fast"
+                    size="x-small"
+                    variant="text"
+                    color="primary"
+                    title="Dispatch now"
+                    :disabled="!canDispatchNow(row)"
+                    @click="confirmAction('dispatch-now', row)"
+                  />
+                </template>
               </td>
             </tr>
           </tbody>
@@ -150,6 +152,7 @@ import {
   type OperatorActorRequiredProblem,
 } from '@/services/scheduled'
 import { useAlertStore } from '@/stores/alertStore'
+import { useAuthStore } from '@/stores/authStore'
 import { usePagination } from '@/composables/usePagination'
 import { useDialog } from '@/composables/useDialog'
 import { ConfirmDialogProps } from '@/components/common/ConfirmDialog.vue'
@@ -159,6 +162,7 @@ import PaginationFooter from '@/components/common/PaginationFooter.vue'
 import type { MessageLane } from '@/components/MessageDetailDialog.vue'
 
 const alertStore = useAlertStore()
+const authStore = useAuthStore()
 
 const laneOptions: readonly MessageLane[] = ['Bus', 'Queue']
 const laneFilter = ref<MessageLane | null>(null)
@@ -263,7 +267,9 @@ function confirmAction(action: ScheduledDeliveryAction, row: ScheduledDeliveryVi
       if (error instanceof HttpError) {
         if (error.status === 403) {
           const problem = error.body as OperatorActorRequiredProblem | null
-          alertStore.showError(problem?.remedy ?? 'Operator actions require an authenticated actor.')
+          alertStore.showError(
+            problem?.remedy ?? 'Operator actions require an authenticated actor.',
+          )
           return
         }
 

@@ -122,35 +122,37 @@
                 </td>
                 <td>{{ generation.isOrphaned ? 'Orphaned' : 'Routable' }}</td>
                 <td class="text-no-wrap">
-                  <v-btn
-                    icon="mdi-replay"
-                    size="x-small"
-                    variant="text"
-                    color="warning"
-                    title="Force reprocess"
-                    :disabled="!isTerminalInboxGeneration(generation.status)"
-                    @click="confirmInboxOperation('reexecute', generation)"
-                  />
-                  <v-btn
-                    :icon="generation.isHeld ? 'mdi-lock-open-variant' : 'mdi-lock'"
-                    size="x-small"
-                    variant="text"
-                    color="info"
-                    :title="generation.isHeld ? 'Release hold' : 'Hold generation'"
-                    :disabled="!isTerminalInboxGeneration(generation.status)"
-                    @click="
-                      confirmInboxOperation(generation.isHeld ? 'release' : 'hold', generation)
-                    "
-                  />
-                  <v-btn
-                    icon="mdi-delete"
-                    size="x-small"
-                    variant="text"
-                    color="error"
-                    title="Purge generation"
-                    :disabled="!isTerminalInboxGeneration(generation.status)"
-                    @click="confirmInboxOperation('delete', generation)"
-                  />
+                  <template v-if="authStore.canOperate">
+                    <v-btn
+                      icon="mdi-replay"
+                      size="x-small"
+                      variant="text"
+                      color="warning"
+                      title="Force reprocess"
+                      :disabled="!isTerminalInboxGeneration(generation.status)"
+                      @click="confirmInboxOperation('reexecute', generation)"
+                    />
+                    <v-btn
+                      :icon="generation.isHeld ? 'mdi-lock-open-variant' : 'mdi-lock'"
+                      size="x-small"
+                      variant="text"
+                      color="info"
+                      :title="generation.isHeld ? 'Release hold' : 'Hold generation'"
+                      :disabled="!isTerminalInboxGeneration(generation.status)"
+                      @click="
+                        confirmInboxOperation(generation.isHeld ? 'release' : 'hold', generation)
+                      "
+                    />
+                    <v-btn
+                      icon="mdi-delete"
+                      size="x-small"
+                      variant="text"
+                      color="error"
+                      title="Purge generation"
+                      :disabled="!isTerminalInboxGeneration(generation.status)"
+                      @click="confirmInboxOperation('delete', generation)"
+                    />
+                  </template>
                 </td>
               </tr>
             </tbody>
@@ -250,6 +252,7 @@ import {
   type InboxGeneration,
 } from '@/services/inbox'
 import { useAlertStore } from '@/stores/alertStore'
+import { useAuthStore } from '@/stores/authStore'
 import { useMessagingStore } from '@/stores/messagingStore'
 import { usePagination } from '@/composables/usePagination'
 import { useDialog } from '@/composables/useDialog'
@@ -324,6 +327,7 @@ const inboxActions = {
 type InboxAction = keyof typeof inboxActions
 
 const alertStore = useAlertStore()
+const authStore = useAuthStore()
 const messagingStore = useMessagingStore()
 const { stats } = storeToRefs(messagingStore)
 

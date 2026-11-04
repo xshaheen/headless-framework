@@ -21,7 +21,8 @@ public class JobsNotificationHub(
         var connectionId = Context.ConnectionId;
         logger.ConnectionAttempt(connectionId);
 
-        // Authenticate the connection using new auth service
+        // Authorization already refused a request without the dashboard's credential or session; this records who
+        // connected. Under host authentication the authorization middleware has set the session's user on the request.
         var authResult = await authService.AuthenticateAsync(Context.GetHttpContext()!).ConfigureAwait(false);
 
         if (!authResult.IsAuthenticated)

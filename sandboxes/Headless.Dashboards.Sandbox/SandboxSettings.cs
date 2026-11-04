@@ -24,12 +24,10 @@ public enum SandboxJobsAuth
     /// <summary>API key auth: the key is <see cref="SandboxSettings.JobsDashboardSecret"/>.</summary>
     ApiKey = 2,
 
-    /// <summary>Custom auth: the validator accepts <see cref="SandboxSettings.JobsDashboardSecret"/> as the credential.</summary>
-    Custom = 3,
-
     /// <summary>
-    /// Host auth through a fake sandbox scheme: <c>Bearer &lt;secret&gt;</c> signs in an operator the dashboard policy
-    /// admits, and <c>Bearer viewer-&lt;secret&gt;</c> a viewer it refuses.
+    /// Host auth through a fake sandbox scheme: <c>Bearer &lt;secret&gt;</c> signs in an operator who may view and
+    /// operate, and <c>Bearer viewer-&lt;secret&gt;</c> a viewer who may only view. The <c>/sandbox/sign-in</c> page
+    /// exchanges either token for a dashboard session.
     /// </summary>
     Host = 4,
 }
@@ -57,7 +55,7 @@ public sealed class SandboxSettings
 
     /// <summary>
     /// Jobs dashboard auth mode. The default is <see cref="SandboxJobsAuth.None"/>; the other modes make the sign-in,
-    /// session-timeout, and live-update journeys walkable under that mode.
+    /// session, and live-update journeys walkable under that mode.
     /// </summary>
     public SandboxJobsAuth JobsDashboardAuth { get; set; } = SandboxJobsAuth.None;
 
@@ -65,11 +63,8 @@ public sealed class SandboxSettings
     public string JobsDashboardUser { get; set; } = "sandbox";
 
     /// <summary>
-    /// The Jobs dashboard password, API key, or custom credential, by <see cref="JobsDashboardAuth"/>. When empty, it
+    /// The Jobs dashboard password or API key, by <see cref="JobsDashboardAuth"/>. When empty, it
     /// falls back to <see cref="MessagingDashboardPassword"/>, so the one generated secret signs in to both.
     /// </summary>
     public string? JobsDashboardSecret { get; set; }
-
-    /// <summary>Jobs dashboard session timeout in minutes; when unset, the dashboard default applies.</summary>
-    public int? JobsDashboardSessionTimeoutMinutes { get; set; }
 }

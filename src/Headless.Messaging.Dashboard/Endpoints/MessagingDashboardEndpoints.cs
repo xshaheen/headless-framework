@@ -52,15 +52,12 @@ public static partial class MessagingDashboardEndpoints
         // The dashboard SPA is the only client of these endpoints, so every one is excluded from API descriptions.
         var applyCors = config.CorsPolicyBuilder is not null;
 
-        // Auth endpoints (always anonymous)
+        // The shared auth endpoints: info, the host session exchange, sign-out, and the sign-in redirect. They are mapped
+        // through a group so a Basic or API key dashboard served cross-origin keeps CORS on auth/info.
         endpoints
-            .MapGet("/api/auth/info", _GetAuthInfo)
-            .WithName("Messaging_GetAuthInfo")
-            .WithSummary("Get authentication configuration")
-            .WithTags("Messaging Dashboard")
-            .AllowAnonymous()
-            .ExcludeFromDescription()
-            .RequireDashboardCors(CorsPolicyName, applyCors);
+            .MapGroup(string.Empty)
+            .RequireDashboardCors(CorsPolicyName, applyCors)
+            .MapDashboardAuthEndpoints(MessagingDashboardOptionsBuilder.AuthenticationName);
 
         endpoints
             .MapPost("/api/auth/validate", _ValidateAuth)
@@ -89,6 +86,8 @@ public static partial class MessagingDashboardEndpoints
             .ExcludeFromDescription()
             .RequireDashboardAuthentication(MessagingDashboardOptionsBuilder.AuthenticationName);
         apiGroup.RequireDashboardCors(CorsPolicyName, applyCors);
+        // Ahead of the gateway filter, so a write without the header is refused here and never forwarded to a node.
+        apiGroup.RequireDashboardRequestIntegrity();
         apiGroup.AddEndpointFilter<GatewayProxyEndpointFilter>();
 
         // Metrics & stats
@@ -120,12 +119,14 @@ public static partial class MessagingDashboardEndpoints
             .MapPost("/published/requeue", _PublishedRequeue)
             .WithName("Messaging_PublishedRequeue")
             .WithSummary("Requeue published messages for redelivery")
-            .WithDescription("Accepts a JSON array of message IDs (Guid[]) in the request body.");
+            .WithDescription("Accepts a JSON array of message IDs (Guid[]) in the request body.")
+            .RequireDashboardOperation(MessagingDashboardOptionsBuilder.AuthenticationName);
         apiGroup
             .MapPost("/published/delete", _PublishedDelete)
             .WithName("Messaging_PublishedDelete")
             .WithSummary("Delete published messages")
-            .WithDescription("Accepts a JSON array of message IDs (Guid[]) in the request body.");
+            .WithDescription("Accepts a JSON array of message IDs (Guid[]) in the request body.")
+            .RequireDashboardOperation(MessagingDashboardOptionsBuilder.AuthenticationName);
         apiGroup
             .MapGet("/published/{status}", _PublishedList)
             .WithName("Messaging_PublishedList")
@@ -140,11 +141,13 @@ public static partial class MessagingDashboardEndpoints
         apiGroup
             .MapPost("/received/reexecute", _ReceivedRequeue)
             .WithName("Messaging_ReceivedRequeue")
-            .WithSummary("Create an audited child inbox generation");
+            .WithSummary("Create an audited child inbox generation")
+            .RequireDashboardOperation(MessagingDashboardOptionsBuilder.AuthenticationName);
         apiGroup
             .MapPost("/received/delete", _ReceivedDelete)
             .WithName("Messaging_ReceivedDelete")
-            .WithSummary("Purge an audited terminal inbox generation");
+            .WithSummary("Purge an audited terminal inbox generation")
+            .RequireDashboardOperation(MessagingDashboardOptionsBuilder.AuthenticationName);
         apiGroup
             .MapGet("/inbox", _InboxList)
             .WithName("Messaging_InboxList")
@@ -152,11 +155,13 @@ public static partial class MessagingDashboardEndpoints
         apiGroup
             .MapPost("/inbox/hold", _InboxHold)
             .WithName("Messaging_InboxHold")
-            .WithSummary("Hold a terminal inbox generation");
+            .WithSummary("Hold a terminal inbox generation")
+            .RequireDashboardOperation(MessagingDashboardOptionsBuilder.AuthenticationName);
         apiGroup
             .MapPost("/inbox/release", _InboxRelease)
             .WithName("Messaging_InboxRelease")
-            .WithSummary("Release an inbox retention hold");
+            .WithSummary("Release an inbox retention hold")
+            .RequireDashboardOperation(MessagingDashboardOptionsBuilder.AuthenticationName);
 
         // Scheduled deliveries
         apiGroup
@@ -166,11 +171,13 @@ public static partial class MessagingDashboardEndpoints
         apiGroup
             .MapPost("/scheduled/revoke", _ScheduledRevoke)
             .WithName("Messaging_ScheduledRevoke")
-            .WithSummary("Revoke a pending scheduled message");
+            .WithSummary("Revoke a pending scheduled message")
+            .RequireDashboardOperation(MessagingDashboardOptionsBuilder.AuthenticationName);
         apiGroup
             .MapPost("/scheduled/dispatch-now", _ScheduledDispatchNow)
             .WithName("Messaging_ScheduledDispatchNow")
-            .WithSummary("Dispatch a pending scheduled message immediately");
+            .WithSummary("Dispatch a pending scheduled message immediately")
+            .RequireDashboardOperation(MessagingDashboardOptionsBuilder.AuthenticationName);
 
         apiGroup
             .MapGet("/received/{status}", _ReceivedList)
@@ -195,27 +202,14 @@ public static partial class MessagingDashboardEndpoints
             .WithName("Messaging_ListServices")
             .WithSummary("List services in a namespace");
         apiGroup
-            .MapGet("/ping", _PingServices)
+            .MapPost("/ping", _PingServices)
             .WithName("Messaging_PingServices")
-            .WithSummary("Ping a registered node to measure latency");
+            .WithSummary("Ping a registered node to measure latency")
+            // A POST, so the request-integrity check covers the outbound call it makes on the operator's behalf.
+            .RequireDashboardOperation(MessagingDashboardOptionsBuilder.AuthenticationName);
     }
 
     #region Endpoint Handlers
-
-    private static IResult _GetAuthInfo(
-        [FromKeyedServices(MessagingDashboardOptionsBuilder.AuthenticationName)] IAuthService authService
-    )
-    {
-        var authInfo = authService.GetAuthInfo();
-        return Results.Json(
-            new
-            {
-                mode = authInfo.Mode.ToString().ToLower(CultureInfo.InvariantCulture),
-                enabled = authInfo.IsEnabled,
-                sessionTimeout = authInfo.SessionTimeoutMinutes,
-            }
-        );
-    }
 
     private static async Task<IResult> _ValidateAuth(
         HttpContext context,

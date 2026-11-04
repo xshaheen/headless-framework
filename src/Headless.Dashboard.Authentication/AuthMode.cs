@@ -27,9 +27,4 @@ public enum AuthMode
     /// Uses authentication from the host application.
     /// </summary>
     Host = 3,
-
-    /// <summary>
-    /// Uses a custom authentication delegate.
-    /// </summary>
-    Custom = 4,
 }

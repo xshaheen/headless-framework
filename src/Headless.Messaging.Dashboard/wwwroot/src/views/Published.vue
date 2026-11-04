@@ -70,7 +70,7 @@
       </div>
 
       <!-- Batch Actions -->
-      <div v-if="selectedIds.length > 0" class="batch-actions mb-3">
+      <div v-if="authStore.canOperate && selectedIds.length > 0" class="batch-actions mb-3">
         <v-chip size="small" color="primary" variant="tonal" class="mr-2">
           {{ selectedIds.length }} selected
         </v-chip>
@@ -102,7 +102,7 @@
         <v-table density="comfortable" class="messages-table">
           <thead>
             <tr>
-              <th style="width: 40px">
+              <th v-if="authStore.canOperate" style="width: 40px">
                 <v-checkbox
                   v-model="selectAll"
                   hide-details
@@ -126,7 +126,7 @@
               <td colspan="10" class="text-center pa-6 text-medium-emphasis">No messages found</td>
             </tr>
             <tr v-for="msg in messages" :key="msg.storageId">
-              <td>
+              <td v-if="authStore.canOperate">
                 <v-checkbox
                   :model-value="selectedIds.includes(msg.storageId)"
                   hide-details
@@ -196,6 +196,7 @@ import { ref, computed, watch, onUnmounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { httpService } from '@/services/http'
 import { useAlertStore } from '@/stores/alertStore'
+import { useAuthStore } from '@/stores/authStore'
 import { useMessagingStore } from '@/stores/messagingStore'
 import { usePagination } from '@/composables/usePagination'
 import { useDialog } from '@/composables/useDialog'
@@ -224,6 +225,7 @@ interface Message {
 }
 
 const alertStore = useAlertStore()
+const authStore = useAuthStore()
 const messagingStore = useMessagingStore()
 const { stats } = storeToRefs(messagingStore)
 

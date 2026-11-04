@@ -6,6 +6,7 @@ using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.AspNetCore.Http.Metadata;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
@@ -16,39 +17,102 @@ namespace Tests.Dashboard;
 public sealed class DashboardEndpointMetadataTests : TestBase
 {
     private const string _BasePath = "/jobs/dashboard";
+    private const string _ViewPolicy = DashboardOptionsBuilder.AuthenticationName + ".View";
+    private const string _OperatePolicy = DashboardOptionsBuilder.AuthenticationName + ".Operate";
+
+    private static readonly string[] _AuthRoutes =
+    [
+        _BasePath + "/api/auth/info",
+        _BasePath + "/api/auth/session",
+        _BasePath + "/api/auth/sign-out",
+    ];
 
     [Fact]
-    public async Task should_apply_the_configured_host_policy_to_dashboard_api_and_hub_endpoints()
+    public async Task should_require_the_view_policy_on_reads_and_the_hub_and_the_operate_policy_on_writes_under_host_auth()
     {
-        await using var app = _CreateApp(new DashboardOptionsBuilder().WithHostAuthentication("DashboardAdmin"));
+        await using var app = _CreateApp(
+            new DashboardOptionsBuilder().WithHostAuthentication(host => host.ViewPolicy = "DashboardAdmin")
+        );
+        var api = _ApiEndpoints(app);
 
-        _GetEndpoint(app, "GetAuthInfo").Metadata.GetMetadata<IAllowAnonymous>().Should().NotBeNull();
-        _GetEndpoint(app, "ValidateAuth").Metadata.GetMetadata<IAllowAnonymous>().Should().NotBeNull();
-        _GetEndpoint(app, "GetTimeJobsPaginated")
-            .Metadata.GetOrderedMetadata<IAuthorizeData>()
-            .Should()
-            .ContainSingle(data => data.Policy == "DashboardAdmin");
-        _GetHubEndpoint(app).Metadata.GetMetadata<IAllowAnonymous>().Should().BeNull();
-        _GetHubEndpoint(app)
-            .Metadata.GetOrderedMetadata<IAuthorizeData>()
-            .Should()
-            .ContainSingle(data => data.Policy == "DashboardAdmin");
+        api.Should().NotBeEmpty();
+        foreach (var endpoint in api)
+        {
+            var policies = endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>().Select(data => data.Policy).ToArray();
+            var methods = endpoint.Metadata.GetMetadata<IHttpMethodMetadata>()!.HttpMethods;
+
+            // The session's policies replace the host policy itself on every endpoint.
+            policies.Should().NotContain("DashboardAdmin");
+            if (methods.SequenceEqual(["GET"]))
+            {
+                policies.Should().Equal([_ViewPolicy], because: $"{endpoint.DisplayName} is a read");
+            }
+            else
+            {
+                policies
+                    .Should()
+                    .BeEquivalentTo([_ViewPolicy, _OperatePolicy], because: $"{endpoint.DisplayName} is a write");
+            }
+        }
+
+        foreach (var hub in _HubEndpoints(app))
+        {
+            hub.Metadata.GetMetadata<IAllowAnonymous>().Should().BeNull();
+            hub.Metadata.GetOrderedMetadata<IAuthorizeData>().Select(data => data.Policy).Should().Equal(_ViewPolicy);
+        }
     }
 
     [Theory]
     [InlineData(AuthMode.Basic)]
     [InlineData(AuthMode.ApiKey)]
-    [InlineData(AuthMode.Custom)]
+    public async Task should_attach_no_session_policy_under_a_dashboard_credential(AuthMode mode)
+    {
+        var config =
+            mode == AuthMode.Basic
+                ? new DashboardOptionsBuilder().WithBasicAuth("ops", "secret")
+                : new DashboardOptionsBuilder().WithApiKey("secret");
+        await using var app = _CreateApp(config);
+
+        foreach (var endpoint in _ApiEndpoints(app).Concat(_HubEndpoints(app)))
+        {
+            endpoint
+                .Metadata.GetOrderedMetadata<IAuthorizeData>()
+                .Select(data => data.Policy)
+                .Should()
+                .NotContain([_ViewPolicy, _OperatePolicy]);
+        }
+    }
+
+    [Theory]
+    [InlineData(AuthMode.Host)]
+    [InlineData(AuthMode.Basic)]
+    public async Task should_close_hub_connections_when_their_authentication_expires(AuthMode mode)
+    {
+        await using var app = _CreateApp(
+            mode == AuthMode.Host
+                ? new DashboardOptionsBuilder().WithHostAuthentication()
+                : new DashboardOptionsBuilder().WithBasicAuth("ops", "secret")
+        );
+
+        // SignalR shares one options instance between the connection and negotiate endpoints and publishes it on the
+        // negotiate endpoint.
+        _GetRoute(app, _BasePath + "/job-notification-hub/negotiate")
+            .Metadata.GetMetadata<HttpConnectionDispatcherOptions>()!
+            .CloseOnAuthenticationExpiration.Should()
+            .BeTrue();
+    }
+
+    [Theory]
+    [InlineData(AuthMode.Basic)]
+    [InlineData(AuthMode.ApiKey)]
     public async Task should_apply_the_dashboard_policy_to_the_api_and_hub_under_a_dashboard_credential(AuthMode mode)
     {
         // The hub carries the API's rule, so the host's UseAuthorization refuses a client before SignalR adds it to
         // Clients.All, where it would hear a broadcast before the hub's OnConnectedAsync ran.
-        var config = mode switch
-        {
-            AuthMode.Basic => new DashboardOptionsBuilder().WithBasicAuth("ops", "secret"),
-            AuthMode.ApiKey => new DashboardOptionsBuilder().WithApiKey("secret"),
-            _ => new DashboardOptionsBuilder().WithCustomAuth((_, _) => true),
-        };
+        var config =
+            mode == AuthMode.Basic
+                ? new DashboardOptionsBuilder().WithBasicAuth("ops", "secret")
+                : new DashboardOptionsBuilder().WithApiKey("secret");
         await using var app = _CreateApp(config);
 
         foreach (var endpoint in new[] { _GetEndpoint(app, "GetOptions"), _GetHubEndpoint(app) })
@@ -71,27 +135,24 @@ public sealed class DashboardEndpointMetadataTests : TestBase
     }
 
     [Theory]
-    [InlineData("Jobs_Spa")]
-    [InlineData("GetAuthInfo")]
-    [InlineData("ValidateAuth")]
-    public async Task should_keep_the_shell_and_auth_endpoints_anonymous_under_a_dashboard_credential(
-        string endpointName
-    )
+    [InlineData(AuthMode.Basic)]
+    [InlineData(AuthMode.Host)]
+    public async Task should_keep_the_shell_and_auth_endpoints_anonymous(AuthMode mode)
     {
-        await using var app = _CreateApp(new DashboardOptionsBuilder().WithBasicAuth("ops", "secret"));
+        await using var app = _CreateApp(
+            mode == AuthMode.Host
+                ? new DashboardOptionsBuilder().WithHostAuthentication()
+                : new DashboardOptionsBuilder().WithBasicAuth("ops", "secret")
+        );
 
-        _GetEndpoint(app, endpointName).Metadata.GetMetadata<IAllowAnonymous>().Should().NotBeNull();
-    }
-
-    [Fact]
-    public async Task should_use_default_authorization_when_host_auth_has_no_named_policy()
-    {
-        await using var app = _CreateApp(new DashboardOptionsBuilder().WithHostAuthentication());
-
-        var authorization = _GetEndpoint(app, "GetOptions").Metadata.GetOrderedMetadata<IAuthorizeData>();
-
-        authorization.Should().ContainSingle();
-        authorization[0].Policy.Should().BeNull();
+        _GetEndpoint(app, "Jobs_Spa").Metadata.GetMetadata<IAllowAnonymous>().Should().NotBeNull();
+        _GetEndpoint(app, "ValidateAuth").Metadata.GetMetadata<IAllowAnonymous>().Should().NotBeNull();
+        foreach (var route in _AuthRoutes)
+        {
+            var endpoint = _GetRoute(app, route);
+            endpoint.Metadata.GetMetadata<IAllowAnonymous>().Should().NotBeNull(route);
+            endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>().Should().BeEmpty(route);
+        }
     }
 
     [Theory]
@@ -116,11 +177,8 @@ public sealed class DashboardEndpointMetadataTests : TestBase
     public async Task should_expose_unique_endpoint_names_for_every_dashboard_route()
     {
         await using var app = _CreateApp(new DashboardOptionsBuilder().WithNoAuth());
-        var names = _Endpoints(app)
-            .OfType<RouteEndpoint>()
-            .Where(endpoint =>
-                endpoint.RoutePattern.RawText?.StartsWith(_BasePath + "/api", StringComparison.Ordinal) is true
-            )
+        // The shared sign-in endpoints are unnamed, so two dashboards in one host never collide on a name.
+        var names = _ApiEndpoints(app)
             .Select(endpoint => endpoint.Metadata.GetMetadata<IEndpointNameMetadata>()?.EndpointName)
             .ToArray();
 
@@ -146,8 +204,7 @@ public sealed class DashboardEndpointMetadataTests : TestBase
             )
             .ToArray();
 
-        api.Should()
-            .Contain(endpoint => endpoint.Metadata.GetMetadata<IEndpointNameMetadata>()!.EndpointName == "GetAuthInfo");
+        api.Select(endpoint => endpoint.RoutePattern.RawText).Should().Contain(_AuthRoutes);
         api.Should()
             .OnlyContain(endpoint =>
                 endpoint.Metadata.GetMetadata<IExcludeFromDescriptionMetadata>() != null
@@ -374,8 +431,7 @@ public sealed class DashboardEndpointMetadataTests : TestBase
                 auth.Mode = config.Auth.Mode;
                 auth.BasicCredentials = config.Auth.BasicCredentials;
                 auth.ApiKey = config.Auth.ApiKey;
-                auth.CustomValidator = config.Auth.CustomValidator;
-                auth.HostAuthorizationPolicy = config.Auth.HostAuthorizationPolicy;
+                auth.Host = config.Auth.Host;
             }
         );
         builder.Services.AddSingleton(new JobsExecutionContext());
@@ -410,17 +466,45 @@ public sealed class DashboardEndpointMetadataTests : TestBase
             );
     }
 
-    private static Endpoint _GetHubEndpoint(WebApplication app)
+    private static Endpoint _GetHubEndpoint(WebApplication app) => _GetRoute(app, _BasePath + "/job-notification-hub");
+
+    // The hub maps two endpoints: the connection itself and its negotiate request.
+    private static IReadOnlyList<Endpoint> _HubEndpoints(WebApplication app)
+    {
+        var hubs = _Endpoints(app)
+            .OfType<RouteEndpoint>()
+            .Where(endpoint =>
+                endpoint.RoutePattern.RawText?.StartsWith(_BasePath + "/job-notification-hub", StringComparison.Ordinal)
+                    is true
+            )
+            .ToArray();
+
+        hubs.Should().HaveCount(2);
+        return hubs;
+    }
+
+    private static Endpoint _GetRoute(WebApplication app, string route)
     {
         return _Endpoints(app)
-            .Single(endpoint =>
-                endpoint is RouteEndpoint routeEndpoint
-                && string.Equals(
-                    routeEndpoint.RoutePattern.RawText,
-                    _BasePath + "/job-notification-hub",
+            .OfType<RouteEndpoint>()
+            .Single(endpoint => string.Equals(endpoint.RoutePattern.RawText, route, StringComparison.Ordinal));
+    }
+
+    // The Jobs API proper: every /api endpoint except the shared sign-in endpoints.
+    private static IReadOnlyList<RouteEndpoint> _ApiEndpoints(WebApplication app)
+    {
+        return _Endpoints(app)
+            .OfType<RouteEndpoint>()
+            .Where(endpoint =>
+                endpoint.RoutePattern.RawText?.StartsWith(_BasePath + "/api", StringComparison.Ordinal) is true
+                && !_AuthRoutes.Contains(endpoint.RoutePattern.RawText, StringComparer.Ordinal)
+                && !string.Equals(
+                    endpoint.Metadata.GetMetadata<IEndpointNameMetadata>()?.EndpointName,
+                    "ValidateAuth",
                     StringComparison.Ordinal
                 )
-            );
+            )
+            .ToArray();
     }
 
     private static IReadOnlyList<Endpoint> _Endpoints(WebApplication app)

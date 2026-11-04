@@ -23,9 +23,8 @@ public static class SetupJobsDashboard
     /// <remarks>
     /// Mount the dashboard on the host's endpoints with <see cref="MapHeadlessJobsDashboard"/>; a host that registers it
     /// without mapping it fails to start. To secure the dashboard,
-    /// use <see cref="DashboardOptionsBuilder.WithBasicAuth"/>, <see cref="DashboardOptionsBuilder.WithApiKey"/>,
-    /// <see cref="DashboardOptionsBuilder.WithHostAuthentication"/>, or
-    /// <see cref="DashboardOptionsBuilder.WithCustomAuth"/>. When coordination-based node membership
+    /// use <see cref="DashboardOptionsBuilder.WithBasicAuth"/>, <see cref="DashboardOptionsBuilder.WithApiKey"/>, or
+    /// <see cref="DashboardOptionsBuilder.WithHostAuthentication"/>. When coordination-based node membership
     /// is registered, a live-nodes bridge is started automatically; otherwise the dashboard stays
     /// inert on the live-nodes panel.
     /// </remarks>
@@ -33,7 +32,7 @@ public static class SetupJobsDashboard
     /// <param name="configureDashboard">
     /// Callback to configure the dashboard. Authentication must be configured explicitly — via
     /// <see cref="DashboardOptionsBuilder.WithBasicAuth"/>, <see cref="DashboardOptionsBuilder.WithApiKey"/>,
-    /// <see cref="DashboardOptionsBuilder.WithHostAuthentication"/>, <see cref="DashboardOptionsBuilder.WithCustomAuth"/>,
+    /// <see cref="DashboardOptionsBuilder.WithHostAuthentication"/>,
     /// or explicitly opted out with <see cref="DashboardOptionsBuilder.WithNoAuth"/> — otherwise the host fails
     /// to start. The dashboard is served at <c>/jobs/dashboard</c> with no CORS policy (same-origin only) by default.
     /// </param>
@@ -70,7 +69,7 @@ public static class SetupJobsDashboard
             // Register authentication (named AuthConfig + keyed IAuthService) through the shared
             // Headless.Dashboard.Authentication extension under this dashboard's own name, so another dashboard in
             // the host keeps its own mode. The builder has already materialized the AuthConfig from WithBasicAuth /
-            // WithApiKey / WithHostAuthentication / WithCustomAuth, so mirror its fields into the options instance.
+            // WithApiKey / WithHostAuthentication, so mirror its fields into the options instance.
             services.AddDashboardAuthentication(
                 DashboardOptionsBuilder.AuthenticationName,
                 auth =>
@@ -78,9 +77,7 @@ public static class SetupJobsDashboard
                     auth.Mode = dashboardConfig.Auth.Mode;
                     auth.BasicCredentials = dashboardConfig.Auth.BasicCredentials;
                     auth.ApiKey = dashboardConfig.Auth.ApiKey;
-                    auth.CustomValidator = dashboardConfig.Auth.CustomValidator;
-                    auth.SessionTimeoutMinutes = dashboardConfig.Auth.SessionTimeoutMinutes;
-                    auth.HostAuthorizationPolicy = dashboardConfig.Auth.HostAuthorizationPolicy;
+                    auth.Host = dashboardConfig.Auth.Host;
                 }
             );
 
@@ -98,14 +95,6 @@ public static class SetupJobsDashboard
 
             dashboardConfig.MapEndpoints = group => group.MapDashboard<TTimeJob, TCronJob>(dashboardConfig);
             services.AddTransient<IStartupFilter>(_ => new JobsDashboardStartupFilter(dashboardConfig));
-
-            // A browser cannot put a header on a WebSocket, so under host auth the hub's credential arrives as
-            // access_token. It must become the Authorization header before the host's own authentication runs, so
-            // this filter prepends to the whole pipeline.
-            if (dashboardConfig.Auth.Mode == AuthMode.Host)
-            {
-                services.AddTransient<IStartupFilter>(_ => new HubAccessTokenStartupFilter(dashboardConfig.BasePath));
-            }
         };
 
         return jobsConfiguration;
@@ -119,12 +108,17 @@ public static class SetupJobsDashboard
     /// <remarks>
     /// <para>
     /// The host's <c>UseAuthorization</c> evaluates the dashboard's access rule, never the host's fallback policy. The
-    /// SPA shell, its static assets, and the <c>/api/auth/info</c> and <c>/api/auth/validate</c> endpoints are
-    /// anonymous, so a browser loads the shell without a credential. Every other <c>{basePath}/api</c> endpoint and the
-    /// hub require the policy <see cref="DashboardOptionsBuilder.WithHostAuthentication"/> names, or the host's
-    /// default policy when none is named. Under Basic, API key, or custom authentication they require the dashboard's
-    /// own credential, checked by the dashboard's authentication scheme; <see cref="DashboardOptionsBuilder.WithNoAuth"/>
-    /// leaves them open.
+    /// SPA shell, its static assets, and the <c>/auth/sign-in</c>, <c>/api/auth/info</c>, <c>/api/auth/session</c>,
+    /// <c>/api/auth/sign-out</c>, and <c>/api/auth/validate</c> endpoints are anonymous, so a browser loads the shell
+    /// and signs in without a credential. Under <see cref="DashboardOptionsBuilder.WithHostAuthentication"/> every other
+    /// <c>{basePath}/api</c> endpoint and the hub require the dashboard's session cookie, issued to a host user who
+    /// passes the view policy; the API's state-changing endpoints also require the operate policy. Under Basic or API
+    /// key authentication they require the dashboard's own credential, checked by the dashboard's authentication
+    /// scheme; <see cref="DashboardOptionsBuilder.WithNoAuth"/> leaves them open.
+    /// </para>
+    /// <para>
+    /// Under host authentication the hub also refuses a request whose <c>Origin</c> header names another origin, and
+    /// closes an open connection when the session it connected with expires.
     /// </para>
     /// <para>
     /// The host's pipeline must run <c>UseAuthorization</c> between routing and endpoints (a <c>WebApplication</c>
@@ -173,66 +167,6 @@ public static class SetupJobsDashboard
         mapEndpoints(group);
 
         return group;
-    }
-}
-
-/// <summary>
-/// Under host authentication, copies the Jobs hub's <c>access_token</c> query parameter into the
-/// <c>Authorization</c> header, ahead of the host's authentication middleware.
-/// </summary>
-/// <remarks>
-/// The dashboard SPA sends the host access key as the <c>Authorization</c> header on API calls and as
-/// <c>access_token</c> on the hub, because a browser cannot set headers on a WebSocket. Only requests to the hub and
-/// its negotiate endpoint that carry no <c>Authorization</c> header are changed. The host's scheme then signs the
-/// request in as it would an API call, and the hub's authorization policy evaluates that user. Cookie sign-in needs
-/// none of this.
-/// </remarks>
-internal sealed class HubAccessTokenStartupFilter(string basePath) : IStartupFilter
-{
-    private readonly string _hubPath =
-        DashboardSpaHelper.NormalizeBasePath(basePath).TrimEnd('/') + JobsNotificationHub.Path;
-
-    public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next)
-    {
-        return app =>
-        {
-            app.Use(
-                (context, nextMiddleware) =>
-                {
-                    if (
-                        string.IsNullOrEmpty(context.Request.Headers.Authorization)
-                        && _IsHubPath(context.Request.Path.Value)
-                        && context.Request.Query["access_token"].FirstOrDefault() is { Length: > 0 } accessToken
-                        && !_HasControlCharacter(accessToken)
-                    )
-                    {
-                        context.Request.Headers.Authorization = accessToken;
-                    }
-
-                    return nextMiddleware(context);
-                }
-            );
-
-            next(app);
-        };
-    }
-
-    // A header value never carries control characters, so a token with any (such as an encoded CR/LF) is left out
-    // rather than handed to the host's handlers and anything that logs or forwards request headers.
-    private static bool _HasControlCharacter(string value)
-    {
-        return value.AsSpan().ContainsAnyInRange('\u0000', '\u001f')
-            || value.Contains('\u007f', StringComparison.Ordinal);
-    }
-
-    // The host may add a path base later in its pipeline, so match the end of the path, not its start.
-    private bool _IsHubPath(string? path)
-    {
-        return path is not null
-            && (
-                path.EndsWith(_hubPath, StringComparison.OrdinalIgnoreCase)
-                || path.EndsWith(_hubPath + "/negotiate", StringComparison.OrdinalIgnoreCase)
-            );
     }
 }
 

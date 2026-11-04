@@ -1,52 +1,42 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import {
-  consumeHostAccessTokenFromFragment,
   getApiBaseUrl,
   getAuthMode,
   getBackendUrl,
   getBasePath,
+  getSignInUrl,
   resolveApiUrl,
   resolvePath,
 } from '@/utilities/pathResolver'
 
 const baseConfig = {
   basePath: '/jobs',
-  auth: { mode: 'none' as const, enabled: false, sessionTimeout: 0 },
+  auth: { mode: 'none' as const, enabled: false, signInAvailable: false },
 }
 
 afterEach(() => {
   delete window.JobsConfig
-  window.history.replaceState(null, '', '/')
 })
 
-describe('host access token fragments', () => {
-  it('normalizes and removes an encoded token fragment in Host mode', () => {
-    window.history.replaceState(null, '', '/jobs/dashboard/login?redirect=%2F#access_token=demo.jwt')
+describe('host-mode sign-in URL', () => {
+  it('returns to the requested page under the base path', () => {
+    window.JobsConfig = { ...baseConfig, basePath: '/jobs/dashboard' }
 
-    expect(consumeHostAccessTokenFromFragment('host')).toBe('Bearer demo.jwt')
-    expect(window.location.pathname).toBe('/jobs/dashboard/login')
-    expect(window.location.search).toBe('?redirect=%2F')
-    expect(window.location.hash).toBe('')
+    expect(getSignInUrl('/time-jobs?page=2')).toBe(
+      '/jobs/dashboard/auth/sign-in?returnUrl=%2Fjobs%2Fdashboard%2Ftime-jobs%3Fpage%3D2',
+    )
   })
 
-  it('does not add a second Bearer prefix', () => {
-    window.history.replaceState(null, '', '/jobs/dashboard/login#access_token=Bearer%20demo.jwt')
+  it('does not double the slash when the dashboard is mounted at the root', () => {
+    window.JobsConfig = { ...baseConfig, basePath: '/' }
 
-    expect(consumeHostAccessTokenFromFragment('host')).toBe('Bearer demo.jwt')
-    expect(window.location.hash).toBe('')
+    expect(getSignInUrl('/cron-jobs')).toBe('/auth/sign-in?returnUrl=%2Fcron-jobs')
   })
 
-  it('removes but does not consume a token fragment outside Host mode', () => {
-    window.history.replaceState(null, '', '/jobs/dashboard/login#access_token=demo.jwt')
+  it('tolerates a trailing slash on the base path and a relative return path', () => {
+    window.JobsConfig = { ...baseConfig, basePath: '/jobs/dashboard/' }
 
-    expect(consumeHostAccessTokenFromFragment('apikey')).toBeNull()
-    expect(window.location.hash).toBe('')
-  })
-
-  it('ignores query-string tokens', () => {
-    window.history.replaceState(null, '', '/jobs/dashboard/login?access_token=demo.jwt')
-
-    expect(consumeHostAccessTokenFromFragment('host')).toBeNull()
+    expect(getSignInUrl('time-jobs')).toBe('/jobs/dashboard/auth/sign-in?returnUrl=%2Fjobs%2Fdashboard%2Ftime-jobs')
   })
 })
 
