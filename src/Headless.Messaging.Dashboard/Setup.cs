@@ -113,7 +113,8 @@ public static class SetupMessagingDashboard
         {
             mode = config.Auth.Mode.ToString().ToLowerInvariant(),
             enabled = config.Auth.IsEnabled,
-            sessionTimeout = config.Auth.SessionTimeoutMinutes,
+            // The server no longer expires browser sign-ins; 0 tells the SPA, which still reads this field, never to.
+            sessionTimeout = 0,
         };
 
         var envConfig = new

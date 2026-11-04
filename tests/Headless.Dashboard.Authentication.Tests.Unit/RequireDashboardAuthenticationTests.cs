@@ -77,30 +77,6 @@ public sealed class RequireDashboardAuthenticationTests : TestBase
     }
 
     [Fact]
-    public async Task authenticates_through_the_custom_validator_with_the_raw_credential()
-    {
-        var seen = new ConcurrentQueue<string>();
-        await using var app = await _StartSingleAsync(auth =>
-        {
-            auth.Mode = AuthMode.Custom;
-            auth.CustomValidator = (credential, _) =>
-            {
-                seen.Enqueue(credential);
-                return string.Equals(credential, "Token let-me-in", StringComparison.Ordinal);
-            };
-        });
-        using var client = app.GetTestClient();
-
-        using var accepted = await _SendAsync(client, _Path, "Token let-me-in");
-        using var refused = await _SendAsync(client, _Path, "Token nope");
-
-        accepted.StatusCode.Should().Be(HttpStatusCode.OK);
-        (await accepted.Content.ReadAsStringAsync(AbortToken)).Should().Be("custom-user");
-        refused.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        seen.Should().Equal("Token let-me-in", "Token nope");
-    }
-
-    [Fact]
     public async Task leaves_the_endpoint_anonymous_when_the_mode_is_none()
     {
         await using var app = await _StartSingleAsync(auth => auth.Mode = AuthMode.None);

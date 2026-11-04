@@ -115,41 +115,6 @@ public sealed class AuthServiceTests : TestBase
     }
 
     [Fact]
-    public async Task custom_auth_succeeds_with_valid_validator()
-    {
-        var config = new AuthConfig
-        {
-            Mode = AuthMode.Custom,
-            CustomValidator = (token, _) => string.Equals(token, "valid-token", StringComparison.Ordinal),
-        };
-        var service = new AuthService(config, _logger);
-        var context = new DefaultHttpContext();
-        context.Request.Headers.Authorization = "valid-token";
-
-        var result = await service.AuthenticateAsync(context, AbortToken);
-
-        result.IsAuthenticated.Should().BeTrue();
-        result.Username.Should().Be("custom-user");
-    }
-
-    [Fact]
-    public async Task custom_auth_fails_with_invalid_token()
-    {
-        var config = new AuthConfig
-        {
-            Mode = AuthMode.Custom,
-            CustomValidator = (token, _) => string.Equals(token, "valid-token", StringComparison.Ordinal),
-        };
-        var service = new AuthService(config, _logger);
-        var context = new DefaultHttpContext();
-        context.Request.Headers.Authorization = "invalid-token";
-
-        var result = await service.AuthenticateAsync(context, AbortToken);
-
-        result.IsAuthenticated.Should().BeFalse();
-    }
-
-    [Fact]
     public async Task fails_when_no_authorization_header()
     {
         var config = new AuthConfig
@@ -169,17 +134,11 @@ public sealed class AuthServiceTests : TestBase
     [Theory]
     [InlineData(AuthMode.ApiKey, "Bearer:my-key")]
     [InlineData(AuthMode.ApiKey, "my-key")]
-    [InlineData(AuthMode.Custom, "Token raw value")]
     public async Task reads_access_token_on_a_hub_endpoint_whatever_its_path(AuthMode mode, string accessToken)
     {
         // The Jobs hub is mapped at /job-notification-hub: no "/hub" segment, so routing metadata, not the path,
         // decides whether the query credential counts.
-        var config = new AuthConfig
-        {
-            Mode = mode,
-            ApiKey = "my-key",
-            CustomValidator = (credential, _) => string.Equals(credential, "Token raw value", StringComparison.Ordinal),
-        };
+        var config = new AuthConfig { Mode = mode, ApiKey = "my-key" };
         var service = new AuthService(config, _logger);
         var context = _HubContext("/job-notification-hub", accessToken);
 
@@ -252,7 +211,6 @@ public sealed class AuthServiceTests : TestBase
         {
             Mode = AuthMode.Basic,
             BasicCredentials = Convert.ToBase64String(Encoding.UTF8.GetBytes("a:b")),
-            SessionTimeoutMinutes = 30,
         };
         var service = new AuthService(config, _logger);
 
@@ -260,6 +218,5 @@ public sealed class AuthServiceTests : TestBase
 
         info.Mode.Should().Be(AuthMode.Basic);
         info.IsEnabled.Should().BeTrue();
-        info.SessionTimeoutMinutes.Should().Be(30);
     }
 }

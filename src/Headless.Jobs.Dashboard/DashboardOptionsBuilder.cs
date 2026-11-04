@@ -153,31 +153,6 @@ public sealed class DashboardOptionsBuilder
     }
 
     /// <summary>
-    /// Enables custom authentication by supplying a validation delegate. The delegate receives the
-    /// raw Bearer token and the current <see cref="IServiceProvider"/>, and returns
-    /// <see langword="true"/> to grant access.
-    /// </summary>
-    /// <param name="validator">Validation function; must be thread-safe.</param>
-    public DashboardOptionsBuilder WithCustomAuth(Func<string, IServiceProvider, bool> validator)
-    {
-        Auth.Mode = AuthMode.Custom;
-        Auth.CustomValidator = validator;
-        AuthConfigured = true;
-        return this;
-    }
-
-    /// <summary>
-    /// Sets the idle session timeout for the dashboard. After this period of inactivity the session
-    /// cookie is invalidated and the user must re-authenticate.
-    /// </summary>
-    /// <param name="minutes">Timeout in minutes.</param>
-    public DashboardOptionsBuilder WithSessionTimeout(int minutes)
-    {
-        Auth.SessionTimeoutMinutes = minutes;
-        return this;
-    }
-
-    /// <summary>
     /// Configures the <see cref="JsonSerializerOptions"/> used exclusively by the dashboard API
     /// endpoints. These options are intentionally isolated from the job request serialization options
     /// configured via <c>JobsOptionsBuilder.ConfigureRequestJsonOptions</c> to prevent user
@@ -198,7 +173,7 @@ public sealed class DashboardOptionsBuilder
         {
             throw new InvalidOperationException(
                 "Dashboard authentication was not configured. Secure the dashboard with WithBasicAuth, WithApiKey, "
-                    + "WithHostAuthentication, or WithCustomAuth, or call WithNoAuth() to explicitly run it "
+                    + "or WithHostAuthentication, or call WithNoAuth() to explicitly run it "
                     + "unauthenticated (development or trusted-network use only)."
             );
         }

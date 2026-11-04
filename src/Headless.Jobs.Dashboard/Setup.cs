@@ -23,9 +23,8 @@ public static class SetupJobsDashboard
     /// <remarks>
     /// Mount the dashboard on the host's endpoints with <see cref="MapHeadlessJobsDashboard"/>; a host that registers it
     /// without mapping it fails to start. To secure the dashboard,
-    /// use <see cref="DashboardOptionsBuilder.WithBasicAuth"/>, <see cref="DashboardOptionsBuilder.WithApiKey"/>,
-    /// <see cref="DashboardOptionsBuilder.WithHostAuthentication"/>, or
-    /// <see cref="DashboardOptionsBuilder.WithCustomAuth"/>. When coordination-based node membership
+    /// use <see cref="DashboardOptionsBuilder.WithBasicAuth"/>, <see cref="DashboardOptionsBuilder.WithApiKey"/>, or
+    /// <see cref="DashboardOptionsBuilder.WithHostAuthentication"/>. When coordination-based node membership
     /// is registered, a live-nodes bridge is started automatically; otherwise the dashboard stays
     /// inert on the live-nodes panel.
     /// </remarks>
@@ -33,7 +32,7 @@ public static class SetupJobsDashboard
     /// <param name="configureDashboard">
     /// Callback to configure the dashboard. Authentication must be configured explicitly — via
     /// <see cref="DashboardOptionsBuilder.WithBasicAuth"/>, <see cref="DashboardOptionsBuilder.WithApiKey"/>,
-    /// <see cref="DashboardOptionsBuilder.WithHostAuthentication"/>, <see cref="DashboardOptionsBuilder.WithCustomAuth"/>,
+    /// <see cref="DashboardOptionsBuilder.WithHostAuthentication"/>,
     /// or explicitly opted out with <see cref="DashboardOptionsBuilder.WithNoAuth"/> — otherwise the host fails
     /// to start. The dashboard is served at <c>/jobs/dashboard</c> with no CORS policy (same-origin only) by default.
     /// </param>
@@ -70,7 +69,7 @@ public static class SetupJobsDashboard
             // Register authentication (named AuthConfig + keyed IAuthService) through the shared
             // Headless.Dashboard.Authentication extension under this dashboard's own name, so another dashboard in
             // the host keeps its own mode. The builder has already materialized the AuthConfig from WithBasicAuth /
-            // WithApiKey / WithHostAuthentication / WithCustomAuth, so mirror its fields into the options instance.
+            // WithApiKey / WithHostAuthentication, so mirror its fields into the options instance.
             services.AddDashboardAuthentication(
                 DashboardOptionsBuilder.AuthenticationName,
                 auth =>
@@ -78,8 +77,6 @@ public static class SetupJobsDashboard
                     auth.Mode = dashboardConfig.Auth.Mode;
                     auth.BasicCredentials = dashboardConfig.Auth.BasicCredentials;
                     auth.ApiKey = dashboardConfig.Auth.ApiKey;
-                    auth.CustomValidator = dashboardConfig.Auth.CustomValidator;
-                    auth.SessionTimeoutMinutes = dashboardConfig.Auth.SessionTimeoutMinutes;
                     auth.HostAuthorizationPolicy = dashboardConfig.Auth.HostAuthorizationPolicy;
                 }
             );

@@ -20,7 +20,7 @@ namespace Headless.Dashboard.Authentication;
 /// modes and credentials. The name selects the named <see cref="AuthConfig"/> options instance and the keyed
 /// <see cref="IAuthService"/>, and names the authentication scheme and authorization policy registered with them:
 /// the scheme checks the dashboard's own credential through that service, and the policy requires a user the scheme
-/// signed in. A dashboard's endpoints carry that policy under Basic, API key, or custom authentication.
+/// signed in. A dashboard's endpoints carry that policy under Basic or API key authentication.
 /// </remarks>
 [PublicAPI]
 public static class SetupDashboardAuthentication
@@ -96,8 +96,8 @@ public static class SetupDashboardAuthentication
     /// <remarks>
     /// The mode of the <see cref="AuthConfig"/> named <paramref name="authenticationName"/> decides the rule when the
     /// host builds its endpoints: <see cref="AuthMode.None"/> allows anonymous access; <see cref="AuthMode.Host"/>
-    /// requires <see cref="AuthConfig.HostAuthorizationPolicy"/>, or the host's default policy when it is empty; Basic,
-    /// API key, and custom modes require a user the dashboard's authentication scheme signed in with the dashboard's
+    /// requires <see cref="AuthConfig.HostAuthorizationPolicy"/>, or the host's default policy when it is empty; Basic and
+    /// API key modes require a user the dashboard's authentication scheme signed in with the dashboard's
     /// own credential, and refuse any other request with <c>401</c>. Put the rule on the dashboard's protected group
     /// only; endpoints the sign-in flow calls without a credential, such as the shell and <c>/api/auth/info</c>, stay
     /// <c>AllowAnonymous</c>.

@@ -22,11 +22,4 @@ public sealed class AuthConfigTests : TestBase
         var config = new AuthConfig { Mode = AuthMode.Basic };
         config.IsEnabled.Should().BeTrue();
     }
-
-    [Fact]
-    public void session_timeout_defaults_to_60()
-    {
-        var config = new AuthConfig();
-        config.SessionTimeoutMinutes.Should().Be(60);
-    }
 }

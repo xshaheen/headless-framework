@@ -95,17 +95,6 @@ public sealed class CrossDashboardAuthenticationTests : TestBase
     }
 
     [Fact]
-    public async Task jobs_hub_accepts_a_custom_credential_verbatim()
-    {
-        await using var app = await _StartAsync(jobs =>
-            jobs.WithCustomAuth((credential, _) => string.Equals(credential, "Token abc", StringComparison.Ordinal))
-        );
-
-        (await _HubStatusAsync(app, "Token abc")).Should().Be(HubOutcome.Authenticated);
-        (await _HubStatusAsync(app, "Token other")).Should().Be(HubOutcome.Refused);
-    }
-
-    [Fact]
     public async Task jobs_hub_under_host_auth_signs_in_the_access_token_and_enforces_the_host_policy()
     {
         await using var app = await _StartHostAuthAsync();

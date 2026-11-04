@@ -33,8 +33,6 @@ internal sealed class DashboardOptionsExtension(Action<MessagingDashboardOptions
                 config.Mode = auth.Mode;
                 config.BasicCredentials = auth.BasicCredentials;
                 config.ApiKey = auth.ApiKey;
-                config.CustomValidator = auth.CustomValidator;
-                config.SessionTimeoutMinutes = auth.SessionTimeoutMinutes;
                 config.HostAuthorizationPolicy = auth.HostAuthorizationPolicy;
             }
         );
@@ -101,7 +99,7 @@ public static class MessagingOptionsExtensions
         /// </summary>
         /// <param name="configure">
         /// An action to configure the dashboard options. An authentication mode must be chosen explicitly
-        /// (<c>WithBasicAuth</c>, <c>WithApiKey</c>, <c>WithHostAuthentication</c>, <c>WithCustomAuth</c>, or an
+        /// (<c>WithBasicAuth</c>, <c>WithApiKey</c>, <c>WithHostAuthentication</c>, or an
         /// explicit <c>WithNoAuth()</c> opt-out) or the host fails to start.
         /// </param>
         /// <returns>The builder for chaining.</returns>

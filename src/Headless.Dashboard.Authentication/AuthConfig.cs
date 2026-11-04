@@ -31,17 +31,6 @@ public sealed class AuthConfig
     public string? ApiKey { get; set; }
 
     /// <summary>
-    /// Gets or sets a custom validation delegate. Receives the authorization header value and
-    /// an <see cref="IServiceProvider"/> to resolve scoped services.
-    /// </summary>
-    public Func<string, IServiceProvider, bool>? CustomValidator { get; set; }
-
-    /// <summary>
-    /// Gets or sets the session timeout in minutes. The default is 60 minutes.
-    /// </summary>
-    public int SessionTimeoutMinutes { get; set; } = 60;
-
-    /// <summary>
     /// Gets or sets the authorization policy name for host mode. When <see langword="null"/>, the default policy is used.
     /// </summary>
     public string? HostAuthorizationPolicy { get; set; }
@@ -69,10 +58,5 @@ internal sealed class AuthConfigValidator : AbstractValidator<AuthConfig>
             .NotEmpty()
             .When(x => x.Mode == AuthMode.ApiKey)
             .WithMessage("ApiKey is required for ApiKey authentication mode");
-
-        RuleFor(x => x.CustomValidator)
-            .NotNull()
-            .When(x => x.Mode == AuthMode.Custom)
-            .WithMessage("CustomValidator is required for Custom authentication mode");
     }
 }

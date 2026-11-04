@@ -97,44 +97,18 @@ public sealed class DashboardOptionsTests : TestBase
     }
 
     [Fact]
-    public void should_set_mode_and_validator_when_with_custom_auth()
-    {
-        // given & when
-        var builder = new MessagingDashboardOptionsBuilder().WithCustomAuth(
-            (token, _) => string.Equals(token, "valid", StringComparison.Ordinal)
-        );
-
-        // then
-        builder.Auth.Mode.Should().Be(AuthMode.Custom);
-        builder.Auth.IsEnabled.Should().BeTrue();
-        builder.Auth.CustomValidator.Should().NotBeNull();
-    }
-
-    [Fact]
-    public void should_set_timeout_when_with_session_timeout()
-    {
-        // given & when
-        var builder = new MessagingDashboardOptionsBuilder().WithSessionTimeout(30);
-
-        // then
-        builder.Auth.SessionTimeoutMinutes.Should().Be(30);
-    }
-
-    [Fact]
     public void should_be_chainable_when_fluent_api()
     {
         // given & when
         var builder = new MessagingDashboardOptionsBuilder()
             .SetBasePath("/custom")
             .SetStatsPollingInterval(3000)
-            .WithBasicAuth("admin", "pass")
-            .WithSessionTimeout(120);
+            .WithBasicAuth("admin", "pass");
 
         // then
         builder.BasePath.Should().Be("/custom");
         builder.StatsPollingInterval.Should().Be(3000);
         builder.Auth.Mode.Should().Be(AuthMode.Basic);
-        builder.Auth.SessionTimeoutMinutes.Should().Be(120);
     }
 
     [Fact]

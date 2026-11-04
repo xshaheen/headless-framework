@@ -108,20 +108,6 @@ public sealed class DashboardOptionsTests : TestBase
     }
 
     [Fact]
-    public void should_configure_custom_authentication_and_session_timeout()
-    {
-        static bool validator(string token, IServiceProvider _) =>
-            string.Equals(token, "valid", StringComparison.Ordinal);
-
-        var builder = new DashboardOptionsBuilder().WithCustomAuth(validator).WithSessionTimeout(30);
-
-        builder.AuthConfigured.Should().BeTrue();
-        builder.Auth.Mode.Should().Be(AuthMode.Custom);
-        builder.Auth.CustomValidator.Should().BeSameAs((Func<string, IServiceProvider, bool>)validator);
-        builder.Auth.SessionTimeoutMinutes.Should().Be(30);
-    }
-
-    [Fact]
     public void should_preserve_dashboard_json_customizations_across_multiple_callbacks()
     {
         var builder = new DashboardOptionsBuilder()

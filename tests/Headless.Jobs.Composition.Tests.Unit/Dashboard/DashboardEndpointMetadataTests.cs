@@ -38,17 +38,14 @@ public sealed class DashboardEndpointMetadataTests : TestBase
     [Theory]
     [InlineData(AuthMode.Basic)]
     [InlineData(AuthMode.ApiKey)]
-    [InlineData(AuthMode.Custom)]
     public async Task should_apply_the_dashboard_policy_to_the_api_and_hub_under_a_dashboard_credential(AuthMode mode)
     {
         // The hub carries the API's rule, so the host's UseAuthorization refuses a client before SignalR adds it to
         // Clients.All, where it would hear a broadcast before the hub's OnConnectedAsync ran.
-        var config = mode switch
-        {
-            AuthMode.Basic => new DashboardOptionsBuilder().WithBasicAuth("ops", "secret"),
-            AuthMode.ApiKey => new DashboardOptionsBuilder().WithApiKey("secret"),
-            _ => new DashboardOptionsBuilder().WithCustomAuth((_, _) => true),
-        };
+        var config =
+            mode == AuthMode.Basic
+                ? new DashboardOptionsBuilder().WithBasicAuth("ops", "secret")
+                : new DashboardOptionsBuilder().WithApiKey("secret");
         await using var app = _CreateApp(config);
 
         foreach (var endpoint in new[] { _GetEndpoint(app, "GetOptions"), _GetHubEndpoint(app) })
@@ -374,7 +371,6 @@ public sealed class DashboardEndpointMetadataTests : TestBase
                 auth.Mode = config.Auth.Mode;
                 auth.BasicCredentials = config.Auth.BasicCredentials;
                 auth.ApiKey = config.Auth.ApiKey;
-                auth.CustomValidator = config.Auth.CustomValidator;
                 auth.HostAuthorizationPolicy = config.Auth.HostAuthorizationPolicy;
             }
         );

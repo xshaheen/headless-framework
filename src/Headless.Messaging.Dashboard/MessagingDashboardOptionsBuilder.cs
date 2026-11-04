@@ -120,22 +120,6 @@ public sealed class MessagingDashboardOptionsBuilder
         return this;
     }
 
-    /// <summary>Configure custom authentication with validation function.</summary>
-    public MessagingDashboardOptionsBuilder WithCustomAuth(Func<string, IServiceProvider, bool> validator)
-    {
-        Auth.Mode = AuthMode.Custom;
-        Auth.CustomValidator = validator;
-        AuthConfigured = true;
-        return this;
-    }
-
-    /// <summary>Set session timeout in minutes.</summary>
-    public MessagingDashboardOptionsBuilder WithSessionTimeout(int minutes)
-    {
-        Auth.SessionTimeoutMinutes = minutes;
-        return this;
-    }
-
     /// <summary>Validate the configuration.</summary>
     internal void Validate()
     {
@@ -143,7 +127,7 @@ public sealed class MessagingDashboardOptionsBuilder
         {
             throw new InvalidOperationException(
                 "Dashboard authentication was not configured. Secure the dashboard with WithBasicAuth, WithApiKey, "
-                    + "WithHostAuthentication, or WithCustomAuth, or call WithNoAuth() to explicitly run it "
+                    + "or WithHostAuthentication, or call WithNoAuth() to explicitly run it "
                     + "unauthenticated (development or trusted-network use only)."
             );
         }

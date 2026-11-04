@@ -86,8 +86,6 @@ internal static class MessagingDashboardHost
                 auth.Mode = config.Auth.Mode;
                 auth.BasicCredentials = config.Auth.BasicCredentials;
                 auth.ApiKey = config.Auth.ApiKey;
-                auth.CustomValidator = config.Auth.CustomValidator;
-                auth.SessionTimeoutMinutes = config.Auth.SessionTimeoutMinutes;
                 auth.HostAuthorizationPolicy = config.Auth.HostAuthorizationPolicy;
             }
         );

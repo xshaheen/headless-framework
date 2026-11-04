@@ -83,12 +83,7 @@ public sealed class SetupDashboardAuthenticationTests : TestBase
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(
-                new Dictionary<string, string?>(StringComparer.Ordinal)
-                {
-                    ["Mode"] = "ApiKey",
-                    ["ApiKey"] = "secret",
-                    ["SessionTimeoutMinutes"] = "15",
-                }
+                new Dictionary<string, string?>(StringComparer.Ordinal) { ["Mode"] = "ApiKey", ["ApiKey"] = "secret" }
             )
             .Build();
         var services = new ServiceCollection();
@@ -99,7 +94,7 @@ public sealed class SetupDashboardAuthenticationTests : TestBase
         using var provider = services.BuildServiceProvider();
         var config = provider.GetRequiredService<IOptionsMonitor<AuthConfig>>().Get(_Name);
         config.Mode.Should().Be(AuthMode.ApiKey);
-        config.SessionTimeoutMinutes.Should().Be(15);
+        config.ApiKey.Should().Be("secret");
         provider.GetRequiredService<IOptionsMonitor<AuthConfig>>().Get(_OtherName).Mode.Should().Be(AuthMode.None);
     }
 
@@ -152,11 +147,19 @@ public sealed class SetupDashboardAuthenticationTests : TestBase
     }
 
     [Fact]
-    public void add_dashboard_authentication_throws_for_custom_mode_without_validator()
+    public void add_dashboard_authentication_fails_startup_for_a_configured_custom_mode()
     {
-        var act = () => _ResolveConfig(cfg => cfg.Mode = AuthMode.Custom);
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>(StringComparer.Ordinal) { ["Mode"] = "Custom" })
+            .Build();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddDashboardAuthentication(_Name, configuration);
 
-        act.Should().Throw<OptionsValidationException>().WithMessage("*CustomValidator*");
+        using var provider = services.BuildServiceProvider();
+        var act = () => provider.GetRequiredService<IStartupValidator>().Validate();
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*Mode*");
     }
 
     [Theory]
@@ -177,19 +180,6 @@ public sealed class SetupDashboardAuthenticationTests : TestBase
             {
                 cfg.Mode = AuthMode.Basic;
                 cfg.BasicCredentials = Convert.ToBase64String(Encoding.UTF8.GetBytes("admin:pass"));
-            });
-
-        act.Should().NotThrow();
-    }
-
-    [Fact]
-    public void add_dashboard_authentication_passes_for_custom_with_validator()
-    {
-        var act = () =>
-            _ResolveConfig(cfg =>
-            {
-                cfg.Mode = AuthMode.Custom;
-                cfg.CustomValidator = (_, _) => true;
             });
 
         act.Should().NotThrow();

@@ -212,7 +212,8 @@ public static partial class MessagingDashboardEndpoints
             {
                 mode = authInfo.Mode.ToString().ToLower(CultureInfo.InvariantCulture),
                 enabled = authInfo.IsEnabled,
-                sessionTimeout = authInfo.SessionTimeoutMinutes,
+                // The server no longer expires browser sign-ins; 0 tells the SPA, which still reads this field, never to.
+                sessionTimeout = 0,
             }
         );
     }
