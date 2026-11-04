@@ -1,12 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Security.Claims;
-using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace Headless.Dashboard.Authentication;
 
@@ -17,39 +15,78 @@ namespace Headless.Dashboard.Authentication;
 /// or hub runs.
 /// </summary>
 /// <remarks>
+/// <para>
 /// It authenticates only requests routed to an endpoint whose <see cref="DashboardEndpointMetadata"/> names this
 /// scheme. A host with no scheme of its own makes this one its default, and the host's <c>UseAuthentication</c> must
 /// then neither check nor log a dashboard credential on its own requests.
+/// </para>
+/// <para>
+/// It implements <see cref="IAuthenticationHandler"/> directly rather than deriving from
+/// <c>AuthenticationHandler&lt;TOptions&gt;</c>, which keeps its first result for the whole request. When that default
+/// scheme runs before routing, as a <c>WebApplication</c> places its implicit <c>UseAuthentication</c> ahead of a
+/// host's own <c>UseRouting</c>, the first call sees no endpoint; caching that answer would refuse the right
+/// credential when the dashboard policy asks again. Only a result computed for a routed request is kept, so a
+/// credential is still checked, and a failure logged, once per request.
+/// </para>
 /// </remarks>
-internal sealed class DashboardAuthenticationHandler(
-    IOptionsMonitor<AuthenticationSchemeOptions> options,
-    ILoggerFactory loggerFactory,
-    UrlEncoder encoder
-) : AuthenticationHandler<AuthenticationSchemeOptions>(options, loggerFactory, encoder)
+internal sealed class DashboardAuthenticationHandler(ILogger<DashboardAuthenticationHandler> logger)
+    : IAuthenticationHandler
 {
-    private readonly ILogger _failureLogger = loggerFactory.CreateLogger<DashboardAuthenticationHandler>();
+    private AuthenticationScheme _scheme = null!;
+    private HttpContext _context = null!;
+    private Task<AuthenticateResult>? _routedResult;
 
-    protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
+    public Task InitializeAsync(AuthenticationScheme scheme, HttpContext context)
     {
-        var metadata = Context.GetEndpoint()?.Metadata.GetMetadata<DashboardEndpointMetadata>();
-        if (!string.Equals(metadata?.AuthenticationName, Scheme.Name, StringComparison.Ordinal))
+        _scheme = scheme;
+        _context = context;
+        return Task.CompletedTask;
+    }
+
+    public Task<AuthenticateResult> AuthenticateAsync()
+    {
+        var endpoint = _context.GetEndpoint();
+        if (endpoint is null)
+        {
+            return Task.FromResult(AuthenticateResult.NoResult());
+        }
+
+        return _routedResult ??= _AuthenticateRoutedAsync(endpoint);
+    }
+
+    public Task ChallengeAsync(AuthenticationProperties? properties)
+    {
+        _context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+        return Task.CompletedTask;
+    }
+
+    public Task ForbidAsync(AuthenticationProperties? properties)
+    {
+        _context.Response.StatusCode = StatusCodes.Status403Forbidden;
+        return Task.CompletedTask;
+    }
+
+    private async Task<AuthenticateResult> _AuthenticateRoutedAsync(Endpoint endpoint)
+    {
+        var metadata = endpoint.Metadata.GetMetadata<DashboardEndpointMetadata>();
+        if (!string.Equals(metadata?.AuthenticationName, _scheme.Name, StringComparison.Ordinal))
         {
             return AuthenticateResult.NoResult();
         }
 
-        var authService = Context.RequestServices.GetRequiredKeyedService<IAuthService>(Scheme.Name);
-        var result = await authService.AuthenticateAsync(Context, Context.RequestAborted).ConfigureAwait(false);
+        var authService = _context.RequestServices.GetRequiredKeyedService<IAuthService>(_scheme.Name);
+        var result = await authService.AuthenticateAsync(_context, _context.RequestAborted).ConfigureAwait(false);
 
         if (!result.IsAuthenticated)
         {
             // Path only, never the query string: a hub client sends its credential as access_token.
-            _failureLogger.LogAuthenticationFailed(_SanitizeForLog(Context.Request.Path.Value), result.ErrorMessage);
+            logger.LogAuthenticationFailed(_SanitizeForLog(_context.Request.Path.Value), result.ErrorMessage);
             return AuthenticateResult.Fail(result.ErrorMessage ?? "Authentication failed");
         }
 
-        var identity = new ClaimsIdentity([new Claim(ClaimTypes.Name, result.Username!)], Scheme.Name);
+        var identity = new ClaimsIdentity([new Claim(ClaimTypes.Name, result.Username!)], _scheme.Name);
 
-        return AuthenticateResult.Success(new AuthenticationTicket(new ClaimsPrincipal(identity), Scheme.Name));
+        return AuthenticateResult.Success(new AuthenticationTicket(new ClaimsPrincipal(identity), _scheme.Name));
     }
 
     // CR/LF stripped so a user-controlled path cannot forge log entries.
