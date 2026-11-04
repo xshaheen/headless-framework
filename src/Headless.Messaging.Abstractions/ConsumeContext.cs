@@ -445,7 +445,7 @@ public record ConsumeContext
     /// on the in-memory transport.
     /// </summary>
     /// <value>
-    /// The NATS subject, the Kafka or Pulsar topic, the RabbitMQ routing key, the Azure Service Bus entity path, the
+    /// The NATS subject, the Kafka topic, the RabbitMQ routing key, the Azure Service Bus entity path, the
     /// Amazon SQS queue URL, or the Redis stream key. On NATS this includes any shard token, so a handler can read routing
     /// tokens such as a tenant or a run identifier from the subject instead of the payload.
     /// </value>

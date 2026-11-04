@@ -296,7 +296,7 @@ public sealed class MessagingOptions
     /// milliseconds costs ten times the idle Redis load of the 1-second default. A Redis publish wakes the waiting
     /// consumer at once unless its wake-ups are turned off; without them, and on SQS, the interval is also an idle
     /// consumer's delivery latency. Push-based
-    /// transports such as RabbitMQ, Azure Service Bus, and Pulsar ignore it. Must be greater than zero and no more
+    /// transports such as RabbitMQ and Azure Service Bus ignore it. Must be greater than zero and no more
     /// than 30 seconds.
     /// </remarks>
     public TimeSpan ConsumerPollTimeout { get; set; } = TimeSpan.FromSeconds(1);
