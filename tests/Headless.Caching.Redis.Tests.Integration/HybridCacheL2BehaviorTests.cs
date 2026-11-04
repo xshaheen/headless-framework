@@ -2,7 +2,6 @@
 
 using System.Reflection;
 using Headless.Caching;
-using Headless.Messaging;
 using Headless.Serializer;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
@@ -31,7 +30,7 @@ public sealed class HybridCacheL2BehaviorTests(RedisCacheFixture fixture) : Test
     private HybridCache _CreateHybrid(
         string keyPrefix = "",
         HybridCacheOptions? hybridOptions = null,
-        CapturingBus? bus = null
+        CapturingBackplane? bus = null
     )
     {
         var l1 = new InMemoryCache(TimeProvider.System, new InMemoryCacheOptions());
@@ -52,7 +51,7 @@ public sealed class HybridCacheL2BehaviorTests(RedisCacheFixture fixture) : Test
         );
         _tierCaches.Add(l2);
 
-        var publisher = (IBus?)bus ?? NoopBus.Instance;
+        var publisher = (IHybridCacheBackplane?)bus ?? NoopBackplane.Instance;
         hybridOptions ??= new HybridCacheOptions();
 
         return new HybridCache(l1, l2, publisher, hybridOptions, NullLogger<HybridCache>.Instance, TimeProvider.System);
@@ -130,7 +129,7 @@ public sealed class HybridCacheL2BehaviorTests(RedisCacheFixture fixture) : Test
     {
         // given
         await _FlushAsync();
-        var bus = new CapturingBus();
+        var bus = new CapturingBackplane();
 
         await using var hybridA = _CreateHybrid("hybrid-bp:", bus: bus);
         await using var hybridB = _CreateHybrid("hybrid-bp:", bus: bus);
@@ -184,10 +183,10 @@ public sealed class HybridCacheL2BehaviorTests(RedisCacheFixture fixture) : Test
         await base.DisposeAsyncCore();
     }
 
-    // Minimal in-process backplane bus: routes CacheInvalidationMessage to all attached HybridCache instances.
+    // Minimal in-process backplane: routes CacheInvalidationMessage to all attached HybridCache instances.
     // HandleInvalidationAsync is internal (InternalsVisibleTo is not granted to this project) so we invoke it
-    // via reflection — the same approach the real infrastructure's message consumer uses, but synchronous here.
-    private sealed class CapturingBus : IBus
+    // via reflection, synchronously, standing in for a real transport's delivery.
+    private sealed class CapturingBackplane : IHybridCacheBackplane
     {
         private readonly List<HybridCache> _subscribers = [];
 
@@ -196,24 +195,10 @@ public sealed class HybridCacheL2BehaviorTests(RedisCacheFixture fixture) : Test
             _subscribers.Add(cache);
         }
 
-        public Task<PublishReceipt> PublishAsync<T>(T? message, CancellationToken cancellationToken = default) =>
-            PublishAsync(message, options: null, cancellationToken);
-
-        public async Task<PublishReceipt> PublishAsync<T>(
-            T? message,
-            PublishOptions? options,
-            CancellationToken cancellationToken = default
-        )
+        public async ValueTask PublishAsync(CacheInvalidationMessage message, CancellationToken cancellationToken)
         {
-            if (message is not CacheInvalidationMessage invalidation)
-            {
-                return new PublishReceipt(options?.MessageId ?? Guid.NewGuid().ToString(), null);
-            }
-
             foreach (var subscriber in _subscribers)
             {
-                // HandleInvalidationAsync is internal; invoke via reflection so the test can route messages
-                // without InternalsVisibleTo being granted to this integration test project.
                 var method = typeof(HybridCache).GetMethod(
                     "HandleInvalidationAsync",
                     BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
@@ -221,29 +206,18 @@ public sealed class HybridCacheL2BehaviorTests(RedisCacheFixture fixture) : Test
                     [typeof(CacheInvalidationMessage), typeof(CancellationToken)],
                     null
                 );
-                var task = (ValueTask)method!.Invoke(subscriber, [invalidation, cancellationToken])!;
+                var task = (ValueTask)method!.Invoke(subscriber, [message, cancellationToken])!;
                 await task.ConfigureAwait(false);
             }
-
-            return new PublishReceipt(options?.MessageId ?? Guid.NewGuid().ToString(), null);
         }
     }
 
-    // No-op bus for tests that don't need cross-node invalidation routing.
-    private sealed class NoopBus : IBus
+    // No-op backplane for tests that don't need cross-node invalidation routing.
+    private sealed class NoopBackplane : IHybridCacheBackplane
     {
-        public static readonly NoopBus Instance = new();
+        public static readonly NoopBackplane Instance = new();
 
-        public Task<PublishReceipt> PublishAsync<T>(T? message, CancellationToken cancellationToken = default) =>
-            PublishAsync(message, options: null, cancellationToken);
-
-        public Task<PublishReceipt> PublishAsync<T>(
-            T? message,
-            PublishOptions? options,
-            CancellationToken cancellationToken = default
-        )
-        {
-            return Task.FromResult(new PublishReceipt(options?.MessageId ?? Guid.NewGuid().ToString(), null));
-        }
+        public ValueTask PublishAsync(CacheInvalidationMessage message, CancellationToken cancellationToken) =>
+            ValueTask.CompletedTask;
     }
 }

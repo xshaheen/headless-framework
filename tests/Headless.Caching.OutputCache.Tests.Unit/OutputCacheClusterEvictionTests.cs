@@ -111,7 +111,7 @@ internal sealed class TwoNodeStoreHarness : IAsyncDisposable
 
     public FakeTimeProvider Time { get; } = new();
 
-    public FakeBackplaneBus Bus { get; } = new();
+    public FakeBackplane Bus { get; } = new();
 
     public StoreNode A { get; }
 

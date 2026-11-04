@@ -24,7 +24,6 @@
     <ProjectReference Include="..\..\src\Headless.Caching.InMemory\Headless.Caching.InMemory.csproj" />
     <ProjectReference Include="..\..\src\Headless.Caching.Redis\Headless.Caching.Redis.csproj" />
     <ProjectReference Include="..\..\src\Headless.Caching.Hybrid\Headless.Caching.Hybrid.csproj" />
-    <ProjectReference Include="..\..\src\Headless.Messaging.Bus.Abstractions\Headless.Messaging.Bus.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Headless.Redis\Headless.Redis.csproj" />
     <ProjectReference Include="..\..\src\Headless.Serializer.Json\Headless.Serializer.Json.csproj" />
   </ItemGroup>

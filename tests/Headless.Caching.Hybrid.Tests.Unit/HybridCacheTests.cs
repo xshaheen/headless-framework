@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Caching;
-using Headless.Messaging;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Time.Testing;
 
@@ -16,7 +15,7 @@ public sealed class HybridCacheTests : TestBase
     // them at teardown.
     private readonly List<object> _disposables = [];
 
-    private (HybridCache cache, IInMemoryCache l1, IRemoteCache l2, IBus publisher) _CreateCache(
+    private (HybridCache cache, IInMemoryCache l1, IRemoteCache l2, IHybridCacheBackplane publisher) _CreateCache(
         HybridCacheOptions? options = null
     )
     {
@@ -29,10 +28,10 @@ public sealed class HybridCacheTests : TestBase
         var inMemoryCache = new InMemoryCache(_timeProvider, l2Options);
         var l2 = new InMemoryRemoteCacheAdapter(inMemoryCache);
 
-        var publisher = Substitute.For<IBus>();
+        var publisher = Substitute.For<IHybridCacheBackplane>();
         publisher
-            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(default(PublishReceipt));
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.CompletedTask);
 
         var cache = new HybridCache(l1, l2, publisher, options, timeProvider: _timeProvider);
 
@@ -375,11 +374,7 @@ public sealed class HybridCacheTests : TestBase
 
         await publisher
             .Received(1)
-            .PublishAsync(
-                Arg.Is<CacheInvalidationMessage>(m => m.Key == key),
-                Arg.Is<PublishOptions?>(options => options!.DeliveryMode == DeliveryMode.Direct),
-                Arg.Any<CancellationToken>()
-            );
+            .PublishAsync(Arg.Is<CacheInvalidationMessage>(m => m.Key == key), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -396,13 +391,7 @@ public sealed class HybridCacheTests : TestBase
 
         // then
         removed.Should().BeFalse();
-        await publisher
-            .DidNotReceive()
-            .PublishAsync(
-                Arg.Any<CacheInvalidationMessage>(),
-                Arg.Any<PublishOptions?>(),
-                Arg.Any<CancellationToken>()
-            );
+        await publisher.DidNotReceive().PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>());
     }
 
     #endregion
@@ -430,11 +419,7 @@ public sealed class HybridCacheTests : TestBase
 
         await publisher
             .Received(1)
-            .PublishAsync(
-                Arg.Is<CacheInvalidationMessage>(m => m.Prefix == prefix),
-                Arg.Is<PublishOptions?>(options => options!.DeliveryMode == DeliveryMode.Direct),
-                Arg.Any<CancellationToken>()
-            );
+            .PublishAsync(Arg.Is<CacheInvalidationMessage>(m => m.Prefix == prefix), Arg.Any<CancellationToken>());
     }
 
     #endregion
@@ -462,11 +447,7 @@ public sealed class HybridCacheTests : TestBase
 
         await publisher
             .Received(1)
-            .PublishAsync(
-                Arg.Is<CacheInvalidationMessage>(m => m.FlushAll),
-                Arg.Is<PublishOptions?>(options => options!.DeliveryMode == DeliveryMode.Direct),
-                Arg.Any<CancellationToken>()
-            );
+            .PublishAsync(Arg.Is<CacheInvalidationMessage>(m => m.FlushAll), Arg.Any<CancellationToken>());
     }
 
     #endregion
@@ -616,10 +597,10 @@ public sealed class HybridCacheTests : TestBase
         // Use a test double that throws on write but returns values on read
         using var l2 = new FailingWriteRemoteCache(_timeProvider);
 
-        var publisher = Substitute.For<IBus>();
+        var publisher = Substitute.For<IHybridCacheBackplane>();
         publisher
-            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(default(PublishReceipt));
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.CompletedTask);
 
         var cache = new HybridCache(l1, l2, publisher, new HybridCacheOptions(), timeProvider: _timeProvider);
         await using var _ = cache;
@@ -963,10 +944,10 @@ public sealed class HybridCacheTests : TestBase
         using var l2Base = new InMemoryCache(_timeProvider, l2Options);
         var l2 = new InMemoryRemoteCacheAdapter(l2Base);
 
-        var publisher = Substitute.For<IBus>();
+        var publisher = Substitute.For<IHybridCacheBackplane>();
         publisher
-            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns<PublishReceipt>(_ => throw new InvalidOperationException("Publish failed"));
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
+            .Returns<ValueTask>(_ => throw new InvalidOperationException("Publish failed"));
 
         var cache = new HybridCache(l1, l2, publisher, new HybridCacheOptions(), timeProvider: _timeProvider);
         await using var _ = cache;
@@ -1062,11 +1043,7 @@ public sealed class HybridCacheTests : TestBase
 
         await publisher
             .Received(1)
-            .PublishAsync(
-                Arg.Is<CacheInvalidationMessage>(m => m.Key == key),
-                Arg.Is<PublishOptions?>(options => options!.DeliveryMode == DeliveryMode.Direct),
-                Arg.Any<CancellationToken>()
-            );
+            .PublishAsync(Arg.Is<CacheInvalidationMessage>(m => m.Key == key), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -1084,11 +1061,7 @@ public sealed class HybridCacheTests : TestBase
         inserted.Should().BeTrue();
         await publisher
             .Received(1)
-            .PublishAsync(
-                Arg.Is<CacheInvalidationMessage>(m => m.Key == key),
-                Arg.Is<PublishOptions?>(options => options!.DeliveryMode == DeliveryMode.Direct),
-                Arg.Any<CancellationToken>()
-            );
+            .PublishAsync(Arg.Is<CacheInvalidationMessage>(m => m.Key == key), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -1105,13 +1078,7 @@ public sealed class HybridCacheTests : TestBase
 
         // then
         inserted.Should().BeFalse();
-        await publisher
-            .DidNotReceive()
-            .PublishAsync(
-                Arg.Any<CacheInvalidationMessage>(),
-                Arg.Any<PublishOptions?>(),
-                Arg.Any<CancellationToken>()
-            );
+        await publisher.DidNotReceive().PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>());
     }
 
     #endregion
@@ -1292,7 +1259,6 @@ public sealed class HybridCacheTests : TestBase
             .Received(1)
             .PublishAsync(
                 Arg.Is<CacheInvalidationMessage>(m => m.Key == key && m.InstanceId != null),
-                Arg.Any<PublishOptions?>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -1347,11 +1313,7 @@ public sealed class HybridCacheTests : TestBase
         timedOut.IsStale.Should().BeTrue();
         await publisher
             .Received(1)
-            .PublishAsync(
-                Arg.Is<CacheInvalidationMessage>(m => m.Key == key),
-                Arg.Any<PublishOptions?>(),
-                Arg.Any<CancellationToken>()
-            );
+            .PublishAsync(Arg.Is<CacheInvalidationMessage>(m => m.Key == key), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -1381,11 +1343,7 @@ public sealed class HybridCacheTests : TestBase
         hit.Value.Should().Be(1);
         await publisher
             .Received(1)
-            .PublishAsync(
-                Arg.Is<CacheInvalidationMessage>(m => m.Key == key),
-                Arg.Any<PublishOptions?>(),
-                Arg.Any<CancellationToken>()
-            );
+            .PublishAsync(Arg.Is<CacheInvalidationMessage>(m => m.Key == key), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -1425,13 +1383,7 @@ public sealed class HybridCacheTests : TestBase
         // then — peers' bytes are still identical, so no invalidation is broadcast for the restamp
         result.Value.Should().Be(value);
         result.IsStale.Should().BeFalse("the NotModified restamp makes the entry fresh again");
-        await publisher
-            .DidNotReceive()
-            .PublishAsync(
-                Arg.Any<CacheInvalidationMessage>(),
-                Arg.Any<PublishOptions?>(),
-                Arg.Any<CancellationToken>()
-            );
+        await publisher.DidNotReceive().PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -1439,12 +1391,12 @@ public sealed class HybridCacheTests : TestBase
     {
         // given — L2 healthy, the backplane down for the first publish, auto-recovery on
         var failPublish = true;
-        var publisher = Substitute.For<IBus>();
+        var publisher = Substitute.For<IHybridCacheBackplane>();
 
         publisher
-            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
-                failPublish ? throw new InvalidOperationException("Publish failed") : default(PublishReceipt)
+                failPublish ? throw new InvalidOperationException("Publish failed") : ValueTask.CompletedTask
             );
 
         using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
@@ -1484,11 +1436,7 @@ public sealed class HybridCacheTests : TestBase
         cache.RecoveryQueue.Count.Should().Be(0);
         await publisher
             .Received(2)
-            .PublishAsync(
-                Arg.Is<CacheInvalidationMessage>(m => m.Key == key),
-                Arg.Any<PublishOptions?>(),
-                Arg.Any<CancellationToken>()
-            );
+            .PublishAsync(Arg.Is<CacheInvalidationMessage>(m => m.Key == key), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -1500,19 +1448,15 @@ public sealed class HybridCacheTests : TestBase
         var sharedL2 = new InMemoryRemoteCacheAdapter(sharedL2Base);
 
         var published = new List<CacheInvalidationMessage>();
-        var publisherA = Substitute.For<IBus>();
+        var publisherA = Substitute.For<IHybridCacheBackplane>();
         publisherA
-            .PublishAsync(
-                Arg.Do<CacheInvalidationMessage>(published.Add),
-                Arg.Any<PublishOptions?>(),
-                Arg.Any<CancellationToken>()
-            )
-            .Returns(default(PublishReceipt));
+            .PublishAsync(Arg.Do<CacheInvalidationMessage>(published.Add), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.CompletedTask);
 
-        var publisherB = Substitute.For<IBus>();
+        var publisherB = Substitute.For<IHybridCacheBackplane>();
         publisherB
-            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(default(PublishReceipt));
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.CompletedTask);
 
         using var l1A = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
         using var l1B = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
@@ -1557,15 +1501,11 @@ public sealed class HybridCacheTests : TestBase
     {
         // given — a node that captures its own factory-write invalidation
         var published = new List<CacheInvalidationMessage>();
-        var publisher = Substitute.For<IBus>();
+        var publisher = Substitute.For<IHybridCacheBackplane>();
 
         publisher
-            .PublishAsync(
-                Arg.Do<CacheInvalidationMessage>(published.Add),
-                Arg.Any<PublishOptions?>(),
-                Arg.Any<CancellationToken>()
-            )
-            .Returns(default(PublishReceipt));
+            .PublishAsync(Arg.Do<CacheInvalidationMessage>(published.Add), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.CompletedTask);
 
         using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
         using var l2Inner = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
@@ -1636,10 +1576,10 @@ public sealed class HybridCacheTests : TestBase
         // given — L2 healthy at read time, failing by the time the factory write lands
         using var l2 = new TogglableRemoteCache(_timeProvider);
         using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
-        var publisher = Substitute.For<IBus>();
+        var publisher = Substitute.For<IHybridCacheBackplane>();
         publisher
-            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(default(PublishReceipt));
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.CompletedTask);
 
         var cache = new HybridCache(l1, l2, publisher, new HybridCacheOptions(), timeProvider: _timeProvider);
         await using var _ = cache;
@@ -1669,11 +1609,7 @@ public sealed class HybridCacheTests : TestBase
         (await l2.GetAsync<int>(key, AbortToken)).HasValue.Should().BeFalse("the L2 write failed and was swallowed");
         await publisher
             .Received(1)
-            .PublishAsync(
-                Arg.Is<CacheInvalidationMessage>(m => m.Key == key),
-                Arg.Any<PublishOptions?>(),
-                Arg.Any<CancellationToken>()
-            );
+            .PublishAsync(Arg.Is<CacheInvalidationMessage>(m => m.Key == key), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -1683,10 +1619,10 @@ public sealed class HybridCacheTests : TestBase
         // leave this node's L1 serving the value the caller asked to remove. (re-review N1)
         using var l2 = new TogglableRemoteCache(_timeProvider);
         using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
-        var publisher = Substitute.For<IBus>();
+        var publisher = Substitute.For<IHybridCacheBackplane>();
         publisher
-            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(default(PublishReceipt));
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.CompletedTask);
 
         var cache = new HybridCache(
             l1,
@@ -1822,10 +1758,10 @@ public sealed class HybridCacheTests : TestBase
         // L1-consistency-on-L2-failure contract is defined for.
         var l2 = new TogglableRemoteCache(_timeProvider);
         var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
-        var publisher = Substitute.For<IBus>();
+        var publisher = Substitute.For<IHybridCacheBackplane>();
         publisher
-            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(default(PublishReceipt));
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.CompletedTask);
 
         var cache = new HybridCache(
             l1,
@@ -1925,10 +1861,10 @@ public sealed class HybridCacheTests : TestBase
         l2.UpsertAllAsync(Arg.Any<IDictionary<string, int>>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns(2);
 
-        var publisher = Substitute.For<IBus>();
+        var publisher = Substitute.For<IHybridCacheBackplane>();
         publisher
-            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(default(PublishReceipt));
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.CompletedTask);
 
         var cache = new HybridCache(
             l1,
@@ -1968,7 +1904,6 @@ public sealed class HybridCacheTests : TestBase
             .Received(1)
             .PublishAsync(
                 Arg.Is<CacheInvalidationMessage>(m => m.Keys != null && m.Keys.Length == 3),
-                Arg.Any<PublishOptions?>(),
                 Arg.Any<CancellationToken>()
             );
         cache.RecoveryQueue!.Count.Should().Be(0);
@@ -1983,10 +1918,10 @@ public sealed class HybridCacheTests : TestBase
         l2.RemoveAllAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
             .Returns<int>(_ => throw new InvalidOperationException("L2 batch failed"));
 
-        var publisher = Substitute.For<IBus>();
+        var publisher = Substitute.For<IHybridCacheBackplane>();
         publisher
-            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(default(PublishReceipt));
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.CompletedTask);
 
         var cache = new HybridCache(
             l1,
@@ -2019,13 +1954,7 @@ public sealed class HybridCacheTests : TestBase
                 .BeFalse("L1 is cleaned before the rethrow to avoid stale entries");
         }
 
-        await publisher
-            .DidNotReceive()
-            .PublishAsync(
-                Arg.Any<CacheInvalidationMessage>(),
-                Arg.Any<PublishOptions?>(),
-                Arg.Any<CancellationToken>()
-            );
+        await publisher.DidNotReceive().PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>());
         cache.RecoveryQueue!.Count.Should().Be(0);
     }
 
@@ -2040,10 +1969,10 @@ public sealed class HybridCacheTests : TestBase
                 throw new InvalidOperationException("L2 read failed")
             );
 
-        var publisher = Substitute.For<IBus>();
+        var publisher = Substitute.For<IHybridCacheBackplane>();
         publisher
-            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(default(PublishReceipt));
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.CompletedTask);
 
         var cache = new HybridCache(
             l1,
@@ -2080,10 +2009,10 @@ public sealed class HybridCacheTests : TestBase
         {
             ReadGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
         };
-        var publisher = Substitute.For<IBus>();
+        var publisher = Substitute.For<IHybridCacheBackplane>();
         publisher
-            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(default(PublishReceipt));
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.CompletedTask);
 
         var cache = new HybridCache(
             l1,
@@ -2127,10 +2056,10 @@ public sealed class HybridCacheTests : TestBase
         {
             ReadGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
         };
-        var publisher = Substitute.For<IBus>();
+        var publisher = Substitute.For<IHybridCacheBackplane>();
         publisher
-            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(default(PublishReceipt));
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.CompletedTask);
 
         var logger = new RecordingHybridCacheLogger();
         var cache = new HybridCache(
@@ -2179,10 +2108,10 @@ public sealed class HybridCacheTests : TestBase
             ReadGate = new(TaskCreationOptions.RunContinuationsAsynchronously),
         };
         using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
-        var publisher = Substitute.For<IBus>();
+        var publisher = Substitute.For<IHybridCacheBackplane>();
         publisher
-            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(default(PublishReceipt));
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.CompletedTask);
 
         await using var cache = new HybridCache(
             l1,
@@ -2229,10 +2158,10 @@ public sealed class HybridCacheTests : TestBase
             WriteGate = new(TaskCreationOptions.RunContinuationsAsynchronously),
         };
         using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
-        var publisher = Substitute.For<IBus>();
+        var publisher = Substitute.For<IHybridCacheBackplane>();
         publisher
-            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(default(PublishReceipt));
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.CompletedTask);
 
         var cache = new HybridCache(
             l1,
@@ -2259,13 +2188,7 @@ public sealed class HybridCacheTests : TestBase
         await act.Should().ThrowAsync<OperationCanceledException>();
         cache.RecoveryQueue!.Count.Should().Be(0, "caller cancellation must not be queued as a failed L2 write");
         (await l1.GetAsync<int>(key, AbortToken)).HasValue.Should().BeFalse();
-        await publisher
-            .DidNotReceive()
-            .PublishAsync(
-                Arg.Any<CacheInvalidationMessage>(),
-                Arg.Any<PublishOptions?>(),
-                Arg.Any<CancellationToken>()
-            );
+        await publisher.DidNotReceive().PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>());
     }
 
     #endregion

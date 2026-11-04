@@ -3,13 +3,13 @@
 namespace Headless.Caching;
 
 /// <summary>
-/// Message published over <c>IBus</c> by <see cref="HybridCache"/> to notify peer instances to evict specific
-/// L1 entries. Exactly one invalidation target must be set per message: <see cref="Key"/>, <see cref="Keys"/>,
+/// Message <see cref="HybridCache"/> sends through the registered <see cref="IHybridCacheBackplane"/> to notify peer
+/// instances to evict specific L1 entries. Exactly one invalidation target must be set per message: <see cref="Key"/>, <see cref="Keys"/>,
 /// <see cref="Prefix"/>, <see cref="Tag"/>, <see cref="Clear"/>, or <see cref="FlushAll"/>.
 /// </summary>
 /// <remarks>
-/// Consumers register <see cref="HybridCacheInvalidationConsumer"/> with Headless Messaging to receive these
-/// messages. Messages whose <see cref="InstanceId"/> matches the receiving instance are silently ignored to
+/// The backplane transport delivers each message to every host, where <see cref="IHybridCacheInvalidationListener"/>
+/// applies it to the hybrid cache it names. Messages whose <see cref="InstanceId"/> matches the receiving instance are silently ignored to
 /// prevent echo invalidation. The <see cref="Timestamp"/> field is load-bearing for tag/clear/flush messages:
 /// receivers seed their L1 marker from it so cross-node clock skew does not reintroduce stale entries.
 /// </remarks>
@@ -17,9 +17,9 @@ namespace Headless.Caching;
 public sealed record CacheInvalidationMessage
 {
     /// <summary>
-    /// The wire name this message is published and consumed under, at contract version <c>1</c>. Every hybrid cache
-    /// registration declares it, so the topic stays the same whatever naming conventions the host configures for its
-    /// own messages.
+    /// The wire name this message travels under, at contract version <c>1</c>. The messaging backplane declares it as the
+    /// message name, so the topic stays the same whatever naming conventions the host configures for its own messages,
+    /// and the Redis backplane uses it as its pub/sub channel name after the Redis key prefix.
     /// </summary>
     public const string MessageName = "headless.caching.hybrid.invalidation";
 

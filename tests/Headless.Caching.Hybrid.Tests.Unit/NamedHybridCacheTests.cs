@@ -1,11 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Caching;
-using Headless.Messaging;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 
@@ -21,45 +19,29 @@ public sealed class NamedHybridCacheTests : TestBase
         var services = new ServiceCollection();
         services.AddSingleton<TimeProvider>(_timeProvider);
         services.AddLogging();
-        // HybridCache's DI factory builds its own unit-less IBus over the singleton MessagePublisher
-        // core; a real in-memory transport is the lightest way to make that resolvable. Direct
-        // delivery (the only mode HybridCache uses) needs a transport but no storage provider, so
-        // startup validation — which runs on host start, never triggered here — would not gate this anyway.
-        services.AddHeadlessMessaging(setup => setup.UseInMemory());
+        services.AddSingleton<IHybridCacheBackplane>(new CapturingBackplane([]));
 
         return services;
     }
 
-    /// <summary>
-    /// Captures every <see cref="CacheInvalidationMessage"/> published on the bus lane via publish
-    /// middleware — the public seam for observing an outbound publish now that HybridCache no longer
-    /// accepts an injected <see cref="IBus"/> substitute.
-    /// </summary>
+    /// <summary>Captures every <see cref="CacheInvalidationMessage"/> the hybrid caches send through the backplane.</summary>
     private List<CacheInvalidationMessage> _CreateServicesCapturingInvalidations(out ServiceCollection services)
     {
         services = new ServiceCollection();
         services.AddSingleton<TimeProvider>(_timeProvider);
         services.AddLogging();
         var captured = new List<CacheInvalidationMessage>();
-        services.AddSingleton(captured);
-        services
-            .AddHeadlessMessaging(setup => setup.UseInMemory())
-            .AddBusPublishMiddleware<CapturingPublishMiddleware>();
+        services.AddSingleton<IHybridCacheBackplane>(new CapturingBackplane(captured));
 
         return captured;
     }
 
-    private sealed class CapturingPublishMiddleware(List<CacheInvalidationMessage> sink)
-        : IPublishMiddleware<PublishContext>
+    private sealed class CapturingBackplane(List<CacheInvalidationMessage> sink) : IHybridCacheBackplane
     {
-        public ValueTask InvokeAsync(PublishContext context, Func<ValueTask> next)
+        public ValueTask PublishAsync(CacheInvalidationMessage message, CancellationToken cancellationToken)
         {
-            if (context.Content is CacheInvalidationMessage message)
-            {
-                sink.Add(message);
-            }
-
-            return next();
+            sink.Add(message);
+            return ValueTask.CompletedTask;
         }
     }
 
@@ -175,7 +157,7 @@ public sealed class NamedHybridCacheTests : TestBase
     }
 
     [Fact]
-    public async Task should_route_named_message_to_named_hybrid_when_invalidation_consumer()
+    public async Task should_route_named_message_to_named_hybrid_when_the_listener_receives_it()
     {
         // given
         var services = _CreateBaseServices();
@@ -201,27 +183,15 @@ public sealed class NamedHybridCacheTests : TestBase
 
         await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         await l1.UpsertAsync("key", "value", TimeSpan.FromMinutes(5), AbortToken);
-        var consumer = new HybridCacheInvalidationConsumer(
-            provider.GetRequiredService<ICacheProvider>(),
-            NullLogger<HybridCacheInvalidationConsumer>.Instance
-        );
+        var listener = provider.GetServices<IHybridCacheInvalidationListener>().Should().ContainSingle().Subject;
 
         // when
-        await consumer.ConsumeAsync(
-            new ConsumeContext<CacheInvalidationMessage>
+        await listener.OnInvalidationAsync(
+            new CacheInvalidationMessage
             {
-                Lane = MessageLane.Bus,
-                Message = new CacheInvalidationMessage
-                {
-                    InstanceId = "node-a",
-                    CacheName = "tenant",
-                    Key = "key",
-                },
-                MessageId = Faker.Random.Guid().ToString(),
-                CorrelationId = null,
-                Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
-                Timestamp = _timeProvider.GetUtcNow(),
-                MessageName = CacheInvalidationMessage.MessageName,
+                InstanceId = "node-a",
+                CacheName = "tenant",
+                Key = "key",
             },
             AbortToken
         );

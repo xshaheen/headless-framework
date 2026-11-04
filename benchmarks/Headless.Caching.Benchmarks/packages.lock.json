@@ -415,9 +415,7 @@
         "dependencies": {
           "Headless.Caching": "[1.0.0, )",
           "Headless.Caching.Abstractions": "[1.0.0, )",
-          "Headless.Hosting": "[1.0.0, )",
-          "Headless.Messaging.Abstractions": "[1.0.0, )",
-          "Headless.Messaging.Bus.Abstractions": "[1.0.0, )"
+          "Headless.Hosting": "[1.0.0, )"
         }
       },
       "headless.caching.inmemory": {
@@ -433,6 +431,7 @@
         "dependencies": {
           "Headless.Caching": "[1.0.0, )",
           "Headless.Caching.Abstractions": "[1.0.0, )",
+          "Headless.Caching.Hybrid": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Redis": "[1.0.0, )",
           "Headless.Serializer.Json": "[1.0.0, )"
@@ -475,21 +474,6 @@
           "OpenTelemetry.Api": "[1.20.1, )"
         }
       },
-      "headless.messaging.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.Reliability.Abstractions": "[1.0.0, )",
-          "Headless.UnitOfWork.Abstractions": "[1.0.0, )",
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.13, )"
-        }
-      },
-      "headless.messaging.bus.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Messaging.Abstractions": "[1.0.0, )"
-        }
-      },
       "headless.primitives": {
         "type": "Project",
         "dependencies": {
@@ -504,12 +488,6 @@
           "StackExchange.Redis": "[3.4.5, )"
         }
       },
-      "headless.reliability.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )"
-        }
-      },
       "headless.serializer.abstractions": {
         "type": "Project"
       },
@@ -518,12 +496,6 @@
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Headless.Serializer.Abstractions": "[1.0.0, )"
-        }
-      },
-      "headless.unitofwork.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )"
         }
       },
       "FluentValidation": {

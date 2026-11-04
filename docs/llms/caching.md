@@ -1,6 +1,6 @@
 ---
 domain: Caching
-packages: Caching.Abstractions, Caching, Caching.DistributedLocks, Caching.Hybrid, Caching.InMemory, Caching.Redis, Caching.Bcl, Caching.OutputCache
+packages: Caching.Abstractions, Caching, Caching.DistributedLocks, Caching.Hybrid, Caching.Hybrid.Messaging, Caching.InMemory, Caching.Redis, Caching.Bcl, Caching.OutputCache
 ---
 
 # Caching
@@ -13,7 +13,7 @@ Install `Headless.Caching.Abstractions` plus one provider. All registration flow
 
 - Single-instance or development: `Headless.Caching.InMemory` with `setup.UseInMemory()`.
 - Multi-instance shared cache: `Headless.Caching.Redis` with `setup.UseRedis(...)`.
-- Local hot path plus shared L2: `Headless.Caching.Hybrid` with `setup.AddMemoryTier()`, `setup.AddRedisTier(...)`, messaging, then `setup.UseHybrid()`.
+- Local hot path plus shared L2: `Headless.Caching.Hybrid` with `setup.AddMemoryTier()`, `setup.AddRedisTier(...)`, `setup.UseHybrid()`, and a backplane: `setup.UseRedisBackplane()` (Redis pub/sub), `setup.UseMessagingBackplane()` (`Headless.Caching.Hybrid.Messaging`), or `setup.UseSingleInstanceBackplane()`.
 - BCL `IDistributedCache` consumers such as ASP.NET Core Session: add `Headless.Caching.Bcl` and call `setup.UseBclCache(...)` inside the same `AddHeadlessCaching` setup.
 - Cross-node factory single-flight: add `Headless.Caching.DistributedLocks`, call `setup.UseDistributedFactoryLock()`, and opt in per entry with `CacheEntryOptions.UseDistributedFactoryLock`.
 
@@ -22,11 +22,12 @@ Install `Headless.Caching.Abstractions` plus one provider. All registration flow
 ## Agent Rules
 
 - Use `ICache` from `Headless.Caching.Abstractions` for application cache operations. Use `Microsoft.Extensions.Caching.Distributed.IDistributedCache` only for standard BCL consumers such as ASP.NET Core Session, and back it with `Headless.Caching.Bcl`. Use `IRemoteCache` only when a remote/L2 implementation is required.
-- For ASP.NET Core response/output caching, do not back `AddOutputCache()` with `IDistributedCache` — ASP.NET's own guidance rejects it as an output-cache store because it lacks atomic tag operations. Add `Headless.Caching.OutputCache` and call `setup.UseOutputCache(...)`; it registers an `IOutputCacheStore` over a named Headless cache so tag eviction rides the engine's distributed tag index. Still call `AddOutputCache()` and declare tags via `[OutputCache(Tags = "...")]` / `.CacheOutput(p => p.Tag("..."))` — the package supplies only the store, not the policy. In the `configureCache` callback select only the backing provider (`instance.UseRedis(...)` / `UseHybrid(...)`); no serializer configuration is needed because the middleware's payloads are `byte[]`, the cache's native wire format — configuring a serializer on the named instance is rejected at registration. `UseOutputCache` is a consumer of the engine, so `AddHeadlessCaching` still requires a default provider alongside it.
+- For ASP.NET Core response/output caching, do not back `AddOutputCache()` with `IDistributedCache` — ASP.NET's own guidance rejects it as an output-cache store because it lacks atomic tag operations. Add `Headless.Caching.OutputCache` and call `setup.UseOutputCache(...)`; it registers an `IOutputCacheStore` over a named Headless cache so tag eviction rides the engine's distributed tag index. Still call `AddOutputCache()` and declare tags via `[OutputCache(Tags = "...")]` / `.CacheOutput(p => p.Tag("..."))` — the package supplies only the store, not the policy. In the `configureCache` callback select only the backing provider (`instance.UseRedis(...)` / `UseHybrid(...)`; a hybrid backing instance needs the setup's `Use*Backplane` choice like any hybrid); no serializer configuration is needed because the middleware's payloads are `byte[]`, the cache's native wire format — configuring a serializer on the named instance is rejected at registration. `UseOutputCache` is a consumer of the engine, so `AddHeadlessCaching` still requires a default provider alongside it.
 - In Headless caching docs, `Memory` means `Headless.Caching.InMemory`, not `Microsoft.Extensions.Caching.Memory`.
 - Use `Headless.Caching.InMemory` for development and single-instance deployments. Use `Headless.Caching.Redis` for production multi-instance deployments. Use `Headless.Caching.Hybrid` when the app needs process-local read speed with remote cache sharing.
 - Configure every cache instance (default, tiers, named, cross-cutting) in one `services.AddHeadlessCaching(setup => ...)` call. Exactly one default `Use{InMemory,Redis,Hybrid}` is required; a second `AddHeadlessCaching` call on the same service collection throws, and a failed setup leaves the service collection unchanged.
-- For hybrid caching, call `setup.AddMemoryTier()`, then `setup.AddRedisTier(...)`, then `setup.UseHybrid()` in the same setup. The hybrid cache becomes the default `ICache`. `UseHybrid()` without a registered `IRemoteCache` (i.e. without `AddRedisTier(...)` or a named remote tier) throws `InvalidOperationException` at DI resolve time; `Headless.Caching.InMemory` does not register `IRemoteCache` and cannot act as L2. Registering a tier for the role the default provider already claims (for example `UseRedis` plus `AddRedisTier`) throws at registration.
+- For hybrid caching, call `setup.AddMemoryTier()`, then `setup.AddRedisTier(...)`, then `setup.UseHybrid()` in the same setup, and choose a backplane (next rule). The hybrid cache becomes the default `ICache`. `UseHybrid()` without a registered `IRemoteCache` (i.e. without `AddRedisTier(...)` or a named remote tier) throws `InvalidOperationException` at DI resolve time; `Headless.Caching.InMemory` does not register `IRemoteCache` and cannot act as L2. Registering a tier for the role the default provider already claims (for example `UseRedis` plus `AddRedisTier`) throws at registration.
+- A hybrid cache refuses to start without a backplane, because a write on one host would leave every other host serving its stale L1 copy until `DefaultLocalExpiration` runs out. Call exactly one of `setup.UseRedisBackplane()` (`Headless.Caching.Redis`, Redis pub/sub, no broker), `setup.UseMessagingBackplane()` (`Headless.Caching.Hybrid.Messaging`, the Headless messaging bus), or `setup.UseSingleInstanceBackplane()` (only when exactly one host runs the cache; it sends nothing) inside `AddHeadlessCaching`, or register a custom `IHybridCacheBackplane`. Without one, the host's startup check throws `MissingRequiredServiceException` naming all three, and resolving `ICache` outside a started host throws `InvalidOperationException` with the same text. The last `Use*Backplane` call wins. Registering `Headless.Messaging` alone does not wire invalidation.
 - `ICache<T>` is the single typed convenience facade wrapping the default `ICache`; it exposes the full operation surface bound to type `T`. There are no typed tier interfaces (`IRemoteCache<T>` and `IInMemoryCache<T>` do not exist). For tier-specific access use the untyped `IRemoteCache`/`IInMemoryCache` with method-level generics, or `ICacheProvider.GetCache(name)`.
 - `setup.UseDistributedFactoryLock()` comes in three overload shapes: parameterless, `Action<CacheFactoryLockOptions>`, and `Action<CacheFactoryLockOptions, IServiceProvider>`. `CacheFactoryLockOptions.TimeUntilExpires`, when set, must be finite and positive — zero, negative, or `Timeout.InfiniteTimeSpan` are rejected at startup.
 - Always check `CacheValue<T>.HasValue` before accessing `.Value`; cache misses return `HasValue = false`.
@@ -56,8 +57,8 @@ Install `Headless.Caching.Abstractions` plus one provider. All registration flow
 - Named cache instances must not use a reserved name — the `CacheConstants` role keys (`Headless.Caching:Memory`, `Headless.Caching:Remote`, `Headless.Caching:Hybrid`), or any name under the `Headless.Caching:` namespace; `setup.AddNamed` throws `ArgumentException` for reserved names and rejects duplicates. Resolve named instances through `ICacheProvider.GetCache(name)` / `GetCacheOrNull(name)`.
 - Named Redis cache instances can select their serializer with `instance.WithSerializer(...)` (a Redis-provider capability shipped in `Headless.Caching.Redis`) when that instance needs a different value codec from the default cache. InMemory stores object references and never serializes, so `WithSerializer` is not offered there; on a hybrid instance it governs L2 (Redis) only. The `Headless.Caching.Bcl` and `Headless.Caching.OutputCache` adapters need no serializer configuration: `byte[]` is the cache's native wire format, stored verbatim (never passed through a serializer), so their `byte[]` payloads avoid JSON/base64 encoding under any serializer.
 - For opaque-byte payloads, prefer the `IBufferCache` fast path over `GetAsync<byte[]>`/`UpsertEntryAsync<byte[]>`: it reads the payload into a caller buffer and writes from a `ReadOnlySequence<byte>` without the 1–2 intermediate `byte[]` materializations the generic path allocates (read drops from 3 payload copies to 1, write from 2 to 1; the one remaining copy is the unavoidable network I/O — zero-copy across a network boundary is impossible). Redis, InMemory, and Hybrid implement it; call it through `BufferCacheExtensions.TryGetToOrFallbackAsync(key, IBufferWriter<byte>)` / `UpsertRawOrFallbackAsync(key, ReadOnlySequence<byte>, options)` so a non-byte-oriented provider transparently falls back to the generic `byte[]` path. `PipeWriter` is an `IBufferWriter<byte>`, so a response/body pipe is a valid destination.
-- Named hybrid instances publish invalidations with `CacheInvalidationMessage.CacheName`, and `HybridCacheInvalidationConsumer` routes them through `ICacheProvider` to the matching named hybrid. Default hybrid messages use a null `CacheName` and resolve through the `CacheConstants.HybridCacheProvider` role key.
-- Wire contract: every hybrid registration declares `CacheInvalidationMessage` as `headless.caching.hybrid.invalidation`, contract version `1` (`CacheInvalidationMessage.MessageName`), for both publishing and consuming. The host's naming conventions (`UseConventions`) do not rename it; only the host-wide `MessagingOptions.MessageNamePrefix` applies, as it does to every message.
+- Named hybrid instances publish invalidations with `CacheInvalidationMessage.CacheName`, and the listener `UseHybrid` registers routes them through `ICacheProvider` to the matching named hybrid, whichever backplane delivered them. Default hybrid messages use a null `CacheName` and resolve through the `CacheConstants.HybridCacheProvider` role key.
+- Wire contract on the messaging backplane: `UseMessagingBackplane()` declares `CacheInvalidationMessage` as `headless.caching.hybrid.invalidation`, contract version `1` (`CacheInvalidationMessage.MessageName`), for both publishing and consuming, under the consumer identity `headless.caching.hybrid.invalidation`. The host's naming conventions (`UseConventions`) do not rename it; only the host-wide `MessagingOptions.MessageNamePrefix` applies, as it does to every message. A host built before the backplane split, whose `UseHybrid` registered the consumer itself, and a host on `UseMessagingBackplane()` invalidate each other. The Redis backplane uses the channel `{KeyPrefix}headless.caching.hybrid.invalidation`, so a Redis host and a messaging host do not see each other's invalidations; move every host of one service to the same backplane in one rollout.
 - Hybrid `AllowBackgroundDistributedCacheOperations = true` fire-and-forgets the L2 write and backplane publish on additive writes (the `GetOrAddAsync` factory write-through, `UpsertAsync`, `UpsertAllAsync`): the caller returns after the L1 write, so L2 and peers briefly lag L1. A failed background write queues for replay when `EnableAutoRecovery` is on, else is logged best-effort. Removes, `Try*`, atomic/set ops, and reads stay synchronous because their result is the L2 answer.
 - Hybrid `DistributedCacheSoftTimeout` / `DistributedCacheHardTimeout` bound slow L2 reads. A factory-backed read with an L1 stale reserve serves that reserve on L2 soft timeout and skips the origin factory; a plain read degrades to a miss. `DistributedCacheCircuitBreakerDuration` skips L2 operations for a short window after non-cancellation L2 failures. When a non-replayable write (removes, `Try*` CAS ops, atomic numeric ops, set mutations, prefix sweeps) fails against L2, Hybrid clears — or logically expires, for `ExpireAsync` — the affected L1 entries before rethrowing: the surfaced exception does not mean "nothing changed locally"; this node deliberately stops serving values whose L2 state is unknown.
 - Hybrid auto-recovery (`EnableAutoRecovery = true`) is degraded-mode semantics, not a guarantee: a failing single-key L2 write succeeds against L1 and is replayed later, so L2 (and other instances) can lag L1 until recovery. Successful set/remove replays republish their key invalidation, so peers converge once replay lands instead of waiting out their L1 TTL. Bulk, atomic, and set operations are never captured and still surface failures.
@@ -277,7 +278,7 @@ The FIFO buffers 2,048 signals by default (`EventBufferCapacity`). When full, th
 | --- | --- | --- | --- |
 | `Headless.Caching.InMemory` | Single process, tests, local development, or L1 for Hybrid. | Multiple app instances must share cache state. | Fastest path, but data is per process and retained in memory. |
 | `Headless.Caching.Redis` | Multiple app instances need a shared cache and Redis is already operational. | The app cannot tolerate Redis operational dependency. | Distributed and script-backed atomic operations, with network latency and Redis timeout tuning. |
-| `Headless.Caching.Hybrid` | Reads are hot enough to benefit from L1 while L2 keeps instances coherent. | Invalidation messaging is not configured or L1 staleness is unacceptable. | Fast local reads plus remote sharing, with extra moving parts and invalidation timing. |
+| `Headless.Caching.Hybrid` | Reads are hot enough to benefit from L1 while L2 keeps instances coherent. | The hosts share neither Redis nor a messaging transport for the backplane, or L1 staleness is unacceptable. | Fast local reads plus remote sharing, with a backplane to run and invalidation timing. |
 
 `Headless.Caching.DistributedLocks` is not a provider — it is an adapter that any provider's factory path can opt into per entry when the factory is expensive enough to justify a distributed lock round-trip.
 
@@ -650,7 +651,7 @@ builder.Services.AddHeadlessCaching(setup =>
 
 ## Headless.Caching.Hybrid
 
-Two-tier cache combining in-memory L1 with remote L2 and cross-instance invalidation through messaging.
+Two-tier cache combining in-memory L1 with remote L2 and cross-instance invalidation through a backplane the host chooses.
 
 ### API and behavior
 
@@ -671,14 +672,22 @@ Two-tier cache combining in-memory L1 with remote L2 and cross-instance invalida
 
 ### Design constraints
 
-A default hybrid composes role-keyed tiers registered in the same `AddHeadlessCaching` setup: `setup.AddMemoryTier()` registers the L1 (`IInMemoryCache` plus the `CacheConstants.MemoryCacheProvider` role key) and `setup.AddRedisTier(...)` the L2 (`IRemoteCache` plus the `CacheConstants.RemoteCacheProvider` role key) without touching the default unkeyed `ICache`; `setup.UseHybrid()` then becomes the default `ICache`. Prefer the tier recipe for the common one-hybrid host — no instance names to invent, and the role keys stay reachable through `ICacheProvider`; set `LocalCacheName`/`RemoteCacheName` to bind `AddNamed` instances instead when a tier needs an identity of its own (for example a second hybrid, or tiers shared with other named consumers). Incoming invalidations are handled by `HybridCacheInvalidationConsumer` (`IConsume<CacheInvalidationMessage>`), which `UseHybrid` registers unconditionally, so cross-node L1 invalidation is correct by default rather than a silent opt-in. A single consumer serves every hybrid (default and named): it resolves the default hybrid by the `CacheConstants.HybridCacheProvider` role key and named hybrids by `CacheInvalidationMessage.CacheName` through `ICacheProvider`, so a named hybrid receives only the invalidations published for its own cache name. The consumer is declared `[BusConsumer("headless.caching.hybrid.invalidation", EveryInstance = true)]` (the identity is also `HybridCacheInvalidationConsumer.Identity`), and `UseHybrid` contributes the package's generated messaging module through `services.ConfigureMessaging(m => m.AddModule<...>())`, which lives in the messaging abstractions, so `Headless.Caching.Hybrid` does not reference `Headless.Messaging`. `CacheInvalidationMessage` has no declared contract, so its message name comes from the messaging naming conventions; the identity alone names each process's subscription, with no host-level prefix or application id. The contribution is order-independent and inert until messaging starts, so caching and messaging may be registered in either order, a host that never adds messaging pays nothing, and any number of hybrids register the consumer once. Do not register the consumer yourself; tune it by identity instead, for example `services.ConfigureMessaging(m => m.Tune(HybridCacheInvalidationConsumer.Identity, c => c.Concurrency(4)))`.
+A default hybrid composes role-keyed tiers registered in the same `AddHeadlessCaching` setup: `setup.AddMemoryTier()` registers the L1 (`IInMemoryCache` plus the `CacheConstants.MemoryCacheProvider` role key) and `setup.AddRedisTier(...)` the L2 (`IRemoteCache` plus the `CacheConstants.RemoteCacheProvider` role key) without touching the default unkeyed `ICache`; `setup.UseHybrid()` then becomes the default `ICache`. Prefer the tier recipe for the common one-hybrid host — no instance names to invent, and the role keys stay reachable through `ICacheProvider`; set `LocalCacheName`/`RemoteCacheName` to bind `AddNamed` instances instead when a tier needs an identity of its own (for example a second hybrid, or tiers shared with other named consumers). Cross-host invalidation goes through one `IHybridCacheBackplane` shared by the default and every named hybrid. Each hybrid sends a `CacheInvalidationMessage` through it on every write, and the transport delivers it to every host, where it hands it to each `IHybridCacheInvalidationListener`. `UseHybrid` registers one listener that serves every hybrid: it resolves the default hybrid by the `CacheConstants.HybridCacheProvider` role key and named hybrids by `CacheInvalidationMessage.CacheName` through `ICacheProvider`, so a named hybrid receives only the invalidations published for its own cache name, and it logs (never throws) a failure to apply one. `UseHybrid` does not choose the transport: it declares the backplane as a required service, and the host's startup check fails until `UseRedisBackplane()`, `UseMessagingBackplane()`, `UseSingleInstanceBackplane()`, or a custom `IHybridCacheBackplane` registration supplies it. The check runs when the host starts, so the backplane may be chosen before or after `UseHybrid`, or registered outside `AddHeadlessCaching`.
 
-**Every-instance delivery of invalidations.** Each L1 lives in one process, so every process must receive every invalidation. The consumer is an [every-instance Bus consumer](messaging.md#every-instance-bus-delivery): each process opens its own subscription, named from the identity and the host's instance id, and the broker removes it when the process stops. A competing subscription would hand each invalidation to one replica and leave the others serving stale L1 entries.
+**Backplane contract.** A custom transport implements `IHybridCacheBackplane.PublishAsync` and calls the registered listeners:
 
-- **At most once.** A process receives only the invalidations published while it is subscribed. Nothing is stored or retried: a consumer failure is logged and the message is committed. The publish side is already at most once, because invalidations publish with `DeliveryMode.Direct`. On Redis Streams the invalidation stream has no consumer group, so the transport keeps its entries only for `RedisMessagingOptions.EveryInstanceStreamMaxAge` (5 minutes by default), not the 7-day `StreamMaxAge`.
-- **L1 flush on every establishment.** The consumer implements `IOnSubscriptionEstablished`. Each time the subscription is established, including when it is re-established (`IsReconnect = true`: the transport recovered, or the host rebuilt its consumer clients after a broker failure or a runtime subscription changed the topology), it flushes the L1 of the default hybrid and of every named hybrid, because an invalidation published during the gap never arrives. L2 stays the source of truth and refills L1 on the next reads. It flushes on the first subscription at host start too: L1 can be warmed before the subscription is live (startup reads, or a broker outage that delays the subscription), and an invalidation published in that window never arrives. A clean start flushes an empty L1, which costs nothing. The flush is local; no invalidation is published.
-- **Transport support.** The transport must support every-instance delivery. InMemory, NATS, RabbitMQ, Redis, and Azure Service Bus do; AWS SNS/SQS does not, and a host that combines a hybrid cache with it fails at startup naming the consumer and the provider.
-- **`ConsumeOnly` hosts.** `ConsumeOnly` never filters every-instance consumers, so a host that limits its consumers still runs the invalidation consumer and evicts its L1 on a peer write.
+- **Publish.** Send the message unchanged and complete only once the transport accepted it; throw otherwise. The cache logs the failure (`FailedToPublishCacheInvalidation`), queues a single-key invalidation for replay under `EnableAutoRecovery`, and rethrows under `ReThrowBackplaneExceptions`.
+- **Deliver.** Hand every delivered message to each `IHybridCacheInvalidationListener` through `OnInvalidationAsync`, with or without the sender's own messages: a receiver drops a message whose `InstanceId` is its own, and seeds tag, clear, and flush markers from the message's `Timestamp`, not its own clock.
+- **Flush after a gap.** Delivery may be at most once, but a gap must not pass silently. Call `OnSubscriptionEstablishedAsync` on each listener every time the subscription is established, the first time included (L1 can be warmed before the subscription is live) and after every reconnect, once the new subscription is confirmed; the listener flushes the L1 of the default and every named hybrid, and L2 refills it. The flush is local; no invalidation is published.
+- **Resolve lazily.** Resolve the listeners on the first delivery, not in the backplane's constructor: they reach the hybrid caches, which depend on the backplane.
+
+**Choosing a backplane.**
+
+| Backplane | Package | Use when | Delivery and gap handling |
+| --- | --- | --- | --- |
+| `setup.UseRedisBackplane()` | `Headless.Caching.Redis` | The hosts share the Redis server that serves L2 (or another registered `IConnectionMultiplexer`) and need no broker. | Redis pub/sub on `{KeyPrefix}headless.caching.hybrid.invalidation`; flushes L1 on the first subscription and after every restored connection. See [Headless.Caching.Redis](#headlesscachingredis). |
+| `setup.UseMessagingBackplane()` | `Headless.Caching.Hybrid.Messaging` | The hosts already share a Headless messaging transport with every-instance delivery. | An every-instance Bus consumer; flushes L1 on every subscription establishment. See [Headless.Caching.Hybrid.Messaging](#headlesscachinghybridmessaging). |
+| `setup.UseSingleInstanceBackplane()` | `Headless.Caching.Hybrid` | Exactly one host runs the cache: a single-node service, a worker that owns its cache alone, a test host. | Sends nothing. On a second host, both serve stale L1 entries until `DefaultLocalExpiration` runs out. |
 
 Hybrid fail-safe and factory timeouts use the same coordinator semantics as the other providers. A stale reserve can come from L1 or L2. On factory soft timeout, the stale value is returned to the caller and the detached background factory writes through the composite store on success, so both tiers are refreshed. Eager refresh and conditional (`NotModified`) refresh likewise run through the composite store, so a refresh extends or replaces the entry in both tiers. `DefaultLocalExpiration` still caps L1 physical retention independently of the L2 duration.
 
@@ -696,7 +705,7 @@ On reads, Hybrid promotes L2 entries into L1 only when they are logically fresh.
 
 The coordinator's `ConcurrencyStamp` compare-and-set (a late factory must not resurrect a removed key) applies to Hybrid too, scoped to the tier the snapshot came from. A stamp is opaque and store-local, and a read is served by one tier, so Hybrid tags the stamp it returns with its tier of origin and enforces the CAS against that tier alone; that tier is also written **first**, so a lost compare aborts the whole write and neither tier takes the stale value. The other tier is still written unconditionally, which leaves one narrow gap: a concurrent write that touched only the unguarded tier is not detected. Removes and upserts go to both tiers, so this affects only per-tier writes (`SkipMemoryCacheWrite`/`SkipDistributedCacheWrite`) racing a factory. Queued auto-recovery replays drop the stamp entirely — they replay long after the snapshot was read, and the queued item's L1 stamp guard is what keeps a superseded replay from landing.
 
-Initial and replayed invalidations use `DeliveryMode.Direct`, so an active unit of work never captures or delays the backplane signal — `Direct` always bypasses storage and enlistment. Publish failures are non-fatal. Other instances may keep their L1 value until TTL or the next successful invalidation, while the local instance still observes the write result.
+Publish failures are non-fatal. Other instances may keep their L1 value until TTL or the next successful invalidation, while the local instance still observes the write result.
 
 ### Install
 
@@ -710,19 +719,13 @@ dotnet add package Headless.Caching.Hybrid
 var redis = ConnectionMultiplexer.Connect("localhost:6379");
 
 services.AddSingleton<IConnectionMultiplexer>(redis);
-services.AddHeadlessMessaging(messaging =>
-{
-    messaging.UseRedis("localhost:6379");
-    // Messaging needs one storage. The invalidation consumer is every-instance and keeps no inbox, so this host
-    // needs no inbox guarantee; a host that also runs durable consumers on raw PostgreSQL storage opts down with
-    // Options.MinimumInboxGuarantee = InboxGuarantee.Durable.
-    messaging.UsePostgreSql(configuration.GetConnectionString("Messaging")!);
-});
 services.AddHeadlessCaching(setup =>
 {
     setup.AddMemoryTier();
     setup.AddRedisTier(options => options.ConnectionMultiplexer = redis);
     setup.UseHybrid(options => options.DefaultLocalExpiration = TimeSpan.FromMinutes(5));
+    // Every host evicts the L1 entries another host's writes made stale, over Redis pub/sub.
+    setup.UseRedisBackplane();
 });
 ```
 
@@ -769,10 +772,11 @@ services.AddHeadlessCaching(setup =>
         options.LocalCacheName = "hot-l1"; // must implement IInMemoryCache
         options.RemoteCacheName = "hot-l2"; // must implement IRemoteCache
     });
+    setup.UseRedisBackplane();
 });
 ```
 
-A named hybrid instance binds named tiers the same way — `setup.AddNamed("hot", i => i.UseHybrid(options => { options.LocalCacheName = "hot-l1"; options.RemoteCacheName = "hot-l2"; }))`. The setup builder stamps that name into invalidation messages so the backplane consumer can route peer invalidations to the matching named hybrid.
+A named hybrid instance binds named tiers the same way — `setup.AddNamed("hot", i => i.UseHybrid(options => { options.LocalCacheName = "hot-l1"; options.RemoteCacheName = "hot-l2"; }))`. The setup builder stamps that name into invalidation messages so the listener can route peer invalidations to the matching named hybrid. One backplane serves every hybrid; choose it once per setup.
 
 ### Configuration
 
@@ -803,8 +807,64 @@ Auto-recovery (design reference: FusionCache's auto-recovery, adapted) keeps one
 - Registers `ICacheProvider` (shared, `TryAdd`).
 - `setup.AddNamed(name, i => i.UseHybrid(...))` registers a keyed `ICache` under the instance name with its own options and tier resolution.
 - Reads configured `HybridCacheOptions`.
-- Publishes cache invalidation messages directly through the registered message bus, bypassing durable capture.
+- Registers one `IHybridCacheInvalidationListener` (`TryAddEnumerable`) that routes delivered invalidations to the default and named hybrids, and declares `IHybridCacheBackplane` as a required service checked at host start.
+- `setup.UseSingleInstanceBackplane()` replaces the `IHybridCacheBackplane` registration with one that sends nothing.
+- Sends every invalidation through the registered `IHybridCacheBackplane`.
 - Runs a `TimeProvider`-driven recovery timer when `EnableAutoRecovery` is set.
+
+---
+
+## Headless.Caching.Hybrid.Messaging
+
+Messaging backplane for `Headless.Caching.Hybrid`: sends L1 invalidations to every host over the Headless messaging bus.
+
+### API and behavior
+
+- `setup.UseMessagingBackplane()` on the caching setup builder replaces the `IHybridCacheBackplane` registration with one that publishes each `CacheInvalidationMessage` through `IBus` with `DeliveryMode.Direct` as a system message (`IsSystemMessage = true`).
+- `HybridCacheInvalidationConsumer` is the every-instance Bus consumer that hands each delivered message to every `IHybridCacheInvalidationListener`; its identity is `HybridCacheInvalidationConsumer.Identity` (`headless.caching.hybrid.invalidation`).
+- The message travels as `headless.caching.hybrid.invalidation`, contract version `1`, the same name, version, and consumer identity hosts used before the backplane split, so a mixed rollout keeps invalidating.
+
+### Design constraints
+
+**Every-instance delivery.** Each L1 lives in one process, so every process must receive every invalidation. The consumer is an [every-instance Bus consumer](messaging.md#every-instance-bus-delivery): each process opens its own subscription, named from the identity and the host's instance id, and the broker removes it when the process stops. A competing subscription would hand each invalidation to one replica and leave the others serving stale L1 entries.
+
+- **At most once.** A process receives only the invalidations published while it is subscribed. Nothing is stored or retried: a failure to apply one is logged and the message is committed. The publish side is at most once too, because invalidations publish with `DeliveryMode.Direct`, which also keeps an open unit of work from capturing or delaying them. On Redis Streams the invalidation stream has no consumer group, so the transport keeps its entries only for `RedisMessagingOptions.EveryInstanceStreamMaxAge` (5 minutes by default), not the 7-day `StreamMaxAge`.
+- **L1 flush on every establishment.** The consumer implements `IOnSubscriptionEstablished`. Each time the subscription is established, including when it is re-established (`IsReconnect = true`: the transport recovered, or the host rebuilt its consumer clients after a broker failure or a runtime subscription changed the topology), the listeners flush the L1 of the default hybrid and of every named hybrid, because an invalidation published during the gap never arrives. It flushes on the first subscription at host start too: L1 can be warmed before the subscription is live, and an invalidation published in that window never arrives. A clean start flushes an empty L1, which costs nothing.
+- **Transport support.** The transport must support every-instance delivery. InMemory, NATS, RabbitMQ, Redis, and Azure Service Bus do; AWS SNS/SQS does not, and a host that combines `UseMessagingBackplane()` with it fails at startup naming the consumer and the provider. Use `UseRedisBackplane()` there instead.
+- **`ConsumeOnly` hosts.** `ConsumeOnly` never filters every-instance consumers, so a host that limits its consumers still runs the invalidation consumer and evicts its L1 on a peer write.
+- **Registration order.** The contribution is order-independent and inert until messaging starts, so caching and messaging may be registered in either order. Do not register the consumer yourself; tune it by identity instead, for example `services.ConfigureMessaging(m => m.Tune(HybridCacheInvalidationConsumer.Identity, c => c.Concurrency(4)))`.
+
+### Install
+
+```bash
+dotnet add package Headless.Caching.Hybrid.Messaging
+```
+
+### Setup and use
+
+```csharp
+services.AddHeadlessMessaging(messaging =>
+{
+    messaging.UseRedis("localhost:6379");
+    // Messaging needs one storage. The invalidation consumer is every-instance and keeps no inbox, so this host
+    // needs no inbox guarantee; a host that also runs durable consumers on raw PostgreSQL storage opts down with
+    // Options.MinimumInboxGuarantee = InboxGuarantee.Durable.
+    messaging.UsePostgreSql(configuration.GetConnectionString("Messaging")!);
+});
+services.AddHeadlessCaching(setup =>
+{
+    setup.AddMemoryTier();
+    setup.AddRedisTier(options => options.ConnectionMultiplexer = redis);
+    setup.UseHybrid();
+    setup.UseMessagingBackplane();
+});
+```
+
+### Runtime behavior
+
+- Replaces the `IHybridCacheBackplane` registration (`services.Replace`); a later `Use*Backplane` call replaces it in turn.
+- Contributes the package's generated messaging module and the `CacheInvalidationMessage` contract through `services.ConfigureMessaging(...)`.
+- A publish awaits the bus, so a broker failure reaches the hybrid cache's auto-recovery and `ReThrowBackplaneExceptions` handling.
 
 ---
 
@@ -870,6 +930,7 @@ builder.Services.AddHeadlessCaching(setup =>
     setup.AddMemoryTier();
     setup.AddRedisTier(options => options.ConnectionMultiplexer = redis); // redis: ConnectionMultiplexer.Connect(...)
     setup.UseHybrid();
+    setup.UseRedisBackplane();
 });
 ```
 
@@ -940,6 +1001,7 @@ Redis distributed cache implementation for multi-instance applications.
 - `cache.Events` event surface (`ICacheEvents`): direct-op `Hit`/`Miss`/`Set`/`Remove` (`Tier=l2`) and the bulk `RemoveAll`/`RemoveByPrefix`/`RemoveByTag`/`Clear`/`Flush` signals (Redis server-side evictions are not client-observable, so no `Eviction` event). See [Events](#events).
 - Shared `GetOrAddAsync` fail-safe, factory timeout, eager refresh, conditional refresh, and background completion behavior through `Headless.Caching`.
 - Contributes the `cache-redis` readiness health check, or `cache-redis-{name}` for a named instance (tags `ready`, `headless`, `redis`), which sends `PING` through the instance's multiplexer. See [Health checks](utilities.md#health-checks).
+- `setup.UseRedisBackplane()` replaces the hybrid cache's `IHybridCacheBackplane` with a Redis pub/sub transport, so hosts sharing a Redis server evict each other's stale L1 entries without a message broker. See [Redis backplane](#redis-backplane).
 
 ### Design constraints
 
@@ -973,6 +1035,16 @@ To avoid a Redis round-trip on every read, each instance keeps a process-local m
 Null scalar values are represented by a header flag with an empty value segment. The literal string `"@@NULL"` is a normal cacheable string when written through Redis cache APIs. Raw legacy keys containing `"@@NULL"` still read as null. Atomic counters remain raw Redis-native numeric strings so Redis can perform native atomic arithmetic; their read path falls back to the raw value codec.
 
 Factory timeouts are enforced in the shared coordinator before provider writes. A soft-timeout background refresh writes through Redis on success and Redis TTL still follows physical expiration. StackExchange.Redis operation timeouts remain configured on `ConfigurationOptions.SyncTimeout` and `AsyncTimeout`; they are separate from `CacheEntryOptions.FactorySoftTimeout` and `FactoryHardTimeout`.
+
+#### Redis backplane
+
+`setup.UseRedisBackplane()` sends every hybrid invalidation on one Redis pub/sub channel and subscribes every host to it.
+
+- **Connection and channel.** It uses the default Redis cache's `RedisCacheOptions.ConnectionMultiplexer` (from `UseRedis` or `AddRedisTier`), else the registered `IConnectionMultiplexer`; building the first hybrid throws `InvalidOperationException` when neither exists. The channel is that cache's `KeyPrefix` followed by `headless.caching.hybrid.invalidation`, so applications sharing a Redis server under different key prefixes do not flush each other's L1. Each message is the `CacheInvalidationMessage` as camel-case JSON.
+- **Publish.** A publish waits for Redis to accept it (`PUBLISH`), so a failure reaches the hybrid cache's logging, auto-recovery replay, and `ReThrowBackplaneExceptions`. The caller's token bounds the wait; StackExchange.Redis takes no token, so the command runs on.
+- **Subscription.** The subscription starts in the background when the first hybrid cache is built and retries with a jittered back-off while Redis is unreachable (`RedisBackplaneSubscribeRetrying`, `EventId = 20`); the host never waits for it. Messages are applied one at a time, in delivery order.
+- **Gap flush.** Pub/sub delivers at most once and only to connected subscribers. The backplane flushes every hybrid's L1 once the first subscription is confirmed, and after every `ConnectionRestored` event of the multiplexer it drops the subscription, subscribes again, waits for Redis to confirm, and then flushes, so no invalidation can slip between the flush and a live subscription. It reacts to every connection type, because on RESP3 the subscription shares the interactive connection; a spare flush after an interactive-only reconnect costs one L1 refill from L2 (`RedisBackplaneConnectionRestored`, `EventId = 24`).
+- **Shutdown.** Disposing the host removes only this backplane's subscription; the shared multiplexer is not disposed.
 
 ### Install
 
@@ -1058,6 +1130,7 @@ builder.Services.AddHeadlessCaching(setup =>
 - `setup.AddNamed(name, i => i.UseRedis(...))` registers a keyed `ICache` under the instance name with a per-instance scripts loader bound to that instance's multiplexer.
 - Named Redis instances use the keyed `ISerializer` configured by `HeadlessCacheInstanceBuilder.WithSerializer(...)` when present; otherwise they use the global `ISerializer`.
 - `RemoveByTagAsync`/`ClearAsync` write timestamp marker keys in the reserved `{KeyPrefix}\0__tag:{tag}` / `{KeyPrefix}\0__clear` namespaces (one `StringSet` per call; no key enumeration).
+- `setup.UseRedisBackplane()` replaces the `IHybridCacheBackplane` registration (`services.Replace`); a later `Use*Backplane` call replaces it in turn. The backplane is a singleton disposed with the container.
 
 ---
 

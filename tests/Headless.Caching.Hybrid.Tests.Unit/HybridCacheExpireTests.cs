@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Caching;
-using Headless.Messaging;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Time.Testing;
 
@@ -20,7 +19,7 @@ public sealed class HybridCacheExpireTests : TestBase
     // L1/L2 stores. This fixture collects those raw InMemoryCache instances and disposes them at teardown.
     private readonly List<object> _disposables = [];
 
-    private (HybridCache cache, IInMemoryCache l1, IRemoteCache l2, IBus publisher) _CreateCache(
+    private (HybridCache cache, IInMemoryCache l1, IRemoteCache l2, IHybridCacheBackplane publisher) _CreateCache(
         HybridCacheOptions? options = null
     )
     {
@@ -32,10 +31,10 @@ public sealed class HybridCacheExpireTests : TestBase
         var l2Base = new InMemoryCache(_timeProvider, l2Options);
         var l2 = new InMemoryRemoteCacheAdapter(l2Base);
 
-        var publisher = Substitute.For<IBus>();
+        var publisher = Substitute.For<IHybridCacheBackplane>();
         publisher
-            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(default(PublishReceipt));
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.CompletedTask);
 
         var cache = new HybridCache(l1, l2, publisher, options, timeProvider: _timeProvider);
 
@@ -98,7 +97,6 @@ public sealed class HybridCacheExpireTests : TestBase
             .Received(1)
             .PublishAsync(
                 Arg.Is<CacheInvalidationMessage>(m => m.Key == key && m.Expire),
-                Arg.Any<PublishOptions?>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -277,13 +275,7 @@ public sealed class HybridCacheExpireTests : TestBase
 
         // then
         expired.Should().BeFalse();
-        await publisher
-            .DidNotReceive()
-            .PublishAsync(
-                Arg.Any<CacheInvalidationMessage>(),
-                Arg.Any<PublishOptions?>(),
-                Arg.Any<CancellationToken>()
-            );
+        await publisher.DidNotReceive().PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -293,10 +285,10 @@ public sealed class HybridCacheExpireTests : TestBase
         // so the failing L2 expiration is swallowed + queued instead of bubbling up.
         using var l2 = new TogglableRemoteCache(_timeProvider);
         using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
-        var publisher = Substitute.For<IBus>();
+        var publisher = Substitute.For<IHybridCacheBackplane>();
         publisher
-            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(default(PublishReceipt));
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.CompletedTask);
 
         var cache = new HybridCache(
             l1,
@@ -323,7 +315,6 @@ public sealed class HybridCacheExpireTests : TestBase
             .Received(1)
             .PublishAsync(
                 Arg.Is<CacheInvalidationMessage>(m => m.Key == key && m.Expire),
-                Arg.Any<PublishOptions?>(),
                 Arg.Any<CancellationToken>()
             );
 
@@ -338,10 +329,10 @@ public sealed class HybridCacheExpireTests : TestBase
         // given — a HybridCache with auto-recovery; the key exists in both tiers
         using var l2 = new TogglableRemoteCache(_timeProvider);
         using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
-        var publisher = Substitute.For<IBus>();
+        var publisher = Substitute.For<IHybridCacheBackplane>();
         publisher
-            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(default(PublishReceipt));
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.CompletedTask);
 
         var recoveryDelay = TimeSpan.FromSeconds(5);
         var cache = new HybridCache(
@@ -389,7 +380,6 @@ public sealed class HybridCacheExpireTests : TestBase
             .Received(2)
             .PublishAsync(
                 Arg.Is<CacheInvalidationMessage>(m => m.Key == key && m.Expire),
-                Arg.Any<PublishOptions?>(),
                 Arg.Any<CancellationToken>()
             );
 

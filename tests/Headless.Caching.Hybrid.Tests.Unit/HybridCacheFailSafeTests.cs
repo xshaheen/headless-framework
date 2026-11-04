@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Caching;
-using Headless.Messaging;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Time.Testing;
 
@@ -15,7 +14,7 @@ public sealed class HybridCacheFailSafeTests : TestBase
     // L1/L2 stores. This fixture collects those raw InMemoryCache instances and disposes them at teardown.
     private readonly List<object> _disposables = [];
 
-    private (HybridCache cache, IInMemoryCache l1, IRemoteCache l2, IBus publisher) _CreateCache(
+    private (HybridCache cache, IInMemoryCache l1, IRemoteCache l2, IHybridCacheBackplane publisher) _CreateCache(
         HybridCacheOptions? options = null
     )
     {
@@ -27,10 +26,10 @@ public sealed class HybridCacheFailSafeTests : TestBase
         var l2Inner = new InMemoryCache(_timeProvider, l2Options);
         var l2 = new InMemoryRemoteCacheAdapter(l2Inner);
 
-        var publisher = Substitute.For<IBus>();
+        var publisher = Substitute.For<IHybridCacheBackplane>();
         publisher
-            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(default(PublishReceipt));
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.CompletedTask);
 
         var cache = new HybridCache(l1, l2, publisher, options, timeProvider: _timeProvider);
 
@@ -179,10 +178,10 @@ public sealed class HybridCacheFailSafeTests : TestBase
         // L2 is a store whose read throws to simulate a down Redis node.
         using var l2 = new ThrowingReadRemoteCache(_timeProvider);
 
-        var publisher = Substitute.For<IBus>();
+        var publisher = Substitute.For<IHybridCacheBackplane>();
         publisher
-            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(default(PublishReceipt));
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.CompletedTask);
 
         var cache = new HybridCache(l1Cache, l2, publisher, new HybridCacheOptions(), timeProvider: _timeProvider);
         await using var __ = cache;
@@ -232,10 +231,10 @@ public sealed class HybridCacheFailSafeTests : TestBase
         l2.GetAsync<int>(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(CacheValue<int>.NoValue);
         l2.GetExpirationAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((TimeSpan?)null);
 
-        var publisher = Substitute.For<IBus>();
+        var publisher = Substitute.For<IHybridCacheBackplane>();
         publisher
-            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(default(PublishReceipt));
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.CompletedTask);
 
         var cache = new HybridCache(l1Cache, l2, publisher, new HybridCacheOptions(), timeProvider: _timeProvider);
         await using var _ = cache;
@@ -388,11 +387,7 @@ public sealed class HybridCacheFailSafeTests : TestBase
         // The factory value-write broadcasts a key invalidation so peers drop their stale L1 copies
         await publisher
             .Received(1)
-            .PublishAsync(
-                Arg.Is<CacheInvalidationMessage>(m => m.Key == key),
-                Arg.Any<PublishOptions?>(),
-                Arg.Any<CancellationToken>()
-            );
+            .PublishAsync(Arg.Is<CacheInvalidationMessage>(m => m.Key == key), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -634,13 +629,7 @@ public sealed class HybridCacheFailSafeTests : TestBase
         // serving their (byte-identical) copies instead of being forced into pointless L2 re-reads
         result.Value.Should().Be(staleValue);
         result.IsStale.Should().BeTrue();
-        await publisher
-            .DidNotReceive()
-            .PublishAsync(
-                Arg.Any<CacheInvalidationMessage>(),
-                Arg.Any<PublishOptions?>(),
-                Arg.Any<CancellationToken>()
-            );
+        await publisher.DidNotReceive().PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>());
     }
 
     #endregion
@@ -659,10 +648,10 @@ public sealed class HybridCacheFailSafeTests : TestBase
 
         using var l2 = new NullTimestampL2Adapter<int>(value);
 
-        var publisher = Substitute.For<IBus>();
+        var publisher = Substitute.For<IHybridCacheBackplane>();
         publisher
-            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(default(PublishReceipt));
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.CompletedTask);
 
         var cache = new HybridCache(
             l1Cache,
@@ -716,10 +705,10 @@ public sealed class HybridCacheFailSafeTests : TestBase
 
         using var l2 = new NullTimestampL2Adapter<int>(value);
 
-        var publisher = Substitute.For<IBus>();
+        var publisher = Substitute.For<IHybridCacheBackplane>();
         publisher
-            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(default(PublishReceipt));
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.CompletedTask);
 
         var cache = new HybridCache(
             l1Cache,

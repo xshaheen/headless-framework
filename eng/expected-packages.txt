@@ -28,6 +28,7 @@ Headless.Caching.Abstractions
 Headless.Caching.Bcl
 Headless.Caching.DistributedLocks
 Headless.Caching.Hybrid
+Headless.Caching.Hybrid.Messaging
 Headless.Caching.InMemory
 Headless.Caching.OutputCache
 Headless.Caching.Redis

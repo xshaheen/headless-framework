@@ -1,0 +1,21 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>Messaging backplane for the Headless hybrid cache: sends L1 invalidations to every host over the bus.</Description>
+    <PackageTags>headless;caching;hybrid;messaging;dotnet</PackageTags>
+    <RootNamespace>Headless.Caching</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Caching.Hybrid\Headless.Caching.Hybrid.csproj" />
+    <ProjectReference Include="..\Headless.Messaging.Abstractions\Headless.Messaging.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.Messaging.Bus.Abstractions\Headless.Messaging.Bus.Abstractions.csproj" />
+    <!-- Generates this assembly's MessagingModule at build time; the module ships compiled into this package, so
+         consumers of the package need neither the generator nor a dependency on it. -->
+    <ProjectReference
+      Include="..\Headless.Messaging.SourceGenerator\Headless.Messaging.SourceGenerator.csproj"
+      OutputItemType="Analyzer"
+      ReferenceOutputAssembly="false"
+      PrivateAssets="all"
+    />
+  </ItemGroup>
+</Project>

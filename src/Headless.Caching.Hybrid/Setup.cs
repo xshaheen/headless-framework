@@ -2,7 +2,6 @@
 
 using Headless.Checks;
 using Headless.Hosting;
-using Headless.Messaging;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -18,16 +17,20 @@ namespace Headless.Caching;
 /// <list type="bullet">
 /// <item>Local tier: call <c>setup.AddMemoryTier()</c> in the same <c>AddHeadlessCaching</c> setup</item>
 /// <item>Remote tier: call <c>setup.AddRedisTier(…)</c> (or register an <see cref="IRemoteCache"/>)</item>
-/// <item>Messaging: configure messaging with <c>AddHeadlessMessaging()</c></item>
+/// <item>
+/// Backplane: choose how hosts evict each other's L1 entries, with <c>setup.UseRedisBackplane()</c>,
+/// <c>setup.UseMessagingBackplane()</c>, or <c>setup.UseSingleInstanceBackplane()</c>; the host refuses to start
+/// without one (see <see cref="IHybridCacheBackplane"/>)
+/// </item>
 /// </list>
 /// <para><b>Example:</b></para>
 /// <code>
-/// services.AddHeadlessMessaging(...);
 /// services.AddHeadlessCaching(setup =>
 /// {
 ///     setup.AddMemoryTier();
 ///     setup.AddRedisTier(options => options.ConnectionMultiplexer = multiplexer);
 ///     setup.UseHybrid(options => options.DefaultLocalExpiration = TimeSpan.FromMinutes(5));
+///     setup.UseRedisBackplane();
 /// });
 /// </code>
 /// <para>
@@ -112,15 +115,50 @@ public static class SetupHybridCache
 
             return setup;
         }
+
+        /// <summary>
+        /// Declares that exactly one host runs these hybrid caches, so a write has no peer L1 to invalidate and no
+        /// invalidation is sent. Use it for a single-node service, a worker that owns its cache alone, or a test host.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// A hybrid cache refuses to start until a backplane is chosen, so this call is the explicit opt-out. On a
+        /// second host it is wrong: neither host would evict the L1 entries the other's writes made stale, and both
+        /// would serve them until <see cref="HybridCacheOptions.DefaultLocalExpiration"/> runs out. Choose
+        /// <c>UseRedisBackplane()</c> (<c>Headless.Caching.Redis</c>) or <c>UseMessagingBackplane()</c>
+        /// (<c>Headless.Caching.Hybrid.Messaging</c>) as soon as the service scales out.
+        /// </para>
+        /// <para>Replaces any backplane registered earlier, and a later <c>Use*Backplane</c> call replaces this one.</para>
+        /// </remarks>
+        /// <returns>The setup builder for chaining.</returns>
+        public HeadlessCachingSetupBuilder UseSingleInstanceBackplane()
+        {
+            setup.RegisterCrossCuttingExtension(static services =>
+                services.Replace(
+                    ServiceDescriptor.Singleton<IHybridCacheBackplane, SingleInstanceHybridCacheBackplane>()
+                )
+            );
+
+            return setup;
+        }
     }
+
+    /// <summary>
+    /// What the startup check and the cache's own resolution tell a host that chose no backplane: every choice, and the
+    /// package each one lives in.
+    /// </summary>
+    internal const string BackplaneRemedy =
+        "Choose how hybrid caches on different hosts evict each other's L1 entries, inside AddHeadlessCaching(...): "
+        + "setup.UseRedisBackplane() (package Headless.Caching.Redis) sends invalidations over Redis pub/sub; "
+        + "setup.UseMessagingBackplane() (package Headless.Caching.Hybrid.Messaging) sends them over the Headless "
+        + "messaging bus; setup.UseSingleInstanceBackplane() declares that exactly one host runs these caches, so "
+        + "nothing is sent. A custom transport registers its own IHybridCacheBackplane.";
 
     internal static IServiceCollection AddNamedCacheCore(IServiceCollection services, string name)
     {
         services.AddCacheProvider();
 
-        // Auto-register the shared invalidation consumer so this named hybrid receives peer L1 invalidations
-        // by default (idempotent + unconditional; one consumer routes to every hybrid by CacheName).
-        HybridCacheInvalidationConsumerRegistration.AddInvalidationConsumer(services);
+        _AddBackplaneSeam(services);
 
         services.AddKeyedSingleton<ICache>(
             name,
@@ -159,16 +197,27 @@ public static class SetupHybridCache
         services.TryAddSingleton<ICache>(provider => provider.GetRequiredService<HybridCache>());
         services.AddKeyedSingleton(CacheConstants.HybridCacheProvider, (x, _) => x.GetRequiredService<ICache>());
 
-        // Auto-register the invalidation consumer so peer L1 caches are evicted by default (idempotent +
-        // unconditional, drained by messaging bootstrap in either registration order). Without this the
-        // backplane was silently publish-only.
-        HybridCacheInvalidationConsumerRegistration.AddInvalidationConsumer(services);
+        _AddBackplaneSeam(services);
 
         // Startup advisor: logs warnings for questionable-but-valid configurations once at host
         // startup so operators notice misconfigurations before they see unexpected runtime behavior.
         services.AddStartupValidator<HybridCacheBestPracticesAdvisor>();
 
         return services;
+    }
+
+    private static void _AddBackplaneSeam(IServiceCollection services)
+    {
+        // One router serves every hybrid, default and named, by routing on CacheName, so repeated registrations
+        // collapse to one listener.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IHybridCacheInvalidationListener, HybridCacheInvalidationRouter>()
+        );
+
+        // The backplane is a host-wide choice made by a Use*Backplane call that may come before or after UseHybrid,
+        // or by a custom registration outside AddHeadlessCaching, so it is checked when the host starts rather than
+        // here. Without one, other hosts keep serving L1 entries this host's writes made stale.
+        services.RequireRegisteredService<IHybridCacheBackplane>("Headless hybrid cache", BackplaneRemedy);
     }
 
     private static HybridCache _CreateHybridCache(IServiceProvider provider, HybridCacheOptions options)
@@ -190,7 +239,10 @@ public static class SetupHybridCache
         return new HybridCache(
             l1Cache,
             l2Cache,
-            provider.GetRequiredService<IBus>(),
+            // Also checked here: a container built without the host's startup checks would otherwise fail with a
+            // bare missing-service error that names none of the choices.
+            provider.GetService<IHybridCacheBackplane>()
+                ?? throw new InvalidOperationException("HybridCache has no IHybridCacheBackplane. " + BackplaneRemedy),
             options,
             provider.GetService<ILogger<HybridCache>>(),
             provider.GetRequiredService<TimeProvider>(),

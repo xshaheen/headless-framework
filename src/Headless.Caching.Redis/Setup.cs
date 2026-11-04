@@ -155,6 +155,43 @@ public static class SetupRedisCache
 
             return setup;
         }
+
+        /// <summary>
+        /// Sends hybrid-cache invalidations to every host over a Redis pub/sub channel, so each host evicts the L1
+        /// entries another host's write made stale without a message broker. One backplane serves the default and every
+        /// named hybrid cache.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Uses the default Redis cache's <see cref="RedisCacheOptions.ConnectionMultiplexer"/> (from <c>UseRedis</c> or
+        /// <c>AddRedisTier</c>), else the registered <see cref="IConnectionMultiplexer"/>. The channel is that cache's
+        /// <c>KeyPrefix</c> followed by <see cref="CacheInvalidationMessage.MessageName"/>, so applications sharing a
+        /// Redis server under different key prefixes do not invalidate each other.
+        /// </para>
+        /// <para>
+        /// Pub/sub delivers at most once, so each host flushes its hybrid caches' L1 when its subscription is first made
+        /// and again after the multiplexer restores a connection; L2 refills it. The subscription starts in the
+        /// background when the first hybrid cache is built and retries while Redis is unreachable; the host never waits
+        /// for it. A publish waits for Redis, so a failure feeds the hybrid cache's auto-recovery replay.
+        /// </para>
+        /// <para>Replaces any backplane registered earlier, and a later <c>Use*Backplane</c> call replaces this one.</para>
+        /// </remarks>
+        /// <returns>The setup builder for chaining.</returns>
+        public HeadlessCachingSetupBuilder UseRedisBackplane()
+        {
+            setup.RegisterCrossCuttingExtension(static services =>
+                services.Replace(
+                    ServiceDescriptor.Singleton<IHybridCacheBackplane>(static provider => new RedisHybridCacheBackplane(
+                        // Optional: a host whose Redis tiers are all named still has the registered multiplexer.
+                        provider.GetService<IOptions<RedisCacheOptions>>()?.Value,
+                        provider,
+                        provider.GetRequiredService<ILogger<RedisHybridCacheBackplane>>()
+                    ))
+                )
+            );
+
+            return setup;
+        }
     }
 
     internal static IServiceCollection AddNamedCacheCore(

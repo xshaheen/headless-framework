@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Messaging;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -10,7 +9,7 @@ namespace Headless.Caching;
 /// <summary>
 /// Two-tier hybrid cache combining a process-local L1 (<see cref="IInMemoryCache"/>) with a shared
 /// distributed L2 (<see cref="IRemoteCache"/>), with cross-instance L1 invalidation via
-/// <see cref="CacheInvalidationMessage"/> published over <c>IBus</c>.
+/// <see cref="CacheInvalidationMessage"/> sent through the registered <see cref="IHybridCacheBackplane"/>.
 /// </summary>
 /// <remarks>
 /// <para><b>Read path (GetOrAddAsync):</b></para>
@@ -39,7 +38,7 @@ namespace Headless.Caching;
 public sealed partial class HybridCache(
     IInMemoryCache l1Cache,
     IRemoteCache l2Cache,
-    IBus publisher,
+    IHybridCacheBackplane backplane,
     HybridCacheOptions cacheOptions,
     ILogger<HybridCache>? logger = null,
     TimeProvider? timeProvider = null,
@@ -48,14 +47,6 @@ public sealed partial class HybridCache(
     CacheEventsConfig? eventsConfig = null
 ) : ICache, IFactoryCacheStore, IBufferCache, IAsyncDisposable
 {
-    // A system message: invalidations from host scope (catalog lookups, host writes, recovery replay) carry no tenant and
-    // must still reach peers when the host requires a tenant on every publish.
-    private static readonly PublishOptions _InvalidationPublishOptions = new()
-    {
-        DeliveryMode = DeliveryMode.Direct,
-        IsSystemMessage = true,
-    };
-
     private readonly ILogger _logger = logger ?? NullLogger<HybridCache>.Instance;
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private readonly string _instanceId = cacheOptions.InstanceId ?? Guid.NewGuid().ToString("N");
@@ -129,7 +120,7 @@ public sealed partial class HybridCache(
 
     /// <summary>
     /// Handles incoming cache invalidation message from other instances.
-    /// Called by <see cref="HybridCacheInvalidationConsumer"/>.
+    /// Called by <see cref="HybridCacheInvalidationRouter"/> for each invalidation the backplane delivers.
     /// </summary>
     internal async ValueTask HandleInvalidationAsync(CacheInvalidationMessage message, CancellationToken ct)
     {
@@ -333,7 +324,7 @@ public sealed partial class HybridCache(
 
         try
         {
-            await publisher.PublishAsync(message, _InvalidationPublishOptions, ct).ConfigureAwait(false);
+            await backplane.PublishAsync(message, ct).ConfigureAwait(false);
         }
         catch (Exception ex) when (!FactoryCacheCoordinator.IsCallerCancellation(ex, ct))
         {

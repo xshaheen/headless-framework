@@ -14,7 +14,7 @@
 
 [اللغة: العربية](README.ar.md)
 
-215 packages &bull; One setup grammar &bull; Swap any provider in one line
+216 packages &bull; One setup grammar &bull; Swap any provider in one line
 
 [Why Headless](#why-headless) &bull; [60-second start](#60-second-start) &bull; [One grammar, every domain](#one-grammar-every-domain) &bull; [What is in the box](#what-is-in-the-box) &bull; [Package catalog](#package-catalog)
 
@@ -44,7 +44,7 @@ builder.Services.AddHeadlessCaching(setup => setup.UseRedis(...)); // production
 
 Every service, repository, and handler that injects `ICache` is untouched by that edit. The same holds for `IBlobStorage` across S3, Azure, Cloudflare R2, the file system, Redis, and SFTP; for `IEmailSender` across SES, Azure Communication Services, and SMTP; and for messaging across seven transports.
 
-**You install three packages, not 215.** The catalog is large because the provider matrix is large. A service that needs caching installs `Headless.Caching.Abstractions`, `Headless.Caching`, and one provider. Domain and application libraries reference the abstraction package alone. `Headless.Caching.Abstractions` pulls in two packages with no third-party dependencies: `Headless.Checks` and `Headless.Primitives`.
+**You install three packages, not 216.** The catalog is large because the provider matrix is large. A service that needs caching installs `Headless.Caching.Abstractions`, `Headless.Caching`, and one provider. Domain and application libraries reference the abstraction package alone. `Headless.Caching.Abstractions` pulls in two packages with no third-party dependencies: `Headless.Checks` and `Headless.Primitives`.
 
 **Tests do not need Docker to be fast.** Caching, distributed locks, and messaging ship in-memory providers; email, SMS, and push notifications ship dev providers that send nothing; blob storage runs against the local file system. Unit tests exercise the real contract with no containers. When you want the real backend, `Headless.Testing.Testcontainers` supplies the fixtures. The repository itself runs 122 unit-test projects and 63 integration-test projects on that split.
 
@@ -155,7 +155,7 @@ services.AddHeadless<Feature>(setup => setup.Use<Provider>(options => { ... }));
 
 | Domain | Entry point | Providers you pick from |
 |--------|-------------|-------------------------|
-| Caching | `AddHeadlessCaching` | `UseInMemory`, `UseRedis`, `UseHybrid` (L1+L2) |
+| Caching | `AddHeadlessCaching` | `UseInMemory`, `UseRedis`, `UseHybrid` (L1+L2, with `UseRedisBackplane`, `UseMessagingBackplane`, or `UseSingleInstanceBackplane`) |
 | Blob storage | `AddHeadlessBlobs` | `UseAws`, `UseAzure`, `UseCloudflareR2`, `UseFileSystem`, `UseRedis`, `UseSsh` |
 | Email | `AddHeadlessEmails` | `UseAwsSes`, `UseAzure`, `UseMailkit`, `UseDevelopment`, `UseNoop` |
 | SMS | `AddHeadlessSms` | `UseTwilio`, `UseAwsSns`, `UseInfobip`, `UseCequens`, `UseConnekio`, `UseVictoryLink`, `UseVodafone`, `UseDevelopment` |
@@ -254,7 +254,7 @@ Provider packages are ordinary NuGet packages. To add a custom backend, implemen
 ## Package catalog
 
 <details>
-<summary><strong>All 215 packages, grouped by domain</strong> — expand to browse</summary>
+<summary><strong>All 216 packages, grouped by domain</strong> — expand to browse</summary>
 
 ### API & Web
 
@@ -331,6 +331,7 @@ Multi-tier caching behind one abstraction: in-memory, Redis, and hybrid L1/L2.
 | [Headless.Caching.Abstractions](src/Headless.Caching.Abstractions/README.md) | Caching interfaces |
 | [Headless.Caching](src/Headless.Caching/README.md) | Shared factory-backed cache orchestration |
 | [Headless.Caching.Hybrid](src/Headless.Caching.Hybrid/README.md) | Hybrid caching (L1/L2) |
+| [Headless.Caching.Hybrid.Messaging](src/Headless.Caching.Hybrid.Messaging/README.md) | Send hybrid-cache L1 invalidations to every host over the messaging bus |
 | [Headless.Caching.InMemory](src/Headless.Caching.InMemory/README.md) | In-memory caching |
 | [Headless.Caching.Redis](src/Headless.Caching.Redis/README.md) | Redis caching |
 | [Headless.Caching.Bcl](src/Headless.Caching.Bcl/README.md) | Adapter exposing a Headless cache as `IDistributedCache` |

@@ -231,6 +231,14 @@
           "Headless.Primitives": "[1.0.0, )"
         }
       },
+      "headless.caching.hybrid": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Caching": "[1.0.0, )",
+          "Headless.Caching.Abstractions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )"
+        }
+      },
       "headless.checks": {
         "type": "Project"
       },
