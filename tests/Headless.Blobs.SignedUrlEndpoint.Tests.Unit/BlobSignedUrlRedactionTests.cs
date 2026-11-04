@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.HttpLogging;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
@@ -162,6 +163,7 @@ public sealed class BlobSignedUrlRedactionTests : TestBase
     {
         // given
         var services = new ServiceCollection();
+        services.AddLogging();
         services.AddHeadlessBlobs(setup =>
         {
             setup.RegisterDefaultProvider(s => s.AddSingleton(Substitute.For<IBlobStorage>()));
@@ -177,9 +179,112 @@ public sealed class BlobSignedUrlRedactionTests : TestBase
         provider.GetServices<IStartupFilter>().Should().ContainSingle();
     }
 
+    [Fact]
+    public async Task should_decorate_the_logger_factory_once_when_setup_runs_twice()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessBlobs(setup =>
+        {
+            setup.RegisterDefaultProvider(s => s.AddSingleton(Substitute.For<IBlobStorage>()));
+            setup.UseSignedUrlEndpoint(options => options.BaseUrl = new Uri("https://api.example.com"));
+            setup.UseSignedUrlEndpoint(options => options.BaseUrl = new Uri("https://api.example.com"));
+        });
+
+        // when
+        await using var provider = services.BuildServiceProvider();
+
+        // then
+        provider.GetRequiredService<ILoggerFactory>().Should().BeOfType<BlobSignedUrlRedactingLoggerFactory>();
+        services.Count(d => d.ServiceType == typeof(ILoggerFactory)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_warn_at_startup_when_a_logger_factory_registered_later_replaces_the_redacting_one()
+    {
+        // given - an app that registers its own logger factory after the endpoint, as UseSerilog does
+        var captured = new List<string>();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessBlobs(setup =>
+        {
+            setup.RegisterDefaultProvider(s => s.AddSingleton(Substitute.For<IBlobStorage>()));
+            setup.UseSignedUrlEndpoint(options => options.BaseUrl = new Uri("https://api.example.com"));
+        });
+        services.AddSingleton<ILoggerFactory>(_ => new LoggerFactory([new EventNameProvider(captured)]));
+        await using var provider = services.BuildServiceProvider();
+
+        // when
+        _ = provider.GetServices<IStartupFilter>().Should().ContainSingle().Subject.Configure(_ => { });
+
+        // then
+        captured.Should().Contain("SignedUrlHostingLogsNotRedacted");
+    }
+
+    [Theory]
+    [InlineData("/blobs/" + _Token, "/blobs/***")]
+    [InlineData("/BLOBS/" + _Token, "/BLOBS/***")]
+    public void should_rewrite_the_path_in_the_hosting_scope_and_request_lines(string path, string expectedPath)
+    {
+        // given
+        var captured = new List<(string Message, string? Path, string? ScopePath)>();
+        using var provider = _BuildProvider("https://api.example.com", "/blobs");
+        using var stateProvider = new StateProvider(captured);
+        using var inner = new LoggerFactory([stateProvider]);
+        using var factory = new BlobSignedUrlRedactingLoggerFactory(
+            inner,
+            provider.GetRequiredService<BlobSignedUrlPathRedactor>()
+        );
+        var logger = factory.CreateLogger(BlobSignedUrlRedactingLoggerFactory.HostingDiagnosticsCategory);
+
+        // when
+        using (logger.BeginScope(new HostingState(("RequestPath", path), ("RequestId", "0HN"))))
+        {
+            logger.Log(
+                LogLevel.Information,
+                default,
+                new HostingState(("PathBase", ""), ("Path", path), ("{OriginalFormat}", "Request starting {Path}")),
+                null,
+                (state, _) => "Request starting " + state.Get("Path")
+            );
+        }
+
+        // then
+        captured
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .Be(("Request starting " + expectedPath, expectedPath, expectedPath));
+    }
+
+    [Fact]
+    public void should_leave_other_categories_and_other_paths_untouched()
+    {
+        // given
+        var captured = new List<(string Message, string? Path, string? ScopePath)>();
+        using var provider = _BuildProvider("https://api.example.com", "/blobs");
+        using var stateProvider = new StateProvider(captured);
+        using var inner = new LoggerFactory([stateProvider]);
+        using var factory = new BlobSignedUrlRedactingLoggerFactory(
+            inner,
+            provider.GetRequiredService<BlobSignedUrlPathRedactor>()
+        );
+        var hosting = factory.CreateLogger(BlobSignedUrlRedactingLoggerFactory.HostingDiagnosticsCategory);
+        var other = factory.CreateLogger("App.Orders");
+
+        // when
+        hosting.Log(LogLevel.Information, default, new HostingState(("Path", "/orders/7")), null, (s, _) => "line");
+        other.Log(LogLevel.Information, default, new HostingState(("Path", "/blobs/" + _Token)), null, (s, _) => "x");
+
+        // then
+        captured.Should().Equal(("line", "/orders/7", null), ("x", "/blobs/" + _Token, null));
+    }
+
     private static ServiceProvider _BuildProvider(string baseUrl, string routePrefix)
     {
         var services = new ServiceCollection();
+        services.AddLogging();
         services.AddHeadlessBlobs(setup =>
         {
             setup.RegisterDefaultProvider(s => s.AddSingleton(Substitute.For<IBlobStorage>()));
@@ -246,5 +351,117 @@ public sealed class BlobSignedUrlRedactionTests : TestBase
     private sealed class ActivityFeature(Activity activity) : IHttpActivityFeature
     {
         public Activity Activity { get; set; } = activity;
+    }
+
+    /// <summary>A structured log state shaped like ASP.NET Core's hosting scope and request lines.</summary>
+    private sealed class HostingState(params (string Key, object? Value)[] values)
+        : IReadOnlyList<KeyValuePair<string, object?>>
+    {
+        public int Count => values.Length;
+
+        public KeyValuePair<string, object?> this[int index] => new(values[index].Key, values[index].Value);
+
+        public object? Get(string key) => values.First(v => string.Equals(v.Key, key, StringComparison.Ordinal)).Value;
+
+        public IEnumerator<KeyValuePair<string, object?>> GetEnumerator()
+        {
+            for (var i = 0; i < values.Length; i++)
+            {
+                yield return this[i];
+            }
+        }
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+
+    /// <summary>Records each entry's message, its state's Path value, and the RequestPath of the scope around it.</summary>
+    private sealed class StateProvider(List<(string Message, string? Path, string? ScopePath)> captured)
+        : ILoggerProvider,
+            ISupportExternalScope
+    {
+        private IExternalScopeProvider _scopes = new LoggerExternalScopeProvider();
+
+        public ILogger CreateLogger(string categoryName) => new StateLogger(this, captured);
+
+        public void SetScopeProvider(IExternalScopeProvider scopeProvider) => _scopes = scopeProvider;
+
+        public void Dispose() { }
+
+        private static string? _Find(object? state, string key)
+        {
+            return state is IReadOnlyList<KeyValuePair<string, object?>> values
+                ? values.FirstOrDefault(p => string.Equals(p.Key, key, StringComparison.Ordinal)).Value as string
+                : null;
+        }
+
+        private sealed class StateLogger(
+            StateProvider owner,
+            List<(string Message, string? Path, string? ScopePath)> captured
+        ) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull => owner._scopes.Push(state);
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter
+            )
+            {
+                var scopePath = new List<string>();
+                owner._scopes.ForEachScope(
+                    static (scope, found) =>
+                    {
+                        if (_Find(scope, "RequestPath") is { } path)
+                        {
+                            found.Add(path);
+                        }
+                    },
+                    scopePath
+                );
+
+                lock (captured)
+                {
+                    captured.Add((formatter(state, exception), _Find(state, "Path"), scopePath.FirstOrDefault()));
+                }
+            }
+        }
+    }
+
+    /// <summary>Records only event names.</summary>
+    private sealed class EventNameProvider(List<string> names) : ILoggerProvider
+    {
+        public ILogger CreateLogger(string categoryName) => new EventNameLogger(names);
+
+        public void Dispose() { }
+
+        private sealed class EventNameLogger(List<string> names) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter
+            )
+            {
+                if (eventId.Name is { } name)
+                {
+                    lock (names)
+                    {
+                        names.Add(name);
+                    }
+                }
+            }
+        }
     }
 }

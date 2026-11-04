@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
+using Headless.Checks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Options;
@@ -12,8 +13,15 @@ namespace Headless.Blobs;
 /// for, so a path that reaches a log or a trace would let anyone who reads it download or overwrite the blob until the
 /// URL expires.
 /// </summary>
-internal sealed class BlobSignedUrlPathRedactor
+/// <remarks>
+/// <c>UseSignedUrlEndpoint</c> registers it as a singleton and applies it to HTTP logging, request activities, and
+/// ASP.NET Core's hosting request logs. Resolve it to redact a path the framework does not log itself, such as the
+/// <c>RequestPath</c> property of Serilog request logging (<c>UseSerilogRequestLogging</c>).
+/// </remarks>
+[PublicAPI]
+public sealed class BlobSignedUrlPathRedactor
 {
+    /// <summary>The text that replaces everything below the route prefix.</summary>
     public const string RedactedSegment = "***";
 
     // Every place the request path can reach a trace. url.path is what ASP.NET Core and the OpenTelemetry
@@ -22,8 +30,12 @@ internal sealed class BlobSignedUrlPathRedactor
 
     private readonly PathString[] _prefixes;
 
+    /// <summary>Creates a redactor for the configured route prefix and public base URL.</summary>
+    /// <param name="options">The endpoint options.</param>
     public BlobSignedUrlPathRedactor(IOptions<BlobSignedUrlOptions> options)
     {
+        Argument.IsNotNull(options);
+
         var settings = options.Value;
         var routePrefix = new PathString(settings.RoutePrefix.TrimEnd('/'));
         var publicPathBase = settings.BaseUrl?.AbsolutePath.TrimEnd('/');
@@ -37,8 +49,12 @@ internal sealed class BlobSignedUrlPathRedactor
 
     /// <summary>
     /// Returns <paramref name="path"/> with everything below the route prefix replaced by <c>***</c>, when the path
-    /// is under the signed-URL route prefix and carries a token.
+    /// is under the signed-URL route prefix, or under the public base URL's path followed by it, and carries a token.
+    /// The prefix matches case-insensitively, as routing does.
     /// </summary>
+    /// <param name="path">The request path, with or without the public path base.</param>
+    /// <param name="redacted">The redacted path, or the default value when nothing was redacted.</param>
+    /// <returns><see langword="true"/> when <paramref name="path"/> carried a token.</returns>
     public bool TryRedact(PathString path, out PathString redacted)
     {
         // Routing matches paths case-insensitively, so /BLOBS/{token} reaches the endpoint too. The whole remainder is
@@ -66,7 +82,7 @@ internal sealed class BlobSignedUrlPathRedactor
     /// Rewrites the path tags of the request's server activity, and of the current activity when instrumentation
     /// started a separate one, when the request targets a signed URL.
     /// </summary>
-    public void RedactActivities(HttpContext context)
+    internal void RedactActivities(HttpContext context)
     {
         var request = context.Request;
 
