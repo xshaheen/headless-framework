@@ -73,7 +73,8 @@ internal sealed record CronOccurrenceRelationalMapping(
     string ContractVersion,
     string Request,
     string CorrelationId,
-    string CausationId
+    string CausationId,
+    string ChangedAt
 )
 {
     /// <summary>
@@ -142,7 +143,9 @@ internal sealed record CronOccurrenceRelationalMapping(
             Column(nameof(CronJobOccurrenceEntity<>.ContractVersion)),
             Column(nameof(CronJobOccurrenceEntity<>.Request)),
             Column(nameof(CronJobOccurrenceEntity<>.CorrelationId)),
-            Column(nameof(CronJobOccurrenceEntity<>.CausationId))
+            Column(nameof(CronJobOccurrenceEntity<>.CausationId)),
+            // Every native claim stamps the change marker beside the claim, so a change read on any node sees it.
+            Column(nameof(CronJobOccurrenceEntity<>.ChangedAt))
         );
     }
 }
@@ -158,7 +161,8 @@ internal sealed record TimeJobRelationalMapping(
     string ExecutionTime,
     string ParentId,
     string RunCondition,
-    string Function
+    string Function,
+    string ChangedAt
 )
 {
     public static TimeJobRelationalMapping Create<TDbContext, TTimeJob>(TDbContext dbContext)
@@ -197,7 +201,8 @@ internal sealed record TimeJobRelationalMapping(
             Column(nameof(TimeJobEntity.ExecutionTime)),
             Column(nameof(TimeJobEntity.ParentId)),
             Column(nameof(TimeJobEntity.RunCondition)),
-            Column(nameof(TimeJobEntity.Function))
+            Column(nameof(TimeJobEntity.Function)),
+            Column(nameof(TimeJobEntity.ChangedAt))
         );
     }
 }

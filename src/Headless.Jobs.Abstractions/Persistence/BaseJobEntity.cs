@@ -62,4 +62,19 @@ public class BaseJobEntity
 
     /// <summary>UTC timestamp of the most recent update to this row.</summary>
     public virtual DateTimeOffset UpdatedAt { get; internal set; }
+
+    /// <summary>
+    /// The row's change marker: a UTC instant the store stamps on every write that changes what an operator sees of
+    /// the row, and that only ever moves forward for one row. Change reads
+    /// (<see cref="IJobPersistenceProvider{TTimeJob,TCronJob}.ReadChangesAsync"/>) order rows by it, and
+    /// <see cref="DateTime.Ticks"/> of it is the row's version.
+    /// </summary>
+    /// <remarks>
+    /// Each write sets the marker to the later of the store's statement clock and the row's previous marker plus one
+    /// tick of the store's precision, so two writes in one clock tick, or a write after the store clock steps back,
+    /// still raise it. A relational store stamps it in the statement that writes the row; the in-memory store stamps
+    /// it under its lock. The store owns the value: a caller's value is ignored on insert and update. The setter is
+    /// public so a third-party persistence provider can stamp it.
+    /// </remarks>
+    public virtual DateTime ChangedAt { get; set; }
 }

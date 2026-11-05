@@ -153,4 +153,10 @@ public class CronJobOccurrenceEntity<TCronJob>
 
     /// <summary>UTC timestamp of the most recent update to this occurrence row.</summary>
     public virtual DateTimeOffset UpdatedAt { get; internal set; }
+
+    /// <summary>
+    /// The occurrence's change marker, stamped by the store on every write and only ever moving forward. It has the
+    /// same meaning as <see cref="BaseJobEntity.ChangedAt"/>.
+    /// </summary>
+    public virtual DateTime ChangedAt { get; set; }
 }

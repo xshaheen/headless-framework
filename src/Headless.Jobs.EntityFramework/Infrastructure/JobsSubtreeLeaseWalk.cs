@@ -329,6 +329,7 @@ internal static class JobsSubtreeLeaseWalk
             .ExecuteUpdateAsync(
                 setter =>
                     setter
+                        .SetChangedAt()
                         .SetProperty(x => x.OwnerId, owner)
                         .SetProperty(x => x.LockedUntil, _ => jobs.Where(r => r.Id == rootId).Max(r => r.LockedUntil))
                         .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),

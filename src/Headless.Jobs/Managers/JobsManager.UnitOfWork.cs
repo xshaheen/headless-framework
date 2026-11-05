@@ -159,6 +159,59 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
         });
     }
 
+    // Registers a coordinated write's post-commit signal, preceded by the re-stamp of the rows it wrote. The rows were
+    // stamped inside the caller's transaction, possibly long before it committed, so another node's change read may
+    // already have passed that stamp; the re-stamp moves them to the current end of the change stream. A re-stamp the
+    // worker drops or a process that stops before it runs leaves the rows visible to a refetch, not to a change read.
+    private void _SignalOnCommit(
+        CoordinatedJobContext context,
+        JobsPostCommitSignal signal,
+        JobChangeKind kind,
+        Guid[] ids
+    )
+    {
+        var restamp = new ChangeMarkerRestampSignal(context.Writer, kind, ids, signal.JobScope);
+        context.UnitOfWork.OnCompleted(() =>
+        {
+            _postCommitSignals.TrySignal(restamp);
+            _postCommitSignals.TrySignal(signal);
+
+            return ValueTask.CompletedTask;
+        });
+    }
+
+    // A coordinated time-job write inserts each entity with its whole chain, so every node of the tree is re-stamped.
+    private static Guid[] _WrittenTimeJobIds(IEnumerable<TTimeJob> entities)
+    {
+        var ids = new List<Guid>();
+        var pending = new Stack<TTimeJob>(entities);
+
+        while (pending.TryPop(out var job))
+        {
+            ids.Add(job.Id);
+
+            foreach (var child in job.Children)
+            {
+                pending.Push(child);
+            }
+        }
+
+        return [.. ids];
+    }
+
+    private sealed record ChangeMarkerRestampSignal(
+        ICoordinatedJobWriter<TTimeJob, TCronJob> Writer,
+        JobChangeKind Kind,
+        Guid[] Ids,
+        string Scope
+    ) : JobsPostCommitSignal(Scope)
+    {
+        public override Task RunAsync(DateTimeOffset now, CancellationToken cancellationToken)
+        {
+            return Writer.RestampChangesAsync(Kind, Ids, cancellationToken);
+        }
+    }
+
     // Signal kinds. Each carries what the worker needs to run the existing side-effect methods against rows that are
     // already committed; the worker supplies the clock read at processing time.
 

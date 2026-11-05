@@ -509,6 +509,12 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         }
     }
 
+    // The change marker a claim stamps: the statement clock, or one datetime2 tick past the row's previous marker when
+    // the clock has not moved past it. A CASE rather than GREATEST, which needs SQL Server 2022.
+    private static string _NextChangedAt(string column, string now = SqlDialectTokens.Now) =>
+        $"CASE WHEN DATEADD(nanosecond, 100, {column}) > CAST({now} AS datetime2(7)) "
+        + $"THEN DATEADD(nanosecond, 100, {column}) ELSE CAST({now} AS datetime2(7)) END";
+
     private static async Task _RefreshCronOccurrenceLeasesAsync(
         TDbContext dbContext,
         IDbContextTransaction transaction,
@@ -688,6 +694,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                 {mapping.OwnerId} = @owner,
                     {mapping.LockedUntil} = {dialect.ShiftByDuration(SqlDialectTokens.Now, "lease")},
                     {mapping.UpdatedAt} = {SqlDialectTokens.Now},
+                    {mapping.ChangedAt} = {_NextChangedAt(mapping.ChangedAt)},
                     {mapping.Status} = @queued,
                     {mapping.OnNodeDeath} = @onNodeDeath
                 """,
@@ -747,6 +754,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                 {mapping.OwnerId} = @owner,
                     {mapping.LockedUntil} = {dialect.ShiftByDuration(SqlDialectTokens.Now, "lease")},
                     {mapping.UpdatedAt} = {SqlDialectTokens.Now},
+                    {mapping.ChangedAt} = {_NextChangedAt(mapping.ChangedAt)},
                     {mapping.Status} = @queued
                 """,
                 [mapping.Id],
@@ -896,6 +904,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                 {mapping.OwnerId} = @owner,
                     {mapping.LockedUntil} = {dialect.ShiftByDuration(SqlDialectTokens.Now, "lease")},
                     {mapping.UpdatedAt} = {SqlDialectTokens.Now},
+                    {mapping.ChangedAt} = {_NextChangedAt(mapping.ChangedAt)},
                     {mapping.Status} = @queuedStatus
                 """,
                 [mapping.Id, mapping.UpdatedAt],
@@ -970,7 +979,8 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             UPDATE job
             SET {mapping.OwnerId} = @owner,
                 {mapping.LockedUntil} = {dialect.ShiftByDuration("@claimedAt", "lease")},
-                {mapping.UpdatedAt} = @claimedAt
+                {mapping.UpdatedAt} = @claimedAt,
+                {mapping.ChangedAt} = {_NextChangedAt("job." + mapping.ChangedAt, "SYSUTCDATETIME()")}
             OUTPUT inserted.{mapping.Id}
             FROM {mapping.Table} AS job
             INNER JOIN descendants ON job.{mapping.Id} = descendants.node_id

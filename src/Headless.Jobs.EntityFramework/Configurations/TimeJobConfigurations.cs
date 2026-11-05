@@ -112,6 +112,8 @@ public class TimeJobConfigurations<TTimeJob>(string schema, StorageNamingStyle s
             .HasIndex("OwnerId", "Status")
             .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, "OwnerId", "Status"));
 
+        JobsChangeMarkerModelConfiguration.ConfigureColumn(builder, style, table);
+
         builder.ToTable(table, schema);
         builder.ApplyJobsColumnNaming(style);
     }

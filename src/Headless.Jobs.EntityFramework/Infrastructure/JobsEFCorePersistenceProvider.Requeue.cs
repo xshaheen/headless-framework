@@ -107,6 +107,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                         .ExecuteUpdateAsync(
                             setter =>
                                 setter
+                                    .SetChangedAt()
                                     .SetProperty(x => x.Status, JobStatus.Idle)
                                     .SetProperty(x => x.RetryCount, 0)
                                     .SetProperty(x => x.ExceptionMessage, _ => null)

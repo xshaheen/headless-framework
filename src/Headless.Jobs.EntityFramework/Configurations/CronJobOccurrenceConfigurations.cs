@@ -109,6 +109,8 @@ public class CronJobOccurrenceConfigurations<TCronJob>(
             .HasFilter($"{JobsStorageNaming.QuotedColumn(style, "Status")} IN ('Idle', 'Queued', 'InProgress')")
             .HasDatabaseName(JobsStorageNaming.Name(style, "UQ", table, "CronJobId", "ExecutionTime"));
 
+        JobsChangeMarkerModelConfiguration.ConfigureColumn(builder, style, table);
+
         builder.ToTable(table, schema);
         builder.ApplyJobsColumnNaming(style);
     }

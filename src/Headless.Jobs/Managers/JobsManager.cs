@@ -317,7 +317,12 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
                 if (coordinated is { } creatorContext)
                 {
-                    _SignalOnCommit(creatorContext.UnitOfWork, new TimeJobCommittedSignal(this, createdDue));
+                    _SignalOnCommit(
+                        creatorContext,
+                        new TimeJobCommittedSignal(this, createdDue),
+                        JobChangeKind.TimeJob,
+                        _WrittenTimeJobIds([entity])
+                    );
                     return entity;
                 }
 
@@ -338,7 +343,12 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
                 persisted = true;
 
-                _SignalOnCommit(context.UnitOfWork, new TimeJobCommittedSignal(this, _CaptureDue(entity, dueTimes)));
+                _SignalOnCommit(
+                    context,
+                    new TimeJobCommittedSignal(this, _CaptureDue(entity, dueTimes)),
+                    JobChangeKind.TimeJob,
+                    _WrittenTimeJobIds([entity])
+                );
 
                 return entity;
             }
@@ -524,14 +534,16 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             // Cron has no immediate-dispatch branch: scheduler restart, cache invalidation, and notify all go to the
             // worker. The signal carries the PERSISTED projection, not a pre-persistence guess.
             _SignalOnCommit(
-                context.UnitOfWork,
+                context,
                 new CronJobsCommittedSignal(
                     this,
                     context.Writer,
                     [entity],
                     coordinatedSeed.EarliestNextDueUtc,
                     entity.Id.ToString()
-                )
+                ),
+                JobChangeKind.CronJob,
+                [entity.Id]
             );
 
             return entity;
@@ -1161,8 +1173,10 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 persisted = true;
 
                 _SignalOnCommit(
-                    context.UnitOfWork,
-                    new TimeJobsBatchCommittedSignal(this, [.. entities.Select(x => _CaptureDue(x, dueTimes))])
+                    context,
+                    new TimeJobsBatchCommittedSignal(this, [.. entities.Select(x => _CaptureDue(x, dueTimes))]),
+                    JobChangeKind.TimeJob,
+                    _WrittenTimeJobIds(entities)
                 );
 
                 return entities;
@@ -1335,14 +1349,16 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 .ConfigureAwait(false);
 
             _SignalOnCommit(
-                context.UnitOfWork,
+                context,
                 new CronJobsCommittedSignal(
                     this,
                     context.Writer,
                     [.. validEntities],
                     coordinatedSeed.EarliestNextDueUtc,
                     $"cron batch ({validEntities.Count})"
-                )
+                ),
+                JobChangeKind.CronJob,
+                [.. validEntities.Select(x => x.Id)]
             );
 
             return validEntities;

@@ -259,7 +259,9 @@ internal static class MappingExtensions
         var nextDueUtc = advance.NextDueUtc;
         setters
             .SetProperty(x => x.ReconciledThroughUtc, reconciledThroughUtc)
-            .SetProperty(x => x.NextDueUtc, nextDueUtc);
+            .SetProperty(x => x.NextDueUtc, nextDueUtc)
+            // The next due time is what a schedule list shows, so moving it is a change.
+            .SetChangedAt();
 
         // Null leaves the persisted fingerprint alone.
         if (advance.EvaluationFingerprint is { } fingerprint)
@@ -360,7 +362,7 @@ internal static class MappingExtensions
 
         // UPDATED_AT ALWAYS — database clock (see UpdateTimeJob). Previously never stamped here, so an
         // occurrence's UpdatedAt froze at its last claim for the whole execution lifecycle.
-        setters.SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow);
+        setters.SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow).SetChangedAt();
     }
 
     internal static void UpdateTimeJob<TTimeJob>(
@@ -431,6 +433,6 @@ internal static class MappingExtensions
         // UPDATED_AT ALWAYS — database clock, not a bound app-clock parameter: claims stamp UpdatedAt from the
         // DB clock and the CAS claim compares it as an optimistic token, so a completion stamped by a lagging
         // node's clock would make the column non-monotonic and unsound as a fence.
-        setters.SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow);
+        setters.SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow).SetChangedAt();
     }
 }

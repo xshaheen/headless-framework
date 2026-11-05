@@ -480,6 +480,7 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                 .ExecuteUpdateAsync(
                     setter =>
                         setter
+                            .SetChangedAt()
                             .SetProperty(x => x.OwnerId, owner)
                             .SetProperty(
                                 x => x.LockedUntil,
@@ -628,7 +629,9 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                             await context.AddAsync(itemToAdd, cancellationToken).ConfigureAwait(false);
                             try
                             {
-                                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                                await dbContext
+                                    .SaveChangesAndStampAsync<TTimeJob, TCronJob>(cancellationToken)
+                                    .ConfigureAwait(false);
                             }
                             catch (DbUpdateException)
                             {
@@ -696,6 +699,7 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                 .ExecuteUpdateAsync(
                     setter =>
                         setter
+                            .SetChangedAt()
                             .SetProperty(x => x.OwnerId, owner)
                             .SetProperty(
                                 x => x.LockedUntil,
@@ -784,6 +788,7 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             .ExecuteUpdateAsync(
                 setter =>
                     setter
+                        .SetChangedAt()
                         .SetProperty(x => x.OwnerId, owner)
                         .SetProperty(x => x.LockedUntil, _ => DateTime.UtcNow.AddSeconds(_leaseDuration.TotalSeconds))
                         .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow)

@@ -54,6 +54,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             updated.ExecutionTime = now.UtcDateTime;
             updated.TraceParent = traceParent;
             updated.UpdatedAt = now;
+            updated.ChangedAt = _NextChangeMarker();
 
             if (!_TryUpdateTimeJob(jobId, updated, job))
             {
@@ -145,6 +146,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             updated.ProgressUpdatedAt = null;
             updated.TraceParent = traceParent;
             updated.UpdatedAt = now;
+            updated.ChangedAt = _NextChangeMarker();
 
             return Task.FromResult(
                 _cronOccurrences.TryUpdate(occurrenceId, updated, current)

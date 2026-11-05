@@ -501,6 +501,11 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         }
     }
 
+    // The change marker a claim stamps: the statement clock, or one microsecond (PostgreSQL's precision) past the
+    // row's previous marker when the clock has not moved past it.
+    private static string _NextChangedAt(string column, string now = SqlDialectTokens.Now) =>
+        $"GREATEST({now}, {column} + INTERVAL '1 microsecond')";
+
     private static async Task _RefreshCronOccurrenceLeasesAsync(
         TDbContext dbContext,
         IDbContextTransaction transaction,
@@ -676,6 +681,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                 {mapping.OwnerId} = @owner,
                     {mapping.LockedUntil} = {dialect.ShiftByDuration(SqlDialectTokens.Now, "lease")},
                     {mapping.UpdatedAt} = {SqlDialectTokens.Now},
+                    {mapping.ChangedAt} = {_NextChangedAt(mapping.ChangedAt)},
                     {mapping.Status} = @queued,
                     {mapping.OnNodeDeath} = @onNodeDeath
                 """,
@@ -734,6 +740,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                 {mapping.OwnerId} = @owner,
                     {mapping.LockedUntil} = {dialect.ShiftByDuration(SqlDialectTokens.Now, "lease")},
                     {mapping.UpdatedAt} = {SqlDialectTokens.Now},
+                    {mapping.ChangedAt} = {_NextChangedAt(mapping.ChangedAt)},
                     {mapping.Status} = @queued
                 """,
                 [mapping.Id],
@@ -884,6 +891,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                 {mapping.OwnerId} = @owner,
                     {mapping.LockedUntil} = {dialect.ShiftByDuration(SqlDialectTokens.Now, "lease")},
                     {mapping.UpdatedAt} = {SqlDialectTokens.Now},
+                    {mapping.ChangedAt} = {_NextChangedAt(mapping.ChangedAt)},
                     {mapping.Status} = @queuedStatus
                 """,
                 [mapping.Id, mapping.UpdatedAt],
@@ -957,7 +965,8 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             UPDATE {mapping.Table} AS job
             SET {mapping.OwnerId} = @owner,
                 {mapping.LockedUntil} = {dialect.ShiftByDuration("@claimedAt", "lease")},
-                {mapping.UpdatedAt} = @claimedAt
+                {mapping.UpdatedAt} = @claimedAt,
+                {mapping.ChangedAt} = {_NextChangedAt("job." + mapping.ChangedAt, "clock_timestamp()")}
             FROM descendants
             WHERE job.{mapping.Id} = descendants.node_id AND job.{mapping.Status} = @idle
             RETURNING job.{mapping.Id};

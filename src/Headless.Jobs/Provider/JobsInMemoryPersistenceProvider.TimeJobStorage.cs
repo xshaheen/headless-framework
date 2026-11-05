@@ -23,6 +23,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
             var key = _CurrentTimeJobKey(job);
             _RejectDuplicateCurrentTimeJob(key, id);
+            job.ChangedAt = _NextChangeMarker();
             if (!_timeJobs.TryAdd(id, job))
             {
                 return false;

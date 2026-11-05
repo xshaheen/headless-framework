@@ -114,6 +114,8 @@ public class CronJobConfigurations<TCronJob>(string schema, StorageNamingStyle s
             .HasIndex("Function", "Expression")
             .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, "Function", "Expression"));
 
+        JobsChangeMarkerModelConfiguration.ConfigureColumn(builder, style, table);
+
         builder.ToTable(table, schema);
         builder.ApplyJobsColumnNaming(style);
     }

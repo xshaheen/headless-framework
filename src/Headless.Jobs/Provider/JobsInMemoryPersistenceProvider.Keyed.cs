@@ -171,6 +171,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 var updated = _CloneTicker(current);
                 updated.CancelRequested = true;
                 updated.UpdatedAt = _timeProvider.GetUtcNow();
+                updated.ChangedAt = _NextChangeMarker();
                 var pending =
                     current.Status == JobStatus.Idle && current.OwnerId is null && current.LockedUntil is null;
                 if (pending)

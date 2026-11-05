@@ -161,6 +161,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ExecuteUpdateAsync(
                 setter =>
                     setter
+                        .SetChangedAt()
                         .SetProperty(x => x.OwnerId, _ => null)
                         .SetProperty(x => x.LockedUntil, _ => null)
                         .SetProperty(x => x.Status, _ => JobStatus.Idle)
@@ -193,6 +194,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 // UpdatedAt from the DB clock: it doubles as the claim CAS token, so it must stay monotonic.
                 setter =>
                     setter
+                        .SetChangedAt()
                         .SetProperty(x => x.OwnerId, _ => null)
                         .SetProperty(x => x.LockedUntil, _ => null)
                         .SetProperty(x => x.Status, JobStatus.Idle)
@@ -227,6 +229,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 setter =>
                 {
                     setter
+                        .SetChangedAt()
                         .SetProperty(
                             x => x.Status,
                             x =>
@@ -547,6 +550,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .ExecuteUpdateAsync(
                             setters =>
                                 setters
+                                    .SetChangedAt()
                                     .SetProperty(x => x.CancelRequested, valueExpression: true)
                                     .SetProperty(
                                         x => x.Status,
@@ -641,6 +645,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ExecuteUpdateAsync(
                 setters =>
                     setters
+                        .SetChangedAt()
                         .SetProperty(x => x.Status, JobStatus.Idle)
                         .SetProperty(x => x.RetryCount, 0)
                         .SetProperty(x => x.ExceptionMessage, _ => null)
@@ -727,6 +732,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ExecuteUpdateAsync(
                 setters =>
                     setters
+                        .SetChangedAt()
                         .SetProperty(x => x.ExecutionTime, _ => DateTime.UtcNow)
                         .SetProperty(x => x.OwnerId, _ => null)
                         .SetProperty(x => x.LockedUntil, _ => null)
@@ -812,6 +818,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ExecuteUpdateAsync(
                 setters =>
                     setters
+                        .SetChangedAt()
                         .SetProperty(x => x.Status, JobStatus.Skipped)
                         .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
                         .SetProperty(x => x.OwnerId, _ => null)
@@ -1039,6 +1046,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ExecuteUpdateAsync(
                 setters =>
                     setters
+                        .SetChangedAt()
                         .SetProperty(x => x.ExecutionTime, _ => DateTime.UtcNow)
                         .SetProperty(x => x.OwnerId, _ => null)
                         .SetProperty(x => x.LockedUntil, _ => null)
@@ -1108,6 +1116,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .ExecuteUpdateAsync(
                             setter =>
                                 setter
+                                    .SetChangedAt()
                                     .SetProperty(x => x.OwnerId, _ => null)
                                     .SetProperty(x => x.LockedUntil, _ => null)
                                     .SetProperty(x => x.Status, JobStatus.Idle)
@@ -1127,6 +1136,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .ExecuteUpdateAsync(
                             setter =>
                                 setter
+                                    .SetChangedAt()
                                     .SetProperty(x => x.OwnerId, _ => null)
                                     .SetProperty(x => x.LockedUntil, _ => null)
                                     .SetProperty(x => x.Status, JobStatus.Idle)
@@ -1151,6 +1161,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .ExecuteUpdateAsync(
                             setter =>
                                 setter
+                                    .SetChangedAt()
                                     .SetProperty(x => x.Status, JobStatus.Failed)
                                     .SetProperty(x => x.LockedUntil, _ => null)
                                     .SetProperty(x => x.ExceptionMessage, "Node is not alive!")
@@ -1173,6 +1184,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .ExecuteUpdateAsync(
                             setter =>
                                 setter
+                                    .SetChangedAt()
                                     .SetProperty(x => x.Status, JobStatus.Skipped)
                                     .SetProperty(x => x.LockedUntil, _ => null)
                                     .SetProperty(x => x.SkippedReason, "Node is not alive!")
@@ -1232,6 +1244,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ExecuteUpdateAsync(
                 setter =>
                     setter
+                        .SetChangedAt()
                         .SetProperty(x => x.OwnerId, owner)
                         .SetProperty(x => x.LockedUntil, _ => DateTime.UtcNow.AddSeconds(LeaseDuration.TotalSeconds))
                         .SetProperty(x => x.Status, JobStatus.InProgress)
@@ -1319,6 +1332,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ExecuteUpdateAsync(
                 setter =>
                     setter
+                        .SetChangedAt()
                         .SetProperty(x => x.ProgressPercent, progress.Percent)
                         .SetProperty(x => x.ProgressMessage, progress.Message)
                         // Database clock, like UpdatedAt, so every node's writes share one time authority.
@@ -1441,6 +1455,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .ExecuteUpdateAsync(
                             setter =>
                                 setter
+                                    .SetChangedAt()
                                     .SetProperty(x => x.OwnerId, _ => null)
                                     .SetProperty(x => x.LockedUntil, _ => null)
                                     .SetProperty(x => x.Status, JobStatus.Idle)
@@ -1458,6 +1473,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .ExecuteUpdateAsync(
                             setter =>
                                 setter
+                                    .SetChangedAt()
                                     .SetProperty(x => x.Status, JobStatus.Failed)
                                     .SetProperty(x => x.LockedUntil, _ => null)
                                     .SetProperty(x => x.ExceptionMessage, "Lease lapsed while running!")
@@ -1475,6 +1491,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .ExecuteUpdateAsync(
                             setter =>
                                 setter
+                                    .SetChangedAt()
                                     .SetProperty(x => x.Status, JobStatus.Skipped)
                                     .SetProperty(x => x.LockedUntil, _ => null)
                                     .SetProperty(x => x.SkippedReason, "Lease lapsed while running!")
@@ -1689,7 +1706,9 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
                     try
                     {
-                        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                        await dbContext
+                            .SaveChangesAndStampAsync<TTimeJob, TCronJob>(cancellationToken)
+                            .ConfigureAwait(false);
 
                         if (changedDefinitionIds.Count > 0)
                         {
@@ -1702,6 +1721,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                                 .ExecuteUpdateAsync(
                                     setter =>
                                         setter
+                                            .SetChangedAt()
                                             .SetProperty(x => x.Status, JobStatus.Skipped)
                                             .SetProperty(x => x.ExecutedAt, now)
                                             .SetProperty(x => x.UpdatedAt, now)
@@ -2049,6 +2069,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ExecuteUpdateAsync(
                 setter =>
                     setter
+                        .SetChangedAt()
                         .SetProperty(x => x.FingerprintFailureCount, nextFailureCount)
                         .SetProperty(x => x.FingerprintRetryAfterUtc, retryAfterUtc),
                 cancellationToken
@@ -2091,6 +2112,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                             setter =>
                             {
                                 setter
+                                    .SetChangedAt()
                                     .SetProperty(x => x.ReconciledThroughUtc, initialRecoveredThroughUtc)
                                     .SetProperty(x => x.NextDueUtc, initialNextDueUtc);
                                 setter.SetCronEvaluationFingerprint(fingerprint);
@@ -2163,7 +2185,9 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                                 .ConfigureAwait(false);
                             coalescedRun.SnapshotContract(definition);
                             await occurrences.AddAsync(coalescedRun, cancellationToken).ConfigureAwait(false);
-                            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                            await dbContext
+                                .SaveChangesAndStampAsync<TTimeJob, TCronJob>(cancellationToken)
+                                .ConfigureAwait(false);
                             dbContext.Entry(coalescedRun).State = EntityState.Detached;
                             preservedOccurrenceId = coalescedRun.Id;
                             break;
@@ -2185,6 +2209,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                             .ExecuteUpdateAsync(
                                 setter =>
                                     setter
+                                        .SetChangedAt()
                                         .SetProperty(x => x.Status, JobStatus.Idle)
                                         .SetProperty(x => x.OwnerId, _ => null)
                                         .SetProperty(x => x.LockedUntil, _ => null)
@@ -2241,6 +2266,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                             .ExecuteUpdateAsync(
                                 setter =>
                                     setter
+                                        .SetChangedAt()
                                         .SetProperty(x => x.Status, JobStatus.Skipped)
                                         .SetProperty(x => x.OwnerId, _ => null)
                                         .SetProperty(x => x.LockedUntil, _ => null)
@@ -2286,6 +2312,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                                 .ExecuteUpdateAsync(
                                     setter =>
                                         setter
+                                            .SetChangedAt()
                                             .SetProperty(x => x.Status, JobStatus.Skipped)
                                             .SetProperty(x => x.ExecutedAt, request.OperationTimeUtc)
                                             .SetProperty(x => x.UpdatedAt, request.OperationTimeUtc)
@@ -2318,6 +2345,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                             .ExecuteUpdateAsync(
                                 setter =>
                                     setter
+                                        .SetChangedAt()
                                         .SetProperty(x => x.ReconciledThroughUtc, finalRecoveredThroughUtc)
                                         .SetProperty(x => x.NextDueUtc, finalNextDueUtc),
                                 cancellationToken
@@ -2668,7 +2696,9 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
                         created.SnapshotContract(committedDefinition);
                         await occurrences.AddAsync(created, cancellationToken).ConfigureAwait(false);
-                        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                        await dbContext
+                            .SaveChangesAndStampAsync<TTimeJob, TCronJob>(cancellationToken)
+                            .ConfigureAwait(false);
                         occurrenceId = created.Id;
                         occurrenceCreatedAt = created.CreatedAt;
                         outcome = skipForOverlap
@@ -2702,6 +2732,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                                 .ExecuteUpdateAsync(
                                     setter =>
                                         setter
+                                            .SetChangedAt()
                                             .SetProperty(x => x.Status, JobStatus.Skipped)
                                             .SetProperty(x => x.OwnerId, _ => null)
                                             .SetProperty(x => x.LockedUntil, _ => null)
@@ -2808,6 +2839,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .ExecuteUpdateAsync(
                             setter =>
                                 setter
+                                    .SetChangedAt()
                                     .SetProperty(x => x.OwnerId, _ => null)
                                     .SetProperty(x => x.LockedUntil, _ => null)
                                     .SetProperty(x => x.Status, JobStatus.Idle)
@@ -2827,6 +2859,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .ExecuteUpdateAsync(
                             setter =>
                                 setter
+                                    .SetChangedAt()
                                     .SetProperty(x => x.OwnerId, _ => null)
                                     .SetProperty(x => x.LockedUntil, _ => null)
                                     .SetProperty(x => x.Status, JobStatus.Idle)
@@ -2849,6 +2882,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .ExecuteUpdateAsync(
                             setter =>
                                 setter
+                                    .SetChangedAt()
                                     .SetProperty(x => x.Status, JobStatus.Failed)
                                     .SetProperty(x => x.LockedUntil, _ => null)
                                     .SetProperty(x => x.ExceptionMessage, "Node is not alive!")
@@ -2869,6 +2903,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .ExecuteUpdateAsync(
                             setter =>
                                 setter
+                                    .SetChangedAt()
                                     .SetProperty(x => x.Status, JobStatus.Skipped)
                                     .SetProperty(x => x.LockedUntil, _ => null)
                                     .SetProperty(x => x.SkippedReason, "Node is not alive!")
@@ -2912,6 +2947,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ExecuteUpdateAsync(
                 setter =>
                     setter
+                        .SetChangedAt()
                         .SetProperty(x => x.ProgressPercent, progress.Percent)
                         .SetProperty(x => x.ProgressMessage, progress.Message)
                         // Database clock, like UpdatedAt, so every node's writes share one time authority.
@@ -2989,6 +3025,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .ExecuteUpdateAsync(
                             setter =>
                                 setter
+                                    .SetChangedAt()
                                     .SetProperty(x => x.OwnerId, _ => null)
                                     .SetProperty(x => x.LockedUntil, _ => null)
                                     .SetProperty(x => x.Status, JobStatus.Idle)
@@ -3006,6 +3043,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .ExecuteUpdateAsync(
                             setter =>
                                 setter
+                                    .SetChangedAt()
                                     .SetProperty(x => x.Status, JobStatus.Failed)
                                     .SetProperty(x => x.LockedUntil, _ => null)
                                     .SetProperty(x => x.ExceptionMessage, "Lease lapsed while running!")
@@ -3023,6 +3061,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .ExecuteUpdateAsync(
                             setter =>
                                 setter
+                                    .SetChangedAt()
                                     .SetProperty(x => x.Status, JobStatus.Skipped)
                                     .SetProperty(x => x.LockedUntil, _ => null)
                                     .SetProperty(x => x.SkippedReason, "Lease lapsed while running!")
@@ -3068,6 +3107,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ExecuteUpdateAsync(
                 setter =>
                     setter
+                        .SetChangedAt()
                         .SetProperty(x => x.OwnerId, _ => null)
                         .SetProperty(x => x.LockedUntil, _ => null)
                         .SetProperty(x => x.Status, JobStatus.Idle)
@@ -3095,6 +3135,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ExecuteUpdateAsync(
                 setter =>
                     setter
+                        .SetChangedAt()
                         .SetProperty(x => x.OwnerId, _ => null)
                         .SetProperty(x => x.LockedUntil, _ => null)
                         .SetProperty(x => x.Status, JobStatus.Idle)
@@ -3123,6 +3164,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ExecuteUpdateAsync(
                 setter =>
                     setter
+                        .SetChangedAt()
                         .SetProperty(
                             x => x.Status,
                             x =>
