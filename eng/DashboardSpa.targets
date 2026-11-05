@@ -105,8 +105,9 @@
     every build, even when _BuildDashboardSpa is skipped as up-to-date.
   -->
   <Target Name="_EmbedDashboardSpa" BeforeTargets="AssignTargetPaths" DependsOnTargets="_BuildDashboardSpa">
+    <!-- The build stamp, not index.html: a dashboard module's build writes no shell document. -->
     <Error
-      Condition="!Exists('$(DashboardSpaDist)/index.html')"
+      Condition="!Exists('$(DashboardSpaBuildStamp)')"
       Text="SPA build output not found at '$(DashboardSpaDist)'. Run '$(NpmTool) run build' in '$(DashboardSpaRoot)', or build with BuildDashboardSpa=true."
     />
     <ItemGroup>

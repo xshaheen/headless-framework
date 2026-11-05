@@ -1,11 +1,7 @@
 {
-  "files": [],
-  "references": [
-    {
-      "path": "./tsconfig.node.json"
-    },
-    {
-      "path": "./tsconfig.app.json"
-    }
-  ]
+  "extends": "../../Headless.Dashboard/wwwroot/tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": ["../../Headless.Dashboard/wwwroot/packages/sdk/src/css.d.ts", "src/**/*", "test/**/*", "vite.config.ts", "vitest.config.ts"]
 }

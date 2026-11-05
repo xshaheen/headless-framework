@@ -449,7 +449,17 @@ An Operation's filter is `{ kind, functions, statuses, cronJobId, correlationId,
 | `POST time-jobs` | an operator action: `{ function, executionTime, timeZoneId, request, description, retries, retryIntervals, children: [{ ..., runCondition }] }` answers `201 { id }`; a time without an offset is read in `timeZoneId`, else the scheduler's zone; a bad body answers `400` |
 | `POST cron-jobs` | an operator action: `{ function, expression, timeZoneId, request, description }` answers `201 { id }` |
 
-Until the module's views ship, its build serves a manifest with no navigation, so the shell lists its server contributions only. Per-node scheduler state, and starting or stopping a scheduler, are not part of the module yet.
+**Views.** The package embeds the module's front end, so the rail shows Jobs with four views:
+
+| View | Shows | Acts |
+| --- | --- | --- |
+| Runs (`{base}/jobs`) | One live list of time jobs and occurrences, filtered in the URL by kind, function, status, time range, correlation id, failure fingerprint, and cron job. The inspector shows the selected run's fields, its attempts with node and exception, and its payload on request. | `Requeue`, `Cancel`, and `Delete` on the selection, and over every matching run as an Operation; `Add time job` and `Add chain` |
+| Run page (`runs/{id}`) | The run's header, fields, attempt timeline, chain steps, and payload on request | The same run actions |
+| Cron jobs and cron job page (`cron-jobs`, `cron-jobs/{id}`) | Each cron job's expression, plain reading, and status; the page adds the schedule strip, the next five fires in the cron job's zone, and its occurrences | `Run now`, `Pause` / `Resume`, `Add cron job`; the expression and zone edit in place, showing the server's reading and next fires before they commit, and stay read-only for a cron job defined in code |
+| Functions and function page (`functions`, `functions/{name}`) | Each function's contract version, priority, concurrency, the live nodes whose run filter claims it, its 24-hour counts, strip, cron jobs, and runs | None |
+| Nodes (`nodes`) | Each live node's liveness and the functions its run filter claims | None |
+
+A run with a pending cancel reads `Cancelling…` until the job stops, and a run an action finished on reads `Requeuing…`, `Cancelling…`, or `Deleting…` until its change arrives. `T` on a selected run, and `Trace` beside its correlation id, open the runs list filtered by that correlation id. The palette adds `Go to runs`, `Requeue failed runs`, `Add time job`, `Add chain`, and `Add cron job`. A viewer sees every action disabled with `Needs operate permission`. Per-node scheduler state, and starting or stopping a scheduler, are not part of the module yet.
 
 ### Jobs and Messaging dashboards
 

@@ -48,8 +48,8 @@ need_wiki = [ -n "$($(1))" ] || { echo "$@: no .wiki/ at or above $(REPO_ROOT), 
 DOTNET ?= dotnet
 NPM ?= npm
 SOLUTION ?= headless-framework.slnx
-# The repository-root npm workspace: one lockfile installs the dashboard shell, its SDK, and its modules. The Jobs and
-# Messaging Vue SPAs stay outside it, each with its own lockfile.
+# The repository-root npm workspace: one lockfile installs the dashboard shell, its SDK, its modules, and the Jobs
+# dashboard module. The Messaging Vue SPA stays outside it, with its own lockfile.
 NPM_WORKSPACE_DIR ?= .
 NPM_WORKSPACE_FILES ?= package.json package-lock.json .npmrc
 SHELL_DASHBOARD_DIR ?= src/Headless.Dashboard/wwwroot
@@ -742,13 +742,18 @@ _node-check:
 	@command -v $(NPM) >/dev/null 2>&1 || { echo "ERROR: '$(NPM)' not found on PATH. Node 22+ is required to build the dashboards. Install from https://nodejs.org (LTS)."; exit 1; }
 
 .PHONY: dashboard-shell
-dashboard-shell: _node-check ## Rebuild the dashboard shell (npm ci at the root workspace + the shell, module, and budget builds into wwwroot/dist).
-	cd "$(NPM_WORKSPACE_DIR)" && $(NPM) ci --no-audit --no-fund
+dashboard-shell: _npm-workspace ## Rebuild the dashboard shell (npm ci at the root workspace + the shell, module, and budget builds into wwwroot/dist).
 	cd "$(SHELL_DASHBOARD_DIR)" && $(NPM) run $(DASHBOARD_BUILD_SCRIPT)
 
 .PHONY: dashboard-jobs
-dashboard-jobs: _node-check ## Rebuild the Jobs dashboard SPA (npm ci + vite build into wwwroot/dist).
-	cd "$(JOBS_DASHBOARD_DIR)" && $(NPM) ci --no-audit --no-fund && $(NPM) run $(DASHBOARD_BUILD_SCRIPT)
+dashboard-jobs: _npm-workspace ## Rebuild the Jobs dashboard module (npm ci at the root workspace + its Vite and budget build into wwwroot/dist).
+	cd "$(JOBS_DASHBOARD_DIR)" && $(NPM) run $(DASHBOARD_BUILD_SCRIPT)
+
+# Internal: one npm ci of the root workspace for every dashboard built from it, so `make -j dashboards` installs once
+# instead of two installs racing over the same node_modules.
+.PHONY: _npm-workspace
+_npm-workspace: _node-check
+	cd "$(NPM_WORKSPACE_DIR)" && $(NPM) ci --no-audit --no-fund
 
 .PHONY: dashboard-messaging
 dashboard-messaging: _node-check ## Rebuild the Messaging dashboard SPA (npm ci + vite build into wwwroot/dist).
@@ -764,6 +769,7 @@ dashboard-messaging: _node-check ## Rebuild the Messaging dashboard SPA (npm ci 
 # cli-exclude: script:headless-*-dashboard/format -- prettier --write over src/, which no gate checks
 # cli-exclude: script:headless-dashboard/test:unit:watch -- an interactive watcher; dashboard-shell-test runs the suite once
 # cli-exclude: script:headless-dashboard/lint -- eslint --fix writes files; the gate runs lint:check
+# cli-exclude: script:@headless/dashboard-module-jobs/lint -- eslint --fix writes files; the gate runs lint:check
 # dashboard_check <name> <dir>: install from the nearest lockfile at or above <dir> (the root workspace's for the
 # shell, the SPA's own otherwise) only when the node_modules beside it is missing or older than it (the rule
 # eng/DashboardSpa.targets uses), then run every gate script so one failure does not hide the next. Scripts
@@ -788,7 +794,7 @@ dashboard-shell-test: ## Lint, type-check, unit-test, and build the dashboard sh
 	@$(DASHBOARD_CHECK_FN); dashboard_check shell "$(SHELL_DASHBOARD_DIR)"
 
 .PHONY: dashboard-jobs-test
-dashboard-jobs-test: ## Lint, type-check, unit-test, and build the Jobs dashboard SPA (CI's Jobs dashboard job).
+dashboard-jobs-test: ## Lint, type-check, unit-test, and build the Jobs dashboard module, size budgets included (CI's Jobs dashboard job).
 	@$(DASHBOARD_CHECK_FN); dashboard_check jobs "$(JOBS_DASHBOARD_DIR)"
 
 .PHONY: dashboard-messaging-test
@@ -805,11 +811,12 @@ dashboards-test: ## Run every dashboard SPA's CI gates (dashboard-shell-test, da
 
 # changed_dashboards prints "<name> <dir>" for each dashboard SPA this side changed vs the merge base with
 # AFFECTED_BASE, committed or not, so a backend-only change pays nothing; with no merge base it prints every one. It
-# diffs the merge base for the same reason FORMAT_CHANGED does. The shell also answers for the root workspace files.
+# diffs the merge base for the same reason FORMAT_CHANGED does. The shell and the Jobs module, both members of the root
+# workspace, also answer for its files.
 CHANGED_DASHBOARDS_FN = changed_dashboards() { \
 	local base spa dir file paths; base="$$(git merge-base "$(AFFECTED_BASE)" HEAD 2>/dev/null || true)"; \
 	for spa in "shell $(SHELL_DASHBOARD_DIR)" "jobs $(JOBS_DASHBOARD_DIR)" "messaging $(MESSAGING_DASHBOARD_DIR)"; do dir="$${spa\#* }"; paths=("$$dir"); \
-		if [ "$${spa%% *}" = shell ]; then for file in $(NPM_WORKSPACE_FILES); do paths+=("$(NPM_WORKSPACE_DIR)/$$file"); done; fi; \
+		if [ "$${spa%% *}" = shell ] || [ "$${spa%% *}" = jobs ]; then for file in $(NPM_WORKSPACE_FILES); do paths+=("$(NPM_WORKSPACE_DIR)/$$file"); done; fi; \
 		if [ -z "$$base" ] || [ -n "$$(git diff --name-only "$$base" -- "$${paths[@]}"; git ls-files --others --exclude-standard -- "$${paths[@]}")" ]; then echo "$$spa"; fi; \
 	done; }
 

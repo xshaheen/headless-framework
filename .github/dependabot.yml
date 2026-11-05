@@ -103,7 +103,6 @@ updates:
   # Dashboards workflow only fast-fails if a dashboard stops compiling.
   - package-ecosystem: "npm"
     directories:
-      - "/src/Headless.Jobs.Dashboard/wwwroot"
       - "/src/Headless.Messaging.Dashboard/wwwroot"
       - "/demo/Headless.Tus.Demo/frontend"
     labels:

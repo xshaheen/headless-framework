@@ -133,6 +133,24 @@ describe('size budgets', () => {
     expect(existsSync(join(failing, '.build-complete'))).toBe(false)
   })
 
+  it('finalizes a module built in its own package, which has a manifest and no shell document', () => {
+    const root = dist({ 'modules/jobs/manifest.json': '{}', 'modules/jobs/index.js': 'export default {}\n'.repeat(200) })
+    const budgetFile = join(root, 'budget.json')
+    writeFileSync(budgetFile, JSON.stringify({ budgets: [viewChunk] }))
+
+    const run = spawnSync(process.execPath, [cli, 'finalize', root, budgetFile], { encoding: 'utf8' })
+
+    expect(run.status).toBe(0)
+    expect(existsSync(join(root, '.build-complete'))).toBe(true)
+    expect(existsSync(join(root, 'modules/jobs/index.js.br'))).toBe(true)
+  })
+
+  it('refuses a folder with neither a shell document nor a module manifest', () => {
+    const root = dist({ 'modules/jobs/index.js': 'export default {}\n' })
+
+    expect(spawnSync(process.execPath, [cli, 'finalize', root]).status).toBe(2)
+  })
+
   it('writes precompressed siblings when the build is within budget', () => {
     const root = dist({ 'index.html': '<!doctype html>', 'assets/a.js': 'export const x = 1\n'.repeat(200) })
     const budgetFile = join(root, 'budget.json')
