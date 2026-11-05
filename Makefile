@@ -891,6 +891,7 @@ up: ## Build and start the dashboard sandbox in the background (STORE=memory|pos
 	nohup $(DOTNET) "$(SANDBOX_DLL)" > "$(SANDBOX_LOG)" 2>&1 & echo $$! > "$(SANDBOX_PID)"; \
 	printf 'store=%s url=%s compose=%s\n' "$(STORE)" "$(SANDBOX_URL)" "$$([ "$(STORE)" = postgres ] && echo "$(SANDBOX_COMPOSE_PROJECT)" || echo none)" > "$(SANDBOX_STATE)"; \
 	echo "Sandbox starting (pid $$(cat "$(SANDBOX_PID)"), STORE=$(STORE))."; \
+	echo "  Headless dashboard:  $(SANDBOX_URL)/headless/ (host auth: sign in at $(SANDBOX_URL)/sandbox/headless-sign-in with the password in $(SANDBOX_ENV))"; \
 	echo "  Jobs dashboard:      $(SANDBOX_URL)/jobs/dashboard"; \
 	if [ -n "$${Sandbox__MessagingDashboardPassword:-}" ]; then \
 	  echo "  Messaging dashboard: $(SANDBOX_URL)/messaging/dashboard (Basic auth: user sandbox, password in $(SANDBOX_ENV))"; \
@@ -900,10 +901,10 @@ up: ## Build and start the dashboard sandbox in the background (STORE=memory|pos
 	echo "Next: make ready $(UP_ENV)"
 
 .PHONY: ready
-ready: ## Wait until the sandbox and both dashboards answer, then until a read through the Messaging store succeeds (TIMEOUT=120 seconds); names what is not usable.
+ready: ## Wait until the sandbox and its three dashboards answer, then until a read through the Messaging store succeeds (TIMEOUT=120 seconds); names what is not usable.
 	@url="$$(sed -n 's/.*url=\([^ ]*\).*/\1/p' "$(SANDBOX_STATE)" 2>/dev/null)"; url="$${url:-$(SANDBOX_URL)}"; \
 	deadline=$$(( $$(date +%s) + $(TIMEOUT) )); \
-	for path in /healthz /jobs/dashboard/ /messaging/dashboard/; do \
+	for path in /healthz /headless/ /jobs/dashboard/ /messaging/dashboard/; do \
 	  until curl -fsS -o /dev/null "$$url$$path" 2>/dev/null; do \
 	    if [ -f "$(SANDBOX_PID)" ] && ! kill -0 "$$(cat "$(SANDBOX_PID)")" 2>/dev/null; then \
 	      echo "Sandbox exited before $$path answered. Last log lines:"; tail -n 20 "$(SANDBOX_LOG)" 2>/dev/null || true; exit 1; fi; \

@@ -9,13 +9,13 @@ using Microsoft.Extensions.Options;
 namespace Headless.Dashboards.Sandbox;
 
 /// <summary>
-/// A stand-in for an application's own sign-in, so the Jobs dashboard's host mode can be walked without an identity
-/// provider. Not a pattern for production: it compares one shared secret.
+/// A stand-in for an application's own sign-in, so the host mode of the Headless dashboard and the Jobs dashboard can
+/// be walked without an identity provider. Not a pattern for production: it compares one shared secret.
 /// </summary>
 /// <remarks>
 /// Like an application that signs its SPA in with a bearer token, it has no sign-in redirect: a browser gets a
-/// dashboard session by posting the token to the dashboard's session exchange, which the <c>/sandbox/sign-in</c> page
-/// does. The viewer role may view the dashboard, and only the operator role may run its write actions.
+/// dashboard session by posting the token to the dashboard's session exchange, which the sandbox sign-in pages do.
+/// The viewer role may view a dashboard, and only the operator role may run its write actions.
 /// </remarks>
 internal static class SandboxHostAuthentication
 {
@@ -38,14 +38,21 @@ internal static class SandboxHostAuthentication
     }
 
     /// <summary>
-    /// Maps <c>GET /sandbox/sign-in</c>, a page that exchanges a sandbox token for a Jobs dashboard session the way an
-    /// application's SPA would: it posts the token as a bearer credential to <c>api/auth/session</c>, then opens the
-    /// dashboard.
+    /// Maps <c>GET <paramref name="route"/></c>, a page that exchanges a sandbox token for a session of the dashboard at
+    /// <paramref name="dashboardPath"/> the way an application's SPA would: it posts the token as a bearer credential
+    /// to <c>api/auth/session</c>, then opens the dashboard.
     /// </summary>
-    public static void MapSignInPage(IEndpointRouteBuilder endpoints, string dashboardPath)
+    public static void MapSignInPage(
+        IEndpointRouteBuilder endpoints,
+        string route,
+        string dashboardPath,
+        string dashboardName
+    )
     {
-        var page = _SignInPage.Replace("{dashboard}", dashboardPath, StringComparison.Ordinal);
-        endpoints.MapGet("/sandbox/sign-in", () => Results.Content(page, "text/html; charset=utf-8"));
+        var page = _SignInPage
+            .Replace("{dashboard}", dashboardPath, StringComparison.Ordinal)
+            .Replace("{name}", dashboardName, StringComparison.Ordinal);
+        endpoints.MapGet(route, () => Results.Content(page, "text/html; charset=utf-8"));
     }
 
     private const string _SignInPage = """
@@ -55,7 +62,7 @@ internal static class SandboxHostAuthentication
         <form id="f">
           <p>Sandbox token: <code>&lt;secret&gt;</code> signs in an operator, <code>viewer-&lt;secret&gt;</code> a viewer.</p>
           <input id="t" type="password" size="40" autofocus>
-          <button>Sign in to the Jobs dashboard</button>
+          <button>Sign in to the {name}</button>
           <p id="e"></p>
         </form>
         <script>

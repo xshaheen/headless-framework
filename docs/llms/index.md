@@ -37,7 +37,7 @@ Package READMEs are discovery pages. They explain why a package exists and link 
 | Use ASP.NET Core Identity with the Headless EF pipeline | [Identity](identity.md) |
 | Resolve tenants from claims, host, route, or catalog; enforce tenant reads/writes | [Multi-tenancy](multi-tenancy.md) |
 | Define and evaluate runtime permissions; integrate with ASP.NET Core authorization | [Permissions](permissions.md) |
-| Protect Jobs or Messaging dashboards | [Dashboards](dashboards.md) |
+| Serve the operations dashboard shell, write a dashboard module, or protect the Jobs or Messaging dashboards | [Dashboards](dashboards.md) |
 | Verify reCAPTCHA or Turnstile tokens | [CAPTCHA](captcha.md) |
 
 ### Data, state, and transactions
@@ -120,7 +120,7 @@ Load every row touched by the behavior, not just the package being edited:
 | --- | --- |
 | Tenant-aware HTTP request | [API](api.md), [Multi-tenancy](multi-tenancy.md), and [Permissions](permissions.md) when authorization is involved |
 | Atomic database write plus message or job | [ORM](orm.md), [Unit of Work](unit-of-work.md), and [Messaging](messaging.md) or [Jobs](jobs.md) |
-| Dashboard exposure | Owning [Jobs](jobs.md) or [Messaging](messaging.md) guide plus [Dashboards](dashboards.md) |
+| Dashboard exposure or a feature dashboard module | Owning domain guide, such as [Jobs](jobs.md) or [Messaging](messaging.md), plus [Dashboards](dashboards.md) |
 | Provider-backed integration test | Owning domain plus [Testing](testing.md) |
 
 ## When the docs and code disagree

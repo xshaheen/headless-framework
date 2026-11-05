@@ -50,7 +50,7 @@ Every service, repository, and handler that injects `ICache` is untouched by tha
 
 **The hard parts are already written.** Background jobs claim work atomically with `FOR UPDATE SKIP LOCKED` on PostgreSQL and `UPDLOCK, READPAST, ROWLOCK` on SQL Server. Messaging writes to a transactional outbox inside your EF Core save. Distributed locks use PostgreSQL advisory locks and SQL Server application locks rather than an improvised `SET NX`. Node membership reads liveness from the server clock, not the node's clock. Each of these is a place where a plausible-looking implementation loses messages or runs a job twice.
 
-**Two dashboards come with it.** `Headless.Jobs.Dashboard` and `Headless.Messaging.Dashboard` are real web UIs for inspecting runs, failures, and retries, with shared authentication and Kubernetes node discovery.
+**Dashboards come with it.** `Headless.Dashboard` serves feature modules under one base path, with one sign-in and live updates that reach every node. `Headless.Jobs.Dashboard` and `Headless.Messaging.Dashboard` are real web UIs for inspecting runs, failures, and retries, with shared authentication and Kubernetes node discovery.
 
 **AI coding agents get first-class docs.** [`docs/llms/`](docs/llms/) is a per-domain documentation set written for agents to fetch on demand. See [using Headless with AI agents](#using-headless-with-ai-agents).
 
@@ -729,7 +729,7 @@ Cross-cutting utilities that belong to no single domain.
 
 | Package | Description |
 |---------|-------------|
-| [Headless.Dashboard](src/Headless.Dashboard/README.md) | Shared authentication for the Jobs and Messaging dashboards |
+| [Headless.Dashboard](src/Headless.Dashboard/README.md) | Operations dashboard shell for feature modules, and shared authentication for the Jobs and Messaging dashboards |
 | [Headless.FluentValidation](src/Headless.FluentValidation/README.md) | FluentValidation extensions |
 | [Headless.Generator.Primitives](src/Headless.Generator.Primitives/README.md) | Primitive types source generator |
 | [Headless.Generator.Primitives.Abstractions](src/Headless.Generator.Primitives.Abstractions/README.md) | Generator abstractions |

@@ -28,6 +28,7 @@
     <ProjectReference Include="..\..\src\Headless.Messaging.Aws\Headless.Messaging.Aws.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.AzureServiceBus\Headless.Messaging.AzureServiceBus.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging\Headless.Messaging.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Dashboard\Headless.Dashboard.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.Dashboard\Headless.Messaging.Dashboard.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.Dashboard.Consul\Headless.Messaging.Dashboard.Consul.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.Dashboard.K8s\Headless.Messaging.Dashboard.K8s.csproj" />
@@ -51,9 +52,13 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
   </ItemGroup>
+  <ItemGroup Label="Packages the examples name in their own usings">
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" />
+  </ItemGroup>
   <ItemGroup Label="Documents under test and the preludes their examples compile against">
     <None Include="..\..\docs\llms\messaging.md" Link="Docs\messaging.md" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\docs\llms\jobs.md" Link="Docs\jobs.md" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\docs\llms\dashboards.md" Link="Docs\dashboards.md" CopyToOutputDirectory="PreserveNewest" />
     <Compile Remove="Preludes\**" />
     <None Include="Preludes\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

@@ -39,7 +39,10 @@ internal static class SandboxJobsDashboardAuth
         }
     }
 
-    /// <summary>The Jobs secret, falling back to the Messaging password so one generated secret serves both.</summary>
+    /// <summary>
+    /// The Jobs secret, falling back to the Messaging password so one generated secret serves both. The sandbox host
+    /// token behind the Headless dashboard's host mode uses it too.
+    /// </summary>
     public static string Secret(SandboxSettings sandbox)
     {
         var secret = sandbox.JobsDashboardSecret;
@@ -51,7 +54,8 @@ internal static class SandboxJobsDashboardAuth
         if (string.IsNullOrEmpty(secret))
         {
             throw new InvalidOperationException(
-                $"Sandbox__JobsDashboardAuth={sandbox.JobsDashboardAuth} needs Sandbox__JobsDashboardSecret or "
+                "The Headless dashboard's host sign-in and "
+                    + $"Sandbox__JobsDashboardAuth={sandbox.JobsDashboardAuth} need Sandbox__JobsDashboardSecret or "
                     + "Sandbox__MessagingDashboardPassword."
             );
         }

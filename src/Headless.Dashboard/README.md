@@ -1,10 +1,10 @@
 # Headless.Dashboard
 
-Shared authentication package for Headless dashboards (Jobs and Messaging).
+One operations dashboard for a Headless host, plus the authentication the Jobs and Messaging dashboards share.
 
 ## Why use this package
 
-Provides one authentication model for the Jobs and Messaging dashboards: host sessions with separate view and operate policies, Basic, API key, or none, so both dashboards share the same sign-in behavior without duplicating code.
+`AddHeadlessDashboard` and `MapHeadlessDashboard` serve every registered feature module under one base path, with one sign-in, one session, live updates that reach every node, and safe bulk commands. The dashboard stores nothing of its own. Operators sign in through the host's own login, Basic, or an API key. The package also ships a diagnostic module for trying the dashboard in Development, and the authentication the Jobs and Messaging dashboards use.
 
 ## Install
 
@@ -15,4 +15,4 @@ dotnet add package Headless.Dashboard
 ## Documentation
 
 - [Headless Framework](https://github.com/xshaheen/headless-framework#readme)
-- [Dashboards guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/dashboards.md#headlessdashboardauthentication)
+- [Dashboards guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/dashboards.md#headlessdashboard)
