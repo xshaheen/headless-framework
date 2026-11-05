@@ -1,10 +1,16 @@
 {
   "budgets": [
     {
-      "name": "Shell and SDK core",
+      "name": "Shell first load",
+      "files": [],
+      "measure": "first-load",
+      "maxBytes": 150000
+    },
+    {
+      "name": "Shell and every SDK entry",
       "files": ["assets/**/*.js", "assets/**/*.css"],
       "measure": "total",
-      "maxBytes": 150000
+      "maxBytes": 240000
     },
     {
       "name": "Module entry",

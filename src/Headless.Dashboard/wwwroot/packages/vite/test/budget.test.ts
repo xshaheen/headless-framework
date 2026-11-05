@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { formatBudgetResult, gzipSize, measureBudgets, type Budget } from '../src/index.ts'
+import { firstLoadFiles, formatBudgetResult, gzipSize, measureBudgets, type Budget } from '../src/index.ts'
 
 const cli = fileURLToPath(new URL('../src/cli.ts', import.meta.url))
 
@@ -63,6 +63,33 @@ describe('size budgets', () => {
     expect(result!.ok).toBe(false)
     expect(result!.bytes).toBeGreaterThan(1500)
     expect(result!.bytes).toBeLessThan(2000)
+  })
+
+  it('holds the first load to the entry, its preloads, and its stylesheets, and leaves on-demand chunks out', () => {
+    const root = dist({
+      'shell.json': JSON.stringify({
+        entry: 'assets/index.js',
+        preload: ['assets/react-dom.js'],
+        css: ['assets/shell.css'],
+        imports: { '@headless/dashboard-sdk/router': 'assets/router.js' },
+      }),
+      'assets/index.js': incompressible(400),
+      'assets/react-dom.js': incompressible(400),
+      'assets/shell.css': incompressible(400),
+      'assets/router.js': incompressible(5000),
+    })
+    const [result] = measureBudgets(root, [{ name: 'First load', files: [], measure: 'first-load', maxBytes: 1500 }])
+
+    expect(firstLoadFiles(root)).toEqual(['assets/index.js', 'assets/react-dom.js', 'assets/shell.css'])
+    expect(result).toMatchObject({ subject: 'First load', ok: true })
+    expect(result!.bytes).toBeLessThan(1500)
+    expect(formatBudgetResult(result!)).toMatch(/^First load \(entry, preloads, and stylesheets in shell\.json\) is /)
+  })
+
+  it('refuses a shell.json without its entry or lists', () => {
+    const root = dist({ 'shell.json': JSON.stringify({ entry: 'assets/index.js' }) })
+
+    expect(() => firstLoadFiles(root)).toThrow(/must hold an entry and its preload and css lists/)
   })
 
   it('leaves excluded files out', () => {

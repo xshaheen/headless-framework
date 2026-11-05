@@ -5,14 +5,32 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./components": "./src/components/index.ts",
+    "./data": "./src/data/index.ts",
+    "./stream": "./src/stream/index.ts",
+    "./commands": "./src/commands/index.ts",
+    "./router": "./src/router/index.ts",
+    "./query": "./src/query/index.ts",
+    "./testing": "./src/testing/render-module.tsx",
     "./package.json": "./package.json"
   },
   "dependencies": {
     "@tanstack/react-query": "5.104.5",
-    "react-aria-components": "1.22.1"
+    "react-aria-components": "1.22.1",
+    "react-router": "8.5.0"
   },
   "peerDependencies": {
+    "@testing-library/dom": "10.4.2",
+    "@testing-library/react": "16.3.3",
     "react": "19.3.1",
     "react-dom": "19.3.1"
+  },
+  "peerDependenciesMeta": {
+    "@testing-library/dom": {
+      "optional": true
+    },
+    "@testing-library/react": {
+      "optional": true
+    }
   }
 }
