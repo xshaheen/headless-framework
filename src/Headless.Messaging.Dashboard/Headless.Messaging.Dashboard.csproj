@@ -14,7 +14,7 @@
     <InternalsVisibleTo Include="Headless.Messaging.Dashboard.Tests.Unit" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Headless.Dashboard.Authentication\Headless.Dashboard.Authentication.csproj" />
+    <ProjectReference Include="..\Headless.Dashboard\Headless.Dashboard.csproj" />
     <ProjectReference Include="..\Headless.Messaging\Headless.Messaging.csproj" />
   </ItemGroup>
   <!-- Builds wwwroot SPA and embeds wwwroot/dist/** at build time (dist is gitignored, not committed). -->

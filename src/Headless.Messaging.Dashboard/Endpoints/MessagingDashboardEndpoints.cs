@@ -3,7 +3,7 @@
 using System.Diagnostics;
 using System.Net;
 using System.Text.Json.Serialization;
-using Headless.Dashboard.Authentication;
+using Headless.Dashboard;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Transport;

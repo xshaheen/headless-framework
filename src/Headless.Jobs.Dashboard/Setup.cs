@@ -2,7 +2,7 @@
 
 using Headless.Checks;
 using Headless.Coordination;
-using Headless.Dashboard.Authentication;
+using Headless.Dashboard;
 using Headless.Jobs.Coordination;
 using Headless.Jobs.Infrastructure.Dashboard;
 using Microsoft.AspNetCore.Builder;
@@ -67,7 +67,7 @@ public static class SetupJobsDashboard
             dashboardConfig.Validate();
 
             // Register authentication (named AuthConfig + keyed IAuthService) through the shared
-            // Headless.Dashboard.Authentication extension under this dashboard's own name, so another dashboard in
+            // Headless.Dashboard authentication extension under this dashboard's own name, so another dashboard in
             // the host keeps its own mode. The builder has already materialized the AuthConfig from WithBasicAuth /
             // WithApiKey / WithHostAuthentication, so mirror its fields into the options instance.
             services.AddDashboardAuthentication(

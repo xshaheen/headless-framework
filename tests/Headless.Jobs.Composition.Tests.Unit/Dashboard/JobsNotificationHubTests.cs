@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
-using Headless.Dashboard.Authentication;
+using Headless.Dashboard;
 using Headless.Jobs;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Http;

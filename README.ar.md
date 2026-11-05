@@ -768,7 +768,7 @@ Base classes وbuilders وfixtures وتكامل Testcontainers لـ integration 
 
 | Package | الوصف |
 |---------|-------|
-| [Headless.Dashboard.Authentication](src/Headless.Dashboard.Authentication/README.md) | Authentication مشتركة للـ dashboards بتاعة الـ Jobs والـ Messaging |
+| [Headless.Dashboard](src/Headless.Dashboard/README.md) | Authentication مشتركة للـ dashboards بتاعة الـ Jobs والـ Messaging |
 | [Headless.FluentValidation](src/Headless.FluentValidation/README.md) | Extensions لـ FluentValidation |
 | [Headless.Generator.Primitives](src/Headless.Generator.Primitives/README.md) | Source generator للـ primitive types |
 | [Headless.Generator.Primitives.Abstractions](src/Headless.Generator.Primitives.Abstractions/README.md) | الـ abstractions بتاعة الـ generator |

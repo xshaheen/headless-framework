@@ -4,7 +4,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Security.Claims;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Headless.Dashboard.Authentication;
+using Headless.Dashboard;
 using Microsoft.AspNetCore.Http;
 
 namespace Headless.Messaging.Dashboard;

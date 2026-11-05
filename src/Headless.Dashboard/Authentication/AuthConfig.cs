@@ -2,7 +2,7 @@
 
 using FluentValidation;
 
-namespace Headless.Dashboard.Authentication;
+namespace Headless.Dashboard;
 
 /// <summary>
 /// Configures authentication for dashboards.

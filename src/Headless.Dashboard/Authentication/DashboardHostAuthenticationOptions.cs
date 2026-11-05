@@ -5,7 +5,7 @@ using System.Text.RegularExpressions;
 using FluentValidation;
 using Microsoft.AspNetCore.Http;
 
-namespace Headless.Dashboard.Authentication;
+namespace Headless.Dashboard;
 
 /// <summary>
 /// Configures a dashboard under <see cref="AuthMode.Host"/>: which host policies let a user view and operate it, how

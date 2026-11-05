@@ -219,7 +219,7 @@
           "Headless.Sql.Abstractions": "[1.0.0, )"
         }
       },
-      "headless.dashboard.authentication": {
+      "headless.dashboard": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
@@ -308,7 +308,7 @@
         "type": "Project",
         "dependencies": {
           "Headless.Coordination.Abstractions": "[1.0.0, )",
-          "Headless.Dashboard.Authentication": "[1.0.0, )",
+          "Headless.Dashboard": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
           "Headless.Jobs": "[1.0.0, )",
           "Headless.Jobs.Abstractions": "[1.0.0, )"
@@ -364,7 +364,7 @@
       "headless.messaging.dashboard": {
         "type": "Project",
         "dependencies": {
-          "Headless.Dashboard.Authentication": "[1.0.0, )",
+          "Headless.Dashboard": "[1.0.0, )",
           "Headless.Messaging": "[1.0.0, )"
         }
       },

@@ -3,7 +3,7 @@
 using System.Net;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
-using Headless.Dashboard.Authentication;
+using Headless.Dashboard;
 using Headless.Messaging;
 using Headless.Messaging.Dashboard;
 using Microsoft.AspNetCore.Authentication;

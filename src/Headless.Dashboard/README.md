@@ -1,4 +1,4 @@
-# Headless.Dashboard.Authentication
+# Headless.Dashboard
 
 Shared authentication package for Headless dashboards (Jobs and Messaging).
 
@@ -9,7 +9,7 @@ Provides one authentication model for the Jobs and Messaging dashboards: host se
 ## Install
 
 ```bash
-dotnet add package Headless.Dashboard.Authentication
+dotnet add package Headless.Dashboard
 ```
 
 ## Documentation
