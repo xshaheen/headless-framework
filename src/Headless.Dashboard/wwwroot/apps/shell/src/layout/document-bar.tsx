@@ -1,4 +1,5 @@
 import { Button, LiveIndicator } from '@headless/dashboard-sdk/components'
+import { useLocale } from '@headless/dashboard-sdk/locale'
 import { useLocation } from '@headless/dashboard-sdk/router'
 import { routeHandleFor } from '../route-handles.ts'
 import { useShell } from '../shell-context.tsx'
@@ -18,6 +19,7 @@ export function DocumentBar({ isRailOpen, onToggleRail, onOpenPalette }: Documen
   const { state } = useShell()
   const route = routeHandleFor(state, useLocation().pathname)
   const canOperate = useCanOperate(route.module)
+  const { timeZone } = useLocale()
   const crumb = route.crumb
   const title = crumb.at(-1) ?? ''
 
@@ -45,7 +47,7 @@ export function DocumentBar({ isRailOpen, onToggleRail, onOpenPalette }: Documen
       </nav>
       <span className="hd-docbar-spacer" />
       <span className="hd-chip" title="Display time zone">
-        UTC
+        {timeZone}
       </span>
       <LiveIndicator />
       {canOperate ? null : <span className="hd-view-only">View only</span>}

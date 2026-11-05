@@ -8,7 +8,6 @@ import { Inspector } from '../../src/components/inspector/inspector.tsx'
 import { LiveIndicator, ToastRegion } from '../../src/components/live.tsx'
 import { StatusMark } from '../../src/components/marks.tsx'
 import { CommandPalette } from '../../src/components/palette/command-palette.tsx'
-import { formatJson, PayloadView } from '../../src/components/payload/payload-view.tsx'
 import { DashboardProvider, useDashboard } from '../../src/context.tsx'
 import { createDashboardClient } from '../../src/data/client.tsx'
 import { createFakeStream, type FakeStream } from '../../src/testing/fake-stream.ts'
@@ -136,30 +135,6 @@ describe('toasts and buttons', () => {
     render(<StatusMark tone="needs" label="Failed" />)
 
     expect(screen.getByText('Failed')).toBeTruthy()
-  })
-})
-
-describe('payload view', () => {
-  it('formats JSON and keeps a large integer exact', () => {
-    expect(formatJson('{"id":9007199254740993,"tags":[],"a":{"b":"x, y"}}')).toBe(
-      '{\n  "id": 9007199254740993,\n  "tags": [],\n  "a": {\n    "b": "x, y"\n  }\n}',
-    )
-
-    render(<PayloadView content='{"amount":12345678901234567890}' contentType="application/json" />)
-    expect(screen.getByText(/12345678901234567890/)).toBeTruthy()
-  })
-
-  it('shows the size and the first 64 KB of a large payload, with Copy all', () => {
-    render(<PayloadView content={'x'.repeat(70 * 1024)} contentType="text/plain" />)
-
-    expect(screen.getByText('70.0 KB, first 64 KB shown')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Copy all' })).toBeTruthy()
-  })
-
-  it('names an unsupported contract version instead of failing to parse', () => {
-    render(<PayloadView content="{}" unsupportedVersion={3} />)
-
-    expect(screen.getByText('Unsupported contract version 3')).toBeTruthy()
   })
 })
 

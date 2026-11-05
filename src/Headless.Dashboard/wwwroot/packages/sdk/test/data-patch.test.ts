@@ -124,7 +124,7 @@ describe('data patching', () => {
   })
 
   it('formats a capped count with a plus', () => {
-    expect(formatCount(capCount(12_345, 10_000))).toBe('10,000+')
-    expect(formatCount(capCount(312, 10_000))).toBe('312')
+    expect(formatCount(capCount(12_345, 10_000), 'en')).toBe('10,000+')
+    expect(formatCount(capCount(312, 10_000), 'en')).toBe('312')
   })
 })

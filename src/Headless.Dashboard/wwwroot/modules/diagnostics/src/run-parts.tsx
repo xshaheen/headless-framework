@@ -1,12 +1,14 @@
 import { useDashboard, useModule } from '@headless/dashboard-sdk'
 import { CommandAction, type RowResult } from '@headless/dashboard-sdk/commands'
 import { Button, InspectorField, InspectorFields, Mono } from '@headless/dashboard-sdk/components'
+import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useStreamEvent, useStreamStatus } from '@headless/dashboard-sdk/stream'
 import { useState } from 'react'
-import { exactTime, relativeTime, useRefusals, useRunCommands, type Run, type RunEvent } from './runs.ts'
+import { useRefusals, useRunCommands, type Run, type RunEvent } from './runs.ts'
 
 /** A timestamp as relative time, with the exact time and zone on hover. */
 export function RunTime({ value }: { value: string }) {
+  const format = useFormat()
   const at = new Date(value)
 
   if (Number.isNaN(at.getTime())) {
@@ -14,8 +16,8 @@ export function RunTime({ value }: { value: string }) {
   }
 
   return (
-    <time dateTime={value} title={exactTime(at)}>
-      {relativeTime(at, Date.now())}
+    <time dateTime={value} title={format.exactTime(at)}>
+      {format.relativeTime(at)}
     </time>
   )
 }

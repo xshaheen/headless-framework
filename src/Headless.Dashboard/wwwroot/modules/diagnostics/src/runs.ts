@@ -175,32 +175,3 @@ export function useRequeuing() {
       }),
   }
 }
-
-const relativeFormat = new Intl.RelativeTimeFormat('en', { numeric: 'auto' })
-
-const exactFormat = new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeStyle: 'long', timeZone: 'UTC' })
-
-const units: readonly [Intl.RelativeTimeFormatUnit, number][] = [
-  ['day', 86_400],
-  ['hour', 3_600],
-  ['minute', 60],
-  ['second', 1],
-]
-
-/** `4 minutes ago`, `in 12 seconds`. */
-export function relativeTime(at: Date, now: number) {
-  const seconds = Math.round((at.getTime() - now) / 1_000)
-
-  for (const [unit, size] of units) {
-    if (Math.abs(seconds) >= size || unit === 'second') {
-      return relativeFormat.format(Math.round(seconds / size), unit)
-    }
-  }
-
-  return relativeFormat.format(0, 'second')
-}
-
-/** The exact time with its zone and offset, for the hover text. The SDK exposes no display time zone yet, so UTC. */
-export function exactTime(at: Date) {
-  return exactFormat.format(at)
-}

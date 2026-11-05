@@ -13,7 +13,8 @@ import {
   useDelayed,
   useViewKeys,
 } from '@headless/dashboard-sdk/components'
-import { DashboardApiError, formatCount, listKey, useDashboardList, useDashboardObject } from '@headless/dashboard-sdk/data'
+import { DashboardApiError, listKey, useDashboardList, useDashboardObject } from '@headless/dashboard-sdk/data'
+import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useMutation, useQueryClient } from '@headless/dashboard-sdk/query'
 import { Link, useSearchParams } from '@headless/dashboard-sdk/router'
 import { useEffect, useRef } from 'react'
@@ -42,6 +43,7 @@ const canvas = { flex: '1 1 32rem', minInlineSize: 0, display: 'flex', flexDirec
 export default function RunsList() {
   const { api } = useDashboard()
   const module = useModule()
+  const format = useFormat()
   const client = useQueryClient()
   const { start } = useOperations()
   const [params, setParams] = useSearchParams()
@@ -145,7 +147,7 @@ export default function RunsList() {
           <h1 id="diagnostics-runs-title" className="hd-title">
             Runs
           </h1>
-          {count ? <span className="hd-hint">{`${formatCount(count)} ${count.value === 1 && !count.capped ? 'run' : 'runs'}`}</span> : null}
+          {count ? <span className="hd-hint">{`${format.count(count)} ${count.value === 1 && !count.capped ? 'run' : 'runs'}`}</span> : null}
           <Button variant="primary" disabledReason={addReason} isPending={add.isPending} onPress={() => add.mutate()}>
             Add run
           </Button>
@@ -199,7 +201,7 @@ export default function RunsList() {
       <RunsInspector
         runs={selectedRuns}
         lookupId={lookupId}
-        count={count ? formatCount(count) : undefined}
+        count={count ? format.count(count) : undefined}
         isRequeuing={requeuing.isRequeuing}
         onRequeued={requeuing.mark}
         onClose={() => select(new Set())}

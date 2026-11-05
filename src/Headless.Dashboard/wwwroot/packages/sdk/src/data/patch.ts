@@ -37,6 +37,8 @@ export function compareVersions(left: string, right: string) {
     return a === b ? 0 : a < b ? -1 : 1
   }
 
+  // A fixed collation, not the operator's locale: every browser must order the same two versions the same way, or
+  // one would drop a change another applies.
   return left.localeCompare(right, 'en', { numeric: true })
 }
 
