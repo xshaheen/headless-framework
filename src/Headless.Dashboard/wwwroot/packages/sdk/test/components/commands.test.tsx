@@ -79,7 +79,7 @@ describe('commands', () => {
     expect(requests[1]!.body).toMatchObject({ ids: ['r1', 'r2'], reason: 'Undo of Fail', confirmed: true })
   })
 
-  it('reports a failed Undo in a toast, which outlives the button that offered it', async () => {
+  it('reports a failed Undo in a toast, which outlives the button, and beside the action while the rows stay selected', async () => {
     const user = userEvent.setup()
     const fail = command({ id: 'fail', label: 'Fail', confirmation: 'none', inverseCommandId: 'requeue' })
     const requeue = command({ id: 'requeue', label: 'Requeue' })
@@ -98,9 +98,28 @@ describe('commands', () => {
     const toast = await screen.findByText('Fail: 2 runs done')
     await user.click(within(toast.closest('[role="status"]') as HTMLElement).getByRole('button', { name: 'Undo' }))
 
-    const failure = await screen.findByText('Run r1 is running again.')
-    expect(failure.closest('[role="status"]')).not.toBeNull()
-    expect(screen.queryByRole('alert')).toBeNull()
+    const failures = await screen.findAllByText('Run r1 is running again.')
+    expect(failures.some((failure) => failure.closest('[role="status"]'))).toBe(true)
+    expect((await screen.findByRole('alert')).textContent).toContain('Run r1 is running again.')
+  })
+
+  it('lists each row the server did not change beside the action, with its reason', async () => {
+    const user = userEvent.setup()
+    const fail = command({ id: 'fail', label: 'Fail', confirmation: 'none' })
+    renderWithDashboard(<CommandAction module="diag" command={fail} ids={['r1', 'r2', 'r3']} noun="runs" />, () => ({
+      rows: [
+        { id: 'r1', outcome: 'done' },
+        { id: 'r2', outcome: 'skipped', reason: 'Already failed' },
+        { id: 'r3', outcome: 'failed', reason: 'Locked by node-b' },
+      ],
+    }))
+
+    await user.click(screen.getByRole('button', { name: 'Fail 3 runs' }))
+
+    const list = await screen.findByRole('list', { name: 'Rows not changed' })
+    const items = within(list).getAllByRole('listitem').map((item) => item.textContent)
+    expect(items).toEqual(['r2SkippedAlready failed', 'r3FailedLocked by node-b'])
+    expect(screen.getByRole('alert').contains(list)).toBe(true)
   })
 
   it('keeps Confirm disabled until the typed count matches', async () => {

@@ -569,6 +569,18 @@
   gap: var(--space-2);
 }
 
+/* The rows a command left unchanged, each with the server's reason, listed beside the action that ran. */
+.hd-outcomes {
+  display: grid;
+  flex-basis: 100%;
+  gap: var(--space-1);
+  overflow-wrap: anywhere;
+}
+
+.hd-outcomes p {
+  margin: 0;
+}
+
 .hd-kv {
   display: grid;
   grid-template-columns: 112px 1fr;

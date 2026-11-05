@@ -305,6 +305,57 @@ describe('diagnostics runs list', () => {
     expect(document.getElementById(requeue.getAttribute('aria-describedby')!)?.textContent).toBe('Running - cancel instead')
   })
 
+  it('keeps every action disabled until the server says it can run now', async () => {
+    let answer: (value: unknown) => void = () => {}
+    open([run('run-000001', 'Queued')], {
+      extra: (request) =>
+        request.path === 'diagnostics/commands/allowed'
+          ? new Promise((resolve) => {
+              answer = resolve
+            })
+          : undefined,
+    })
+
+    await user().click(await screen.findByRole('row', { name: /run-000001/ }))
+    const inspector = screen.getByRole('complementary', { name: 'Run run-000001' })
+    const fail = await within(inspector).findByRole('button', { name: 'Fail' })
+
+    expect(fail.getAttribute('aria-disabled')).toBe('true')
+    expect(document.getElementById(fail.getAttribute('aria-describedby')!)?.textContent).toBe('Checking whether this can run…')
+
+    act(() =>
+      answer({
+        objects: [
+          { kind: 'run', id: 'run-000001', commands: commands.map((command) => ({ id: command.id, allowed: true })) },
+        ],
+      }),
+    )
+    await waitFor(() => expect(within(inspector).getByRole('button', { name: 'Fail' }).getAttribute('aria-disabled')).toBeNull())
+  })
+
+  it('keeps actions disabled and says so when the server cannot say whether they can run', async () => {
+    open([run('run-000001', 'Queued')], {
+      extra: (request) => {
+        if (request.path === 'diagnostics/commands/allowed') {
+          throw new DashboardApiError(503, 'Unavailable')
+        }
+
+        return undefined
+      },
+    })
+
+    await user().click(await screen.findByRole('row', { name: /run-000001/ }))
+    const inspector = screen.getByRole('complementary', { name: 'Run run-000001' })
+    const fail = await within(inspector).findByRole('button', { name: 'Fail' })
+
+    await waitFor(() =>
+      expect(document.getElementById(fail.getAttribute('aria-describedby')!)?.textContent).toBe(
+        'Could not check whether this can run. Reload to try again.',
+      ),
+    )
+    expect(fail.getAttribute('aria-disabled')).toBe('true')
+  })
+
   it('reads Requeuing… after a requeue until the stream sets the real status', async () => {
     const actor = user()
     const row = run('run-000001', 'Failed')

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Button } from '../components/button.tsx'
+import { Mono } from '../components/marks.tsx'
 import { useDashboard } from '../context.tsx'
 import { DashboardApiError } from '../data/api.ts'
 import { ActionConfirm, type ConfirmedAction } from './action-confirm.tsx'
@@ -36,6 +37,44 @@ function summary(label: string, noun: string, rows: readonly RowResult[]) {
   return parts.join(', ')
 }
 
+/** The outcome of the last run on one selection: the rows the server did not change, each with its reason. */
+interface RunOutcome {
+  /** The selection it belongs to, so a reselected inspector never shows another selection's refusals. */
+  key: string
+  label: string
+  rows: RowResult[]
+  error?: string
+}
+
+function RowOutcomes({ outcome }: { outcome: RunOutcome }) {
+  const refused = outcome.rows.filter((row) => row.outcome !== 'done')
+
+  if (refused.length === 0 && !outcome.error) {
+    return null
+  }
+
+  return (
+    <div role="alert" className="hd-outcomes">
+      {outcome.error ? <p className="hd-error">{outcome.error}</p> : null}
+      {refused.length > 0 ? (
+        <>
+          <p className="hd-hint">{outcome.label}: not changed</p>
+          {/* The same list the Operation panel shows, so a run over ids and an Operation report refusals alike. */}
+          <ul className="hd-operation-problems" aria-label="Rows not changed">
+            {refused.map((row) => (
+              <li key={row.id}>
+                <Mono>{row.id}</Mono>
+                <span>{row.outcome === 'failed' ? 'Failed' : 'Skipped'}</span>
+                <span className="hd-hint">{row.reason ?? ''}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+    </div>
+  )
+}
+
 /**
  * Runs a server command on the selected rows. A command with an inverse runs at once and its toast offers Undo; any
  * other confirmed command opens its confirmation, typed past 100 rows. A command the user or the row's state does
@@ -46,6 +85,9 @@ export function CommandAction({ module, command, ids, noun, disabledReason, comm
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | undefined>()
+  const [outcome, setOutcome] = useState<RunOutcome | undefined>()
+  const selection = ids.join('\n')
+  const shownOutcome = outcome?.key === selection ? outcome : undefined
 
   const confirmation = effectiveConfirmation(command, ids.length)
   const needsInput = Object.keys(command.arguments.properties).length > 0 || command.requiresReason
@@ -56,6 +98,7 @@ export function CommandAction({ module, command, ids, noun, disabledReason, comm
   async function run(action: ConfirmedAction) {
     setBusy(true)
     setError(undefined)
+    setOutcome(undefined)
 
     try {
       const rows = await client.run(command.id, {
@@ -69,6 +112,7 @@ export function CommandAction({ module, command, ids, noun, disabledReason, comm
       const undone = rows.filter((row) => row.outcome === 'done').map((row) => row.id)
 
       setConfirming(false)
+      setOutcome({ key: selection, label: command.label, rows })
       toasts.show({
         message: summary(command.label, noun, rows),
         action:
@@ -76,17 +120,22 @@ export function CommandAction({ module, command, ids, noun, disabledReason, comm
             ? {
                 label: 'Undo',
                 onAction: () => {
+                  const undoLabel = inverse?.label ?? 'Undo'
+
                   // The inverse may require a reason; Undo states its own rather than asking the operator again.
                   void client
                     .run(command.inverseCommandId!, { ids: undone, confirmed: true, reason: `Undo of ${command.label}` })
-                    .then((undoRows) => toasts.show({ message: summary(inverse?.label ?? 'Undo', noun, undoRows) }))
-                    // The toast outlives this button, so the failure goes to a toast too, not into state that may
-                    // belong to an unmounted or reselected component.
-                    .catch((undoError: unknown) =>
-                      toasts.show({
-                        message: undoError instanceof DashboardApiError ? undoError.message : 'Undo failed. Try again.',
-                      }),
-                    )
+                    .then((undoRows) => {
+                      toasts.show({ message: summary(undoLabel, noun, undoRows) })
+                      setOutcome({ key: selection, label: undoLabel, rows: undoRows })
+                    })
+                    // The toast outlives this button, so the failure goes to a toast as well. The inline copy is keyed
+                    // to the selection, so it shows only while the same rows are still selected.
+                    .catch((undoError: unknown) => {
+                      const message = undoError instanceof DashboardApiError ? undoError.message : 'Undo failed. Try again.'
+                      toasts.show({ message })
+                      setOutcome({ key: selection, label: undoLabel, rows: [], error: message })
+                    })
                 },
               }
             : undefined,
@@ -120,6 +169,7 @@ export function CommandAction({ module, command, ids, noun, disabledReason, comm
           {error}
         </span>
       ) : null}
+      {shownOutcome && !confirming ? <RowOutcomes outcome={shownOutcome} /> : null}
       <ActionConfirm
         isOpen={confirming}
         title={label}

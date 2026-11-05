@@ -444,13 +444,17 @@
   margin: 0;
 }
 
-/* Below 1280 px the inspector becomes a drawer from the inline end. */
+/*
+ * Below 1280 px a selection's inspector becomes a drawer from the inline end. A summary, shown when nothing is
+ * selected, has no Close, so it stays in the flow below the canvas rather than covering it.
+ */
 @media (max-width: 1279px) {
   .hd-body {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
   }
 
-  .hd-dock {
+  .hd-dock:has(> .hd-inspector-selection) {
     position: fixed;
     inset-block: 0;
     inset-inline-end: 0;
@@ -510,7 +514,8 @@
     padding-inline: var(--space-4);
   }
 
-  .hd-dock {
+  /* Matches the drawer rule's selector, which would otherwise win on specificity and keep it at drawer width. */
+  .hd-dock:has(> .hd-inspector-selection) {
     inline-size: 100%;
   }
 

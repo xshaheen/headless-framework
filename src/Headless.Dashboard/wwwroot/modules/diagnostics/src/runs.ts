@@ -128,7 +128,17 @@ export function useRefusals(runs: readonly Pick<Run, 'id' | 'version'>[]) {
       return null
     }
 
-    for (const object of answer.data ?? []) {
+    // An action is offered only once the server has said it can succeed now, so it stays disabled while that answer
+    // is loading or after it failed, rather than letting the operator run what the server may refuse.
+    if (answer.isPending) {
+      return 'Checking whether this can run…'
+    }
+
+    if (answer.isError) {
+      return 'Could not check whether this can run. Reload to try again.'
+    }
+
+    for (const object of answer.data) {
       const command = object.commands.find((candidate) => candidate.id === commandId)
 
       if (command && !command.allowed) {
