@@ -26,6 +26,7 @@ internal static class TimeJobEditGuard
         nameof(TimeJobEntity.ExecutedAt),
         nameof(TimeJobEntity.ElapsedTime),
         nameof(TimeJobEntity.ExceptionMessage),
+        nameof(TimeJobEntity.FailureFingerprint),
         nameof(TimeJobEntity.SkippedReason),
         nameof(TimeJobEntity.ProgressPercent),
         nameof(TimeJobEntity.ProgressMessage),

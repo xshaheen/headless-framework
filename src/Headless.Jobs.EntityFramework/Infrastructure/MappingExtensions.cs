@@ -327,6 +327,12 @@ internal static class MappingExtensions
             setters.SetProperty(x => x.ExceptionMessage, functionContext.ExceptionDetails);
         }
 
+        // FAILURE FINGERPRINT
+        if (propsToUpdate.Contains(nameof(JobExecutionState.FailureFingerprint)))
+        {
+            setters.SetProperty(x => x.FailureFingerprint, functionContext.FailureFingerprint);
+        }
+
         // ELAPSED_TIME
         if (propsToUpdate.Contains(nameof(JobExecutionState.ElapsedTime)))
         {
@@ -401,6 +407,12 @@ internal static class MappingExtensions
         )
         {
             setters.SetProperty(x => x.ExceptionMessage, functionContext.ExceptionDetails);
+        }
+
+        // FAILURE FINGERPRINT
+        if (propsToUpdate.Contains(nameof(JobExecutionState.FailureFingerprint)))
+        {
+            setters.SetProperty(x => x.FailureFingerprint, functionContext.FailureFingerprint);
         }
 
         // ELAPSED_TIME

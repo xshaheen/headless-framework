@@ -109,6 +109,12 @@ public class CronJobOccurrenceConfigurations<TCronJob>(
             .HasFilter($"{JobsStorageNaming.QuotedColumn(style, "Status")} IN ('Idle', 'Queued', 'InProgress')")
             .HasDatabaseName(JobsStorageNaming.Name(style, "UQ", table, "CronJobId", "ExecutionTime"));
 
+        // Failures group by cause per function: the dashboard counts and lists failed runs by this key.
+        builder.Property(x => x.FailureFingerprint).HasMaxLength(JobFailureFingerprints.MaxLength);
+        builder
+            .HasIndex("Function", "FailureFingerprint", "Status")
+            .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, "Function", "FailureFingerprint", "Status"));
+
         JobsChangeMarkerModelConfiguration.ConfigureColumn(builder, style, table);
 
         builder.ToTable(table, schema);

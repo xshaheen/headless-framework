@@ -488,6 +488,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 case NodeDeathPolicy.MarkFailed:
                     updated.Status = JobStatus.Failed;
                     updated.ExceptionMessage = reason;
+                    updated.FailureFingerprint = JobFailureFingerprints.InterruptedByShutdown;
                     updated.ExecutedAt = now;
                     break;
                 case NodeDeathPolicy.Skip:
@@ -1132,6 +1133,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                             t.Status = JobStatus.Failed;
                             t.LockedUntil = null;
                             t.ExceptionMessage = "Lease lapsed while running!";
+                            t.FailureFingerprint = JobFailureFingerprints.LeaseLapsed;
                             t.ExecutedAt = now;
                         }
                     ):
@@ -1616,6 +1618,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         job.ExecutedAt = stored.ExecutedAt;
         job.ElapsedTime = stored.ElapsedTime;
         job.ExceptionMessage = stored.ExceptionMessage;
+        job.FailureFingerprint = stored.FailureFingerprint;
         job.SkippedReason = stored.SkippedReason;
         job.ProgressPercent = stored.ProgressPercent;
         job.ProgressMessage = stored.ProgressMessage;
@@ -1762,6 +1765,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                             t.Status = JobStatus.Failed;
                             t.LockedUntil = null;
                             t.ExceptionMessage = "Node is not alive!";
+                            t.FailureFingerprint = JobFailureFingerprints.NodeNotAlive;
                             t.ExecutedAt = now;
                         }
                     )
@@ -3529,6 +3533,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                             t.Status = JobStatus.Failed;
                             t.LockedUntil = null;
                             t.ExceptionMessage = "Lease lapsed while running!";
+                            t.FailureFingerprint = JobFailureFingerprints.LeaseLapsed;
                             t.ExecutedAt = now;
                         }
                     ):
@@ -3640,6 +3645,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 case NodeDeathPolicy.MarkFailed:
                     updated.Status = JobStatus.Failed;
                     updated.ExceptionMessage = reason;
+                    updated.FailureFingerprint = JobFailureFingerprints.InterruptedByShutdown;
                     updated.ExecutedAt = now;
                     break;
                 case NodeDeathPolicy.Skip:
@@ -3789,6 +3795,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                             o.Status = JobStatus.Failed;
                             o.LockedUntil = null;
                             o.ExceptionMessage = "Node is not alive!";
+                            o.FailureFingerprint = JobFailureFingerprints.NodeNotAlive;
                             o.ExecutedAt = now;
                         }
                     )
@@ -4439,6 +4446,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             ParentId = job.ParentId,
             Request = job.Request?.ToArray(),
             ExceptionMessage = job.ExceptionMessage,
+            FailureFingerprint = job.FailureFingerprint,
             SkippedReason = job.SkippedReason,
             ElapsedTime = job.ElapsedTime,
             ProgressPercent = job.ProgressPercent,
@@ -4483,6 +4491,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             LockedUntil = occurrence.LockedUntil,
             OnNodeDeath = occurrence.OnNodeDeath,
             ExceptionMessage = occurrence.ExceptionMessage,
+            FailureFingerprint = occurrence.FailureFingerprint,
             SkippedReason = occurrence.SkippedReason,
             // Same reasoning as RecoveredFromUtc above: the occupied-instant rule reads this and nothing else, so a
             // clone that dropped it would silently turn a seeding-migration retirement into an ordinary one.
@@ -4523,6 +4532,12 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         if (propsToUpdate.Contains(nameof(JobExecutionState.ExceptionDetails)) && context.Status != JobStatus.Skipped)
         {
             job.ExceptionMessage = context.ExceptionDetails;
+        }
+
+        // FAILURE FINGERPRINT
+        if (propsToUpdate.Contains(nameof(JobExecutionState.FailureFingerprint)))
+        {
+            job.FailureFingerprint = context.FailureFingerprint;
         }
 
         // ELAPSED_TIME
@@ -4588,6 +4603,12 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         if (propsToUpdate.Contains(nameof(JobExecutionState.ExceptionDetails)) && context.Status != JobStatus.Skipped)
         {
             occurrence.ExceptionMessage = context.ExceptionDetails;
+        }
+
+        // FAILURE FINGERPRINT
+        if (propsToUpdate.Contains(nameof(JobExecutionState.FailureFingerprint)))
+        {
+            occurrence.FailureFingerprint = context.FailureFingerprint;
         }
 
         // ELAPSED_TIME

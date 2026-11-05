@@ -695,7 +695,10 @@ internal sealed class JobsExecutionTaskHandler
                     .SetProperty(x => x.Status, JobStatus.Failed)
                     .SetProperty(x => x.ExecutedAt, _timeProvider.GetUtcNow())
                     .SetProperty(x => x.ElapsedTime, 0L)
-                    .SetProperty(x => x.ExceptionDetails, _SerializeException(exhaustedByRecovery));
+                    .SetProperty(x => x.ExceptionDetails, _SerializeException(exhaustedByRecovery))
+                    // The exception above is built here and never thrown, so it has no frames to fingerprint: the
+                    // cause gets its fixed fingerprint instead.
+                    .SetProperty(x => x.FailureFingerprint, JobFailureFingerprints.RetryBudgetExhaustedByRecovery);
                 jobActivity?.SetTag("headless.job.final_status", context.Status.ToString());
                 jobActivity?.SetTag("headless.job.final_retry.count", context.RetryCount);
                 _jobsInstrumentation.LogJobFailed(
@@ -809,7 +812,9 @@ internal sealed class JobsExecutionTaskHandler
                                 throw new OperationCanceledException(cancellationTokenSource.Token);
                             }
 
-                            context.SetProperty(x => x.RetryCount, retryCount);
+                            context
+                                .SetProperty(x => x.RetryCount, retryCount)
+                                .SetProperty(x => x.FailureFingerprint, FailureFingerprint.Compute(exception));
                             int affected;
                             try
                             {
@@ -1050,7 +1055,8 @@ internal sealed class JobsExecutionTaskHandler
             {
                 context
                     .SetProperty(x => x.Status, JobStatus.Failed)
-                    .SetProperty(x => x.ExceptionDetails, _SerializeException(lastException));
+                    .SetProperty(x => x.ExceptionDetails, _SerializeException(lastException))
+                    .SetProperty(x => x.FailureFingerprint, FailureFingerprint.Compute(lastException));
 
                 // Add failure tags to activity
                 jobActivity?.SetTag("headless.job.final_status", context.Status.ToString());

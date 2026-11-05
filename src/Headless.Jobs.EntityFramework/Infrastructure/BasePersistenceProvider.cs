@@ -244,6 +244,13 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                             x => x.OnNodeDeath == NodeDeathPolicy.MarkFailed ? reason : x.ExceptionMessage
                         )
                         .SetProperty(
+                            x => x.FailureFingerprint,
+                            x =>
+                                x.OnNodeDeath == NodeDeathPolicy.MarkFailed
+                                    ? JobFailureFingerprints.InterruptedByShutdown
+                                    : x.FailureFingerprint
+                        )
+                        .SetProperty(
                             x => x.SkippedReason,
                             x => x.OnNodeDeath == NodeDeathPolicy.Skip ? reason : x.SkippedReason
                         )
@@ -649,6 +656,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.Status, JobStatus.Idle)
                         .SetProperty(x => x.RetryCount, 0)
                         .SetProperty(x => x.ExceptionMessage, _ => null)
+                        .SetProperty(x => x.FailureFingerprint, _ => null)
                         .SetProperty(x => x.SkippedReason, _ => null)
                         .SetProperty(x => x.OwnerId, _ => null)
                         .SetProperty(x => x.LockedUntil, _ => null)
@@ -1165,6 +1173,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                                     .SetProperty(x => x.Status, JobStatus.Failed)
                                     .SetProperty(x => x.LockedUntil, _ => null)
                                     .SetProperty(x => x.ExceptionMessage, "Node is not alive!")
+                                    .SetProperty(x => x.FailureFingerprint, JobFailureFingerprints.NodeNotAlive)
                                     .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
                                     .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
                             CancellationToken.None
@@ -1477,6 +1486,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                                     .SetProperty(x => x.Status, JobStatus.Failed)
                                     .SetProperty(x => x.LockedUntil, _ => null)
                                     .SetProperty(x => x.ExceptionMessage, "Lease lapsed while running!")
+                                    .SetProperty(x => x.FailureFingerprint, JobFailureFingerprints.LeaseLapsed)
                                     .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
                                     .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
                             CancellationToken.None
@@ -2886,6 +2896,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                                     .SetProperty(x => x.Status, JobStatus.Failed)
                                     .SetProperty(x => x.LockedUntil, _ => null)
                                     .SetProperty(x => x.ExceptionMessage, "Node is not alive!")
+                                    .SetProperty(x => x.FailureFingerprint, JobFailureFingerprints.NodeNotAlive)
                                     .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
                                     .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
                             CancellationToken.None
@@ -3047,6 +3058,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                                     .SetProperty(x => x.Status, JobStatus.Failed)
                                     .SetProperty(x => x.LockedUntil, _ => null)
                                     .SetProperty(x => x.ExceptionMessage, "Lease lapsed while running!")
+                                    .SetProperty(x => x.FailureFingerprint, JobFailureFingerprints.LeaseLapsed)
                                     .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
                                     .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
                             CancellationToken.None
@@ -3177,6 +3189,13 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(
                             x => x.ExceptionMessage,
                             x => x.OnNodeDeath == NodeDeathPolicy.MarkFailed ? reason : x.ExceptionMessage
+                        )
+                        .SetProperty(
+                            x => x.FailureFingerprint,
+                            x =>
+                                x.OnNodeDeath == NodeDeathPolicy.MarkFailed
+                                    ? JobFailureFingerprints.InterruptedByShutdown
+                                    : x.FailureFingerprint
                         )
                         .SetProperty(
                             x => x.SkippedReason,

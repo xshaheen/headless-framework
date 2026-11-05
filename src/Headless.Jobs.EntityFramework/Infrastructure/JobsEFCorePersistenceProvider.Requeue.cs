@@ -111,6 +111,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                                     .SetProperty(x => x.Status, JobStatus.Idle)
                                     .SetProperty(x => x.RetryCount, 0)
                                     .SetProperty(x => x.ExceptionMessage, _ => null)
+                                    .SetProperty(x => x.FailureFingerprint, _ => null)
                                     .SetProperty(x => x.SkippedReason, _ => null)
                                     .SetProperty(x => x.OwnerId, _ => null)
                                     .SetProperty(x => x.LockedUntil, _ => null)

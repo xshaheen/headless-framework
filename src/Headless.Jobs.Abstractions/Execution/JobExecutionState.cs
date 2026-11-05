@@ -84,6 +84,13 @@ public class JobExecutionState
     public string? ExceptionDetails { get; set; }
 
     /// <summary>
+    /// Fingerprint of the failed attempt's cause, computed from the live exception where the executor records the
+    /// failure, both on a retry write and on the terminal <c>Failed</c> write; see <see cref="JobFailureFingerprints"/>.
+    /// A provider stores it in the row's <c>FailureFingerprint</c> when it is named in <see cref="PropertiesToUpdate"/>.
+    /// </summary>
+    public string? FailureFingerprint { get; set; }
+
+    /// <summary>
     /// Progress reported since the last progress write, persisted with this update and stamped with the store's
     /// clock; <see langword="null"/> when there is none to write.
     /// </summary>

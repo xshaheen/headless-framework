@@ -41,6 +41,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             updated.Status = JobStatus.Idle;
             updated.RetryCount = 0;
             updated.ExceptionMessage = null;
+            updated.FailureFingerprint = null;
             updated.SkippedReason = null;
             updated.OwnerId = null;
             updated.LockedUntil = null;
@@ -135,6 +136,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             updated.Status = JobStatus.Idle;
             updated.RetryCount = 0;
             updated.ExceptionMessage = null;
+            updated.FailureFingerprint = null;
             updated.SkippedReason = null;
             updated.OwnerId = null;
             updated.LockedUntil = null;

@@ -96,6 +96,17 @@ public class CronJobOccurrenceEntity<TCronJob>
     /// <summary>Serialized exception message when the occurrence ended in <c>Failed</c> status.</summary>
     public virtual string? ExceptionMessage { get; internal set; }
 
+    /// <summary>
+    /// Fingerprint of the cause of the run's most recent failed attempt, which groups failures by cause; see
+    /// <see cref="JobFailureFingerprints"/>. <see langword="null"/> until an attempt fails, and cleared by a requeue.
+    /// </summary>
+    /// <remarks>
+    /// The executor writes it with each retry and with the terminal <c>Failed</c> write; a failure the store writes
+    /// itself stores a fixed value per cause in the same conditional update. The setter is public so a third-party
+    /// persistence provider can write it.
+    /// </remarks>
+    public virtual string? FailureFingerprint { get; set; }
+
     /// <summary>Human-readable reason when the occurrence was skipped. Display text only — never read to decide
     /// whether the row accounts for its instant; that is <see cref="Disposition" />'s job.</summary>
     public virtual string? SkippedReason { get; internal set; }

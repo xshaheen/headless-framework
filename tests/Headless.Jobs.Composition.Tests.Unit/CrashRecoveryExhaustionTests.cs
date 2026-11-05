@@ -50,6 +50,7 @@ public sealed class CrashRecoveryExhaustionTests : TestBase
         await manager
             .Received(1)
             .UpdateTickerAsync(Arg.Is<JobExecutionState>(x => x.Status == JobStatus.Failed), CancellationToken.None);
+        state.FailureFingerprint.Should().Be("v1:retry-budget-exhausted-by-recovery");
         exhausted.Should().ContainSingle().Which.RetryCount.Should().Be(3);
     }
 
