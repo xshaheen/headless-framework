@@ -63,6 +63,8 @@ public static class SetupDashboard
             registration.EndpointMappers.Add(DashboardAuthEndpoints.MapShell);
             registration.EndpointMappers.Add(_MapModules);
             registration.EndpointMappers.Add(DashboardAggregationSetup.MapAggregation);
+            registration.EndpointMappers.Add(DashboardCommandsSetup.MapCommands);
+            registration.EndpointMappers.Add(DashboardStreamingSetup.MapStreaming);
             // Mapped last: its catch-all serves the document for every path no other endpoint claims.
             registration.EndpointMappers.Add(DashboardServing.MapServingEndpoints);
             services.AddSingleton(registration);
@@ -108,6 +110,8 @@ public static class SetupDashboard
 
             services.TryAddSingleton<DashboardModuleCatalog>();
             DashboardAggregationSetup.AddAggregation(services);
+            DashboardCommandsSetup.AddCommands(services);
+            DashboardStreamingSetup.AddStreaming(services);
             DashboardServing.AddServingServices(services);
             services.TryAddSingleton<DashboardManifestProvider>();
             services.AddStartupValidator<ContributionOverrideValidator>();

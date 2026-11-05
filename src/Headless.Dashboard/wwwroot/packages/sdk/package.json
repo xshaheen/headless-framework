@@ -1,0 +1,18 @@
+{
+  "name": "@headless/dashboard-sdk",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "5.104.5",
+    "react-aria-components": "1.22.1"
+  },
+  "peerDependencies": {
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  }
+}

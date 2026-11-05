@@ -1,0 +1,28 @@
+{
+  "budgets": [
+    {
+      "name": "Shell and SDK core",
+      "files": ["assets/**/*.js", "assets/**/*.css"],
+      "measure": "total",
+      "maxBytes": 150000
+    },
+    {
+      "name": "Module entry",
+      "files": ["modules/*/index.js"],
+      "measure": "each",
+      "maxBytes": 10000
+    },
+    {
+      "name": "View chunk",
+      "files": ["modules/*/chunks/**/*.js"],
+      "measure": "each",
+      "maxBytes": 50000
+    },
+    {
+      "name": "Fonts",
+      "files": ["assets/**/*.woff2", "assets/**/*.woff"],
+      "measure": "total",
+      "maxBytes": 60000
+    }
+  ]
+}

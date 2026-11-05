@@ -15,15 +15,18 @@
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
   </ItemGroup>
   <!--
-    Embeds the shell's front-end build (wwwroot/dist) so the shell serves it from its own endpoints under any base
-    path. The items are added before AssignTargetPaths so they get the SDK's default manifest names
-    (Headless.Dashboard.wwwroot.dist.*), which the shell's EmbeddedFileProvider resolves at run time. The target runs
-    on every build because dist is generated, not committed; a missing dist embeds nothing, and the shell then
-    answers its document route with an error naming the missing build.
+    The shell's front end is an npm workspace (the SDK, the Vite presets, the shell app, and the built-in modules), not
+    the single src/ folder eng/DashboardSpa.targets watches by default. Each workspace folder is a build input, so an
+    edit under any of them reruns the npm build on the next incremental build. The items are declared before the
+    import, which embeds wwwroot/dist as Headless.Dashboard.wwwroot.dist.*, the names the shell's EmbeddedFileProvider
+    resolves at run time.
   -->
-  <Target Name="_EmbedDashboardShellDist" BeforeTargets="AssignTargetPaths">
-    <ItemGroup Condition="Exists('$(MSBuildProjectDirectory)/wwwroot/dist')">
-      <EmbeddedResource Include="wwwroot/dist/**/*" Exclude="wwwroot/dist/**/*.map" />
-    </ItemGroup>
-  </Target>
+  <ItemGroup>
+    <DashboardSpaInput
+      Include="$(MSBuildProjectDirectory)/wwwroot/packages/**/*;$(MSBuildProjectDirectory)/wwwroot/apps/**/*;$(MSBuildProjectDirectory)/wwwroot/modules/**/*"
+      Exclude="$(MSBuildProjectDirectory)/wwwroot/**/node_modules/**;$(MSBuildProjectDirectory)/wwwroot/**/dist/**"
+    />
+    <DashboardSpaInput Include="$(MSBuildProjectDirectory)/wwwroot/.npmrc" />
+  </ItemGroup>
+  <Import Project="$(MSBuildThisFileDirectory)..\..\eng\DashboardSpa.targets" />
 </Project>

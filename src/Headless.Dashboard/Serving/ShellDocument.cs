@@ -73,6 +73,11 @@ internal sealed class ShellDocument(
         var encoder = HtmlEncoder.Default;
         var head = new StringBuilder(2048);
 
+        // The UI library inserts a <style> element of its own and reads its nonce from this element. The nonce goes
+        // in the attribute, which the browser hides from scripts and selectors, not in a content attribute anyone
+        // could read.
+        head.Append("<meta name=\"csp-nonce\" nonce=\"").Append(nonce).Append("\">\n");
+
         // Order matters: the import map must precede every module load, preloads included.
         head.Append("<script type=\"importmap\" nonce=\"")
             .Append(nonce)
@@ -119,7 +124,7 @@ internal sealed class ShellDocument(
 /// <description>
 /// <c>index.html</c>: the document, holding exactly one <c>&lt;!--headless-dashboard:head--&gt;</c> placeholder in its
 /// <c>&lt;head&gt;</c> and no <c>&lt;script&gt;</c> or <c>&lt;base&gt;</c> element. The server replaces the placeholder
-/// with the nonced import map, a nonced <c>modulepreload</c> link per preload, a stylesheet link per stylesheet, the
+/// with the <c>csp-nonce</c> meta element, the nonced import map, a nonced <c>modulepreload</c> link per preload, a stylesheet link per stylesheet, the
 /// <c>application/json</c> page-state block, and the nonced entry module script, in that order.
 /// </description>
 /// </item>

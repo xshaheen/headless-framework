@@ -23,7 +23,10 @@ internal static class ContentSecurityPolicy
     }
 
     /// <summary>Builds the policy for one document response.</summary>
-    /// <param name="nonce">The response's nonce, carried by every script element the document emits.</param>
+    /// <param name="nonce">
+    /// The response's nonce, carried by every script element the document emits and by the style elements its UI
+    /// library inserts.
+    /// </param>
     /// <param name="host">The sources the host adds.</param>
     /// <exception cref="InvalidOperationException">
     /// A host source is empty or contains white space, a control character, a semicolon, or a comma, which would end
@@ -35,7 +38,7 @@ internal static class ContentSecurityPolicy
 
         policy.Append("default-src 'self'; script-src 'nonce-").Append(nonce).Append("' 'strict-dynamic'");
         _AppendSources(policy, host.ScriptSources, "script-src");
-        policy.Append("; style-src 'self'");
+        policy.Append("; style-src 'self' 'nonce-").Append(nonce).Append('\'');
         _AppendSources(policy, host.StyleSources, "style-src");
         policy.Append("; img-src 'self' data:");
         _AppendSources(policy, host.ImageSources, "img-src");

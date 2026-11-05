@@ -48,6 +48,7 @@ need_wiki = [ -n "$($(1))" ] || { echo "$@: no .wiki/ at or above $(REPO_ROOT), 
 DOTNET ?= dotnet
 NPM ?= npm
 SOLUTION ?= headless-framework.slnx
+SHELL_DASHBOARD_DIR ?= src/Headless.Dashboard/wwwroot
 JOBS_DASHBOARD_DIR ?= src/Headless.Jobs.Dashboard/wwwroot
 MESSAGING_DASHBOARD_DIR ?= src/Headless.Messaging.Dashboard/wwwroot
 MESSAGING_COMPATIBILITY_DIR ?= tests/Headless.Messaging.PackageReference.Tests.Unit/Probes/Compatibility
@@ -729,12 +730,16 @@ quality-fix-project: ## Apply analyzer fixes for QUALITY_DIAGNOSTICS in PROJECT,
 	$(DOTNET) csharpier format .
 
 .PHONY: dashboards
-dashboards: dashboard-jobs dashboard-messaging ## Rebuild every SPA dashboard (npm ci + vite build into wwwroot/dist).
+dashboards: dashboard-shell dashboard-jobs dashboard-messaging ## Rebuild every SPA dashboard (npm ci + vite build into wwwroot/dist).
 
 # Internal: fail early with a clear message when Node/npm is missing.
 .PHONY: _node-check
 _node-check:
 	@command -v $(NPM) >/dev/null 2>&1 || { echo "ERROR: '$(NPM)' not found on PATH. Node 22+ is required to build the dashboards. Install from https://nodejs.org (LTS)."; exit 1; }
+
+.PHONY: dashboard-shell
+dashboard-shell: _node-check ## Rebuild the dashboard shell's workspace (npm ci + the shell, module, and budget builds into wwwroot/dist).
+	cd "$(SHELL_DASHBOARD_DIR)" && $(NPM) ci --no-audit --no-fund && $(NPM) run $(DASHBOARD_BUILD_SCRIPT)
 
 .PHONY: dashboard-jobs
 dashboard-jobs: _node-check ## Rebuild the Jobs dashboard SPA (npm ci + vite build into wwwroot/dist).
@@ -752,6 +757,8 @@ dashboard-messaging: _node-check ## Rebuild the Messaging dashboard SPA (npm ci 
 # cli-exclude: script:headless-*-dashboard/test:unit:watch -- an interactive watcher; dashboard-<name>-test runs the suite once
 # cli-exclude: script:headless-*-dashboard/lint -- eslint --fix writes files; the gate runs lint:check
 # cli-exclude: script:headless-*-dashboard/format -- prettier --write over src/, which no gate checks
+# cli-exclude: script:headless-dashboard/test:unit:watch -- an interactive watcher; dashboard-shell-test runs the suite once
+# cli-exclude: script:headless-dashboard/lint -- eslint --fix writes files; the gate runs lint:check
 # dashboard_check <name> <dir>: install from the lockfile only when node_modules is missing or older than it (the
 # rule eng/DashboardSpa.targets uses), then run every gate script so one failure does not hide the next. Scripts
 # run through `npm run`, never npx: a wrapper such as Socket's prints a banner over npx output and once hid an
@@ -769,6 +776,10 @@ DASHBOARD_CHECK_FN = dashboard_check() { \
 	if [ -n "$$failed" ]; then echo "[dashboard-$$name] failed:$$failed" >&2; return 3; fi; \
 	echo "[dashboard-$$name] passed: lint:check type-check test:unit build-only"; }
 
+.PHONY: dashboard-shell-test
+dashboard-shell-test: ## Lint, type-check, unit-test, and build the dashboard shell's workspace, size budgets included (CI's Shell dashboard job).
+	@$(DASHBOARD_CHECK_FN); dashboard_check shell "$(SHELL_DASHBOARD_DIR)"
+
 .PHONY: dashboard-jobs-test
 dashboard-jobs-test: ## Lint, type-check, unit-test, and build the Jobs dashboard SPA (CI's Jobs dashboard job).
 	@$(DASHBOARD_CHECK_FN); dashboard_check jobs "$(JOBS_DASHBOARD_DIR)"
@@ -778,18 +789,19 @@ dashboard-messaging-test: ## Lint, type-check, unit-test, and build the Messagin
 	@$(DASHBOARD_CHECK_FN); dashboard_check messaging "$(MESSAGING_DASHBOARD_DIR)"
 
 .PHONY: dashboards-test
-dashboards-test: ## Run both dashboard SPAs' CI gates (dashboard-jobs-test, dashboard-messaging-test); both run, every failure is reported.
+dashboards-test: ## Run every dashboard SPA's CI gates (dashboard-shell-test, dashboard-jobs-test, dashboard-messaging-test); all run, every failure is reported.
 	@$(DASHBOARD_CHECK_FN); rc=0; \
-	dashboard_check jobs "$(JOBS_DASHBOARD_DIR)" || rc=$$?; \
+	dashboard_check shell "$(SHELL_DASHBOARD_DIR)" || rc=$$?; \
+	dashboard_check jobs "$(JOBS_DASHBOARD_DIR)" || { code=$$?; [ $$code -le $$rc ] || rc=$$code; }; \
 	dashboard_check messaging "$(MESSAGING_DASHBOARD_DIR)" || { code=$$?; [ $$code -le $$rc ] || rc=$$code; }; \
 	exit $$rc
 
 # changed_dashboards prints "<name> <dir>" for each dashboard SPA this side changed vs the merge base with
-# AFFECTED_BASE, committed or not, so a backend-only change pays nothing; with no merge base it prints both. It
+# AFFECTED_BASE, committed or not, so a backend-only change pays nothing; with no merge base it prints every one. It
 # diffs the merge base for the same reason FORMAT_CHANGED does.
 CHANGED_DASHBOARDS_FN = changed_dashboards() { \
 	local base spa dir; base="$$(git merge-base "$(AFFECTED_BASE)" HEAD 2>/dev/null || true)"; \
-	for spa in "jobs $(JOBS_DASHBOARD_DIR)" "messaging $(MESSAGING_DASHBOARD_DIR)"; do dir="$${spa\#* }"; \
+	for spa in "shell $(SHELL_DASHBOARD_DIR)" "jobs $(JOBS_DASHBOARD_DIR)" "messaging $(MESSAGING_DASHBOARD_DIR)"; do dir="$${spa\#* }"; \
 		if [ -z "$$base" ] || [ -n "$$(git diff --name-only "$$base" -- "$$dir"; git ls-files --others --exclude-standard -- "$$dir")" ]; then echo "$$spa"; fi; \
 	done; }
 

@@ -58,6 +58,24 @@ public sealed class ShellDocumentTests : TestBase
     }
 
     [Fact]
+    public async Task should_allow_the_ui_library_style_element_through_a_nonce_meta_element_that_hides_its_value()
+    {
+        await using var app = await ServingHost.StartAsync(AbortToken);
+        using var client = app.GetTestClient();
+
+        using var response = await client.GetAsync("/headless/", AbortToken);
+
+        var policy = _Policy(response);
+        var nonce = ServingHost.PolicyNonce(policy);
+        var html = await response.Content.ReadAsStringAsync(AbortToken);
+        policy.Should().Contain($"style-src 'self' 'nonce-{nonce}'");
+        policy.Should().NotContain("'unsafe-inline'");
+        // The value sits in the nonce attribute, which the browser hides from the page, never in a content attribute.
+        html.Should().Contain($"<meta name=\"csp-nonce\" nonce=\"{nonce}\">");
+        html.Should().NotContain("content=\"" + nonce);
+    }
+
+    [Fact]
     public async Task should_send_a_strict_policy_and_no_base_element()
     {
         await using var app = await ServingHost.StartAsync(AbortToken);
