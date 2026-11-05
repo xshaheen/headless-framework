@@ -5,6 +5,7 @@ import {
   Inspector,
   Mono,
   ObjectHeader,
+  PrimaryAction,
   SelectField,
   StatusMark,
   TextInputField,
@@ -150,9 +151,11 @@ export default function RunsList() {
             Runs
           </h1>
           {count ? <span className="hd-hint">{`${format.count(count)} ${count.value === 1 && !count.capped ? 'run' : 'runs'}`}</span> : null}
-          <Button variant="primary" disabledReason={addReason} isPending={add.isPending} onPress={() => add.mutate()}>
-            Add run
-          </Button>
+          <PrimaryAction>
+            <Button variant="primary" disabledReason={addReason} isPending={add.isPending} onPress={() => add.mutate()}>
+              Add run
+            </Button>
+          </PrimaryAction>
           <Button disabledReason={requeueReason} onPress={requeueFailed}>
             Requeue failed runs
           </Button>

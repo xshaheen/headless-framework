@@ -356,11 +356,11 @@ export default defineModule({
 | SDK entry | Contents |
 | --- | --- |
 | `@headless/dashboard-sdk` | `defineModule`, the dashboard and module context hooks (`useDashboard`, `useModule`), and `Button` |
-| `/components` | The design-system components: `Inspector`, `Dialog`, `Drawer`, form fields, `CommandPalette`, `PayloadView`, status marks, live regions, and toasts |
+| `/components` | The design-system components: `Inspector` with editable `InspectorField`s (a select commits on change, text on `Enter` or blur, with an optional server preview while typing), `Timeline` (stored events in the same select-into-the-inspector grid as a table), `ScheduleStrip` (SVG marks for the next fires in the scheduler's zone, `[`/`]` widen and narrow it), `Figure` (a value that requires its comparison), `PrimaryAction` (a view's one primary action, drawn in the document bar), `Dialog`, `Drawer`, form fields, `CommandPalette`, `PayloadView`, status marks, live regions, toasts, and the keymap hooks |
 | `/table` | `DataTable`: virtualized, with keyset load-more, column priority, a density remembered per view, and rows that arrive above held behind `N new`. It is its own entry, so the browser loads it with the first view that lists rows, not with the shell |
 | `/data` | The API client and hooks (`useDashboardApi`, `useDashboardList`, `useDashboardKeysetList`, `useDashboardObject`, `useNewRows`), change patching, and capped counts |
 | `/stream` | `useTopics`, `useStreamEvent`, `useStreamStatus`, and the stream client |
-| `/commands` | `CommandAction`, `ActionConfirm`, `SchemaForm`, the commands API, and the Operation runner and panel |
+| `/commands` | `CommandAction` (its `recovery` prop makes it the command `R` runs for the selection, and every allowed action also appears in the palette), `useAllowedActions` (keeps actions disabled until the server answers and says why when it refuses or the check fails), `ActionConfirm`, `SchemaForm`, the commands API, and the Operation runner and panel |
 | `/router` | React Router, re-exported so every module uses the shell's one router |
 | `/query` | TanStack Query, re-exported so every module reads the shell's one data client |
 | `/testing` | `renderModule` |

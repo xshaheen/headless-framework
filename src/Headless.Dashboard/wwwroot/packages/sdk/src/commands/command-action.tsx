@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { Button } from '../components/button.tsx'
+import { useSelectionCommand, useViewKeys } from '../components/keymap.tsx'
+import { Announcer } from '../components/live.tsx'
 import { Mono } from '../components/marks.tsx'
 import { useDashboard } from '../context.tsx'
 import { DashboardApiError } from '../data/api.ts'
@@ -17,6 +19,8 @@ export interface CommandActionProps {
   /** The module's other commands, to find the inverse that Undo calls. */
   commands?: readonly CommandDefinition[]
   variant?: 'primary' | 'secondary' | 'danger'
+  /** This is the selection's recommended recovery command: `R` runs it, or announces why the server refuses it. */
+  recovery?: boolean
   onDone?: (rows: RowResult[]) => void
 }
 
@@ -80,12 +84,13 @@ function RowOutcomes({ outcome }: { outcome: RunOutcome }) {
  * other confirmed command opens its confirmation, typed past 100 rows. A command the user or the row's state does
  * not allow renders disabled with the server's reason.
  */
-export function CommandAction({ module, command, ids, noun, disabledReason, commands, variant, onDone }: CommandActionProps) {
+export function CommandAction({ module, command, ids, noun, disabledReason, commands, variant, recovery, onDone }: CommandActionProps) {
   const { api, toasts } = useDashboard()
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | undefined>()
   const [outcome, setOutcome] = useState<RunOutcome | undefined>()
+  const [announced, setAnnounced] = useState('')
   const selection = ids.join('\n')
   const shownOutcome = outcome?.key === selection ? outcome : undefined
 
@@ -94,6 +99,18 @@ export function CommandAction({ module, command, ids, noun, disabledReason, comm
   const refusal = !command.canRun ? (command.disabledReason ?? 'Needs operate permission') : disabledReason
   const label = ids.length > 1 ? `${command.label} ${ids.length} ${noun}` : command.label
   const client = createCommandsApi(api, module)
+
+  function press() {
+    if (confirmation === 'none' && !needsInput) {
+      void run({ arguments: {} })
+    } else {
+      setConfirming(true)
+    }
+  }
+
+  // `R` and the palette go through the same refusal as the button, so a refused command stays refused.
+  useViewKeys({ recover: () => (refusal ? setAnnounced(refusal) : press()) }, recovery === true && ids.length > 0)
+  useSelectionCommand(refusal || ids.length === 0 ? null : { id: command.id, label, run: press })
 
   async function run(action: ConfirmedAction) {
     setBusy(true)
@@ -154,16 +171,11 @@ export function CommandAction({ module, command, ids, noun, disabledReason, comm
         variant={variant}
         disabledReason={refusal}
         isPending={busy && !confirming}
-        onPress={() => {
-          if (confirmation === 'none' && !needsInput) {
-            void run({ arguments: {} })
-          } else {
-            setConfirming(true)
-          }
-        }}
+        onPress={press}
       >
         {label}
       </Button>
+      {recovery ? <Announcer message={announced} /> : null}
       {error && !confirming ? (
         <span role="alert" className="hd-error">
           {error}

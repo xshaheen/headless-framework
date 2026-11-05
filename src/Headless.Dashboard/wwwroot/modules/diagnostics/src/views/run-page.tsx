@@ -1,6 +1,7 @@
 import { useDashboard, useModule } from '@headless/dashboard-sdk'
 import {
   Button,
+  Inspector,
   InspectorField,
   InspectorFields,
   ObjectHeader,
@@ -9,10 +10,10 @@ import {
 } from '@headless/dashboard-sdk/components'
 import { DashboardApiError, useDashboardObject } from '@headless/dashboard-sdk/data'
 import { useQuery } from '@headless/dashboard-sdk/query'
-import { Link, useParams } from '@headless/dashboard-sdk/router'
+import { Link, useParams, useSearchParams } from '@headless/dashboard-sdk/router'
 import { useStreamEvent } from '@headless/dashboard-sdk/stream'
 import { useState } from 'react'
-import { LoadError, RunActions, RunFields, RunTimeline, StaleNotice } from '../run-parts.tsx'
+import { LoadError, RunActions, RunFields, RunTime, RunTimeline, StaleNotice } from '../run-parts.tsx'
 import { fetchRun, runStatusMark, runsTopic, useRequeuing } from '../runs.ts'
 
 interface PayloadAnswer {
@@ -20,6 +21,10 @@ interface PayloadAnswer {
   contentType: string
   headers?: Readonly<Record<string, string>>
 }
+
+/** The page sits beside the inspector, and the two stack once the screen is too narrow for both. */
+const layout = { display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'start' } as const
+const canvas = { flex: '1 1 32rem', minInlineSize: 0 } as const
 
 /** One run's page: its header and actions, fields, timeline, and payload on request. */
 export default function RunPage() {
@@ -30,6 +35,12 @@ export default function RunPage() {
   const run = useDashboardObject({ topic, id: runId, fetch: () => fetchRun(api, module.id, runId) })
   const showLoading = useDelayed(run.isPending)
   const requeuing = useRequeuing()
+  const [params, setParams] = useSearchParams()
+  const eventId = params.get('event') ?? undefined
+
+  function selectEvent(id: string | undefined) {
+    setParams(id === undefined ? {} : { event: id }, { replace: true })
+  }
 
   // A live change patches the fields but carries no timeline, so the page reads the run again for it.
   useStreamEvent('change', (change) => {
@@ -68,15 +79,35 @@ export default function RunPage() {
   const detail = run.data
   const status = runStatusMark(detail.status, requeuing.isRequeuing(detail))
 
+  const event = eventId === undefined ? undefined : detail.timeline[Number(eventId)]
+
   return (
-    <article aria-label={`Run ${detail.id}`} className="hd-fields">
-      {back}
-      <ObjectHeader title="Run" id={detail.id} status={status} actions={<RunActions runs={[detail]} onRequeued={requeuing.mark} />} />
-      <StaleNotice onRefresh={() => void run.refetch()} />
-      <RunFields run={detail} statusLabel={status.label} />
-      <RunTimeline events={detail.timeline} />
-      <RunPayload module={module.id} runId={detail.id} />
-    </article>
+    <div style={layout}>
+      <article aria-label={`Run ${detail.id}`} className="hd-fields" style={canvas}>
+        {back}
+        <ObjectHeader title="Run" id={detail.id} status={status} actions={<RunActions runs={[detail]} onRequeued={requeuing.mark} />} />
+        <StaleNotice onRefresh={() => void run.refetch()} />
+        <RunFields run={detail} statusLabel={status.label} />
+        <RunTimeline events={detail.timeline} selected={eventId} onSelect={selectEvent} />
+        <RunPayload module={module.id} runId={detail.id} />
+      </article>
+      {event ? (
+        <Inspector label={`Event ${event.kind}`} onClose={() => selectEvent(undefined)}>
+          <h2 className="hd-title">{event.kind}</h2>
+          <InspectorFields>
+            <InspectorField label="At">
+              <RunTime value={event.at} />
+            </InspectorField>
+            <InspectorField label="Detail">{event.text ?? 'None'}</InspectorField>
+          </InspectorFields>
+        </Inspector>
+      ) : (
+        <Inspector label="Run summary">
+          <h2 className="hd-title">Run</h2>
+          <p className="hd-hint">Select a timeline event to see what it recorded.</p>
+        </Inspector>
+      )}
+    </div>
   )
 }
 

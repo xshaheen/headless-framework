@@ -130,47 +130,6 @@ export function useRunCommands() {
 }
 
 /**
- * Why the server refuses each command for `runs` now, such as `Running - cancel instead`. The runs' versions are in
- * the key, so a status change asks again.
- */
-export function useRefusals(runs: readonly Pick<Run, 'id' | 'version'>[]) {
-  const { api } = useDashboard()
-  const module = useModule()
-  const ids = runs.map((run) => run.id)
-  const answer = useQuery({
-    queryKey: ['allowed', module.id, runs.map((run) => `${run.id}@${run.version}`)],
-    queryFn: () => createCommandsApi(api, module.id).allowed('run', ids),
-    enabled: ids.length > 0,
-  })
-
-  return (commandId: string | undefined): string | null => {
-    if (!commandId) {
-      return null
-    }
-
-    // An action is offered only once the server has said it can succeed now, so it stays disabled while that answer
-    // is loading or after it failed, rather than letting the operator run what the server may refuse.
-    if (answer.isPending) {
-      return 'Checking whether this can run…'
-    }
-
-    if (answer.isError) {
-      return 'Could not check whether this can run. Reload to try again.'
-    }
-
-    for (const object of answer.data) {
-      const command = object.commands.find((candidate) => candidate.id === commandId)
-
-      if (command && !command.allowed) {
-        return command.disabledReason ?? 'Not allowed now'
-      }
-    }
-
-    return null
-  }
-}
-
-/**
  * The runs a requeue finished on but whose change has not arrived: each shows `Requeuing…` until its version moves
  * past the one it had when the operator confirmed.
  */

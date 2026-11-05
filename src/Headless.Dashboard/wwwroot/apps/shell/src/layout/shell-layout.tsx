@@ -1,5 +1,5 @@
 import { OperationHost } from '@headless/dashboard-sdk/commands'
-import { ToastRegion, useShellKeys } from '@headless/dashboard-sdk/components'
+import { PrimaryActionSlot, ToastRegion, useShellKeys } from '@headless/dashboard-sdk/components'
 import { Outlet, useNavigate } from '@headless/dashboard-sdk/router'
 import { useCallback, useEffect, useState } from 'react'
 import { ShellPalette } from '../palette/shell-palette.tsx'
@@ -23,6 +23,7 @@ export function ShellLayout() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const navigate = useNavigate()
   const [dock, setDock] = useState<HTMLElement | null>(null)
+  const [primary, setPrimary] = useState<HTMLElement | null>(null)
   const [updated, setUpdated] = useState(false)
 
   const openPalette = useCallback(() => setPaletteOpen(true), [])
@@ -44,12 +45,14 @@ export function ShellLayout() {
       {railOpen ? <div className="hd-rail-scrim" aria-hidden="true" onClick={() => setRailOpen(false)} /> : null}
       <div className="hd-main">
         <OperationHost>
-          <DocumentBar isRailOpen={railOpen} onToggleRail={() => setRailOpen((open) => !open)} onOpenPalette={openPalette} />
+          <DocumentBar isRailOpen={railOpen} onToggleRail={() => setRailOpen((open) => !open)} onOpenPalette={openPalette} primarySlot={setPrimary} />
           {updated ? <UpdatedNotice /> : null}
           <div className="hd-body">
             <main id="hd-canvas" className="hd-canvas" tabIndex={-1}>
               <DockProvider element={dock}>
-                <Outlet />
+                <PrimaryActionSlot element={primary}>
+                  <Outlet />
+                </PrimaryActionSlot>
               </DockProvider>
             </main>
             <div ref={setDock} className="hd-dock" />

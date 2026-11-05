@@ -20,13 +20,26 @@ export const shellShortcuts: readonly { keys: readonly string[]; action: string 
 /** The keys the shell owns; a module binding may not reuse one. */
 const shellKeys = new Set(['k', 'escape', '/', 'j', 'x', 'r', 't', 'g', '[', ']', '?'])
 
-/** What the mounted view does on a shell key: its list moves and selects, its filter takes focus, its trace opens. */
+/**
+ * What the mounted view does on a shell key: its list moves and selects, its filter takes focus, its trace opens,
+ * `R` runs the selection's recovery command, and `[`/`]` widen and narrow its strip's window.
+ */
 export interface ViewKeyHandlers {
   next?: () => void
   previous?: () => void
   toggle?: () => void
   filter?: () => void
   trace?: () => void
+  recover?: () => void
+  widen?: () => void
+  narrow?: () => void
+}
+
+/** A server command the selection allows now, offered in the palette beside navigation. */
+export interface SelectionCommand {
+  id: string
+  label: string
+  run: () => void
 }
 
 /** What the shell itself does on its keys: the palette, the shortcut list, and the `G` chords by letter. */
@@ -50,6 +63,7 @@ interface Keymap {
   views: Registration<ViewKeyHandlers>[]
   shell: Registration<ShellKeyHandlers>[]
   modules: Registration<ModuleShortcut & { run: () => void }>[]
+  commands: Registration<SelectionCommand | null>[]
 }
 
 const KeymapContext = createContext<Keymap | null>(null)
@@ -109,7 +123,7 @@ function useRegistration<T>(list: (keymap: Keymap) => Registration<T>[], value: 
  * has focus, except `⌘K` (`Ctrl+K`); `Esc` is left to the popover, list, or inspector that has focus.
  */
 export function KeymapProvider({ children }: { children: ReactNode }) {
-  const [keymap] = useState<Keymap>(() => ({ views: [], shell: [], modules: [] }))
+  const [keymap] = useState<Keymap>(() => ({ views: [], shell: [], modules: [], commands: [] }))
 
   useEffect(() => {
     let chord: ReturnType<typeof setTimeout> | undefined
@@ -163,6 +177,15 @@ export function KeymapProvider({ children }: { children: ReactNode }) {
           return
         case 't':
           run(event, latest(keymap.views, (view) => view.trace))
+          return
+        case 'r':
+          run(event, latest(keymap.views, (view) => view.recover))
+          return
+        case '[':
+          run(event, latest(keymap.views, (view) => view.widen))
+          return
+        case ']':
+          run(event, latest(keymap.views, (view) => view.narrow))
           return
         case 'g':
           armed = true
@@ -227,4 +250,16 @@ export function useModuleShortcuts(): () => readonly ModuleShortcut[] {
 
     return { key: key.toUpperCase(), label }
   })
+}
+
+/** Offers `command` in the palette while the calling component is mounted; `null` offers nothing. */
+export function useSelectionCommand(command: SelectionCommand | null) {
+  useRegistration((keymap) => keymap.commands, command, command !== null)
+}
+
+/** The selection's commands offered now, for the palette. */
+export function useSelectionCommands(): () => readonly SelectionCommand[] {
+  const keymap = useContext(KeymapContext)
+
+  return () => (keymap?.commands ?? []).flatMap((registration) => registration.read() ?? [])
 }

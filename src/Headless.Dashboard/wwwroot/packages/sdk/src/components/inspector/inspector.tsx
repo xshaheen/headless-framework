@@ -1,4 +1,4 @@
-import { useEffect, useRef, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { Button } from '../button.tsx'
 import { Mono, StatusMark, type StatusTone } from '../marks.tsx'
 
@@ -75,13 +75,121 @@ export function Inspector({ label, onClose, children }: InspectorProps) {
   )
 }
 
-/** One read-only field in the inspector: a label and its value. Fields sit in an `InspectorFields` list. */
-export function InspectorField({ label, children }: { label: string; children: ReactNode }) {
+/** An editable field's value, how it commits, and what it shows while the operator types. */
+export interface InspectorFieldEdit {
+  value: string
+  /**
+   * Saves `value`. A rejection keeps the typed text uncommitted and shows the error's message inline, so the server's
+   * validation reads where the operator typed.
+   */
+  onCommit: (value: string) => Promise<unknown> | void
+  /** A select's choices; without them the field is text, committed on `Enter` or blur. */
+  options?: readonly { value: string; label: string }[]
+  /** Hears each keystroke without committing, such as to ask the server for a cron expression's next fires. */
+  onDraftChange?: (value: string) => void
+  /** What the typed text would mean, shown below the field before it commits. */
+  preview?: ReactNode
+}
+
+export interface InspectorFieldProps {
+  label: string
+  /** The read-only value; an editable field shows `edit` instead. */
+  children?: ReactNode
+  edit?: InspectorFieldEdit
+}
+
+/**
+ * One field in the inspector: a label and its value. An editable field commits on its own, with no Save: a select
+ * on change, text on `Enter` or blur. Fields sit in an `InspectorFields` list.
+ */
+export function InspectorField({ label, children, edit }: InspectorFieldProps) {
+  const id = useId()
+
   return (
     <>
-      <dt>{label}</dt>
-      <dd>{children}</dd>
+      <dt>{edit ? <label htmlFor={id}>{label}</label> : label}</dt>
+      <dd>{edit ? <EditableValue id={id} edit={edit} /> : children}</dd>
     </>
+  )
+}
+
+function EditableValue({ id, edit }: { id: string; edit: InspectorFieldEdit }) {
+  const { value, options, onDraftChange, preview } = edit
+  const [draft, setDraft] = useState(value)
+  const [seen, setSeen] = useState(value)
+  const [error, setError] = useState<string>()
+  const [busy, setBusy] = useState(false)
+
+  // A committed value, or a live change, replaces the text once it arrives.
+  if (seen !== value) {
+    setSeen(value)
+    setDraft(value)
+  }
+
+  async function commit(next: string) {
+    if (next === value) {
+      return
+    }
+
+    setBusy(true)
+    setError(undefined)
+
+    try {
+      await edit.onCommit(next)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not save. Try again.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const common = {
+    id,
+    className: 'hd-input',
+    value: draft,
+    'aria-invalid': error ? true : undefined,
+    'aria-describedby': error ? `${id}-error` : undefined,
+    'aria-busy': busy || undefined,
+  }
+
+  return (
+    <span className="hd-field">
+      {options ? (
+        <select
+          {...common}
+          onChange={(event) => {
+            setDraft(event.currentTarget.value)
+            void commit(event.currentTarget.value)
+          }}
+        >
+          {options.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <input
+          {...common}
+          onChange={(event) => {
+            setDraft(event.currentTarget.value)
+            onDraftChange?.(event.currentTarget.value)
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              void commit(draft)
+            }
+          }}
+          onBlur={() => void commit(draft)}
+        />
+      )}
+      {preview ? <span className="hd-hint">{preview}</span> : null}
+      {error ? (
+        <span id={`${id}-error`} role="alert" className="hd-error">
+          {error}
+        </span>
+      ) : null}
+    </span>
   )
 }
 

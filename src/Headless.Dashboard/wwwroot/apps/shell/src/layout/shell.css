@@ -347,10 +347,8 @@
   border-block: 1px solid var(--hairline);
 }
 
+/* The SDK's components.css lays out a figure and its value; the Overview adds the cells' padding and rules. */
 .hd-figure {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
   padding: 14px var(--space-4) 14px 0;
 }
 
@@ -362,11 +360,6 @@
 .hd-figure-module {
   font: var(--text-label);
   color: var(--muted);
-}
-
-.hd-figure-value {
-  font: var(--text-figure);
-  font-variant-numeric: tabular-nums;
 }
 
 .hd-figure-label {

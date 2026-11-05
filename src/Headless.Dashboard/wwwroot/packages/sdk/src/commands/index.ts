@@ -1,4 +1,5 @@
 export { ActionConfirm, type ActionConfirmProps, type ConfirmedAction } from './action-confirm.tsx'
+export { useAllowedActions } from './allowed.ts'
 export {
   createCommandsApi,
   effectiveConfirmation,
