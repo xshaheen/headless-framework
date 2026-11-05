@@ -1,7 +1,7 @@
 import { DashboardProvider, createDashboardClient } from '@headless/dashboard-sdk'
 import { useShortcut } from '@headless/dashboard-sdk/components'
 import { createFakeStream } from '@headless/dashboard-sdk/testing'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { shellState } from './fixtures/modules.tsx'
@@ -37,11 +37,12 @@ describe('shell keyboard', () => {
     await screen.findByRole('heading', { name: 'Overview' })
     await user.keyboard('gn')
 
-    expect(shell.router.state.location.pathname).toBe('/needs-you')
+    // Needs you is a lazy route: the location changes only once its chunk has loaded, which a busy run delays.
+    await waitFor(() => expect(shell.router.state.location.pathname).toBe('/needs-you'))
 
     await user.keyboard('go')
 
-    expect(shell.router.state.location.pathname).toBe('/')
+    await waitFor(() => expect(shell.router.state.location.pathname).toBe('/'))
   })
 
   it('opens the palette on ⌘K even while a text field has focus, and ignores other keys there', async () => {

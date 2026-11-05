@@ -315,7 +315,7 @@ builder.Services.AddHeadlessDashboard(dashboard =>
 
 ### Diagnostic module
 
-`AddDiagnostics()` adds a module with the id `diagnostics`: an in-memory `DiagnosticsStore` of fake runs that implements every capability above, including commands (`{id}.fail`, `{id}.requeue`, `{id}.add-note`), Operations, and change reads. Its API at `{base}/api/{id}` lists runs (`GET runs`), reads one (`GET runs/{runId}`), and adds a queued run (`POST runs`, an operator action). It adds no table, cache key, or channel to the host, and starts empty.
+`AddDiagnostics()` adds a module with the id `diagnostics`: an in-memory `DiagnosticsStore` of fake runs that implements every capability above, including commands (`{id}.fail`, `{id}.requeue`, `{id}.add-note`), Operations, and change reads. Its API at `{base}/api/{id}` lists runs newest first, one keyset page at a time (`GET runs?limit=&after=`: each page carries a `nextCursor` that `after` takes, `null` on the last page, and a run added while paging never shifts a later page), reads one (`GET runs/{runId}`), and adds a queued run (`POST runs`, an operator action). It adds no table, cache key, or channel to the host, and starts empty.
 
 | `DiagnosticsOptions` member | Default | Description |
 | --- | --- | --- |
@@ -356,8 +356,9 @@ export default defineModule({
 | SDK entry | Contents |
 | --- | --- |
 | `@headless/dashboard-sdk` | `defineModule`, the dashboard and module context hooks (`useDashboard`, `useModule`), and `Button` |
-| `/components` | The design-system components: `DataTable`, `Inspector`, `Dialog`, `Drawer`, form fields, `CommandPalette`, `PayloadView`, status marks, live regions, and toasts |
-| `/data` | The API client and hooks (`useDashboardApi`, `useDashboardList`, `useDashboardObject`, `useNewRows`), change patching, and capped counts |
+| `/components` | The design-system components: `Inspector`, `Dialog`, `Drawer`, form fields, `CommandPalette`, `PayloadView`, status marks, live regions, and toasts |
+| `/table` | `DataTable`: virtualized, with keyset load-more, column priority, a density remembered per view, and rows that arrive above held behind `N new`. It is its own entry, so the browser loads it with the first view that lists rows, not with the shell |
+| `/data` | The API client and hooks (`useDashboardApi`, `useDashboardList`, `useDashboardKeysetList`, `useDashboardObject`, `useNewRows`), change patching, and capped counts |
 | `/stream` | `useTopics`, `useStreamEvent`, `useStreamStatus`, and the stream client |
 | `/commands` | `CommandAction`, `ActionConfirm`, `SchemaForm`, the commands API, and the Operation runner and panel |
 | `/router` | React Router, re-exported so every module uses the shell's one router |
@@ -380,7 +381,7 @@ export default defineConfig(
 )
 ```
 
-The workspace build then holds the output to the size budgets in `packages/vite/budget.json`, measured as gzip at maximum compression: the shell's first load at most 235,000 bytes, the shell and every SDK entry together at most 250,000 bytes, each module entry at most 10,000 bytes, each view chunk at most 50,000 bytes, and the fonts at most 60,000 bytes. A budget overrun fails the build.
+The workspace build then holds the output to the size budgets in `packages/vite/budget.json`, measured as gzip at maximum compression: the shell's first load at most 235,000 bytes, the shell and every SDK entry together at most 250,000 bytes, each module entry at most 10,000 bytes, each view chunk at most 50,000 bytes, and the fonts at most 60,000 bytes. A budget overrun fails the build. The dashboard ships in English, so the shell build keeps only React Aria's `en-US` strings (its labels and screen-reader announcements); React Aria falls back to them for any other locale.
 
 `renderModule(definition, options)` from `@headless/dashboard-sdk/testing` mounts a module in a test shell, as the dashboard would: its routes, a session, its permissions (`canView` and `canOperate`, both `true` by default), the data client, an Operation host, toasts, and a fake stream. The `api` handler answers the module's API calls; throw a `DashboardApiError` to answer with a status. The result adds `stream` (push events as the server would), `requests` (every API call in order), and `navigate(path)`.
 

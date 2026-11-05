@@ -5,5 +5,6 @@ export { createDashboardClient, DashboardDataProvider, listKey, objectKey, setOb
 export { capCount, formatCount, type CappedCount } from './counts.ts'
 export { useDashboardApi, useDashboardList, useDashboardObject, useNewRows } from './hooks.ts'
 export type { DashboardListOptions, DashboardObjectOptions } from './hooks.ts'
+export { useDashboardKeysetList, type DashboardKeysetListOptions } from './keyset.ts'
 export { applyChange, compareVersions, getNewRows, refetchTopics, showNewRows } from './patch.ts'
 export type { ChangeOutcome, DashboardListPage, ListItem } from './patch.ts'

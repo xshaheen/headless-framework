@@ -30,7 +30,7 @@ its diagnostic module, which registers only in Development (`make up` sets it). 
 `sandbox-operator`, or `viewer-<password>` to sign in as `sandbox-viewer`, who may view but not run commands. The page
 exchanges the token for the `__Host-headless-dashboard-headless-dashboards-sandbox` session cookie, then opens
 `/headless/`. The diagnostic module starts empty: `make seed SCENARIO=diagnostic-runs` adds six runs in every state,
-two of them failed, so Needs you, Overview, the runs view, and Requeue have something to show.
+two of them failed, so Needs you, Overview, the runs view, and Requeue have something to show. `make seed SCENARIO=diagnostic-runs-long` adds 5,000 more, so the runs view pages through a long list.
 
 Each dashboard has its own auth, so the modes can differ. To walk the Jobs sign-in, session, or live-update
 journeys under auth, set these before `make up` (`make down` first if it is running):

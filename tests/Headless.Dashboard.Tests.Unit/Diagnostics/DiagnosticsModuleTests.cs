@@ -92,6 +92,50 @@ public sealed class DiagnosticsModuleTests : TestBase
     }
 
     [Fact]
+    public async Task should_list_every_run_once_newest_first_when_the_list_pages_by_its_next_cursor()
+    {
+        await using var app = await _StartAsync(Environments.Development, dashboard => dashboard.AddDiagnostics());
+        using var client = _Client(app);
+        var store = app.Services.GetRequiredKeyedService<DiagnosticsStore>(_Id);
+        var added = Enumerable.Range(0, 250).Select(_ => store.AddRun().Id).ToList();
+        added.Reverse();
+
+        var seen = new List<string>();
+        var pages = 0;
+        string? cursor = null;
+
+        do
+        {
+            var query = cursor is null ? "limit=100" : "limit=100&after=" + Uri.EscapeDataString(cursor);
+            using var response = await _GetAsync(client, $"/headless/api/{_Id}/runs?{query}");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var page = await _ReadAsync(response);
+
+            page.GetProperty("count").GetInt32().Should().Be(250 + pages);
+            seen.AddRange(page.GetProperty("items").EnumerateArray().Select(static run => run.GetProperty("id").GetString()!));
+            cursor = page.TryGetProperty("nextCursor", out var next) ? next.GetString() : null;
+            pages++;
+
+            // A run added while the operator scrolls lands above the first page, so it shifts no later page.
+            store.AddRun();
+        } while (cursor is not null && pages < 10);
+
+        pages.Should().Be(3);
+        seen.Should().Equal(added);
+    }
+
+    [Fact]
+    public async Task should_answer_400_when_the_list_cursor_is_not_one_the_list_gave()
+    {
+        await using var app = await _StartAsync(Environments.Development, dashboard => dashboard.AddDiagnostics());
+        using var client = _Client(app);
+
+        using var response = await _GetAsync(client, $"/headless/api/{_Id}/runs?after=not-a-cursor");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
     public async Task should_keep_each_instance_apart_when_a_second_instance_is_added_under_another_id()
     {
         await using var app = await _StartAsync(

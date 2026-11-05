@@ -46,6 +46,35 @@ function isListPage(value: unknown): value is DashboardListPage {
   return typeof value === 'object' && value !== null && Array.isArray((value as DashboardListPage).items)
 }
 
+/** A keyset-paged list as its infinite query caches it: the pages loaded so far, in order. */
+interface KeysetPages {
+  pages: DashboardListPage[]
+  pageParams: unknown[]
+}
+
+function isKeysetPages(value: unknown): value is KeysetPages {
+  return typeof value === 'object' && value !== null && Array.isArray((value as KeysetPages).pages)
+}
+
+/** The rows a cached list holds, whether it is one page or a keyset list of several. */
+function rowsOf(value: unknown): ListItem[] {
+  return isListPage(value) ? value.items : isKeysetPages(value) ? value.pages.flatMap((page) => page.items) : []
+}
+
+/** Applies `patch` to the rows of a cached list that hold `id`, keeping the list's shape. */
+function patchRows(value: unknown, id: string, patch: Record<string, unknown>): unknown {
+  const patchPage = (page: DashboardListPage) =>
+    page.items.some((item) => item.id === id)
+      ? { ...page, items: page.items.map((item) => (item.id === id ? { ...item, ...patch } : item)) }
+      : page
+
+  if (isListPage(value)) {
+    return patchPage(value)
+  }
+
+  return isKeysetPages(value) && rowsOf(value).some((item) => item.id === id) ? { ...value, pages: value.pages.map(patchPage) } : value
+}
+
 function versionOf(value: unknown): string | undefined {
   return typeof value === 'object' && value !== null && typeof (value as ListItem).version === 'string'
     ? (value as ListItem).version
@@ -100,7 +129,7 @@ export function applyChange(client: QueryClient, change: StreamChange): ChangeOu
   const key = objectKey(change.topic, change.id)
   const cached = client.getQueryData(key)
   const lists = client.getQueriesData({ queryKey: listKey(change.topic) })
-  const rows = lists.flatMap(([, page]) => (isListPage(page) ? page.items.filter((item) => item.id === change.id) : []))
+  const rows = lists.flatMap(([, data]) => rowsOf(data).filter((item) => item.id === change.id))
   const held = cached !== undefined || rows.length > 0
 
   if (!held) {
@@ -131,7 +160,7 @@ export function applyChange(client: QueryClient, change: StreamChange): ChangeOu
     void client.invalidateQueries({ queryKey: key })
     void client.invalidateQueries({
       queryKey: listKey(change.topic),
-      predicate: (query) => isListPage(query.state.data) && query.state.data.items.some((item) => item.id === change.id),
+      predicate: (query) => rowsOf(query.state.data).some((item) => item.id === change.id),
     })
 
     return 'refetch'
@@ -143,11 +172,7 @@ export function applyChange(client: QueryClient, change: StreamChange): ChangeOu
     client.setQueryData(key, typeof cached === 'object' && cached !== null ? { ...cached, ...patch } : patch)
   }
 
-  client.setQueriesData({ queryKey: listKey(change.topic) }, (page: unknown) =>
-    isListPage(page) && page.items.some((item) => item.id === change.id)
-      ? { ...page, items: page.items.map((item) => (item.id === change.id ? { ...item, ...patch } : item)) }
-      : page,
-  )
+  client.setQueriesData({ queryKey: listKey(change.topic) }, (data: unknown) => patchRows(data, change.id, patch))
 
   return 'patched'
 }

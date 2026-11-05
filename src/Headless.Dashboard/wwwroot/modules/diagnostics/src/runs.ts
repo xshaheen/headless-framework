@@ -39,6 +39,16 @@ interface RunListAnswer {
   items: Run[]
   count: number
   countCapped: boolean
+  /** The keyset cursor of the page's last run, when more runs follow it. */
+  nextCursor?: string | null
+}
+
+/** How many runs one list page asks for. */
+const runsPageSize = 100
+
+/** Whether `run` matches `filter` as the server reads it: the status and the last error, each exactly. */
+export function runMatches(run: Run, filter: RunFilter) {
+  return (!filter.status || run.status === filter.status) && (!filter.error || run.lastError === filter.error)
 }
 
 export const runStatuses = ['Queued', 'Running', 'Succeeded', 'Failed'] as const
@@ -59,8 +69,18 @@ export function runsTopic(module: string) {
   return `${module}.run`
 }
 
-export async function fetchRuns(api: DashboardApi, module: string, filter: RunFilter): Promise<DashboardListPage<Run> & { count: CappedCount }> {
-  const query: Record<string, string> = {}
+/** One page of runs, newest first: the first page, or the page after the run `cursor` names. */
+export async function fetchRuns(
+  api: DashboardApi,
+  module: string,
+  filter: RunFilter,
+  cursor?: string,
+): Promise<DashboardListPage<Run> & { count: CappedCount }> {
+  const query: Record<string, string> = { limit: String(runsPageSize) }
+
+  if (cursor) {
+    query.after = cursor
+  }
 
   if (filter.status) {
     query.status = filter.status
@@ -72,7 +92,7 @@ export async function fetchRuns(api: DashboardApi, module: string, filter: RunFi
 
   const answer = await api.request<RunListAnswer>({ method: 'GET', path: `${encodeURIComponent(module)}/runs`, query })
 
-  return { items: answer.items, count: { value: answer.count, capped: answer.countCapped } }
+  return { items: answer.items, count: { value: answer.count, capped: answer.countCapped }, nextCursor: answer.nextCursor ?? null }
 }
 
 export function fetchRun(api: DashboardApi, module: string, id: string) {

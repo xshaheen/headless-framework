@@ -2,10 +2,8 @@ import { useDashboard, useModule } from '@headless/dashboard-sdk'
 import { useOperations } from '@headless/dashboard-sdk/commands'
 import {
   Button,
-  DataTable,
   Inspector,
   Mono,
-  NewRowsNotice,
   ObjectHeader,
   SelectField,
   StatusMark,
@@ -13,7 +11,8 @@ import {
   useDelayed,
   useViewKeys,
 } from '@headless/dashboard-sdk/components'
-import { DashboardApiError, listKey, useDashboardList, useDashboardObject } from '@headless/dashboard-sdk/data'
+import { DataTable } from '@headless/dashboard-sdk/table'
+import { DashboardApiError, listKey, useDashboardKeysetList, useDashboardObject, useNewRows } from '@headless/dashboard-sdk/data'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useMutation, useQueryClient } from '@headless/dashboard-sdk/query'
 import { Link, useSearchParams } from '@headless/dashboard-sdk/router'
@@ -23,6 +22,7 @@ import {
   addRun,
   fetchRun,
   fetchRuns,
+  runMatches,
   runStatuses,
   runStatusMark,
   runsTopic,
@@ -50,8 +50,10 @@ export default function RunsList() {
   const filter: RunFilter = { status: params.get('status') ?? '', error: params.get('error') ?? '' }
   const selectedIds = new Set(params.getAll('selected'))
   const topic = runsTopic(module.id)
-  const runs = useDashboardList<Run>({ topic, params: filter, fetch: () => fetchRuns(api, module.id, filter) })
-  const showLoading = useDelayed(runs.isPending)
+  const runs = useDashboardKeysetList<Run>({ topic, params: filter, fetchPage: (cursor) => fetchRuns(api, module.id, filter, cursor) })
+  const list = runs.query
+  const newRows = useNewRows(topic)
+  const showLoading = useDelayed(list.isPending)
   const { requeue } = useRunCommands()
   const requeuing = useRequeuing()
   const add = useMutation({
@@ -126,12 +128,12 @@ export default function RunsList() {
     }
   }, [wantsOperation])
 
-  const items = runs.data?.items ?? []
+  const items = runs.rows
   const selectedRuns = items.filter((run) => selectedIds.has(run.id))
   // A link can select a run the loaded page does not hold; the inspector reads that one run by its id instead.
   const [onlySelected] = selectedIds
-  const lookupId = runs.data && selectedIds.size === 1 && selectedRuns.length === 0 ? onlySelected : undefined
-  const count = runs.data?.count
+  const lookupId = list.data && selectedIds.size === 1 && selectedRuns.length === 0 ? onlySelected : undefined
+  const count = runs.count
   const filtered = Boolean(filter.status || filter.error)
   const addReason = module.canOperate ? null : viewOnlyReason
   const requeueReason = requeue && !requeue.canRun ? (requeue.disabledReason ?? viewOnlyReason) : null
@@ -160,20 +162,27 @@ export default function RunsList() {
           <SelectField label="Status" value={filter.status} onChange={(value) => setFilter('status', value)} options={statusOptions} />
           <TextInputField label="Error contains" value={filter.error} onChange={(value) => setFilter('error', value)} />
         </div>
-        <StaleNotice onRefresh={() => void runs.refetch()} />
-        <NewRowsNotice topic={topic} />
-        {runs.isPending ? (
+        <StaleNotice onRefresh={() => void list.refetch()} />
+        {list.isPending ? (
           showLoading ? (
             <div role="status" aria-busy="true" aria-label="Loading runs" className="hd-table-wrap">
               <p className="hd-hint">Loading runs…</p>
             </div>
           ) : null
-        ) : runs.isError ? (
-          <LoadError message={runs.error.message} onRetry={() => void runs.refetch()} />
+        ) : list.isError ? (
+          <LoadError message={list.error.message} onRetry={() => void list.refetch()} />
         ) : (
           <DataTable
+            // A new filter is a new list: the held rows and the scroll start again.
+            key={`${filter.status}\n${filter.error}`}
             label="Runs"
+            viewId={`${module.id}.runs`}
             rows={items}
+            matches={(run) => runMatches(run, filter)}
+            hasMore={runs.hasMore}
+            isLoadingMore={runs.isLoadingMore}
+            onLoadMore={runs.loadMore}
+            newRows={newRows}
             selectionMode="multiple"
             selectedIds={selectedIds}
             onSelectionChange={select}
@@ -185,15 +194,16 @@ export default function RunsList() {
             }}
             emptyState={filtered ? 'No runs match this filter. Clear it to see every run.' : 'No runs yet - add one with Fail on a new run'}
             columns={[
-              { id: 'id', header: 'Run', cell: (run) => <Mono>{run.id}</Mono>, isRowHeader: true },
+              { id: 'id', header: 'Run', cell: (run) => <Mono>{run.id}</Mono>, isRowHeader: true, width: 140 },
               {
                 id: 'status',
                 header: 'Status',
                 cell: (run) => <StatusMark {...runStatusMark(run.status, requeuing.isRequeuing(run))} />,
+                width: 130,
               },
-              { id: 'attempts', header: 'Attempts', cell: (run) => run.attempts, align: 'end' },
-              { id: 'lastError', header: 'Last error', cell: (run) => run.lastError ?? '' },
-              { id: 'updated', header: 'Updated', cell: (run) => <RunTime value={run.updatedAt} /> },
+              { id: 'attempts', header: 'Attempts', cell: (run) => format.number(run.attempts), align: 'end', priority: 2, width: 90 },
+              { id: 'lastError', header: 'Last error', cell: (run) => run.lastError ?? '', priority: 2, width: '2fr' },
+              { id: 'updated', header: 'Updated', cell: (run) => <RunTime value={run.updatedAt} />, width: '1fr' },
             ]}
           />
         )}
