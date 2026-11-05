@@ -1440,6 +1440,9 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             var node = flattened[index];
 
             // Nothing else can mutate a parked barrier row (every predicate excludes it), so this swap always wins.
+            // The reveal is the write readers see, so it carries its own marker: the barrier's marker stamped a row
+            // that is now replaced, and a change read that already passed it must still see the revealed row.
+            node.ChangedAt = _NextChangeMarker();
             _TryUpdateTimeJob(node.Id, node, barriers[index]);
             _SyncReconcileCandidate(node);
         }

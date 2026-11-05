@@ -558,6 +558,35 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
 
         sut.Scheduler.Received(1).RestartIfNeeded(job.ExecutionTime!.Value);
         await sut.Notification.Received(1).AddTimeJobNotifyAsync(job.Id);
+        // The one signal re-stamps the committed row's change marker before the notification it carries.
+        await sut
+            .Writer.Received(1)
+            .RestampChangesAsync(
+                JobChangeKind.TimeJob,
+                Arg.Is<Guid[]>(ids => ids.SequenceEqual(new[] { job.Id })),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task failed_change_marker_restamp_still_runs_the_side_effects_and_is_logged_by_the_worker()
+    {
+        var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: true);
+        var boom = new InvalidOperationException("restamp boom");
+        sut.Writer.RestampChangesAsync(Arg.Any<JobChangeKind>(), Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(boom));
+        var job = _FutureTimeJob();
+        var notified = _NotifiedTimeJob(sut);
+
+        await sut.Time.AddAsync(job, AbortToken);
+        await sut.Coordinator!.CommitAsync();
+        await _StartWorkerAsync(sut);
+        await notified.Task.WaitAsync(_WaitTimeout, AbortToken);
+
+        sut.Scheduler.Received(1).RestartIfNeeded(job.ExecutionTime!.Value);
+        var entry = await sut.SignalsLogger.WaitForAsync(e => e.Exception is not null, AbortToken);
+        entry.Level.Should().Be(LogLevel.Warning);
+        entry.Exception.Should().BeSameAs(boom);
     }
 
     [Fact]

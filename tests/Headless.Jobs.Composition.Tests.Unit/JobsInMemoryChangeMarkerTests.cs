@@ -248,7 +248,8 @@ public sealed class JobsInMemoryChangeMarkerTests : TestBase
     private static TimeJobEntity _TimeJob()
     {
         var job = _UntimedJob();
-        job.ExecutionTime = _Now.UtcDateTime.AddHours(1);
+        // Due now, so the immediate claim the tests take is allowed: the store only claims a job that is due.
+        job.ExecutionTime = _Now.UtcDateTime;
 
         return job;
     }
