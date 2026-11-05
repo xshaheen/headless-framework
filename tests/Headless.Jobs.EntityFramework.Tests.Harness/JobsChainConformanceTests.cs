@@ -162,6 +162,29 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
 
             var rootId = await scheduler.EnqueueAsync(builder.Build(), ct);
             var firstLevelChildId = (await _ChildrenAsync(rootId, ct)).Single().Id;
+            // Attempt history cascades from each run, so it adds no conflict of its own: the retry below is still the
+            // one the appended child forces, and the committed delete takes every member's attempts.
+            await using (var scope = host.Services.CreateAsyncScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<JobsDbContext>();
+                db.Set<TimeJobAttemptEntity>()
+                    .AddRange(
+                        new TimeJobAttemptEntity
+                        {
+                            RunId = rootId,
+                            Number = 1,
+                            Outcome = JobAttemptOutcome.Failed,
+                        },
+                        new TimeJobAttemptEntity
+                        {
+                            RunId = firstLevelChildId,
+                            Number = 1,
+                            Outcome = JobAttemptOutcome.Failed,
+                        }
+                    );
+                await db.SaveChangesAsync(ct);
+            }
+
             var appendStarted = 0;
             var seamCalls = 0;
             treeDeleteProvider.OnTreeDeleteBeforeFirstDelete = async () =>
@@ -187,6 +210,8 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
             deleted.Should().Be(6);
             seamCalls.Should().Be(2, "the committed append must force one fresh-discovery retry");
             (await fixture.CountTimeJobsAsync(ct)).Should().Be(0);
+            (await persistence.GetTimeJobAttemptsAsync(rootId, ct)).Should().BeEmpty();
+            (await persistence.GetTimeJobAttemptsAsync(firstLevelChildId, ct)).Should().BeEmpty();
         }
         finally
         {

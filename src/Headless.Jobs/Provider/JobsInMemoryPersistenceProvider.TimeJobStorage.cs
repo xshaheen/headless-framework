@@ -89,9 +89,11 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             {
                 _currentTimeJobIds.Remove(key);
             }
-
-            return true;
         }
+
+        // Outside the keyed lock: the attempt lock is never taken while holding it.
+        _RemoveAttempts(_timeJobAttempts, id);
+        return true;
     }
 
     private bool _TryRemoveTimeJob(KeyValuePair<Guid, TTimeJob> expected)
@@ -107,9 +109,10 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             {
                 _currentTimeJobIds.Remove(key);
             }
-
-            return true;
         }
+
+        _RemoveAttempts(_timeJobAttempts, expected.Key);
+        return true;
     }
 
     private void _RejectDuplicateCurrentTimeJob((string? TenantId, string Function, string BusinessKey)? key, Guid id)

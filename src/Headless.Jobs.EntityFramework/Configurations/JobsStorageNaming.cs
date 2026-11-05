@@ -18,6 +18,8 @@ internal static class JobsStorageNaming
     internal const string CronJobs = "CronJobs";
     internal const string CronJobOccurrences = "CronJobOccurrences";
     internal const string TimeJobIdempotencyReservations = "TimeJobIdempotencyReservations";
+    internal const string TimeJobAttempts = "TimeJobAttempts";
+    internal const string CronJobOccurrenceAttempts = "CronJobOccurrenceAttempts";
 
     /// <summary>The naming style of the database <paramref name="context"/> targets.</summary>
     internal static StorageNamingStyle StyleOf(DbContext context) =>

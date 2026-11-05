@@ -91,6 +91,14 @@ public class JobExecutionState
     public string? FailureFingerprint { get; set; }
 
     /// <summary>
+    /// The end of the attempt this write closes: set by the executor on a retry write and on every write that ends an
+    /// execution. When it is named in <see cref="PropertiesToUpdate"/>, a provider closes the run's open attempt with
+    /// it in the same atomic write, or inserts a closed attempt when no open one exists, and only when the write
+    /// applied; see <see cref="JobAttemptEntity"/>.
+    /// </summary>
+    public JobAttemptEnd? AttemptEnd { get; set; }
+
+    /// <summary>
     /// Progress reported since the last progress write, persisted with this update and stamped with the store's
     /// clock; <see langword="null"/> when there is none to write.
     /// </summary>

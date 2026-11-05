@@ -1896,6 +1896,85 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
 
     #endregion
 
+    #region Attempt history
+
+    /// <summary>
+    /// Opens the next attempt of a running time job: inserts an attempt numbered one past the run's last, with the
+    /// claim owner and start time, when the job is still <c>InProgress</c> under <paramref name="claimOwner"/>.
+    /// </summary>
+    /// <param name="timeJobId">The running time job.</param>
+    /// <param name="claimOwner">The owner that claimed the run and is about to invoke its handler.</param>
+    /// <param name="startedAt">When the executor invokes the handler (UTC).</param>
+    /// <param name="cancellationToken">Token that aborts the write.</param>
+    /// <returns><see langword="true"/> when an attempt was opened.</returns>
+    /// <remarks>
+    /// The executor calls it once per handler invocation, outside any other write, and treats it as best effort: a
+    /// failed open never fails the run, and the write that ends the attempt then inserts it closed. Serialize the open
+    /// with the writes that move the run out of <c>InProgress</c> (the relational store locks the run row), so an open
+    /// that loses to such a write inserts nothing. The default opens nothing and returns <see langword="false"/>, so a
+    /// provider without attempt history keeps working.
+    /// </remarks>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<bool> OpenTimeJobAttemptAsync(
+        Guid timeJobId,
+        string claimOwner,
+        DateTime startedAt,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return Task.FromResult(false);
+    }
+
+    /// <summary>
+    /// Opens the next attempt of a running cron occurrence, as <see cref="OpenTimeJobAttemptAsync"/> describes for a
+    /// time job.
+    /// </summary>
+    /// <param name="occurrenceId">The running occurrence.</param>
+    /// <param name="claimOwner">The owner that claimed the run and is about to invoke its handler.</param>
+    /// <param name="startedAt">When the executor invokes the handler (UTC).</param>
+    /// <param name="cancellationToken">Token that aborts the write.</param>
+    /// <returns><see langword="true"/> when an attempt was opened.</returns>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<bool> OpenCronJobOccurrenceAttemptAsync(
+        Guid occurrenceId,
+        string claimOwner,
+        DateTime startedAt,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return Task.FromResult(false);
+    }
+
+    /// <summary>Returns every attempt of a time job, in attempt order.</summary>
+    /// <param name="timeJobId">The time job.</param>
+    /// <param name="cancellationToken">Token that aborts the query.</param>
+    /// <returns>The attempts, first attempt first; empty when the job has none or does not exist.</returns>
+    /// <remarks>The default returns no attempts, for a provider without attempt history.</remarks>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<IReadOnlyList<TimeJobAttemptEntity>> GetTimeJobAttemptsAsync(
+        Guid timeJobId,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return Task.FromResult<IReadOnlyList<TimeJobAttemptEntity>>([]);
+    }
+
+    /// <summary>Returns every attempt of a cron occurrence, in attempt order.</summary>
+    /// <param name="occurrenceId">The cron occurrence.</param>
+    /// <param name="cancellationToken">Token that aborts the query.</param>
+    /// <returns>The attempts, first attempt first; empty when the occurrence has none or does not exist.</returns>
+    /// <remarks>The default returns no attempts, for a provider without attempt history.</remarks>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<IReadOnlyList<CronJobOccurrenceAttemptEntity>> GetCronJobOccurrenceAttemptsAsync(
+        Guid occurrenceId,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return Task.FromResult<IReadOnlyList<CronJobOccurrenceAttemptEntity>>([]);
+    }
+
+    #endregion
+
     #region Change reads
 
     /// <summary>

@@ -510,6 +510,15 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
             if (_TryUpdateTimeJob(jobId, updated, current))
             {
+                _CloseInterruptedAttempt(
+                    _timeJobAttempts,
+                    jobId,
+                    claimOwner,
+                    reason,
+                    policyOverride,
+                    current.OnNodeDeath,
+                    now
+                );
                 _SyncReconcileCandidate(updated);
                 return 1;
             }
@@ -597,6 +606,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
             if (_TryUpdateTimeJob(functionContext.JobId, updatedTicker, job))
             {
+                _CloseExecutorAttempt(_timeJobAttempts, functionContext);
                 _SyncReconcileCandidate(updatedTicker);
                 return Task.FromResult(1);
             }
@@ -1086,7 +1096,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         // Swap against the row the decision was made on, not a fresh read: a terminal write or a lease renewal that
         // lands after the scan replaces the row, so the swap fails and the job is left alone, as the EF reclaim's
         // predicate-guarded UPDATE leaves it.
-        bool tryApply(TTimeJob decidedOn, Action<TTimeJob> mutate)
+        bool tryApply(TTimeJob decidedOn, JobAttemptEnd attemptEnd, Action<TTimeJob> mutate)
         {
             var updated = _CloneTicker(decidedOn);
             mutate(updated);
@@ -1097,6 +1107,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 return false;
             }
 
+            _CloseAttempt(_timeJobAttempts, decidedOn.Id, decidedOn.OwnerId, attemptEnd, insertWhenMissing: true);
             _SyncReconcileCandidate(updated);
             return true;
         }
@@ -1115,6 +1126,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 case NodeDeathPolicy.Retry
                     when tryApply(
                         job,
+                        _StoreAttemptEnd(JobAttemptOutcome.Lost, now, _LeaseLapsedReason),
                         t =>
                         {
                             t.OwnerId = null;
@@ -1128,6 +1140,12 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 case NodeDeathPolicy.MarkFailed
                     when tryApply(
                         job,
+                        _StoreAttemptEnd(
+                            JobAttemptOutcome.Failed,
+                            now,
+                            _LeaseLapsedReason,
+                            JobFailureFingerprints.LeaseLapsed
+                        ),
                         t =>
                         {
                             t.Status = JobStatus.Failed;
@@ -1142,6 +1160,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 case NodeDeathPolicy.Skip
                     when tryApply(
                         job,
+                        _StoreAttemptEnd(JobAttemptOutcome.Skipped, now, _LeaseLapsedReason),
                         t =>
                         {
                             t.Status = JobStatus.Skipped;
@@ -1701,7 +1720,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         // Swap against the row the decision was made on, not a fresh read: a terminal write or a lease renewal that
         // lands after the scan replaces the row, so the swap fails and the job is left alone, as the EF reclaim's
         // predicate-guarded UPDATE leaves it.
-        bool tryApply(TTimeJob decidedOn, Action<TTimeJob> mutate)
+        bool tryApply(TTimeJob decidedOn, JobAttemptEnd? attemptEnd, Action<TTimeJob> mutate)
         {
             var updated = _CloneTicker(decidedOn);
             mutate(updated);
@@ -1710,6 +1729,12 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             if (!_TryUpdateTimeJob(decidedOn.Id, updated, decidedOn))
             {
                 return false;
+            }
+
+            // Only a started (InProgress) row has an attempt to close; an Idle or Queued release passes none.
+            if (attemptEnd is not null)
+            {
+                _CloseAttempt(_timeJobAttempts, decidedOn.Id, decidedOn.OwnerId, attemptEnd, insertWhenMissing: true);
             }
 
             _SyncReconcileCandidate(updated);
@@ -1739,6 +1764,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 if (
                     tryApply(
                         job,
+                        inProgressLapsed ? _StoreAttemptEnd(JobAttemptOutcome.Lost, now, _NodeNotAliveReason) : null,
                         t =>
                         {
                             t.OwnerId = null;
@@ -1760,6 +1786,12 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 if (
                     tryApply(
                         job,
+                        _StoreAttemptEnd(
+                            JobAttemptOutcome.Failed,
+                            now,
+                            _NodeNotAliveReason,
+                            JobFailureFingerprints.NodeNotAlive
+                        ),
                         t =>
                         {
                             t.Status = JobStatus.Failed;
@@ -1779,6 +1811,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 if (
                     tryApply(
                         job,
+                        _StoreAttemptEnd(JobAttemptOutcome.Skipped, now, _NodeNotAliveReason),
                         t =>
                         {
                             t.Status = JobStatus.Skipped;
@@ -1847,7 +1880,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 {
                     if (pair.Value.Status is JobStatus.Idle or JobStatus.Queued)
                     {
-                        _cronOccurrences.TryRemove(pair.Key, out _);
+                        _TryRemoveOccurrence(pair.Key);
                     }
                 }
 
@@ -1876,7 +1909,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
                 foreach (var pair in _cronOccurrences.Where(x => x.Value.CronJobId == removedId).ToArray())
                 {
-                    _cronOccurrences.TryRemove(pair.Key, out _);
+                    _TryRemoveOccurrence(pair.Key);
                 }
             }
         }
@@ -3369,6 +3402,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             // Return 1 only when the completion was actually applied (mirror EF affected-row count).
             if (_cronOccurrences.TryUpdate(functionContext.JobId, updatedOccurrence, occurrence))
             {
+                _CloseExecutorAttempt(_occurrenceAttempts, functionContext);
                 return Task.FromResult(1);
             }
         }
@@ -3494,13 +3528,23 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         var affected = 0;
 
         // Swap against the row the decision was made on, not a fresh read (see the time-job reclaim).
-        bool tryApply(CronJobOccurrenceEntity<TCronJob> decidedOn, Action<CronJobOccurrenceEntity<TCronJob>> mutate)
+        bool tryApply(
+            CronJobOccurrenceEntity<TCronJob> decidedOn,
+            JobAttemptEnd attemptEnd,
+            Action<CronJobOccurrenceEntity<TCronJob>> mutate
+        )
         {
             var updated = _CloneCronOccurrence(decidedOn);
             mutate(updated);
             updated.UpdatedAt = now;
             updated.ChangedAt = _NextChangeMarker();
-            return _cronOccurrences.TryUpdate(decidedOn.Id, updated, decidedOn);
+            if (!_cronOccurrences.TryUpdate(decidedOn.Id, updated, decidedOn))
+            {
+                return false;
+            }
+
+            _CloseAttempt(_occurrenceAttempts, decidedOn.Id, decidedOn.OwnerId, attemptEnd, insertWhenMissing: true);
+            return true;
         }
 
         var stalled = _cronOccurrences
@@ -3515,6 +3559,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 case NodeDeathPolicy.Retry
                     when tryApply(
                         occurrence,
+                        _StoreAttemptEnd(JobAttemptOutcome.Lost, now, _LeaseLapsedReason),
                         t =>
                         {
                             t.OwnerId = null;
@@ -3528,6 +3573,12 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 case NodeDeathPolicy.MarkFailed
                     when tryApply(
                         occurrence,
+                        _StoreAttemptEnd(
+                            JobAttemptOutcome.Failed,
+                            now,
+                            _LeaseLapsedReason,
+                            JobFailureFingerprints.LeaseLapsed
+                        ),
                         t =>
                         {
                             t.Status = JobStatus.Failed;
@@ -3542,6 +3593,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 case NodeDeathPolicy.Skip
                     when tryApply(
                         occurrence,
+                        _StoreAttemptEnd(JobAttemptOutcome.Skipped, now, _LeaseLapsedReason),
                         t =>
                         {
                             t.Status = JobStatus.Skipped;
@@ -3663,6 +3715,15 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
             if (_cronOccurrences.TryUpdate(occurrenceId, updated, current))
             {
+                _CloseInterruptedAttempt(
+                    _occurrenceAttempts,
+                    occurrenceId,
+                    claimOwner,
+                    reason,
+                    policyOverride,
+                    current.OnNodeDeath,
+                    now
+                );
                 return 1;
             }
         }
@@ -3737,13 +3798,34 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         var affected = 0;
 
         // Swap against the row the decision was made on, not a fresh read (see the time-job reclaim).
-        bool tryApply(CronJobOccurrenceEntity<TCronJob> decidedOn, Action<CronJobOccurrenceEntity<TCronJob>> mutate)
+        bool tryApply(
+            CronJobOccurrenceEntity<TCronJob> decidedOn,
+            JobAttemptEnd? attemptEnd,
+            Action<CronJobOccurrenceEntity<TCronJob>> mutate
+        )
         {
             var updated = _CloneCronOccurrence(decidedOn);
             mutate(updated);
             updated.UpdatedAt = now;
             updated.ChangedAt = _NextChangeMarker();
-            return _cronOccurrences.TryUpdate(decidedOn.Id, updated, decidedOn);
+            if (!_cronOccurrences.TryUpdate(decidedOn.Id, updated, decidedOn))
+            {
+                return false;
+            }
+
+            // Only a started (InProgress) row has an attempt to close; an Idle or Queued release passes none.
+            if (attemptEnd is not null)
+            {
+                _CloseAttempt(
+                    _occurrenceAttempts,
+                    decidedOn.Id,
+                    decidedOn.OwnerId,
+                    attemptEnd,
+                    insertWhenMissing: true
+                );
+            }
+
+            return true;
         }
 
         // Per-policy dead-node transition (#315, #316) — mirrors EF ReleaseDeadNodeOccurrenceResourcesAsync.
@@ -3769,6 +3851,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 if (
                     tryApply(
                         occurrence,
+                        inProgressLapsed ? _StoreAttemptEnd(JobAttemptOutcome.Lost, now, _NodeNotAliveReason) : null,
                         o =>
                         {
                             o.OwnerId = null;
@@ -3790,6 +3873,12 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 if (
                     tryApply(
                         occurrence,
+                        _StoreAttemptEnd(
+                            JobAttemptOutcome.Failed,
+                            now,
+                            _NodeNotAliveReason,
+                            JobFailureFingerprints.NodeNotAlive
+                        ),
                         o =>
                         {
                             o.Status = JobStatus.Failed;
@@ -3809,6 +3898,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 if (
                     tryApply(
                         occurrence,
+                        _StoreAttemptEnd(JobAttemptOutcome.Skipped, now, _NodeNotAliveReason),
                         o =>
                         {
                             o.Status = JobStatus.Skipped;
@@ -4031,7 +4121,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         var count = 0;
         foreach (var id in cronJobOccurrences)
         {
-            if (_cronOccurrences.TryRemove(id, out _))
+            if (_TryRemoveOccurrence(id))
             {
                 count++;
             }

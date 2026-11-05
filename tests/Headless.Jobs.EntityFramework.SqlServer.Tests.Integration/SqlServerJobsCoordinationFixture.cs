@@ -49,7 +49,10 @@ public class SqlServerJobsCoordinationFixture
     // SQL Server has no DROP SCHEMA CASCADE. Drop child tables before parents (CronJobOccurrences -> CronJobs).
     // The shared headless schema itself stays, and the schema runner creates it when missing anyway. DROP TABLE IF EXISTS is a no-op when the table is absent.
     public string ResetSql =>
-        "DROP TABLE IF EXISTS [headless].[CronJobOccurrences];"
+        // Attempt history references the run tables, so it goes first.
+        "DROP TABLE IF EXISTS [headless].[TimeJobAttempts];"
+        + "DROP TABLE IF EXISTS [headless].[CronJobOccurrenceAttempts];"
+        + "DROP TABLE IF EXISTS [headless].[CronJobOccurrences];"
         + "DROP TABLE IF EXISTS [consumer_jobs].[consumer_time_jobs];"
         + "IF EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'consumer_jobs') DROP SCHEMA [consumer_jobs];"
         + "DROP TABLE IF EXISTS [headless].[TimeJobIdempotencyReservations];"
@@ -77,7 +80,9 @@ public class SqlServerJobsCoordinationFixture
         {
             const string schema = JobsCoordinationFixtureExtensions.CustomSchemaName;
 
-            return $"DROP TABLE IF EXISTS [{schema}].[CronJobOccurrences];"
+            return $"DROP TABLE IF EXISTS [{schema}].[TimeJobAttempts];"
+                + $"DROP TABLE IF EXISTS [{schema}].[CronJobOccurrenceAttempts];"
+                + $"DROP TABLE IF EXISTS [{schema}].[CronJobOccurrences];"
                 + $"DROP TABLE IF EXISTS [{schema}].[TimeJobIdempotencyReservations];"
                 + $"DROP TABLE IF EXISTS [{schema}].[TimeJobs];"
                 + $"DROP TABLE IF EXISTS [{schema}].[CronJobs];"
@@ -88,7 +93,9 @@ public class SqlServerJobsCoordinationFixture
     // The renamed-mapping claim test owns its own mapped_jobs cleanup, but the collection shares one database: if that
     // test's teardown is cut short, the leftovers wedge every later test at CREATE TABLE, so drop them here too.
     private const string _MappedSchemaResetSql =
-        "DROP TABLE IF EXISTS [mapped_jobs].[native_cron_occurrences];"
+        "DROP TABLE IF EXISTS [mapped_jobs].[TimeJobAttempts];"
+        + "DROP TABLE IF EXISTS [mapped_jobs].[CronJobOccurrenceAttempts];"
+        + "DROP TABLE IF EXISTS [mapped_jobs].[native_cron_occurrences];"
         + "DROP TABLE IF EXISTS [mapped_jobs].[native_time_jobs];"
         + "DROP TABLE IF EXISTS [mapped_jobs].[TimeJobIdempotencyReservations];"
         + "DROP TABLE IF EXISTS [mapped_jobs].[CronJobs];"

@@ -691,14 +691,27 @@ internal sealed class JobsExecutionTaskHandler
                         + "interrupted attempts were consumed by lease-lapse/node-death reclaims and the handler "
                         + "was not invoked again."
                 );
+                var exhaustedAt = _timeProvider.GetUtcNow();
+                var exhaustedDetails = _SerializeException(exhaustedByRecovery);
                 context
                     .SetProperty(x => x.Status, JobStatus.Failed)
-                    .SetProperty(x => x.ExecutedAt, _timeProvider.GetUtcNow())
+                    .SetProperty(x => x.ExecutedAt, exhaustedAt)
                     .SetProperty(x => x.ElapsedTime, 0L)
-                    .SetProperty(x => x.ExceptionDetails, _SerializeException(exhaustedByRecovery))
+                    .SetProperty(x => x.ExceptionDetails, exhaustedDetails)
                     // The exception above is built here and never thrown, so it has no frames to fingerprint: the
                     // cause gets its fixed fingerprint instead.
-                    .SetProperty(x => x.FailureFingerprint, JobFailureFingerprints.RetryBudgetExhaustedByRecovery);
+                    .SetProperty(x => x.FailureFingerprint, JobFailureFingerprints.RetryBudgetExhaustedByRecovery)
+                    // The handler never ran, so the attempt that records why the run failed has no start.
+                    .SetProperty(
+                        x => x.AttemptEnd,
+                        new JobAttemptEnd
+                        {
+                            Outcome = JobAttemptOutcome.Failed,
+                            EndedAt = exhaustedAt.UtcDateTime,
+                            ExceptionMessage = exhaustedDetails,
+                            FailureFingerprint = JobFailureFingerprints.RetryBudgetExhaustedByRecovery,
+                        }
+                    );
                 jobActivity?.SetTag("headless.job.final_status", context.Status.ToString());
                 jobActivity?.SetTag("headless.job.final_retry.count", context.RetryCount);
                 _jobsInstrumentation.LogJobFailed(
@@ -755,6 +768,23 @@ internal sealed class JobsExecutionTaskHandler
             Exception? lastException = null;
             var success = false;
             var handlerInvoked = false;
+            // When the handler was last invoked: the start of the attempt the next closing write ends.
+            DateTime? attemptStartedAt = null;
+
+            JobAttemptEnd attemptEnd(
+                JobAttemptOutcome outcome,
+                DateTimeOffset endedAt,
+                string? exceptionMessage = null,
+                string? failureFingerprint = null
+            ) =>
+                new()
+                {
+                    Outcome = outcome,
+                    StartedAt = attemptStartedAt,
+                    EndedAt = endedAt.UtcDateTime,
+                    ExceptionMessage = exceptionMessage,
+                    FailureFingerprint = failureFingerprint,
+                };
 
             // A persisted attempt count above zero means a reclaim charged the previous, interrupted attempt to the
             // row: this run is the attempt that replaces it.
@@ -774,6 +804,9 @@ internal sealed class JobsExecutionTaskHandler
                             jobFunctionContext.RetryCount = retryCount;
                             jobActivity?.SetTag("headless.job.current_attempt", retryCount + 1);
                             handlerInvoked = true;
+                            attemptStartedAt = _timeProvider.GetUtcNow().UtcDateTime;
+                            await _OpenAttemptAsync(context, attemptStartedAt.Value, attemptToken)
+                                .ConfigureAwait(false);
                             stopWatch.Start();
                             await using var scope = _serviceProvider.CreateAsyncScope();
                             jobFunctionContext.SetServiceScope(scope);
@@ -812,9 +845,19 @@ internal sealed class JobsExecutionTaskHandler
                                 throw new OperationCanceledException(cancellationTokenSource.Token);
                             }
 
+                            var retryFingerprint = FailureFingerprint.Compute(exception);
                             context
                                 .SetProperty(x => x.RetryCount, retryCount)
-                                .SetProperty(x => x.FailureFingerprint, FailureFingerprint.Compute(exception));
+                                .SetProperty(x => x.FailureFingerprint, retryFingerprint)
+                                .SetProperty(
+                                    x => x.AttemptEnd,
+                                    attemptEnd(
+                                        JobAttemptOutcome.Failed,
+                                        _timeProvider.GetUtcNow(),
+                                        _SerializeException(exception),
+                                        retryFingerprint
+                                    )
+                                );
                             int affected;
                             try
                             {
@@ -888,11 +931,17 @@ internal sealed class JobsExecutionTaskHandler
                         return;
                     }
 
+                    var cancelledAt = _timeProvider.GetUtcNow();
+                    var cancelledDetails = _SerializeException(ex);
                     context
                         .SetProperty(x => x.Status, JobStatus.Cancelled)
-                        .SetProperty(x => x.ExecutedAt, _timeProvider.GetUtcNow())
+                        .SetProperty(x => x.ExecutedAt, cancelledAt)
                         .SetProperty(x => x.ElapsedTime, stopWatch.ElapsedMilliseconds)
-                        .SetProperty(x => x.ExceptionDetails, _SerializeException(ex));
+                        .SetProperty(x => x.ExceptionDetails, cancelledDetails)
+                        .SetProperty(
+                            x => x.AttemptEnd,
+                            attemptEnd(JobAttemptOutcome.Cancelled, cancelledAt, cancelledDetails)
+                        );
 
                     jobActivity?.SetTag("headless.job.final_status", context.Status.ToString());
                     jobActivity?.SetTag("headless.job.cancellation.reason", "Durable cancellation requested");
@@ -940,10 +989,16 @@ internal sealed class JobsExecutionTaskHandler
                     return;
                 }
 
+                var terminatedAt = _timeProvider.GetUtcNow();
+                var terminateReason = ex.InnerException?.Message ?? ex.Message;
                 context
                     .SetProperty(x => x.Status, ex.Status)
-                    .SetProperty(x => x.ExecutedAt, _timeProvider.GetUtcNow())
-                    .SetProperty(x => x.ElapsedTime, stopWatch.ElapsedMilliseconds);
+                    .SetProperty(x => x.ExecutedAt, terminatedAt)
+                    .SetProperty(x => x.ElapsedTime, stopWatch.ElapsedMilliseconds)
+                    .SetProperty(
+                        x => x.AttemptEnd,
+                        attemptEnd(_AttemptOutcomeOf(ex.Status), terminatedAt, terminateReason)
+                    );
 
                 if (ex.InnerException != null)
                 {
@@ -1005,13 +1060,16 @@ internal sealed class JobsExecutionTaskHandler
 
             stopWatch.Stop();
 
+            var completedAt = _timeProvider.GetUtcNow();
             context
                 .SetProperty(x => x.ElapsedTime, stopWatch.ElapsedMilliseconds)
-                .SetProperty(x => x.ExecutedAt, _timeProvider.GetUtcNow());
+                .SetProperty(x => x.ExecutedAt, completedAt);
 
             if (success)
             {
-                context.SetProperty(x => x.Status, isDue ? JobStatus.DueDone : JobStatus.Succeeded);
+                context
+                    .SetProperty(x => x.Status, isDue ? JobStatus.DueDone : JobStatus.Succeeded)
+                    .SetProperty(x => x.AttemptEnd, attemptEnd(JobAttemptOutcome.Succeeded, completedAt));
 
                 // Add success tags to activity
                 jobActivity?.SetTag("headless.job.final_status", context.Status.ToString());
@@ -1053,10 +1111,16 @@ internal sealed class JobsExecutionTaskHandler
             }
             else if (lastException != null)
             {
+                var failedDetails = _SerializeException(lastException);
+                var failedFingerprint = FailureFingerprint.Compute(lastException);
                 context
                     .SetProperty(x => x.Status, JobStatus.Failed)
-                    .SetProperty(x => x.ExceptionDetails, _SerializeException(lastException))
-                    .SetProperty(x => x.FailureFingerprint, FailureFingerprint.Compute(lastException));
+                    .SetProperty(x => x.ExceptionDetails, failedDetails)
+                    .SetProperty(x => x.FailureFingerprint, failedFingerprint)
+                    .SetProperty(
+                        x => x.AttemptEnd,
+                        attemptEnd(JobAttemptOutcome.Failed, completedAt, failedDetails, failedFingerprint)
+                    );
 
                 // Add failure tags to activity
                 jobActivity?.SetTag("headless.job.final_status", context.Status.ToString());
@@ -1614,6 +1678,34 @@ internal sealed class JobsExecutionTaskHandler
         _logger.LogJobReleasedMembershipUnknown(context.JobId, context.FunctionName);
     }
 
+    // Best effort by contract: attempt history must never fail or delay a run. The write that ends the attempt inserts
+    // it closed when this open is lost. Cancellation still propagates, as it would from the handler itself.
+    private async Task _OpenAttemptAsync(
+        JobExecutionState context,
+        DateTime startedAt,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            await _internalJobsManager.OpenAttemptAsync(context, startedAt, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            _logger.LogJobAttemptOpenFailed(exception, context.JobId, context.FunctionName);
+        }
+    }
+
+    // A handler that ends its run through TerminateExecutionException names the run's terminal status.
+    private static JobAttemptOutcome _AttemptOutcomeOf(JobStatus status) =>
+        status switch
+        {
+            JobStatus.Succeeded or JobStatus.DueDone => JobAttemptOutcome.Succeeded,
+            JobStatus.Failed => JobAttemptOutcome.Failed,
+            JobStatus.Cancelled => JobAttemptOutcome.Cancelled,
+            _ => JobAttemptOutcome.Skipped,
+        };
+
     private static Exception _GetRootException(Exception ex)
     {
         while (ex.InnerException != null)
@@ -1936,6 +2028,19 @@ internal static partial class JobsExecutionTaskHandlerLog
             + "per OnNodeDeath."
     )]
     internal static partial void LogJobShutdownWriteFailed(
+        this ILogger logger,
+        Exception exception,
+        Guid jobId,
+        string function
+    );
+
+    [LoggerMessage(
+        EventId = 3128,
+        Level = LogLevel.Warning,
+        Message = "Opening an attempt of job {JobId} ({Function}) failed; the run continues, and the write that ends "
+            + "the attempt records it closed."
+    )]
+    internal static partial void LogJobAttemptOpenFailed(
         this ILogger logger,
         Exception exception,
         Guid jobId,

@@ -1116,6 +1116,26 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         return affected;
     }
 
+    public async Task<bool> OpenAttemptAsync(
+        JobExecutionState context,
+        DateTime startedAt,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (context.ClaimOwner is not { Length: > 0 } claimOwner)
+        {
+            return false;
+        }
+
+        return context.Type == JobType.CronJobOccurrence
+            ? await persistenceProvider
+                .OpenCronJobOccurrenceAttemptAsync(context.JobId, claimOwner, startedAt, cancellationToken)
+                .ConfigureAwait(false)
+            : await persistenceProvider
+                .OpenTimeJobAttemptAsync(context.JobId, claimOwner, startedAt, cancellationToken)
+                .ConfigureAwait(false);
+    }
+
     public async Task<int> ReleaseInProgressAsync(
         JobExecutionState context,
         CancellationToken cancellationToken = default
