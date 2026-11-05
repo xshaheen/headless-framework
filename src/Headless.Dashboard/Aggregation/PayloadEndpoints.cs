@@ -25,7 +25,7 @@ internal static class PayloadEndpoints
         // would discard the IResult and send an empty 200.
         Func<HttpContext, Task<IResult>> handler = static context => _GetAsync(context, context.RequestAborted);
 
-        dashboard.MapGet("/api/payload", handler).ExcludeFromDescription();
+        dashboard.MapGet("/api/payload", handler).RequireDashboardShellAccess(moduleId: null).ExcludeFromDescription();
     }
 
     private static async Task<IResult> _GetAsync(HttpContext context, CancellationToken cancellationToken)
@@ -51,7 +51,12 @@ internal static class PayloadEndpoints
 
         var user = context.User;
 
-        if (!await services.GetRequiredService<ModuleFanOut>().MayViewAsync(user, owner.Id).ConfigureAwait(false))
+        var access = await services
+            .GetRequiredService<DashboardPermissions>()
+            .GetSessionSnapshotAsync(context)
+            .ConfigureAwait(false);
+
+        if (!access.MayView(owner.Id))
         {
             return Results.StatusCode(StatusCodes.Status403Forbidden);
         }

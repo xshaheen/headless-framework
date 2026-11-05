@@ -32,10 +32,24 @@ internal static class AggregationEndpoints
     /// <summary>Maps the endpoints on <paramref name="dashboard"/>, the route group at the dashboard's base path.</summary>
     internal static void Map(IEndpointRouteBuilder dashboard)
     {
-        dashboard.MapGet("/api/needs-you", _Handler(_GetNeedsYouAsync)).ExcludeFromDescription();
-        dashboard.MapGet("/api/overview", _Handler(_GetOverviewAsync)).ExcludeFromDescription();
-        dashboard.MapGet("/api/resolve", _Handler(_ResolveAsync)).ExcludeFromDescription();
-        dashboard.MapGet("/api/related", _Handler(_GetRelatedAsync)).ExcludeFromDescription();
+        // Every module also filters by the session, but the endpoints still need one first: Basic and API key open
+        // every module to any signed-in user, so without it they would answer anonymous callers too.
+        dashboard
+            .MapGet("/api/needs-you", _Handler(_GetNeedsYouAsync))
+            .RequireDashboardShellAccess(moduleId: null)
+            .ExcludeFromDescription();
+        dashboard
+            .MapGet("/api/overview", _Handler(_GetOverviewAsync))
+            .RequireDashboardShellAccess(moduleId: null)
+            .ExcludeFromDescription();
+        dashboard
+            .MapGet("/api/resolve", _Handler(_ResolveAsync))
+            .RequireDashboardShellAccess(moduleId: null)
+            .ExcludeFromDescription();
+        dashboard
+            .MapGet("/api/related", _Handler(_GetRelatedAsync))
+            .RequireDashboardShellAccess(moduleId: null)
+            .ExcludeFromDescription();
     }
 
     // A lambda returning Task<IResult> binds to the RequestDelegate overload, which discards the result.
@@ -51,7 +65,7 @@ internal static class AggregationEndpoints
         var user = context.User;
         var answers = await _FanOut(context)
             .CallAsync<IDashboardAttentionSource, IReadOnlyList<DashboardAttentionItem>>(
-                user,
+                await _AccessAsync(context).ConfigureAwait(false),
                 "attention",
                 (source, token) => source.GetAttentionAsync(new DashboardAttentionRequest { User = user }, token),
                 cancellationToken
@@ -70,7 +84,7 @@ internal static class AggregationEndpoints
         var user = context.User;
         var answers = await _FanOut(context)
             .CallAsync<IDashboardOverviewSource, IReadOnlyList<DashboardFigure>>(
-                user,
+                await _AccessAsync(context).ConfigureAwait(false),
                 "overview",
                 (source, token) => source.GetOverviewAsync(new DashboardOverviewRequest { User = user }, token),
                 cancellationToken
@@ -95,7 +109,7 @@ internal static class AggregationEndpoints
         var traceTemplate = _TraceTemplate(context);
         var answers = await _FanOut(context)
             .CallAsync<IDashboardObjectResolver, IReadOnlyList<DashboardObject>>(
-                user,
+                await _AccessAsync(context).ConfigureAwait(false),
                 "resolve",
                 (source, token) =>
                     source.ResolveAsync(new DashboardResolveRequest { Query = query, User = user }, token),
@@ -135,7 +149,9 @@ internal static class AggregationEndpoints
         }
 
         // Relating to an object the user may not see would describe that object through other modules.
-        if (!await fanOut.MayViewAsync(user, owner.Id).ConfigureAwait(false))
+        var access = await _AccessAsync(context).ConfigureAwait(false);
+
+        if (!access.MayView(owner.Id))
         {
             return Results.StatusCode(StatusCodes.Status403Forbidden);
         }
@@ -148,7 +164,7 @@ internal static class AggregationEndpoints
         };
         var answers = await fanOut
             .CallAsync<IDashboardRelatedSource, IReadOnlyList<DashboardRelatedGroup>>(
-                user,
+                access,
                 "related",
                 (source, token) =>
                     source.GetRelatedAsync(new DashboardRelatedRequest { Target = target, User = user }, token),
@@ -265,6 +281,12 @@ internal static class AggregationEndpoints
     internal static (long Count, bool Capped) CapCount(long count)
     {
         return count > CountCap ? (CountCap, true) : (count, false);
+    }
+
+    // The per-module access the session reports to the page, so a module the page hides is never called here.
+    private static Task<DashboardSessionSnapshot> _AccessAsync(HttpContext context)
+    {
+        return context.RequestServices.GetRequiredService<DashboardPermissions>().GetSessionSnapshotAsync(context);
     }
 
     private static ModuleFanOut _FanOut(HttpContext context)

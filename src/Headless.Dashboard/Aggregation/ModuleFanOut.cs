@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Security.Claims;
 using Headless.Checks;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -15,8 +13,6 @@ namespace Headless.Dashboard;
 /// </summary>
 internal sealed class ModuleFanOut(
     DashboardManifestProvider manifest,
-    DashboardModuleCatalog catalog,
-    IAuthorizationService authorization,
     IOptions<HeadlessDashboardOptions> options,
     TimeProvider timeProvider,
     ILogger<ModuleFanOut> logger
@@ -24,19 +20,19 @@ internal sealed class ModuleFanOut(
 {
     /// <summary>
     /// Calls <paramref name="call"/> on every loaded module that implements <typeparamref name="TSource"/> and that
-    /// <paramref name="user"/> may view, and returns one answer per module in registration order. A refused module is
+    /// <paramref name="access"/> lets the user view, and returns one answer per module in registration order. A refused module is
     /// never called.
     /// </summary>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
     public async Task<IReadOnlyList<ModuleAnswer<TResult>>> CallAsync<TSource, TResult>(
-        ClaimsPrincipal user,
+        DashboardSessionSnapshot access,
         string capability,
         Func<TSource, CancellationToken, Task<TResult>> call,
         CancellationToken cancellationToken
     )
         where TSource : class
     {
-        Argument.IsNotNull(user);
+        Argument.IsNotNull(access);
         Argument.IsNotNull(call);
 
         var calls = new List<Task<ModuleAnswer<TResult>>>();
@@ -48,7 +44,7 @@ internal sealed class ModuleFanOut(
                 continue;
             }
 
-            if (!await MayViewAsync(user, module.Id).ConfigureAwait(false))
+            if (!access.MayView(module.Id))
             {
                 continue;
             }
@@ -57,30 +53,6 @@ internal sealed class ModuleFanOut(
         }
 
         return await Task.WhenAll(calls).ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// Whether <paramref name="user"/> may view the module <paramref name="moduleId"/>: its view policy passes, or it has
-    /// none. Basic and API-key authentication share one credential for every module, so they skip module policies.
-    /// </summary>
-    /// <exception cref="KeyNotFoundException">No module is registered under <paramref name="moduleId"/>.</exception>
-    public async Task<bool> MayViewAsync(ClaimsPrincipal user, string moduleId)
-    {
-        if (options.Value.AuthMode is AuthMode.Basic or AuthMode.ApiKey)
-        {
-            return true;
-        }
-
-        var policy = catalog.GetPolicy(moduleId).ViewPolicy;
-
-        if (policy is null)
-        {
-            return true;
-        }
-
-        var result = await authorization.AuthorizeAsync(user, resource: null, policy).ConfigureAwait(false);
-
-        return result.Succeeded;
     }
 
     private async Task<ModuleAnswer<TResult>> _CallOneAsync<TSource, TResult>(

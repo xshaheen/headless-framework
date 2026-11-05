@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
+using Microsoft.Net.Http.Headers;
 
 namespace Tests.Aggregation;
 
@@ -131,13 +132,14 @@ public sealed class AggregationEndpointTests : TestBase
         _diagA.Attention = _ => _Items(_Item("a-1", count: 1));
         _diagB.Attention = _ => _Items(_Item("b-1", count: 1));
 
-        await using var app = await _StartAsync(services: services =>
-            services.Configure<DiagBModuleOptions>(o => o.ViewPolicy = _DiagBViewers)
+        await using var app = await _StartAsync(
+            services: services => services.Configure<DiagBModuleOptions>(o => o.ViewPolicy = _DiagBViewers),
+            hostAuthentication: true
         );
-        using var client = app.GetTestClient();
+        using var client = _HttpsClient(app);
 
-        using var outsider = await _GetAsync(client, "/dash/api/needs-you", roles: "");
-        using var viewer = await _GetAsync(client, "/dash/api/needs-you", roles: "diag-b-viewer");
+        using var outsider = await _GetSignedInAsync(client, "/dash/api/needs-you", roles: "");
+        using var viewer = await _GetSignedInAsync(client, "/dash/api/needs-you", roles: "diag-b-viewer");
 
         (await _ReadAsync(outsider))
             .GetProperty("modules")
@@ -257,12 +259,17 @@ public sealed class AggregationEndpointTests : TestBase
     [Fact]
     public async Task should_refuse_related_objects_for_a_module_the_user_may_not_view()
     {
-        await using var app = await _StartAsync(services: services =>
-            services.Configure<DiagBModuleOptions>(o => o.ViewPolicy = _DiagBViewers)
+        await using var app = await _StartAsync(
+            services: services => services.Configure<DiagBModuleOptions>(o => o.ViewPolicy = _DiagBViewers),
+            hostAuthentication: true
         );
-        using var client = app.GetTestClient();
+        using var client = _HttpsClient(app);
 
-        using var response = await _GetAsync(client, "/dash/api/related?module=diag-b&kind=run&id=run-42", roles: "");
+        using var response = await _GetSignedInAsync(
+            client,
+            "/dash/api/related?module=diag-b&kind=run&id=run-42",
+            roles: ""
+        );
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
@@ -396,12 +403,17 @@ public sealed class AggregationEndpointTests : TestBase
     {
         _diagB.Payload = (_, _) =>
             Task.FromResult<DashboardPayload?>(new DashboardPayload { Content = "secret", ContentType = "text/plain" });
-        await using var app = await _StartAsync(services: services =>
-            services.Configure<DiagBModuleOptions>(o => o.ViewPolicy = _DiagBViewers)
+        await using var app = await _StartAsync(
+            services: services => services.Configure<DiagBModuleOptions>(o => o.ViewPolicy = _DiagBViewers),
+            hostAuthentication: true
         );
-        using var client = app.GetTestClient();
+        using var client = _HttpsClient(app);
 
-        using var response = await _GetAsync(client, "/dash/api/payload?module=diag-b&kind=run&id=run-42", roles: "");
+        using var response = await _GetSignedInAsync(
+            client,
+            "/dash/api/payload?module=diag-b&kind=run&id=run-42",
+            roles: ""
+        );
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
@@ -427,10 +439,55 @@ public sealed class AggregationEndpointTests : TestBase
         response.StatusCode.Should().Be(HttpStatusCode.GatewayTimeout);
     }
 
+    [Theory]
+    [InlineData("/dash/api/needs-you")]
+    [InlineData("/dash/api/overview")]
+    [InlineData("/dash/api/resolve?q=run-42")]
+    [InlineData("/dash/api/related?module=diag-a&kind=run&id=run-42")]
+    [InlineData("/dash/api/payload?module=diag-a&kind=run&id=run-42")]
+    public async Task should_answer_401_and_call_no_module_when_a_request_has_no_session_under_basic_authentication(
+        string path
+    )
+    {
+        var called = false;
+        _diagA.Attention = _ =>
+        {
+            called = true;
+            return _Items(_Item("a-1", count: 1));
+        };
+        _diagA.Payload = (_, _) =>
+        {
+            called = true;
+            return Task.FromResult<DashboardPayload?>(
+                new DashboardPayload { Content = "secret", ContentType = "text/plain" }
+            );
+        };
+        await using var app = await _StartAsync(auth: dashboard => dashboard.WithBasicAuth("operator", "s3cret-pass"));
+        using var client = _HttpsClient(app);
+
+        using var response = await client.GetAsync(path, AbortToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        called.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_answer_401_when_a_request_has_no_session_under_host_authentication()
+    {
+        await using var app = await _StartAsync(hostAuthentication: true);
+        using var client = _HttpsClient(app);
+
+        using var response = await client.GetAsync("/dash/api/needs-you", AbortToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
     private async Task<WebApplication> _StartAsync(
         bool withDiagB = true,
         Action<IServiceCollection>? services = null,
-        Action<HeadlessDashboardSetupBuilder>? configure = null
+        Action<HeadlessDashboardSetupBuilder>? configure = null,
+        bool hostAuthentication = false,
+        Action<HeadlessDashboardSetupBuilder>? auth = null
     )
     {
         var builder = WebApplication.CreateSlimBuilder();
@@ -453,7 +510,20 @@ public sealed class AggregationEndpointTests : TestBase
 
         builder.Services.AddHeadlessDashboard(dashboard =>
         {
-            dashboard.WithNoAuth().SetBasePath("/dash").AddModule<DiagAModule, DiagAModuleOptions>("diag-a");
+            if (auth is not null)
+            {
+                auth(dashboard);
+            }
+            else if (hostAuthentication)
+            {
+                dashboard.WithHostAuthentication();
+            }
+            else
+            {
+                dashboard.WithNoAuth();
+            }
+
+            dashboard.SetBasePath("/dash").AddModule<DiagAModule, DiagAModuleOptions>("diag-a");
 
             if (withDiagB)
             {
@@ -464,6 +534,8 @@ public sealed class AggregationEndpointTests : TestBase
         });
 
         var app = builder.Build();
+        app.UseAuthentication();
+        app.UseAuthorization();
         app.MapHeadlessDashboard();
 
         await app.StartAsync(AbortToken);
@@ -471,11 +543,30 @@ public sealed class AggregationEndpointTests : TestBase
         return app;
     }
 
-    private static async Task<HttpResponseMessage> _GetAsync(HttpClient client, string url, string roles)
+    // The session cookie is Secure, so the cookie handler issues and reads it only on an https request.
+    private static HttpClient _HttpsClient(WebApplication app)
     {
+        var client = app.GetTestClient();
+        client.BaseAddress = new Uri("https://localhost");
+
+        return client;
+    }
+
+    // Signs the host user in for a session, as the browser does, then sends the request with the session cookie alone.
+    private static async Task<HttpResponseMessage> _GetSignedInAsync(HttpClient client, string url, string roles)
+    {
+        using var exchange = new HttpRequestMessage(HttpMethod.Post, "/dash/api/auth/session");
+        exchange.Headers.Add("X-Test-User", "operator");
+        exchange.Headers.Add("X-Test-Roles", roles);
+        exchange.Headers.Add("X-Requested-With", "XMLHttpRequest");
+        using var signedIn = await client.SendAsync(exchange, AbortToken);
+        signedIn.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        var cookie = SetCookieHeaderValue
+            .ParseList([.. signedIn.Headers.GetValues("Set-Cookie")])
+            .Single(c => c.Name.Value!.StartsWith("__Host-headless-dashboard-", StringComparison.Ordinal));
+
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        request.Headers.Add("X-Test-User", "operator");
-        request.Headers.Add("X-Test-Roles", roles);
+        request.Headers.Add("Cookie", $"{cookie.Name}={cookie.Value}");
 
         return await client.SendAsync(request, AbortToken);
     }
