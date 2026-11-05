@@ -40,9 +40,6 @@ internal static class StreamEndpoint
 
     private const int _MaxTopicLength = 200;
 
-    // The session ticket item that holds the last revalidation time, as the shell's session code writes it.
-    private const string _ValidatedAtKey = ".headless.dashboard.validated_at";
-
     private const string _AuthenticationName = SetupDashboard.AuthenticationName;
 
     /// <summary>Maps the endpoint on <paramref name="dashboard"/>, the group at the dashboard's base path.</summary>
@@ -213,13 +210,7 @@ internal static class StreamEndpoint
             if (
                 config.Mode == AuthMode.Host
                 && config.Host is { Revalidate: not null, RevalidationInterval: { } interval }
-                && ticket.Items.TryGetValue(_ValidatedAtKey, out var value)
-                && DateTimeOffset.TryParse(
-                    value,
-                    CultureInfo.InvariantCulture,
-                    DateTimeStyles.RoundtripKind,
-                    out var validatedAt
-                )
+                && DashboardHostSession.GetValidatedAt(ticket) is { } validatedAt
             )
             {
                 closeAt = _Earliest(closeAt, validatedAt + interval);

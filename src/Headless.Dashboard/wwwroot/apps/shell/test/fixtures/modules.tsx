@@ -6,7 +6,6 @@ export function entryUrl(id: string) {
   return `/headless/m/${id}/index.js?v=1`
 }
 
-/** The URL of a module's route chunk. */
 export function chunkUrl(id: string, name: string) {
   return `/headless/m/${id}/chunks/${name}.js?v=1`
 }

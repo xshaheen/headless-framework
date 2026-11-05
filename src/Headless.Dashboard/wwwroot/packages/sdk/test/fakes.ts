@@ -98,13 +98,11 @@ export class FakeSource implements StreamSource {
     this.listeners.get(type)?.forEach((listener) => listener({ data: JSON.stringify(data), lastEventId }))
   }
 
-  /** The query parameter `name` of the URL the source opened. */
   param(name: string) {
     return new URL(this.url, 'http://localhost').searchParams.get(name)
   }
 }
 
-/** Records every EventSource the tabs open. */
 export class FakeSources {
   readonly opened: FakeSource[] = []
 

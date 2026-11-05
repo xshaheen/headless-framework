@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { ModuleDefinitionError, readModuleDefinition } from '../src/index.ts'
+import { ModuleDefinitionError, readModuleDefinition } from '../src/definition.ts'
 import { buildFixture } from './build-fixture.ts'
 
 const sdkVersion = (
@@ -52,18 +52,8 @@ describe('module manifest', () => {
     expect(entry + view).not.toContain('process.env.NODE_ENV')
   })
 
-  it('fails on a computed nav label, naming the field', () => {
-    const read = () =>
-      readModuleDefinition(
-        source(`{ id: 'm', nav: [{ id: 'm.nav', label: t('Runs'), to: 'runs' }] }`),
-        'computed.ts',
-      )
-
-    expect(read).toThrow(ModuleDefinitionError)
-    expect(read).toThrow(/nav\[0\]\.label must be a literal/)
-  })
-
   it.each([
+    ['a computed nav label', `{ id: 'm', nav: [{ id: 'm.nav', label: t('Runs'), to: 'runs' }] }`, /nav\[0\]\.label must be a literal/],
     ['a variable id', `{ id: moduleId }`, /id must be a literal/],
     ['a shorthand label', `{ id: 'm', nav: [{ id: 'n', label, to: '' }] }`, /nav\[0\]\.label must be a literal/],
     ['a template with an expression', `{ id: \`m-\${x}\` }`, /id must be a literal/],
@@ -72,7 +62,10 @@ describe('module manifest', () => {
     ['an unknown permission', `{ id: 'm', commands: [{ id: 'c', label: 'C', requires: 'admin', run() {} }] }`, /'view' or 'operate'/],
     ['an unknown field', `{ id: 'm', slots: [] }`, /no field 'slots'/],
   ])('fails on %s', (_, definition, message) => {
-    expect(() => readModuleDefinition(source(definition), 'module.ts')).toThrow(message)
+    const read = () => readModuleDefinition(source(definition), 'module.ts')
+
+    expect(read).toThrow(ModuleDefinitionError)
+    expect(read).toThrow(message)
   })
 
   it('reads literals wrapped in as const and satisfies', () => {

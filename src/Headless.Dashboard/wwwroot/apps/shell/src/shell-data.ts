@@ -50,8 +50,8 @@ export interface RelatedGroup {
   hasMore: boolean
 }
 
-export const needsYouKey = ['shell', 'needs-you'] as const
-export const overviewKey = ['shell', 'overview'] as const
+const needsYouKey = ['shell', 'needs-you'] as const
+const overviewKey = ['shell', 'overview'] as const
 
 /**
  * Every module's attention items. `attention.changed` refetches them, so Needs you and the rail's count stay current

@@ -1,4 +1,3 @@
-/** The id of the page-state block the server writes into the document. */
 export const stateElementId = 'headless-dashboard-state'
 
 export type Permission = 'view' | 'operate'
@@ -175,7 +174,6 @@ function readState(value: unknown): BootstrapState | undefined {
   }
 }
 
-/** Reads the page state the server wrote into `document`. */
 export function readBootstrapState(document: Document): BootstrapState {
   const text = document.getElementById(stateElementId)?.textContent
 
@@ -209,7 +207,6 @@ export interface AuthInfo {
   modules?: Record<string, { canView: boolean; canOperate: boolean }>
 }
 
-/** Reads the session as the server sees it now. */
 export async function fetchAuthInfo(apiBase: string, fetcher: typeof fetch): Promise<AuthInfo> {
   const response = await fetcher(`${apiBase}/auth/info`, {
     headers: { Accept: 'application/json' },

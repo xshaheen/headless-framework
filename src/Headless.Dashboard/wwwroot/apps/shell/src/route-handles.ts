@@ -13,7 +13,7 @@ export function joinPath(moduleId: string, path: string) {
   return rest ? `${moduleId}/${rest}` : moduleId
 }
 
-export function crumbFor(module: BootstrapModule, route: BootstrapRoute): string[] {
+function crumbFor(module: BootstrapModule, route: BootstrapRoute): string[] {
   const entry = module.nav.find((candidate) => candidate.to.replace(/^\/+|\/+$/g, '') === route.path.replace(/^\/+|\/+$/g, ''))
 
   return entry && entry.label !== module.displayName ? [module.displayName, entry.label] : [module.displayName]

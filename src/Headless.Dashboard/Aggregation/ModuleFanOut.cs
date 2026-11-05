@@ -84,7 +84,7 @@ internal sealed class ModuleFanOut(
             when (timeoutSource.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
             logger.ModuleTimedOut(module.Id, capability, timeout);
-            _ObserveLateFailure(task);
+            ObserveLateFailure(task);
 
             return new ModuleAnswer<TResult>(module, default, Stale: true);
         }
@@ -100,7 +100,7 @@ internal sealed class ModuleFanOut(
 
     // A module abandoned at the timeout may still fail later; observing it keeps that failure out of
     // TaskScheduler.UnobservedTaskException.
-    private static void _ObserveLateFailure(Task? task)
+    internal static void ObserveLateFailure(Task? task)
     {
         if (task is null)
         {

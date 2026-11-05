@@ -25,8 +25,6 @@
   inset-block-start: var(--space-2);
 }
 
-/* ---------- rail ---------- */
-
 .hd-rail {
   display: flex;
   flex-direction: column;
@@ -137,8 +135,6 @@
 .hd-rail-scrim {
   display: none;
 }
-
-/* ---------- main column ---------- */
 
 /* Operations render before the document bar in the tree; the grid places them below it, on every view. */
 .hd-main {
@@ -252,8 +248,6 @@
   flex: 1;
 }
 
-/* ---------- views ---------- */
-
 .hd-view {
   display: flex;
   flex-direction: column;
@@ -307,8 +301,6 @@
   background: var(--sunken);
   border-radius: var(--radius-control);
 }
-
-/* Overview */
 
 .hd-attention-lines {
   display: flex;
@@ -386,8 +378,6 @@
   color: var(--alarm);
 }
 
-/* Needs you */
-
 .hd-cause {
   display: flex;
   flex-direction: column;
@@ -453,8 +443,6 @@
 .hd-related-group h3 {
   margin: 0;
 }
-
-/* ---------- narrower screens ---------- */
 
 /* Below 1280 px the inspector becomes a drawer from the inline end. */
 @media (max-width: 1279px) {

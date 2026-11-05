@@ -36,19 +36,18 @@ internal static class DiagnosticsAssets
 /// </summary>
 internal sealed class RenamedManifestFileProvider(IFileProvider inner, string id) : IFileProvider
 {
-    private readonly IFileProvider _inner = inner;
     private readonly Lazy<IFileInfo> _manifest = new(() => _Rename(inner.GetFileInfo(ModuleManifest.FileName), id));
 
     public IFileInfo GetFileInfo(string subpath)
     {
         return string.Equals(subpath.TrimStart('/'), ModuleManifest.FileName, StringComparison.Ordinal)
             ? _manifest.Value
-            : _inner.GetFileInfo(subpath);
+            : inner.GetFileInfo(subpath);
     }
 
-    public IDirectoryContents GetDirectoryContents(string subpath) => _inner.GetDirectoryContents(subpath);
+    public IDirectoryContents GetDirectoryContents(string subpath) => inner.GetDirectoryContents(subpath);
 
-    public IChangeToken Watch(string filter) => _inner.Watch(filter);
+    public IChangeToken Watch(string filter) => inner.Watch(filter);
 
     private static IFileInfo _Rename(IFileInfo source, string id)
     {

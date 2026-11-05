@@ -158,6 +158,12 @@ internal static class DashboardHostSession
             : [];
     }
 
+    /// <summary>The last time the session was revalidated, or <see langword="null"/> when the ticket holds none.</summary>
+    internal static DateTimeOffset? GetValidatedAt(AuthenticationProperties? properties)
+    {
+        return properties is null ? null : _Parse(properties, _ValidatedAtKey);
+    }
+
     private static void _ConfigureCookie(
         CookieAuthenticationOptions cookie,
         string authenticationName,

@@ -142,7 +142,7 @@ export function applyChange(client: QueryClient, change: StreamChange): ChangeOu
   }
 
   client.setQueriesData({ queryKey: listKey(change.topic) }, (page: unknown) =>
-    isListPage(page)
+    isListPage(page) && page.items.some((item) => item.id === change.id)
       ? { ...page, items: page.items.map((item) => (item.id === change.id ? { ...item, ...patch } : item)) }
       : page,
   )

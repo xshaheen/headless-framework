@@ -8,7 +8,7 @@ export function DockProvider({ element, children }: { element: HTMLElement | nul
   return <DockContext.Provider value={element}>{children}</DockContext.Provider>
 }
 
-export interface DockedInspectorProps {
+interface DockedInspectorProps {
   label: string
   /** Clears the selection; the drawer and the phone's full-screen inspector show it as Close. */
   onClose?: () => void

@@ -1,8 +1,6 @@
 import { useState } from 'react'
 import type { CommandDefinition } from '../../src/commands/api.ts'
 import { CommandAction } from '../../src/commands/command-action.tsx'
-import { useOperations } from '../../src/commands/operations.tsx'
-import { Button } from '../../src/components/button.tsx'
 import { NewRowsNotice } from '../../src/components/live.tsx'
 import { StatusMark } from '../../src/components/marks.tsx'
 import { DataTable } from '../../src/components/table/data-table.tsx'
@@ -29,11 +27,10 @@ export const requeue: CommandDefinition = {
   canRun: true,
 }
 
-/** A view as a module author writes one: a live list, its new rows notice, an action per row, and an Operation. */
+/** A view as a module author writes one: a live list, its new rows notice, and an action per row. */
 export default function RunsView() {
   const { api } = useDashboard()
   const module = useModule()
-  const { start } = useOperations()
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
   const runs = useDashboardList<Run>({
     topic: 'diag.run',
@@ -52,9 +49,6 @@ export default function RunsView() {
   return (
     <section aria-label="Runs">
       <NewRowsNotice topic="diag.run" />
-      <Button onPress={() => start({ module: 'diag', command, filter: { status: 'failed' }, noun: 'failed runs' })}>
-        Requeue all failed
-      </Button>
       <CommandAction module="diag" command={command} ids={[...selected]} noun="runs" />
       <DataTable
         label="Runs"

@@ -1,9 +1,8 @@
-import { Button, StatusMark } from '@headless/dashboard-sdk/components'
+import { Button, StatusMark, useDelayed } from '@headless/dashboard-sdk/components'
 import { formatCount } from '@headless/dashboard-sdk/data'
 import { Link } from '@headless/dashboard-sdk/router'
 import { comparisonText, exactTime, figureText, relativeTime } from '../format.ts'
 import { attentionTotal, useNeedsYou, useOverview, type Figure, type ModuleSection } from '../shell-data.ts'
-import { useDelayed } from './use-delayed.ts'
 
 const topItems = 5
 

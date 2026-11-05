@@ -14,8 +14,7 @@ internal static class DashboardServing
     private static readonly string[] _ReadMethods = [HttpMethods.Get, HttpMethods.Head];
 
     /// <summary>
-    /// Registers the shell's build, the served build files, the document, and the signed-out session reader that a
-    /// session-aware one replaces.
+    /// Registers the shell's build, the served build files, the document, and the session reader.
     /// </summary>
     public static void AddServingServices(IServiceCollection services)
     {

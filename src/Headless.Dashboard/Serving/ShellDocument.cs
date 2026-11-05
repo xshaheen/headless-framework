@@ -41,7 +41,6 @@ internal sealed class ShellDocument(
         var settings = options.Value;
         var prefix = GetPrefix(context.Request, settings.BasePath);
 
-        // Resolved per request, so a session reader that depends on scoped services works too.
         var snapshot = context.RequestServices.GetRequiredService<IDashboardSessionSnapshot>();
         var session = await snapshot.GetAsync(context, context.RequestAborted).ConfigureAwait(false);
 

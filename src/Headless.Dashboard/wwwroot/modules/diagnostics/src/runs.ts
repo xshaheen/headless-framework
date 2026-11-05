@@ -3,7 +3,7 @@ import { createCommandsApi, type CommandDefinition } from '@headless/dashboard-s
 import type { StatusTone } from '@headless/dashboard-sdk/components'
 import type { CappedCount, DashboardApi, DashboardListPage } from '@headless/dashboard-sdk/data'
 import { useQuery } from '@headless/dashboard-sdk/query'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 
 /** A run as the module's list and a live change's projection carry it. */
 export interface Run {
@@ -166,24 +166,9 @@ export function useRequeuing() {
   }
 }
 
-/** True once `active` has held for `delayMs`, so a fast answer never flashes a loading state. */
-export function useDelayed(active: boolean, delayMs = 150) {
-  const [shown, setShown] = useState(false)
+const relativeFormat = new Intl.RelativeTimeFormat('en', { numeric: 'auto' })
 
-  useEffect(() => {
-    if (!active) {
-      setShown(false)
-
-      return undefined
-    }
-
-    const timer = setTimeout(() => setShown(true), delayMs)
-
-    return () => clearTimeout(timer)
-  }, [active, delayMs])
-
-  return active && shown
-}
+const exactFormat = new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeStyle: 'long', timeZone: 'UTC' })
 
 const units: readonly [Intl.RelativeTimeFormatUnit, number][] = [
   ['day', 86_400],
@@ -195,18 +180,17 @@ const units: readonly [Intl.RelativeTimeFormatUnit, number][] = [
 /** `4 minutes ago`, `in 12 seconds`. */
 export function relativeTime(at: Date, now: number) {
   const seconds = Math.round((at.getTime() - now) / 1_000)
-  const format = new Intl.RelativeTimeFormat('en', { numeric: 'auto' })
 
   for (const [unit, size] of units) {
     if (Math.abs(seconds) >= size || unit === 'second') {
-      return format.format(Math.round(seconds / size), unit)
+      return relativeFormat.format(Math.round(seconds / size), unit)
     }
   }
 
-  return format.format(0, 'second')
+  return relativeFormat.format(0, 'second')
 }
 
 /** The exact time with its zone and offset, for the hover text. The SDK exposes no display time zone yet, so UTC. */
 export function exactTime(at: Date) {
-  return new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeStyle: 'long', timeZone: 'UTC' }).format(at)
+  return exactFormat.format(at)
 }

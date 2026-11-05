@@ -45,9 +45,6 @@ internal sealed class StreamConnection(
 
     private const string _EmptyData = "{}";
 
-    // The shell's SPA reads these field names; the host's own JSON options must not rename them.
-    private static readonly JsonSerializerOptions _JsonOptions = new(JsonSerializerDefaults.Web);
-
     /// <summary>Runs the stream until the browser leaves, the host stops, or the session needs a check.</summary>
     public async IAsyncEnumerable<SseItem<string>> RunAsync(
         [EnumeratorCancellation] CancellationToken cancellationToken = default
@@ -218,7 +215,7 @@ internal sealed class StreamConnection(
         return new SseItem<string>(data, eventType) { EventId = epoch.FormatId(position) };
     }
 
-    private static string _Serialize<T>(T data) => JsonSerializer.Serialize(data, _JsonOptions);
+    private static string _Serialize<T>(T data) => JsonSerializer.Serialize(data, ShellJson.Web);
 
     private static async Task<Wake> _WaitAsync(Task<bool> tick, Task appended, CancellationToken cancellationToken)
     {

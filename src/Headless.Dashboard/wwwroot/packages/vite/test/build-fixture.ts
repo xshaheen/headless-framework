@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'vite'
-import { dashboardModule } from '../src/index.ts'
+import { dashboardModule } from '../src/module.ts'
 
 /** Builds the fixture module `name` with the module preset into a fresh folder and returns that folder. */
 export async function buildFixture(name: string) {

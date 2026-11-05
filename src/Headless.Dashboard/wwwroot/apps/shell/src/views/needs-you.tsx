@@ -1,4 +1,4 @@
-import { Button, InspectorField, InspectorFields, Mono, StatusMark } from '@headless/dashboard-sdk/components'
+import { Button, InspectorField, InspectorFields, Mono, StatusMark, useDelayed } from '@headless/dashboard-sdk/components'
 import { formatCount } from '@headless/dashboard-sdk/data'
 import { useSearchParams } from '@headless/dashboard-sdk/router'
 import { useEffect, useState } from 'react'
@@ -6,7 +6,6 @@ import { exactTime, relativeTime } from '../format.ts'
 import { DockedInspector } from '../layout/inspector-dock.tsx'
 import { useOpenObject } from '../shell-context.tsx'
 import { attentionTotal, useNeedsYou, useRelated, type AttentionItem, type ModuleSection } from '../shell-data.ts'
-import { useDelayed } from './use-delayed.ts'
 
 interface Cause {
   key: string
@@ -14,7 +13,7 @@ interface Cause {
 }
 
 /** A module's items grouped by cause, in the order the module listed them. */
-export function groupByCause(items: readonly AttentionItem[]): Cause[] {
+function groupByCause(items: readonly AttentionItem[]): Cause[] {
   const causes = new Map<string, Cause>()
 
   for (const item of items) {

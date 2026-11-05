@@ -34,7 +34,7 @@ export function useShell(): ShellContextValue {
 }
 
 /** The module `id` names, when the user may view it and the shell loaded it. */
-export function findModule(state: BootstrapState, id: string): BootstrapModule | undefined {
+function findModule(state: BootstrapState, id: string): BootstrapModule | undefined {
   return state.modules.find((module) => module.id === id && !module.refusal)
 }
 

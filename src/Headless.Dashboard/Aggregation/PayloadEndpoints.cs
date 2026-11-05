@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -15,9 +14,6 @@ namespace Headless.Dashboard;
 /// </summary>
 internal static class PayloadEndpoints
 {
-    // The shell's SPA reads these field names; the host's own JSON options must not rename them.
-    private static readonly JsonSerializerOptions _JsonOptions = new(JsonSerializerDefaults.Web);
-
     /// <summary>Maps the endpoint on <paramref name="dashboard"/>, the route group at the dashboard's base path.</summary>
     internal static void Map(IEndpointRouteBuilder dashboard)
     {
@@ -72,18 +68,20 @@ internal static class PayloadEndpoints
         using var timeout = new CancellationTokenSource(limit, services.GetRequiredService<TimeProvider>());
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeout.Token);
         DashboardPayload? raw;
+        Task<DashboardPayload?>? call = null;
 
         try
         {
+            call = source.GetPayloadAsync(new DashboardPayloadRequest { Target = target, User = user }, linked.Token);
+
             // WaitAsync bounds a module that ignores its token, as the other aggregation calls do.
-            raw = await source
-                .GetPayloadAsync(new DashboardPayloadRequest { Target = target, User = user }, linked.Token)
-                .WaitAsync(linked.Token)
-                .ConfigureAwait(false);
+            raw = await call.WaitAsync(linked.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
             when (timeout.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
+            ModuleFanOut.ObserveLateFailure(call);
+
             return Results.StatusCode(StatusCodes.Status504GatewayTimeout);
         }
 
@@ -97,7 +95,7 @@ internal static class PayloadEndpoints
             .FormatAsync(target, raw, user, cancellationToken)
             .ConfigureAwait(false);
 
-        return Results.Json(new PayloadResponse(payload.Content, payload.ContentType, payload.Headers), _JsonOptions);
+        return Results.Json(new PayloadResponse(payload.Content, payload.ContentType, payload.Headers), ShellJson.Web);
     }
 
     private sealed record PayloadResponse(

@@ -3,7 +3,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import './sign-in.css'
 import { fetchAuthInfo, safeReturnUrl, type BootstrapState, type SignInState } from '../bootstrap.ts'
 
-export interface SignInPageProps {
+interface SignInPageProps {
   state: BootstrapState
   /** The page's query string: `state` and `returnUrl`. */
   search: string

@@ -29,7 +29,6 @@
   border: 0;
 }
 
-/* Buttons */
 .hd-btn {
   display: inline-flex;
   align-items: center;
@@ -95,7 +94,6 @@
   color: var(--muted);
 }
 
-/* Marks */
 .hd-status {
   display: inline-flex;
   align-items: center;
@@ -179,7 +177,6 @@
   background: var(--surface);
 }
 
-/* Fields */
 .hd-fields {
   display: flex;
   flex-direction: column;
@@ -256,7 +253,6 @@
   outline-offset: 2px;
 }
 
-/* Overlays */
 .hd-scrim {
   position: fixed;
   inset: 0;
@@ -348,7 +344,6 @@
   border-block-start: 1px solid var(--hairline);
 }
 
-/* Live */
 .hd-live {
   display: inline-flex;
   align-items: center;
@@ -437,7 +432,6 @@
   background: var(--accent);
 }
 
-/* Table */
 .hd-table-wrap {
   display: flex;
   flex-direction: column;
@@ -517,7 +511,6 @@
   text-align: center;
 }
 
-/* Inspector */
 .hd-inspector {
   display: flex;
   flex-direction: column;
@@ -572,7 +565,6 @@
   overflow-wrap: anywhere;
 }
 
-/* Payload */
 .hd-payload {
   margin: 0;
   border-radius: var(--radius-control);
@@ -602,7 +594,6 @@
   color: var(--muted);
 }
 
-/* Palette */
 .hd-palette-body {
   display: flex;
   flex-direction: column;
@@ -648,7 +639,6 @@
   gap: var(--space-2);
 }
 
-/* Operations */
 .hd-operation {
   display: grid;
   grid-template-columns: 1fr auto;

@@ -197,6 +197,9 @@ internal static class ShellJson
 {
     private static readonly JsonSerializerOptions _Options = _CreateOptions();
 
+    // The shell's SPA reads these field names; the host's own JSON options must not rename them.
+    public static JsonSerializerOptions Web => JsonSerializerOptions.Web;
+
     public static JsonTypeInfo<BootstrapState> BootstrapStateInfo { get; } = _TypeInfo<BootstrapState>();
 
     public static JsonTypeInfo<ImportMapDocument> ImportMapInfo { get; } = _TypeInfo<ImportMapDocument>();

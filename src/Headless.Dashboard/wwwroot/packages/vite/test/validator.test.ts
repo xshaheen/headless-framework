@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { checkBundleIsolation, checkDynamicCode, validateManifest, type ModuleManifest } from '../src/index.ts'
+import { checkBundleIsolation, checkDynamicCode, validateManifest, type ModuleManifest } from '../src/validator.ts'
 import { buildFixture } from './build-fixture.ts'
 
 function manifest(overrides: Partial<ModuleManifest> = {}): ModuleManifest {

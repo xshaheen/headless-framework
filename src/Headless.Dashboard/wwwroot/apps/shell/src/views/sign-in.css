@@ -1,5 +1,3 @@
-/* The sign-in page: one centred panel outside the shell's rail and bars. */
-
 .hd-sign-in {
   display: grid;
   place-items: center;

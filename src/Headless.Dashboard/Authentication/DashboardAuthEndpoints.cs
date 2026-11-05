@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Security.Claims;
-using System.Text.Json;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.DataProtection;
@@ -27,9 +26,6 @@ internal static class DashboardAuthEndpoints
 {
     private const string _SignInPath = "/auth/sign-in";
     private const string _AttemptMarker = "attempt";
-
-    // The dashboard SPA reads these field names; the host's own JSON options must not rename them.
-    private static readonly JsonSerializerOptions _JsonOptions = new(JsonSerializerDefaults.Web);
 
     /// <summary>Maps the dashboard shell's auth endpoints on <paramref name="dashboard"/>, its base-path group.</summary>
     internal static void MapShell(IEndpointRouteBuilder dashboard)
@@ -94,7 +90,7 @@ internal static class DashboardAuthEndpoints
                     snapshot.CanOperate,
                     snapshot.Modules
                 ),
-                _JsonOptions
+                ShellJson.Web
             );
         }
 
@@ -111,7 +107,7 @@ internal static class DashboardAuthEndpoints
                     Name: null,
                     CanOperate: open
                 ),
-                _JsonOptions
+                ShellJson.Web
             );
         }
 
@@ -128,7 +124,7 @@ internal static class DashboardAuthEndpoints
                     Name: null,
                     CanOperate: false
                 ),
-                _JsonOptions
+                ShellJson.Web
             );
         }
 
@@ -154,7 +150,7 @@ internal static class DashboardAuthEndpoints
                 principal.Identity?.Name,
                 canOperate
             ),
-            _JsonOptions
+            ShellJson.Web
         );
     }
 

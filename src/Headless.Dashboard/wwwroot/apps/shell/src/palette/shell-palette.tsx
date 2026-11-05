@@ -7,10 +7,10 @@ import { useOpenObject, useShell } from '../shell-context.tsx'
 import type { ModuleSection, ResolvedObject } from '../shell-data.ts'
 
 /** How long typing settles before a pasted id is looked up in every module. */
-export const resolveDelayMs = 250
+const resolveDelayMs = 250
 
 /** A query that may be an id: one token, long enough not to ask every module about each keystroke. */
-export function looksLikeId(query: string) {
+function looksLikeId(query: string) {
   const text = query.trim()
 
   return text.length >= 3 && text.length <= 256 && !/\s/.test(text)
@@ -23,7 +23,7 @@ function modulePath(id: string, to: string) {
 }
 
 /** The palette's static items: the shell's views, every module's nav, and every client command the user may run. */
-export function staticItems(
+function staticItems(
   state: BootstrapState,
   navigate: (to: string) => void,
   runCommand: (moduleId: string, commandId: string) => void,

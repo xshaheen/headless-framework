@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -25,9 +24,6 @@ internal static class AggregationEndpoints
 
     /// <summary>The Overview draws at most this many figures per module.</summary>
     private const int _MaxFigures = 3;
-
-    // The shell's SPA reads these field names; the host's own JSON options must not rename them.
-    private static readonly JsonSerializerOptions _JsonOptions = new(JsonSerializerDefaults.Web);
 
     /// <summary>Maps the endpoints on <paramref name="dashboard"/>, the route group at the dashboard's base path.</summary>
     internal static void Map(IEndpointRouteBuilder dashboard)
@@ -76,7 +72,7 @@ internal static class AggregationEndpoints
             _Section(answer, items => items.Select(static item => _ToAttentionResponse(item)).ToArray())
         );
 
-        return Results.Json(new ModulesResponse<AttentionItemResponse>([.. modules]), _JsonOptions);
+        return Results.Json(new ModulesResponse<AttentionItemResponse>([.. modules]), ShellJson.Web);
     }
 
     private static async Task<IResult> _GetOverviewAsync(HttpContext context, CancellationToken cancellationToken)
@@ -93,7 +89,7 @@ internal static class AggregationEndpoints
 
         var modules = answers.Select(answer => _Section(answer, figures => figures.Take(_MaxFigures).ToArray()));
 
-        return Results.Json(new ModulesResponse<DashboardFigure>([.. modules]), _JsonOptions);
+        return Results.Json(new ModulesResponse<DashboardFigure>([.. modules]), ShellJson.Web);
     }
 
     private static async Task<IResult> _ResolveAsync(HttpContext context, CancellationToken cancellationToken)
@@ -121,7 +117,7 @@ internal static class AggregationEndpoints
             _Section(answer, objects => objects.Select(o => _ToObjectResponse(o, traceTemplate)).ToArray())
         );
 
-        return Results.Json(new ModulesResponse<ObjectResponse>([.. modules]), _JsonOptions);
+        return Results.Json(new ModulesResponse<ObjectResponse>([.. modules]), ShellJson.Web);
     }
 
     private static async Task<IResult> _GetRelatedAsync(HttpContext context, CancellationToken cancellationToken)
@@ -178,7 +174,7 @@ internal static class AggregationEndpoints
             .Select(static answer => new StaleModuleResponse(answer.Module.Id, answer.Module.DisplayName))
             .ToArray();
 
-        return Results.Json(new RelatedResponse(groups, stale), _JsonOptions);
+        return Results.Json(new RelatedResponse(groups, stale), ShellJson.Web);
     }
 
     /// <summary>

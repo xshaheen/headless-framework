@@ -75,7 +75,7 @@ public sealed class BasePathMatrixTests : TestBase
             client.DefaultRequestHeaders.Add("X-Forwarded-Prefix", "/proxy");
         }
 
-        foreach (var path in new[] { "/", "/diag/runs/42", "/diag/runs/42" })
+        foreach (var path in new[] { "/", "/diag", "/diag/runs/42" })
         {
             using var response = await client.GetAsync(requestPrefix + path, AbortToken);
 

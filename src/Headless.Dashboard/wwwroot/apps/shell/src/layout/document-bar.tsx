@@ -4,7 +4,7 @@ import { routeHandleFor } from '../route-handles.ts'
 import { useShell } from '../shell-context.tsx'
 import { useCanOperate } from '../shell-data.ts'
 
-export interface DocumentBarProps {
+interface DocumentBarProps {
   isRailOpen: boolean
   onToggleRail: () => void
   onOpenPalette: () => void

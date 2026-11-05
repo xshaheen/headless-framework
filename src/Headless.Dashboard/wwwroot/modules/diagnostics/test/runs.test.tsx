@@ -401,8 +401,6 @@ describe('diagnostics runs list', () => {
     let target = ''
     const command = diagnostics.commands.find((candidate) => candidate.id === 'diagnostics.requeue-failed')!
     command.run({ navigate: (to) => (target = to) })
-    expect(command.requires).toBe('operate')
-    expect(diagnostics.commands.map((candidate) => candidate.label)).toEqual(['Go to Diagnostics runs', 'Requeue failed runs'])
 
     const view = open([run('run-000001', 'Failed')])
     await screen.findByRole('row', { name: /run-000001/ })

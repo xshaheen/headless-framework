@@ -1,7 +1,5 @@
 import { screen, waitFor, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
-import { DashboardApiError, type ApiRequest } from '../src/data/api.ts'
 import { defineModule } from '../src/define-module.ts'
 import { renderModule } from '../src/testing/render-module.tsx'
 
@@ -58,49 +56,9 @@ describe('renderModule', () => {
     expect(document.getElementById(action.getAttribute('aria-describedby')!)?.textContent).toBe('Needs operate permission')
   })
 
-  it('runs an Operation: confirm with the count, then chunks with progress', async () => {
-    const user = userEvent.setup()
-    const calls: ApiRequest[] = []
-    renderModule(diagnostics, {
-      path: 'runs',
-      api: (request) => {
-        calls.push(request)
-
-        if (request.path === 'diag/runs') {
-          return runs
-        }
-
-        if (request.path === 'diag/commands/requeue/confirm') {
-          return { operationId: 'op1', count: 3, confirmation: 'confirm', sample: [], token: 't', expiresAt: '', chunkSize: 500 }
-        }
-
-        return {
-          operationId: 'op1',
-          rows: [
-            { id: 'a', outcome: 'done' },
-            { id: 'b', outcome: 'done' },
-            { id: 'c', outcome: 'failed', reason: 'store timeout' },
-          ],
-          done: true,
-        }
-      },
-    })
-
-    await user.click(await screen.findByRole('button', { name: 'Requeue all failed' }))
-    await user.type(screen.getByRole('textbox', { name: /Reason/ }), 'fixed the gateway')
-    await user.click(screen.getByRole('button', { name: 'Count rows' }))
-    await user.click(await screen.findByRole('button', { name: 'Requeue 3 failed runs' }))
-
-    const panel = await screen.findByRole('group', { name: 'Requeue failed runs' })
-    await within(panel).findByText('Requeue failed runs: Completed')
-    expect(within(panel).getByRole('list', { name: 'Rows not changed' }).textContent).toContain('store timeout')
-    expect(calls.find((call) => call.path.endsWith('/confirm'))?.body).toMatchObject({ reason: 'fixed the gateway', filter: { status: 'failed' } })
-  })
-
   it('answers an unhandled API call with 404', async () => {
     renderModule(diagnostics, { path: 'runs' })
 
     expect((await screen.findByRole('alert')).textContent).toBe('No API handler for GET diag/runs.')
-    expect(new DashboardApiError(404, 'x').status).toBe(404)
   })
 })

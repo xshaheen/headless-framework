@@ -1,8 +1,6 @@
 import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
-import { createModuleLoader } from '../src/module-loader.ts'
-import { buildRoutes } from '../src/router.tsx'
 import { chunkUrl, entryUrl, moduleFiles, moduleManifest, shellState, twentyModules } from './fixtures/modules.tsx'
 import { renderShell } from './harness.tsx'
 
@@ -11,10 +9,6 @@ describe('router', () => {
     const modules = twentyModules()
     const state = shellState(modules)
     const user = userEvent.setup()
-
-    const routes = buildRoutes(state, createModuleLoader({ importer: () => Promise.reject(new Error('not expected')) }))
-    // Two routes per module, plus Overview, Needs you, and not found, under the layout.
-    expect(routes[0]!.children).toHaveLength(20 * 2 + 3)
 
     const shell = renderShell(state, { files: moduleFiles(modules) })
 

@@ -31,11 +31,11 @@ export function withSessionEnd(api: DashboardApi, onSessionEnded: () => void): D
 }
 
 /** The permissions the inlined state grants: every listed module may be viewed, and some operated. */
-export function permissionsOf(state: BootstrapState): DashboardEnvironment['permissions'] {
+function permissionsOf(state: BootstrapState): DashboardEnvironment['permissions'] {
   return Object.fromEntries(state.modules.map((module) => [module.id, { canView: true, canOperate: module.canOperate }]))
 }
 
-export interface ShellAppProps {
+interface ShellAppProps {
   state: BootstrapState
   router: ReturnType<typeof createBrowserRouter>
   client: QueryClient
