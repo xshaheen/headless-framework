@@ -5,8 +5,8 @@ using Microsoft.AspNetCore.Http;
 namespace Headless.Dashboard;
 
 /// <summary>
-/// Refuses a live stream request whose <c>Origin</c> header names another origin than the request's own, unless the
-/// host allowed that origin through the dashboard's CORS origins.
+/// Refuses a live stream request whose <c>Origin</c> header names another origin than the request's own. Every
+/// session cookie is host-only, so the dashboard is served from one origin in every authentication mode.
 /// </summary>
 /// <remarks>
 /// A sibling subdomain is same-site, so the browser still sends it the <c>SameSite=Strict</c> session cookie on a
@@ -16,10 +16,10 @@ namespace Headless.Dashboard;
 internal static class SameOriginCheck
 {
     /// <summary>
-    /// Whether <paramref name="request"/> carries no <c>Origin</c> header, one naming the request's own scheme, host,
-    /// and port, or one of <paramref name="allowedOrigins"/>.
+    /// Whether <paramref name="request"/> carries no <c>Origin</c> header, or one naming the request's own scheme,
+    /// host, and port.
     /// </summary>
-    public static bool IsAllowed(HttpRequest request, IEnumerable<string> allowedOrigins)
+    public static bool IsAllowed(HttpRequest request)
     {
         var origins = request.Headers.Origin;
         if (origins.Count == 0)
@@ -34,11 +34,6 @@ internal static class SameOriginCheck
         )
         {
             return false;
-        }
-
-        if (allowedOrigins.Any(allowed => _SameOrigin(allowed, origin)))
-        {
-            return true;
         }
 
         var requestPort =
@@ -60,13 +55,5 @@ internal static class SameOriginCheck
             + $"server sees its own origin as '{request.Scheme}://{request.Host}'. Behind a reverse proxy or load "
             + "balancer, apply its forwarded headers (UseForwardedHeaders with X-Forwarded-Proto and X-Forwarded-Host) "
             + "before the dashboard, so the server sees the origin the browser used.";
-    }
-
-    private static bool _SameOrigin(string allowed, Uri origin)
-    {
-        return Uri.TryCreate(allowed, UriKind.Absolute, out var allowedUri)
-            && string.Equals(allowedUri.Scheme, origin.Scheme, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(allowedUri.Host, origin.Host, StringComparison.OrdinalIgnoreCase)
-            && allowedUri.Port == origin.Port;
     }
 }

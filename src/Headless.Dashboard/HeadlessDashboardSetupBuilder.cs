@@ -38,7 +38,6 @@ public sealed partial class HeadlessDashboardSetupBuilder
     private readonly List<IConfiguration> _contributionSections = [];
     private string _basePath = HeadlessDashboardOptions.DefaultBasePath;
     private string? _traceLinkTemplate;
-    private string[] _corsOrigins = [];
 
     internal HeadlessDashboardSetupBuilder(IServiceCollection services)
     {
@@ -75,7 +74,7 @@ public sealed partial class HeadlessDashboardSetupBuilder
     /// </summary>
     /// <remarks>
     /// The session cookie is <c>SameSite=Strict</c> and host-only, so the dashboard must be served from the host's own
-    /// origin: host authentication cannot be combined with <see cref="SetCorsOrigins"/>.
+    /// origin.
     /// </remarks>
     /// <param name="configure">
     /// Sets the shell's view and operate policies, the sign-in challenge scheme, and the session's cookie name and
@@ -182,24 +181,6 @@ public sealed partial class HeadlessDashboardSetupBuilder
     public HeadlessDashboardSetupBuilder SetTraceLinkTemplate(string template)
     {
         _traceLinkTemplate = Argument.IsNotNullOrWhiteSpace(template);
-
-        return this;
-    }
-
-    /// <summary>
-    /// Allows the given origins to call the dashboard's API cross-origin with credentials. Not allowed with host
-    /// authentication.
-    /// </summary>
-    /// <param name="origins">The exact origins, such as <c>https://admin.example.com</c>.</param>
-    /// <returns>The same builder for chaining.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="origins"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentException"><paramref name="origins"/> is empty or holds an empty origin.</exception>
-    public HeadlessDashboardSetupBuilder SetCorsOrigins(params string[] origins)
-    {
-        Argument.IsNotNullOrEmpty(origins);
-        Argument.HasNoNullOrWhiteSpaceElements(origins);
-
-        _corsOrigins = [.. origins];
 
         return this;
     }
@@ -331,11 +312,6 @@ public sealed partial class HeadlessDashboardSetupBuilder
         options.AuthMode = Auth.Mode;
         options.BasePath = _basePath;
         options.TraceLinkTemplate = _traceLinkTemplate;
-
-        foreach (var origin in _corsOrigins)
-        {
-            options.CorsOrigins.Add(origin);
-        }
 
         foreach (var configure in _contentSecurityPolicyActions)
         {

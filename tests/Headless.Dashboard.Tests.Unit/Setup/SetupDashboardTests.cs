@@ -145,18 +145,6 @@ public sealed class SetupDashboardTests : TestBase
     }
 
     [Fact]
-    public async Task should_refuse_the_options_when_host_authentication_allows_cors_origins()
-    {
-        await using var provider = _BuildProvider(dashboard =>
-            dashboard.WithHostAuthentication().SetCorsOrigins("https://admin.example.com")
-        );
-
-        var act = () => provider.GetRequiredService<IOptions<HeadlessDashboardOptions>>().Value;
-
-        act.Should().Throw<OptionsValidationException>().WithMessage("*Host authentication*");
-    }
-
-    [Fact]
     public async Task should_refuse_the_options_when_the_trace_link_template_has_no_trace_id()
     {
         await using var provider = _BuildProvider(dashboard =>

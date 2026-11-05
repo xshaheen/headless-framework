@@ -477,7 +477,7 @@ public sealed class DiagnosticsModuleTests : TestBase
     }
 
     [Fact]
-    public async Task should_find_runs_by_id_and_by_trace_id_when_the_palette_looks_one_up()
+    public async Task should_find_a_run_by_its_id_when_the_palette_looks_one_up()
     {
         var store = new DiagnosticsStore(_time);
         var traceId = new string('b', 32);
@@ -486,14 +486,9 @@ public sealed class DiagnosticsModuleTests : TestBase
         var module = _Module(store, new RecordingPublisher());
 
         var byId = await module.ResolveAsync(new DashboardResolveRequest { Query = run.Id, User = _User }, AbortToken);
-        var byTrace = await module.FindByTraceAsync(
-            new DashboardTraceRequest { TraceId = traceId, User = _User },
-            AbortToken
-        );
         var none = await module.ResolveAsync(new DashboardResolveRequest { Query = "run", User = _User }, AbortToken);
 
         byId.Should().ContainSingle().Which.TraceId.Should().Be(traceId);
-        byTrace.Should().ContainSingle().Which.Target.Id.Should().Be(run.Id);
         none.Should().BeEmpty();
     }
 

@@ -60,7 +60,7 @@ internal static class StreamEndpoint
         var services = context.RequestServices;
         var options = services.GetRequiredService<IOptions<HeadlessDashboardOptions>>().Value;
 
-        if (!SameOriginCheck.IsAllowed(context.Request, options.CorsOrigins))
+        if (!SameOriginCheck.IsAllowed(context.Request))
         {
             return Results.Text(
                 SameOriginCheck.RefusalMessage(context.Request),

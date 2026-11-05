@@ -11,7 +11,7 @@ namespace Headless.Dashboard;
 /// display name, embedded UI assets, and its own API endpoints. Everything else a module can offer is an optional
 /// capability interface implemented on the same class and discovered by a type check:
 /// <see cref="IDashboardAttentionSource"/>, <see cref="IDashboardOverviewSource"/>,
-/// <see cref="IDashboardObjectResolver"/>, <see cref="IDashboardTraceSource"/>, <see cref="IDashboardRelatedSource"/>,
+/// <see cref="IDashboardObjectResolver"/>, <see cref="IDashboardRelatedSource"/>,
 /// <see cref="IDashboardPayloadSource"/>, <see cref="IDashboardPayloadFormatter"/>, <see cref="IDashboardCommandSource"/>,
 /// <see cref="IDashboardOperationRunner"/>, and <see cref="IDashboardChangeSource"/>.
 /// </para>

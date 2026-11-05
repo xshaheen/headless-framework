@@ -125,18 +125,6 @@ internal sealed class DiagnosticsSources(string moduleId, DiagnosticsStore store
         return store.Find(query) is { } run ? [ToObject(run)] : [];
     }
 
-    /// <summary>Returns the runs that carry <paramref name="traceId"/>, oldest first.</summary>
-    public IReadOnlyList<DashboardObject> FindByTrace(string traceId)
-    {
-        return
-        [
-            .. store
-                .Runs.Where(run => string.Equals(run.TraceId, traceId, StringComparison.OrdinalIgnoreCase))
-                .OrderBy(static run => run.CreatedSequence)
-                .Select(ToObject),
-        ];
-    }
-
     /// <summary>
     /// Returns the runs linked to <paramref name="target"/>, an object of any module, and for one of this module's
     /// runs, the other runs that carry its trace id.

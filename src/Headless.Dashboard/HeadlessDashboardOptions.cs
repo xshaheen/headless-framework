@@ -33,12 +33,6 @@ public sealed class HeadlessDashboardOptions
     /// </summary>
     public string? TraceLinkTemplate { get; set; }
 
-    /// <summary>
-    /// Gets or sets the origins allowed to call the dashboard's API cross-origin with credentials. Empty, the default,
-    /// allows none. Host authentication refuses any, because its session cookie never leaves the dashboard's origin.
-    /// </summary>
-    public IList<string> CorsOrigins { get; set; } = [];
-
     /// <summary>Gets or sets the sources the host adds to the dashboard's Content Security Policy.</summary>
     public DashboardContentSecurityPolicy ContentSecurityPolicy { get; set; } = new();
 
@@ -80,14 +74,6 @@ internal sealed class HeadlessDashboardOptionsValidator : AbstractValidator<Head
             .WithMessage(
                 "BasePath cannot be the root path, because the dashboard's client route would answer every unmatched "
                     + "GET in the host. Use a path such as \"/headless\"."
-            );
-
-        RuleFor(x => x.CorsOrigins)
-            .Empty()
-            .When(x => x.AuthMode == AuthMode.Host)
-            .WithMessage(
-                "Host authentication serves the dashboard from the host's own origin only, because its session cookie "
-                    + "never leaves that origin. Remove SetCorsOrigins, or use WithBasicAuth or WithApiKey."
             );
 
         RuleFor(x => x.TraceLinkTemplate)

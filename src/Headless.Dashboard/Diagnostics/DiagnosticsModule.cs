@@ -28,7 +28,6 @@ internal sealed class DiagnosticsModule
         IDashboardAttentionSource,
         IDashboardOverviewSource,
         IDashboardObjectResolver,
-        IDashboardTraceSource,
         IDashboardRelatedSource,
         IDashboardPayloadSource,
         IDashboardPayloadFormatter,
@@ -115,16 +114,6 @@ internal sealed class DiagnosticsModule
         Argument.IsNotNull(request);
 
         return Task.FromResult(_sources.Resolve(request.Query));
-    }
-
-    public Task<IReadOnlyList<DashboardObject>> FindByTraceAsync(
-        DashboardTraceRequest request,
-        CancellationToken cancellationToken
-    )
-    {
-        Argument.IsNotNull(request);
-
-        return Task.FromResult(_sources.FindByTrace(request.TraceId));
     }
 
     public Task<IReadOnlyList<DashboardRelatedGroup>> GetRelatedAsync(
