@@ -44,17 +44,19 @@ public sealed class SetupDashboardTests : TestBase
         act.Should().Throw<InvalidOperationException>().WithMessage("*'diag'*");
     }
 
-    [Fact]
-    public void should_throw_as_reserved_when_a_module_id_is_api()
+    [Theory]
+    [InlineData("api")]
+    [InlineData("needs-you")]
+    public void should_throw_as_reserved_when_a_module_id_names_a_shell_path(string id)
     {
         var services = new ServiceCollection();
 
         var act = () =>
             services.AddHeadlessDashboard(dashboard =>
-                dashboard.WithNoAuth().AddModule<DiagModule, DiagModuleOptions>("api")
+                dashboard.WithNoAuth().AddModule<DiagModule, DiagModuleOptions>(id)
             );
 
-        act.Should().Throw<ArgumentException>().WithMessage("*'api' is reserved*");
+        act.Should().Throw<ArgumentException>().WithMessage($"*'{id}' is reserved*");
     }
 
     [Fact]

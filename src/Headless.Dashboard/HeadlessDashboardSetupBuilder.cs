@@ -27,6 +27,8 @@ public sealed partial class HeadlessDashboardSetupBuilder
         "api",
         "auth",
         "m",
+        // The shell's own pages share the route space with module ids.
+        "needs-you",
         "sign-in",
         "shell"
     );
@@ -259,7 +261,8 @@ public sealed partial class HeadlessDashboardSetupBuilder
     /// <typeparam name="TOptions">The module's options, carrying its view and operate policies.</typeparam>
     /// <param name="id">
     /// The module's id, equal to <see cref="IDashboardModule.Id"/>: a lower-case kebab token such as <c>jobs</c>, used
-    /// as a URL segment, so <c>api</c>, <c>auth</c>, <c>m</c>, <c>sign-in</c>, and <c>shell</c> are reserved.
+    /// as a URL segment, so <c>api</c>, <c>auth</c>, <c>m</c>, <c>needs-you</c>, <c>sign-in</c>, and <c>shell</c> are
+    /// reserved.
     /// </param>
     /// <returns>The same builder for chaining.</returns>
     /// <exception cref="ArgumentException">

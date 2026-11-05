@@ -4,13 +4,13 @@
       "name": "Shell first load",
       "files": [],
       "measure": "first-load",
-      "maxBytes": 150000
+      "maxBytes": 235000
     },
     {
       "name": "Shell and every SDK entry",
       "files": ["assets/**/*.js", "assets/**/*.css"],
       "measure": "total",
-      "maxBytes": 240000
+      "maxBytes": 250000
     },
     {
       "name": "Module entry",

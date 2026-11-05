@@ -18,6 +18,22 @@ export default defineConfig({
           setupFiles: ['packages/sdk/test/setup.ts'],
         },
       },
+      {
+        test: {
+          name: 'shell',
+          include: ['apps/shell/test/**/*.test.{ts,tsx}'],
+          environment: 'jsdom',
+          setupFiles: ['apps/shell/test/setup.ts'],
+        },
+      },
+      {
+        test: {
+          name: 'diagnostics',
+          include: ['modules/diagnostics/test/**/*.test.{ts,tsx}'],
+          environment: 'jsdom',
+          setupFiles: ['modules/diagnostics/test/setup.ts'],
+        },
+      },
     ],
   },
 })

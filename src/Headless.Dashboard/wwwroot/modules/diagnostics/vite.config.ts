@@ -5,7 +5,7 @@ import { defineConfig } from 'vite'
 export default defineConfig(
   dashboardModule({
     root: fileURLToPath(new URL('.', import.meta.url)),
-    entry: 'src/index.ts',
+    entry: 'src/module.ts',
     outDir: '../../dist/modules/diagnostics',
   }),
 )
