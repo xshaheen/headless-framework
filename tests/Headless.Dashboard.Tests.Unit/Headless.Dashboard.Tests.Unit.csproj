@@ -14,6 +14,8 @@
   <ItemGroup>
     <!-- Fixture module builds: each folder stands in for one module's embedded Vite output. -->
     <EmbeddedResource Include="Modules\Fixtures\**\manifest.json" />
+    <!-- A fake shell build (dist) and module builds, embedded the way the packages embed their real builds. -->
+    <EmbeddedResource Include="Serving\Fixtures\**\*" Exclude="Serving\Fixtures\**\*.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Dashboard\Headless.Dashboard.csproj" />

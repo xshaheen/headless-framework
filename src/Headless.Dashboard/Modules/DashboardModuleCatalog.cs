@@ -19,6 +19,9 @@ internal sealed class DashboardModuleCatalog(
     /// <exception cref="InvalidOperationException">A module's <see cref="IDashboardModule.Id"/> differs from its registered id.</exception>
     public IReadOnlyList<IDashboardModule> Modules => _modules.Value;
 
+    /// <summary>The ids of the registered modules, in registration order, read without resolving any module.</summary>
+    public IReadOnlyList<string> ModuleIds { get; } = [.. registration.Modules.Select(static module => module.Id)];
+
     /// <summary>
     /// Returns the view and operate policies the module requires under host authentication: the module's own, else the
     /// shell's. A <see langword="null"/> policy means the host's default policy.

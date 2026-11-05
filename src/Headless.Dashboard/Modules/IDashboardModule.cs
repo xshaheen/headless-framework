@@ -12,7 +12,7 @@ namespace Headless.Dashboard;
 /// capability interface implemented on the same class and discovered by a type check:
 /// <see cref="IDashboardAttentionSource"/>, <see cref="IDashboardOverviewSource"/>,
 /// <see cref="IDashboardObjectResolver"/>, <see cref="IDashboardTraceSource"/>, <see cref="IDashboardRelatedSource"/>,
-/// <see cref="IDashboardPayloadFormatter"/>, <see cref="IDashboardCommandSource"/>,
+/// <see cref="IDashboardPayloadSource"/>, <see cref="IDashboardPayloadFormatter"/>, <see cref="IDashboardCommandSource"/>,
 /// <see cref="IDashboardOperationRunner"/>, and <see cref="IDashboardChangeSource"/>.
 /// </para>
 /// <para>

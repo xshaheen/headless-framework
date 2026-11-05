@@ -1,0 +1,13 @@
+{
+  "entry": "assets/shell-a1b2c3.js",
+  "css": ["assets/shell-d4e5f6.css"],
+  "preload": ["assets/react-0a1b2c.js", "assets/sdk-3d4e5f.js"],
+  "imports": {
+    "react": "assets/react-0a1b2c.js",
+    "react/jsx-runtime": "assets/jsx-runtime-6a7b8c.js",
+    "react-dom": "assets/react-dom-9d0e1f.js",
+    "react-dom/client": "assets/react-dom-client-2a3b4c.js",
+    "react/compiler-runtime": "assets/compiler-runtime-5d6e7f.js",
+    "@headless/dashboard-sdk": "assets/sdk-3d4e5f.js"
+  }
+}

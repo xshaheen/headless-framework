@@ -2,11 +2,14 @@
 
 using Headless.Checks;
 using Headless.Hosting;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Dashboard;
@@ -57,6 +60,11 @@ public static class SetupDashboard
             setup.Validate();
 
             var registration = new DashboardRegistration([.. setup.Modules]);
+            registration.EndpointMappers.Add(DashboardAuthEndpoints.MapShell);
+            registration.EndpointMappers.Add(_MapModules);
+            registration.EndpointMappers.Add(DashboardAggregationSetup.MapAggregation);
+            // Mapped last: its catch-all serves the document for every path no other endpoint claims.
+            registration.EndpointMappers.Add(DashboardServing.MapServingEndpoints);
             services.AddSingleton(registration);
 
             // The builder has materialized the shell's AuthConfig; copy it into the shell's named options so the shared
@@ -72,9 +80,35 @@ public static class SetupDashboard
                 }
             );
 
+            // Every application on one host name gets its own session cookie: a browser keeps one cookie per name for
+            // the whole host, so a shared name would let two applications overwrite each other's session.
+            services
+                .AddOptions<CookieAuthenticationOptions>(DashboardHostSession.SchemeName(AuthenticationName))
+                .PostConfigure<IServiceProvider>(
+                    (cookie, provider) =>
+                    {
+                        var host = provider
+                            .GetRequiredService<IOptionsMonitor<AuthConfig>>()
+                            .Get(AuthenticationName)
+                            .Host;
+
+                        if (string.IsNullOrEmpty(host.SessionCookieName))
+                        {
+                            cookie.Cookie.Name = DashboardHostSession.ShellCookieName(
+                                provider.GetService<IHostEnvironment>()?.ApplicationName
+                            );
+                        }
+                    }
+                );
+
+            services.TryAddSingleton<DashboardPermissions>();
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IAuthorizationHandler, DashboardAccessHandler>());
+
             services.Configure<HeadlessDashboardOptions, HeadlessDashboardOptionsValidator>(setup.ApplyTo);
 
             services.TryAddSingleton<DashboardModuleCatalog>();
+            DashboardAggregationSetup.AddAggregation(services);
+            DashboardServing.AddServingServices(services);
             services.TryAddSingleton<DashboardManifestProvider>();
             services.AddStartupValidator<ContributionOverrideValidator>();
             services.AddTransient<IStartupFilter>(_ => new DashboardStartupFilter(registration));
@@ -127,6 +161,32 @@ public static class SetupDashboard
         }
 
         return group;
+    }
+
+    // Each module's own API sits at {base}/api/{id} behind that module's view policy, and an endpoint the module marks
+    // with RequireOperate also needs its operate policy. A module refused for its SDK version maps nothing, so the
+    // server withholds what the page cannot show. State-changing requests need X-Requested-With, as every
+    // cookie-authenticated dashboard endpoint does.
+    private static void _MapModules(RouteGroupBuilder dashboard)
+    {
+        var manifest = ((IEndpointRouteBuilder)dashboard)
+            .ServiceProvider.GetRequiredService<DashboardManifestProvider>()
+            .Manifest;
+
+        foreach (var module in manifest.Modules)
+        {
+            if (module.IsRefused)
+            {
+                continue;
+            }
+
+            var api = dashboard
+                .MapGroup("/api/" + module.Id)
+                .RequireDashboardShellAccess(module.Id)
+                .RequireDashboardRequestIntegrity();
+
+            module.Module.MapEndpoints(new DashboardModuleEndpoints(module.Id, api));
+        }
     }
 }
 

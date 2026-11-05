@@ -54,9 +54,11 @@ public sealed class DashboardHostAuthenticationOptions
     public string? ChallengeScheme { get; set; }
 
     /// <summary>
-    /// Gets or sets the name of the dashboard's session cookie. When <see langword="null"/> or empty, the name is
-    /// <c>__Host-</c> followed by the dashboard's authentication name in lower case. Set it when two applications on
-    /// one host name mount the same dashboard, so their sessions do not overwrite each other.
+    /// Gets or sets the name of the dashboard's session cookie. When <see langword="null"/> or empty, the dashboard
+    /// shell's cookie is <c>__Host-headless-dashboard-</c> followed by the host's application name, reduced to
+    /// lower-case letters, digits, and <c>-</c>, and any other dashboard's is <c>__Host-</c> followed by its
+    /// authentication name in lower case. Set it when two applications on one host name share an application name, so
+    /// their sessions do not overwrite each other.
     /// </summary>
     /// <remarks>
     /// The cookie is always host-only and written with <c>Path=/</c>, <c>Secure</c>, <c>HttpOnly</c>, and

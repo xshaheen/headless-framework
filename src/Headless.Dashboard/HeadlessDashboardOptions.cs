@@ -6,7 +6,7 @@ namespace Headless.Dashboard;
 
 /// <summary>
 /// The dashboard shell's settings: where it is served, how it links to the host's tracing, which sources its Content
-/// Security Policy adds, and the host's contribution overrides.
+/// Security Policy adds, the host's contribution overrides, and how long it waits for each module.
 /// </summary>
 /// <remarks>
 /// Set them through <see cref="HeadlessDashboardSetupBuilder"/> inside <c>AddHeadlessDashboard</c>. They are validated
@@ -44,6 +44,13 @@ public sealed class HeadlessDashboardOptions
     /// <summary>Gets or sets the host's overrides of module contributions by id.</summary>
     public ContributionOverrides Contributions { get; set; } = new();
 
+    /// <summary>
+    /// Gets or sets how long Needs you, Overview, id lookup, and related objects wait for each module. A module that
+    /// has not answered by then, or that fails, shows as <c>Stale</c> while the other modules' answers are still
+    /// served. Defaults to 2 seconds; must be positive.
+    /// </summary>
+    public TimeSpan AggregationTimeout { get; set; } = TimeSpan.FromSeconds(2);
+
     /// <summary>The authentication mode the builder chose, so validation can refuse settings that mode cannot honor.</summary>
     internal AuthMode AuthMode { get; set; }
 }
@@ -72,6 +79,10 @@ internal sealed class HeadlessDashboardOptionsValidator : AbstractValidator<Head
             .Must(template => template!.Contains("{traceId}", StringComparison.Ordinal))
             .When(x => !string.IsNullOrEmpty(x.TraceLinkTemplate))
             .WithMessage("TraceLinkTemplate must contain {traceId} where the trace id goes.");
+
+        RuleFor(x => x.AggregationTimeout)
+            .GreaterThan(TimeSpan.Zero)
+            .WithMessage("AggregationTimeout must be positive, such as 2 seconds.");
 
         RuleFor(x => x.ContentSecurityPolicy).NotNull();
         RuleFor(x => x.Contributions).NotNull();

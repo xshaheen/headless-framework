@@ -14,4 +14,16 @@
     <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
   </ItemGroup>
+  <!--
+    Embeds the shell's front-end build (wwwroot/dist) so the shell serves it from its own endpoints under any base
+    path. The items are added before AssignTargetPaths so they get the SDK's default manifest names
+    (Headless.Dashboard.wwwroot.dist.*), which the shell's EmbeddedFileProvider resolves at run time. The target runs
+    on every build because dist is generated, not committed; a missing dist embeds nothing, and the shell then
+    answers its document route with an error naming the missing build.
+  -->
+  <Target Name="_EmbedDashboardShellDist" BeforeTargets="AssignTargetPaths">
+    <ItemGroup Condition="Exists('$(MSBuildProjectDirectory)/wwwroot/dist')">
+      <EmbeddedResource Include="wwwroot/dist/**/*" Exclude="wwwroot/dist/**/*.map" />
+    </ItemGroup>
+  </Target>
 </Project>

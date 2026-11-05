@@ -1,0 +1,6 @@
+{
+  "id": "legacy",
+  "sdkVersion": "2.0.0",
+  "entry": "entry.js",
+  "nav": [{ "id": "legacy.nav.home", "label": "Home", "to": "home" }]
+}

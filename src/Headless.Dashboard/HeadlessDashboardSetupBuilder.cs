@@ -99,6 +99,11 @@ public sealed partial class HeadlessDashboardSetupBuilder
     /// Signs operators in with one user name and password. The sign-in page takes the credential once, and the browser
     /// then holds only the session cookie.
     /// </summary>
+    /// <remarks>
+    /// The session cookie is protected by the host's Data Protection key ring, so every instance serving the dashboard
+    /// must share that key ring. Changing the password ends every session issued under the old one at its next request.
+    /// A script may still send the credential as a <c>Basic</c> authorization header on every request.
+    /// </remarks>
     /// <param name="username">The user name.</param>
     /// <param name="password">The password.</param>
     /// <returns>The same builder for chaining.</returns>
@@ -121,6 +126,10 @@ public sealed partial class HeadlessDashboardSetupBuilder
     /// Signs operators and scripts in with one API key. The sign-in page takes the key once, and the browser then holds
     /// only the session cookie; a script sends the key as a bearer token.
     /// </summary>
+    /// <remarks>
+    /// The session cookie is protected by the host's Data Protection key ring, so every instance serving the dashboard
+    /// must share that key ring. Changing the key ends every session issued under the old one at its next request.
+    /// </remarks>
     /// <param name="apiKey">The API key.</param>
     /// <returns>The same builder for chaining.</returns>
     /// <exception cref="ArgumentException"><paramref name="apiKey"/> is <see langword="null"/>, empty, or white space.</exception>
