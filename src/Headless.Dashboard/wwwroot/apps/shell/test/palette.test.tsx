@@ -80,4 +80,35 @@ describe('command palette', () => {
     expect(await screen.findByRole('heading', { name: 'Diagnostics runs view' })).toBeTruthy()
     expect(shell.router.state.location.search).toBe('?selected=r-8f31c2')
   })
+
+  it('shows a found id bidi-isolated and left-to-right beside a right-to-left title', async () => {
+    const user = userEvent.setup()
+    const modules = [moduleManifest('diag', { displayName: 'Diagnostics' })]
+    renderShell(shellState(modules), {
+      files: moduleFiles(modules),
+      api: (request) =>
+        request.path === 'resolve'
+          ? {
+              modules: [
+                {
+                  id: 'diag',
+                  displayName: 'Diagnostics',
+                  stale: false,
+                  items: [{ target: { module: 'diag', kind: 'run', id: 'r-8f31c2' }, title: 'فاتورة الشهر' }],
+                },
+              ],
+            }
+          : { modules: [] },
+    })
+
+    await screen.findByRole('heading', { name: 'Overview' })
+    await user.keyboard('{Meta>}k{/Meta}')
+    await user.paste('r-8f31c2')
+
+    const found = await screen.findByRole('menuitem', { name: /فاتورة الشهر r-8f31c2/ })
+    const id = within(found).getByText('r-8f31c2')
+
+    expect(id.tagName).toBe('BDI')
+    expect(id.getAttribute('dir')).toBe('ltr')
+  })
 })

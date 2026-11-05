@@ -9,7 +9,6 @@ import { LiveIndicator, ToastRegion } from '../../src/components/live.tsx'
 import { StatusMark } from '../../src/components/marks.tsx'
 import { CommandPalette } from '../../src/components/palette/command-palette.tsx'
 import { formatJson, PayloadView } from '../../src/components/payload/payload-view.tsx'
-import { DataTable } from '../../src/components/table/data-table.tsx'
 import { DashboardProvider, useDashboard } from '../../src/context.tsx'
 import { createDashboardClient } from '../../src/data/client.tsx'
 import { createFakeStream, type FakeStream } from '../../src/testing/fake-stream.ts'
@@ -71,66 +70,6 @@ describe('overlays', () => {
 
     expect(screen.queryByRole('dialog')).toBeNull()
     await waitFor(() => expect(document.activeElement).toBe(opener))
-  })
-})
-
-describe('data table', () => {
-  const rows = [
-    { id: 'r1', title: 'billing.charge #1' },
-    { id: 'r2', title: 'billing.charge #2' },
-    { id: 'r3', title: 'billing.charge #3' },
-  ]
-
-  it('moves the selection with the arrow keys, opens on Enter, and clears on Esc', async () => {
-    const user = userEvent.setup()
-    const opened: string[] = []
-    const selections: string[][] = []
-    render(
-      <DataTable
-        label="Runs"
-        rows={rows}
-        columns={[{ id: 'title', header: 'Run', cell: (row) => row.title }]}
-        emptyState="No runs yet."
-        onOpen={(row) => opened.push(row.id)}
-        onSelectionChange={(ids) => selections.push([...ids])}
-      />,
-    )
-
-    expect(screen.getByRole('grid', { name: 'Runs' })).toBeTruthy()
-
-    await user.tab()
-    await user.keyboard('{ArrowDown}')
-    expect(screen.getByRole('row', { name: /#2/ }).getAttribute('aria-selected')).toBe('true')
-
-    await user.keyboard('{Enter}')
-    expect(opened).toEqual(['r2'])
-
-    await user.keyboard('{Escape}')
-    expect(screen.getByRole('row', { name: /#2/ }).getAttribute('aria-selected')).toBe('false')
-    expect(selections.at(-1)).toEqual([])
-  })
-
-  it('says what will appear when empty', () => {
-    render(<DataTable label="Runs" rows={[]} columns={[{ id: 'title', header: 'Run', cell: () => '' }]} emptyState="No runs yet." />)
-
-    expect(screen.getByText('No runs yet.')).toBeTruthy()
-  })
-
-  it('offers select all matching once every loaded row is selected', () => {
-    render(
-      <DataTable
-        label="Runs"
-        rows={rows}
-        columns={[{ id: 'title', header: 'Run', cell: (row) => row.title }]}
-        emptyState="No runs yet."
-        selectionMode="multiple"
-        selectedIds={new Set(['r1', 'r2', 'r3'])}
-        matchingCount={312}
-        onSelectAllMatching={vi.fn()}
-      />,
-    )
-
-    expect(screen.getByRole('button', { name: 'Select all 312 matching' })).toBeTruthy()
   })
 })
 

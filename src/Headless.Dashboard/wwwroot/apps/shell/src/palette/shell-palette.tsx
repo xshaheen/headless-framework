@@ -135,8 +135,9 @@ export function ShellPalette({ isOpen, onOpenChange }: { isOpen: boolean; onOpen
     found.query === query
       ? found.objects.map((object) => ({
           id: `object:${object.target.module}:${object.target.kind}:${object.target.id}`,
-          // The id is part of the label, so the palette's filter keeps the object the pasted id found.
-          label: `${object.title} ${object.target.id}`,
+          label: object.title,
+          // The palette's filter matches the id too, so it keeps the object the pasted id found.
+          objectId: object.target.id,
           kind: state.modules.find((module) => module.id === object.target.module)?.displayName ?? object.target.module,
           onAction: () => void openObject(object.target).catch(() => undefined),
         }))

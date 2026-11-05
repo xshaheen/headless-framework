@@ -1,6 +1,7 @@
-import { useState, type ReactNode } from 'react'
+import { useRef, useState, type FocusEvent, type ReactNode } from 'react'
 import { Cell, Column, Row, Table, TableBody, TableHeader, type Key, type Selection } from 'react-aria-components'
 import { Button } from '../button.tsx'
+import { useViewKeys } from '../keymap.tsx'
 
 export interface DataTableColumn<T> {
   id: string
@@ -20,9 +21,8 @@ export interface DataTableProps<T extends { id: string }> {
   selectionMode?: 'single' | 'multiple'
   /** The selected row ids, when the view keeps the selection in its URL. */
   selectedIds?: ReadonlySet<string>
+  /** The selection changed: a click, the arrow keys, `Enter`, `J`/`K`, `X`, or `Esc`. The inspector shows it. */
   onSelectionChange?: (ids: ReadonlySet<string>) => void
-  /** Opens the row in the inspector: `Enter` on the focused row, or a double click. */
-  onOpen?: (row: T) => void
   /** Rows the filter matches past the loaded page; offers `Select all matching` once every loaded row is selected. */
   matchingCount?: number
   onSelectAllMatching?: () => void
@@ -31,8 +31,9 @@ export interface DataTableProps<T extends { id: string }> {
 }
 
 /**
- * The dashboard's list of one object kind, as a WAI-ARIA grid: one tab stop, arrow keys move the selection, `Enter`
- * opens the row, and `Esc` clears the selection.
+ * The dashboard's list of one object kind, as a WAI-ARIA grid: one tab stop, arrow keys and `J`/`K` move the focus and
+ * the selection, `Enter` selects the focused row into the inspector without leaving the list, `X` toggles the focused
+ * row in a multi-selection, and `Esc` clears the selection. A row never opens a page; the inspector links to it.
  */
 export function DataTable<T extends { id: string }>({
   label,
@@ -41,20 +42,23 @@ export function DataTable<T extends { id: string }>({
   selectionMode = 'single',
   selectedIds,
   onSelectionChange,
-  onOpen,
   matchingCount,
   onSelectAllMatching,
   emptyState,
 }: DataTableProps<T>) {
   const [ownSelection, setOwnSelection] = useState<ReadonlySet<string>>(new Set())
+  const wrap = useRef<HTMLDivElement>(null)
+  const focusedId = useRef<string | undefined>(undefined)
   const selected = selectedIds ?? ownSelection
   const allLoadedSelected = rows.length > 0 && rows.every((row) => selected.has(row.id))
   const offerAllMatching =
     selectionMode === 'multiple' && allLoadedSelected && matchingCount !== undefined && matchingCount > rows.length
 
   function change(keys: Selection) {
-    const ids = new Set<string>(keys === 'all' ? rows.map((row) => row.id) : [...keys].map(String))
+    commit(new Set<string>(keys === 'all' ? rows.map((row) => row.id) : [...keys].map(String)))
+  }
 
+  function commit(ids: ReadonlySet<string>) {
     if (!selectedIds) {
       setOwnSelection(ids)
     }
@@ -62,13 +66,72 @@ export function DataTable<T extends { id: string }>({
     onSelectionChange?.(ids)
   }
 
-  function open(key: Key) {
-    const row = rows.find((candidate) => candidate.id === String(key))
+  // `Enter` (and a double click) puts the row alone in the selection, which the inspector shows; focus stays here.
+  function selectOnly(key: Key) {
+    commit(new Set([String(key)]))
+  }
+
+  function onFocus(event: FocusEvent<HTMLDivElement>) {
+    const row = event.target.closest<HTMLElement>('[data-row-id]')
 
     if (row) {
-      onOpen?.(row)
+      focusedId.current = row.dataset.rowId
     }
   }
+
+  // The row `J`/`K` and `X` act on: the focused one, else the selected one, as after a click in the inspector.
+  function currentIndex() {
+    const id = focusedId.current ?? rows.find((row) => selected.has(row.id))?.id
+
+    return rows.findIndex((row) => row.id === id)
+  }
+
+  function moveTo(index: number) {
+    const row = rows[index]
+
+    if (!row) {
+      return
+    }
+
+    commit(new Set([row.id]))
+    focusedId.current = row.id
+    wrap.current?.querySelector<HTMLElement>(`[data-row-id="${CSS.escape(row.id)}"]`)?.focus()
+  }
+
+  useViewKeys({
+    next: () => {
+      const index = currentIndex()
+
+      // At the last row `J` does nothing.
+      if (index < rows.length - 1) {
+        moveTo(index + 1)
+      }
+    },
+    previous: () => {
+      const index = currentIndex()
+      moveTo(index === -1 ? 0 : index - 1)
+    },
+    toggle:
+      selectionMode === 'multiple'
+        ? () => {
+            const row = rows[currentIndex()]
+
+            if (!row) {
+              return
+            }
+
+            const next = new Set(selected)
+
+            if (next.has(row.id)) {
+              next.delete(row.id)
+            } else {
+              next.add(row.id)
+            }
+
+            commit(next)
+          }
+        : undefined,
+  })
 
   const headerIndex = Math.max(
     0,
@@ -76,7 +139,7 @@ export function DataTable<T extends { id: string }>({
   )
 
   return (
-    <div className="hd-table-wrap">
+    <div ref={wrap} className="hd-table-wrap" onFocus={onFocus}>
       {offerAllMatching ? (
         <div className="hd-banner">
           <span>{`All ${rows.length} rows on this page are selected.`}</span>
@@ -92,7 +155,7 @@ export function DataTable<T extends { id: string }>({
         selectionBehavior="replace"
         selectedKeys={selected as Set<Key>}
         onSelectionChange={change}
-        onRowAction={open}
+        onRowAction={selectOnly}
         escapeKeyBehavior="clearSelection"
       >
         <TableHeader>
@@ -104,7 +167,7 @@ export function DataTable<T extends { id: string }>({
         </TableHeader>
         <TableBody renderEmptyState={() => <div className="hd-empty">{emptyState}</div>}>
           {rows.map((row) => (
-            <Row key={row.id} id={row.id} className="hd-row">
+            <Row key={row.id} id={row.id} className="hd-row" data-row-id={row.id}>
               {columns.map((column) => (
                 <Cell key={column.id} className={column.align === 'end' ? 'hd-end' : undefined}>
                   {column.cell(row)}

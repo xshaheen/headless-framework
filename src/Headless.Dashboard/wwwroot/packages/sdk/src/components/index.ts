@@ -21,7 +21,17 @@ export {
 } from './inspector/inspector.tsx'
 export { Announcer, LiveIndicator, NewRowsNotice, ProgressBar, ToastRegion } from './live.tsx'
 export { Chip, Kbd, Mono, NodeChip, StatusMark, TenantChip, type StatusTone } from './marks.tsx'
-export { CommandPalette, usePaletteShortcut, type CommandPaletteProps, type PaletteItem } from './palette/command-palette.tsx'
+export {
+  shellShortcuts,
+  useModuleShortcuts,
+  useShellKeys,
+  useShortcut,
+  useViewKeys,
+  type ModuleShortcut,
+  type ShellKeyHandlers,
+  type ViewKeyHandlers,
+} from './keymap.tsx'
+export { CommandPalette, type CommandPaletteProps, type PaletteItem } from './palette/command-palette.tsx'
 export { formatJson, payloadDisplayLimit, PayloadView, type PayloadViewProps } from './payload/payload-view.tsx'
 export { DataTable, type DataTableColumn, type DataTableProps } from './table/data-table.tsx'
 export { useDelayed } from './use-delayed.ts'

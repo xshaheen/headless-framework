@@ -1,5 +1,6 @@
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query'
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { KeymapProvider } from './components/keymap.tsx'
 import type { DashboardApi } from './data/api.ts'
 import { bindStreamToClient } from './data/bind.ts'
 import type { DashboardStream } from './stream/types.ts'
@@ -39,7 +40,10 @@ export interface DashboardProviderProps {
   children: ReactNode
 }
 
-/** Provides the dashboard to the shell and every module, and keeps the data client current from the stream. */
+/**
+ * Provides the dashboard to the shell and every module, keeps the data client current from the stream, and owns the
+ * one keymap every shortcut dispatches through.
+ */
 export function DashboardProvider({ environment, client, children }: DashboardProviderProps) {
   const [toasts] = useState(createToastStore)
   const { stream } = environment
@@ -48,7 +52,9 @@ export function DashboardProvider({ environment, client, children }: DashboardPr
 
   return (
     <QueryClientProvider client={client}>
-      <DashboardContext.Provider value={{ ...environment, toasts }}>{children}</DashboardContext.Provider>
+      <DashboardContext.Provider value={{ ...environment, toasts }}>
+        <KeymapProvider>{children}</KeymapProvider>
+      </DashboardContext.Provider>
     </QueryClientProvider>
   )
 }

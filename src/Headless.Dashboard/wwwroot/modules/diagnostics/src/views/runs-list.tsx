@@ -4,17 +4,19 @@ import {
   Button,
   DataTable,
   Inspector,
+  Mono,
   NewRowsNotice,
   ObjectHeader,
   SelectField,
   StatusMark,
   TextInputField,
   useDelayed,
+  useViewKeys,
 } from '@headless/dashboard-sdk/components'
 import { DashboardApiError, formatCount, listKey, useDashboardList, useDashboardObject } from '@headless/dashboard-sdk/data'
 import { useMutation, useQueryClient } from '@headless/dashboard-sdk/query'
-import { Link, useNavigate, useSearchParams } from '@headless/dashboard-sdk/router'
-import { useEffect, useRef, type KeyboardEvent } from 'react'
+import { Link, useSearchParams } from '@headless/dashboard-sdk/router'
+import { useEffect, useRef } from 'react'
 import { LoadError, RunActions, RunFields, RunTime, RunTimeline, StaleNotice } from '../run-parts.tsx'
 import {
   addRun,
@@ -36,16 +38,11 @@ const statusOptions = [{ value: '', label: 'Any status' }, ...runStatuses.map((s
 const layout = { display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'start' } as const
 const canvas = { flex: '1 1 32rem', minInlineSize: 0, display: 'flex', flexDirection: 'column', gap: '0.75rem' } as const
 
-function isTextField(target: EventTarget) {
-  return target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
-}
-
 /** The diagnostic runs: a live list, the selection's inspector, and Requeue over the failed runs as an Operation. */
 export default function RunsList() {
   const { api } = useDashboard()
   const module = useModule()
   const client = useQueryClient()
-  const navigate = useNavigate()
   const { start } = useOperations()
   const [params, setParams] = useSearchParams()
   const filter: RunFilter = { status: params.get('status') ?? '', error: params.get('error') ?? '' }
@@ -137,30 +134,9 @@ export default function RunsList() {
   const addReason = module.canOperate ? null : viewOnlyReason
   const requeueReason = requeue && !requeue.canRun ? (requeue.disabledReason ?? viewOnlyReason) : null
 
-  // `X` toggles the focused row in the selection, as the dashboard's lists do.
-  function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    if (event.key.toLowerCase() !== 'x' || event.metaKey || event.ctrlKey || event.altKey || isTextField(event.target)) {
-      return
-    }
-
-    const row = (event.target as HTMLElement).closest('[role="row"]')
-    const id = row?.querySelector<HTMLElement>('[data-run-id]')?.dataset.runId
-
-    if (!id) {
-      return
-    }
-
-    event.preventDefault()
-    const next = new Set(selectedIds)
-
-    if (next.has(id)) {
-      next.delete(id)
-    } else {
-      next.add(id)
-    }
-
-    select(next)
-  }
+  // `/` focuses the view's filter: the free-text one, which is what an operator types into.
+  const filters = useRef<HTMLDivElement>(null)
+  useViewKeys({ filter: () => filters.current?.querySelector<HTMLInputElement>('input')?.focus() })
 
   return (
     <div style={layout}>
@@ -178,7 +154,7 @@ export default function RunsList() {
           </Button>
         </header>
         {add.isError ? <LoadError message={add.error.message} onRetry={() => add.mutate()} /> : null}
-        <div className="hd-actions" role="search" aria-label="Filter runs">
+        <div ref={filters} className="hd-actions" role="search" aria-label="Filter runs">
           <SelectField label="Status" value={filter.status} onChange={(value) => setFilter('status', value)} options={statusOptions} />
           <TextInputField label="Error contains" value={filter.error} onChange={(value) => setFilter('error', value)} />
         </div>
@@ -193,39 +169,31 @@ export default function RunsList() {
         ) : runs.isError ? (
           <LoadError message={runs.error.message} onRetry={() => void runs.refetch()} />
         ) : (
-          <div onKeyDown={onKeyDown}>
-            <DataTable
-              label="Runs"
-              rows={items}
-              selectionMode="multiple"
-              selectedIds={selectedIds}
-              onSelectionChange={select}
-              onOpen={(run) => navigate(`runs/${encodeURIComponent(run.id)}`)}
-              matchingCount={count?.value}
-              onSelectAllMatching={() => {
-                if (requeue?.canRun) {
-                  start({ module: module.id, command: requeue, filter: matchingFilter, noun: 'matching runs' })
-                }
-              }}
-              emptyState={filtered ? 'No runs match this filter. Clear it to see every run.' : 'No runs yet - add one with Fail on a new run'}
-              columns={[
-                { id: 'id', header: 'Run', cell: (run) => (
-                    <bdi className="hd-mono" data-run-id={run.id}>
-                      {run.id}
-                    </bdi>
-                  ),
-                  isRowHeader: true },
-                {
-                  id: 'status',
-                  header: 'Status',
-                  cell: (run) => <StatusMark {...runStatusMark(run.status, requeuing.isRequeuing(run))} />,
-                },
-                { id: 'attempts', header: 'Attempts', cell: (run) => run.attempts, align: 'end' },
-                { id: 'lastError', header: 'Last error', cell: (run) => run.lastError ?? '' },
-                { id: 'updated', header: 'Updated', cell: (run) => <RunTime value={run.updatedAt} /> },
-              ]}
-            />
-          </div>
+          <DataTable
+            label="Runs"
+            rows={items}
+            selectionMode="multiple"
+            selectedIds={selectedIds}
+            onSelectionChange={select}
+            matchingCount={count?.value}
+            onSelectAllMatching={() => {
+              if (requeue?.canRun) {
+                start({ module: module.id, command: requeue, filter: matchingFilter, noun: 'matching runs' })
+              }
+            }}
+            emptyState={filtered ? 'No runs match this filter. Clear it to see every run.' : 'No runs yet - add one with Fail on a new run'}
+            columns={[
+              { id: 'id', header: 'Run', cell: (run) => <Mono>{run.id}</Mono>, isRowHeader: true },
+              {
+                id: 'status',
+                header: 'Status',
+                cell: (run) => <StatusMark {...runStatusMark(run.status, requeuing.isRequeuing(run))} />,
+              },
+              { id: 'attempts', header: 'Attempts', cell: (run) => run.attempts, align: 'end' },
+              { id: 'lastError', header: 'Last error', cell: (run) => run.lastError ?? '' },
+              { id: 'updated', header: 'Updated', cell: (run) => <RunTime value={run.updatedAt} /> },
+            ]}
+          />
         )}
       </section>
       <RunsInspector
@@ -345,7 +313,12 @@ function RunInspector({
         title="Run"
         id={run.id}
         status={status}
-        actions={<RunActions runs={[run]} onRequeued={onRequeued} />}
+        actions={
+          <>
+            <Link to={`runs/${encodeURIComponent(run.id)}`}>Open run page</Link>
+            <RunActions runs={[run]} onRequeued={onRequeued} />
+          </>
+        }
       />
       <RunFields run={run} statusLabel={status.label} />
       {detail.data ? (
@@ -357,7 +330,6 @@ function RunInspector({
           Loading the timeline…
         </p>
       )}
-      <Link to={`runs/${encodeURIComponent(run.id)}`}>Open run page</Link>
     </Inspector>
   )
 }
