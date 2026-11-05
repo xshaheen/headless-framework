@@ -58,6 +58,8 @@ public class CronJobConfigurations<TCronJob>(string schema, StorageNamingStyle s
         builder.Property(e => e.ScheduleRevision).HasDefaultValue(0L);
 
         builder.Property(e => e.TimeZoneId).HasMaxLength(128);
+        // Occurrences copy the definition's correlation id into their own bounded column.
+        builder.Property(e => e.CorrelationId).HasMaxLength(JobContract.CorrelationIdMaxLength);
 
         builder.Property(e => e.OnNodeDeath).HasConversion<string>().HasMaxLength(32);
 

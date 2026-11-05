@@ -115,6 +115,12 @@ public class CronJobOccurrenceConfigurations<TCronJob>(
             .HasIndex("Function", "FailureFingerprint", "Status")
             .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, "Function", "FailureFingerprint", "Status"));
 
+        // The dashboard's Trace view lists every run of one correlation id.
+        builder.Property(x => x.CorrelationId).HasMaxLength(JobContract.CorrelationIdMaxLength);
+        builder
+            .HasIndex("CorrelationId")
+            .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, "CorrelationId"));
+
         JobsChangeMarkerModelConfiguration.ConfigureColumn(builder, style, table);
 
         builder.ToTable(table, schema);

@@ -1652,6 +1652,11 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
     public Task<int> RemoveTimeJobsAsync(Guid[] jobIds, CancellationToken cancellationToken = default)
     {
+        return Task.FromResult(_RemoveTimeJobs(jobIds));
+    }
+
+    private int _RemoveTimeJobs(Guid[] jobIds)
+    {
         lock (_keyedOperations)
         {
             foreach (var candidateId in jobIds)
@@ -1705,7 +1710,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 }
             }
 
-            return Task.FromResult(count);
+            return count;
         }
     }
 

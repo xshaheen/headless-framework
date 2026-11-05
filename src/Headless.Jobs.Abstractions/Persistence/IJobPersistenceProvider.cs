@@ -77,7 +77,7 @@ namespace Headless.Jobs;
 /// <typeparam name="TTimeJob">The application's concrete time job entity type.</typeparam>
 /// <typeparam name="TCronJob">The application's concrete cron job entity type.</typeparam>
 [PublicAPI]
-public interface IJobPersistenceProvider<TTimeJob, TCronJob>
+public partial interface IJobPersistenceProvider<TTimeJob, TCronJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {

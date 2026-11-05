@@ -692,7 +692,44 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         }
     }
 
-    public async Task<int> RemoveTimeJobsAsync(Guid[] timeJobIds, CancellationToken cancellationToken = default)
+    public Task<int> RemoveTimeJobsAsync(Guid[] timeJobIds, CancellationToken cancellationToken = default)
+    {
+        return _RemoveTimeJobsAsync(timeJobIds, expectedChangedAt: null, cancellationToken);
+    }
+
+    public async Task<bool> RemoveTimeJobIfUnchangedAsync(
+        Guid jobId,
+        DateTime expectedChangedAt,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return await _RemoveTimeJobsAsync([jobId], expectedChangedAt, cancellationToken).ConfigureAwait(false) > 0;
+    }
+
+    public async Task<bool> RemoveCronJobOccurrenceIfUnchangedAsync(
+        Guid occurrenceId,
+        DateTime expectedChangedAt,
+        CancellationToken cancellationToken = default
+    )
+    {
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var marker = DateTime.SpecifyKind(expectedChangedAt, DateTimeKind.Utc);
+
+        // One conditional delete; the attempts go with it through their cascading key.
+        return await dbContext
+                .Set<CronJobOccurrenceEntity<TCronJob>>()
+                .Where(x => x.Id == occurrenceId && x.ChangedAt == marker && x.Status != JobStatus.InProgress)
+                .ExecuteDeleteAsync(cancellationToken)
+                .ConfigureAwait(false) > 0;
+    }
+
+    private async Task<int> _RemoveTimeJobsAsync(
+        Guid[] timeJobIds,
+        DateTime? expectedChangedAt,
+        CancellationToken cancellationToken
+    )
     {
         if (timeJobIds.Length == 0)
         {
@@ -707,9 +744,11 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             return await _treeDeleteRetryPipeline
                 .ExecuteAsync(
                     static async (context, state) =>
-                        await state.Provider._RemoveTimeJobsAttemptAsync(state.Ids, context).ConfigureAwait(false),
+                        await state
+                            .Provider._RemoveTimeJobsAttemptAsync(state.Ids, state.Expected, context)
+                            .ConfigureAwait(false),
                     resilienceContext,
-                    (Provider: this, Ids: timeJobIds)
+                    (Provider: this, Ids: timeJobIds, Expected: expectedChangedAt)
                 )
                 .ConfigureAwait(false);
         }
@@ -719,7 +758,13 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         }
     }
 
-    private async ValueTask<int> _RemoveTimeJobsAttemptAsync(Guid[] timeJobIds, ResilienceContext resilienceContext)
+    // With an expected marker, the call deletes one root only while it is not running and its marker is unchanged: an
+    // Operation's compare-and-set, checked under the row lock the delete then holds through commit.
+    private async ValueTask<int> _RemoveTimeJobsAttemptAsync(
+        Guid[] timeJobIds,
+        DateTime? expectedChangedAt,
+        ResilienceContext resilienceContext
+    )
     {
         resilienceContext.Properties.Set(_TreeDeleteCommitStartedKey, value: false);
         var cancellationToken = resilienceContext.CancellationToken;
@@ -751,6 +796,28 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                     // rather than with a recursive CTE so a single query shape serves every relational provider; the
                     // visited set also terminates a corrupted cycle. The foreign key is the atomicity fence: a
                     // conflicting write rolls this scope back and fresh discovery runs.
+                    if (expectedChangedAt is { } expected)
+                    {
+                        var marker = DateTime.SpecifyKind(expected, DateTimeKind.Utc);
+                        var rootId = timeJobIds[0];
+
+                        // A no-op write takes the root's row lock, so no claim or requeue can move the row between
+                        // this check and the delete.
+                        var held = await dbContext
+                            .Set<TTimeJob>()
+                            .Where(x => x.Id == rootId && x.ChangedAt == marker && x.Status != JobStatus.InProgress)
+                            .ExecuteUpdateAsync(
+                                setter => setter.SetProperty(x => x.Status, x => x.Status),
+                                cancellationToken
+                            )
+                            .ConfigureAwait(false);
+
+                        if (held == 0)
+                        {
+                            return 0;
+                        }
+                    }
+
                     var levels = new List<Guid[]> { timeJobIds };
                     var visited = new HashSet<Guid>(timeJobIds);
                     var frontier = timeJobIds;

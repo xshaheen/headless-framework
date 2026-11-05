@@ -29,6 +29,15 @@ internal sealed class JobsRunFilter
     /// </summary>
     public string[]? RunnableFunctions { get; }
 
+    /// <summary>
+    /// The registered functions this host claims, in ordinal order: <see cref="RunnableFunctions"/>, which only
+    /// registered functions can match, or every registered function when the host is unfiltered.
+    /// </summary>
+    public string[] ClaimedFunctions(IEnumerable<string> registeredFunctions)
+    {
+        return RunnableFunctions ?? [.. registeredFunctions.Order(StringComparer.Ordinal)];
+    }
+
     /// <summary>Whether this host restricts what it runs.</summary>
     public bool IsFiltered => _runnable is not null;
 

@@ -681,10 +681,30 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
             .ConfigureAwait(false);
     }
 
-    public async Task<JobRequeueOutcome> RequeueTimeJobAsync(
+    public Task<JobRequeueOutcome> RequeueTimeJobAsync(
         Guid jobId,
         string? traceParent,
         CancellationToken cancellationToken = default
+    )
+    {
+        return _RequeueTimeJobAsync(jobId, expectedChangedAt: null, traceParent, cancellationToken);
+    }
+
+    public Task<JobRequeueOutcome> RequeueTimeJobIfUnchangedAsync(
+        Guid jobId,
+        DateTime expectedChangedAt,
+        string? traceParent,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return _RequeueTimeJobAsync(jobId, expectedChangedAt, traceParent, cancellationToken);
+    }
+
+    private async Task<JobRequeueOutcome> _RequeueTimeJobAsync(
+        Guid jobId,
+        DateTime? expectedChangedAt,
+        string? traceParent,
+        CancellationToken cancellationToken
     )
     {
         await using var dbContext = await DbContextFactory
@@ -695,13 +715,17 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
         // One autocommit statement whose predicate carries every eligibility rule, so a concurrent requeue, a keyed
         // supersede, or a claim can only make it match no row. ExecutionTime is re-stamped to the database clock in
         // the same statement: the main peek ignores rows older than a second, and the store is the clock it compares.
-        var affected = await jobs.Where(x =>
-                x.Id == jobId
-                && x.Status == JobStatus.Failed
-                && x.ParentId == null
-                && !jobs.Any(child => child.ParentId == x.Id)
-                && (x.BusinessKey == null || x.IsCurrentGeneration == true)
-            )
+        var target = jobs.Where(x => x.Id == jobId).Where(JobRequeueRules.RequeueableTimeJob(jobs));
+
+        // An Operation's compare-and-set: a row written since its scope read, a requeued run that failed again
+        // included, matches no row.
+        if (expectedChangedAt is { } expected)
+        {
+            var marker = DateTime.SpecifyKind(expected, DateTimeKind.Utc);
+            target = target.Where(x => x.ChangedAt == marker);
+        }
+
+        var affected = await target
             .ExecuteUpdateAsync(
                 setters =>
                     setters

@@ -522,6 +522,18 @@ public static class SetupJobs
                 : CronRulesDigest.SweepDisabled;
         });
 
+        // Each node publishes the functions it claims, so a dashboard can name a function no live node runs. The run
+        // filter is fixed for the node's lifetime, as registration metadata is; the catalog is built when options are
+        // first read, so contributions recorded after this call still count.
+        services
+            .AddOptions<CoordinationOptions>()
+            .Configure<JobFunctionRegistry>(
+                (options, registry) =>
+                    options.Metadata[JobsNodeMetadata.ClaimedFunctionsKey] = JobsNodeMetadata.FormatClaimedFunctions(
+                        claimsWork ? registry.RunFilter.ClaimedFunctions(registry.Functions.Keys) : []
+                    )
+            );
+
         // Only nodes sharing a durable store have a fleet whose cron rules must agree before a rebase.
         services.AddSingleton<CronFleetAgreement>();
 
