@@ -74,8 +74,19 @@ export function useNeedsYou() {
   })
 }
 
+/**
+ * Every module's figures. They refetch on `attention.changed`, as Needs you does, because the shell subscribes to no
+ * module topic and that event is the one a module's change reaches it by while no module's code is loaded.
+ */
 export function useOverview() {
   const api = useDashboardApi()
+  const client = useQueryClient()
+
+  const refetch = useCallback(() => {
+    void client.invalidateQueries({ queryKey: overviewKey })
+  }, [client])
+
+  useStreamEvent('attention.changed', refetch)
 
   return useQuery({
     queryKey: overviewKey,

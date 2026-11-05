@@ -20,6 +20,30 @@ describe('command palette', () => {
     expect(await screen.findByRole('heading', { name: 'Diagnostics runs view' })).toBeTruthy()
   })
 
+  it('lists a destination once when a module command repeats a nav entry', async () => {
+    const user = userEvent.setup()
+    const modules = [
+      moduleManifest('diag', {
+        displayName: 'Diagnostics',
+        commands: [
+          { id: 'diag.go-runs', label: 'Go to Diagnostics runs' },
+          { id: 'diag.add', label: 'Add diag run', requires: 'operate' },
+        ],
+      }),
+    ]
+    renderShell(shellState(modules), { files: moduleFiles(modules) })
+
+    await screen.findByRole('heading', { name: 'Overview' })
+    await user.keyboard('{Meta>}k{/Meta}')
+    await user.keyboard('diag')
+
+    const palette = await screen.findByRole('dialog', { name: 'Command palette' })
+    expect(within(palette).getAllByRole('menuitem', { name: /Go to Diagnostics runs/i }).map((item) => item.textContent)).toEqual([
+      expect.stringContaining('Go to Diagnostics Runs'),
+    ])
+    expect(within(palette).getByRole('menuitem', { name: /Add diag run/ })).toBeTruthy()
+  })
+
   it('finds an object by a pasted id in any module and opens it in its module', async () => {
     const user = userEvent.setup()
     const modules = [moduleManifest('diag', { displayName: 'Diagnostics' })]

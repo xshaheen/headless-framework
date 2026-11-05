@@ -11,7 +11,6 @@ export default defineModule({
     run: { route: (id: string) => `runs/${encodeURIComponent(id)}` },
   },
   commands: [
-    { id: 'diagnostics.go-runs', label: 'Go to Diagnostics runs', run: ({ navigate }) => navigate('') },
     {
       id: 'diagnostics.requeue-failed',
       label: 'Requeue failed runs',

@@ -181,6 +181,8 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+  /* Fields and timeline events hold operator text, such as a 500-character note with no spaces, that must wrap in place. */
+  overflow-wrap: anywhere;
 }
 
 .hd-field {
@@ -527,6 +529,26 @@
   align-self: flex-end;
 }
 
+/* Focus moves into a floating inspector for the keyboard and screen readers; the panel itself shows no ring. */
+.hd-inspector-selection:focus {
+  outline: none;
+}
+
+/*
+ * Below 1280 px a selection's inspector leaves the flow and opens as a drawer from the inline end, so selecting a row
+ * shows it beside the list instead of below it. The shell's dock already floats, so its inspector stays in place.
+ */
+@media (max-width: 1279px) {
+  :not(.hd-dock) > .hd-inspector-selection {
+    position: fixed;
+    inset-block: 0;
+    inset-inline-end: 0;
+    z-index: 30;
+    inline-size: min(var(--inspector-width), 100%);
+    box-shadow: var(--shadow);
+  }
+}
+
 .hd-object-header {
   display: flex;
   flex-direction: column;
@@ -669,7 +691,8 @@
     grid-template-columns: 1fr;
   }
 
-  .hd-inspector {
+  .hd-inspector,
+  :not(.hd-dock) > .hd-inspector-selection {
     inline-size: 100%;
   }
 }

@@ -4,6 +4,7 @@ import { useState, type ReactNode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Button } from '../../src/components/button.tsx'
 import { Dialog, Drawer } from '../../src/components/dialog.tsx'
+import { Inspector } from '../../src/components/inspector/inspector.tsx'
 import { LiveIndicator, ToastRegion } from '../../src/components/live.tsx'
 import { StatusMark } from '../../src/components/marks.tsx'
 import { CommandPalette } from '../../src/components/palette/command-palette.tsx'
@@ -245,5 +246,61 @@ describe('command palette', () => {
     await user.keyboard('{Enter}')
     expect(openRuns).toHaveBeenCalledTimes(1)
     expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+})
+
+describe('inspector', () => {
+  function stubWidth(floating: boolean) {
+    vi.stubGlobal('matchMedia', (query: string) => ({ matches: floating, media: query }))
+  }
+
+  function Selection() {
+    const [open, setOpen] = useState(false)
+
+    return (
+      <>
+        <button type="button" onClick={() => setOpen(true)}>
+          run-000001
+        </button>
+        {open ? (
+          <Inspector label="Run run-000001" onClose={() => setOpen(false)}>
+            <p>Failed</p>
+          </Inspector>
+        ) : null}
+      </>
+    )
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('takes focus below 1280 px, closes on Esc, and returns focus to what opened it', async () => {
+    stubWidth(true)
+    const user = userEvent.setup()
+    render(<Selection />)
+
+    const opener = screen.getByRole('button', { name: 'run-000001' })
+    await user.click(opener)
+
+    const inspector = screen.getByRole('complementary', { name: 'Run run-000001' })
+    expect(document.activeElement).toBe(inspector)
+
+    await user.keyboard('{Escape}')
+
+    expect(screen.queryByRole('complementary', { name: 'Run run-000001' })).toBeNull()
+    expect(document.activeElement).toBe(opener)
+  })
+
+  it('leaves focus on the list when docked beside it', async () => {
+    stubWidth(false)
+    const user = userEvent.setup()
+    render(<Selection />)
+
+    const opener = screen.getByRole('button', { name: 'run-000001' })
+    await user.click(opener)
+
+    expect(screen.getByRole('complementary', { name: 'Run run-000001' })).toBeTruthy()
+    expect(document.activeElement).toBe(opener)
   })
 })

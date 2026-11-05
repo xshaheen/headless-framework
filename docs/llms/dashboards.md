@@ -346,12 +346,12 @@ export default defineModule({
     run: { route: (id: string) => `runs/${encodeURIComponent(id)}` },
   },
   commands: [
-    { id: 'diagnostics.go-runs', label: 'Go to Diagnostics runs', run: ({ navigate }) => navigate('') },
+    { id: 'diagnostics.requeue-failed', label: 'Requeue failed runs', requires: 'operate', run: ({ navigate }) => navigate('?status=Failed&operation=requeue') },
   ],
 })
 ```
 
-`id` equals the .NET module id. Nav entries and client commands take `requires: 'view' | 'operate'`. Each route's `import()` becomes its own chunk.
+`id` equals the .NET module id. Nav entries and client commands take `requires: 'view' | 'operate'`. Each route's `import()` becomes its own chunk. The palette already lists every nav entry as `Go to <module> <label>`, so a command that only navigates to a nav entry's route repeats it; the palette drops a command whose label matches a nav entry's label, ignoring case.
 
 | SDK entry | Contents |
 | --- | --- |

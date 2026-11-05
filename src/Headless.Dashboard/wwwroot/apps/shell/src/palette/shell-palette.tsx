@@ -33,6 +33,9 @@ function staticItems(
     { id: 'shell.needs-you', label: 'Go to Needs you', kind: 'View', shortcut: 'G N', onAction: () => navigate('/needs-you') },
   ]
 
+  // A command labelled like a view is a second way to the same place; the palette lists each destination once.
+  const labels = new Set(items.map((item) => item.label.toLocaleLowerCase()))
+
   for (const module of state.modules) {
     if (module.refusal) {
       continue
@@ -44,12 +47,19 @@ function staticItems(
       }
 
       const label = entry.label === module.displayName ? `Go to ${entry.label}` : `Go to ${module.displayName} ${entry.label}`
+      labels.add(label.toLocaleLowerCase())
       items.push({ id: `nav:${entry.id}`, label, kind: 'View', onAction: () => navigate(modulePath(module.id, entry.to)) })
+    }
+  }
+
+  for (const module of state.modules) {
+    if (module.refusal) {
+      continue
     }
 
     for (const command of module.commands) {
       // A viewer is not offered a command the server would refuse; the module's own views show it disabled.
-      if (command.requires === 'operate' && !module.canOperate) {
+      if ((command.requires === 'operate' && !module.canOperate) || labels.has(command.label.toLocaleLowerCase())) {
         continue
       }
 

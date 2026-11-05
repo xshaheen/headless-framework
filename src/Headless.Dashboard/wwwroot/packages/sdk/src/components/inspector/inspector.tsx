@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useEffect, useRef, type KeyboardEvent, type ReactNode } from 'react'
 import { Button } from '../button.tsx'
 import { Mono, StatusMark, type StatusTone } from '../marks.tsx'
 
@@ -10,10 +10,61 @@ export interface InspectorProps {
   children: ReactNode
 }
 
-/** The panel docked at the inline end that shows the selection, or the view's summary when nothing is selected. */
+/** The widths at which a selection's inspector floats over the list as a drawer, as `components.css` lays it out. */
+const floatingQuery = '(max-width: 1279px)'
+
+function isFloating() {
+  return typeof window.matchMedia === 'function' && window.matchMedia(floatingQuery).matches
+}
+
+/**
+ * The panel docked at the inline end that shows the selection, or the view's summary when nothing is selected.
+ * Below 1280 px a selection's inspector (one with `onClose`) floats over the list as a drawer, and fills the screen
+ * below 768 px; it then takes focus when it opens, `Esc` closes it, and focus returns to what opened it.
+ */
 export function Inspector({ label, onClose, children }: InspectorProps) {
+  const ref = useRef<HTMLElement>(null)
+  const closable = Boolean(onClose)
+
+  useEffect(() => {
+    const panel = ref.current
+
+    if (!closable || !panel || !isFloating()) {
+      return undefined
+    }
+
+    const active = document.activeElement
+    const opener = active instanceof HTMLElement && active !== document.body ? active : null
+    panel.focus()
+
+    return () => {
+      const focused = document.activeElement
+
+      // Focus goes back only when it would otherwise be lost with the panel, never away from where the operator moved it.
+      if (opener?.isConnected && (!focused || focused === document.body || panel.contains(focused))) {
+        opener.focus()
+      }
+    }
+  }, [closable])
+
+  function onKeyDown(event: KeyboardEvent<HTMLElement>) {
+    // A dialog or popover above the inspector takes Esc first.
+    if (event.key !== 'Escape' || !onClose || event.defaultPrevented || document.querySelector('[role="dialog"]')) {
+      return
+    }
+
+    event.preventDefault()
+    onClose()
+  }
+
   return (
-    <aside className="hd-inspector" aria-label={label}>
+    <aside
+      ref={ref}
+      className={onClose ? 'hd-inspector hd-inspector-selection' : 'hd-inspector'}
+      aria-label={label}
+      tabIndex={onClose ? -1 : undefined}
+      onKeyDown={onKeyDown}
+    >
       {onClose ? (
         <Button variant="ghost" className="hd-inspector-close" onPress={onClose}>
           Close

@@ -177,6 +177,23 @@ describe('diagnostics runs list', () => {
     ])
   })
 
+  it('opens the inspector for a selected run the loaded page does not hold, read by its id', async () => {
+    const onPage = run('run-000002', 'Queued')
+    const offPage = run('run-000017', 'Failed')
+    const view = open([onPage, offPage], {
+      path: '?selected=run-000017',
+      extra: (request) =>
+        request.method === 'GET' && request.path === 'diagnostics/runs' ? { items: [onPage], count: 2, countCapped: false } : undefined,
+    })
+
+    // The panel reads `Loading the run…` first, then the run's own inspector replaces it.
+    await waitFor(() => expect(within(screen.getByRole('complementary', { name: 'Run run-000017' })).getByText('trace-run-000017')).toBeTruthy())
+    const inspector = screen.getByRole('complementary', { name: 'Run run-000017' })
+    expect(await within(inspector).findByRole('region', { name: 'Timeline' })).toBeTruthy()
+    expect(screen.queryByRole('row', { name: /run-000017/ })).toBeNull()
+    expect(view.requests.filter((request) => request.path === 'diagnostics/runs/run-000017')).toHaveLength(1)
+  })
+
   it('shows the view summary in the inspector when nothing is selected', async () => {
     open([run('run-000001', 'Failed')])
 

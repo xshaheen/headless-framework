@@ -11,7 +11,7 @@ import {
   TextInputField,
   useDelayed,
 } from '@headless/dashboard-sdk/components'
-import { formatCount, listKey, useDashboardList, useDashboardObject } from '@headless/dashboard-sdk/data'
+import { DashboardApiError, formatCount, listKey, useDashboardList, useDashboardObject } from '@headless/dashboard-sdk/data'
 import { useMutation, useQueryClient } from '@headless/dashboard-sdk/query'
 import { Link, useNavigate, useSearchParams } from '@headless/dashboard-sdk/router'
 import { useEffect, useRef, type KeyboardEvent } from 'react'
@@ -129,6 +129,9 @@ export default function RunsList() {
 
   const items = runs.data?.items ?? []
   const selectedRuns = items.filter((run) => selectedIds.has(run.id))
+  // A link can select a run the loaded page does not hold; the inspector reads that one run by its id instead.
+  const [onlySelected] = selectedIds
+  const lookupId = runs.data && selectedIds.size === 1 && selectedRuns.length === 0 ? onlySelected : undefined
   const count = runs.data?.count
   const filtered = Boolean(filter.status || filter.error)
   const addReason = module.canOperate ? null : viewOnlyReason
@@ -227,6 +230,7 @@ export default function RunsList() {
       </section>
       <RunsInspector
         runs={selectedRuns}
+        lookupId={lookupId}
         count={count ? formatCount(count) : undefined}
         isRequeuing={requeuing.isRequeuing}
         onRequeued={requeuing.mark}
@@ -238,6 +242,8 @@ export default function RunsList() {
 
 interface RunsInspectorProps {
   runs: readonly Run[]
+  /** The one selected run's id when the loaded page does not hold it. */
+  lookupId?: string
   count?: string
   isRequeuing: (run: Run) => boolean
   onRequeued: (ids: readonly string[], versions: ReadonlyMap<string, string>) => void
@@ -245,8 +251,12 @@ interface RunsInspectorProps {
 }
 
 /** The selection's inspector: one run's fields and timeline, the shared actions of several, or the view's summary. */
-function RunsInspector({ runs, count, isRequeuing, onRequeued, onClose }: RunsInspectorProps) {
+function RunsInspector({ runs, lookupId, count, isRequeuing, onRequeued, onClose }: RunsInspectorProps) {
   const [only] = runs
+
+  if (lookupId) {
+    return <LookedUpRunInspector id={lookupId} isRequeuing={isRequeuing} onRequeued={onRequeued} onClose={onClose} />
+  }
 
   if (runs.length === 0) {
     return (
@@ -268,6 +278,39 @@ function RunsInspector({ runs, count, isRequeuing, onRequeued, onClose }: RunsIn
   }
 
   return <RunInspector run={only} requeuing={isRequeuing(only)} onRequeued={onRequeued} onClose={onClose} />
+}
+
+/** A selected run outside the loaded page: read by its id, then shown as any selected run is. */
+function LookedUpRunInspector({
+  id,
+  isRequeuing,
+  onRequeued,
+  onClose,
+}: { id: string } & Pick<RunsInspectorProps, 'isRequeuing' | 'onRequeued' | 'onClose'>) {
+  const { api } = useDashboard()
+  const module = useModule()
+  const detail = useDashboardObject({ topic: runsTopic(module.id), id, fetch: () => fetchRun(api, module.id, id) })
+
+  if (detail.data) {
+    return <RunInspector run={detail.data} requeuing={isRequeuing(detail.data)} onRequeued={onRequeued} onClose={onClose} />
+  }
+
+  return (
+    <Inspector label={`Run ${id}`} onClose={onClose}>
+      <h2 className="hd-title">Run</h2>
+      {detail.isError ? (
+        detail.error instanceof DashboardApiError && detail.error.status === 404 ? (
+          <p role="alert">{`No run ${id}. It may have been removed with the in-memory store.`}</p>
+        ) : (
+          <LoadError message={detail.error.message} onRetry={() => void detail.refetch()} />
+        )
+      ) : (
+        <p className="hd-hint" role="status">
+          Loading the run…
+        </p>
+      )}
+    </Inspector>
+  )
 }
 
 function RunInspector({
