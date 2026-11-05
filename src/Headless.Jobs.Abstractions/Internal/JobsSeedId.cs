@@ -88,6 +88,25 @@ internal static class JobsSeedId
             : marker.Insert(kindOffset, "retired:");
     }
 
+    /// <summary>Whether a stored marker names a row the seed step created from code, retired or not.</summary>
+    public static bool IsSeedMarker(string? storedMarker)
+    {
+        return storedMarker?.StartsWith(_MarkerRoot, StringComparison.Ordinal) == true;
+    }
+
+    /// <summary>Whether a stored marker names a seeded row whose declaration was removed from code.</summary>
+    public static bool IsRetiredMarker(string? storedMarker)
+    {
+        if (!IsSeedMarker(storedMarker))
+        {
+            return false;
+        }
+
+        var kindOffset = storedMarker!.IndexOf(':', _MarkerRoot.Length) + 1;
+
+        return kindOffset > 0 && storedMarker.AsSpan(kindOffset).StartsWith("retired:", StringComparison.Ordinal);
+    }
+
     /// <summary>Whether a stored marker is the retired form of a declared entry's live marker.</summary>
     public static bool IsRetiredMarkerOf(string? storedMarker, string liveMarker)
     {

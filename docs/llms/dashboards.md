@@ -271,6 +271,7 @@ The shell owns the endpoints under `{base}/api/{module}/commands`:
 - `GET` lists the module's commands for the caller. `GET allowed?kind=&id=` asks `GetAllowedCommandsAsync` which commands each object allows now (at most 500 objects), so the page disables a control with the module's reason instead of offering an action the module would refuse.
 - `POST {commandId}` runs the command over `ids` in a JSON body that may also carry `arguments`, `reason`, `confirmed`, and `typedCount`. At most 100,000 rows per call.
 - The shell checks every rule before `ExecuteAsync` runs. A command the host disabled, or one the call's channel may not use, answers `404`. A failed permission answers `403`. The body, reason, argument schema, and confirmation answer a `400` validation problem naming each field, with the broken rule in its `rules` extension. The page sends `X-Headless-Dashboard-Channel: ui`; a call without it is an API call. The channel is claimed, not proven, so it decides only which commands are offered and what the log records.
+- A module that refuses the whole call, because the object is not in a state the command applies to, returns a `DashboardCommandResult` with `Refusal` set and changes nothing; the shell answers `409` with the reason as the problem's `detail` and writes no operator-log entry.
 
 A command over a filter runs as an **Operation**, through the module's `IDashboardOperationRunner`:
 
@@ -392,6 +393,63 @@ export default defineConfig(
 The workspace build then holds the output to the size budgets in `packages/vite/budget.json`, measured as gzip at maximum compression: the shell's first load at most 235,000 bytes, the shell and every SDK entry together at most 250,000 bytes, each module entry at most 10,000 bytes, each view chunk at most 50,000 bytes, and the fonts at most 60,000 bytes. A budget overrun fails the build. The dashboard ships in English, so the shell build keeps only React Aria's `en-US` strings (its labels and screen-reader announcements); React Aria falls back to them for any other locale.
 
 `renderModule(definition, options)` from `@headless/dashboard-sdk/testing` mounts a module in a test shell, as the dashboard would: its routes, a session, its permissions (`canView` and `canOperate`, both `true` by default), the data client, an Operation host, toasts, and a fake stream. The `api` handler answers the module's API calls; throw a `DashboardApiError` to answer with a status. The result adds `stream` (push events as the server would), `requests` (every API call in order), and `navigate(path)`.
+
+### Jobs module
+
+`AddJobs()` adds the Jobs module (`Headless.Jobs.Dashboard`) under the id `jobs`. It needs `AddHeadlessJobs(...)` in the same host and takes no entity type arguments.
+
+```csharp
+builder.Services.AddHeadlessJobs(jobs => jobs.AddModule<AppJobs>());
+builder.Services.AddHeadlessDashboard(dashboard => dashboard
+    .WithHostAuthentication(host => { host.ViewPolicy = "ops.view"; host.OperatePolicy = "ops.operate"; })
+    .AddJobs(jobs => jobs.OperatePolicy = "jobs.operate"));
+
+app.MapHeadlessDashboard();
+```
+
+| `JobsDashboardOptions` member | Default | Description |
+| --- | --- | --- |
+| `ViewPolicy`, `OperatePolicy` | the shell's | As for every module. |
+| `ChangeOverlapWindow` | 5 s | How far back each change read reads again. Make it longer than the Jobs store's slowest single write. |
+| `ChangePageSize` | 200 | The most changed rows one change read returns, 1 to 1000. |
+
+`AddJobs(Action<JobsDashboardOptions>)`, `AddJobs(Action<JobsDashboardOptions, IServiceProvider>)`, and `AddJobs(IConfiguration)` configure them.
+
+**Object kinds and topics.** `run` (a time job or a cron occurrence, by its id), `cron-job`, `function` (by name), and `node`. Stream topics are `jobs.run` and `jobs.cron-job`; a change's projection is the run or cron job as its list row shows it, and its version is the row's change marker in ticks. A deleted row goes out with no projection, so open views refetch it and show `This run no longer exists`.
+
+**Commands.** Requeue, Cancel, and Delete need a reason and a confirmation (typed past 100 rows) and run over a filter as Operations. A call on one object the rules refuse changes nothing and answers `409` with the reason, such as `Paused — resume first`.
+
+| Command | On | Allowed when |
+| --- | --- | --- |
+| `jobs.requeue` | `run` | failed, cancelled, or skipped, and the requeue rules accept it |
+| `jobs.cancel` | `run` | a queued or running time job with no cancel requested yet |
+| `jobs.delete` | `run` | not running, and not a keyed time job |
+| `jobs.run-now` | `cron-job` | not paused, and not running when the cron job forbids overlap; the done row's `reason` is the new run's id |
+| `jobs.pause` / `jobs.resume` | `cron-job` | active / paused and not removed from code; each is the other's inverse |
+| `jobs.edit-cron` | `cron-job` | not defined in code; arguments `expression` (required) and `timeZoneId` |
+
+An Operation's filter is `{ kind, functions, statuses, cronJobId, correlationId, fingerprint, from, before, actionableOnly }`. Requeue and Delete freeze on the store's latest change marker at confirm and write each row only while its marker is unchanged, so a run requeued by one chunk that fails again is not touched again; Cancel freezes on creation at confirm and needs no marker, because a running job advances its marker as it reports progress.
+
+**Needs you and Overview.** One item per function and failure fingerprint (`3 failed runs of billing.charge`), recommending `jobs.requeue` over the group's actionable failures; one item per registered function that no live node's run filter claims (`No live node runs billing.charge`), pointing at its `function` object. The Overview shows the share of runs that succeeded, failed runs, and runs that started later than the scheduler's fallback interval after they were due, each over the last 24 hours against the 24 before.
+
+**Related and payload.** A run relates to the other runs with its correlation id (`jobs.same-correlation`), its chain (`jobs.chain`), and its cron job (`jobs.cron-job`); a run with a stored W3C trace parent carries its trace id, so the shell offers `Open trace`. Its payload is its stored request as JSON, or `Unsupported contract version N` when this host registers another version.
+
+**API** at `{base}/api/jobs`, JSON with camelCase names and enums as strings:
+
+| Route | Answer |
+| --- | --- |
+| `GET runs?kind=&function=&status=&cronJobId=&correlationId=&fingerprint=&from=&before=&actionable=&newest=&limit=&after=` | `{ items, count, countCapped, nextCursor }`: one keyset page of runs, newest first unless `newest=false`, `limit` up to 200, a count capped at 10,000; `after` takes `nextCursor` |
+| `GET runs/{id}` | `{ run, children }`, or `404` |
+| `GET runs/{id}/attempts` | `{ items: [{ number, node, startedAt, endedAt, outcome, exceptionMessage, failureFingerprint }] }`, or `404` |
+| `GET cron-jobs?function=` | `{ items }`: every cron job with its plain reading |
+| `GET cron-jobs/{id}?fires=` | one cron job with its next fires (default 5, at most 50; none while paused), or `404` |
+| `GET cron-preview?expression=&timeZoneId=&count=` | `{ timeZoneId, reading, nextFires, validationMessage }` for a draft schedule |
+| `GET functions` | `{ items: [{ name, contractVersion, priority, maxConcurrency, requestType, cronExpression, claimedBy, succeeded, failed, running, waiting, lastExecutedAt, cronJobs }] }`, counts over 24 hours |
+| `GET nodes` | `{ items: [{ identity, state, role, claimedFunctions }] }`: live nodes; without node membership, this host |
+| `POST time-jobs` | an operator action: `{ function, executionTime, timeZoneId, request, description, retries, retryIntervals, children: [{ ..., runCondition }] }` answers `201 { id }`; a time without an offset is read in `timeZoneId`, else the scheduler's zone; a bad body answers `400` |
+| `POST cron-jobs` | an operator action: `{ function, expression, timeZoneId, request, description }` answers `201 { id }` |
+
+Until the module's views ship, its build serves a manifest with no navigation, so the shell lists its server contributions only. Per-node scheduler state, and starting or stopping a scheduler, are not part of the module yet.
 
 ### Jobs and Messaging dashboards
 

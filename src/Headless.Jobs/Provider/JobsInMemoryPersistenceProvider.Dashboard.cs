@@ -350,13 +350,12 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             )
             && (
                 !query.ActionableFailuresOnly
-                || JobRequeueRules.RefuseTimeJob(
+                || JobRequeueRules.IsActionableTimeJobFailure(
                     job.Status,
                     job.ParentId is not null || _GetChildrenIds(job.Id).Length != 0,
                     job.BusinessKey,
                     job.IsCurrentGeneration
                 )
-                    is null
             );
     }
 

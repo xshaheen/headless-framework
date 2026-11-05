@@ -5,8 +5,9 @@ using Microsoft.EntityFrameworkCore;
 #pragma warning disable MA0133 // EF must keep DateTime.UtcNow in expression trees so providers translate the database clock before the DateTimeOffset assignment.
 namespace Headless.Jobs.Infrastructure;
 
-// Operator requeue of a Failed cron occurrence for the relational provider. It holds the definition row lock every
-// occurrence producer takes first, so the overlap and instant checks stay true until the write commits.
+// Operator requeue of a Failed, Cancelled, or Skipped cron occurrence for the relational provider. It holds the
+// definition row lock every occurrence producer takes first, so the overlap and instant checks stay true until the
+// write commits.
 internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>
     where TDbContext : DbContext
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
@@ -66,9 +67,9 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             return JobRequeueOutcome.NotFound;
         }
 
-        if (observed.Status != JobStatus.Failed)
+        if (JobRequeueRules.RefuseCronJobOccurrence(observed.Status) is { } refused)
         {
-            return JobRequeueOutcome.NotFailed;
+            return refused;
         }
 
         if (compareMarker && observed.ChangedAt != marker)
@@ -134,11 +135,8 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                     }
 
                     var affected = await occurrences
-                        .Where(x =>
-                            x.Id == occurrenceId
-                            && x.Status == JobStatus.Failed
-                            && (!compareMarker || x.ChangedAt == marker)
-                        )
+                        .Where(x => x.Id == occurrenceId && (!compareMarker || x.ChangedAt == marker))
+                        .Where(JobRequeueRules.RequeueableCronJobOccurrence<TCronJob>())
                         .ExecuteUpdateAsync(
                             setter =>
                                 setter
