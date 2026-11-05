@@ -1,12 +1,36 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
+import type { CommandDefinition } from '@headless/dashboard-sdk/commands'
 import type { AttentionItem, ModuleSection } from '../src/shell-data.ts'
 import { moduleFiles, moduleManifest, shellState } from './fixtures/modules.tsx'
 import { renderShell } from './harness.tsx'
 
 function item(id: string, groupKey: string, title: string, count: number): AttentionItem {
   return { id, groupKey, title, severity: 'critical', count, capped: false, target: { module: 'diag', kind: 'run', id }, since: '2026-11-05T09:14:00Z' }
+}
+
+const requeue: CommandDefinition = {
+  id: 'diag.requeue',
+  label: 'Requeue',
+  objectKind: 'run',
+  permission: 'operate',
+  confirmation: 'confirm',
+  typedConfirmationAbove: 100,
+  requiresReason: true,
+  supportsFilter: true,
+  arguments: { type: 'object', required: [], properties: {} },
+  canRun: true,
+}
+
+function grouped(overrides: Partial<AttentionItem>): AttentionItem {
+  return { ...item('g1', 'timeout', '23 runs failed: timeout', 23), target: null, ...overrides }
+}
+
+function needsYouOnly(items: AttentionItem[]) {
+  return (request: { path: string }) => ({
+    modules: request.path === 'needs-you' ? [{ id: 'diag', displayName: 'Diagnostics', stale: false, items }] : [],
+  })
 }
 
 describe('Needs you', () => {
@@ -93,5 +117,57 @@ describe('Needs you', () => {
 
     await user.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('complementary', { name: 'Needs you: Run failed' })).toBeNull())
+  })
+
+  it('offers the recommended command as the primary button and opens the Operation confirm over the group', async () => {
+    const user = userEvent.setup()
+    const filter = { status: 'Failed', error: 'timeout' }
+    const shell = renderShell(shellState([moduleManifest('diag', { displayName: 'Diagnostics' })]), {
+      path: '/needs-you',
+      api: (request) =>
+        request.path.endsWith('/confirm')
+          ? { operationId: 'op1', count: 23, confirmation: 'confirm', sample: [], token: 't', expiresAt: '', chunkSize: 50 }
+          : needsYouOnly([grouped({ recommended: { command: requeue, filter }, recentCount: 3 })])(request),
+    })
+
+    const cause = await screen.findByRole('list', { name: '23 runs failed: timeout' })
+    expect(within(cause).getByText(/growing/)).toBeTruthy()
+    const button = within(cause).getByRole('button', { name: 'Requeue 23' })
+    expect(button.className).toContain('hd-btn-primary')
+
+    await user.click(button)
+    expect(await screen.findByRole('dialog', { name: 'Requeue runs in this group' })).toBeTruthy()
+    await user.type(screen.getByRole('textbox', { name: /Reason/ }), 'timeouts fixed')
+    await user.click(screen.getByRole('button', { name: 'Count rows' }))
+
+    expect(await screen.findByRole('button', { name: 'Requeue 23 runs in this group' })).toBeTruthy()
+    const confirm = shell.requests.find((request) => request.path === 'diag/commands/diag.requeue/confirm')
+    expect(confirm?.body).toMatchObject({ filter, reason: 'timeouts fixed' })
+  })
+
+  it('shows no growing mark when nothing joined the cause in the latest interval', async () => {
+    renderShell(shellState([moduleManifest('diag', { displayName: 'Diagnostics' })]), {
+      path: '/needs-you',
+      api: needsYouOnly([grouped({ recommended: { command: requeue, filter: {} }, recentCount: 0 })]),
+    })
+
+    const cause = await screen.findByRole('list', { name: '23 runs failed: timeout' })
+    expect(within(cause).queryByText(/growing/)).toBeNull()
+  })
+
+  it('shows a viewer the recommended command disabled with Needs operate permission', async () => {
+    const user = userEvent.setup()
+    const refused = { ...requeue, canRun: false, disabledReason: 'Needs operate permission' }
+    renderShell(shellState([moduleManifest('diag', { displayName: 'Diagnostics' })]), {
+      path: '/needs-you',
+      api: needsYouOnly([grouped({ recommended: { command: refused, filter: {} } })]),
+    })
+
+    const button = await screen.findByRole('button', { name: 'Requeue 23' })
+    expect(button.getAttribute('aria-disabled')).toBe('true')
+    expect(document.getElementById(button.getAttribute('aria-describedby')!)?.textContent).toBe('Needs operate permission')
+
+    await user.click(button)
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 })

@@ -181,6 +181,14 @@ Everything else is an optional capability interface on the same class, found by 
 
 Needs you, Overview, lookup, and related objects call every module in parallel, list only the modules the user may view, and wait at most `AggregationTimeout` for each. A module that times out or throws answers `stale: true` in its place. Counts stop at 10,000 and report `capped: true`.
 
+A `DashboardAttentionItem` can also say how to resolve it and whether it is still growing:
+
+- **`RecommendedCommandId` and `GroupFilter`.** The id of one of the module's commands, such as its Requeue, and the filter, in the module's own Operation filter shape, that selects every object of the item's group. Needs you shows the command as the item's primary button (`Requeue 23`), and pressing it starts an Operation over `GroupFilter`: the operator gives a reason, the server counts the scope, and nothing runs before the confirm. The shell offers the button only when both members are set, the module implements `IDashboardOperationRunner`, and the host has not disabled the command or hidden it from the UI. A user without the command's permission sees it disabled with `Needs operate permission`.
+- **`RecentCount`.** How many objects joined the item in the module's latest interval, such as the last hour. Above zero, Needs you marks the cause `growing`.
+- **`LastSeenAt`.** When the cause last occurred, beside `Since`, when it began.
+
+`GET {base}/api/needs-you` returns these as `recommended` (`{ command, filter }`, where `command` is described for the signed-in user as `GET {base}/api/{module}/commands` describes it, or `null`), `recentCount`, and `lastSeenAt`. The diagnostic module recommends Requeue over each failure group and counts the runs that failed in the last hour.
+
 The interfaces grow by new capability interfaces and default interface members. An existing member never gains a parameter; the request and result records grow by `init` members instead.
 
 A module package wraps `AddModule` in its own extension, the way `AddDiagnostics` does:

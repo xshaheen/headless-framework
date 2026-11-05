@@ -68,11 +68,17 @@ internal static class AggregationEndpoints
             )
             .ConfigureAwait(false);
 
-        var modules = answers.Select(answer =>
-            _Section(answer, items => items.Select(static item => _ToAttentionResponse(item)).ToArray())
-        );
+        var modules = new List<ModuleSection<AttentionItemResponse>>(answers.Count);
 
-        return Results.Json(new ModulesResponse<AttentionItemResponse>([.. modules]), ShellJson.Web);
+        foreach (var answer in answers)
+        {
+            var commands = await _RecommendedCommandsAsync(context, answer).ConfigureAwait(false);
+            modules.Add(
+                _Section(answer, items => items.Select(item => _ToAttentionResponse(item, commands)).ToArray())
+            );
+        }
+
+        return Results.Json(new ModulesResponse<AttentionItemResponse>(modules), ShellJson.Web);
     }
 
     private static async Task<IResult> _GetOverviewAsync(HttpContext context, CancellationToken cancellationToken)
@@ -243,9 +249,65 @@ internal static class AggregationEndpoints
         return new ModuleSection<TItem>(answer.Module.Id, answer.Module.DisplayName, answer.Stale, items);
     }
 
-    private static AttentionItemResponse _ToAttentionResponse(DashboardAttentionItem item)
+    /// <summary>
+    /// Describes each command the module's items recommend, as <c>GET {module}/commands</c> does for this user, so the
+    /// shell draws the button, its refusal, and its Operation confirm without another request. A command the module
+    /// cannot run over a filter, or one the host disabled or hid from the UI, is left out, so its item offers none.
+    /// </summary>
+    private static async Task<Dictionary<string, JsonElement>> _RecommendedCommandsAsync(
+        HttpContext context,
+        ModuleAnswer<IReadOnlyList<DashboardAttentionItem>> answer
+    )
+    {
+        var described = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+
+        if (answer is not { Stale: false, Result: { } items } || answer.Module.Module is not IDashboardOperationRunner)
+        {
+            return described;
+        }
+
+        foreach (var item in items)
+        {
+            if (
+                item is not { RecommendedCommandId: { } commandId, GroupFilter: not null }
+                || described.ContainsKey(commandId)
+            )
+            {
+                continue;
+            }
+
+            var command = answer.Module.ServerCommands.FirstOrDefault(c =>
+                string.Equals(c.Id, commandId, StringComparison.Ordinal) && c.Visibility.HasFlag(DashboardChannels.Ui)
+            );
+
+            if (command is null)
+            {
+                continue;
+            }
+
+            var refusal = await CommandAuthorization
+                .GetRefusalAsync(context, answer.Module.Id, command)
+                .ConfigureAwait(false);
+            described[commandId] = JsonSerializer.SerializeToElement(
+                CommandDefinition.Create(command, supportsFilter: true, refusal),
+                CommandEndpoints.JsonOptions
+            );
+        }
+
+        return described;
+    }
+
+    private static AttentionItemResponse _ToAttentionResponse(
+        DashboardAttentionItem item,
+        Dictionary<string, JsonElement> commands
+    )
     {
         var (count, capped) = CapCount(item.Count);
+        var recommended =
+            item is { RecommendedCommandId: { } commandId, GroupFilter: { } filter }
+            && commands.TryGetValue(commandId, out var command)
+                ? new RecommendedCommandResponse(command, filter)
+                : null;
 
         return new AttentionItemResponse(
             item.Id,
@@ -255,7 +317,10 @@ internal static class AggregationEndpoints
             count,
             capped,
             item.Target,
-            item.Since
+            item.Since,
+            item.LastSeenAt,
+            item.RecentCount,
+            recommended
         );
     }
 
@@ -307,8 +372,14 @@ internal static class AggregationEndpoints
         long Count,
         bool Capped,
         ObjectRef? Target,
-        DateTimeOffset? Since
+        DateTimeOffset? Since,
+        DateTimeOffset? LastSeenAt,
+        long RecentCount,
+        RecommendedCommandResponse? Recommended
     );
+
+    /// <summary>The command an item recommends, described for the user, and the filter that scopes its Operation.</summary>
+    private sealed record RecommendedCommandResponse(JsonElement Command, JsonElement Filter);
 
     private sealed record ObjectResponse(
         ObjectRef Target,

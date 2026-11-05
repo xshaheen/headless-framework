@@ -112,7 +112,9 @@ public sealed class DiagnosticsModuleTests : TestBase
             var page = await _ReadAsync(response);
 
             page.GetProperty("count").GetInt32().Should().Be(250 + pages);
-            seen.AddRange(page.GetProperty("items").EnumerateArray().Select(static run => run.GetProperty("id").GetString()!));
+            seen.AddRange(
+                page.GetProperty("items").EnumerateArray().Select(static run => run.GetProperty("id").GetString()!)
+            );
             cursor = page.TryGetProperty("nextCursor", out var next) ? next.GetString() : null;
             pages++;
 
@@ -425,6 +427,32 @@ public sealed class DiagnosticsModuleTests : TestBase
         items.Should().OnlyContain(static item => item.Severity == DashboardAttentionSeverity.Critical);
         items[0].Target.Should().BeNull();
         items[1].Target!.Id.Should().Be(single);
+    }
+
+    [Fact]
+    public async Task should_recommend_requeue_over_the_group_and_count_the_last_hour_when_needs_you_asks()
+    {
+        var store = new DiagnosticsStore(_time);
+        _SeedFailed(store, 2, "timeout");
+        _SeedFailed(store, 1, "disk full");
+        _time.Advance(TimeSpan.FromHours(2));
+        _SeedFailed(store, 1, "timeout");
+        var latest = _time.GetUtcNow();
+        var module = _Module(store, new RecordingPublisher());
+
+        var items = await module.GetAttentionAsync(new DashboardAttentionRequest { User = _User }, AbortToken);
+
+        var timeout = items.Single(static item => string.Equals(item.GroupKey, "timeout", StringComparison.Ordinal));
+        var diskFull = items.Single(static item => string.Equals(item.GroupKey, "disk full", StringComparison.Ordinal));
+        timeout.RecommendedCommandId.Should().Be(_Requeue);
+        timeout.RecentCount.Should().Be(1);
+        timeout.LastSeenAt.Should().Be(latest);
+        diskFull.RecentCount.Should().Be(0);
+
+        // The group filter scopes the Operation to the group's own runs: every timeout, and no disk full.
+        var scope = await module.PrepareAsync(_Scope(timeout.GroupFilter!.Value), AbortToken);
+        scope.Count.Should().Be(3);
+        scope.Sample.Should().OnlyContain(run => store.Find(run.Target.Id)!.LastError == "timeout");
     }
 
     [Fact]

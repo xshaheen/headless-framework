@@ -24,6 +24,15 @@ public sealed class AggregationEndpointTests : TestBase
     private const string _TraceId = "4bf92f3577b34da6a3ce929d0e0e4736";
     private const string _DiagBViewers = "diag-b.viewers";
 
+    private static readonly DashboardCommand _Requeue = new()
+    {
+        Id = "diag-a.requeue",
+        Label = "Requeue",
+        ObjectKind = "run",
+        Confirmation = DashboardConfirmation.Confirm,
+        RequiresReason = true,
+    };
+
     private readonly FakeTimeProvider _time = new(new DateTimeOffset(2026, 11, 5, 9, 0, 0, TimeSpan.Zero));
     private readonly DiagAModule _diagA = new();
     private readonly DiagBModule _diagB = new();
@@ -333,6 +342,76 @@ public sealed class AggregationEndpointTests : TestBase
         items[0].GetProperty("capped").GetBoolean().Should().BeTrue();
         items[1].GetProperty("count").GetInt64().Should().Be(9_999);
         items[1].GetProperty("capped").GetBoolean().Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_return_the_recommended_command_with_its_group_filter_and_growth_when_needs_you_asks()
+    {
+        var lastSeenAt = _time.GetUtcNow().AddMinutes(-5);
+        _diagA.Commands = [_Requeue];
+        _diagA.Attention = _ =>
+            _Items(
+                _Item("a-1", count: 4) with
+                {
+                    RecommendedCommandId = _Requeue.Id,
+                    GroupFilter = JsonSerializer.SerializeToElement(new { error = "boom" }),
+                    LastSeenAt = lastSeenAt,
+                    RecentCount = 2,
+                },
+                _Item("a-2", count: 1) with
+                {
+                    RecommendedCommandId = "diag-a.unknown",
+                    GroupFilter = JsonSerializer.SerializeToElement(new { error = "other" }),
+                }
+            );
+
+        await using var app = await _StartAsync(withDiagB: false);
+        using var client = app.GetTestClient();
+
+        using var response = await client.GetAsync("/dash/api/needs-you", AbortToken);
+
+        var items = (await _ReadAsync(response)).GetProperty("modules")[0].GetProperty("items");
+        var recommended = items[0].GetProperty("recommended");
+        recommended.GetProperty("command").GetProperty("id").GetString().Should().Be(_Requeue.Id);
+        recommended.GetProperty("command").GetProperty("label").GetString().Should().Be("Requeue");
+        recommended.GetProperty("command").GetProperty("confirmation").GetString().Should().Be("confirm");
+        recommended.GetProperty("command").GetProperty("canRun").GetBoolean().Should().BeTrue();
+        recommended.GetProperty("filter").GetProperty("error").GetString().Should().Be("boom");
+        items[0].GetProperty("lastSeenAt").GetDateTimeOffset().Should().Be(lastSeenAt);
+        items[0].GetProperty("recentCount").GetInt64().Should().Be(2);
+        // A command the module does not offer the UI, such as one the host disabled, is not recommended.
+        items[1].GetProperty("recommended").ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
+    [Fact]
+    public async Task should_recommend_the_command_disabled_with_needs_operate_permission_when_a_viewer_asks()
+    {
+        _diagA.Commands = [_Requeue];
+        _diagA.Attention = _ =>
+            _Items(
+                _Item("a-1", count: 4) with
+                {
+                    RecommendedCommandId = _Requeue.Id,
+                    GroupFilter = JsonSerializer.SerializeToElement(new { error = "boom" }),
+                }
+            );
+
+        await using var app = await _StartAsync(
+            withDiagB: false,
+            services: services => services.Configure<DiagAModuleOptions>(o => o.OperatePolicy = _DiagBViewers),
+            hostAuthentication: true
+        );
+        using var client = _HttpsClient(app);
+
+        using var response = await _GetSignedInAsync(client, "/dash/api/needs-you", roles: "");
+
+        var command = (await _ReadAsync(response))
+            .GetProperty("modules")[0]
+            .GetProperty("items")[0]
+            .GetProperty("recommended")
+            .GetProperty("command");
+        command.GetProperty("canRun").GetBoolean().Should().BeFalse();
+        command.GetProperty("disabledReason").GetString().Should().Be("Needs operate permission");
     }
 
     [Fact]

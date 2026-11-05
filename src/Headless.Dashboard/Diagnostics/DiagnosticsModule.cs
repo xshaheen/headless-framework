@@ -95,7 +95,7 @@ internal sealed class DiagnosticsModule
         CancellationToken cancellationToken
     )
     {
-        return Task.FromResult(_sources.GetAttention());
+        return Task.FromResult(_sources.GetAttention(_commands.RequeueId));
     }
 
     public Task<IReadOnlyList<DashboardFigure>> GetOverviewAsync(
@@ -260,7 +260,8 @@ internal sealed class DiagnosticsModule
             }
         }
 
-        var nextCursor = hasMore && last is not null ? last.CreatedSequence.ToString(CultureInfo.InvariantCulture) : null;
+        var nextCursor =
+            hasMore && last is not null ? last.CreatedSequence.ToString(CultureInfo.InvariantCulture) : null;
 
         return TypedResults.Json(
             new DiagnosticsRunList(items, count, capped, nextCursor),
@@ -355,6 +356,9 @@ internal sealed record DiagnosticsRunList(
     string? NextCursor
 );
 
+/// <summary>The filter <see cref="DiagnosticsRunFilter"/> reads, as a Needs-you group hands it to its Operation.</summary>
+internal sealed record DiagnosticsRunFilterDocument(string Status, string Error);
+
 [JsonSourceGenerationOptions(
     JsonSerializerDefaults.Web,
     UseStringEnumConverter = true,
@@ -363,4 +367,5 @@ internal sealed record DiagnosticsRunList(
 [JsonSerializable(typeof(DiagnosticsRunSummary))]
 [JsonSerializable(typeof(DiagnosticsRunDetail))]
 [JsonSerializable(typeof(DiagnosticsRunList))]
+[JsonSerializable(typeof(DiagnosticsRunFilterDocument))]
 internal sealed partial class DiagnosticsJsonContext : JsonSerializerContext;

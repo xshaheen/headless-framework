@@ -1,4 +1,5 @@
 import { useDashboard } from '@headless/dashboard-sdk'
+import type { CommandDefinition } from '@headless/dashboard-sdk/commands'
 import { useDashboardApi } from '@headless/dashboard-sdk/data'
 import { useQuery, useQueryClient } from '@headless/dashboard-sdk/query'
 import { useStreamEvent } from '@headless/dashboard-sdk/stream'
@@ -25,6 +26,12 @@ export interface AttentionItem {
   target?: ObjectRef | null
   /** When the item began, an ISO time. */
   since?: string | null
+  /** When its cause last occurred, an ISO time. */
+  lastSeenAt?: string | null
+  /** How many objects joined it in the module's latest interval; above zero, the cause is still growing. */
+  recentCount?: number
+  /** The command that resolves it, described for this user, and the filter that scopes its Operation to the group. */
+  recommended?: { command: CommandDefinition; filter: unknown } | null
 }
 
 export interface Figure {

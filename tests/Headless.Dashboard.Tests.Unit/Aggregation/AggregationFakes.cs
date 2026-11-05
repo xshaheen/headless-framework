@@ -23,7 +23,9 @@ internal abstract class FakeModule(string id)
         IDashboardObjectResolver,
         IDashboardRelatedSource,
         IDashboardPayloadSource,
-        IDashboardPayloadFormatter
+        IDashboardPayloadFormatter,
+        IDashboardCommandSource,
+        IDashboardOperationRunner
 {
     public string Id { get; } = id;
 
@@ -62,7 +64,37 @@ internal abstract class FakeModule(string id)
     public Func<ObjectRef, CancellationToken, Task<DashboardPayload?>> Payload { get; set; } =
         static (_, _) => Task.FromResult<DashboardPayload?>(null);
 
+    public IReadOnlyList<DashboardCommand> Commands { get; set; } = [];
+
     public void MapEndpoints(DashboardModuleEndpoints endpoints) { }
+
+    public Task<IReadOnlyList<DashboardCommandAvailability>> GetAllowedCommandsAsync(
+        DashboardAllowedCommandsRequest request,
+        CancellationToken cancellationToken
+    ) => Task.FromResult<IReadOnlyList<DashboardCommandAvailability>>([]);
+
+    public Task<DashboardCommandResult> ExecuteAsync(
+        DashboardCommandRequest request,
+        CancellationToken cancellationToken
+    ) => Task.FromResult(new DashboardCommandResult { Rows = [] });
+
+    public Task<DashboardOperationScope> PrepareAsync(
+        DashboardOperationScopeRequest request,
+        CancellationToken cancellationToken
+    ) =>
+        Task.FromResult(
+            new DashboardOperationScope
+            {
+                Count = 0,
+                Sample = [],
+                HighWaterMark = "0",
+            }
+        );
+
+    public Task<DashboardOperationChunk> RunChunkAsync(
+        DashboardOperationChunkRequest request,
+        CancellationToken cancellationToken
+    ) => Task.FromResult(new DashboardOperationChunk { Rows = [], NextCursor = null });
 
     public Task<IReadOnlyList<DashboardAttentionItem>> GetAttentionAsync(
         DashboardAttentionRequest request,

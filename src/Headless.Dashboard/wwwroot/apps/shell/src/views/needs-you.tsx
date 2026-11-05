@@ -1,3 +1,4 @@
+import { useOperations } from '@headless/dashboard-sdk/commands'
 import { Button, InspectorField, InspectorFields, Mono, StatusMark, useDelayed } from '@headless/dashboard-sdk/components'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useSearchParams } from '@headless/dashboard-sdk/router'
@@ -63,6 +64,26 @@ function InvestigateButton({ item, variant }: { item: AttentionItem; variant?: '
       ) : null}
     </>
   )
+}
+
+/**
+ * The item's recommended command as its primary button, such as `Requeue 23`: an Operation over the item's group,
+ * which confirms the scope the server counts before anything runs. A user who may not run it sees the button disabled
+ * with the reason. A plain function rather than a component, so the compiler adds no memo cache of its own: the shell
+ * sits at the edge of its size budget.
+ */
+function recommendedButton(operations: ReturnType<typeof useOperations>, format: ReturnType<typeof useFormat>, module: string, item: AttentionItem) {
+  const recommended = item.recommended
+
+  return recommended ? (
+    <Button
+      variant="primary"
+      disabledReason={recommended.command.disabledReason}
+      onPress={() => operations.start({ module, ...recommended, noun: `${recommended.command.objectKind}s in this group` })}
+    >
+      {`${recommended.command.label} ${format.count({ value: item.count, capped: item.capped })}`}
+    </Button>
+  ) : null
 }
 
 function ItemInspector({ section, item, onClose }: { section: ModuleSection<AttentionItem>; item: AttentionItem; onClose: () => void }) {
@@ -158,6 +179,7 @@ export function NeedsYou() {
   const showSkeleton = useDelayed(needsYou.isPending)
   const selected = params.get('item')
   const format = useFormat()
+  const operations = useOperations()
 
   function select(key: string | null) {
     setParams(
@@ -253,9 +275,11 @@ export function NeedsYou() {
                         <span className="hd-hint">
                           {`${format.count({ value: item.count, capped: item.capped })} items`}
                           {item.since ? ` · since ${format.relativeTime(item.since, { style: 'short' })}` : ''}
+                          {item.recentCount ? ' · growing' : ''}
                         </span>
                       </button>
                       <span className="hd-actions">
+                        {recommendedButton(operations, format, section.id, item)}
                         <InvestigateButton item={item} />
                       </span>
                     </li>
