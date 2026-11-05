@@ -1,0 +1,8 @@
+{
+  "id": "diag",
+  "sdkVersion": "2.0",
+  "entry": "entry.js",
+  "nav": [{ "id": "diag.nav.runs", "label": "Runs", "to": "runs" }],
+  "routes": [{ "path": "runs", "chunk": "runs.js" }],
+  "commands": [{ "id": "diag.open-runs", "label": "Open runs" }]
+}

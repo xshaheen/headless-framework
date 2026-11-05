@@ -12,6 +12,10 @@
     <PackageReference Include="xunit.v3.mtp-v2" />
   </ItemGroup>
   <ItemGroup>
+    <!-- Fixture module builds: each folder stands in for one module's embedded Vite output. -->
+    <EmbeddedResource Include="Modules\Fixtures\**\manifest.json" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Dashboard\Headless.Dashboard.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
   </ItemGroup>
