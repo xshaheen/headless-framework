@@ -80,8 +80,12 @@ export function CommandAction({ module, command, ids, noun, disabledReason, comm
                   void client
                     .run(command.inverseCommandId!, { ids: undone, confirmed: true, reason: `Undo of ${command.label}` })
                     .then((undoRows) => toasts.show({ message: summary(inverse?.label ?? 'Undo', noun, undoRows) }))
+                    // The toast outlives this button, so the failure goes to a toast too, not into state that may
+                    // belong to an unmounted or reselected component.
                     .catch((undoError: unknown) =>
-                      setError(undoError instanceof DashboardApiError ? undoError.message : 'Undo failed. Try again.'),
+                      toasts.show({
+                        message: undoError instanceof DashboardApiError ? undoError.message : 'Undo failed. Try again.',
+                      }),
                     )
                 },
               }

@@ -1,10 +1,10 @@
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { firstLoadFiles, formatBudgetResult, gzipSize, measureBudgets, type Budget } from '../src/index.ts'
+import { firstLoadFiles, formatBudgetResult, gzipSize, measureBudgets, type Budget } from '../src/budget.ts'
 
 const cli = fileURLToPath(new URL('../src/cli.ts', import.meta.url))
 
@@ -110,6 +110,27 @@ describe('size budgets', () => {
 
     expect(run.status).toBe(3)
     expect(run.stderr).toMatch(/View chunk: modules\/jobs\/chunks\/runs\.js is \d+\.\d kB gzip, over its 2\.0 kB budget/)
+  })
+
+  it('writes the build stamp last on success, and removes a stale one when over budget', () => {
+    const passing = dist({ 'index.html': '<!doctype html>', 'assets/a.js': 'export const x = 1\n'.repeat(200) })
+    const passingBudget = join(passing, 'budget.json')
+    writeFileSync(passingBudget, JSON.stringify({ budgets: [] }))
+
+    expect(spawnSync(process.execPath, [cli, 'finalize', passing, passingBudget]).status).toBe(0)
+    expect(existsSync(join(passing, '.build-complete'))).toBe(true)
+
+    // A stamp left by an earlier good build must not survive a failed one, or the .NET build would skip npm next time.
+    const failing = dist({
+      'index.html': '<!doctype html>',
+      '.build-complete': 'stale\n',
+      'modules/jobs/chunks/runs.js': incompressible(3000),
+    })
+    const failingBudget = join(failing, 'budget.json')
+    writeFileSync(failingBudget, JSON.stringify({ budgets: [viewChunk] }))
+
+    expect(spawnSync(process.execPath, [cli, 'finalize', failing, failingBudget]).status).toBe(3)
+    expect(existsSync(join(failing, '.build-complete'))).toBe(false)
   })
 
   it('writes precompressed siblings when the build is within budget', () => {

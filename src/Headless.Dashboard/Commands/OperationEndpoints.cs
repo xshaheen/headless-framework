@@ -235,44 +235,64 @@ internal static class OperationEndpoints
             return CommandEndpoints.Invalid(unconfirmed);
         }
 
-        var chunk = await ((IDashboardOperationRunner)module.Module)
-            .RunChunkAsync(
-                new DashboardOperationChunkRequest
-                {
-                    CommandId = command.Id,
-                    Filter = _ParseElement(token.Filter),
-                    HighWaterMark = token.HighWaterMark,
-                    Cursor = body.Cursor,
-                    ChunkSize = CommandRules.ChunkSize,
-                    Arguments = _ParseArguments(token.Arguments),
-                    Reason = token.Reason,
-                    User = context.User,
-                },
-                cancellationToken
-            )
-            .ConfigureAwait(false);
+        var entry = new OperatorLogEntry
+        {
+            Timestamp = CommandEndpoints.Now(context),
+            Actor = actor,
+            Channel = channel,
+            Module = module.Id,
+            CommandId = command.Id,
+            Action = OperatorLogAction.OperationChunk,
+            Scope = token.Filter,
+            Count = CommandRules.ChunkSize,
+            Reason = token.Reason,
+            OperationId = token.OperationId,
+        };
+
+        DashboardOperationChunk chunk;
+
+        try
+        {
+            chunk = await ((IDashboardOperationRunner)module.Module)
+                .RunChunkAsync(
+                    new DashboardOperationChunkRequest
+                    {
+                        CommandId = command.Id,
+                        Filter = _ParseElement(token.Filter),
+                        HighWaterMark = token.HighWaterMark,
+                        Cursor = body.Cursor,
+                        ChunkSize = CommandRules.ChunkSize,
+                        Arguments = _ParseArguments(token.Arguments),
+                        Reason = token.Reason,
+                        User = context.User,
+                    },
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            // The module may have changed some rows of the chunk before it failed; the attempt is recorded before the
+            // error propagates to the host's error handling.
+            await CommandEndpoints
+                .WriteLogAsync(context, entry with { Failed = CommandRules.ChunkSize })
+                .ConfigureAwait(false);
+            throw;
+        }
 
         var (done, skipped, failed) = CommandEndpoints.Tally(chunk.Rows);
 
         await CommandEndpoints
             .WriteLogAsync(
                 context,
-                new OperatorLogEntry
+                entry with
                 {
                     Timestamp = CommandEndpoints.Now(context),
-                    Actor = actor,
-                    Channel = channel,
-                    Module = module.Id,
-                    CommandId = command.Id,
-                    Action = OperatorLogAction.OperationChunk,
                     Ids = [.. chunk.Rows.Select(static row => row.Id)],
-                    Scope = token.Filter,
                     Count = chunk.Rows.Count,
-                    Reason = token.Reason,
                     Done = done,
                     Skipped = skipped,
                     Failed = failed,
-                    OperationId = token.OperationId,
                 }
             )
             .ConfigureAwait(false);

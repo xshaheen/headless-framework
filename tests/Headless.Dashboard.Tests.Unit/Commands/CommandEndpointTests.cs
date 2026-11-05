@@ -18,6 +18,9 @@ public sealed class CommandEndpointTests : TestBase
 {
     private const string _Viewer = "Bearer diag-viewer";
     private const string _Operator = "Bearer diag-operator";
+    private const string _RunRoute = "";
+    private const string _ConfirmRoute = "/confirm";
+    private const string _ChunksRoute = "/chunks";
 
     private readonly FakeTimeProvider _time = ShellTestHost.NewTime();
     private readonly FakeRunStore _store = new();
@@ -29,14 +32,17 @@ public sealed class CommandEndpointTests : TestBase
         _store.SeedFailed(200);
     }
 
-    [Fact]
-    public async Task should_answer_403_and_log_nothing_when_a_viewer_calls_an_operate_command()
+    [Theory]
+    [InlineData(_RunRoute)]
+    [InlineData(_ConfirmRoute)]
+    [InlineData(_ChunksRoute)]
+    public async Task should_answer_403_and_log_nothing_when_a_viewer_calls_an_operate_command(string route)
     {
         await using var app = await _StartAsync();
         using var client = ShellTestHost.Client(app);
         var cookie = await ShellTestHost.SignInAsync(client, _Viewer, AbortToken);
 
-        using var response = await _RequeueAsync(client, cookie, ["run-000001"]);
+        using var response = await _PostRouteAsync(client, route, cookie);
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         (await ReadAsync(response, AbortToken))
@@ -46,6 +52,28 @@ public sealed class CommandEndpointTests : TestBase
             .Be("Needs operate permission");
         _log.Entries.Should().BeEmpty();
         Module(app).Executed.Should().BeEmpty();
+        Module(app).Chunks.Should().BeEmpty();
+        _store.Get("run-000001").State.Should().Be(FakeRunState.Failed);
+    }
+
+    [Theory]
+    [InlineData(_RunRoute)]
+    [InlineData(_ConfirmRoute)]
+    [InlineData(_ChunksRoute)]
+    public async Task should_answer_400_and_log_nothing_when_an_operator_posts_without_the_requested_with_header(
+        string route
+    )
+    {
+        await using var app = await _StartAsync();
+        using var client = ShellTestHost.Client(app);
+        var cookie = await ShellTestHost.SignInAsync(client, _Operator, AbortToken);
+
+        using var response = await _PostRouteAsync(client, route, cookie, requestedWith: false);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        _log.Entries.Should().BeEmpty();
+        Module(app).Executed.Should().BeEmpty();
+        Module(app).Chunks.Should().BeEmpty();
         _store.Get("run-000001").State.Should().Be(FakeRunState.Failed);
     }
 
@@ -458,16 +486,21 @@ public sealed class CommandEndpointTests : TestBase
         unknown.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
-    [Fact]
-    public async Task should_answer_401_when_a_command_is_called_without_a_session()
+    [Theory]
+    [InlineData(_RunRoute)]
+    [InlineData(_ConfirmRoute)]
+    [InlineData(_ChunksRoute)]
+    public async Task should_answer_401_when_a_command_is_called_without_a_session(string route)
     {
         await using var app = await _StartAsync();
         using var client = ShellTestHost.Client(app);
 
-        using var response = await _RequeueAsync(client, cookie: null, ["run-000001"]);
+        using var response = await _PostRouteAsync(client, route, cookie: null);
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         _log.Entries.Should().BeEmpty();
+        Module(app).Executed.Should().BeEmpty();
+        Module(app).Chunks.Should().BeEmpty();
     }
 
     private Task<WebApplication> _StartAsync(string[]? disabled = null)
@@ -482,6 +515,36 @@ public sealed class CommandEndpointTests : TestBase
                 DisabledIds = disabled ?? [],
             },
             AbortToken
+        );
+    }
+
+    // A body each route would accept from an operator, so only the check under test can refuse the call.
+    private Task<HttpResponseMessage> _PostRouteAsync(
+        HttpClient client,
+        string route,
+        string? cookie,
+        bool requestedWith = true
+    )
+    {
+        object body = route switch
+        {
+            _RunRoute => new
+            {
+                ids = new[] { "run-000001" },
+                reason = "stuck after deploy",
+                confirmed = true,
+            },
+            _ConfirmRoute => new { filter = new { queue = "default" }, reason = "stuck after deploy" },
+            _ => new { token = "not-a-token", confirmed = true },
+        };
+
+        return PostAsync(
+            client,
+            $"{Base}/{FakeCommandModule.Requeue}{route}",
+            body,
+            cookie,
+            AbortToken,
+            requestedWith: requestedWith
         );
     }
 

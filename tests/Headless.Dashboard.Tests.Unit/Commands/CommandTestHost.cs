@@ -88,14 +88,15 @@ internal static class CommandTestHost
         object body,
         string? cookie,
         CancellationToken cancellationToken,
-        bool ui = true
+        bool ui = true,
+        bool requestedWith = true
     )
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(path, UriKind.Relative))
         {
             Content = JsonContent.Create(body),
         };
-        _AddHeaders(request, cookie, ui);
+        _AddHeaders(request, cookie, ui, requestedWith);
 
         return await client.SendAsync(request, cancellationToken);
     }
@@ -120,9 +121,12 @@ internal static class CommandTestHost
         return document.RootElement.Clone();
     }
 
-    private static void _AddHeaders(HttpRequestMessage request, string? cookie, bool ui)
+    private static void _AddHeaders(HttpRequestMessage request, string? cookie, bool ui, bool requestedWith = true)
     {
-        request.Headers.TryAddWithoutValidation("X-Requested-With", "XMLHttpRequest");
+        if (requestedWith)
+        {
+            request.Headers.TryAddWithoutValidation("X-Requested-With", "XMLHttpRequest");
+        }
 
         if (cookie is not null)
         {

@@ -1,8 +1,8 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <Description>Authentication primitives and policies shared by Headless dashboard packages.</Description>
-    <PackageTags>headless;dashboard;authentication;dotnet</PackageTags>
+    <Description>One operations dashboard for a Headless host, plus the authentication the Jobs and Messaging dashboards share.</Description>
+    <PackageTags>headless;dashboard;operations;sse;authentication;dotnet</PackageTags>
   </PropertyGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
@@ -28,5 +28,17 @@
     />
     <DashboardSpaInput Include="$(MSBuildProjectDirectory)/wwwroot/.npmrc" />
   </ItemGroup>
+  <!--
+    The npm build runs three steps, and the first writes dist/index.html, so index.html would mark a build whose later
+    step failed as up to date. The finalize step writes .build-complete last; the stamp itself is not embedded.
+  -->
+  <PropertyGroup>
+    <DashboardSpaBuildStamp>$(MSBuildProjectDirectory)/wwwroot/dist/.build-complete</DashboardSpaBuildStamp>
+  </PropertyGroup>
+  <Target Name="_ExcludeDashboardSpaBuildStamp" AfterTargets="_EmbedDashboardSpa">
+    <ItemGroup>
+      <EmbeddedResource Remove="wwwroot/dist/.build-complete" />
+    </ItemGroup>
+  </Target>
   <Import Project="$(MSBuildThisFileDirectory)..\..\eng\DashboardSpa.targets" />
 </Project>

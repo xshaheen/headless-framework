@@ -106,6 +106,9 @@ internal sealed class FakeCommandModule(FakeRunStore store)
     /// <summary>Every chunk request the module ran, in order.</summary>
     public List<DashboardOperationChunkRequest> Chunks { get; } = [];
 
+    /// <summary>When set, every chunk request is recorded and then throws this, as a module failing mid-chunk would.</summary>
+    public Exception? ChunkFailure { get; set; }
+
     public static DashboardObject ToObject(FakeRun run)
     {
         return new DashboardObject
@@ -195,6 +198,11 @@ internal sealed class FakeCommandModule(FakeRunStore store)
         lock (Chunks)
         {
             Chunks.Add(request);
+        }
+
+        if (ChunkFailure is { } failure)
+        {
+            throw failure;
         }
 
         var mark = long.Parse(request.HighWaterMark, CultureInfo.InvariantCulture);

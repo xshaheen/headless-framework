@@ -1,11 +1,13 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { formatBudgetResult, measureBudgets, type BudgetFile } from './budget.ts'
 import { precompress } from './compress.ts'
 
-// Runs after every Vite build of the workspace: holds the output to its size budgets, then writes the precompressed
-// siblings the server serves. Exits 3 over budget and 2 on a usage error.
+// Runs after every Vite build of the workspace: holds the output to its size budgets, writes the precompressed siblings
+// the server serves, then writes `.build-complete`. Exits 3 over budget and 2 on a usage error.
+// The .NET build treats `.build-complete` as the SPA's output, so it is written last and removed first: a run that
+// fails at any step leaves no stamp, and the next build reruns npm instead of embedding a partial dist.
 const [command, distArgument, budgetArgument] = process.argv.slice(2)
 
 if (command !== 'finalize' || !distArgument) {
@@ -14,6 +16,9 @@ if (command !== 'finalize' || !distArgument) {
 }
 
 const dist = resolve(distArgument)
+const stamp = join(dist, '.build-complete')
+rmSync(stamp, { force: true })
+
 const budgetPath = budgetArgument ? resolve(budgetArgument) : fileURLToPath(new URL('../budget.json', import.meta.url))
 
 if (!existsSync(join(dist, 'index.html'))) {
@@ -40,3 +45,4 @@ if (over.length > 0) {
 }
 
 console.log(`[compress] wrote ${precompress([join(dist, 'assets'), join(dist, 'modules')].filter((dir) => existsSync(dir)))} precompressed file(s).`)
+writeFileSync(stamp, `${new Date().toISOString()}\n`)

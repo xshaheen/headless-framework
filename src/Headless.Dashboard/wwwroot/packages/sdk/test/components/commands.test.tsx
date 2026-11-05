@@ -9,7 +9,7 @@ import { OperationHost, useOperations } from '../../src/commands/operations.tsx'
 import { Button } from '../../src/components/button.tsx'
 import { ToastRegion } from '../../src/components/live.tsx'
 import { DashboardProvider } from '../../src/context.tsx'
-import type { ApiRequest } from '../../src/data/api.ts'
+import { DashboardApiError, type ApiRequest } from '../../src/data/api.ts'
 import { createDashboardClient } from '../../src/data/client.tsx'
 import { createFakeStream } from '../../src/testing/fake-stream.ts'
 
@@ -77,6 +77,30 @@ describe('commands', () => {
     expect(await screen.findByText('Requeue: 2 runs done')).toBeTruthy()
     expect(requests.map((request) => request.path)).toEqual(['diag/commands/fail', 'diag/commands/requeue'])
     expect(requests[1]!.body).toMatchObject({ ids: ['r1', 'r2'], reason: 'Undo of Fail', confirmed: true })
+  })
+
+  it('reports a failed Undo in a toast, which outlives the button that offered it', async () => {
+    const user = userEvent.setup()
+    const fail = command({ id: 'fail', label: 'Fail', confirmation: 'none', inverseCommandId: 'requeue' })
+    const requeue = command({ id: 'requeue', label: 'Requeue' })
+    renderWithDashboard(
+      <CommandAction module="diag" command={fail} commands={[fail, requeue]} ids={['r1', 'r2']} noun="runs" />,
+      (request) => {
+        if (request.path === 'diag/commands/requeue') {
+          throw new DashboardApiError(409, 'Run r1 is running again.')
+        }
+
+        return { rows: (request.body as { ids: string[] }).ids.map((id) => ({ id, outcome: 'done' })) }
+      },
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Fail 2 runs' }))
+    const toast = await screen.findByText('Fail: 2 runs done')
+    await user.click(within(toast.closest('[role="status"]') as HTMLElement).getByRole('button', { name: 'Undo' }))
+
+    const failure = await screen.findByText('Run r1 is running again.')
+    expect(failure.closest('[role="status"]')).not.toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 
   it('keeps Confirm disabled until the typed count matches', async () => {
