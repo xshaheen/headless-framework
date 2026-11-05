@@ -62,6 +62,12 @@ public sealed record OperatorLogEntry
 
     /// <summary>Gets the Operation's id, shared by its confirm and chunk entries; <see langword="null"/> for a run over ids.</summary>
     public string? OperationId { get; init; }
+
+    /// <summary>
+    /// Gets the cursor a chunk started from, as the browser sent it, so a failed chunk can be located and resumed;
+    /// <see langword="null"/> for an Operation's first chunk, its confirm, and a run over ids.
+    /// </summary>
+    public string? Cursor { get; init; }
 }
 
 /// <summary>What an operator-log entry records.</summary>

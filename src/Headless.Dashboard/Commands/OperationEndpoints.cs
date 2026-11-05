@@ -247,6 +247,7 @@ internal static class OperationEndpoints
             Count = CommandRules.ChunkSize,
             Reason = token.Reason,
             OperationId = token.OperationId,
+            Cursor = body.Cursor,
         };
 
         DashboardOperationChunk chunk;

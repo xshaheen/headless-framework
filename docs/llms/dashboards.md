@@ -161,7 +161,7 @@ A module is one feature's data and UI under the shell. Its .NET side implements 
 | `Id` | The module's URL segment, API group (`{base}/api/{id}`), and stream topic prefix. It must equal the id it was registered under: a lower-case kebab token. `api`, `auth`, `m`, `needs-you`, `sign-in`, and `shell` are reserved. |
 | `DisplayName` | The name the shell shows. |
 | `Assets` | A `DashboardModuleAssets` whose `Files` provider is rooted at the module's front-end build, with `manifest.json` at the root. Use a provider over resources embedded in the module's assembly. |
-| `MapEndpoints(endpoints)` | Maps the module's own API on `endpoints.Routes`, at `{base}/api/{id}`, behind the module's view policy. Wrap each state-changing endpoint in `endpoints.RequireOperate(...)` to require the operate policy too. Every state-changing request needs `X-Requested-With`. The `commands` segment belongs to the shell. |
+| `MapEndpoints(endpoints)` | Maps the module's own API on `endpoints.Routes`, at `{base}/api/{id}`, behind the module's view policy. Wrap each state-changing endpoint in `endpoints.RequireOperate(...)` to require the operate policy too: the shell does not add it, so an unwrapped write is open to every viewer. Every state-changing request needs `X-Requested-With`. The `commands` segment belongs to the shell. |
 
 The shell resolves the module as a singleton, so its members must be thread-safe. It reads `Id`, `DisplayName`, `Assets`, and every declared list (commands, related groups, formatter kinds) once, when it builds its manifest at startup; those reads must not open a connection or run a query.
 
@@ -271,7 +271,7 @@ A command over a filter runs as an **Operation**, through the module's `IDashboa
 
 The dashboard stores no Operation. The token carries its scope and the cursor its progress, so any node that shares the key ring serves any chunk, and Stop is the browser not asking for the next one. The module's store must therefore make each chunk safe alone: a time each row entered its current state, stamped by the store; a high-water mark from that time, so a row that enters the state during the run stays out; a conditional update that re-checks the filter, the state, and the mark inside the update itself; and an index that serves the walk as a range seek. Report a row an earlier chunk already changed as `Skipped`.
 
-Every command call the shell runs, every Operation confirm, and every chunk writes an `OperatorLogEntry` (time, actor, channel, module, command, action, ids or scope, count, reason, done, skipped, failed, Operation id). A refused call writes none. The default sink writes each entry as a structured `ILogger` event in the `Headless.Dashboard.OperatorLog` category. Add sinks as singletons; each entry goes to every sink in registration order, after the change it records was made, so a sink that throws fails the request but does not undo the change:
+Every command call the shell runs, every Operation confirm, and every chunk writes an `OperatorLogEntry` (time, actor, channel, module, command, action, ids or scope, count, reason, done, skipped, failed, Operation id, and the cursor a chunk started from). A refused call writes none. The default sink writes each entry as a structured `ILogger` event in the `Headless.Dashboard.OperatorLog` category. Add sinks as singletons; each entry goes to every sink in registration order, after the change it records was made, so a sink that throws fails the request but does not undo the change:
 
 ```csharp
 using Headless.Dashboard;

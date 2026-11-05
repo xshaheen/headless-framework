@@ -42,6 +42,7 @@ public sealed class OperatorLogTests : TestBase
                 Done = 1,
                 Skipped = 1,
                 OperationId = "op-1",
+                Cursor = "run-0500",
             },
             AbortToken
         );
@@ -63,6 +64,7 @@ public sealed class OperatorLogTests : TestBase
         record.State["OperationId"].Should().Be("op-1");
         record.State["Ids"].Should().BeEquivalentTo(new[] { "run-1", "run-2" });
         record.State["Scope"].Should().Be("""{"queue":"default"}""");
+        record.State["Cursor"].Should().Be("run-0500");
         record.Message.Should().Contain("alice").And.Contain("diag.requeue");
     }
 

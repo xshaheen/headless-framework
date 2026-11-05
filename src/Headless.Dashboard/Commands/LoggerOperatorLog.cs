@@ -31,7 +31,8 @@ internal sealed class LoggerOperatorLog(ILoggerFactory loggerFactory) : IDashboa
             entry.Reason,
             entry.OperationId,
             entry.Ids,
-            entry.Scope
+            entry.Scope,
+            entry.Cursor
         );
 
         return ValueTask.CompletedTask;
@@ -46,7 +47,7 @@ internal static partial class LoggerOperatorLogMessages
         Level = LogLevel.Information,
         Message = "Dashboard operator {Actor} ({Channel}) {Action} {CommandId} in module {ModuleId}: {Count} rows, "
             + "{Done} done, {Skipped} skipped, {Failed} failed; reason: {Reason}; operation {OperationId}; "
-            + "ids {Ids}; scope {Scope}"
+            + "ids {Ids}; scope {Scope}; cursor {Cursor}"
     )]
     internal static partial void OperatorAction(
         this ILogger logger,
@@ -62,6 +63,7 @@ internal static partial class LoggerOperatorLogMessages
         string? reason,
         string? operationId,
         IReadOnlyList<string> ids,
-        string? scope
+        string? scope,
+        string? cursor
     );
 }

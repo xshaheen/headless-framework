@@ -393,6 +393,9 @@ public sealed class OperationTests : TestBase
             );
         entries[0].Count.Should().Be(1_200);
         entries.Skip(1).Select(static e => (e.Count, e.Done)).Should().Equal((500, 500), (500, 500), (200, 200));
+        entries[0].Cursor.Should().BeNull();
+        entries[1].Cursor.Should().BeNull();
+        entries.Skip(2).Should().OnlyContain(static e => !string.IsNullOrEmpty(e.Cursor));
         entries[1].Ids.Should().HaveCount(500).And.StartWith("run-000001");
     }
 
