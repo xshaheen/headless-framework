@@ -15,9 +15,10 @@
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
   </ItemGroup>
   <!--
-    The shell's front end is an npm workspace (the SDK, the Vite presets, the shell app, and the built-in modules), not
-    the single src/ folder eng/DashboardSpa.targets watches by default. Each workspace folder is a build input, so an
-    edit under any of them reruns the npm build on the next incremental build. The items are declared before the
+    The shell's front end is a set of members of the repository-root npm workspace (the SDK, the Vite presets, the shell
+    app, and the built-in modules), not the single src/ folder eng/DashboardSpa.targets watches by default. Each member
+    folder is a build input, so an edit under any of them reruns the npm build on the next incremental build; the
+    targets file adds the root workspace's package.json, package-lock.json, and .npmrc. The items are declared before the
     import, which embeds wwwroot/dist as Headless.Dashboard.wwwroot.dist.*, the names the shell's EmbeddedFileProvider
     resolves at run time.
   -->
@@ -26,7 +27,6 @@
       Include="$(MSBuildProjectDirectory)/wwwroot/packages/**/*;$(MSBuildProjectDirectory)/wwwroot/apps/**/*;$(MSBuildProjectDirectory)/wwwroot/modules/**/*"
       Exclude="$(MSBuildProjectDirectory)/wwwroot/**/node_modules/**;$(MSBuildProjectDirectory)/wwwroot/**/dist/**"
     />
-    <DashboardSpaInput Include="$(MSBuildProjectDirectory)/wwwroot/.npmrc" />
   </ItemGroup>
   <!--
     The npm build runs three steps, and the first writes dist/index.html, so index.html would mark a build whose later

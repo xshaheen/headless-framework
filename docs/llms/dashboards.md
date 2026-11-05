@@ -328,7 +328,7 @@ builder.Services.AddHeadlessDashboard(dashboard =>
 
 ### Module front end
 
-The shell is a React application. A module's front end is a small entry plus lazy route chunks that import React, React Router, TanStack Query, and React Aria from the shell through an import map, never from their own bundle. The SDK (`@headless/dashboard-sdk`) and the Vite preset (`@headless/dashboard-vite`) are private packages of the npm workspace at `src/Headless.Dashboard/wwwroot`, where the diagnostic module is built; they are not published to npm in this release.
+The shell is a React application. A module's front end is a small entry plus lazy route chunks that import React, React Router, TanStack Query, and React Aria from the shell through an import map, never from their own bundle. The SDK (`@headless/dashboard-sdk`) and the Vite preset (`@headless/dashboard-vite`) are private packages of the repository-root npm workspace, under `src/Headless.Dashboard/wwwroot`, where the diagnostic module is built; they are not published to npm in this release.
 
 A module's entry exports a `defineModule` call. The build reads the literal itself to write `manifest.json`, so every static field (ids, labels, paths, permissions, event names) must be a literal, not computed:
 

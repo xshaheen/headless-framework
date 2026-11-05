@@ -27,6 +27,14 @@
     <DashboardSpaBuildStamp Condition="'$(DashboardSpaBuildStamp)' == ''"
       >$(DashboardSpaDist)/index.html</DashboardSpaBuildStamp>
     <DashboardSpaInputManifest>$(BaseIntermediateOutputPath)dashboard-spa-inputs.txt</DashboardSpaInputManifest>
+    <!--
+      The folder holding the lockfile npm ci installs from: the SPA's own folder when it has a package-lock.json, else
+      the nearest folder above it that has one, which for a member of the repository-root npm workspace is the root.
+      Each project's dist output and build stamp stay under its own wwwroot either way.
+    -->
+    <DashboardSpaNpmRoot Condition="'$(DashboardSpaNpmRoot)' == ''"
+      >$([MSBuild]::GetDirectoryNameOfFileAbove('$(DashboardSpaRoot)', 'package-lock.json'))</DashboardSpaNpmRoot>
+    <DashboardSpaNpmRoot Condition="'$(DashboardSpaNpmRoot)' == ''">$(DashboardSpaRoot)</DashboardSpaNpmRoot>
     <BuildDashboardSpa Condition="'$(BuildDashboardSpa)' == ''">true</BuildDashboardSpa>
     <NpmTool Condition="'$(NpmTool)' == ''">npm</NpmTool>
   </PropertyGroup>
@@ -37,7 +45,12 @@
     <DashboardSpaInput Include="$(DashboardSpaRoot)/public/**/*" />
     <DashboardSpaInput Include="$(DashboardSpaRoot)/index.html" />
     <DashboardSpaInput Include="$(DashboardSpaRoot)/package.json" />
-    <DashboardSpaInput Include="$(DashboardSpaRoot)/package-lock.json" />
+    <DashboardSpaInput Include="$(DashboardSpaNpmRoot)/package.json" Condition="'$(DashboardSpaNpmRoot)' != '$(DashboardSpaRoot)'" />
+    <DashboardSpaInput Include="$(DashboardSpaNpmRoot)/package-lock.json" />
+    <DashboardSpaInput
+      Include="$(DashboardSpaNpmRoot)/.npmrc"
+      Condition="Exists('$(DashboardSpaNpmRoot)/.npmrc')"
+    />
     <DashboardSpaInput Include="$(DashboardSpaRoot)/vite.config.*" />
     <DashboardSpaInput Include="$(DashboardSpaRoot)/postcss.config.*" />
     <DashboardSpaInput Include="$(DashboardSpaRoot)/tailwind.config.*" />
@@ -68,11 +81,11 @@
   <Target
     Name="_RestoreDashboardSpa"
     Condition="'$(BuildDashboardSpa)' == 'true'"
-    Inputs="$(DashboardSpaRoot)/package-lock.json"
-    Outputs="$(DashboardSpaRoot)/node_modules/.package-lock.json"
+    Inputs="$(DashboardSpaNpmRoot)/package-lock.json"
+    Outputs="$(DashboardSpaNpmRoot)/node_modules/.package-lock.json"
   >
-    <Message Importance="high" Text="[$(MSBuildProjectName)] Installing SPA dependencies ($(NpmTool) ci)..." />
-    <Exec Command="$(NpmTool) ci" WorkingDirectory="$(DashboardSpaRoot)" />
+    <Message Importance="high" Text="[$(MSBuildProjectName)] Installing SPA dependencies ($(NpmTool) ci in $(DashboardSpaNpmRoot))..." />
+    <Exec Command="$(NpmTool) ci" WorkingDirectory="$(DashboardSpaNpmRoot)" />
   </Target>
 
   <!-- Build the SPA; re-runs only when inputs change or the build stamp is missing. -->
