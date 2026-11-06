@@ -22,9 +22,16 @@ describe('module manifest', () => {
       sdkVersion,
       entry: 'index.js',
       css: [],
-      nav: [
-        { id: 'fixture.nav.runs', label: 'Runs', to: 'runs', requires: 'view' },
-        { id: 'fixture.nav.cron', label: 'Cron jobs', to: 'cron' },
+      product: 'jobs',
+      sidebar: [
+        { entries: [{ id: 'fixture.nav.runs', label: 'Runs', route: 'runs', icon: 'runs', requires: 'view' }] },
+        {
+          label: 'States',
+          entries: [
+            { id: 'fixture.nav.failed', label: 'Failed', route: 'runs?status=Failed', state: 'fail', countKey: 'Failed' },
+            { id: 'fixture.nav.cron', label: 'Cron jobs', route: 'cron', icon: 'cron' },
+          ],
+        },
       ],
       objectKinds: { run: {} },
       commands: [{ id: 'fixture.add-run', label: 'Add run', requires: 'operate' }],
@@ -52,15 +59,25 @@ describe('module manifest', () => {
     expect(entry + view).not.toContain('process.env.NODE_ENV')
   })
 
+  const entry = (fields: string) => `{ id: 'm', product: 'jobs', sidebar: [{ entries: [${fields}] }] }`
+
   it.each([
-    ['a computed nav label', `{ id: 'm', nav: [{ id: 'm.nav', label: t('Runs'), to: 'runs' }] }`, /nav\[0\]\.label must be a literal/],
-    ['a variable id', `{ id: moduleId }`, /id must be a literal/],
-    ['a shorthand label', `{ id: 'm', nav: [{ id: 'n', label, to: '' }] }`, /nav\[0\]\.label must be a literal/],
-    ['a template with an expression', `{ id: \`m-\${x}\` }`, /id must be a literal/],
-    ['a spread nav', `{ id: 'm', nav: [...entries] }`, /nav\[0\] must be written out/],
-    ['a computed route import', `{ id: 'm', routes: [{ path: '', lazy: () => import(view) }] }`, /routes\[0\]\.lazy must be written as/],
-    ['an unknown permission', `{ id: 'm', commands: [{ id: 'c', label: 'C', requires: 'admin', run() {} }] }`, /'view' or 'operate'/],
-    ['an unknown field', `{ id: 'm', slots: [] }`, /no field 'slots'/],
+    ['a computed entry label', entry(`{ id: 'm.nav', label: t('Runs'), route: 'runs', icon: 'runs' }`), /sidebar\[0\]\.entries\[0\]\.label must be a literal/],
+    ['a variable id', `{ id: moduleId, product: 'jobs' }`, /id must be a literal/],
+    ['a shorthand label', entry(`{ id: 'n', label, route: '', icon: 'runs' }`), /sidebar\[0\]\.entries\[0\]\.label must be a literal/],
+    ['a template with an expression', `{ id: \`m-\${x}\`, product: 'jobs' }`, /id must be a literal/],
+    ['a sidebar held in a variable', `{ id: 'm', product: 'jobs', sidebar: sections }`, /sidebar must be an array literal/],
+    ['a spread sidebar', `{ id: 'm', product: 'jobs', sidebar: [...sections] }`, /sidebar\[0\] must be written out/],
+    ['spread entries', `{ id: 'm', product: 'jobs', sidebar: [{ entries: [...entries] }] }`, /sidebar\[0\]\.entries\[0\] must be written out/],
+    ['an entry with both icon and state', entry(`{ id: 'n', label: 'L', route: '', icon: 'runs', state: 'fail' }`), /exactly one of icon or state/],
+    ['an unknown state role', entry(`{ id: 'n', label: 'L', route: '', state: 'needs' }`), /state must be one of/],
+    ['an unknown product', `{ id: 'm', product: 'billing' }`, /product must be one of 'jobs', .*not 'billing'/],
+    ['a computed product', `{ id: 'm', product: products.jobs }`, /product must be a literal/],
+    ['a missing product', `{ id: 'm' }`, /needs a product/],
+    ['a computed route import', `{ id: 'm', product: 'jobs', routes: [{ path: '', lazy: () => import(view) }] }`, /routes\[0\]\.lazy must be written as/],
+    ['an unknown permission', `{ id: 'm', product: 'jobs', commands: [{ id: 'c', label: 'C', requires: 'admin', run() {} }] }`, /'view' or 'operate'/],
+    ['an unknown field', `{ id: 'm', product: 'jobs', slots: [] }`, /no field 'slots'/],
+    ['the retired nav field', `{ id: 'm', product: 'jobs', nav: [] }`, /no field 'nav'/],
   ])('fails on %s', (_, definition, message) => {
     const read = () => readModuleDefinition(source(definition), 'module.ts')
 
@@ -70,13 +87,16 @@ describe('module manifest', () => {
 
   it('reads literals wrapped in as const and satisfies', () => {
     const definition = readModuleDefinition(
-      source(`{ id: 'm' as const, nav: [{ id: \`n\`, label: 'L', to: '' } satisfies object] }`),
+      source(
+        `{ id: 'm' as const, product: 'jobs' as const, sidebar: [{ entries: [{ id: \`n\`, label: 'L', route: '', icon: 'runs' } satisfies object] }] }`,
+      ),
       'module.ts',
     )
 
     expect(definition).toEqual({
       id: 'm',
-      nav: [{ id: 'n', label: 'L', to: '' }],
+      product: 'jobs',
+      sidebar: [{ entries: [{ id: 'n', label: 'L', route: '', icon: 'runs' }] }],
       routes: [],
       objectKinds: {},
       commands: [],

@@ -295,6 +295,52 @@ public sealed class JobsModuleSourcesTests : TestBase
         }
     }
 
+    [Fact]
+    public async Task should_count_every_run_status_with_one_capped_store_count_each()
+    {
+        // given: the store reports Failed past the cap, and one run waits Idle
+        var counted = new List<JobRunQuery>();
+        await using var node = JobsModuleNode.Create(
+            _time,
+            backend: inner =>
+                InterceptedJobsDashboardBackend.Wrap(
+                    inner,
+                    (method, args, proceed) =>
+                    {
+                        if (
+                            !string.Equals(
+                                method,
+                                nameof(IJobsDashboardBackend.CountRunsAsync),
+                                StringComparison.Ordinal
+                            ) || args[0] is not JobRunQuery query
+                        )
+                        {
+                            return proceed();
+                        }
+
+                        counted.Add(query);
+
+                        return query.Statuses is { Count: 1 } statuses && statuses.Contains(JobStatus.Failed)
+                            ? Task.FromResult(new JobRunCount(JobRunCount.DefaultCap, Capped: true))
+                            : proceed();
+                    }
+                )
+        );
+        await node.Store.AddTimeJobsAsync([JobsModuleNode.IdleJob(_time.GetUtcNow())], AbortToken);
+
+        // when
+        var counts = await node.Module.GetCountsAsync(new DashboardCountsRequest { User = _User }, AbortToken);
+
+        // then
+        counts
+            .Keys.Should()
+            .BeEquivalentTo("Idle", "Queued", "InProgress", "Succeeded", "DueDone", "Failed", "Cancelled", "Skipped");
+        counts["Failed"].Should().Be(new DashboardCount { Count = JobRunCount.DefaultCap, Capped = true });
+        counts["Idle"].Should().Be(new DashboardCount { Count = 1, Capped = false });
+        counts["Succeeded"].Should().Be(new DashboardCount { Count = 0, Capped = false });
+        counted.Select(query => query.Statuses?.Count).Should().HaveCount(8).And.OnlyContain(count => count == 1);
+    }
+
     /// <summary>
     /// Queues a change for a new sentinel run behind everything this node already queued, and waits until it is
     /// published: every change queued before it has then been published or dropped.

@@ -2,7 +2,7 @@ import { CommandPalette, useSelectionCommands, type PaletteItem } from '@headles
 import { useDashboardApi } from '@headless/dashboard-sdk/data'
 import { useNavigate } from '@headless/dashboard-sdk/router'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import type { BootstrapState } from '../bootstrap.ts'
+import { moduleSidebarEntries, type BootstrapState } from '../bootstrap.ts'
 import { useOpenObject, useShell } from '../shell-context.tsx'
 import type { ModuleSection, ResolvedObject } from '../shell-data.ts'
 
@@ -22,7 +22,7 @@ function modulePath(id: string, to: string) {
   return rest ? `/${id}/${rest}` : `/${id}`
 }
 
-/** The palette's static items: the shell's views, every module's nav, and every client command the user may run. */
+/** The palette's static items: the shell's views, every module's sidebar entries, and every client command the user may run. */
 function staticItems(
   state: BootstrapState,
   navigate: (to: string) => void,
@@ -41,14 +41,14 @@ function staticItems(
       continue
     }
 
-    for (const entry of module.nav) {
+    for (const entry of moduleSidebarEntries(state, module.id)) {
       if (entry.requires === 'operate' && !module.canOperate) {
         continue
       }
 
       const label = entry.label === module.displayName ? `Go to ${entry.label}` : `Go to ${module.displayName} ${entry.label}`
       labels.add(label.toLocaleLowerCase())
-      items.push({ id: `nav:${entry.id}`, label, kind: 'View', onAction: () => navigate(modulePath(module.id, entry.to)) })
+      items.push({ id: `nav:${entry.id}`, label, kind: 'View', onAction: () => navigate(modulePath(module.id, entry.route)) })
     }
   }
 
@@ -76,7 +76,7 @@ function staticItems(
 }
 
 /**
- * The shell's command palette: views, module nav, and client commands from the inlined manifest, the server commands
+ * The shell's command palette: views, module sidebar entries, and client commands from the inlined manifest, the server commands
  * the view's selection allows now, and the objects a pasted id resolves to in any module, looked up once typing
  * settles.
  */

@@ -127,7 +127,7 @@ app.MapPost("/account/sign-out", async (HttpContext context) =>
 | `ChangePollInterval` | 2 seconds | How often each node reads every module's changes while the node has a live stream open. Must be positive. |
 | `HeartbeatInterval` | 2 seconds | How often an open stream sends `heartbeat`. The page marks a stream `Stale` after 5 seconds without an event, so it must be under 5 seconds. |
 
-Contribution overrides name the ids modules declare: nav entries, client commands, server commands, and related-object groups. Disable or order them in code, or bind the `Disable` (a list of ids) and `Order` (a list of id lists) keys from configuration. Both forms add up. An id that no registered module declares fails the host's start, so a typo never leaves a contribution enabled. A disabled server command also answers `404` at its endpoint.
+Contribution overrides name the ids modules declare: sidebar entries, client commands, server commands, and related-object groups. Disable or order them in code, or bind the `Disable` (a list of ids) and `Order` (a list of id lists) keys from configuration. Both forms add up. An id that no registered module declares fails the host's start, so a typo never leaves a contribution enabled. A disabled server command also answers `404` at its endpoint. A sidebar entry moves only within its own section, and a section whose every entry is disabled is dropped, so `Disable("jobs.nav.failed")` removes the Failed entry and leaves the rest of the States section.
 
 ```csharp
 using Headless.Dashboard;
@@ -171,6 +171,7 @@ Everything else is an optional capability interface on the same class, found by 
 | --- | --- |
 | `IDashboardAttentionSource` | Needs you: the items that need an operator, grouped by `GroupKey`. Called whenever Needs you opens or its attention changes, so keep it to one cheap query. |
 | `IDashboardOverviewSource` | Overview: up to three `DashboardFigure`s per module, each with its comparison, and, through the default member `GetScheduleAsync`, the module's `DashboardScheduleTrack`s on the Overview's schedule strip. A comparison whose `Value` is `null` means the earlier period has nothing to compare; the shell shows its `Label` alone, so the label says why (`no runs finished in the previous 24 h`). |
+| `IDashboardCountSource` | The counts beside sidebar entries: a `DashboardCount` (`Count`, `Capped`) per `countKey` the module's sidebar declares. `GET {base}/api/counts?product=` asks every module of one product and answers `{ product, counts: { key: { count, capped } }, stale }`; when two modules answer one key, the first registered wins. The shell refetches on live changes, so keep each count to one cheap, capped query. |
 | `IDashboardObjectResolver` | The palette's pasted-id lookup (`GET {base}/api/resolve?q=`, at most 256 characters). Answer with an exact-id lookup, never a text search. |
 | `IDashboardRelatedSource` | Related objects of any module's object, drawn as labelled groups (`GET {base}/api/related?module=&kind=&id=`). `GroupIds` declares every group id up front, because each is a contribution the host can disable or reorder. |
 | `IDashboardPayloadSource` | One object's payload (`GET {base}/api/payload?module=&kind=&id=`). |
@@ -179,7 +180,7 @@ Everything else is an optional capability interface on the same class, found by 
 | `IDashboardCommandSource` | Operator commands; see [Commands and Operations](#commands-and-operations). |
 | `IDashboardOperationRunner` | Commands over a filter, run as an Operation; see [Commands and Operations](#commands-and-operations). |
 
-Needs you, Overview, lookup, and related objects call every module in parallel, list only the modules the user may view, and wait at most `AggregationTimeout` for each. A module that times out or throws answers `stale: true` in its place. Counts stop at 10,000 and report `capped: true`.
+Needs you, Overview, lookup, related objects, and counts call every module in parallel, list only the modules the user may view, and wait at most `AggregationTimeout` for each. A module that times out or throws answers `stale: true` in its place. Counts stop at 10,000 and report `capped: true`. `api/counts` answers `400` without `product`, `404` for a product no registered module joins, and `403` when the user may view none of the product's modules.
 
 A `DashboardAttentionItem` can also say how to resolve it and whether it is still growing:
 
@@ -346,7 +347,8 @@ import { defineModule } from '@headless/dashboard-sdk'
 
 export default defineModule({
   id: 'diagnostics',
-  nav: [{ id: 'diagnostics.nav.runs', label: 'Runs', to: '' }],
+  product: 'diagnostics',
+  sidebar: [{ entries: [{ id: 'diagnostics.nav.runs', label: 'Runs', route: '', icon: 'runs' }] }],
   routes: [
     { path: '', lazy: () => import('./views/runs-list.tsx') },
     { path: 'runs/:runId', lazy: () => import('./views/run-page.tsx') },
@@ -360,7 +362,11 @@ export default defineModule({
 })
 ```
 
-`id` equals the .NET module id. Nav entries and client commands take `requires: 'view' | 'operate'`. Each route's `import()` becomes its own chunk. The palette already lists every nav entry as `Go to <module> <label>`, so a command that only navigates to a nav entry's route repeats it; the palette drops a command whose label matches a nav entry's label, ignoring case.
+`id` equals the .NET module id. `product` names the tab the module joins, one of `jobs`, `messaging`, `cluster`, `platform`, `dev-inbox`, or `diagnostics`; the shell shows one tab per product a host registered, in that order, and modules that name one product share its tab, their sidebar sections in registration order. A module whose manifest names another product fails the host's start.
+
+`sidebar` lists the module's sections in display order. A section has an optional `label` (a section without one draws no heading) and its `entries`. An entry has an `id` (a contribution id the host can disable or order, such as `jobs.nav.failed`), a `label`, a `route` relative to the module with an optional query (`?status=Failed`), exactly one of `icon` (an icon key) or `state` (the colour role of its dot: `sched`, `enq`, `proc`, `ok`, `fail`, or `off`), an optional `countKey` naming its count in the module's `IDashboardCountSource` answer, and an optional `requires`. The build fails on a computed `sidebar`, an unknown `product` or `state`, or an entry with both or neither of `icon` and `state`.
+
+Sidebar entries and client commands take `requires: 'view' | 'operate'`. Each route's `import()` becomes its own chunk. The palette already lists every sidebar entry as `Go to <module> <label>`, so a command that only navigates to an entry's route repeats it; the palette drops a command whose label matches a sidebar entry's label, ignoring case.
 
 | SDK entry | Contents |
 | --- | --- |

@@ -603,6 +603,123 @@ public sealed class AggregationEndpointTests : TestBase
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
+    [Fact]
+    public async Task should_answer_every_count_of_the_product_from_each_module_with_capped_set_at_the_cap()
+    {
+        _diagA.Counts = _ =>
+            _Counts(
+                ("Failed", new DashboardCount { Count = 12_000 }),
+                ("Queued", new DashboardCount { Count = 10_000, Capped = true }),
+                ("Idle", new DashboardCount { Count = 9_999 })
+            );
+        // A key the first module already answered keeps the first module's count.
+        _diagB.Counts = _ =>
+            _Counts(("Failed", new DashboardCount { Count = 5 }), ("Cancelled", new DashboardCount { Count = 2 }));
+
+        await using var app = await _StartAsync();
+        using var client = app.GetTestClient();
+
+        using var response = await client.GetAsync("/dash/api/counts?product=diagnostics", AbortToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await _ReadAsync(response);
+        body.GetProperty("product").GetString().Should().Be("diagnostics");
+        var counts = body.GetProperty("counts");
+        counts.EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo("Failed", "Queued", "Idle", "Cancelled");
+        _Count(counts, "Failed").Should().Be((10_000, true));
+        _Count(counts, "Queued").Should().Be((10_000, true));
+        _Count(counts, "Idle").Should().Be((9_999, false));
+        _Count(counts, "Cancelled").Should().Be((2, false));
+        body.GetProperty("stale").GetArrayLength().Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_ask_only_the_modules_of_the_requested_product_and_mark_a_failing_one_stale()
+    {
+        var otherCalled = false;
+        _diagA.Counts = _ => throw new InvalidOperationException("store down");
+        _diagB.Product = "jobs";
+        _diagB.Counts = _ =>
+        {
+            otherCalled = true;
+            return _Counts(("Failed", new DashboardCount { Count = 1 }));
+        };
+
+        await using var app = await _StartAsync();
+        using var client = app.GetTestClient();
+
+        using var response = await client.GetAsync("/dash/api/counts?product=diagnostics", AbortToken);
+
+        var body = await _ReadAsync(response);
+        body.GetProperty("counts").EnumerateObject().Should().BeEmpty();
+        body.GetProperty("stale")
+            .EnumerateArray()
+            .Select(m => m.GetProperty("id").GetString())
+            .Should()
+            .Equal("diag-a");
+        otherCalled.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("billing")]
+    [InlineData("jobs")]
+    public async Task should_answer_not_found_for_counts_of_a_product_no_module_joins(string product)
+    {
+        await using var app = await _StartAsync();
+        using var client = app.GetTestClient();
+
+        using var response = await client.GetAsync($"/dash/api/counts?product={product}", AbortToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task should_refuse_counts_without_a_product()
+    {
+        await using var app = await _StartAsync();
+        using var client = app.GetTestClient();
+
+        using var response = await client.GetAsync("/dash/api/counts", AbortToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task should_refuse_counts_of_a_product_whose_modules_the_user_may_not_view()
+    {
+        _diagB.Product = "jobs";
+        _diagB.Counts = _ => _Counts(("Failed", new DashboardCount { Count = 4 }));
+
+        await using var app = await _StartAsync(
+            services: services => services.Configure<DiagBModuleOptions>(o => o.ViewPolicy = _DiagBViewers),
+            hostAuthentication: true
+        );
+        using var client = _HttpsClient(app);
+
+        using var outsider = await _GetSignedInAsync(client, "/dash/api/counts?product=jobs", roles: "");
+        using var viewer = await _GetSignedInAsync(client, "/dash/api/counts?product=jobs", roles: "diag-b-viewer");
+
+        outsider.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        viewer.StatusCode.Should().Be(HttpStatusCode.OK);
+        _Count((await _ReadAsync(viewer)).GetProperty("counts"), "Failed").Should().Be((4, false));
+    }
+
+    private static Task<IReadOnlyDictionary<string, DashboardCount>> _Counts(
+        params (string Key, DashboardCount Count)[] counts
+    )
+    {
+        return Task.FromResult<IReadOnlyDictionary<string, DashboardCount>>(
+            counts.ToDictionary(c => c.Key, c => c.Count, StringComparer.Ordinal)
+        );
+    }
+
+    private static (long Count, bool Capped) _Count(JsonElement counts, string key)
+    {
+        var count = counts.GetProperty(key);
+
+        return (count.GetProperty("count").GetInt64(), count.GetProperty("capped").GetBoolean());
+    }
+
     private async Task<WebApplication> _StartAsync(
         bool withDiagB = true,
         Action<IServiceCollection>? services = null,

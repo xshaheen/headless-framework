@@ -3,13 +3,34 @@ import type { ComponentType } from 'react'
 /** Who may use an entry: a viewer, or an operator who may also act. */
 export type DashboardPermission = 'view' | 'operate'
 
-export interface ModuleNavEntry {
-  /** Unique across the module, such as `jobs.nav.runs`. */
+/**
+ * The product a module belongs to. The shell shows one tab per product a host registered, in this order: `jobs`,
+ * `messaging`, `cluster`, `platform`, `dev-inbox`, `diagnostics`. Modules that name one product share its tab.
+ */
+export type DashboardProduct = 'jobs' | 'messaging' | 'cluster' | 'platform' | 'dev-inbox' | 'diagnostics'
+
+/** The colour role a state dot paints: scheduled, enqueued, processing, ok, failed, or off. */
+export type DashboardStateRole = 'sched' | 'enq' | 'proc' | 'ok' | 'fail' | 'off'
+
+export interface ModuleSidebarEntry {
+  /** Unique across the module, such as `jobs.nav.failed`. A host disables or orders the entry by this id. */
   id: string
   label: string
-  /** The route path the entry opens, relative to the module. */
-  to: string
+  /** The route the entry opens, relative to the module, with an optional query such as `?status=Failed`. */
+  route: string
+  /** The icon the entry leads with. An entry leads with an icon or a state dot, never both. */
+  icon?: string
+  /** The colour role of the dot the entry leads with, for an entry that lists the objects in one state. */
+  state?: DashboardStateRole
+  /** The key of the entry's count in the module's counts answer; an entry without one shows no count. */
+  countKey?: string
   requires?: DashboardPermission
+}
+
+export interface ModuleSidebarSection {
+  /** The section's heading; a section without one, such as the one holding Dashboard, draws no heading. */
+  label?: string
+  entries: readonly ModuleSidebarEntry[]
 }
 
 export interface ModuleRoute {
@@ -40,7 +61,9 @@ export type ModuleEventHandler = (payload: unknown) => void
 export interface ModuleDefinition {
   /** The module's id, the same id its .NET registration uses. */
   id: string
-  nav?: readonly ModuleNavEntry[]
+  product: DashboardProduct
+  /** The module's sections in its product's sidebar, in display order. */
+  sidebar?: readonly ModuleSidebarSection[]
   routes?: readonly ModuleRoute[]
   objectKinds?: Readonly<Record<string, ModuleObjectKind>>
   commands?: readonly ModuleCommand[]

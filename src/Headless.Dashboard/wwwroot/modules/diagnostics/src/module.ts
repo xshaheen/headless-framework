@@ -2,7 +2,8 @@ import { defineModule } from '@headless/dashboard-sdk'
 
 export default defineModule({
   id: 'diagnostics',
-  nav: [{ id: 'diagnostics.nav.runs', label: 'Runs', to: '' }],
+  product: 'diagnostics',
+  sidebar: [{ entries: [{ id: 'diagnostics.nav.runs', label: 'Runs', route: '', icon: 'runs' }] }],
   routes: [
     { path: '', lazy: () => import('./views/runs-list.tsx') },
     { path: 'runs/:runId', lazy: () => import('./views/run-page.tsx') },

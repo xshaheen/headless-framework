@@ -7,8 +7,8 @@ namespace Headless.Jobs;
 
 /// <summary>
 /// The Jobs dashboard module: runs, cron jobs, functions, and nodes of the host's Jobs store, with Needs you,
-/// Overview figures and strip tracks, id lookup, related runs, payloads, live changes from every node, commands, and
-/// Operations.
+/// Overview figures and strip tracks, sidebar counts per run status, id lookup, related runs, payloads, live changes
+/// from every node, commands, and Operations.
 /// </summary>
 /// <remarks>
 /// Its object kinds are <c>run</c> (a time job or a cron occurrence), <c>cron-job</c>, <c>function</c>, and
@@ -21,6 +21,7 @@ internal sealed class JobsModule
     : IDashboardModule,
         IDashboardAttentionSource,
         IDashboardOverviewSource,
+        IDashboardCountSource,
         IDashboardObjectResolver,
         IDashboardRelatedSource,
         IDashboardPayloadSource,
@@ -29,6 +30,7 @@ internal sealed class JobsModule
         IDashboardOperationRunner
 {
     private readonly JobsSources _sources;
+    private readonly JobsCounts _counts;
     private readonly JobsChangeSource _changes;
     private readonly JobsCommands _commands;
     private readonly JobsModuleApi _api;
@@ -46,6 +48,7 @@ internal sealed class JobsModule
         Argument.IsNotNull(options);
 
         _sources = new JobsSources(Id, backend, timeProvider);
+        _counts = new JobsCounts(backend);
         _changes = new JobsChangeSource(Id, backend, timeProvider, options.ChangePageSize, options.ChangeOverlapWindow);
         _commands = new JobsCommands(Id, backend, publisher, timeProvider);
         _api = new JobsModuleApi(backend, timeProvider);
@@ -91,6 +94,14 @@ internal sealed class JobsModule
     )
     {
         return _sources.GetScheduleAsync(cancellationToken);
+    }
+
+    public Task<IReadOnlyDictionary<string, DashboardCount>> GetCountsAsync(
+        DashboardCountsRequest request,
+        CancellationToken cancellationToken
+    )
+    {
+        return _counts.GetCountsAsync(cancellationToken);
     }
 
     public Task<IReadOnlyList<DashboardObject>> ResolveAsync(

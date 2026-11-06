@@ -2,7 +2,7 @@ import { Button, Kbd } from '@headless/dashboard-sdk/components'
 import { TimeZoneField, useFormat } from '@headless/dashboard-sdk/locale'
 import { NavLink } from '@headless/dashboard-sdk/router'
 import { useId, useState } from 'react'
-import type { BootstrapModule, BootstrapNavEntry } from '../bootstrap.ts'
+import { moduleSidebarEntries, type BootstrapModule, type BootstrapSidebarEntry } from '../bootstrap.ts'
 import { useShell } from '../shell-context.tsx'
 import { attentionTotal, useNeedsYou } from '../shell-data.ts'
 import { refusalText } from '../views/module-error.tsx'
@@ -10,8 +10,8 @@ import { ThemeControl } from './theme.tsx'
 
 const operateReason = 'Needs operate permission'
 
-function modulePath(module: BootstrapModule, entry: BootstrapNavEntry) {
-  const rest = entry.to.replace(/^\/+|\/+$/g, '')
+function modulePath(module: BootstrapModule, entry: BootstrapSidebarEntry) {
+  const rest = entry.route.replace(/^\/+|\/+$/g, '')
 
   return rest ? `/${module.id}/${rest}` : `/${module.id}`
 }
@@ -20,7 +20,7 @@ function navClass({ isActive }: { isActive: boolean }) {
   return isActive ? 'hd-nav hd-nav-current' : 'hd-nav'
 }
 
-/** A nav entry the user may not open: focusable, so hover and focus show whom to ask. */
+/** A sidebar entry the user may not open: focusable, so hover and focus show whom to ask. */
 function LockedEntry({ label }: { label: string }) {
   const reasonId = useId()
 
@@ -36,6 +36,7 @@ function LockedEntry({ label }: { label: string }) {
 
 function ModuleGroup({ module, onNavigate }: { module: BootstrapModule; onNavigate: () => void }) {
   const labelId = useId()
+  const { state } = useShell()
 
   return (
     <div className="hd-rail-group" role="group" aria-labelledby={labelId}>
@@ -47,7 +48,7 @@ function ModuleGroup({ module, onNavigate }: { module: BootstrapModule; onNaviga
           {refusalText(module)}
         </p>
       ) : (
-        module.nav.map((entry) =>
+        moduleSidebarEntries(state, module.id).map((entry) =>
           entry.requires === 'operate' && !module.canOperate ? (
             <LockedEntry key={entry.id} label={entry.label} />
           ) : (

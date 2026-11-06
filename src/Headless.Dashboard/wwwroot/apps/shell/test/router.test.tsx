@@ -26,7 +26,6 @@ describe('router', () => {
     const good = moduleManifest('good')
     const refused = moduleManifest('old', {
       entry: undefined,
-      nav: [],
       routes: [],
       commands: [],
       refusal: { builtAgainst: '2.1.0', shellSdkVersion: '1.0.0', message: 'refused' },

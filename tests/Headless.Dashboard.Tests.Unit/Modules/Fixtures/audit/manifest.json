@@ -2,6 +2,23 @@
   "id": "audit",
   "sdkVersion": "1.0.0",
   "entry": "entry.js",
-  "nav": [{ "id": "audit.nav.entries", "label": "Entries", "to": "entries" }],
-  "routes": [{ "path": "entries", "chunk": "entries.js" }]
+  "product": "diagnostics",
+  "sidebar": [
+    {
+      "entries": [
+        {
+          "id": "audit.nav.entries",
+          "label": "Entries",
+          "route": "entries",
+          "icon": "list"
+        }
+      ]
+    }
+  ],
+  "routes": [
+    {
+      "path": "entries",
+      "chunk": "entries.js"
+    }
+  ]
 }

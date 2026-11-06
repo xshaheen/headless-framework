@@ -24,7 +24,7 @@ internal sealed class ModuleFanOut(
     /// never called.
     /// </summary>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
-    public async Task<IReadOnlyList<ModuleAnswer<TResult>>> CallAsync<TSource, TResult>(
+    public Task<IReadOnlyList<ModuleAnswer<TResult>>> CallAsync<TSource, TResult>(
         DashboardSessionSnapshot access,
         string capability,
         Func<TSource, CancellationToken, Task<TResult>> call,
@@ -32,14 +32,32 @@ internal sealed class ModuleFanOut(
     )
         where TSource : class
     {
+        return CallAsync(access, capability, static _ => true, call, cancellationToken);
+    }
+
+    /// <summary>
+    /// Calls <paramref name="call"/> as the other overload does, on only the modules <paramref name="include"/>
+    /// selects, such as the modules of one product.
+    /// </summary>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
+    public async Task<IReadOnlyList<ModuleAnswer<TResult>>> CallAsync<TSource, TResult>(
+        DashboardSessionSnapshot access,
+        string capability,
+        Func<MergedModule, bool> include,
+        Func<TSource, CancellationToken, Task<TResult>> call,
+        CancellationToken cancellationToken
+    )
+        where TSource : class
+    {
         Argument.IsNotNull(access);
+        Argument.IsNotNull(include);
         Argument.IsNotNull(call);
 
         var calls = new List<Task<ModuleAnswer<TResult>>>();
 
         foreach (var module in manifest.Manifest.Modules)
         {
-            if (module.IsRefused || module.Module is not TSource source)
+            if (module.IsRefused || module.Module is not TSource source || !include(module))
             {
                 continue;
             }

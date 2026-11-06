@@ -78,7 +78,7 @@ describe('command palette', () => {
     await waitFor(() => expect(shell.requests.map((request) => request.path)).toContain('diag/commands/diag.requeue'))
   })
 
-  it('finds a nav entry by its label and goes there', async () => {
+  it('finds a sidebar entry by its label and goes there', async () => {
     const user = userEvent.setup()
     const modules = [moduleManifest('diag', { displayName: 'Diagnostics' })]
     renderShell(shellState(modules), { files: moduleFiles(modules) })
@@ -93,7 +93,7 @@ describe('command palette', () => {
     expect(await screen.findByRole('heading', { name: 'Diagnostics runs view' })).toBeTruthy()
   })
 
-  it('lists a destination once when a module command repeats a nav entry', async () => {
+  it('lists a destination once when a module command repeats a sidebar entry', async () => {
     const user = userEvent.setup()
     const modules = [
       moduleManifest('diag', {

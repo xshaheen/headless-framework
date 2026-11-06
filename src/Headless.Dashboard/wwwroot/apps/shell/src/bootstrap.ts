@@ -8,11 +8,32 @@ export interface BootstrapRoute {
   chunk?: string
 }
 
-export interface BootstrapNavEntry {
+export interface BootstrapSidebarEntry {
   id: string
   label: string
-  to: string
+  /** The route the entry opens, relative to its section's module, with an optional query. */
+  route: string
+  icon?: string | null
+  /** The colour role of the entry's state dot. */
+  state?: string | null
+  /** The key of the entry's count in its product's counts answer. */
+  countKey?: string | null
   requires?: Permission | null
+}
+
+export interface BootstrapSidebarSection {
+  /** The module that declares the section; each entry's route is relative to it. */
+  module: string
+  label?: string | null
+  entries: BootstrapSidebarEntry[]
+}
+
+/** One product tab: the modules that join it and its sidebar, both in registration order. */
+export interface BootstrapProduct {
+  id: string
+  label: string
+  modules: string[]
+  sections: BootstrapSidebarSection[]
 }
 
 export interface BootstrapCommand {
@@ -34,7 +55,6 @@ export interface BootstrapModule {
   /** The entry chunk's absolute URL; absent for a refused module. */
   entry?: string
   css: string[]
-  nav: BootstrapNavEntry[]
   routes: BootstrapRoute[]
   /** The static fields of each object kind; the route to an object needs the module's entry. */
   objectKinds?: Record<string, unknown>
@@ -55,6 +75,8 @@ export interface BootstrapState {
   session: { authenticated: boolean; name?: string | null }
   traceLinkTemplate?: string
   modules: BootstrapModule[]
+  /** The products of the listed modules, in the dashboard's product order. */
+  products: BootstrapProduct[]
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -69,13 +91,42 @@ function isPermission(value: unknown): value is Permission | null | undefined {
   return value === undefined || value === null || value === 'view' || value === 'operate'
 }
 
-function isNavEntry(value: unknown): value is BootstrapNavEntry {
+function isOptionalString(value: unknown): value is string | null | undefined {
+  return value === undefined || value === null || typeof value === 'string'
+}
+
+function isSidebarEntry(value: unknown): value is BootstrapSidebarEntry {
   return (
     isRecord(value) &&
     typeof value.id === 'string' &&
     typeof value.label === 'string' &&
-    typeof value.to === 'string' &&
+    typeof value.route === 'string' &&
+    isOptionalString(value.icon) &&
+    isOptionalString(value.state) &&
+    isOptionalString(value.countKey) &&
     isPermission(value.requires)
+  )
+}
+
+function isSidebarSection(value: unknown): value is BootstrapSidebarSection {
+  return (
+    isRecord(value) &&
+    typeof value.module === 'string' &&
+    isOptionalString(value.label) &&
+    Array.isArray(value.entries) &&
+    value.entries.every(isSidebarEntry)
+  )
+}
+
+function isProduct(value: unknown): value is BootstrapProduct {
+  return (
+    isRecord(value) &&
+    typeof value.id === 'string' &&
+    typeof value.label === 'string' &&
+    Array.isArray(value.modules) &&
+    value.modules.every((id) => typeof id === 'string') &&
+    Array.isArray(value.sections) &&
+    value.sections.every(isSidebarSection)
   )
 }
 
@@ -109,13 +160,12 @@ function readModule(value: unknown): BootstrapModule | undefined {
     return undefined
   }
 
-  const nav = arrayOf(value.nav, isNavEntry)
   const routes = arrayOf(value.routes, isRoute)
   const commands = arrayOf(value.commands, isCommand)
   const css = arrayOf(value.css, (item): item is string => typeof item === 'string')
   const events = arrayOf(value.events, (item): item is string => typeof item === 'string')
 
-  if (!nav || !routes || !commands || !css || !events) {
+  if (!routes || !commands || !css || !events) {
     return undefined
   }
 
@@ -129,7 +179,6 @@ function readModule(value: unknown): BootstrapModule | undefined {
     canOperate: value.canOperate === true,
     entry: typeof value.entry === 'string' ? value.entry : undefined,
     css,
-    nav,
     routes,
     objectKinds: isRecord(value.objectKinds) ? value.objectKinds : undefined,
     commands,
@@ -157,8 +206,9 @@ function readState(value: unknown): BootstrapState | undefined {
   }
 
   const modules = value.modules.map(readModule)
+  const products = arrayOf(value.products, isProduct)
 
-  if (!modules.every((module): module is BootstrapModule => module !== undefined)) {
+  if (!modules.every((module): module is BootstrapModule => module !== undefined) || !products) {
     return undefined
   }
 
@@ -171,6 +221,7 @@ function readState(value: unknown): BootstrapState | undefined {
     session: { authenticated: session.authenticated, name: typeof session.name === 'string' ? session.name : null },
     traceLinkTemplate: typeof traceLinkTemplate === 'string' ? traceLinkTemplate : undefined,
     modules,
+    products,
   }
 }
 
@@ -188,6 +239,13 @@ export function readBootstrapState(document: Document): BootstrapState {
   }
 
   return state
+}
+
+/** The sidebar entries one module declares, in its sections' order. */
+export function moduleSidebarEntries(state: BootstrapState, moduleId: string): BootstrapSidebarEntry[] {
+  return state.products.flatMap((product) =>
+    product.sections.filter((section) => section.module === moduleId).flatMap((section) => section.entries),
+  )
 }
 
 /** Whether the page needs a signed-in session; a dashboard without sign-in is open to everyone. */

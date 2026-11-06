@@ -8,7 +8,8 @@ function manifest(overrides: Partial<ModuleManifest> = {}): ModuleManifest {
     sdkVersion: '1.0.0',
     entry: 'index.js',
     css: [],
-    nav: [{ id: 'jobs.nav.runs', label: 'Runs', to: 'runs' }],
+    product: 'jobs',
+    sidebar: [{ entries: [{ id: 'jobs.nav.runs', label: 'Runs', route: 'runs', icon: 'runs' }] }],
     routes: [{ path: 'runs', chunk: 'chunks/runs.js' }],
     objectKinds: {},
     commands: [],
@@ -24,21 +25,38 @@ describe('manifest validator', () => {
     expect(validateManifest(manifest(), files)).toEqual([])
   })
 
-  it('fails two nav entries with one id', () => {
+  it('fails an unknown product', () => {
+    const errors = validateManifest(manifest({ product: 'billing' as ModuleManifest['product'] }), files)
+
+    expect(errors).toEqual([expect.stringMatching(/The product 'billing' is not one of jobs, messaging/)])
+  })
+
+  it('fails two sidebar entries with one id, across sections', () => {
     const errors = validateManifest(
       manifest({
-        nav: [
-          { id: 'jobs.nav.runs', label: 'Runs', to: 'runs' },
-          { id: 'jobs.nav.runs', label: 'Cron', to: 'cron' },
+        sidebar: [
+          { entries: [{ id: 'jobs.nav.runs', label: 'Runs', route: 'runs', icon: 'runs' }] },
+          { label: 'States', entries: [{ id: 'jobs.nav.runs', label: 'Failed', route: 'runs?status=Failed', state: 'fail' }] },
         ],
       }),
       files,
     )
 
-    expect(errors).toEqual([expect.stringMatching(/nav\[1\] reuses the id 'jobs\.nav\.runs' of nav\[0\]/)])
+    expect(errors).toEqual([
+      expect.stringMatching(/sidebar\[1\]\.entries\[0\] reuses the id 'jobs\.nav\.runs' of sidebar\[0\]\.entries\[0\]/),
+    ])
   })
 
-  it('fails a command that reuses a nav id', () => {
+  it('fails a sidebar entry with no leading mark', () => {
+    const errors = validateManifest(
+      manifest({ sidebar: [{ entries: [{ id: 'jobs.nav.runs', label: 'Runs', route: 'runs' }] }] }),
+      files,
+    )
+
+    expect(errors).toEqual([expect.stringMatching(/sidebar\[0\]\.entries\[0\] needs exactly one of icon or state/)])
+  })
+
+  it('fails a command that reuses a sidebar entry id', () => {
     const errors = validateManifest(
       manifest({ commands: [{ id: 'jobs.nav.runs', label: 'Runs' }] }),
       files,

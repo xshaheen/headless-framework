@@ -176,11 +176,11 @@ describe('shell layout', () => {
     const modules = [
       moduleManifest('jobs', {
         displayName: 'Jobs',
-        nav: [{ id: 'jobs.nav.functions', label: 'Functions', to: 'functions' }],
         routes: [{ path: 'functions/:name', chunk: chunkUrl('jobs', 'function') }],
       }),
     ]
-    renderShell(shellState(modules), { path: '/jobs/functions/billing.charge', files: moduleFiles(modules) })
+    const sidebar = { jobs: [{ id: 'jobs.nav.functions', label: 'Functions', route: 'functions', icon: 'function' }] }
+    renderShell(shellState(modules, {}, sidebar), { path: '/jobs/functions/billing.charge', files: moduleFiles(modules) })
 
     await screen.findByRole('heading', { name: 'Jobs functions/:name view' })
     const crumb = screen.getByRole('navigation', { name: 'Breadcrumb' })

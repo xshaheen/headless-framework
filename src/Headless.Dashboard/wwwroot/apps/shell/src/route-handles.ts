@@ -1,5 +1,5 @@
 import { matchPath } from '@headless/dashboard-sdk/router'
-import type { BootstrapModule, BootstrapRoute, BootstrapState } from './bootstrap.ts'
+import { moduleSidebarEntries, type BootstrapModule, type BootstrapRoute, type BootstrapState } from './bootstrap.ts'
 
 /** What the document bar shows for a route: its breadcrumb, and the module it belongs to. */
 export interface ShellRouteHandle {
@@ -16,13 +16,13 @@ export function joinPath(moduleId: string, path: string) {
 const trim = (path: string) => path.replace(/^\/+|\/+$/g, '')
 
 /**
- * The module, the nav entry the route sits under, and for an object page (`functions/:name`) the object from the
+ * The module, the sidebar entry the route sits under, and for an object page (`functions/:name`) the object from the
  * path: `Jobs › Functions › billing.charge`.
  */
-function crumbFor(module: BootstrapModule, route: BootstrapRoute, path: string): string[] {
+function crumbFor(state: BootstrapState, module: BootstrapModule, route: BootstrapRoute, path: string): string[] {
   const own = trim(route.path)
-  const entry = module.nav.find((candidate) => {
-    const to = trim(candidate.to)
+  const entry = moduleSidebarEntries(state, module.id).find((candidate) => {
+    const to = trim(candidate.route)
 
     return to === own || (to !== '' && own.startsWith(`${to}/`))
   })
@@ -59,7 +59,7 @@ export function routeHandleFor(state: BootstrapState, pathname: string): ShellRo
 
     for (const route of module.routes) {
       if (matchPath({ path: `/${joinPath(module.id, route.path)}`, end: true }, path)) {
-        return { crumb: crumbFor(module, route, path), module: module.id }
+        return { crumb: crumbFor(state, module, route, path), module: module.id }
       }
     }
   }

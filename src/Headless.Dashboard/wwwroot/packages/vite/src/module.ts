@@ -68,7 +68,8 @@ export function moduleManifestPlugin(options: ModuleManifestPluginOptions): Plug
         sdkVersion: options.sdkVersion,
         entry: entryChunk?.fileName ?? '',
         css: assets.filter((asset) => asset.fileName.endsWith('.css')).map((asset) => asset.fileName),
-        nav: definition.nav,
+        product: definition.product,
+        sidebar: definition.sidebar,
         routes: definition.routes.map((route, index) => ({
           path: route.path,
           chunk:

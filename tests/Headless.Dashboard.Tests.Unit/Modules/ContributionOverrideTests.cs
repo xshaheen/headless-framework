@@ -12,11 +12,11 @@ namespace Tests.Modules;
 public sealed class ContributionOverrideTests : TestBase
 {
     [Fact]
-    public async Task should_remove_the_nav_entry_from_the_merged_manifest_when_the_host_disables_it()
+    public async Task should_remove_the_sidebar_entry_from_the_merged_manifest_when_the_host_disables_it()
     {
         await using var provider = _Build(dashboard => dashboard.Contributions(c => c.Disable("diag.nav.runs")));
 
-        _NavIds(provider).Should().Equal("diag.nav.overview", "diag.nav.settings");
+        _SidebarIds(provider).Should().Equal("diag.nav.overview", "diag.nav.settings");
     }
 
     [Fact]
@@ -44,7 +44,7 @@ public sealed class ContributionOverrideTests : TestBase
             )
         );
 
-        _NavIds(provider).Should().Equal("diag.nav.settings", "diag.nav.overview", "diag.nav.runs");
+        _SidebarIds(provider).Should().Equal("diag.nav.settings", "diag.nav.overview", "diag.nav.runs");
         provider
             .GetRequiredService<DashboardManifestProvider>()
             .Manifest.RelatedGroupIds.Should()
@@ -92,8 +92,8 @@ public sealed class ContributionOverrideTests : TestBase
             dashboard.Contributions(c => c.Disable("diag.nav.overview").Order("diag.nav.settings", "diag.nav.runs"))
         );
 
-        _NavIds(bound).Should().Equal("diag.nav.settings", "diag.nav.runs");
-        _NavIds(code).Should().Equal(_NavIds(bound));
+        _SidebarIds(bound).Should().Equal("diag.nav.settings", "diag.nav.runs");
+        _SidebarIds(code).Should().Equal(_SidebarIds(bound));
         await _RunStartupValidatorsAsync(bound);
     }
 
@@ -113,13 +113,14 @@ public sealed class ContributionOverrideTests : TestBase
         return services.BuildServiceProvider();
     }
 
-    private static IEnumerable<string> _NavIds(IServiceProvider provider)
+    private static IEnumerable<string> _SidebarIds(IServiceProvider provider)
     {
         var manifest = provider.GetRequiredService<DashboardManifestProvider>().Manifest;
 
         return manifest
             .Modules.Single(module => string.Equals(module.Id, "diag", StringComparison.Ordinal))
-            .Manifest!.Nav.Select(entry => entry.Id);
+            .Manifest!.Sidebar.SelectMany(section => section.Entries)
+            .Select(entry => entry.Id);
     }
 
     private static async Task _RunStartupValidatorsAsync(IServiceProvider provider)

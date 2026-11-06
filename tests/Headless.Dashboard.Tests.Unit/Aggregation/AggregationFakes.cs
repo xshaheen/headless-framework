@@ -20,6 +20,7 @@ internal abstract class FakeModule(string id)
     : IDashboardModule,
         IDashboardAttentionSource,
         IDashboardOverviewSource,
+        IDashboardCountSource,
         IDashboardObjectResolver,
         IDashboardRelatedSource,
         IDashboardPayloadSource,
@@ -34,18 +35,32 @@ internal abstract class FakeModule(string id)
     /// <summary>The SDK version the module claims it was built against; a major other than 1 makes the shell refuse it.</summary>
     public string SdkVersion { get; set; } = "1.0.0";
 
+    /// <summary>The product the module joins; both fakes join one product unless a test moves one.</summary>
+    public string Product { get; set; } = "diagnostics";
+
     public DashboardModuleAssets Assets =>
         new()
         {
             Files = new SingleFileProvider(
                 "manifest.json",
-                $$"""{"id":"{{Id}}","sdkVersion":"{{SdkVersion}}","entry":"entry.js"}"""
+                $$"""{"id":"{{Id}}","sdkVersion":"{{SdkVersion}}","entry":"entry.js","product":"{{Product}}"}"""
             ),
         };
 
     public IReadOnlyList<string> GroupIds { get; set; } = [];
 
     public IReadOnlyList<string> ObjectKinds { get; set; } = [];
+
+    public Func<CancellationToken, Task<IReadOnlyDictionary<string, DashboardCount>>> Counts { get; set; } =
+        static _ =>
+            Task.FromResult<IReadOnlyDictionary<string, DashboardCount>>(
+                new Dictionary<string, DashboardCount>(StringComparer.Ordinal)
+            );
+
+    public Task<IReadOnlyDictionary<string, DashboardCount>> GetCountsAsync(
+        DashboardCountsRequest request,
+        CancellationToken cancellationToken
+    ) => Counts(cancellationToken);
 
     public Func<CancellationToken, Task<IReadOnlyList<DashboardAttentionItem>>> Attention { get; set; } =
         static _ => Task.FromResult<IReadOnlyList<DashboardAttentionItem>>([]);

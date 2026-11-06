@@ -5,11 +5,32 @@ export class ModuleDefinitionError extends Error {
   override name = 'ModuleDefinitionError'
 }
 
-export interface DefinitionNavEntry {
+/**
+ * The products a module may belong to, in the order the shell shows their tabs. The dashboard fixes the order, not
+ * the host's registration, so a product's tab sits in the same place on every host.
+ */
+export const dashboardProducts = ['jobs', 'messaging', 'cluster', 'platform', 'dev-inbox', 'diagnostics'] as const
+
+export type DashboardProduct = (typeof dashboardProducts)[number]
+
+/** The colour roles a sidebar entry's state dot may paint. */
+export const stateRoles = ['sched', 'enq', 'proc', 'ok', 'fail', 'off'] as const
+
+export type StateRole = (typeof stateRoles)[number]
+
+export interface DefinitionSidebarEntry {
   id: string
   label: string
-  to: string
+  route: string
+  icon?: string
+  state?: StateRole
+  countKey?: string
   requires?: Permission
+}
+
+export interface DefinitionSidebarSection {
+  label?: string
+  entries: DefinitionSidebarEntry[]
 }
 
 export interface DefinitionRoute {
@@ -27,7 +48,8 @@ export interface DefinitionCommand {
 /** Everything static a `defineModule` call declares, read from its source without running it. */
 export interface ModuleDefinitionSource {
   id: string
-  nav: DefinitionNavEntry[]
+  product: DashboardProduct
+  sidebar: DefinitionSidebarSection[]
   routes: DefinitionRoute[]
   /** Each object kind's literal fields; function fields such as `route` stay in code. */
   objectKinds: Record<string, Record<string, JsonValue>>
@@ -44,7 +66,7 @@ interface Node {
   [key: string]: unknown
 }
 
-const definitionFields = new Set(['id', 'nav', 'routes', 'objectKinds', 'commands', 'events'])
+const definitionFields = new Set(['id', 'product', 'sidebar', 'routes', 'objectKinds', 'commands', 'events'])
 
 /**
  * Reads the object literal passed to `export default defineModule(...)` in a module's entry source.
@@ -87,16 +109,29 @@ export function readModuleDefinition(source: string, fileName: string): ModuleDe
     throw new ModuleDefinitionError(`${fileName}: defineModule needs an id.`)
   }
 
+  const productNode = fields.get('product')
+
+  if (!productNode) {
+    throw new ModuleDefinitionError(`${fileName}: defineModule needs a product, one of ${quoted(dashboardProducts)}.`)
+  }
+
   return {
     id: stringField(idNode, 'id', fileName),
-    nav: arrayField(fields.get('nav'), 'nav', fileName, (entry, at) => {
-      const props = objectProperties(entry, at, fileName, ['id', 'label', 'to', 'requires'])
+    product: oneOf(productNode, 'product', dashboardProducts, fileName),
+    sidebar: arrayField(fields.get('sidebar'), 'sidebar', fileName, (section, at) => {
+      const props = objectProperties(section, at, fileName, ['label', 'entries'])
+      const label = props.get('label')
+      const entries = props.get('entries')
+
+      if (!entries) {
+        throw new ModuleDefinitionError(`${fileName}: ${at}.entries is required.`)
+      }
 
       return {
-        id: requiredString(props, 'id', at, fileName),
-        label: requiredString(props, 'label', at, fileName),
-        to: requiredString(props, 'to', at, fileName),
-        ...optionalPermission(props, at, fileName),
+        ...(label ? { label: stringField(label, `${at}.label`, fileName) } : {}),
+        entries: arrayField(entries, `${at}.entries`, fileName, (entry, entryAt) =>
+          sidebarEntry(entry, entryAt, fileName),
+        ),
       }
     }),
     routes: arrayField(fields.get('routes'), 'routes', fileName, (entry, at) => {
@@ -234,6 +269,46 @@ function optionalPermission(props: Map<string, Node>, at: string, fileName: stri
   }
 
   return { requires: value }
+}
+
+function quoted(values: readonly string[]) {
+  return values.map((value) => `'${value}'`).join(', ')
+}
+
+function oneOf<const T extends readonly string[]>(node: Node, at: string, values: T, fileName: string): T[number] {
+  const value = stringField(node, at, fileName)
+
+  if (!isOneOf(values, value)) {
+    throw new ModuleDefinitionError(`${fileName}: ${at} must be one of ${quoted(values)}, not '${value}'.`)
+  }
+
+  return value
+}
+
+function isOneOf<const T extends readonly string[]>(values: T, value: string): value is T[number] {
+  return values.includes(value)
+}
+
+function sidebarEntry(entry: Node, at: string, fileName: string): DefinitionSidebarEntry {
+  const props = objectProperties(entry, at, fileName, ['id', 'label', 'route', 'icon', 'state', 'countKey', 'requires'])
+  const icon = props.get('icon')
+  const state = props.get('state')
+  const countKey = props.get('countKey')
+
+  // The entry's leading mark is one slot: an icon for a view, a dot for one state's list.
+  if (!icon === !state) {
+    throw new ModuleDefinitionError(`${fileName}: ${at} needs exactly one of icon or state.`)
+  }
+
+  return {
+    id: requiredString(props, 'id', at, fileName),
+    label: requiredString(props, 'label', at, fileName),
+    route: requiredString(props, 'route', at, fileName),
+    ...(icon ? { icon: stringField(icon, `${at}.icon`, fileName) } : {}),
+    ...(state ? { state: oneOf(state, `${at}.state`, stateRoles, fileName) } : {}),
+    ...(countKey ? { countKey: stringField(countKey, `${at}.countKey`, fileName) } : {}),
+    ...optionalPermission(props, at, fileName),
+  }
 }
 
 function stringField(node: Node, at: string, fileName: string): string {

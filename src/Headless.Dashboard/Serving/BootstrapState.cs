@@ -35,6 +35,13 @@ internal sealed record BootstrapState
 
     public required IReadOnlyList<BootstrapModule> Modules { get; init; }
 
+    /// <summary>
+    /// The products of the modules the session may view, in the dashboard's product order, each with the sidebar
+    /// sections of its modules in registration order. A product no listed module joins is left out, so the shell never
+    /// draws an empty tab.
+    /// </summary>
+    public required IReadOnlyList<BootstrapProduct> Products { get; init; }
+
     /// <summary>Builds the state for one document response.</summary>
     /// <param name="prefix">The dashboard's absolute path for this request: <c>PathBase</c> plus the base path.</param>
     /// <param name="manifest">The merged manifest.</param>
@@ -50,6 +57,7 @@ internal sealed record BootstrapState
     )
     {
         var modules = new List<BootstrapModule>(manifest.Modules.Count);
+        var viewable = new List<MergedModule>(manifest.Modules.Count);
 
         foreach (var module in manifest.Modules)
         {
@@ -58,6 +66,7 @@ internal sealed record BootstrapState
                 continue;
             }
 
+            viewable.Add(module);
             modules.Add(_CreateModule(prefix, module, session.MayOperate(module.Id), assets.FindModule(module.Id)));
         }
 
@@ -77,7 +86,45 @@ internal sealed record BootstrapState
             Session = new BootstrapSession { Authenticated = session.Authenticated, Name = session.Name },
             TraceLinkTemplate = string.IsNullOrEmpty(options.TraceLinkTemplate) ? null : options.TraceLinkTemplate,
             Modules = modules,
+            Products = _CreateProducts(viewable),
         };
+    }
+
+    private static List<BootstrapProduct> _CreateProducts(List<MergedModule> modules)
+    {
+        var products = new List<BootstrapProduct>();
+
+        foreach (var product in DashboardProducts.All)
+        {
+            var members = modules.Where(module => module.Product == product).ToList();
+
+            if (members.Count == 0)
+            {
+                continue;
+            }
+
+            products.Add(
+                new BootstrapProduct
+                {
+                    Id = product.Id,
+                    Label = product.Label,
+                    Modules = [.. members.Select(static module => module.Id)],
+                    Sections =
+                    [
+                        .. members.SelectMany(static module =>
+                            (module.Manifest?.Sidebar ?? []).Select(section => new BootstrapSidebarSection
+                            {
+                                Module = module.Id,
+                                Label = section.Label,
+                                Entries = section.Entries,
+                            })
+                        ),
+                    ],
+                }
+            );
+        }
+
+        return products;
     }
 
     private static BootstrapModule _CreateModule(
@@ -95,7 +142,6 @@ internal sealed record BootstrapState
                 DisplayName = module.DisplayName,
                 CanOperate = false,
                 Css = [],
-                Nav = [],
                 Routes = [],
                 ObjectKinds = FrozenDictionary<string, JsonElement>.Empty,
                 Commands = [],
@@ -127,7 +173,6 @@ internal sealed record BootstrapState
             CanOperate = canOperate,
             Entry = url(manifest.Entry),
             Css = [.. manifest.Css.Select(url).OfType<string>()],
-            Nav = manifest.Nav,
             Routes =
             [
                 .. manifest.Routes.Select(route => new BootstrapRoute { Path = route.Path, Chunk = url(route.Chunk) }),
@@ -165,8 +210,6 @@ internal sealed record BootstrapModule
 
     public required IReadOnlyList<string> Css { get; init; }
 
-    public required IReadOnlyList<ModuleManifestNavEntry> Nav { get; init; }
-
     public required IReadOnlyList<BootstrapRoute> Routes { get; init; }
 
     public required IReadOnlyDictionary<string, JsonElement> ObjectKinds { get; init; }
@@ -178,6 +221,31 @@ internal sealed record BootstrapModule
 
     /// <summary>Why the shell refused the module; <see langword="null"/> when it loads.</summary>
     public ModuleRefusal? Refusal { get; init; }
+}
+
+/// <summary>One product tab: its id and label, the modules that join it, and its sidebar.</summary>
+internal sealed record BootstrapProduct
+{
+    public required string Id { get; init; }
+
+    public required string Label { get; init; }
+
+    /// <summary>The ids of the product's modules the session may view, refused ones included, in registration order.</summary>
+    public required IReadOnlyList<string> Modules { get; init; }
+
+    /// <summary>The sidebar sections of the product's loaded modules, in registration order.</summary>
+    public required IReadOnlyList<BootstrapSidebarSection> Sections { get; init; }
+}
+
+/// <summary>One sidebar section, with the module whose routes its entries open.</summary>
+internal sealed record BootstrapSidebarSection
+{
+    /// <summary>The id of the module that declares the section; each entry's route is relative to it.</summary>
+    public required string Module { get; init; }
+
+    public string? Label { get; init; }
+
+    public required IReadOnlyList<ModuleManifestSidebarEntry> Entries { get; init; }
 }
 
 /// <summary>A module route: its client path and its chunk's absolute URL.</summary>

@@ -1,3 +1,9 @@
+import {
+  dashboardProducts,
+  stateRoles,
+  type DashboardProduct,
+  type DefinitionSidebarSection,
+} from './definition.ts'
 import { isolatedLibraries } from './shared.ts'
 
 /** A module's `manifest.json`, the file the dashboard's server reads beside the module's entry. */
@@ -7,7 +13,8 @@ export interface ModuleManifest {
   sdkVersion: string
   entry: string
   css: string[]
-  nav: { id: string; label: string; to: string; requires?: 'view' | 'operate' }[]
+  product: DashboardProduct
+  sidebar: DefinitionSidebarSection[]
   routes: { path: string; chunk: string }[]
   objectKinds: Record<string, unknown>
   commands: { id: string; label: string; requires?: 'view' | 'operate' }[]
@@ -49,24 +56,42 @@ export function validateManifest(manifest: ModuleManifest, files: ReadonlySet<st
     }
   }
 
-  // Nav entries and commands share the command palette, so one id names one item across both.
+  if (!(dashboardProducts as readonly string[]).includes(manifest.product)) {
+    errors.push(`The product '${manifest.product}' is not one of ${dashboardProducts.join(', ')}.`)
+  }
+
+  // Sidebar entries and commands share the command palette, so one id names one item across both.
   const seen = new Map<string, string>()
+  const items: { at: string; id: string }[] = [
+    ...manifest.sidebar.flatMap((section, sectionIndex) =>
+      section.entries.map((entry, index) => ({ at: `sidebar[${sectionIndex}].entries[${index}]`, id: entry.id })),
+    ),
+    ...manifest.commands.map((command, index) => ({ at: `commands[${index}]`, id: command.id })),
+  ]
 
-  for (const [list, items] of [
-    ['nav', manifest.nav],
-    ['commands', manifest.commands],
-  ] as const) {
-    items.forEach((item, index) => {
-      const at = `${list}[${index}]`
-      const first = seen.get(item.id)
+  for (const { at, id } of items) {
+    const first = seen.get(id)
 
-      if (first) {
-        errors.push(`${at} reuses the id '${item.id}' of ${first}; every nav entry and command needs its own id.`)
-      } else {
-        seen.set(item.id, at)
+    if (first) {
+      errors.push(`${at} reuses the id '${id}' of ${first}; every sidebar entry and command needs its own id.`)
+    } else {
+      seen.set(id, at)
+    }
+  }
+
+  manifest.sidebar.forEach((section, sectionIndex) => {
+    section.entries.forEach((entry, index) => {
+      const at = `sidebar[${sectionIndex}].entries[${index}]`
+
+      if (!entry.icon === !entry.state) {
+        errors.push(`${at} needs exactly one of icon or state.`)
+      }
+
+      if (entry.state && !(stateRoles as readonly string[]).includes(entry.state)) {
+        errors.push(`${at}.state '${entry.state}' is not one of ${stateRoles.join(', ')}.`)
       }
     })
-  }
+  })
 
   const paths = new Map<string, number>()
 

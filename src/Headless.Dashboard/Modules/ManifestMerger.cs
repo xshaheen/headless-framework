@@ -46,7 +46,9 @@ internal static class ManifestMerger
 
             // A refused module's ids still count as known, so disabling one of them never fails the start just
             // because the module's version was refused.
-            knownIds.UnionWith(manifest.Nav.Select(static entry => entry.Id));
+            knownIds.UnionWith(
+                manifest.Sidebar.SelectMany(static section => section.Entries).Select(static entry => entry.Id)
+            );
             knownIds.UnionWith(manifest.Commands.Select(static command => command.Id));
             knownIds.UnionWith(serverCommands.Select(static command => command.Id));
             knownIds.UnionWith(moduleRelatedIds);
@@ -61,6 +63,9 @@ internal static class ManifestMerger
                         Id = module.Id,
                         DisplayName = module.DisplayName,
                         Module = module,
+                        // A refused module keeps its product's tab when it names a known one, so the tab can say why
+                        // the module is missing; an older manifest without one joins no product.
+                        Product = DashboardProducts.Find(manifest.Product),
                         Manifest = null,
                         ServerCommands = [],
                         Refusal = refusal,
@@ -70,9 +75,21 @@ internal static class ManifestMerger
                 continue;
             }
 
+            var product = _ReadProduct(module, manifest.Product);
             var filtered = manifest with
             {
-                Nav = _Apply(manifest.Nav, static entry => entry.Id, disabled, orders),
+                Sidebar =
+                [
+                    .. manifest
+                        .Sidebar.Select(section =>
+                            section with
+                            {
+                                Entries = _Apply(section.Entries, static entry => entry.Id, disabled, orders),
+                            }
+                        )
+                        // A section whose every entry the host disabled would draw a heading over nothing.
+                        .Where(static section => section.Entries.Count > 0),
+                ],
                 Commands = _Apply(manifest.Commands, static command => command.Id, disabled, orders),
             };
 
@@ -82,6 +99,7 @@ internal static class ManifestMerger
                     Id = module.Id,
                     DisplayName = module.DisplayName,
                     Module = module,
+                    Product = product,
                     Manifest = filtered,
                     ServerCommands = _Apply(serverCommands, static command => command.Id, disabled, orders),
                     Refusal = null,
@@ -141,6 +159,17 @@ internal static class ManifestMerger
         }
 
         return manifest;
+    }
+
+    private static DashboardProduct _ReadProduct(IDashboardModule module, string? productId)
+    {
+        return DashboardProducts.Find(productId)
+            ?? throw new InvalidOperationException(
+                $"Dashboard module '{module.Id}' names the product '{productId}' in its {ModuleManifest.FileName}, "
+                    + "which is not one of "
+                    + string.Join(", ", DashboardProducts.All.Select(static product => product.Id))
+                    + ". Set product in defineModule to one of them."
+            );
     }
 
     private static ModuleRefusal? _CheckSdkVersion(IDashboardModule module, string? builtAgainst, Version shell)
@@ -281,6 +310,12 @@ internal sealed class MergedModule
     public required string DisplayName { get; init; }
 
     public required IDashboardModule Module { get; init; }
+
+    /// <summary>
+    /// The product whose tab the module joins; <see langword="null"/> only for a refused module whose manifest names
+    /// no known product.
+    /// </summary>
+    public required DashboardProduct? Product { get; init; }
 
     /// <summary>The manifest with the host's overrides applied; <see langword="null"/> for a refused module.</summary>
     public required ModuleManifest? Manifest { get; init; }
