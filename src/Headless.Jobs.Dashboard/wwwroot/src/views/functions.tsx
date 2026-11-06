@@ -105,7 +105,7 @@ export default function FunctionsView() {
           </h2>
           <div className="hd-actions">
             <Link to={`/jobs/functions/${encodeURIComponent(selected.name)}`}>Open function page</Link>
-            <Link to={`/jobs/?function=${encodeURIComponent(selected.name)}`}>Its runs</Link>
+            <Link to={`/jobs/runs?function=${encodeURIComponent(selected.name)}`}>Its runs</Link>
           </div>
           <FunctionFields item={selected} />
         </Inspector>

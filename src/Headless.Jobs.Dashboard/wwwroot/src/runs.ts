@@ -328,7 +328,7 @@ export function useModuleNavigate() {
 
 /** The runs list filtered by one correlation id: the trace until the cross-module trace page exists. */
 export function tracePath(correlationId: string) {
-  return `?correlationId=${encodeURIComponent(correlationId)}`
+  return `runs?correlationId=${encodeURIComponent(correlationId)}`
 }
 
 /** A duration with its unit: `340 ms`, `1.2 s`, `3 min 4 s`. */

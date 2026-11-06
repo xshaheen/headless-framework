@@ -73,6 +73,27 @@ export function twentyModules() {
 }
 
 /**
+ * A Jobs module shaped like the real one: its Dashboard at the module's home route leads the sidebar, then a state
+ * entry and All runs on the runs list.
+ */
+export function jobsWithDashboard() {
+  const jobs = moduleManifest('jobs', {
+    routes: [
+      { path: '', chunk: chunkUrl('jobs', 'dashboard') },
+      { path: 'runs', chunk: chunkUrl('jobs', 'runs') },
+      { path: 'settings', chunk: chunkUrl('jobs', 'settings') },
+    ],
+  })
+  const sidebar: BootstrapSidebarEntry[] = [
+    { id: 'jobs.nav.dashboard', label: 'Dashboard', route: '', icon: 'dashboard' },
+    { id: 'jobs.nav.failed', label: 'Failed', route: 'runs?status=Failed', state: 'fail', countKey: 'Failed' },
+    { id: 'jobs.nav.runs', label: 'All runs', route: 'runs', icon: 'runs' },
+  ]
+
+  return { modules: [jobs], state: shellState([jobs], {}, { jobs: sidebar }) }
+}
+
+/**
  * The files every fixture module serves: its entry, a `defineModule` result, and a view per route that names the
  * module and route it belongs to.
  */

@@ -228,15 +228,9 @@ interface FrameContext {
 
 const Frame = createContext<FrameContext | null>(null)
 
-/** The frame a `DetailPanel` sits in; a panel outside a `PageFrame` is a mistake caught at first render. */
+/** The frame a `DetailPanel` sits in; `null` outside a `PageFrame`, where the panel is its object's own page. */
 export function useFrame() {
-  const frame = useContext(Frame)
-
-  if (!frame) {
-    throw new Error('A DetailPanel renders only inside a PageFrame.')
-  }
-
-  return frame
+  return useContext(Frame)
 }
 
 function subscribe(onChange: () => void) {

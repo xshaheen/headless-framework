@@ -76,7 +76,11 @@ describe('DetailPanel', () => {
     expect(screen.getByText('Chain body')).toBeTruthy()
   })
 
-  it('refuses to render outside a PageFrame', () => {
-    expect(() => render(<DetailPanel label="Run details" name="billing.charge" />)).toThrow(/inside a PageFrame/)
+  it('renders as the object’s own page outside a PageFrame, with nothing to close or move', () => {
+    render(<DetailPanel label="Run details" name="billing.charge" />)
+
+    expect(screen.getByRole('region', { name: 'Run details' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Close details' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Move details/ })).toBeNull()
   })
 })

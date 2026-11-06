@@ -32,14 +32,31 @@ function Lead({ entry }: { entry: BootstrapSidebarEntry }) {
   )
 }
 
-/** The entry the location sits on: an exact path and query first, else the longest list whose page this is. */
-function currentEntry(entries: readonly { to: string }[], location: string, pathname: string) {
-  return (
-    entries.find((entry) => entry.to === location) ??
-    entries
-      .filter((entry) => !entry.to.includes('?') && pathname.startsWith(`${entry.to}/`))
-      .sort((left, right) => right.to.length - left.to.length)[0]
-  )
+/**
+ * The entry the location sits on: on its path, the entry whose query the location holds with the most parameters
+ * (so `runs?status=Failed&open=r1` stays on Failed, not All runs), else the longest list whose page this is.
+ */
+function currentEntry(entries: readonly { to: string }[], search: URLSearchParams, pathname: string) {
+  let best
+  let score = -1
+
+  for (const entry of entries) {
+    const [path = '', query] = entry.to.split('?')
+    const params = [...new URLSearchParams(query)]
+    const next =
+      path === pathname && params.every(([name, value]) => search.get(name) === value)
+        ? 1e4 + params.length
+        : !query && pathname.startsWith(`${path}/`)
+          ? path.length
+          : -1
+
+    if (next > score) {
+      best = entry
+      score = next
+    }
+  }
+
+  return best
 }
 
 /**
@@ -60,7 +77,7 @@ export function ProductSidebar({ product, onNavigate }: { product: BootstrapProd
     ...section,
     entries: section.entries.map((entry) => ({ ...entry, module: section.module, to: modulePath(section.module, entry.route) })),
   }))
-  const current = currentEntry(sections.flatMap((section) => section.entries), `${location.pathname}${location.search}`, location.pathname)
+  const current = currentEntry(sections.flatMap((section) => section.entries), new URLSearchParams(location.search), location.pathname)
 
   return (
     <nav className="hd-sidebar" aria-label={product.label}>

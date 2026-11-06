@@ -89,7 +89,7 @@ export default function FunctionPage() {
         </section>
         <section aria-label="Runs" className="hd-fields">
           <h3 className="hd-title">Runs</h3>
-          <Link to={`/jobs/?function=${encodeURIComponent(name)}`}>Open in Runs</Link>
+          <Link to={`/jobs/runs?function=${encodeURIComponent(name)}`}>Open in Runs</Link>
           {runs.query.isError ? (
             <LoadError message={runs.query.error.message} onRetry={() => void runs.query.refetch()} />
           ) : (

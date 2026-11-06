@@ -1226,6 +1226,71 @@ a.hd-stat:hover {
   block-size: 36px;
 }
 
+.hd-dcards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  align-items: start;
+  gap: var(--sp-5);
+  padding: var(--sp-6) var(--sp-7);
+}
+
+.hd-dcard {
+  min-inline-size: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-panel);
+  background: var(--panel);
+}
+
+.hd-dcard header,
+.hd-dcard li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1) var(--sp-4);
+  min-block-size: 40px;
+  padding: var(--sp-2) var(--sp-5) var(--sp-2) var(--sp-6);
+  border-block-end: 1px solid var(--line);
+  font: var(--text-mono);
+}
+
+.hd-dcard h2 {
+  margin: 0;
+  font: 600 13px/20px var(--sans);
+}
+
+/* The header's trailing control and a row's first fact after its name sit at the inline end. */
+.hd-dcard header > :not(h2, .hd-faint),
+.hd-dcard li > b + * {
+  margin-inline-start: auto;
+}
+
+.hd-dcard ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hd-dcard li:last-child {
+  border: 0;
+}
+
+.hd-dcard li > b {
+  min-inline-size: 0;
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hd-dcard li > div {
+  flex-basis: 100%;
+}
+
+.hd-dcard > p {
+  margin: 0;
+  padding: var(--sp-6);
+}
+
 @media (max-width: 767px) {
   .hd-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));

@@ -36,8 +36,8 @@ export function ShellLayout() {
   // A fresh key per opening, so the palette starts from the search it was opened with.
   const openPalette = (query?: string) => setPalette((current) => ({ open: true, query, key: current.key + 1 }))
 
-  // `G R` opens the Jobs runs list, the Jobs module's home route. It does not check that the module is registered:
-  // without Jobs the route answers with the shell's Not found view.
+  // `G R` opens the Jobs runs list. It does not check that the module is registered: without Jobs the route answers
+  // with the shell's Not found view.
   useShellKeys({
     palette: () => openPalette(),
     goTo: () => goTo.current?.focus(),
@@ -45,7 +45,7 @@ export function ShellLayout() {
     go: {
       o: () => void navigate(product ? productHome(product) : '/'),
       n: () => attention.setOpen(true),
-      r: () => void navigate('/jobs'),
+      r: () => void navigate('/jobs/runs'),
     },
   })
   useEffect(() => loader.onError(() => setUpdated(true)), [loader])

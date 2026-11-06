@@ -157,11 +157,17 @@ export interface FakeServer {
   runs?: Run[]
   attempts?: Readonly<Record<string, Attempt[]>>
   cronJobs?: CronJob[]
+  /** The sidebar counts by status, as `GET api/counts?product=jobs` answers them. */
+  counts?: Readonly<Record<string, number>>
+  /** The Jobs Overview figures, as `GET api/overview` serves them. */
+  figures?: unknown[]
+  /** The Jobs attention items, as `GET api/needs-you` serves them. */
+  attention?: unknown[]
   extra?: (request: ApiRequest) => unknown
 }
 
-/** A fake of the Jobs module's API and the shell's command endpoints for it. */
-export function server({ runs = [], attempts = {}, cronJobs = [], extra }: FakeServer) {
+/** A fake of the Jobs module's API, the shell's aggregates it reads, and the shell's command endpoints for it. */
+export function server({ runs = [], attempts = {}, cronJobs = [], counts = {}, figures = [], attention = [], extra }: FakeServer) {
   return (request: ApiRequest) => {
     const answered = extra?.(request)
 
@@ -171,10 +177,23 @@ export function server({ runs = [], attempts = {}, cronJobs = [], extra }: FakeS
 
     const query = request.query ?? {}
 
+    if (request.path === 'counts') {
+      return { counts: Object.fromEntries(Object.entries(counts).map(([key, count]) => [key, { count, capped: false }])) }
+    }
+
+    if (request.path === 'overview') {
+      return { modules: [{ id: 'jobs', displayName: 'Jobs', stale: false, items: figures, tracks: [] }] }
+    }
+
+    if (request.path === 'needs-you') {
+      return { modules: [{ id: 'jobs', displayName: 'Jobs', stale: false, items: attention }] }
+    }
+
     if (request.method === 'GET' && request.path === 'jobs/runs') {
       const items = runs.filter(
         (row) =>
           (!query.status || row.status === query.status) &&
+          (!query.fingerprint || row.failureFingerprint === query.fingerprint) &&
           (!query.function || row.function === query.function) &&
           (!query.correlationId || row.correlationId === query.correlationId) &&
           (!query.cronJobId || row.cronJobId === query.cronJobId),

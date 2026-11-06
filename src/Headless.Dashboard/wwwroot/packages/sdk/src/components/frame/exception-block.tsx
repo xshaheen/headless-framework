@@ -6,8 +6,8 @@ import { useState } from 'react'
 import { Button } from '../button.tsx'
 
 export interface ExceptionBlockProps {
-  /** The exception's type, such as `System.TimeoutException`. */
-  type: string
+  /** The exception's type, such as `System.TimeoutException`; left out when the server does not serve it. */
+  type?: string
   message: string
   /** The stack frames, one per entry, without the leading `at`. */
   frames?: readonly string[]
@@ -24,8 +24,8 @@ export function ExceptionBlock({ type, message, frames = [] }: ExceptionBlockPro
   return (
     <div className="hd-exception">
       <pre className="hd-mono">
-        <b>{type}</b>
-        {`: ${message}`}
+        {type ? <b>{type}: </b> : null}
+        {message}
         {(full ? lines : lines.slice(0, shownFrames)).map((line, index) => (
           <span key={index}>{`\n${line}`}</span>
         ))}
@@ -39,7 +39,7 @@ export function ExceptionBlock({ type, message, frames = [] }: ExceptionBlockPro
         <Button
           variant="ghost"
           aria-label="Copy exception"
-          onPress={() => void navigator.clipboard?.writeText([`${type}: ${message}`, ...lines].join('\n'))}
+          onPress={() => void navigator.clipboard?.writeText([type ? `${type}: ${message}` : message, ...lines].join('\n'))}
         >
           Copy
         </Button>

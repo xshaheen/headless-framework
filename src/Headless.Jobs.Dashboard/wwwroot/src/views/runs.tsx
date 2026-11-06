@@ -1,59 +1,47 @@
 import { useDashboard, useModule } from '@headless/dashboard-sdk'
-import { useOperations, type CommandDefinition } from '@headless/dashboard-sdk/commands'
+import { CommandAction, useAllowedActions, useOperations, type CommandDefinition } from '@headless/dashboard-sdk/commands'
 import {
   Button,
+  DetailPanel,
   FilterChip,
-  Inspector,
+  FilterChips,
   Mono,
-  ObjectHeader,
+  PageFrame,
+  PageHeader,
   SelectField,
   StatusMark,
-  TenantChip,
   useDelayed,
+  usePageFrame,
 } from '@headless/dashboard-sdk/components'
-import { DataTable } from '@headless/dashboard-sdk/table'
 import { DashboardApiError, listKey, useDashboardKeysetList, useDashboardObject, useNewRows } from '@headless/dashboard-sdk/data'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQuery, useQueryClient } from '@headless/dashboard-sdk/query'
-import { Link, useSearchParams } from '@headless/dashboard-sdk/router'
-import { useEffect, useRef, useState } from 'react'
+import { useSearchParams } from '@headless/dashboard-sdk/router'
+import { DataTable, type DataTableColumn } from '@headless/dashboard-sdk/table'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { fetchFunctions } from '../cron.ts'
-import {
-  AttemptTimeline,
-  canvas,
-  CellText,
-  layout,
-  LoadError,
-  RunActions,
-  RunFields,
-  RunPayload,
-  Skeleton,
-  StaleNotice,
-  Time,
-  useTraceKey,
-} from '../parts.tsx'
+import { CellText, JobsStats, LoadError, RunPanel, Skeleton, StaleNotice, Time, useJobsAttention } from '../parts.tsx'
 import {
   fetchRun,
   fetchRuns,
   filterNames,
   formatDuration,
-  isFiltered,
   kindLabel,
   operationScope,
+  pendingLabels,
   rangeSpans,
   readFilter,
   runMatches,
   runsNoun,
-  runStatuses,
   runStatusMark,
   runsTopic,
-  statusLabel,
   useJobsCommands,
   usePending,
   viewOnlyReason,
   type Pending,
   type Run,
   type RunFilter,
+  type RunStatus,
 } from '../runs.ts'
 import { TimeJobForm } from './create.tsx'
 
@@ -61,17 +49,30 @@ const kindOptions = [
   { value: 'TimeJob', label: 'Time jobs' },
   { value: 'CronJobOccurrence', label: 'Occurrences' },
 ]
-const statusOptions = runStatuses.map((status) => ({ value: status, label: statusLabel(status) }))
-const allLoaded = '*'
 const rangeOptions = [
   { value: '1h', label: 'Last hour' },
   { value: '24h', label: 'Last 24 h' },
   { value: '7d', label: 'Last 7 days' },
 ]
 
+/** Each state list's title, as its sidebar entry names it, and the one sentence that says what the list holds. */
+const states: Readonly<Record<RunStatus, { title: string; description: string }>> = {
+  Idle: { title: 'Idle', description: 'Due later, waiting for a retry, or a chain step waiting for its parent.' },
+  Queued: { title: 'Queued', description: 'Due now, waiting for a node to pick them up.' },
+  InProgress: { title: 'In progress', description: 'Running on a node now.' },
+  Succeeded: { title: 'Succeeded', description: 'Finished without an exception.' },
+  DueDone: { title: 'Due done', description: 'Finished without an exception after starting later than due.' },
+  Failed: { title: 'Failed', description: 'Threw on their last try; requeue them once the cause is fixed.' },
+  Cancelled: { title: 'Cancelled', description: 'Stopped before they finished, by an operator or by their chain.' },
+  Skipped: { title: 'Skipped', description: 'Not run, because their chain condition or overlap rule passed them over.' },
+}
+
+/** States a cancel can still reach; on the other lists the bulk Cancel would refuse every row. */
+const cancellable = new Set(['', 'Idle', 'Queued', 'InProgress'])
+
 /**
- * Runs: one live, keyset-paged list of time jobs and cron occurrences, filtered in the URL, with the selection's
- * inspector, Operations over every matching run, and the time job and chain forms.
+ * A state's runs, or every run: one live, keyset-paged list filtered in the URL, with checked rows for bulk actions
+ * the server allows per row, Operations over every matching run, and the open run in the docked panel.
  */
 export default function RunsView() {
   const { api } = useDashboard()
@@ -85,15 +86,18 @@ export default function RunsView() {
   const creating = params.get('create')
   const runs = useDashboardKeysetList<Run>({ topic: runsTopic, params: filter, fetchPage: (cursor) => fetchRuns(api, filter, cursor) })
   const items = runs.rows
-  // `selected=*` is every loaded run (`⌘A`): one marker, not one id per row, keeps a shared link short.
-  const selectedIds = new Set(params.get('selected') === allLoaded ? items.map((run) => run.id) : params.getAll('selected'))
   const list = runs.query
-  const newRows = useNewRows<Run>(runsTopic, (run) => runMatches(run, filter))
+  const matches = (run: Run) => runMatches(run, filter)
+  const frame = usePageFrame({ viewId: 'jobs.runs', rows: items, matches })
+  const newRows = useNewRows<Run>(runsTopic, matches)
   const showLoading = useDelayed(list.isPending)
   const functions = useQuery({ queryKey: ['jobs', 'functions'], queryFn: () => fetchFunctions(api) })
   const commands = useJobsCommands()
   const pending = usePending()
   const [allMatching, setAllMatching] = useState(false)
+  const checkedRuns = items.filter((run) => frame.checked.has(run.id))
+  const status = filter.status as RunStatus | ''
+  const state = status ? states[status] : undefined
 
   function update(change: (next: URLSearchParams) => void) {
     setParams(
@@ -107,27 +111,16 @@ export default function RunsView() {
     )
   }
 
-  function select(ids: ReadonlySet<string>) {
+  function setFilter(name: keyof RunFilter, value: string, also?: Partial<RunFilter>) {
     setAllMatching(false)
+    frame.setChecked(new Set())
     update((next) => {
-      next.delete('selected')
-      next.delete('create')
-
-      if (ids.size > 1 && ids.size === items.length && items.every((run) => ids.has(run.id))) {
-        next.set('selected', allLoaded)
-      } else {
-        ids.forEach((id) => next.append('selected', id))
-      }
-    })
-  }
-
-  function setFilter(name: keyof RunFilter, value: string) {
-    setAllMatching(false)
-    update((next) => {
-      if (value) {
-        next.set(name, value)
-      } else {
-        next.delete(name)
+      for (const [key, set] of Object.entries({ [name]: value, ...also })) {
+        if (set) {
+          next.set(key, set)
+        } else {
+          next.delete(key)
+        }
       }
 
       if (name === 'range') {
@@ -139,25 +132,29 @@ export default function RunsView() {
           next.delete('from')
         }
       }
-
-      next.delete('selected')
     })
   }
 
+  // The status is the list itself, chosen in the sidebar; clearing the filters keeps it.
   function clearFilters() {
     setAllMatching(false)
-    update((next) => {
-      filterNames.forEach((name) => next.delete(name))
-      next.delete('selected')
-    })
+    frame.setChecked(new Set())
+    update((next) => filterNames.filter((name) => name !== 'status').forEach((name) => next.delete(name)))
   }
 
   function openCreate(kind: 'time-job' | 'chain') {
     update((next) => {
-      next.delete('selected')
+      next.delete('open')
       next.set('create', kind)
     })
   }
+
+  // A row opened while the form is up replaces it, so closing the run does not bring the form back.
+  useEffect(() => {
+    if (frame.openId && creating) {
+      update((next) => next.delete('create'))
+    }
+  }, [frame.openId])
 
   // The palette's `Requeue failed runs` opens this view with `operation=requeue`; the view starts the Operation once.
   const started = useRef(false)
@@ -184,156 +181,330 @@ export default function RunsView() {
     }
   }, [wantsOperation])
 
-  const selectedRuns = items.filter((run) => selectedIds.has(run.id))
-  const [onlySelected] = selectedIds
-  // A link can select a run the loaded page does not hold; the inspector reads that one run by its id instead.
-  const lookupId = list.data && selectedIds.size === 1 && selectedRuns.length === 0 ? onlySelected : undefined
+  // `Select all matching` answers for the rows checked when it was pressed; a change to them ends it.
+  useEffect(() => setAllMatching(false), [frame.checked])
+
   const count = runs.count
-  const filtered = isFiltered(filter)
+  const narrowed = filterNames.some((name) => name !== 'status' && filter[name] !== '')
   const addReason = module.canOperate ? null : viewOnlyReason
   const functionOptions = [
     ...new Set([...(functions.data ?? []).map((item) => item.name), ...(filter.function ? [filter.function] : [])]),
   ].map((name) => ({ value: name, label: name }))
+  const openRun = items.find((run) => run.id === frame.openId)
+  // The filters a link set that the header shows as chips to clear: on a state list, every one but the status; on All
+  // runs, those with no select. On the Failed list a pressed cause chip already shows its fingerprint and function.
+  const chipped: readonly { name: keyof RunFilter; label: string }[] = [
+    ...(status
+      ? [
+          { name: 'kind', label: 'kind' } as const,
+          { name: 'function', label: 'function' } as const,
+          { name: 'range', label: 'time' } as const,
+        ]
+      : []),
+    { name: 'correlationId', label: 'correlation' },
+    { name: 'fingerprint', label: 'cause' },
+    { name: 'cronJobId', label: 'cron job' },
+  ]
+  const setFilters = chipped.filter(
+    ({ name }) => filter[name] && !(status === 'Failed' && filter.fingerprint && (name === 'fingerprint' || name === 'function')),
+  )
 
-  let inspector
-  if (creating === 'time-job' || creating === 'chain') {
-    inspector = (
+  let panel
+  if (frame.openId) {
+    panel = openRun ? <RunPanel run={openRun} pending={pending} /> : <LookedUpRun id={frame.openId} pending={pending} />
+  } else if (creating === 'time-job' || creating === 'chain') {
+    panel = (
       <TimeJobForm
         chain={creating === 'chain'}
         onCancel={() => update((next) => next.delete('create'))}
         onCreated={(id) => {
           void client.invalidateQueries({ queryKey: listKey(runsTopic) })
-          select(new Set([id]))
+          update((next) => {
+            next.delete('create')
+            next.set('open', id)
+          })
         }}
-      />
-    )
-  } else if (allMatching && count) {
-    inspector = <MatchingInspector filter={filter} count={format.count(count)} onClose={() => select(new Set())} />
-  } else {
-    inspector = (
-      <RunsInspector
-        runs={selectedRuns}
-        lookupId={lookupId}
-        count={count ? format.count(count) : undefined}
-        pending={pending}
-        onClose={() => select(new Set())}
       />
     )
   }
 
   return (
-    <div style={layout}>
-      <section aria-labelledby="jobs-runs-title" style={canvas}>
-        <header className="hd-actions">
-          <h1 id="jobs-runs-title" className="hd-title">
-            Runs
-          </h1>
-          {count ? <span className="hd-hint">{`${format.count(count)} ${count.value === 1 && !count.capped ? 'run' : 'runs'}`}</span> : null}
-          <Button variant="primary" disabledReason={addReason} onPress={() => openCreate('time-job')}>
-            Add time job
-          </Button>
-          <Button disabledReason={addReason} onPress={() => openCreate('chain')}>
-            Add chain
-          </Button>
-        </header>
-        <div className="hd-actions" role="search" aria-label="Filter runs">
-          <SelectField label="Kind" emptyLabel="Any kind" value={filter.kind} onChange={(value) => setFilter('kind', value)} options={kindOptions} />
-          <SelectField label="Function" emptyLabel="Any function" value={filter.function} onChange={(value) => setFilter('function', value)} options={functionOptions} />
-          <SelectField label="Status" emptyLabel="Any status" value={filter.status} onChange={(value) => setFilter('status', value)} options={statusOptions} />
-          <SelectField label="Time range" emptyLabel="Any time" value={filter.range} onChange={(value) => setFilter('range', value)} options={rangeOptions} />
-          {filter.correlationId ? <FilterChip label="correlation" value={filter.correlationId} onClear={() => setFilter('correlationId', '')} /> : null}
-          {filter.fingerprint ? <FilterChip label="cause" value={filter.fingerprint} onClear={() => setFilter('fingerprint', '')} /> : null}
-          {filter.cronJobId ? <FilterChip label="cron job" value={filter.cronJobId} onClear={() => setFilter('cronJobId', '')} /> : null}
-        </div>
-        <StaleNotice what="these runs" onRefresh={() => void list.refetch()} />
-        {list.isPending ? (
-          showLoading ? (
-            <Skeleton label="Loading runs" rows={6} />
-          ) : null
-        ) : list.isError ? (
-          <LoadError message={list.error.message} onRetry={() => void list.refetch()} />
-        ) : (
-          <DataTable
-            // A new filter is a new list: the held rows and the scroll start again.
-            key={filterKey}
-            label="Runs"
-            viewId="jobs.runs"
-            rows={items}
-            matches={(run) => runMatches(run, filter)}
-            hasMore={runs.hasMore}
-            isLoadingMore={runs.isLoadingMore}
-            onLoadMore={runs.loadMore}
-            newRows={newRows}
-            selectionMode="multiple"
-            selectedIds={selectedIds}
-            onSelectionChange={select}
-            matchingCount={count?.value}
-            onSelectAllMatching={() => setAllMatching(true)}
-            emptyState={
-              filtered ? (
-                <span>
-                  No runs match. Clear filters or widen the time range.{' '}
-                  <Button variant="ghost" onPress={clearFilters}>
-                    Clear filters
-                  </Button>
-                </span>
-              ) : (
-                'No runs yet. A run appears when a host schedules a time job or a cron job fires; add a time job here.'
-              )
-            }
-            columns={[
-              {
-                id: 'function',
-                header: 'Function',
-                cell: (run) => (
-                  <CellText title={run.function}>
-                    <Mono>{run.function}</Mono>
-                  </CellText>
-                ),
-                isRowHeader: true,
-                width: '2fr',
-              },
-              {
-                id: 'status',
-                header: 'Status',
-                cell: (run) => (
-                  <CellText>
-                    <StatusMark {...runStatusMark(run, pending.labelOf(run))} />
-                  </CellText>
-                ),
-                width: 130,
-              },
-              { id: 'kind', header: 'Kind', cell: (run) => kindLabel(run.kind), priority: 2, width: 110 },
-              { id: 'retries', header: 'Retries', cell: (run) => format.number(run.retryCount), align: 'end', priority: 2, width: 80 },
-              {
-                id: 'duration',
-                header: 'Duration',
-                cell: (run) => (run.executedAt ? formatDuration(run.elapsedMilliseconds, format.number) : ''),
-                align: 'end',
-                priority: 2,
-                width: 100,
-              },
-              {
-                id: 'due',
-                header: 'Due',
-                cell: (run) => (
-                  <CellText>
-                    <Time value={run.executionTime ?? run.createdAt} short />
-                  </CellText>
-                ),
-                width: 110,
-              },
-            ]}
+    <PageFrame
+      frame={frame}
+      form={panel !== undefined && !frame.openId}
+      stats={<JobsStats />}
+      header={
+        <PageHeader
+          title={state?.title ?? 'All runs'}
+          tone={status ? runStatusMark({ status }).tone : undefined}
+          count={count ? format.count(count) : undefined}
+          description={state?.description ?? 'Every time job and cron occurrence, newest first.'}
+          actions={
+            <>
+              {allMatching && count ? (
+                <MatchingActions filter={filter} count={format.count(count)} />
+              ) : checkedRuns.length > 0 ? (
+                <CheckedActions runs={checkedRuns} pending={pending} cancel={cancellable.has(status)} frame={frame} />
+              ) : null}
+              <Button variant="primary" disabledReason={addReason} onPress={() => openCreate('time-job')}>
+                Add time job
+              </Button>
+              <Button disabledReason={addReason} onPress={() => openCreate('chain')}>
+                Add chain
+              </Button>
+            </>
+          }
+        >
+          {status === 'Failed' ? <FailureChips filter={filter} count={count ? format.count(count) : undefined} onPick={setFilter} /> : null}
+          {/* A state list keeps its header to one row, as the sidebar already chose the state: its other filters
+              arrive by link and show as chips to clear. The All runs list offers every filter. */}
+          {status ? null : (
+            <>
+              <SelectField label="Kind" emptyLabel="Any kind" value={filter.kind} onChange={(value) => setFilter('kind', value)} options={kindOptions} />
+              <SelectField label="Function" emptyLabel="Any function" value={filter.function} onChange={(value) => setFilter('function', value)} options={functionOptions} />
+              <SelectField label="Time range" emptyLabel="Any time" value={filter.range} onChange={(value) => setFilter('range', value)} options={rangeOptions} />
+            </>
+          )}
+          {setFilters.length > 0 ? (
+            <FilterChips label="Set filters">
+              {setFilters.map(({ name, label }) => (
+                <FilterChip key={name} label={label} value={filter[name]} onClear={() => setFilter(name, '')} />
+              ))}
+            </FilterChips>
+          ) : null}
+        </PageHeader>
+      }
+      panel={panel}
+    >
+      <StaleNotice what="these runs" onRefresh={() => void list.refetch()} />
+      {list.isPending ? (
+        showLoading ? (
+          <Skeleton label="Loading runs" rows={6} />
+        ) : null
+      ) : list.isError ? (
+        <LoadError message={list.error.message} onRetry={() => void list.refetch()} />
+      ) : (
+        <RunsTable
+          // A new filter is a new list: the held rows and the scroll start again.
+          key={filterKey}
+          frame={frame}
+          runs={runs}
+          matches={matches}
+          newRows={newRows}
+          failed={status === 'Failed'}
+          pending={pending}
+          onSelectAllMatching={() => setAllMatching(true)}
+          emptyState={
+            narrowed ? (
+              <span>
+                No runs match. Clear filters or widen the time range.{' '}
+                <Button variant="ghost" onPress={clearFilters}>
+                  Clear filters
+                </Button>
+              </span>
+            ) : state ? (
+              `No ${state.title.toLowerCase()} runs.`
+            ) : (
+              'No runs yet. A run appears when a host schedules a time job or a cron job fires; add a time job here.'
+            )
+          }
+        />
+      )}
+    </PageFrame>
+  )
+}
+
+interface RunsTableProps {
+  frame: ReturnType<typeof usePageFrame>
+  runs: ReturnType<typeof useDashboardKeysetList<Run>>
+  matches: (run: Run) => boolean
+  newRows: ReturnType<typeof useNewRows<Run>>
+  failed: boolean
+  pending: Pending
+  onSelectAllMatching: () => void
+  emptyState: ReactNode
+}
+
+function RunsTable({ frame, runs, matches, newRows, failed, pending, onSelectAllMatching, emptyState }: RunsTableProps) {
+  const format = useFormat()
+  // The Failed list says why each run failed; the server serves the message, not the exception's type.
+  const reasonColumn: DataTableColumn<Run> = {
+    id: 'reason',
+    header: 'Reason',
+    cell: (run) => {
+      const reason = run.exceptionMessage?.split('\n')[0]
+
+      return <CellText title={reason}>{reason}</CellText>
+    },
+    priority: 2,
+    width: '3fr',
+  }
+
+  return (
+    <DataTable
+      label="Runs"
+      viewId="jobs.runs"
+      frame={frame}
+      rows={runs.rows}
+      matches={matches}
+      hasMore={runs.hasMore}
+      isLoadingMore={runs.isLoadingMore}
+      onLoadMore={runs.loadMore}
+      newRows={newRows}
+      selectionMode="multiple"
+      matchingCount={runs.count?.value}
+      onSelectAllMatching={onSelectAllMatching}
+      emptyState={emptyState}
+      columns={[
+        {
+          id: 'function',
+          header: 'Function',
+          cell: (run) => (
+            <CellText title={run.function}>
+              <Mono>{run.function}</Mono>
+            </CellText>
+          ),
+          isRowHeader: true,
+          width: '2fr',
+        },
+        {
+          id: 'status',
+          header: 'Status',
+          cell: (run) => (
+            <CellText>
+              <StatusMark {...runStatusMark(run, pending.labelOf(run))} />
+            </CellText>
+          ),
+          width: 130,
+        },
+        ...(failed ? [reasonColumn] : []),
+        { id: 'kind', header: 'Kind', cell: (run) => kindLabel(run.kind), priority: 2, width: 110 },
+        { id: 'retries', header: 'Retries', cell: (run) => format.number(run.retryCount), align: 'end', priority: 2, width: 80 },
+        {
+          id: 'duration',
+          header: 'Duration',
+          cell: (run) => (run.executedAt ? formatDuration(run.elapsedMilliseconds, format.number) : ''),
+          align: 'end',
+          priority: 2,
+          width: 100,
+        },
+        {
+          id: 'due',
+          header: failed ? 'Failed at' : 'Due',
+          cell: (run) => (
+            <CellText>
+              <Time value={failed ? (run.executedAt ?? run.executionTime) : (run.executionTime ?? run.createdAt)} short />
+            </CellText>
+          ),
+          width: 110,
+        },
+      ]}
+    />
+  )
+}
+
+/**
+ * The Failed list's causes: `All`, then one chip per failure group the server counts, labelled by its function; the
+ * server does not serve a group's exception type, and the chip's title names its fingerprint.
+ */
+function FailureChips({
+  filter,
+  count,
+  onPick,
+}: {
+  filter: RunFilter
+  count?: string
+  onPick: (name: keyof RunFilter, value: string, also?: Partial<RunFilter>) => void
+}) {
+  const format = useFormat()
+  const groups = useJobsAttention().items.flatMap((item) => {
+    const scope = item.recommended?.filter
+    const fn = scope?.functions?.[0]
+
+    // A group stored without a fingerprint has no filter that selects only its runs.
+    return fn && scope.fingerprint ? [{ id: item.id, fn, fingerprint: scope.fingerprint, count: { value: item.count, capped: item.capped } }] : []
+  })
+
+  return (
+    <FilterChips label="Filter by cause">
+      <FilterChip label="All" count={count} pressed={!filter.fingerprint} onPress={() => onPick('fingerprint', '', { function: '' })} />
+      {groups.map((group) => {
+        const pressed = filter.fingerprint === group.fingerprint
+
+        return (
+          <FilterChip
+            key={group.id}
+            label={group.fn}
+            title={`${group.fn}, fingerprint ${group.fingerprint}`}
+            count={format.count(group.count)}
+            failing
+            pressed={pressed}
+            onPress={() => onPick('fingerprint', pressed ? '' : group.fingerprint, { function: pressed ? '' : group.fn })}
           />
-        )}
-      </section>
-      {inspector}
-    </div>
+        )
+      })}
+    </FilterChips>
+  )
+}
+
+/**
+ * The checked rows' bulk actions. Each runs on the rows the server allows (`Requeue 3 of 5`); the rows it refused carry
+ * their reasons in the list, and the result's `View` shows them.
+ */
+function CheckedActions({
+  runs,
+  pending,
+  cancel,
+  frame,
+}: {
+  runs: readonly Run[]
+  pending: Pending
+  cancel: boolean
+  frame: ReturnType<typeof usePageFrame>
+}) {
+  const module = useModule()
+  const commands = useJobsCommands()
+  const allowed = useAllowedActions('run', runs)
+  const ids = runs.map((run) => run.id)
+  // Captured at render, so the versions are the ones the operator saw when they ran the command.
+  const versions = new Map(runs.map((run) => [run.id, run.version]))
+
+  const action = (name: 'requeue' | 'cancel' | 'delete', command: CommandDefinition | undefined, variant?: 'primary' | 'danger') =>
+    command ? (
+      <CommandAction
+        key={name}
+        module={module.id}
+        command={command}
+        ids={ids}
+        noun={ids.length === 1 ? 'run' : 'runs'}
+        variant={variant}
+        commands={commands.all}
+        disabledReason={allowed(command.id)}
+        refused={allowed.refused(command.id)}
+        onRefused={frame.setRefused}
+        onViewRefused={frame.reveal}
+        onDone={(rows) =>
+          pending.mark(
+            rows.filter((row) => row.outcome === 'done').map((row) => row.id),
+            versions,
+            pendingLabels[name]!,
+          )
+        }
+      />
+    ) : null
+
+  return (
+    <>
+      <span>{`${runs.length} selected`}</span>
+      {action('requeue', commands.requeue, 'primary')}
+      {cancel ? action('cancel', commands.cancel) : null}
+      {action('delete', commands.delete, 'danger')}
+    </>
   )
 }
 
 /** Every run the filter matches, past the loaded page: each action runs over them as an Operation. */
-function MatchingInspector({ filter, count, onClose }: { filter: RunFilter; count: string; onClose: () => void }) {
+function MatchingActions({ filter, count }: { filter: RunFilter; count: string }) {
   const module = useModule()
   const { start } = useOperations()
   const commands = useJobsCommands()
@@ -352,68 +523,26 @@ function MatchingInspector({ filter, count, onClose }: { filter: RunFilter; coun
     ) : null
 
   return (
-    <Inspector label={`All ${count} matching ${noun}`} onClose={onClose}>
-      <h2 className="hd-title">{`All ${count} matching ${noun}`}</h2>
-      <p className="hd-hint">Each action counts the rows the filter matches at confirm, then runs over them in chunks from this tab.</p>
-      <div className="hd-actions">
-        {operation(commands.requeue, 'primary')}
-        {operation(commands.cancel)}
-        {operation(commands.delete, 'danger')}
-      </div>
-    </Inspector>
+    <>
+      <span>{`All ${count} matching ${noun}`}</span>
+      {operation(commands.requeue, 'primary')}
+      {operation(commands.cancel)}
+      {operation(commands.delete, 'danger')}
+    </>
   )
 }
 
-interface RunsInspectorProps {
-  runs: readonly Run[]
-  lookupId?: string
-  count?: string
-  pending: Pending
-  onClose: () => void
-}
-
-/** The selection's inspector: one run, the shared actions of several, or the view's summary. */
-function RunsInspector({ runs, lookupId, count, pending, onClose }: RunsInspectorProps) {
-  const [only] = runs
-
-  if (lookupId) {
-    return <LookedUpRunInspector id={lookupId} pending={pending} onClose={onClose} />
-  }
-
-  if (runs.length === 0) {
-    return (
-      <Inspector label="Runs summary">
-        <h2 className="hd-title">Runs</h2>
-        <p>{count ? `${count} runs match this view.` : 'Runs appear here once they load.'}</p>
-        <p className="hd-hint">Select a run to see its fields, its attempts, and the actions allowed now.</p>
-      </Inspector>
-    )
-  }
-
-  if (runs.length > 1 || !only) {
-    return (
-      <Inspector label={`${runs.length} runs selected`} onClose={onClose}>
-        <h2 className="hd-title">{`${runs.length} runs selected`}</h2>
-        <RunActions runs={runs} pending={pending} />
-      </Inspector>
-    )
-  }
-
-  return <RunInspector run={only} pending={pending} onClose={onClose} />
-}
-
-/** A selected run outside the loaded page: read by its id, then shown as any selected run is. */
-function LookedUpRunInspector({ id, pending, onClose }: { id: string; pending: Pending; onClose: () => void }) {
+/** An open run the loaded page does not hold, such as one a link opened: read by its id, then shown as any open run. */
+function LookedUpRun({ id, pending }: { id: string; pending: Pending }) {
   const { api } = useDashboard()
   const detail = useDashboardObject({ topic: runsTopic, id, fetch: () => fetchRun(api, id) })
 
   if (detail.data) {
-    return <RunInspector run={detail.data} pending={pending} onClose={onClose} />
+    return <RunPanel run={detail.data} pending={pending} />
   }
 
   return (
-    <Inspector label={`Run ${id}`} onClose={onClose}>
-      <h2 className="hd-title">Run</h2>
+    <DetailPanel label={`Run ${id}`} name="Run" id={id}>
       {detail.isError ? (
         detail.error instanceof DashboardApiError && detail.error.status === 404 ? (
           <p role="alert">This run no longer exists.</p>
@@ -423,31 +552,6 @@ function LookedUpRunInspector({ id, pending, onClose }: { id: string; pending: P
       ) : (
         <Skeleton label="Loading the run" />
       )}
-    </Inspector>
-  )
-}
-
-function RunInspector({ run, pending, onClose }: { run: Run; pending: Pending; onClose: () => void }) {
-  const status = runStatusMark(run, pending.labelOf(run))
-  useTraceKey(run)
-
-  return (
-    <Inspector label={`Run ${run.id}`} onClose={onClose}>
-      <ObjectHeader
-        title={run.function}
-        id={run.id}
-        status={status}
-        chips={run.tenantId ? <TenantChip tenant={run.tenantId} /> : undefined}
-        actions={
-          <>
-            <Link to={`runs/${encodeURIComponent(run.id)}`}>Open run page</Link>
-            <RunActions runs={[run]} pending={pending} />
-          </>
-        }
-      />
-      <RunFields run={run} />
-      <AttemptTimeline run={run} />
-      <RunPayload runId={run.id} />
-    </Inspector>
+    </DetailPanel>
   )
 }
