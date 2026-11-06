@@ -30,16 +30,6 @@ export {
   type SelectFieldProps,
   type TextInputFieldProps,
 } from './form.tsx'
-export {
-  Inspector,
-  InspectorField,
-  InspectorFields,
-  ObjectHeader,
-  type InspectorFieldEdit,
-  type InspectorFieldProps,
-  type InspectorProps,
-  type ObjectHeaderProps,
-} from './inspector/inspector.tsx'
 export { Announcer, LiveIndicator, NewRowsNotice, ProgressBar, ToastRegion } from './live.tsx'
 export { Chip, Kbd, Mono, NodeChip, StatusMark, TenantChip } from './marks.tsx'
 export {

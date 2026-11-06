@@ -5,16 +5,16 @@
   place-items: center;
   min-block-size: 100vh;
   min-block-size: 100dvh;
-  padding: 48px var(--sp-7);
-  background: radial-gradient(var(--line) 1px, transparent 1.2px) 0 0 / 22px 22px var(--ground);
+  padding: calc(var(--sp-9) + var(--sp-8)) var(--sp-7);
+  background: radial-gradient(var(--line) 1px, transparent 1.2px) 0 0 / var(--sign-in-grid) var(--sign-in-grid) var(--ground);
 }
 
 .hd-sign-in-card {
   display: flex;
   flex-direction: column;
-  gap: 22px;
-  inline-size: min(400px, 100%);
-  padding: 32px var(--sp-9) 26px;
+  gap: var(--sp-8);
+  inline-size: min(var(--sign-in-width), 100%);
+  padding: var(--sp-9);
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
@@ -31,8 +31,8 @@
 
 .hd-sign-in-card svg {
   flex: none;
-  inline-size: 15px;
-  block-size: 15px;
+  inline-size: var(--icon);
+  block-size: var(--icon);
   fill: none;
   stroke: currentColor;
   stroke-width: 1.5;
@@ -42,17 +42,16 @@
   display: inline-flex;
   align-items: center;
   gap: var(--sp-4);
-  font-size: 16px;
-  font-weight: 700;
+  font: var(--text-brand);
   letter-spacing: -0.01em;
 }
 
 .hd-sign-in-mark {
   display: inline-grid;
   place-items: center;
-  inline-size: 30px;
-  block-size: 30px;
-  border-radius: 8px;
+  inline-size: var(--field-height);
+  block-size: var(--field-height);
+  border-radius: var(--radius-float);
   background: var(--text);
   color: var(--panel);
 }
@@ -79,7 +78,7 @@
   display: flex;
   align-items: center;
   gap: var(--sp-3);
-  block-size: 42px;
+  block-size: var(--sign-in-field-height);
   padding-inline: var(--sp-5) var(--sp-2);
   color: var(--faint);
   background: var(--deep);
@@ -117,7 +116,7 @@
 
 .hd-sign-in-alert,
 .hd-sign-in-state {
-  padding: 10px var(--sp-5);
+  padding: var(--sp-4) var(--sp-5);
   border-radius: var(--radius-float);
 }
 
@@ -132,10 +131,9 @@
 }
 
 .hd-btn.hd-sign-in-go {
-  block-size: 42px;
+  block-size: var(--sign-in-field-height);
   margin-block-start: var(--sp-2);
   border-radius: var(--radius-float);
-  font-size: 14px;
-  font-weight: 600;
+  font: var(--text-detail);
   text-decoration: none;
 }

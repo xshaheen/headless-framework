@@ -1,11 +1,12 @@
 import { useDashboard, useModule } from '@headless/dashboard-sdk'
+import { useDashboardObject } from '@headless/dashboard-sdk/data'
 import { CommandAction, useAllowedActions, type RowResult } from '@headless/dashboard-sdk/commands'
 import type { DashboardStateRole } from '@headless/dashboard-sdk'
-import { Button, InspectorField, InspectorFields, Mono, Timeline } from '@headless/dashboard-sdk/components'
+import { Button, DetailPanel, FieldGrid, GridField, Mono, Timeline } from '@headless/dashboard-sdk/components'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useStreamEvent, useStreamStatus } from '@headless/dashboard-sdk/stream'
-import { useState } from 'react'
-import { useRunCommands, type Run, type RunEvent } from './runs.ts'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { fetchRun, runStatusMark, runsTopic, useRunCommands, type Run, type RunEvent } from './runs.ts'
 
 /** A timestamp as relative time, with the exact time and zone on hover. */
 export function RunTime({ value }: { value: string }) {
@@ -23,45 +24,104 @@ export function RunTime({ value }: { value: string }) {
   )
 }
 
-/** The trace id, mono, with `Open trace` when the host configured a link to its tracing tool. */
-function TraceId({ traceId }: { traceId: string }) {
+/** The `Open trace` link, when the host configured a link to its tracing tool. */
+function TraceLink({ traceId }: { traceId: string }) {
   const { traceLinkTemplate } = useDashboard()
 
+  return traceLinkTemplate ? (
+    <a href={traceLinkTemplate.replace('{traceId}', encodeURIComponent(traceId))} target="_blank" rel="noreferrer">
+      Open trace
+    </a>
+  ) : null
+}
+
+/** A run's read-only fields, in the order the panel and the run page show them. */
+function RunFields({ run, statusLabel }: { run: Run; statusLabel: string }) {
   return (
-    <span>
-      <Mono>{traceId}</Mono>
-      {traceLinkTemplate ? (
-        <>
-          {' '}
-          <a href={traceLinkTemplate.replace('{traceId}', encodeURIComponent(traceId))} target="_blank" rel="noreferrer">
-            Open trace
-          </a>
-        </>
-      ) : null}
-    </span>
+    <FieldGrid columns={3}>
+      <GridField label="Status">{statusLabel}</GridField>
+      <GridField label="Attempts">{run.attempts}</GridField>
+      <GridField label="Updated">
+        <RunTime value={run.updatedAt} />
+      </GridField>
+      <GridField label="Last error" span={2}>
+        {run.lastError ?? 'None'}
+      </GridField>
+      <GridField label="Created">
+        <RunTime value={run.createdAt} />
+      </GridField>
+      <GridField label="Trace id" span={2} action={<TraceLink traceId={run.traceId} />}>
+        <Mono>{run.traceId}</Mono>
+      </GridField>
+    </FieldGrid>
   )
 }
 
-/** A run's read-only fields, in the order the inspector and the run page show them. */
-export function RunFields({ run, statusLabel }: { run: Run; statusLabel: string }) {
+/**
+ * One run in a detail panel: its fields, and its timeline once the detail answers. In a list the panel is docked
+ * and links to the run's own page; on that page (`page`) the panel is the page.
+ */
+export function RunPanel({
+  run,
+  requeuing,
+  onRequeued,
+  page,
+  children,
+  selectedEvent,
+  onSelectEvent,
+  eventDetail,
+}: {
+  run: Run
+  requeuing: boolean
+  onRequeued: RunActionsProps['onRequeued']
+  page?: boolean
+  /** What the run page adds under the fields, such as the payload. */
+  children?: ReactNode
+  /** The selected timeline event's id, and how the timeline selects one; the run page keeps it in its URL. */
+  selectedEvent?: string
+  onSelectEvent?: (id: string) => void
+  /** What the selected event recorded, under the timeline. */
+  eventDetail?: ReactNode
+}) {
+  const { api } = useDashboard()
+  const module = useModule()
+  const detail = useDashboardObject({ topic: runsTopic(module.id), id: run.id, fetch: () => fetchRun(api, module.id, run.id) })
+  // The list row fills the fields at once from the cache; the detail adds the timeline when it answers.
+  const status = runStatusMark(run.status, requeuing)
+  const seenVersion = useRef(run.version)
+
+  // A live change patches the row's fields but carries no timeline, so the timeline is read again.
+  useEffect(() => {
+    if (seenVersion.current !== run.version) {
+      seenVersion.current = run.version
+      void detail.refetch()
+    }
+  }, [run.version, detail])
+
   return (
-    <InspectorFields>
-      <InspectorField label="Id">
-        <Mono>{run.id}</Mono>
-      </InspectorField>
-      <InspectorField label="Status">{statusLabel}</InspectorField>
-      <InspectorField label="Attempts">{run.attempts}</InspectorField>
-      <InspectorField label="Last error">{run.lastError ? <Mono>{run.lastError}</Mono> : 'None'}</InspectorField>
-      <InspectorField label="Trace id">
-        <TraceId traceId={run.traceId} />
-      </InspectorField>
-      <InspectorField label="Created">
-        <RunTime value={run.createdAt} />
-      </InspectorField>
-      <InspectorField label="Updated">
-        <RunTime value={run.updatedAt} />
-      </InspectorField>
-    </InspectorFields>
+    <DetailPanel
+      label={`Run ${run.id}`}
+      name="Run"
+      id={run.id}
+      status={status}
+      actions={<RunActions runs={[run]} onRequeued={onRequeued} />}
+      detachTo={page ? undefined : `runs/${encodeURIComponent(run.id)}`}
+    >
+      <section aria-label="Fields">
+        <RunFields run={run} statusLabel={status.label} />
+        {children}
+      </section>
+      <div>
+        {detail.data ? (
+          <RunTimeline events={detail.data.timeline} selected={selectedEvent} onSelect={onSelectEvent} />
+        ) : detail.isError ? (
+          <LoadError message={detail.error.message} onRetry={() => void detail.refetch()} />
+        ) : (
+          <p role="status">Loading the timeline…</p>
+        )}
+        {eventDetail}
+      </div>
+    </DetailPanel>
   )
 }
 
@@ -73,12 +133,12 @@ const eventTones: Readonly<Record<string, DashboardStateRole>> = {
 
 /**
  * The run's stored events, oldest first: created, each start, failure, requeue, and note. Selecting one puts it in
- * `onSelect`'s inspector; the event's id is its position, since the run stores events only in order.
+ * `onSelect`; the event's id is its position, since the run stores events only in order.
  */
 export function RunTimeline({ events, selected, onSelect }: { events: readonly RunEvent[]; selected?: string; onSelect?: (id: string) => void }) {
   return (
     <section aria-label="Timeline">
-      <h3 className="hd-title">Timeline</h3>
+      <h3 className="hd-label">Timeline</h3>
       <Timeline
         label="Run timeline"
         events={events.map((event, index) => ({ id: String(index), label: event.kind, at: event.at, text: event.text, tone: eventTones[event.kind] }))}
@@ -114,7 +174,7 @@ export function RunActions({ runs, onRequeued, onChanged }: RunActionsProps) {
   }
 
   return (
-    <div className="hd-actions">
+    <>
       {requeue ? (
         <CommandAction
           module={module.id}
@@ -156,7 +216,7 @@ export function RunActions({ runs, onRequeued, onChanged }: RunActionsProps) {
           onDone={onChanged}
         />
       ) : null}
-    </div>
+    </>
   )
 }
 

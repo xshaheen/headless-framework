@@ -219,6 +219,8 @@ export function usePageFrame<T extends { id: string }>({ viewId, rows, matches }
 interface FrameContext {
   close: () => void
   stale: boolean
+  /** The panel holds a form, whose title reads in the sans face rather than as an object's mono name. */
+  form: boolean
   /** Below 768 px the panel is a full-screen modal. */
   modal: boolean
   /** At 1280 px and wider the panel can sit beside the list; `null` below. */
@@ -280,7 +282,7 @@ export interface PageFrameProps {
   children: ReactNode
   /** The `DetailPanel` for the open row, or the add form; the panel region exists only while this is set. */
   panel?: ReactNode
-  /** The panel holds a form: it opens taller and its handle reads `Resize form`. */
+  /** The panel holds a form: it opens taller, its handle reads `Resize form`, and its title reads in the sans face. */
   form?: boolean
 }
 
@@ -370,6 +372,7 @@ export function PageFrame({ frame, stats, header, children, panel, form }: PageF
   const context: FrameContext = {
     close: frame.close,
     stale: frame.stale,
+    form: Boolean(form),
     modal: width === 2,
     side: width === 0 ? beside : null,
     setSide: (next) => {

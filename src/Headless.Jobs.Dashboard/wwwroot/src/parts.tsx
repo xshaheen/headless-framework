@@ -43,10 +43,6 @@ import {
   type RunStatus,
 } from './runs.ts'
 
-/** The canvas sits beside the inspector, and the two stack once the screen is too narrow for both. */
-export const layout = { display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'start' } as const
-export const canvas = { flex: '1 1 32rem', minInlineSize: 0, display: 'flex', flexDirection: 'column', gap: '0.75rem' } as const
-
 /**
  * A timestamp as relative time, with the exact time, zone, and offset on hover; in `zone` when one is named. `short`
  * reads `4 min. ago`, so a list column stays narrow enough for a phone.
@@ -65,18 +61,12 @@ export function Time({ value, zone, short, missing = 'Not yet' }: { value: strin
   )
 }
 
-const cellText = { minInlineSize: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } as const
-
 /**
- * A list cell's content on one line. A column too narrow for it ends the text in an ellipsis, never cuts a word, and
- * `title` gives the full text on hover.
+ * A list cell's content, with `title` giving the full text on hover. The table ends a cell's only child in an
+ * ellipsis when the column is too narrow for it.
  */
 export function CellText({ title, children }: { title?: string; children: ReactNode }) {
-  return (
-    <span title={title} style={cellText}>
-      {children}
-    </span>
-  )
+  return <span title={title}>{children}</span>
 }
 
 /** The skeleton of a list or page, shown only once its load has taken 150 ms. */

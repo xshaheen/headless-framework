@@ -1,5 +1,10 @@
 /* The SDK's component styles. They read only the tokens in tokens.css; a module never restyles them. */
 
+/* Blocks space their headings, paragraphs, and lists by their own gaps, never by the browser's default margins. */
+:is(.hd-panel, .hd-dcard, .hd-page-header, .hd-history) :is(h1, h2, h3, h4, p, ol, ul, dl) {
+  margin: 0;
+}
+
 .hd-mono {
   font: var(--text-mono);
   direction: ltr;
@@ -83,16 +88,34 @@
   background: var(--deep);
 }
 
+/*
+ * A disabled action's reason is the button's description, so a screen reader reads it with the button; on screen it
+ * shows on hover and focus, under the button, so it never widens or wraps the row the button sits in.
+ */
 .hd-btn-group {
+  position: relative;
   display: inline-flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--sp-1);
 }
 
 .hd-why {
-  font: var(--text-label);
-  color: var(--muted);
+  position: absolute;
+  inset-block-start: calc(100% + var(--sp-1));
+  inset-inline-end: 0;
+  z-index: var(--z-popover);
+  inline-size: max-content;
+  max-inline-size: 32ch;
+  padding: var(--sp-1) var(--sp-3);
+  border-radius: var(--radius-tag);
+  background: var(--text);
+  color: var(--ground);
+  font: var(--text-small);
+  white-space: normal;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.hd-btn-group:is(:hover, :focus-within) .hd-why {
+  opacity: 1;
 }
 
 .hd-status {
@@ -131,8 +154,8 @@
 }
 
 .hd-mark {
-  inline-size: 8px;
-  block-size: 8px;
+  inline-size: var(--sp-3);
+  block-size: var(--sp-3);
   border-radius: 50%;
   flex: none;
   background: var(--role);
@@ -148,7 +171,7 @@
   display: inline-flex;
   align-items: center;
   gap: var(--sp-1);
-  block-size: 22px;
+  block-size: var(--chip-height);
   padding-inline: var(--sp-2);
   border-radius: var(--radius-control);
   background: var(--raised);
@@ -165,7 +188,7 @@
 .hd-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--sp-2);
   align-items: center;
 }
 
@@ -223,7 +246,7 @@
 
 .hd-textarea {
   block-size: auto;
-  min-block-size: 72px;
+  min-block-size: var(--textarea-min);
   padding-block: var(--sp-3);
   resize: vertical;
 }
@@ -241,8 +264,8 @@
 }
 
 .hd-checkbox-box {
-  inline-size: 16px;
-  block-size: 16px;
+  inline-size: var(--sp-7);
+  block-size: var(--sp-7);
   border: 1px solid var(--field-edge);
   border-radius: var(--radius-tag);
   background: var(--panel);
@@ -270,7 +293,7 @@
 }
 
 .hd-dialog {
-  inline-size: min(560px, 100%);
+  inline-size: min(var(--dialog-width), 100%);
   max-block-size: 76vh;
   display: flex;
   flex-direction: column;
@@ -341,8 +364,8 @@
 
 /* The dot carries the state; the clock beside it stays a text tone, since light --ok and --proc fail 4.5:1. */
 .hd-live i {
-  inline-size: 8px;
-  block-size: 8px;
+  inline-size: var(--sp-3);
+  block-size: var(--sp-3);
   border-radius: 50%;
   background: var(--ok);
 }
@@ -426,8 +449,8 @@
 
 .hd-bar {
   display: block;
-  block-size: 4px;
-  max-inline-size: 520px;
+  block-size: var(--sp-1);
+  max-inline-size: var(--bar-max);
   border-radius: var(--radius-bar);
   background: var(--raised);
   overflow: hidden;
@@ -459,56 +482,6 @@
   text-align: center;
 }
 
-.hd-inspector {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  inline-size: var(--panel-side-width);
-  max-inline-size: 100%;
-  padding: 18px var(--sp-8) var(--sp-8);
-  overflow: auto;
-  background: var(--panel);
-  border-inline-start: 1px solid var(--line);
-}
-
-.hd-inspector-close {
-  align-self: flex-end;
-}
-
-/* Focus moves into a floating inspector for the keyboard and screen readers; the panel itself shows no ring. */
-.hd-inspector-selection:focus {
-  outline: none;
-}
-
-/*
- * Below 1280 px a selection's inspector leaves the flow and opens as a drawer from the inline end, so selecting a row
- * shows it beside the list instead of below it. The shell's dock already floats, so its inspector stays in place.
- */
-@media (max-width: 1279px) {
-  :not(.hd-dock) > .hd-inspector-selection {
-    position: fixed;
-    inset-block: 0;
-    inset-inline-end: 0;
-    z-index: var(--z-panel);
-    inline-size: min(var(--panel-side-width), 100%);
-    box-shadow: var(--shadow-float);
-  }
-}
-
-.hd-object-header {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-3);
-}
-
-.hd-object-id {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-1);
-  min-inline-size: 0;
-  overflow-wrap: anywhere;
-}
-
 .hd-actions {
   display: flex;
   flex-wrap: wrap;
@@ -529,7 +502,7 @@
 
 .hd-kv {
   display: grid;
-  grid-template-columns: 112px 1fr;
+  grid-template-columns: max-content 1fr;
   gap: var(--sp-2) var(--sp-5);
   margin: 0;
 }
@@ -563,7 +536,7 @@
 .hd-payload pre {
   margin: 0;
   padding: var(--sp-3) var(--sp-5) var(--sp-5);
-  max-block-size: 480px;
+  max-block-size: var(--payload-max);
   overflow: auto;
   white-space: pre;
 }
@@ -582,8 +555,8 @@
 
 .hd-palette-input {
   inline-size: 100%;
-  block-size: 52px;
-  padding-inline: 18px;
+  block-size: var(--palette-input-height);
+  padding-inline: var(--sp-7);
   border: 0;
   border-block-end: 1px solid var(--line);
   background: transparent;
@@ -647,11 +620,6 @@
 @media (max-width: 767px) {
   .hd-operation {
     grid-template-columns: 1fr;
-  }
-
-  .hd-inspector,
-  :not(.hd-dock) > .hd-inspector-selection {
-    inline-size: 100%;
   }
 }
 
@@ -789,9 +757,9 @@
 
 .hd-frame-handle::before {
   content: '';
-  inline-size: 36px;
-  block-size: 3px;
-  border-radius: 2px;
+  inline-size: var(--grip-width);
+  block-size: var(--grip-height);
+  border-radius: var(--radius-bar);
   background: var(--edge);
 }
 
@@ -826,15 +794,18 @@
   padding: var(--sp-3) var(--sp-5) 0 var(--sp-7);
 }
 
+/* An object's name is mono; a form's title is sans. */
 .hd-panel-title h2 {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 600;
+  font: var(--text-detail);
+}
+
+.hd-panel-title h2.hd-mono {
+  font-family: var(--mono);
 }
 
 .hd-panel svg {
-  inline-size: 13px;
-  block-size: 13px;
+  inline-size: var(--icon-sm);
+  block-size: var(--icon-sm);
   fill: none;
   stroke: currentColor;
   stroke-width: 1.5;
@@ -846,13 +817,12 @@
 }
 
 .hd-panel [role='tab'] {
-  block-size: 34px;
+  block-size: var(--row-height);
   padding: 0 var(--sp-5);
   border: 0;
   border-block-end: 2px solid transparent;
   background: none;
-  font-size: 12.5px;
-  font-weight: 500;
+  font: var(--text-tab);
   color: var(--faint);
   cursor: pointer;
 }
@@ -925,7 +895,7 @@
 
 .hd-footnote {
   margin: 0;
-  font: 400 12px/18px var(--mono);
+  font: var(--text-mono-small);
   color: var(--faint);
 }
 
@@ -939,8 +909,7 @@
 .hd-exception pre {
   margin: 0;
   padding: var(--sp-4) var(--sp-5);
-  font-size: 12px;
-  line-height: 19px;
+  font: var(--text-code);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -960,27 +929,28 @@
   border-block-start: 1px solid var(--line);
 }
 
-.hd-history h3 {
-  margin: 0 0 var(--sp-3);
-}
-
+/* The rows share one grid, so the time column is as wide as the longest time and every dot lines up. */
 .hd-history ol {
-  margin: 0;
+  display: grid;
+  grid-template-columns: max-content var(--sp-5) minmax(0, 1fr) auto;
+  column-gap: var(--sp-4);
+  margin-block-start: var(--sp-3);
   padding: 0;
   list-style: none;
 }
 
 .hd-history li {
   display: grid;
-  grid-template-columns: 64px 12px minmax(0, 1fr) auto;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
   align-items: center;
-  gap: var(--sp-4);
   min-block-size: var(--row-height-compact);
-  font: 400 12px/18px var(--mono);
+  font: var(--text-mono-small);
 }
 
 .hd-history-time {
   color: var(--faint);
+  white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1020,24 +990,24 @@
   flex: none;
   align-items: center;
   gap: var(--sp-1);
-  block-size: 18px;
+  block-size: var(--tag-height);
   padding-inline: var(--sp-2);
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: var(--tag-height);
   font: var(--text-tag);
   color: var(--muted);
   white-space: nowrap;
 }
 
 .hd-tag-pill {
-  block-size: 20px;
+  block-size: var(--tag-pill-height);
   border-color: var(--edge);
-  border-radius: 10px;
+  border-radius: var(--tag-pill-height);
 }
 
 .hd-tag-filled,
 .hd-tag-square {
-  block-size: 20px;
+  block-size: var(--tag-pill-height);
   border-radius: var(--radius-tag);
 }
 
@@ -1055,7 +1025,7 @@
 }
 
 .hd-seg button {
-  block-size: 22px;
+  block-size: var(--chip-height);
   padding-inline: var(--sp-3);
   border: 0;
   border-radius: var(--radius-tag);
@@ -1067,7 +1037,7 @@
 }
 
 .hd-seg-form button {
-  block-size: 24px;
+  block-size: var(--seg-form-height);
   padding-inline: var(--sp-4);
   font: var(--text-small);
 }
@@ -1082,7 +1052,7 @@
   display: inline-flex;
   align-items: center;
   gap: var(--sp-2);
-  block-size: 26px;
+  block-size: var(--fchip-height);
   padding-inline: var(--sp-3);
   border: 1px solid var(--line);
   border-radius: var(--radius-control);
@@ -1197,7 +1167,7 @@ a.hd-stat:hover {
 
 .hd-bars svg {
   inline-size: 100%;
-  block-size: 140px;
+  block-size: var(--chart-height);
   border-block-end: 1px solid var(--line);
 }
 
@@ -1223,7 +1193,7 @@ a.hd-stat:hover {
 }
 
 .hd-bars-mini svg {
-  block-size: 36px;
+  block-size: var(--chart-mini-height);
 }
 
 .hd-dcards {
@@ -1247,25 +1217,37 @@ a.hd-stat:hover {
   flex-wrap: wrap;
   align-items: center;
   gap: var(--sp-1) var(--sp-4);
-  min-block-size: 40px;
+  min-block-size: var(--card-row-height);
   padding: var(--sp-2) var(--sp-5) var(--sp-2) var(--sp-6);
   border-block-end: 1px solid var(--line);
   font: var(--text-mono);
 }
 
 .hd-dcard h2 {
-  margin: 0;
-  font: 600 13px/20px var(--sans);
+  font: var(--text-nav);
+  font-weight: 600;
+}
+
+/* A row's first line never wraps: only the name gives way, in an ellipsis, so a value or Cancel stays beside it. */
+.hd-dcard li > div {
+  flex-basis: 100%;
+}
+
+.hd-dcard li > :first-child {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  min-inline-size: 0;
+  white-space: nowrap;
 }
 
 /* The header's trailing control and a row's first fact after its name sit at the inline end. */
 .hd-dcard header > :not(h2, .hd-faint),
-.hd-dcard li > b + * {
+.hd-dcard b + * {
   margin-inline-start: auto;
 }
 
 .hd-dcard ul {
-  margin: 0;
   padding: 0;
   list-style: none;
 }
@@ -1274,20 +1256,14 @@ a.hd-stat:hover {
   border: 0;
 }
 
-.hd-dcard li > b {
+.hd-dcard b {
   min-inline-size: 0;
   overflow: hidden;
   font-weight: 500;
   text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.hd-dcard li > div {
-  flex-basis: 100%;
 }
 
 .hd-dcard > p {
-  margin: 0;
   padding: var(--sp-6);
 }
 

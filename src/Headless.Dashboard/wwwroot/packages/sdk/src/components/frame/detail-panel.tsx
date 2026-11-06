@@ -49,7 +49,7 @@ const focusable = 'a[href], button:not([disabled]), input, select, textarea, [ta
  */
 export function DetailPanel({ label, name, id, status, tabs, children, actions, detachTo }: DetailPanelProps) {
   // Outside a frame the panel is the object's own page: nothing to close, move, or trap focus in.
-  const { close, stale, modal, side, setSide } = useFrame() ?? { stale: false, modal: false, side: null }
+  const { close, stale, form, modal, side, setSide } = useFrame() ?? { stale: false, form: false, modal: false, side: null }
   const ref = useRef<HTMLDivElement>(null)
   const base = useId()
   const [picked, setPicked] = useState<string>()
@@ -112,7 +112,7 @@ export function DetailPanel({ label, name, id, status, tabs, children, actions, 
             <span className="hd-visually-hidden">{status.label}</span>
           </span>
         ) : null}
-        <h2 className="hd-mono">{name}</h2>
+        <h2 className={form ? undefined : 'hd-mono'}>{name}</h2>
         {id ? (
           <>
             <bdi className="hd-mono hd-faint" dir="ltr">

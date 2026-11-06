@@ -49,15 +49,20 @@ export interface CardRowProps {
   children?: ReactNode
 }
 
-/** One row of a `Card`: dot, name, faint meta, value, and actions, with an optional second line. */
+/**
+ * One row of a `Card`: dot, name, faint meta, value, and actions on one line, where only the name gives way, with an
+ * optional second line.
+ */
 export function CardRow({ tone, name, meta, value, actions, children }: CardRowProps) {
   return (
     <li className={tone ? `hd-tone-${tone}` : undefined}>
-      {tone ? <i className="hd-mark" aria-hidden="true" /> : null}
-      <b>{name}</b>
-      {meta != null ? <span className="hd-faint">{meta}</span> : null}
-      {value}
-      {actions}
+      <div>
+        {tone ? <i className="hd-mark" aria-hidden="true" /> : null}
+        <b>{name}</b>
+        {meta != null ? <span className="hd-faint">{meta}</span> : null}
+        {value}
+        {actions}
+      </div>
       {children != null ? <div>{children}</div> : null}
     </li>
   )
