@@ -50,7 +50,7 @@ Every service, repository, and handler that injects `ICache` is untouched by tha
 
 **The hard parts are already written.** Background jobs claim work atomically with `FOR UPDATE SKIP LOCKED` on PostgreSQL and `UPDLOCK, READPAST, ROWLOCK` on SQL Server. Messaging writes to a transactional outbox inside your EF Core save. Distributed locks use PostgreSQL advisory locks and SQL Server application locks rather than an improvised `SET NX`. Node membership reads liveness from the server clock, not the node's clock. Each of these is a place where a plausible-looking implementation loses messages or runs a job twice.
 
-**Dashboards come with it.** `Headless.Dashboard` serves feature modules under one base path, with one sign-in and live updates that reach every node. `Headless.Jobs.Dashboard` and `Headless.Messaging.Dashboard` are real web UIs for inspecting runs, failures, and retries, with shared authentication and Kubernetes node discovery.
+**Dashboards come with it.** `Headless.Dashboard` serves feature modules under one base path, with one sign-in and live updates that reach every node. `Headless.Jobs.Dashboard` adds the Jobs module to it, for inspecting runs, failures grouped by cause, and cron schedules, and `Headless.Messaging.Dashboard` is a web UI for messages, with Kubernetes node discovery.
 
 **AI coding agents get first-class docs.** [`docs/llms/`](docs/llms/) is a per-domain documentation set written for agents to fetch on demand. See [using Headless with AI agents](#using-headless-with-ai-agents).
 
@@ -479,7 +479,7 @@ Distributed background job scheduling with cron expressions, delayed execution, 
 | [Headless.Jobs.Abstractions](src/Headless.Jobs.Abstractions/README.md) | Job scheduling interfaces |
 | [Headless.Jobs](src/Headless.Jobs/README.md) | Job engine: cron, delays, retries, monitoring |
 | [Headless.Jobs.SourceGenerator](src/Headless.Jobs.SourceGenerator/README.md) | Compile-time code generation for `[Job]`-marked job classes |
-| [Headless.Jobs.Dashboard](src/Headless.Jobs.Dashboard/README.md) | Web UI for job monitoring |
+| [Headless.Jobs.Dashboard](src/Headless.Jobs.Dashboard/README.md) | Jobs module of the Headless dashboard |
 | [Headless.Jobs.EntityFramework](src/Headless.Jobs.EntityFramework/README.md) | EF Core job state persistence; uses optional `Headless.Caching.ICache` for cron-expression caching |
 | [Headless.Jobs.EntityFramework.PostgreSql](src/Headless.Jobs.EntityFramework.PostgreSql/README.md) | PostgreSQL atomic claims with `FOR UPDATE SKIP LOCKED` |
 | [Headless.Jobs.EntityFramework.SqlServer](src/Headless.Jobs.EntityFramework.SqlServer/README.md) | SQL Server atomic claims with `UPDLOCK`, `READPAST`, and `ROWLOCK` |
@@ -729,7 +729,7 @@ Cross-cutting utilities that belong to no single domain.
 
 | Package | Description |
 |---------|-------------|
-| [Headless.Dashboard](src/Headless.Dashboard/README.md) | Operations dashboard shell for feature modules, and shared authentication for the Jobs and Messaging dashboards |
+| [Headless.Dashboard](src/Headless.Dashboard/README.md) | Operations dashboard shell for feature modules, and shared authentication for the Messaging dashboard |
 | [Headless.FluentValidation](src/Headless.FluentValidation/README.md) | FluentValidation extensions |
 | [Headless.Generator.Primitives](src/Headless.Generator.Primitives/README.md) | Primitive types source generator |
 | [Headless.Generator.Primitives.Abstractions](src/Headless.Generator.Primitives.Abstractions/README.md) | Generator abstractions |

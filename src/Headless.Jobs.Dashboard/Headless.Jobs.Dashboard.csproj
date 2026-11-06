@@ -1,7 +1,7 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <Description>Dashboard UI and endpoints for Headless background jobs.</Description>
+    <Description>The Jobs module of the Headless dashboard: runs, cron jobs, functions, and nodes of Headless background jobs.</Description>
     <PackageTags>headless;jobs;dashboard;dotnet</PackageTags>
     <RootNamespace>Headless.Jobs</RootNamespace>
   </PropertyGroup>

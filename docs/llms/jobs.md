@@ -12,7 +12,7 @@ packages: Jobs.Abstractions, Jobs, Jobs.Dashboard, Jobs.SourceGenerator, Jobs.En
 Required packages: `Jobs` + `Jobs.EntityFramework` (persistence) + `Jobs.SourceGenerator` (compile-time job registration). Add the PostgreSQL or SQL Server Jobs EF provider package for native atomic claims; otherwise the EF package uses its portable optimistic-CAS fallback.
 
 Optional add-ons:
-- `Jobs.Dashboard` — monitoring UI with authentication (basic, API key, host auth) plus live-cluster node view
+- `Jobs.Dashboard` — the Jobs module of the unified dashboard (`AddHeadlessDashboard(d => d.AddJobs())`): runs, cron jobs, functions, and live nodes, with commands and Operations
 - OpenTelemetry tracing and metrics ship inside `Jobs` (see [OpenTelemetry Instrumentation](#opentelemetry-instrumentation)); there is no separate instrumentation package
 - Readiness checks and the `jobs` section of the host manifest register with Jobs itself (see [Readiness and host manifest](#readiness-and-host-manifest))
 - `Jobs.Abstractions` — interfaces only; pulled in transitively by `Jobs`; install directly only when building a library on top
@@ -290,7 +290,7 @@ public static async Task<bool> TryRequeueOccurrenceAsync(IJobScheduler scheduler
 - **`RequeueOccurrenceAsync(occurrenceId)`** moves a `Failed`, `Cancelled`, or `Skipped` cron occurrence to `Idle` with the same reset. It keeps its `ExecutionTime`, which identifies the scheduled instant it stands for, so the fallback check (`FallbackIntervalChecker`) claims it rather than the main peek. An occurrence of a paused definition can be requeued and waits until the definition resumes.
 - **Refusals** leave the row unchanged and return the reason: `NotFound`; `NotFailed` (the row is not failed, cancelled, or skipped; a repeated or concurrent requeue lands here, so requeue is safe to repeat); `ChainMember` (a time job with a parent or a child); `SupersededGeneration` (a keyed time job that is no longer its key's current generation); `Overlap` (the occurrence's definition forbids overlapping runs and another occurrence is unfinished, checked under the definition lock that occurrence creation takes); `Conflict` (the row changed during the request, or another live occurrence holds the instant).
 
-The Jobs dashboard shows a requeue button on `Failed` time jobs and occurrences. It calls `POST /api/job/requeue` and `POST /api/cron-job-occurrence/requeue` with the row id as the `id` query parameter; a refusal returns HTTP 400 with the outcome name as the body. A custom `IJobPersistenceProvider` implements `RequeueTimeJobAsync` and `RequeueCronJobOccurrenceAsync`.
+The Jobs dashboard module offers Requeue (`jobs.requeue`) on a failed, cancelled, or skipped run, and over every run a filter matches as an Operation; a refusal on one run answers `409` with the reason. A custom `IJobPersistenceProvider` implements `RequeueTimeJobAsync` and `RequeueCronJobOccurrenceAsync`.
 
 The eligibility rule is public as `JobRequeueRules`, so every provider refuses the same rows and the dashboard counts only failures a requeue accepts: `RefuseTimeJob` and `RefuseCronJobOccurrence` return the refusal for a row's state, `IsRequeueableStatus` names the three statuses a requeue accepts, `RequeueableTimeJob(timeJobs)`, `RequeueableCronJobOccurrence()`, `ActionableTimeJobFailure(timeJobs)`, and `ActionableCronJobOccurrenceFailure(occurrences)` return the same rules as query predicates a LINQ provider translates, `IsActionableTimeJobFailure` and `IsActionableCronJobOccurrenceFailure` are the in-memory forms, and `IsSuccess` treats `DueDone` as a success. Only a `Failed` run is an actionable failure: a cancelled or skipped run is requeueable, but it was stopped on purpose, so it never enters Needs you or a failure group. A failed time job stays actionable until it is requeued or deleted; a failed cron occurrence stops being actionable once a later occurrence of the same cron job succeeds.
 
@@ -1288,7 +1288,7 @@ Deleting a time job deletes its whole descendant chain. The parent/child foreign
 
 A job's stored argument is read immediately before its `ExecuteAsync` runs. A read or deserialization failure fails that attempt and is classified by the normal retry pipeline; the handler is never invoked with a default payload, and cancellation stays cancellation. `JobsRequestProvider.GetRequestAsync` therefore returns `default` only when the job genuinely stored no request.
 
-Dashboard SignalR notifications are best-effort on the whole scheduling path: a hub failure is logged and never aborts a claim enumeration, so a dashboard or backplane outage cannot delay job dispatch. If a claim enumeration does abort for another reason, the rows already claimed in that batch are released back to `Idle` instead of waiting out their lease.
+Dashboard change notifications are best-effort on the whole scheduling path: a failed publish is logged and never aborts a claim enumeration, so a dashboard outage cannot delay job dispatch. If a claim enumeration does abort for another reason, the rows already claimed in that batch are released back to `Idle` instead of waiting out their lease.
 
 Time-job cancellation is durable and job-ID-only through `IJobScheduler.CancelAsync(jobId)` or `context.RequestCancellationAsync()`. Idle jobs become `Cancelled` atomically; queued and in-progress jobs retain their status and set `CancelRequested`. The owning execution observes the flag before user code and then on a bounded `TimeProvider` cadence. Once durable observation cancels that execution's token, a cooperative exit with any `OperationCanceledException` writes terminal `Cancelled`, whatever token the exception carries, so a handler that links its own `CancelAfter` source to the job token still ends `Cancelled`. Host shutdown and lease loss are distinct causes and write no terminal status, whatever token the exception carries; an uncooperative handler keeps its natural result and leaves `CancelRequested` as audit data. An `OperationCanceledException` that ends the run while the execution's token is live remains a failure, which the failure policy classifies and retries.
 
@@ -1527,67 +1527,31 @@ builder.Services.AddHeadlessJobs(options =>
   ```
 
 - Use a store other than `Headless.Jobs.EntityFramework`. The EF package and its PostgreSQL and SQL Server providers do not declare `IsAotCompatible`: EF Core generates query code at runtime, and the generic time and cron entity types flow into EF model APIs that are not annotated for trimming.
-- Leave `Headless.Jobs.Dashboard` out. Its minimal-API endpoints, request-example generator, and JSON converters rely on reflection, so it does not declare `IsAotCompatible` either.
+- Leave `Headless.Jobs.Dashboard` out. Its minimal-API endpoints and JSON payload handling rely on reflection, so it does not declare `IsAotCompatible` either.
 
 ---
 
 ## Headless.Jobs.Dashboard
 
-Embedded web monitoring UI for `Headless.Jobs` with pluggable authentication and real-time cluster updates.
+The Jobs module of the unified dashboard: runs, cron jobs, functions, and live nodes of the host's Jobs store, with Needs you items, Overview figures, live changes from every node, commands, and Operations.
 
-Read [dashboards.md](dashboards.md) for the shared authentication modes and production security boundary.
+Read [dashboards.md](dashboards.md) for the shell, its authentication modes, and the production security boundary. [dashboards.md](dashboards.md#jobs-module) lists the module's commands, Needs-you items, Overview figures, stream topics, API, and views.
 
 ### Jobs module for the unified dashboard
 
-`AddHeadlessDashboard(d => d.AddJobs())` adds a module with the id `jobs` to the unified dashboard. It takes no entity type arguments: `AddHeadlessJobs<TTimeJob, TCronJob>` registers the seam the module reads, closed over the host's entity types, so the call order of the two registrations does not matter. A host that adds `AddJobs()` without `AddHeadlessJobs` fails to start with a message naming `AddHeadlessJobs`. [dashboards.md](dashboards.md#jobs-module) lists its commands, Needs-you items, Overview figures, stream topics, and API.
+`AddHeadlessDashboard(d => d.AddJobs())` adds a module with the id `jobs` to the unified dashboard. It takes no entity type arguments: `AddHeadlessJobs<TTimeJob, TCronJob>` registers the seam the module reads, closed over the host's entity types, so the call order of the two registrations does not matter. A host that adds `AddJobs()` without `AddHeadlessJobs` fails to start with a message naming `AddHeadlessJobs`.
 
 - **Live changes on every node**: a write the job managers make on this node is read back by id after it returns and published with its change marker (`ChangedAt` in ticks) as the version. Writes from other nodes, and a batch add, which names no row, reach every node through the change reader over `ReadChangesAsync`, within one `ChangePollInterval`.
 - **One rule set**: Requeue is allowed on a `Failed`, `Cancelled`, or `Skipped` run that `JobRequeueRules` accepts; Cancel on a queued or running time job with no cancel requested yet (a requested cancel keeps the run `InProgress` until it stops, and a second cancel is refused with `Cancel requested — waiting for the job to stop`); Delete on a run that is not running and not keyed; Run now on a cron job that is not paused, and not running when its overlap policy forbids overlap; Pause on an active cron job; Resume on a paused one that was not removed from code; Edit schedule on a cron job not defined in code (`Defined in code`). The same rules decide the allowed-actions answer, the Needs-you counts, and Operation scopes.
 
 ### API and behavior
 
-- **Contract and lineage visibility**: function descriptors expose `ContractVersion`; time-job, cron-definition, and occurrence views show version, correlation, causation, and tenant fields. Occurrences show their own snapshotted function. Add/update forms submit the selected descriptor version, and request inspection reports an unsupported stored version before attempting deserialization. Live occurrence updates retain the same metadata.
-- **Embedded SPA**: served from the host process, no separate deployment.
-- **Hidden from application API documents**: every dashboard endpoint is excluded from API Explorer (`ExcludeFromDescription()`), because the dashboard SPA is their only client.
-- **Authentication options**: `WithBasicAuth(username, password)`, `WithApiKey(apiKey)`, `WithHostAuthentication(host => ...)` (a dashboard session issued from the host's own sign-in, with separate view and operate policies), or explicit no-auth mode for isolated development dashboards.
-- **Host sessions**: in host mode the SPA asks `GET /api/auth/info` whether a session exists. Without one it shows a Sign in link to `/auth/sign-in` when `ChallengeScheme` is set; an application that signs in with a bearer token posts it to `/api/auth/session` first. No token goes into a URL or browser storage, and write actions are hidden when the session may not operate. See [Host sessions](dashboards.md#host-sessions).
-- **Predictable timestamp display**: explicit ISO UTC offsets are preserved, zone-less values are treated as UTC, and invalid values render empty instead of `NaN`.
-- **Responsive operational layout**: content cards shrink within mobile viewports while wide data tables retain their own overflow boundary.
-- **Live cluster view**: `GET /api/nodes` returns live node projections from `Headless.Coordination` membership; `NodeJoined` / `NodeLeft` / `NodeSuspected` push updates over SignalR — no polling required. A push the hub fails to send is logged and dropped; later membership changes still push.
-- **Error monitoring**: surfaces failed, cancelled, and skipped jobs; retry counts; execution timings; exception messages.
-- **Job progress**: a running time job or cron occurrence that [reports progress](#progress-reporting) shows a progress
-  bar with its percent and message; the tooltip shows how long ago it was written. Each stored write also pushes a
-  `JobProgressNotification` over SignalR that moves the bar in place without reloading the page. A finished row keeps
-  its last progress, greyed out, so a failed job shows how far it got.
-- **Chain and add time zones**: `POST /api/time-job/add?timeZoneId=…` reads every execution time sent without an offset, on the root and on every chain step, as a wall-clock time in `timeZoneId`; a time sent with `Z` or an offset is kept as that instant. Without `timeZoneId`, times are taken as sent. A `timeZoneId` the host cannot resolve returns `400` on add and on `PUT /api/time-job/update`. The Add and Chain Jobs dialogs send the scheduler's time zone.
-- **Accessible actions**: every icon-only row and toolbar action has an accessible name (for example "Requeue job", "Delete cron job", "View occurrences"), so assistive technology and browser automation reach them by name.
-- **Cron "Run now"**: the on-demand occurrence is stamped with the store's clock when it is written (`IJobPersistenceProvider.InsertRunNowCronJobOccurrenceAsync`), not the dashboard host's, so when its immediate acquire loses (a saturated cluster limit, or another node) the scheduler can still claim it at once, whatever the dashboard host's clock skew.
-- **Requeue**: `Failed` time jobs and cron occurrences show a requeue button. `POST /api/job/requeue?id=…` and `POST /api/cron-job-occurrence/requeue?id=…` call `IJobScheduler.RequeueAsync` and `RequeueOccurrenceAsync`; HTTP 200 means the row was requeued, and HTTP 400 carries the refusal's `JobRequeueOutcome` name. See [Requeue a failed job](#requeue-a-failed-job).
-- **Storage-reduced cron graphs**: bundled providers select distinct UTC dates and aggregate status counts in storage;
-  the dashboard does not load a cron job's lifetime occurrence entities to render its bounded history graph.
-- **Fluent builder**: `SetBasePath(path)`, `SetBackendDomain(domain)`, `SetCorsOrigins(origins)`, `SetCorsPolicy(policy)`. The last three serve a cross-origin SPA and work only with Basic or API key: host mode fails at startup with any of them.
-- **Pair with OpenTelemetry**: Dashboard for operational triage; the built-in OpenTelemetry instrumentation for trace-level diagnostics.
-
-### Design constraints
-
-The dashboard exposes operational endpoints that can create, update, delete, run, cancel, requeue, start, stop, and restart jobs. Authentication must be chosen explicitly — if no auth method (including `WithNoAuth()`) is called, the host fails to start, so the dashboard never ships publicly by omission. Treat `WithNoAuth()` as development-only unless the dashboard is isolated behind trusted network controls; production deployments should use `WithHostAuthentication(...)`, `WithBasicAuth(...)`, or `WithApiKey(...)`. No CORS policy is applied by default (same-origin only); use `SetCorsOrigins(...)` when the SPA is served cross-origin under Basic or API key. Host mode is same-origin only.
-
-In host mode every state-changing `/api` endpoint (create, update, delete, run, cancel, requeue, start, stop, restart) also requires the operate policy, `OperatePolicy` or the view policy when it is unset. Reads, including a job's request payload, need only the view policy.
-
-Cron-occurrence graph selection remains history-derived: it first chooses the same inclusive UTC date window from
-distinct occurrence dates, then zero-fills gaps. `IJobPersistenceProvider.GetCronOccurrenceGraphStatusCountsAsync`,
-`GetTimeJobStatusCountsAsync`, `GetTimeJobDailyStatusCountsAsync`, `GetTimeJobLockedOwnerCountsAsync`,
-`GetCronOccurrenceStatusCountsAsync`, both `GetCronOccurrenceDailyStatusCountsAsync` overloads (all definitions, and
-one definition by `cronJobId` for its per-definition graph), and `GetCronOccurrenceLockedOwnerCountsAsync` are additive and have default interface implementations for third-party
-providers. A custom durable provider should override them so status counts, owner counts, and date/status
-aggregations happen in storage; otherwise the default implementations preserve behavior by projecting through the
-existing list APIs.
-
-Dashboard API inputs are bounded: paginated queries accept page sizes from 1 through 100, JSON request bodies are limited to 1 MiB, and batch deletion accepts at most 500 IDs. Collection endpoints use the paginated routes. Time-job pages are ordered by execution time and cron-definition pages by creation time, newest first, then by `Id`, so rows that share a time (one batch enqueue, one seed) keep one order across pages and each row appears on exactly one page.
-
-Every state-changing `/api` request (`POST`, `PUT`, `PATCH`, `DELETE`) must carry an `X-Requested-With` header, and a request body must be sent as `application/json`. A request without the header gets `400`; a body with another content type gets `415`. The SPA sends both. They keep a cross-site page from driving the dashboard with the browser's dashboard session cookie: a cross-site `<form>` can set neither, and a cross-site script that sets the header needs a CORS preflight the dashboard policy refuses. A custom `SetCorsPolicy` for a cross-origin SPA must allow the header; `SetCorsOrigins` allows any header.
-
-The function list's request example is serialized, and a stored request is checked against its request type (request inspection's match result), with the host's request JSON options (`ConfigureRequestJsonOptions`), the options a job deserializes its payload with. A naming policy or a request-type converter therefore shapes the example the same way, and an operator who submits the example unchanged creates a job whose payload binds. A request JSON body the dashboard receives is stored as written, so an edited payload must use the same names.
+- **Embedded front end**: the package embeds the module's views and serves them through the shell, so it needs no separate deployment. The rail shows Jobs with the Runs, Cron jobs, Functions, and Nodes views at `{shell base}/jobs`.
+- **Authentication from the shell**: the module has no authentication of its own. The shell's mode (`WithHostAuthentication`, `WithBasicAuth`, `WithApiKey`, or `WithNoAuth`) covers it, and in host mode `JobsDashboardOptions.ViewPolicy` and `OperatePolicy` narrow who may read the module and who may run its commands. Empty policies inherit the shell's.
+- **Live cluster view**: the Nodes view lists each live node from `Headless.Coordination` membership and the functions its run filter claims; without node membership it shows this host. A function no live node claims becomes a Needs you item.
+- **Cron "Run now"**: the on-demand occurrence is stamped with the store's clock when it is written (`IJobPersistenceProvider.InsertRunNowCronJobOccurrenceAsync`), not the dashboard host's, so when its immediate acquire loses (a saturated cluster limit, or another node) the scheduler can still claim it at once, whatever the dashboard host's clock skew. The run links to the request's trace.
+- **Job progress**: a running time job or cron occurrence that [reports progress](#progress-reporting) shows its percent and message; each stored write advances the row's change marker, so open views move the bar without reloading.
+- **Pair with OpenTelemetry**: the dashboard for operational triage; the built-in OpenTelemetry instrumentation for trace-level diagnostics. A run with a stored W3C trace parent offers `Open trace`.
 
 ### Install
 
@@ -1598,89 +1562,42 @@ dotnet add package Headless.Jobs.Dashboard
 ### Setup and use
 
 ```csharp
+using Headless.Dashboard;
 using Headless.Jobs;
 
-builder.Services.AddHeadlessJobs(options =>
-    options.AddDashboard(dashboard =>
-    {
-        dashboard.SetBasePath("/jobs-dashboard");
-        dashboard.WithHostAuthentication(host =>
-        {
-            host.ViewPolicy = "JobsViewers";
-            host.OperatePolicy = "JobsOperators";
-        }); // or WithBasicAuth / WithApiKey
-    })
-);
+builder.Services.AddHeadlessJobs(jobs => jobs.AddModule<MyApp.JobsModule>());
+builder.Services.AddHeadlessDashboard(dashboard => dashboard
+    .WithHostAuthentication(host => { host.ViewPolicy = "JobsViewers"; host.OperatePolicy = "JobsOperators"; })
+    .AddJobs());
 
 var app = builder.Build();
 app.UseAuthentication();
 app.UseAuthorization();
-app.MapHeadlessJobsDashboard();
+app.MapHeadlessDashboard();
 app.Run();
 ```
 
-`MapHeadlessJobsDashboard()` is the only mount: a host that registers the dashboard with `AddDashboard(...)` and never maps it fails to start with `InvalidOperationException`. It maps a `{basePath}` group on the host's endpoint routing, so the host's `UseAuthorization` evaluates the dashboard's rule and never the host's fallback policy:
-
-| Request | Rule |
-| --- | --- |
-| SPA shell, deep links, static assets | `AllowAnonymous` |
-| `/auth/sign-in`, `/api/auth/info`, `/api/auth/session`, `/api/auth/sign-out`, `/api/auth/validate` | `AllowAnonymous` |
-| Other `{basePath}/api/*` and the `{basePath}/job-notification-hub` hub, `WithHostAuthentication(...)` | The dashboard session cookie, for a user who passes `ViewPolicy` (or the host's default policy); `401` without a session, `403` when the policy refuses |
-| Non-`GET` `{basePath}/api/*`, `WithHostAuthentication(...)` | Also `OperatePolicy`, or `ViewPolicy` when it is unset; `403` when it refuses |
-| Other `{basePath}/api/*` and the hub, Basic, API key | The dashboard's own credential, checked by its authentication scheme; an empty `401` otherwise, before SignalR opens a hub connection |
-| The same, `WithNoAuth()` | `AllowAnonymous` |
-| Unmatched `{basePath}/api/*` | `404`, never the shell |
-
-- The host pipeline must run `UseAuthorization()` (a `WebApplication` adds it when the host does not), and `UseAuthentication()` before it for host authentication. A host that calls `UseAuthentication()` must also call `UseAuthorization()` after it: the `UseAuthorization` a `WebApplication` adds on its own runs ahead of the host's `UseAuthentication`, so host authentication would not have signed the user in yet. It must run `UseCors()` only when `SetCorsOrigins(...)` or `SetCorsPolicy(...)` is configured: the dashboard registers and attaches its CORS policy only then.
-- Host-specific behavior for the dashboard, such as rate limiting, goes on the builder `MapHeadlessJobsDashboard()` returns.
-- It throws `InvalidOperationException` when `AddDashboard(...)` was not called, on a second call, or when the base path is the root, where the SPA route would answer every unmatched GET in the host.
-
 ### Configuration
 
-```csharp
-builder.Services.AddHeadlessJobs(options =>
-    options.AddDashboard(dashboard =>
-    {
-        dashboard.SetBasePath("/jobs");
+| `JobsDashboardOptions` member | Default | Description |
+| --- | --- | --- |
+| `ViewPolicy`, `OperatePolicy` | the shell's | Host policies a user must pass to read the module and to run its commands, in host mode. |
+| `ChangeOverlapWindow` | 5 s | How far back each change read reads again, so a write that committed after a later one is still seen. Make it longer than the Jobs store's slowest single write. |
+| `ChangePageSize` | 200 | The most changed rows one change read returns, 1 to 1000; a larger burst is read over several polls. |
 
-        // Authentication — required, pick one. Host mode: a dashboard session from the host's own sign-in.
-        dashboard.WithHostAuthentication(host =>
-        {
-            host.ViewPolicy = "JobsViewers"; // read the dashboard; null uses the host's default policy
-            host.OperatePolicy = "JobsOperators"; // run write actions; null uses ViewPolicy
-            host.ChallengeScheme = "oidc"; // where the Sign in link sends a user who is not signed in
-            host.SessionIdleTimeout = TimeSpan.FromMinutes(30);
-            host.SessionLifetime = TimeSpan.FromHours(8);
-        });
-        // Or dashboard.WithBasicAuth("admin", "secret") or dashboard.WithApiKey("my-api-key").
-        // Or opt out explicitly with dashboard.WithNoAuth() — isolated development environments only.
-    })
-);
-```
+`AddJobs(Action<JobsDashboardOptions>)`, `AddJobs(Action<JobsDashboardOptions, IServiceProvider>)`, and `AddJobs(IConfiguration)` set them; `JobsDashboardOptionsValidator` validates them.
 
-A Basic or API-key dashboard whose SPA is served from another origin adds the cross-origin settings, which host mode refuses:
+### Migrating from `MapHeadlessJobsDashboard`
 
-```csharp
-builder.Services.AddHeadlessJobs(options =>
-    options.AddDashboard(dashboard =>
-    {
-        dashboard.SetBackendDomain("https://api.example.com");
-        dashboard.SetCorsOrigins("https://admin.example.com");
-        dashboard.WithApiKey(builder.Configuration["JobsDashboard:ApiKey"]!);
-    })
-);
-```
-
-The SPA follows the mode: `WithNoAuth()` opens without sign-in; Basic shows a username and password form; API key asks for the key; host mode signs in through the host and shows a signed-out page after sign-out. [dashboards.md](dashboards.md#configuration) lists every host option.
+The Jobs Vue dashboard, its SignalR live-update hub, its `/jobs/dashboard` endpoints, `JobsOptionsBuilder.AddDashboard(...)`, `DashboardOptionsBuilder`, and `MapHeadlessJobsDashboard()` are removed. Delete the `AddDashboard(...)` call and the `MapHeadlessJobsDashboard()` mount, add `AddJobs()` to `AddHeadlessDashboard(...)`, and configure authentication on the shell. [dashboards.md](dashboards.md#migrate-from-mapheadlessjobsdashboard) lists every step.
 
 ### Runtime behavior
 
-- `MapHeadlessJobsDashboard()` maps the dashboard HTTP API, the SignalR hub, and the SPA under the `SetBasePath` path.
-- Authenticates with its own configuration, registered under `DashboardOptionsBuilder.AuthenticationName`, so a Messaging dashboard in the same host can use another mode. The live-update hub authenticates the same credential as the API: the session cookie in host mode, closed when the session expires, and the `access_token` query parameter under Basic or API key; see [Jobs live-update hub](dashboards.md#jobs-live-update-hub).
-- Subscribes to `Headless.Coordination` membership events for live-node push updates.
-- A committed time-job or cron-job delete, single or batch, pushes `RemoveTimeJobNotification` or `RemoveCronJobNotification` for each requested id, so every open dashboard drops the rows; the dashboard that issued the delete also reloads its list itself. A failed notification is logged (event 3239) and never fails the delete.
-- Serves embedded frontend SPA assets; requires Node 22 on `PATH` when building from source (build target `make dashboards`).
-- Exposes mutating operational endpoints; configure authentication and CORS before exposing the dashboard outside an isolated development environment.
+- Registers a singleton change publisher and replaces the job managers' notification seam, so each write a manager makes on this node reaches the shell's stream after it returns.
+- Reads changes from the store on the shell's change poll, so writes from other nodes reach open views within one `ChangePollInterval`.
+- Requeue, Cancel, and Delete over a filter run as Operations in chunks: Requeue and Delete write a row only while its change marker is unchanged since confirm, so a row is never written twice.
+- Serves the embedded module assets; building from source needs Node 22 on `PATH` (build target `make dashboard-jobs`).
+- Exposes operational commands; configure the shell's authentication before exposing it outside an isolated development environment.
 
 ---
 

@@ -828,7 +828,7 @@ dashboards-test-affected: ## Run dashboard-<name>-test for each SPA changed vs A
 	exit $$rc
 
 # ---- Dashboard sandbox ---------------------------------------------------------------------------------------------
-# The repository ships no app, but the Jobs and Messaging dashboards are UI that has to be driven to be tested.
+# The repository ships no app, but the Headless and Messaging dashboards are UI that has to be driven to be tested.
 # sandboxes/Headless.Dashboards.Sandbox hosts both on loopback with named scenario fixtures, and these targets own
 # its lifecycle: `up` builds and starts it in the background, `ready` waits for it, `seed` creates dashboard states,
 # `down` stops only what `up` started. STORE=memory (default) needs nothing beyond the SDK; STORE=postgres also
@@ -854,7 +854,7 @@ SANDBOX_PG_DATABASE ?= headless_sandbox
 # (scenarios are posted on demand), so there is no seeded record to fetch; the Messaging dashboard's stats read goes
 # through the message storage, the in-memory store or the PostgreSQL tables the host creates as it starts, so it
 # fails until that storage answers. It takes the Messaging dashboard's Basic auth, which sandbox.env sets; the Jobs
-# dashboard's API was not used because its auth mode varies with Sandbox__JobsDashboardAuth.
+# module's API was not used because it sits behind the Headless dashboard's host sign-in session.
 SANDBOX_USABLE_PATH ?= /messaging/dashboard/api/stats
 SANDBOX_USER ?= sandbox
 STORE ?= memory
@@ -907,7 +907,7 @@ up: ## Build and start the dashboard sandbox in the background (STORE=memory|pos
 	printf 'store=%s url=%s compose=%s\n' "$(STORE)" "$(SANDBOX_URL)" "$$([ "$(STORE)" = postgres ] && echo "$(SANDBOX_COMPOSE_PROJECT)" || echo none)" > "$(SANDBOX_STATE)"; \
 	echo "Sandbox starting (pid $$(cat "$(SANDBOX_PID)"), STORE=$(STORE))."; \
 	echo "  Headless dashboard:  $(SANDBOX_URL)/headless/ (host auth: sign in at $(SANDBOX_URL)/sandbox/headless-sign-in with the password in $(SANDBOX_ENV))"; \
-	echo "  Jobs dashboard:      $(SANDBOX_URL)/jobs/dashboard"; \
+	echo "  Jobs module:         $(SANDBOX_URL)/headless/jobs (the Headless dashboard's sign-in)"; \
 	if [ -n "$${Sandbox__MessagingDashboardPassword:-}" ]; then \
 	  echo "  Messaging dashboard: $(SANDBOX_URL)/messaging/dashboard (Basic auth: user sandbox, password in $(SANDBOX_ENV))"; \
 	else \
@@ -916,10 +916,10 @@ up: ## Build and start the dashboard sandbox in the background (STORE=memory|pos
 	echo "Next: make ready $(UP_ENV)"
 
 .PHONY: ready
-ready: ## Wait until the sandbox and its three dashboards answer, then until a read through the Messaging store succeeds (TIMEOUT=120 seconds); names what is not usable.
+ready: ## Wait until the sandbox and its two dashboards answer, then until a read through the Messaging store succeeds (TIMEOUT=120 seconds); names what is not usable.
 	@url="$$(sed -n 's/.*url=\([^ ]*\).*/\1/p' "$(SANDBOX_STATE)" 2>/dev/null)"; url="$${url:-$(SANDBOX_URL)}"; \
 	deadline=$$(( $$(date +%s) + $(TIMEOUT) )); \
-	for path in /healthz /headless/ /jobs/dashboard/ /messaging/dashboard/; do \
+	for path in /healthz /headless/ /messaging/dashboard/; do \
 	  until curl -fsS -o /dev/null "$$url$$path" 2>/dev/null; do \
 	    if [ -f "$(SANDBOX_PID)" ] && ! kill -0 "$$(cat "$(SANDBOX_PID)")" 2>/dev/null; then \
 	      echo "Sandbox exited before $$path answered. Last log lines:"; tail -n 20 "$(SANDBOX_LOG)" 2>/dev/null || true; exit 1; fi; \

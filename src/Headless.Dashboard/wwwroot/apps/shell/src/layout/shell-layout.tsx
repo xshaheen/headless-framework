@@ -28,11 +28,13 @@ export function ShellLayout() {
 
   const openPalette = useCallback(() => setPaletteOpen(true), [])
 
-  // `G` then a letter goes to a shell view; a module's own views join when the module that owns them ships.
+  // `G` then a letter goes to a view: `G R` opens the Jobs runs list, the Jobs module's home route. It does not check
+  // that the module is registered: the check costs more than the shell's bundle budget leaves, and without Jobs the
+  // route answers with the shell's Not found view.
   useShellKeys({
     palette: openPalette,
     shortcuts: () => setShortcutsOpen(true),
-    go: { o: () => void navigate('/'), n: () => void navigate('/needs-you') },
+    go: { o: () => void navigate('/'), n: () => void navigate('/needs-you'), r: () => void navigate('/jobs') },
   })
   useEffect(() => loader.onError(() => setUpdated(true)), [loader])
 

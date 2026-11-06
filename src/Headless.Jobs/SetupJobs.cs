@@ -348,7 +348,6 @@ public static class SetupJobs
         );
 
         optionInstance.ExternalProviderConfigServiceAction?.Invoke(services);
-        optionInstance.DashboardServiceAction?.Invoke(services, requestSerializationOptions);
 
         // The durable operational store opts into coordinated membership; wire it after the provider's own
         // services are registered so the require-provider check sees the coordination registration.

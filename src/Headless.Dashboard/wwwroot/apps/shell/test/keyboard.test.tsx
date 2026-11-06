@@ -4,7 +4,7 @@ import { createFakeStream } from '@headless/dashboard-sdk/testing'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { shellState } from './fixtures/modules.tsx'
+import { moduleManifest, shellState } from './fixtures/modules.tsx'
 import { renderShell } from './harness.tsx'
 
 /** The keys of the shortcut table in the dashboard's design system, as an operator reads them on the key caps. */
@@ -43,6 +43,16 @@ describe('shell keyboard', () => {
     await user.keyboard('go')
 
     await waitFor(() => expect(shell.router.state.location.pathname).toBe('/'))
+  })
+
+  it('goes to the Jobs runs list with G R when the Jobs module is registered', async () => {
+    const user = userEvent.setup()
+    const shell = renderShell(shellState([moduleManifest('jobs')]))
+
+    await screen.findByRole('heading', { name: 'Overview' })
+    await user.keyboard('gr')
+
+    await waitFor(() => expect(shell.router.state.location.pathname).toBe('/jobs'))
   })
 
   it('opens the palette on ⌘K even while a text field has focus, and ignores other keys there', async () => {

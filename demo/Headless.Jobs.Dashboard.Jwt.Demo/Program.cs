@@ -1,5 +1,6 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using Headless.Dashboard;
 using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Jobs.Dashboard.Jwt.Demo;
@@ -45,10 +46,11 @@ builder.Services.AddAuthorizationBuilder().AddPolicy(dashboardPolicy, policy => 
 builder.Services.AddHttpClient();
 
 // Jobs setup — no UseEntityFramework() means in-memory persistence by default
-builder.Services.AddHeadlessJobs(options =>
-    options
-        .AddModule<Headless.Jobs.Dashboard.Jwt.Demo.JobsModule>()
-        .AddDashboard(d => d.WithHostAuthentication(host => host.ViewPolicy = dashboardPolicy))
+builder.Services.AddHeadlessJobs(options => options.AddModule<Headless.Jobs.Dashboard.Jwt.Demo.JobsModule>());
+
+// The Headless dashboard, with the Jobs module at /headless/jobs, signs operators in through the app's JWT.
+builder.Services.AddHeadlessDashboard(dashboard =>
+    dashboard.WithHostAuthentication(host => host.ViewPolicy = dashboardPolicy).AddJobs()
 );
 
 builder.Services.AddHostedService<DemoJobSeeder>();
@@ -101,6 +103,6 @@ app.MapPost(
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapHeadlessJobsDashboard();
+app.MapHeadlessDashboard();
 
 await app.RunAsync();

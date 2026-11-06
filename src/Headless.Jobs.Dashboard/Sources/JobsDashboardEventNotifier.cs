@@ -53,8 +53,6 @@ internal sealed class JobsDashboardEventNotifier(IJobsDashboardBackend backend, 
 
     public void UpdateHostException(object exceptionMessage) { }
 
-    public Task UpdateNodesAsync(object nodes) => Task.CompletedTask;
-
     public Task AddCronOccurrenceAsync(Guid groupId, object occurrence) =>
         _Row(JobChangeKind.CronJobOccurrence, occurrence, affectsAttention: false);
 
