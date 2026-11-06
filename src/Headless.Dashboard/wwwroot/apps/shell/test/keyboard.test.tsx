@@ -1,7 +1,7 @@
 import { DashboardProvider, createDashboardClient } from '@headless/dashboard-sdk'
 import { useShortcut } from '@headless/dashboard-sdk/components'
 import { createFakeStream } from '@headless/dashboard-sdk/testing'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { moduleManifest, shellState } from './fixtures/modules.tsx'
@@ -57,6 +57,18 @@ describe('shell keyboard', () => {
     await user.keyboard('go')
 
     await waitFor(() => expect(shell.router.state.location.pathname).toBe('/'))
+  })
+
+  it('goes to a view with G then a letter while a select has focus, since a select is not a text field', async () => {
+    const user = userEvent.setup()
+    const shell = renderShell(shellState([]))
+
+    await screen.findByRole('heading', { name: 'Overview' })
+    // The view's filter, which `/` focuses, is a select; the rail's Theme stands in for it here.
+    act(() => screen.getByRole('combobox', { name: 'Theme' }).focus())
+    await user.keyboard('gn')
+
+    await waitFor(() => expect(shell.router.state.location.pathname).toBe('/needs-you'))
   })
 
   it('goes to the Jobs runs list with G R when the Jobs module is registered', async () => {

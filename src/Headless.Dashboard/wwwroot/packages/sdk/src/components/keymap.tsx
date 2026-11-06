@@ -71,11 +71,9 @@ interface Keymap {
 
 const KeymapContext = createContext<Keymap | null>(null)
 
+// A select is not a text field: `/` focuses a view's filter, often a select, and the `G` chords must still work there.
 function isTextField(target: EventTarget | null) {
-  return (
-    target instanceof HTMLElement &&
-    (target.isContentEditable || target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')
-  )
+  return target instanceof HTMLElement && (target.isContentEditable || target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')
 }
 
 /** A popover, menu, or dialog above the view keeps its own keys; the view's shortcuts would act behind it. */
