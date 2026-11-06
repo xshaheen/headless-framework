@@ -31,7 +31,7 @@ internal sealed class FakeCommandModule(FakeRunStore store)
         {
             Files = new SingleFileProvider(
                 "manifest.json",
-                """{"id":"diag","sdkVersion":"1.0.0","entry":"e.js","product":"diagnostics"}"""
+                """{"id":"diag","sdkVersion":"1.0.0","entry":"e.js","product":"platform"}"""
             ),
         };
 

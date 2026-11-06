@@ -5,9 +5,9 @@ export type DashboardPermission = 'view' | 'operate'
 
 /**
  * The product a module belongs to. The shell shows one tab per product a host registered, in this order: `jobs`,
- * `messaging`, `cluster`, `platform`, `dev-inbox`, `diagnostics`. Modules that name one product share its tab.
+ * `messaging`, `cluster`, `platform`, `dev-inbox`. Modules that name one product share its tab.
  */
-export type DashboardProduct = 'jobs' | 'messaging' | 'cluster' | 'platform' | 'dev-inbox' | 'diagnostics'
+export type DashboardProduct = 'jobs' | 'messaging' | 'cluster' | 'platform' | 'dev-inbox'
 
 /** The colour role a state dot paints: scheduled, enqueued, processing, ok, failed, or off. */
 export type DashboardStateRole = 'sched' | 'enq' | 'proc' | 'ok' | 'fail' | 'off'

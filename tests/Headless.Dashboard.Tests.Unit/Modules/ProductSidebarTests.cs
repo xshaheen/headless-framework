@@ -19,8 +19,8 @@ public sealed class ProductSidebarTests : TestBase
         var state = _State(provider, ("audit", _Viewer), ("diag", _Viewer));
 
         var product = state.Products.Should().ContainSingle().Subject;
-        product.Id.Should().Be("diagnostics");
-        product.Label.Should().Be("Diagnostics");
+        product.Id.Should().Be("platform");
+        product.Label.Should().Be("Platform");
         product.Modules.Should().Equal("audit", "diag");
         product.Sections.Select(section => section.Module).Should().Equal("audit", "diag");
         product

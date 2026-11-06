@@ -80,7 +80,7 @@ public sealed class ManifestMergerTests : TestBase
             new ContributionOverrides()
         );
 
-        manifest.Modules.Select(module => module.Product?.Id).Should().Equal("diagnostics", "diagnostics");
+        manifest.Modules.Select(module => module.Product?.Id).Should().Equal("platform", "platform");
         manifest.KnownContributionIds.Should().Contain(["diag.nav.runs", "diag.nav.settings", "audit.nav.entries"]);
     }
 

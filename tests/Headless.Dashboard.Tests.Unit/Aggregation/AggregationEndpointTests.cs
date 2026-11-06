@@ -619,11 +619,11 @@ public sealed class AggregationEndpointTests : TestBase
         await using var app = await _StartAsync();
         using var client = app.GetTestClient();
 
-        using var response = await client.GetAsync("/dash/api/counts?product=diagnostics", AbortToken);
+        using var response = await client.GetAsync("/dash/api/counts?product=platform", AbortToken);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await _ReadAsync(response);
-        body.GetProperty("product").GetString().Should().Be("diagnostics");
+        body.GetProperty("product").GetString().Should().Be("platform");
         var counts = body.GetProperty("counts");
         counts.EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo("Failed", "Queued", "Idle", "Cancelled");
         _Count(counts, "Failed").Should().Be((10_000, true));
@@ -648,7 +648,7 @@ public sealed class AggregationEndpointTests : TestBase
         await using var app = await _StartAsync();
         using var client = app.GetTestClient();
 
-        using var response = await client.GetAsync("/dash/api/counts?product=diagnostics", AbortToken);
+        using var response = await client.GetAsync("/dash/api/counts?product=platform", AbortToken);
 
         var body = await _ReadAsync(response);
         body.GetProperty("counts").EnumerateObject().Should().BeEmpty();

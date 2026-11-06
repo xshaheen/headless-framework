@@ -11,7 +11,7 @@ packages: Dashboard
 
 `Headless.Dashboard` has two parts:
 
-- **The shell.** `services.AddHeadlessDashboard(...)` registers it and `app.MapHeadlessDashboard()` mounts it, by default at `/headless`. It serves every registered module under that base path with one sign-in, one session cookie, one live stream, and one command pipeline. It stores nothing: each module reads its own store. The package ships one module, the diagnostic module (`AddDiagnostics()`), an in-memory store of fake runs that exercises every module capability. `Headless.Jobs.Dashboard` adds the Jobs module (`AddJobs()`); see [Jobs module](#jobs-module).
+- **The shell.** `services.AddHeadlessDashboard(...)` registers it and `app.MapHeadlessDashboard()` mounts it, by default at `/headless`. It serves every registered module under that base path with one sign-in, one session cookie, one live stream, and one command pipeline. It stores nothing: each module reads its own store. The package ships no module of its own. `Headless.Jobs.Dashboard` adds the Jobs module (`AddJobs()`); see [Jobs module](#jobs-module).
 - **Shared authentication for the Messaging dashboard.** `Headless.Messaging.Dashboard` keeps its own Vue dashboard in this release, mounted by `MapHeadlessMessagingDashboard()`. It is not a shell module yet. It receives this package transitively and configures its authentication through its own builder; see [Messaging and standalone dashboards](#messaging-and-standalone-dashboards).
 
 A host can run the shell and the Messaging dashboard side by side. Each has its own authentication mode, credentials, and session cookie.
@@ -32,7 +32,6 @@ Read [jobs.md](jobs.md) for Headless Jobs and [messaging.md](messaging.md) for t
 - The shell's document replaces any `Content-Security-Policy` header already on its response. Add the sources a module or the host needs through `ConfigureContentSecurityPolicy`, never by loosening the policy in host middleware.
 - Never embed production credentials or API keys in source, examples, logs, URLs, or frontend storage.
 - `WithNoAuth()` and `AuthMode.None` make a dashboard public. Use them only in an isolated development environment.
-- The diagnostic module registers nothing outside the Development environment unless `DiagnosticsOptions.Enabled` is `true`. Do not enable it in production: it serves fake data.
 
 ## Choosing an authentication mode
 
@@ -47,7 +46,7 @@ The Messaging dashboard builder takes the same four calls. There is no custom-va
 
 ## Headless.Dashboard
 
-The dashboard shell, its module contract, its diagnostic module, and the authentication that the shell and the Messaging dashboard share.
+The dashboard shell, its module contract, and the authentication that the shell and the Messaging dashboard share.
 
 ### Register the shell
 
@@ -55,10 +54,11 @@ The dashboard shell, its module contract, its diagnostic module, and the authent
 dotnet add package Headless.Dashboard
 ```
 
-Host mode with separate view and operate policies, an OpenID Connect sign-in for browsers, and the diagnostic module:
+Host mode with separate view and operate policies, an OpenID Connect sign-in for browsers, and the Jobs module from `Headless.Jobs.Dashboard`:
 
 ```csharp
 using Headless.Dashboard;
+using Headless.Jobs;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
@@ -85,7 +85,7 @@ builder.Services.AddHeadlessDashboard(dashboard =>
         host.ChallengeScheme = OpenIdConnectDefaults.AuthenticationScheme;
     });
     dashboard.SetTraceLinkTemplate("https://apm.example.com/trace/{traceId}");
-    dashboard.AddDiagnostics(); // registers nothing outside Development
+    dashboard.AddJobs();
 });
 
 var app = builder.Build();
@@ -131,12 +131,13 @@ Contribution overrides name the ids modules declare: sidebar entries, client com
 
 ```csharp
 using Headless.Dashboard;
+using Headless.Jobs;
 
 builder.Services.AddHeadlessDashboard(dashboard =>
 {
     dashboard.WithBasicAuth("operator", builder.Configuration["Dashboard:Password"]!);
-    dashboard.AddDiagnostics();
-    dashboard.Contributions(contributions => contributions.Disable("diagnostics.requeue-failed"));
+    dashboard.AddJobs();
+    dashboard.Contributions(contributions => contributions.Disable("jobs.nav.failed"));
     dashboard.Contributions(builder.Configuration.GetSection("Headless:Dashboard:Contributions"));
 });
 
@@ -188,11 +189,11 @@ A `DashboardAttentionItem` can also say how to resolve it and whether it is stil
 - **`RecentCount`.** How many objects joined the item in the module's latest interval, such as the last hour. Above zero, the cause is still growing.
 - **`LastSeenAt`.** When the cause last occurred, beside `Since`, when it began.
 
-`GET {base}/api/needs-you` returns these as `recommended` (`{ command, filter }`, where `command` is described for the signed-in user as `GET {base}/api/{module}/commands` describes it, or `null`), `recentCount`, and `lastSeenAt`. The diagnostic module recommends Requeue over each failure group and counts the runs that failed in the last hour.
+`GET {base}/api/needs-you` returns these as `recommended` (`{ command, filter }`, where `command` is described for the signed-in user as `GET {base}/api/{module}/commands` describes it, or `null`), `recentCount`, and `lastSeenAt`.
 
 The interfaces grow by new capability interfaces and default interface members. An existing member never gains a parameter; the request and result records grow by `init` members instead.
 
-A module package wraps `AddModule` in its own extension, the way `AddDiagnostics` does:
+A module package wraps `AddModule` in its own extension, the way `AddJobs` does:
 
 ```csharp
 using Headless.Dashboard;
@@ -324,22 +325,9 @@ builder.Services.AddHeadlessDashboard(dashboard =>
 });
 ```
 
-### Diagnostic module
-
-`AddDiagnostics()` adds a module with the id `diagnostics`: an in-memory `DiagnosticsStore` of fake runs that implements every capability above, including commands (`{id}.fail`, `{id}.requeue`, `{id}.add-note`), Operations, and change reads. Its API at `{base}/api/{id}` lists runs newest first, one keyset page at a time (`GET runs?limit=&after=`: each page carries a `nextCursor` that `after` takes, `null` on the last page, and a run added while paging never shifts a later page), reads one (`GET runs/{runId}`), and adds a queued run (`POST runs`, an operator action). It adds no table, cache key, or channel to the host, and starts empty.
-
-| `DiagnosticsOptions` member | Default | Description |
-| --- | --- | --- |
-| `Id` / `Instance(id)` | `diagnostics` | The instance's id. Add a second instance under another id, such as `diag-b`. |
-| `Enabled` | `false` | Serves outside Development. In Development the module always registers; elsewhere `AddDiagnostics` registers nothing unless this is `true`, so the module is absent and its routes answer `404`. |
-| `UseStore(store)` | a store of its own | Shares one `DiagnosticsStore` across hosts, as a deployment shares a database. |
-| `ViewPolicy`, `OperatePolicy` | the shell's | As for every module. |
-
-`AddDiagnostics(IConfiguration)` binds `Id`, `Enabled`, `ViewPolicy`, and `OperatePolicy`. The id, `Enabled`, and the store are read once, when `AddDiagnostics` runs.
-
 ### Module front end
 
-The shell is a React application. A module's front end is a small entry plus lazy route chunks that import React, React Router, TanStack Query, and React Aria from the shell through an import map, never from their own bundle. The SDK (`@headless/dashboard-sdk`) and the Vite preset (`@headless/dashboard-vite`) are private packages of the repository-root npm workspace, under `src/Headless.Dashboard/wwwroot`, where the diagnostic module is built; they are not published to npm in this release.
+The shell is a React application. A module's front end is a small entry plus lazy route chunks that import React, React Router, TanStack Query, and React Aria from the shell through an import map, never from their own bundle. The SDK (`@headless/dashboard-sdk`) and the Vite preset (`@headless/dashboard-vite`) are private packages of the repository-root npm workspace, under `src/Headless.Dashboard/wwwroot`; they are not published to npm in this release.
 
 A module's entry exports a `defineModule` call. The build reads the literal itself to write `manifest.json`, so every static field (ids, labels, paths, permissions, event names) must be a literal, not computed:
 
@@ -347,9 +335,9 @@ A module's entry exports a `defineModule` call. The build reads the literal itse
 import { defineModule } from '@headless/dashboard-sdk'
 
 export default defineModule({
-  id: 'diagnostics',
-  product: 'diagnostics',
-  sidebar: [{ entries: [{ id: 'diagnostics.nav.runs', label: 'Runs', route: '', icon: 'runs' }] }],
+  id: 'reports',
+  product: 'platform',
+  sidebar: [{ entries: [{ id: 'reports.nav.runs', label: 'Runs', route: '', icon: 'runs' }] }],
   routes: [
     { path: '', lazy: () => import('./views/runs-list.tsx') },
     { path: 'runs/:runId', lazy: () => import('./views/run-page.tsx') },
@@ -358,12 +346,12 @@ export default defineModule({
     run: { route: (id: string) => `runs/${encodeURIComponent(id)}` },
   },
   commands: [
-    { id: 'diagnostics.requeue-failed', label: 'Requeue failed runs', requires: 'operate', run: ({ navigate }) => navigate('?status=Failed&operation=requeue') },
+    { id: 'reports.requeue-failed', label: 'Requeue failed runs', requires: 'operate', run: ({ navigate }) => navigate('?status=Failed&operation=requeue') },
   ],
 })
 ```
 
-`id` equals the .NET module id. `product` names the tab the module joins, one of `jobs`, `messaging`, `cluster`, `platform`, `dev-inbox`, or `diagnostics`; the shell shows one tab per product a host registered, in that order, and modules that name one product share its tab, their sidebar sections in registration order. A module whose manifest names another product fails the host's start.
+`id` equals the .NET module id. `product` names the tab the module joins, one of `jobs`, `messaging`, `cluster`, `platform`, or `dev-inbox`; the shell shows one tab per product a host registered, in that order, and modules that name one product share its tab, their sidebar sections in registration order. A module whose manifest names another product fails the host's start.
 
 `sidebar` lists the module's sections in display order. A section has an optional `label` (a section without one draws no heading) and its `entries`. An entry has an `id` (a contribution id the host can disable or order, such as `jobs.nav.failed`), a `label`, a `route` relative to the module with an optional query (`?status=Failed`), exactly one of `icon` (an icon key) or `state` (the colour role of its dot: `sched`, `enq`, `proc`, `ok`, `fail`, or `off`), an optional `countKey` naming its count in the module's `IDashboardCountSource` answer, and an optional `requires`. The build fails on a computed `sidebar`, an unknown `product` or `state`, or an entry with both or neither of `icon` and `state`.
 
@@ -409,7 +397,7 @@ export default defineConfig(
   dashboardModule({
     root: fileURLToPath(new URL('.', import.meta.url)),
     entry: 'src/module.ts',
-    outDir: '../../dist/modules/diagnostics',
+    outDir: '../../dist/modules/reports',
   }),
 )
 ```
