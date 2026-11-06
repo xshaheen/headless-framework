@@ -71,10 +71,10 @@ describe('commands', () => {
     await user.click(screen.getByRole('button', { name: 'Fail 2 runs' }))
 
     expect(screen.queryByRole('dialog')).toBeNull()
-    const toast = await screen.findByText('Failed 2')
+    const toast = await screen.findByText('Fail: 2 done')
     await user.click(within(toast.closest('[role="status"]') as HTMLElement).getByRole('button', { name: 'Undo' }))
 
-    expect(await screen.findByText('Requeued 2')).toBeTruthy()
+    expect(await screen.findByText('Requeue: 2 done')).toBeTruthy()
     expect(requests.map((request) => request.path)).toEqual(['diag/commands/fail', 'diag/commands/requeue'])
     expect(requests[1]!.body).toMatchObject({ ids: ['r1', 'r2'], reason: 'Undo of Fail', confirmed: true })
   })
@@ -95,7 +95,7 @@ describe('commands', () => {
     )
 
     await user.click(screen.getByRole('button', { name: 'Fail 2 runs' }))
-    const toast = await screen.findByText('Failed 2')
+    const toast = await screen.findByText('Fail: 2 done')
     await user.click(within(toast.closest('[role="status"]') as HTMLElement).getByRole('button', { name: 'Undo' }))
 
     const failures = await screen.findAllByText('Run r1 is running again.')

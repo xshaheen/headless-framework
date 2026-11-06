@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, useSyncExternalStore, type FocusEvent, type KeyboardEvent, type ReactNode, type SyntheticEvent } from 'react'
+import { useLayoutEffect, useRef, useState, type FocusEvent, type KeyboardEvent, type ReactNode, type SyntheticEvent } from 'react'
 import {
   Cell,
   Column,
@@ -13,7 +13,7 @@ import {
   type Key,
   type Selection,
 } from 'react-aria-components'
-import { below } from '../breakpoints.ts'
+import { below, useBelow } from '../breakpoints.ts'
 import { Button } from '../button.tsx'
 import { Tag } from '../display/tag.tsx'
 import type { PageFrameState } from '../frame/page-frame.tsx'
@@ -105,23 +105,6 @@ export interface DataTableProps<T extends { id: string }> {
   rowActions?: (row: T) => ReactNode
 }
 
-const narrowQuery = below.phone
-
-function subscribeNarrow(onChange: () => void) {
-  if (typeof window.matchMedia !== 'function') {
-    return () => undefined
-  }
-
-  const query = window.matchMedia(narrowQuery)
-  query.addEventListener?.('change', onChange)
-
-  return () => query.removeEventListener?.('change', onChange)
-}
-
-function isNarrow() {
-  return typeof window.matchMedia === 'function' && window.matchMedia(narrowQuery).matches
-}
-
 /** Keys that move the focus in the grid; without `Shift` they never change a multi-selection. */
 const moveKeys = new Set(['ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'])
 
@@ -157,7 +140,7 @@ export function DataTable<T extends { id: string }>({
 }: DataTableProps<T>) {
   const [ownSelection, setOwnSelection] = useState<ReadonlySet<string>>(new Set())
   const [density, setDensity] = useDensity(viewId)
-  const narrow = useSyncExternalStore(subscribeNarrow, isNarrow, () => false)
+  const narrow = useBelow(below.phone)
   const wrap = useRef<HTMLDivElement>(null)
   const scroller = useRef<HTMLDivElement>(null)
   const focusedId = useRef<string | undefined>(undefined)
@@ -211,12 +194,13 @@ export function DataTable<T extends { id: string }>({
     if (frame) {
       const id = keys === 'all' ? undefined : [...keys][0]
 
-      // An arrow key moves the focus and React Aria selects the row it lands on: that opens a row only while one is open.
+      // An arrow key moves the focus and React Aria selects the row it lands on: that opens a row only while one is
+      // open, replacing its history entry as `J`/`K` do, so Back leaves the panel rather than walking every row.
       if (!moving.current || frame.openId) {
         if (id === undefined) {
           frame.close()
         } else {
-          frame.open(String(id))
+          frame.open(String(id), moving.current)
         }
       }
 

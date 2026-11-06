@@ -9,14 +9,13 @@ import {
   useLayoutEffect,
   useRef,
   useState,
-  useSyncExternalStore,
   type KeyboardEvent,
   type PointerEvent,
   type ReactNode,
   type RefObject,
 } from 'react'
 import { useSearchParams } from 'react-router'
-import { below } from '../breakpoints.ts'
+import { below, remember, useBelow } from '../breakpoints.ts'
 import { useViewKeys } from '../keymap.tsx'
 
 export interface PageFrameOptions<T extends { id: string }> {
@@ -36,8 +35,11 @@ export interface PageFrameState {
   viewId: string
   /** The open row's id, from `?open=`; `null` when the panel is closed. */
   openId: string | null
-  /** Opens a row in the panel and adds a history entry; focus stays where it is. */
-  open: (id: string) => void
+  /**
+   * Opens a row in the panel and adds a history entry, or replaces the open row's entry with `replace` (the panel
+   * following the focus, as `J`/`K` do); focus stays where it is.
+   */
+  open: (id: string, replace?: boolean) => void
   /** Closes the panel, adding a history entry so Back reopens it; focus returns to the row that was open. */
   close: () => void
   /** The row `J`/`K` and `X` act on. */
@@ -129,11 +131,11 @@ export function usePageFrame<T extends { id: string }>({ viewId, rows, matches }
   const state: PageFrameState = {
     viewId,
     openId,
-    open: (id) => {
+    open: (id, replace) => {
       setCursor(id)
 
       if (id !== openId) {
-        show(id)
+        show(id, replace)
       }
     },
     close: () => show(null),
@@ -239,39 +241,6 @@ export function useFrame() {
   return frame
 }
 
-function subscribe(onChange: () => void) {
-  const queries = typeof window.matchMedia === 'function' ? [below.wide, below.phone].map((query) => window.matchMedia(query)) : []
-  queries.forEach((query) => query.addEventListener?.('change', onChange))
-
-  return () => queries.forEach((query) => query.removeEventListener?.('change', onChange))
-}
-
-function matchesMedia(query: string) {
-  return typeof window.matchMedia === 'function' && window.matchMedia(query).matches
-}
-
-/** Below 1280 px: 1 (docked below only), below 768 px: 2 (modal), else 0. */
-function widthClass() {
-  return matchesMedia(below.phone) ? 2 : matchesMedia(below.wide) ? 1 : 0
-}
-
-// Browser storage can be missing or throw (a private window, blocked site data); the frame then forgets.
-function read(key: string) {
-  try {
-    return localStorage.getItem(key)
-  } catch {
-    return null
-  }
-}
-
-function write(key: string, value: string) {
-  try {
-    localStorage.setItem(key, value)
-  } catch {
-    // Remembering is a convenience; the panel works without it.
-  }
-}
-
 /** The panel's shortest height, and the least the list keeps above it. */
 const minPanel = 200
 const minList = 160
@@ -297,12 +266,15 @@ export interface PageFrameProps {
  * wider the panel can move to the side; below 768 px it opens full screen.
  */
 export function PageFrame({ frame, stats, header, children, panel, form }: PageFrameProps) {
-  const width = useSyncExternalStore(subscribe, widthClass, () => 0)
+  // Below 1280 px: 1 (docked below only), below 768 px: 2 (modal), else 0.
+  const phone = useBelow(below.phone)
+  const wide = useBelow(below.wide)
+  const width = phone ? 2 : wide ? 1 : 0
   const key = `hd-panel:${frame.viewId}`
   const sideKey = `hd-panel-side:${frame.viewId.split('.')[0]}`
   const initial = form ? 400 : 340
-  const [height, setHeight] = useState(() => Number(read(key)) || initial)
-  const [side, setSideState] = useState(() => read(sideKey) === '1')
+  const [height, setHeight] = useState(() => Number(remember(key)) || initial)
+  const [side, setSideState] = useState(() => remember(sideKey) === '1')
   const [room, setRoom] = useState(0)
   const list = frame.listRef
   const box = useRef<HTMLDivElement>(null)
@@ -345,7 +317,7 @@ export function PageFrame({ frame, stats, header, children, panel, form }: PageF
   function resize(next: number) {
     const clamped = Math.min(max, Math.max(minPanel, next))
     setHeight(clamped)
-    write(key, String(clamped))
+    remember(key, String(clamped))
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
@@ -380,7 +352,7 @@ export function PageFrame({ frame, stats, header, children, panel, form }: PageF
     side: width === 0 ? beside : null,
     setSide: (next) => {
       setSideState(next)
-      write(sideKey, next ? '1' : '')
+      remember(sideKey, next ? '1' : '')
     },
   }
 

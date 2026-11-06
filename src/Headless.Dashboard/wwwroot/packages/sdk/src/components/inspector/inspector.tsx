@@ -5,7 +5,7 @@
 import { useEffect, useId, useRef, type KeyboardEvent, type ReactNode } from 'react'
 import { Button } from '../button.tsx'
 import type { DashboardStateRole } from '../../define-module.ts'
-import { below } from '../breakpoints.ts'
+import { below, isBelow } from '../breakpoints.ts'
 import { EditableValue, type FieldEdit } from '../frame/field-grid.tsx'
 import { Mono, StatusMark } from '../marks.tsx'
 
@@ -15,13 +15,6 @@ export interface InspectorProps {
   /** Closes the inspector; on a phone this is the back control. */
   onClose?: () => void
   children: ReactNode
-}
-
-/** The widths at which a selection's inspector floats over the list as a drawer, as `components.css` lays it out. */
-const floatingQuery = below.wide
-
-function isFloating() {
-  return typeof window.matchMedia === 'function' && window.matchMedia(floatingQuery).matches
 }
 
 /**
@@ -36,7 +29,7 @@ export function Inspector({ label, onClose, children }: InspectorProps) {
   useEffect(() => {
     const panel = ref.current
 
-    if (!closable || !panel || !isFloating()) {
+    if (!closable || !panel || !isBelow(below.wide)) {
       return undefined
     }
 
