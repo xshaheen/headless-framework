@@ -1,3 +1,7 @@
+// The React Compiler's memo caches cost the SDK more bytes than these renders save (the file runs no effect that a
+// changed identity could re-trigger), and the shell's assets sit near their size budget.
+'use no memo'
+
 import { useId, type Ref } from 'react'
 import { Button as AriaButton, type ButtonProps as AriaButtonProps } from 'react-aria-components'
 

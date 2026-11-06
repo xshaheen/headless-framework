@@ -256,12 +256,6 @@
   font-weight: 400;
 }
 
-.hd-btn.hd-icon {
-  inline-size: var(--control-height);
-  padding: 0;
-  color: var(--faint);
-}
-
 .hd-clock {
   font: var(--text-mono);
   color: var(--muted);

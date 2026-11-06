@@ -106,7 +106,7 @@ export function ToastRegion() {
               {toast.action.label}
             </Button>
           ) : null}
-          <Button variant="ghost" aria-label="Dismiss" onPress={() => toasts.dismiss(toast.id)}>
+          <Button variant="ghost" className="hd-icon" aria-label="Dismiss" onPress={() => toasts.dismiss(toast.id)}>
             ×
           </Button>
         </div>

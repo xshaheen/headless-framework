@@ -106,6 +106,7 @@
   --panel-side-width: 380px;
   --resize-handle: 9px;
   --control-height: 28px;
+  --field-height: 30px;
 
   /*
    * Breakpoints, named here for reference only: a media condition cannot read a custom property, so components.css

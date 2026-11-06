@@ -17,17 +17,6 @@
   padding-block-start: var(--sp-3);
 }
 
-.hd-density {
-  display: flex;
-  gap: var(--sp-1);
-  margin-inline-start: auto;
-}
-
-.hd-density .hd-btn[aria-pressed='true'] {
-  background: var(--accent-soft);
-  color: var(--text);
-}
-
 /* The virtualized grid scrolls on its own, so its header stays and only the rows in view are in the page. Rows
    that arrive above are held in place by the table itself, so the browser's own scroll anchoring stays off. */
 .hd-table {
@@ -101,4 +90,48 @@
   display: flex;
   align-items: center;
   padding-inline: var(--sp-4);
+}
+
+.hd-table-bar .hd-seg {
+  margin-inline-start: auto;
+}
+
+/* A pinned cell paints its row's fill, so the cells that scroll sideways under it stay hidden. */
+.hd-table [style*='sticky'] {
+  background: inherit;
+}
+
+/* Checked state lives on the checkbox alone, never on the row's fill; the margin makes a 24 px target. */
+.hd-table .hd-check {
+  padding-inline: var(--sp-7) 0;
+}
+
+.hd-check input {
+  inline-size: var(--sp-7);
+  block-size: var(--sp-7);
+  margin: var(--sp-1);
+  accent-color: var(--accent);
+}
+
+/* The rows a bulk action refused, once the operator asked to see them. */
+.hd-row[data-highlighted] {
+  background: var(--fail-soft);
+  box-shadow: inset 2px 0 0 var(--fail);
+}
+
+/* Opacity, not visibility, hides them, so they stay in the tab order; a coarse pointer has no hover, so it sees them. */
+.hd-row-actions > span {
+  display: flex;
+  gap: var(--sp-1);
+  opacity: 0;
+}
+
+.hd-row:is([data-hovered], :focus-within) .hd-row-actions > span {
+  opacity: 1;
+}
+
+@media (pointer: coarse) {
+  .hd-row-actions > span {
+    opacity: 1;
+  }
 }

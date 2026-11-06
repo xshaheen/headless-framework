@@ -1,7 +1,12 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+// The React Compiler's memo caches cost the SDK more bytes than these rare renders save, and the shell's assets sit
+// near their size budget.
+'use no memo'
+
+import { useEffect, useId, useRef, type KeyboardEvent, type ReactNode } from 'react'
 import { Button } from '../button.tsx'
 import type { DashboardStateRole } from '../../define-module.ts'
-import { below } from '../breakpoints.ts'
+import { below, isBelow } from '../breakpoints.ts'
+import { EditableValue, type FieldEdit } from '../frame/field-grid.tsx'
 import { Mono, StatusMark } from '../marks.tsx'
 
 export interface InspectorProps {
@@ -10,13 +15,6 @@ export interface InspectorProps {
   /** Closes the inspector; on a phone this is the back control. */
   onClose?: () => void
   children: ReactNode
-}
-
-/** The widths at which a selection's inspector floats over the list as a drawer, as `components.css` lays it out. */
-const floatingQuery = below.wide
-
-function isFloating() {
-  return typeof window.matchMedia === 'function' && window.matchMedia(floatingQuery).matches
 }
 
 /**
@@ -31,7 +29,7 @@ export function Inspector({ label, onClose, children }: InspectorProps) {
   useEffect(() => {
     const panel = ref.current
 
-    if (!closable || !panel || !isFloating()) {
+    if (!closable || !panel || !isBelow(below.wide)) {
       return undefined
     }
 
@@ -78,20 +76,7 @@ export function Inspector({ label, onClose, children }: InspectorProps) {
 }
 
 /** An editable field's value, how it commits, and what it shows while the operator types. */
-export interface InspectorFieldEdit {
-  value: string
-  /**
-   * Saves `value`. A rejection keeps the typed text uncommitted and shows the error's message inline, so the server's
-   * validation reads where the operator typed.
-   */
-  onCommit: (value: string) => Promise<unknown> | void
-  /** A select's choices; without them the field is text, committed on `Enter` or blur. */
-  options?: readonly { value: string; label: string }[]
-  /** Hears each keystroke without committing, such as to ask the server for a cron expression's next fires. */
-  onDraftChange?: (value: string) => void
-  /** What the typed text would mean, shown below the field before it commits. */
-  preview?: ReactNode
-}
+export type InspectorFieldEdit = FieldEdit
 
 export interface InspectorFieldProps {
   label: string
@@ -112,95 +97,6 @@ export function InspectorField({ label, children, edit }: InspectorFieldProps) {
       <dt>{edit ? <label htmlFor={id}>{label}</label> : label}</dt>
       <dd>{edit ? <EditableValue id={id} edit={edit} /> : children}</dd>
     </>
-  )
-}
-
-function EditableValue({ id, edit }: { id: string; edit: InspectorFieldEdit }) {
-  const { value, options, onDraftChange, preview } = edit
-  const [draft, setDraft] = useState(value)
-  const [seen, setSeen] = useState(value)
-  const [error, setError] = useState<string>()
-  const [busy, setBusy] = useState(false)
-  // The text last sent or refused: Enter then blur, or a blur after a refusal, does not send it again.
-  const attempted = useRef<string>(undefined)
-
-  // A committed value, or a live change, replaces the text once it arrives.
-  if (seen !== value) {
-    setSeen(value)
-    setDraft(value)
-  }
-
-  async function commit(next: string) {
-    if (next === value || next === attempted.current) {
-      return
-    }
-
-    attempted.current = next
-    setBusy(true)
-    setError(undefined)
-
-    try {
-      await edit.onCommit(next)
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Could not save. Try again.')
-      // A select shows what is stored, not the refused option.
-      if (options) {
-        setDraft(value)
-      }
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const common = {
-    id,
-    className: 'hd-input',
-    value: draft,
-    'aria-invalid': error ? true : undefined,
-    'aria-describedby': error ? `${id}-error` : undefined,
-    'aria-busy': busy || undefined,
-  }
-
-  return (
-    <span className="hd-field">
-      {options ? (
-        <select
-          {...common}
-          onChange={(event) => {
-            attempted.current = undefined
-            setDraft(event.currentTarget.value)
-            void commit(event.currentTarget.value)
-          }}
-        >
-          {options.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-      ) : (
-        <input
-          {...common}
-          onChange={(event) => {
-            attempted.current = undefined
-            setDraft(event.currentTarget.value)
-            onDraftChange?.(event.currentTarget.value)
-          }}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              void commit(draft)
-            }
-          }}
-          onBlur={() => void commit(draft)}
-        />
-      )}
-      {preview ? <span className="hd-hint">{preview}</span> : null}
-      {error ? (
-        <span id={`${id}-error`} role="alert" className="hd-error">
-          {error}
-        </span>
-      ) : null}
-    </span>
   )
 }
 
