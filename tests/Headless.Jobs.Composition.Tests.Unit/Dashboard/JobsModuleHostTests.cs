@@ -114,6 +114,32 @@ public sealed class JobsModuleHostTests : TestBase
     }
 
     [Fact]
+    public async Task should_refuse_a_time_job_for_an_unknown_function_with_the_reason_alone()
+    {
+        // given
+        await using var app = await JobsDashboardHttpHost.StartAsync(_time, _log, AbortToken);
+        using var client = JobsDashboardHttpHost.Client(app);
+        var cookie = await JobsDashboardHttpHost.SignInAsync(client, "ops", AbortToken);
+
+        // when
+        using var refused = await JobsDashboardHttpHost.PostAsync(
+            client,
+            JobsDashboardHttpHost.Api + "/time-jobs",
+            new { function = "no.such" },
+            cookie,
+            AbortToken
+        );
+
+        // then: the operator reads the reason, not the parameter name .NET appends for a developer
+        refused.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await JobsDashboardHttpHost.ReadAsync(refused, AbortToken))
+            .GetProperty("detail")
+            .GetString()
+            .Should()
+            .Be("No function named 'no.such' is registered.");
+    }
+
+    [Fact]
     public async Task should_fail_at_startup_naming_add_headless_jobs_when_jobs_is_not_registered()
     {
         // when

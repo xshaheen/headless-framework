@@ -345,7 +345,7 @@ internal sealed class JobsModuleApi(IJobsDashboardBackend backend, TimeProvider 
         }
         catch (ArgumentException exception)
         {
-            return _Invalid(exception.Message);
+            return _Invalid(_Reason(exception));
         }
     }
 
@@ -394,7 +394,7 @@ internal sealed class JobsModuleApi(IJobsDashboardBackend backend, TimeProvider 
         }
         catch (ArgumentException exception)
         {
-            return _Invalid(exception.Message);
+            return _Invalid(_Reason(exception));
         }
     }
 
@@ -456,6 +456,19 @@ internal sealed class JobsModuleApi(IJobsDashboardBackend backend, TimeProvider 
 
     private static ProblemHttpResult _Invalid(string detail) =>
         TypedResults.Problem(detail: detail, statusCode: StatusCodes.Status400BadRequest);
+
+    /// <summary>
+    /// The reason an argument was refused, without the <c> (Parameter 'json')</c> suffix .NET adds for a developer:
+    /// the form shows it to an operator, who never named that parameter.
+    /// </summary>
+    private static string _Reason(ArgumentException exception)
+    {
+        var suffix = $" (Parameter '{exception.ParamName}')";
+
+        return exception.ParamName is not null && exception.Message.EndsWith(suffix, StringComparison.Ordinal)
+            ? exception.Message[..^suffix.Length]
+            : exception.Message;
+    }
 
     private DateTime _Now() => _timeProvider.GetUtcNow().UtcDateTime;
 }

@@ -106,11 +106,14 @@ export function createDashboardApi(options: DashboardApiOptions): DashboardApi {
         headers['X-Headless-Dashboard-Channel'] = 'ui'
       }
 
+      // A request that never reaches the server rejects with the browser's own words (`Failed to fetch`).
       const response = await fetcher(apiUrl(options.apiBase, request.path, request.query), {
         method: request.method,
         headers,
         credentials: 'same-origin',
         body: request.method === 'GET' ? undefined : JSON.stringify(request.body ?? {}),
+      }).catch(() => {
+        throw new DashboardApiError(0, 'The dashboard did not answer. Check the connection, then try again.')
       })
       const text = await response.text()
       let body: unknown = text

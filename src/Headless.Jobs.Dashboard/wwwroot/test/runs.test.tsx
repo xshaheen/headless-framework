@@ -53,6 +53,28 @@ describe('jobs runs list', () => {
     expect(view.requests.filter((request) => request.path === 'jobs/runs')).toHaveLength(before)
   })
 
+  it('reads each unset filter as Any, not None', async () => {
+    open({ runs: [run('Failed')] })
+
+    const search = await screen.findByRole('search', { name: 'Filter runs' })
+    const unset = within(search)
+      .getAllByRole('combobox')
+      .map((select) => (select as HTMLSelectElement).options[0]!.textContent)
+    expect(unset).toEqual(['Any kind', 'Any function', 'Any status', 'Any time'])
+  })
+
+  it('counts a single live node in the singular', async () => {
+    open(
+      {
+        runs: [],
+        extra: (request) => (request.path === 'jobs/nodes' ? { items: [{ identity: 'node-a', state: 'Alive', claimedFunctions: null }] } : undefined),
+      },
+      { path: 'nodes' },
+    )
+
+    expect(await screen.findByText('1 live node.')).toBeTruthy()
+  })
+
   it('counts only arrived runs that match the filter in N new', async () => {
     const view = open({ runs: [run('Failed', { function: 'a.kept' })] }, { path: '?function=a.kept' })
     await screen.findByRole('row', { name: /a\.kept/ })

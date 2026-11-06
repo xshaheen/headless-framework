@@ -84,7 +84,7 @@ export default function NodesView() {
       ) : (
         <Inspector label="Nodes summary">
           <h2 className="hd-title">Nodes</h2>
-          <p>{nodes.data ? `${rows.length} live nodes.` : 'Nodes appear here once they load.'}</p>
+          <p>{nodes.data ? `${rows.length} live ${rows.length === 1 ? 'node' : 'nodes'}.` : 'Nodes appear here once they load.'}</p>
           <p className="hd-hint">Select a node to see the functions its run filter claims.</p>
         </Inspector>
       )}

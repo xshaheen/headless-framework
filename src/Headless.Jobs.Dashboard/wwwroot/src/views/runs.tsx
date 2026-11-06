@@ -244,10 +244,10 @@ export default function RunsView() {
           </Button>
         </header>
         <div ref={filters} className="hd-actions" role="search" aria-label="Filter runs">
-          <SelectField label="Kind" value={filter.kind} onChange={(value) => setFilter('kind', value)} options={kindOptions} />
-          <SelectField label="Function" value={filter.function} onChange={(value) => setFilter('function', value)} options={functionOptions} />
-          <SelectField label="Status" value={filter.status} onChange={(value) => setFilter('status', value)} options={statusOptions} />
-          <SelectField label="Time range" value={filter.range} onChange={(value) => setFilter('range', value)} options={rangeOptions} />
+          <SelectField label="Kind" emptyLabel="Any kind" value={filter.kind} onChange={(value) => setFilter('kind', value)} options={kindOptions} />
+          <SelectField label="Function" emptyLabel="Any function" value={filter.function} onChange={(value) => setFilter('function', value)} options={functionOptions} />
+          <SelectField label="Status" emptyLabel="Any status" value={filter.status} onChange={(value) => setFilter('status', value)} options={statusOptions} />
+          <SelectField label="Time range" emptyLabel="Any time" value={filter.range} onChange={(value) => setFilter('range', value)} options={rangeOptions} />
           {filter.correlationId ? <FilterChip label="correlation" value={filter.correlationId} onClear={() => setFilter('correlationId', '')} /> : null}
           {filter.fingerprint ? <FilterChip label="cause" value={filter.fingerprint} onClear={() => setFilter('fingerprint', '')} /> : null}
           {filter.cronJobId ? <FilterChip label="cron job" value={filter.cronJobId} onClear={() => setFilter('cronJobId', '')} /> : null}
