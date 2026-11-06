@@ -1102,7 +1102,7 @@ test-project: ## Run one test project (builds it, asserts restore instead of res
 	@test -n "$(TEST_PROJECT)" || (echo "TEST_PROJECT is required. Example: make test-project TEST_PROJECT=tests/Headless.Api.Composition.Tests.Unit/Headless.Api.Composition.Tests.Unit.csproj" && exit 2)
 	@mkdir -p "$(TEST_RESULTS_DIR)"
 	@$(ASSERT_RESTORED); assert_restored "$(TEST_PROJECT)"
-	$(DOTNET) test --project "$(TEST_PROJECT)" --configuration "$(CONFIGURATION)" --no-restore --results-directory "$(TEST_RESULTS_DIR)" $(TEST_ARGS) $(TEST_FILTER)
+	$(DOTNET) test --project "$(TEST_PROJECT)" --configuration "$(CONFIGURATION)" --no-restore --results-directory "$(TEST_RESULTS_DIR)" $(TEST_ARGS) $(TEST_FILTER) $(MSBUILD_ARGS)
 
 .PHONY: test-project-fast
 test-project-fast: ## Run one prebuilt test project without restore/build.
@@ -1220,7 +1220,7 @@ test-messaging-chaos: ## Run the messaging chaos and soak suite on PostgreSQL an
 	@mkdir -p "$(MESSAGING_CHAOS_RESULTS_DIR)"
 	@rm -f "$(MESSAGING_CHAOS_RESULTS_DIR)/summary.md"
 	@$(ASSERT_RESTORED); assert_restored "$(MESSAGING_CHAOS_PROJECT)"
-	HEADLESS_CHAOS_SUMMARY_DIR="$(abspath $(MESSAGING_CHAOS_RESULTS_DIR))" $(DOTNET) test --project "$(MESSAGING_CHAOS_PROJECT)" --configuration "$(CONFIGURATION)" --no-restore --results-directory "$(MESSAGING_CHAOS_RESULTS_DIR)" $(TEST_ARGS) $(TEST_FILTER)
+	HEADLESS_CHAOS_SUMMARY_DIR="$(abspath $(MESSAGING_CHAOS_RESULTS_DIR))" $(DOTNET) test --project "$(MESSAGING_CHAOS_PROJECT)" --configuration "$(CONFIGURATION)" --no-restore --results-directory "$(MESSAGING_CHAOS_RESULTS_DIR)" $(TEST_ARGS) $(TEST_FILTER) $(MSBUILD_ARGS)
 
 # The integration tier runs each suite once, with no --retry-failed-tests, so a flaky guarantee shows as a failure
 # rather than a pass on the second try. Every suite runs to completion, and the evidence tests export the manifest and
@@ -1234,7 +1234,7 @@ test-messaging-integration: ## Run the messaging integration suites with no retr
 	@status=0; for project in $(MESSAGING_INTEGRATION_PROJECTS); do \
 		printf '\033[36m[integration]\033[0m %s\n' "$$project"; \
 		HEADLESS_CONFORMANCE_EXPORT_DIR="$(abspath $(MESSAGING_INTEGRATION_RESULTS_DIR))/conformance" \
-			$(DOTNET) test --project "$$project" --configuration "$(CONFIGURATION)" --no-restore --results-directory "$(MESSAGING_INTEGRATION_RESULTS_DIR)" $(TEST_ARGS) $(TEST_FILTER) || status=1; \
+			$(DOTNET) test --project "$$project" --configuration "$(CONFIGURATION)" --no-restore --results-directory "$(MESSAGING_INTEGRATION_RESULTS_DIR)" $(TEST_ARGS) $(TEST_FILTER) $(MSBUILD_ARGS) || status=1; \
 	done; \
 	if [ "$(MESSAGING_INTEGRATION_REPORT)" = "true" ]; then $(MAKE) --no-print-directory messaging-drift-report MESSAGING_DRIFT_REPORT_ROOT="$(MESSAGING_INTEGRATION_RESULTS_DIR)" || status=1; fi; \
 	exit $$status
