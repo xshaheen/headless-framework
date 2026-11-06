@@ -27,17 +27,19 @@ export interface CommandPaletteProps {
   isOpen: boolean
   onOpenChange: (isOpen: boolean) => void
   items: readonly PaletteItem[]
+  /** The search it opens with, such as an id the top bar's go to id matched more than once. */
+  defaultQuery?: string
 }
 
 /** The command palette: views, commands, and objects, filtered as the operator types. */
-export function CommandPalette({ isOpen, onOpenChange, items }: CommandPaletteProps) {
+export function CommandPalette({ isOpen, onOpenChange, items, defaultQuery }: CommandPaletteProps) {
   const { contains } = useFilter({ sensitivity: 'base' })
 
   return (
     <ModalOverlay className="hd-scrim" isOpen={isOpen} onOpenChange={onOpenChange} isDismissable>
       <Modal className="hd-dialog hd-palette">
         <AriaDialog aria-label="Command palette" className="hd-palette-body">
-          <Autocomplete filter={contains}>
+          <Autocomplete filter={contains} defaultInputValue={defaultQuery}>
             <SearchField aria-label="Search commands, views, and objects" autoFocus>
               <Input className="hd-palette-input" placeholder="Search commands, views, and objects" />
             </SearchField>

@@ -3,7 +3,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { chunkUrl, moduleFiles, moduleManifest, shellState } from './fixtures/modules.tsx'
-import { renderShell } from './harness.tsx'
+import { emptyAggregates, renderShell } from './harness.tsx'
 
 function serverCommand(id: string, label: string): CommandDefinition {
   return {
@@ -63,7 +63,7 @@ describe('command palette', () => {
           return { rows: [{ id: 'r1', outcome: 'done' }] }
         }
 
-        return { modules: [] }
+        return emptyAggregates(request)
       },
     })
 
@@ -81,9 +81,9 @@ describe('command palette', () => {
   it('finds a sidebar entry by its label and goes there', async () => {
     const user = userEvent.setup()
     const modules = [moduleManifest('diag', { displayName: 'Diagnostics' })]
-    renderShell(shellState(modules), { files: moduleFiles(modules) })
+    renderShell(shellState(modules), { path: '/missing', files: moduleFiles(modules) })
 
-    await screen.findByRole('heading', { name: 'Overview' })
+    await screen.findByRole('heading', { name: 'Nothing lives at this address' })
     await user.keyboard('{Meta>}k{/Meta}')
     await user.keyboard('runs')
 
@@ -104,9 +104,9 @@ describe('command palette', () => {
         ],
       }),
     ]
-    renderShell(shellState(modules), { files: moduleFiles(modules) })
+    renderShell(shellState(modules), { path: '/missing', files: moduleFiles(modules) })
 
-    await screen.findByRole('heading', { name: 'Overview' })
+    await screen.findByRole('heading', { name: 'Nothing lives at this address' })
     await user.keyboard('{Meta>}k{/Meta}')
     await user.keyboard('diag')
 
@@ -121,6 +121,7 @@ describe('command palette', () => {
     const user = userEvent.setup()
     const modules = [moduleManifest('diag', { displayName: 'Diagnostics' })]
     const shell = renderShell(shellState(modules), {
+      path: '/missing',
       files: moduleFiles(modules),
       api: (request) => {
         if (request.path === 'resolve') {
@@ -136,13 +137,12 @@ describe('command palette', () => {
           }
         }
 
-        return { modules: [] }
+        return emptyAggregates(request)
       },
     })
 
-    await screen.findByRole('heading', { name: 'Overview' })
-    await user.click(screen.getByRole('button', { name: 'Search' }))
-    await user.click(await screen.findByRole('searchbox'))
+    await screen.findByRole('heading', { name: 'Nothing lives at this address' })
+    await user.keyboard('{Meta>}k{/Meta}')
     await user.paste('r-8f31c2')
 
     const found = await screen.findByRole('menuitem', { name: /billing\.charge r-8f31c2/ })
@@ -158,6 +158,7 @@ describe('command palette', () => {
     const user = userEvent.setup()
     const modules = [moduleManifest('diag', { displayName: 'Diagnostics' })]
     renderShell(shellState(modules), {
+      path: '/missing',
       files: moduleFiles(modules),
       api: (request) =>
         request.path === 'resolve'
@@ -171,10 +172,10 @@ describe('command palette', () => {
                 },
               ],
             }
-          : { modules: [] },
+          : emptyAggregates(request),
     })
 
-    await screen.findByRole('heading', { name: 'Overview' })
+    await screen.findByRole('heading', { name: 'Nothing lives at this address' })
     await user.keyboard('{Meta>}k{/Meta}')
     await user.paste('r-8f31c2')
 

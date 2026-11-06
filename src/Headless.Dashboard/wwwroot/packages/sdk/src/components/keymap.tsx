@@ -6,16 +6,17 @@ import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState
  */
 export const shellShortcuts: readonly { keys: readonly string[]; action: string; module?: string }[] = [
   { keys: ['⌘K'], action: 'Command palette' },
-  { keys: ['Esc'], action: 'Close popover, then clear selection, then close inspector' },
-  { keys: ['/'], action: 'Focus the view’s filter' },
+  { keys: ['/'], action: 'Go to id' },
   { keys: ['J', 'K'], action: 'Next / previous row' },
-  { keys: ['X'], action: 'Toggle the row in the selection' },
-  { keys: ['R'], action: 'Primary recovery action on the selection (requeue or re-execute)' },
-  { keys: ['T'], action: 'Open the selection’s trace' },
-  { keys: ['G N'], action: 'Go to Needs you' },
-  { keys: ['G O'], action: 'Go to Overview' },
-  { keys: ['G R'], action: 'Go to Runs', module: 'jobs' },
-  { keys: ['G M'], action: 'Go to Received messages', module: 'messaging' },
+  { keys: ['Enter'], action: 'Open the row' },
+  { keys: ['X'], action: 'Check or uncheck the row' },
+  { keys: ['Esc'], action: 'Close the popover or menu, then the details, then clear checked rows' },
+  { keys: ['R'], action: 'Primary recovery action (requeue or re-execute)' },
+  { keys: ['T'], action: 'Open the trace' },
+  { keys: ['G O'], action: 'Go to the product’s dashboard' },
+  { keys: ['G N'], action: 'Open Attention' },
+  { keys: ['G R'], action: 'Go to runs', module: 'jobs' },
+  { keys: ['G M'], action: 'Go to received messages', module: 'messaging' },
   { keys: ['[', ']'], action: 'Widen / narrow the strip’s time window' },
   { keys: ['?'], action: 'Shortcut list' },
 ]
@@ -24,14 +25,13 @@ export const shellShortcuts: readonly { keys: readonly string[]; action: string;
 const shellKeys = new Set(['k', 'escape', '/', 'j', 'x', 'r', 't', 'g', '[', ']', '?'])
 
 /**
- * What the mounted view does on a shell key: its list moves and selects, its filter takes focus, its trace opens,
+ * What the mounted view does on a shell key: its list moves and selects, its trace opens,
  * `R` runs the selection's recovery command, and `[`/`]` widen and narrow its strip's window.
  */
 export interface ViewKeyHandlers {
   next?: () => void
   previous?: () => void
   toggle?: () => void
-  filter?: () => void
   trace?: () => void
   recover?: () => void
   widen?: () => void
@@ -45,9 +45,10 @@ export interface SelectionCommand {
   run: () => void
 }
 
-/** What the shell itself does on its keys: the palette, the shortcut list, and the `G` chords by letter. */
+/** What the shell itself does on its keys: the palette, go to id, the shortcut list, and the `G` chords by letter. */
 export interface ShellKeyHandlers {
   palette: () => void
+  goTo: () => void
   shortcuts: () => void
   go: Readonly<Record<string, () => void>>
 }
@@ -71,7 +72,7 @@ interface Keymap {
 
 const KeymapContext = createContext<Keymap | null>(null)
 
-// A select is not a text field: `/` focuses a view's filter, often a select, and the `G` chords must still work there.
+// A select is not a text field: a view's filter is often one, and the `G` chords must still work there.
 function isTextField(target: EventTarget | null) {
   return target instanceof HTMLElement && (target.isContentEditable || target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')
 }
@@ -165,7 +166,7 @@ export function KeymapProvider({ children }: { children: ReactNode }) {
           run(event, latest(keymap.shell, (shell) => shell.shortcuts))
           return
         case '/':
-          run(event, latest(keymap.views, (view) => view.filter))
+          run(event, latest(keymap.shell, (shell) => shell.goTo))
           return
         case 'j':
           run(event, latest(keymap.views, (view) => view.next))
@@ -219,7 +220,7 @@ export function useViewKeys(handlers: ViewKeyHandlers, enabled = true) {
   useRegistration((keymap) => keymap.views, handlers, enabled)
 }
 
-/** The shell's own keys: the palette, the shortcut list, and the `G` chords. */
+/** The shell's own keys: the palette, go to id, the shortcut list, and the `G` chords. */
 export function useShellKeys(handlers: ShellKeyHandlers) {
   useRegistration((keymap) => keymap.shell, handlers)
 }

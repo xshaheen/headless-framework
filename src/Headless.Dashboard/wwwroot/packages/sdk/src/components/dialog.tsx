@@ -35,27 +35,3 @@ export function Dialog({ isOpen, onOpenChange, title, children, isDismissable = 
     </ModalOverlay>
   )
 }
-
-/**
- * A panel from the inline-end edge: the inspector below 1280 px. Focus returns to the control that opened it on
- * close.
- */
-export function Drawer({ isOpen, onOpenChange, title, children, isDismissable = true }: OverlayProps) {
-  return (
-    <ModalOverlay
-      className="hd-scrim hd-scrim-drawer"
-      isOpen={isOpen}
-      onOpenChange={onOpenChange}
-      isDismissable={isDismissable}
-    >
-      <Modal className="hd-drawer">
-        <AriaDialog className="hd-drawer-body">
-          <Heading slot="title" className="hd-dialog-title">
-            {title}
-          </Heading>
-          {children}
-        </AriaDialog>
-      </Modal>
-    </ModalOverlay>
-  )
-}

@@ -1,68 +1,34 @@
-import { matchPath } from '@headless/dashboard-sdk/router'
-import { moduleSidebarEntries, type BootstrapModule, type BootstrapRoute, type BootstrapState } from './bootstrap.ts'
+import type { BootstrapProduct, BootstrapState } from './bootstrap.ts'
 
-/** What the document bar shows for a route: its breadcrumb, and the module it belongs to. */
-export interface ShellRouteHandle {
-  crumb: string[]
-  module?: string
-}
+const trim = (path: string) => path.replace(/^\/+|\/+$/g, '')
 
 export function joinPath(moduleId: string, path: string) {
-  const rest = path.replace(/^\/+|\/+$/g, '')
+  const rest = trim(path)
 
   return rest ? `${moduleId}/${rest}` : moduleId
 }
 
-const trim = (path: string) => path.replace(/^\/+|\/+$/g, '')
-
 /**
- * The module, the sidebar entry the route sits under, and for an object page (`functions/:name`) the object from the
- * path: `Jobs › Functions › billing.charge`.
+ * The shell path a module route opens: `/jobs/cron-jobs`. A route that is only a query (`?status=Failed`) stays on the
+ * module's home path, so a state entry opens its filtered list.
  */
-function crumbFor(state: BootstrapState, module: BootstrapModule, route: BootstrapRoute, path: string): string[] {
-  const own = trim(route.path)
-  const entry = moduleSidebarEntries(state, module.id).find((candidate) => {
-    const to = trim(candidate.route)
+export function modulePath(moduleId: string, route: string) {
+  const rest = trim(route)
 
-    return to === own || (to !== '' && own.startsWith(`${to}/`))
-  })
-  const crumb = entry && entry.label !== module.displayName ? [module.displayName, entry.label] : [module.displayName]
-
-  return own.includes(':') ? [...crumb, decodeURIComponent(path.slice(path.lastIndexOf('/') + 1))] : crumb
+  return rest.startsWith('?') ? `/${moduleId}${rest}` : rest ? `/${moduleId}/${rest}` : `/${moduleId}`
 }
 
-const shellHandles: Record<string, ShellRouteHandle> = {
-  '/': { crumb: ['Overview'] },
-  '/needs-you': { crumb: ['Needs you'] },
+/** A product's home: its first module's home route, where its sidebar's first entry leads. */
+export function productHome(product: BootstrapProduct) {
+  const section = product.sections[0]
+  const entry = section?.entries[0]
+
+  return entry ? modulePath(section.module, entry.route) : `/${product.modules[0] ?? ''}`
 }
 
-/**
- * The breadcrumb and module of `pathname`, a path inside the router's basename. Read from the manifest, the same
- * data the routes are built from, so the document bar names a view before its code loads.
- */
-export function routeHandleFor(state: BootstrapState, pathname: string): ShellRouteHandle {
-  const path = pathname.replace(/\/+$/, '') || '/'
-  const shell = shellHandles[path]
+/** The product whose module owns `pathname`, a path inside the router's basename; `undefined` off every module. */
+export function productOf(state: BootstrapState, pathname: string): BootstrapProduct | undefined {
+  const moduleId = pathname.split('/')[1]
 
-  if (shell) {
-    return shell
-  }
-
-  for (const module of state.modules) {
-    if (module.refusal) {
-      if (matchPath({ path: `/${module.id}/*` }, path)) {
-        return { crumb: [module.displayName], module: module.id }
-      }
-
-      continue
-    }
-
-    for (const route of module.routes) {
-      if (matchPath({ path: `/${joinPath(module.id, route.path)}`, end: true }, path)) {
-        return { crumb: crumbFor(state, module, route, path), module: module.id }
-      }
-    }
-  }
-
-  return { crumb: ['Not found'] }
+  return moduleId ? state.products.find((product) => product.modules.includes(moduleId)) : undefined
 }

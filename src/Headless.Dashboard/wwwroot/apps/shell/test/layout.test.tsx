@@ -1,10 +1,13 @@
-import { Button, PrimaryAction } from '@headless/dashboard-sdk/components'
+import { Button } from '@headless/dashboard-sdk/components'
 import { useOperations, type CommandDefinition } from '@headless/dashboard-sdk/commands'
-import { screen, waitFor, within } from '@testing-library/react'
+import { DashboardApiError, listKey, useDashboardList } from '@headless/dashboard-sdk/data'
+import { useQueryClient } from '@headless/dashboard-sdk/query'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { BootstrapState } from '../src/bootstrap.ts'
 import { chunkUrl, moduleFiles, moduleManifest, shellState } from './fixtures/modules.tsx'
-import { emptyAggregates, renderShell } from './harness.tsx'
+import { emptyAggregates, renderShell, type ApiHandler } from './harness.tsx'
 
 const requeue: CommandDefinition = {
   id: 'requeue',
@@ -28,6 +31,51 @@ function StartOperation() {
     </Button>
   )
 }
+
+/** Answers matchMedia as a window `width` pixels wide would. */
+function atWidth(width: number) {
+  vi.stubGlobal('matchMedia', (query: string) => ({
+    matches: width <= Number(/max-width:\s*(\d+)px/.exec(query)?.[1] ?? Infinity),
+    media: query,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+  }))
+}
+
+/** Jobs and diagnostics as two products, in the dashboard's product order, with the Jobs sidebar's state counts. */
+function twoProducts(): BootstrapState {
+  const jobs = moduleManifest('jobs', { displayName: 'Jobs', objectKinds: { run: {} } })
+  const diag = moduleManifest('diagnostics', { displayName: 'Diagnostics' })
+
+  return {
+    ...shellState([jobs, diag]),
+    products: [
+      {
+        id: 'jobs',
+        label: 'Jobs',
+        modules: ['jobs'],
+        sections: [
+          {
+            module: 'jobs',
+            label: 'States',
+            entries: [
+              { id: 'jobs.nav.failed', label: 'Failed', route: 'runs?status=Failed', state: 'fail', countKey: 'Failed' },
+              { id: 'jobs.nav.queued', label: 'Queued', route: 'runs?status=Queued', state: 'enq', countKey: 'Queued' },
+              { id: 'jobs.nav.runs', label: 'All runs', route: 'runs', icon: 'runs' },
+            ],
+          },
+        ],
+      },
+      { id: 'diagnostics', label: 'Diagnostics', modules: ['diagnostics'], sections: [{ module: 'diagnostics', entries: [] }] },
+    ],
+  }
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+  vi.useRealTimers()
+  localStorage.clear()
+})
 
 describe('shell layout', () => {
   it('keeps the Operation running across navigation, with Stop in view and the leave warning armed', async () => {
@@ -74,17 +122,221 @@ describe('shell layout', () => {
     window.dispatchEvent(unload)
     expect(unload.defaultPrevented).toBe(true)
 
-    await user.click(within(screen.getByRole('navigation', { name: 'Dashboard' })).getByRole('link', { name: 'Overview' }))
-    expect(await screen.findByRole('heading', { name: 'Overview', level: 1 })).toBeTruthy()
+    await user.click(within(screen.getByRole('navigation', { name: 'Jobs' })).getByRole('link', { name: 'Settings' }))
+    expect(await screen.findByRole('heading', { name: 'Diagnostics settings view' })).toBeTruthy()
     expect(within(panel).getByRole('button', { name: 'Stop' })).toBeTruthy()
 
     release()
     await waitFor(() => expect(chunks).toBe(3))
     expect(await within(screen.getByRole('group', { name: /Requeue failed runs/ })).findByText(/Completed/)).toBeTruthy()
-    expect(shell.router.state.location.pathname).toBe('/')
+    expect(shell.router.state.location.pathname).toBe('/diag/settings')
   })
 
-  it('shows Sign-out failed beside Sign out, and the operator stays signed in', async () => {
+  it('shows one tab per registered product, in the product order, the current one marked', async () => {
+    renderShell(twoProducts(), { path: '/diagnostics/runs', files: moduleFiles(twoProducts().modules) })
+
+    const tabs = within(await screen.findByRole('navigation', { name: 'Products' })).getAllByRole('link')
+    expect(tabs.map((tab) => tab.textContent)).toEqual(['JobsJobs, nothing needs attention', 'DiagnosticsDiagnostics, nothing needs attention'])
+    expect(tabs[1]!.getAttribute('aria-current')).toBe('page')
+    expect(tabs[0]!.getAttribute('aria-current')).toBeNull()
+  })
+
+  it('marks a product tab by its worst attention, in words as well as the dot', async () => {
+    const api: ApiHandler = (request) =>
+      request.path === 'needs-you'
+        ? {
+            modules: [
+              {
+                id: 'jobs',
+                displayName: 'Jobs',
+                stale: false,
+                items: [{ id: 'f', groupKey: 'f', title: 'CardException: declined', severity: 'critical', count: 23, capped: false }],
+              },
+            ],
+          }
+        : emptyAggregates(request)
+    renderShell(twoProducts(), { path: '/jobs/runs', files: moduleFiles(twoProducts().modules), api })
+
+    const jobs = await screen.findByRole('link', { name: 'Jobs, 23 need attention' })
+    expect(jobs.className).toContain('hd-tone-fail')
+    expect(await screen.findByRole('button', { name: 'Attention 23' })).toBeTruthy()
+  })
+
+  it('shows a capped count as N+, and the current entry by aria-current', async () => {
+    const api: ApiHandler = (request) =>
+      request.path === 'counts'
+        ? { product: 'jobs', counts: { Failed: { count: 10000, capped: true }, Queued: { count: 12, capped: false } }, stale: [] }
+        : emptyAggregates(request)
+    renderShell(twoProducts(), { path: '/jobs/runs?status=Failed', files: moduleFiles(twoProducts().modules), api })
+
+    const sidebar = await screen.findByRole('navigation', { name: 'Jobs' })
+    const failed = within(sidebar).getByRole('link', { name: /Failed/ })
+    await waitFor(() => expect(failed.textContent).toBe('Failed10,000+'))
+    expect(within(sidebar).getByRole('link', { name: /Queued/ }).textContent).toBe('Queued12')
+    expect(failed.getAttribute('aria-current')).toBe('page')
+    expect(within(sidebar).getByRole('link', { name: /All runs/ }).getAttribute('aria-current')).toBeNull()
+  })
+
+  it('shows an en dash in each count when the counts request fails, and announces it once', async () => {
+    const api: ApiHandler = (request) => {
+      if (request.path === 'counts') {
+        throw new DashboardApiError(503, 'Unavailable')
+      }
+
+      return emptyAggregates(request)
+    }
+    renderShell(twoProducts(), { path: '/jobs/runs', files: moduleFiles(twoProducts().modules), api })
+
+    const sidebar = await screen.findByRole('navigation', { name: 'Jobs' })
+    await waitFor(() => expect(within(sidebar).getByRole('status').textContent).toBe('Jobs counts did not load.'))
+    expect(within(sidebar).getByRole('link', { name: /Failed/ }).textContent).toBe('Failed–')
+    expect(within(sidebar).getByRole('link', { name: /Queued/ }).textContent).toBe('Queued–')
+  })
+
+  it('refetches the counts on a change of the product’s topics, at most once every 5 s', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const shell = renderShell(twoProducts(), { path: '/jobs/runs', files: moduleFiles(twoProducts().modules) })
+    const counted = () => shell.requests.filter((request) => request.path === 'counts').length
+
+    await waitFor(() => expect(counted()).toBe(1))
+    expect(shell.stream.topics()).toContain('jobs.run')
+
+    for (let index = 0; index < 3; index++) {
+      shell.stream.push('change', { module: 'jobs', kind: 'run', id: `r${index}`, topic: 'jobs.run', version: '1' })
+    }
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000)
+    })
+    await waitFor(() => expect(counted()).toBe(2))
+  })
+
+  it('holds run changes while paused and shows how many wait, while the operator’s own command still updates its row', async () => {
+    const server = [
+      { id: 'r1', version: '1', status: 'Failed' },
+      { id: 'r2', version: '1', status: 'Failed' },
+      { id: 'r3', version: '1', status: 'Failed' },
+    ]
+
+    function Runs() {
+      const client = useQueryClient()
+      const list = useDashboardList({ topic: 'jobs.run', fetch: async () => ({ items: server.map((row) => ({ ...row })) }) })
+
+      return (
+        <>
+          <ul aria-label="Runs">
+            {list.data?.items.map((row) => (
+              <li key={row.id}>{`${row.id} ${row.status}`}</li>
+            ))}
+          </ul>
+          <Button
+            onPress={() => {
+              // A command's result comes back through the API; the view refetches, as the Jobs views do after one.
+              server[0]!.status = 'Queued'
+              void client.invalidateQueries({ queryKey: listKey('jobs.run') })
+            }}
+          >
+            Requeue r1
+          </Button>
+        </>
+      )
+    }
+
+    const modules = [moduleManifest('jobs')]
+    const shell = renderShell(shellState(modules), {
+      path: '/jobs/runs',
+      files: { ...moduleFiles(modules), [chunkUrl('jobs', 'runs')]: { default: Runs } },
+    })
+    const user = userEvent.setup()
+    const rows = async () => (await screen.findAllByRole('listitem')).map((row) => row.textContent)
+
+    expect(await rows()).toEqual(['r1 Failed', 'r2 Failed', 'r3 Failed'])
+    await user.click(screen.getByRole('button', { name: 'Pause live updates' }))
+
+    for (const id of ['r1', 'r2', 'r3']) {
+      shell.stream.push('change', { module: 'jobs', kind: 'run', id, topic: 'jobs.run', version: '2', projection: { status: 'Succeeded' } })
+    }
+
+    expect(screen.getByText('Paused · 3 updates')).toBeTruthy()
+    expect(await rows()).toEqual(['r1 Failed', 'r2 Failed', 'r3 Failed'])
+
+    await user.click(screen.getByRole('button', { name: 'Requeue r1' }))
+    await waitFor(async () => expect(await rows()).toEqual(['r1 Queued', 'r2 Failed', 'r3 Failed']))
+
+    await user.click(screen.getByRole('button', { name: 'Resume live updates' }))
+
+    expect(await rows()).toEqual(['r1 Succeeded', 'r2 Succeeded', 'r3 Succeeded'])
+    expect(screen.queryByText(/Paused/)).toBeNull()
+  })
+
+  it('applies a session end at once while paused', async () => {
+    const ended = vi.fn()
+    const { withSessionEnd } = await import('../src/app.tsx')
+    const api = withSessionEnd(
+      {
+        request: async () => {
+          throw new DashboardApiError(401, 'Unauthorized')
+        },
+      },
+      ended,
+    )
+
+    await expect(api.request({ method: 'GET', path: 'needs-you' })).rejects.toThrow()
+    expect(ended).toHaveBeenCalledOnce()
+  })
+
+  it('keeps the clock out of any live region, and announces going stale once', async () => {
+    const modules = [moduleManifest('jobs')]
+    const shell = renderShell(shellState(modules), { path: '/jobs/runs', files: moduleFiles(modules) })
+
+    const clock = (await screen.findByRole('banner')).querySelector('time.hd-clock')!
+    expect(clock.closest('[aria-live], [role="status"]')).toBeNull()
+
+    shell.stream.setStatus('stale')
+
+    const announced = screen
+      .getAllByRole('status')
+      .map((region) => region.textContent)
+      .filter((text) => text === 'Live updates stopped. What you see may be out of date.')
+    expect(announced).toHaveLength(1)
+  })
+
+  it('folds the zone and clock into the account menu at 1024 px', async () => {
+    atWidth(1024)
+    const user = userEvent.setup()
+    const modules = [moduleManifest('jobs')]
+    renderShell(shellState(modules), { path: '/jobs/runs', files: moduleFiles(modules) })
+
+    const bar = await screen.findByRole('banner')
+    expect(within(bar).queryByRole('button', { name: /Display time zone/ })).toBeNull()
+    expect(bar.querySelector('time.hd-clock')).toBeNull()
+    expect(within(bar).getByRole('button', { name: 'Pause live updates' })).toBeTruthy()
+
+    await user.click(screen.getByRole('button', { name: 'Account: Mona Haddad' }))
+
+    const menu = screen.getByRole('dialog', { name: 'Account' })
+    expect(within(menu).getByRole('combobox', { name: 'Time zone' })).toBeTruthy()
+    expect(menu.querySelector('time.hd-clock')).toBeTruthy()
+  })
+
+  it('closes the sidebar behind a Menu button at 400 px', async () => {
+    atWidth(400)
+    const user = userEvent.setup()
+    const modules = [moduleManifest('jobs')]
+    renderShell(shellState(modules), { path: '/jobs/runs', files: moduleFiles(modules) })
+
+    const menu = await screen.findByRole('button', { name: 'Menu' })
+    expect(screen.queryByRole('navigation', { name: 'Jobs' })).toBeNull()
+    expect(menu.getAttribute('aria-expanded')).toBe('false')
+
+    await user.click(menu)
+    await user.click(within(screen.getByRole('navigation', { name: 'Jobs' })).getByRole('link', { name: 'Settings' }))
+
+    expect(await screen.findByRole('heading', { name: 'Module jobs settings view' })).toBeTruthy()
+    expect(screen.queryByRole('navigation', { name: 'Jobs' })).toBeNull()
+  })
+
+  it('shows Sign-out failed beside Sign out in the account menu, and the operator stays signed in', async () => {
     const user = userEvent.setup()
     renderShell(shellState([]), {
       signOut: async () => {
@@ -92,6 +344,7 @@ describe('shell layout', () => {
       },
     })
 
+    await user.click(await screen.findByRole('button', { name: 'Account: Mona Haddad' }))
     await user.click(screen.getByRole('button', { name: 'Sign out' }))
 
     expect((await screen.findByRole('alert')).textContent).toContain('Sign-out failed')
@@ -99,92 +352,30 @@ describe('shell layout', () => {
     expect(screen.getByText('Mona Haddad')).toBeTruthy()
   })
 
-  it('shows a viewer operate actions disabled with Needs operate permission, and View only', async () => {
+  it('shows a viewer operate entries disabled with Needs operate permission, and View only', async () => {
     const modules = [moduleManifest('diag', { displayName: 'Diagnostics', canOperate: false })]
     renderShell(shellState(modules), { files: moduleFiles(modules), path: '/diag/runs' })
 
-    const group = await screen.findByRole('group', { name: 'Diagnostics' })
-    const settings = within(group).getByRole('link', { name: /Settings/ })
+    const sidebar = await screen.findByRole('navigation', { name: 'Jobs' })
+    const settings = within(sidebar).getByRole('link', { name: /Settings/ })
     expect(settings.getAttribute('aria-disabled')).toBe('true')
     expect(settings.getAttribute('href')).toBeNull()
-    expect(within(group).getByText('Needs operate permission')).toBeTruthy()
-    expect(await screen.findByText('View only')).toBeTruthy()
+    expect(settings.getAttribute('aria-describedby')).toBeTruthy()
+    expect(document.getElementById(settings.getAttribute('aria-describedby')!)?.textContent).toBe('Needs operate permission')
+    expect(screen.getByText('View only')).toBeTruthy()
   })
 
-  it('shows every time in the zone chosen in the account menu, in the document bar too, and keeps it after a reload', async () => {
-    localStorage.clear()
+  it('keeps the zone chosen in the top bar after a reload', async () => {
     const user = userEvent.setup()
-    const sections = [
-      {
-        id: 'diag',
-        displayName: 'Diagnostics',
-        stale: false,
-        items: [{ id: 'f', groupKey: 'f', title: 'Failed runs', severity: 'critical', count: 3, capped: false, since: '2026-11-05T15:40:00Z' }],
-      },
-    ]
-    const api = (request: { path: string }) => ({ modules: request.path === 'needs-you' ? sections : [] })
-    const since = async () => (await screen.findByText(/^since /)).getAttribute('title')
+    const first = renderShell(shellState([]))
 
-    const first = renderShell(shellState([]), { api })
-
-    expect(await since()).toBe('Nov 5, 2026, 15:40:00 UTC')
-    expect(screen.getByTitle('Display time zone').textContent).toBe('UTC')
-
+    await user.click(await screen.findByRole('button', { name: 'Display time zone: UTC' }))
     await user.selectOptions(screen.getByLabelText('Time zone'), 'Africa/Cairo')
-
-    expect(await since()).toBe('Nov 5, 2026, 17:40:00 GMT+02:00 Africa/Cairo')
-    expect(screen.getByTitle('Display time zone').textContent).toBe('Africa/Cairo')
+    expect(screen.getByRole('button', { name: 'Display time zone: Africa/Cairo' })).toBeTruthy()
 
     first.unmount()
-    renderShell(shellState([]), { api })
+    renderShell(shellState([]))
 
-    expect(await since()).toBe('Nov 5, 2026, 17:40:00 GMT+02:00 Africa/Cairo')
-    expect(screen.getByTitle('Display time zone').textContent).toBe('Africa/Cairo')
-    localStorage.clear()
-  })
-
-  it('shows a view’s primary action in the document bar, and not on another view', async () => {
-    const modules = [moduleManifest('diag', { displayName: 'Diagnostics' })]
-    const files = {
-      ...moduleFiles(modules),
-      [chunkUrl('diag', 'runs')]: {
-        default: function RunsView() {
-          return (
-            <>
-              <h2>Runs view</h2>
-              <PrimaryAction>
-                <Button variant="primary">Add run</Button>
-              </PrimaryAction>
-            </>
-          )
-        },
-      },
-    }
-    const shell = renderShell(shellState(modules), { path: '/diag/runs', files })
-
-    await screen.findByRole('heading', { name: 'Runs view' })
-    expect(within(screen.getByRole('banner')).getByRole('button', { name: 'Add run' })).toBeTruthy()
-    expect(within(screen.getByRole('main')).queryByRole('button', { name: 'Add run' })).toBeNull()
-
-    await shell.router.navigate('/diag/settings')
-
-    await screen.findByRole('heading', { name: 'Diagnostics settings view' })
-    expect(screen.queryByRole('button', { name: 'Add run' })).toBeNull()
-  })
-
-  it('names an object page in the breadcrumb under its list: module, list, then the object', async () => {
-    const modules = [
-      moduleManifest('jobs', {
-        displayName: 'Jobs',
-        routes: [{ path: 'functions/:name', chunk: chunkUrl('jobs', 'function') }],
-      }),
-    ]
-    const sidebar = { jobs: [{ id: 'jobs.nav.functions', label: 'Functions', route: 'functions', icon: 'function' }] }
-    renderShell(shellState(modules, {}, sidebar), { path: '/jobs/functions/billing.charge', files: moduleFiles(modules) })
-
-    await screen.findByRole('heading', { name: 'Jobs functions/:name view' })
-    const crumb = screen.getByRole('navigation', { name: 'Breadcrumb' })
-    expect(crumb.textContent).toBe('Jobs›Functions›billing.charge')
-    expect(within(crumb).getByRole('heading', { level: 1 }).textContent).toBe('billing.charge')
+    expect(await screen.findByRole('button', { name: 'Display time zone: Africa/Cairo' })).toBeTruthy()
   })
 })

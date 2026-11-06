@@ -5,12 +5,10 @@ import {
   Inspector,
   Mono,
   ObjectHeader,
-  PrimaryAction,
   SelectField,
   StatusMark,
   TextInputField,
   useDelayed,
-  useViewKeys,
 } from '@headless/dashboard-sdk/components'
 import { DataTable } from '@headless/dashboard-sdk/table'
 import { DashboardApiError, listKey, useDashboardKeysetList, useDashboardObject, useNewRows } from '@headless/dashboard-sdk/data'
@@ -139,10 +137,6 @@ export default function RunsList() {
   const addReason = module.canOperate ? null : viewOnlyReason
   const requeueReason = requeue && !requeue.canRun ? (requeue.disabledReason ?? viewOnlyReason) : null
 
-  // `/` focuses the view's filter: the free-text one, which is what an operator types into.
-  const filters = useRef<HTMLDivElement>(null)
-  useViewKeys({ filter: () => filters.current?.querySelector<HTMLInputElement>('input')?.focus() })
-
   return (
     <div style={layout}>
       <section aria-labelledby="diagnostics-runs-title" style={canvas}>
@@ -151,17 +145,15 @@ export default function RunsList() {
             Runs
           </h1>
           {count ? <span className="hd-hint">{`${format.count(count)} ${count.value === 1 && !count.capped ? 'run' : 'runs'}`}</span> : null}
-          <PrimaryAction>
-            <Button variant="primary" disabledReason={addReason} isPending={add.isPending} onPress={() => add.mutate()}>
-              Add run
-            </Button>
-          </PrimaryAction>
+          <Button variant="primary" disabledReason={addReason} isPending={add.isPending} onPress={() => add.mutate()}>
+            Add run
+          </Button>
           <Button disabledReason={requeueReason} onPress={requeueFailed}>
             Requeue failed runs
           </Button>
         </header>
         {add.isError ? <LoadError message={add.error.message} onRetry={() => add.mutate()} /> : null}
-        <div ref={filters} className="hd-actions" role="search" aria-label="Filter runs">
+        <div className="hd-actions" role="search" aria-label="Filter runs">
           <SelectField label="Status" emptyLabel="Any status" value={filter.status} onChange={(value) => setFilter('status', value)} options={statusOptions} />
           <TextInputField label="Error contains" value={filter.error} onChange={(value) => setFilter('error', value)} />
         </div>

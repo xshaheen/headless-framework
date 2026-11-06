@@ -280,8 +280,7 @@
   overflow: auto;
 }
 
-.hd-dialog-body,
-.hd-drawer-body {
+.hd-dialog-body {
   display: flex;
   flex-direction: column;
   gap: var(--sp-5);
@@ -301,20 +300,6 @@
   gap: var(--sp-3);
   padding-block-start: var(--sp-5);
   border-block-start: 1px solid var(--line);
-}
-
-.hd-scrim-drawer {
-  place-items: stretch end;
-  padding: 0;
-}
-
-.hd-drawer {
-  inline-size: min(var(--panel-side-width), 100%);
-  block-size: 100%;
-  overflow: auto;
-  background: var(--panel);
-  border-inline-start: 1px solid var(--line);
-  box-shadow: var(--shadow-float);
 }
 
 .hd-sample {
@@ -363,6 +348,21 @@
 
 .hd-live-stale i {
   background: var(--proc);
+}
+
+.hd-live-paused i {
+  background: var(--off);
+}
+
+/* A live stream's dot breathes, so a frozen page reads apart from a quiet one; reduced motion stops it in tokens.css. */
+.hd-live:not(.hd-live-stale, .hd-live-paused) i {
+  animation: hd-pulse 2s ease-in-out infinite;
+}
+
+@keyframes hd-pulse {
+  50% {
+    opacity: 0.35;
+  }
 }
 
 .hd-new-rows {

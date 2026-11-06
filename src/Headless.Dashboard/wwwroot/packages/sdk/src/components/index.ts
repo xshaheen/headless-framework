@@ -1,7 +1,8 @@
 import './components.css'
 
+export { below } from './breakpoints.ts'
 export { Button, type ButtonProps, type ButtonVariant } from './button.tsx'
-export { Dialog, Drawer, type OverlayProps } from './dialog.tsx'
+export { Dialog, type OverlayProps } from './dialog.tsx'
 export { Figure, type FigureProps } from './figure/figure.tsx'
 export {
   CheckboxField,
@@ -39,7 +40,6 @@ export {
 } from './keymap.tsx'
 export { CommandPalette, type CommandPaletteProps, type PaletteItem } from './palette/command-palette.tsx'
 export { formatJson, payloadDisplayLimit, PayloadView, type PayloadViewProps } from './payload/payload-view.tsx'
-export { PrimaryAction, PrimaryActionSlot } from './primary-action.tsx'
 // The timeline and the strip ride in this entry: as entries of their own they cost the shell's total budget more
 // than their code, in import preambles that compress apart from the rest.
 export { ScheduleStrip, type ScheduleStripProps, type ScheduleTick, type ScheduleTrack } from './schedule/schedule-strip.tsx'

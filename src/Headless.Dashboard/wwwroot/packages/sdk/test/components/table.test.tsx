@@ -3,7 +3,6 @@ import userEvent from '@testing-library/user-event'
 import { useState, type ReactNode } from 'react'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TextInputField } from '../../src/components/form.tsx'
-import { useViewKeys } from '../../src/components/keymap.tsx'
 import { DataTable, type DataTableProps } from '../../src/components/table/data-table.tsx'
 import { rowHeights } from '../../src/components/table/density.tsx'
 import { DashboardProvider } from '../../src/context.tsx'
@@ -45,8 +44,6 @@ function withDashboard(children: ReactNode) {
 function ListView({ selectionMode = 'single' }: Pick<DataTableProps<Row>, 'selectionMode'>) {
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
   const [filter, setFilter] = useState('')
-
-  useViewKeys({ filter: () => document.querySelector<HTMLInputElement>('input[name="filter"]')?.focus() })
 
   return (
     <>
@@ -181,14 +178,13 @@ describe('data table', () => {
     expect(clear).toHaveBeenCalledOnce()
   })
 
-  it('focuses the filter on /, where J types a letter and moves no row', async () => {
+  it('types J into a focused filter and moves no row', async () => {
     const user = userEvent.setup()
     render(withDashboard(<ListView />))
 
     await user.click(row(/#1/))
-    await user.keyboard('/')
     const filter = screen.getByRole('textbox', { name: 'Filter' })
-    expect(document.activeElement).toBe(filter)
+    await user.click(filter)
 
     await user.keyboard('j')
 

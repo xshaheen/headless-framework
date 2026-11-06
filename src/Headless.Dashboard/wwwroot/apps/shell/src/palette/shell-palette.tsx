@@ -1,36 +1,30 @@
+// The React Compiler's memo caches cost the shell more bytes than these rare renders save, and the shell's assets
+// sit near their size budget.
+'use no memo'
+
 import { CommandPalette, useSelectionCommands, type PaletteItem } from '@headless/dashboard-sdk/components'
-import { useDashboardApi } from '@headless/dashboard-sdk/data'
 import { useNavigate } from '@headless/dashboard-sdk/router'
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import { moduleSidebarEntries, type BootstrapState } from '../bootstrap.ts'
+import { modulePath, productHome } from '../route-handles.ts'
 import { useOpenObject, useShell } from '../shell-context.tsx'
-import type { ModuleSection, ResolvedObject } from '../shell-data.ts'
+import { useResolve } from '../shell-data.ts'
 
-/** How long typing settles before a pasted id is looked up in every module. */
-const resolveDelayMs = 250
-
-/** A query that may be an id: one token, long enough not to ask every module about each keystroke. */
-function looksLikeId(query: string) {
-  const text = query.trim()
-
-  return text.length >= 3 && text.length <= 256 && !/\s/.test(text)
-}
-
-function modulePath(id: string, to: string) {
-  const rest = to.replace(/^\/+|\/+$/g, '')
-
-  return rest ? `/${id}/${rest}` : `/${id}`
-}
-
-/** The palette's static items: the shell's views, every module's sidebar entries, and every client command the user may run. */
+/** The palette's static items: Attention, each product, every module's sidebar entries, and every client command the user may run. */
 function staticItems(
   state: BootstrapState,
   navigate: (to: string) => void,
   runCommand: (moduleId: string, commandId: string) => void,
+  openAttention: () => void,
 ): PaletteItem[] {
   const items: PaletteItem[] = [
-    { id: 'shell.overview', label: 'Go to Overview', kind: 'View', shortcut: 'G O', onAction: () => navigate('/') },
-    { id: 'shell.needs-you', label: 'Go to Needs you', kind: 'View', shortcut: 'G N', onAction: () => navigate('/needs-you') },
+    { id: 'shell.attention', label: 'Open Attention', kind: 'View', shortcut: 'G N', onAction: openAttention },
+    ...state.products.map((product) => ({
+      id: `product:${product.id}`,
+      label: `Go to ${product.label}`,
+      kind: 'View',
+      onAction: () => navigate(productHome(product)),
+    })),
   ]
 
   // A command labelled like a view is a second way to the same place; the palette lists each destination once.
@@ -75,45 +69,26 @@ function staticItems(
   return items
 }
 
+interface ShellPaletteProps {
+  isOpen: boolean
+  onOpenChange: (isOpen: boolean) => void
+  /** The search it opens with: an id go to id matched in more than one place. */
+  initialQuery?: string
+  onOpenAttention: () => void
+}
+
 /**
- * The shell's command palette: views, module sidebar entries, and client commands from the inlined manifest, the server commands
- * the view's selection allows now, and the objects a pasted id resolves to in any module, looked up once typing
- * settles.
+ * The shell's command palette: views, module sidebar entries, and client commands from the inlined manifest, the
+ * server commands the view's selection allows now, and the objects a pasted id resolves to in any module, looked up
+ * once typing settles.
  */
-export function ShellPalette({ isOpen, onOpenChange }: { isOpen: boolean; onOpenChange: (isOpen: boolean) => void }) {
+export function ShellPalette({ isOpen, onOpenChange, initialQuery = '', onOpenAttention }: ShellPaletteProps) {
   const { state, loader } = useShell()
-  const api = useDashboardApi()
   const navigate = useNavigate()
   const openObject = useOpenObject()
   const selectionCommands = useSelectionCommands()
-  const [query, setQuery] = useState('')
-  const [found, setFound] = useState<{ query: string; objects: ResolvedObject[] }>({ query: '', objects: [] })
-  const latest = useRef(0)
-
-  useEffect(() => {
-    if (!isOpen || !looksLikeId(query)) {
-      return undefined
-    }
-
-    const request = ++latest.current
-    const timer = setTimeout(() => {
-      api
-        .request<{ modules: ModuleSection<ResolvedObject>[] }>({ method: 'GET', path: 'resolve', query: { q: query.trim() } })
-        .then((answer) => {
-          // Only the answer to the newest query may land; an older one would show objects for text no longer typed.
-          if (request === latest.current) {
-            setFound({ query, objects: answer.modules.flatMap((section) => section.items) })
-          }
-        })
-        .catch(() => {
-          if (request === latest.current) {
-            setFound({ query, objects: [] })
-          }
-        })
-    }, resolveDelayMs)
-
-    return () => clearTimeout(timer)
-  }, [api, isOpen, query])
+  const [query, setQuery] = useState(initialQuery)
+  const found = useResolve(query, isOpen) ?? []
 
   function runCommand(moduleId: string, commandId: string) {
     const module = state.modules.find((candidate) => candidate.id === moduleId)
@@ -133,17 +108,14 @@ export function ShellPalette({ isOpen, onOpenChange }: { isOpen: boolean; onOpen
       .catch(() => undefined)
   }
 
-  const objects: PaletteItem[] =
-    found.query === query
-      ? found.objects.map((object) => ({
-          id: `object:${object.target.module}:${object.target.kind}:${object.target.id}`,
-          label: object.title,
-          // The palette's filter matches the id too, so it keeps the object the pasted id found.
-          objectId: object.target.id,
-          kind: state.modules.find((module) => module.id === object.target.module)?.displayName ?? object.target.module,
-          onAction: () => void openObject(object.target).catch(() => undefined),
-        }))
-      : []
+  const objects: PaletteItem[] = found.map((object) => ({
+    id: `object:${object.target.module}:${object.target.kind}:${object.target.id}`,
+    label: object.title,
+    // The palette's filter matches the id too, so it keeps the object the pasted id found.
+    objectId: object.target.id,
+    kind: state.modules.find((module) => module.id === object.target.module)?.displayName ?? object.target.module,
+    onAction: () => void openObject(object.target).catch(() => undefined),
+  }))
 
   // The view offers only the commands the server allows its selection now, so a refused one is absent here.
   const selection: PaletteItem[] = selectionCommands().map((command) => ({
@@ -152,7 +124,7 @@ export function ShellPalette({ isOpen, onOpenChange }: { isOpen: boolean; onOpen
     kind: 'Selection',
     onAction: command.run,
   }))
-  const items = [...objects, ...selection, ...staticItems(state, (to) => void navigate(to), runCommand)]
+  const items = [...objects, ...selection, ...staticItems(state, (to) => void navigate(to), runCommand, onOpenAttention)]
 
   function onInput(event: FormEvent<HTMLDivElement>) {
     if (event.target instanceof HTMLInputElement) {
@@ -173,6 +145,7 @@ export function ShellPalette({ isOpen, onOpenChange }: { isOpen: boolean; onOpen
           onOpenChange(open)
         }}
         items={items}
+        defaultQuery={initialQuery}
       />
     </div>
   )

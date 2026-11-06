@@ -6,12 +6,10 @@ import {
   Inspector,
   Mono,
   ObjectHeader,
-  PrimaryAction,
   SelectField,
   StatusMark,
   TenantChip,
   useDelayed,
-  useViewKeys,
 } from '@headless/dashboard-sdk/components'
 import { DataTable } from '@headless/dashboard-sdk/table'
 import { DashboardApiError, listKey, useDashboardKeysetList, useDashboardObject, useNewRows } from '@headless/dashboard-sdk/data'
@@ -197,9 +195,6 @@ export default function RunsView() {
     ...new Set([...(functions.data ?? []).map((item) => item.name), ...(filter.function ? [filter.function] : [])]),
   ].map((name) => ({ value: name, label: name }))
 
-  const filters = useRef<HTMLDivElement>(null)
-  useViewKeys({ filter: () => filters.current?.querySelector<HTMLSelectElement>('select')?.focus() })
-
   let inspector
   if (creating === 'time-job' || creating === 'chain') {
     inspector = (
@@ -234,16 +229,14 @@ export default function RunsView() {
             Runs
           </h1>
           {count ? <span className="hd-hint">{`${format.count(count)} ${count.value === 1 && !count.capped ? 'run' : 'runs'}`}</span> : null}
-          <PrimaryAction>
-            <Button variant="primary" disabledReason={addReason} onPress={() => openCreate('time-job')}>
-              Add time job
-            </Button>
-          </PrimaryAction>
+          <Button variant="primary" disabledReason={addReason} onPress={() => openCreate('time-job')}>
+            Add time job
+          </Button>
           <Button disabledReason={addReason} onPress={() => openCreate('chain')}>
             Add chain
           </Button>
         </header>
-        <div ref={filters} className="hd-actions" role="search" aria-label="Filter runs">
+        <div className="hd-actions" role="search" aria-label="Filter runs">
           <SelectField label="Kind" emptyLabel="Any kind" value={filter.kind} onChange={(value) => setFilter('kind', value)} options={kindOptions} />
           <SelectField label="Function" emptyLabel="Any function" value={filter.function} onChange={(value) => setFilter('function', value)} options={functionOptions} />
           <SelectField label="Status" emptyLabel="Any status" value={filter.status} onChange={(value) => setFilter('status', value)} options={statusOptions} />
