@@ -119,6 +119,67 @@ describe('data table', () => {
     expect(inspector()).toBe('r1')
   })
 
+  it('builds a multi-selection with J X J X: J moves the focus and keeps the rows X selected', async () => {
+    const user = userEvent.setup()
+    render(withDashboard(<ListView selectionMode="multiple" />))
+
+    await user.keyboard('j')
+    expect(document.activeElement).toBe(row(/#1/))
+    expect(inspector()).toBe('Nothing selected')
+
+    await user.keyboard('x')
+    await user.keyboard('j')
+    expect(document.activeElement).toBe(row(/#2/))
+    expect(inspector()).toBe('r1')
+
+    await user.keyboard('x')
+    expect(inspector()).toBe('r1, r2')
+  })
+
+  it('moves the focus without selecting on Tab and the arrow keys in a multi-selection list', async () => {
+    const user = userEvent.setup()
+    render(withDashboard(<ListView selectionMode="multiple" />))
+
+    // The filter, then the density toggle's two buttons, then the grid's one tab stop.
+    await user.click(screen.getByRole('textbox', { name: 'Filter' }))
+    await user.tab()
+    await user.tab()
+    await user.tab()
+    expect(document.activeElement).toBe(row(/#1/))
+    expect(inspector()).toBe('Nothing selected')
+
+    await user.keyboard('{ArrowDown}')
+    expect(document.activeElement).toBe(row(/#2/))
+    expect(inspector()).toBe('Nothing selected')
+
+    await user.keyboard('x{Shift>}{ArrowDown}{/Shift}')
+    expect(inspector()).toBe('r2, r3')
+  })
+
+  it('runs a button in the empty state when clicked', async () => {
+    const user = userEvent.setup()
+    const clear = vi.fn()
+    render(
+      withDashboard(
+        <DataTable
+          label="Runs"
+          rows={[]}
+          selectionMode="multiple"
+          columns={[{ id: 'title', header: 'Run', cell: () => '' }]}
+          emptyState={
+            <button type="button" onClick={clear}>
+              Clear filters
+            </button>
+          }
+        />,
+      ),
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Clear filters' }))
+
+    expect(clear).toHaveBeenCalledOnce()
+  })
+
   it('focuses the filter on /, where J types a letter and moves no row', async () => {
     const user = userEvent.setup()
     render(withDashboard(<ListView />))
