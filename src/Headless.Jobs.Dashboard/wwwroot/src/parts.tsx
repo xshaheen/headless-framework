@@ -222,6 +222,11 @@ export function RunFields({ run }: { run: Run }) {
       <InspectorField label="Status">
         {run.cancelRequested && !isFinished(run.status) ? `${statusLabel(run.status)}, cancel requested` : statusLabel(run.status)}
       </InspectorField>
+      {/* A handler that does not observe its cancellation token finishes on its own terms; the run keeps the status
+          it really ended with, and this says the cancel asked for was not honoured. */}
+      {run.cancelRequested && isFinished(run.status) && run.status !== 'Cancelled' ? (
+        <InspectorField label="Cancel request">Not honoured: the handler kept running</InspectorField>
+      ) : null}
       {run.status === 'DueDone' ? <InspectorField label="Note">Started late</InspectorField> : null}
       <InspectorField label="Retries">{format.number(run.retryCount)}</InspectorField>
       <InspectorField label="Duration">{run.executedAt ? formatDuration(run.elapsedMilliseconds, format.number) : (running ?? 'Not run yet')}</InspectorField>

@@ -230,6 +230,20 @@ describe('jobs runs list', () => {
 
     await waitFor(() => expect(within(screen.getByRole('row', { name: /a\.running/ })).getByText('Cancelled')).toBeTruthy())
     expect(screen.queryByText('Cancelling…')).toBeNull()
+    expect(screen.queryByText('Not honoured: the handler kept running')).toBeNull()
+  })
+
+  it('keeps the status a run really ended with when its handler ignored the cancel, and says so', async () => {
+    const stubborn = run('Succeeded', { function: 'a.stubborn', cancelRequested: true })
+    open({ runs: [stubborn] })
+
+    const row = await screen.findByRole('row', { name: /a\.stubborn/ })
+    expect(within(row).getByText('Succeeded')).toBeTruthy()
+
+    await user().click(row)
+    const inspector = screen.getByRole('complementary', { name: `Run ${stubborn.id}` })
+    const field = within(inspector).getByText('Cancel request', { selector: 'dt' }).nextElementSibling?.textContent
+    expect(field).toBe('Not honoured: the handler kept running')
   })
 
   it('reads Requeuing… after a requeue until the stream sets the real status', async () => {
