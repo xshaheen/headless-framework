@@ -24,7 +24,7 @@ const tracks: ScheduleTrack[] = [
   },
 ]
 
-function renderStrip(props: { onSelect?: (id: string) => void; onSpanChange?: (span: number) => void } = {}) {
+function renderStrip(props: { onSelect?: (id: string) => void; onSpanChange?: (span: number) => void; tracks?: ScheduleTrack[] } = {}) {
   render(
     <DashboardProvider
       client={createDashboardClient()}
@@ -52,6 +52,25 @@ describe('ScheduleStrip', () => {
     expect(marks[1]!.getAttribute('aria-label')).toMatch(/^billing\.charge, next fire, .*11:10:00/)
     expect(marks[0]!.getAttribute('class')).not.toContain('hd-strip-future')
     expect(marks[1]!.getAttribute('class')).toContain('hd-strip-future')
+  })
+
+  it('merges a dense schedule into at most one mark per 24th of the window, keeping every tick in a count', () => {
+    // Every 30 s for the past hour: 120 runs, which would draw an unreadable band one tick apart.
+    const dense = Array.from({ length: 120 }, (_, index) => ({
+      id: `run-${index}`,
+      at: new Date(now - (index + 1) * 30_000).toISOString(),
+      label: 'succeeded',
+      tone: 'healthy' as const,
+    }))
+    renderStrip({ tracks: [{ id: 'sandbox.progress', label: 'sandbox.progress', ticks: dense }] })
+
+    const marks = screen.getAllByRole('gridcell')
+    const counts = marks.map((mark) => Number(/, (\d+) ticks,/.exec(mark.getAttribute('aria-label')!)?.[1] ?? 1))
+    const xs = marks.map((mark) => Number.parseFloat(mark.querySelector('rect')!.getAttribute('x')!))
+
+    expect(marks.length).toBeLessThanOrEqual(12)
+    expect(counts.reduce((sum, count) => sum + count, 0)).toBe(120)
+    xs.slice(1).forEach((x, index) => expect(x - xs[index]!).toBeGreaterThanOrEqual(100 / 24 - 1e-9))
   })
 
   it('narrows the window with ] and widens it with [', async () => {
