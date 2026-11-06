@@ -16,7 +16,6 @@ internal static class DashboardProducts
         new("cluster", "Cluster"),
         new("platform", "Platform"),
         new("dev-inbox", "Dev inbox"),
-        new("diagnostics", "Diagnostics"),
     ];
 
     /// <summary>Finds the product with the given id, or <see langword="null"/> when no product has it.</summary>

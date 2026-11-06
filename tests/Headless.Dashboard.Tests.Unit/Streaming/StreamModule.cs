@@ -23,7 +23,7 @@ internal abstract class StreamModule(string id, FakeChangeStore store)
         {
             Files = new SingleFileProvider(
                 "manifest.json",
-                $$"""{"id":"{{Id}}","sdkVersion":"1.0.0","entry":"entry.js","product":"diagnostics"}"""
+                $$"""{"id":"{{Id}}","sdkVersion":"1.0.0","entry":"entry.js","product":"platform"}"""
             ),
         };
 

@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Dashboard;
 using Headless.Jobs;
 using Headless.Messaging;
 
@@ -37,10 +36,6 @@ public static class SandboxScenarios
             "Time job that reports progress for 5 minutes and ignores its cancellation token: Cancel requests a stop it never honors.",
         ["messages"] = "Ten published messages: eight consumed, two failing in the consumer.",
         ["scheduled-message"] = "One message published with a 10 minute delay: a row on the Scheduled page.",
-        ["diagnostic-runs"] =
-            "Six Headless dashboard diagnostic runs: two queued, one running, one succeeded, two failed with one error.",
-        ["diagnostic-runs-long"] =
-            "5,000 Headless dashboard diagnostic runs, enough to scroll the runs view through many pages: every 100th failed, the rest succeeded.",
     };
 
     public static async Task<IReadOnlyList<string>> RunAsync(
@@ -48,7 +43,6 @@ public static class SandboxScenarios
         IJobScheduler jobs,
         ICronJobManager<CronJobEntity> cronJobs,
         IBus bus,
-        DiagnosticsStore diagnostics,
         CancellationToken cancellationToken
     )
     {
@@ -106,9 +100,7 @@ public static class SandboxScenarios
                     )
                 ),
             ],
-            "diagnostic-runs" => _AddDiagnosticRuns(diagnostics),
-            "diagnostic-runs-long" => _AddLongDiagnosticRunList(diagnostics, count: 5_000),
-            "all" => await _RunAllAsync(jobs, cronJobs, bus, diagnostics, cancellationToken),
+            "all" => await _RunAllAsync(jobs, cronJobs, bus, cancellationToken),
             _ => throw new KeyNotFoundException(
                 $"Unknown scenario '{name}'. Known: all, {string.Join(", ", Descriptions.Keys)}."
             ),
@@ -119,14 +111,13 @@ public static class SandboxScenarios
         IJobScheduler jobs,
         ICronJobManager<CronJobEntity> cronJobs,
         IBus bus,
-        DiagnosticsStore diagnostics,
         CancellationToken cancellationToken
     )
     {
         var created = new List<string>();
         foreach (var scenario in Descriptions.Keys)
         {
-            created.AddRange(await RunAsync(scenario, jobs, cronJobs, bus, diagnostics, cancellationToken));
+            created.AddRange(await RunAsync(scenario, jobs, cronJobs, bus, cancellationToken));
         }
 
         return created;
@@ -208,37 +199,6 @@ public static class SandboxScenarios
         }
 
         return receipts;
-    }
-
-    // Writes straight to the store, as a feature's own code would; the dashboard learns of the runs from its change
-    // reads, so they reach an open view within the change-poll interval.
-    private static IReadOnlyList<string> _AddDiagnosticRuns(DiagnosticsStore diagnostics)
-    {
-        var queued = new[] { diagnostics.AddRun(), diagnostics.AddRun() };
-        var running = diagnostics.Start(diagnostics.AddRun().Id);
-        var succeeded = diagnostics.Succeed(diagnostics.Start(diagnostics.AddRun().Id).Id);
-        var failed = new[] { diagnostics.AddRun(), diagnostics.AddRun() }
-            .Select(run => diagnostics.Fail(diagnostics.Start(run.Id).Id, "Upstream timed out"))
-            .ToArray();
-
-        return [.. queued.Select(run => run.Id), running.Id, succeeded.Id, .. failed.Select(run => run.Id)];
-    }
-
-    private static List<string> _AddLongDiagnosticRunList(DiagnosticsStore diagnostics, int count)
-    {
-        var ids = new List<string>(count);
-
-        for (var index = 1; index <= count; index++)
-        {
-            var started = diagnostics.Start(diagnostics.AddRun().Id);
-            var run =
-                index % 100 == 0
-                    ? diagnostics.Fail(started.Id, "Disk quota exceeded")
-                    : diagnostics.Succeed(started.Id);
-            ids.Add(run.Id);
-        }
-
-        return ids;
     }
 
     private static string _Id(Guid id) => id.ToString("D");

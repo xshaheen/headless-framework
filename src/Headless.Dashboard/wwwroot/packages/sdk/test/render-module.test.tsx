@@ -5,7 +5,7 @@ import { renderModule } from '../src/testing/render-module.tsx'
 
 const diagnostics = defineModule({
   id: 'diag',
-  product: 'diagnostics',
+  product: 'platform',
   routes: [{ path: 'runs', lazy: () => import('./fixtures/runs-view.tsx') }],
 })
 

@@ -42,13 +42,13 @@ function atWidth(width: number) {
   }))
 }
 
-/** Jobs and diagnostics as two products, in the dashboard's product order, with the Jobs sidebar's state counts. */
+/** Jobs and Platform as two products, in the dashboard's product order, with the Jobs sidebar's state counts. */
 function twoProducts(): BootstrapState {
   const jobs = moduleManifest('jobs', { displayName: 'Jobs', objectKinds: { run: {} } })
-  const diag = moduleManifest('diagnostics', { displayName: 'Diagnostics' })
+  const audit = moduleManifest('audit', { displayName: 'Audit' })
 
   return {
-    ...shellState([jobs, diag]),
+    ...shellState([jobs, audit]),
     products: [
       {
         id: 'jobs',
@@ -66,7 +66,7 @@ function twoProducts(): BootstrapState {
           },
         ],
       },
-      { id: 'diagnostics', label: 'Diagnostics', modules: ['diagnostics'], sections: [{ module: 'diagnostics', entries: [] }] },
+      { id: 'platform', label: 'Platform', modules: ['audit'], sections: [{ module: 'audit', entries: [] }] },
     ],
   }
 }
@@ -134,11 +134,11 @@ describe('shell layout', () => {
   })
 
   it('shows one tab per registered product, in the product order, the current one marked', async () => {
-    renderShell(twoProducts(), { path: '/diagnostics/runs', files: moduleFiles(twoProducts().modules) })
+    renderShell(twoProducts(), { path: '/audit/runs', files: moduleFiles(twoProducts().modules) })
 
     const tabs = within(await screen.findByRole('navigation', { name: 'Products' })).getAllByRole('link')
     await waitFor(() =>
-      expect(tabs.map((tab) => tab.textContent)).toEqual(['JobsJobs, nothing needs attention', 'DiagnosticsDiagnostics, nothing needs attention']),
+      expect(tabs.map((tab) => tab.textContent)).toEqual(['JobsJobs, nothing needs attention', 'PlatformPlatform, nothing needs attention']),
     )
     expect(tabs[1]!.getAttribute('aria-current')).toBe('page')
     expect(tabs[0]!.getAttribute('aria-current')).toBeNull()
@@ -361,7 +361,7 @@ describe('shell layout', () => {
     act(() => shell.stream.push('subscribed', { topics: ['jobs.run'], added: ['jobs.run'] }))
     await waitFor(() => expect(counted()).toBe(3))
 
-    await act(() => shell.router.navigate('/diagnostics/runs'))
+    await act(() => shell.router.navigate('/audit/runs'))
     await act(() => shell.router.navigate('/jobs/runs'))
     await waitFor(() => expect(counted()).toBe(4))
   })
@@ -390,7 +390,7 @@ describe('shell layout', () => {
     const jobs = await screen.findByRole('link', { name: 'Jobs did not answer' })
     expect(jobs.className).toContain('hd-tone-off')
     expect(screen.getByRole('button', { name: 'Attention' }).className).toContain('hd-tone-off')
-    expect(screen.getByRole('link', { name: 'Diagnostics, nothing needs attention' }).className).toContain('hd-tone-ok')
+    expect(screen.getByRole('link', { name: 'Platform, nothing needs attention' }).className).toContain('hd-tone-ok')
   })
 
   it('keeps the clock out of any live region, and announces going stale once', async () => {

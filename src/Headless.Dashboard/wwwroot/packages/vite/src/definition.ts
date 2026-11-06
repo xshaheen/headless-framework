@@ -9,7 +9,7 @@ export class ModuleDefinitionError extends Error {
  * The products a module may belong to, in the order the shell shows their tabs. The dashboard fixes the order, not
  * the host's registration, so a product's tab sits in the same place on every host.
  */
-export const dashboardProducts = ['jobs', 'messaging', 'cluster', 'platform', 'dev-inbox', 'diagnostics'] as const
+export const dashboardProducts = ['jobs', 'messaging', 'cluster', 'platform', 'dev-inbox'] as const
 
 export type DashboardProduct = (typeof dashboardProducts)[number]
 

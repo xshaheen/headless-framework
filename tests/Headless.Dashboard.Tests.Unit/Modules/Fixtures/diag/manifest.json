@@ -2,7 +2,7 @@
   "id": "diag",
   "sdkVersion": "1.0.0",
   "entry": "entry.js",
-  "product": "diagnostics",
+  "product": "platform",
   "sidebar": [
     {
       "entries": [

@@ -36,7 +36,7 @@ internal abstract class FakeModule(string id)
     public string SdkVersion { get; set; } = "1.0.0";
 
     /// <summary>The product the module joins; both fakes join one product unless a test moves one.</summary>
-    public string Product { get; set; } = "diagnostics";
+    public string Product { get; set; } = "platform";
 
     public DashboardModuleAssets Assets =>
         new()

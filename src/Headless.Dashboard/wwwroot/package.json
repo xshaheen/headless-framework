@@ -8,7 +8,7 @@
   },
   "scripts": {
     "build": "npm run type-check && npm run build-only",
-    "build-only": "vite build -c apps/shell/vite.config.ts && vite build -c modules/diagnostics/vite.config.ts && node packages/vite/src/cli.ts finalize dist",
+    "build-only": "vite build -c apps/shell/vite.config.ts && node packages/vite/src/cli.ts finalize dist",
     "type-check": "tsc -p tsconfig.json",
     "test:unit": "vitest run",
     "test:unit:watch": "vitest",

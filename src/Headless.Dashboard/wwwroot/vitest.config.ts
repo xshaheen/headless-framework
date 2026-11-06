@@ -26,14 +26,6 @@ export default defineConfig({
           setupFiles: ['apps/shell/test/setup.ts'],
         },
       },
-      {
-        test: {
-          name: 'diagnostics',
-          include: ['modules/diagnostics/test/**/*.test.{ts,tsx}'],
-          environment: 'jsdom',
-          setupFiles: ['modules/diagnostics/test/setup.ts'],
-        },
-      },
     ],
   },
 })

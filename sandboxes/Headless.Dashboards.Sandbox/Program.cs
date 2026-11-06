@@ -9,7 +9,7 @@ using Headless.Messaging;
 using Headless.Messaging.Dashboard;
 using Microsoft.EntityFrameworkCore;
 
-// A local test host for the Headless dashboard, with its Jobs and diagnostic modules, and the Messaging dashboard,
+// A local test host for the Headless dashboard, with its Jobs module, and the Messaging dashboard,
 // started and stopped by the project CLI (`make up`, `make down`). It binds to loopback only and exists so a person or
 // an agent can drive every dashboard state on demand; it is not a sample of production wiring. See sandboxes/README.md.
 var builder = WebApplication.CreateBuilder(args);
@@ -31,10 +31,6 @@ if (postgres is not null)
 // The Headless dashboard always runs in host mode, so the sandbox host sign-in is always registered.
 SandboxHostAuthentication.Add(builder.Services, sandbox.ResolveHostSecret());
 
-// The diagnostic module's store, shared with the diagnostic-runs scenario so `make seed` can fill it.
-var diagnostics = new DiagnosticsStore();
-builder.Services.AddSingleton(diagnostics);
-
 builder.Services.AddHeadlessDashboard(dashboard =>
 {
     dashboard.WithHostAuthentication(host =>
@@ -44,8 +40,6 @@ builder.Services.AddHeadlessDashboard(dashboard =>
     });
     // The Jobs module reads the store AddHeadlessJobs configures below, and inherits the host policies above.
     dashboard.AddJobs();
-    // The diagnostic module registers only in Development, which `make up` sets.
-    dashboard.AddDiagnostics(options => options.UseStore(diagnostics));
 });
 
 builder.Services.AddHeadlessJobs(options =>
@@ -145,7 +139,6 @@ app.MapPost(
         IJobScheduler jobs,
         ICronJobManager<CronJobEntity> cronJobs,
         IBus bus,
-        DiagnosticsStore diagnosticRuns,
         CancellationToken cancellationToken
     ) =>
     {
@@ -156,7 +149,7 @@ app.MapPost(
             );
         }
 
-        var created = await SandboxScenarios.RunAsync(name, jobs, cronJobs, bus, diagnosticRuns, cancellationToken);
+        var created = await SandboxScenarios.RunAsync(name, jobs, cronJobs, bus, cancellationToken);
         return Results.Json(new { scenario = name, created });
     }
 );
