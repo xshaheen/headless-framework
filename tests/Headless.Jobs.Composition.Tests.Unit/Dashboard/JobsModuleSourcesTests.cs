@@ -49,7 +49,6 @@ public sealed class JobsModuleSourcesTests : TestBase
         declined.RecentCount.Should().Be(2);
         items.Should().ContainSingle(item => item.GroupKey == "billing.charge:v1:timeout");
 
-        // The group's filter scopes its Operation to exactly the rows the item counts.
         var scope = await node.Module.PrepareAsync(
             new DashboardOperationScopeRequest
             {

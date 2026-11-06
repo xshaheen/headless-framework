@@ -143,6 +143,14 @@ export function statusLabel(status: RunStatus) {
 
 const finished = new Set<RunStatus>(['Succeeded', 'DueDone', 'Failed', 'Cancelled', 'Skipped'])
 
+export function isFinished(status: RunStatus) {
+  return finished.has(status)
+}
+
+export function kindLabel(kind: RunKind) {
+  return kind === 'TimeJob' ? 'Time job' : 'Occurrence'
+}
+
 /**
  * The mark a run shows. A command the server finished reads `Requeuing…`, `Cancelling…`, or `Deleting…` until the
  * stream moves the row's version; a stored cancel request reads `Cancelling…` until the job stops. Either keeps the
@@ -155,7 +163,7 @@ export function runStatusMark(run: Pick<Run, 'status' | 'cancelRequested'>, pend
     return { tone, label: pending }
   }
 
-  if (run.cancelRequested && !finished.has(run.status)) {
+  if (run.cancelRequested && !isFinished(run.status)) {
     return { tone, label: 'Cancelling…' }
   }
 
@@ -190,7 +198,8 @@ export async function fetchRuns(
 ): Promise<DashboardListPage<Run> & { count: CappedCount }> {
   const query: Record<string, string> = { limit: String(runsPageSize) }
 
-  for (const name of ['kind', 'function', 'status', 'cronJobId', 'correlationId', 'fingerprint', 'from'] as const) {
+  // `range` lives only in the URL; the server filters on the `from` it fixed.
+  for (const name of filterNames.filter((field) => field !== 'range')) {
     const value = filter[name]
 
     if (value) {

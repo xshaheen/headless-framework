@@ -40,6 +40,7 @@ import {
   filterNames,
   formatDuration,
   isFiltered,
+  kindLabel,
   operationScope,
   rangeSpans,
   readFilter,
@@ -302,7 +303,7 @@ export default function RunsView() {
                 ),
                 width: 130,
               },
-              { id: 'kind', header: 'Kind', cell: (run) => (run.kind === 'TimeJob' ? 'Time job' : 'Occurrence'), priority: 2, width: 110 },
+              { id: 'kind', header: 'Kind', cell: (run) => kindLabel(run.kind), priority: 2, width: 110 },
               { id: 'retries', header: 'Retries', cell: (run) => format.number(run.retryCount), align: 'end', priority: 2, width: 80 },
               {
                 id: 'duration',

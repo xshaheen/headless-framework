@@ -124,7 +124,7 @@ internal sealed class JobsModuleApi(IJobsDashboardBackend backend, TimeProvider 
     )
     {
         if (
-            !JobsViews.TryParseId(runId, out var id)
+            !Guid.TryParse(runId, out var id)
             || await _backend.GetRunAsync(id, cancellationToken).ConfigureAwait(false) is not { } run
         )
         {
@@ -148,7 +148,7 @@ internal sealed class JobsModuleApi(IJobsDashboardBackend backend, TimeProvider 
     )
     {
         if (
-            !JobsViews.TryParseId(runId, out var id)
+            !Guid.TryParse(runId, out var id)
             || await _backend.GetRunAsync(id, cancellationToken).ConfigureAwait(false) is not { } run
         )
         {
@@ -198,7 +198,7 @@ internal sealed class JobsModuleApi(IJobsDashboardBackend backend, TimeProvider 
     )
     {
         if (
-            !JobsViews.TryParseId(cronJobId, out var id)
+            !Guid.TryParse(cronJobId, out var id)
             || await _backend.GetCronJobAsync(id, cancellationToken).ConfigureAwait(false) is not { } cronJob
         )
         {
@@ -230,16 +230,12 @@ internal sealed class JobsModuleApi(IJobsDashboardBackend backend, TimeProvider 
             return TypedResults.BadRequest("expression is required.");
         }
 
-        var preview = _backend.Preview(
-            expression,
-            string.IsNullOrWhiteSpace(timeZoneId) ? null : timeZoneId,
-            _Now(),
-            Math.Clamp(count ?? _DefaultFires, 1, MaxFires)
-        );
+        var zone = string.IsNullOrWhiteSpace(timeZoneId) ? null : timeZoneId;
+        var preview = _backend.Preview(expression, zone, _Now(), Math.Clamp(count ?? _DefaultFires, 1, MaxFires));
 
         return TypedResults.Json(
             new JobsSchedulePreview(
-                string.IsNullOrWhiteSpace(timeZoneId) ? _backend.SchedulerTimeZone.Id : timeZoneId,
+                zone ?? _backend.SchedulerTimeZone.Id,
                 preview.Reading,
                 preview.NextFiresUtc,
                 preview.ValidationMessage

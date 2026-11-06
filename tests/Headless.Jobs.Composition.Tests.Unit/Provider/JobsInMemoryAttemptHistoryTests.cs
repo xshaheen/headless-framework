@@ -91,10 +91,7 @@ public sealed class JobsInMemoryAttemptHistoryTests : TestBase
             (await store.OpenTimeJobAttemptAsync(id, _Owner, _Now.UtcDateTime, AbortToken)).Should().BeTrue();
         }
 
-        // The stalled sweep moves both lapsed rows: the Skip row ends Skipped and the Retry row goes back to Idle.
-        (await store.ReclaimStalledTimeJobsAsync(AbortToken))
-            .Should()
-            .Be(2);
+        (await store.ReclaimStalledTimeJobsAsync(AbortToken)).Should().Be(2);
         (await store.SettleInterruptedTimeJobAsync(released.Id, _Owner, "host stopped", null, AbortToken))
             .Should()
             .Be(1);

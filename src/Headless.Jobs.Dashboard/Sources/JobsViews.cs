@@ -16,9 +16,6 @@ internal static class JobsViews
     /// <summary>A registered function, identified by its name.</summary>
     public const string FunctionKind = "function";
 
-    /// <summary>A live node, identified by its coordination identity.</summary>
-    public const string NodeKind = "node";
-
     /// <summary>The version a removal carries: above any marker, so no earlier change of the row follows it.</summary>
     public const string RemovedVersion = "9223372036854775807";
 
@@ -73,6 +70,46 @@ internal static class JobsViews
             // A paused cron job and a resumed one change what Needs you shows about its function.
             AffectsAttention = true,
         };
+
+    /// <summary>
+    /// Reads a changed row back for its projection, or returns <see langword="null"/> when the row is gone.
+    /// </summary>
+    public static async Task<DashboardChange?> ReadBackAsync(
+        IJobsDashboardBackend backend,
+        TimeProvider timeProvider,
+        string moduleId,
+        JobChangeKind kind,
+        Guid id,
+        bool affectsAttention,
+        CancellationToken cancellationToken
+    )
+    {
+        if (kind == JobChangeKind.CronJob)
+        {
+            var cronJob = await backend.GetCronJobAsync(id, cancellationToken).ConfigureAwait(false);
+
+            if (cronJob is null)
+            {
+                return null;
+            }
+
+            var preview = backend.Preview(
+                cronJob.Expression,
+                cronJob.TimeZoneId,
+                timeProvider.GetUtcNow().UtcDateTime,
+                count: 1
+            );
+
+            return Change(moduleId, cronJob, preview);
+        }
+
+        var run = await backend.GetRunAsync(id, cancellationToken).ConfigureAwait(false);
+
+        return run is null ? null : Change(moduleId, run, affectsAttention);
+    }
+
+    /// <summary>The object kind a change of the given row kind targets.</summary>
+    public static string KindOf(JobChangeKind kind) => kind == JobChangeKind.CronJob ? CronJobKind : RunKind;
 
     /// <summary>A change that makes views refetch an object that is gone, so they show it no longer exists.</summary>
     public static DashboardChange Removed(string moduleId, string kind, Guid id) =>
@@ -132,8 +169,6 @@ internal static class JobsViews
             return (stored, null);
         }
     }
-
-    public static bool TryParseId(string value, out Guid id) => Guid.TryParse(value, out id);
 }
 
 /// <summary>A run as a list row, a stream change, and the inspector show it.</summary>

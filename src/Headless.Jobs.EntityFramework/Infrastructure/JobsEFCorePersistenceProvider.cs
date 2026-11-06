@@ -717,7 +717,6 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             .ConfigureAwait(false);
         var marker = DateTime.SpecifyKind(expectedChangedAt, DateTimeKind.Utc);
 
-        // One conditional delete; the attempts go with it through their cascading key.
         return await dbContext
                 .Set<CronJobOccurrenceEntity<TCronJob>>()
                 .Where(x => x.Id == occurrenceId && x.ChangedAt == marker && x.Status != JobStatus.InProgress)

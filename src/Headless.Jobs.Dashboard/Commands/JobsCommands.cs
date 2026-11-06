@@ -347,7 +347,7 @@ internal sealed class JobsCommands(
         CancellationToken cancellationToken
     )
     {
-        var run = JobsViews.TryParseId(id, out var guid)
+        var run = Guid.TryParse(id, out var guid)
             ? await _backend.GetRunAsync(guid, cancellationToken).ConfigureAwait(false)
             : null;
 
@@ -420,7 +420,7 @@ internal sealed class JobsCommands(
     )
     {
         var command = request.CommandId;
-        var cronJob = JobsViews.TryParseId(id, out var guid)
+        var cronJob = Guid.TryParse(id, out var guid)
             ? await _backend.GetCronJobAsync(guid, cancellationToken).ConfigureAwait(false)
             : null;
 
@@ -445,7 +445,6 @@ internal sealed class JobsCommands(
                 .PublishAsync(JobChangeKind.CronJobOccurrence, occurrence, affectsAttention: false, cancellationToken)
                 .ConfigureAwait(false);
 
-            // The new run's id travels on the row, so the toast can open it.
             done = occurrence.ToString();
         }
         else if (string.Equals(command, PauseId, StringComparison.Ordinal))
@@ -523,7 +522,7 @@ internal sealed class JobsCommands(
         CancellationToken cancellationToken
     )
     {
-        var run = JobsViews.TryParseId(id, out var guid)
+        var run = Guid.TryParse(id, out var guid)
             ? await _backend.GetRunAsync(guid, cancellationToken).ConfigureAwait(false)
             : null;
 
@@ -542,7 +541,7 @@ internal sealed class JobsCommands(
         CancellationToken cancellationToken
     )
     {
-        var cronJob = JobsViews.TryParseId(id, out var guid)
+        var cronJob = Guid.TryParse(id, out var guid)
             ? await _backend.GetCronJobAsync(guid, cancellationToken).ConfigureAwait(false)
             : null;
 

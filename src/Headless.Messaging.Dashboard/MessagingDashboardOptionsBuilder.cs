@@ -81,8 +81,6 @@ public sealed class MessagingDashboardOptionsBuilder
         return this;
     }
 
-    // --- Auth fluent API ---
-
     /// <summary>Configure no authentication (public dashboard).</summary>
     public MessagingDashboardOptionsBuilder WithNoAuth()
     {

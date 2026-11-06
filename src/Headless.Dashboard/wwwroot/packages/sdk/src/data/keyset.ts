@@ -41,7 +41,6 @@ export function useDashboardKeysetList<T extends ListItem>(options: DashboardKey
     }
 
     requested.current.add(nextCursor)
-    // `cancelRefetch: false` joins a fetch already running instead of restarting it.
     void query.fetchNextPage({ cancelRefetch: false })
   }
 

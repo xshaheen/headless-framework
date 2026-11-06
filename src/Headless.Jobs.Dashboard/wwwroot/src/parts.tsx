@@ -20,6 +20,8 @@ import {
   attemptTones,
   fetchAttempts,
   formatDuration,
+  isFinished,
+  kindLabel,
   pendingLabels,
   statusLabel,
   tracePath,
@@ -205,18 +207,17 @@ export function useTraceKey(run: Pick<Run, 'correlationId'> | undefined) {
 /** A run's fields, in the order the inspector and the run page show them. */
 export function RunFields({ run }: { run: Run }) {
   const format = useFormat()
-  const finished = run.status !== 'Idle' && run.status !== 'Queued' && run.status !== 'InProgress'
 
   return (
     <InspectorFields>
-      <InspectorField label="Kind">{run.kind === 'TimeJob' ? 'Time job' : 'Occurrence'}</InspectorField>
+      <InspectorField label="Kind">{kindLabel(run.kind)}</InspectorField>
       <InspectorField label="Function">
         <Link to={`/jobs/functions/${encodeURIComponent(run.function)}`}>
           <Mono>{run.function}</Mono>
         </Link>
       </InspectorField>
       <InspectorField label="Status">
-        {run.cancelRequested && !finished ? `${statusLabel(run.status)}, cancel requested` : statusLabel(run.status)}
+        {run.cancelRequested && !isFinished(run.status) ? `${statusLabel(run.status)}, cancel requested` : statusLabel(run.status)}
       </InspectorField>
       {run.status === 'DueDone' ? <InspectorField label="Note">Started late</InspectorField> : null}
       <InspectorField label="Retries">{format.number(run.retryCount)}</InspectorField>

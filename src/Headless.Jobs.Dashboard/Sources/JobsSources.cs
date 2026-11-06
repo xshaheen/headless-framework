@@ -150,7 +150,7 @@ internal sealed class JobsSources(string moduleId, IJobsDashboardBackend backend
     /// <summary>Returns the run or cron job whose id is exactly <paramref name="query"/>, or the function so named.</summary>
     public async Task<IReadOnlyList<DashboardObject>> ResolveAsync(string query, CancellationToken cancellationToken)
     {
-        if (JobsViews.TryParseId(query, out var id))
+        if (Guid.TryParse(query, out var id))
         {
             if (await _backend.GetRunAsync(id, cancellationToken).ConfigureAwait(false) is { } run)
             {
@@ -182,7 +182,7 @@ internal sealed class JobsSources(string moduleId, IJobsDashboardBackend backend
         if (
             !string.Equals(target.Module, _moduleId, StringComparison.Ordinal)
             || !string.Equals(target.Kind, JobsViews.RunKind, StringComparison.Ordinal)
-            || !JobsViews.TryParseId(target.Id, out var id)
+            || !Guid.TryParse(target.Id, out var id)
             || await _backend.GetRunAsync(id, cancellationToken).ConfigureAwait(false) is not { } run
         )
         {
@@ -274,7 +274,7 @@ internal sealed class JobsSources(string moduleId, IJobsDashboardBackend backend
         if (
             !string.Equals(target.Module, _moduleId, StringComparison.Ordinal)
             || !string.Equals(target.Kind, JobsViews.RunKind, StringComparison.Ordinal)
-            || !JobsViews.TryParseId(target.Id, out var id)
+            || !Guid.TryParse(target.Id, out var id)
             || await _backend.GetRunAsync(id, cancellationToken).ConfigureAwait(false) is not { } run
             || await _backend.GetRequestAsync(run.Kind, run.Id, cancellationToken).ConfigureAwait(false)
                 is not { } request

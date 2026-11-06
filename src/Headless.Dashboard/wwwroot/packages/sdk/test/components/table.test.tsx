@@ -321,7 +321,6 @@ describe('virtualized keyset table', () => {
     await waitFor(() => expect(fetchPage).toHaveBeenCalledTimes(2))
     expect(fetchPage.mock.calls.map(([cursor]) => cursor)).toEqual([undefined, 'cursor-of-r100'])
 
-    // The second page answers with no cursor, so nothing more is asked for.
     await screen.findByRole('row', { name: /^r101\b/ })
     sentinelInView()
     scrollTo(200 * 36 - 360)

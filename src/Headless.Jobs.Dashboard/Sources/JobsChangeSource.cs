@@ -56,32 +56,20 @@ internal sealed class JobsChangeSource(
     // A change read cannot tell whether a row entered or left a Needs-you state, so every read change refreshes it.
     private async Task<DashboardChange> _ReadBackAsync(JobChange change, CancellationToken cancellationToken)
     {
-        var version = change.Version.ToString(CultureInfo.InvariantCulture);
+        var readBack = await JobsViews
+            .ReadBackAsync(
+                _backend,
+                _timeProvider,
+                _moduleId,
+                change.Kind,
+                change.Id,
+                affectsAttention: true,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
 
-        if (change.Kind == JobChangeKind.CronJob)
-        {
-            var cronJob = await _backend.GetCronJobAsync(change.Id, cancellationToken).ConfigureAwait(false);
-
-            if (cronJob is not null)
-            {
-                var preview = _backend.Preview(
-                    cronJob.Expression,
-                    cronJob.TimeZoneId,
-                    _timeProvider.GetUtcNow().UtcDateTime,
-                    count: 1
-                );
-
-                return JobsViews.Change(_moduleId, cronJob, preview);
-            }
-
-            return _Gone(JobsViews.CronJobKind, change.Id, version);
-        }
-
-        var run = await _backend.GetRunAsync(change.Id, cancellationToken).ConfigureAwait(false);
-
-        return run is null
-            ? _Gone(JobsViews.RunKind, change.Id, version)
-            : JobsViews.Change(_moduleId, run, affectsAttention: true);
+        return readBack
+            ?? _Gone(JobsViews.KindOf(change.Kind), change.Id, change.Version.ToString(CultureInfo.InvariantCulture));
     }
 
     private DashboardChange _Gone(string kind, Guid id, string version) =>

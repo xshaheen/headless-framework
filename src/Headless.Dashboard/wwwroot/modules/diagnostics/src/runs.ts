@@ -43,7 +43,6 @@ interface RunListAnswer {
   nextCursor?: string | null
 }
 
-/** How many runs one list page asks for. */
 const runsPageSize = 100
 
 /** Whether `run` matches `filter` as the server reads it: the status and the last error, each exactly. */

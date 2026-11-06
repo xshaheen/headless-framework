@@ -342,8 +342,7 @@
 }
 
 /*
- * A module contributes at most three figures, so three columns give each module that reports three its own row, and
- * no tile wraps onto a row alone the way a fit-as-many grid left the sixth one.
+ * A module contributes at most three figures, so three columns give each module that reports three its own row.
  */
 .hd-figures {
   display: grid;

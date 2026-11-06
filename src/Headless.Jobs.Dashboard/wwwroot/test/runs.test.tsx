@@ -97,7 +97,7 @@ describe('jobs runs list', () => {
     expect(screen.getByRole('status', { name: 'Loading runs' })).toBeTruthy()
   })
 
-  it('keeps a long function name on one line with its full name on hover', async () => {
+  it('shows a long function name in full as the hover title', async () => {
     const long = run('Failed', { function: 'sandbox.chain-step-charge-card-and-notify' })
     open({ runs: [long] })
 
@@ -218,7 +218,6 @@ describe('jobs runs list', () => {
         runs: failed,
         extra: (request) => {
           if (request.path === 'jobs/runs') {
-            // The first page of 312 matching runs; the page after it is not needed here.
             return request.query?.after
               ? { items: [], count: 312, countCapped: false, nextCursor: null }
               : { items: failed, count: 312, countCapped: false, nextCursor: 'next' }
@@ -265,9 +264,7 @@ describe('jobs runs list', () => {
 
     await waitFor(() => expect(screen.queryByRole('row', { name: /mail\.send/ })).toBeNull())
     expect(screen.getByRole('row', { name: /billing\.charge/ })).toBeTruthy()
-    expect(view.requests.at(-1)?.query?.correlationId ?? view.requests.find((request) => request.query?.correlationId)?.query?.correlationId).toBe(
-      'corr-7f2',
-    )
+    expect(view.requests.filter((request) => request.path === 'jobs/runs').at(-1)?.query?.correlationId).toBe('corr-7f2')
     expect(screen.getByText('corr-7f2', { selector: 'b' })).toBeTruthy()
   })
 
@@ -338,6 +335,7 @@ describe('jobs runs list', () => {
     await act(() => view.navigate(target))
 
     expect(await screen.findByRole('button', { name: 'Count rows' })).toBeTruthy()
+    expect(screen.getByRole('combobox', { name: 'Status', hidden: true })).toHaveProperty('value', 'Failed')
   })
 })
 

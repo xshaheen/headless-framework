@@ -207,7 +207,6 @@ export function DataTable<T extends { id: string }>({
     next: () => {
       const index = currentIndex()
 
-      // At the last row `J` does nothing.
       if (index < listed.length - 1) {
         moveTo(index + 1)
       }

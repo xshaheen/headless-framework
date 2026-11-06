@@ -95,7 +95,6 @@ describe('R on the selection', () => {
     const user = userEvent.setup()
     const requests = renderInModule(<Recovery />, () => allowedAnswer('Running - cancel instead'))
 
-    // The refused button shows the server's reason beside it once the answer lands.
     await screen.findByText('Running - cancel instead')
     expect(screen.getByRole('status').textContent).toBe('')
 

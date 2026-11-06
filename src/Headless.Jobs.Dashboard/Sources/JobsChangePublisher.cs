@@ -62,13 +62,7 @@ internal sealed class JobsChangePublisher : IAsyncDisposable
     /// <summary>Publishes that a row is gone, so open views refetch it and show it no longer exists.</summary>
     public void PublishRemoved(JobChangeKind kind, Guid id)
     {
-        _publisher.Publish(
-            JobsViews.Removed(
-                JobsDashboardOptions.ModuleId,
-                kind == JobChangeKind.CronJob ? JobsViews.CronJobKind : JobsViews.RunKind,
-                id
-            )
-        );
+        _publisher.Publish(JobsViews.Removed(JobsDashboardOptions.ModuleId, JobsViews.KindOf(kind), id));
     }
 
     /// <summary>Reads a row back now and publishes it, for a write this module made itself.</summary>
@@ -79,38 +73,26 @@ internal sealed class JobsChangePublisher : IAsyncDisposable
         CancellationToken cancellationToken
     )
     {
-        if (kind == JobChangeKind.CronJob)
-        {
-            var cronJob = await _backend.GetCronJobAsync(id, cancellationToken).ConfigureAwait(false);
+        var change = await JobsViews
+            .ReadBackAsync(
+                _backend,
+                _timeProvider,
+                JobsDashboardOptions.ModuleId,
+                kind,
+                id,
+                affectsAttention,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
 
-            if (cronJob is null)
-            {
-                PublishRemoved(kind, id);
-
-                return;
-            }
-
-            var preview = _backend.Preview(
-                cronJob.Expression,
-                cronJob.TimeZoneId,
-                _timeProvider.GetUtcNow().UtcDateTime,
-                count: 1
-            );
-            _publisher.Publish(JobsViews.Change(JobsDashboardOptions.ModuleId, cronJob, preview));
-
-            return;
-        }
-
-        var run = await _backend.GetRunAsync(id, cancellationToken).ConfigureAwait(false);
-
-        if (run is null)
+        if (change is null)
         {
             PublishRemoved(kind, id);
 
             return;
         }
 
-        _publisher.Publish(JobsViews.Change(JobsDashboardOptions.ModuleId, run, affectsAttention));
+        _publisher.Publish(change);
     }
 
     public async ValueTask DisposeAsync()
