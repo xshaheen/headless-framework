@@ -123,7 +123,9 @@ public sealed class JobsModuleSourcesTests : TestBase
         var figures = await node.Module.GetOverviewAsync(new DashboardOverviewRequest { User = _User }, AbortToken);
 
         // then
-        var share = figures.Single(figure => figure.Id == "jobs.overview.succeeded-share");
+        var share = figures.Single(figure =>
+            string.Equals(figure.Id, "jobs.overview.succeeded-share", StringComparison.Ordinal)
+        );
         share.Value.Should().Be(0);
         share.Comparison.Should().NotBeNull("every figure carries its comparison");
         share.Comparison!.Value.Should().BeNull();
