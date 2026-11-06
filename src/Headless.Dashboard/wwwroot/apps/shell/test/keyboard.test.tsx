@@ -1,5 +1,6 @@
 import { DashboardProvider, createDashboardClient } from '@headless/dashboard-sdk'
 import { useShortcut } from '@headless/dashboard-sdk/components'
+import { DashboardApiError } from '@headless/dashboard-sdk/data'
 import { createFakeStream } from '@headless/dashboard-sdk/testing'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -141,6 +142,55 @@ describe('shell keyboard', () => {
     await user.paste('nope-123')
 
     expect(await screen.findByText('No object with id nope-123')).toBeTruthy()
+  })
+
+  it('says a lookup failed, rather than that nothing has the id, when the request fails', async () => {
+    const user = userEvent.setup()
+    renderShell(shellState([]), {
+      api: (request) => {
+        if (request.path === 'resolve') {
+          throw new DashboardApiError(503, 'Unavailable')
+        }
+
+        return emptyAggregates(request)
+      },
+    })
+
+    await user.keyboard('/')
+    await user.paste('job_7f2b')
+
+    expect(await screen.findByText('Lookup failed. Try again.')).toBeTruthy()
+    expect(screen.queryByText(/No object with id/)).toBeNull()
+  })
+
+  it('names the modules that did not answer when no answering module has the id', async () => {
+    const user = userEvent.setup()
+    renderShell(shellState([]), {
+      api: (request) =>
+        request.path === 'resolve' ? { modules: [{ id: 'jobs', displayName: 'Jobs', stale: true, items: [] }] } : emptyAggregates(request),
+    })
+
+    await user.keyboard('/')
+    await user.paste('job_7f2b')
+
+    expect(await screen.findByText('No match in the modules that answered (Jobs did not answer)')).toBeTruthy()
+  })
+
+  it('closes the palette opened over Attention on Escape, and leaves Attention open', async () => {
+    const user = userEvent.setup()
+    const modules = [moduleManifest('jobs')]
+    renderShell(shellState(modules), { files: moduleFiles(modules) })
+
+    await screen.findByRole('heading', { name: 'Module jobs runs view' })
+    await user.keyboard('gn')
+    await screen.findByRole('dialog', { name: 'Attention' })
+
+    await user.keyboard('{Control>}k{/Control}')
+    await screen.findByRole('dialog', { name: 'Command palette' })
+    await user.keyboard('{Escape}')
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Command palette' })).toBeNull())
+    expect(screen.getByRole('dialog', { name: 'Attention' })).toBeTruthy()
   })
 
   it('opens the palette on ⌘K even while a text field has focus, and ignores other keys there', async () => {

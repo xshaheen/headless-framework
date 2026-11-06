@@ -8,7 +8,7 @@ import { useEffect, useState, useSyncExternalStore, type ReactNode, type RefObje
 import type { BootstrapProduct } from '../bootstrap.ts'
 import { useOpenObject, useShell } from '../shell-context.tsx'
 import { attentionTotal, useAttention, useCanOperate, useResolve, type ResolvedObject } from '../shell-data.ts'
-import { AttentionPopover, severityRole } from './attention-popover.tsx'
+import { AttentionPopover, attentionRole } from './attention-popover.tsx'
 import { Flyout, useBelow, useFlyout } from './flyout.tsx'
 import { ProductTabs } from './product-tabs.tsx'
 import { ThemeControl } from './theme.tsx'
@@ -47,7 +47,8 @@ function Clock() {
  */
 function GoTo({ input, onMany }: { input: RefObject<HTMLInputElement | null>; onMany: (query: string) => void }) {
   const [query, setQuery] = useState('')
-  const objects = useResolve(query, true)
+  const resolved = useResolve(query, true)
+  const objects = resolved && !resolved.failed ? resolved.objects : undefined
   const openObject = useOpenObject()
 
   function open(object: ResolvedObject) {
@@ -83,12 +84,18 @@ function GoTo({ input, onMany }: { input: RefObject<HTMLInputElement | null>; on
           <Kbd>/</Kbd>
         </span>
       </label>
-      {objects ? (
+      {resolved ? (
         <div className="hd-goto-list" role="region" aria-label="Matches">
-          {objects.length === 0 ? (
-            <p className="hd-hint">{`No object with id ${query.trim()}`}</p>
+          {resolved.failed ? (
+            <p className="hd-hint">Lookup failed. Try again.</p>
+          ) : resolved.objects.length === 0 ? (
+            <p className="hd-hint">
+              {resolved.stale.length > 0
+                ? `No match in the modules that answered (${resolved.stale.join(', ')} did not answer)`
+                : `No object with id ${query.trim()}`}
+            </p>
           ) : (
-            objects.map((object) => (
+            resolved.objects.map((object) => (
               <Button key={`${object.target.module}:${object.target.id}`} variant="ghost" onPress={() => open(object)}>
                 {object.title}
               </Button>
@@ -143,8 +150,10 @@ export function TopBar({ product, goTo, attention, onMany, menu }: TopBarProps) 
   const canOperate = useCanOperate(product?.modules[0])
   const paused = useSyncExternalStore(live.onPauseChange, live.getPending)
   const [signOutState, setSignOutState] = useState<'idle' | 'busy' | 'failed'>('idle')
-  const total = attentionTotal(items.data)
-  const role = severityRole((items.data ?? []).flatMap((section) => section.items))
+  // A failed request is no answer, so the pill and the tabs read unknown rather than all clear.
+  const sections = items.isError ? undefined : items.data
+  const total = attentionTotal(sections)
+  const role = attentionRole(sections)
   const togglePause = () => live.setPaused(paused === null)
   const name = state.session.name
 
@@ -167,7 +176,7 @@ export function TopBar({ product, goTo, attention, onMany, menu }: TopBarProps) 
         </span>
         headless
       </span>
-      <ProductTabs current={product} attention={items.data} />
+      <ProductTabs current={product} attention={sections} />
       <span className="hd-spacer" />
       <GoTo input={goTo} onMany={onMany} />
       <Button ref={attention.trigger} variant="ghost" className={`hd-quiet hd-tone-${role}`} aria-expanded={attention.isOpen} onPress={attention.toggle}>

@@ -12,19 +12,38 @@ import type { AttentionItem, ModuleSection } from '../shell-data.ts'
 import { Flyout } from './flyout.tsx'
 
 /** The worst severity among `items`, as a state role: fail with a critical item, proc with warnings only, else ok. */
-export function severityRole(items: readonly AttentionItem[]): DashboardStateRole {
+function severityRole(items: readonly AttentionItem[]): DashboardStateRole {
   return items.some((item) => item.severity === 'critical') ? 'fail' : items.length > 0 ? 'proc' : 'ok'
 }
 
-/** A product tab's dot and the words behind it: `off` when one of its modules did not load. */
+/**
+ * The sections' worst severity as a state role, but `off` instead of `ok` while there is no answer or a module did
+ * not answer: only a complete, empty answer is all clear.
+ */
+export function attentionRole(sections: readonly ModuleSection<AttentionItem>[] | undefined): DashboardStateRole {
+  const role = severityRole(sections?.flatMap((section) => section.items) ?? [])
+
+  return role === 'ok' && (!sections || sections.some((section) => section.stale)) ? 'off' : role
+}
+
+/** A product tab's dot and the words behind it: `off` when one of its modules did not load or did not answer. */
 export function productAttention(state: BootstrapState, product: BootstrapProduct, sections: readonly ModuleSection<AttentionItem>[] | undefined) {
   const failed = state.modules.some((module) => module.refusal && product.modules.includes(module.id))
-  const items = (sections ?? []).filter((section) => product.modules.includes(section.id)).flatMap((section) => section.items)
-  const total = items.reduce((sum, item) => sum + item.count, 0)
+  const own = sections?.filter((section) => product.modules.includes(section.id))
+  const total = (own ?? []).reduce((sum, section) => section.items.reduce((count, item) => count + item.count, sum), 0)
 
   return failed
     ? { role: 'off' as const, text: `${product.label} did not load` }
-    : { role: severityRole(items), text: total > 0 ? `${product.label}, ${total} need attention` : `${product.label}, nothing needs attention` }
+    : {
+        role: attentionRole(own),
+        text: !own
+          ? `${product.label}, attention not loaded`
+          : total > 0
+            ? `${product.label}, ${total} need attention`
+            : own.some((section) => section.stale)
+              ? `${product.label} did not answer`
+              : `${product.label}, nothing needs attention`,
+      }
 }
 
 function Item({ item, onOpen }: { item: AttentionItem; onOpen: () => void }) {
