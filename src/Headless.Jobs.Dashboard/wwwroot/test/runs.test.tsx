@@ -341,7 +341,7 @@ describe('jobs runs list', () => {
     await actor.type(within(dialog).getByRole('textbox', { name: /Reason/ }), 'gateway fixed')
     await actor.click(within(dialog).getByRole('button', { name: /^Requeue 2/ }))
 
-    const toast = await screen.findByText('Requeued 2 · 1 refused')
+    const toast = await screen.findByText('Requeue: 2 done · 1 refused')
     expect(view.requests.find((request) => request.path === 'jobs/commands/jobs.requeue')?.body).toMatchObject({ ids: failed.map((row) => row.id) })
     expect(within(screen.getByRole('row', { name: /a\.done/ })).getByText('Not failed')).toBeTruthy()
     expect(within(toast.closest('[role="status"]') ?? toast.parentElement!).getByRole('button', { name: 'View' })).toBeTruthy()
@@ -375,6 +375,8 @@ describe('jobs runs list', () => {
     await actor.click(await screen.findByRole('button', { name: 'Select all 312 matching' }))
 
     expect(screen.getByText('All 312 matching failed runs of billing.charge')).toBeTruthy()
+    // A failed run has finished, so the Operation offers no Cancel, as the checked rows' bar does not.
+    expect(screen.queryByRole('button', { name: /^Cancel/ })).toBeNull()
     await actor.click(screen.getByRole('button', { name: 'Requeue 312' }))
     await actor.type(await screen.findByRole('textbox', { name: /Reason/ }), 'gateway fixed')
     await actor.click(screen.getByRole('button', { name: 'Count rows' }))
@@ -503,6 +505,125 @@ describe('jobs runs list', () => {
     expect(view.location().pathname).toBe('/jobs/runs')
     expect(screen.getByRole('heading', { level: 1, name: 'Failed', hidden: true })).toBeTruthy()
   })
+
+  it('drops a checked run a live change moves out of the list, so the bar and its action cover only the runs shown', async () => {
+    const actor = user()
+    const failed = [run('Failed', { function: 'a.first' }), run('Failed', { function: 'a.second' })]
+    const view = list(
+      {
+        runs: failed,
+        extra: (request) =>
+          request.method === 'POST' && request.path === 'jobs/commands/jobs.requeue'
+            ? { rows: (request.body as { ids: string[] }).ids.map((id) => ({ id, outcome: 'done' })) }
+            : undefined,
+      },
+      '?status=Failed',
+    )
+
+    await screen.findByRole('row', { name: /a\.first/ })
+    for (const row of failed) {
+      await actor.click(screen.getByRole('checkbox', { name: `Select ${row.id}` }))
+    }
+    expect(screen.getByText('2 selected')).toBeTruthy()
+
+    const [first] = failed
+    view.stream.push('change', change({ ...first!, status: 'Queued', version: '2' }))
+    expect(await screen.findByText('1 selected')).toBeTruthy()
+
+    // Back on the list, the run is no longer checked: it left the selection when it left the list.
+    view.stream.push('change', change({ ...first!, version: '3' }))
+    await screen.findByRole('row', { name: /a\.first/ })
+    expect(screen.getByText('1 selected')).toBeTruthy()
+
+    await actor.click(screen.getByRole('button', { name: 'Requeue' }))
+    const dialog = await screen.findByRole('dialog')
+    await actor.type(within(dialog).getByRole('textbox', { name: /Reason/ }), 'gateway fixed')
+    await actor.click(within(dialog).getByRole('button', { name: /^Requeue/ }))
+
+    await waitFor(() => expect(view.requests.find((request) => request.path === 'jobs/commands/jobs.requeue')?.body).toMatchObject({ ids: [failed[1]!.id] }))
+  })
+
+  it('drops the checked runs when the sidebar, a link, or Back changes the list', async () => {
+    const actor = user()
+    const failed = run('Failed', { function: 'a.failed' })
+    const view = list({ runs: [failed, run('Succeeded', { function: 'a.done' })] }, '?status=Failed')
+
+    await screen.findByRole('row', { name: /a\.failed/ })
+    await actor.click(screen.getByRole('checkbox', { name: `Select ${failed.id}` }))
+    expect(screen.getByText('1 selected')).toBeTruthy()
+
+    await act(() => view.navigate('runs?status=Succeeded'))
+    await screen.findByRole('row', { name: /a\.done/ })
+    await act(() => view.navigate('runs?status=Failed'))
+    await screen.findByRole('row', { name: /a\.failed/ })
+
+    expect(screen.queryByText('1 selected')).toBeNull()
+  })
+
+  it('drops a refused run’s tag once a live change makes it a new version', async () => {
+    const actor = user()
+    const failed = run('Failed', { function: 'a.failed' })
+    const done = run('Succeeded', { function: 'a.done' })
+    const view = list({
+      runs: [failed, done],
+      extra: (request) =>
+        request.method === 'POST' && request.path === 'jobs/commands/jobs.requeue'
+          ? { rows: (request.body as { ids: string[] }).ids.map((id) => ({ id, outcome: 'done' })) }
+          : undefined,
+    })
+
+    await screen.findByRole('row', { name: /a\.done/ })
+    for (const row of [failed, done]) {
+      await actor.click(screen.getByRole('checkbox', { name: `Select ${row.id}` }))
+    }
+    await actor.click(await screen.findByRole('button', { name: 'Requeue 1 of 2' }))
+    const dialog = await screen.findByRole('dialog')
+    await actor.type(within(dialog).getByRole('textbox', { name: /Reason/ }), 'gateway fixed')
+    await actor.click(within(dialog).getByRole('button', { name: /^Requeue/ }))
+
+    await screen.findByText('Requeue: 1 done · 1 refused')
+    const row = () => screen.getByRole('row', { name: /a\.done/ })
+    expect(within(row()).getByText('Not failed')).toBeTruthy()
+
+    view.stream.push('change', change({ ...done, status: 'Failed', version: '2' }))
+
+    await waitFor(() => expect(within(row()).queryByText('Not failed')).toBeNull())
+  })
+
+  it('reads a status in any case as that status', async () => {
+    const view = list({ runs: [run('Failed', { function: 'a.failed' }), run('Succeeded', { function: 'a.done' })] }, '?status=failed')
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Failed' })).toBeTruthy()
+    expect(await screen.findByRole('row', { name: /a\.failed/ })).toBeTruthy()
+    expect(screen.queryByRole('row', { name: /a\.done/ })).toBeNull()
+    expect(view.requests.find((request) => request.path === 'jobs/runs')?.query?.status).toBe('Failed')
+    expect(screen.getByRole('group', { name: 'Filter by cause' })).toBeTruthy()
+  })
+
+  it('reads a status no run has as every status, with every filter offered', async () => {
+    const view = list({ runs: [run('Failed', { function: 'a.failed' }), run('Succeeded', { function: 'a.done' })] }, '?status=Bogus')
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'All runs' })).toBeTruthy()
+    expect(await screen.findByRole('row', { name: /a\.done/ })).toBeTruthy()
+    expect(view.requests.find((request) => request.path === 'jobs/runs')?.query?.status).toBeUndefined()
+    expect(screen.getAllByRole('combobox')).toHaveLength(3)
+  })
+
+  it('opens a run the loaded page does not hold, reading it once by its id', async () => {
+    const elsewhere = run('Succeeded', { function: 'a.elsewhere' })
+    const view = list({ runs: [run('Failed', { function: 'a.failed' }), elsewhere] }, `?status=Failed&open=${elsewhere.id}`)
+
+    // The panel loads first, then shows the run it read.
+    await waitFor(() => expect(within(panel(elsewhere.id)).getAllByText('a.elsewhere').length).toBeGreaterThan(0))
+    expect(screen.queryByRole('row', { name: /a\.elsewhere/ })).toBeNull()
+    expect(view.requests.filter((request) => request.path === `jobs/runs/${elsewhere.id}`)).toHaveLength(1)
+  })
+
+  it('says a run opened by a link no longer exists on 404', async () => {
+    list({ runs: [run('Failed')] }, '?status=Failed&open=00000000-0000-0000-0000-00000000dead')
+
+    expect((await screen.findByRole('alert')).textContent).toBe('This run no longer exists.')
+  })
 })
 
 describe('jobs failed list', () => {
@@ -538,6 +659,26 @@ describe('jobs failed list', () => {
     expect(screen.getByRole('row', { name: /export\.ledger/ })).toBeTruthy()
     expect(new URLSearchParams(view.location().search).get('fingerprint')).toBe('v1:io')
     expect(within(chips).getByRole('button', { name: /export\.ledger/ }).getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('presses only the chip of the function and fingerprint set, when two functions fail the same way', async () => {
+    const actor = user()
+    const charge = run('Failed', { function: 'billing.charge', failureFingerprint: 'v1:io' })
+    const refund = run('Failed', { function: 'billing.refund', failureFingerprint: 'v1:io' })
+    const view = list(
+      { runs: [charge, refund], attention: [attention('billing.charge', 'v1:io', 1), attention('billing.refund', 'v1:io', 1)] },
+      '?status=Failed&function=billing.charge&fingerprint=v1%3Aio',
+    )
+
+    const chips = await screen.findByRole('group', { name: 'Filter by cause' })
+    const chip = (name: RegExp) => within(chips).getByRole('button', { name })
+    await waitFor(() => expect(chip(/billing\.charge/).getAttribute('aria-pressed')).toBe('true'))
+    expect(chip(/billing\.refund/).getAttribute('aria-pressed')).not.toBe('true')
+
+    await actor.click(chip(/billing\.refund/))
+
+    await waitFor(() => expect(new URLSearchParams(view.location().search).get('function')).toBe('billing.refund'))
+    expect(new URLSearchParams(view.location().search).get('fingerprint')).toBe('v1:io')
   })
 })
 

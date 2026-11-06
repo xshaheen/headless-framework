@@ -230,15 +230,17 @@ const outcomeSeries = [
   { name: 'Cancelled or skipped', tone: 'off', statuses: ['Cancelled', 'Skipped'] },
 ] as const satisfies readonly { name: string; tone: string; statuses: readonly RunStatus[] }[]
 
-/** One column per hour of the last 24, oldest first, counting the finished occurrences due in it by outcome. */
-function hourlyOutcomes(runs: readonly Run[], since: number, locale: string, timeZone: string): BarColumn[] {
-  const start = Math.floor(since / hour) * hour
+/**
+ * One column per hour from `start`, a whole hour, to the current one, oldest first, counting the finished occurrences
+ * due in it by outcome.
+ */
+function hourlyOutcomes(runs: readonly Run[], start: number, locale: string, timeZone: string): BarColumn[] {
   const label = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone })
-  const columns = Array.from({ length: 24 }, (_, index) => ({ label: label.format(start + (index + 1) * hour), values: outcomeSeries.map(() => 0) }))
+  const columns = Array.from({ length: 24 }, (_, index) => ({ label: label.format(start + index * hour), values: outcomeSeries.map(() => 0) }))
 
   for (const run of runs) {
     const at = Date.parse(run.executionTime ?? run.createdAt)
-    const column = columns[Math.floor((at - start) / hour) - 1]
+    const column = columns[Math.floor((at - start) / hour)]
     const series = outcomeSeries.findIndex((item) => (item.statuses as readonly RunStatus[]).includes(run.status))
 
     if (column && series !== -1) {
@@ -260,7 +262,9 @@ function occurrenceNote(run: Run) {
 function CronOccurrences({ cronJob }: { cronJob: CronJob }) {
   const { api } = useDashboard()
   const format = useFormat()
-  const [stableWindowStart] = useState(() => Date.now() - 24 * hour)
+  // The first bar's hour: the list loads from there, so the bars count every occurrence it shows, none from the part of
+  // an hour before the first bar.
+  const [stableWindowStart] = useState(() => (Math.floor(Date.now() / hour) - 23) * hour)
   const filter = { cronJobId: cronJob.id, from: new Date(stableWindowStart).toISOString() }
   const occurrences = useDashboardKeysetList<Run>({ topic: runsTopic, params: filter, fetchPage: (cursor) => fetchRuns(api, filter, cursor) })
   const rows = occurrences.rows

@@ -97,7 +97,8 @@ export function RunPanel({
       name="Run"
       id={run.id}
       status={status}
-      actions={<RunActions runs={[run]} onRequeued={onRequeued} />}
+      // Keyed by run, so a command still busy or failed for one run does not show on the next one J/K opens.
+      actions={<RunActions key={run.id} runs={[run]} onRequeued={onRequeued} />}
       detachTo={page ? undefined : `runs/${encodeURIComponent(run.id)}`}
     >
       <section aria-label="Fields">

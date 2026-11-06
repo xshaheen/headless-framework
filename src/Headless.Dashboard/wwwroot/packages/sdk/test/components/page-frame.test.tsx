@@ -202,6 +202,17 @@ describe('PageFrame', () => {
     expect(screen.getByText('No longer matches the filter')).toBeTruthy()
   })
 
+  it('steps J past a row that left the filter, since the list hides it', async () => {
+    const user = userEvent.setup()
+    renderFrame()
+
+    await user.click(screen.getByRole('button', { name: 'billing.charge' }))
+    act(() => setRows(failed.map((row) => (row.id === 'r2' ? { ...row, status: 'Queued' } : row))))
+    await user.keyboard('j')
+
+    expect(location()).toBe('/jobs/failed?open=r3')
+  })
+
   it('detaches to the object’s own page', async () => {
     const user = userEvent.setup()
     renderFrame()

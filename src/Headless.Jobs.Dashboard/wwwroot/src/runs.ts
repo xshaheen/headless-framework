@@ -69,7 +69,8 @@ export interface Attempt {
 export interface RunFilter {
   kind: string
   function: string
-  status: string
+  /** A known run status, or empty for every status; `readFilter` drops a name the server would not read as one. */
+  status: RunStatus | ''
   cronJobId: string
   correlationId: string
   fingerprint: string
@@ -88,10 +89,22 @@ export function readFilter(params: URLSearchParams): RunFilter {
   const filter = { ...emptyFilter }
 
   for (const name of filterNames) {
-    filter[name] = params.get(name) ?? ''
+    if (name !== 'status') {
+      filter[name] = params.get(name) ?? ''
+    }
   }
 
+  filter.status = readStatus(params.get('status') ?? '')
+
   return filter
+}
+
+/**
+ * The run status `value` names, read case-insensitively as the server reads it, so `failed` is `Failed`; `''` for no
+ * status or one no run has, which the list then reads as every status rather than a filter nothing can match.
+ */
+function readStatus(value: string): RunStatus | '' {
+  return runStatuses.find((status) => status.toLowerCase() === value.toLowerCase()) ?? ''
 }
 
 export function isFiltered(filter: RunFilter) {

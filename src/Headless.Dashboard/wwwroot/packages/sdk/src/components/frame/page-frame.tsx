@@ -113,8 +113,10 @@ export function usePageFrame<T extends { id: string }>({ viewId, rows, matches }
   }
 
   function move(step: number) {
-    const index = rows.findIndex((row) => row.id === cursorId)
-    const row = rows[index === -1 ? 0 : index + step]
+    // The rows the list shows: a row that stopped matching is hidden unless it is the open one.
+    const shown = matches ? rows.filter((row) => row.id === openId || matches(row)) : rows
+    const index = shown.findIndex((row) => row.id === cursorId)
+    const row = shown[index === -1 ? 0 : index + step]
 
     if (!row) {
       return

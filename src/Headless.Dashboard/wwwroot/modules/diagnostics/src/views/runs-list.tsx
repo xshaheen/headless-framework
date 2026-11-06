@@ -118,7 +118,8 @@ export default function RunsList() {
     }
   }, [wantsOperation])
 
-  const checkedRuns = items.filter((run) => frame.checked.has(run.id))
+  // A live change can move a checked run out of the list while the cache still holds it; act only on the ones shown.
+  const checkedRuns = items.filter((run) => frame.checked.has(run.id) && matches(run))
   const openRun = items.find((run) => run.id === frame.openId)
   const count = runs.count
   const filtered = Boolean(filter.status || filter.error)

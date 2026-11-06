@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { change, cronJob, now, open, run, user } from './fake-server.ts'
 
@@ -11,6 +11,10 @@ afterEach(() => {
   vi.useRealTimers()
   localStorage.clear()
 })
+
+function described(button: HTMLElement) {
+  return document.getElementById(button.getAttribute('aria-describedby')!)?.textContent
+}
 
 const figures = [
   {
@@ -76,14 +80,94 @@ describe('jobs dashboard', () => {
 
   it('drops a run that finished from Processing now', async () => {
     const running = run('InProgress', { function: 'sandbox.progress' })
-    const view = open({ runs: [running] })
+    const runs = [running]
+    const view = open({ runs })
 
     const card = await screen.findByRole('region', { name: 'Processing now' })
     await within(card).findByText('sandbox.progress')
 
-    view.stream.push('change', change({ ...running, status: 'Succeeded', version: '2' }))
+    runs[0] = { ...running, status: 'Succeeded', version: '2' }
+    view.stream.push('change', change(runs[0]))
 
     expect(await within(card).findByText('Nothing is running. A due run starts once a node picks it up.')).toBeTruthy()
+  })
+
+  it('shows a run another cached list holds once it starts, and drops it and its count once it finishes', async () => {
+    const queued = run('Queued', { function: 'export.ledger' })
+    const running = run('InProgress', { function: 'sandbox.progress' })
+    const runs = [queued, running]
+    const view = open({ runs }, { path: 'runs' })
+
+    // The All runs list now holds the queued run, so its change patches that list rather than arriving as new.
+    await screen.findByRole('row', { name: /export\.ledger/ })
+    await act(() => view.navigate(''))
+    const card = await screen.findByRole('region', { name: 'Processing now' })
+    await within(card).findByText('sandbox.progress')
+    expect(within(card).getByText('1 running')).toBeTruthy()
+
+    runs[0] = { ...queued, status: 'InProgress', version: '2' }
+    view.stream.push('change', change(runs[0]))
+
+    expect(await within(card).findByText('export.ledger')).toBeTruthy()
+    await waitFor(() => expect(within(card).getByText('2 running')).toBeTruthy())
+
+    runs[1] = { ...running, status: 'Succeeded', version: '2' }
+    view.stream.push('change', change(runs[1]))
+
+    await waitFor(() => expect(within(card).queryByText('sandbox.progress')).toBeNull())
+    expect(within(card).getByText('1 running')).toBeTruthy()
+  })
+
+  it('cancels the in-progress run its Cancel sits beside, after the confirm', async () => {
+    const actor = user()
+    const first = run('InProgress', { function: 'a.first' })
+    const second = run('InProgress', { function: 'a.second' })
+    const view = open({
+      runs: [first, second],
+      extra: (request) =>
+        request.method === 'POST' && request.path === 'jobs/commands/jobs.cancel' ? { rows: [{ id: second.id, outcome: 'done' }] } : undefined,
+    })
+
+    const card = await screen.findByRole('region', { name: 'Processing now' })
+    const row = (await within(card).findByRole('link', { name: 'a.second' })).closest('li')!
+    const cancel = within(row).getByRole('button', { name: 'Cancel' })
+    await waitFor(() => expect(cancel.getAttribute('aria-disabled')).toBeNull())
+    await actor.click(cancel)
+    const dialog = await screen.findByRole('dialog')
+    await actor.type(within(dialog).getByRole('textbox', { name: /Reason/ }), 'stuck on a lock')
+    await actor.click(within(dialog).getByRole('button', { name: 'Cancel run' }))
+
+    await waitFor(() => expect(view.requests.find((request) => request.path === 'jobs/commands/jobs.cancel')?.body).toMatchObject({ ids: [second.id] }))
+  })
+
+  it('disables a Processing now Cancel the server refuses, with its reason', async () => {
+    const stuck = run('InProgress', { function: 'a.stuck' })
+    open({
+      runs: [stuck],
+      extra: (request) =>
+        request.path === 'jobs/commands/allowed'
+          ? { objects: [{ kind: 'run', id: stuck.id, commands: [{ id: 'jobs.cancel', allowed: false, disabledReason: 'Already stopping' }] }] }
+          : undefined,
+    })
+
+    const card = await screen.findByRole('region', { name: 'Processing now' })
+    await within(card).findByText('a.stuck')
+    const cancel = within(card).getByRole('button', { name: 'Cancel' })
+    await waitFor(() => expect(cancel.getAttribute('aria-disabled')).toBe('true'))
+    expect(described(cancel)).toBe('Already stopping')
+  })
+
+  it('refreshes every section from Refresh while live updates are stopped', async () => {
+    const view = open({ runs: [run('InProgress')], cronJobs: [cronJob()], counts: { InProgress: 1 }, figures })
+    const paths = ['counts', 'overview', 'needs-you', 'jobs/runs', 'jobs/cron-jobs']
+    const reads = () => paths.map((path) => view.requests.filter((request) => request.path === path).length)
+
+    await waitFor(() => expect(reads().every((count) => count > 0)).toBe(true))
+    act(() => view.stream.push('module.stale', { module: 'jobs', stale: true }))
+    const before = reads()
+    await user().click(await screen.findByRole('button', { name: 'Refresh' }))
+
+    await waitFor(() => expect(reads().map((count, index) => count > before[index]!)).toEqual(paths.map(() => true)))
   })
 
   it('lists the next recurring runs soonest first, leaving out paused ones', async () => {

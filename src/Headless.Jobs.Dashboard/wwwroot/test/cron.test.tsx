@@ -187,7 +187,47 @@ describe('jobs recurring jobs list', () => {
       expect.stringContaining('Failed'),
     ])
     const read = view.requests.find((request) => request.path === 'jobs/runs')
-    expect(read?.query).toMatchObject({ cronJobId: job.id, from: expect.stringMatching(/^2026-11-04T10:00:/) })
+    expect(read?.query).toMatchObject({ cronJobId: job.id, from: expect.stringMatching(/^2026-11-04T11:00:/) })
+  })
+
+  it('loads the occurrences from the first bar’s hour, so the bars count every occurrence listed', async () => {
+    // Off the hour, the 24-hour window starts part way through an hour that has no bar.
+    vi.setSystemTime(new Date('2026-11-05T10:37:00Z'))
+    const actor = user()
+    const job = cronJob()
+    const occurrences = [
+      run('Succeeded', { kind: 'CronJobOccurrence', cronJobId: job.id, executionTime: '2026-11-05T10:20:00Z' }),
+      run('Failed', { kind: 'CronJobOccurrence', cronJobId: job.id, executionTime: '2026-11-04T11:10:00Z' }),
+      run('Succeeded', { kind: 'CronJobOccurrence', cronJobId: job.id, executionTime: '2026-11-04T10:45:00Z' }),
+    ]
+    open(
+      {
+        cronJobs: [job],
+        extra: (request) => {
+          if (request.path !== 'jobs/runs') {
+            return undefined
+          }
+
+          // As the server does, the list holds only the occurrences due from `from` on.
+          const from = Date.parse(String(request.query?.from))
+          const items = occurrences.filter((item) => Date.parse(item.executionTime!) >= from)
+
+          return { items, count: items.length, countCapped: false }
+        },
+      },
+      { path: `cron-jobs?open=${job.id}` },
+    )
+
+    await actor.click(await screen.findByRole('tab', { name: 'Occurrences' }))
+    const panel = screen.getByRole('region', { name: `Cron job ${job.id}` })
+    const chart = await within(panel).findByRole('img', { name: /^Occurrence outcomes per hour/ })
+    const listed = within(within(panel).getByRole('region', { name: 'Occurrences' })).getAllByRole('listitem').length
+    const counted = [...chart.querySelectorAll('title')]
+      .flatMap((title) => [...(title.textContent ?? '').matchAll(/(\d+) [A-Z]/g)])
+      .reduce((sum, match) => sum + Number(match[1]), 0)
+
+    expect(listed).toBe(2)
+    expect(counted).toBe(listed)
   })
 
   it('does not carry an expression typed for one job into the next one opened', async () => {

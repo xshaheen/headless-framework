@@ -638,7 +638,8 @@ export function RunPanel({ run, pending, page }: { run: Run; pending: Pending; p
       id={run.id}
       status={runStatusMark(run, pending.labelOf(run))}
       detachTo={page ? undefined : `/jobs/runs/${encodeURIComponent(run.id)}`}
-      actions={<RunActions run={run} pending={pending} />}
+      // Keyed by run, so a command still busy or failed for one run does not show on the next one J/K opens.
+      actions={<RunActions key={run.id} run={run} pending={pending} />}
       tabs={[
         {
           id: 'overview',

@@ -1,10 +1,12 @@
 import { useDashboard, useModule } from '@headless/dashboard-sdk'
 import { CommandAction, useAllowedActions } from '@headless/dashboard-sdk/commands'
 import { Button, Card, CardRow, Cards, Mono, PageFrame, PageHeader, usePageFrame } from '@headless/dashboard-sdk/components'
-import { useDashboardKeysetList, useDashboardList, useNewRows } from '@headless/dashboard-sdk/data'
+import { listKey, useDashboardKeysetList, useDashboardList, useNewRows } from '@headless/dashboard-sdk/data'
 import { useFormat } from '@headless/dashboard-sdk/locale'
+import { useQueryClient } from '@headless/dashboard-sdk/query'
 import { Link, useNavigate } from '@headless/dashboard-sdk/router'
-import { useEffect } from 'react'
+import { useStreamEvent } from '@headless/dashboard-sdk/stream'
+import { useEffect, useRef } from 'react'
 import { cronJobsTopic, fetchCronJobs, type CronJob } from '../cron.ts'
 import { JobsStats, LoadError, RunProgress, Skeleton, StaleNotice, Time, useJobsAttention, type AttentionItem } from '../parts.tsx'
 import { fetchRuns, markDone, readFilter, runsTopic, useJobsCommands, usePending, viewOnlyReason, type Run } from '../runs.ts'
@@ -12,11 +14,15 @@ import { fetchRuns, markDone, readFilter, runsTopic, useJobsCommands, usePending
 const cardRows = 6
 
 /** The in-progress runs, as the runs list filtered to In progress reads them, so both share one cached list. */
-const processingFilter = { ...readFilter(new URLSearchParams()), status: 'InProgress' }
+const processingFilter = { ...readFilter(new URLSearchParams()), status: 'InProgress' as const }
+
+/** Every answer the dashboard reads: its lists, the strip's counts and figures, and the attention items. */
+const dashboardKeys = [listKey(runsTopic), listKey(cronJobsTopic), ['jobs'], ['shell', 'counts', 'jobs'], ['shell', 'attention']]
 
 export default function JobsDashboard() {
   const module = useModule()
   const navigate = useNavigate()
+  const client = useQueryClient()
   const cronJobs = useNextRecurringRuns()
   const next = cronJobs.next[0]
   const frame = usePageFrame({ viewId: 'jobs.dashboard', rows: [] })
@@ -43,7 +49,7 @@ export default function JobsDashboard() {
         />
       }
     >
-      <StaleNotice what="this dashboard" onRefresh={() => void cronJobs.list.refetch()} />
+      <StaleNotice what="this dashboard" onRefresh={() => dashboardKeys.forEach((queryKey) => void client.invalidateQueries({ queryKey }))} />
       <Cards>
         <ProcessingNow />
         <NextRecurringRuns {...cronJobs} />
@@ -62,8 +68,23 @@ function ProcessingNow() {
   const { api } = useDashboard()
   const module = useModule()
   const format = useFormat()
+  const client = useQueryClient()
   const runs = useDashboardKeysetList<Run>({ topic: runsTopic, params: processingFilter, fetchPage: (cursor) => fetchRuns(api, processingFilter, cursor) })
   const arrived = useNewRows<Run>(runsTopic, (run) => run.status === 'InProgress')
+  const refetch = useRef<ReturnType<typeof setTimeout>>(undefined)
+
+  // A run another cached list holds (All runs, Queued) is patched there rather than arriving as new, so it never
+  // reaches this list: a change that moves a run into or out of In progress refetches the card, once per burst.
+  // A progress tick of a listed run moves nothing, so it only patches.
+  useStreamEvent('change', (change) => {
+    const listed = runs.rows.some((run) => run.id === change.id)
+
+    if (change.topic === runsTopic && change.projection && (change.projection.status === 'InProgress') !== listed) {
+      clearTimeout(refetch.current)
+      refetch.current = setTimeout(() => void client.invalidateQueries({ queryKey: listKey(runsTopic, processingFilter) }), 250)
+    }
+  })
+  useEffect(() => () => clearTimeout(refetch.current), [])
   const commands = useJobsCommands()
   const pending = usePending()
   const running = runs.rows.filter((run) => run.status === 'InProgress')
@@ -82,7 +103,8 @@ function ProcessingNow() {
   return (
     <Card
       title="Processing now"
-      caption={runs.count ? `${format.count(runs.count)} running` : undefined}
+      // The served count answers for the last fetch; while every running run is loaded, the shown rows are newer.
+      caption={running.length > 0 ? `${format.count(runs.hasMore && runs.count ? runs.count : { value: running.length, capped: false })} running` : undefined}
       action={running.length > 0 ? <Link to="/jobs/runs?status=InProgress">All</Link> : undefined}
       empty={
         runs.query.isError ? (

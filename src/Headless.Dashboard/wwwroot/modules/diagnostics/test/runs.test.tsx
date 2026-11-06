@@ -502,6 +502,22 @@ describe('diagnostics runs list', () => {
 
     expect(await screen.findByRole('dialog')).toBeTruthy()
   })
+
+  it('counts only the checked runs the list still shows after a live change moves one out of it', async () => {
+    const actor = user()
+    const view = open([run('run-000001', 'Failed'), run('run-000002', 'Failed')], { path: '?status=Failed' })
+
+    await screen.findByRole('row', { name: /run-000001/ })
+    for (const id of ['run-000001', 'run-000002']) {
+      await actor.click(screen.getByRole('checkbox', { name: `Select ${id}` }))
+    }
+    const header = screen.getByRole('banner')
+    expect(within(header).getByText('2 selected')).toBeTruthy()
+
+    view.stream.push('change', change(run('run-000001', 'Queued', { version: '2' })))
+
+    expect(await within(header).findByText('1 selected')).toBeTruthy()
+  })
 })
 
 describe('diagnostics run page', () => {

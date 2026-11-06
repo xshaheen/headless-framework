@@ -100,8 +100,12 @@ export default function RunsView() {
   const commands = useJobsCommands()
   const pending = usePending()
   const [allMatching, setAllMatching] = useState(false)
-  const checkedRuns = items.filter((run) => frame.checked.has(run.id))
-  const status = filter.status as RunStatus | ''
+  // A live change can move a checked run out of the list while the cache still holds it: the bar counts and acts on
+  // the checked runs the list shows, never on hidden ones.
+  const checkedRuns = items.filter((run) => frame.checked.has(run.id) && matches(run))
+  // The version each refused run had when it was refused; a later change to the run makes the refusal out of date.
+  const refusedAt = useRef<ReadonlyMap<string, string>>(new Map())
+  const status = filter.status
   const state = status ? states[status] : undefined
 
   function update(change: (next: URLSearchParams) => void) {
@@ -117,7 +121,6 @@ export default function RunsView() {
   }
 
   function setFilter(name: keyof RunFilter, value: string, also?: Partial<RunFilter>) {
-    frame.setChecked(new Set())
     update((next) => {
       for (const [key, set] of Object.entries({ [name]: value, ...also })) {
         if (set) {
@@ -141,7 +144,6 @@ export default function RunsView() {
 
   // The status is the list itself, chosen in the sidebar; clearing the filters keeps it.
   function clearFilters() {
-    frame.setChecked(new Set())
     update((next) => filterNames.filter((name) => name !== 'status').forEach((name) => next.delete(name)))
   }
 
@@ -184,8 +186,33 @@ export default function RunsView() {
     }
   }, [wantsOperation])
 
+  // A new filter is a new list, whether the header, the sidebar, a link, or Back changed it: the checked rows, and so
+  // `Select all matching` and the refusals, answered for the old one.
+  useEffect(() => frame.setChecked(new Set()), [filterKey])
+
   // `Select all matching` answers for the rows checked when it was pressed; a change to them ends it.
   useEffect(() => setAllMatching(false), [frame.checked])
+
+  // A checked run a live change moved out of the list leaves the selection, so it does not come back checked; while
+  // every matching run is selected the Operation scopes by the filter, so the checked rows stay. A refused run that
+  // changed since is answered afresh by the next action, so its tag goes.
+  useEffect(() => {
+    const left = allMatching ? [] : items.filter((run) => frame.checked.has(run.id) && !matches(run))
+
+    if (left.length > 0) {
+      const next = new Set(frame.checked)
+      left.forEach((run) => next.delete(run.id))
+      frame.setChecked(next)
+
+      return
+    }
+
+    const changed = new Set(items.filter((run) => frame.refused.has(run.id) && refusedAt.current.get(run.id) !== run.version).map((run) => run.id))
+
+    if (changed.size > 0) {
+      frame.setRefused(new Map([...frame.refused].filter(([id]) => !changed.has(id))))
+    }
+  }, [items])
 
   const count = runs.count
   const narrowed = filterNames.some((name) => name !== 'status' && filter[name] !== '')
@@ -247,9 +274,18 @@ export default function RunsView() {
           actions={
             <>
               {allMatching && count ? (
-                <MatchingActions filter={filter} count={format.count(count)} />
+                <MatchingActions filter={filter} count={format.count(count)} cancel={CANCELLABLE_STATES.has(status)} />
               ) : checkedRuns.length > 0 ? (
-                <CheckedActions runs={checkedRuns} pending={pending} cancel={CANCELLABLE_STATES.has(status)} frame={frame} />
+                <CheckedActions
+                  runs={checkedRuns}
+                  pending={pending}
+                  cancel={CANCELLABLE_STATES.has(status)}
+                  frame={frame}
+                  onRefused={(reasons, versions) => {
+                    refusedAt.current = versions
+                    frame.setRefused(reasons)
+                  }}
+                />
               ) : null}
               <Button variant="primary" disabledReason={addReason} onPress={() => openCreate('time-job')}>
                 Add time job
@@ -430,7 +466,8 @@ function FailureChips({
     <FilterChips label="Filter by cause">
       <FilterChip label="All" count={count} pressed={!filter.fingerprint} onPress={() => onPick('fingerprint', '', { function: '' })} />
       {groups.map((group) => {
-        const pressed = filter.fingerprint === group.fingerprint
+        // Two functions can fail the same way, so a chip is its pair: one function and one fingerprint.
+        const pressed = filter.fingerprint === group.fingerprint && filter.function === group.fn
 
         return (
           <FilterChip
@@ -453,11 +490,13 @@ function CheckedActions({
   pending,
   cancel,
   frame,
+  onRefused,
 }: {
   runs: readonly Run[]
   pending: Pending
   cancel: boolean
   frame: ReturnType<typeof usePageFrame>
+  onRefused: (reasons: ReadonlyMap<string, string>, versions: ReadonlyMap<string, string>) => void
 }) {
   const module = useModule()
   const commands = useJobsCommands()
@@ -476,9 +515,8 @@ function CheckedActions({
         noun={ids.length === 1 ? 'run' : 'runs'}
         variant={variant}
         commands={commands.all}
-        disabledReason={allowed(command.id)}
         refused={allowed.refused(command.id)}
-        onRefused={frame.setRefused}
+        onRefused={(reasons) => onRefused(reasons, versions)}
         onViewRefused={frame.reveal}
         onDone={markDone(pending, versions, name)}
       />
@@ -495,7 +533,7 @@ function CheckedActions({
 }
 
 /** Every run the filter matches, past the loaded page: each action runs over them as an Operation. */
-function MatchingActions({ filter, count }: { filter: RunFilter; count: string }) {
+function MatchingActions({ filter, count, cancel }: { filter: RunFilter; count: string; cancel: boolean }) {
   const module = useModule()
   const { start } = useOperations()
   const commands = useJobsCommands()
@@ -517,7 +555,7 @@ function MatchingActions({ filter, count }: { filter: RunFilter; count: string }
     <>
       <span>{`All ${count} matching ${noun}`}</span>
       {operation(commands.requeue, 'primary')}
-      {operation(commands.cancel)}
+      {cancel ? operation(commands.cancel) : null}
       {operation(commands.delete, 'danger')}
     </>
   )
