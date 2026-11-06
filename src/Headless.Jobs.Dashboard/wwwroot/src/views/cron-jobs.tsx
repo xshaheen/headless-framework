@@ -55,7 +55,7 @@ export default function CronJobsView() {
             </>
           }
         />
-        <CronFields cronJob={selected} />
+        <CronFields key={selected.id} cronJob={selected} />
       </Inspector>
     )
   } else {

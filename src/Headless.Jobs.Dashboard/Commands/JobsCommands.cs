@@ -407,7 +407,7 @@ internal sealed class JobsCommands(
         }
 
         await _publisher
-            .PublishAsync(changeKind, run.Id, affectsAttention: true, cancellationToken)
+            .TryPublishAsync(changeKind, run.Id, affectsAttention: true, cancellationToken)
             .ConfigureAwait(false);
 
         return (_Done(id), false);
@@ -442,7 +442,12 @@ internal sealed class JobsCommands(
 
             var occurrence = await _backend.RunCronJobNowAsync(cronJob.Id, cancellationToken).ConfigureAwait(false);
             await _publisher
-                .PublishAsync(JobChangeKind.CronJobOccurrence, occurrence, affectsAttention: false, cancellationToken)
+                .TryPublishAsync(
+                    JobChangeKind.CronJobOccurrence,
+                    occurrence,
+                    affectsAttention: false,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
 
             done = occurrence.ToString();
@@ -503,7 +508,7 @@ internal sealed class JobsCommands(
         }
 
         await _publisher
-            .PublishAsync(JobChangeKind.CronJob, cronJob.Id, affectsAttention: true, cancellationToken)
+            .TryPublishAsync(JobChangeKind.CronJob, cronJob.Id, affectsAttention: true, cancellationToken)
             .ConfigureAwait(false);
 
         return (

@@ -113,6 +113,27 @@ public sealed class JobsModuleSourcesTests : TestBase
     }
 
     [Fact]
+    public async Task should_leave_out_the_succeeded_share_when_no_run_finished_in_the_last_day()
+    {
+        // given: one run succeeded the day before, and none finished since
+        await using var node = JobsModuleNode.Create(_time);
+        var now = _time.GetUtcNow();
+        var yesterday = JobsModuleNode.FailedJob(now);
+        yesterday.Status = JobStatus.Succeeded;
+        yesterday.ExceptionMessage = null;
+        yesterday.FailureFingerprint = null;
+        yesterday.ExecutedAt = now.AddHours(-30);
+        await node.Store.AddTimeJobsAsync([yesterday, JobsModuleNode.IdleJob(now)], AbortToken);
+
+        // when
+        var figures = await node.Module.GetOverviewAsync(new DashboardOverviewRequest { User = _User }, AbortToken);
+
+        // then
+        figures.Select(figure => figure.Id).Should().Equal("jobs.overview.failed", "jobs.overview.late");
+        figures[0].Value.Should().Be(0);
+    }
+
+    [Fact]
     public async Task should_publish_a_run_that_fails_on_this_node_once_with_the_marker_read_back_from_its_row()
     {
         // given
@@ -138,7 +159,9 @@ public sealed class JobsModuleSourcesTests : TestBase
             .Should()
             .Be(1);
         var change = await node.Published.WaitForAsync(job.Id, AbortToken);
-        await Task.Delay(TimeSpan.FromMilliseconds(200), AbortToken);
+        // The queue publishes in order, so once a change queued after this write is out, any second publish of the
+        // run would be out too.
+        await _DrainPublisherAsync(node);
 
         // then
         var stored = await node.Store.GetJobRunAsync(job.Id, AbortToken);
@@ -165,18 +188,42 @@ public sealed class JobsModuleSourcesTests : TestBase
         var added = await node
             .Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>()
             .AddBatchAsync(batch, AbortToken);
-        await Task.Delay(TimeSpan.FromMilliseconds(200), AbortToken);
+        var sentinel = await _DrainPublisherAsync(node);
         var read = await node.Module.ReadChangesAsync(cursor, AbortToken);
 
         // then
-        node.Published.Changes.Should().BeEmpty("a batch add names no row");
+        var sentinelId = sentinel.ToString();
+        node.Published.Changes.Should()
+            .OnlyContain(
+                change => string.Equals(change.Target.Id, sentinelId, StringComparison.Ordinal),
+                "a batch add names no row"
+            );
         var ids = added.Select(job => job.Id.ToString()).ToArray();
-        read.Changes.Select(change => change.Target.Id).Should().BeEquivalentTo(ids);
-        foreach (var change in read.Changes)
+        var batchChanges = read
+            .Changes.Where(change => !string.Equals(change.Target.Id, sentinelId, StringComparison.Ordinal))
+            .ToList();
+        batchChanges.Select(change => change.Target.Id).Should().BeEquivalentTo(ids);
+        foreach (var change in batchChanges)
         {
             var stored = await node.Store.GetJobRunAsync(Guid.Parse(change.Target.Id), AbortToken);
             change.Target.Kind.Should().Be("run");
             change.Version.Should().Be(stored!.ChangedAt.Ticks.ToString(CultureInfo.InvariantCulture));
         }
+    }
+
+    /// <summary>
+    /// Queues a change for a new sentinel run behind everything this node already queued, and waits until it is
+    /// published: every change queued before it has then been published or dropped.
+    /// </summary>
+    private async Task<Guid> _DrainPublisherAsync(JobsModuleNode node)
+    {
+        var sentinel = JobsModuleNode.IdleJob(_time.GetUtcNow());
+        sentinel.ExecutionTime = _time.GetUtcNow().UtcDateTime.AddDays(1);
+        await node.Store.AddTimeJobsAsync([sentinel], AbortToken);
+        node.Services.GetRequiredService<JobsChangePublisher>()
+            .Enqueue(JobChangeKind.TimeJob, sentinel.Id, affectsAttention: false);
+        await node.Published.WaitForAsync(sentinel.Id, AbortToken);
+
+        return sentinel.Id;
     }
 }

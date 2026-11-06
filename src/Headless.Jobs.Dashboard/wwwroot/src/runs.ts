@@ -79,10 +79,19 @@ export interface RunFilter {
   from: string
 }
 
-export const filterNames = ['kind', 'function', 'status', 'cronJobId', 'correlationId', 'fingerprint', 'range', 'from'] as const
+// Typed as the whole filter, so a field added to RunFilter must be listed here, and so in filterNames.
+const emptyFilter: RunFilter = { kind: '', function: '', status: '', cronJobId: '', correlationId: '', fingerprint: '', range: '', from: '' }
+
+export const filterNames = Object.keys(emptyFilter) as (keyof RunFilter)[]
 
 export function readFilter(params: URLSearchParams): RunFilter {
-  return Object.fromEntries(filterNames.map((name) => [name, params.get(name) ?? ''])) as unknown as RunFilter
+  const filter = { ...emptyFilter }
+
+  for (const name of filterNames) {
+    filter[name] = params.get(name) ?? ''
+  }
+
+  return filter
 }
 
 export function isFiltered(filter: RunFilter) {

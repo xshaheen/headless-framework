@@ -95,6 +95,34 @@ internal sealed class JobsChangePublisher : IAsyncDisposable
         _publisher.Publish(change);
     }
 
+    /// <summary>
+    /// Reads a row back and publishes it after a write that already committed. A failed read is logged, not thrown,
+    /// and a cancellation after the write is ignored: the caller's change is done, and the change reader still
+    /// delivers the row to every stream.
+    /// </summary>
+    public async Task TryPublishAsync(
+        JobChangeKind kind,
+        Guid id,
+        bool affectsAttention,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            await PublishAsync(kind, id, affectsAttention, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The caller stopped waiting after the write committed; the change reader publishes the row instead.
+        }
+#pragma warning disable CA1031 // The write committed, so a failed read-back must not report it as failed; it is logged.
+        catch (Exception exception)
+#pragma warning restore CA1031
+        {
+            _logger.LogJobsChangePublishFailed(exception, kind, id);
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
         _queue.Writer.TryComplete();
@@ -142,20 +170,8 @@ internal sealed class JobsChangePublisher : IAsyncDisposable
             var (kind, id, affectsAttention) in _queue.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false)
         )
         {
-            try
-            {
-                await PublishAsync(kind, id, affectsAttention, cancellationToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-#pragma warning disable CA1031 // The reader serves every later notification, so one failed read is logged and skipped.
-            catch (Exception exception)
-#pragma warning restore CA1031
-            {
-                _logger.LogJobsChangePublishFailed(exception, kind, id);
-            }
+            // One failed read is logged and skipped, so the reader serves every later notification.
+            await TryPublishAsync(kind, id, affectsAttention, cancellationToken).ConfigureAwait(false);
         }
     }
 }

@@ -130,4 +130,30 @@ describe('jobs cron jobs list', () => {
 
     expect(await screen.findByText('No cron jobs. Declare one with a [Job] cron attribute, or add one here.')).toBeTruthy()
   })
+
+  it('does not carry an expression typed for one cron job into the next one selected', async () => {
+    const actor = user()
+    const first = cronJob({ description: 'Nightly report' })
+    const second = cronJob({ id: 'c0000000-0000-0000-0000-000000000002', description: 'Nightly cleanup' })
+    const view = open(
+      {
+        cronJobs: [first, second],
+        extra: (request) =>
+          request.path === 'jobs/cron-preview' && request.query?.expression === '61 * * * *'
+            ? { timeZoneId: 'Europe/Berlin', nextFires: [], validationMessage: 'Minute 61 is out of range (0-59).' }
+            : undefined,
+      },
+      { path: 'cron-jobs' },
+    )
+
+    await actor.click(await screen.findByRole('row', { name: /Nightly report/ }))
+    const field = await screen.findByRole('textbox', { name: 'Expression' })
+    await actor.clear(field)
+    await actor.type(field, '61 * * * *')
+    await actor.click(screen.getByRole('row', { name: /Nightly cleanup/ }))
+
+    await screen.findByRole('complementary', { name: `Cron job ${second.id}` })
+    expect((screen.getByRole('textbox', { name: 'Expression' }) as HTMLInputElement).value).toBe('0 2 * * *')
+    expect(view.requests.some((request) => request.method === 'POST')).toBe(false)
+  })
 })

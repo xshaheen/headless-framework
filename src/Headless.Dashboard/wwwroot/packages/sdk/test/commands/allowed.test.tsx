@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { useAllowedActions } from '../../src/commands/allowed.ts'
 import type { CommandDefinition } from '../../src/commands/api.ts'
 import { CommandAction } from '../../src/commands/command-action.tsx'
+import { useSelectionCommands } from '../../src/components/keymap.tsx'
 import { DashboardProvider, ModuleScope } from '../../src/context.tsx'
 import { DashboardApiError, type ApiRequest } from '../../src/data/api.ts'
 import { createDashboardClient } from '../../src/data/client.tsx'
@@ -68,6 +69,17 @@ function Recovery() {
   return <CommandAction module="diag" command={requeue} ids={['r1']} noun="run" recovery disabledReason={refusal(requeue.id)} />
 }
 
+/** The palette's view of the selection: its commands, read when the button is pressed, as the palette reads them. */
+function Palette() {
+  const commands = useSelectionCommands()
+
+  return (
+    <button type="button" onClick={() => commands().forEach((command) => command.run())}>
+      Palette
+    </button>
+  )
+}
+
 describe('useAllowedActions', () => {
   it('says the check is running while the server has not answered', () => {
     renderInModule(<Refusal />, () => new Promise(() => undefined))
@@ -114,5 +126,23 @@ describe('R on the selection', () => {
     await user.keyboard('r')
 
     await waitFor(() => expect(requests.map((request) => request.path)).toEqual(['diag/commands/allowed', 'diag/commands/diag.requeue']))
+  })
+
+  it('starts one run when R is pressed again, or the palette runs it, before the first run answers', async () => {
+    const user = userEvent.setup()
+    const requests = renderInModule(
+      <>
+        <Recovery />
+        <Palette />
+      </>,
+      (request) => (request.path === 'diag/commands/allowed' ? allowedAnswer() : new Promise(() => undefined)),
+    )
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Requeue' }).getAttribute('aria-disabled')).toBeNull())
+    await user.keyboard('r')
+    await user.keyboard('r')
+    await user.click(screen.getByRole('button', { name: 'Palette' }))
+
+    expect(requests.map((request) => request.path)).toEqual(['diag/commands/allowed', 'diag/commands/diag.requeue'])
   })
 })

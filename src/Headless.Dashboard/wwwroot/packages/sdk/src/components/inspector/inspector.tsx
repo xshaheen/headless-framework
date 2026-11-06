@@ -119,6 +119,8 @@ function EditableValue({ id, edit }: { id: string; edit: InspectorFieldEdit }) {
   const [seen, setSeen] = useState(value)
   const [error, setError] = useState<string>()
   const [busy, setBusy] = useState(false)
+  // The text last sent or refused: Enter then blur, or a blur after a refusal, does not send it again.
+  const attempted = useRef<string>(undefined)
 
   // A committed value, or a live change, replaces the text once it arrives.
   if (seen !== value) {
@@ -127,10 +129,11 @@ function EditableValue({ id, edit }: { id: string; edit: InspectorFieldEdit }) {
   }
 
   async function commit(next: string) {
-    if (next === value) {
+    if (next === value || next === attempted.current) {
       return
     }
 
+    attempted.current = next
     setBusy(true)
     setError(undefined)
 
@@ -138,6 +141,10 @@ function EditableValue({ id, edit }: { id: string; edit: InspectorFieldEdit }) {
       await edit.onCommit(next)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not save. Try again.')
+      // A select shows what is stored, not the refused option.
+      if (options) {
+        setDraft(value)
+      }
     } finally {
       setBusy(false)
     }
@@ -158,6 +165,7 @@ function EditableValue({ id, edit }: { id: string; edit: InspectorFieldEdit }) {
         <select
           {...common}
           onChange={(event) => {
+            attempted.current = undefined
             setDraft(event.currentTarget.value)
             void commit(event.currentTarget.value)
           }}
@@ -172,6 +180,7 @@ function EditableValue({ id, edit }: { id: string; edit: InspectorFieldEdit }) {
         <input
           {...common}
           onChange={(event) => {
+            attempted.current = undefined
             setDraft(event.currentTarget.value)
             onDraftChange?.(event.currentTarget.value)
           }}

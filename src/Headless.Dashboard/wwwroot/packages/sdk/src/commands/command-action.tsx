@@ -101,6 +101,11 @@ export function CommandAction({ module, command, ids, noun, disabledReason, comm
   const client = createCommandsApi(api, module)
 
   function press() {
+    // `R` and the palette call this directly, so a run in flight or an open confirmation does not start another.
+    if (busy || confirming) {
+      return
+    }
+
     if (confirmation === 'none' && !needsInput) {
       void run({ arguments: {} })
     } else {
@@ -110,7 +115,7 @@ export function CommandAction({ module, command, ids, noun, disabledReason, comm
 
   // `R` and the palette go through the same refusal as the button, so a refused command stays refused.
   useViewKeys({ recover: () => (refusal ? setAnnounced(refusal) : press()) }, recovery === true && ids.length > 0)
-  useSelectionCommand(refusal || ids.length === 0 ? null : { id: command.id, label, run: press })
+  useSelectionCommand(refusal || busy || ids.length === 0 ? null : { id: command.id, label, run: press })
 
   async function run(action: ConfirmedAction) {
     setBusy(true)

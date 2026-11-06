@@ -327,6 +327,62 @@ describe('virtualized keyset table', () => {
     expect(fetchPage).toHaveBeenCalledTimes(2)
   })
 
+  it('asks for the next page again after it failed and the list was retried', async () => {
+    const user = userEvent.setup()
+    let failNext = true
+    const fetchPage = vi.fn(async (cursor: string | undefined): Promise<DashboardListPage<Run>> => {
+      if (cursor === undefined) {
+        return { items: runs(100), nextCursor: 'cursor-of-r100' }
+      }
+
+      if (failNext) {
+        failNext = false
+        throw new Error('Page 2 failed')
+      }
+
+      return { items: runs(100, 101), nextCursor: null }
+    })
+
+    function RetriedRuns() {
+      const list = useDashboardKeysetList<Run>({ topic: 'diag.run', params: {}, fetchPage })
+
+      return (
+        <>
+          {list.query.isError ? (
+            <button type="button" onClick={() => void list.query.refetch()}>
+              Retry
+            </button>
+          ) : null}
+          <DataTable
+            label="Runs"
+            rows={list.rows}
+            columns={runColumns}
+            hasMore={list.hasMore}
+            isLoadingMore={list.isLoadingMore}
+            onLoadMore={list.loadMore}
+            emptyState="No runs yet."
+          />
+        </>
+      )
+    }
+
+    render(withDashboard(<RetriedRuns />))
+    await screen.findByRole('row', { name: /^r1\b/ })
+
+    scrollTo(100 * 36 - 360)
+    sentinelInView()
+    await user.click(await screen.findByRole('button', { name: 'Retry' }))
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull())
+
+    sentinelInView()
+
+    await screen.findByRole('row', { name: /^r101\b/ })
+    expect(fetchPage.mock.calls.map(([cursor]) => cursor).filter((cursor) => cursor !== undefined)).toEqual([
+      'cursor-of-r100',
+      'cursor-of-r100',
+    ])
+  })
+
   it('holds the rows in view when three rows arrive above them, and shows 3 new', async () => {
     const user = userEvent.setup()
     const view = render(withDashboard(<SelectableRuns rows={runs(5_000, 4)} />))

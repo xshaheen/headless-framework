@@ -103,7 +103,8 @@ internal sealed class JobsSources(string moduleId, IJobsDashboardBackend backend
 
     /// <summary>
     /// The share of runs that succeeded, the failed runs, and the runs that started late, each over the last 24 hours
-    /// and compared with the 24 hours before.
+    /// and compared with the 24 hours before. The share is left out when no run finished in the last 24 hours, so an
+    /// idle system does not read as 0 % succeeded.
     /// </summary>
     public async Task<IReadOnlyList<DashboardFigure>> GetOverviewAsync(CancellationToken cancellationToken)
     {
@@ -112,39 +113,49 @@ internal sealed class JobsSources(string moduleId, IJobsDashboardBackend backend
             .ConfigureAwait(false);
         var (current, previous) = (figures.Current, figures.Previous);
         const string comparison = "previous 24 h";
+        var result = new List<DashboardFigure>(3);
 
-        return
-        [
-            new DashboardFigure
-            {
-                Id = _moduleId + ".overview.succeeded-share",
-                Label = "Runs that succeeded, last 24 h",
-                Value = Math.Round((current.SucceededShare ?? 0) * 100, 1, MidpointRounding.AwayFromZero),
-                Unit = "%",
-                Comparison = previous.SucceededShare is { } share
-                    ? new DashboardFigureComparison
-                    {
-                        Label = comparison,
-                        Value = Math.Round(share * 100, 1, MidpointRounding.AwayFromZero),
-                        HigherIsBetter = true,
-                    }
-                    : null,
-            },
+        if (current.SucceededShare is { } succeeded)
+        {
+            result.Add(
+                new DashboardFigure
+                {
+                    Id = _moduleId + ".overview.succeeded-share",
+                    Label = "Runs that succeeded, last 24 h",
+                    Value = Math.Round(succeeded * 100, 1, MidpointRounding.AwayFromZero),
+                    Unit = "%",
+                    Comparison = previous.SucceededShare is { } share
+                        ? new DashboardFigureComparison
+                        {
+                            Label = comparison,
+                            Value = Math.Round(share * 100, 1, MidpointRounding.AwayFromZero),
+                            HigherIsBetter = true,
+                        }
+                        : null,
+                }
+            );
+        }
+
+        result.Add(
             new DashboardFigure
             {
                 Id = _moduleId + ".overview.failed",
                 Label = "Failed runs, last 24 h",
                 Value = current.Failed,
                 Comparison = new DashboardFigureComparison { Label = comparison, Value = previous.Failed },
-            },
+            }
+        );
+        result.Add(
             new DashboardFigure
             {
                 Id = _moduleId + ".overview.late",
                 Label = "Runs that started late, last 24 h",
                 Value = current.Late,
                 Comparison = new DashboardFigureComparison { Label = comparison, Value = previous.Late },
-            },
-        ];
+            }
+        );
+
+        return result;
     }
 
     /// <summary>Returns the run or cron job whose id is exactly <paramref name="query"/>, or the function so named.</summary>

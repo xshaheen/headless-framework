@@ -105,4 +105,57 @@ describe('InspectorField', () => {
 
     expect(save).toHaveBeenCalledExactlyOnceWith('nightly')
   })
+
+  it('commits text once on Enter then blur, before the save answers', async () => {
+    const user = userEvent.setup()
+    let answer: () => void = () => undefined
+    const save = vi.fn(() => new Promise<void>((resolve) => (answer = resolve)))
+    render(<Stored initial="" save={save} />)
+
+    await user.type(screen.getByRole('textbox', { name: 'Setting' }), 'nightly{Enter}')
+    await user.tab()
+    answer()
+
+    expect(await screen.findByText('Stored: nightly')).toBeTruthy()
+    expect(save).toHaveBeenCalledExactlyOnceWith('nightly')
+  })
+
+  it('does not resend refused text on a later blur, and sends it again once edited', async () => {
+    const user = userEvent.setup()
+    const save = vi.fn(async () => {
+      throw new DashboardApiError(400, 'Not a cron expression')
+    })
+    render(<Stored initial="0 * * * *" save={save} />)
+
+    const field = screen.getByRole('textbox', { name: 'Setting' })
+    await user.clear(field)
+    await user.type(field, '61 * * * *{Enter}')
+    await screen.findByRole('alert')
+    await user.tab()
+
+    expect(save).toHaveBeenCalledTimes(1)
+
+    await user.type(field, '1{Enter}')
+
+    expect(save).toHaveBeenCalledTimes(2)
+    expect(save).toHaveBeenLastCalledWith('61 * * * *1')
+  })
+
+  it('shows the stored option again when the server refuses a select change', async () => {
+    const user = userEvent.setup()
+    const save = vi.fn(async () => {
+      throw new DashboardApiError(400, 'Not allowed')
+    })
+    const options = [
+      { value: 'low', label: 'Low' },
+      { value: 'high', label: 'High' },
+    ]
+    render(<Stored initial="low" save={save} options={options} />)
+
+    const select = screen.getByRole('combobox', { name: 'Setting' })
+    await user.selectOptions(select, 'high')
+
+    expect((await screen.findByRole('alert')).textContent).toBe('Not allowed')
+    expect((select as HTMLSelectElement).value).toBe('low')
+  })
 })

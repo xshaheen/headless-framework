@@ -126,6 +126,20 @@ internal static class JobsDashboardHttpHost
         return await client.SendAsync(request, cancellationToken);
     }
 
+    public static async Task<HttpResponseMessage> GetAsync(
+        HttpClient client,
+        string path,
+        string cookie,
+        CancellationToken cancellationToken
+    )
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(path, UriKind.Relative));
+        request.Headers.TryAddWithoutValidation("Cookie", cookie);
+        request.Headers.TryAddWithoutValidation("X-Requested-With", "XMLHttpRequest");
+
+        return await client.SendAsync(request, cancellationToken);
+    }
+
     public static async Task<JsonElement> ReadAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));

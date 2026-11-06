@@ -3,6 +3,7 @@
 using Headless.Dashboard;
 using Headless.Jobs;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Time.Testing;
 
 namespace Tests.Dashboard;
@@ -35,7 +36,8 @@ internal sealed class JobsModuleNode : IAsyncDisposable
     public static JobsModuleNode Create(
         FakeTimeProvider time,
         IJobPersistenceProvider<TimeJobEntity, CronJobEntity>? sharedStore = null,
-        string nodeId = "node-a"
+        string nodeId = "node-a",
+        Func<IJobsDashboardBackend, IJobsDashboardBackend>? backend = null
     )
     {
         var publisher = new RecordingEventPublisher();
@@ -55,6 +57,14 @@ internal sealed class JobsModuleNode : IAsyncDisposable
         }
 
         services.AddSingleton<IDashboardEventPublisher>(publisher);
+
+        if (backend is not null)
+        {
+            var factory = services.Single(x => x.ServiceType == typeof(IJobsDashboardBackend)).ImplementationFactory!;
+            services.Replace(
+                ServiceDescriptor.Singleton(provider => backend((IJobsDashboardBackend)factory(provider)))
+            );
+        }
 
         return new JobsModuleNode(services.BuildServiceProvider(), publisher);
     }
