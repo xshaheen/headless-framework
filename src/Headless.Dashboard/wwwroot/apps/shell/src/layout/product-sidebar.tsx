@@ -32,11 +32,7 @@ function Lead({ entry }: { entry: BootstrapSidebarEntry }) {
   )
 }
 
-/**
- * The entry the location sits on: on its path, the entry whose query the location holds with the most parameters
- * (so `runs?status=Failed&open=r1` stays on Failed, not All runs), else the longest list whose page this is.
- */
-function currentEntry(entries: readonly { to: string }[], search: URLSearchParams, pathname: string) {
+function mostSpecificEntry(entries: readonly { to: string }[], search: URLSearchParams, pathname: string) {
   let best
   let score = -1
 
@@ -77,7 +73,7 @@ export function ProductSidebar({ product, onNavigate }: { product: BootstrapProd
     ...section,
     entries: section.entries.map((entry) => ({ ...entry, module: section.module, to: modulePath(section.module, entry.route) })),
   }))
-  const current = currentEntry(sections.flatMap((section) => section.entries), new URLSearchParams(location.search), location.pathname)
+  const current = mostSpecificEntry(sections.flatMap((section) => section.entries), new URLSearchParams(location.search), location.pathname)
 
   return (
     <nav className="hd-sidebar" aria-label={product.label}>

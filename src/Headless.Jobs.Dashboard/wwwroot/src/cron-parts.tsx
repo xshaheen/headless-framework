@@ -8,7 +8,7 @@ import { Link } from '@headless/dashboard-sdk/router'
 import { useStreamEvent } from '@headless/dashboard-sdk/stream'
 import { useEffect, useState } from 'react'
 import { cronJobsTopic, cronStatusMark, fetchCronJob, fetchPreview, type CronJob } from './cron.ts'
-import { LoadError, Skeleton, Time } from './parts.tsx'
+import { firstLine, LoadError, Skeleton, Time } from './parts.tsx'
 import { fetchRuns, runStatusMark, runsTopic, statusLabel, useJobsCommands, viewOnlyReason, type Run, type RunStatus } from './runs.ts'
 
 const hour = 3_600_000
@@ -224,7 +224,6 @@ export function CronActions({ cronJob }: { cronJob: CronJob }) {
   )
 }
 
-/** The outcome series of the occurrence bars, and which finished statuses each counts. */
 const outcomeSeries = [
   { name: 'Succeeded', tone: 'ok', statuses: ['Succeeded', 'DueDone'] },
   { name: 'Failed', tone: 'fail', statuses: ['Failed'] },
@@ -250,9 +249,8 @@ function hourlyOutcomes(runs: readonly Run[], since: number, locale: string, tim
   return columns
 }
 
-/** What one occurrence says beyond its status: the node that ran it, why it was skipped, or how it failed. */
 function occurrenceNote(run: Run) {
-  return run.skippedReason ?? run.exceptionMessage?.split('\n')[0] ?? run.node
+  return run.skippedReason ?? firstLine(run.exceptionMessage) ?? run.node
 }
 
 /**
@@ -262,9 +260,8 @@ function occurrenceNote(run: Run) {
 function CronOccurrences({ cronJob }: { cronJob: CronJob }) {
   const { api } = useDashboard()
   const format = useFormat()
-  // Fixed when the tab opens, so the list keeps one cache key while it stays open.
-  const [since] = useState(() => Date.now() - 24 * hour)
-  const filter = { cronJobId: cronJob.id, from: new Date(since).toISOString() }
+  const [stableWindowStart] = useState(() => Date.now() - 24 * hour)
+  const filter = { cronJobId: cronJob.id, from: new Date(stableWindowStart).toISOString() }
   const occurrences = useDashboardKeysetList<Run>({ topic: runsTopic, params: filter, fetchPage: (cursor) => fetchRuns(api, filter, cursor) })
   const rows = occurrences.rows
 
@@ -289,7 +286,7 @@ function CronOccurrences({ cronJob }: { cronJob: CronJob }) {
             <BarChart
               label="Occurrence outcomes per hour"
               series={outcomeSeries}
-              columns={hourlyOutcomes(rows, since, format.locale, format.timeZone)}
+              columns={hourlyOutcomes(rows, stableWindowStart, format.locale, format.timeZone)}
               unit="occurrences"
             />
             {occurrences.hasMore && total ? (
@@ -318,10 +315,7 @@ function CronOccurrences({ cronJob }: { cronJob: CronJob }) {
   )
 }
 
-/**
- * One cron job in the detail panel, or as its own page when `page` is set: its schedule, editable in place, beside its
- * next fires, and its occurrences, with the actions the server allows now. `fires` is unset while they load.
- */
+/** `fires` is unset while they load. */
 export function CronPanel({ cronJob, fires, page }: { cronJob: CronJob; fires: readonly string[] | undefined; page?: boolean }) {
   const zone = useCronZone(cronJob)
 

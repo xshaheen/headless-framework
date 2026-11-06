@@ -169,7 +169,7 @@ internal sealed class JobsModuleApi(IJobsDashboardBackend backend, TimeProvider 
         CancellationToken cancellationToken
     )
     {
-        // A Function page asks for each cron job's next fires to draw them on its strip; the Cron jobs list does not.
+        // Computing next fires costs a cron parse per job, so a list caller gets them only when it asks for them.
         var count = fires is null ? 1 : Math.Clamp(fires.Value, 1, MaxFires);
         var cronJobs = await _backend.GetCronJobsAsync(cancellationToken).ConfigureAwait(false);
         var now = _Now();

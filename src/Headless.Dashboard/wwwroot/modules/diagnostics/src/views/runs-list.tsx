@@ -36,10 +36,6 @@ import {
 
 const statusOptions = runStatuses.map((status) => ({ value: status, label: status }))
 
-/**
- * The diagnostic runs: a live list filtered in the URL, the open run in the docked panel, checked rows for Requeue,
- * and Requeue over the failed runs as an Operation.
- */
 export default function RunsList() {
   const { api } = useDashboard()
   const module = useModule()
@@ -111,7 +107,7 @@ export default function RunsList() {
     update((next) => next.delete('operation'))
 
     if (requeue.canRun) {
-      start({ module: module.id, command: requeue, filter: failedFilter, noun: 'failed runs' })
+      requeueFailed()
     }
     // Runs once per palette request; the filter and helpers are read as they are now.
   }, [wantsOperation, requeue])
@@ -219,7 +215,6 @@ export default function RunsList() {
   )
 }
 
-/** An open run outside the loaded page: read by its id, then shown as any open run is. */
 function LookedUpRun({
   id,
   isRequeuing,

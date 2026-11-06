@@ -129,7 +129,6 @@
   accent-color: var(--accent);
 }
 
-/* The rows a bulk action refused, once the operator asked to see them. */
 .hd-row[data-highlighted] {
   background: var(--fail-soft);
   box-shadow: inset 2px 0 0 var(--fail);

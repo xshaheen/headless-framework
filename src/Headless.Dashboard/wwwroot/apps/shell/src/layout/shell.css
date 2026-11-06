@@ -386,7 +386,6 @@
   background: var(--panel);
 }
 
-/* A module page draws its own frame, flush against the sidebar and the top bar, with its own inner padding. */
 .hd-canvas:has(> :is(.hd-frame, .hd-panel)) {
   gap: 0;
   padding: 0;
@@ -402,7 +401,6 @@
   gap: var(--sp-8);
 }
 
-/* A failed or missing view speaks in the sign-in card's language, inside the frame. */
 .hd-card {
   gap: var(--sp-5);
   max-inline-size: var(--dialog-width);

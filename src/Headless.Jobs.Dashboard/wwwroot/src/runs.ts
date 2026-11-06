@@ -1,5 +1,5 @@
 import { useDashboard, useModule } from '@headless/dashboard-sdk'
-import { createCommandsApi, type CommandDefinition } from '@headless/dashboard-sdk/commands'
+import { createCommandsApi, type CommandDefinition, type RowResult } from '@headless/dashboard-sdk/commands'
 import type { DashboardStateRole } from '@headless/dashboard-sdk'
 import type { CappedCount, DashboardApi, DashboardListPage } from '@headless/dashboard-sdk/data'
 import { useQuery } from '@headless/dashboard-sdk/query'
@@ -317,6 +317,16 @@ export function usePending() {
 }
 
 export type Pending = ReturnType<typeof usePending>
+
+/** A run action's `onDone`: the runs it finished on read its pending label until their change arrives. */
+export function markDone(pending: Pending, versions: ReadonlyMap<string, string>, name: 'requeue' | 'cancel' | 'delete') {
+  return (rows: readonly RowResult[]) =>
+    pending.mark(
+      rows.filter((row) => row.outcome === 'done').map((row) => row.id),
+      versions,
+      pendingLabels[name]!,
+    )
+}
 
 /** Opens a path of this module, such as the runs list filtered by a correlation id. */
 export function useModuleNavigate() {

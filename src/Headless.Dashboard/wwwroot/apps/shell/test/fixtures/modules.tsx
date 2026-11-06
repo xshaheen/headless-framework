@@ -72,10 +72,6 @@ export function twentyModules() {
   return Array.from({ length: 20 }, (_, index) => moduleManifest(`mod-${String(index + 1).padStart(2, '0')}`))
 }
 
-/**
- * A Jobs module shaped like the real one: its Dashboard at the module's home route leads the sidebar, then a state
- * entry and All runs on the runs list.
- */
 export function jobsWithDashboard() {
   const jobs = moduleManifest('jobs', {
     routes: [

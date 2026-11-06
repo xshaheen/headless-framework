@@ -488,7 +488,6 @@
   gap: var(--sp-3);
 }
 
-/* The rows a command left unchanged, each with the server's reason, listed beside the action that ran. */
 .hd-outcomes {
   display: grid;
   flex-basis: 100%;
@@ -794,7 +793,6 @@
   padding: var(--sp-3) var(--sp-5) 0 var(--sp-7);
 }
 
-/* An object's name is mono; a form's title is sans. */
 .hd-panel-title h2 {
   font: var(--text-detail);
 }
@@ -845,7 +843,6 @@
   color: var(--muted);
 }
 
-/* Two columns that each scroll; a single child takes the whole width. */
 .hd-panel-body {
   display: grid;
   grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
@@ -955,7 +952,6 @@
 }
 
 @media (max-width: 767px) {
-  /* The phone's detail panel is a full-screen modal over the frame. */
   .hd-frame-panel {
     position: fixed;
     inset: 0;
@@ -1241,7 +1237,6 @@ a.hd-stat:hover {
   white-space: nowrap;
 }
 
-/* The header's trailing control and a row's first fact after its name sit at the inline end. */
 .hd-dcard header > :not(h2, .hd-faint),
 .hd-dcard b + * {
   margin-inline-start: auto;

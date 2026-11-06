@@ -19,7 +19,7 @@ describe('Card', () => {
     expect(within(card).getByRole('heading', { name: 'Processing now' })).toBeTruthy()
     expect(within(card).getByText('2 running')).toBeTruthy()
     const row = within(card).getByRole('listitem')
-    expect(row.className).toBe('hd-tone-proc')
+    expect(row.classList.contains('hd-tone-proc')).toBe(true)
     expect(row.textContent).toBe('sandbox.progressnode-a24 s48 %')
   })
 
@@ -32,7 +32,7 @@ describe('Card', () => {
 })
 
 describe('ExceptionBlock without a served type', () => {
-  it('shows the message alone and copies it without a type', () => {
+  it('renders the message and its frames with no type line', () => {
     render(<ExceptionBlock message="Card declined" frames={['Billing.Charge()']} />)
 
     expect(screen.getByText(/Card declined/).closest('pre')?.textContent).toBe('Card declined\n   at Billing.Charge()')

@@ -10,25 +10,35 @@ import {
   PageHeader,
   SelectField,
   StatusMark,
-  useDelayed,
   usePageFrame,
 } from '@headless/dashboard-sdk/components'
 import { DashboardApiError, listKey, useDashboardKeysetList, useDashboardObject, useNewRows } from '@headless/dashboard-sdk/data'
 import { useFormat } from '@headless/dashboard-sdk/locale'
-import { useQuery, useQueryClient } from '@headless/dashboard-sdk/query'
+import { useQueryClient } from '@headless/dashboard-sdk/query'
 import { useSearchParams } from '@headless/dashboard-sdk/router'
 import { DataTable, type DataTableColumn } from '@headless/dashboard-sdk/table'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { fetchFunctions } from '../cron.ts'
-import { CellText, JobsStats, LoadError, RunPanel, Skeleton, StaleNotice, Time, useJobsAttention } from '../parts.tsx'
+import {
+  CellText,
+  firstLine,
+  JobsStats,
+  LoadError,
+  QueryState,
+  RunPanel,
+  Skeleton,
+  StaleNotice,
+  Time,
+  useFunctions,
+  useJobsAttention,
+} from '../parts.tsx'
 import {
   fetchRun,
   fetchRuns,
   filterNames,
   formatDuration,
   kindLabel,
+  markDone,
   operationScope,
-  pendingLabels,
   rangeSpans,
   readFilter,
   runMatches,
@@ -55,7 +65,6 @@ const rangeOptions = [
   { value: '7d', label: 'Last 7 days' },
 ]
 
-/** Each state list's title, as its sidebar entry names it, and the one sentence that says what the list holds. */
 const states: Readonly<Record<RunStatus, { title: string; description: string }>> = {
   Idle: { title: 'Idle', description: 'Due later, waiting for a retry, or a chain step waiting for its parent.' },
   Queued: { title: 'Queued', description: 'Due now, waiting for a node to pick them up.' },
@@ -67,13 +76,10 @@ const states: Readonly<Record<RunStatus, { title: string; description: string }>
   Skipped: { title: 'Skipped', description: 'Not run, because their chain condition or overlap rule passed them over.' },
 }
 
-/** States a cancel can still reach; on the other lists the bulk Cancel would refuse every row. */
-const cancellable = new Set(['', 'Idle', 'Queued', 'InProgress'])
+const CANCELLABLE_STATES: ReadonlySet<RunStatus | ''> = new Set(['', 'Idle', 'Queued', 'InProgress'])
 
-/**
- * A state's runs, or every run: one live, keyset-paged list filtered in the URL, with checked rows for bulk actions
- * the server allows per row, Operations over every matching run, and the open run in the docked panel.
- */
+type CreateKind = 'time-job' | 'chain'
+
 export default function RunsView() {
   const { api } = useDashboard()
   const module = useModule()
@@ -90,8 +96,7 @@ export default function RunsView() {
   const matches = (run: Run) => runMatches(run, filter)
   const frame = usePageFrame({ viewId: 'jobs.runs', rows: items, matches })
   const newRows = useNewRows<Run>(runsTopic, matches)
-  const showLoading = useDelayed(list.isPending)
-  const functions = useQuery({ queryKey: ['jobs', 'functions'], queryFn: () => fetchFunctions(api) })
+  const functions = useFunctions()
   const commands = useJobsCommands()
   const pending = usePending()
   const [allMatching, setAllMatching] = useState(false)
@@ -112,7 +117,6 @@ export default function RunsView() {
   }
 
   function setFilter(name: keyof RunFilter, value: string, also?: Partial<RunFilter>) {
-    setAllMatching(false)
     frame.setChecked(new Set())
     update((next) => {
       for (const [key, set] of Object.entries({ [name]: value, ...also })) {
@@ -137,12 +141,11 @@ export default function RunsView() {
 
   // The status is the list itself, chosen in the sidebar; clearing the filters keeps it.
   function clearFilters() {
-    setAllMatching(false)
     frame.setChecked(new Set())
     update((next) => filterNames.filter((name) => name !== 'status').forEach((name) => next.delete(name)))
   }
 
-  function openCreate(kind: 'time-job' | 'chain') {
+  function openCreate(kind: CreateKind) {
     update((next) => {
       next.delete('open')
       next.set('create', kind)
@@ -246,7 +249,7 @@ export default function RunsView() {
               {allMatching && count ? (
                 <MatchingActions filter={filter} count={format.count(count)} />
               ) : checkedRuns.length > 0 ? (
-                <CheckedActions runs={checkedRuns} pending={pending} cancel={cancellable.has(status)} frame={frame} />
+                <CheckedActions runs={checkedRuns} pending={pending} cancel={CANCELLABLE_STATES.has(status)} frame={frame} />
               ) : null}
               <Button variant="primary" disabledReason={addReason} onPress={() => openCreate('time-job')}>
                 Add time job
@@ -279,39 +282,35 @@ export default function RunsView() {
       panel={panel}
     >
       <StaleNotice what="these runs" onRefresh={() => void list.refetch()} />
-      {list.isPending ? (
-        showLoading ? (
-          <Skeleton label="Loading runs" rows={6} />
-        ) : null
-      ) : list.isError ? (
-        <LoadError message={list.error.message} onRetry={() => void list.refetch()} />
-      ) : (
-        <RunsTable
-          // A new filter is a new list: the held rows and the scroll start again.
-          key={filterKey}
-          frame={frame}
-          runs={runs}
-          matches={matches}
-          newRows={newRows}
-          failed={status === 'Failed'}
-          pending={pending}
-          onSelectAllMatching={() => setAllMatching(true)}
-          emptyState={
-            narrowed ? (
-              <span>
-                No runs match. Clear filters or widen the time range.{' '}
-                <Button variant="ghost" onPress={clearFilters}>
-                  Clear filters
-                </Button>
-              </span>
-            ) : state ? (
-              `No ${state.title.toLowerCase()} runs.`
-            ) : (
-              'No runs yet. A run appears when a host schedules a time job or a cron job fires; add a time job here.'
-            )
-          }
-        />
-      )}
+      <QueryState query={list} label="Loading runs" rows={6}>
+        {() => (
+          <RunsTable
+            // A new filter is a new list: the held rows and the scroll start again.
+            key={filterKey}
+            frame={frame}
+            runs={runs}
+            matches={matches}
+            newRows={newRows}
+            failed={status === 'Failed'}
+            pending={pending}
+            onSelectAllMatching={() => setAllMatching(true)}
+            emptyState={
+              narrowed ? (
+                <span>
+                  No runs match. Clear filters or widen the time range.{' '}
+                  <Button variant="ghost" onPress={clearFilters}>
+                    Clear filters
+                  </Button>
+                </span>
+              ) : state ? (
+                `No ${state.title.toLowerCase()} runs.`
+              ) : (
+                'No runs yet. A run appears when a host schedules a time job or a cron job fires; add a time job here.'
+              )
+            }
+          />
+        )}
+      </QueryState>
     </PageFrame>
   )
 }
@@ -334,7 +333,7 @@ function RunsTable({ frame, runs, matches, newRows, failed, pending, onSelectAll
     id: 'reason',
     header: 'Reason',
     cell: (run) => {
-      const reason = run.exceptionMessage?.split('\n')[0]
+      const reason = firstLine(run.exceptionMessage)
 
       return <CellText title={reason}>{reason}</CellText>
     },
@@ -449,10 +448,6 @@ function FailureChips({
   )
 }
 
-/**
- * The checked rows' bulk actions. Each runs on the rows the server allows (`Requeue 3 of 5`); the rows it refused carry
- * their reasons in the list, and the result's `View` shows them.
- */
 function CheckedActions({
   runs,
   pending,
@@ -485,13 +480,7 @@ function CheckedActions({
         refused={allowed.refused(command.id)}
         onRefused={frame.setRefused}
         onViewRefused={frame.reveal}
-        onDone={(rows) =>
-          pending.mark(
-            rows.filter((row) => row.outcome === 'done').map((row) => row.id),
-            versions,
-            pendingLabels[name]!,
-          )
-        }
+        onDone={markDone(pending, versions, name)}
       />
     ) : null
 
@@ -534,7 +523,6 @@ function MatchingActions({ filter, count }: { filter: RunFilter; count: string }
   )
 }
 
-/** An open run the loaded page does not hold, such as one a link opened: read by its id, then shown as any open run. */
 function LookedUpRun({ id, pending }: { id: string; pending: Pending }) {
   const { api } = useDashboard()
   const detail = useDashboardObject({ topic: runsTopic, id, fetch: () => fetchRun(api, id) })

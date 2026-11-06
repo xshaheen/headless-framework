@@ -1,5 +1,5 @@
 import { useDashboard, useModule } from '@headless/dashboard-sdk'
-import { Button, DetailPanel, Mono, PageFrame, PageHeader, Tag, useDelayed, usePageFrame } from '@headless/dashboard-sdk/components'
+import { Button, DetailPanel, Mono, PageFrame, PageHeader, Tag, usePageFrame } from '@headless/dashboard-sdk/components'
 import { DashboardApiError, listKey, useDashboardList } from '@headless/dashboard-sdk/data'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQueryClient } from '@headless/dashboard-sdk/query'
@@ -7,15 +7,10 @@ import { useSearchParams } from '@headless/dashboard-sdk/router'
 import { DataTable } from '@headless/dashboard-sdk/table'
 import { CronPanel, useCronJob } from '../cron-parts.tsx'
 import { cronJobsTopic, fetchCronJobs, type CronJob } from '../cron.ts'
-import { CellText, JobsStats, LoadError, Skeleton, StaleNotice, Time } from '../parts.tsx'
+import { CellText, JobsStats, LoadError, QueryState, Skeleton, StaleNotice, Time } from '../parts.tsx'
 import { viewOnlyReason } from '../runs.ts'
 import { CronJobForm } from './create.tsx'
 
-/**
- * Recurring jobs: every cron job with its function, schedule and plain reading, and next run, live; the open one docks
- * under the list, and `Add recurring job` opens the add form there. The last run of each is not served, so the list
- * shows none.
- */
 export default function CronJobsView() {
   const { api } = useDashboard()
   const module = useModule()
@@ -24,7 +19,6 @@ export default function CronJobsView() {
   const [params, setParams] = useSearchParams()
   const creating = params.get('create') === 'cron-job'
   const list = useDashboardList<CronJob>({ topic: cronJobsTopic, fetch: () => fetchCronJobs(api) })
-  const showLoading = useDelayed(list.isPending)
   const rows = list.data?.items ?? []
   const frame = usePageFrame({ viewId: 'jobs.cron-jobs', rows })
   const openRow = rows.find((row) => row.id === frame.openId)
@@ -83,69 +77,61 @@ export default function CronJobsView() {
       panel={panel}
     >
       <StaleNotice what="these recurring jobs" onRefresh={() => void list.refetch()} />
-      {list.isPending ? (
-        showLoading ? (
-          <Skeleton label="Loading recurring jobs" rows={4} />
-        ) : null
-      ) : list.isError ? (
-        <LoadError message={list.error.message} onRetry={() => void list.refetch()} />
-      ) : (
-        <DataTable
-          label="Recurring jobs"
-          viewId="jobs.cron-jobs"
-          frame={frame}
-          rows={rows}
-          emptyState="No recurring jobs. Declare one with a [Job] cron attribute, or add one here."
-          columns={[
-            {
-              id: 'function',
-              header: 'Function',
-              cell: (row) => (
-                <CellText title={row.function}>
-                  <Mono>{row.function}</Mono>
-                </CellText>
-              ),
-              isRowHeader: true,
-              width: '1.5fr',
-            },
-            { id: 'description', header: 'Description', cell: (row) => <CellText title={row.description}>{row.description}</CellText>, priority: 2, width: '1.5fr' },
-            {
-              id: 'schedule',
-              header: 'Schedule',
-              cell: (row) => (
-                <CellText title={row.reading ?? row.validationMessage}>
-                  <Mono>{row.expression}</Mono> <span className="hd-faint">{row.reading ?? row.validationMessage}</span>
-                </CellText>
-              ),
-              width: '2fr',
-            },
-            {
-              id: 'next',
-              header: 'Next run',
-              cell: (row) =>
-                row.isPaused ? (
-                  <Tag variant="pill" tone="off">
-                    Paused
-                  </Tag>
-                ) : (
-                  <CellText>
-                    <Time value={row.nextDueUtc} short />
+      <QueryState query={list} label="Loading recurring jobs" rows={4}>
+        {() => (
+          <DataTable
+            label="Recurring jobs"
+            viewId="jobs.cron-jobs"
+            frame={frame}
+            rows={rows}
+            emptyState="No recurring jobs. Declare one with a [Job] cron attribute, or add one here."
+            columns={[
+              {
+                id: 'function',
+                header: 'Function',
+                cell: (row) => (
+                  <CellText title={row.function}>
+                    <Mono>{row.function}</Mono>
                   </CellText>
                 ),
-              align: 'end',
-              width: 120,
-            },
-          ]}
-        />
-      )}
+                isRowHeader: true,
+                width: '1.5fr',
+              },
+              { id: 'description', header: 'Description', cell: (row) => <CellText title={row.description}>{row.description}</CellText>, priority: 2, width: '1.5fr' },
+              {
+                id: 'schedule',
+                header: 'Schedule',
+                cell: (row) => (
+                  <CellText title={row.reading ?? row.validationMessage}>
+                    <Mono>{row.expression}</Mono> <span className="hd-faint">{row.reading ?? row.validationMessage}</span>
+                  </CellText>
+                ),
+                width: '2fr',
+              },
+              {
+                id: 'next',
+                header: 'Next run',
+                cell: (row) =>
+                  row.isPaused ? (
+                    <Tag variant="pill" tone="off">
+                      Paused
+                    </Tag>
+                  ) : (
+                    <CellText>
+                      <Time value={row.nextDueUtc} short />
+                    </CellText>
+                  ),
+                align: 'end',
+                width: 120,
+              },
+            ]}
+          />
+        )}
+      </QueryState>
     </PageFrame>
   )
 }
 
-/**
- * The open cron job, read by its id for its next fires; the list row stands in while that read is under way, and a
- * cron job no longer listed shows only once the read answers.
- */
 function OpenCronJob({ id, row }: { id: string; row: CronJob | undefined }) {
   const detail = useCronJob(id)
   const cronJob = detail.data ?? row

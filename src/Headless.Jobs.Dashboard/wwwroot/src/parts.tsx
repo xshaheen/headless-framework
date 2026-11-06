@@ -1,4 +1,4 @@
-import { useDashboard, useModule } from '@headless/dashboard-sdk'
+import { useDashboard, useModule, type DashboardStateRole } from '@headless/dashboard-sdk'
 import { CommandAction, useAllowedActions, type CommandDefinition } from '@headless/dashboard-sdk/commands'
 import {
   Button,
@@ -13,6 +13,7 @@ import {
   StatCard,
   StatStrip,
   Timeline,
+  useDelayed,
   useViewKeys,
   type HistoryItem,
   type TimelineEvent,
@@ -23,6 +24,7 @@ import { useQuery } from '@headless/dashboard-sdk/query'
 import { Link } from '@headless/dashboard-sdk/router'
 import { useStreamEvent, useStreamStatus } from '@headless/dashboard-sdk/stream'
 import { useState, type ReactNode } from 'react'
+import { fetchFunctions } from './cron.ts'
 import {
   attemptTones,
   fetchAttempts,
@@ -30,7 +32,7 @@ import {
   formatDuration,
   isFinished,
   kindLabel,
-  pendingLabels,
+  markDone,
   runStatusMark,
   runsTopic,
   statusLabel,
@@ -90,6 +92,43 @@ export function LoadError({ message, onRetry }: { message: string; onRetry: () =
       <Button onPress={onRetry}>Retry</Button>
     </div>
   )
+}
+
+type LoadState<T> =
+  | { isPending: true; isError: false }
+  | { isPending: false; isError: true; error: Error; refetch: () => Promise<unknown> }
+  | { isPending: false; isError: false; data: T }
+
+/** A load's skeleton, once it has taken 150 ms, or its error and Retry, else what `children` draws from its data. */
+export function QueryState<T>({
+  query,
+  label,
+  rows,
+  children,
+}: {
+  query: LoadState<T>
+  label: string
+  rows: number
+  children: (data: T) => ReactNode
+}) {
+  const showLoading = useDelayed(query.isPending)
+
+  if (query.isPending) {
+    return showLoading ? <Skeleton label={label} rows={rows} /> : null
+  }
+
+  if (query.isError) {
+    return <LoadError message={query.error.message} onRetry={() => void query.refetch()} />
+  }
+
+  return children(query.data)
+}
+
+/** The registered functions, one cached answer for the runs list, the add forms, and the Functions views. */
+export function useFunctions() {
+  const { api } = useDashboard()
+
+  return useQuery({ queryKey: ['jobs', 'functions'], queryFn: () => fetchFunctions(api) })
 }
 
 /** `Stale` while the stream is down or the server reports the Jobs changes stopped; the data on screen is kept. */
@@ -186,7 +225,8 @@ interface Figure {
   comparison?: { label: string; value?: number | null } | null
 }
 
-/** The Jobs figures the Overview source serves: the succeeded share, failed runs, and late starts over 24 hours. */
+const OVERVIEW_STALE_MS = 60_000
+
 function useJobsFigures() {
   const { api } = useDashboard()
 
@@ -196,16 +236,15 @@ function useJobsFigures() {
       (await api.request<{ modules: { id: string; items: Figure[] }[] }>({ method: 'GET', path: 'overview' })).modules.find(
         (section) => section.id === 'jobs',
       )?.items ?? [],
-    // Figures span 24 hours, so a view opened within a minute of the last read shows that read.
-    staleTime: 60_000,
+    staleTime: OVERVIEW_STALE_MS,
   })
 }
 
-/** Short card labels for the served figures; the strip has no room for the server's full sentence. */
-const figureLabels: Readonly<Record<string, string>> = {
-  'jobs.overview.succeeded-share': 'Succeeded, 24 h',
-  'jobs.overview.failed': 'Failed, 24 h',
-  'jobs.overview.late': 'Started late, 24 h',
+/** Short card labels for the served figures: the strip has no room for the server's full sentence. */
+const figureMeta: Readonly<Record<string, { label: string; tone?: DashboardStateRole }>> = {
+  'jobs.overview.succeeded-share': { label: 'Succeeded, 24 h', tone: 'ok' },
+  'jobs.overview.failed': { label: 'Failed, 24 h', tone: 'fail' },
+  'jobs.overview.late': { label: 'Started late, 24 h' },
 }
 
 const stripStates: readonly { status: RunStatus; tone: 'sched' | 'enq' | 'proc' }[] = [
@@ -214,10 +253,7 @@ const stripStates: readonly { status: RunStatus; tone: 'sched' | 'enq' | 'proc' 
   { status: 'InProgress', tone: 'proc' },
 ]
 
-/**
- * The Jobs stat strip: the Idle, Queued, and In progress counts, each linking to its list, then the figures the
- * server serves, each with its comparison as served. A count still loading or failed reads as an en dash, never 0.
- */
+/** A count still loading or failed reads as an en dash, never 0. */
 export function JobsStats() {
   const format = useFormat()
   const counts = useJobsCounts()
@@ -266,8 +302,8 @@ export function JobsStats() {
       {(figures.data ?? []).map((figure) => (
         <StatCard
           key={figure.id}
-          label={figureLabels[figure.id] ?? figure.label}
-          tone={figure.id.endsWith('.failed') ? 'fail' : figure.id.endsWith('.succeeded-share') ? 'ok' : undefined}
+          label={figureMeta[figure.id]?.label ?? figure.label}
+          tone={figureMeta[figure.id]?.tone}
           value={figureValue(figure)}
           caption={caption(figure)}
         />
@@ -293,7 +329,6 @@ export function RunException({ message, frame }: { message: string; frame?: stri
   return <ExceptionBlock {...exceptionParts(message, frame)} />
 }
 
-/** The W3C trace link, when the host configured a link to its tracing tool. */
 function TraceLink({ traceId }: { traceId: string }) {
   const { traceLinkTemplate } = useDashboard()
 
@@ -320,7 +355,6 @@ export function useTraceKey(run: Pick<Run, 'correlationId'> | undefined) {
   useViewKeys({ trace: () => (id ? open(tracePath(id)) : undefined) }, id !== undefined)
 }
 
-/** A run's exception and fields, in the order the run panel, the run page, and a cron job's occurrence show them. */
 export function RunFields({ run }: { run: Run }) {
   const format = useFormat()
   const open = useModuleNavigate()
@@ -399,7 +433,6 @@ export function RunFields({ run }: { run: Run }) {
   )
 }
 
-/** A run's reported progress as a bar with its percentage and message. */
 export function RunProgress({ run }: { run: Pick<Run, 'function' | 'progressPercent' | 'progressMessage'> }) {
   const format = useFormat()
   const percent = run.progressPercent ?? 0
@@ -421,11 +454,10 @@ export function useAttempts(run: Pick<Run, 'id' | 'version'>) {
   return useQuery({ queryKey: ['jobs', 'attempts', run.id, run.version], queryFn: () => fetchAttempts(api, run.id) })
 }
 
-function firstLine(text: string | undefined) {
+export function firstLine(text: string | undefined) {
   return text?.split('\n')[0]
 }
 
-/** The run's timeline: created, then each attempt with its node, outcome, exception, and fingerprint, oldest first. */
 export function attemptEvents(run: Pick<Run, 'createdAt'>, attempts: readonly Attempt[]): TimelineEvent[] {
   return [
     { id: 'created', label: 'Created', at: run.createdAt },
@@ -463,7 +495,6 @@ export function AttemptTimeline({ run }: { run: Pick<Run, 'id' | 'version' | 'cr
   )
 }
 
-/** What one attempt says beyond its outcome: its try, node, exception, and failure fingerprint. */
 function attemptNote(attempt: Attempt) {
   return [
     `try ${attempt.number}`,
@@ -475,10 +506,7 @@ function attemptNote(attempt: Attempt) {
     .join(' · ')
 }
 
-/**
- * The run's history, newest first: each attempt with its outcome, try, node, and exception, then its creation. The
- * store keeps attempts, not each move between queued and idle, so only those show.
- */
+/** The store keeps attempts, not each move between queued and idle, so only those show. */
 export function RunHistory({ run }: { run: Pick<Run, 'id' | 'version' | 'createdAt'> }) {
   const attempts = useAttempts(run)
 
@@ -534,13 +562,7 @@ export function RunActions({ run, pending }: { run: Run; pending: Pending }) {
         recovery={name === 'requeue'}
         commands={commands.all}
         disabledReason={refusal(command.id)}
-        onDone={(rows) =>
-          pending.mark(
-            rows.filter((row) => row.outcome === 'done').map((row) => row.id),
-            versions,
-            pendingLabels[name]!,
-          )
-        }
+        onDone={markDone(pending, versions, name)}
       />
     ) : null
 
@@ -586,7 +608,6 @@ export function RunPayload({ runId }: { runId: string }) {
   )
 }
 
-/** The run's chain: the step it runs after, and the steps that run after it. */
 function RunChain({ run }: { run: Pick<Run, 'id' | 'parentId'> }) {
   const { api } = useDashboard()
   const detail = useDashboardObject({ topic: runsTopic, id: run.id, fetch: () => fetchRun(api, run.id) })
@@ -607,10 +628,6 @@ function RunChain({ run }: { run: Pick<Run, 'id' | 'parentId'> }) {
   )
 }
 
-/**
- * One run in the detail panel, or as its own page when `page` is set: its exception, fields, and history on Overview,
- * its arguments, and its chain, with the actions the server allows now.
- */
 export function RunPanel({ run, pending, page }: { run: Run; pending: Pending; page?: boolean }) {
   useTraceKey(run)
 

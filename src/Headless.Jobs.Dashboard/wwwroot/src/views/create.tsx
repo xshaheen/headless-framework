@@ -4,8 +4,8 @@ import { DashboardApiError } from '@headless/dashboard-sdk/data'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQuery } from '@headless/dashboard-sdk/query'
 import { useState } from 'react'
-import { fetchFunctions, fetchPreview } from '../cron.ts'
-import { useStale } from '../parts.tsx'
+import { fetchPreview } from '../cron.ts'
+import { useFunctions, useStale } from '../parts.tsx'
 
 /** The run conditions a chain step offers, in the framework's words, and the `RunCondition` each sends. */
 const runConditions = [
@@ -35,10 +35,8 @@ function newStep(): Step {
   return { key: nextKey++, function: '', request: '', runCondition: 'OnSuccess', children: [] }
 }
 
-/** The functions the form offers, as the registry lists them. */
 function useFunctionOptions() {
-  const { api } = useDashboard()
-  const functions = useQuery({ queryKey: ['jobs', 'functions'], queryFn: () => fetchFunctions(api) })
+  const functions = useFunctions()
 
   return (functions.data ?? []).map((item) => ({ value: item.name, label: item.name }))
 }
@@ -250,7 +248,6 @@ export function TimeJobForm({ chain, onChainChange, onCreated, onCancel }: Creat
   )
 }
 
-/** Adds a recurring job: the expression shows the server's plain reading and next five fires before it is submitted. */
 export function CronJobForm({ onCreated, onCancel }: CreateFormProps) {
   const { api } = useDashboard()
   const format = useFormat()

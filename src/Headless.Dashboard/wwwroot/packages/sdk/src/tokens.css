@@ -66,7 +66,6 @@
   --sans: Geist, ui-sans-serif, system-ui, sans-serif;
   --mono: 'Geist Mono', ui-monospace, monospace;
 
-  /* Type scale: weight size/line height family. */
   --text-body: 400 13.5px/20px var(--sans);
   --text-mono: 400 12.5px/20px var(--mono);
   --text-label: 500 11.5px/16px var(--sans);
@@ -102,7 +101,6 @@
   --radius-float: 7px;
   --radius-card: 12px;
 
-  /* Fixed regions. */
   --topbar-height: 48px;
   --sidebar-width: 208px;
   --statstrip-height: 85px;

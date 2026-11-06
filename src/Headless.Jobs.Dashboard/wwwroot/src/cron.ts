@@ -1,7 +1,7 @@
 import type { DashboardStateRole } from '@headless/dashboard-sdk'
 import type { DashboardApi } from '@headless/dashboard-sdk/data'
 
-/** A cron job as its list row, its page, and a live change carry it; `nextFires` is filled on its page and a function's list. */
+/** A cron job as its list row, its page, and a live change carry it; `nextFires` is filled on its page only. */
 export interface CronJob {
   id: string
   function: string
@@ -73,12 +73,12 @@ export function cronJobTitle(cronJob: Pick<CronJob, 'description' | 'function' |
   return cronJob.description || `${cronJob.function} (${cronJob.expression})`
 }
 
-/** The cron jobs, or one function's with up to 50 next fires each, which a Function page draws on its strip. */
+/** The cron jobs, or one function's, without their next fires: the server fills those only when asked. */
 export async function fetchCronJobs(api: DashboardApi, functionName?: string) {
   const answer = await api.request<{ items: CronJob[] }>({
     method: 'GET',
     path: 'jobs/cron-jobs',
-    query: functionName ? { function: functionName, fires: '50' } : undefined,
+    query: functionName ? { function: functionName } : undefined,
   })
 
   return { items: answer.items }

@@ -9,24 +9,15 @@ import {
   PageFrame,
   PageHeader,
   Tag,
-  useDelayed,
   usePageFrame,
 } from '@headless/dashboard-sdk/components'
 import { useDashboardKeysetList, useDashboardList } from '@headless/dashboard-sdk/data'
 import { useFormat } from '@headless/dashboard-sdk/locale'
-import { useQuery } from '@headless/dashboard-sdk/query'
 import { Link, useNavigate } from '@headless/dashboard-sdk/router'
 import { DataTable } from '@headless/dashboard-sdk/table'
-import { cronJobsTopic, cronStatusMark, fetchCronJobs, fetchFunctions, type CronJob, type JobFunction } from '../cron.ts'
-import { CellText, JobsStats, LoadError, Skeleton, StaleNotice, Time } from '../parts.tsx'
+import { cronJobsTopic, cronStatusMark, fetchCronJobs, type CronJob, type JobFunction } from '../cron.ts'
+import { CellText, JobsStats, LoadError, QueryState, Skeleton, StaleNotice, Time, useFunctions } from '../parts.tsx'
 import { fetchRuns, runStatusMark, runsTopic, statusLabel, viewOnlyReason, type Run } from '../runs.ts'
-
-/** The functions every Functions view reads, one cached answer for the list, its panel, and the function page. */
-export function useFunctions() {
-  const { api } = useDashboard()
-
-  return useQuery({ queryKey: ['jobs', 'functions'], queryFn: () => fetchFunctions(api) })
-}
 
 /** A function declared with a cron expression is fired by its schedule; any other is added as a time job. */
 function FunctionKind({ item }: { item: Pick<JobFunction, 'cronExpression'> }) {
@@ -63,12 +54,10 @@ function useLimit() {
     `${format.number(item.running)} / ${item.maxConcurrency > 0 ? format.number(item.maxConcurrency) : 'no limit'}`
 }
 
-/** Functions: every registered function, its kind and limits, the live nodes that run it, and its last 24 hours. */
 export default function FunctionsView() {
   const format = useFormat()
   const limit = useLimit()
   const functions = useFunctions()
-  const showLoading = useDelayed(functions.isPending)
   const rows = (functions.data ?? []).map((item) => ({ ...item, id: item.name }))
   const frame = usePageFrame({ viewId: 'jobs.functions', rows })
   const open = rows.find((row) => row.id === frame.openId)
@@ -92,74 +81,69 @@ export default function FunctionsView() {
       panel={open ? <FunctionPanel item={open} /> : undefined}
     >
       <StaleNotice what="these functions" onRefresh={() => void functions.refetch()} />
-      {functions.isPending ? (
-        showLoading ? (
-          <Skeleton label="Loading functions" rows={4} />
-        ) : null
-      ) : functions.isError ? (
-        <LoadError message={functions.error.message} onRetry={() => void functions.refetch()} />
-      ) : (
-        <DataTable
-          label="Functions"
-          viewId="jobs.functions"
-          frame={frame}
-          rows={rows}
-          emptyState="No functions registered on any live node."
-          columns={[
-            {
-              id: 'name',
-              header: 'Function',
-              cell: (row) => (
-                <CellText title={row.name}>
-                  <Mono>{row.name}</Mono>
-                </CellText>
-              ),
-              isRowHeader: true,
-              width: '1.6fr',
-            },
-            {
-              id: 'kind',
-              header: 'Kind',
-              cell: (row) => (
-                <CellText title={row.cronExpression}>
-                  <FunctionKind item={row} />
-                </CellText>
-              ),
-              width: '1.2fr',
-            },
-            {
-              id: 'request',
-              header: 'Request type',
-              cell: (row) => (
-                <CellText title={row.requestType}>
-                  <Mono>{row.requestType ?? '–'}</Mono>
-                </CellText>
-              ),
-              priority: 2,
-              width: '1.4fr',
-            },
-            { id: 'priority', header: 'Priority', cell: (row) => row.priority, priority: 2, width: 100 },
-            { id: 'limit', header: 'Running / limit', cell: (row) => limit(row), align: 'end', priority: 2, width: 120 },
-            {
-              id: 'runs-on',
-              header: 'Runs on',
-              cell: (row) => (
-                <CellText title={row.claimedBy.join(', ')}>
-                  <RunsOn item={row} />
-                </CellText>
-              ),
-              width: '1.3fr',
-            },
-            { id: 'succeeded', header: 'Succeeded, 24 h', cell: (row) => format.number(row.succeeded), align: 'end', priority: 2, width: 120 },
-            { id: 'failed', header: 'Failed, 24 h', cell: (row) => format.number(row.failed), align: 'end', width: 100 },
-          ]}
-        />
-      )}
+      <QueryState query={functions} label="Loading functions" rows={4}>
+        {() => (
+          <DataTable
+            label="Functions"
+            viewId="jobs.functions"
+            frame={frame}
+            rows={rows}
+            emptyState="No functions registered on any live node."
+            columns={[
+              {
+                id: 'name',
+                header: 'Function',
+                cell: (row) => (
+                  <CellText title={row.name}>
+                    <Mono>{row.name}</Mono>
+                  </CellText>
+                ),
+                isRowHeader: true,
+                width: '1.6fr',
+              },
+              {
+                id: 'kind',
+                header: 'Kind',
+                cell: (row) => (
+                  <CellText title={row.cronExpression}>
+                    <FunctionKind item={row} />
+                  </CellText>
+                ),
+                width: '1.2fr',
+              },
+              {
+                id: 'request',
+                header: 'Request type',
+                cell: (row) => (
+                  <CellText title={row.requestType}>
+                    <Mono>{row.requestType ?? '–'}</Mono>
+                  </CellText>
+                ),
+                priority: 2,
+                width: '1.4fr',
+              },
+              { id: 'priority', header: 'Priority', cell: (row) => row.priority, priority: 2, width: 100 },
+              { id: 'limit', header: 'Running / limit', cell: (row) => limit(row), align: 'end', priority: 2, width: 120 },
+              {
+                id: 'runs-on',
+                header: 'Runs on',
+                cell: (row) => (
+                  <CellText title={row.claimedBy.join(', ')}>
+                    <RunsOn item={row} />
+                  </CellText>
+                ),
+                width: '1.3fr',
+              },
+              { id: 'succeeded', header: 'Succeeded, 24 h', cell: (row) => format.number(row.succeeded), align: 'end', priority: 2, width: 120 },
+              { id: 'failed', header: 'Failed, 24 h', cell: (row) => format.number(row.failed), align: 'end', width: 100 },
+            ]}
+          />
+        )}
+      </QueryState>
     </PageFrame>
   )
 }
 
-/** The function's facts: its contract, kind, limits, and how its runs went over the last 24 hours. */
 function FunctionFields({ item }: { item: JobFunction }) {
   const format = useFormat()
   const limit = useLimit()
@@ -187,7 +171,6 @@ function FunctionFields({ item }: { item: JobFunction }) {
   )
 }
 
-/** Where the function runs, and the recurring jobs that fire it. */
 function WhereItRuns({ item }: { item: JobFunction }) {
   const { api } = useDashboard()
   const filter = { function: item.name }
@@ -236,7 +219,6 @@ function WhereItRuns({ item }: { item: JobFunction }) {
   )
 }
 
-/** The function's latest runs, newest first, each linking to its run. */
 function FunctionRuns({ name }: { name: string }) {
   const { api } = useDashboard()
   const filter = { function: name }
@@ -272,10 +254,6 @@ function FunctionRuns({ name }: { name: string }) {
   )
 }
 
-/**
- * One function in the detail panel, or as its own page when `page` is set: its facts beside where it runs on
- * Overview, and its latest runs, with `Add time job` and `Add recurring job`.
- */
 export function FunctionPanel({ item, page }: { item: JobFunction; page?: boolean }) {
   const module = useModule()
   const navigate = useNavigate()

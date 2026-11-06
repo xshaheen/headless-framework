@@ -7,19 +7,13 @@ import { Link, useNavigate } from '@headless/dashboard-sdk/router'
 import { useEffect } from 'react'
 import { cronJobsTopic, fetchCronJobs, type CronJob } from '../cron.ts'
 import { JobsStats, LoadError, RunProgress, Skeleton, StaleNotice, Time, useJobsAttention, type AttentionItem } from '../parts.tsx'
-import { fetchRuns, pendingLabels, readFilter, runsTopic, useJobsCommands, usePending, viewOnlyReason, type Run } from '../runs.ts'
+import { fetchRuns, markDone, readFilter, runsTopic, useJobsCommands, usePending, viewOnlyReason, type Run } from '../runs.ts'
 
-/** The rows each card shows before its `All` link takes over. */
 const cardRows = 6
 
 /** The in-progress runs, as the runs list filtered to In progress reads them, so both share one cached list. */
 const processingFilter = { ...readFilter(new URLSearchParams()), status: 'InProgress' }
 
-/**
- * The Jobs Dashboard: the state counts and served figures, the runs in progress with their progress, the next fires
- * of the recurring jobs, and the Jobs attention items. Throughput, history, workers, and queue lag wait until the
- * server serves them, so the page draws none of them.
- */
 export default function JobsDashboard() {
   const module = useModule()
   const navigate = useNavigate()
@@ -115,13 +109,7 @@ function ProcessingNow() {
                 noun="run"
                 commands={commands.all}
                 disabledReason={refused.get(run.id) ?? null}
-                onDone={(rows) =>
-                  pending.mark(
-                    rows.filter((row) => row.outcome === 'done').map((row) => row.id),
-                    new Map([[run.id, run.version]]),
-                    pendingLabels.cancel!,
-                  )
-                }
+                onDone={markDone(pending, new Map([[run.id, run.version]]), 'cancel')}
               />
             ) : undefined
           }
@@ -133,7 +121,6 @@ function ProcessingNow() {
   )
 }
 
-/** The active cron jobs ordered by their next due time. */
 function useNextRecurringRuns() {
   const { api } = useDashboard()
   const list = useDashboardList<CronJob>({ topic: cronJobsTopic, fetch: () => fetchCronJobs(api) })
@@ -181,7 +168,6 @@ function NextRecurringRuns({ list, total, next }: ReturnType<typeof useNextRecur
   )
 }
 
-/** Where an attention item leads: a failure group to its failed runs, anything else to the object it names. */
 function attentionPath(item: AttentionItem) {
   const scope = item.recommended?.filter
   const fn = scope?.functions?.[0]

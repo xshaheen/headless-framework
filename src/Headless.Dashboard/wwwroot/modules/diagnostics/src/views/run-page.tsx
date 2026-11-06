@@ -3,7 +3,6 @@ import { Button, FieldGrid, GridField, PayloadView, useDelayed } from '@headless
 import { DashboardApiError, useDashboardObject } from '@headless/dashboard-sdk/data'
 import { useQuery } from '@headless/dashboard-sdk/query'
 import { Link, useParams, useSearchParams } from '@headless/dashboard-sdk/router'
-import { useStreamEvent } from '@headless/dashboard-sdk/stream'
 import { useState } from 'react'
 import { LoadError, RunPanel, RunTime, StaleNotice } from '../run-parts.tsx'
 import { fetchRun, runsTopic, useRequeuing } from '../runs.ts'
@@ -14,24 +13,15 @@ interface PayloadAnswer {
   headers?: Readonly<Record<string, string>>
 }
 
-/** One run's own page: the run panel detached from its list, with the payload on request and the selected event. */
 export default function RunPage() {
   const { api } = useDashboard()
   const module = useModule()
   const runId = useParams().runId ?? ''
-  const topic = runsTopic(module.id)
-  const run = useDashboardObject({ topic, id: runId, fetch: () => fetchRun(api, module.id, runId) })
+  const run = useDashboardObject({ topic: runsTopic(module.id), id: runId, fetch: () => fetchRun(api, module.id, runId) })
   const showLoading = useDelayed(run.isPending)
   const requeuing = useRequeuing()
   const [params, setParams] = useSearchParams()
   const eventId = params.get('event') ?? undefined
-
-  // A live change patches the fields but carries no timeline, so the page reads the run again for it.
-  useStreamEvent('change', (change) => {
-    if (change.topic === topic && change.id === runId) {
-      void run.refetch()
-    }
-  })
 
   if (run.isPending) {
     return showLoading ? (

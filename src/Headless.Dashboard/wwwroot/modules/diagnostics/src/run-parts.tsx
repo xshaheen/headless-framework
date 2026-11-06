@@ -1,6 +1,6 @@
 import { useDashboard, useModule } from '@headless/dashboard-sdk'
 import { useDashboardObject } from '@headless/dashboard-sdk/data'
-import { CommandAction, useAllowedActions, type RowResult } from '@headless/dashboard-sdk/commands'
+import { CommandAction, useAllowedActions } from '@headless/dashboard-sdk/commands'
 import type { DashboardStateRole } from '@headless/dashboard-sdk'
 import { Button, DetailPanel, FieldGrid, GridField, Mono, Timeline } from '@headless/dashboard-sdk/components'
 import { useFormat } from '@headless/dashboard-sdk/locale'
@@ -8,7 +8,6 @@ import { useStreamEvent, useStreamStatus } from '@headless/dashboard-sdk/stream'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { fetchRun, runStatusMark, runsTopic, useRunCommands, type Run, type RunEvent } from './runs.ts'
 
-/** A timestamp as relative time, with the exact time and zone on hover. */
 export function RunTime({ value }: { value: string }) {
   const format = useFormat()
   const at = new Date(value)
@@ -24,7 +23,6 @@ export function RunTime({ value }: { value: string }) {
   )
 }
 
-/** The `Open trace` link, when the host configured a link to its tracing tool. */
 function TraceLink({ traceId }: { traceId: string }) {
   const { traceLinkTemplate } = useDashboard()
 
@@ -35,7 +33,6 @@ function TraceLink({ traceId }: { traceId: string }) {
   ) : null
 }
 
-/** A run's read-only fields, in the order the panel and the run page show them. */
 function RunFields({ run, statusLabel }: { run: Run; statusLabel: string }) {
   return (
     <FieldGrid columns={3}>
@@ -57,10 +54,6 @@ function RunFields({ run, statusLabel }: { run: Run; statusLabel: string }) {
   )
 }
 
-/**
- * One run in a detail panel: its fields, and its timeline once the detail answers. In a list the panel is docked
- * and links to the run's own page; on that page (`page`) the panel is the page.
- */
 export function RunPanel({
   run,
   requeuing,
@@ -131,17 +124,18 @@ const eventTones: Readonly<Record<string, DashboardStateRole>> = {
   Failed: 'fail',
 }
 
-/**
- * The run's stored events, oldest first: created, each start, failure, requeue, and note. Selecting one puts it in
- * `onSelect`; the event's id is its position, since the run stores events only in order.
- */
+/** The run stores its events only in order, so an event's id is its position. */
+function eventIdOf(index: number) {
+  return String(index)
+}
+
 export function RunTimeline({ events, selected, onSelect }: { events: readonly RunEvent[]; selected?: string; onSelect?: (id: string) => void }) {
   return (
     <section aria-label="Timeline">
       <h3 className="hd-label">Timeline</h3>
       <Timeline
         label="Run timeline"
-        events={events.map((event, index) => ({ id: String(index), label: event.kind, at: event.at, text: event.text, tone: eventTones[event.kind] }))}
+        events={events.map((event, index) => ({ id: eventIdOf(index), label: event.kind, at: event.at, text: event.text, tone: eventTones[event.kind] }))}
         selectedId={selected}
         onSelect={onSelect}
       />
@@ -153,14 +147,13 @@ export interface RunActionsProps {
   runs: readonly Run[]
   /** Called with the runs a requeue finished on and the versions they had when the operator confirmed it. */
   onRequeued?: (ids: readonly string[], versions: ReadonlyMap<string, string>) => void
-  onChanged?: (rows: RowResult[]) => void
 }
 
 /**
  * The actions the server allows now on `runs`: `Fail` and `Add note` on one run, `Requeue` on any number. Each
  * refused action renders disabled with the server's reason.
  */
-export function RunActions({ runs, onRequeued, onChanged }: RunActionsProps) {
+export function RunActions({ runs, onRequeued }: RunActionsProps) {
   const module = useModule()
   const { all, fail, requeue, addNote } = useRunCommands()
   const refusal = useAllowedActions('run', runs)
@@ -185,13 +178,12 @@ export function RunActions({ runs, onRequeued, onChanged }: RunActionsProps) {
           recovery
           commands={all}
           disabledReason={refusal(requeue.id)}
-          onDone={(rows) => {
+          onDone={(rows) =>
             onRequeued?.(
               rows.filter((row) => row.outcome === 'done').map((row) => row.id),
               versions,
             )
-            onChanged?.(rows)
-          }}
+          }
         />
       ) : null}
       {fail && ids.length === 1 ? (
@@ -202,7 +194,6 @@ export function RunActions({ runs, onRequeued, onChanged }: RunActionsProps) {
           noun={noun}
           commands={all}
           disabledReason={refusal(fail.id)}
-          onDone={onChanged}
         />
       ) : null}
       {addNote && ids.length === 1 ? (
@@ -213,7 +204,6 @@ export function RunActions({ runs, onRequeued, onChanged }: RunActionsProps) {
           noun={noun}
           commands={all}
           disabledReason={refusal(addNote.id)}
-          onDone={onChanged}
         />
       ) : null}
     </>
