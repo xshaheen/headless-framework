@@ -98,6 +98,9 @@ export function CommandAction({ module, command, ids, noun, disabledReason, comm
   const needsInput = Object.keys(command.arguments.properties).length > 0 || command.requiresReason
   const refusal = !command.canRun ? (command.disabledReason ?? 'Needs operate permission') : disabledReason
   const label = ids.length > 1 ? `${command.label} ${ids.length} ${noun}` : command.label
+  // The confirm names its effect even for one row: a bare verb takes its object (`Cancel run`, never `Cancel` beside
+  // the dismiss button), while a label that already says it (`Add note`) stays.
+  const effect = ids.length > 1 || label.includes(' ') ? label : `${label} ${noun}`
   const client = createCommandsApi(api, module)
 
   function press() {
@@ -189,8 +192,8 @@ export function CommandAction({ module, command, ids, noun, disabledReason, comm
       {shownOutcome && !confirming ? <RowOutcomes outcome={shownOutcome} /> : null}
       <ActionConfirm
         isOpen={confirming}
-        title={label}
-        confirmLabel={label}
+        title={effect}
+        confirmLabel={effect}
         confirmation={confirmation}
         count={ids.length}
         reason={command.requiresReason ? 'required' : 'optional'}

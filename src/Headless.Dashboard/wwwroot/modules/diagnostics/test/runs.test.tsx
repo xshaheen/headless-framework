@@ -388,7 +388,7 @@ describe('diagnostics runs list', () => {
 
     const dialog = await screen.findByRole('dialog')
     await actor.type(within(dialog).getByRole('textbox', { name: /Reason/ }), 'gateway fixed')
-    await actor.click(within(dialog).getByRole('button', { name: 'Requeue' }))
+    await actor.click(within(dialog).getByRole('button', { name: 'Requeue run' }))
 
     await waitFor(() => expect(within(screen.getByRole('row', { name: /run-000001/ })).getByText('Requeuing…')).toBeTruthy())
     const call = view.requests.find((request) => request.path === 'diagnostics/commands/diagnostics.requeue')

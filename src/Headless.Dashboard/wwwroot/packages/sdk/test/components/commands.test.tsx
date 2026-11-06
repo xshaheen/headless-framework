@@ -208,7 +208,7 @@ describe('commands', () => {
       throw Object.assign(new Error('x'), { name: 'other' })
     })
     await user.click(screen.getByRole('button', { name: 'Requeue' }))
-    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Requeue' }))
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Requeue runs' }))
 
     expect((await screen.findByRole('alert')).textContent).toBe('Requeue failed. Try again.')
     expect(requests).toHaveLength(1)

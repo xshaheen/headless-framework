@@ -131,6 +131,7 @@ describe('jobs runs list', () => {
             endedAt: '2026-11-05T09:56:00Z',
             outcome: 'Failed',
             exceptionMessage: 'Gateway timeout\n   at Billing.Charge()',
+            failureFingerprint: 'v1:9f2c41',
           },
         ],
       },
@@ -144,8 +145,52 @@ describe('jobs runs list', () => {
     expect(within(timeline).getAllByRole('row').map((row) => row.textContent)).toEqual([
       'Created 10 minutes ago',
       'Attempt 1: Lost 8 minutes ago by node-a',
-      'Attempt 2: Failed 4 minutes ago by node-b Gateway timeout',
+      'Attempt 2: Failed 4 minutes ago by node-b Gateway timeout · fingerprint v1:9f2c41',
     ])
+  })
+
+  it('reads a running run and a chain step without contradicting their status', async () => {
+    const actor = user()
+    const running = run('InProgress', { function: 'a.running', executedAt: undefined })
+    const step = run('Succeeded', { function: 'a.step', executionTime: undefined, parentId: running.id })
+    open({ runs: [running, step] })
+
+    const field = (inspector: HTMLElement, label: string) =>
+      within(inspector).getByText(label, { selector: 'dt' }).nextElementSibling?.textContent
+
+    await actor.click(await screen.findByRole('row', { name: /a\.running/ }))
+    const first = screen.getByRole('complementary', { name: `Run ${running.id}` })
+    expect(field(first, 'Duration')).toBe('Running')
+    expect(field(first, 'Executed')).toBe('Running')
+
+    await actor.click(screen.getByRole('row', { name: /a\.step/ }))
+    const second = screen.getByRole('complementary', { name: `Run ${step.id}` })
+    expect(field(second, 'Due')).toBe('After its chain parent')
+  })
+
+  it('names the effect on the cancel confirm, and a dismiss that is not Cancel', async () => {
+    const actor = user()
+    const running = run('InProgress', { function: 'a.running' })
+    open({ runs: [running] })
+
+    await actor.click(await screen.findByRole('row', { name: /a\.running/ }))
+    await actor.click(within(screen.getByRole('complementary', { name: `Run ${running.id}` })).getByRole('button', { name: 'Cancel' }))
+
+    const dialog = await screen.findByRole('dialog', { name: 'Cancel run' })
+    expect(within(dialog).getAllByRole('button').map((button) => button.textContent)).toEqual(['Back', 'Cancel run'])
+  })
+
+  it('says a run with no stored payload has none, not that the load failed', async () => {
+    const quiet = run('Succeeded', { function: 'a.quiet' })
+    const actor = user()
+    open({ runs: [quiet] })
+
+    await actor.click(await screen.findByRole('row', { name: /a\.quiet/ }))
+    await actor.click(screen.getByRole('button', { name: 'Show payload' }))
+
+    expect(await screen.findByText('This run has no payload.')).toBeTruthy()
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull()
   })
 
   it('reads Cancelling… on a run with a pending cancel and keeps its stored status until the stream changes it', async () => {
@@ -182,7 +227,7 @@ describe('jobs runs list', () => {
 
     const dialog = await screen.findByRole('dialog')
     await actor.type(within(dialog).getByRole('textbox', { name: /Reason/ }), 'gateway fixed')
-    await actor.click(within(dialog).getByRole('button', { name: 'Requeue' }))
+    await actor.click(within(dialog).getByRole('button', { name: 'Requeue run' }))
 
     await waitFor(() => expect(within(screen.getByRole('row', { name: /a\.failed/ })).getByText('Requeuing…')).toBeTruthy())
 
@@ -263,6 +308,21 @@ describe('jobs runs list', () => {
     })
   })
 
+  it('keeps a select-all of the loaded runs as one URL marker that a reload restores', async () => {
+    const actor = user()
+    const view = open({ runs: [run('Failed'), run('Failed'), run('Failed')] })
+
+    await actor.click((await screen.findAllByRole('row', { name: /billing\.charge/ }))[0]!)
+    await actor.keyboard('{Control>}a{/Control}')
+
+    expect(await screen.findByRole('complementary', { name: '3 runs selected' })).toBeTruthy()
+    expect(new URLSearchParams(view.location().search).getAll('selected')).toEqual(['*'])
+
+    await act(() => view.navigate(`?selected=*`))
+
+    expect(await screen.findByRole('complementary', { name: '3 runs selected' })).toBeTruthy()
+  })
+
   it('opens the runs list filtered by the run’s correlation id on T', async () => {
     const actor = user()
     const first = run('Succeeded', { function: 'orders.place', correlationId: 'corr-7f2' })
@@ -308,21 +368,6 @@ describe('jobs runs list', () => {
     await actor.click(within(form).getByRole('button', { name: 'Add chain' }))
 
     expect(await screen.findByRole('complementary', { name: `Run ${created.id}` })).toBeTruthy()
-  it('keeps a select-all of the loaded runs as one URL marker that a reload restores', async () => {
-    const actor = user()
-    const view = open({ runs: [run('Failed'), run('Failed'), run('Failed')] })
-
-    await actor.click((await screen.findAllByRole('row', { name: /billing\.charge/ }))[0]!)
-    await actor.keyboard('{Control>}a{/Control}')
-
-    expect(await screen.findByRole('complementary', { name: '3 runs selected' })).toBeTruthy()
-    expect(new URLSearchParams(view.location().search).getAll('selected')).toEqual(['*'])
-
-    await act(() => view.navigate(`?selected=*`))
-
-    expect(await screen.findByRole('complementary', { name: '3 runs selected' })).toBeTruthy()
-  })
-
     expect(view.requests.find((request) => request.path === 'jobs/time-jobs')?.body).toEqual({
       function: 'billing.charge',
       request: { invoiceId: 42 },

@@ -11,6 +11,7 @@ import {
   useViewKeys,
   type TimelineEvent,
 } from '@headless/dashboard-sdk/components'
+import { DashboardApiError } from '@headless/dashboard-sdk/data'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQuery } from '@headless/dashboard-sdk/query'
 import { Link } from '@headless/dashboard-sdk/router'
@@ -40,11 +41,11 @@ export const canvas = { flex: '1 1 32rem', minInlineSize: 0, display: 'flex', fl
  * A timestamp as relative time, with the exact time, zone, and offset on hover; in `zone` when one is named. `short`
  * reads `4 min. ago`, so a list column stays narrow enough for a phone.
  */
-export function Time({ value, zone, short }: { value: string | undefined; zone?: string; short?: boolean }) {
+export function Time({ value, zone, short, missing = 'Not yet' }: { value: string | undefined; zone?: string; short?: boolean; missing?: string }) {
   const format = useFormat()
 
   if (!value) {
-    return <span className="hd-hint">Not yet</span>
+    return <span className="hd-hint">{missing}</span>
   }
 
   return (
@@ -207,6 +208,8 @@ export function useTraceKey(run: Pick<Run, 'correlationId'> | undefined) {
 /** A run's fields, in the order the inspector and the run page show them. */
 export function RunFields({ run }: { run: Run }) {
   const format = useFormat()
+  // The store stamps `executedAt` when a run ends, so a running run has none yet; it reads as running, not as unrun.
+  const running = run.status === 'InProgress' ? 'Running' : undefined
 
   return (
     <InspectorFields>
@@ -221,7 +224,7 @@ export function RunFields({ run }: { run: Run }) {
       </InspectorField>
       {run.status === 'DueDone' ? <InspectorField label="Note">Started late</InspectorField> : null}
       <InspectorField label="Retries">{format.number(run.retryCount)}</InspectorField>
-      <InspectorField label="Duration">{run.executedAt ? formatDuration(run.elapsedMilliseconds, format.number) : 'Not run yet'}</InspectorField>
+      <InspectorField label="Duration">{run.executedAt ? formatDuration(run.elapsedMilliseconds, format.number) : (running ?? 'Not run yet')}</InspectorField>
       {run.progressPercent !== undefined ? (
         <InspectorField label="Progress">
           <ProgressBar
@@ -233,13 +236,14 @@ export function RunFields({ run }: { run: Run }) {
         </InspectorField>
       ) : null}
       <InspectorField label="Due">
-        <Time value={run.executionTime} />
+        {/* A chain step has no due time of its own: it runs once its parent ends. */}
+        <Time value={run.executionTime} missing={run.parentId ? 'After its chain parent' : undefined} />
       </InspectorField>
       <InspectorField label="Created">
         <Time value={run.createdAt} />
       </InspectorField>
       <InspectorField label="Executed">
-        <Time value={run.executedAt} />
+        <Time value={run.executedAt} missing={running} />
       </InspectorField>
       <Optional label="Node" value={run.node ? <Mono>{run.node}</Mono> : undefined} />
       <Optional
@@ -277,7 +281,7 @@ function firstLine(text: string | undefined) {
   return text?.split('\n')[0]
 }
 
-/** The run's timeline: created, then each attempt with its node, outcome, and exception, oldest first. */
+/** The run's timeline: created, then each attempt with its node, outcome, exception, and fingerprint, oldest first. */
 export function attemptEvents(run: Pick<Run, 'createdAt'>, attempts: readonly Attempt[]): TimelineEvent[] {
   return [
     { id: 'created', label: 'Created', at: run.createdAt },
@@ -286,7 +290,11 @@ export function attemptEvents(run: Pick<Run, 'createdAt'>, attempts: readonly At
       label: `Attempt ${attempt.number}: ${attempt.outcome ?? 'Running'}`,
       at: attempt.endedAt ?? attempt.startedAt ?? run.createdAt,
       actor: attempt.node,
-      text: firstLine(attempt.exceptionMessage),
+      // The fingerprint is the failure's cause, the key Needs you groups by, so each failed attempt names it.
+      text:
+        [firstLine(attempt.exceptionMessage), attempt.failureFingerprint && `fingerprint ${attempt.failureFingerprint}`]
+          .filter(Boolean)
+          .join(' · ') || undefined,
       tone: attempt.outcome ? attemptTones[attempt.outcome] : 'active',
     })),
   ]
@@ -416,7 +424,12 @@ export function RunPayload({ runId }: { runId: string }) {
           Loading the payload…
         </p>
       ) : payload.isError ? (
-        <LoadError message={payload.error.message} onRetry={() => void payload.refetch()} />
+        // The server answers 404 for a run that stored no arguments: that is the run's payload, not a failed load.
+        payload.error instanceof DashboardApiError && payload.error.status === 404 ? (
+          <p className="hd-hint">This run has no payload.</p>
+        ) : (
+          <LoadError message={payload.error.message} onRetry={() => void payload.refetch()} />
+        )
       ) : (
         <PayloadView content={payload.data.content} contentType={payload.data.contentType} />
       )}

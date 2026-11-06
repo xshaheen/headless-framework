@@ -21,7 +21,7 @@ export interface ActionConfirmProps {
   reach?: ReactNode
   /** The outcome the confirm button names: `Requeue 312 runs`, never Yes. */
   confirmLabel: string
-  /** The outcome of backing out: `Keep runs as they are`. */
+  /** The outcome of backing out: `Keep runs as they are`. `Back` by default, since `Cancel` is a command's verb. */
   cancelLabel?: string
   confirmation: Confirmation
   /** The row count a typed confirmation asks for. */
@@ -51,7 +51,7 @@ function ActionConfirmDialog({
   title,
   reach,
   confirmLabel,
-  cancelLabel = 'Cancel',
+  cancelLabel = 'Back',
   confirmation,
   count = 0,
   reason = 'none',
