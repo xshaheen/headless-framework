@@ -49,9 +49,10 @@ export default function FunctionPage() {
       label: statusLabel(run.status).toLowerCase(),
       tone: runStatusMark(run).tone,
     })),
-    ...(cronJobs.data?.items ?? [])
-      .filter((cronJob) => !cronJob.isPaused)
-      .map((cronJob) => ({ id: `fire:${cronJob.id}`, at: cronJob.nextDueUtc, label: 'next fire' })),
+    // Every next fire the server computed, so a frequent cron job fills the window to the right of now.
+    ...(cronJobs.data?.items ?? []).flatMap((cronJob) =>
+      cronJob.nextFires.map((fire) => ({ id: `fire:${cronJob.id}:${fire}`, at: fire, label: 'next fire' })),
+    ),
   ]
   const selectedRun = runs.rows.find((run) => run.id === params.get('selected'))
 

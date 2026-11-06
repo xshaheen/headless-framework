@@ -206,7 +206,8 @@ export function server({ runs = [], attempts = {}, cronJobs = [], extra }: FakeS
     }
 
     if (request.method === 'GET' && request.path === 'jobs/cron-jobs') {
-      return { items: cronJobs }
+      // As the server does, the list carries next fires only when asked for them.
+      return { items: cronJobs.map((item) => (query.fires ? item : { ...item, nextFires: [] })) }
     }
 
     const cron = /^jobs\/cron-jobs\/(.+)$/.exec(request.path)

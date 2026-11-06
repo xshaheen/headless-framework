@@ -200,6 +200,39 @@ public sealed class JobsModuleApiTests : TestBase
     }
 
     [Fact]
+    public async Task should_list_each_active_cron_jobs_next_fires_when_the_list_asks_for_them()
+    {
+        // given
+        await using var app = await JobsDashboardHttpHost.StartAsync(_time, _log, AbortToken);
+        var active = JobsModuleNode.CronJob();
+        var paused = JobsModuleNode.CronJob(paused: true);
+        await _Store(app).InsertCronJobsAsync([active, paused], AbortToken);
+        using var client = JobsDashboardHttpHost.Client(app);
+        var cookie = await JobsDashboardHttpHost.SignInAsync(client, "viewer", AbortToken);
+
+        // when
+        using var list = await JobsDashboardHttpHost.GetAsync(
+            client,
+            JobsDashboardHttpHost.Api + "/cron-jobs?fires=4",
+            cookie,
+            AbortToken
+        );
+
+        // then: a paused cron job fires nothing, so it lists no fires
+        var items = (await JobsDashboardHttpHost.ReadAsync(list, AbortToken))
+            .GetProperty("items")
+            .EnumerateArray()
+            .ToList();
+        items
+            .ToDictionary(
+                item => item.GetProperty("id").GetGuid(),
+                item => item.GetProperty("nextFires").GetArrayLength()
+            )
+            .Should()
+            .BeEquivalentTo(new Dictionary<Guid, int> { [active.Id] = 4, [paused.Id] = 0 });
+    }
+
+    [Fact]
     public async Task should_answer_400_for_a_preview_with_no_expression_and_clamp_its_fires_to_50()
     {
         // given

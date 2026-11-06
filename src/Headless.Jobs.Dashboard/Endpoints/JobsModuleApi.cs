@@ -165,9 +165,12 @@ internal sealed class JobsModuleApi(IJobsDashboardBackend backend, TimeProvider 
 
     private async Task<JsonHttpResult<JobsCronJobList>> _ListCronJobsAsync(
         string? function,
+        int? fires,
         CancellationToken cancellationToken
     )
     {
+        // A Function page asks for each cron job's next fires to draw them on its strip; the Cron jobs list does not.
+        var count = fires is null ? 1 : Math.Clamp(fires.Value, 1, MaxFires);
         var cronJobs = await _backend.GetCronJobsAsync(cancellationToken).ConfigureAwait(false);
         var now = _Now();
 
@@ -180,12 +183,15 @@ internal sealed class JobsModuleApi(IJobsDashboardBackend backend, TimeProvider 
                     .OrderBy(static cronJob => cronJob.Function, StringComparer.Ordinal)
                     .ThenBy(static cronJob => cronJob.Id)
                     .Select(cronJob =>
-                        JobsCronJobView.From(
+                    {
+                        var preview = _backend.Preview(cronJob.Expression, cronJob.TimeZoneId, now, count);
+
+                        return JobsCronJobView.From(
                             cronJob,
-                            _backend.Preview(cronJob.Expression, cronJob.TimeZoneId, now, count: 1),
-                            nextFires: []
-                        )
-                    ),
+                            preview,
+                            fires is null || cronJob.IsPaused ? [] : preview.NextFiresUtc
+                        );
+                    }),
             ]),
             JobsDashboardJsonContext.Default.JobsCronJobList
         );

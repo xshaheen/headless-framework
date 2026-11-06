@@ -132,6 +132,20 @@ describe('jobs cron job page', () => {
   })
 })
 
+describe('jobs function page', () => {
+  it('draws each next fire of the function’s active cron jobs on its strip, hollow', async () => {
+    const minutes = (count: number) => new Date(now.getTime() + count * 60_000).toISOString()
+    const job = cronJob({ function: 'billing.charge', nextFires: [minutes(10), minutes(20), minutes(40)] })
+    open({ cronJobs: [job] }, { path: 'functions/billing.charge' })
+
+    const strip = await screen.findByRole('grid', { name: 'Schedule of billing.charge' })
+    await waitFor(() => expect(within(strip).getAllByRole('gridcell')).toHaveLength(3))
+    for (const tick of within(strip).getAllByRole('gridcell')) {
+      expect(tick.getAttribute('class')).toContain('hd-strip-future')
+    }
+  })
+})
+
 describe('jobs cron jobs list', () => {
   it('says how cron jobs get there when there are none', async () => {
     open({}, { path: 'cron-jobs' })
