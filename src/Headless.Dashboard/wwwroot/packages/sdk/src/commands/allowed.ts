@@ -3,9 +3,9 @@ import { useDashboard, useModule } from '../context.tsx'
 import { createCommandsApi } from './api.ts'
 
 /**
- * Why the server refuses one command now: `(commandId)` gives the shared reason when it refuses every object, so the
- * action is disabled; `.refused(commandId)` gives each refused object's own reason, so a bulk action runs on the
- * rest and tags these in their rows.
+ * Why the server refuses one command now: `(commandId)` gives a reason when it refuses any object, so an action given
+ * it as `disabledReason` never sends a refused row; `.refused(commandId)` gives each refused object's own reason, so a
+ * `CommandAction` given it as `refused` runs on the rest and tags these in their rows.
  */
 export interface AllowedActions {
   (commandId: string | undefined): string | null
@@ -53,16 +53,7 @@ export function useAllowedActions(kind: string, objects: readonly { id: string; 
     return reasons
   }
 
-  const allowed = (commandId: string | undefined) => {
-    const reasons = [...refused(commandId).values()]
-
-    if (reasons.length === 0 || reasons.length < objects.length) {
-      return null
-    }
-
-    // One reason when every object shares it; otherwise each row's tag says its own.
-    return reasons.every((reason) => reason === reasons[0]) ? reasons[0]! : 'None of these can run now'
-  }
+  const allowed = (commandId: string | undefined) => refused(commandId).values().next().value ?? null
 
   allowed.refused = refused
 

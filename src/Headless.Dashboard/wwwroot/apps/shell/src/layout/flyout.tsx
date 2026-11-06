@@ -54,8 +54,12 @@ export function Flyout({ label, isOpen, onClose, trigger, className, children }:
     panel.current?.focus()
 
     function onKey(event: KeyboardEvent) {
-      if (event.key === 'Escape') {
-        // Taken before a panel or list below sees it: Escape closes the nearest layer first.
+      const target = event.target as Node
+
+      // Only Escape from the flyout, its button, or nowhere in particular: a dialog opened above it, such as the
+      // palette, holds focus and closes first on its own Escape.
+      if (event.key === 'Escape' && (target === document.body || panel.current?.contains(target) || trigger.current?.contains(target))) {
+        // Taken before a list inside it sees it: Escape closes the nearest layer first.
         event.stopPropagation()
         close()
         trigger.current?.focus()

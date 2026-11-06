@@ -101,7 +101,7 @@ describe('useAllowedActions', () => {
     expect(await screen.findByText('Running - cancel instead')).toBeTruthy()
   })
 
-  it('answers per row, and gives a shared reason only when every row is refused', async () => {
+  it('answers per row, and gives a reason whenever any row is refused, so a caller without per-row refusals sends none', async () => {
     function PerRow({ ids }: { ids: string[] }) {
       const allowed = useAllowedActions(
         'run',
@@ -128,8 +128,8 @@ describe('useAllowedActions', () => {
       }),
     )
 
-    expect(await screen.findByText('r2: Running, r3: Held | some can run')).toBeTruthy()
-    expect(screen.getByText('r2: Running, r3: Held | None of these can run now')).toBeTruthy()
+    expect(await screen.findByText('r2: Running, r3: Held | Running')).toBeTruthy()
+    expect(screen.getAllByText('r2: Running, r3: Held | Running')).toHaveLength(2)
     expect(screen.getByText('r2: Running | Running')).toBeTruthy()
   })
 })

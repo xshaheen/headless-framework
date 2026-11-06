@@ -81,7 +81,7 @@ export function ProductSidebar({ product, onNavigate }: { product: BootstrapProd
         <div key={`${section.module}:${index}`} className="hd-side-section">
           {section.label ? <h2 className="hd-side-head">{section.label}</h2> : null}
           {section.entries.map((entry) => {
-              const count = entry.countKey ? counts.data?.[entry.countKey] : undefined
+              const count = entry.countKey ? counts.data?.counts[entry.countKey] : undefined
               const body = (
                 <>
                   <Lead entry={entry} />
@@ -114,7 +114,8 @@ export function ProductSidebar({ product, onNavigate }: { product: BootstrapProd
       <span id={reasonId} hidden>
         Needs operate permission
       </span>
-      <Announcer message={counts.isError ? `${product.label} counts did not load.` : ''} />
+      {/* A module that did not answer leaves its counts out of a successful answer, so they read as en dashes too. */}
+      <Announcer message={counts.isError || counts.data?.stale.length ? `${product.label} counts did not load.` : ''} />
     </nav>
   )
 }

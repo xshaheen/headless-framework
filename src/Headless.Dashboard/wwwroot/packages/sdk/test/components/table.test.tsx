@@ -580,8 +580,16 @@ const requeue: CommandDefinition = {
   canRun: true,
 }
 
+interface BulkOptions {
+  /** Passes the per-row refusals (`refused`), as a refused-aware list does; without them any refused row disables. */
+  perRow?: boolean
+  command?: CommandDefinition
+  /** Holds the run's answer until the test releases it. */
+  ran?: Promise<void>
+}
+
 /** A failed list as a module writes one: the page frame's checked rows, the table, and a bulk Requeue over them. */
-function BulkRuns({ rows: list }: { rows: readonly Run[] }) {
+function BulkRuns({ rows: list, perRow = true, command = requeue }: { rows: readonly Run[] } & BulkOptions) {
   const frame = usePageFrame({ viewId: 'diag.runs', rows: list })
   const checked = list.filter((run) => frame.checked.has(run.id))
   const allowed = useAllowedActions('run', checked)
@@ -592,11 +600,12 @@ function BulkRuns({ rows: list }: { rows: readonly Run[] }) {
       header={
         <CommandAction
           module="diag"
-          command={requeue}
+          command={command}
           ids={checked.map((run) => run.id)}
           noun="runs"
-          disabledReason={allowed(requeue.id)}
-          refused={allowed.refused(requeue.id)}
+          recovery
+          disabledReason={allowed(command.id)}
+          refused={perRow ? allowed.refused(command.id) : undefined}
           onRefused={frame.setRefused}
           onViewRefused={frame.reveal}
         />
@@ -608,9 +617,9 @@ function BulkRuns({ rows: list }: { rows: readonly Run[] }) {
 }
 
 /** Renders the bulk view; the server refuses requeue for each id in `refusals`, with its reason. */
-function renderBulk(list: readonly Run[], refusals: Record<string, string>) {
+function renderBulk(list: readonly Run[], refusals: Record<string, string>, options: BulkOptions = {}) {
   const requests: ApiRequest[] = []
-  const router = createMemoryRouter([{ path: '/', element: <BulkRuns rows={list} /> }])
+  const router = createMemoryRouter([{ path: '/', element: <BulkRuns rows={list} {...options} /> }])
 
   render(
     <DashboardProvider
@@ -626,17 +635,19 @@ function renderBulk(list: readonly Run[], refusals: Record<string, string>) {
             requests.push(request)
             const ids = (request.query?.id ?? []) as string[]
 
-            return (
-              request.path === 'diag/commands/allowed'
-                ? {
-                    objects: ids.map((id) => ({
-                      kind: 'run',
-                      id,
-                      commands: [{ id: requeue.id, allowed: !refusals[id], disabledReason: refusals[id] }],
-                    })),
-                  }
-                : { rows: (request.body as { ids: string[] }).ids.map((id) => ({ id, outcome: 'done' })) }
-            ) as T
+            if (request.path === 'diag/commands/allowed') {
+              return {
+                objects: ids.map((id) => ({
+                  kind: 'run',
+                  id,
+                  commands: [{ id: (options.command ?? requeue).id, allowed: !refusals[id], disabledReason: refusals[id] }],
+                })),
+              } as T
+            }
+
+            await options.ran
+
+            return { rows: (request.body as { ids: string[] }).ids.map((id) => ({ id, outcome: 'done' })) } as T
           },
         },
       }}
@@ -648,7 +659,12 @@ function renderBulk(list: readonly Run[], refusals: Record<string, string>) {
     </DashboardProvider>,
   )
 
-  return requests
+  return { requests, router }
+}
+
+/** The run requests the view sent, by their ids. */
+function sentIds(requests: readonly ApiRequest[]) {
+  return requests.filter((request) => request.path !== 'diag/commands/allowed').map((request) => (request.body as { ids: string[] }).ids)
 }
 
 describe('checked rows and bulk refusals', () => {
@@ -700,12 +716,12 @@ describe('checked rows and bulk refusals', () => {
 
   it('requeues the 3 allowed of 5, tags the 2 refused in their rows, and View scrolls to and highlights them', async () => {
     const user = userEvent.setup()
-    const requests = renderBulk(runs(5), { r3: 'Running', r5: 'Held' })
+    const { requests } = renderBulk(runs(5), { r3: 'Running', r5: 'Held' })
 
     await user.click(screen.getByRole('checkbox', { name: 'Select all loaded' }))
     await user.click(await screen.findByRole('button', { name: 'Requeue 3 of 5' }))
 
-    const toast = await screen.findByText('Requeued 3 · 2 refused')
+    const toast = await screen.findByText('Requeue: 3 done · 2 refused')
     expect(requests.find((request) => request.path === 'diag/commands/diag.requeue')?.body).toMatchObject({ ids: ['r1', 'r2', 'r4'] })
     expect(row(/^r3\b/).textContent).toContain('Running')
     expect(row(/^r5\b/).textContent).toContain('Held')
@@ -727,5 +743,108 @@ describe('checked rows and bulk refusals', () => {
 
     const button = await screen.findByRole('button', { name: 'Requeue 3 runs', description: 'Running' })
     expect(button.getAttribute('aria-disabled')).toBe('true')
+  })
+
+  it('says why on R when every checked row is refused, and sends nothing', async () => {
+    const user = userEvent.setup()
+    const { requests } = renderBulk(runs(2), { r1: 'Running', r2: 'Running' })
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select all loaded' }))
+    await user.click(await screen.findByRole('button', { name: 'Requeue 2 runs', description: 'Running' }))
+    await user.keyboard('r')
+
+    expect(screen.getAllByRole('status').some((region) => region.textContent === 'Running')).toBe(true)
+    expect(sentIds(requests)).toEqual([])
+  })
+
+  it('without per-row refusals, disables the action on a mixed selection with the server’s reason', async () => {
+    const user = userEvent.setup()
+    const { requests } = renderBulk(runs(5), { r3: 'Running', r5: 'Held' }, { perRow: false })
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select all loaded' }))
+
+    const button = await screen.findByRole('button', { name: 'Requeue 5 runs', description: 'Running' })
+    expect(button.getAttribute('aria-disabled')).toBe('true')
+
+    await user.click(button)
+    await user.keyboard('r')
+
+    expect(screen.getAllByRole('status').some((region) => region.textContent === 'Running')).toBe(true)
+    expect(sentIds(requests)).toEqual([])
+  })
+
+  it('confirms and runs the rows it was pressed on, though the selection changed behind the open confirm', async () => {
+    const user = userEvent.setup()
+    const { requests } = renderBulk(runs(5), { r3: 'Running', r5: 'Held' }, { command: { ...requeue, confirmation: 'confirm' } })
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select all loaded' }))
+    await user.click(await screen.findByRole('button', { name: 'Requeue 3 of 5' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Requeue 3 of 5' })
+
+    // A change behind the dialog asks the server again; until it answers, every checked row reads as refused.
+    act(() => {
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Select r1', hidden: true }))
+    })
+
+    expect(screen.getByRole('dialog', { name: 'Requeue 3 of 5' })).toBe(dialog)
+    await user.click(within(dialog).getByRole('button', { name: 'Requeue 3 of 5' }))
+
+    await waitFor(() => expect(sentIds(requests)).toEqual([['r1', 'r2', 'r4']]))
+    // The refusals answered for the pressed rows, not for the selection now, so no row is tagged with them.
+    expect(row(/^r3\b/).textContent).not.toContain('Running')
+  })
+
+  it('keeps refusals off a selection changed while the run was in flight; the toast still reports the run', async () => {
+    const user = userEvent.setup()
+    let release!: () => void
+    const ran = new Promise<void>((resolve) => (release = resolve))
+    renderBulk(runs(5), { r3: 'Running', r5: 'Held' }, { ran })
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select all loaded' }))
+    await user.click(await screen.findByRole('button', { name: 'Requeue 3 of 5' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Select r1' }))
+    await act(async () => release())
+
+    const toast = await screen.findByText('Requeue: 3 done · 2 refused')
+    expect(within(toast.closest('[role="status"]') as HTMLElement).queryByRole('button', { name: 'View' })).toBeNull()
+    expect(row(/^r3\b/).textContent).not.toContain('Running')
+    expect(row(/^r5\b/).textContent).not.toContain('Held')
+  })
+})
+
+describe('page frame keys on the table', () => {
+  it('opens with Enter, follows J/K and the arrows without new history, checks with X, and closes then clears on Esc', async () => {
+    const user = userEvent.setup()
+    const { router } = renderBulk(runs(5), {})
+    const search = () => router.state.location.search
+
+    act(() => row(/^r1\b/).focus())
+    await user.keyboard('{Enter}')
+    expect(search()).toBe('?open=r1')
+
+    await user.keyboard('{ArrowDown}{ArrowDown}')
+    expect(search()).toBe('?open=r3')
+
+    await user.keyboard('j')
+    expect(search()).toBe('?open=r4')
+    await user.keyboard('k')
+    expect(search()).toBe('?open=r3')
+
+    await user.keyboard('x')
+    expect((screen.getByRole('checkbox', { name: 'Select r3' }) as HTMLInputElement).checked).toBe(true)
+    expect(search()).toBe('?open=r3')
+
+    await user.keyboard('{Escape}')
+    expect(search()).toBe('')
+    expect((screen.getByRole('checkbox', { name: 'Select r3' }) as HTMLInputElement).checked).toBe(true)
+
+    await user.keyboard('{Escape}')
+    expect((screen.getByRole('checkbox', { name: 'Select r3' }) as HTMLInputElement).checked).toBe(false)
+
+    // Enter pushed one entry, the moves replaced it, and the close pushed one: two steps back reach the bare list.
+    await act(() => router.navigate(-1))
+    expect(search()).toBe('?open=r3')
+    await act(() => router.navigate(-1))
+    expect(search()).toBe('')
   })
 })
