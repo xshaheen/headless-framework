@@ -32,6 +32,14 @@ describe('jobs cron job page', () => {
     ])
   })
 
+  it('shows the scheduler zone in an editable cron job’s Time zone when it stores none of its own', async () => {
+    const job = cronJob({ timeZoneId: '' })
+    open({ cronJobs: [job] }, { path: `cron-jobs/${job.id}` })
+
+    const zone = await screen.findByRole('textbox', { name: 'Time zone' })
+    await waitFor(() => expect(zone).toHaveProperty('value', 'Europe/Berlin'))
+  })
+
   it('disables Run now on a paused cron job with the server’s reason, and lists no fires', async () => {
     const job = cronJob({ isPaused: true })
     open({ cronJobs: [job] }, { path: `cron-jobs/${job.id}` })

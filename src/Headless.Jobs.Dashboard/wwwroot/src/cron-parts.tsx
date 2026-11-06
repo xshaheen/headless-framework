@@ -142,7 +142,8 @@ export function CronFields({ cronJob }: { cronJob: CronJob }) {
           <InspectorField
             label="Time zone"
             edit={{
-              value: cronJob.timeZoneId,
+              // A cron job with no zone of its own fires in the scheduler's, so the field shows that one, not a blank.
+              value: cronJob.timeZoneId || zone || '',
               onDraftChange: (timeZoneId) => setDraft({ expression: draft?.expression ?? cronJob.expression, timeZoneId }),
               onCommit: (timeZoneId) => commit(draft?.expression ?? cronJob.expression, timeZoneId),
             }}

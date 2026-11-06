@@ -171,4 +171,20 @@ describe('shell layout', () => {
     await screen.findByRole('heading', { name: 'Diagnostics settings view' })
     expect(screen.queryByRole('button', { name: 'Add run' })).toBeNull()
   })
+
+  it('names an object page in the breadcrumb under its list: module, list, then the object', async () => {
+    const modules = [
+      moduleManifest('jobs', {
+        displayName: 'Jobs',
+        nav: [{ id: 'jobs.nav.functions', label: 'Functions', to: 'functions' }],
+        routes: [{ path: 'functions/:name', chunk: chunkUrl('jobs', 'function') }],
+      }),
+    ]
+    renderShell(shellState(modules), { path: '/jobs/functions/billing.charge', files: moduleFiles(modules) })
+
+    await screen.findByRole('heading', { name: 'Jobs functions/:name view' })
+    const crumb = screen.getByRole('navigation', { name: 'Breadcrumb' })
+    expect(crumb.textContent).toBe('Jobs›Functions›billing.charge')
+    expect(within(crumb).getByRole('heading', { level: 1 }).textContent).toBe('billing.charge')
+  })
 })
