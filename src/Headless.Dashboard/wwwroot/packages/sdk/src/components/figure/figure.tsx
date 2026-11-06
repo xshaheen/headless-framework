@@ -1,3 +1,7 @@
+// The React Compiler's memo caches cost the SDK more bytes than these rare renders save, and the shell's assets sit
+// near their size budget.
+'use no memo'
+
 import type { ReactNode } from 'react'
 
 export interface FigureProps {
