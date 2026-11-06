@@ -1,7 +1,7 @@
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
-import { chunkUrl, entryUrl, moduleFiles, moduleManifest, shellState, twentyModules } from './fixtures/modules.tsx'
+import { chunkUrl, entryUrl, jobsWithDashboard, moduleFiles, moduleManifest, shellState, twentyModules } from './fixtures/modules.tsx'
 import { renderShell } from './harness.tsx'
 
 describe('router', () => {
@@ -33,6 +33,25 @@ describe('router', () => {
     expect(await screen.findByRole('heading', { name: 'Module jobs runs view' })).toBeTruthy()
     expect(shell.router.state.location.pathname).toBe('/jobs/runs')
     expect(screen.getByRole('link', { name: /^Jobs/ }).getAttribute('aria-current')).toBe('page')
+  })
+
+  it('lands on the Jobs Dashboard at /, and keeps a state entry current while a run is open in its list', async () => {
+    const { modules, state } = jobsWithDashboard()
+    const shell = renderShell(state, { files: moduleFiles(modules) })
+
+    expect(await screen.findByRole('heading', { name: 'Module jobs view' })).toBeTruthy()
+    expect(shell.router.state.location.pathname).toBe('/jobs')
+    const sidebar = screen.getByRole('navigation', { name: 'Jobs' })
+    expect(within(sidebar).getByRole('link', { name: 'Dashboard' }).getAttribute('aria-current')).toBe('page')
+
+    await shell.router.navigate('/jobs/runs?status=Failed&open=r1')
+    await screen.findByRole('heading', { name: 'Module jobs runs view' })
+    expect(within(sidebar).getByRole('link', { name: /Failed/ }).getAttribute('aria-current')).toBe('page')
+    expect(within(sidebar).getByRole('link', { name: 'Dashboard' }).getAttribute('aria-current')).toBeNull()
+    expect(within(sidebar).getByRole('link', { name: 'All runs' }).getAttribute('aria-current')).toBeNull()
+
+    await shell.router.navigate('/jobs/runs/r1')
+    await waitFor(() => expect(within(sidebar).getByRole('link', { name: 'All runs' }).getAttribute('aria-current')).toBe('page'))
   })
 
   it('shows why a refused module did not load, marks its product off, and the other modules still work', async () => {

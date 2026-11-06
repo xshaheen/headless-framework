@@ -39,6 +39,11 @@
   white-space: nowrap;
 }
 
+/* A cell fills its row's height, so its text centres on the row and the row header's lines up with the rest. */
+.hd-table :is([role='gridcell'], [role='rowheader'], [role='columnheader']) {
+  block-size: 100%;
+}
+
 .hd-table [role='gridcell'],
 .hd-table [role='rowheader'] {
   display: flex;
@@ -48,6 +53,13 @@
   overflow: hidden;
   font: var(--text-small);
   white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* A cell's only child, such as a name or a reason, ends in an ellipsis when the column is too narrow for it. */
+.hd-table :is([role='gridcell'], [role='rowheader']):not(.hd-row-actions) > span:only-child {
+  min-inline-size: 0;
+  overflow: hidden;
   text-overflow: ellipsis;
 }
 
@@ -96,8 +108,12 @@
   margin-inline-start: auto;
 }
 
-/* A pinned cell paints its row's fill, so the cells that scroll sideways under it stay hidden. */
+/*
+ * A pinned cell paints its row's fill, so the cells that scroll sideways under it stay hidden. The virtualizer makes it
+ * an inline block; aligned to the top it no longer sits on the row's text baseline, which pushed it below its row.
+ */
 .hd-table [style*='sticky'] {
+  vertical-align: top;
   background: inherit;
 }
 
@@ -113,7 +129,6 @@
   accent-color: var(--accent);
 }
 
-/* The rows a bulk action refused, once the operator asked to see them. */
 .hd-row[data-highlighted] {
   background: var(--fail-soft);
   box-shadow: inset 2px 0 0 var(--fail);

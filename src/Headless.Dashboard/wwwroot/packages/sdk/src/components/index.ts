@@ -4,6 +4,7 @@ export { below } from './breakpoints.ts'
 export { Button, type ButtonProps, type ButtonVariant } from './button.tsx'
 export { Dialog, type OverlayProps } from './dialog.tsx'
 export { BarChart, type BarChartProps, type BarColumn, type BarSeries } from './display/bar-chart.tsx'
+export { Card, CardRow, Cards, type CardProps, type CardRowProps } from './display/card.tsx'
 export { FilterChip, FilterChips, type FilterChipProps } from './display/filter-chips.tsx'
 export { PageHeader, type PageHeaderProps } from './display/page-header.tsx'
 export { SegmentedControl, type SegmentedControlProps } from './display/segmented-control.tsx'
@@ -29,16 +30,6 @@ export {
   type SelectFieldProps,
   type TextInputFieldProps,
 } from './form.tsx'
-export {
-  Inspector,
-  InspectorField,
-  InspectorFields,
-  ObjectHeader,
-  type InspectorFieldEdit,
-  type InspectorFieldProps,
-  type InspectorProps,
-  type ObjectHeaderProps,
-} from './inspector/inspector.tsx'
 export { Announcer, LiveIndicator, NewRowsNotice, ProgressBar, ToastRegion } from './live.tsx'
 export { Chip, Kbd, Mono, NodeChip, StatusMark, TenantChip } from './marks.tsx'
 export {

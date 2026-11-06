@@ -1,5 +1,5 @@
 import { useDashboard, useModule } from '@headless/dashboard-sdk'
-import { createCommandsApi, type CommandDefinition } from '@headless/dashboard-sdk/commands'
+import { createCommandsApi, type CommandDefinition, type RowResult } from '@headless/dashboard-sdk/commands'
 import type { DashboardStateRole } from '@headless/dashboard-sdk'
 import type { CappedCount, DashboardApi, DashboardListPage } from '@headless/dashboard-sdk/data'
 import { useQuery } from '@headless/dashboard-sdk/query'
@@ -69,7 +69,8 @@ export interface Attempt {
 export interface RunFilter {
   kind: string
   function: string
-  status: string
+  /** A known run status, or empty for every status; `readFilter` drops a name the server would not read as one. */
+  status: RunStatus | ''
   cronJobId: string
   correlationId: string
   fingerprint: string
@@ -88,10 +89,22 @@ export function readFilter(params: URLSearchParams): RunFilter {
   const filter = { ...emptyFilter }
 
   for (const name of filterNames) {
-    filter[name] = params.get(name) ?? ''
+    if (name !== 'status') {
+      filter[name] = params.get(name) ?? ''
+    }
   }
 
+  filter.status = readStatus(params.get('status') ?? '')
+
   return filter
+}
+
+/**
+ * The run status `value` names, read case-insensitively as the server reads it, so `failed` is `Failed`; `''` for no
+ * status or one no run has, which the list then reads as every status rather than a filter nothing can match.
+ */
+function readStatus(value: string): RunStatus | '' {
+  return runStatuses.find((status) => status.toLowerCase() === value.toLowerCase()) ?? ''
 }
 
 export function isFiltered(filter: RunFilter) {
@@ -318,6 +331,16 @@ export function usePending() {
 
 export type Pending = ReturnType<typeof usePending>
 
+/** A run action's `onDone`: the runs it finished on read its pending label until their change arrives. */
+export function markDone(pending: Pending, versions: ReadonlyMap<string, string>, name: 'requeue' | 'cancel' | 'delete') {
+  return (rows: readonly RowResult[]) =>
+    pending.mark(
+      rows.filter((row) => row.outcome === 'done').map((row) => row.id),
+      versions,
+      pendingLabels[name]!,
+    )
+}
+
 /** Opens a path of this module, such as the runs list filtered by a correlation id. */
 export function useModuleNavigate() {
   const navigate = useNavigate()
@@ -328,7 +351,7 @@ export function useModuleNavigate() {
 
 /** The runs list filtered by one correlation id: the trace until the cross-module trace page exists. */
 export function tracePath(correlationId: string) {
-  return `?correlationId=${encodeURIComponent(correlationId)}`
+  return `runs?correlationId=${encodeURIComponent(correlationId)}`
 }
 
 /** A duration with its unit: `340 ms`, `1.2 s`, `3 min 4 s`. */

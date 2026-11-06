@@ -48,7 +48,8 @@ const focusable = 'a[href], button:not([disabled]), input, select, textarea, [ta
  * tablist with roving focus. Below 768 px the panel is a full-screen modal that holds focus until it closes.
  */
 export function DetailPanel({ label, name, id, status, tabs, children, actions, detachTo }: DetailPanelProps) {
-  const { close, stale, modal, side, setSide } = useFrame()
+  // Outside a frame the panel is the object's own page: nothing to close, move, or trap focus in.
+  const { close, stale, form, modal, side, setSide } = useFrame() ?? { stale: false, form: false, modal: false, side: null }
   const ref = useRef<HTMLDivElement>(null)
   const base = useId()
   const [picked, setPicked] = useState<string>()
@@ -111,7 +112,7 @@ export function DetailPanel({ label, name, id, status, tabs, children, actions, 
             <span className="hd-visually-hidden">{status.label}</span>
           </span>
         ) : null}
-        <h2 className="hd-mono">{name}</h2>
+        <h2 className={form ? undefined : 'hd-mono'}>{name}</h2>
         {id ? (
           <>
             <bdi className="hd-mono hd-faint" dir="ltr">
@@ -151,19 +152,21 @@ export function DetailPanel({ label, name, id, status, tabs, children, actions, 
             <Glyph d="M9 3h4v4M13 3L7.5 8.5M12 9.5V13H3V4h3.5" />
           </Link>
         ) : null}
-        {side !== null ? (
+        {side != null ? (
           <Button
             variant="ghost"
             className="hd-icon"
             aria-label={side ? 'Move details below' : 'Move details to the side'}
-            onPress={() => setSide(!side)}
+            onPress={() => setSide?.(!side)}
           >
             <Glyph d={side ? 'M2.5 2.5h11v11h-11zM2.5 9.5h11' : 'M2.5 2.5h11v11h-11zM9.5 2.5v11'} />
           </Button>
         ) : null}
-        <Button variant="ghost" className="hd-icon" aria-label="Close details" onPress={close}>
-          <Glyph d="M3.5 3.5l9 9M12.5 3.5l-9 9" />
-        </Button>
+        {close ? (
+          <Button variant="ghost" className="hd-icon" aria-label="Close details" onPress={close}>
+            <Glyph d="M3.5 3.5l9 9M12.5 3.5l-9 9" />
+          </Button>
+        ) : null}
       </div>
       {stale ? <p className="hd-panel-note">No longer matches the filter</p> : null}
       <div

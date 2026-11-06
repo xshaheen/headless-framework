@@ -5,7 +5,7 @@ import { createFakeStream } from '@headless/dashboard-sdk/testing'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { chunkUrl, moduleFiles, moduleManifest, shellState } from './fixtures/modules.tsx'
+import { chunkUrl, jobsWithDashboard, moduleFiles, moduleManifest, shellState } from './fixtures/modules.tsx'
 import { emptyAggregates, renderShell } from './harness.tsx'
 
 /** The keys of the shortcut table in the dashboard's design system, as an operator reads them on the key caps. */
@@ -66,15 +66,15 @@ describe('shell keyboard', () => {
 
   it('goes to the current product’s home with G O, and to the Jobs runs list with G R', async () => {
     const user = userEvent.setup()
-    const modules = [moduleManifest('jobs')]
-    const shell = renderShell(shellState(modules), { path: '/jobs/settings', files: moduleFiles(modules) })
+    const { modules, state } = jobsWithDashboard()
+    const shell = renderShell(state, { path: '/jobs/settings', files: moduleFiles(modules) })
 
     await screen.findByRole('heading', { name: 'Module jobs settings view' })
     await user.keyboard('go')
-    await waitFor(() => expect(shell.router.state.location.pathname).toBe('/jobs/runs'))
+    await waitFor(() => expect(shell.router.state.location.pathname).toBe('/jobs'))
 
     await user.keyboard('gr')
-    await waitFor(() => expect(shell.router.state.location.pathname).toBe('/jobs'))
+    await waitFor(() => expect(shell.router.state.location.pathname).toBe('/jobs/runs'))
   })
 
   it('goes with G then a letter while a select has focus, since a select is not a text field', async () => {

@@ -66,7 +66,6 @@
   --sans: Geist, ui-sans-serif, system-ui, sans-serif;
   --mono: 'Geist Mono', ui-monospace, monospace;
 
-  /* Type scale: weight size/line height family. */
   --text-body: 400 13.5px/20px var(--sans);
   --text-mono: 400 12.5px/20px var(--mono);
   --text-label: 500 11.5px/16px var(--sans);
@@ -77,6 +76,12 @@
   --text-tag: 400 11px/16px var(--sans);
   --text-axis: 400 10.5px/14px var(--mono);
   --text-hero: 600 22px/28px var(--sans);
+  --text-mono-small: 400 12px/18px var(--mono);
+  --text-nav: 400 13px/20px var(--sans);
+  --text-tab: 500 12.5px/20px var(--sans);
+  --text-code: 400 12px/19px var(--mono);
+  --text-count: 400 11.5px/16px var(--mono);
+  --text-brand: 700 16px/20px var(--sans);
 
   --sp-0: 2px;
   --sp-1: 4px;
@@ -96,12 +101,35 @@
   --radius-float: 7px;
   --radius-card: 12px;
 
-  /* Fixed regions. */
   --topbar-height: 48px;
   --sidebar-width: 208px;
   --statstrip-height: 85px;
   --row-height: 34px;
   --row-height-compact: 28px;
+  --card-row-height: 40px;
+  --chip-height: 22px;
+  --fchip-height: 26px;
+  --seg-form-height: 24px;
+  --tag-height: 18px;
+  --tag-pill-height: 20px;
+  --icon: 15px;
+  --icon-sm: 13px;
+  --grip-width: 36px;
+  --grip-height: 3px;
+  --bar-max: 520px;
+  --chart-height: 140px;
+  --chart-mini-height: 36px;
+  --textarea-min: 72px;
+  --payload-max: 480px;
+  --palette-input-height: 52px;
+  --dialog-width: 560px;
+  --goto-width: 200px;
+  --popover-width: 280px;
+  --flyout-width: 360px;
+  --sidebar-phone-width: 260px;
+  --sign-in-width: 400px;
+  --sign-in-field-height: 42px;
+  --sign-in-grid: 22px;
   --panel-height: 340px;
   --panel-side-width: 380px;
   --resize-handle: 9px;
@@ -183,6 +211,16 @@ textarea {
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* A link in text or a row is accent and gains its underline on hover; a link styled as a tab or button keeps its own. */
+a:not([class]) {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:not([class]):hover {
+  text-decoration: underline;
 }
 
 [hidden] {

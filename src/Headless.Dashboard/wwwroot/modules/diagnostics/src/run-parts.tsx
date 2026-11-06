@@ -1,13 +1,13 @@
 import { useDashboard, useModule } from '@headless/dashboard-sdk'
-import { CommandAction, useAllowedActions, type RowResult } from '@headless/dashboard-sdk/commands'
+import { useDashboardObject } from '@headless/dashboard-sdk/data'
+import { CommandAction, useAllowedActions } from '@headless/dashboard-sdk/commands'
 import type { DashboardStateRole } from '@headless/dashboard-sdk'
-import { Button, InspectorField, InspectorFields, Mono, Timeline } from '@headless/dashboard-sdk/components'
+import { Button, DetailPanel, FieldGrid, GridField, Mono, Timeline } from '@headless/dashboard-sdk/components'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useStreamEvent, useStreamStatus } from '@headless/dashboard-sdk/stream'
-import { useState } from 'react'
-import { useRunCommands, type Run, type RunEvent } from './runs.ts'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { fetchRun, runStatusMark, runsTopic, useRunCommands, type Run, type RunEvent } from './runs.ts'
 
-/** A timestamp as relative time, with the exact time and zone on hover. */
 export function RunTime({ value }: { value: string }) {
   const format = useFormat()
   const at = new Date(value)
@@ -23,45 +23,99 @@ export function RunTime({ value }: { value: string }) {
   )
 }
 
-/** The trace id, mono, with `Open trace` when the host configured a link to its tracing tool. */
-function TraceId({ traceId }: { traceId: string }) {
+function TraceLink({ traceId }: { traceId: string }) {
   const { traceLinkTemplate } = useDashboard()
 
+  return traceLinkTemplate ? (
+    <a href={traceLinkTemplate.replace('{traceId}', encodeURIComponent(traceId))} target="_blank" rel="noreferrer">
+      Open trace
+    </a>
+  ) : null
+}
+
+function RunFields({ run, statusLabel }: { run: Run; statusLabel: string }) {
   return (
-    <span>
-      <Mono>{traceId}</Mono>
-      {traceLinkTemplate ? (
-        <>
-          {' '}
-          <a href={traceLinkTemplate.replace('{traceId}', encodeURIComponent(traceId))} target="_blank" rel="noreferrer">
-            Open trace
-          </a>
-        </>
-      ) : null}
-    </span>
+    <FieldGrid columns={3}>
+      <GridField label="Status">{statusLabel}</GridField>
+      <GridField label="Attempts">{run.attempts}</GridField>
+      <GridField label="Updated">
+        <RunTime value={run.updatedAt} />
+      </GridField>
+      <GridField label="Last error" span={2}>
+        {run.lastError ?? 'None'}
+      </GridField>
+      <GridField label="Created">
+        <RunTime value={run.createdAt} />
+      </GridField>
+      <GridField label="Trace id" span={2} action={<TraceLink traceId={run.traceId} />}>
+        <Mono>{run.traceId}</Mono>
+      </GridField>
+    </FieldGrid>
   )
 }
 
-/** A run's read-only fields, in the order the inspector and the run page show them. */
-export function RunFields({ run, statusLabel }: { run: Run; statusLabel: string }) {
+export function RunPanel({
+  run,
+  requeuing,
+  onRequeued,
+  page,
+  children,
+  selectedEvent,
+  onSelectEvent,
+  eventDetail,
+}: {
+  run: Run
+  requeuing: boolean
+  onRequeued: RunActionsProps['onRequeued']
+  page?: boolean
+  /** What the run page adds under the fields, such as the payload. */
+  children?: ReactNode
+  /** The selected timeline event's id, and how the timeline selects one; the run page keeps it in its URL. */
+  selectedEvent?: string
+  onSelectEvent?: (id: string) => void
+  /** What the selected event recorded, under the timeline. */
+  eventDetail?: ReactNode
+}) {
+  const { api } = useDashboard()
+  const module = useModule()
+  const detail = useDashboardObject({ topic: runsTopic(module.id), id: run.id, fetch: () => fetchRun(api, module.id, run.id) })
+  // The list row fills the fields at once from the cache; the detail adds the timeline when it answers.
+  const status = runStatusMark(run.status, requeuing)
+  const seenVersion = useRef(run.version)
+
+  // A live change patches the row's fields but carries no timeline, so the timeline is read again.
+  useEffect(() => {
+    if (seenVersion.current !== run.version) {
+      seenVersion.current = run.version
+      void detail.refetch()
+    }
+  }, [run.version, detail])
+
   return (
-    <InspectorFields>
-      <InspectorField label="Id">
-        <Mono>{run.id}</Mono>
-      </InspectorField>
-      <InspectorField label="Status">{statusLabel}</InspectorField>
-      <InspectorField label="Attempts">{run.attempts}</InspectorField>
-      <InspectorField label="Last error">{run.lastError ? <Mono>{run.lastError}</Mono> : 'None'}</InspectorField>
-      <InspectorField label="Trace id">
-        <TraceId traceId={run.traceId} />
-      </InspectorField>
-      <InspectorField label="Created">
-        <RunTime value={run.createdAt} />
-      </InspectorField>
-      <InspectorField label="Updated">
-        <RunTime value={run.updatedAt} />
-      </InspectorField>
-    </InspectorFields>
+    <DetailPanel
+      label={`Run ${run.id}`}
+      name="Run"
+      id={run.id}
+      status={status}
+      // Keyed by run, so a command still busy or failed for one run does not show on the next one J/K opens.
+      actions={<RunActions key={run.id} runs={[run]} onRequeued={onRequeued} />}
+      detachTo={page ? undefined : `runs/${encodeURIComponent(run.id)}`}
+    >
+      <section aria-label="Fields">
+        <RunFields run={run} statusLabel={status.label} />
+        {children}
+      </section>
+      <div>
+        {detail.data ? (
+          <RunTimeline events={detail.data.timeline} selected={selectedEvent} onSelect={onSelectEvent} />
+        ) : detail.isError ? (
+          <LoadError message={detail.error.message} onRetry={() => void detail.refetch()} />
+        ) : (
+          <p role="status">Loading the timeline…</p>
+        )}
+        {eventDetail}
+      </div>
+    </DetailPanel>
   )
 }
 
@@ -71,17 +125,18 @@ const eventTones: Readonly<Record<string, DashboardStateRole>> = {
   Failed: 'fail',
 }
 
-/**
- * The run's stored events, oldest first: created, each start, failure, requeue, and note. Selecting one puts it in
- * `onSelect`'s inspector; the event's id is its position, since the run stores events only in order.
- */
+/** The run stores its events only in order, so an event's id is its position. */
+function eventIdOf(index: number) {
+  return String(index)
+}
+
 export function RunTimeline({ events, selected, onSelect }: { events: readonly RunEvent[]; selected?: string; onSelect?: (id: string) => void }) {
   return (
     <section aria-label="Timeline">
-      <h3 className="hd-title">Timeline</h3>
+      <h3 className="hd-label">Timeline</h3>
       <Timeline
         label="Run timeline"
-        events={events.map((event, index) => ({ id: String(index), label: event.kind, at: event.at, text: event.text, tone: eventTones[event.kind] }))}
+        events={events.map((event, index) => ({ id: eventIdOf(index), label: event.kind, at: event.at, text: event.text, tone: eventTones[event.kind] }))}
         selectedId={selected}
         onSelect={onSelect}
       />
@@ -93,14 +148,13 @@ export interface RunActionsProps {
   runs: readonly Run[]
   /** Called with the runs a requeue finished on and the versions they had when the operator confirmed it. */
   onRequeued?: (ids: readonly string[], versions: ReadonlyMap<string, string>) => void
-  onChanged?: (rows: RowResult[]) => void
 }
 
 /**
  * The actions the server allows now on `runs`: `Fail` and `Add note` on one run, `Requeue` on any number. Each
  * refused action renders disabled with the server's reason.
  */
-export function RunActions({ runs, onRequeued, onChanged }: RunActionsProps) {
+export function RunActions({ runs, onRequeued }: RunActionsProps) {
   const module = useModule()
   const { all, fail, requeue, addNote } = useRunCommands()
   const refusal = useAllowedActions('run', runs)
@@ -114,7 +168,7 @@ export function RunActions({ runs, onRequeued, onChanged }: RunActionsProps) {
   }
 
   return (
-    <div className="hd-actions">
+    <>
       {requeue ? (
         <CommandAction
           module={module.id}
@@ -125,13 +179,12 @@ export function RunActions({ runs, onRequeued, onChanged }: RunActionsProps) {
           recovery
           commands={all}
           disabledReason={refusal(requeue.id)}
-          onDone={(rows) => {
+          onDone={(rows) =>
             onRequeued?.(
               rows.filter((row) => row.outcome === 'done').map((row) => row.id),
               versions,
             )
-            onChanged?.(rows)
-          }}
+          }
         />
       ) : null}
       {fail && ids.length === 1 ? (
@@ -142,7 +195,6 @@ export function RunActions({ runs, onRequeued, onChanged }: RunActionsProps) {
           noun={noun}
           commands={all}
           disabledReason={refusal(fail.id)}
-          onDone={onChanged}
         />
       ) : null}
       {addNote && ids.length === 1 ? (
@@ -153,10 +205,9 @@ export function RunActions({ runs, onRequeued, onChanged }: RunActionsProps) {
           noun={noun}
           commands={all}
           disabledReason={refusal(addNote.id)}
-          onDone={onChanged}
         />
       ) : null}
-    </div>
+    </>
   )
 }
 

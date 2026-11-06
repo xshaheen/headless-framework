@@ -18,7 +18,7 @@
 .hd-skip {
   position: absolute;
   inset-inline-start: var(--sp-3);
-  inset-block-start: -100px;
+  inset-block-start: -100vh;
   z-index: var(--z-palette);
   padding: var(--sp-3) var(--sp-5);
   background: var(--panel);
@@ -49,15 +49,15 @@
 .hd-topbar svg,
 .hd-sidebar svg {
   flex: none;
-  inline-size: 15px;
-  block-size: 15px;
+  inline-size: var(--icon);
+  block-size: var(--icon);
   fill: none;
   stroke: currentColor;
   stroke-width: 1.4;
 }
 
 .hd-topbar .hd-glyph-fill {
-  inline-size: 14px;
+  inline-size: var(--sp-6);
   fill: currentColor;
   stroke: none;
 }
@@ -65,7 +65,7 @@
 .hd-logo {
   display: inline-flex;
   align-items: center;
-  gap: 9px;
+  gap: var(--sp-3);
   font-weight: 700;
   letter-spacing: -0.01em;
 }
@@ -73,15 +73,15 @@
 .hd-logo-mark {
   display: inline-grid;
   place-items: center;
-  inline-size: 22px;
-  block-size: 22px;
+  inline-size: var(--chip-height);
+  block-size: var(--chip-height);
   border-radius: var(--radius-panel);
   background: var(--text);
   color: var(--deep);
 }
 
 .hd-topbar .hd-logo-mark svg {
-  inline-size: 12px;
+  inline-size: var(--sp-5);
   stroke-width: 2.2;
 }
 
@@ -102,7 +102,7 @@
   display: inline-flex;
   align-items: center;
   gap: var(--sp-3);
-  block-size: 30px;
+  block-size: var(--field-height);
   padding-inline: var(--sp-6);
   border-radius: var(--radius-control);
   font-weight: 500;
@@ -137,7 +137,7 @@
   display: flex;
   align-items: center;
   gap: var(--sp-3);
-  inline-size: 200px;
+  inline-size: var(--goto-width);
   block-size: var(--control-height);
   padding-inline: var(--sp-3) var(--sp-1);
   color: var(--faint);
@@ -182,7 +182,7 @@
   position: absolute;
   inset-block-start: calc(100% + var(--sp-1));
   inset-inline-end: 0;
-  inline-size: 280px;
+  inline-size: var(--popover-width);
   gap: 0;
   padding: var(--sp-2);
 }
@@ -200,7 +200,7 @@
   position: fixed;
   inset-block-start: calc(var(--topbar-height) + var(--sp-1));
   inset-inline-end: var(--sp-5);
-  inline-size: min(360px, calc(100vw - 2 * var(--sp-5)));
+  inline-size: min(var(--flyout-width), calc(100vw - 2 * var(--sp-5)));
   max-block-size: calc(100dvh - var(--topbar-height) - var(--sp-7));
   overflow: auto;
   outline: none;
@@ -214,10 +214,6 @@
 
 .hd-flyout > .hd-btn {
   align-self: flex-start;
-}
-
-.hd-card a {
-  color: var(--accent);
 }
 
 .hd-attn section {
@@ -267,13 +263,13 @@
   font: var(--text-tag);
   color: var(--muted);
   border: 1px solid var(--edge);
-  border-radius: 10px;
+  border-radius: var(--tag-pill-height);
 }
 
 .hd-btn.hd-avatar {
   inline-size: var(--control-height);
   padding: 0;
-  font-size: 11px;
+  font: var(--text-tag);
   font-weight: 600;
   color: var(--on-avatar);
   background: var(--avatar);
@@ -285,7 +281,7 @@
   grid-area: side;
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: var(--sp-0);
   padding: var(--sp-4) var(--sp-3);
   overflow-y: auto;
   background: var(--deep);
@@ -295,7 +291,7 @@
 .hd-side-section {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: var(--sp-0);
 }
 
 .hd-side-head {
@@ -309,10 +305,10 @@
   display: flex;
   align-items: center;
   gap: var(--sp-4);
-  block-size: 30px;
+  block-size: var(--field-height);
   padding-inline: var(--sp-4);
   border-radius: var(--radius-control);
-  font-size: 13px;
+  font: var(--text-nav);
   color: var(--muted);
   text-decoration: none;
 }
@@ -341,7 +337,7 @@
 
 /* A dot sits in the 15 px box an icon takes, so labels align whichever an entry leads with. */
 .hd-side-item > .hd-mark {
-  margin-inline: 3.5px;
+  margin-inline: calc((var(--icon) - var(--sp-3)) / 2);
 }
 
 .hd-side-label {
@@ -353,7 +349,7 @@
 }
 
 .hd-side-count {
-  font: 400 11.5px/16px var(--mono);
+  font: var(--text-count);
   font-variant-numeric: tabular-nums;
 }
 
@@ -385,9 +381,14 @@
   flex-direction: column;
   gap: var(--sp-8);
   min-block-size: 0;
-  padding: var(--sp-8) var(--sp-8) 40px;
+  padding: var(--sp-8) var(--sp-8) var(--sp-9);
   overflow: auto;
   background: var(--panel);
+}
+
+.hd-canvas:has(> :is(.hd-frame, .hd-panel)) {
+  gap: 0;
+  padding: 0;
 }
 
 .hd-canvas:focus {
@@ -400,10 +401,9 @@
   gap: var(--sp-8);
 }
 
-/* A failed or missing view speaks in the sign-in card's language, inside the frame. */
 .hd-card {
   gap: var(--sp-5);
-  max-inline-size: 560px;
+  max-inline-size: var(--dialog-width);
   padding: var(--sp-9);
   background: var(--panel);
   border: 1px solid var(--line);
@@ -428,7 +428,7 @@
 @media (max-width: 1023px) {
   .hd-goto-field:not(:focus-within) {
     inline-size: var(--control-height);
-    padding-inline: 6px;
+    padding-inline: var(--sp-2);
   }
 
   .hd-goto-field:not(:focus-within) :is(input, kbd) {
@@ -456,7 +456,7 @@
     inset-block: var(--topbar-height) 0;
     inset-inline-start: 0;
     z-index: var(--z-popover);
-    inline-size: min(260px, 85vw);
+    inline-size: min(var(--sidebar-phone-width), 85vw);
     box-shadow: var(--shadow-float);
   }
 

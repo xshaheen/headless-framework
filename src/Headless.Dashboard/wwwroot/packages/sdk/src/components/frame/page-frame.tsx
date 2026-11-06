@@ -113,8 +113,10 @@ export function usePageFrame<T extends { id: string }>({ viewId, rows, matches }
   }
 
   function move(step: number) {
-    const index = rows.findIndex((row) => row.id === cursorId)
-    const row = rows[index === -1 ? 0 : index + step]
+    // The rows the list shows: a row that stopped matching is hidden unless it is the open one.
+    const shown = matches ? rows.filter((row) => row.id === openId || matches(row)) : rows
+    const index = shown.findIndex((row) => row.id === cursorId)
+    const row = shown[index === -1 ? 0 : index + step]
 
     if (!row) {
       return
@@ -221,6 +223,8 @@ export function usePageFrame<T extends { id: string }>({ viewId, rows, matches }
 interface FrameContext {
   close: () => void
   stale: boolean
+  /** The panel holds a form, whose title reads in the sans face rather than as an object's mono name. */
+  form: boolean
   /** Below 768 px the panel is a full-screen modal. */
   modal: boolean
   /** At 1280 px and wider the panel can sit beside the list; `null` below. */
@@ -230,15 +234,9 @@ interface FrameContext {
 
 const Frame = createContext<FrameContext | null>(null)
 
-/** The frame a `DetailPanel` sits in; a panel outside a `PageFrame` is a mistake caught at first render. */
+/** The frame a `DetailPanel` sits in; `null` outside a `PageFrame`, where the panel is its object's own page. */
 export function useFrame() {
-  const frame = useContext(Frame)
-
-  if (!frame) {
-    throw new Error('A DetailPanel renders only inside a PageFrame.')
-  }
-
-  return frame
+  return useContext(Frame)
 }
 
 /** The panel's shortest height, and the least the list keeps above it. */
@@ -255,7 +253,7 @@ export interface PageFrameProps {
   children: ReactNode
   /** The `DetailPanel` for the open row, or the add form; the panel region exists only while this is set. */
   panel?: ReactNode
-  /** The panel holds a form: it opens taller and its handle reads `Resize form`. */
+  /** The panel holds a form: it opens taller, its handle reads `Resize form`, and its title reads in the sans face. */
   form?: boolean
 }
 
@@ -348,6 +346,7 @@ export function PageFrame({ frame, stats, header, children, panel, form }: PageF
   const context: FrameContext = {
     close: frame.close,
     stale: frame.stale,
+    form: Boolean(form),
     modal: width === 2,
     side: width === 0 ? beside : null,
     setSide: (next) => {

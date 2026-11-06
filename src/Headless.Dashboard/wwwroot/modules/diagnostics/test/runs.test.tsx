@@ -149,11 +149,11 @@ describe('diagnostics runs list', () => {
     expect(within(failed).getByText('Gateway timeout')).toBeTruthy()
     expect(within(failed).getByText('4 minutes ago')).toBeTruthy()
     expect(within(screen.getByRole('row', { name: /run-000002/ })).getByText('Running')).toBeTruthy()
-    expect(screen.getByText('4 runs')).toBeTruthy()
+    expect(within(screen.getByRole('banner')).getByText('4')).toBeTruthy()
     expect(view.stream.topics()).toContain('diagnostics.run')
   })
 
-  it('fills the inspector from the cached row at once, then adds the timeline', async () => {
+  it('opens a run in the docked panel, filled from the cached row at once, then adds the timeline', async () => {
     let answer: (value: RunDetail) => void = () => undefined
     const row = run('run-000001', 'Failed')
     open([row], {
@@ -163,45 +163,38 @@ describe('diagnostics runs list', () => {
 
     await user().click(await screen.findByRole('row', { name: /run-000001/ }))
 
-    const inspector = screen.getByRole('complementary', { name: 'Run run-000001' })
-    expect(within(inspector).getByText('trace-run-000001')).toBeTruthy()
-    expect(within(inspector).getByText('Attempts').nextElementSibling?.textContent).toBe('2')
-    expect(within(inspector).getByText('Loading the timeline…')).toBeTruthy()
+    const panel = screen.getByRole('region', { name: 'Run run-000001' })
+    expect(within(panel).getByText('trace-run-000001')).toBeTruthy()
+    expect(within(panel).getByText('Attempts').nextElementSibling?.textContent).toBe('2')
+    expect(within(panel).getByText('Loading the timeline…')).toBeTruthy()
 
     act(() => answer(detail(row)))
 
-    const timeline = await within(inspector).findByRole('region', { name: 'Timeline' })
+    const timeline = await within(panel).findByRole('region', { name: 'Timeline' })
     expect(within(timeline).getAllByRole('row').map((item) => item.textContent)).toEqual([
       'Created 10 minutes ago',
       'Failed 4 minutes ago Gateway timeout',
     ])
   })
 
-  it('opens the inspector for a selected run the loaded page does not hold, read by its id', async () => {
+  it('opens a run the loaded page does not hold, read by its id', async () => {
     const onPage = run('run-000002', 'Queued')
     const offPage = run('run-000017', 'Failed')
     const view = open([onPage, offPage], {
-      path: '?selected=run-000017',
+      path: '?open=run-000017',
       extra: (request) =>
         request.method === 'GET' && request.path === 'diagnostics/runs' ? { items: [onPage], count: 2, countCapped: false } : undefined,
     })
 
-    // The panel reads `Loading the run…` first, then the run's own inspector replaces it.
-    await waitFor(() => expect(within(screen.getByRole('complementary', { name: 'Run run-000017' })).getByText('trace-run-000017')).toBeTruthy())
-    const inspector = screen.getByRole('complementary', { name: 'Run run-000017' })
-    expect(await within(inspector).findByRole('region', { name: 'Timeline' })).toBeTruthy()
+    // The panel reads `Loading the run…` first, then the run's own panel replaces it.
+    await waitFor(() => expect(within(screen.getByRole('region', { name: 'Run run-000017' })).getByText('trace-run-000017')).toBeTruthy())
+    const panel = screen.getByRole('region', { name: 'Run run-000017' })
+    expect(await within(panel).findByRole('region', { name: 'Timeline' })).toBeTruthy()
     expect(screen.queryByRole('row', { name: /run-000017/ })).toBeNull()
     expect(view.requests.filter((request) => request.path === 'diagnostics/runs/run-000017')).toHaveLength(1)
   })
 
-  it('shows the view summary in the inspector when nothing is selected', async () => {
-    open([run('run-000001', 'Failed')])
-
-    const summary = await screen.findByRole('complementary', { name: 'Runs summary' })
-    await within(summary).findByText('1 runs match this view.')
-  })
-
-  it('says how runs get there when there are none, and Add run adds and selects one', async () => {
+  it('says how runs get there when there are none, and Add run adds and opens one', async () => {
     const rows: Run[] = []
     const view = open(rows, {
       extra: (request) => {
@@ -216,11 +209,11 @@ describe('diagnostics runs list', () => {
       },
     })
 
-    expect(await screen.findByText('No runs yet - add one with Fail on a new run')).toBeTruthy()
+    expect(await screen.findByText('No runs yet. Add run creates one.')).toBeTruthy()
 
     await user().click(screen.getByRole('button', { name: 'Add run' }))
 
-    expect(await screen.findByRole('complementary', { name: 'Run run-000001' })).toBeTruthy()
+    expect(await screen.findByRole('region', { name: 'Run run-000001' })).toBeTruthy()
     expect(view.requests.filter((request) => request.method === 'POST' && request.path === 'diagnostics/runs')).toHaveLength(1)
   })
 
@@ -249,7 +242,7 @@ describe('diagnostics runs list', () => {
     })
 
     expect((await screen.findByRole('alert')).textContent).toBe('The diagnostic store did not answer. Try again.')
-    expect(screen.queryByText('No runs yet - add one with Fail on a new run')).toBeNull()
+    expect(screen.queryByText('No runs yet. Add run creates one.')).toBeNull()
 
     fail = false
     await user().click(screen.getByRole('button', { name: 'Retry' }))
@@ -289,8 +282,8 @@ describe('diagnostics runs list', () => {
       expect(document.getElementById(button.getAttribute('aria-describedby')!)?.textContent).toBe('Needs operate permission')
     }
 
-    const inspector = screen.getByRole('complementary', { name: 'Run run-000001' })
-    const requeue = await within(inspector).findByRole('button', { name: 'Requeue' })
+    const panel = screen.getByRole('region', { name: 'Run run-000001' })
+    const requeue = await within(panel).findByRole('button', { name: 'Requeue' })
     expect(requeue.getAttribute('aria-disabled')).toBe('true')
   })
 
@@ -299,8 +292,8 @@ describe('diagnostics runs list', () => {
 
     await user().click(await screen.findByRole('row', { name: /run-000001/ }))
 
-    const inspector = screen.getByRole('complementary', { name: 'Run run-000001' })
-    const requeue = await within(inspector).findByRole('button', { name: 'Requeue' })
+    const panel = screen.getByRole('region', { name: 'Run run-000001' })
+    const requeue = await within(panel).findByRole('button', { name: 'Requeue' })
     await waitFor(() => expect(requeue.getAttribute('aria-disabled')).toBe('true'))
     expect(document.getElementById(requeue.getAttribute('aria-describedby')!)?.textContent).toBe('Running - cancel instead')
   })
@@ -310,12 +303,12 @@ describe('diagnostics runs list', () => {
     const shell = open([run('run-000001', 'Running')])
 
     await actor.click(await screen.findByRole('row', { name: /run-000001/ }))
-    const inspector = screen.getByRole('complementary', { name: 'Run run-000001' })
-    await waitFor(() => expect(within(inspector).getByRole('button', { name: 'Requeue' }).getAttribute('aria-disabled')).toBe('true'))
+    const panel = screen.getByRole('region', { name: 'Run run-000001' })
+    await waitFor(() => expect(within(panel).getByRole('button', { name: 'Requeue' }).getAttribute('aria-disabled')).toBe('true'))
 
     await actor.keyboard('r')
 
-    expect(within(inspector).getAllByRole('status').map((region) => region.textContent)).toContain('Running - cancel instead')
+    expect(within(panel).getAllByRole('status').map((region) => region.textContent)).toContain('Running - cancel instead')
     expect(shell.requests.some((request) => request.method === 'POST')).toBe(false)
   })
 
@@ -331,8 +324,8 @@ describe('diagnostics runs list', () => {
     })
 
     await user().click(await screen.findByRole('row', { name: /run-000001/ }))
-    const inspector = screen.getByRole('complementary', { name: 'Run run-000001' })
-    const fail = await within(inspector).findByRole('button', { name: 'Fail' })
+    const panel = screen.getByRole('region', { name: 'Run run-000001' })
+    const fail = await within(panel).findByRole('button', { name: 'Fail' })
 
     expect(fail.getAttribute('aria-disabled')).toBe('true')
     expect(document.getElementById(fail.getAttribute('aria-describedby')!)?.textContent).toBe('Checking whether this can run…')
@@ -344,7 +337,7 @@ describe('diagnostics runs list', () => {
         ],
       }),
     )
-    await waitFor(() => expect(within(inspector).getByRole('button', { name: 'Fail' }).getAttribute('aria-disabled')).toBeNull())
+    await waitFor(() => expect(within(panel).getByRole('button', { name: 'Fail' }).getAttribute('aria-disabled')).toBeNull())
   })
 
   it('keeps actions disabled and says so when the server cannot say whether they can run', async () => {
@@ -359,8 +352,8 @@ describe('diagnostics runs list', () => {
     })
 
     await user().click(await screen.findByRole('row', { name: /run-000001/ }))
-    const inspector = screen.getByRole('complementary', { name: 'Run run-000001' })
-    const fail = await within(inspector).findByRole('button', { name: 'Fail' })
+    const panel = screen.getByRole('region', { name: 'Run run-000001' })
+    const fail = await within(panel).findByRole('button', { name: 'Fail' })
 
     await waitFor(() =>
       expect(document.getElementById(fail.getAttribute('aria-describedby')!)?.textContent).toBe(
@@ -381,8 +374,8 @@ describe('diagnostics runs list', () => {
     })
 
     await actor.click(await screen.findByRole('row', { name: /run-000001/ }))
-    const inspector = screen.getByRole('complementary', { name: 'Run run-000001' })
-    const requeue = await within(inspector).findByRole('button', { name: 'Requeue' })
+    const panel = screen.getByRole('region', { name: 'Run run-000001' })
+    const requeue = await within(panel).findByRole('button', { name: 'Requeue' })
     await waitFor(() => expect(requeue.getAttribute('aria-disabled')).toBeNull())
     await actor.click(requeue)
 
@@ -410,8 +403,8 @@ describe('diagnostics runs list', () => {
     })
 
     await actor.click(await screen.findByRole('row', { name: /run-000001/ }))
-    const inspector = screen.getByRole('complementary', { name: 'Run run-000001' })
-    const fail = await within(inspector).findByRole('button', { name: 'Fail' })
+    const panel = screen.getByRole('region', { name: 'Run run-000001' })
+    const fail = await within(panel).findByRole('button', { name: 'Fail' })
     await waitFor(() => expect(fail.getAttribute('aria-disabled')).toBeNull())
     await actor.click(fail)
 
@@ -435,8 +428,8 @@ describe('diagnostics runs list', () => {
     })
 
     await actor.click(await screen.findByRole('row', { name: /run-000001/ }))
-    const inspector = screen.getByRole('complementary', { name: 'Run run-000001' })
-    await actor.click(await within(inspector).findByRole('button', { name: 'Add note' }))
+    const panel = screen.getByRole('region', { name: 'Run run-000001' })
+    await actor.click(await within(panel).findByRole('button', { name: 'Add note' }))
 
     const dialog = await screen.findByRole('dialog')
     await actor.type(within(dialog).getByRole('textbox', { name: /Note/ }), 'checked the gateway')
@@ -493,7 +486,7 @@ describe('diagnostics runs list', () => {
     expect(screen.getByRole('combobox', { name: 'Status', hidden: true })).toHaveProperty('value', 'Failed')
   })
 
-  it('toggles the focused row into the selection with X', async () => {
+  it('checks the focused row with X, and Requeue on the checked rows asks for a reason', async () => {
     const actor = user()
     open([run('run-000001', 'Failed'), run('run-000002', 'Failed')])
 
@@ -501,7 +494,29 @@ describe('diagnostics runs list', () => {
     act(() => screen.getByRole('row', { name: /run-000002/ }).focus())
     await actor.keyboard('x')
 
-    await screen.findByRole('complementary', { name: '2 runs selected' })
+    const header = screen.getByRole('banner')
+    expect(within(header).getByText('1 selected')).toBeTruthy()
+    const requeue = await within(header).findByRole('button', { name: 'Requeue' })
+    await waitFor(() => expect(requeue.getAttribute('aria-disabled')).toBeNull())
+    await actor.click(requeue)
+
+    expect(await screen.findByRole('dialog')).toBeTruthy()
+  })
+
+  it('counts only the checked runs the list still shows after a live change moves one out of it', async () => {
+    const actor = user()
+    const view = open([run('run-000001', 'Failed'), run('run-000002', 'Failed')], { path: '?status=Failed' })
+
+    await screen.findByRole('row', { name: /run-000001/ })
+    for (const id of ['run-000001', 'run-000002']) {
+      await actor.click(screen.getByRole('checkbox', { name: `Select ${id}` }))
+    }
+    const header = screen.getByRole('banner')
+    expect(within(header).getByText('2 selected')).toBeTruthy()
+
+    view.stream.push('change', change(run('run-000001', 'Queued', { version: '2' })))
+
+    expect(await within(header).findByText('1 selected')).toBeTruthy()
   })
 })
 
@@ -516,8 +531,9 @@ describe('diagnostics run page', () => {
           : undefined,
     })
 
-    const page = await screen.findByRole('article', { name: 'Run run-000001' })
+    const page = await screen.findByRole('region', { name: 'Run run-000001' })
     expect(within(page).getByRole('heading', { name: 'Run' })).toBeTruthy()
+    expect(within(page).queryByRole('link', { name: 'Open in its own page' })).toBeNull()
     expect(within(within(page).getByRole('region', { name: 'Timeline' })).getAllByRole('row')).toHaveLength(2)
 
     await actor.click(within(page).getByRole('button', { name: 'Show payload' }))
@@ -525,18 +541,18 @@ describe('diagnostics run page', () => {
     expect(await within(page).findByText('***')).toBeTruthy()
   })
 
-  it('opens a timeline event in the inspector with Enter, and keeps the selection in the URL', async () => {
+  it('shows a timeline event selected with Enter under the timeline, keeping focus in the timeline', async () => {
     const actor = user()
     open([run('run-000001', 'Failed')], { path: 'runs/run-000001' })
 
-    const page = await screen.findByRole('article', { name: 'Run run-000001' })
-    expect(screen.getByRole('complementary', { name: 'Run summary' })).toBeTruthy()
+    const page = await screen.findByRole('region', { name: 'Run run-000001' })
+    await within(page).findByRole('region', { name: 'Timeline' })
 
     within(page).getAllByRole('row')[0]!.focus()
     await actor.keyboard('{ArrowDown}{Enter}')
 
-    const inspector = await screen.findByRole('complementary', { name: 'Event Failed' })
-    expect(within(inspector).getByText('Gateway timeout')).toBeTruthy()
+    const event = await screen.findByRole('region', { name: 'Event Failed' })
+    expect(within(event).getByText('Gateway timeout')).toBeTruthy()
     expect(document.activeElement).toBe(within(page).getAllByRole('row')[1])
   })
 
