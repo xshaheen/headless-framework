@@ -216,6 +216,7 @@ export default function RunsView() {
     panel = (
       <TimeJobForm
         chain={creating === 'chain'}
+        onChainChange={(chain) => update((next) => next.set('create', chain ? 'chain' : 'time-job'))}
         onCancel={() => update((next) => next.delete('create'))}
         onCreated={(id) => {
           void client.invalidateQueries({ queryKey: listKey(runsTopic) })
@@ -230,7 +231,8 @@ export default function RunsView() {
 
   return (
     <PageFrame
-      frame={frame}
+      // The form is not a row, so the panel's Close ends the form rather than closing an open row.
+      frame={panel !== undefined && !frame.openId ? { ...frame, close: () => update((next) => next.delete('create')) } : frame}
       form={panel !== undefined && !frame.openId}
       stats={<JobsStats />}
       header={

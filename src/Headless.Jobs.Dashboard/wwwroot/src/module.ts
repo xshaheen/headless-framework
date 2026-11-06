@@ -43,7 +43,7 @@ export default defineModule({
     run: { route: (id: string) => `runs/${encodeURIComponent(id)}` },
     'cron-job': { route: (id: string) => `cron-jobs/${encodeURIComponent(id)}` },
     function: { route: (id: string) => `functions/${encodeURIComponent(id)}` },
-    node: { route: (id: string) => `nodes?selected=${encodeURIComponent(id)}` },
+    node: { route: (id: string) => `nodes?open=${encodeURIComponent(id)}` },
   },
   commands: [
     {

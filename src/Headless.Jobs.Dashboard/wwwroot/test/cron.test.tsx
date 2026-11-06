@@ -1,6 +1,7 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cronJob, now, open, user } from './fake-server.ts'
+import type { CronJob } from '../src/cron.ts'
+import { cronJob, now, open, run, user } from './fake-server.ts'
 
 beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true })
@@ -132,31 +133,67 @@ describe('jobs cron job page', () => {
   })
 })
 
-describe('jobs function page', () => {
-  it('draws each next fire of the function’s active cron jobs on its strip, hollow', async () => {
-    const minutes = (count: number) => new Date(now.getTime() + count * 60_000).toISOString()
-    const job = cronJob({ function: 'billing.charge', nextFires: [minutes(10), minutes(20), minutes(40)] })
-    open({ cronJobs: [job] }, { path: 'functions/billing.charge' })
-
-    const strip = await screen.findByRole('grid', { name: 'Schedule of billing.charge' })
-    await waitFor(() => expect(within(strip).getAllByRole('gridcell')).toHaveLength(3))
-    for (const tick of within(strip).getAllByRole('gridcell')) {
-      expect(tick.getAttribute('class')).toContain('hd-strip-future')
-    }
-  })
-})
-
-describe('jobs cron jobs list', () => {
-  it('says how cron jobs get there when there are none', async () => {
+describe('jobs recurring jobs list', () => {
+  it('says how recurring jobs get there when there are none', async () => {
     open({}, { path: 'cron-jobs' })
 
-    expect(await screen.findByText('No cron jobs. Declare one with a [Job] cron attribute, or add one here.')).toBeTruthy()
+    expect(await screen.findByText('No recurring jobs. Declare one with a [Job] cron attribute, or add one here.')).toBeTruthy()
   })
 
-  it('does not carry an expression typed for one cron job into the next one selected', async () => {
+  it('lists each job’s function, schedule with its reading, and next run, and tags a paused one', async () => {
+    const paused = cronJob({ id: 'c0000000-0000-0000-0000-000000000002', function: 'export.ledger', description: 'Nightly ledger export', isPaused: true })
+    open({ cronJobs: [cronJob(), paused] }, { path: 'cron-jobs' })
+
+    const active = await screen.findByRole('row', { name: /reports\.nightly/ })
+    expect(active.textContent).toContain('0 2 * * *')
+    expect(active.textContent).toContain('At 02:00')
+    expect(active.textContent).toContain('in 15 hr.')
+    expect(screen.getByRole('row', { name: /export\.ledger/ }).textContent).toContain('Paused')
+    expect(screen.queryByRole('columnheader', { name: 'Last run' })).toBeNull()
+  })
+
+  it('opens a job in the docked panel, with Run now on a paused job disabled with the server’s reason', async () => {
+    const actor = user()
+    const job = cronJob({ isPaused: true })
+    const view = open({ cronJobs: [job] }, { path: 'cron-jobs' })
+
+    await actor.click(await screen.findByRole('row', { name: /reports\.nightly/ }))
+
+    const panel = await screen.findByRole('region', { name: `Cron job ${job.id}` })
+    expect(view.location().search).toBe(`?open=${job.id}`)
+    const runNow = within(panel).getByRole('button', { name: 'Run now' })
+    await waitFor(() => expect(described(runNow)).toBe('Paused — resume first'))
+    expect(runNow.getAttribute('aria-disabled')).toBe('true')
+    expect(within(panel).getByRole('button', { name: 'Resume' })).toBeTruthy()
+  })
+
+  it('draws the last 24 hours of occurrences as outcome bars over the occurrence list', async () => {
+    const actor = user()
+    const job = cronJob()
+    const occurrences = [
+      run('Succeeded', { kind: 'CronJobOccurrence', cronJobId: job.id, executionTime: '2026-11-05T09:30:00Z' }),
+      run('Failed', { kind: 'CronJobOccurrence', cronJobId: job.id, executionTime: '2026-11-05T08:30:00Z' }),
+    ]
+    const view = open({ cronJobs: [job], runs: occurrences }, { path: `cron-jobs?open=${job.id}` })
+
+    await actor.click(await screen.findByRole('tab', { name: 'Occurrences' }))
+    const panel = screen.getByRole('region', { name: `Cron job ${job.id}` })
+
+    const chart = await within(panel).findByRole('img', { name: /^Occurrence outcomes per hour/ })
+    expect(chart.getAttribute('aria-label')).toContain('the tallest bar is 1 occurrences')
+    const list = within(panel).getByRole('region', { name: 'Occurrences' })
+    expect(within(list).getAllByRole('listitem').map((item) => item.textContent)).toEqual([
+      expect.stringContaining('Succeeded'),
+      expect.stringContaining('Failed'),
+    ])
+    const read = view.requests.find((request) => request.path === 'jobs/runs')
+    expect(read?.query).toMatchObject({ cronJobId: job.id, from: expect.stringMatching(/^2026-11-04T10:00:/) })
+  })
+
+  it('does not carry an expression typed for one job into the next one opened', async () => {
     const actor = user()
     const first = cronJob({ description: 'Nightly report' })
-    const second = cronJob({ id: 'c0000000-0000-0000-0000-000000000002', description: 'Nightly cleanup' })
+    const second = cronJob({ id: 'c0000000-0000-0000-0000-000000000002', function: 'reports.cleanup', description: 'Nightly cleanup' })
     const view = open(
       {
         cronJobs: [first, second],
@@ -168,14 +205,44 @@ describe('jobs cron jobs list', () => {
       { path: 'cron-jobs' },
     )
 
-    await actor.click(await screen.findByRole('row', { name: /Nightly report/ }))
+    await actor.click(await screen.findByRole('row', { name: /reports\.nightly/ }))
     const field = await screen.findByRole('textbox', { name: 'Expression' })
     await actor.clear(field)
     await actor.type(field, '61 * * * *')
-    await actor.click(screen.getByRole('row', { name: /Nightly cleanup/ }))
+    await actor.click(screen.getByRole('row', { name: /reports\.cleanup/ }))
 
-    await screen.findByRole('complementary', { name: `Cron job ${second.id}` })
+    await screen.findByRole('region', { name: `Cron job ${second.id}` })
     expect((screen.getByRole('textbox', { name: 'Expression' }) as HTMLInputElement).value).toBe('0 2 * * *')
     expect(view.requests.some((request) => request.method === 'POST')).toBe(false)
+  })
+
+  it('opens the add recurring job form in the panel and opens the job it created', async () => {
+    const actor = user()
+    const jobs: CronJob[] = []
+    const created = cronJob({ id: 'c0000000-0000-0000-0000-00000000000a' })
+    const view = open(
+      {
+        cronJobs: jobs,
+        extra: (request) => {
+          if (request.method === 'POST' && request.path === 'jobs/cron-jobs') {
+            jobs.push(created)
+
+            return { id: created.id }
+          }
+
+          return undefined
+        },
+      },
+      { path: 'cron-jobs' },
+    )
+
+    await actor.click(await screen.findByRole('button', { name: 'Add recurring job' }))
+    const form = await screen.findByRole('region', { name: 'Add recurring job' })
+    await actor.selectOptions(within(form).getByRole('combobox', { name: 'Function' }), 'billing.charge')
+    await actor.type(within(form).getByRole('textbox', { name: /Expression/ }), '0 2 * * *')
+    await actor.click(within(form).getByRole('button', { name: 'Create recurring job' }))
+
+    expect(await screen.findByRole('region', { name: `Cron job ${created.id}` })).toBeTruthy()
+    expect(view.location().search).toBe(`?open=${created.id}`)
   })
 })

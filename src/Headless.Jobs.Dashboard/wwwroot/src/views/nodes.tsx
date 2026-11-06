@@ -1,93 +1,143 @@
 import { useDashboard } from '@headless/dashboard-sdk'
-import { Inspector, InspectorField, InspectorFields, Mono, StatusMark, useDelayed } from '@headless/dashboard-sdk/components'
+import { DetailPanel, FieldGrid, GridField, Mono, PageFrame, PageHeader, StatusMark, Tag, useDelayed, usePageFrame } from '@headless/dashboard-sdk/components'
+import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQuery } from '@headless/dashboard-sdk/query'
-import { Link, useSearchParams } from '@headless/dashboard-sdk/router'
+import { Link } from '@headless/dashboard-sdk/router'
 import { DataTable } from '@headless/dashboard-sdk/table'
-import { fetchNodes, nodeStatusMark } from '../cron.ts'
-import { canvas, layout, LoadError, Skeleton, StaleNotice } from '../parts.tsx'
+import { fetchNodes, nodeStatusMark, type JobNode } from '../cron.ts'
+import { CellText, JobsStats, LoadError, Skeleton, StaleNotice } from '../parts.tsx'
 
 /**
- * Nodes: each live node, its liveness, and the functions its run filter claims. Read-only: the scheduler's state
- * and its start and stop are not offered here yet.
+ * Servers: each live node, its role and liveness, and the functions its run filter claims; the open one docks under
+ * the list. Read-only: the server serves no scheduler state, workers, queues, or registration time per node, and
+ * starting or stopping a node's scheduler is not offered yet, so the view shows none of them.
  */
 export default function NodesView() {
   const { api } = useDashboard()
-  const [params, setParams] = useSearchParams()
+  const format = useFormat()
   const nodes = useQuery({ queryKey: ['jobs', 'nodes'], queryFn: () => fetchNodes(api) })
   const showLoading = useDelayed(nodes.isPending)
   const rows = (nodes.data ?? []).map((node) => ({ ...node, id: node.identity }))
-  const selectedId = params.get('selected') ?? undefined
-  const selected = rows.find((row) => row.id === selectedId)
+  const frame = usePageFrame({ viewId: 'jobs.nodes', rows })
+  const open = rows.find((row) => row.id === frame.openId)
+  const alive = rows.filter((row) => row.state === 'Alive').length
 
   return (
-    <div style={layout}>
-      <section aria-labelledby="jobs-nodes-title" style={canvas}>
-        <h1 id="jobs-nodes-title" className="hd-title">
-          Nodes
-        </h1>
-        <StaleNotice what="these nodes" onRefresh={() => void nodes.refetch()} />
-        {nodes.isPending ? (
-          showLoading ? (
-            <Skeleton label="Loading nodes" rows={3} />
-          ) : null
-        ) : nodes.isError ? (
-          <LoadError message={nodes.error.message} onRetry={() => void nodes.refetch()} />
-        ) : (
-          <DataTable
-            label="Nodes"
-            viewId="jobs.nodes"
-            rows={rows}
-            selectedIds={new Set(selectedId ? [selectedId] : [])}
-            onSelectionChange={(ids) => setParams(ids.size ? { selected: [...ids][0]! } : {}, { replace: true })}
-            emptyState="No live nodes."
-            columns={[
-              { id: 'identity', header: 'Node', cell: (row) => <Mono>{row.identity}</Mono>, isRowHeader: true, width: '2fr' },
-              { id: 'state', header: 'Liveness', cell: (row) => <StatusMark {...nodeStatusMark(row)} />, width: 130 },
-              { id: 'role', header: 'Role', cell: (row) => row.role ?? '', priority: 2, width: '1fr' },
-              {
-                id: 'claims',
-                header: 'Claims',
-                cell: (row) => (row.claimedFunctions ? `${row.claimedFunctions.length} functions` : 'Not published'),
-                width: '1fr',
-              },
-            ]}
-          />
-        )}
-      </section>
-      {selected ? (
-        <Inspector label={`Node ${selected.identity}`} onClose={() => setParams({}, { replace: true })}>
-          <h2 className="hd-title">
-            <Mono>{selected.identity}</Mono>
-          </h2>
-          <InspectorFields>
-            <InspectorField label="Liveness">
-              <StatusMark {...nodeStatusMark(selected)} />
-            </InspectorField>
-            <InspectorField label="Role">{selected.role ?? 'None'}</InspectorField>
-            <InspectorField label="Claims">
-              {selected.claimedFunctions ? (
-                <ul>
-                  {selected.claimedFunctions.map((name) => (
-                    <li key={name}>
-                      <Link to={`/jobs/functions/${encodeURIComponent(name)}`}>
-                        <Mono>{name}</Mono>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                'This node published no run filter.'
-              )}
-            </InspectorField>
-          </InspectorFields>
-        </Inspector>
+    <PageFrame
+      frame={frame}
+      stats={<JobsStats />}
+      header={
+        <PageHeader
+          title="Servers"
+          count={nodes.data ? format.number(rows.length) : undefined}
+          description={nodes.data ? `${format.number(alive)} alive. Each runs the functions its run filter claims.` : undefined}
+        />
+      }
+      panel={open ? <NodePanel node={open} /> : undefined}
+    >
+      <StaleNotice what="these servers" onRefresh={() => void nodes.refetch()} />
+      {nodes.isPending ? (
+        showLoading ? (
+          <Skeleton label="Loading servers" rows={3} />
+        ) : null
+      ) : nodes.isError ? (
+        <LoadError message={nodes.error.message} onRetry={() => void nodes.refetch()} />
       ) : (
-        <Inspector label="Nodes summary">
-          <h2 className="hd-title">Nodes</h2>
-          <p>{nodes.data ? `${rows.length} live ${rows.length === 1 ? 'node' : 'nodes'}.` : 'Nodes appear here once they load.'}</p>
-          <p className="hd-hint">Select a node to see the functions its run filter claims.</p>
-        </Inspector>
+        <DataTable
+          label="Servers"
+          viewId="jobs.nodes"
+          frame={frame}
+          rows={rows}
+          emptyState="No live servers."
+          columns={[
+            {
+              id: 'identity',
+              header: 'Server',
+              cell: (row) => (
+                <CellText title={row.identity}>
+                  <Mono>{row.identity}</Mono>
+                </CellText>
+              ),
+              isRowHeader: true,
+              width: '1.5fr',
+            },
+            { id: 'role', header: 'Role', cell: (row) => <CellText title={row.role}>{row.role ?? ''}</CellText>, priority: 2, width: '1fr' },
+            {
+              id: 'state',
+              header: 'State',
+              cell: (row) => (
+                <CellText>
+                  <StatusMark {...nodeStatusMark(row)} />
+                </CellText>
+              ),
+              width: 120,
+            },
+            {
+              id: 'claims',
+              header: 'Claimed functions',
+              cell: (row) => (
+                <CellText title={row.claimedFunctions?.join(', ')}>
+                  <Claims node={row} />
+                </CellText>
+              ),
+              width: '2.5fr',
+            },
+          ]}
+        />
       )}
-    </div>
+    </PageFrame>
+  )
+}
+
+/** The functions the node's run filter claims, each a tag; a node that published no filter says so. */
+function Claims({ node, links }: { node: JobNode; links?: boolean }) {
+  if (!node.claimedFunctions) {
+    return <span className="hd-faint">No run filter published</span>
+  }
+
+  if (node.claimedFunctions.length === 0) {
+    return <span className="hd-faint">None</span>
+  }
+
+  return (
+    <>
+      {node.claimedFunctions.map((name) => (
+        <Tag key={name} variant="square">
+          {links ? <Link to={`/jobs/functions/${encodeURIComponent(name)}`}>{name}</Link> : name}
+        </Tag>
+      ))}
+    </>
+  )
+}
+
+function NodePanel({ node }: { node: JobNode }) {
+  return (
+    <DetailPanel
+      label={`Server ${node.identity}`}
+      name={node.identity}
+      status={nodeStatusMark(node)}
+      tabs={[
+        {
+          id: 'overview',
+          label: 'Overview',
+          content: (
+            <>
+              <div>
+                <FieldGrid columns={2}>
+                  <GridField label="State">{node.state}</GridField>
+                  <GridField label="Role">{node.role ?? 'None'}</GridField>
+                </FieldGrid>
+              </div>
+              <section aria-label="Functions this server runs">
+                <h3 className="hd-label">Functions this server runs</h3>
+                <div>
+                  <Claims node={node} links />
+                </div>
+              </section>
+            </>
+          ),
+        },
+      ]}
+    />
   )
 }

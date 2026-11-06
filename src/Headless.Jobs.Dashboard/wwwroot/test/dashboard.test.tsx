@@ -148,7 +148,7 @@ describe('jobs dashboard', () => {
 
     await user().click(await screen.findByRole('button', { name: 'Add time job' }))
 
-    expect(await screen.findByRole('complementary', { name: 'Add time job' })).toBeTruthy()
+    expect(await screen.findByRole('region', { name: 'Add time job' })).toBeTruthy()
     expect(view.location().pathname).toBe('/jobs/runs')
   })
 })

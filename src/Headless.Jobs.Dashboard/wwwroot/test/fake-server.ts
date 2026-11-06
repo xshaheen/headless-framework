@@ -3,7 +3,7 @@ import { DashboardApiError, type ApiRequest } from '@headless/dashboard-sdk/data
 import { renderModule, type RenderModuleOptions } from '@headless/dashboard-sdk/testing'
 import userEvent from '@testing-library/user-event'
 import { vi } from 'vitest'
-import type { CronJob, JobFunction } from '../src/cron.ts'
+import type { CronJob, JobFunction, JobNode } from '../src/cron.ts'
 import jobs from '../src/module.ts'
 import type { Attempt, Run } from '../src/runs.ts'
 
@@ -163,11 +163,24 @@ export interface FakeServer {
   figures?: unknown[]
   /** The Jobs attention items, as `GET api/needs-you` serves them. */
   attention?: unknown[]
+  /** The registered functions; the two billing functions, both claimed by node-a, by default. */
+  functions?: JobFunction[]
+  nodes?: JobNode[]
   extra?: (request: ApiRequest) => unknown
 }
 
 /** A fake of the Jobs module's API, the shell's aggregates it reads, and the shell's command endpoints for it. */
-export function server({ runs = [], attempts = {}, cronJobs = [], counts = {}, figures = [], attention = [], extra }: FakeServer) {
+export function server({
+  runs = [],
+  attempts = {},
+  cronJobs = [],
+  counts = {},
+  figures = [],
+  attention = [],
+  functions: registered = functions,
+  nodes = [],
+  extra,
+}: FakeServer) {
   return (request: ApiRequest) => {
     const answered = extra?.(request)
 
@@ -221,7 +234,11 @@ export function server({ runs = [], attempts = {}, cronJobs = [], counts = {}, f
     }
 
     if (request.method === 'GET' && request.path === 'jobs/functions') {
-      return { items: functions }
+      return { items: registered }
+    }
+
+    if (request.method === 'GET' && request.path === 'jobs/nodes') {
+      return { items: nodes }
     }
 
     if (request.method === 'GET' && request.path === 'jobs/cron-jobs') {

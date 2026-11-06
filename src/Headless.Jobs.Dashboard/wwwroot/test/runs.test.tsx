@@ -87,18 +87,6 @@ describe('jobs runs list', () => {
     expect(unset).toEqual(['Any kind', 'Any function', 'Any time'])
   })
 
-  it('counts a single live node in the singular', async () => {
-    open(
-      {
-        runs: [],
-        extra: (request) => (request.path === 'jobs/nodes' ? { items: [{ identity: 'node-a', state: 'Alive', claimedFunctions: null }] } : undefined),
-      },
-      { path: 'nodes' },
-    )
-
-    expect(await screen.findByText('1 live node.')).toBeTruthy()
-  })
-
   it('counts only arrived runs that match the filter in N new', async () => {
     const view = list({ runs: [run('Failed', { function: 'a.kept' })] }, '?function=a.kept')
     await screen.findByRole('row', { name: /a\.kept/ })
@@ -435,13 +423,13 @@ describe('jobs runs list', () => {
     await screen.findByRole('row', { name: /a\.done/ })
     await actor.click(screen.getByRole('button', { name: 'Add chain' }))
 
-    const form = await screen.findByRole('complementary', { name: 'Add chain' })
+    const form = await screen.findByRole('region', { name: 'Add chain' })
     await actor.selectOptions(within(form).getAllByRole('combobox', { name: 'Function' })[0]!, 'billing.charge')
     await actor.type(within(form).getAllByRole('textbox', { name: /Arguments/ })[0]!, '{{"invoiceId": 42}')
-    await actor.click(within(form).getByRole('button', { name: 'Add step after this' }))
+    await actor.click(within(form).getByRole('button', { name: 'Add step' }))
     await actor.selectOptions(within(form).getAllByRole('combobox', { name: 'Function' })[1]!, 'billing.refund')
     await actor.selectOptions(within(form).getByRole('combobox', { name: 'Runs' }), 'On failure')
-    await actor.click(within(form).getByRole('button', { name: 'Add chain' }))
+    await actor.click(within(form).getByRole('button', { name: 'Create chain' }))
 
     expect(await screen.findByRole('region', { name: `Run ${created.id}` })).toBeTruthy()
     expect(view.requests.find((request) => request.path === 'jobs/time-jobs')?.body).toEqual({
@@ -465,12 +453,41 @@ describe('jobs runs list', () => {
     })
 
     await actor.click(await screen.findByRole('button', { name: 'Add time job' }))
-    const form = await screen.findByRole('complementary', { name: 'Add time job' })
+    const form = await screen.findByRole('region', { name: 'Add time job' })
     await actor.selectOptions(within(form).getByRole('combobox', { name: 'Function' }), 'billing.charge')
-    await actor.click(within(form).getByRole('button', { name: 'Add time job' }))
+    await actor.click(within(form).getByRole('button', { name: 'Create job' }))
 
     expect((await within(form).findByRole('alert')).textContent).toBe("The request does not match billing.charge's argument type.")
-    expect(screen.getByRole('complementary', { name: 'Add time job' })).toBeTruthy()
+    expect(screen.getByRole('region', { name: 'Add time job' })).toBeTruthy()
+  })
+
+  it('keeps the function and arguments typed so far when Single job switches to Chain', async () => {
+    const actor = user()
+    const view = list({})
+
+    await actor.click(await screen.findByRole('button', { name: 'Add time job' }))
+    const single = await screen.findByRole('region', { name: 'Add time job' })
+    await actor.selectOptions(within(single).getByRole('combobox', { name: 'Function' }), 'billing.charge')
+    await actor.type(within(single).getByRole('textbox', { name: /Arguments/ }), '{{"invoiceId": 7}')
+    await actor.click(within(single).getByRole('button', { name: 'Chain' }))
+
+    const chain = await screen.findByRole('region', { name: 'Add chain' })
+    expect(view.location().search).toBe('?create=chain')
+    expect(within(chain).getByRole('button', { name: 'Chain' }).getAttribute('aria-pressed')).toBe('true')
+    expect((within(chain).getByRole('combobox', { name: 'Function' }) as HTMLSelectElement).value).toBe('billing.charge')
+    expect((within(chain).getByRole('textbox', { name: /Arguments/ }) as HTMLTextAreaElement).value).toBe('{"invoiceId": 7}')
+    expect(within(chain).getByRole('region', { name: 'Steps after the first' })).toBeTruthy()
+  })
+
+  it('closes the add form from the panel’s Close', async () => {
+    const actor = user()
+    const view = list({}, '?create=time-job')
+
+    await screen.findByRole('region', { name: 'Add time job' })
+    await actor.click(screen.getByRole('button', { name: 'Close details' }))
+
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Add time job' })).toBeNull())
+    expect(view.location().search).toBe('')
   })
 
   it('opens the Requeue Operation over the failed runs from the palette command, on the Failed list', async () => {

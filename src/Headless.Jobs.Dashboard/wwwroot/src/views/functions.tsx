@@ -1,121 +1,317 @@
-import { useDashboard } from '@headless/dashboard-sdk'
-import { Inspector, InspectorField, InspectorFields, Mono, StatusMark, useDelayed } from '@headless/dashboard-sdk/components'
+import { useDashboard, useModule } from '@headless/dashboard-sdk'
+import {
+  Button,
+  DetailPanel,
+  FieldGrid,
+  GridField,
+  HistoryList,
+  Mono,
+  PageFrame,
+  PageHeader,
+  Tag,
+  useDelayed,
+  usePageFrame,
+} from '@headless/dashboard-sdk/components'
+import { useDashboardKeysetList, useDashboardList } from '@headless/dashboard-sdk/data'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQuery } from '@headless/dashboard-sdk/query'
-import { Link, useSearchParams } from '@headless/dashboard-sdk/router'
+import { Link, useNavigate } from '@headless/dashboard-sdk/router'
 import { DataTable } from '@headless/dashboard-sdk/table'
-import { fetchFunctions, type JobFunction } from '../cron.ts'
-import { canvas, layout, LoadError, Skeleton, StaleNotice, Time } from '../parts.tsx'
+import { cronJobsTopic, cronStatusMark, fetchCronJobs, fetchFunctions, type CronJob, type JobFunction } from '../cron.ts'
+import { CellText, JobsStats, LoadError, Skeleton, StaleNotice, Time } from '../parts.tsx'
+import { fetchRuns, runStatusMark, runsTopic, statusLabel, viewOnlyReason, type Run } from '../runs.ts'
 
-/** Whether a live node's run filter claims the function: a function no node claims never runs. */
-export function claimMark(item: Pick<JobFunction, 'claimedBy'>) {
-  return item.claimedBy.length > 0
-    ? ({ tone: 'ok', label: `Claimed by ${item.claimedBy.length}` } as const)
-    : ({ tone: 'fail', label: 'No live node' } as const)
+/** The functions every Functions view reads, one cached answer for the list, its panel, and the function page. */
+export function useFunctions() {
+  const { api } = useDashboard()
+
+  return useQuery({ queryKey: ['jobs', 'functions'], queryFn: () => fetchFunctions(api) })
 }
 
-/** A function's read-only fields, as the list's inspector and the function page show them. */
-export function FunctionFields({ item }: { item: JobFunction }) {
-  const format = useFormat()
-
-  return (
-    <InspectorFields>
-      <InspectorField label="Contract version">
-        <Mono>{item.contractVersion}</Mono>
-      </InspectorField>
-      <InspectorField label="Priority">{item.priority}</InspectorField>
-      <InspectorField label="Concurrency">{item.maxConcurrency > 0 ? format.number(item.maxConcurrency) : 'Unlimited'}</InspectorField>
-      {item.requestType ? (
-        <InspectorField label="Argument type">
-          <Mono>{item.requestType}</Mono>
-        </InspectorField>
-      ) : null}
-      {item.cronExpression ? (
-        <InspectorField label="Declared cron">
-          <Mono>{item.cronExpression}</Mono>
-        </InspectorField>
-      ) : null}
-      <InspectorField label="Run by">
-        {item.claimedBy.length > 0 ? (
-          item.claimedBy.map((node) => (
-            <span key={node}>
-              <Mono>{node}</Mono>{' '}
-            </span>
-          ))
-        ) : (
-          <span className="hd-error">No live node's run filter claims it, so its runs wait.</span>
-        )}
-      </InspectorField>
-      <InspectorField label="Last 24 h">
-        {`${format.number(item.succeeded)} succeeded, ${format.number(item.failed)} failed, ${format.number(item.running)} running, ${format.number(item.waiting)} waiting`}
-      </InspectorField>
-      <InspectorField label="Last run">
-        <Time value={item.lastExecutedAt} />
-      </InspectorField>
-    </InspectorFields>
+/** A function declared with a cron expression is fired by its schedule; any other is added as a time job. */
+function FunctionKind({ item }: { item: Pick<JobFunction, 'cronExpression'> }) {
+  return item.cronExpression ? (
+    <>
+      <Tag variant="filled">cron</Tag> <Mono>{item.cronExpression}</Mono>
+    </>
+  ) : (
+    <Tag variant="filled">time</Tag>
   )
 }
 
-/** Functions: every registered function, which live nodes claim it, and how its runs went in the last 24 hours. */
-export default function FunctionsView() {
-  const { api } = useDashboard()
+/** The live nodes whose run filter claims the function, or why none runs it: its runs wait until one does. */
+function RunsOn({ item }: { item: Pick<JobFunction, 'claimedBy'> }) {
+  return item.claimedBy.length > 0 ? (
+    <>
+      {item.claimedBy.map((node) => (
+        <Tag key={node} variant="square">
+          {node}
+        </Tag>
+      ))}
+    </>
+  ) : (
+    <Tag tone="fail" title="No live node's run filter claims it, so its runs wait.">
+      no node runs it
+    </Tag>
+  )
+}
+
+function useLimit() {
   const format = useFormat()
-  const [params, setParams] = useSearchParams()
-  const functions = useQuery({ queryKey: ['jobs', 'functions'], queryFn: () => fetchFunctions(api) })
+
+  return (item: Pick<JobFunction, 'running' | 'maxConcurrency'>) =>
+    `${format.number(item.running)} / ${item.maxConcurrency > 0 ? format.number(item.maxConcurrency) : 'no limit'}`
+}
+
+/** Functions: every registered function, its kind and limits, the live nodes that run it, and its last 24 hours. */
+export default function FunctionsView() {
+  const format = useFormat()
+  const limit = useLimit()
+  const functions = useFunctions()
   const showLoading = useDelayed(functions.isPending)
   const rows = (functions.data ?? []).map((item) => ({ ...item, id: item.name }))
-  const selectedId = params.get('selected') ?? undefined
-  const selected = rows.find((row) => row.id === selectedId)
+  const frame = usePageFrame({ viewId: 'jobs.functions', rows })
+  const open = rows.find((row) => row.id === frame.openId)
+  const unclaimed = rows.filter((row) => row.claimedBy.length === 0).length
 
   return (
-    <div style={layout}>
-      <section aria-labelledby="jobs-functions-title" style={canvas}>
-        <h1 id="jobs-functions-title" className="hd-title">
-          Functions
-        </h1>
-        <StaleNotice what="these functions" onRefresh={() => void functions.refetch()} />
-        {functions.isPending ? (
-          showLoading ? (
-            <Skeleton label="Loading functions" rows={4} />
-          ) : null
-        ) : functions.isError ? (
-          <LoadError message={functions.error.message} onRetry={() => void functions.refetch()} />
+    <PageFrame
+      frame={frame}
+      stats={<JobsStats />}
+      header={
+        <PageHeader
+          title="Functions"
+          count={functions.data ? format.number(rows.length) : undefined}
+          description={
+            unclaimed > 0
+              ? `${format.number(unclaimed)} not run by any live node; their runs wait until a node claims them.`
+              : 'Every function the live nodes register, with what runs it and its last 24 hours.'
+          }
+        />
+      }
+      panel={open ? <FunctionPanel item={open} /> : undefined}
+    >
+      <StaleNotice what="these functions" onRefresh={() => void functions.refetch()} />
+      {functions.isPending ? (
+        showLoading ? (
+          <Skeleton label="Loading functions" rows={4} />
+        ) : null
+      ) : functions.isError ? (
+        <LoadError message={functions.error.message} onRetry={() => void functions.refetch()} />
+      ) : (
+        <DataTable
+          label="Functions"
+          viewId="jobs.functions"
+          frame={frame}
+          rows={rows}
+          emptyState="No functions registered on any live node."
+          columns={[
+            {
+              id: 'name',
+              header: 'Function',
+              cell: (row) => (
+                <CellText title={row.name}>
+                  <Mono>{row.name}</Mono>
+                </CellText>
+              ),
+              isRowHeader: true,
+              width: '1.6fr',
+            },
+            {
+              id: 'kind',
+              header: 'Kind',
+              cell: (row) => (
+                <CellText title={row.cronExpression}>
+                  <FunctionKind item={row} />
+                </CellText>
+              ),
+              width: '1.2fr',
+            },
+            {
+              id: 'request',
+              header: 'Request type',
+              cell: (row) => (
+                <CellText title={row.requestType}>
+                  <Mono>{row.requestType ?? '–'}</Mono>
+                </CellText>
+              ),
+              priority: 2,
+              width: '1.4fr',
+            },
+            { id: 'priority', header: 'Priority', cell: (row) => row.priority, priority: 2, width: 100 },
+            { id: 'limit', header: 'Running / limit', cell: (row) => limit(row), align: 'end', priority: 2, width: 120 },
+            {
+              id: 'runs-on',
+              header: 'Runs on',
+              cell: (row) => (
+                <CellText title={row.claimedBy.join(', ')}>
+                  <RunsOn item={row} />
+                </CellText>
+              ),
+              width: '1.3fr',
+            },
+            { id: 'succeeded', header: 'Succeeded, 24 h', cell: (row) => format.number(row.succeeded), align: 'end', priority: 2, width: 120 },
+            { id: 'failed', header: 'Failed, 24 h', cell: (row) => format.number(row.failed), align: 'end', width: 100 },
+          ]}
+        />
+      )}
+    </PageFrame>
+  )
+}
+
+/** The function's facts: its contract, kind, limits, and how its runs went over the last 24 hours. */
+function FunctionFields({ item }: { item: JobFunction }) {
+  const format = useFormat()
+  const limit = useLimit()
+
+  return (
+    <FieldGrid>
+      <GridField label="Contract version">
+        <Mono>{item.contractVersion}</Mono>
+      </GridField>
+      <GridField label="Priority">{item.priority}</GridField>
+      <GridField label="Running / limit">{limit(item)}</GridField>
+      <GridField label="Kind">
+        <FunctionKind item={item} />
+      </GridField>
+      <GridField label="Request type" span={2}>
+        {item.requestType ? <Mono>{item.requestType}</Mono> : 'None'}
+      </GridField>
+      <GridField label="Last run" span={2}>
+        <Time value={item.lastExecutedAt} />
+      </GridField>
+      <GridField label="Succeeded, 24 h">{format.number(item.succeeded)}</GridField>
+      <GridField label="Failed, 24 h">{format.number(item.failed)}</GridField>
+      <GridField label="Waiting">{format.number(item.waiting)}</GridField>
+    </FieldGrid>
+  )
+}
+
+/** Where the function runs, and the recurring jobs that fire it. */
+function WhereItRuns({ item }: { item: JobFunction }) {
+  const { api } = useDashboard()
+  const filter = { function: item.name }
+  const cronJobs = useDashboardList<CronJob>({ topic: cronJobsTopic, params: filter, fetch: () => fetchCronJobs(api, item.name) })
+  const listed = cronJobs.data?.items ?? []
+
+  return (
+    <div>
+      <section aria-label="Where it runs" className="hd-fields">
+        <h3 className="hd-label">Where it runs</h3>
+        {item.claimedBy.length > 0 ? (
+          <div>
+            {item.claimedBy.map((node) => (
+              <Tag key={node} variant="square">
+                <Link to={`/jobs/nodes?open=${encodeURIComponent(node)}`}>{node}</Link>
+              </Tag>
+            ))}
+          </div>
         ) : (
-          <DataTable
-            label="Functions"
-            viewId="jobs.functions"
-            rows={rows}
-            selectedIds={new Set(selectedId ? [selectedId] : [])}
-            onSelectionChange={(ids) => setParams(ids.size ? { selected: [...ids][0]! } : {}, { replace: true })}
-            emptyState="No functions registered on any live node."
-            columns={[
-              { id: 'name', header: 'Function', cell: (row) => <Mono>{row.name}</Mono>, isRowHeader: true, width: '2fr' },
-              { id: 'claim', header: 'Run by', cell: (row) => <StatusMark {...claimMark(row)} />, width: 150 },
-              { id: 'failed', header: 'Failed, 24 h', cell: (row) => format.number(row.failed), align: 'end', width: 110 },
-              { id: 'succeeded', header: 'Succeeded, 24 h', cell: (row) => format.number(row.succeeded), align: 'end', priority: 2, width: 130 },
-              { id: 'last', header: 'Last run', cell: (row) => <Time value={row.lastExecutedAt} />, priority: 2, width: '1fr' },
-            ]}
-          />
+          <p>
+            <Tag tone="fail">no node runs it</Tag> No live node's run filter claims it, so its runs wait until one does.
+          </p>
         )}
       </section>
-      {selected ? (
-        <Inspector label={`Function ${selected.name}`} onClose={() => setParams({}, { replace: true })}>
-          <h2 className="hd-title">
-            <Mono>{selected.name}</Mono>
-          </h2>
-          <div className="hd-actions">
-            <Link to={`/jobs/functions/${encodeURIComponent(selected.name)}`}>Open function page</Link>
-            <Link to={`/jobs/runs?function=${encodeURIComponent(selected.name)}`}>Its runs</Link>
-          </div>
-          <FunctionFields item={selected} />
-        </Inspector>
+      {cronJobs.isError ? (
+        <LoadError message={cronJobs.error.message} onRetry={() => void cronJobs.refetch()} />
+      ) : cronJobs.data && listed.length === 0 ? (
+        <section aria-label="Recurring jobs using it" className="hd-fields">
+          <h3 className="hd-label">Recurring jobs using it</h3>
+          <span className="hd-hint">None. Add one to run this function on a schedule.</span>
+        </section>
       ) : (
-        <Inspector label="Functions summary">
-          <h2 className="hd-title">Functions</h2>
-          <p>{functions.data ? `${rows.length} functions, ${rows.filter((row) => row.claimedBy.length === 0).length} not claimed by any live node.` : 'Functions appear here once they load.'}</p>
-          <p className="hd-hint">Select a function to see what runs it and how its runs went.</p>
-        </Inspector>
+        <HistoryList
+          label="Recurring jobs using it"
+          items={listed.map((cronJob) => ({
+            key: cronJob.id,
+            time: <Mono>{cronJob.expression}</Mono>,
+            tone: cronStatusMark(cronJob).tone,
+            state: cronJob.reading ?? cronStatusMark(cronJob).label,
+            note: cronJob.isPaused ? 'paused' : undefined,
+            actions: <Link to={`/jobs/cron-jobs?open=${encodeURIComponent(cronJob.id)}`}>Open</Link>,
+          }))}
+        />
       )}
     </div>
+  )
+}
+
+/** The function's latest runs, newest first, each linking to its run. */
+function FunctionRuns({ name }: { name: string }) {
+  const { api } = useDashboard()
+  const filter = { function: name }
+  const runs = useDashboardKeysetList<Run>({ topic: runsTopic, params: filter, fetchPage: (cursor) => fetchRuns(api, filter, cursor) })
+
+  if (runs.query.isError) {
+    return <LoadError message={runs.query.error.message} onRetry={() => void runs.query.refetch()} />
+  }
+
+  if (runs.query.isPending) {
+    return <Skeleton label="Loading the runs" rows={3} />
+  }
+
+  return (
+    <div>
+      {runs.rows.length === 0 ? (
+        <p>No runs of this function yet.</p>
+      ) : (
+        <HistoryList
+          label="Latest runs"
+          items={runs.rows.map((run) => ({
+            key: run.id,
+            time: <Time value={run.executionTime ?? run.createdAt} short />,
+            tone: runStatusMark(run).tone,
+            state: statusLabel(run.status),
+            note: run.node,
+            actions: <Link to={`/jobs/runs/${encodeURIComponent(run.id)}`}>Open run</Link>,
+          }))}
+        />
+      )}
+      <Link to={`/jobs/runs?function=${encodeURIComponent(name)}`}>All runs of this function</Link>
+    </div>
+  )
+}
+
+/**
+ * One function in the detail panel, or as its own page when `page` is set: its facts beside where it runs on
+ * Overview, and its latest runs, with `Add time job` and `Add recurring job`.
+ */
+export function FunctionPanel({ item, page }: { item: JobFunction; page?: boolean }) {
+  const module = useModule()
+  const navigate = useNavigate()
+  const addReason = module.canOperate ? null : viewOnlyReason
+
+  return (
+    <DetailPanel
+      label={`Function ${item.name}`}
+      name={item.name}
+      status={item.claimedBy.length > 0 ? undefined : { tone: 'fail', label: 'No node runs it' }}
+      detachTo={page ? undefined : `/jobs/functions/${encodeURIComponent(item.name)}`}
+      actions={
+        <>
+          <Button variant="primary" disabledReason={addReason} onPress={() => void navigate('/jobs/runs?create=time-job')}>
+            Add time job
+          </Button>
+          <Button disabledReason={addReason} onPress={() => void navigate('/jobs/cron-jobs?create=cron-job')}>
+            Add recurring job
+          </Button>
+        </>
+      }
+      tabs={[
+        {
+          id: 'overview',
+          label: 'Overview',
+          content: (
+            <>
+              <div>
+                <FunctionFields item={item} />
+              </div>
+              <WhereItRuns item={item} />
+            </>
+          ),
+        },
+        { id: 'runs', label: 'Runs', content: <FunctionRuns name={item.name} /> },
+      ]}
+    />
   )
 }
