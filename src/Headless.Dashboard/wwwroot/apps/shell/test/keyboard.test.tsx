@@ -17,7 +17,7 @@ describe('shell keyboard', () => {
 
   it('opens the shortcut list on ?, listing every key of the design system', async () => {
     const user = userEvent.setup()
-    renderShell(shellState([]))
+    renderShell(shellState([moduleManifest('jobs'), moduleManifest('messaging')]))
 
     await screen.findByRole('heading', { name: 'Overview' })
     await user.keyboard('?')
@@ -28,6 +28,20 @@ describe('shell keyboard', () => {
     for (const key of designKeys) {
       expect(caps).toContain(key)
     }
+  })
+
+  it('lists a G chord only when the module it opens is registered', async () => {
+    const user = userEvent.setup()
+    renderShell(shellState([moduleManifest('jobs')]))
+
+    await screen.findByRole('heading', { name: 'Overview' })
+    await user.keyboard('?')
+
+    const list = await screen.findByRole('dialog', { name: 'Keyboard shortcuts' })
+    const caps = [...list.querySelectorAll('kbd')].map((cap) => cap.textContent)
+    expect(caps).toContain('G R')
+    expect(caps).toContain('G N')
+    expect(caps).not.toContain('G M')
   })
 
   it('goes to a view with G then a letter', async () => {

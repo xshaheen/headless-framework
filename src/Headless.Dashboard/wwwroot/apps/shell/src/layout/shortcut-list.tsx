@@ -1,11 +1,13 @@
 import { Button, Dialog, Kbd, shellShortcuts, useModuleShortcuts } from '@headless/dashboard-sdk/components'
 import { Fragment } from 'react'
+import { useShell } from '../shell-context.tsx'
 
 /** Every shortcut on one sheet: the shell's, then those the open view's module binds now. `?` opens it. */
 export function ShortcutList({ isOpen, onOpenChange }: { isOpen: boolean; onOpenChange: (isOpen: boolean) => void }) {
   const moduleShortcuts = useModuleShortcuts()
+  const { modules } = useShell().state
   const rows = [
-    ...shellShortcuts,
+    ...shellShortcuts.filter((row) => !row.module || modules.some((module) => module.id === row.module)),
     ...(isOpen ? moduleShortcuts().map((shortcut) => ({ keys: [shortcut.key], action: shortcut.label })) : []),
   ]
 

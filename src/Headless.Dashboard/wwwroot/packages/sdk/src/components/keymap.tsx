@@ -1,7 +1,10 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 
-/** Every shell shortcut, in the order the shortcut list shows them. Use `Ctrl` in place of `⌘` off macOS. */
-export const shellShortcuts: readonly { keys: readonly string[]; action: string }[] = [
+/**
+ * Every shell shortcut, in the order the shortcut list shows them. Use `Ctrl` in place of `⌘` off macOS. A `G` chord
+ * into a module names it, and the list shows the chord only when that module is registered.
+ */
+export const shellShortcuts: readonly { keys: readonly string[]; action: string; module?: string }[] = [
   { keys: ['⌘K'], action: 'Command palette' },
   { keys: ['Esc'], action: 'Close popover, then clear selection, then close inspector' },
   { keys: ['/'], action: 'Focus the view’s filter' },
@@ -11,8 +14,8 @@ export const shellShortcuts: readonly { keys: readonly string[]; action: string 
   { keys: ['T'], action: 'Open the selection’s trace' },
   { keys: ['G N'], action: 'Go to Needs you' },
   { keys: ['G O'], action: 'Go to Overview' },
-  { keys: ['G R'], action: 'Go to Runs' },
-  { keys: ['G M'], action: 'Go to Received messages' },
+  { keys: ['G R'], action: 'Go to Runs', module: 'jobs' },
+  { keys: ['G M'], action: 'Go to Received messages', module: 'messaging' },
   { keys: ['[', ']'], action: 'Widen / narrow the strip’s time window' },
   { keys: ['?'], action: 'Shortcut list' },
 ]
