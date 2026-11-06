@@ -57,6 +57,25 @@ describe('jobs dashboard', () => {
     expect(within(strip).getByRole('link', { name: 'Idle –' })).toBeTruthy()
   })
 
+  it('shares the shell sidebar’s cached counts in the sidebar’s own shape, both ways', async () => {
+    const view = open({ counts: { Idle: 37 } })
+    const strip = await screen.findByRole('region', { name: 'Jobs at a glance' })
+    await within(strip).findByRole('link', { name: 'Idle 37' })
+
+    // The sidebar reads this entry when the strip fetched first; a flat map here throws in the shell.
+    expect(view.client.getQueryData(['shell', 'counts', 'jobs'])).toEqual({
+      counts: { Idle: { value: 37, capped: false } },
+      stale: [],
+    })
+
+    // And the strip reads the entry the sidebar wrote when it fetched first.
+    act(() => {
+      view.client.setQueryData(['shell', 'counts', 'jobs'], { counts: { Queued: { value: 5, capped: false } }, stale: [] })
+    })
+
+    expect(await within(strip).findByRole('link', { name: 'Queued 5' })).toBeTruthy()
+  })
+
   it('shows a run that moves to In progress through the stream in Processing now, without a reload', async () => {
     const queued = run('Queued', { function: 'export.ledger', node: 'node-c' })
     const running = run('InProgress', { function: 'sandbox.progress', node: 'node-a', progressPercent: 48, progressMessage: 'import: step 58 of 120' })
