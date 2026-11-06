@@ -88,7 +88,8 @@ export function ShellPalette({ isOpen, onOpenChange, initialQuery = '', onOpenAt
   const openObject = useOpenObject()
   const selectionCommands = useSelectionCommands()
   const [query, setQuery] = useState(initialQuery)
-  const found = useResolve(query, isOpen) ?? []
+  const resolved = useResolve(query, isOpen)
+  const found = resolved && !resolved.failed ? resolved.objects : []
 
   function runCommand(moduleId: string, commandId: string) {
     const module = state.modules.find((candidate) => candidate.id === moduleId)

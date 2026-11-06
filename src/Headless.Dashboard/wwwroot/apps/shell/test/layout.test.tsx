@@ -1,6 +1,6 @@
 import { Button } from '@headless/dashboard-sdk/components'
 import { useOperations, type CommandDefinition } from '@headless/dashboard-sdk/commands'
-import { DashboardApiError, listKey, useDashboardList } from '@headless/dashboard-sdk/data'
+import { DashboardApiError, listKey, useDashboardList, type ApiRequest } from '@headless/dashboard-sdk/data'
 import { useQueryClient } from '@headless/dashboard-sdk/query'
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -73,6 +73,7 @@ function twoProducts(): BootstrapState {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
   vi.useRealTimers()
   localStorage.clear()
 })
@@ -136,7 +137,9 @@ describe('shell layout', () => {
     renderShell(twoProducts(), { path: '/diagnostics/runs', files: moduleFiles(twoProducts().modules) })
 
     const tabs = within(await screen.findByRole('navigation', { name: 'Products' })).getAllByRole('link')
-    expect(tabs.map((tab) => tab.textContent)).toEqual(['JobsJobs, nothing needs attention', 'DiagnosticsDiagnostics, nothing needs attention'])
+    await waitFor(() =>
+      expect(tabs.map((tab) => tab.textContent)).toEqual(['JobsJobs, nothing needs attention', 'DiagnosticsDiagnostics, nothing needs attention']),
+    )
     expect(tabs[1]!.getAttribute('aria-current')).toBe('page')
     expect(tabs[0]!.getAttribute('aria-current')).toBeNull()
   })
@@ -270,19 +273,124 @@ describe('shell layout', () => {
   })
 
   it('applies a session end at once while paused', async () => {
+    const user = userEvent.setup()
     const ended = vi.fn()
     const { withSessionEnd } = await import('../src/app.tsx')
+    // Resolve answers 401, as it would once the cookie expired; everything else answers as usual.
     const api = withSessionEnd(
       {
-        request: async () => {
-          throw new DashboardApiError(401, 'Unauthorized')
+        request: async <T,>(request: ApiRequest) => {
+          if (request.path === 'resolve') {
+            throw new DashboardApiError(401, 'Unauthorized')
+          }
+
+          return (await emptyAggregates(request)) as T
         },
       },
       ended,
     )
+    const modules = [moduleManifest('jobs')]
+    renderShell(shellState(modules), { path: '/jobs/runs', files: moduleFiles(modules), api: (request) => api.request(request) })
 
-    await expect(api.request({ method: 'GET', path: 'needs-you' })).rejects.toThrow()
-    expect(ended).toHaveBeenCalledOnce()
+    await user.click(await screen.findByRole('button', { name: 'Pause live updates' }))
+    await user.click(screen.getByRole('textbox', { name: 'Go to id' }))
+    await user.paste('run-401')
+
+    await waitFor(() => expect(ended).toHaveBeenCalledOnce())
+    expect(screen.getByRole('button', { name: 'Resume live updates' })).toBeTruthy()
+  })
+
+  it('reads a stale module’s counts as en dashes, and announces it once', async () => {
+    const api: ApiHandler = (request) =>
+      request.path === 'counts' ? { product: 'jobs', counts: {}, stale: [{ id: 'jobs', displayName: 'Jobs' }] } : emptyAggregates(request)
+    renderShell(twoProducts(), { path: '/jobs/runs', files: moduleFiles(twoProducts().modules), api })
+
+    const sidebar = await screen.findByRole('navigation', { name: 'Jobs' })
+    await waitFor(() => expect(within(sidebar).getByRole('status').textContent).toBe('Jobs counts did not load.'))
+    expect(within(sidebar).getByRole('link', { name: /Failed/ }).textContent).toBe('Failed–')
+  })
+
+  it('owes a counts refetch that falls due while the tab is hidden, and pays it when the tab shows', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    let visibility: DocumentVisibilityState = 'visible'
+    vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibility)
+    const shell = renderShell(twoProducts(), { path: '/jobs/runs', files: moduleFiles(twoProducts().modules) })
+    const counted = () => shell.requests.filter((request) => request.path === 'counts').length
+
+    await waitFor(() => expect(counted()).toBe(1))
+    visibility = 'hidden'
+    shell.stream.push('change', { module: 'jobs', kind: 'run', id: 'r1', topic: 'jobs.run', version: '1' })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000)
+    })
+    expect(counted()).toBe(1)
+
+    visibility = 'visible'
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    await waitFor(() => expect(counted()).toBe(2))
+  })
+
+  it('holds a counts refetch armed before Pause until Resume', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    const shell = renderShell(twoProducts(), { path: '/jobs/runs', files: moduleFiles(twoProducts().modules) })
+    const counted = () => shell.requests.filter((request) => request.path === 'counts').length
+
+    await waitFor(() => expect(counted()).toBe(1))
+    shell.stream.push('change', { module: 'jobs', kind: 'run', id: 'r1', topic: 'jobs.run', version: '1' })
+    await user.click(screen.getByRole('button', { name: 'Pause live updates' }))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000)
+    })
+    expect(counted()).toBe(1)
+
+    await user.click(screen.getByRole('button', { name: 'Resume live updates' }))
+    await waitFor(() => expect(counted()).toBe(2))
+  })
+
+  it('refetches the counts on a stream reset, a topic that became live, and a return to the product', async () => {
+    const shell = renderShell(twoProducts(), { path: '/jobs/runs', files: moduleFiles(twoProducts().modules) })
+    const counted = () => shell.requests.filter((request) => request.path === 'counts').length
+
+    await waitFor(() => expect(counted()).toBe(1))
+    act(() => shell.stream.push('reset', {}))
+    await waitFor(() => expect(counted()).toBe(2))
+
+    act(() => shell.stream.push('subscribed', { topics: ['jobs.run'], added: ['jobs.run'] }))
+    await waitFor(() => expect(counted()).toBe(3))
+
+    await act(() => shell.router.navigate('/diagnostics/runs'))
+    await act(() => shell.router.navigate('/jobs/runs'))
+    await waitFor(() => expect(counted()).toBe(4))
+  })
+
+  it('reads Attention as unknown, not all clear, while it loads, after it fails, and for a module that did not answer', async () => {
+    let answer: () => unknown = () => new Promise(() => undefined)
+    const api: ApiHandler = (request) => (request.path === 'needs-you' ? answer() : emptyAggregates(request))
+    const first = renderShell(twoProducts(), { path: '/jobs/runs', files: moduleFiles(twoProducts().modules), api })
+
+    expect((await screen.findByRole('button', { name: 'Attention' })).className).toContain('hd-tone-off')
+    expect(screen.getByRole('link', { name: 'Jobs, attention not loaded' })).toBeTruthy()
+    first.unmount()
+
+    answer = () => {
+      throw new DashboardApiError(503, 'Unavailable')
+    }
+    const second = renderShell(twoProducts(), { path: '/jobs/runs', files: moduleFiles(twoProducts().modules), api })
+
+    expect(await screen.findByRole('link', { name: 'Jobs, attention not loaded' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Attention' }).className).toContain('hd-tone-off')
+    second.unmount()
+
+    answer = () => ({ modules: [{ id: 'jobs', displayName: 'Jobs', stale: true, items: [] }] })
+    renderShell(twoProducts(), { path: '/jobs/runs', files: moduleFiles(twoProducts().modules), api })
+
+    const jobs = await screen.findByRole('link', { name: 'Jobs did not answer' })
+    expect(jobs.className).toContain('hd-tone-off')
+    expect(screen.getByRole('button', { name: 'Attention' }).className).toContain('hd-tone-off')
+    expect(screen.getByRole('link', { name: 'Diagnostics, nothing needs attention' }).className).toContain('hd-tone-ok')
   })
 
   it('keeps the clock out of any live region, and announces going stale once', async () => {
