@@ -104,6 +104,11 @@ function ItemInspector({ section, item, onClose }: { section: ModuleSection<Atte
             <span title={format.exactTime(item.since)}>{format.relativeTime(item.since, { style: 'short' })}</span>
           </InspectorField>
         ) : null}
+        {item.lastSeenAt ? (
+          <InspectorField label="Last seen">
+            <span title={format.exactTime(item.lastSeenAt)}>{format.relativeTime(item.lastSeenAt, { style: 'short' })}</span>
+          </InspectorField>
+        ) : null}
         {item.target ? (
           <InspectorField label="Object">
             <Mono>{item.target.id}</Mono>
@@ -273,8 +278,9 @@ export function NeedsYou() {
                       >
                         <span className="hd-attention-title">{item.title}</span>
                         <span className="hd-hint">
-                          {`${format.count({ value: item.count, capped: item.capped })} items`}
+                          {`${format.count({ value: item.count, capped: item.capped })} ${item.count === 1 && !item.capped ? 'item' : 'items'}`}
                           {item.since ? ` · since ${format.relativeTime(item.since, { style: 'short' })}` : ''}
+                          {item.lastSeenAt ? ` · last seen ${format.relativeTime(item.lastSeenAt, { style: 'short' })}` : ''}
                           {item.recentCount ? ' · growing' : ''}
                         </span>
                       </button>

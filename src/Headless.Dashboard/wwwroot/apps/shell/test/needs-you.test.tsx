@@ -34,6 +34,20 @@ function needsYouOnly(items: AttentionItem[]) {
 }
 
 describe('Needs you', () => {
+  it('shows one item in the singular with its first and last time, in the list and the inspector', async () => {
+    const user = userEvent.setup()
+    const one = { ...item('r1', 'timeout', 'TimeoutException', 1), target: null, lastSeenAt: '2026-11-05T09:20:00Z' }
+    renderShell(shellState([moduleManifest('diag', { displayName: 'Diagnostics' })]), { path: '/needs-you', api: needsYouOnly([one]) })
+
+    const select = await screen.findByRole('button', { name: /TimeoutException/ })
+    expect(select.textContent).toMatch(/1 item · since .+ · last seen .+$/)
+
+    await user.click(select)
+
+    const inspector = await screen.findByRole('complementary', { name: 'Needs you: TimeoutException' })
+    expect(within(inspector).getByText('Last seen')).toBeTruthy()
+  })
+
   it('groups items by module and cause, and shows Stale for a module the server marks stale', async () => {
     const modules = [moduleManifest('diag', { displayName: 'Diagnostics' }), moduleManifest('slow', { displayName: 'Slow module' })]
     const sections: ModuleSection<AttentionItem>[] = [
