@@ -97,6 +97,15 @@ describe('jobs runs list', () => {
     expect(screen.getByRole('status', { name: 'Loading runs' })).toBeTruthy()
   })
 
+  it('keeps a long function name on one line with its full name on hover', async () => {
+    const long = run('Failed', { function: 'sandbox.chain-step-charge-card-and-notify' })
+    open({ runs: [long] })
+
+    const row = await screen.findByRole('row', { name: /sandbox\.chain-step-charge-card-and-notify/ })
+    const name = within(row).getByText('sandbox.chain-step-charge-card-and-notify')
+    expect(name.closest('[title]')?.getAttribute('title')).toBe('sandbox.chain-step-charge-card-and-notify')
+  })
+
   it('shows the selected run’s attempts in order, each with its node and exception', async () => {
     const failed = run('Failed', { function: 'a.failed' })
     open({
@@ -360,5 +369,34 @@ describe('jobs run page', () => {
     const inspector = await screen.findByRole('complementary', { name: 'Attempt 1' })
     expect(within(inspector).getByText('node-b')).toBeTruthy()
     expect(within(inspector).getByText('Gateway timeout')).toBeTruthy()
+  })
+
+  it('shows a stored exception as its message, with its frame as one left-to-right line under Stack', async () => {
+    const actor = user()
+    const failed = run('Failed', { function: 'a.failed' })
+    const frame = 'MoveNext at offset 596 in /src/Sandbox/SandboxJobs.cs:96:13'
+    open(
+      {
+        runs: [failed],
+        attempts: {
+          [failed.id]: [
+            { number: 1, node: 'node-b', startedAt: '2026-11-05T09:55:00Z', outcome: 'Failed', exceptionMessage: 'Card declined', exceptionFrame: frame },
+          ],
+        },
+      },
+      { path: `runs/${failed.id}` },
+    )
+
+    const timeline = await screen.findByRole('grid', { name: 'Run timeline' })
+    await waitFor(() => expect(within(timeline).getAllByRole('row')).toHaveLength(2))
+    expect(within(timeline).getAllByRole('row')[1]!.textContent).toBe('Attempt 1: Failed 5 minutes ago by node-b Card declined')
+    await actor.click(within(timeline).getAllByRole('row')[1]!)
+
+    const inspector = await screen.findByRole('complementary', { name: 'Attempt 1' })
+    expect(within(inspector).getByText('Card declined')).toBeTruthy()
+    const stack = within(inspector).getByText(frame)
+    expect(stack.tagName).toBe('PRE')
+    expect(stack.getAttribute('dir')).toBe('ltr')
+    expect(stack.closest('details')?.querySelector('summary')?.textContent).toBe('Stack')
   })
 })

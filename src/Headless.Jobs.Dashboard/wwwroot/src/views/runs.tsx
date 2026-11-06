@@ -20,7 +20,20 @@ import { useQuery, useQueryClient } from '@headless/dashboard-sdk/query'
 import { Link, useSearchParams } from '@headless/dashboard-sdk/router'
 import { useEffect, useRef, useState } from 'react'
 import { fetchFunctions } from '../cron.ts'
-import { AttemptTimeline, canvas, layout, LoadError, RunActions, RunFields, RunPayload, Skeleton, StaleNotice, Time, useTraceKey } from '../parts.tsx'
+import {
+  AttemptTimeline,
+  canvas,
+  CellText,
+  layout,
+  LoadError,
+  RunActions,
+  RunFields,
+  RunPayload,
+  Skeleton,
+  StaleNotice,
+  Time,
+  useTraceKey,
+} from '../parts.tsx'
 import {
   fetchRun,
   fetchRuns,
@@ -268,8 +281,27 @@ export default function RunsView() {
               )
             }
             columns={[
-              { id: 'function', header: 'Function', cell: (run) => <Mono>{run.function}</Mono>, isRowHeader: true, width: '2fr' },
-              { id: 'status', header: 'Status', cell: (run) => <StatusMark {...runStatusMark(run, pending.labelOf(run))} />, width: 150 },
+              {
+                id: 'function',
+                header: 'Function',
+                cell: (run) => (
+                  <CellText title={run.function}>
+                    <Mono>{run.function}</Mono>
+                  </CellText>
+                ),
+                isRowHeader: true,
+                width: '2fr',
+              },
+              {
+                id: 'status',
+                header: 'Status',
+                cell: (run) => (
+                  <CellText>
+                    <StatusMark {...runStatusMark(run, pending.labelOf(run))} />
+                  </CellText>
+                ),
+                width: 130,
+              },
               { id: 'kind', header: 'Kind', cell: (run) => (run.kind === 'TimeJob' ? 'Time job' : 'Occurrence'), priority: 2, width: 110 },
               { id: 'retries', header: 'Retries', cell: (run) => format.number(run.retryCount), align: 'end', priority: 2, width: 80 },
               {
@@ -280,7 +312,16 @@ export default function RunsView() {
                 priority: 2,
                 width: 100,
               },
-              { id: 'due', header: 'Due', cell: (run) => <Time value={run.executionTime ?? run.createdAt} />, width: '1fr' },
+              {
+                id: 'due',
+                header: 'Due',
+                cell: (run) => (
+                  <CellText>
+                    <Time value={run.executionTime ?? run.createdAt} short />
+                  </CellText>
+                ),
+                width: 110,
+              },
             ]}
           />
         )}

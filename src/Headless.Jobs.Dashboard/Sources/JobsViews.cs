@@ -98,6 +98,41 @@ internal static class JobsViews
         return traceId.All(char.IsAsciiHexDigit) && traceId.Any(static c => c != '0') ? traceId : null;
     }
 
+    /// <summary>
+    /// The message and top frame of a stored exception. The executor stores a failure as JSON (the outer message and
+    /// the root exception's top frame), so the operator reads text instead of the stored JSON; a reason the store
+    /// wrote itself (lease lapsed, node not alive) or a cancellation message is plain text and reads as it is.
+    /// </summary>
+    public static (string? Message, string? Frame) ReadException(string? stored)
+    {
+        if (string.IsNullOrEmpty(stored) || !stored.StartsWith('{'))
+        {
+            return (stored, null);
+        }
+
+        try
+        {
+            var detail = JsonSerializer.Deserialize(
+                stored,
+                JobsExceptionJsonContext.Default.ExceptionDetailClassForSerialization
+            );
+
+            if (detail is null)
+            {
+                return (stored, null);
+            }
+
+            var frame = string.IsNullOrWhiteSpace(detail.StackTrace) ? null : detail.StackTrace.TrimEnd();
+
+            return (detail.Message, frame);
+        }
+        catch (JsonException)
+        {
+            // Text that only starts like JSON is a plain message, shown as stored.
+            return (stored, null);
+        }
+    }
+
     public static bool TryParseId(string value, out Guid id) => Guid.TryParse(value, out id);
 }
 
@@ -115,6 +150,7 @@ internal sealed record JobsRunView(
     int RetryCount,
     string? Node,
     string? ExceptionMessage,
+    string? ExceptionFrame,
     string? FailureFingerprint,
     string? SkippedReason,
     double? ProgressPercent,
@@ -131,8 +167,11 @@ internal sealed record JobsRunView(
     string Version
 )
 {
-    public static JobsRunView From(JobRunSummary run) =>
-        new(
+    public static JobsRunView From(JobRunSummary run)
+    {
+        var (message, frame) = JobsViews.ReadException(run.ExceptionMessage);
+
+        return new(
             run.Id,
             run.Kind,
             run.Function,
@@ -144,7 +183,8 @@ internal sealed record JobsRunView(
             run.ElapsedTime,
             run.RetryCount,
             run.OwnerId,
-            run.ExceptionMessage,
+            message,
+            frame,
             run.FailureFingerprint,
             run.SkippedReason,
             run.ProgressPercent,
@@ -160,6 +200,7 @@ internal sealed record JobsRunView(
             run.CancelRequested,
             run.ChangedAt.Ticks.ToString(CultureInfo.InvariantCulture)
         );
+    }
 }
 
 /// <summary>A run with its chain children, as the run page shows it.</summary>
@@ -176,19 +217,25 @@ internal sealed record JobsAttemptView(
     DateTime? EndedAt,
     JobAttemptOutcome? Outcome,
     string? ExceptionMessage,
+    string? ExceptionFrame,
     string? FailureFingerprint
 )
 {
-    public static JobsAttemptView From(JobAttemptEntity attempt) =>
-        new(
+    public static JobsAttemptView From(JobAttemptEntity attempt)
+    {
+        var (message, frame) = JobsViews.ReadException(attempt.ExceptionMessage);
+
+        return new(
             attempt.Number,
             attempt.OwnerId,
             attempt.StartedAt,
             attempt.EndedAt,
             attempt.Outcome,
-            attempt.ExceptionMessage,
+            message,
+            frame,
             attempt.FailureFingerprint
         );
+    }
 }
 
 internal sealed record JobsAttemptList(IReadOnlyList<JobsAttemptView> Items);

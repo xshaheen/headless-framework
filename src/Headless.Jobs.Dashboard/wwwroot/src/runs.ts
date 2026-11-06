@@ -25,7 +25,10 @@ export interface Run {
   elapsedMilliseconds: number
   retryCount: number
   node?: string
+  /** The exception's message, read from the stored detail on the server. */
   exceptionMessage?: string
+  /** The top frame of the exception's stack, when the stored detail has one. */
+  exceptionFrame?: string
   failureFingerprint?: string
   skippedReason?: string
   progressPercent?: number
@@ -58,6 +61,7 @@ export interface Attempt {
   endedAt?: string
   outcome?: AttemptOutcome
   exceptionMessage?: string
+  exceptionFrame?: string
   failureFingerprint?: string
 }
 

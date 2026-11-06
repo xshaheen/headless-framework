@@ -341,9 +341,13 @@
   text-align: end;
 }
 
+/*
+ * A module contributes at most three figures, so three columns give each module that reports three its own row, and
+ * no tile wraps onto a row alone the way a fit-as-many grid left the sixth one.
+ */
 .hd-figures {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   border-block: 1px solid var(--hairline);
 }
 
@@ -355,6 +359,15 @@
 .hd-figure + .hd-figure {
   padding-inline-start: var(--space-4);
   border-inline-start: 1px solid var(--hairline);
+}
+
+.hd-figure:nth-child(3n + 1) {
+  padding-inline-start: 0;
+  border-inline-start: 0;
+}
+
+.hd-figure:nth-child(n + 4) {
+  border-block-start: 1px solid var(--hairline);
 }
 
 .hd-figure-module {
@@ -521,6 +534,10 @@
   }
 
   .hd-attention-item {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .hd-figures {
     grid-template-columns: minmax(0, 1fr);
   }
 

@@ -34,8 +34,11 @@ import {
 export const layout = { display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'start' } as const
 export const canvas = { flex: '1 1 32rem', minInlineSize: 0, display: 'flex', flexDirection: 'column', gap: '0.75rem' } as const
 
-/** A timestamp as relative time, with the exact time, zone, and offset on hover; in `zone` when one is named. */
-export function Time({ value, zone }: { value: string | undefined; zone?: string }) {
+/**
+ * A timestamp as relative time, with the exact time, zone, and offset on hover; in `zone` when one is named. `short`
+ * reads `4 min. ago`, so a list column stays narrow enough for a phone.
+ */
+export function Time({ value, zone, short }: { value: string | undefined; zone?: string; short?: boolean }) {
   const format = useFormat()
 
   if (!value) {
@@ -44,8 +47,22 @@ export function Time({ value, zone }: { value: string | undefined; zone?: string
 
   return (
     <time dateTime={value} title={zone ? format.zonedTime(value, zone) : format.exactTime(value)}>
-      {format.relativeTime(value)}
+      {format.relativeTime(value, short ? { style: 'short' } : undefined)}
     </time>
+  )
+}
+
+const cellText = { minInlineSize: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } as const
+
+/**
+ * A list cell's content on one line. A column too narrow for it ends the text in an ellipsis, never cuts a word, and
+ * `title` gives the full text on hover.
+ */
+export function CellText({ title, children }: { title?: string; children: ReactNode }) {
+  return (
+    <span title={title} style={cellText}>
+      {children}
+    </span>
   )
 }
 
@@ -105,23 +122,34 @@ export function useStale() {
   return status === 'stale' || moduleStale
 }
 
-/** An exception: its first line, `Copy`, and the rest one disclosure away. */
-export function ExceptionText({ text }: { text: string }) {
-  const [first, ...rest] = text.split('\n')
+const stackText = { margin: 0, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' } as const
+
+/**
+ * An exception: its message's first line as text with `Copy`, and the rest of the message with the top frame one
+ * disclosure away, as a left-to-right isolated mono block so a source path reads the same in any locale. `Copy` takes
+ * the whole of both.
+ */
+export function ExceptionText({ message, frame }: { message: string; frame?: string }) {
+  const [first, ...rest] = message.split('\n')
+  const stack = [...rest, ...(frame ? [frame] : [])].join('\n')
 
   return (
     <span className="hd-fields">
       <span>
-        <Mono>{first}</Mono>{' '}
-        <Button variant="ghost" aria-label="Copy exception" onPress={() => void navigator.clipboard?.writeText(text)}>
+        {first}{' '}
+        <Button
+          variant="ghost"
+          aria-label="Copy exception"
+          onPress={() => void navigator.clipboard?.writeText(frame ? `${message}\n${frame}` : message)}
+        >
           Copy
         </Button>
       </span>
-      {rest.length > 0 ? (
+      {stack ? (
         <details>
           <summary>Stack</summary>
-          <pre className="hd-mono" dir="ltr">
-            {rest.join('\n')}
+          <pre className="hd-mono" dir="ltr" style={stackText}>
+            {stack}
           </pre>
         </details>
       ) : null}
@@ -213,7 +241,10 @@ export function RunFields({ run }: { run: Run }) {
         <Time value={run.executedAt} />
       </InspectorField>
       <Optional label="Node" value={run.node ? <Mono>{run.node}</Mono> : undefined} />
-      <Optional label="Exception" value={run.exceptionMessage ? <ExceptionText text={run.exceptionMessage} /> : undefined} />
+      <Optional
+        label="Exception"
+        value={run.exceptionMessage ? <ExceptionText message={run.exceptionMessage} frame={run.exceptionFrame} /> : undefined}
+      />
       <Optional label="Skipped because" value={run.skippedReason} />
       <Optional label="Contract version" value={run.contractVersion ? <Mono>{run.contractVersion}</Mono> : undefined} />
       <Optional label="Correlation" value={run.correlationId ? <Correlation id={run.correlationId} /> : undefined} />
@@ -299,7 +330,10 @@ export function AttemptFields({ attempt }: { attempt: Attempt }) {
       <InspectorField label="Ended">
         <Time value={attempt.endedAt} />
       </InspectorField>
-      <Optional label="Exception" value={attempt.exceptionMessage ? <ExceptionText text={attempt.exceptionMessage} /> : undefined} />
+      <Optional
+        label="Exception"
+        value={attempt.exceptionMessage ? <ExceptionText message={attempt.exceptionMessage} frame={attempt.exceptionFrame} /> : undefined}
+      />
       <Optional label="Fingerprint" value={attempt.failureFingerprint ? <Mono>{attempt.failureFingerprint}</Mono> : undefined} />
     </InspectorFields>
   )

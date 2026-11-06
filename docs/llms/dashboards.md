@@ -434,7 +434,7 @@ An Operation's filter is `{ kind, functions, statuses, cronJobId, correlationId,
 
 **Needs you and Overview.** One item per function and failure fingerprint (`3 failed runs of billing.charge`), recommending `jobs.requeue` over the group's actionable failures; one item per registered function that no live node's run filter claims (`No live node runs billing.charge`), pointing at its `function` object. The Overview shows the share of runs that succeeded, failed runs, and runs that started later than the scheduler's fallback interval after they were due, each over the last 24 hours against the 24 before.
 
-**Related and payload.** A run relates to the other runs with its correlation id (`jobs.same-correlation`), its chain (`jobs.chain`), and its cron job (`jobs.cron-job`); a run with a stored W3C trace parent carries its trace id, so the shell offers `Open trace`. Its payload is its stored request as JSON, or `Unsupported contract version N` when this host registers another version.
+**Related and payload.** A run relates to the other runs with its correlation id (`jobs.same-correlation`), its chain (`jobs.chain`), and its cron job (`jobs.cron-job`); a run with a stored W3C trace parent carries its trace id, so the shell offers `Open trace`. Its payload is its stored request as JSON, or `Unsupported contract version N` when this host registers another version. A run and an attempt carry their exception as `exceptionMessage` and `exceptionFrame`: the module reads the JSON the executor stores (the outer message and the root exception's top frame) into the two, and a reason the store wrote itself, such as `Lease lapsed while running!`, arrives as the message with no frame.
 
 **API** at `{base}/api/jobs`, JSON with camelCase names and enums as strings:
 
@@ -442,7 +442,7 @@ An Operation's filter is `{ kind, functions, statuses, cronJobId, correlationId,
 | --- | --- |
 | `GET runs?kind=&function=&status=&cronJobId=&correlationId=&fingerprint=&from=&before=&actionable=&newest=&limit=&after=` | `{ items, count, countCapped, nextCursor }`: one keyset page of runs, newest first unless `newest=false`, `limit` up to 200, a count capped at 10,000; `after` takes `nextCursor` |
 | `GET runs/{id}` | `{ run, children }`, or `404` |
-| `GET runs/{id}/attempts` | `{ items: [{ number, node, startedAt, endedAt, outcome, exceptionMessage, failureFingerprint }] }`, or `404` |
+| `GET runs/{id}/attempts` | `{ items: [{ number, node, startedAt, endedAt, outcome, exceptionMessage, exceptionFrame, failureFingerprint }] }`, or `404` |
 | `GET cron-jobs?function=` | `{ items }`: every cron job with its plain reading |
 | `GET cron-jobs/{id}?fires=` | one cron job with its next fires (default 5, at most 50; none while paused), or `404` |
 | `GET cron-preview?expression=&timeZoneId=&count=` | `{ timeZoneId, reading, nextFires, validationMessage }` for a draft schedule |
