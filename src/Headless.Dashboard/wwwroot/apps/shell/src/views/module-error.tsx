@@ -1,3 +1,7 @@
+// The React Compiler's memo caches cost this view more bytes than its rare renders save, and the shell's assets
+// sit at their size budget.
+'use no memo'
+
 import { Button } from '@headless/dashboard-sdk/components'
 import { Link, isRouteErrorResponse, useRouteError } from '@headless/dashboard-sdk/router'
 import type { BootstrapModule } from '../bootstrap.ts'

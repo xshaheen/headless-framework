@@ -1,3 +1,7 @@
+// The React Compiler's memo caches cost this view more bytes than its rare renders save, and the shell's assets
+// sit at their size budget.
+'use no memo'
+
 import { useOperations } from '@headless/dashboard-sdk/commands'
 import { Button, InspectorField, InspectorFields, Mono, StatusMark, useDelayed } from '@headless/dashboard-sdk/components'
 import { useFormat } from '@headless/dashboard-sdk/locale'
