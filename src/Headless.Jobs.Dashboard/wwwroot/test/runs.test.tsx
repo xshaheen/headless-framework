@@ -53,6 +53,17 @@ describe('jobs runs list', () => {
     expect(view.requests.filter((request) => request.path === 'jobs/runs')).toHaveLength(before)
   })
 
+  it('counts only arrived runs that match the filter in N new', async () => {
+    const view = open({ runs: [run('Failed', { function: 'a.kept' })] }, { path: '?function=a.kept' })
+    await screen.findByRole('row', { name: /a\.kept/ })
+
+    view.stream.push('change', change(run('Failed', { function: 'b.other' })))
+    view.stream.push('change', change(run('Failed', { function: 'b.other' })))
+    view.stream.push('change', change(run('Queued', { function: 'a.kept' })))
+
+    expect(await screen.findByRole('button', { name: '1 new' })).toBeTruthy()
+  })
+
   it('says no runs match with Clear filters, and clearing shows every run', async () => {
     const actor = user()
     open({ runs: [run('Succeeded', { function: 'a.done' })] }, { path: '?status=Failed' })

@@ -36,12 +36,15 @@ export function useDashboardObject<T>(options: DashboardObjectOptions<T>) {
   return useQuery({ queryKey: objectKey(options.topic, options.id), queryFn: options.fetch })
 }
 
-/** The new rows notice of `topic`: how many rows arrived, and the call that shows them. */
-export function useNewRows(topic: string) {
+/**
+ * The new rows notice of `topic`: how many rows arrived, and the call that shows them. With `matches`, only an
+ * arrived row whose projection matches the list's filter counts, because only those would appear on `show`.
+ */
+export function useNewRows<T>(topic: string, matches?: (row: T) => boolean) {
   const client = useQueryClient()
   const count = useSyncExternalStore(
     (listener) => onNewRowsChange(client, listener),
-    () => getNewRows(client, topic).size,
+    () => [...getNewRows(client, topic).values()].filter((row) => !matches || (row !== null && matches(row as T))).length,
   )
 
   return { count, show: () => showNewRows(client, topic) }

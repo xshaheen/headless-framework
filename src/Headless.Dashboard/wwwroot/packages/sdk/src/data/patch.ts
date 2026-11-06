@@ -85,7 +85,8 @@ function isNewer(change: StreamChange, held: string | undefined) {
   return held === undefined || compareVersions(change.version, held) > 0
 }
 
-const newRows = new WeakMap<QueryClient, Map<string, Set<string>>>()
+/** Per topic, each arrived object's projection by id; `null` when its change carried none. */
+const newRows = new WeakMap<QueryClient, Map<string, Map<string, Record<string, unknown> | null>>>()
 const newRowListeners = new WeakMap<QueryClient, Set<() => void>>()
 
 function notifyNewRows(client: QueryClient) {
@@ -94,9 +95,9 @@ function notifyNewRows(client: QueryClient) {
   }
 }
 
-/** The ids of objects that changed on `topic` while no loaded list held them. */
-export function getNewRows(client: QueryClient, topic: string): ReadonlySet<string> {
-  return newRows.get(client)?.get(topic) ?? new Set()
+/** The objects that changed on `topic` while no loaded list held them: each one's projection by id. */
+export function getNewRows(client: QueryClient, topic: string): ReadonlyMap<string, Record<string, unknown> | null> {
+  return newRows.get(client)?.get(topic) ?? new Map()
 }
 
 export function onNewRowsChange(client: QueryClient, listener: () => void) {
@@ -140,12 +141,9 @@ export function applyChange(client: QueryClient, change: StreamChange): ChangeOu
       newRows.set(client, topicRows)
     }
 
-    const ids = topicRows.get(change.topic) ?? new Set()
-
-    if (!ids.has(change.id)) {
-      topicRows.set(change.topic, new Set(ids).add(change.id))
-      notifyNewRows(client)
-    }
+    // A later change of the same object replaces its projection, so a list's filter reads where the row is now.
+    topicRows.set(change.topic, new Map(topicRows.get(change.topic)).set(change.id, change.projection ?? null))
+    notifyNewRows(client)
 
     return 'new'
   }

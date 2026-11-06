@@ -87,7 +87,7 @@ export default function RunsView() {
   const creating = params.get('create')
   const runs = useDashboardKeysetList<Run>({ topic: runsTopic, params: filter, fetchPage: (cursor) => fetchRuns(api, filter, cursor) })
   const list = runs.query
-  const newRows = useNewRows(runsTopic)
+  const newRows = useNewRows<Run>(runsTopic, (run) => runMatches(run, filter))
   const showLoading = useDelayed(list.isPending)
   const functions = useQuery({ queryKey: ['jobs', 'functions'], queryFn: () => fetchFunctions(api) })
   const commands = useJobsCommands()
