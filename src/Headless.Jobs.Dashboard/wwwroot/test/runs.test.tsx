@@ -308,6 +308,21 @@ describe('jobs runs list', () => {
     await actor.click(within(form).getByRole('button', { name: 'Add chain' }))
 
     expect(await screen.findByRole('complementary', { name: `Run ${created.id}` })).toBeTruthy()
+  it('keeps a select-all of the loaded runs as one URL marker that a reload restores', async () => {
+    const actor = user()
+    const view = open({ runs: [run('Failed'), run('Failed'), run('Failed')] })
+
+    await actor.click((await screen.findAllByRole('row', { name: /billing\.charge/ }))[0]!)
+    await actor.keyboard('{Control>}a{/Control}')
+
+    expect(await screen.findByRole('complementary', { name: '3 runs selected' })).toBeTruthy()
+    expect(new URLSearchParams(view.location().search).getAll('selected')).toEqual(['*'])
+
+    await act(() => view.navigate(`?selected=*`))
+
+    expect(await screen.findByRole('complementary', { name: '3 runs selected' })).toBeTruthy()
+  })
+
     expect(view.requests.find((request) => request.path === 'jobs/time-jobs')?.body).toEqual({
       function: 'billing.charge',
       request: { invoiceId: 42 },

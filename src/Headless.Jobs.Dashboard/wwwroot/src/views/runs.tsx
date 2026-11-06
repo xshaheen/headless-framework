@@ -64,6 +64,7 @@ const kindOptions = [
   { value: 'CronJobOccurrence', label: 'Occurrences' },
 ]
 const statusOptions = runStatuses.map((status) => ({ value: status, label: statusLabel(status) }))
+const allLoaded = '*'
 const rangeOptions = [
   { value: '1h', label: 'Last hour' },
   { value: '24h', label: 'Last 24 h' },
@@ -83,9 +84,11 @@ export default function RunsView() {
   const [params, setParams] = useSearchParams()
   const filter = readFilter(params)
   const filterKey = filterNames.map((name) => filter[name]).join('\n')
-  const selectedIds = new Set(params.getAll('selected'))
   const creating = params.get('create')
   const runs = useDashboardKeysetList<Run>({ topic: runsTopic, params: filter, fetchPage: (cursor) => fetchRuns(api, filter, cursor) })
+  const items = runs.rows
+  // `selected=*` is every loaded run (`⌘A`): one marker, not one id per row, keeps a shared link short.
+  const selectedIds = new Set(params.get('selected') === allLoaded ? items.map((run) => run.id) : params.getAll('selected'))
   const list = runs.query
   const newRows = useNewRows<Run>(runsTopic, (run) => runMatches(run, filter))
   const showLoading = useDelayed(list.isPending)
@@ -111,7 +114,12 @@ export default function RunsView() {
     update((next) => {
       next.delete('selected')
       next.delete('create')
-      ids.forEach((id) => next.append('selected', id))
+
+      if (ids.size > 1 && ids.size === items.length && items.every((run) => ids.has(run.id))) {
+        next.set('selected', allLoaded)
+      } else {
+        ids.forEach((id) => next.append('selected', id))
+      }
     })
   }
 
@@ -178,7 +186,6 @@ export default function RunsView() {
     }
   }, [wantsOperation])
 
-  const items = runs.rows
   const selectedRuns = items.filter((run) => selectedIds.has(run.id))
   const [onlySelected] = selectedIds
   // A link can select a run the loaded page does not hold; the inspector reads that one run by its id instead.
