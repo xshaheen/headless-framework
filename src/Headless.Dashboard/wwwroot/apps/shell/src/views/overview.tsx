@@ -33,7 +33,7 @@ function StaleNote({ sections }: { sections: readonly ModuleSection<unknown>[] }
 
   return stale.length > 0 ? (
     <p className="hd-stale-note">
-      <StatusMark tone="waiting" label="Stale" />
+      <StatusMark tone="proc" label="Stale" />
       {` ${stale.map((section) => section.displayName).join(', ')} did not answer in time. What shows for ${stale.length === 1 ? 'it' : 'them'} may be missing.`}
     </p>
   ) : null

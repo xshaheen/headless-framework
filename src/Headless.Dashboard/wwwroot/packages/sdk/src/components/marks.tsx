@@ -1,10 +1,11 @@
 import type { ReactNode } from 'react'
+import type { DashboardStateRole } from '../define-module.ts'
 
-/** The five tones every status maps to. A new status picks one; it never adds a colour. */
-export type StatusTone = 'healthy' | 'active' | 'waiting' | 'needs' | 'stopped'
-
-/** A status as mark plus label: colour is never the only cue. */
-export function StatusMark({ tone, label }: { tone: StatusTone; label: string }) {
+/**
+ * A status as a dot in its state role's colour plus its label: colour is never the only cue, and the label keeps the
+ * text tone, so states that share a role read apart.
+ */
+export function StatusMark({ tone, label }: { tone: DashboardStateRole; label: string }) {
   return (
     <span className={`hd-status hd-tone-${tone}`}>
       <span className="hd-mark" aria-hidden="true" />

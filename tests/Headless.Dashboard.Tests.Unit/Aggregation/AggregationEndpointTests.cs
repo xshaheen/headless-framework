@@ -455,7 +455,7 @@ public sealed class AggregationEndpointTests : TestBase
                             Id = "r1",
                             At = at,
                             Label = "failed",
-                            Tone = "needs",
+                            Tone = "fail",
                             Target = new ObjectRef
                             {
                                 Module = "diag-a",
@@ -476,7 +476,7 @@ public sealed class AggregationEndpointTests : TestBase
         track.GetProperty("label").GetString().Should().Be("billing.charge");
         var tick = track.GetProperty("ticks")[0];
         tick.GetProperty("at").GetDateTimeOffset().Should().Be(at);
-        tick.GetProperty("tone").GetString().Should().Be("needs");
+        tick.GetProperty("tone").GetString().Should().Be("fail");
         tick.GetProperty("target").GetProperty("id").GetString().Should().Be("r1");
     }
 

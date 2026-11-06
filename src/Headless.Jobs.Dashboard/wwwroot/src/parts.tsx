@@ -300,7 +300,7 @@ export function attemptEvents(run: Pick<Run, 'createdAt'>, attempts: readonly At
         [firstLine(attempt.exceptionMessage), attempt.failureFingerprint && `fingerprint ${attempt.failureFingerprint}`]
           .filter(Boolean)
           .join(' · ') || undefined,
-      tone: attempt.outcome ? attemptTones[attempt.outcome] : 'active',
+      tone: attempt.outcome ? attemptTones[attempt.outcome] : 'proc',
     })),
   ]
 }

@@ -5,40 +5,40 @@
 
 .hd-shell {
   display: grid;
-  grid-template-columns: var(--rail-width) minmax(0, 1fr);
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
   block-size: 100vh;
   block-size: 100dvh;
 }
 
 .hd-skip {
   position: absolute;
-  inset-inline-start: var(--space-2);
+  inset-inline-start: var(--sp-3);
   inset-block-start: -100px;
-  z-index: 70;
-  padding: var(--space-2) var(--space-3);
-  background: var(--surface);
+  z-index: var(--z-palette);
+  padding: var(--sp-3) var(--sp-5);
+  background: var(--panel);
   border-radius: var(--radius-control);
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-float);
 }
 
 .hd-skip:focus {
-  inset-block-start: var(--space-2);
+  inset-block-start: var(--sp-3);
 }
 
 .hd-rail {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: var(--space-3) var(--space-2);
+  padding: var(--sp-5) var(--sp-3);
   overflow-y: auto;
   background: var(--ground);
-  border-inline-end: 1px solid var(--hairline);
+  border-inline-end: 1px solid var(--line);
 }
 
 .hd-brand {
   display: flex;
   flex-direction: column;
-  padding: var(--space-1) 10px 14px;
+  padding: var(--sp-1) 10px 14px;
 }
 
 .hd-brand b {
@@ -55,11 +55,11 @@
   border-radius: var(--radius-control);
   color: var(--text);
   text-decoration: none;
-  transition: background var(--motion-fast);
+  transition: background var(--ease-fast);
 }
 
 .hd-nav:hover {
-  background: var(--sunken);
+  background: var(--hover);
 }
 
 .hd-nav-current {
@@ -77,14 +77,14 @@
 
 .hd-nav-locked .hd-why {
   flex-basis: 100%;
-  padding-block-end: var(--space-1);
+  padding-block-end: var(--sp-1);
 }
 
 .hd-nav-count {
   margin-inline-start: auto;
   font: var(--text-label);
   font-weight: 600;
-  color: var(--alarm);
+  color: var(--fail);
   font-variant-numeric: tabular-nums;
 }
 
@@ -96,27 +96,27 @@
 }
 
 .hd-rail-label {
-  padding: 0 10px var(--space-1);
+  padding: 0 10px var(--sp-1);
   font: var(--text-label);
   color: var(--muted);
 }
 
 .hd-rail-error {
   margin: 0;
-  padding: var(--space-2) 10px;
+  padding: var(--sp-3) 10px;
   font: var(--text-small);
-  color: var(--alarm);
-  background: var(--sunken);
+  color: var(--fail);
+  background: var(--deep);
   border-radius: var(--radius-control);
 }
 
 .hd-rail-foot {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--sp-3);
   margin-block-start: auto;
-  padding: var(--space-3) 10px var(--space-1);
-  border-block-start: 1px solid var(--hairline);
+  padding: var(--sp-5) 10px var(--sp-1);
+  border-block-start: 1px solid var(--line);
 }
 
 .hd-rail-who {
@@ -128,8 +128,8 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: var(--space-1);
-  margin-inline: calc(-1 * var(--space-2));
+  gap: var(--sp-1);
+  margin-inline: calc(-1 * var(--sp-3));
 }
 
 .hd-rail-scrim {
@@ -150,23 +150,23 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--sp-5);
   min-block-size: 53px;
-  padding: 10px var(--space-5);
+  padding: 10px var(--sp-8);
   background: var(--ground);
-  border-block-end: 1px solid var(--hairline);
+  border-block-end: 1px solid var(--line);
 }
 
 .hd-main > .hd-notice {
   grid-area: notice;
-  margin: var(--space-2) var(--space-5) 0;
+  margin: var(--sp-3) var(--sp-8) 0;
 }
 
 .hd-main > .hd-operations {
   grid-area: ops;
-  padding-inline: var(--space-6);
-  background: var(--surface);
-  border-block-end: 1px solid var(--hairline);
+  padding-inline: var(--sp-8);
+  background: var(--panel);
+  border-block-end: 1px solid var(--line);
 }
 
 .hd-crumb {
@@ -185,7 +185,7 @@
 
 .hd-page-title {
   margin: 0;
-  font: var(--text-page);
+  font: var(--text-title);
   color: var(--text);
   text-wrap: balance;
 }
@@ -195,10 +195,10 @@
 }
 
 .hd-view-only {
-  padding: 3px var(--space-2);
+  padding: 3px var(--sp-3);
   font: var(--text-label);
   color: var(--muted);
-  background: var(--sunken);
+  background: var(--raised);
   border-radius: var(--radius-control);
 }
 
@@ -213,7 +213,7 @@
 .hd-body {
   grid-area: body;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--inspector-width);
+  grid-template-columns: minmax(0, 1fr) var(--panel-side-width);
   min-block-size: 0;
 }
 
@@ -224,11 +224,11 @@
 .hd-canvas {
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
+  gap: var(--sp-8);
   min-inline-size: 0;
-  padding: var(--space-5) var(--space-6) 40px;
+  padding: var(--sp-8) var(--sp-8) 40px;
   overflow: auto;
-  background: var(--surface);
+  background: var(--panel);
 }
 
 .hd-canvas:focus {
@@ -251,7 +251,7 @@
 .hd-view {
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
+  gap: var(--sp-8);
 }
 
 .hd-centred {
@@ -264,7 +264,7 @@
 .hd-section {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--sp-3);
 }
 
 .hd-section-head {
@@ -272,13 +272,13 @@
   flex-wrap: wrap;
   align-items: baseline;
   gap: 10px;
-  padding-block-end: var(--space-2);
-  border-block-end: 1px solid var(--hairline);
+  padding-block-end: var(--sp-3);
+  border-block-end: 1px solid var(--line);
 }
 
 .hd-prose {
   margin: 0;
-  font: var(--text-prose);
+  font: var(--text-body);
   max-inline-size: 72ch;
 }
 
@@ -290,15 +290,15 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--sp-3);
   margin: 0;
   font: var(--text-small);
-  color: var(--stale);
+  color: var(--muted);
 }
 
 .hd-skeleton {
   block-size: 120px;
-  background: var(--sunken);
+  background: var(--raised);
   border-radius: var(--radius-control);
 }
 
@@ -313,10 +313,10 @@
 .hd-attention-line {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
-  gap: var(--space-4);
+  gap: var(--sp-7);
   align-items: center;
   padding-block: 10px;
-  border-block-end: 1px solid var(--hairline);
+  border-block-end: 1px solid var(--line);
 }
 
 .hd-attention-what {
@@ -333,7 +333,7 @@
 
 .hd-attention-count {
   font-weight: 600;
-  color: var(--alarm);
+  color: var(--fail);
   font-variant-numeric: tabular-nums;
 }
 
@@ -347,17 +347,17 @@
 .hd-figures {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  border-block: 1px solid var(--hairline);
+  border-block: 1px solid var(--line);
 }
 
 /* The SDK's components.css lays out a figure and its value; the Overview adds the cells' padding and rules. */
 .hd-figure {
-  padding: 14px var(--space-4) 14px 0;
+  padding: 14px var(--sp-7) 14px 0;
 }
 
 .hd-figure + .hd-figure {
-  padding-inline-start: var(--space-4);
-  border-inline-start: 1px solid var(--hairline);
+  padding-inline-start: var(--sp-7);
+  border-inline-start: 1px solid var(--line);
 }
 
 .hd-figure:nth-child(3n + 1) {
@@ -366,7 +366,7 @@
 }
 
 .hd-figure:nth-child(n + 4) {
-  border-block-start: 1px solid var(--hairline);
+  border-block-start: 1px solid var(--line);
 }
 
 .hd-figure-module {
@@ -380,7 +380,7 @@
 }
 
 .hd-delta-worse {
-  color: var(--alarm);
+  color: var(--fail);
 }
 
 .hd-cause {
@@ -394,10 +394,10 @@
 .hd-attention-item {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: var(--space-2) var(--space-6);
+  gap: var(--sp-3) var(--sp-8);
   align-items: center;
-  padding-block: var(--space-2);
-  border-block-end: 1px solid var(--hairline);
+  padding-block: var(--sp-3);
+  border-block-end: 1px solid var(--line);
 }
 
 .hd-attention-item[data-selected] {
@@ -410,7 +410,7 @@
   flex-direction: column;
   align-items: flex-start;
   gap: 2px;
-  padding: var(--space-2) var(--space-2);
+  padding: var(--sp-3) var(--sp-3);
   text-align: start;
   background: none;
   border: 0;
@@ -419,30 +419,30 @@
 }
 
 .hd-attention-select:hover {
-  background: var(--sunken);
+  background: var(--hover);
 }
 
 .hd-related {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--sp-5);
 }
 
 .hd-related-group ul {
   display: flex;
   flex-direction: column;
-  margin: var(--space-1) 0 0;
+  margin: var(--sp-1) 0 0;
   padding: 0;
   list-style: none;
-  border-block-start: 1px solid var(--hairline);
+  border-block-start: 1px solid var(--line);
 }
 
 .hd-related-group li {
   display: flex;
   justify-content: space-between;
-  gap: var(--space-2);
-  padding-block: var(--space-2);
-  border-block-end: 1px solid var(--hairline);
+  gap: var(--sp-3);
+  padding-block: var(--sp-3);
+  border-block-end: 1px solid var(--line);
 }
 
 .hd-related-group h3 {
@@ -463,9 +463,9 @@
     position: fixed;
     inset-block: 0;
     inset-inline-end: 0;
-    z-index: 30;
-    inline-size: min(var(--inspector-width), 100%);
-    box-shadow: var(--shadow);
+    z-index: var(--z-panel);
+    inline-size: min(var(--panel-side-width), 100%);
+    box-shadow: var(--shadow-float);
   }
 }
 
@@ -481,9 +481,8 @@
     inset-inline-start: 0;
     z-index: 40;
     inline-size: min(260px, 85vw);
-    box-shadow: var(--shadow);
+    box-shadow: var(--shadow-float);
     transform: translateX(-102%);
-    transition: transform var(--motion-panel-out);
   }
 
   [dir='rtl'] .hd-rail {
@@ -492,7 +491,6 @@
 
   .hd-rail.hd-rail-open {
     transform: none;
-    transition: transform var(--motion-panel-in);
   }
 
   .hd-rail-scrim {
@@ -508,15 +506,15 @@
   }
 
   .hd-docbar {
-    padding: var(--space-2) var(--space-4);
+    padding: var(--sp-3) var(--sp-7);
   }
 
   .hd-canvas {
-    padding: var(--space-4) var(--space-4) var(--space-6);
+    padding: var(--sp-7) var(--sp-7) var(--sp-8);
   }
 
   .hd-main > .hd-operations {
-    padding-inline: var(--space-4);
+    padding-inline: var(--sp-7);
   }
 
   /* Matches the drawer rule's selector, which would otherwise win on specificity and keep it at drawer width. */
@@ -543,6 +541,6 @@
   .hd-figure + .hd-figure {
     padding-inline-start: 0;
     border-inline-start: 0;
-    border-block-start: 1px solid var(--hairline);
+    border-block-start: 1px solid var(--line);
   }
 }

@@ -12,7 +12,7 @@
 }
 
 .hd-title {
-  font: var(--text-title);
+  font: var(--text-detail);
   margin: 0;
   text-wrap: balance;
 }
@@ -33,20 +33,20 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: var(--space-2);
+  gap: var(--sp-3);
   block-size: var(--control-height);
-  padding-inline: var(--space-3);
-  border: 1px solid var(--field-edge);
+  padding-inline: var(--sp-5);
+  border: 1px solid var(--edge);
   border-radius: var(--radius-control);
-  background: var(--surface);
+  background: var(--panel);
   font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
-  transition: background-color var(--motion-fast);
+  transition: background-color var(--ease-fast);
 }
 
 .hd-btn[data-hovered]:not([data-disabled], [data-soft-disabled]) {
-  background: var(--sunken);
+  background: var(--hover);
 }
 
 .hd-btn[data-focus-visible] {
@@ -66,7 +66,8 @@
 }
 
 .hd-btn-danger {
-  color: var(--alarm);
+  border-color: var(--fail-edge);
+  color: var(--fail);
 }
 
 .hd-btn-ghost {
@@ -78,15 +79,15 @@
 .hd-btn[data-soft-disabled] {
   cursor: not-allowed;
   color: var(--muted);
-  border-color: var(--hairline);
-  background: var(--sunken);
+  border-color: var(--line);
+  background: var(--deep);
 }
 
 .hd-btn-group {
   display: inline-flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: var(--space-1);
+  gap: var(--sp-1);
 }
 
 .hd-why {
@@ -97,59 +98,60 @@
 .hd-status {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--sp-3);
   white-space: nowrap;
 }
 
+/*
+ * A state role sets --role on the element that carries it; the dot, a strip tick, or a bar paints with it. The label
+ * beside a dot keeps its text tone, because the light roles other than fail are under 4.5:1 as text.
+ */
+.hd-tone-sched {
+  --role: var(--sched);
+}
+
+.hd-tone-enq {
+  --role: var(--enq);
+}
+
+.hd-tone-proc {
+  --role: var(--proc);
+}
+
+.hd-tone-ok {
+  --role: var(--ok);
+}
+
+.hd-tone-fail {
+  --role: var(--fail);
+}
+
+.hd-tone-off {
+  --role: var(--off);
+}
+
 .hd-mark {
-  inline-size: 9px;
-  block-size: 9px;
+  inline-size: 8px;
+  block-size: 8px;
   border-radius: 50%;
   flex: none;
+  background: var(--role);
 }
 
-.hd-tone-healthy .hd-mark {
-  background: var(--ok);
-}
-
-.hd-tone-active .hd-mark {
-  background: var(--accent);
-  animation: hd-pulse 2.4s ease-in-out infinite;
-}
-
-.hd-tone-needs {
-  color: var(--alarm);
-  font-weight: 500;
-}
-
-.hd-tone-needs .hd-mark {
-  background: var(--alarm);
-}
-
-.hd-tone-waiting .hd-mark {
-  border: 1.5px solid var(--muted);
-  border-radius: 50%;
-  background: conic-gradient(var(--muted) 0 25%, transparent 0) center / 50% 50% no-repeat;
-}
-
-.hd-tone-stopped .hd-mark {
-  border: 1.5px solid var(--muted);
-}
-
-@keyframes hd-pulse {
-  50% {
-    opacity: 0.35;
-  }
+/* Running and failed states need the eye now, so their dot carries the halo; a resting state has none. */
+.hd-tone-proc .hd-mark,
+.hd-tone-fail .hd-mark {
+  box-shadow: 0 0 var(--glow) var(--role);
 }
 
 .hd-chip {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1);
+  gap: var(--sp-1);
   block-size: 22px;
-  padding-inline: 7px;
+  padding-inline: var(--sp-2);
   border-radius: var(--radius-control);
-  background: var(--sunken);
+  background: var(--raised);
   font: var(--text-label);
   color: var(--muted);
   white-space: nowrap;
@@ -168,19 +170,20 @@
 }
 
 .hd-kbd {
-  font: 400 11px/16px var(--mono);
-  padding-inline: 5px;
-  border: 1px solid var(--hairline);
+  font: var(--text-tag);
+  font-family: var(--mono);
+  padding-inline: var(--sp-1);
+  border: 1px solid var(--line);
   border-block-end-width: 2px;
-  border-radius: 4px;
-  color: var(--muted);
-  background: var(--surface);
+  border-radius: var(--radius-tag);
+  color: var(--faint);
+  background: var(--panel);
 }
 
 .hd-fields {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--sp-5);
   /* Fields and timeline events hold operator text, such as a 500-character note with no spaces, that must wrap in place. */
   overflow-wrap: anywhere;
 }
@@ -188,21 +191,21 @@
 .hd-field {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  gap: var(--sp-1);
   min-inline-size: 0;
 }
 
 .hd-label {
   font: var(--text-label);
-  color: var(--muted);
+  color: var(--faint);
 }
 
 .hd-input {
   block-size: var(--control-height);
-  padding-inline: 10px;
+  padding-inline: var(--sp-4);
   border: 1px solid var(--field-edge);
   border-radius: var(--radius-control);
-  background: var(--surface);
+  background: var(--panel);
   min-inline-size: 0;
 }
 
@@ -214,25 +217,25 @@
 
 .hd-input[aria-invalid='true'],
 .hd-input[data-invalid] {
-  border-color: var(--alarm);
+  border-color: var(--fail);
 }
 
 .hd-textarea {
   block-size: auto;
   min-block-size: 72px;
-  padding-block: var(--space-2);
+  padding-block: var(--sp-3);
   resize: vertical;
 }
 
 .hd-error {
   font: var(--text-small);
-  color: var(--alarm);
+  color: var(--fail);
 }
 
 .hd-checkbox {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--sp-3);
   cursor: pointer;
 }
 
@@ -240,14 +243,14 @@
   inline-size: 16px;
   block-size: 16px;
   border: 1px solid var(--field-edge);
-  border-radius: 4px;
-  background: var(--surface);
+  border-radius: var(--radius-tag);
+  background: var(--panel);
 }
 
 .hd-checkbox[data-selected] .hd-checkbox-box {
   background: var(--accent);
   border-color: var(--accent);
-  box-shadow: inset 0 0 0 3px var(--surface);
+  box-shadow: inset 0 0 0 3px var(--panel);
 }
 
 .hd-checkbox[data-focus-visible] .hd-checkbox-box {
@@ -258,10 +261,10 @@
 .hd-scrim {
   position: fixed;
   inset: 0;
-  z-index: 50;
+  z-index: var(--z-dialog);
   display: grid;
   place-items: start center;
-  padding: 12vh var(--space-4) var(--space-4);
+  padding: 12vh var(--sp-7) var(--sp-7);
   background: var(--scrim);
 }
 
@@ -270,28 +273,24 @@
   max-block-size: 76vh;
   display: flex;
   flex-direction: column;
-  background: var(--surface);
-  border: 1px solid var(--hairline);
+  background: var(--panel);
+  border: 1px solid var(--line);
   border-radius: var(--radius-panel);
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-float);
   overflow: auto;
-}
-
-.hd-dialog[data-entering] {
-  animation: hd-fade var(--motion-panel-in);
 }
 
 .hd-dialog-body,
 .hd-drawer-body {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-5);
+  gap: var(--sp-5);
+  padding: var(--sp-8);
   outline: none;
 }
 
 .hd-dialog-title {
-  font: var(--text-title);
+  font: var(--text-detail);
   margin: 0;
 }
 
@@ -299,9 +298,9 @@
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: var(--space-2);
-  padding-block-start: var(--space-3);
-  border-block-start: 1px solid var(--hairline);
+  gap: var(--sp-3);
+  padding-block-start: var(--sp-5);
+  border-block-start: 1px solid var(--line);
 }
 
 .hd-scrim-drawer {
@@ -310,18 +309,12 @@
 }
 
 .hd-drawer {
-  inline-size: min(var(--inspector-width), 100%);
+  inline-size: min(var(--panel-side-width), 100%);
   block-size: 100%;
   overflow: auto;
-  background: var(--surface);
-  border-inline-start: 1px solid var(--hairline);
-  box-shadow: var(--shadow);
-}
-
-@keyframes hd-fade {
-  from {
-    opacity: 0;
-  }
+  background: var(--panel);
+  border-inline-start: 1px solid var(--line);
+  box-shadow: var(--shadow-float);
 }
 
 .hd-sample {
@@ -330,45 +323,46 @@
   margin: 0;
   padding: 0;
   list-style: none;
-  border: 1px solid var(--hairline);
+  border: 1px solid var(--line);
   border-radius: var(--radius-control);
 }
 
 .hd-sample li {
   display: flex;
   justify-content: space-between;
-  gap: var(--space-3);
-  padding: 6px 10px;
+  gap: var(--sp-5);
+  padding: var(--sp-2) var(--sp-4);
   font: var(--text-small);
 }
 
 .hd-sample li + li {
-  border-block-start: 1px solid var(--hairline);
+  border-block-start: 1px solid var(--line);
 }
 
 .hd-live {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
-  color: var(--ok);
+  gap: var(--sp-3);
+  color: var(--muted);
 }
 
 .hd-live-label {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-2);
   font-variant-numeric: tabular-nums;
 }
 
+/* The dot carries the state; the clock beside it stays a text tone, since light --ok and --proc fail 4.5:1. */
 .hd-live i {
-  inline-size: 7px;
-  block-size: 7px;
+  inline-size: 8px;
+  block-size: 8px;
   border-radius: 50%;
-  background: currentColor;
+  background: var(--ok);
 }
 
-.hd-live-stale {
-  color: var(--stale);
+.hd-live-stale i {
+  background: var(--proc);
 }
 
 .hd-new-rows {
@@ -378,27 +372,27 @@
 
 .hd-toasts {
   position: fixed;
-  inset-block-end: var(--space-5);
-  inset-inline: var(--space-4);
-  z-index: 60;
+  inset-block-end: var(--sp-8);
+  inset-inline: var(--sp-7);
+  z-index: var(--z-toast);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--sp-3);
   pointer-events: none;
 }
 
 .hd-toast {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--sp-5);
   max-inline-size: 100%;
-  padding-block: 6px;
-  padding-inline: 14px 6px;
-  border-radius: var(--radius-panel);
+  padding-block: var(--sp-2);
+  padding-inline: var(--sp-6) var(--sp-2);
+  border-radius: var(--radius-float);
   background: var(--text);
-  color: var(--surface);
-  box-shadow: var(--shadow);
+  color: var(--ground);
+  box-shadow: var(--shadow-float);
   pointer-events: auto;
 }
 
@@ -410,7 +404,7 @@
 .hd-progress {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--sp-2);
 }
 
 .hd-progress-text {
@@ -420,26 +414,26 @@
 
 .hd-bar {
   display: block;
-  block-size: 6px;
+  block-size: 4px;
   max-inline-size: 520px;
-  border-radius: 3px;
-  background: var(--sunken);
+  border-radius: var(--radius-bar);
+  background: var(--raised);
   overflow: hidden;
 }
 
 .hd-bar i {
   display: block;
   block-size: 100%;
-  border-radius: 3px;
-  background: var(--accent);
+  border-radius: var(--radius-bar);
+  background: var(--proc);
 }
 
 .hd-banner {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
-  padding: var(--space-2) var(--space-3);
+  gap: var(--sp-4);
+  padding: var(--sp-3) var(--sp-5);
   border-radius: var(--radius-control);
   background: var(--accent-soft);
 }
@@ -447,8 +441,8 @@
 .hd-empty {
   max-inline-size: 46ch;
   margin-inline: auto;
-  padding-block: var(--space-6);
-  font: var(--text-prose);
+  padding-block: var(--sp-8);
+  font: var(--text-body);
   color: var(--muted);
   text-align: center;
 }
@@ -457,12 +451,12 @@
   display: flex;
   flex-direction: column;
   gap: 18px;
-  inline-size: var(--inspector-width);
+  inline-size: var(--panel-side-width);
   max-inline-size: 100%;
-  padding: 18px var(--space-5) var(--space-6);
+  padding: 18px var(--sp-8) var(--sp-8);
   overflow: auto;
-  background: var(--surface);
-  border-inline-start: 1px solid var(--hairline);
+  background: var(--panel);
+  border-inline-start: 1px solid var(--line);
 }
 
 .hd-inspector-close {
@@ -483,22 +477,22 @@
     position: fixed;
     inset-block: 0;
     inset-inline-end: 0;
-    z-index: 30;
-    inline-size: min(var(--inspector-width), 100%);
-    box-shadow: var(--shadow);
+    z-index: var(--z-panel);
+    inline-size: min(var(--panel-side-width), 100%);
+    box-shadow: var(--shadow-float);
   }
 }
 
 .hd-object-header {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--sp-3);
 }
 
 .hd-object-id {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1);
+  gap: var(--sp-1);
   min-inline-size: 0;
   overflow-wrap: anywhere;
 }
@@ -506,14 +500,14 @@
 .hd-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2);
+  gap: var(--sp-3);
 }
 
 /* The rows a command left unchanged, each with the server's reason, listed beside the action that ran. */
 .hd-outcomes {
   display: grid;
   flex-basis: 100%;
-  gap: var(--space-1);
+  gap: var(--sp-1);
   overflow-wrap: anywhere;
 }
 
@@ -524,25 +518,25 @@
 .hd-figure {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--sp-0);
   margin: 0;
 }
 
 .hd-figure-value {
-  font: var(--text-figure);
+  font: var(--text-stat);
   font-variant-numeric: tabular-nums;
 }
 
 .hd-kv {
   display: grid;
   grid-template-columns: 112px 1fr;
-  gap: 6px var(--space-3);
+  gap: var(--sp-2) var(--sp-5);
   margin: 0;
 }
 
 .hd-kv dt {
   font: var(--text-label);
-  color: var(--muted);
+  color: var(--faint);
 }
 
 .hd-kv dd {
@@ -554,21 +548,21 @@
 .hd-payload {
   margin: 0;
   border-radius: var(--radius-control);
-  background: var(--sunken);
+  background: var(--deep);
 }
 
 .hd-payload-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-2);
-  padding-block-start: var(--space-1);
-  padding-inline: var(--space-3) var(--space-1);
+  gap: var(--sp-3);
+  padding-block-start: var(--sp-1);
+  padding-inline: var(--sp-5) var(--sp-1);
 }
 
 .hd-payload pre {
   margin: 0;
-  padding: var(--space-2) var(--space-3) var(--space-3);
+  padding: var(--sp-3) var(--sp-5) var(--sp-5);
   max-block-size: 480px;
   overflow: auto;
   white-space: pre;
@@ -576,7 +570,7 @@
 
 .hd-payload-note {
   margin: 0;
-  font: var(--text-prose);
+  font: var(--text-body);
   color: var(--muted);
 }
 
@@ -591,15 +585,15 @@
   block-size: 52px;
   padding-inline: 18px;
   border: 0;
-  border-block-end: 1px solid var(--hairline);
+  border-block-end: 1px solid var(--line);
   background: transparent;
-  font: var(--text-prose);
+  font: var(--text-body);
   outline: none;
 }
 
 .hd-palette-list {
   margin: 0;
-  padding: 6px;
+  padding: var(--sp-2);
   overflow: auto;
   outline: none;
 }
@@ -608,8 +602,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-3);
-  padding: var(--space-2) var(--space-3);
+  gap: var(--sp-5);
+  padding: var(--sp-3) var(--sp-5);
   border-radius: var(--radius-control);
   cursor: pointer;
   outline: none;
@@ -622,16 +616,16 @@
 .hd-palette-meta {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--sp-3);
 }
 
 .hd-operation {
   display: grid;
   grid-template-columns: 1fr auto;
-  gap: var(--space-2) var(--space-6);
+  gap: var(--sp-3) var(--sp-8);
   align-items: center;
-  padding-block: 14px;
-  border-block-end: 1px solid var(--hairline);
+  padding-block: var(--sp-6);
+  border-block-end: 1px solid var(--line);
 }
 
 .hd-operation-problems {
@@ -646,8 +640,8 @@
 
 .hd-operation-problems li {
   display: flex;
-  gap: var(--space-3);
-  padding-block: var(--space-1);
+  gap: var(--sp-5);
+  padding-block: var(--sp-1);
 }
 
 @media (max-width: 767px) {
@@ -660,6 +654,7 @@
     inline-size: 100%;
   }
 }
+
 .hd-timeline {
   display: flex;
   flex-direction: column;
@@ -670,8 +665,8 @@
 }
 
 .hd-timeline [role='row'] {
-  padding: var(--space-2);
-  border-block-end: 1px solid var(--hairline);
+  padding: var(--sp-3);
+  border-block-end: 1px solid var(--line);
   cursor: default;
 }
 
@@ -687,12 +682,13 @@
 .hd-timeline-text {
   display: block;
 }
+
 .hd-strip-track {
   display: grid;
   grid-template-columns: minmax(6rem, 12rem) 1fr;
   align-items: center;
-  gap: var(--space-2);
-  border-block-end: 1px solid var(--hairline);
+  gap: var(--sp-3);
+  border-block-end: 1px solid var(--line);
 }
 
 .hd-strip svg {
@@ -705,7 +701,6 @@
 }
 
 .hd-strip g {
-  --tick: var(--muted);
   cursor: default;
 }
 
@@ -714,8 +709,8 @@
 }
 
 .hd-strip rect {
-  fill: var(--tick);
-  stroke: var(--tick);
+  fill: var(--role);
+  stroke: var(--role);
 }
 
 .hd-strip text {
@@ -731,19 +726,7 @@
 }
 
 .hd-strip .hd-strip-future rect {
-  fill: var(--surface);
-}
-
-.hd-strip .hd-tone-healthy {
-  --tick: var(--ok);
-}
-
-.hd-strip .hd-tone-active {
-  --tick: var(--accent);
-}
-
-.hd-strip .hd-tone-needs {
-  --tick: var(--alarm);
+  fill: var(--panel);
 }
 
 .hd-strip-axis {

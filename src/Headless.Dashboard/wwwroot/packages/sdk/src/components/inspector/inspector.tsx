@@ -1,6 +1,8 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { Button } from '../button.tsx'
-import { Mono, StatusMark, type StatusTone } from '../marks.tsx'
+import type { DashboardStateRole } from '../../define-module.ts'
+import { below } from '../breakpoints.ts'
+import { Mono, StatusMark } from '../marks.tsx'
 
 export interface InspectorProps {
   /** Names the panel, such as `Run billing.charge`. */
@@ -11,7 +13,7 @@ export interface InspectorProps {
 }
 
 /** The widths at which a selection's inspector floats over the list as a drawer, as `components.css` lays it out. */
-const floatingQuery = '(max-width: 1279px)'
+const floatingQuery = below.wide
 
 function isFloating() {
   return typeof window.matchMedia === 'function' && window.matchMedia(floatingQuery).matches
@@ -210,7 +212,7 @@ export interface ObjectHeaderProps {
   title: string
   /** The object's id: shown mono, with copy. */
   id: string
-  status?: { tone: StatusTone; label: string }
+  status?: { tone: DashboardStateRole; label: string }
   chips?: ReactNode
   /** The actions the server allows now. */
   actions?: ReactNode

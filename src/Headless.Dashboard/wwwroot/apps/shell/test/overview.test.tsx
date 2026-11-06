@@ -58,7 +58,7 @@ describe('Overview', () => {
             id: 'reports.nightly',
             label: 'reports.nightly',
             ticks: [
-              { id: 'r1', at: new Date(now - 20 * 60_000).toISOString(), label: 'failed', tone: 'needs', target: { module: 'jobs', kind: 'run', id: 'r1' } },
+              { id: 'r1', at: new Date(now - 20 * 60_000).toISOString(), label: 'failed', tone: 'fail', target: { module: 'jobs', kind: 'run', id: 'r1' } },
               { id: 'fire:c1:1', at: new Date(now + 20 * 60_000).toISOString(), label: 'next fire', target: null },
             ],
           },

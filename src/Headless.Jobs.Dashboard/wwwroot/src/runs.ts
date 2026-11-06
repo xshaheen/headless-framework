@@ -1,6 +1,6 @@
 import { useDashboard, useModule } from '@headless/dashboard-sdk'
 import { createCommandsApi, type CommandDefinition } from '@headless/dashboard-sdk/commands'
-import type { StatusTone } from '@headless/dashboard-sdk/components'
+import type { DashboardStateRole } from '@headless/dashboard-sdk'
 import type { CappedCount, DashboardApi, DashboardListPage } from '@headless/dashboard-sdk/data'
 import { useQuery } from '@headless/dashboard-sdk/query'
 import { useNavigate } from '@headless/dashboard-sdk/router'
@@ -133,15 +133,16 @@ export function runsNoun(filter: Pick<RunFilter, 'status' | 'function'>) {
   return `${status}runs${filter.function ? ` of ${filter.function}` : ''}`
 }
 
-const tones: Readonly<Record<RunStatus, StatusTone>> = {
-  Idle: 'waiting',
-  Queued: 'active',
-  InProgress: 'active',
-  Succeeded: 'healthy',
-  DueDone: 'healthy',
-  Failed: 'needs',
-  Cancelled: 'stopped',
-  Skipped: 'stopped',
+/** The state role each run status paints in. Due done shares ok with Succeeded; its label says it ran late. */
+const runRoles: Readonly<Record<RunStatus, DashboardStateRole>> = {
+  Idle: 'sched',
+  Queued: 'enq',
+  InProgress: 'proc',
+  Succeeded: 'ok',
+  DueDone: 'ok',
+  Failed: 'fail',
+  Cancelled: 'off',
+  Skipped: 'off',
 }
 
 const labels: Partial<Record<RunStatus, string>> = { InProgress: 'In progress', DueDone: 'Succeeded late' }
@@ -163,10 +164,10 @@ export function kindLabel(kind: RunKind) {
 /**
  * The mark a run shows. A command the server finished reads `Requeuing…`, `Cancelling…`, or `Deleting…` until the
  * stream moves the row's version; a stored cancel request reads `Cancelling…` until the job stops. Either keeps the
- * stored status's tone, because the server has not confirmed a new one.
+ * stored status's role, because the server has not confirmed a new one.
  */
-export function runStatusMark(run: Pick<Run, 'status' | 'cancelRequested'>, pending?: string): { tone: StatusTone; label: string } {
-  const tone = tones[run.status] ?? 'waiting'
+export function runStatusMark(run: Pick<Run, 'status' | 'cancelRequested'>, pending?: string): { tone: DashboardStateRole; label: string } {
+  const tone = runRoles[run.status] ?? 'off'
 
   if (pending) {
     return { tone, label: pending }
@@ -179,13 +180,17 @@ export function runStatusMark(run: Pick<Run, 'status' | 'cancelRequested'>, pend
   return { tone, label: statusLabel(run.status) }
 }
 
-export const attemptTones: Readonly<Record<AttemptOutcome, StatusTone>> = {
-  Succeeded: 'healthy',
-  Failed: 'needs',
-  Cancelled: 'stopped',
-  Lost: 'waiting',
-  Skipped: 'stopped',
-  Released: 'waiting',
+/**
+ * The state role each attempt outcome paints in. A lost attempt died with its node, so it reads as failed; a released
+ * one went back to the queue, so it reads as queued.
+ */
+export const attemptTones: Readonly<Record<AttemptOutcome, DashboardStateRole>> = {
+  Succeeded: 'ok',
+  Failed: 'fail',
+  Cancelled: 'off',
+  Lost: 'fail',
+  Skipped: 'off',
+  Released: 'enq',
 }
 
 export const runsTopic = 'jobs.run'

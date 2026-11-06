@@ -117,15 +117,19 @@ internal static class JobsViews
             _ => status.ToString().ToLowerInvariant(),
         };
 
-    /// <summary>The status tone the Runs view gives a run's status, for a schedule strip tick.</summary>
+    /// <summary>
+    /// The state role the Runs view paints a run's status in, for a schedule strip tick: <c>sched</c>, <c>enq</c>,
+    /// <c>proc</c>, <c>ok</c>, <c>fail</c>, or <c>off</c>.
+    /// </summary>
     public static string StatusTone(JobStatus status) =>
         status switch
         {
-            JobStatus.Idle => "waiting",
-            JobStatus.Queued or JobStatus.InProgress => "active",
-            JobStatus.Succeeded or JobStatus.DueDone => "healthy",
-            JobStatus.Failed => "needs",
-            _ => "stopped",
+            JobStatus.Idle => "sched",
+            JobStatus.Queued => "enq",
+            JobStatus.InProgress => "proc",
+            JobStatus.Succeeded or JobStatus.DueDone => "ok",
+            JobStatus.Failed => "fail",
+            _ => "off",
         };
 
     /// <summary>The object kind a change of the given row kind targets.</summary>

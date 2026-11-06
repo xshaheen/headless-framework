@@ -1,6 +1,7 @@
 import { useState, type KeyboardEvent } from 'react'
 import { useFormat } from '../../locale/locale.tsx'
-import { StatusMark, type StatusTone } from '../marks.tsx'
+import type { DashboardStateRole } from '../../define-module.ts'
+import { StatusMark } from '../marks.tsx'
 
 /** One stored event that changed an object: what happened, when, and who did it where that is recorded. */
 export interface TimelineEvent {
@@ -13,8 +14,8 @@ export interface TimelineEvent {
   actor?: string
   /** The event's detail, such as an exception's first line or a note. */
   text?: string
-  /** The status the event left the object in; the label shows as a status mark in that tone. */
-  tone?: StatusTone
+  /** The status the event left the object in; the label shows as a status mark in that state role. */
+  tone?: DashboardStateRole
 }
 
 export interface TimelineProps {

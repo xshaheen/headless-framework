@@ -98,7 +98,7 @@ function ItemInspector({ section, item, onClose }: { section: ModuleSection<Atte
     <DockedInspector label={`Needs you: ${item.title}`} onClose={onClose}>
       <header className="hd-object-header">
         <h2 className="hd-title">{item.title}</h2>
-        <StatusMark tone="needs" label={item.severity === 'critical' ? 'Needs you' : 'Warning'} />
+        <StatusMark tone={item.severity === 'critical' ? 'fail' : 'proc'} label={item.severity === 'critical' ? 'Needs you' : 'Warning'} />
       </header>
       <InspectorFields>
         <InspectorField label="Module">{section.displayName}</InspectorField>
@@ -150,7 +150,7 @@ function ItemInspector({ section, item, onClose }: { section: ModuleSection<Atte
               ))}
               {related.data.stale.map((module) => (
                 <p key={module.id} className="hd-stale-note">
-                  <StatusMark tone="waiting" label="Stale" /> {module.displayName} did not answer in time.
+                  <StatusMark tone="proc" label="Stale" /> {module.displayName} did not answer in time.
                 </p>
               ))}
             </>
@@ -260,7 +260,7 @@ export function NeedsYou() {
             <h2 id={`needs-${section.id}`} className="hd-title">
               {section.displayName}
             </h2>
-            {section.stale ? <StatusMark tone="waiting" label="Stale" /> : null}
+            {section.stale ? <StatusMark tone="proc" label="Stale" /> : null}
           </div>
           {section.stale ? (
             <p className="hd-stale-note">{section.displayName} did not answer in time. Its items may be missing; the rest are current.</p>

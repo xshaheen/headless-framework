@@ -32,11 +32,11 @@ describe('jobs runs list', () => {
     })
 
     const expected: [string, string, string][] = [
-      ['a.failed', 'Failed', 'hd-tone-needs'],
-      ['a.running', 'In progress', 'hd-tone-active'],
-      ['a.late', 'Succeeded late', 'hd-tone-healthy'],
-      ['a.idle', 'Idle', 'hd-tone-waiting'],
-      ['a.skipped', 'Skipped', 'hd-tone-stopped'],
+      ['a.failed', 'Failed', 'hd-tone-fail'],
+      ['a.running', 'In progress', 'hd-tone-proc'],
+      ['a.late', 'Succeeded late', 'hd-tone-ok'],
+      ['a.idle', 'Idle', 'hd-tone-sched'],
+      ['a.skipped', 'Skipped', 'hd-tone-off'],
     ]
 
     for (const [name, label, tone] of expected) {
@@ -220,7 +220,7 @@ describe('jobs runs list', () => {
     const view = open({ runs: [running] })
 
     const row = await screen.findByRole('row', { name: /a\.running/ })
-    expect(within(row).getByText('Cancelling…').className).toContain('hd-tone-active')
+    expect(within(row).getByText('Cancelling…').className).toContain('hd-tone-proc')
 
     await user().click(row)
     const inspector = screen.getByRole('complementary', { name: `Run ${running.id}` })

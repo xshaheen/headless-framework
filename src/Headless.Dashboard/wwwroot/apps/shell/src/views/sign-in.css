@@ -3,7 +3,7 @@
   place-items: center;
   min-block-size: 100vh;
   min-block-size: 100dvh;
-  padding: var(--space-6) var(--space-4);
+  padding: var(--sp-8) var(--sp-7);
   background: var(--ground);
 }
 
@@ -12,10 +12,11 @@
   flex-direction: column;
   gap: 18px;
   inline-size: min(400px, 100%);
-  padding: 28px;
-  background: var(--surface);
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-panel);
+  padding: var(--sp-9);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
 }
 
 .hd-sign-in-panel p {
@@ -23,16 +24,16 @@
 }
 
 .hd-sign-in-state {
-  padding: var(--space-2) 10px;
+  padding: var(--sp-3) var(--sp-4);
   font: var(--text-small);
-  background: var(--sunken);
+  background: var(--deep);
   border-radius: var(--radius-control);
 }
 
 .hd-sign-in-form {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--sp-5);
 }
 
 .hd-sign-in-action {

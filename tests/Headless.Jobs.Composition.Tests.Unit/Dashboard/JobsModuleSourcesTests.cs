@@ -162,7 +162,7 @@ public sealed class JobsModuleSourcesTests : TestBase
             .Ticks.Select(tick => (tick.At, tick.Label, tick.Tone))
             .Should()
             .Equal(
-                (new DateTimeOffset(now.AddMinutes(-30), TimeSpan.Zero), "failed", "needs"),
+                (new DateTimeOffset(now.AddMinutes(-30), TimeSpan.Zero), "failed", "fail"),
                 (new DateTimeOffset(now.AddHours(1), TimeSpan.Zero), "next fire", (string?)null)
             );
         track

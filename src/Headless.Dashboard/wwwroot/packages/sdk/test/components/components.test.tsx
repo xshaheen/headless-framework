@@ -131,10 +131,15 @@ describe('toasts and buttons', () => {
     expect(onPress).not.toHaveBeenCalled()
   })
 
-  it('labels a status as well as marking it', () => {
-    render(<StatusMark tone="needs" label="Failed" />)
+  it.each(['sched', 'enq', 'proc', 'ok', 'fail', 'off'] as const)('marks the %s role with its class and keeps the label outside the dot', (role) => {
+    render(<StatusMark tone={role} label="State" />)
 
-    expect(screen.getByText('Failed')).toBeTruthy()
+    const status = screen.getByText('State')
+    const mark = status.querySelector('.hd-mark')!
+
+    expect(status.classList).toContain(`hd-tone-${role}`)
+    expect(mark.getAttribute('aria-hidden')).toBe('true')
+    expect(mark.textContent).toBe('')
   })
 })
 

@@ -23,7 +23,7 @@ export {
   type ObjectHeaderProps,
 } from './inspector/inspector.tsx'
 export { Announcer, LiveIndicator, NewRowsNotice, ProgressBar, ToastRegion } from './live.tsx'
-export { Chip, Kbd, Mono, NodeChip, StatusMark, TenantChip, type StatusTone } from './marks.tsx'
+export { Chip, Kbd, Mono, NodeChip, StatusMark, TenantChip } from './marks.tsx'
 export {
   shellShortcuts,
   useModuleShortcuts,

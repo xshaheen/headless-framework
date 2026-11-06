@@ -1,6 +1,7 @@
 import { useDashboard, useModule } from '@headless/dashboard-sdk'
 import { CommandAction, useAllowedActions, type RowResult } from '@headless/dashboard-sdk/commands'
-import { Button, InspectorField, InspectorFields, Mono, Timeline, type StatusTone } from '@headless/dashboard-sdk/components'
+import type { DashboardStateRole } from '@headless/dashboard-sdk'
+import { Button, InspectorField, InspectorFields, Mono, Timeline } from '@headless/dashboard-sdk/components'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useStreamEvent, useStreamStatus } from '@headless/dashboard-sdk/stream'
 import { useState } from 'react'
@@ -64,10 +65,10 @@ export function RunFields({ run, statusLabel }: { run: Run; statusLabel: string 
   )
 }
 
-const eventTones: Readonly<Record<string, StatusTone>> = {
-  Started: 'active',
-  Succeeded: 'healthy',
-  Failed: 'needs',
+const eventTones: Readonly<Record<string, DashboardStateRole>> = {
+  Started: 'proc',
+  Succeeded: 'ok',
+  Failed: 'fail',
 }
 
 /**

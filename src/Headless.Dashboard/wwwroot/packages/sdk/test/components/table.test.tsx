@@ -5,6 +5,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { TextInputField } from '../../src/components/form.tsx'
 import { useViewKeys } from '../../src/components/keymap.tsx'
 import { DataTable, type DataTableProps } from '../../src/components/table/data-table.tsx'
+import { rowHeights } from '../../src/components/table/density.tsx'
 import { DashboardProvider } from '../../src/context.tsx'
 import { createDashboardClient } from '../../src/data/client.tsx'
 import { useDashboardKeysetList } from '../../src/data/keyset.ts'
@@ -264,9 +265,11 @@ function scrollTo(top: number) {
   })
 }
 
+const rowHeight = rowHeights.comfortable
+
 describe('virtualized keyset table', () => {
   // jsdom lays nothing out. As React Aria's own tests do, every element reports a fixed client size, so the
-  // virtualizer sees a 360 px viewport: 9 rows of 36 px under a 32 px header. Scroll offsets are kept per element.
+  // virtualizer sees a 360 px viewport: rows of the comfortable height under a 32 px header. Scroll offsets are kept per element.
   const offsets = new WeakMap<Element, number>()
   const observers = new Set<{ callback: IntersectionObserverCallback }>()
 
@@ -373,9 +376,9 @@ describe('virtualized keyset table', () => {
     render(withDashboard(<KeysetRuns />))
     await screen.findByRole('row', { name: /^r1\b/ })
 
-    scrollTo(100 * 36 - 360)
+    scrollTo(100 * rowHeight - 360)
     sentinelInView()
-    scrollTo(100 * 36 - 300)
+    scrollTo(100 * rowHeight - 300)
     sentinelInView()
     sentinelInView()
 
@@ -384,7 +387,7 @@ describe('virtualized keyset table', () => {
 
     await screen.findByRole('row', { name: /^r101\b/ })
     sentinelInView()
-    scrollTo(200 * 36 - 360)
+    scrollTo(200 * rowHeight - 360)
     expect(fetchPage).toHaveBeenCalledTimes(2)
   })
 
@@ -430,7 +433,7 @@ describe('virtualized keyset table', () => {
     render(withDashboard(<RetriedRuns />))
     await screen.findByRole('row', { name: /^r1\b/ })
 
-    scrollTo(100 * 36 - 360)
+    scrollTo(100 * rowHeight - 360)
     sentinelInView()
     await user.click(await screen.findByRole('button', { name: 'Retry' }))
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull())
@@ -448,7 +451,7 @@ describe('virtualized keyset table', () => {
     const user = userEvent.setup()
     const view = render(withDashboard(<SelectableRuns rows={runs(5_000, 4)} />))
 
-    scrollTo(1_000 * 36)
+    scrollTo(1_000 * rowHeight)
     const before = renderedIds()
     expect(before).toContain('r1004')
 
@@ -458,7 +461,7 @@ describe('virtualized keyset table', () => {
       fireEvent.scroll(grid())
     })
 
-    expect(grid().scrollTop).toBe(1_003 * 36)
+    expect(grid().scrollTop).toBe(1_003 * rowHeight)
     expect(renderedIds()).toEqual(before)
     expect(screen.queryByRole('row', { name: /^r1\b/ })).toBeNull()
 
