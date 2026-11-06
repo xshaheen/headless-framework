@@ -154,7 +154,7 @@ public static class SandboxScenarios
         return [.. queued.Select(run => run.Id), running.Id, succeeded.Id, .. failed.Select(run => run.Id)];
     }
 
-    private static IReadOnlyList<string> _AddLongDiagnosticRunList(DiagnosticsStore diagnostics, int count)
+    private static List<string> _AddLongDiagnosticRunList(DiagnosticsStore diagnostics, int count)
     {
         var ids = new List<string>(count);
 
