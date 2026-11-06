@@ -108,6 +108,26 @@ internal static class JobsViews
         return run is null ? null : Change(moduleId, run, affectsAttention);
     }
 
+    /// <summary>A run's status in words, as the Runs view writes it in lower case: <c>in progress</c>, <c>failed</c>.</summary>
+    public static string StatusWords(JobStatus status) =>
+        status switch
+        {
+            JobStatus.InProgress => "in progress",
+            JobStatus.DueDone => "succeeded late",
+            _ => status.ToString().ToLowerInvariant(),
+        };
+
+    /// <summary>The status tone the Runs view gives a run's status, for a schedule strip tick.</summary>
+    public static string StatusTone(JobStatus status) =>
+        status switch
+        {
+            JobStatus.Idle => "waiting",
+            JobStatus.Queued or JobStatus.InProgress => "active",
+            JobStatus.Succeeded or JobStatus.DueDone => "healthy",
+            JobStatus.Failed => "needs",
+            _ => "stopped",
+        };
+
     /// <summary>The object kind a change of the given row kind targets.</summary>
     public static string KindOf(JobChangeKind kind) => kind == JobChangeKind.CronJob ? CronJobKind : RunKind;
 

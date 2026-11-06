@@ -7,7 +7,8 @@ namespace Headless.Jobs;
 
 /// <summary>
 /// The Jobs dashboard module: runs, cron jobs, functions, and nodes of the host's Jobs store, with Needs you,
-/// Overview figures, id lookup, related runs, payloads, live changes from every node, commands, and Operations.
+/// Overview figures and strip tracks, id lookup, related runs, payloads, live changes from every node, commands, and
+/// Operations.
 /// </summary>
 /// <remarks>
 /// Its object kinds are <c>run</c> (a time job or a cron occurrence), <c>cron-job</c>, <c>function</c>, and
@@ -82,6 +83,14 @@ internal sealed class JobsModule
     )
     {
         return _sources.GetOverviewAsync(cancellationToken);
+    }
+
+    public Task<IReadOnlyList<DashboardScheduleTrack>> GetScheduleAsync(
+        DashboardOverviewRequest request,
+        CancellationToken cancellationToken
+    )
+    {
+        return _sources.GetScheduleAsync(cancellationToken);
     }
 
     public Task<IReadOnlyList<DashboardObject>> ResolveAsync(

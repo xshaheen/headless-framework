@@ -1,5 +1,6 @@
 import { useDashboard } from '@headless/dashboard-sdk'
 import type { CommandDefinition } from '@headless/dashboard-sdk/commands'
+import type { ScheduleTick, ScheduleTrack } from '@headless/dashboard-sdk/components'
 import { useDashboardApi } from '@headless/dashboard-sdk/data'
 import { useQuery, useQueryClient } from '@headless/dashboard-sdk/query'
 import { useStreamEvent } from '@headless/dashboard-sdk/stream'
@@ -39,7 +40,18 @@ export interface Figure {
   label: string
   value: number
   unit?: string | null
-  comparison?: { label: string; value: number; higherIsBetter?: boolean } | null
+  /** `value` is `null` when the earlier period has nothing to compare; `label` then says why. */
+  comparison?: { label: string; value: number | null; higherIsBetter?: boolean } | null
+}
+
+/** One run or fire on a module's strip track, and the object it opens. */
+export interface OverviewTick extends ScheduleTick {
+  target?: ObjectRef | null
+}
+
+/** A module's Overview: its figures as `items`, and its schedule strip tracks. */
+export interface OverviewSection extends ModuleSection<Figure> {
+  tracks?: (Omit<ScheduleTrack, 'ticks'> & { ticks: OverviewTick[] })[]
 }
 
 export interface ResolvedObject {
@@ -98,7 +110,7 @@ export function useOverview() {
   return useQuery({
     queryKey: overviewKey,
     queryFn: async () =>
-      (await api.request<{ modules: ModuleSection<Figure>[] }>({ method: 'GET', path: 'overview' })).modules,
+      (await api.request<{ modules: OverviewSection[] }>({ method: 'GET', path: 'overview' })).modules,
   })
 }
 

@@ -13,6 +13,15 @@ internal sealed class JobsSources(string moduleId, IJobsDashboardBackend backend
     /// <summary>The most runs a related group lists.</summary>
     internal const int RelatedPageSize = 20;
 
+    /// <summary>The most past runs one strip track holds: a cron firing every 30 seconds fills it in the hour.</summary>
+    internal const int StripRunsPerTrack = 200;
+
+    /// <summary>The most next fires one cron job adds to its track.</summary>
+    internal const int StripFiresPerCronJob = 50;
+
+    /// <summary>How far the strip reaches each side of now: its default window.</summary>
+    private static readonly TimeSpan _StripReach = TimeSpan.FromHours(1);
+
     private readonly string _moduleId = Argument.IsNotNullOrWhiteSpace(moduleId);
     private readonly IJobsDashboardBackend _backend = Argument.IsNotNull(backend);
     private readonly TimeProvider _timeProvider = Argument.IsNotNull(timeProvider);
@@ -104,7 +113,8 @@ internal sealed class JobsSources(string moduleId, IJobsDashboardBackend backend
     /// <summary>
     /// The share of runs that succeeded, the failed runs, and the runs that started late, each over the last 24 hours
     /// and compared with the 24 hours before. The share is left out when no run finished in the last 24 hours, so an
-    /// idle system does not read as 0 % succeeded.
+    /// idle system does not read as 0 % succeeded, and compares with nothing, saying so, when no run finished in the 24
+    /// hours before.
     /// </summary>
     public async Task<IReadOnlyList<DashboardFigure>> GetOverviewAsync(CancellationToken cancellationToken)
     {
@@ -131,7 +141,7 @@ internal sealed class JobsSources(string moduleId, IJobsDashboardBackend backend
                             Value = Math.Round(share * 100, 1, MidpointRounding.AwayFromZero),
                             HigherIsBetter = true,
                         }
-                        : null,
+                        : new DashboardFigureComparison { Label = "no runs finished in the " + comparison },
                 }
             );
         }
@@ -156,6 +166,83 @@ internal sealed class JobsSources(string moduleId, IJobsDashboardBackend backend
         );
 
         return result;
+    }
+
+    /// <summary>
+    /// One strip track per function that has cron jobs: its cron occurrences due in the last hour, filled in their
+    /// status tone, and the next fires of its active cron jobs in the next hour, hollow.
+    /// </summary>
+    public async Task<IReadOnlyList<DashboardScheduleTrack>> GetScheduleAsync(CancellationToken cancellationToken)
+    {
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var cronJobs = await _backend.GetCronJobsAsync(cancellationToken).ConfigureAwait(false);
+        var tracks = new List<DashboardScheduleTrack>();
+
+        foreach (
+            var function in cronJobs
+                .GroupBy(static c => c.Function, StringComparer.Ordinal)
+                .OrderBy(static g => g.Key, StringComparer.Ordinal)
+        )
+        {
+            var page = await _backend
+                .ListRunsAsync(
+                    new JobRunQuery
+                    {
+                        Kind = JobRunKind.CronJobOccurrence,
+                        Functions = [function.Key],
+                        ExecutionFrom = now - _StripReach,
+                        ExecutionBefore = now,
+                    },
+                    after: null,
+                    StripRunsPerTrack,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+            var ticks = new List<DashboardScheduleTick>(page.Runs.Count);
+
+            foreach (var run in page.Runs)
+            {
+                ticks.Add(
+                    new DashboardScheduleTick
+                    {
+                        Id = run.Id.ToString(),
+                        At = new DateTimeOffset(run.ExecutionTime ?? run.CreatedAt.UtcDateTime, TimeSpan.Zero),
+                        Label = JobsViews.StatusWords(run.Status),
+                        Tone = JobsViews.StatusTone(run.Status),
+                        Target = JobsViews.Ref(_moduleId, JobsViews.RunKind, run.Id.ToString()),
+                    }
+                );
+            }
+
+            foreach (var cronJob in function.Where(static c => !c.IsPaused))
+            {
+                var preview = _backend.Preview(cronJob.Expression, cronJob.TimeZoneId, now, StripFiresPerCronJob);
+
+                foreach (var fire in preview.NextFiresUtc.Where(fire => fire <= now + _StripReach))
+                {
+                    ticks.Add(
+                        new DashboardScheduleTick
+                        {
+                            Id = $"fire:{cronJob.Id}:{fire.Ticks.ToString(CultureInfo.InvariantCulture)}",
+                            At = new DateTimeOffset(fire, TimeSpan.Zero),
+                            Label = "next fire",
+                            Target = JobsViews.Ref(_moduleId, JobsViews.CronJobKind, cronJob.Id.ToString()),
+                        }
+                    );
+                }
+            }
+
+            tracks.Add(
+                new DashboardScheduleTrack
+                {
+                    Id = function.Key,
+                    Label = function.Key,
+                    Ticks = ticks,
+                }
+            );
+        }
+
+        return tracks;
     }
 
     /// <summary>Returns the run or cron job whose id is exactly <paramref name="query"/>, or the function so named.</summary>

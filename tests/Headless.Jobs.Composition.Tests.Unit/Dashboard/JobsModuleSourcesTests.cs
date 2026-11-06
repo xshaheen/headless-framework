@@ -113,6 +113,88 @@ public sealed class JobsModuleSourcesTests : TestBase
     }
 
     [Fact]
+    public async Task should_say_the_succeeded_share_has_nothing_to_compare_when_no_run_finished_the_day_before()
+    {
+        // given: one run failed in the last day, and none finished the day before
+        await using var node = JobsModuleNode.Create(_time);
+        await node.Store.AddTimeJobsAsync([JobsModuleNode.FailedJob(_time.GetUtcNow())], AbortToken);
+
+        // when
+        var figures = await node.Module.GetOverviewAsync(new DashboardOverviewRequest { User = _User }, AbortToken);
+
+        // then
+        var share = figures.Single(figure => figure.Id == "jobs.overview.succeeded-share");
+        share.Value.Should().Be(0);
+        share.Comparison.Should().NotBeNull("every figure carries its comparison");
+        share.Comparison!.Value.Should().BeNull();
+        share.Comparison.Label.Should().Be("no runs finished in the previous 24 h");
+    }
+
+    [Fact]
+    public async Task should_draw_one_strip_track_per_function_with_cron_jobs_holding_its_last_hour_and_next_fires()
+    {
+        // given: an hourly cron job, one of its occurrences failed 30 minutes ago, and one ran two hours ago
+        await using var node = JobsModuleNode.Create(_time);
+        var now = _time.GetUtcNow().UtcDateTime;
+        var cronJob = JobsModuleNode.CronJob();
+        await node.Store.InsertCronJobsAsync(
+            [cronJob, JobsModuleNode.CronJob(JobsModuleNode.Report, paused: true)],
+            AbortToken
+        );
+        var recent = _Occurrence(cronJob, now.AddMinutes(-30), JobStatus.Failed);
+        await node.Store.InsertCronJobOccurrencesAsync(
+            [recent, _Occurrence(cronJob, now.AddHours(-2), JobStatus.Succeeded)],
+            AbortToken
+        );
+
+        // when
+        var tracks = await ((IDashboardOverviewSource)node.Module).GetScheduleAsync(
+            new DashboardOverviewRequest { User = _User },
+            AbortToken
+        );
+
+        // then: the past hour's occurrence in its tone, and the active cron job's one fire in the next hour
+        var track = tracks.Should().ContainSingle().Subject;
+        track.Label.Should().Be(JobsModuleNode.Report);
+        track
+            .Ticks.Select(tick => (tick.At, tick.Label, tick.Tone))
+            .Should()
+            .Equal(
+                (new DateTimeOffset(now.AddMinutes(-30), TimeSpan.Zero), "failed", "needs"),
+                (new DateTimeOffset(now.AddHours(1), TimeSpan.Zero), "next fire", (string?)null)
+            );
+        track
+            .Ticks[0]
+            .Target.Should()
+            .Be(
+                new ObjectRef
+                {
+                    Module = "jobs",
+                    Kind = "run",
+                    Id = recent.Id.ToString(),
+                }
+            );
+    }
+
+    private static CronJobOccurrenceEntity<CronJobEntity> _Occurrence(
+        CronJobEntity cronJob,
+        DateTime executionTime,
+        JobStatus status
+    ) =>
+        new()
+        {
+            Id = Guid.NewGuid(),
+            CronJobId = cronJob.Id,
+            Function = cronJob.Function,
+            ExecutionTime = executionTime,
+            Status = status,
+            ExecutedAt = new DateTimeOffset(executionTime.AddSeconds(3), TimeSpan.Zero),
+            ExceptionMessage = status is JobStatus.Failed ? "boom" : null,
+            CreatedAt = new DateTimeOffset(executionTime.AddMinutes(-1), TimeSpan.Zero),
+            UpdatedAt = new DateTimeOffset(executionTime.AddSeconds(3), TimeSpan.Zero),
+        };
+
+    [Fact]
     public async Task should_leave_out_the_succeeded_share_when_no_run_finished_in_the_last_day()
     {
         // given: one run succeeded the day before, and none finished since

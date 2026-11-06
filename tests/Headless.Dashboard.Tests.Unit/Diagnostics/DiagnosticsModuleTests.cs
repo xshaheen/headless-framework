@@ -470,7 +470,7 @@ public sealed class DiagnosticsModuleTests : TestBase
         figures
             .Select(static figure => (figure.Label, figure.Value, figure.Comparison!.Value))
             .Should()
-            .Equal(("Failed", 1d, 0d), ("Running", 0d, 1d), ("Succeeded", 0d, 0d));
+            .Equal(("Failed", 1d, (double?)0d), ("Running", 0d, (double?)1d), ("Succeeded", 0d, (double?)0d));
     }
 
     [Fact]
