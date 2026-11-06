@@ -191,7 +191,10 @@ export function server({
     const query = request.query ?? {}
 
     if (request.path === 'counts') {
-      return { counts: Object.fromEntries(Object.entries(counts).map(([key, count]) => [key, { count, capped: false }])) }
+      return {
+        counts: Object.fromEntries(Object.entries(counts).map(([key, count]) => [key, { count, capped: false }])),
+        stale: [],
+      }
     }
 
     if (request.path === 'overview') {

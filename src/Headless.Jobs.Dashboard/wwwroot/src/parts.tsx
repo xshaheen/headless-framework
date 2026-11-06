@@ -164,8 +164,15 @@ export function useStale() {
   return status === 'stale' || moduleStale
 }
 
-/** A product's sidebar counts by count key, as the shell reads them from `GET api/counts`. */
-type ProductCounts = Readonly<Record<string, CappedCount>>
+/**
+ * A product's sidebar counts by count key, and the modules whose counts did not answer: the shell sidebar's cached
+ * answer for `GET api/counts`, field for field. Whichever of the two fetches first fills the cache the other reads, so
+ * a different shape here breaks the sidebar.
+ */
+interface ProductCounts {
+  counts: Readonly<Record<string, CappedCount>>
+  stale: readonly { id: string; displayName: string }[]
+}
 
 /**
  * The Jobs sidebar's counts. The query key and answer shape are the shell sidebar's own, so the strip and the sidebar
@@ -176,16 +183,22 @@ export function useJobsCounts() {
 
   return useQuery({
     queryKey: ['shell', 'counts', 'jobs'],
-    queryFn: async () => {
-      const answer = await api.request<{ counts: Record<string, { count: number; capped: boolean }> }>({
+    queryFn: async (): Promise<ProductCounts> => {
+      const answer = await api.request<{
+        counts: Record<string, { count: number; capped: boolean }>
+        stale: { id: string; displayName: string }[]
+      }>({
         method: 'GET',
         path: 'counts',
         query: { product: 'jobs' },
       })
 
-      return Object.fromEntries(
-        Object.entries(answer.counts).map(([key, count]) => [key, { value: count.count, capped: count.capped }]),
-      ) as ProductCounts
+      return {
+        counts: Object.fromEntries(
+          Object.entries(answer.counts).map(([key, count]) => [key, { value: count.count, capped: count.capped }]),
+        ),
+        stale: answer.stale,
+      }
     },
   })
 }
@@ -287,7 +300,7 @@ export function JobsStats() {
   return (
     <StatStrip label="Jobs at a glance">
       {stripStates.map(({ status, tone }) => {
-        const count = counts.data?.[status]
+        const count = counts.data?.counts[status]
 
         return (
           <StatCard
