@@ -131,8 +131,8 @@ public sealed record DashboardScheduleTick
     public required string Label { get; init; }
 
     /// <summary>
-    /// Gets the status tone: <c>healthy</c>, <c>active</c>, <c>needs</c>, <c>waiting</c>, or <c>stopped</c>;
-    /// <see langword="null"/> for a fire, which has no status yet.
+    /// Gets the state role the tick paints in: <c>sched</c>, <c>enq</c>, <c>proc</c>, <c>ok</c>, <c>fail</c>, or
+    /// <c>off</c>; <see langword="null"/> for a fire, which has no status yet and reads as <c>sched</c>.
     /// </summary>
     public string? Tone { get; init; }
 

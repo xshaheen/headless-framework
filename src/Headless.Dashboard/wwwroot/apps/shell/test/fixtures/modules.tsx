@@ -1,5 +1,5 @@
 import { defineModule } from '@headless/dashboard-sdk'
-import type { BootstrapModule, BootstrapState } from '../../src/bootstrap.ts'
+import type { BootstrapModule, BootstrapSidebarEntry, BootstrapState } from '../../src/bootstrap.ts'
 
 /** A module's entry URL, as the server inlines it. */
 export function entryUrl(id: string) {
@@ -20,10 +20,6 @@ export function moduleManifest(id: string, overrides: Partial<BootstrapModule> =
     canOperate: true,
     entry: entryUrl(id),
     css: [],
-    nav: [
-      { id: `${id}.nav.runs`, label: 'Runs', to: 'runs' },
-      { id: `${id}.nav.settings`, label: 'Settings', to: 'settings', requires: 'operate' },
-    ],
     routes: [
       { path: 'runs', chunk: chunkUrl(id, 'runs') },
       { path: 'settings', chunk: chunkUrl(id, 'settings') },
@@ -34,7 +30,27 @@ export function moduleManifest(id: string, overrides: Partial<BootstrapModule> =
   }
 }
 
-export function shellState(modules: BootstrapModule[], overrides: Partial<BootstrapState> = {}): BootstrapState {
+/** The sidebar entries every fixture module declares unless a test names its own. */
+export function moduleSidebar(id: string): BootstrapSidebarEntry[] {
+  return [
+    { id: `${id}.nav.runs`, label: 'Runs', route: 'runs', icon: 'runs' },
+    { id: `${id}.nav.settings`, label: 'Settings', route: 'settings', icon: 'settings', requires: 'operate' },
+  ]
+}
+
+/**
+ * The page state for `modules`, as the server inlines it: every module joins one product, each with one sidebar
+ * section, `sidebars[id]` when given, else its default entries; a refused module declares none.
+ */
+export function shellState(
+  modules: BootstrapModule[],
+  overrides: Partial<BootstrapState> = {},
+  sidebars: Record<string, BootstrapSidebarEntry[]> = {},
+): BootstrapState {
+  const sections = modules
+    .filter((module) => !module.refusal)
+    .map((module) => ({ module: module.id, entries: sidebars[module.id] ?? moduleSidebar(module.id) }))
+
   return {
     basePath: '/headless',
     apiBase: '/headless/api',
@@ -43,6 +59,10 @@ export function shellState(modules: BootstrapModule[], overrides: Partial<Bootst
     authMode: 'host',
     session: { authenticated: true, name: 'Mona Haddad' },
     modules,
+    products:
+      modules.length === 0
+        ? []
+        : [{ id: 'jobs', label: 'Jobs', modules: modules.map((module) => module.id), sections }],
     ...overrides,
   }
 }
@@ -63,6 +83,7 @@ export function moduleFiles(modules: readonly BootstrapModule[]): Record<string,
     files[entryUrl(module.id)] = {
       default: defineModule({
         id: module.id,
+        product: 'jobs',
         objectKinds: { run: { route: (id: string) => `runs?selected=${id}` } },
         commands: [],
       }),

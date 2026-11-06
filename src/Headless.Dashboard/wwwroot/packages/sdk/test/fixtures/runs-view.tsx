@@ -58,7 +58,7 @@ export default function RunsView() {
         emptyState="No runs yet."
         columns={[
           { id: 'title', header: 'Run', cell: (run) => run.title, isRowHeader: true },
-          { id: 'status', header: 'Status', cell: (run) => <StatusMark tone={run.status === 'Failed' ? 'needs' : 'active'} label={run.status} /> },
+          { id: 'status', header: 'Status', cell: (run) => <StatusMark tone={run.status === 'Failed' ? 'fail' : 'proc'} label={run.status} /> },
         ]}
       />
     </section>

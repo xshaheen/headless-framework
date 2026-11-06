@@ -1,10 +1,16 @@
+// The React Compiler's memo caches cost the shell more bytes than these rare renders save, and the shell's assets
+// sit near their size budget.
+'use no memo'
+
 import { DashboardProvider, type DashboardEnvironment } from '@headless/dashboard-sdk'
 import { DashboardApiError, type DashboardApi } from '@headless/dashboard-sdk/data'
 import type { QueryClient } from '@headless/dashboard-sdk/query'
 import { RouterProvider, type createBrowserRouter } from '@headless/dashboard-sdk/router'
 import type { DashboardStream } from '@headless/dashboard-sdk/stream'
+import { useState } from 'react'
 import type { BootstrapState } from './bootstrap.ts'
 import type { ModuleLoader } from './module-loader.ts'
+import { pausable } from './pause.ts'
 import { ShellProvider } from './shell-context.tsx'
 
 /**
@@ -45,8 +51,13 @@ interface ShellAppProps {
   signOut: () => Promise<void>
 }
 
-/** The signed-in shell: the dashboard environment every module reads, and the router built from the manifest. */
+/**
+ * The signed-in shell: the dashboard environment every module reads, and the router built from the manifest. Every
+ * view reads the stream through this tab's pause, so Pause holds the same changes in each of them.
+ */
 export function ShellApp({ state, router, client, api, stream, loader, signOut }: ShellAppProps) {
+  const [live] = useState(() => pausable(stream))
+
   return (
     <DashboardProvider
       client={client}
@@ -55,12 +66,12 @@ export function ShellApp({ state, router, client, api, stream, loader, signOut }
         apiBase: state.apiBase,
         session: { authenticated: state.session.authenticated, name: state.session.name ?? undefined },
         permissions: permissionsOf(state),
-        stream,
+        stream: live,
         api,
         traceLinkTemplate: state.traceLinkTemplate,
       }}
     >
-      <ShellProvider value={{ state, loader, signOut }}>
+      <ShellProvider value={{ state, loader, signOut, live }}>
         <RouterProvider router={router} />
       </ShellProvider>
     </DashboardProvider>

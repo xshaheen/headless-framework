@@ -7,8 +7,8 @@ import { LocaleProvider } from '../../src/locale/locale.tsx'
 
 const events: TimelineEvent[] = [
   { id: 'queued', label: 'Queued', at: '2026-11-05T09:50:00Z' },
-  { id: 'started', label: 'Started', at: '2026-11-05T09:51:00Z', actor: 'node-a', tone: 'active' },
-  { id: 'failed', label: 'Failed', at: '2026-11-05T09:52:00Z', text: 'Gateway timeout', tone: 'needs' },
+  { id: 'started', label: 'Started', at: '2026-11-05T09:51:00Z', actor: 'node-a', tone: 'proc' },
+  { id: 'failed', label: 'Failed', at: '2026-11-05T09:52:00Z', text: 'Gateway timeout', tone: 'fail' },
 ]
 
 /** A view that shows the selected event the way a module's inspector would. */

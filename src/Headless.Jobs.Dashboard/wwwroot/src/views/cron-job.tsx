@@ -1,5 +1,5 @@
 import { useDashboard } from '@headless/dashboard-sdk'
-import { Inspector, Mono, ObjectHeader, PrimaryAction, ScheduleStrip, StatusMark, useDelayed, type ScheduleTick } from '@headless/dashboard-sdk/components'
+import { Inspector, Mono, ObjectHeader, ScheduleStrip, StatusMark, useDelayed, type ScheduleTick } from '@headless/dashboard-sdk/components'
 import { DashboardApiError, useDashboardKeysetList, useDashboardObject } from '@headless/dashboard-sdk/data'
 import { Link, useParams, useSearchParams } from '@headless/dashboard-sdk/router'
 import { useStreamEvent } from '@headless/dashboard-sdk/stream'
@@ -75,9 +75,7 @@ function CronJobDetail({ cronJob, back, onRefresh }: { cronJob: CronJob; back: R
       <article aria-label={`Cron job ${cronJob.id}`} style={canvas}>
         {back}
         <ObjectHeader title={cronJobTitle(cronJob)} id={cronJob.id} status={cronStatusMark(cronJob)} />
-        <PrimaryAction>
-          <CronActions cronJob={cronJob} />
-        </PrimaryAction>
+        <CronActions cronJob={cronJob} />
         <StaleNotice what="this cron job" onRefresh={onRefresh} />
         <CronFields cronJob={cronJob} />
         <ScheduleStrip

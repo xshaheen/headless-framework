@@ -6,9 +6,16 @@ function patchRun(payload: unknown) {
 
 export default defineModule({
   id: 'fixture',
-  nav: [
-    { id: 'fixture.nav.runs', label: 'Runs', to: 'runs', requires: 'view' },
-    { id: 'fixture.nav.cron', label: 'Cron jobs', to: 'cron' },
+  product: 'jobs',
+  sidebar: [
+    { entries: [{ id: 'fixture.nav.runs', label: 'Runs', route: 'runs', icon: 'runs', requires: 'view' }] },
+    {
+      label: 'States',
+      entries: [
+        { id: 'fixture.nav.failed', label: 'Failed', route: 'runs?status=Failed', state: 'fail', countKey: 'Failed' },
+        { id: 'fixture.nav.cron', label: 'Cron jobs', route: 'cron', icon: 'cron' },
+      ],
+    },
   ],
   routes: [
     { path: 'runs', lazy: () => import('./views/runs.tsx') },

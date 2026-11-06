@@ -1,4 +1,4 @@
-import type { StatusTone } from '@headless/dashboard-sdk/components'
+import type { DashboardStateRole } from '@headless/dashboard-sdk'
 import type { DashboardApi } from '@headless/dashboard-sdk/data'
 
 /** A cron job as its list row, its page, and a live change carry it; `nextFires` is filled on its page and a function's list. */
@@ -57,14 +57,15 @@ export interface JobNode {
 
 export const cronJobsTopic = 'jobs.cron-job'
 
-export function cronStatusMark(cronJob: Pick<CronJob, 'isPaused'>): { tone: StatusTone; label: string } {
-  return cronJob.isPaused ? { tone: 'stopped', label: 'Paused' } : { tone: 'active', label: 'Active' }
+/** An active cron job waits for its next fire, so it reads as scheduled; a paused one is stopped on purpose. */
+export function cronStatusMark(cronJob: Pick<CronJob, 'isPaused'>): { tone: DashboardStateRole; label: string } {
+  return cronJob.isPaused ? { tone: 'off', label: 'Paused' } : { tone: 'sched', label: 'Active' }
 }
 
-const nodeTones: Readonly<Record<string, StatusTone>> = { Alive: 'healthy', Suspected: 'waiting', Dead: 'needs' }
+const nodeTones: Readonly<Record<string, DashboardStateRole>> = { Alive: 'ok', Suspected: 'proc', Dead: 'fail', Left: 'off' }
 
-export function nodeStatusMark(node: Pick<JobNode, 'state'>): { tone: StatusTone; label: string } {
-  return { tone: nodeTones[node.state] ?? 'waiting', label: node.state }
+export function nodeStatusMark(node: Pick<JobNode, 'state'>): { tone: DashboardStateRole; label: string } {
+  return { tone: nodeTones[node.state] ?? 'off', label: node.state }
 }
 
 /** The cron job's display name: its description, or its function and expression. */

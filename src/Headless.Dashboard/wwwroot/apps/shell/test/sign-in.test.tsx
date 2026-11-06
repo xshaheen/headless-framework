@@ -83,6 +83,25 @@ describe('sign-in page', () => {
     expect((await screen.findByRole('alert')).textContent).toBe('The user name or password is wrong. Check them and try again.')
   })
 
+  it('says when Caps Lock is on in the password, and shows the password on request', async () => {
+    const user = userEvent.setup()
+    renderSignIn('basic', '')
+    const password = screen.getByLabelText('Password')
+
+    await user.type(password, 'Se{CapsLock}CRET')
+
+    const hint = screen.getByText('Caps Lock is on')
+    expect(password.getAttribute('aria-describedby')).toBe(hint.id)
+    expect(password.getAttribute('type')).toBe('password')
+
+    const show = screen.getByRole('button', { name: 'Show password' })
+    expect(show.getAttribute('aria-pressed')).toBe('false')
+    await user.click(show)
+
+    expect(password.getAttribute('type')).toBe('text')
+    expect(screen.getByRole('button', { name: 'Hide password' }).getAttribute('aria-pressed')).toBe('true')
+  })
+
   it('takes the key in API key mode', async () => {
     const user = userEvent.setup()
     const { calls } = renderSignIn('apiKey', '', { session: 204 })

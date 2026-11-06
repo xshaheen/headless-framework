@@ -1,100 +1,155 @@
 /*
- * The dashboard's design tokens. Every module reads these; a raw colour, font, or duration in a component is a defect.
- * Light values sit on :root, dark values under prefers-color-scheme and [data-theme="dark"], so the account menu's
- * choice wins over the system setting in both directions. The contrast ratios in DESIGN.md were computed for these
- * exact values; re-check any value you change.
+ * The dashboard's design tokens. Every module reads these; a raw colour, font, size, or duration in a component is a
+ * defect. Dark values sit on :root, so a browser that stored no choice renders dark whatever its system setting;
+ * light values apply only under [data-theme="light"], which the account menu sets. The contrast ratios in DESIGN.md
+ * were computed for these exact values; re-check any value you change.
  */
+@font-face {
+  font-family: Geist;
+  src: url('./fonts/geist-latin.woff2') format('woff2');
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Geist Mono';
+  src: url('./fonts/geist-mono-latin.woff2') format('woff2');
+  font-weight: 100 900;
+  font-display: swap;
+}
+
 :root {
-  --ground: oklch(0.975 0.004 285);
-  --surface: oklch(1 0 0);
-  --sunken: oklch(0.957 0.006 285);
-  --hairline: oklch(0.91 0.008 285);
-  --field-edge: oklch(0.62 0.014 285);
-  --text: oklch(0.25 0.02 285);
-  --muted: oklch(0.48 0.018 285);
-  --accent: oklch(0.5 0.17 285);
-  --accent-soft: oklch(0.95 0.025 285);
-  --ok: oklch(0.52 0.13 150);
-  --alarm: oklch(0.54 0.19 27);
-  --stale: oklch(0.52 0.11 70);
-  --on-accent: oklch(1 0 0);
-  --scrim: oklch(0.2 0.02 285 / 0.38);
-  --shadow: 0 8px 28px oklch(0.25 0.02 285 / 0.16), 0 1px 3px oklch(0.25 0.02 285 / 0.12);
-
-  --sans: 'Atkinson Hyperlegible Next', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --mono: 'Atkinson Hyperlegible Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-
-  /* Type scale: size / line height / weight. */
-  --text-label: 500 12px/16px var(--sans);
-  --text-small: 400 13px/18px var(--sans);
-  --text-body: 400 14px/20px var(--sans);
-  --text-prose: 400 15px/24px var(--sans);
-  --text-title: 600 17px/24px var(--sans);
-  --text-page: 600 22px/28px var(--sans);
-  --text-figure: 500 28px/32px var(--sans);
-  --text-mono: 400 13px/18px var(--mono);
-
-  /* A 4 px grid: 8 between related controls, 16 inside panels, 24 between groups. */
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 20px;
-  --space-6: 24px;
-
-  --control-height: 32px;
-  --row-height: 36px;
-  --row-height-compact: 28px;
-  --radius-control: 6px;
-  --radius-panel: 10px;
-  --rail-width: 224px;
-  --inspector-width: 380px;
-
-  --motion-fast: 100ms cubic-bezier(0.2, 0, 0.38, 0.9);
-  --motion-panel-in: 180ms cubic-bezier(0, 0, 0.38, 0.9);
-  --motion-panel-out: 180ms cubic-bezier(0.2, 0, 1, 0.9);
-
-  color-scheme: light;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    --ground: oklch(0.205 0.012 285);
-    --surface: oklch(0.24 0.013 285);
-    --sunken: oklch(0.185 0.011 285);
-    --hairline: oklch(0.32 0.013 285);
-    --field-edge: oklch(0.56 0.015 285);
-    --text: oklch(0.95 0.006 285);
-    --muted: oklch(0.73 0.014 285);
-    --accent: oklch(0.74 0.13 285);
-    --accent-soft: oklch(0.32 0.07 285);
-    --ok: oklch(0.76 0.14 150);
-    --alarm: oklch(0.71 0.17 27);
-    --stale: oklch(0.81 0.13 80);
-    --on-accent: oklch(0.205 0.012 285);
-    --scrim: oklch(0 0 0 / 0.5);
-    --shadow: 0 8px 28px oklch(0 0 0 / 0.5), 0 1px 3px oklch(0 0 0 / 0.4);
-    color-scheme: dark;
-  }
-}
-
-:root[data-theme='dark'] {
-  --ground: oklch(0.205 0.012 285);
-  --surface: oklch(0.24 0.013 285);
-  --sunken: oklch(0.185 0.011 285);
-  --hairline: oklch(0.32 0.013 285);
-  --field-edge: oklch(0.56 0.015 285);
-  --text: oklch(0.95 0.006 285);
-  --muted: oklch(0.73 0.014 285);
-  --accent: oklch(0.74 0.13 285);
-  --accent-soft: oklch(0.32 0.07 285);
-  --ok: oklch(0.76 0.14 150);
-  --alarm: oklch(0.71 0.17 27);
-  --stale: oklch(0.81 0.13 80);
-  --on-accent: oklch(0.205 0.012 285);
+  /* Surfaces, darkest to lightest: neutrals on hue 275, the accent on 278. */
+  --ground: oklch(0.155 0.006 275);
+  --deep: oklch(0.135 0.006 275);
+  --panel: oklch(0.185 0.007 275);
+  --raised: oklch(0.215 0.008 275);
+  --hover: oklch(0.235 0.009 275);
+  --line: oklch(0.265 0.009 275);
+  --edge: oklch(0.36 0.01 275);
+  /* A field's boundary must reach 3:1 on its surface; --line and --edge do not. */
+  --field-edge: oklch(0.52 0.012 275);
+  --text: oklch(0.965 0.004 275);
+  --muted: oklch(0.74 0.012 275);
+  /* Lighter than the boards' value so faint text still passes 4.5:1 inside the open row's --accent-soft fill. */
+  --faint: oklch(0.67 0.012 275);
+  --accent: oklch(0.7 0.15 278);
+  --accent-soft: oklch(0.29 0.07 278);
+  --on-accent: oklch(0.15 0.01 278);
+  --fail-edge: oklch(0.45 0.1 25);
   --scrim: oklch(0 0 0 / 0.5);
-  --shadow: 0 8px 28px oklch(0 0 0 / 0.5), 0 1px 3px oklch(0 0 0 / 0.4);
+
+  /* The six state roles. They paint dots, bars, and tags; only --fail may also colour danger text. */
+  --sched: oklch(0.77 0.09 205);
+  --enq: oklch(0.73 0.12 245);
+  --proc: oklch(0.83 0.13 80);
+  --ok: oklch(0.76 0.14 155);
+  --fail: oklch(0.72 0.16 25);
+  --off: oklch(0.62 0.01 275);
+  /* The halo a live or failing state's dot carries; light draws none. */
+  --glow: 8px;
+
   color-scheme: dark;
+
+  /* Derived once here, so each follows its role into the light theme. */
+  --sched-soft: color-mix(in oklch, var(--sched) 16%, transparent);
+  --enq-soft: color-mix(in oklch, var(--enq) 16%, transparent);
+  --proc-soft: color-mix(in oklch, var(--proc) 16%, transparent);
+  --ok-soft: color-mix(in oklch, var(--ok) 16%, transparent);
+  --fail-soft: color-mix(in oklch, var(--fail) 16%, transparent);
+  --on-proc: oklch(0.2 0.02 80);
+  --avatar: oklch(0.45 0.08 200);
+  --on-avatar: oklch(0.98 0 0);
+  --shadow-float: 0 10px 30px oklch(0 0 0 / 0.3);
+  --shadow-card: 0 24px 60px oklch(0 0 0 / 0.28);
+
+  --sans: Geist, ui-sans-serif, system-ui, sans-serif;
+  --mono: 'Geist Mono', ui-monospace, monospace;
+
+  /* Type scale: weight size/line height family. */
+  --text-body: 400 13.5px/20px var(--sans);
+  --text-mono: 400 12.5px/20px var(--mono);
+  --text-label: 500 11.5px/16px var(--sans);
+  --text-title: 600 15px/20px var(--sans);
+  --text-detail: 600 14px/20px var(--sans);
+  --text-small: 400 12px/18px var(--sans);
+  --text-stat: 600 20px/26px var(--mono);
+  --text-tag: 400 11px/16px var(--sans);
+  --text-axis: 400 10.5px/14px var(--mono);
+  --text-hero: 600 22px/28px var(--sans);
+
+  --sp-0: 2px;
+  --sp-1: 4px;
+  --sp-2: 6px;
+  --sp-3: 8px;
+  --sp-4: 10px;
+  --sp-5: 12px;
+  --sp-6: 14px;
+  --sp-7: 16px;
+  --sp-8: 20px;
+  --sp-9: 28px;
+
+  --radius-bar: 3px;
+  --radius-tag: 4px;
+  --radius-control: 5px;
+  --radius-panel: 6px;
+  --radius-float: 7px;
+  --radius-card: 12px;
+
+  /* Fixed regions. */
+  --topbar-height: 48px;
+  --sidebar-width: 208px;
+  --statstrip-height: 85px;
+  --row-height: 34px;
+  --row-height-compact: 28px;
+  --panel-height: 340px;
+  --panel-side-width: 380px;
+  --resize-handle: 9px;
+  --control-height: 28px;
+
+  /*
+   * Breakpoints, named here for reference only: a media condition cannot read a custom property, so components.css
+   * writes each as a literal max-width one pixel below it and the SDK's breakpoints module mirrors them for script.
+   */
+  --bp-wide: 1280px;
+  --bp-medium: 1024px;
+  --bp-phone: 768px;
+
+  --z-sticky: 1;
+  --z-panel: 2;
+  --z-popover: 10;
+  --z-toast: 20;
+  --z-dialog: 30;
+  --z-palette: 40;
+
+  --ease-fast: 100ms cubic-bezier(0.2, 0, 0.38, 0.9);
+}
+
+:root[data-theme='light'] {
+  --ground: oklch(0.975 0.003 275);
+  --deep: oklch(0.952 0.004 275);
+  --panel: oklch(1 0 0);
+  --raised: oklch(0.962 0.004 275);
+  --hover: oklch(0.94 0.005 275);
+  --line: oklch(0.905 0.006 275);
+  --edge: oklch(0.78 0.01 275);
+  --field-edge: oklch(0.6 0.012 275);
+  --text: oklch(0.22 0.012 275);
+  --muted: oklch(0.43 0.014 275);
+  --faint: oklch(0.5 0.014 275);
+  --accent: oklch(0.52 0.18 278);
+  --accent-soft: oklch(0.94 0.035 278);
+  --on-accent: oklch(1 0 0);
+  --fail-edge: oklch(0.8 0.08 25);
+  --scrim: oklch(0.2 0.012 275 / 0.38);
+  --sched: oklch(0.57 0.09 205);
+  --enq: oklch(0.54 0.13 245);
+  /* Darker than the boards' value so an In-progress dot reaches 3:1 on every light surface. */
+  --proc: oklch(0.57 0.14 75);
+  --ok: oklch(0.54 0.13 155);
+  --fail: oklch(0.54 0.19 25);
+  --glow: 0px;
+  color-scheme: light;
 }
 
 *,

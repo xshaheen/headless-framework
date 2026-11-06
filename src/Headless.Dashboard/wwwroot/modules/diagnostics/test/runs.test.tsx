@@ -5,7 +5,7 @@ import type { CommandDefinition } from '@headless/dashboard-sdk/commands'
 import { DashboardApiError, type ApiRequest } from '@headless/dashboard-sdk/data'
 import { renderModule, type RenderModuleOptions } from '@headless/dashboard-sdk/testing'
 import diagnostics from '../src/module.ts'
-import type { Run, RunDetail } from '../src/runs.ts'
+import { runStatusMark, runStatuses, type Run, type RunDetail } from '../src/runs.ts'
 
 const now = new Date('2026-11-05T10:00:00Z')
 
@@ -545,5 +545,18 @@ describe('diagnostics run page', () => {
 
     expect((await screen.findByRole('alert')).textContent).toContain('No run run-000404.')
     expect(screen.getByRole('link', { name: 'Back to runs' })).toBeTruthy()
+  })
+})
+
+describe('diagnostics state roles', () => {
+  it('maps every run state to its state role, and a pending requeue to queued', () => {
+    expect(Object.fromEntries(runStatuses.map((status) => [status, runStatusMark(status).tone]))).toEqual({
+      Queued: 'enq',
+      Running: 'proc',
+      Succeeded: 'ok',
+      Failed: 'fail',
+    })
+    expect(runStatusMark('Failed', true)).toEqual({ tone: 'enq', label: 'Requeuing…' })
+    expect(runStatusMark('Paused').tone).toBe('off')
   })
 })

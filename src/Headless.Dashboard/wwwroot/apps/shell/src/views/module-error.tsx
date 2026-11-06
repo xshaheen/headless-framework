@@ -17,7 +17,7 @@ export function refusalText(module: BootstrapModule) {
 
 export function ModuleError({ module }: { module: BootstrapModule }) {
   return (
-    <section className="hd-view" aria-labelledby="module-error-title">
+    <section className="hd-view hd-card" aria-labelledby="module-error-title">
       <h2 id="module-error-title" className="hd-title">
         {module.displayName} is not available
       </h2>
@@ -25,7 +25,7 @@ export function ModuleError({ module }: { module: BootstrapModule }) {
         {refusalText(module)}
       </p>
       <p className="hd-hint">
-        The rest of the dashboard keeps working. <Link to="/">Go to Overview</Link>
+        The rest of the dashboard keeps working. <Link to="/">Go to the dashboard</Link>
       </p>
     </section>
   )
@@ -33,12 +33,12 @@ export function ModuleError({ module }: { module: BootstrapModule }) {
 
 export function NotFound() {
   return (
-    <section className="hd-view hd-centred" aria-labelledby="not-found-title">
+    <section className="hd-view hd-card hd-centred" aria-labelledby="not-found-title">
       <h2 id="not-found-title" className="hd-title">
         Nothing lives at this address
       </h2>
       <p className="hd-prose">The link may name a module this dashboard does not serve, or one you may not view.</p>
-      <Link to="/">Go to Overview</Link>
+      <Link to="/">Go to the dashboard</Link>
     </section>
   )
 }
@@ -61,7 +61,7 @@ export function RouteError() {
       : 'This view failed to load.'
 
   return (
-    <section className="hd-view" role="alert" aria-labelledby="route-error-title">
+    <section className="hd-view hd-card" role="alert" aria-labelledby="route-error-title">
       <h2 id="route-error-title" className="hd-title">
         This view failed
       </h2>
@@ -70,7 +70,7 @@ export function RouteError() {
         <Button variant="primary" onPress={() => window.location.reload()}>
           Reload
         </Button>
-        <Link to="/">Go to Overview</Link>
+        <Link to="/">Go to the dashboard</Link>
       </div>
     </section>
   )

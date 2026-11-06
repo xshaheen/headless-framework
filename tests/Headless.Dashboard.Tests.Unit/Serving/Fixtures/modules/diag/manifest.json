@@ -2,9 +2,35 @@
   "id": "diag",
   "sdkVersion": "1.0.0",
   "entry": "entry.js",
-  "css": ["diag-1a2b3c.css"],
-  "nav": [{ "id": "diag.nav.runs", "label": "Runs", "to": "runs" }],
-  "routes": [{ "path": "runs", "chunk": "runs-4d5e6f.js" }],
-  "commands": [{ "id": "diag.open-runs", "label": "Open runs" }],
-  "events": ["diag.run.updated"]
+  "product": "diagnostics",
+  "sidebar": [
+    {
+      "entries": [
+        {
+          "id": "diag.nav.runs",
+          "label": "Runs",
+          "route": "runs",
+          "icon": "list"
+        }
+      ]
+    }
+  ],
+  "css": [
+    "diag-1a2b3c.css"
+  ],
+  "routes": [
+    {
+      "path": "runs",
+      "chunk": "runs-4d5e6f.js"
+    }
+  ],
+  "commands": [
+    {
+      "id": "diag.open-runs",
+      "label": "Open runs"
+    }
+  ],
+  "events": [
+    "diag.run.updated"
+  ]
 }

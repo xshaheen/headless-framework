@@ -13,6 +13,7 @@ import {
   type Key,
   type Selection,
 } from 'react-aria-components'
+import { below } from '../breakpoints.ts'
 import { Button } from '../button.tsx'
 import { useViewKeys } from '../keymap.tsx'
 import { Announcer } from '../live.tsx'
@@ -73,7 +74,7 @@ export interface DataTableProps<T extends { id: string }> {
   emptyState: ReactNode
 }
 
-const narrowQuery = '(max-width: 767px)'
+const narrowQuery = below.phone
 
 function subscribeNarrow(onChange: () => void) {
   if (typeof window.matchMedia !== 'function') {

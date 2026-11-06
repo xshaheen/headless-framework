@@ -29,7 +29,10 @@ internal sealed class FakeCommandModule(FakeRunStore store)
     public DashboardModuleAssets Assets { get; } =
         new()
         {
-            Files = new SingleFileProvider("manifest.json", """{"id":"diag","sdkVersion":"1.0.0","entry":"e.js"}"""),
+            Files = new SingleFileProvider(
+                "manifest.json",
+                """{"id":"diag","sdkVersion":"1.0.0","entry":"e.js","product":"diagnostics"}"""
+            ),
         };
 
     public IReadOnlyList<DashboardCommand> Commands { get; } =

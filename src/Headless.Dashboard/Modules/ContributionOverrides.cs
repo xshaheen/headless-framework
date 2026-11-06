@@ -6,7 +6,7 @@ using Microsoft.Extensions.Configuration;
 namespace Headless.Dashboard;
 
 /// <summary>
-/// The host's overrides of module contributions by id: nav entries, client and server commands, and related-object
+/// The host's overrides of module contributions by id: sidebar entries, client and server commands, and related-object
 /// groups. Applied on the server before the dashboard's manifest is built, so a disabled contribution never reaches
 /// the browser.
 /// </summary>
@@ -25,13 +25,17 @@ namespace Headless.Dashboard;
 [PublicAPI]
 public sealed class ContributionOverrides
 {
-    /// <summary>Gets or sets the ids of the disabled contributions. Bound from the <c>Disable</c> key.</summary>
+    /// <summary>
+    /// Gets or sets the ids of the disabled contributions. A sidebar section whose every entry is disabled is dropped.
+    /// Bound from the <c>Disable</c> key.
+    /// </summary>
     [ConfigurationKeyName("Disable")]
     public IList<string> DisabledIds { get; set; } = [];
 
     /// <summary>
     /// Gets or sets the ordering groups. Each group lists contribution ids in the order the shell shows them; the
-    /// contributions a group does not name keep their places. Bound from the <c>Order</c> key.
+    /// contributions a group does not name keep their places. A sidebar entry moves only within its own section.
+    /// Bound from the <c>Order</c> key.
     /// </summary>
     [ConfigurationKeyName("Order")]
     public IList<IList<string>> OrderGroups { get; set; } = [];

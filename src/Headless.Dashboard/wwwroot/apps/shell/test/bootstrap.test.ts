@@ -1,5 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
-import { readBootstrapState, safeReturnUrl, sessionMatches, settleSession, stateElementId, type AuthInfo } from '../src/bootstrap.ts'
+import {
+  moduleSidebarEntries,
+  readBootstrapState,
+  safeReturnUrl,
+  sessionMatches,
+  settleSession,
+  stateElementId,
+  type AuthInfo,
+} from '../src/bootstrap.ts'
 import { moduleManifest, shellState } from './fixtures/modules.tsx'
 
 function fakeFetch(info: AuthInfo) {
@@ -32,6 +40,18 @@ describe('bootstrap', () => {
     expect(readBootstrapState(document).modules[0]?.id).toBe('diag')
 
     document.body.innerHTML = `<script type="application/json" id="${stateElementId}">{"basePath":"/x"}</script>`
+    expect(() => readBootstrapState(document)).toThrow(/does not hold the dashboard's page state/)
+  })
+
+  it('reads each product with its sidebar, and refuses a sidebar entry without a route', () => {
+    const state = shellState([moduleManifest('diag')])
+    document.body.innerHTML = `<script type="application/json" id="${stateElementId}">${JSON.stringify(state)}</script>`
+
+    expect(readBootstrapState(document).products).toEqual(state.products)
+    expect(moduleSidebarEntries(state, 'diag').map((entry) => entry.id)).toEqual(['diag.nav.runs', 'diag.nav.settings'])
+
+    const broken = { ...state, products: [{ ...state.products[0], sections: [{ module: 'diag', entries: [{ id: 'x', label: 'X' }] }] }] }
+    document.body.innerHTML = `<script type="application/json" id="${stateElementId}">${JSON.stringify(broken)}</script>`
     expect(() => readBootstrapState(document)).toThrow(/does not hold the dashboard's page state/)
   })
 

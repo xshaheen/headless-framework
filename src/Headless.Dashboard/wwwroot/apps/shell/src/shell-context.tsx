@@ -1,7 +1,12 @@
+// The React Compiler's memo caches cost the shell more bytes than these rare renders save, and the shell's assets
+// sit near their size budget.
+'use no memo'
+
 import { createContext, useContext, type ReactNode } from 'react'
 import { useNavigate } from '@headless/dashboard-sdk/router'
 import type { BootstrapModule, BootstrapState } from './bootstrap.ts'
 import type { ModuleLoader } from './module-loader.ts'
+import type { PausableStream } from './pause.ts'
 
 /** One object of any module, as the shell's aggregation endpoints name it. */
 export interface ObjectRef {
@@ -15,6 +20,8 @@ interface ShellContextValue {
   loader: ModuleLoader
   /** Ends the session on the server, then signs every tab of this browser out. Rejects when the server refused. */
   signOut: () => Promise<void>
+  /** The stream as this tab's views read it, with the tab's pause. */
+  live: PausableStream
 }
 
 const ShellContext = createContext<ShellContextValue | null>(null)

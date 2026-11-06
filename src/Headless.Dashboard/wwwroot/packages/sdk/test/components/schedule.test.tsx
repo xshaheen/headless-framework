@@ -14,7 +14,7 @@ const tracks: ScheduleTrack[] = [
     id: 'billing.charge',
     label: 'billing.charge',
     ticks: [
-      { id: 'run-1', at: minutes(-20), label: 'failed', tone: 'needs' },
+      { id: 'run-1', at: minutes(-20), label: 'failed', tone: 'fail' },
       { id: 'fire-1', at: minutes(10), label: 'next fire' },
       { id: 'fire-2', at: minutes(20), label: 'next fire' },
       { id: 'fire-3', at: minutes(40), label: 'next fire' },
@@ -60,7 +60,7 @@ describe('ScheduleStrip', () => {
       id: `run-${index}`,
       at: new Date(now - (index + 1) * 30_000).toISOString(),
       label: 'succeeded',
-      tone: 'healthy' as const,
+      tone: 'ok' as const,
     }))
     renderStrip({ tracks: [{ id: 'sandbox.progress', label: 'sandbox.progress', ticks: dense }] })
 

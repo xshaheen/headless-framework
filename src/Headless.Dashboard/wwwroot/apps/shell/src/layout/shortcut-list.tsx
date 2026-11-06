@@ -1,3 +1,7 @@
+// The React Compiler's memo caches cost the shell more bytes than these rare renders save, and the shell's assets
+// sit near their size budget.
+'use no memo'
+
 import { Button, Dialog, Kbd, shellShortcuts, useModuleShortcuts } from '@headless/dashboard-sdk/components'
 import { Fragment } from 'react'
 import { useShell } from '../shell-context.tsx'

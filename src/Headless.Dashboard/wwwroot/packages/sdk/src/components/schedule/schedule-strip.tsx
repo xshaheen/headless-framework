@@ -1,7 +1,7 @@
 import { useState, type KeyboardEvent } from 'react'
 import { useFormat } from '../../locale/locale.tsx'
 import { useViewKeys } from '../keymap.tsx'
-import type { StatusTone } from '../marks.tsx'
+import type { DashboardStateRole } from '../../define-module.ts'
 
 /** One run or fire on a track. One at or before now is a past run, drawn filled; a later one is a fire, drawn hollow. */
 export interface ScheduleTick {
@@ -11,7 +11,8 @@ export interface ScheduleTick {
   at: string
   /** The status as words, for the tick's accessible name: `failed`, `next fire`. */
   label: string
-  tone?: StatusTone
+  /** The state role a past run paints in; a fire has no state yet and reads as scheduled. */
+  tone?: DashboardStateRole
 }
 
 export interface ScheduleTrack {
@@ -142,7 +143,7 @@ export function ScheduleStrip({ label, tracks, span, onSpanChange, timeZone, onS
                       ? `${track.label}, ${count} ticks, ${at(Date.parse(first.at))} to ${at(Date.parse(mark.ticks.at(-1)!.at))}`
                       : `${track.label}, ${first.label}, ${at(Date.parse(first.at))}`
                   }
-                  className={`hd-tone-${first.tone ?? 'waiting'}${Date.parse(first.at) > now ? ' hd-strip-future' : ''}`}
+                  className={`hd-tone-${first.tone ?? 'sched'}${Date.parse(first.at) > now ? ' hd-strip-future' : ''}`}
                   onFocus={() => setFocus([trackIndex, markIndex])}
                   onClick={() => onSelect?.(first.id)}
                 >

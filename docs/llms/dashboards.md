@@ -123,11 +123,11 @@ app.MapPost("/account/sign-out", async (HttpContext context) =>
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `AggregationTimeout` | 2 seconds | How long Needs you, Overview, id lookup, and related objects wait for each module. A module that has not answered, or that throws, shows as `Stale` while the others' answers are served. Must be positive. |
+| `AggregationTimeout` | 2 seconds | How long attention, Overview, id lookup, and related objects wait for each module. A module that has not answered, or that throws, shows as `Stale` while the others' answers are served. Must be positive. |
 | `ChangePollInterval` | 2 seconds | How often each node reads every module's changes while the node has a live stream open. Must be positive. |
 | `HeartbeatInterval` | 2 seconds | How often an open stream sends `heartbeat`. The page marks a stream `Stale` after 5 seconds without an event, so it must be under 5 seconds. |
 
-Contribution overrides name the ids modules declare: nav entries, client commands, server commands, and related-object groups. Disable or order them in code, or bind the `Disable` (a list of ids) and `Order` (a list of id lists) keys from configuration. Both forms add up. An id that no registered module declares fails the host's start, so a typo never leaves a contribution enabled. A disabled server command also answers `404` at its endpoint.
+Contribution overrides name the ids modules declare: sidebar entries, client commands, server commands, and related-object groups. Disable or order them in code, or bind the `Disable` (a list of ids) and `Order` (a list of id lists) keys from configuration. Both forms add up. An id that no registered module declares fails the host's start, so a typo never leaves a contribution enabled. A disabled server command also answers `404` at its endpoint. A sidebar entry moves only within its own section, and a section whose every entry is disabled is dropped, so `Disable("jobs.nav.failed")` removes the Failed entry and leaves the rest of the States section.
 
 ```csharp
 using Headless.Dashboard;
@@ -169,8 +169,9 @@ Everything else is an optional capability interface on the same class, found by 
 
 | Capability | The shell uses it for |
 | --- | --- |
-| `IDashboardAttentionSource` | Needs you: the items that need an operator, grouped by `GroupKey`. Called whenever Needs you opens or its attention changes, so keep it to one cheap query. |
-| `IDashboardOverviewSource` | Overview: up to three `DashboardFigure`s per module, each with its comparison, and, through the default member `GetScheduleAsync`, the module's `DashboardScheduleTrack`s on the Overview's schedule strip. A comparison whose `Value` is `null` means the earlier period has nothing to compare; the shell shows its `Label` alone, so the label says why (`no runs finished in the previous 24 h`). |
+| `IDashboardAttentionSource` | The Attention popover and each product tab's dot: the items that need an operator, grouped by `GroupKey`. Called when the shell loads and whenever the module's attention changes, so keep it to one cheap query. |
+| `IDashboardOverviewSource` | `GET {base}/api/overview` (the shell's frame no longer draws an Overview page; a product dashboard reads it): up to three `DashboardFigure`s per module, each with its comparison, and, through the default member `GetScheduleAsync`, the module's `DashboardScheduleTrack`s on the Overview's schedule strip. A comparison whose `Value` is `null` means the earlier period has nothing to compare; the shell shows its `Label` alone, so the label says why (`no runs finished in the previous 24 h`). |
+| `IDashboardCountSource` | The counts beside sidebar entries: a `DashboardCount` (`Count`, `Capped`) per `countKey` the module's sidebar declares. `GET {base}/api/counts?product=` asks every module of one product and answers `{ product, counts: { key: { count, capped } }, stale }`; when two modules answer one key, the first registered wins. The shell refetches on live changes, so keep each count to one cheap, capped query. |
 | `IDashboardObjectResolver` | The palette's pasted-id lookup (`GET {base}/api/resolve?q=`, at most 256 characters). Answer with an exact-id lookup, never a text search. |
 | `IDashboardRelatedSource` | Related objects of any module's object, drawn as labelled groups (`GET {base}/api/related?module=&kind=&id=`). `GroupIds` declares every group id up front, because each is a contribution the host can disable or reorder. |
 | `IDashboardPayloadSource` | One object's payload (`GET {base}/api/payload?module=&kind=&id=`). |
@@ -179,12 +180,12 @@ Everything else is an optional capability interface on the same class, found by 
 | `IDashboardCommandSource` | Operator commands; see [Commands and Operations](#commands-and-operations). |
 | `IDashboardOperationRunner` | Commands over a filter, run as an Operation; see [Commands and Operations](#commands-and-operations). |
 
-Needs you, Overview, lookup, and related objects call every module in parallel, list only the modules the user may view, and wait at most `AggregationTimeout` for each. A module that times out or throws answers `stale: true` in its place. Counts stop at 10,000 and report `capped: true`.
+Attention, Overview, lookup, related objects, and counts call every module in parallel, list only the modules the user may view, and wait at most `AggregationTimeout` for each. A module that times out or throws answers `stale: true` in its place. Counts stop at 10,000 and report `capped: true`. `api/counts` answers `400` without `product`, `404` for a product no registered module joins, and `403` when the user may view none of the product's modules.
 
 A `DashboardAttentionItem` can also say how to resolve it and whether it is still growing:
 
-- **`RecommendedCommandId` and `GroupFilter`.** The id of one of the module's commands, such as its Requeue, and the filter, in the module's own Operation filter shape, that selects every object of the item's group. Needs you shows the command as the item's primary button (`Requeue 23`), and pressing it starts an Operation over `GroupFilter`: the operator gives a reason, the server counts the scope, and nothing runs before the confirm. The shell offers the button only when both members are set, the module implements `IDashboardOperationRunner`, and the host has not disabled the command or hidden it from the UI. A user without the command's permission sees it disabled with `Needs operate permission`.
-- **`RecentCount`.** How many objects joined the item in the module's latest interval, such as the last hour. Above zero, Needs you marks the cause `growing`.
+- **`RecommendedCommandId` and `GroupFilter`.** The id of one of the module's commands, such as its Requeue, and the filter, in the module's own Operation filter shape, that selects every object of the item's group. The item's recommended command (`Requeue 23`) runs as an Operation over `GroupFilter` from the module's own filtered list, never from the Attention popover: the operator gives a reason, the server counts the scope, and nothing runs before the confirm. The shell offers the button only when both members are set, the module implements `IDashboardOperationRunner`, and the host has not disabled the command or hidden it from the UI. A user without the command's permission sees it disabled with `Needs operate permission`.
+- **`RecentCount`.** How many objects joined the item in the module's latest interval, such as the last hour. Above zero, the cause is still growing.
 - **`LastSeenAt`.** When the cause last occurred, beside `Since`, when it began.
 
 `GET {base}/api/needs-you` returns these as `recommended` (`{ command, filter }`, where `command` is described for the signed-in user as `GET {base}/api/{module}/commands` describes it, or `null`), `recentCount`, and `lastSeenAt`. The diagnostic module recommends Requeue over each failure group and counts the runs that failed in the last hour.
@@ -247,6 +248,7 @@ The page reads live changes from one server-sent-events stream at `GET {base}/ap
 
 - **Events.** `subscribed`, `change` (module, kind, id, topic, version, and the formatted projection), `module.stale`, `attention.changed`, `heartbeat`, and `reset`. Each stream receives only modules the user may view and only the topics it asked for.
 - **Resume.** Each node keeps its recent events in a bounded ring. A reconnect sends its last event id (the `Last-Event-ID` header, or the `lastEventId` query parameter) and resumes from it. When the node no longer holds that position, the stream sends `reset` and the page refetches its views.
+- **Pause.** The top bar's Pause holds this tab's data changes (`change`, `attention.changed`, `reset`, and `subscribed`) while the stream stays open for the other tabs, and the live state reads `Paused · N updates`; Resume applies them in the order they came. A module going stale, session end, sign-out from another tab, and the result of the operator's own commands, which return through the API, still apply at once. Pause is not remembered across reloads.
 - **Cross-node changes.** While a node has at least one stream open, it reads every module's `IDashboardChangeSource` each `ChangePollInterval`, starting from `GetStartCursorAsync`. No broker is involved: the module's store is the only shared state. A node with no open stream reads nothing. A read that throws marks that module's views `Stale`; the reader backs off and retries with the same cursor.
 - **What a change source's store must provide.** A change marker stamped by the store (a sequence or the store's clock) in the same statement as every write the dashboard shows; an index on it; reads from the cursor minus an overlap window longer than the store's longest write transaction; and a bounded page per read. The shell drops a change whose `Version` it already sent for that object.
 - **Same-node changes.** `IDashboardEventPublisher`, a singleton the shell registers, pushes a change to this node's streams at once, after the module's store commits it. Changes to one object within 250 milliseconds coalesce into one event. A version not newer than the last sent is dropped; versions compare as integers when both parse as one, and ordinally otherwise, so use a store sequence or a fixed-width timestamp. Other nodes still learn of the change from their own reads.
@@ -346,7 +348,8 @@ import { defineModule } from '@headless/dashboard-sdk'
 
 export default defineModule({
   id: 'diagnostics',
-  nav: [{ id: 'diagnostics.nav.runs', label: 'Runs', to: '' }],
+  product: 'diagnostics',
+  sidebar: [{ entries: [{ id: 'diagnostics.nav.runs', label: 'Runs', route: '', icon: 'runs' }] }],
   routes: [
     { path: '', lazy: () => import('./views/runs-list.tsx') },
     { path: 'runs/:runId', lazy: () => import('./views/run-page.tsx') },
@@ -360,12 +363,16 @@ export default defineModule({
 })
 ```
 
-`id` equals the .NET module id. Nav entries and client commands take `requires: 'view' | 'operate'`. Each route's `import()` becomes its own chunk. The palette already lists every nav entry as `Go to <module> <label>`, so a command that only navigates to a nav entry's route repeats it; the palette drops a command whose label matches a nav entry's label, ignoring case.
+`id` equals the .NET module id. `product` names the tab the module joins, one of `jobs`, `messaging`, `cluster`, `platform`, `dev-inbox`, or `diagnostics`; the shell shows one tab per product a host registered, in that order, and modules that name one product share its tab, their sidebar sections in registration order. A module whose manifest names another product fails the host's start.
+
+`sidebar` lists the module's sections in display order. A section has an optional `label` (a section without one draws no heading) and its `entries`. An entry has an `id` (a contribution id the host can disable or order, such as `jobs.nav.failed`), a `label`, a `route` relative to the module with an optional query (`?status=Failed`), exactly one of `icon` (an icon key) or `state` (the colour role of its dot: `sched`, `enq`, `proc`, `ok`, `fail`, or `off`), an optional `countKey` naming its count in the module's `IDashboardCountSource` answer, and an optional `requires`. The build fails on a computed `sidebar`, an unknown `product` or `state`, or an entry with both or neither of `icon` and `state`.
+
+Sidebar entries and client commands take `requires: 'view' | 'operate'`. Each route's `import()` becomes its own chunk. The palette already lists every sidebar entry as `Go to <module> <label>`, so a command that only navigates to an entry's route repeats it; the palette drops a command whose label matches a sidebar entry's label, ignoring case.
 
 | SDK entry | Contents |
 | --- | --- |
 | `@headless/dashboard-sdk` | `defineModule`, the dashboard and module context hooks (`useDashboard`, `useModule`), and `Button` |
-| `/components` | The design-system components: `Inspector` with editable `InspectorField`s (a select commits on change, text on `Enter` or blur, with an optional server preview while typing), `Timeline` (stored events in the same select-into-the-inspector grid as a table), `ScheduleStrip` (SVG marks for the next fires in the scheduler's zone, `[`/`]` widen and narrow it), `Figure` (a value that requires its comparison), `PrimaryAction` (a view's one primary action, drawn in the document bar), `Dialog`, `Drawer`, form fields, `CommandPalette`, `PayloadView`, status marks, live regions, toasts, and the keymap hooks |
+| `/components` | The design-system components: `Inspector` with editable `InspectorField`s (a select commits on change, text on `Enter` or blur, with an optional server preview while typing), `Timeline` (stored events in the same select-into-the-inspector grid as a table), `ScheduleStrip` (SVG marks for the next fires in the scheduler's zone, `[`/`]` widen and narrow it), `Figure` (a value that requires its comparison), `Dialog`, form fields, `CommandPalette`, `PayloadView`, status marks, live regions (`LiveIndicator` reads `Paused · N updates` when given the waiting count), toasts, the keymap hooks, and `below`, the named breakpoints as media conditions for script |
 | `/table` | `DataTable`: virtualized, with keyset load-more, column priority, a density remembered per view, and rows that arrive above held behind `N new`. It is its own entry, so the browser loads it with the first view that lists rows, not with the shell |
 | `/data` | The API client and hooks (`useDashboardApi`, `useDashboardList`, `useDashboardKeysetList`, `useDashboardObject`, `useNewRows`), change patching, and capped counts |
 | `/stream` | `useTopics`, `useStreamEvent`, `useStreamStatus`, and the stream client |
@@ -432,7 +439,7 @@ app.MapHeadlessDashboard();
 
 An Operation's filter is `{ kind, functions, statuses, cronJobId, correlationId, fingerprint, from, before, actionableOnly }`. Requeue and Delete freeze on the store's latest change marker at confirm and write each row only while its marker is unchanged, so a run requeued by one chunk that fails again is not touched again; Cancel freezes on creation at confirm and needs no marker, because a running job advances its marker as it reports progress.
 
-**Needs you and Overview.** One item per function and failure fingerprint (`3 failed runs of billing.charge`), recommending `jobs.requeue` over the group's actionable failures; one item per registered function that no live node's run filter claims (`No live node runs billing.charge`), pointing at its `function` object. The Overview shows the share of runs that succeeded, failed runs, and runs that started later than the scheduler's fallback interval after they were due, each over the last 24 hours against the 24 before. The succeeded share is left out while no run finished in the last 24 hours, so an idle system does not read as 0 % succeeded, and compares with nothing, labelled `no runs finished in the previous 24 h`, while no run finished in the 24 hours before. The Overview's schedule strip gets one track per function that has cron jobs: its occurrences due in the last hour in their status tone, and the next fires of its active cron jobs in the next hour; a past tick opens its run and a fire opens its cron job.
+**Attention and Overview.** One item per function and failure fingerprint (`3 failed runs of billing.charge`), recommending `jobs.requeue` over the group's actionable failures; one item per registered function that no live node's run filter claims (`No live node runs billing.charge`), pointing at its `function` object. The Overview shows the share of runs that succeeded, failed runs, and runs that started later than the scheduler's fallback interval after they were due, each over the last 24 hours against the 24 before. The succeeded share is left out while no run finished in the last 24 hours, so an idle system does not read as 0 % succeeded, and compares with nothing, labelled `no runs finished in the previous 24 h`, while no run finished in the 24 hours before. The Overview's schedule strip gets one track per function that has cron jobs: its occurrences due in the last hour in their status's state role (`sched`, `enq`, `proc`, `ok`, `fail`, or `off`), and the next fires of its active cron jobs in the next hour; a past tick opens its run and a fire opens its cron job.
 
 **Related and payload.** A run relates to the other runs with its correlation id (`jobs.same-correlation`), its chain (`jobs.chain`), and its cron job (`jobs.cron-job`); a run with a stored W3C trace parent carries its trace id, so the shell offers `Open trace`. Its payload is its stored request as JSON, or `Unsupported contract version N` when this host registers another version. A run and an attempt carry their exception as `exceptionMessage` and `exceptionFrame`: the module reads the JSON the executor stores (the outer message and the root exception's top frame) into the two, and a reason the store wrote itself, such as `Lease lapsed while running!`, arrives as the message with no frame.
 
@@ -451,7 +458,7 @@ An Operation's filter is `{ kind, functions, statuses, cronJobId, correlationId,
 | `POST time-jobs` | an operator action: `{ function, executionTime, timeZoneId, request, description, retries, retryIntervals, children: [{ ..., runCondition }] }` answers `201 { id }`; a time without an offset is read in `timeZoneId`, else the scheduler's zone; a bad body answers `400` |
 | `POST cron-jobs` | an operator action: `{ function, expression, timeZoneId, request, description }` answers `201 { id }` |
 
-**Views.** The package embeds the module's front end, so the rail shows Jobs with four views:
+**Views.** The package embeds the module's front end, so the Jobs tab's sidebar reaches four views:
 
 | View | Shows | Acts |
 | --- | --- | --- |

@@ -71,7 +71,11 @@ internal sealed class RenamedManifestFileProvider(IFileProvider inner, string id
         var prefix = manifest["id"]?.GetValue<string>() + ".";
         manifest["id"] = id;
 
-        _RenameIds(manifest["nav"] as JsonArray, prefix, id);
+        foreach (var section in (manifest["sidebar"] as JsonArray)?.OfType<JsonObject>() ?? [])
+        {
+            _RenameIds(section["entries"] as JsonArray, prefix, id);
+        }
+
         _RenameIds(manifest["commands"] as JsonArray, prefix, id);
 
         if (manifest["events"] is JsonArray events)

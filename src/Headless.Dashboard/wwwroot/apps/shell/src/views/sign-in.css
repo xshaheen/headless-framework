@@ -1,40 +1,141 @@
+/* The sign-in card: outside the frame, on a dot grid, in the stored theme. */
+
 .hd-sign-in {
   display: grid;
   place-items: center;
   min-block-size: 100vh;
   min-block-size: 100dvh;
-  padding: var(--space-6) var(--space-4);
-  background: var(--ground);
+  padding: 48px var(--sp-7);
+  background: radial-gradient(var(--line) 1px, transparent 1.2px) 0 0 / 22px 22px var(--ground);
 }
 
-.hd-sign-in-panel {
+.hd-sign-in-card {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 22px;
   inline-size: min(400px, 100%);
-  padding: 28px;
-  background: var(--surface);
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-panel);
+  padding: 32px var(--sp-9) 26px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
 }
 
-.hd-sign-in-panel p {
+.hd-sign-in-card p {
   margin: 0;
 }
 
-.hd-sign-in-state {
-  padding: var(--space-2) 10px;
-  font: var(--text-small);
-  background: var(--sunken);
-  border-radius: var(--radius-control);
+.hd-sign-in-card a:not(.hd-btn) {
+  color: var(--accent);
+}
+
+.hd-sign-in-card svg {
+  flex: none;
+  inline-size: 15px;
+  block-size: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+
+.hd-sign-in-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-4);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.hd-sign-in-mark {
+  display: inline-grid;
+  place-items: center;
+  inline-size: 30px;
+  block-size: 30px;
+  border-radius: 8px;
+  background: var(--text);
+  color: var(--panel);
+}
+
+.hd-sign-in-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.hd-sign-in-head h1 {
+  margin: 0;
+  font: var(--text-hero);
+  letter-spacing: -0.015em;
 }
 
 .hd-sign-in-form {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--sp-6);
 }
 
-.hd-sign-in-action {
+.hd-sign-in-field {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  block-size: 42px;
+  padding-inline: var(--sp-5) var(--sp-2);
+  color: var(--faint);
+  background: var(--deep);
+  border: 1px solid var(--field-edge);
+  border-radius: var(--radius-float);
+}
+
+.hd-sign-in-field:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.hd-sign-in-field input {
+  flex: 1;
+  min-inline-size: 0;
+  color: var(--text);
+  background: none;
+  border: 0;
+  outline: 0;
+}
+
+.hd-sign-in-field [aria-pressed='true'] {
+  color: var(--accent);
+}
+
+.hd-sign-in-caps {
+  font: var(--text-small);
+  color: var(--muted);
+}
+
+.hd-sign-in-caps::before {
+  content: '⇪ ';
+  color: var(--proc);
+}
+
+.hd-sign-in-alert,
+.hd-sign-in-state {
+  padding: 10px var(--sp-5);
+  border-radius: var(--radius-float);
+}
+
+.hd-sign-in-alert {
+  color: var(--fail);
+  border: 1px solid var(--fail-edge);
+}
+
+.hd-sign-in-state {
+  font: var(--text-small);
+  background: var(--deep);
+}
+
+.hd-btn.hd-sign-in-go {
+  block-size: 42px;
+  margin-block-start: var(--sp-2);
+  border-radius: var(--radius-float);
+  font-size: 14px;
+  font-weight: 600;
   text-decoration: none;
 }

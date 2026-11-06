@@ -10,9 +10,9 @@ namespace Headless.Dashboard;
 
 /// <summary>
 /// The endpoints that gather one answer from every module: <c>GET api/needs-you</c>, <c>GET api/overview</c>,
-/// <c>GET api/resolve?q=</c> (a pasted id), and <c>GET api/related?module=&amp;kind=&amp;id=</c> (one object's related
-/// objects). Each lists only the modules the user may view; a module that times out or fails answers
-/// <c>stale: true</c> in its place.
+/// <c>GET api/resolve?q=</c> (a pasted id), <c>GET api/related?module=&amp;kind=&amp;id=</c> (one object's related
+/// objects), and <c>GET api/counts?product=</c> (one product's sidebar counts). Each lists only the modules the user
+/// may view; a module that times out or fails answers <c>stale: true</c> in its place.
 /// </summary>
 internal static class AggregationEndpoints
 {
@@ -44,6 +44,10 @@ internal static class AggregationEndpoints
             .ExcludeFromDescription();
         dashboard
             .MapGet("/api/related", _Handler(_GetRelatedAsync))
+            .RequireDashboardShellAccess(moduleId: null)
+            .ExcludeFromDescription();
+        dashboard
+            .MapGet("/api/counts", _Handler(_GetCountsAsync))
             .RequireDashboardShellAccess(moduleId: null)
             .ExcludeFromDescription();
     }
@@ -198,6 +202,76 @@ internal static class AggregationEndpoints
             .ToArray();
 
         return Results.Json(new RelatedResponse(groups, stale), ShellJson.Web);
+    }
+
+    /// <summary>
+    /// Answers every sidebar count of one product in one response, so the shell draws the sidebar's counts from one
+    /// request. Two modules of one product that answer the same key keep the first registered module's count.
+    /// </summary>
+    private static async Task<IResult> _GetCountsAsync(HttpContext context, CancellationToken cancellationToken)
+    {
+        var productId = context.Request.Query["product"].ToString();
+
+        if (productId.Length == 0)
+        {
+            return Results.BadRequest();
+        }
+
+        var manifest = context.RequestServices.GetRequiredService<DashboardManifestProvider>().Manifest;
+
+        if (DashboardProducts.Find(productId) is not { } product)
+        {
+            return Results.NotFound();
+        }
+
+        var members = manifest.Modules.Where(module => module.Product == product).ToArray();
+
+        // A product no registered module joins has no tab, so it answers as an unknown one.
+        if (members.Length == 0)
+        {
+            return Results.NotFound();
+        }
+
+        var access = await _AccessAsync(context).ConfigureAwait(false);
+
+        if (!members.Any(module => access.MayView(module.Id)))
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        var request = new DashboardCountsRequest { User = context.User };
+        var answers = await _FanOut(context)
+            .CallAsync<IDashboardCountSource, IReadOnlyDictionary<string, DashboardCount>>(
+                access,
+                "counts",
+                module => module.Product == product,
+                (source, token) => source.GetCountsAsync(request, token),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        var counts = new Dictionary<string, CountResponse>(StringComparer.Ordinal);
+
+        foreach (var answer in answers)
+        {
+            if (answer is not { Stale: false, Result: { } result })
+            {
+                continue;
+            }
+
+            foreach (var (key, value) in result)
+            {
+                var (count, capped) = CapCount(value.Count);
+                counts.TryAdd(key, new CountResponse(count, capped || value.Capped));
+            }
+        }
+
+        var stale = answers
+            .Where(static answer => answer.Stale)
+            .Select(static answer => new StaleModuleResponse(answer.Module.Id, answer.Module.DisplayName))
+            .ToArray();
+
+        return Results.Json(new CountsResponse(product.Id, counts, stale), ShellJson.Web);
     }
 
     /// <summary>
@@ -435,4 +509,12 @@ internal static class AggregationEndpoints
     );
 
     private sealed record StaleModuleResponse(string Id, string DisplayName);
+
+    private sealed record CountsResponse(
+        string Product,
+        IReadOnlyDictionary<string, CountResponse> Counts,
+        IReadOnlyList<StaleModuleResponse> Stale
+    );
+
+    private sealed record CountResponse(long Count, bool Capped);
 }

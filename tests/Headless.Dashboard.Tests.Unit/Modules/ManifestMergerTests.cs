@@ -41,12 +41,16 @@ public sealed class ManifestMergerTests : TestBase
 
         var module = manifest.Modules.Should().ContainSingle().Subject;
         module.IsRefused.Should().BeFalse();
-        module.Manifest!.Nav.Select(entry => entry.Id).Should().Equal("diag.nav.runs");
+        module
+            .Manifest!.Sidebar.SelectMany(section => section.Entries)
+            .Select(entry => entry.Id)
+            .Should()
+            .Equal("diag.nav.runs");
         module.ServerCommands.Select(command => command.Id).Should().Equal("diag.requeue");
     }
 
     [Fact]
-    public void should_keep_a_refused_module_as_a_refusal_entry_with_no_nav_routes_or_commands()
+    public void should_keep_a_refused_module_as_a_refusal_entry_with_no_sidebar_routes_or_commands()
     {
         var manifest = ManifestMerger.Merge(
             [new FixtureModule("diag", "sdk_2_0"), new FixtureModule("audit", "audit")],
@@ -65,5 +69,43 @@ public sealed class ManifestMergerTests : TestBase
         // Its server contributions are withheld from the rest of the dashboard too.
         manifest.RelatedGroupIds.Should().Equal("audit.run-related");
         manifest.Modules[1].IsRefused.Should().BeFalse();
+    }
+
+    [Fact]
+    public void should_carry_each_module_product_and_its_sidebar_entry_ids_as_known_contributions()
+    {
+        var manifest = ManifestMerger.Merge(
+            [new FixtureModule("diag", "diag"), new FixtureModule("audit", "audit")],
+            new Version(1, 0, 0),
+            new ContributionOverrides()
+        );
+
+        manifest.Modules.Select(module => module.Product?.Id).Should().Equal("diagnostics", "diagnostics");
+        manifest.KnownContributionIds.Should().Contain(["diag.nav.runs", "diag.nav.settings", "audit.nav.entries"]);
+    }
+
+    [Fact]
+    public void should_fail_the_start_naming_the_product_when_a_loaded_module_names_an_unknown_product()
+    {
+        var act = () =>
+            ManifestMerger.Merge(
+                [new FixtureModule("diag", "bad_product")],
+                new Version(1, 0, 0),
+                new ContributionOverrides()
+            );
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*'diag'*'billing'*jobs, messaging*");
+    }
+
+    [Fact]
+    public void should_drop_a_sidebar_section_when_the_host_disables_every_entry_in_it()
+    {
+        var manifest = ManifestMerger.Merge(
+            [new FixtureModule("audit", "audit")],
+            new Version(1, 0, 0),
+            new ContributionOverrides().Disable("audit.nav.entries")
+        );
+
+        manifest.Modules.Should().ContainSingle().Subject.Manifest!.Sidebar.Should().BeEmpty();
     }
 }

@@ -2,7 +2,29 @@
   "id": "diag",
   "sdkVersion": "1.6",
   "entry": "entry.js",
-  "nav": [{ "id": "diag.nav.runs", "label": "Runs", "to": "runs" }],
-  "routes": [{ "path": "runs", "chunk": "runs.js" }],
-  "commands": [{ "id": "diag.open-runs", "label": "Open runs" }]
+  "product": "diagnostics",
+  "sidebar": [
+    {
+      "entries": [
+        {
+          "id": "diag.nav.runs",
+          "label": "Runs",
+          "route": "runs",
+          "icon": "list"
+        }
+      ]
+    }
+  ],
+  "routes": [
+    {
+      "path": "runs",
+      "chunk": "runs.js"
+    }
+  ],
+  "commands": [
+    {
+      "id": "diag.open-runs",
+      "label": "Open runs"
+    }
+  ]
 }

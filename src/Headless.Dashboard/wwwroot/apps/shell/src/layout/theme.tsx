@@ -1,41 +1,45 @@
+// The React Compiler's memo caches cost the shell more bytes than these rare renders save, and the shell's assets
+// sit near their size budget.
+'use no memo'
+
 import { SelectField } from '@headless/dashboard-sdk/components'
 import { useState } from 'react'
 
-export type Theme = 'system' | 'light' | 'dark'
+export type Theme = 'dark' | 'light'
 
 const storageKey = 'headless-dashboard:theme'
 
 function isTheme(value: unknown): value is Theme {
-  return value === 'system' || value === 'light' || value === 'dark'
+  return value === 'dark' || value === 'light'
 }
 
-/** The theme this browser chose; `system` when it chose none or storage is unavailable. */
+/**
+ * The theme this browser chose. Dark is the default whatever the system setting, so a value this build does not
+ * know, such as an older `system`, an empty store, or storage that throws, all read as dark.
+ */
 export function readTheme(): Theme {
   try {
-    const value = localStorage.getItem(storageKey)
-
-    return isTheme(value) ? value : 'system'
+    return localStorage.getItem(storageKey) === 'light' ? 'light' : 'dark'
   } catch {
-    return 'system'
+    return 'dark'
   }
 }
 
-/** Applies a theme to the document: `system` leaves the choice to `prefers-color-scheme`. */
+/** Applies a theme to the document: the dark tokens sit on `:root`, and only light needs the attribute. */
 export function applyTheme(theme: Theme, root: HTMLElement = document.documentElement) {
-  if (theme === 'system') {
-    root.removeAttribute('data-theme')
+  if (theme === 'light') {
+    root.setAttribute('data-theme', 'light')
   } else {
-    root.setAttribute('data-theme', theme)
+    root.removeAttribute('data-theme')
   }
 }
 
 const options = [
-  { value: 'system', label: 'System' },
-  { value: 'light', label: 'Light' },
   { value: 'dark', label: 'Dark' },
+  { value: 'light', label: 'Light' },
 ]
 
-/** Light, dark, or the system setting; remembered per browser. */
+/** Dark or light; remembered per browser. */
 export function ThemeControl() {
   const [theme, setTheme] = useState(readTheme)
 

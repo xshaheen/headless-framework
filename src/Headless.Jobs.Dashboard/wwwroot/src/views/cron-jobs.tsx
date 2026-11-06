@@ -1,5 +1,5 @@
 import { useDashboard, useModule } from '@headless/dashboard-sdk'
-import { Button, Inspector, Mono, ObjectHeader, PrimaryAction, StatusMark, useDelayed } from '@headless/dashboard-sdk/components'
+import { Button, Inspector, Mono, ObjectHeader, StatusMark, useDelayed } from '@headless/dashboard-sdk/components'
 import { listKey, useDashboardList } from '@headless/dashboard-sdk/data'
 import { useQueryClient } from '@headless/dashboard-sdk/query'
 import { Link, useSearchParams } from '@headless/dashboard-sdk/router'
@@ -75,11 +75,9 @@ export default function CronJobsView() {
           <h1 id="jobs-cron-title" className="hd-title">
             Cron jobs
           </h1>
-          <PrimaryAction>
-            <Button variant="primary" disabledReason={addReason} onPress={() => setParams({ create: 'cron-job' }, { replace: true })}>
-              Add cron job
-            </Button>
-          </PrimaryAction>
+          <Button variant="primary" disabledReason={addReason} onPress={() => setParams({ create: 'cron-job' }, { replace: true })}>
+            Add cron job
+          </Button>
         </header>
         <StaleNotice what="these cron jobs" onRefresh={() => void list.refetch()} />
         {list.isPending ? (

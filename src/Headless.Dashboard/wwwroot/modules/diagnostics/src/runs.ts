@@ -1,6 +1,6 @@
 import { useDashboard, useModule } from '@headless/dashboard-sdk'
 import { createCommandsApi, type CommandDefinition } from '@headless/dashboard-sdk/commands'
-import type { StatusTone } from '@headless/dashboard-sdk/components'
+import type { DashboardStateRole } from '@headless/dashboard-sdk'
 import type { CappedCount, DashboardApi, DashboardListPage } from '@headless/dashboard-sdk/data'
 import { useQuery } from '@headless/dashboard-sdk/query'
 import { useState } from 'react'
@@ -52,16 +52,21 @@ export function runMatches(run: Run, filter: RunFilter) {
 
 export const runStatuses = ['Queued', 'Running', 'Succeeded', 'Failed'] as const
 
-const tones: Readonly<Record<string, StatusTone>> = {
-  Queued: 'waiting',
-  Running: 'active',
-  Succeeded: 'healthy',
-  Failed: 'needs',
+const runRoles: Readonly<Record<(typeof runStatuses)[number], DashboardStateRole>> = {
+  Queued: 'enq',
+  Running: 'proc',
+  Succeeded: 'ok',
+  Failed: 'fail',
 }
 
-/** The mark a run's status shows. `Requeuing…` is the client's own state while a requeue waits for its change. */
-export function runStatusMark(status: string, requeuing = false): { tone: StatusTone; label: string } {
-  return requeuing ? { tone: 'active', label: 'Requeuing…' } : { tone: tones[status] ?? 'waiting', label: status }
+/**
+ * The mark a run's status shows. `Requeuing…` is the client's own state while a requeue waits for its change, and
+ * reads as queued, where the requeue puts the run; a status this build does not know reads as off.
+ */
+export function runStatusMark(status: string, requeuing = false): { tone: DashboardStateRole; label: string } {
+  return requeuing
+    ? { tone: 'enq', label: 'Requeuing…' }
+    : { tone: runRoles[status as keyof typeof runRoles] ?? 'off', label: status }
 }
 
 export function runsTopic(module: string) {

@@ -16,12 +16,15 @@ export { createDashboardClient, DashboardDataProvider, objectKey, setObject, use
 export {
   defineModule,
   type DashboardPermission,
+  type DashboardProduct,
+  type DashboardStateRole,
   type ModuleCommand,
   type ModuleCommandContext,
   type ModuleDefinition,
   type ModuleEventHandler,
-  type ModuleNavEntry,
   type ModuleObjectKind,
   type ModuleRoute,
+  type ModuleSidebarEntry,
+  type ModuleSidebarSection,
 } from './define-module.ts'
 export type { Toast, ToastStore } from './toast-store.ts'

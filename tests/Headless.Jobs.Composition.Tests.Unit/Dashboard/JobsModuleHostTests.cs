@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
+using System.Text.Json;
 using Headless.Jobs;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -17,6 +18,37 @@ public sealed class JobsModuleHostTests : TestBase
 {
     private readonly FakeTimeProvider _time = new(new DateTimeOffset(2026, 11, 5, 12, 0, 0, TimeSpan.Zero));
     private readonly RecordingOperatorLog _log = new();
+
+    [Fact]
+    public async Task should_answer_the_jobs_sidebar_counts_for_every_run_status_in_one_request()
+    {
+        // given
+        await using var app = await JobsDashboardHttpHost.StartAsync(_time, _log, AbortToken);
+        var store = app.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+        await store.AddTimeJobsAsync(
+            [JobsModuleNode.FailedJob(_time.GetUtcNow()), JobsModuleNode.FailedJob(_time.GetUtcNow())],
+            AbortToken
+        );
+        using var client = JobsDashboardHttpHost.Client(app);
+        var cookie = await JobsDashboardHttpHost.SignInAsync(client, "viewer", AbortToken);
+
+        // when
+        using var response = await JobsDashboardHttpHost.GetAsync(
+            client,
+            "/headless/api/counts?product=jobs",
+            cookie,
+            AbortToken
+        );
+
+        // then
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(AbortToken));
+        var counts = body.RootElement.GetProperty("counts");
+        counts.EnumerateObject().Select(property => property.Name).Should().BeEquivalentTo(Enum.GetNames<JobStatus>());
+        counts.GetProperty("Failed").GetProperty("count").GetInt64().Should().Be(2);
+        counts.GetProperty("Failed").GetProperty("capped").GetBoolean().Should().BeFalse();
+        counts.GetProperty("Queued").GetProperty("count").GetInt64().Should().Be(0);
+    }
 
     [Fact]
     public async Task should_answer_403_and_log_nothing_when_a_viewer_posts_requeue()

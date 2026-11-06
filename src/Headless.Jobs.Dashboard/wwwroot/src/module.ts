@@ -2,11 +2,33 @@ import { defineModule } from '@headless/dashboard-sdk'
 
 export default defineModule({
   id: 'jobs',
-  nav: [
-    { id: 'jobs.nav.runs', label: 'Runs', to: '' },
-    { id: 'jobs.nav.cron-jobs', label: 'Cron jobs', to: 'cron-jobs' },
-    { id: 'jobs.nav.functions', label: 'Functions', to: 'functions' },
-    { id: 'jobs.nav.nodes', label: 'Nodes', to: 'nodes' },
+  product: 'jobs',
+  // The Dashboard and state entries open the runs list until the product has a Dashboard view of its own. Each state's
+  // countKey is its JobStatus name, the key the module's counts answer uses.
+  sidebar: [
+    { entries: [{ id: 'jobs.nav.dashboard', label: 'Dashboard', route: '', icon: 'dashboard' }] },
+    {
+      label: 'States',
+      entries: [
+        { id: 'jobs.nav.idle', label: 'Idle', route: '?status=Idle', state: 'sched', countKey: 'Idle' },
+        { id: 'jobs.nav.queued', label: 'Queued', route: '?status=Queued', state: 'enq', countKey: 'Queued' },
+        { id: 'jobs.nav.in-progress', label: 'In progress', route: '?status=InProgress', state: 'proc', countKey: 'InProgress' },
+        { id: 'jobs.nav.succeeded', label: 'Succeeded', route: '?status=Succeeded', state: 'ok', countKey: 'Succeeded' },
+        { id: 'jobs.nav.due-done', label: 'Due done', route: '?status=DueDone', state: 'ok', countKey: 'DueDone' },
+        { id: 'jobs.nav.failed', label: 'Failed', route: '?status=Failed', state: 'fail', countKey: 'Failed' },
+        { id: 'jobs.nav.cancelled', label: 'Cancelled', route: '?status=Cancelled', state: 'off', countKey: 'Cancelled' },
+        { id: 'jobs.nav.skipped', label: 'Skipped', route: '?status=Skipped', state: 'off', countKey: 'Skipped' },
+        { id: 'jobs.nav.runs', label: 'All runs', route: '', icon: 'runs' },
+      ],
+    },
+    {
+      label: 'Definitions',
+      entries: [
+        { id: 'jobs.nav.cron-jobs', label: 'Recurring jobs', route: 'cron-jobs', icon: 'recurring' },
+        { id: 'jobs.nav.functions', label: 'Functions', route: 'functions', icon: 'function' },
+      ],
+    },
+    { label: 'Hosts', entries: [{ id: 'jobs.nav.nodes', label: 'Servers', route: 'nodes', icon: 'server' }] },
   ],
   routes: [
     { path: '', lazy: () => import('./views/runs.tsx') },

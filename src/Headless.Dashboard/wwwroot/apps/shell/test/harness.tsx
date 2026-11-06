@@ -22,8 +22,12 @@ export interface RenderShellOptions {
 }
 
 export const emptyAggregates: ApiHandler = (request) => {
-  if (request.path === 'needs-you' || request.path === 'overview' || request.path === 'resolve') {
+  if (request.path === 'needs-you' || request.path === 'resolve') {
     return { modules: [] }
+  }
+
+  if (request.path === 'counts') {
+    return { product: request.query?.product, counts: {}, stale: [] }
   }
 
   throw new Error(`No API handler for ${request.method} ${request.path}.`)

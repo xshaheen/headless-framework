@@ -53,7 +53,7 @@ public sealed class DiagnosticsModuleTests : TestBase
     }
 
     [Fact]
-    public async Task should_appear_with_its_nav_routes_and_api_when_the_environment_is_development()
+    public async Task should_appear_with_its_sidebar_routes_and_api_when_the_environment_is_development()
     {
         await using var app = await _StartAsync(Environments.Development, dashboard => dashboard.AddDiagnostics());
         using var client = _Client(app);
@@ -63,7 +63,7 @@ public sealed class DiagnosticsModuleTests : TestBase
             .ContainSingle(module => string.Equals(module.Id, _Id, StringComparison.Ordinal))
             .Which;
         module.IsRefused.Should().BeFalse();
-        module.Manifest!.Nav.Should().NotBeEmpty();
+        module.Manifest!.Sidebar.Should().NotBeEmpty();
         module.Manifest.Routes.Should().NotBeEmpty();
 
         using var asset = await _GetAsync(client, $"/headless/m/{_Id}/{module.Manifest.Entry}");
@@ -160,7 +160,8 @@ public sealed class DiagnosticsModuleTests : TestBase
         );
         renamed.IsRefused.Should().BeFalse();
         renamed
-            .Manifest!.Nav.Should()
+            .Manifest!.Sidebar.SelectMany(static section => section.Entries)
+            .Should()
             .NotBeEmpty()
             .And.OnlyContain(entry => entry.Id.StartsWith("diag-b.", StringComparison.Ordinal));
         renamed.ServerCommands.Select(static command => command.Id).Should().Contain("diag-b.requeue");

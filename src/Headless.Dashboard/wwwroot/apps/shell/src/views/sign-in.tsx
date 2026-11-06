@@ -2,7 +2,7 @@
 // sit at their size budget.
 'use no memo'
 
-import { Button, TextInputField } from '@headless/dashboard-sdk/components'
+import { Button } from '@headless/dashboard-sdk/components'
 import { useEffect, useState, type FormEvent } from 'react'
 import './sign-in.css'
 import { fetchAuthInfo, safeReturnUrl, type BootstrapState, type SignInState } from '../bootstrap.ts'
@@ -181,16 +181,22 @@ export function SignInPage({ state, search, fetch: fetcher, assign }: SignInPage
   const host = typeof location === 'undefined' ? 'the application' : location.host
 
   return (
-    <main className="hd-sign-in">
-      <section className="hd-sign-in-panel" aria-labelledby="sign-in-title">
-        <div>
-          <h1 id="sign-in-title" className="hd-page-title">
-            Headless dashboard
-          </h1>
-          <p className="hd-hint">Background jobs, messages, and what needs an operator, for this application.</p>
+    <div className="hd-sign-in">
+      <main className="hd-sign-in-card" aria-labelledby="sign-in-title">
+        <span className="hd-sign-in-brand">
+          <span className="hd-sign-in-mark" aria-hidden="true">
+            <Icon d="M4.5 3v10M11.5 3v10M4.5 8h7" />
+          </span>
+          headless
+        </span>
+        <div className="hd-sign-in-head">
+          <h1 id="sign-in-title">Sign in</h1>
+          <p className="hd-hint">
+            <span className="hd-mono">{host}</span> dashboard
+          </p>
         </div>
         {forbidden ? (
-          <p role="alert" className="hd-sign-in-state">
+          <p role="alert" className="hd-sign-in-alert">
             {forbidden}
           </p>
         ) : notice ? (
@@ -209,7 +215,7 @@ export function SignInPage({ state, search, fetch: fetcher, assign }: SignInPage
               <a href="/">Go to the application</a>
             </p>
           ) : (
-            <a className="hd-btn hd-btn-primary hd-sign-in-action" href={hostSignIn}>
+            <a className="hd-btn hd-btn-primary hd-sign-in-go" href={hostSignIn}>
               {`Sign in with ${host}`}
             </a>
           )
@@ -219,47 +225,90 @@ export function SignInPage({ state, search, fetch: fetcher, assign }: SignInPage
           </p>
         ) : (
           <form className="hd-sign-in-form" onSubmit={(event) => void submit(event)} noValidate>
-            {mode === 'basic' ? (
-              <>
-                <TextInputField label="User name" name="username" value={userName} onChange={setUserName} isRequired />
-                <PasswordField label="Password" value={password} onChange={setPassword} />
-              </>
-            ) : (
-              <PasswordField label="API key" value={apiKey} onChange={setApiKey} />
-            )}
             {phase.kind === 'refused' ? (
-              <p role="alert" className="hd-error">
+              <p role="alert" className="hd-sign-in-alert">
                 {phase.message}
               </p>
             ) : null}
-            <Button type="submit" variant="primary" isPending={phase.kind === 'busy'}>
+            {mode === 'basic' ? (
+              <>
+                <SignInField label="User name" icon={userIcon} value={userName} onChange={setUserName} autoComplete="username" />
+                <SignInField label="Password" icon={keyIcon} value={password} onChange={setPassword} secret autoComplete="current-password" />
+              </>
+            ) : (
+              <SignInField label="API key" icon={keyIcon} value={apiKey} onChange={setApiKey} secret autoComplete="off" />
+            )}
+            <Button type="submit" variant="primary" className="hd-sign-in-go" isPending={phase.kind === 'busy'}>
               Sign in
             </Button>
           </form>
         )}
-      </section>
-    </main>
+      </main>
+    </div>
   )
 }
 
-/** A secret field: a native password input, so password managers and the platform treat it as one. */
-function PasswordField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+const userIcon = 'M8 8a3 3 0 1 0 0-6a3 3 0 0 0 0 6zM3 14c0-3 2-4 5-4s5 1 5 4'
+const keyIcon = 'M4 7h8v7H4zM6 7V5a2 2 0 0 1 4 0v2'
+
+function Icon({ d }: { d: string }) {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <path d={d} />
+    </svg>
+  )
+}
+
+interface SignInFieldProps {
+  label: string
+  icon: string
+  value: string
+  onChange: (value: string) => void
+  autoComplete: string
+  /** A password or key: hidden as typed, with a Show toggle and a Caps Lock hint. */
+  secret?: boolean
+}
+
+/**
+ * A sign-in field: a native input, so password managers and the platform treat it as one. A secret field hides what
+ * is typed until Show, and says when Caps Lock is on, since a wrong case reads as a wrong password.
+ */
+function SignInField({ label, icon, value, onChange, autoComplete, secret }: SignInFieldProps) {
   const id = `sign-in-${label.toLowerCase().replace(/\s+/g, '-')}`
+  const [shown, setShown] = useState(false)
+  const [caps, setCaps] = useState(false)
 
   return (
     <div className="hd-field">
       <label className="hd-label" htmlFor={id}>
         {label}
       </label>
-      <input
-        id={id}
-        className="hd-input"
-        type="password"
-        required
-        autoComplete={label === 'Password' ? 'current-password' : 'off'}
-        value={value}
-        onChange={(event) => onChange(event.currentTarget.value)}
-      />
+      <span className="hd-sign-in-field">
+        <Icon d={icon} />
+        <input
+          id={id}
+          type={secret && !shown ? 'password' : 'text'}
+          required
+          autoComplete={autoComplete}
+          autoCapitalize="none"
+          spellCheck={false}
+          aria-describedby={secret && caps ? `${id}-caps` : undefined}
+          value={value}
+          onChange={(event) => onChange(event.currentTarget.value)}
+          onKeyUp={(event) => setCaps(event.getModifierState('CapsLock'))}
+          onKeyDown={(event) => setCaps(event.getModifierState('CapsLock'))}
+        />
+        {secret ? (
+          <Button variant="ghost" aria-label={shown ? `Hide ${label.toLowerCase()}` : `Show ${label.toLowerCase()}`} aria-pressed={shown} onPress={() => setShown(!shown)}>
+            <Icon d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8zM8 6.5a1.5 1.5 0 1 0 0 3a1.5 1.5 0 0 0 0-3z" />
+          </Button>
+        ) : null}
+      </span>
+      {secret && caps ? (
+        <span id={`${id}-caps`} className="hd-sign-in-caps">
+          Caps Lock is on
+        </span>
+      ) : null}
     </div>
   )
 }

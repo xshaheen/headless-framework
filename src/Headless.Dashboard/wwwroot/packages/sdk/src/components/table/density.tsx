@@ -1,11 +1,11 @@
 import { useState } from 'react'
 import { Button } from '../button.tsx'
 
-/** How tall a list's rows are: 36 px, or 28 px on a long list read at a glance. */
+/** How tall a list's rows are: 34 px, or 28 px on a long list read at a glance. */
 export type Density = 'comfortable' | 'compact'
 
 /** The row heights `tokens.css` sets as `--row-height` and `--row-height-compact`; the virtualizer lays rows out by them. */
-export const rowHeights: Readonly<Record<Density, number>> = { comfortable: 36, compact: 28 }
+export const rowHeights: Readonly<Record<Density, number>> = { comfortable: 34, compact: 28 }
 
 const storagePrefix = 'headless-dashboard:density:'
 

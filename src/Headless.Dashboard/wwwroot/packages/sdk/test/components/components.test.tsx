@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { useState, type ReactNode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Button } from '../../src/components/button.tsx'
-import { Dialog, Drawer } from '../../src/components/dialog.tsx'
+import { Dialog } from '../../src/components/dialog.tsx'
 import { Inspector } from '../../src/components/inspector/inspector.tsx'
 import { LiveIndicator, ToastRegion } from '../../src/components/live.tsx'
 import { StatusMark } from '../../src/components/marks.tsx'
@@ -31,23 +31,22 @@ function withDashboard(children: ReactNode, stream: FakeStream = createFakeStrea
 }
 
 describe('overlays', () => {
-  function Opener({ kind }: { kind: 'dialog' | 'drawer' }) {
+  function Opener() {
     const [open, setOpen] = useState(false)
-    const Overlay = kind === 'dialog' ? Dialog : Drawer
 
     return (
       <>
         <Button onPress={() => setOpen(true)}>Open details</Button>
-        <Overlay isOpen={open} onOpenChange={setOpen} title="Run details">
+        <Dialog isOpen={open} onOpenChange={setOpen} title="Run details">
           <Button onPress={() => setOpen(false)}>Close details</Button>
-        </Overlay>
+        </Dialog>
       </>
     )
   }
 
-  it.each(['dialog', 'drawer'] as const)('returns focus to the control that opened the %s', async (kind) => {
+  it('returns focus to the control that opened the dialog', async () => {
     const user = userEvent.setup()
-    render(<Opener kind={kind} />)
+    render(<Opener />)
     const opener = screen.getByRole('button', { name: 'Open details' })
 
     await user.click(opener)
@@ -61,7 +60,7 @@ describe('overlays', () => {
 
   it('closes on Esc and returns focus', async () => {
     const user = userEvent.setup()
-    render(<Opener kind="drawer" />)
+    render(<Opener />)
     const opener = screen.getByRole('button', { name: 'Open details' })
 
     await user.click(opener)
@@ -131,10 +130,15 @@ describe('toasts and buttons', () => {
     expect(onPress).not.toHaveBeenCalled()
   })
 
-  it('labels a status as well as marking it', () => {
-    render(<StatusMark tone="needs" label="Failed" />)
+  it.each(['sched', 'enq', 'proc', 'ok', 'fail', 'off'] as const)('marks the %s role with its class and keeps the label outside the dot', (role) => {
+    render(<StatusMark tone={role} label="State" />)
 
-    expect(screen.getByText('Failed')).toBeTruthy()
+    const status = screen.getByText('State')
+    const mark = status.querySelector('.hd-mark')!
+
+    expect(status.classList).toContain(`hd-tone-${role}`)
+    expect(mark.getAttribute('aria-hidden')).toBe('true')
+    expect(mark.textContent).toBe('')
   })
 })
 

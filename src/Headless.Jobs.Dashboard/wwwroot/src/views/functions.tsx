@@ -10,8 +10,8 @@ import { canvas, layout, LoadError, Skeleton, StaleNotice, Time } from '../parts
 /** Whether a live node's run filter claims the function: a function no node claims never runs. */
 export function claimMark(item: Pick<JobFunction, 'claimedBy'>) {
   return item.claimedBy.length > 0
-    ? ({ tone: 'healthy', label: `Claimed by ${item.claimedBy.length}` } as const)
-    : ({ tone: 'needs', label: 'No live node' } as const)
+    ? ({ tone: 'ok', label: `Claimed by ${item.claimedBy.length}` } as const)
+    : ({ tone: 'fail', label: 'No live node' } as const)
 }
 
 /** A function's read-only fields, as the list's inspector and the function page show them. */

@@ -31,23 +31,32 @@ function useSecondsSince(since: number | null) {
 }
 
 /**
- * The document bar's live indicator: `● Live`, or `Stale — 40 s` in amber with `Reconnect`. The change to and from
- * stale is announced once through a live region; the ticking seconds are not.
+ * The top bar's live state: `Live`, `Stale — 40 s` with `Reconnect`, or `Paused · 3 updates` while the tab holds its
+ * updates (`paused` is how many wait); a dropped stream wins over Paused. Each turn to Stale or Paused is announced
+ * once through a live region; the ticking seconds and the waiting count are not.
  */
-export function LiveIndicator() {
+export function LiveIndicator({ paused }: { paused?: number | null }) {
   const { stream } = useDashboard()
   const { status, staleSince } = useStreamStatus()
   const seconds = useSecondsSince(staleSince)
-  // Only the turn to stale is news; the steady state is not announced.
-  const announcement = status === 'stale' ? 'Live updates stopped. What you see may be out of date.' : ''
+  const stale = status === 'stale'
+  const held = stale ? null : paused
+  // Only a turn away from live is news; the steady state is not announced.
+  const announcement = stale ? 'Live updates stopped. What you see may be out of date.' : held != null ? 'Live updates paused in this tab.' : ''
 
   return (
-    <span className={`hd-live${status === 'stale' ? ' hd-live-stale' : ''}`}>
+    <span className={`hd-live${stale ? ' hd-live-stale' : held != null ? ' hd-live-paused' : ''}`}>
       <span className="hd-live-label">
         <i aria-hidden="true" />
-        {status === 'stale' ? `Stale — ${seconds} s` : status === 'live' ? 'Live' : 'Connecting'}
+        {stale
+          ? `Stale — ${seconds} s`
+          : held != null
+            ? `Paused · ${held} ${held === 1 ? 'update' : 'updates'}`
+            : status === 'live'
+              ? 'Live'
+              : 'Connecting'}
       </span>
-      {status === 'stale' ? (
+      {stale ? (
         <Button variant="ghost" onPress={() => stream.reconnect()}>
           Reconnect
         </Button>

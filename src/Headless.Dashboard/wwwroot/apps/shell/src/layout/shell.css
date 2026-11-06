@@ -1,257 +1,420 @@
 /*
- * The shell's layout: rail, document bar, Operations, canvas, and inspector dock. Every value reads the SDK's tokens
+ * The shell's frame: top bar, product sidebar, Operations, and the view. Every value reads the SDK's tokens
  * (tokens.css); the shell adds layout, never a colour of its own.
  */
 
 .hd-shell {
   display: grid;
-  grid-template-columns: var(--rail-width) minmax(0, 1fr);
+  grid-template: 'bar bar' var(--topbar-height) 'side main' minmax(0, 1fr) / var(--sidebar-width) minmax(0, 1fr);
   block-size: 100vh;
   block-size: 100dvh;
 }
 
+/* Off every product (Not found, no module registered) there is no sidebar to show. */
+.hd-shell-bare {
+  grid-template: 'bar' var(--topbar-height) 'main' minmax(0, 1fr) / minmax(0, 1fr);
+}
+
 .hd-skip {
   position: absolute;
-  inset-inline-start: var(--space-2);
+  inset-inline-start: var(--sp-3);
   inset-block-start: -100px;
-  z-index: 70;
-  padding: var(--space-2) var(--space-3);
-  background: var(--surface);
+  z-index: var(--z-palette);
+  padding: var(--sp-3) var(--sp-5);
+  background: var(--panel);
   border-radius: var(--radius-control);
-  box-shadow: var(--shadow);
 }
 
 .hd-skip:focus {
-  inset-block-start: var(--space-2);
+  inset-block-start: var(--sp-3);
 }
 
-.hd-rail {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: var(--space-3) var(--space-2);
-  overflow-y: auto;
-  background: var(--ground);
-  border-inline-end: 1px solid var(--hairline);
-}
-
-.hd-brand {
-  display: flex;
-  flex-direction: column;
-  padding: var(--space-1) 10px 14px;
-}
-
-.hd-brand b {
-  font-weight: 600;
-  font-size: 15px;
-}
-
-.hd-nav {
+.hd-topbar {
+  grid-area: bar;
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-block-size: var(--control-height);
-  padding-inline: 10px;
+  gap: var(--sp-5);
+  min-inline-size: 0;
+  padding-inline: var(--sp-5) var(--sp-6);
+  white-space: nowrap;
+  background: var(--deep);
+  border-block-end: 1px solid var(--line);
+}
+
+/* Only the product tabs give way when the bar is short of room; they scroll in their track instead. */
+.hd-topbar > * {
+  flex-shrink: 0;
+}
+
+.hd-topbar svg,
+.hd-sidebar svg {
+  flex: none;
+  inline-size: 15px;
+  block-size: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+}
+
+.hd-topbar .hd-glyph-fill {
+  inline-size: 14px;
+  fill: currentColor;
+  stroke: none;
+}
+
+.hd-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.hd-logo-mark {
+  display: inline-grid;
+  place-items: center;
+  inline-size: 22px;
+  block-size: 22px;
+  border-radius: var(--radius-panel);
+  background: var(--text);
+  color: var(--deep);
+}
+
+.hd-topbar .hd-logo-mark svg {
+  inline-size: 12px;
+  stroke-width: 2.2;
+}
+
+.hd-tabs {
+  display: flex;
+  flex-shrink: 1;
+  gap: var(--sp-0);
+  min-inline-size: 0;
+  padding: var(--sp-0);
+  overflow-x: auto;
+  scrollbar-width: none;
+  background: var(--ground);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-float);
+}
+
+.hd-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+  block-size: 30px;
+  padding-inline: var(--sp-6);
   border-radius: var(--radius-control);
-  color: var(--text);
+  font-weight: 500;
+  color: var(--muted);
   text-decoration: none;
-  transition: background var(--motion-fast);
 }
 
-.hd-nav:hover {
-  background: var(--sunken);
+.hd-tab:hover,
+.hd-tab[aria-current] {
+  color: var(--text);
 }
 
-.hd-nav-current {
-  background: var(--accent-soft);
+/* The fill alone is too faint a cue, so the active tab also carries an accent bottom edge. */
+.hd-tab[aria-current] {
+  background: var(--raised);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.hd-tab[aria-current] .hd-mark {
+  box-shadow: 0 0 var(--glow) var(--role);
+}
+
+.hd-spacer {
+  flex: 1;
+}
+
+.hd-goto {
+  position: relative;
+}
+
+.hd-goto-field {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  inline-size: 200px;
+  block-size: var(--control-height);
+  padding-inline: var(--sp-3) var(--sp-1);
+  color: var(--faint);
+  cursor: text;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+}
+
+.hd-goto-field:focus-within {
+  border-color: var(--accent);
+}
+
+.hd-goto input {
+  flex: 1;
+  min-inline-size: 0;
+  padding: 0;
+  color: var(--text);
+  background: none;
+  border: 0;
+  outline: 0;
+}
+
+.hd-goto input::placeholder {
+  color: var(--faint);
+}
+
+.hd-goto-list,
+.hd-flyout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  padding: var(--sp-5);
+  white-space: normal;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-float);
+  box-shadow: var(--shadow-float);
+  z-index: var(--z-popover);
+}
+
+.hd-goto-list {
+  position: absolute;
+  inset-block-start: calc(100% + var(--sp-1));
+  inset-inline-end: 0;
+  inline-size: 280px;
+  gap: 0;
+  padding: var(--sp-2);
+}
+
+.hd-goto-list .hd-btn {
+  justify-content: flex-start;
+}
+
+.hd-goto-list p {
+  margin: 0;
+  padding: var(--sp-2);
+}
+
+.hd-flyout {
+  position: fixed;
+  inset-block-start: calc(var(--topbar-height) + var(--sp-1));
+  inset-inline-end: var(--sp-5);
+  inline-size: min(360px, calc(100vw - 2 * var(--sp-5)));
+  max-block-size: calc(100dvh - var(--topbar-height) - var(--sp-7));
+  overflow: auto;
+  outline: none;
+}
+
+.hd-flyout h2,
+.hd-flyout h3,
+.hd-flyout p {
+  margin: 0;
+}
+
+.hd-flyout > .hd-btn {
+  align-self: flex-start;
+}
+
+.hd-card a {
+  color: var(--accent);
+}
+
+.hd-attn section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.hd-attn-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hd-attn-item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  padding-block: var(--sp-2);
+  border-block-start: 1px solid var(--line);
+}
+
+.hd-attn-text {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+.hd-attn-text a {
+  color: var(--text);
+}
+
+.hd-btn.hd-quiet {
+  border-color: var(--line);
+  font-weight: 400;
+}
+
+.hd-btn.hd-icon {
+  inline-size: var(--control-height);
+  padding: 0;
+  color: var(--faint);
+}
+
+.hd-clock {
+  font: var(--text-mono);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.hd-view-only {
+  padding: 0 var(--sp-2);
+  font: var(--text-tag);
+  color: var(--muted);
+  border: 1px solid var(--edge);
+  border-radius: 10px;
+}
+
+.hd-btn.hd-avatar {
+  inline-size: var(--control-height);
+  padding: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--on-avatar);
+  background: var(--avatar);
+  border: 0;
+  border-radius: 50%;
+}
+
+.hd-sidebar {
+  grid-area: side;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: var(--sp-4) var(--sp-3);
+  overflow-y: auto;
+  background: var(--deep);
+  border-inline-end: 1px solid var(--line);
+}
+
+.hd-side-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.hd-side-head {
+  margin: 0;
+  padding: var(--sp-7) var(--sp-4) var(--sp-2);
+  font: var(--text-label);
+  color: var(--faint);
+}
+
+.hd-side-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  block-size: 30px;
+  padding-inline: var(--sp-4);
+  border-radius: var(--radius-control);
+  font-size: 13px;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.hd-side-item:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+/* Weight and an inline-start accent bar mark the current entry, so the fill is never the only cue. */
+.hd-side-item[aria-current] {
+  background: var(--raised);
+  color: var(--text);
   font-weight: 500;
   box-shadow: inset 2px 0 0 var(--accent);
 }
 
-.hd-nav-locked {
-  flex-wrap: wrap;
-  row-gap: 0;
-  color: var(--muted);
+[dir='rtl'] .hd-side-item[aria-current] {
+  box-shadow: inset -2px 0 0 var(--accent);
+}
+
+.hd-side-item[aria-disabled] {
+  color: var(--faint);
   cursor: not-allowed;
 }
 
-.hd-nav-locked .hd-why {
-  flex-basis: 100%;
-  padding-block-end: var(--space-1);
+/* A dot sits in the 15 px box an icon takes, so labels align whichever an entry leads with. */
+.hd-side-item > .hd-mark {
+  margin-inline: 3.5px;
 }
 
-.hd-nav-count {
-  margin-inline-start: auto;
-  font: var(--text-label);
-  font-weight: 600;
-  color: var(--alarm);
+.hd-side-label {
+  flex: 1;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hd-side-count {
+  font: 400 11.5px/16px var(--mono);
   font-variant-numeric: tabular-nums;
 }
 
-.hd-rail-group {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin-block-start: 14px;
-}
-
-.hd-rail-label {
-  padding: 0 10px var(--space-1);
-  font: var(--text-label);
-  color: var(--muted);
-}
-
-.hd-rail-error {
-  margin: 0;
-  padding: var(--space-2) 10px;
-  font: var(--text-small);
-  color: var(--alarm);
-  background: var(--sunken);
-  border-radius: var(--radius-control);
-}
-
-.hd-rail-foot {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  margin-block-start: auto;
-  padding: var(--space-3) 10px var(--space-1);
-  border-block-start: 1px solid var(--hairline);
-}
-
-.hd-rail-who {
-  font-weight: 500;
-  overflow-wrap: anywhere;
-}
-
-.hd-rail-signout {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-1);
-  margin-inline: calc(-1 * var(--space-2));
-}
-
-.hd-rail-scrim {
-  display: none;
-}
-
-/* Operations render before the document bar in the tree; the grid places them below it, on every view. */
 .hd-main {
-  display: grid;
-  grid-template-areas: 'bar' 'notice' 'ops' 'body';
-  grid-template-rows: auto auto auto minmax(0, 1fr);
+  grid-area: main;
+  display: flex;
+  flex-direction: column;
   min-inline-size: 0;
   min-block-size: 0;
 }
 
-.hd-docbar {
-  grid-area: bar;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-3);
-  min-block-size: 53px;
-  padding: 10px var(--space-5);
-  background: var(--ground);
-  border-block-end: 1px solid var(--hairline);
-}
-
 .hd-main > .hd-notice {
-  grid-area: notice;
-  margin: var(--space-2) var(--space-5) 0;
+  margin: var(--sp-3) var(--sp-8) 0;
 }
 
 .hd-main > .hd-operations {
-  grid-area: ops;
-  padding-inline: var(--space-6);
-  background: var(--surface);
-  border-block-end: 1px solid var(--hairline);
-}
-
-.hd-crumb {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 6px;
-  min-inline-size: 0;
-  color: var(--muted);
-}
-
-.hd-crumb-part {
-  display: inline-flex;
-  gap: 6px;
-}
-
-.hd-page-title {
-  margin: 0;
-  font: var(--text-page);
-  color: var(--text);
-  text-wrap: balance;
-}
-
-.hd-docbar-spacer {
-  flex: 1;
-}
-
-.hd-view-only {
-  padding: 3px var(--space-2);
-  font: var(--text-label);
-  color: var(--muted);
-  background: var(--sunken);
-  border-radius: var(--radius-control);
-}
-
-.hd-menu-button {
-  display: none;
+  padding-inline: var(--sp-8);
+  background: var(--panel);
+  border-block-end: 1px solid var(--line);
 }
 
 .hd-palette-host {
   display: contents;
 }
 
-.hd-body {
-  grid-area: body;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--inspector-width);
-  min-block-size: 0;
-}
-
-.hd-body:has(> .hd-dock:empty) {
-  grid-template-columns: minmax(0, 1fr);
-}
-
 .hd-canvas {
   display: flex;
+  flex: 1;
   flex-direction: column;
-  gap: var(--space-6);
-  min-inline-size: 0;
-  padding: var(--space-5) var(--space-6) 40px;
+  gap: var(--sp-8);
+  min-block-size: 0;
+  padding: var(--sp-8) var(--sp-8) 40px;
   overflow: auto;
-  background: var(--surface);
+  background: var(--panel);
 }
 
 .hd-canvas:focus {
   outline: none;
 }
 
-.hd-dock {
-  display: flex;
-  min-block-size: 0;
-}
-
-.hd-dock:empty {
-  display: none;
-}
-
-.hd-dock > .hd-inspector {
-  flex: 1;
-}
-
 .hd-view {
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
+  gap: var(--sp-8);
+}
+
+/* A failed or missing view speaks in the sign-in card's language, inside the frame. */
+.hd-card {
+  gap: var(--sp-5);
+  max-inline-size: 560px;
+  padding: var(--sp-9);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
 }
 
 .hd-centred {
@@ -261,288 +424,53 @@
   text-align: center;
 }
 
-.hd-section {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.hd-section-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 10px;
-  padding-block-end: var(--space-2);
-  border-block-end: 1px solid var(--hairline);
-}
-
 .hd-prose {
   margin: 0;
-  font: var(--text-prose);
+  font: var(--text-body);
   max-inline-size: 72ch;
 }
 
-.hd-muted {
-  color: var(--muted);
-}
-
-.hd-stale-note {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-  margin: 0;
-  font: var(--text-small);
-  color: var(--stale);
-}
-
-.hd-skeleton {
-  block-size: 120px;
-  background: var(--sunken);
-  border-radius: var(--radius-control);
-}
-
-.hd-attention-lines {
-  display: flex;
-  flex-direction: column;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.hd-attention-line {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  gap: var(--space-4);
-  align-items: center;
-  padding-block: 10px;
-  border-block-end: 1px solid var(--hairline);
-}
-
-.hd-attention-what {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-inline-size: 0;
-}
-
-.hd-attention-title {
-  font-weight: 500;
-  overflow-wrap: anywhere;
-}
-
-.hd-attention-count {
-  font-weight: 600;
-  color: var(--alarm);
-  font-variant-numeric: tabular-nums;
-}
-
-.hd-attention-when {
-  text-align: end;
-}
-
-/*
- * A module contributes at most three figures, so three columns give each module that reports three its own row.
- */
-.hd-figures {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  border-block: 1px solid var(--hairline);
-}
-
-/* The SDK's components.css lays out a figure and its value; the Overview adds the cells' padding and rules. */
-.hd-figure {
-  padding: 14px var(--space-4) 14px 0;
-}
-
-.hd-figure + .hd-figure {
-  padding-inline-start: var(--space-4);
-  border-inline-start: 1px solid var(--hairline);
-}
-
-.hd-figure:nth-child(3n + 1) {
-  padding-inline-start: 0;
-  border-inline-start: 0;
-}
-
-.hd-figure:nth-child(n + 4) {
-  border-block-start: 1px solid var(--hairline);
-}
-
-.hd-figure-module {
-  font: var(--text-label);
-  color: var(--muted);
-}
-
-.hd-figure-label {
-  font: var(--text-small);
-  color: var(--muted);
-}
-
-.hd-delta-worse {
-  color: var(--alarm);
-}
-
-.hd-cause {
-  display: flex;
-  flex-direction: column;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.hd-attention-item {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: var(--space-2) var(--space-6);
-  align-items: center;
-  padding-block: var(--space-2);
-  border-block-end: 1px solid var(--hairline);
-}
-
-.hd-attention-item[data-selected] {
-  background: var(--accent-soft);
-  box-shadow: inset 2px 0 0 var(--accent);
-}
-
-.hd-attention-select {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  padding: var(--space-2) var(--space-2);
-  text-align: start;
-  background: none;
-  border: 0;
-  border-radius: var(--radius-control);
-  cursor: pointer;
-}
-
-.hd-attention-select:hover {
-  background: var(--sunken);
-}
-
-.hd-related {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.hd-related-group ul {
-  display: flex;
-  flex-direction: column;
-  margin: var(--space-1) 0 0;
-  padding: 0;
-  list-style: none;
-  border-block-start: 1px solid var(--hairline);
-}
-
-.hd-related-group li {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--space-2);
-  padding-block: var(--space-2);
-  border-block-end: 1px solid var(--hairline);
-}
-
-.hd-related-group h3 {
-  margin: 0;
-}
-
-/*
- * Below 1280 px a selection's inspector becomes a drawer from the inline end. A summary, shown when nothing is
- * selected, has no Close, so it stays in the flow below the canvas rather than covering it.
- */
-@media (max-width: 1279px) {
-  .hd-body {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr) auto;
+/* Below 1024 px go to id shrinks to its search icon, and opens to full width while it has focus. */
+@media (max-width: 1023px) {
+  .hd-goto-field:not(:focus-within) {
+    inline-size: var(--control-height);
+    padding-inline: 6px;
   }
 
-  .hd-dock:has(> .hd-inspector-selection) {
-    position: fixed;
-    inset-block: 0;
-    inset-inline-end: 0;
-    z-index: 30;
-    inline-size: min(var(--inspector-width), 100%);
-    box-shadow: var(--shadow);
+  .hd-goto-field:not(:focus-within) :is(input, kbd) {
+    display: none;
   }
 }
 
-/* Below 768 px the rail becomes a menu, and the inspector a full screen with Close. */
+/* Below 768 px the product tabs scroll in their track, and the sidebar opens over the view from the Menu button. */
 @media (max-width: 767px) {
   .hd-shell {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template: 'bar' var(--topbar-height) 'main' minmax(0, 1fr) / minmax(0, 1fr);
   }
 
-  .hd-rail {
-    position: fixed;
-    inset-block: 0;
-    inset-inline-start: 0;
-    z-index: 40;
-    inline-size: min(260px, 85vw);
-    box-shadow: var(--shadow);
-    transform: translateX(-102%);
-    transition: transform var(--motion-panel-out);
-  }
-
-  [dir='rtl'] .hd-rail {
-    transform: translateX(102%);
-  }
-
-  .hd-rail.hd-rail-open {
-    transform: none;
-    transition: transform var(--motion-panel-in);
-  }
-
-  .hd-rail-scrim {
-    display: block;
-    position: fixed;
-    inset: 0;
-    z-index: 35;
-    background: var(--scrim);
-  }
-
-  .hd-menu-button {
-    display: inline-flex;
-  }
-
-  .hd-docbar {
-    padding: var(--space-2) var(--space-4);
-  }
-
-  .hd-canvas {
-    padding: var(--space-4) var(--space-4) var(--space-6);
-  }
-
-  .hd-main > .hd-operations {
-    padding-inline: var(--space-4);
-  }
-
-  /* Matches the drawer rule's selector, which would otherwise win on specificity and keep it at drawer width. */
-  .hd-dock:has(> .hd-inspector-selection) {
-    inline-size: 100%;
-  }
-
-  .hd-attention-line {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .hd-attention-when {
+  .hd-logo {
     display: none;
   }
 
-  .hd-attention-item {
-    grid-template-columns: minmax(0, 1fr);
+  .hd-topbar {
+    gap: var(--sp-3);
+    padding-inline: var(--sp-3);
   }
 
-  .hd-figures {
-    grid-template-columns: minmax(0, 1fr);
+  .hd-sidebar {
+    position: fixed;
+    inset-block: var(--topbar-height) 0;
+    inset-inline-start: 0;
+    z-index: var(--z-popover);
+    inline-size: min(260px, 85vw);
+    box-shadow: var(--shadow-float);
   }
 
-  .hd-figure + .hd-figure {
-    padding-inline-start: 0;
-    border-inline-start: 0;
-    border-block-start: 1px solid var(--hairline);
+  .hd-canvas {
+    padding: var(--sp-7) var(--sp-7) var(--sp-8);
+  }
+
+  .hd-main > .hd-operations {
+    padding-inline: var(--sp-7);
   }
 }

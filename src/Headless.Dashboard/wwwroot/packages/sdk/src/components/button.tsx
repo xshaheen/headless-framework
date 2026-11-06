@@ -1,9 +1,11 @@
-import { useId } from 'react'
+import { useId, type Ref } from 'react'
 import { Button as AriaButton, type ButtonProps as AriaButtonProps } from 'react-aria-components'
 
 export type ButtonVariant = 'secondary' | 'primary' | 'danger' | 'ghost'
 
 export interface ButtonProps extends AriaButtonProps {
+  /** The rendered button, such as for a popover that returns focus to the button that opened it. */
+  ref?: Ref<HTMLButtonElement>
   /** `primary` for the view's one primary action; `danger` for a destructive verb. */
   variant?: ButtonVariant
   /**
