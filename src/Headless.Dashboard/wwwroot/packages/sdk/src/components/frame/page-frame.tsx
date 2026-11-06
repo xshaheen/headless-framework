@@ -46,6 +46,15 @@ export interface PageFrameState {
   /** The bulk selection: view state that survives live updates but not a reload. */
   checked: ReadonlySet<string>
   setChecked: (ids: ReadonlySet<string>) => void
+  /**
+   * The checked rows the last bulk action refused, each with its reason; the list tags each in its row. A change to
+   * the checked rows clears them, because they answered for the old set.
+   */
+  refused: ReadonlyMap<string, string>
+  setRefused: (reasons: ReadonlyMap<string, string>) => void
+  /** How many times `View` asked to see the refused rows; above 0 the list highlights them and scrolls to the first. */
+  revealed: number
+  reveal: () => void
   /** The open row no longer matches the list's filter. */
   stale: boolean
   /** The list region; `PageFrame` attaches it, and rows inside carry `data-row-id` so the frame can focus them. */
@@ -64,7 +73,9 @@ export function usePageFrame<T extends { id: string }>({ viewId, rows, matches }
   const [params, setParams] = useSearchParams()
   const openId = params.get('open')
   const [cursor, setCursor] = useState<string | null>(null)
-  const [checked, setChecked] = useState(none)
+  const [checked, setCheckedState] = useState(none)
+  const [refused, setRefusedState] = useState<ReadonlyMap<string, string>>(new Map())
+  const [revealed, setRevealed] = useState(0)
   const listRef = useRef<HTMLDivElement>(null)
   const shown = useRef(openId)
   const cursorId = cursor ?? openId
@@ -87,6 +98,16 @@ export function usePageFrame<T extends { id: string }>({ viewId, rows, matches }
 
   function focusRow(id: string) {
     listRef.current?.querySelector<HTMLElement>(`[data-row-id="${CSS.escape(id)}"]`)?.focus()
+  }
+
+  function setChecked(ids: ReadonlySet<string>) {
+    setCheckedState(ids)
+    setRefused(new Map())
+  }
+
+  function setRefused(reasons: ReadonlyMap<string, string>) {
+    setRefusedState(reasons)
+    setRevealed(0)
   }
 
   function move(step: number) {
@@ -120,6 +141,10 @@ export function usePageFrame<T extends { id: string }>({ viewId, rows, matches }
     setCursor,
     checked,
     setChecked,
+    refused,
+    setRefused,
+    revealed,
+    reveal: () => setRevealed((count) => count + 1),
     stale: Boolean(openRow && matches && !matches(openRow)),
     listRef,
   }
@@ -303,6 +328,19 @@ export function PageFrame({ frame, stats, header, children, panel, form }: PageF
 
     return () => window.removeEventListener('resize', measure)
   }, [open, beside, list])
+
+  const lift = open && !beside && width !== 2 ? value : 0
+
+  // The toasts sit outside the frame, so the docked panel's height reaches them through the root: a toast floats
+  // above the panel instead of covering it.
+  useEffect(() => {
+    const root = document.documentElement.style
+    root.setProperty('--toast-lift', `${lift}px`)
+
+    return () => {
+      root.removeProperty('--toast-lift')
+    }
+  }, [lift])
 
   function resize(next: number) {
     const clamped = Math.min(max, Math.max(minPanel, next))

@@ -100,6 +100,38 @@ describe('useAllowedActions', () => {
 
     expect(await screen.findByText('Running - cancel instead')).toBeTruthy()
   })
+
+  it('answers per row, and gives a shared reason only when every row is refused', async () => {
+    function PerRow({ ids }: { ids: string[] }) {
+      const allowed = useAllowedActions(
+        'run',
+        ids.map((id) => ({ id })),
+      )
+      const refused = [...allowed.refused(requeue.id)].map(([id, reason]) => `${id}: ${reason}`)
+
+      return <p>{`${refused.join(', ')} | ${allowed(requeue.id) ?? 'some can run'}`}</p>
+    }
+
+    const reasons: Record<string, string> = { r2: 'Running', r3: 'Held' }
+    renderInModule(
+      <>
+        <PerRow ids={['r1', 'r2', 'r3']} />
+        <PerRow ids={['r2', 'r3']} />
+        <PerRow ids={['r2']} />
+      </>,
+      (request) => ({
+        objects: (request.query!.id as string[]).map((id) => ({
+          kind: 'run',
+          id,
+          commands: [{ id: requeue.id, allowed: !reasons[id], disabledReason: reasons[id] }],
+        })),
+      }),
+    )
+
+    expect(await screen.findByText('r2: Running, r3: Held | some can run')).toBeTruthy()
+    expect(screen.getByText('r2: Running, r3: Held | None of these can run now')).toBeTruthy()
+    expect(screen.getByText('r2: Running | Running')).toBeTruthy()
+  })
 })
 
 describe('R on the selection', () => {

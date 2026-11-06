@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Button } from '../button.tsx'
+import { SegmentedControl } from '../display/segmented-control.tsx'
 
 /** How tall a list's rows are: 34 px, or 28 px on a long list read at a glance. */
 export type Density = 'comfortable' | 'compact'
@@ -42,15 +42,12 @@ export function useDensity(viewId: string | undefined) {
   return [density, setDensity] as const
 }
 
-/** The list's density choice: comfortable or compact rows, as two pressed-state buttons. */
+const densities = [
+  { value: 'comfortable', label: 'Comfortable' },
+  { value: 'compact', label: 'Compact' },
+] as const
+
+/** The list's density choice: comfortable or compact rows. */
 export function DensityToggle({ value, onChange }: { value: Density; onChange: (next: Density) => void }) {
-  return (
-    <div role="group" aria-label="Row density" className="hd-density">
-      {(['comfortable', 'compact'] as const).map((density) => (
-        <Button key={density} variant="ghost" aria-pressed={value === density} onPress={() => onChange(density)}>
-          {density === 'comfortable' ? 'Comfortable' : 'Compact'}
-        </Button>
-      ))}
-    </div>
-  )
+  return <SegmentedControl label="Row density" options={densities} value={value} onChange={onChange} />
 }

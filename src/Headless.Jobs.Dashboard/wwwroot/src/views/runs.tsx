@@ -2,7 +2,7 @@ import { useDashboard, useModule } from '@headless/dashboard-sdk'
 import { useOperations, type CommandDefinition } from '@headless/dashboard-sdk/commands'
 import {
   Button,
-  Chip,
+  FilterChip,
   Inspector,
   Mono,
   ObjectHeader,
@@ -329,17 +329,6 @@ export default function RunsView() {
       </section>
       {inspector}
     </div>
-  )
-}
-
-function FilterChip({ label, value, onClear }: { label: string; value: string; onClear: () => void }) {
-  return (
-    <span className="hd-actions">
-      <Chip label={label} value={value} mono />
-      <Button variant="ghost" aria-label={`Clear ${label} filter`} onPress={onClear}>
-        Clear
-      </Button>
-    </span>
   )
 }
 

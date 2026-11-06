@@ -2,10 +2,17 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import userEvent from '@testing-library/user-event'
 import { useState, type ReactNode } from 'react'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createMemoryRouter, RouterProvider } from 'react-router'
+import { useAllowedActions } from '../../src/commands/allowed.ts'
+import type { CommandDefinition } from '../../src/commands/api.ts'
+import { CommandAction } from '../../src/commands/command-action.tsx'
 import { TextInputField } from '../../src/components/form.tsx'
+import { PageFrame, usePageFrame } from '../../src/components/frame/page-frame.tsx'
+import { ToastRegion } from '../../src/components/live.tsx'
 import { DataTable, type DataTableProps } from '../../src/components/table/data-table.tsx'
 import { rowHeights } from '../../src/components/table/density.tsx'
-import { DashboardProvider } from '../../src/context.tsx'
+import { DashboardProvider, ModuleScope } from '../../src/context.tsx'
+import type { ApiRequest } from '../../src/data/api.ts'
 import { createDashboardClient } from '../../src/data/client.tsx'
 import { useDashboardKeysetList } from '../../src/data/keyset.ts'
 import type { DashboardListPage } from '../../src/data/patch.ts'
@@ -557,5 +564,168 @@ describe('virtualized keyset table', () => {
 
     expect(screen.getByRole('button', { name: 'Compact' }).getAttribute('aria-pressed')).toBe('true')
     expect(row(/^r1\b/).parentElement?.style.height).toBe('28px')
+  })
+})
+
+const requeue: CommandDefinition = {
+  id: 'diag.requeue',
+  label: 'Requeue',
+  objectKind: 'run',
+  permission: 'operate',
+  confirmation: 'none',
+  typedConfirmationAbove: 100,
+  requiresReason: false,
+  supportsFilter: true,
+  arguments: { type: 'object', required: [], properties: {} },
+  canRun: true,
+}
+
+/** A failed list as a module writes one: the page frame's checked rows, the table, and a bulk Requeue over them. */
+function BulkRuns({ rows: list }: { rows: readonly Run[] }) {
+  const frame = usePageFrame({ viewId: 'diag.runs', rows: list })
+  const checked = list.filter((run) => frame.checked.has(run.id))
+  const allowed = useAllowedActions('run', checked)
+
+  return (
+    <PageFrame
+      frame={frame}
+      header={
+        <CommandAction
+          module="diag"
+          command={requeue}
+          ids={checked.map((run) => run.id)}
+          noun="runs"
+          disabledReason={allowed(requeue.id)}
+          refused={allowed.refused(requeue.id)}
+          onRefused={frame.setRefused}
+          onViewRefused={frame.reveal}
+        />
+      }
+    >
+      <DataTable label="Runs" rows={list} columns={runColumns} frame={frame} selectionMode="multiple" emptyState="No runs yet." />
+    </PageFrame>
+  )
+}
+
+/** Renders the bulk view; the server refuses requeue for each id in `refusals`, with its reason. */
+function renderBulk(list: readonly Run[], refusals: Record<string, string>) {
+  const requests: ApiRequest[] = []
+  const router = createMemoryRouter([{ path: '/', element: <BulkRuns rows={list} /> }])
+
+  render(
+    <DashboardProvider
+      client={createDashboardClient()}
+      environment={{
+        basePath: '/headless',
+        apiBase: '/headless/api',
+        session: { authenticated: true },
+        permissions: { diag: { canView: true, canOperate: true } },
+        stream: createFakeStream(),
+        api: {
+          async request<T>(request: ApiRequest) {
+            requests.push(request)
+            const ids = (request.query?.id ?? []) as string[]
+
+            return (
+              request.path === 'diag/commands/allowed'
+                ? {
+                    objects: ids.map((id) => ({
+                      kind: 'run',
+                      id,
+                      commands: [{ id: requeue.id, allowed: !refusals[id], disabledReason: refusals[id] }],
+                    })),
+                  }
+                : { rows: (request.body as { ids: string[] }).ids.map((id) => ({ id, outcome: 'done' })) }
+            ) as T
+          },
+        },
+      }}
+    >
+      <ModuleScope id="diag">
+        <RouterProvider router={router} />
+        <ToastRegion />
+      </ModuleScope>
+    </DashboardProvider>,
+  )
+
+  return requests
+}
+
+describe('checked rows and bulk refusals', () => {
+  const offsets = new WeakMap<Element, number>()
+
+  beforeAll(() => {
+    Object.defineProperty(HTMLElement.prototype, 'scrollTop', {
+      configurable: true,
+      get(this: Element) {
+        return offsets.get(this) ?? 0
+      },
+      set(this: Element, value: number) {
+        offsets.set(this, value)
+      },
+    })
+  })
+
+  afterAll(() => {
+    Reflect.deleteProperty(HTMLElement.prototype, 'scrollTop')
+  })
+
+  it('checks only the loaded rows with Select all loaded, says so, and opens none of them', async () => {
+    const user = userEvent.setup()
+    renderBulk(runs(3), {})
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select all loaded' }))
+
+    expect(screen.getByText('All 3 loaded rows are checked.')).toBeTruthy()
+    expect(screen.getAllByRole('checkbox', { checked: true }).map((box) => box.getAttribute('aria-label'))).toEqual([
+      'Select all loaded',
+      'Select r1',
+      'Select r2',
+      'Select r3',
+    ])
+    expect(screen.getAllByRole('row').some((element) => element.getAttribute('aria-selected') === 'true')).toBe(false)
+  })
+
+  it('marks only the open row aria-selected, apart from the checked rows', async () => {
+    const user = userEvent.setup()
+    renderBulk(runs(3), {})
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select r1' }))
+    await user.click(row(/^r2\b/))
+
+    expect(row(/^r2\b/).getAttribute('aria-selected')).toBe('true')
+    expect(row(/^r1\b/).getAttribute('aria-selected')).not.toBe('true')
+    expect((screen.getByRole('checkbox', { name: 'Select r1' }) as HTMLInputElement).checked).toBe(true)
+  })
+
+  it('requeues the 3 allowed of 5, tags the 2 refused in their rows, and View scrolls to and highlights them', async () => {
+    const user = userEvent.setup()
+    const requests = renderBulk(runs(5), { r3: 'Running', r5: 'Held' })
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select all loaded' }))
+    await user.click(await screen.findByRole('button', { name: 'Requeue 3 of 5' }))
+
+    const toast = await screen.findByText('Requeued 3 · 2 refused')
+    expect(requests.find((request) => request.path === 'diag/commands/diag.requeue')?.body).toMatchObject({ ids: ['r1', 'r2', 'r4'] })
+    expect(row(/^r3\b/).textContent).toContain('Running')
+    expect(row(/^r5\b/).textContent).toContain('Held')
+    expect(row(/^r1\b/).textContent).not.toContain('Running')
+
+    await user.click(within(toast.closest('[role="status"]') as HTMLElement).getByRole('button', { name: 'View' }))
+
+    expect(row(/^r3\b/).hasAttribute('data-highlighted')).toBe(true)
+    expect(row(/^r5\b/).hasAttribute('data-highlighted')).toBe(true)
+    expect(row(/^r1\b/).hasAttribute('data-highlighted')).toBe(false)
+    expect(grid().scrollTop).toBe(2 * rowHeight)
+  })
+
+  it('disables the action with the shared reason when every checked row is refused', async () => {
+    const user = userEvent.setup()
+    renderBulk(runs(3), { r1: 'Running', r2: 'Running', r3: 'Running' })
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select all loaded' }))
+
+    const button = await screen.findByRole('button', { name: 'Requeue 3 runs', description: 'Running' })
+    expect(button.getAttribute('aria-disabled')).toBe('true')
   })
 })

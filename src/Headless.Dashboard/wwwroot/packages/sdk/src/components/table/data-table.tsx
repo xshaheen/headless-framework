@@ -1,4 +1,4 @@
-import { useRef, useState, useSyncExternalStore, type FocusEvent, type KeyboardEvent, type ReactNode } from 'react'
+import { useLayoutEffect, useRef, useState, useSyncExternalStore, type FocusEvent, type KeyboardEvent, type ReactNode, type SyntheticEvent } from 'react'
 import {
   Cell,
   Column,
@@ -15,6 +15,8 @@ import {
 } from 'react-aria-components'
 import { below } from '../breakpoints.ts'
 import { Button } from '../button.tsx'
+import { Tag } from '../display/tag.tsx'
+import type { PageFrameState } from '../frame/page-frame.tsx'
 import { useViewKeys } from '../keymap.tsx'
 import { Announcer } from '../live.tsx'
 import { DensityToggle, rowHeights, useDensity } from './density.tsx'
@@ -36,6 +38,27 @@ export interface DataTableColumn<T> {
   /** The column's starting width: pixels, or a share such as `2fr`. Columns share the width equally by default. */
   width?: ColumnProps['defaultWidth']
 }
+
+/**
+ * Pins the checkbox column and the first data column (state and name) while the rest scroll sideways inside the
+ * table, so a wide list never scrolls the page.
+ */
+class PinnedLayout<T> extends TableLayout<T> {
+  pinned = 1
+
+  protected override isStickyColumn(node: { index: number }) {
+    return node.index < this.pinned
+  }
+}
+
+// A checkbox or button in a row is its own control: the row's press would otherwise open the row as well.
+function isolate(event: SyntheticEvent) {
+  if (!('key' in event) || event.key === ' ' || event.key === 'Enter') {
+    event.stopPropagation()
+  }
+}
+
+const isolated = { onPointerDown: isolate, onClick: isolate, onKeyDown: isolate }
 
 /** The arrived rows a live list does not hold yet, and the call that loads them, as `useNewRows` reads them. */
 export interface DataTableNewRows {
@@ -72,6 +95,14 @@ export interface DataTableProps<T extends { id: string }> {
   newRows?: DataTableNewRows
   /** What the empty list says, and how rows get there. */
   emptyState: ReactNode
+  /**
+   * The list's page frame. The open row is then the frame's (`aria-selected`), and a `multiple` list adds a checkbox
+   * column bound to the frame's checked rows, tags the rows a bulk action refused, and scrolls to them on `View`.
+   * The frame's keys replace the list's own.
+   */
+  frame?: PageFrameState
+  /** A row's actions, in the last column: shown on hover or focus with a fine pointer, always with a coarse one. */
+  rowActions?: (row: T) => ReactNode
 }
 
 const narrowQuery = below.phone
@@ -121,6 +152,8 @@ export function DataTable<T extends { id: string }>({
   onLoadMore,
   newRows,
   emptyState,
+  frame,
+  rowActions,
 }: DataTableProps<T>) {
   const [ownSelection, setOwnSelection] = useState<ReadonlySet<string>>(new Set())
   const [density, setDensity] = useDensity(viewId)
@@ -131,7 +164,9 @@ export function DataTable<T extends { id: string }>({
   // React Aria selects the row the focus lands on in its `replace` behavior; a multi-selection built with `X` must
   // survive Tab and the arrow keys, so a change made while the focus moves is dropped there.
   const moving = useRef(false)
-  const selected = selectedIds ?? ownSelection
+  const selected = frame ? new Set(frame.openId ? [frame.openId] : []) : (selectedIds ?? ownSelection)
+  const checks = frame !== undefined && selectionMode === 'multiple'
+  const bulk = checks ? frame.checked : selected
   const rowHeight = rowHeights[density]
   const listed = matches ? rows.filter((row) => selected.has(row.id) || matches(row)) : rows
   const [ids, setIds] = useState<readonly string[]>([])
@@ -145,17 +180,49 @@ export function DataTable<T extends { id: string }>({
   const { held, reveal } = useHeldRows(scroller, ids, rowHeight, (id) => selected.has(id))
   const pending = newRows?.count ?? 0
   const arrived = held + pending
-  const allLoadedSelected = listed.length > 0 && listed.every((row) => selected.has(row.id))
-  const offerAllMatching =
-    selectionMode === 'multiple' && allLoadedSelected && matchingCount !== undefined && matchingCount > listed.length
+  const allLoaded = listed.length > 0 && listed.every((row) => bulk.has(row.id))
+  const someLoaded = listed.some((row) => bulk.has(row.id))
+  const more = matchingCount !== undefined && matchingCount > listed.length
+  const revealed = frame?.revealed ?? 0
+  const [layout] = useState(() => new PinnedLayout<T>())
   const headerIndex = Math.max(
     0,
     columns.findIndex((column) => column.isRowHeader),
   )
   const shown = columns.filter((column, index) => !narrow || index === headerIndex || (column.priority ?? 1) === 1)
   const rowHeaderId = columns[headerIndex]?.id
+  layout.pinned = shown.findIndex((column) => column.id === rowHeaderId) + (checks ? 2 : 1)
+
+  // `View` on a bulk result: the refused rows light up and the first scrolls into the list's view.
+  useLayoutEffect(() => {
+    const index = revealed > 0 ? listed.findIndex((row) => frame?.refused.has(row.id)) : -1
+
+    if (index >= 0 && scroller.current) {
+      scroller.current.scrollTop = index * rowHeight
+    }
+    // Only a new `View` scrolls; a live update to the rows must leave the operator's place alone.
+  }, [revealed])
+
+  function check(ids: ReadonlySet<string>) {
+    frame?.setChecked(ids)
+  }
 
   function change(keys: Selection) {
+    if (frame) {
+      const id = keys === 'all' ? undefined : [...keys][0]
+
+      // An arrow key moves the focus and React Aria selects the row it lands on: that opens a row only while one is open.
+      if (!moving.current || frame.openId) {
+        if (id === undefined) {
+          frame.close()
+        } else {
+          frame.open(String(id))
+        }
+      }
+
+      return
+    }
+
     if (moving.current && selectionMode === 'multiple') {
       return
     }
@@ -219,7 +286,8 @@ export function DataTable<T extends { id: string }>({
     wrap.current?.querySelector<HTMLElement>(`[data-row-id="${CSS.escape(row.id)}"]`)?.focus()
   }
 
-  useViewKeys({
+  useViewKeys(
+    {
     next: () => {
       const index = currentIndex()
 
@@ -251,7 +319,9 @@ export function DataTable<T extends { id: string }>({
             commit(next)
           }
         : undefined,
-  })
+    },
+    !frame,
+  )
 
   function showArrived() {
     reveal(pending > 0)
@@ -280,12 +350,14 @@ export function DataTable<T extends { id: string }>({
         <Announcer message={arrived > 0 ? `${arrived} new ${arrived === 1 ? 'row' : 'rows'}` : ''} />
         <DensityToggle value={density} onChange={setDensity} />
       </div>
-      {offerAllMatching ? (
+      {selectionMode === 'multiple' && allLoaded && (checks || more) ? (
         <div className="hd-banner">
-          <span>{`All ${listed.length} rows on this page are selected.`}</span>
-          <Button variant="ghost" onPress={onSelectAllMatching}>
-            {`Select all ${matchingCount} matching`}
-          </Button>
+          <span>{checks ? `All ${listed.length} loaded rows are checked.` : `All ${listed.length} rows on this page are selected.`}</span>
+          {more ? (
+            <Button variant="ghost" onPress={onSelectAllMatching}>
+              {`Select all ${matchingCount} matching`}
+            </Button>
+          ) : null}
         </div>
       ) : null}
       {/* The empty state sits outside the grid: inside it the virtualizer gives it no height, so its next step
@@ -293,34 +365,58 @@ export function DataTable<T extends { id: string }>({
       {listed.length === 0 && !hasMore ? (
         <div className="hd-empty">{emptyState}</div>
       ) : (
-        <Virtualizer layout={TableLayout} layoutOptions={{ rowHeight, headingHeight, loaderHeight: rowHeight }}>
+        <Virtualizer layout={layout} layoutOptions={{ rowHeight, headingHeight, loaderHeight: rowHeight }}>
           <Table
             ref={scroller}
             aria-label={label}
             className="hd-table"
-            selectionMode={selectionMode}
+            selectionMode={frame ? 'single' : selectionMode}
             selectionBehavior="replace"
             selectedKeys={selected as Set<Key>}
             onSelectionChange={change}
-            onRowAction={selectOnly}
-            escapeKeyBehavior="clearSelection"
+            onRowAction={frame ? (key) => frame.open(String(key)) : selectOnly}
+            // The frame closes the panel, then clears the checked rows, on its own Esc.
+            escapeKeyBehavior={frame ? 'none' : 'clearSelection'}
           >
             <TableHeader>
+              {checks ? (
+                <Column id="hd-check" width={44} className="hd-check">
+                  <input
+                    type="checkbox"
+                    aria-label="Select all loaded"
+                    checked={allLoaded}
+                    ref={(input) => {
+                      if (input) {
+                        input.indeterminate = someLoaded && !allLoaded
+                      }
+                    }}
+                    onChange={() => check(new Set(allLoaded ? [] : listed.map((row) => row.id)))}
+                    {...isolated}
+                  />
+                </Column>
+              ) : null}
               {shown.map((column) => (
                 <Column
                   key={column.id}
                   id={column.id}
                   isRowHeader={column.id === rowHeaderId}
                   defaultWidth={column.width}
+                  minWidth={96}
                   className={column.align === 'end' ? 'hd-end' : undefined}
                 >
                   {column.header}
                 </Column>
               ))}
+              {rowActions ? (
+                <Column id="hd-actions" width={96}>
+                  <span className="hd-visually-hidden">Actions</span>
+                </Column>
+              ) : null}
             </TableHeader>
             <TableBody>
               {listed.map((row) => {
                 const stale = matches !== undefined && !matches(row)
+                const refusal = frame?.refused.get(row.id)
 
                 return (
                   <Row
@@ -329,7 +425,29 @@ export function DataTable<T extends { id: string }>({
                     className="hd-row"
                     data-row-id={row.id}
                     data-no-longer-matches={stale || undefined}
+                    data-highlighted={(revealed > 0 && refusal !== undefined) || undefined}
                   >
+                    {checks ? (
+                      <Cell className="hd-check">
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${row.id}`}
+                          checked={bulk.has(row.id)}
+                          onChange={(event) => {
+                            const next = new Set(bulk)
+
+                            if (event.target.checked) {
+                              next.add(row.id)
+                            } else {
+                              next.delete(row.id)
+                            }
+
+                            check(next)
+                          }}
+                          {...isolated}
+                        />
+                      </Cell>
+                    ) : null}
                     {shown.map((column) => (
                       <Cell key={column.id} className={column.align === 'end' ? 'hd-end' : undefined}>
                         {column.cell(row)}
@@ -340,8 +458,19 @@ export function DataTable<T extends { id: string }>({
                             <span className="hd-chip hd-no-match">No longer matches</span>
                           </>
                         ) : null}
+                        {refusal !== undefined && column.id === rowHeaderId ? (
+                          <>
+                            {' '}
+                            <Tag>{refusal}</Tag>
+                          </>
+                        ) : null}
                       </Cell>
                     ))}
+                    {rowActions ? (
+                      <Cell className="hd-row-actions">
+                        <span {...isolated}>{rowActions(row)}</span>
+                      </Cell>
+                    ) : null}
                   </Row>
                 )
               })}
