@@ -23,68 +23,10 @@ internal sealed partial class RelationalDataStorage
         CancellationToken cancellationToken = default
     )
     {
-        authorization.Validate();
+        authorization.ValidateRead();
         var page = Math.Max(query.CurrentPage, 0);
         var pageSize = Math.Clamp(query.PageSize, 1, 200);
-        var where = $"{_t.IsInboxRecord} = {_t.True}";
-        if (query.IncarnationId is not null)
-        {
-            where += $" AND {_t.GenerationIncarnationId}=@IncarnationId";
-        }
-
-        if (!string.IsNullOrEmpty(query.ConsumerIdentity))
-        {
-            // The equality seeks; the LIKE of the escaped value keeps the match exact on an engine whose equality
-            // ignores trailing spaces.
-            where +=
-                $" AND {_t.ConsumerIdentity}=@ConsumerIdentity AND {_t.ConsumerIdentity} LIKE @ConsumerIdentityPattern ESCAPE '\\'";
-        }
-
-        if (query.Lane is not null)
-        {
-            where += $" AND {_t.IntentType}=@IntentType";
-        }
-
-        if (query.Status is not null)
-        {
-            where += $" AND {_t.StatusName}=@StatusName";
-        }
-
-        if (query.IsOrphaned is not null)
-        {
-            where += $" AND {_t.IsInboxOrphaned}=@IsOrphaned";
-        }
-
-        if (query.IsHeld is not null)
-        {
-            where += $" AND {_t.IsHeld}=@IsHeld";
-        }
-
-        void bind(DbCommand command)
-        {
-            _dialect.AddParameter(command, "IncarnationId", SqlColumnType.Guid, query.IncarnationId);
-            _dialect.AddParameter(
-                command,
-                "ConsumerIdentity",
-                SqlColumnType.KeyText(_NameMaxLength),
-                query.ConsumerIdentity
-            );
-            _dialect.AddParameter(
-                command,
-                "ConsumerIdentityPattern",
-                SqlColumnType.KeyText(_Unbounded),
-                query.ConsumerIdentity is null ? null : SqlLikePattern.Escape(query.ConsumerIdentity)
-            );
-            _dialect.AddParameter(
-                command,
-                "IntentType",
-                SqlColumnType.Int16,
-                query.Lane is null ? null : MessageLaneCompatibility.ToPersistedValue(query.Lane.Value)
-            );
-            _dialect.AddParameter(command, "StatusName", _StatusType, query.Status?.ToString());
-            _dialect.AddParameter(command, "IsOrphaned", SqlColumnType.Boolean, query.IsOrphaned);
-            _dialect.AddParameter(command, "IsHeld", SqlColumnType.Boolean, query.IsHeld);
-        }
+        var (where, bind) = _InboxGenerationFilter(query);
 
         await using var connection = _CreateConnection();
         var total = Convert.ToInt64(
@@ -160,6 +102,71 @@ internal sealed partial class RelationalDataStorage
             .ConfigureAwait(false);
 
         return new IndexPage<InboxGenerationView>(items, page, pageSize, checked((int)total));
+    }
+
+    private (string Where, Action<DbCommand> Bind) _InboxGenerationFilter(InboxGenerationQuery query)
+    {
+        var where = $"{_t.IsInboxRecord} = {_t.True}";
+        if (query.IncarnationId is not null)
+        {
+            where += $" AND {_t.GenerationIncarnationId}=@IncarnationId";
+        }
+
+        if (!string.IsNullOrEmpty(query.ConsumerIdentity))
+        {
+            // The equality seeks; the LIKE of the escaped value keeps the match exact on an engine whose equality
+            // ignores trailing spaces.
+            where +=
+                $" AND {_t.ConsumerIdentity}=@ConsumerIdentity AND {_t.ConsumerIdentity} LIKE @ConsumerIdentityPattern ESCAPE '\\'";
+        }
+
+        if (query.Lane is not null)
+        {
+            where += $" AND {_t.IntentType}=@IntentType";
+        }
+
+        if (query.Status is not null)
+        {
+            where += $" AND {_t.StatusName}=@StatusName";
+        }
+
+        if (query.IsOrphaned is not null)
+        {
+            where += $" AND {_t.IsInboxOrphaned}=@IsOrphaned";
+        }
+
+        if (query.IsHeld is not null)
+        {
+            where += $" AND {_t.IsHeld}=@IsHeld";
+        }
+
+        void bind(DbCommand command)
+        {
+            _dialect.AddParameter(command, "IncarnationId", SqlColumnType.Guid, query.IncarnationId);
+            _dialect.AddParameter(
+                command,
+                "ConsumerIdentity",
+                SqlColumnType.KeyText(_NameMaxLength),
+                query.ConsumerIdentity
+            );
+            _dialect.AddParameter(
+                command,
+                "ConsumerIdentityPattern",
+                SqlColumnType.KeyText(_Unbounded),
+                query.ConsumerIdentity is null ? null : SqlLikePattern.Escape(query.ConsumerIdentity)
+            );
+            _dialect.AddParameter(
+                command,
+                "IntentType",
+                SqlColumnType.Int16,
+                query.Lane is null ? null : MessageLaneCompatibility.ToPersistedValue(query.Lane.Value)
+            );
+            _dialect.AddParameter(command, "StatusName", _StatusType, query.Status?.ToString());
+            _dialect.AddParameter(command, "IsOrphaned", SqlColumnType.Boolean, query.IsOrphaned);
+            _dialect.AddParameter(command, "IsHeld", SqlColumnType.Boolean, query.IsHeld);
+        }
+
+        return (where, bind);
     }
 
     public ValueTask<InboxOperationResult> HoldAsync(
@@ -334,7 +341,7 @@ internal sealed partial class RelationalDataStorage
                         childGeneration,
                         childIncarnationId,
                         request.Actor,
-                        request.Reason,
+                        request.StoredReason,
                         now
                     );
                     await _WriteInboxReceiptAndAuditAsync(connection, transaction, applied, ct).ConfigureAwait(false);
@@ -392,7 +399,7 @@ internal sealed partial class RelationalDataStorage
             && prior.ExpectedIncarnationId == request.ExpectedIncarnationId
             && prior.ExpectedStatus == request.ExpectedStatus
             && string.Equals(prior.Actor, request.Actor, StringComparison.Ordinal)
-            && string.Equals(prior.Reason, request.Reason, StringComparison.Ordinal);
+            && string.Equals(prior.Reason, request.StoredReason, StringComparison.Ordinal);
         return matches
             ? prior with
             {
@@ -409,7 +416,7 @@ internal sealed partial class RelationalDataStorage
                 ChildGeneration: null,
                 ChildIncarnationId: null,
                 request.Actor,
-                request.Reason,
+                request.StoredReason,
                 prior.CreatedAt,
                 IsReplay: true
             );
@@ -502,7 +509,7 @@ internal sealed partial class RelationalDataStorage
                         reader.IsDBNull(8) ? null : reader.GetInt64(8),
                         reader.IsDBNull(9) ? null : reader.GetGuid(9),
                         reader.GetString(3),
-                        reader.GetString(4),
+                        reader.IsDBNull(4) ? null : reader.GetString(4),
                         reader.GetFieldValue<DateTimeOffset>(10)
                     );
                 },
@@ -616,7 +623,12 @@ internal sealed partial class RelationalDataStorage
                     _dialect.AddParameter(command, "IncarnationId", SqlColumnType.Guid, request.ExpectedIncarnationId);
                     _dialect.AddParameter(command, "OperationId", SqlColumnType.Guid, request.OperationId);
                     _dialect.AddParameter(command, "Actor", SqlColumnType.KeyText(_ActorMaxLength), request.Actor);
-                    _dialect.AddParameter(command, "Reason", SqlColumnType.Text(_ReasonMaxLength), request.Reason);
+                    _dialect.AddParameter(
+                        command,
+                        "Reason",
+                        SqlColumnType.Text(_ReasonMaxLength),
+                        request.StoredReason
+                    );
                     _dialect.AddParameter(command, "Instant", SqlColumnType.Timestamp, now);
                 },
                 cancellationToken
@@ -648,13 +660,13 @@ internal sealed partial class RelationalDataStorage
             )
         );
         var insertChild = $"""
-            INSERT INTO {_receivedTable}({_t.Id},{_t.Version},{_t.Name},{_t.Content},{_t.IntentType},{_t.Retries},{_t.InlineAttempts},{_t.Added},{_t.ExpiresAt},{_t.NextRetryAt},{_t.LockedUntil},{_t.Owner},{_t.StatusName},{_t.MessageId},{_t.ExceptionInfo},{_t.IsInboxRecord},{_t.TenantPresent},{_t.TenantId},{_t.ContractIdentity},{_t.ContractVersion},{_t.ConsumerIdentity},{_t.Generation},{_t.GenerationIncarnationId},{_t.LifecycleId},{_t.AttemptId},{_t.IsInboxOrphaned},{_t.IsCurrentGeneration},{_t.ReplayParentIncarnationId},{_t.ReplayOperationId},{_t.TerminalAt},{_t.EffectiveExpiresAt},{_t.IsHeld},{_t.HeldAt},{_t.HeldBy},{_t.HoldReason},{_t.HoldOperationId},{_t.InboxKeyHash},{_t.InboxRetentionSeconds},{_t.ChangedAt})
+            INSERT INTO {_receivedTable}({_t.Id},{_t.Version},{_t.Name},{_t.Content},{_t.IntentType},{_t.Retries},{_t.InlineAttempts},{_t.Added},{_t.ExpiresAt},{_t.NextRetryAt},{_t.LockedUntil},{_t.Owner},{_t.StatusName},{_t.MessageId},{_t.ExceptionInfo},{_t.IsInboxRecord},{_t.TenantPresent},{_t.TenantId},{_t.ContractIdentity},{_t.ContractVersion},{_t.ConsumerIdentity},{_t.Generation},{_t.GenerationIncarnationId},{_t.LifecycleId},{_t.AttemptId},{_t.IsInboxOrphaned},{_t.IsCurrentGeneration},{_t.ReplayParentIncarnationId},{_t.ReplayOperationId},{_t.TerminalAt},{_t.EffectiveExpiresAt},{_t.IsHeld},{_t.HeldAt},{_t.HeldBy},{_t.HoldReason},{_t.HoldOperationId},{_t.InboxKeyHash},{_t.InboxRetentionSeconds},{_t.ConsumerKeyHash},{_t.ChangedAt})
             SELECT @ChildStorageId,{_t.Version},{_t.Name},{_t.Content},{_t.IntentType},0,0,@Instant,NULL,{_dialect.ShiftByDuration(
                 "@Instant",
                 "Grace"
             )},NULL,NULL,'{nameof(
                 StatusName.Scheduled
-            )}',{_t.MessageId},NULL,{_t.True},{_t.TenantPresent},{_t.TenantId},{_t.ContractIdentity},{_t.ContractVersion},{_t.ConsumerIdentity},@ChildGeneration,@ChildIncarnationId,{_t.LifecycleId},NULL,{_t.False},{_t.True},{_t.GenerationIncarnationId},@OperationId,NULL,NULL,{_t.False},NULL,NULL,NULL,NULL,@InboxKeyHash,{_t.InboxRetentionSeconds},{SqlDialectTokens.Now}
+            )}',{_t.MessageId},NULL,{_t.True},{_t.TenantPresent},{_t.TenantId},{_t.ContractIdentity},{_t.ContractVersion},{_t.ConsumerIdentity},@ChildGeneration,@ChildIncarnationId,{_t.LifecycleId},NULL,{_t.False},{_t.True},{_t.GenerationIncarnationId},@OperationId,NULL,NULL,{_t.False},NULL,NULL,NULL,NULL,@InboxKeyHash,{_t.InboxRetentionSeconds},{_t.ConsumerKeyHash},{SqlDialectTokens.Now}
             FROM {_receivedTable} WHERE {_t.GenerationIncarnationId}=@ParentIncarnationId;
             """;
 
@@ -755,7 +767,7 @@ internal sealed partial class RelationalDataStorage
         Guid? incarnationId,
         MessagingOperationType operationType,
         string actor,
-        string reason,
+        string? reason,
         InboxOperationOutcome outcome,
         CancellationToken cancellationToken
     )

@@ -92,18 +92,19 @@ public sealed class ScheduledDeliveryOperationRequestTests : TestBase
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    public void should_throw_invalid_operation_when_reason_is_empty(string? reason)
+    public void should_accept_an_empty_reason_and_store_it_as_null(string? reason)
     {
         var request = new ScheduledDeliveryOperationRequest(
             Guid.NewGuid(),
             Guid.NewGuid(),
             DateTimeOffset.UtcNow,
-            reason!,
+            reason,
             _CreateValidAuth()
         );
 
         var act = () => request.Validate();
-        act.Should().Throw<InvalidOperationException>().WithMessage("*reason*");
+        act.Should().NotThrow();
+        request.StoredReason.Should().BeNull();
     }
 
     [Fact]

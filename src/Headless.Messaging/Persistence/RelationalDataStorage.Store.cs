@@ -399,6 +399,7 @@ internal sealed partial class RelationalDataStorage
                     _t.StatusName,
                     _t.ExceptionInfo,
                     _t.FailureFingerprint,
+                    _t.ConsumerKeyHash,
                     _t.ChangedAt,
                 ],
                 [
@@ -419,6 +420,7 @@ internal sealed partial class RelationalDataStorage
                     "@StatusName",
                     "@ExceptionInfo",
                     "@FailureFingerprint",
+                    "@ConsumerKeyHash",
                     SqlDialectTokens.Now,
                 ],
                 [_t.Id, _t.Added, _t.NextRetryAt],
@@ -517,6 +519,7 @@ internal sealed partial class RelationalDataStorage
                             bindIdentityHash(command);
                             bindIdentityColumns(command);
                             bindValues(command);
+                            _BindConsumerKeyHash(command, row.ConsumerIdentity);
                             _dialect.AddParameter(command, "Id", SqlColumnType.Guid, row.Id);
                             _dialect.AddParameter(command, "Name", _NameType, row.Name);
                             _dialect.AddParameter(command, "Retries", SqlColumnType.Int32, row.Retries);

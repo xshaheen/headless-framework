@@ -17,6 +17,16 @@ internal static class ConformanceCaseAllowList
     public static readonly IReadOnlyList<ConformanceSkip> Entries =
     [
         new(
+            "InMemoryDataStorageTests",
+            "should_return_a_row_committed_late_inside_the_overlap_window",
+            "The in-memory store has no transactions: every write is visible when it is stamped, so no row can commit after a later one and the overlap window has nothing late to catch."
+        ),
+        new(
+            "InMemoryDataStorageTests",
+            "should_store_the_poison_cause_when_a_claim_cannot_read_a_stored_row",
+            "The in-memory store keeps envelopes as objects and never deserializes stored text in its retry claim, so no stored row can be unreadable to it."
+        ),
+        new(
             "AmazonSqsConsumerClientHarnessTests",
             "should_delegate_commit_callback_value",
             "SQS settles by the in-flight receipt-handle state the consumer handed out, so the case's arbitrary object sender cannot be a settlement value; AmazonSqsConsumerClientConformanceTests covers broker-observed commit with a real receipt handle."

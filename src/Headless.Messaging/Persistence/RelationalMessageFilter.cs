@@ -1,0 +1,145 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using System.Data.Common;
+using Headless.Messaging.Internal;
+using Headless.Sql;
+
+namespace Headless.Messaging.Persistence;
+
+/// <summary>
+/// Renders the <c>WHERE</c> predicate of a <see cref="MessageListQuery"/> over the published or received table, and
+/// binds its parameters. The list, the capped count, and an Operation's scope read share it, so a count and the rows
+/// it counts never disagree about which rows a filter matches.
+/// </summary>
+internal static class RelationalMessageFilter
+{
+    private const int _TextMaxLength = 200;
+
+    /// <summary>The predicate of a terminal row: succeeded or failed, with no retry pending.</summary>
+    public static string Terminal(MessagingTables t) =>
+        $"{t.StatusName} IN ('{nameof(StatusName.Succeeded)}','{nameof(StatusName.Failed)}') AND {t.NextRetryAt} IS NULL";
+
+    /// <summary>Returns the predicate and the binder of <paramref name="query"/>'s filters.</summary>
+    public static (string Where, Action<DbCommand> Bind) Build(
+        MessagingTables t,
+        ISqlDialect dialect,
+        MessageListQuery query
+    )
+    {
+        var received = query.MessageType == MessageType.Subscribe;
+        var where = $"{t.IntentType} IN (0, 1)";
+
+        if (query.Status is not null)
+        {
+            where += $" AND {t.StatusName} = @FilterStatus";
+        }
+
+        if (query.TerminalOnly)
+        {
+            where += $" AND {Terminal(t)}";
+        }
+
+        if (query.Lane is not null)
+        {
+            where += $" AND {t.IntentType} = @FilterIntentType";
+        }
+
+        // The equality seeks; the LIKE of the escaped value keeps the match exact on an engine whose equality ignores
+        // trailing spaces.
+        string exact(string column, string parameter) =>
+            $" AND {column} = @{parameter} AND {column} LIKE @{parameter}Pattern ESCAPE '\\'";
+
+        if (query.Name is not null)
+        {
+            where += exact(t.Name, "FilterName");
+        }
+
+        if (query.MessageId is not null)
+        {
+            where += exact(t.MessageId, "FilterMessageId");
+        }
+
+        if (query.FailureFingerprint is not null)
+        {
+            where += exact(t.FailureFingerprint, "FilterFingerprint");
+        }
+
+        if (received && query.ConsumerIdentity is not null)
+        {
+            where += exact(t.ConsumerIdentity, "FilterConsumer");
+        }
+
+        if (received && query.TenantId is not null)
+        {
+            where += $" AND {t.TenantPresent} = {t.True}" + exact(t.TenantId, "FilterTenant");
+        }
+
+        if (query.IsHeld is { } held)
+        {
+            // Published rows are never held.
+            where +=
+                received ? $" AND {t.IsHeld} = {(held ? t.True : t.False)}"
+                : held ? " AND 1 = 0"
+                : "";
+        }
+
+        void bind(DbCommand command)
+        {
+            if (query.Status is { } status)
+            {
+                dialect.AddParameter(command, "FilterStatus", SqlColumnType.Text(50), status.ToString("G"));
+            }
+
+            if (query.Lane is { } lane)
+            {
+                dialect.AddParameter(
+                    command,
+                    "FilterIntentType",
+                    SqlColumnType.Int16,
+                    MessageLaneCompatibility.ToPersistedValue(lane)
+                );
+            }
+
+            // The pattern is unbounded, so a value longer than its column, which a sized parameter would truncate,
+            // still matches nothing.
+            void text(string parameter, string? value, SqlColumnType type)
+            {
+                if (value is null)
+                {
+                    return;
+                }
+
+                dialect.AddParameter(command, parameter, type, value);
+                dialect.AddParameter(
+                    command,
+                    parameter + "Pattern",
+                    SqlColumnType.Text(-1),
+                    SqlLikePattern.Escape(value)
+                );
+            }
+
+            text("FilterName", query.Name, SqlColumnType.Text(_TextMaxLength));
+            text("FilterMessageId", query.MessageId, SqlColumnType.KeyText(_TextMaxLength));
+            text(
+                "FilterFingerprint",
+                query.FailureFingerprint,
+                SqlColumnType.Text(MessagingFailureFingerprints.MaxLength)
+            );
+
+            if (received)
+            {
+                text("FilterConsumer", query.ConsumerIdentity, SqlColumnType.KeyText(_TextMaxLength));
+                text("FilterTenant", query.TenantId, SqlColumnType.KeyText(_TextMaxLength));
+            }
+        }
+
+        return (where, bind);
+    }
+
+    /// <summary>
+    /// The keyset predicate of a newest-first read: rows strictly before (<paramref name="atParameter"/>,
+    /// <paramref name="idParameter"/>) in (<paramref name="atColumn"/> DESC, <paramref name="idColumn"/> DESC) order.
+    /// </summary>
+    public static string Before(string atColumn, string idColumn, string atParameter, string idParameter) =>
+        $"({atColumn} < @{atParameter} OR ({atColumn} = @{atParameter} AND {idColumn} < @{idParameter}))";
+}

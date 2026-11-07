@@ -67,6 +67,7 @@ internal sealed class MessagingTables
         InboxRetentionSeconds = column("InboxRetentionSeconds");
         InboxKeyHash = column("InboxKeyHash");
         ConsumerIdentityHash = column("ConsumerIdentityHash");
+        ConsumerKeyHash = column("ConsumerKeyHash");
         ChangedAt = column("ChangedAt");
         StampChange = $"{ChangedAt}={dialect.NextChangeMarker(ChangedAt)}";
 
@@ -192,6 +193,12 @@ internal sealed class MessagingTables
     /// rather than padded text.
     /// </summary>
     public string ConsumerIdentityHash { get; }
+
+    /// <summary>
+    /// The SHA-256 of a received row's consumer identity alone. Failure groups key on it rather than on the text, which
+    /// SQL Server compares with trailing spaces padded away.
+    /// </summary>
+    public string ConsumerKeyHash { get; }
 
     /// <summary>
     /// The change marker of a published or received row: the database clock when a write last changed the row's

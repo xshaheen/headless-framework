@@ -80,6 +80,68 @@ public interface IMonitoringApi
     );
 
     /// <summary>
+    /// Returns at most <paramref name="pageSize"/> rows of one table that <paramref name="query"/> matches, newest
+    /// first by insert time and then by storage identifier, starting after <paramref name="after"/>.
+    /// </summary>
+    /// <param name="query">The rows to read.</param>
+    /// <param name="after">The <see cref="MessageListPage.Next"/> of the previous page, or <see langword="null"/> for the first page.</param>
+    /// <param name="pageSize">The most rows to return, at most 500.</param>
+    /// <param name="cancellationToken">A token to cancel the query.</param>
+    /// <returns>The page; its rows carry no content.</returns>
+    /// <remarks>
+    /// The keyset is (added, id), which no write changes, so paging never repeats or skips a row that changes state
+    /// between pages. Rows with an unrecognized lane are never listed.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="query"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="pageSize"/> is not between 1 and 500.</exception>
+    ValueTask<MessageListPage> ListMessagesAsync(
+        MessageListQuery query,
+        MessageListPosition? after,
+        int pageSize,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Counts the rows <paramref name="query"/> matches, stopping at <paramref name="cap"/>: a larger count reports the
+    /// cap with <see cref="MessageCount.Capped"/> set.
+    /// </summary>
+    /// <param name="query">
+    /// The rows to count. Status <see cref="StatusName.Scheduled"/>, <see cref="StatusName.Queued"/>, terminal
+    /// <see cref="StatusName.Failed"/>, and <see cref="MessageListQuery.IsHeld"/> are the dashboard's counts.
+    /// </param>
+    /// <param name="cap">The cap.</param>
+    /// <param name="cancellationToken">A token to cancel the query.</param>
+    /// <returns>The capped count.</returns>
+    /// <remarks>The store reads at most one row past the cap, so a count costs no more than the cap.</remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="query"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="cap"/> is not positive.</exception>
+    ValueTask<MessageCount> CountMessagesAsync(
+        MessageListQuery query,
+        int cap = MessageCount.DefaultCap,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Returns the failures of one table that ended for good, grouped by failure fingerprint and, for received rows,
+    /// by consumer, newest group first.
+    /// </summary>
+    /// <param name="messageType">The table to read.</param>
+    /// <param name="consumerIdentity">The one consumer to group, or <see langword="null"/> for every consumer.</param>
+    /// <param name="cancellationToken">A token to cancel the query.</param>
+    /// <returns>Every group.</returns>
+    /// <remarks>
+    /// A failure counts while it is <see cref="StatusName.Failed"/> with no retry pending and, for an inbox
+    /// generation, while it is the current generation: a re-executed generation leaves its group. Consumers are told
+    /// apart by the bytes of their identity, so two identities that differ only by trailing spaces form two groups on
+    /// every store.
+    /// </remarks>
+    ValueTask<IReadOnlyList<MessageFailureGroup>> GetFailureGroupsAsync(
+        MessageType messageType,
+        string? consumerIdentity = null,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
     /// Returns a bounded, deterministic page of rows whose persisted lane value is not recognized.
     /// The query never deserializes message content and does not mutate the returned rows.
     /// </summary>

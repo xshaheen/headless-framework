@@ -67,6 +67,21 @@ public sealed record OperatorAuthorizationContext(ClaimsPrincipal Principal)
 
     public string Actor => Principal.Identity?.Name ?? string.Empty;
 
+    /// <summary>
+    /// Checks the authority a read needs: an authenticated principal. A viewer without a named operator can read
+    /// counts and lists; only a write needs the actor <see cref="Validate"/> checks.
+    /// </summary>
+    /// <exception cref="UnauthorizedAccessException">The principal is not authenticated.</exception>
+    public void ValidateRead()
+    {
+        if (Principal?.Identity?.IsAuthenticated is not true)
+        {
+            throw new UnauthorizedAccessException("Messaging operation reads require an authenticated principal.");
+        }
+    }
+
+    /// <summary>Checks the authority a write needs: an authenticated principal with a usable actor name.</summary>
+    /// <exception cref="UnauthorizedAccessException">The principal is not authenticated or has no usable actor name.</exception>
     public void Validate()
     {
         if (Principal?.Identity?.IsAuthenticated is not true)
@@ -84,18 +99,25 @@ public sealed record OperatorAuthorizationContext(ClaimsPrincipal Principal)
 }
 
 /// <summary>Audited mutation request fenced to one immutable generation incarnation and state.</summary>
+/// <remarks>
+/// <see cref="Reason"/> is optional for a single-row request: an empty or whitespace reason is stored as
+/// <see langword="null"/>. A caller that runs an Operation over a filter is expected to require one.
+/// </remarks>
 [PublicAPI]
 public sealed record InboxOperationRequest(
     Guid OperationId,
     Guid ExpectedIncarnationId,
     StatusName ExpectedStatus,
-    string Reason,
+    string? Reason,
     OperatorAuthorizationContext Authorization
 )
 {
     internal const int ReasonMaxLength = 1000;
 
     public string Actor => Authorization?.Actor ?? string.Empty;
+
+    /// <summary>Gets the reason as it is stored: <see langword="null"/> when empty or whitespace.</summary>
+    public string? StoredReason => OperatorReason.Normalize(Reason);
 
     public void Validate()
     {
@@ -109,11 +131,9 @@ public sealed record InboxOperationRequest(
             throw new InvalidOperationException("Expected inbox incarnation cannot be empty.");
         }
 
-        if (string.IsNullOrWhiteSpace(Reason) || Reason.Length > ReasonMaxLength)
+        if (Reason?.Length > ReasonMaxLength)
         {
-            throw new InvalidOperationException(
-                $"Inbox operation reason must be between 1 and {ReasonMaxLength} characters."
-            );
+            throw new InvalidOperationException($"Inbox operation reason cannot exceed {ReasonMaxLength} characters.");
         }
 
         if (Authorization is null)
@@ -161,7 +181,83 @@ public sealed record InboxOperationResult(
     long? ChildGeneration,
     Guid? ChildIncarnationId,
     string Actor,
-    string Reason,
+    string? Reason,
     DateTimeOffset CreatedAt,
     bool IsReplay = false
 );
+
+/// <summary>The reason an operator gave, as storage keeps it.</summary>
+internal static class OperatorReason
+{
+    /// <summary>Returns <see langword="null"/> for an empty or whitespace reason, else the reason unchanged.</summary>
+    public static string? Normalize(string? reason) => string.IsNullOrWhiteSpace(reason) ? null : reason;
+}
+
+/// <summary>
+/// Filters for the operator ledger: the receipts every audited intervention writes, refused ones included. A filter
+/// left <see langword="null"/> matches every receipt; text filters compare ordinally.
+/// </summary>
+/// <remarks>This record grows by <see langword="init"/> members.</remarks>
+[PublicAPI]
+public sealed record MessagingOperationReceiptQuery
+{
+    /// <summary>The most receipts one read returns.</summary>
+    public const int MaxLimit = 500;
+
+    /// <summary>Gets the operator every receipt read must name.</summary>
+    public string? Actor { get; init; }
+
+    /// <summary>Gets the intervention every receipt read must record.</summary>
+    public MessagingOperationType? OperationType { get; init; }
+
+    /// <summary>Gets the kind of target every receipt read must record.</summary>
+    public MessagingOperationTargetKind? TargetKind { get; init; }
+
+    /// <summary>Gets the inclusive lower bound of the receipt time.</summary>
+    public DateTimeOffset? From { get; init; }
+
+    /// <summary>Gets the exclusive upper bound of the receipt time.</summary>
+    public DateTimeOffset? Before { get; init; }
+
+    /// <summary>Gets the position of the last receipt an earlier read returned, exclusive, or <see langword="null"/>.</summary>
+    public MessagingOperationReceiptPosition? After { get; init; }
+
+    /// <summary>Gets the most receipts to return, clamped to 1 through <see cref="MaxLimit"/>.</summary>
+    public int Limit { get; init; } = 50;
+}
+
+/// <summary>The keyset position of one receipt in the ledger: its time, then its operation identifier.</summary>
+/// <param name="CreatedAt">The receipt's time.</param>
+/// <param name="OperationId">The receipt's operation identifier.</param>
+[PublicAPI]
+[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Auto)]
+public readonly record struct MessagingOperationReceiptPosition(DateTimeOffset CreatedAt, Guid OperationId);
+
+/// <summary>One receipt in the operator ledger.</summary>
+[PublicAPI]
+public sealed record MessagingOperationReceiptView(
+    Guid OperationId,
+    MessagingOperationTargetKind TargetKind,
+    MessagingOperationType OperationType,
+    InboxOperationOutcome Outcome,
+    string Actor,
+    string? Reason,
+    DateTimeOffset CreatedAt,
+    Guid? StorageId,
+    Guid? IncarnationId,
+    Guid? ChildStorageId,
+    string? MessageName,
+    string? MessageId
+);
+
+/// <summary>One page of the operator ledger, newest first, and the position of the next page.</summary>
+/// <remarks>This record grows by <see langword="init"/> members.</remarks>
+[PublicAPI]
+public sealed record MessagingOperationReceiptPage
+{
+    /// <summary>Gets the receipts, newest first.</summary>
+    public required IReadOnlyList<MessagingOperationReceiptView> Items { get; init; }
+
+    /// <summary>Gets the position to read the next page after, or <see langword="null"/> when this page is the last.</summary>
+    public MessagingOperationReceiptPosition? Next { get; init; }
+}

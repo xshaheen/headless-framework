@@ -62,4 +62,33 @@ public class MessageView
 
     /// <summary>UTC timestamp until which the row is leased by an active dispatch attempt; <see langword="null"/> when no lease is active.</summary>
     public DateTimeOffset? LockedUntil { get; set; }
+
+    /// <summary>
+    /// Gets or sets the row's change marker: when a write last changed its visible state. Set by
+    /// <see cref="IMonitoringApi.ListMessagesAsync"/>.
+    /// </summary>
+    public DateTimeOffset? ChangedAt { get; set; }
+
+    /// <summary>
+    /// Gets or sets the fingerprint of the row's last failure, or <see langword="null"/>. Set by
+    /// <see cref="IMonitoringApi.ListMessagesAsync"/>.
+    /// </summary>
+    public string? FailureFingerprint { get; set; }
+
+    /// <summary>
+    /// Gets or sets the tenant of a received inbox row, or <see langword="null"/>. Set by
+    /// <see cref="IMonitoringApi.ListMessagesAsync"/>.
+    /// </summary>
+    public string? TenantId { get; set; }
+
+    /// <summary>
+    /// Gets or sets whether a received inbox row is held. Set by <see cref="IMonitoringApi.ListMessagesAsync"/>.
+    /// </summary>
+    public bool IsHeld { get; set; }
+
+    /// <summary>
+    /// Gets or sets a received inbox row's incarnation, the identity its audited operations fence on, or
+    /// <see langword="null"/>. Set by <see cref="IMonitoringApi.ListMessagesAsync"/>.
+    /// </summary>
+    public Guid? IncarnationId { get; set; }
 }

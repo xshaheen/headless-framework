@@ -296,7 +296,7 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
             )
         ).ToList();
 
-        compositeKeyColumns.Should().BeEquivalentTo(["StatusName", "Added"], opts => opts.WithStrictOrdering());
+        compositeKeyColumns.Should().BeEquivalentTo(["StatusName", "Added", "Id"], opts => opts.WithStrictOrdering());
 
         // The dashboard counts filter on IntentType too; carrying it lets them read the index alone.
         var includedColumns = (

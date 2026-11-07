@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Headless.Messaging.Internal;
 using Headless.Primitives;
 
@@ -361,6 +362,137 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
                 new IndexPage<MessageView>(pageItems, currentPage, query.PageSize, filtered.Count)
             );
         }
+    }
+
+    public ValueTask<MessageListPage> ListMessagesAsync(
+        MessageListQuery query,
+        MessageListPosition? after,
+        int pageSize,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(query);
+        Argument.IsInclusiveBetween(pageSize, 1, 500);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var received = query.MessageType == MessageType.Subscribe;
+        var rows = _Rows(query)
+            .Where(message =>
+                after is not { } position
+                || message.Added < position.Added
+                || (message.Added == position.Added && message.StorageId.CompareTo(position.Id) < 0)
+            )
+            .OrderByDescending(static message => message.Added)
+            .ThenByDescending(static message => message.StorageId)
+            .Take(pageSize + 1)
+            .Select(message => new MessageView
+            {
+                StorageId = message.StorageId,
+                MessageId = message.Origin.Id,
+                Version = message.Version,
+                Name = message.Name,
+                ConsumerIdentity = received ? message.ConsumerIdentity : null,
+                Lane = message.Lane,
+                Retries = message.Retries,
+                Added = message.Added,
+                ExpiresAt = message.ExpiresAt,
+                StatusName = message.StatusName,
+                NextRetryAt = message.NextRetryAt,
+                LockedUntil = message.LockedUntil,
+                ChangedAt = message.ChangedAt,
+                FailureFingerprint = message.FailureFingerprint,
+                TenantId = received ? message.InboxKey?.TenantId : null,
+                IsHeld = received && message.IsHeld,
+                IncarnationId = message.InboxGeneration?.IncarnationId,
+            })
+            .ToList();
+
+        var page = rows.Count > pageSize ? rows.GetRange(0, pageSize) : rows;
+        return ValueTask.FromResult(
+            new MessageListPage
+            {
+                Items = page,
+                Next = rows.Count > pageSize ? new MessageListPosition(page[^1].Added, page[^1].StorageId) : null,
+            }
+        );
+    }
+
+    public ValueTask<MessageCount> CountMessagesAsync(
+        MessageListQuery query,
+        int cap = MessageCount.DefaultCap,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(query);
+        Argument.IsPositive(cap);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        return ValueTask.FromResult(MessageCount.Of(_Rows(query).Take(cap + 1).Count(), cap));
+    }
+
+    public ValueTask<IReadOnlyList<MessageFailureGroup>> GetFailureGroupsAsync(
+        MessageType messageType,
+        string? consumerIdentity = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var received = messageType == MessageType.Subscribe;
+        var source = received ? storage.ReceivedMessages.Values : storage.PublishedMessages.Values;
+        var groups = source
+            .Where(message =>
+                InMemoryMessageFilter.IsRecognizedLane(message.Lane)
+                && message.StatusName == StatusName.Failed
+                && message.NextRetryAt is null
+                && (!received || message.IsCurrentGeneration)
+                && (
+                    !received
+                    || consumerIdentity is null
+                    || string.Equals(message.ConsumerIdentity, consumerIdentity, StringComparison.Ordinal)
+                )
+            )
+            .GroupBy(
+                message =>
+                    (Fingerprint: message.FailureFingerprint, Consumer: received ? message.ConsumerIdentity : null),
+                FailureGroupKeyComparer.Instance
+            )
+            .Select(group => new MessageFailureGroup
+            {
+                MessageType = messageType,
+                FailureFingerprint = group.Key.Fingerprint,
+                ConsumerIdentity = group.Key.Consumer,
+                Count = group.Count(),
+                LastFailedAt = group.Max(static message => message.ChangedAt),
+            });
+
+        return ValueTask.FromResult(MessageFailureGroupOrder.Sort(groups));
+    }
+
+    private IEnumerable<MemoryMessage> _Rows(MessageListQuery query)
+    {
+        var source =
+            query.MessageType == MessageType.Subscribe
+                ? storage.ReceivedMessages.Values
+                : storage.PublishedMessages.Values;
+
+        return source.Where(message => InMemoryMessageFilter.Matches(message, query));
+    }
+
+    // Groups compare their key text ordinally, as the relational stores compare the identity's hash.
+    private sealed class FailureGroupKeyComparer : IEqualityComparer<(string? Fingerprint, string? Consumer)>
+    {
+        public static readonly FailureGroupKeyComparer Instance = new();
+
+        public bool Equals((string? Fingerprint, string? Consumer) x, (string? Fingerprint, string? Consumer) y) =>
+            string.Equals(x.Fingerprint, y.Fingerprint, StringComparison.Ordinal)
+            && string.Equals(x.Consumer, y.Consumer, StringComparison.Ordinal);
+
+        public int GetHashCode((string? Fingerprint, string? Consumer) obj) =>
+            HashCode.Combine(
+                obj.Fingerprint is null ? 0 : StringComparer.Ordinal.GetHashCode(obj.Fingerprint),
+                obj.Consumer is null ? 0 : StringComparer.Ordinal.GetHashCode(obj.Consumer)
+            );
     }
 
     public ValueTask<IndexPage<UnknownLaneMessageView>> GetUnknownLaneMessagesAsync(

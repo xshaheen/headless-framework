@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
 using Headless.Primitives;
@@ -16,6 +17,13 @@ internal sealed partial class InMemoryDataStorage
             OperatorAuthorizationContext authorization,
             CancellationToken cancellationToken = default
         ) => storage._QueryScheduledAsync(query, authorization, cancellationToken);
+
+        public ValueTask<MessageCount> CountAsync(
+            ScheduledDeliveryQuery query,
+            OperatorAuthorizationContext authorization,
+            int cap = MessageCount.DefaultCap,
+            CancellationToken cancellationToken = default
+        ) => storage._CountScheduledAsync(query, authorization, cap, cancellationToken);
 
         public ValueTask<ScheduledDeliveryOperationResult> RevokeAsync(
             ScheduledDeliveryOperationRequest request,
@@ -38,7 +46,7 @@ internal sealed partial class InMemoryDataStorage
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
-        authorization.Validate();
+        authorization.ValidateRead();
         query.Validate();
 
         var page = Math.Max(query.CurrentPage, 0);
@@ -47,41 +55,7 @@ internal sealed partial class InMemoryDataStorage
         lock (_receivedUpsertLock)
         {
             var now = timeProvider.GetUtcNow();
-            var rows = PublishedMessages.Values.Where(message =>
-                string.Equals(message.Version, messagingOptions.Value.Version, StringComparison.Ordinal)
-                && message.StatusName is StatusName.Delayed or StatusName.Queued
-                && message.InlineAttempts == 0
-                && message.Retries == 0
-                && message.NextRetryAt is null
-                && message.ExpiresAt is not null
-                && message.Lane is MessageLane.Bus or MessageLane.Queue
-            );
-
-            if (!string.IsNullOrWhiteSpace(query.MessageName))
-            {
-                rows = rows.Where(message => string.Equals(message.Name, query.MessageName, StringComparison.Ordinal));
-            }
-
-            if (query.Lane is { } lane)
-            {
-                rows = rows.Where(message => message.Lane == lane);
-            }
-
-            if (query.DueFrom is { } dueFrom)
-            {
-                rows = rows.Where(message => message.ExpiresAt >= dueFrom);
-            }
-
-            if (query.DueTo is { } dueTo)
-            {
-                rows = rows.Where(message => message.ExpiresAt <= dueTo);
-            }
-
-            if (query.StorageIds is { Count: > 0 } ids)
-            {
-                var idSet = ids as HashSet<Guid> ?? [.. ids];
-                rows = rows.Where(message => idSet.Contains(message.StorageId));
-            }
+            var rows = _ScheduledRows(query);
 
             var materialized = rows.OrderBy(message => message.ExpiresAt).ThenBy(message => message.StorageId).ToList();
 
@@ -110,6 +84,66 @@ internal sealed partial class InMemoryDataStorage
         }
     }
 
+    /// <summary>The pending scheduled deliveries <paramref name="query"/> matches; the caller holds the store lock.</summary>
+    private IEnumerable<MemoryMessage> _ScheduledRows(ScheduledDeliveryQuery query)
+    {
+        var rows = PublishedMessages.Values.Where(message =>
+            string.Equals(message.Version, messagingOptions.Value.Version, StringComparison.Ordinal)
+            && message.StatusName is StatusName.Delayed or StatusName.Queued
+            && message.InlineAttempts == 0
+            && message.Retries == 0
+            && message.NextRetryAt is null
+            && message.ExpiresAt is not null
+            && message.Lane is MessageLane.Bus or MessageLane.Queue
+        );
+
+        if (!string.IsNullOrWhiteSpace(query.MessageName))
+        {
+            rows = rows.Where(message => string.Equals(message.Name, query.MessageName, StringComparison.Ordinal));
+        }
+
+        if (query.Lane is { } lane)
+        {
+            rows = rows.Where(message => message.Lane == lane);
+        }
+
+        if (query.DueFrom is { } dueFrom)
+        {
+            rows = rows.Where(message => message.ExpiresAt >= dueFrom);
+        }
+
+        if (query.DueTo is { } dueTo)
+        {
+            rows = rows.Where(message => message.ExpiresAt <= dueTo);
+        }
+
+        if (query.StorageIds is { Count: > 0 } ids)
+        {
+            var idSet = ids as HashSet<Guid> ?? [.. ids];
+            rows = rows.Where(message => idSet.Contains(message.StorageId));
+        }
+
+        return rows;
+    }
+
+    private ValueTask<MessageCount> _CountScheduledAsync(
+        ScheduledDeliveryQuery query,
+        OperatorAuthorizationContext authorization,
+        int cap,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        authorization.ValidateRead();
+        query.Validate();
+        Argument.IsPositive(cap);
+
+        lock (_receivedUpsertLock)
+        {
+            return ValueTask.FromResult(MessageCount.Of(_ScheduledRows(query).Take(cap + 1).Count(), cap));
+        }
+    }
+
     private ValueTask<ScheduledDeliveryOperationResult> _MutateScheduledAsync(
         MessagingOperationType operationType,
         ScheduledDeliveryOperationRequest request,
@@ -129,7 +163,7 @@ internal sealed partial class InMemoryDataStorage
                     && prior.StorageId == request.StorageId
                     && prior.ExpectedDueAt == request.ExpectedDueAt
                     && string.Equals(prior.Actor, request.Actor, StringComparison.Ordinal)
-                    && string.Equals(prior.Reason, request.Reason, StringComparison.Ordinal);
+                    && string.Equals(prior.Reason, request.StoredReason, StringComparison.Ordinal);
 
                 if (matches)
                 {
@@ -160,7 +194,7 @@ internal sealed partial class InMemoryDataStorage
                         IncarnationId: null,
                         operationType,
                         request.Actor,
-                        request.Reason,
+                        request.StoredReason,
                         InboxOperationOutcome.OperationConflict,
                         conflictNow
                     )
@@ -177,7 +211,7 @@ internal sealed partial class InMemoryDataStorage
                         prior.MessageId,
                         prior.Lane is { } conflictLane ? Enum.Parse<MessageLane>(conflictLane) : null,
                         request.Actor,
-                        request.Reason,
+                        request.StoredReason,
                         conflictNow,
                         IsReplay: true
                     )
@@ -248,7 +282,7 @@ internal sealed partial class InMemoryDataStorage
                 operationType,
                 finalOutcome,
                 request.Actor,
-                request.Reason,
+                request.StoredReason,
                 now,
                 ExpectedDueAt: request.ExpectedDueAt,
                 StorageId: request.StorageId,
@@ -266,7 +300,7 @@ internal sealed partial class InMemoryDataStorage
                     IncarnationId: null,
                     operationType,
                     request.Actor,
-                    request.Reason,
+                    request.StoredReason,
                     finalOutcome,
                     now
                 )
@@ -288,7 +322,7 @@ internal sealed partial class InMemoryDataStorage
                     messageId,
                     messageLane,
                     request.Actor,
-                    request.Reason,
+                    request.StoredReason,
                     now,
                     IsReplay: false
                 )

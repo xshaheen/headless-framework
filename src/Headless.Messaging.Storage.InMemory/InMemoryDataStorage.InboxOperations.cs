@@ -17,6 +17,32 @@ internal sealed partial class InMemoryDataStorage
             CancellationToken cancellationToken = default
         ) => storage._QueryInboxAsync(query, authorization, cancellationToken);
 
+        public ValueTask<MessageCount> CountAsync(
+            InboxGenerationQuery query,
+            OperatorAuthorizationContext authorization,
+            int cap = MessageCount.DefaultCap,
+            CancellationToken cancellationToken = default
+        ) => storage._CountInboxAsync(query, authorization, cap, cancellationToken);
+
+        public ValueTask<MessageCount> CountOperationScopeAsync(
+            MessageOperationScope scope,
+            int cap = MessageCount.DefaultCap,
+            CancellationToken cancellationToken = default
+        ) => storage._CountOperationScopeAsync(scope, cap, cancellationToken);
+
+        public ValueTask<MessageOperationChunk> ReadOperationScopeAsync(
+            MessageOperationScope scope,
+            Guid? afterId,
+            int chunkSize,
+            CancellationToken cancellationToken = default
+        ) => storage._ReadOperationScopeAsync(scope, afterId, chunkSize, cancellationToken);
+
+        public ValueTask<MessagingOperationReceiptPage> QueryReceiptsAsync(
+            MessagingOperationReceiptQuery query,
+            OperatorAuthorizationContext authorization,
+            CancellationToken cancellationToken = default
+        ) => storage._QueryReceiptsAsync(query, authorization, cancellationToken);
+
         public ValueTask<InboxOperationResult> HoldAsync(
             InboxOperationRequest request,
             CancellationToken cancellationToken = default
@@ -45,7 +71,7 @@ internal sealed partial class InMemoryDataStorage
         Guid? IncarnationId,
         MessagingOperationType OperationType,
         string Actor,
-        string Reason,
+        string? Reason,
         InboxOperationOutcome Outcome,
         DateTimeOffset CreatedAt
     );
@@ -56,7 +82,7 @@ internal sealed partial class InMemoryDataStorage
         MessagingOperationType OperationType,
         InboxOperationOutcome Outcome,
         string Actor,
-        string Reason,
+        string? Reason,
         DateTimeOffset CreatedAt,
         Guid? GenerationIncarnationId = null,
         StatusName? ExpectedStatus = null,
@@ -155,46 +181,13 @@ internal sealed partial class InMemoryDataStorage
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
-        authorization.Validate();
+        authorization.ValidateRead();
         var page = Math.Max(query.CurrentPage, 0);
         var pageSize = Math.Clamp(query.PageSize, 1, 200);
 
         lock (_receivedUpsertLock)
         {
-            IEnumerable<MemoryMessage> rows = ReceivedMessages.Values.Where(message =>
-                message.InboxGeneration is not null
-            );
-            if (query.IncarnationId is { } incarnationId)
-            {
-                rows = rows.Where(message => message.InboxGeneration!.IncarnationId == incarnationId);
-            }
-
-            if (!string.IsNullOrEmpty(query.ConsumerIdentity))
-            {
-                rows = rows.Where(message =>
-                    string.Equals(message.InboxKey!.ConsumerIdentity, query.ConsumerIdentity, StringComparison.Ordinal)
-                );
-            }
-
-            if (query.Lane is { } lane)
-            {
-                rows = rows.Where(message => message.Lane == lane);
-            }
-
-            if (query.Status is { } status)
-            {
-                rows = rows.Where(message => message.StatusName == status);
-            }
-
-            if (query.IsOrphaned is { } orphaned)
-            {
-                rows = rows.Where(message => message.IsInboxOrphaned == orphaned);
-            }
-
-            if (query.IsHeld is { } held)
-            {
-                rows = rows.Where(message => message.IsHeld == held);
-            }
+            var rows = _InboxRows(query);
 
             var materialized = rows.OrderByDescending(message => message.Added)
                 .ThenBy(message => message.StorageId)
@@ -202,6 +195,45 @@ internal sealed partial class InMemoryDataStorage
             var items = materialized.Skip(page * pageSize).Take(pageSize).Select(_ToInboxGenerationView).ToList();
             return ValueTask.FromResult(new IndexPage<InboxGenerationView>(items, page, pageSize, materialized.Count));
         }
+    }
+
+    /// <summary>The retained inbox generations <paramref name="query"/> matches; the caller holds the store lock.</summary>
+    private IEnumerable<MemoryMessage> _InboxRows(InboxGenerationQuery query)
+    {
+        IEnumerable<MemoryMessage> rows = ReceivedMessages.Values.Where(message => message.InboxGeneration is not null);
+        if (query.IncarnationId is { } incarnationId)
+        {
+            rows = rows.Where(message => message.InboxGeneration!.IncarnationId == incarnationId);
+        }
+
+        if (!string.IsNullOrEmpty(query.ConsumerIdentity))
+        {
+            rows = rows.Where(message =>
+                string.Equals(message.InboxKey!.ConsumerIdentity, query.ConsumerIdentity, StringComparison.Ordinal)
+            );
+        }
+
+        if (query.Lane is { } lane)
+        {
+            rows = rows.Where(message => message.Lane == lane);
+        }
+
+        if (query.Status is { } status)
+        {
+            rows = rows.Where(message => message.StatusName == status);
+        }
+
+        if (query.IsOrphaned is { } orphaned)
+        {
+            rows = rows.Where(message => message.IsInboxOrphaned == orphaned);
+        }
+
+        if (query.IsHeld is { } held)
+        {
+            rows = rows.Where(message => message.IsHeld == held);
+        }
+
+        return rows;
     }
 
     private ValueTask<InboxOperationResult> _MutateInboxAsync(
@@ -223,7 +255,7 @@ internal sealed partial class InMemoryDataStorage
                     && prior.GenerationIncarnationId == request.ExpectedIncarnationId
                     && prior.ExpectedStatus == request.ExpectedStatus
                     && string.Equals(prior.Actor, request.Actor, StringComparison.Ordinal)
-                    && string.Equals(prior.Reason, request.Reason, StringComparison.Ordinal);
+                    && string.Equals(prior.Reason, request.StoredReason, StringComparison.Ordinal);
                 if (matches)
                 {
                     return ValueTask.FromResult(
@@ -257,7 +289,7 @@ internal sealed partial class InMemoryDataStorage
                     ChildGeneration: null,
                     ChildIncarnationId: null,
                     request.Actor,
-                    request.Reason,
+                    request.StoredReason,
                     conflictAt,
                     IsReplay: true
                 );
@@ -269,7 +301,7 @@ internal sealed partial class InMemoryDataStorage
                         request.ExpectedIncarnationId,
                         operationType,
                         request.Actor,
-                        request.Reason,
+                        request.StoredReason,
                         InboxOperationOutcome.OperationConflict,
                         conflictAt
                     )
@@ -305,7 +337,7 @@ internal sealed partial class InMemoryDataStorage
                         row.IsHeld = true;
                         row.HeldAt = now;
                         row.HeldBy = request.Actor;
-                        row.HoldReason = request.Reason;
+                        row.HoldReason = request.StoredReason;
                         row.HoldOperationId = request.OperationId;
                         _StampChange(row);
                         break;
@@ -340,7 +372,7 @@ internal sealed partial class InMemoryDataStorage
                 operationType,
                 outcome,
                 request.Actor,
-                request.Reason,
+                request.StoredReason,
                 now,
                 GenerationIncarnationId: request.ExpectedIncarnationId,
                 ExpectedStatus: request.ExpectedStatus,
@@ -362,7 +394,7 @@ internal sealed partial class InMemoryDataStorage
                     request.ExpectedIncarnationId,
                     operationType,
                     request.Actor,
-                    request.Reason,
+                    request.StoredReason,
                     outcome,
                     now
                 )
@@ -378,7 +410,7 @@ internal sealed partial class InMemoryDataStorage
                 childGeneration,
                 childIncarnationId,
                 request.Actor,
-                request.Reason,
+                request.StoredReason,
                 now
             );
             if (row?.InboxKey is { } key && outcome is InboxOperationOutcome.Applied)

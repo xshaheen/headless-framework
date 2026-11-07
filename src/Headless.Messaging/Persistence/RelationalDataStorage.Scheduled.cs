@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
+using Headless.Checks;
 using Headless.Messaging.Internal;
 using Headless.Primitives;
 using Headless.Sql;
@@ -76,70 +77,11 @@ internal sealed partial class RelationalDataStorage
         CancellationToken cancellationToken = default
     )
     {
-        authorization.Validate();
+        authorization.ValidateRead();
         query.Validate();
         var page = Math.Max(query.CurrentPage, 0);
         var pageSize = Math.Clamp(query.PageSize, 1, 200);
-        var where = ScheduledPending;
-
-        if (!string.IsNullOrWhiteSpace(query.MessageName))
-        {
-            where += $" AND {_t.Name}=@Name";
-        }
-
-        if (query.Lane is not null)
-        {
-            where += $" AND {_t.IntentType}=@IntentType";
-        }
-
-        if (query.DueFrom is not null)
-        {
-            where += $" AND {_t.ExpiresAt}>=@DueFrom";
-        }
-
-        if (query.DueTo is not null)
-        {
-            where += $" AND {_t.ExpiresAt}<=@DueTo";
-        }
-
-        if (query.StorageIds is { Count: > 0 })
-        {
-            where += $" AND {_dialect.InList(_t.Id, "StorageIds", SqlColumnType.Guid)}";
-        }
-
-        void bind(DbCommand command)
-        {
-            _BindVersion(command);
-            if (!string.IsNullOrWhiteSpace(query.MessageName))
-            {
-                _dialect.AddParameter(command, "Name", _NameType, query.MessageName);
-            }
-
-            if (query.Lane is { } lane)
-            {
-                _dialect.AddParameter(command, "IntentType", SqlColumnType.Int16, (short)lane);
-            }
-
-            if (query.DueFrom is { } dueFrom)
-            {
-                _dialect.AddParameter(command, "DueFrom", SqlColumnType.Timestamp, dueFrom);
-            }
-
-            if (query.DueTo is { } dueTo)
-            {
-                _dialect.AddParameter(command, "DueTo", SqlColumnType.Timestamp, dueTo);
-            }
-
-            if (query.StorageIds is { Count: > 0 } storageIds)
-            {
-                _dialect.AddListParameter(
-                    command,
-                    "StorageIds",
-                    SqlColumnType.Guid,
-                    storageIds as Guid[] ?? [.. storageIds]
-                );
-            }
-        }
+        var (where, bind) = _ScheduledFilter(query);
 
         await using var connection = _CreateConnection();
         var total = Convert.ToInt64(
@@ -206,6 +148,101 @@ internal sealed partial class RelationalDataStorage
             .ConfigureAwait(false);
 
         return new IndexPage<ScheduledDeliveryView>(items, page, pageSize, checked((int)total));
+    }
+
+    public async ValueTask<MessageCount> CountAsync(
+        ScheduledDeliveryQuery query,
+        OperatorAuthorizationContext authorization,
+        int cap = MessageCount.DefaultCap,
+        CancellationToken cancellationToken = default
+    )
+    {
+        authorization.ValidateRead();
+        query.Validate();
+        Argument.IsPositive(cap);
+
+        var (where, bind) = _ScheduledFilter(query);
+        await using var connection = _CreateConnection();
+        var matched = await RelationalMonitoringApi
+            .CountCappedAsync(
+                _dialect,
+                connection,
+                _publishedTable,
+                where,
+                bind,
+                cap,
+                CommandTimeoutSeconds,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return MessageCount.Of(matched, cap);
+    }
+
+    private (string Where, Action<DbCommand> Bind) _ScheduledFilter(ScheduledDeliveryQuery query)
+    {
+        var where = ScheduledPending;
+
+        if (!string.IsNullOrWhiteSpace(query.MessageName))
+        {
+            where += $" AND {_t.Name}=@Name";
+        }
+
+        if (query.Lane is not null)
+        {
+            where += $" AND {_t.IntentType}=@IntentType";
+        }
+
+        if (query.DueFrom is not null)
+        {
+            where += $" AND {_t.ExpiresAt}>=@DueFrom";
+        }
+
+        if (query.DueTo is not null)
+        {
+            where += $" AND {_t.ExpiresAt}<=@DueTo";
+        }
+
+        if (query.StorageIds is { Count: > 0 })
+        {
+            where += $" AND {_dialect.InList(_t.Id, "StorageIds", SqlColumnType.Guid)}";
+        }
+
+        void bind(DbCommand command)
+        {
+            _BindVersion(command);
+            if (!string.IsNullOrWhiteSpace(query.MessageName))
+            {
+                _dialect.AddParameter(command, "Name", _NameType, query.MessageName);
+            }
+
+            if (query.Lane is { } lane)
+            {
+                _dialect.AddParameter(command, "IntentType", SqlColumnType.Int16, (short)lane);
+            }
+
+            if (query.DueFrom is { } dueFrom)
+            {
+                _dialect.AddParameter(command, "DueFrom", SqlColumnType.Timestamp, dueFrom);
+            }
+
+            if (query.DueTo is { } dueTo)
+            {
+                _dialect.AddParameter(command, "DueTo", SqlColumnType.Timestamp, dueTo);
+            }
+
+            if (query.StorageIds is { Count: > 0 } storageIds)
+            {
+                _dialect.AddListParameter(
+                    command,
+                    "StorageIds",
+                    SqlColumnType.Guid,
+                    storageIds as Guid[] ?? [.. storageIds]
+                );
+            }
+        }
+
+        return (where, bind);
     }
 
     public ValueTask<ScheduledDeliveryOperationResult> RevokeAsync(
@@ -336,7 +373,7 @@ internal sealed partial class RelationalDataStorage
                         row?.MessageId,
                         row?.Lane,
                         request.Actor,
-                        request.Reason,
+                        request.StoredReason,
                         now
                     );
                     await _WriteScheduledReceiptAndAuditAsync(connection, transaction, applied, ct)
@@ -408,7 +445,7 @@ internal sealed partial class RelationalDataStorage
                         reader.IsDBNull(6) ? null : reader.GetString(6),
                         reader.IsDBNull(7) ? null : Enum.Parse<MessageLane>(reader.GetString(7)),
                         reader.GetString(8),
-                        reader.GetString(9),
+                        reader.IsDBNull(9) ? null : reader.GetString(9),
                         reader.GetFieldValue<DateTimeOffset>(10)
                     );
                 },
@@ -428,7 +465,7 @@ internal sealed partial class RelationalDataStorage
             && prior.StorageId == request.StorageId
             && prior.ExpectedDueAt == request.ExpectedDueAt
             && string.Equals(prior.Actor, request.Actor, StringComparison.Ordinal)
-            && string.Equals(prior.Reason, request.Reason, StringComparison.Ordinal);
+            && string.Equals(prior.Reason, request.StoredReason, StringComparison.Ordinal);
 
         return matches
             ? prior with
@@ -445,7 +482,7 @@ internal sealed partial class RelationalDataStorage
                 prior.MessageId,
                 prior.Lane,
                 request.Actor,
-                request.Reason,
+                request.StoredReason,
                 prior.CreatedAt,
                 IsReplay: true
             );

@@ -152,6 +152,9 @@ internal static class PostgreSqlMessagingSchemaContribution
                 -- SHA-256 of a non-inbox row's identity. The text columns compare exactly here, but SQL Server pads
                 -- trailing spaces, so both engines key the row on this hash to treat every identity the same way.
                 "consumer_identity_hash" BYTEA NULL,
+                -- SHA-256 of the consumer identity alone. Failure groups key on it, so both engines tell consumers
+                -- apart by their bytes rather than by padded text.
+                "consumer_key_hash" BYTEA NULL,
                 -- The change marker every state-changing statement stamps from the statement clock; the default
                 -- covers a row written outside the storage.
                 "changed_at" TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp()
@@ -228,7 +231,12 @@ internal static class PostgreSqlMessagingSchemaContribution
             -- also filters on "intent_type", so INCLUDE carries it and those counts read the index alone instead of
             -- fetching each heap row of a status that retention keeps in the millions. The step creates the final
             -- schema directly; it does not carry migration DDL for superseded index shapes.
-            CREATE INDEX IF NOT EXISTS "idx_messaging_received_status_name_added" ON {received} ("status_name","added") INCLUDE ("intent_type");
+            -- The id key column makes the index serve the dashboard's status-filtered keyset list on (added, id) too.
+            CREATE INDEX IF NOT EXISTS "idx_messaging_received_status_name_added" ON {received} ("status_name","added","id") INCLUDE ("intent_type");
+            -- The failure groups read only failures that ended for good and are still current, grouped by cause and
+            -- consumer, so the partial index holds exactly those rows in group order.
+            CREATE INDEX IF NOT EXISTS "idx_messaging_received_failure_groups" ON {received} ("failure_fingerprint","consumer_key_hash")
+                INCLUDE ("changed_at","intent_type") WHERE "status_name" = 'Failed' AND "next_retry_at" IS NULL AND "is_current_generation" = TRUE;
             -- The dashboard's change read pages by (changed_at, id) on every poll of every node.
             CREATE INDEX IF NOT EXISTS "idx_messaging_received_changed_at_id" ON {received} ("changed_at","id") INCLUDE ("status_name");
 
@@ -240,7 +248,8 @@ internal static class PostgreSqlMessagingSchemaContribution
                 "expected_status" VARCHAR(50) COLLATE "C" NULL,
                 "expected_due_at" TIMESTAMPTZ NULL,
                 "actor" VARCHAR(200) COLLATE "C" NOT NULL,
-                "reason" VARCHAR(1000) NOT NULL,
+                -- NULL when a single-row intervention gave no reason.
+                "reason" VARCHAR(1000) NULL,
                 "outcome" VARCHAR(50) COLLATE "C" NOT NULL,
                 "storage_id" UUID NULL,
                 "message_name" VARCHAR(200) NULL,
@@ -259,7 +268,7 @@ internal static class PostgreSqlMessagingSchemaContribution
                 "generation_incarnation_id" UUID NULL,
                 "operation_type" VARCHAR(50) COLLATE "C" NOT NULL,
                 "actor" VARCHAR(200) COLLATE "C" NOT NULL,
-                "reason" VARCHAR(1000) NOT NULL,
+                "reason" VARCHAR(1000) NULL,
                 "outcome" VARCHAR(50) COLLATE "C" NOT NULL,
                 "created_at" TIMESTAMPTZ NOT NULL,
                 CONSTRAINT "fk_messaging_inbox_audit_operation" FOREIGN KEY ("operation_id")
@@ -350,7 +359,9 @@ internal static class PostgreSqlMessagingSchemaContribution
             -- Queued backlog (e.g. accumulated during broker downtime).
             CREATE INDEX IF NOT EXISTS "idx_messaging_published_version_expires_at_queued" ON {published} ("version","expires_at") WHERE "status_name" = 'Queued';
             -- #508 — see the received-table note above; create the final dashboard timeline/statistics index.
-            CREATE INDEX IF NOT EXISTS "idx_messaging_published_status_name_added" ON {published} ("status_name","added") INCLUDE ("intent_type");
+            CREATE INDEX IF NOT EXISTS "idx_messaging_published_status_name_added" ON {published} ("status_name","added","id") INCLUDE ("intent_type");
+            CREATE INDEX IF NOT EXISTS "idx_messaging_published_failure_groups" ON {published} ("failure_fingerprint")
+                INCLUDE ("changed_at","intent_type") WHERE "status_name" = 'Failed' AND "next_retry_at" IS NULL;
             CREATE INDEX IF NOT EXISTS "idx_messaging_published_changed_at_id" ON {published} ("changed_at","id") INCLUDE ("status_name");
             """
         );
@@ -396,6 +407,8 @@ internal static class PostgreSqlMessagingSchemaContribution
                 CREATE INDEX IF NOT EXISTS "idx_messaging_received_owner_not_null" ON {received} ("owner") WHERE "owner" IS NOT NULL;
 
                 CREATE INDEX IF NOT EXISTS "idx_messaging_inbox_receipts_type_created" ON "{schema}"."{_ReceiptsTable}" ("operation_type","created_at");
+                -- The operator ledger reads receipts newest first by (created_at, operation_id).
+                CREATE INDEX IF NOT EXISTS "idx_messaging_inbox_receipts_created" ON "{schema}"."{_ReceiptsTable}" ("created_at","operation_id");
                 CREATE INDEX IF NOT EXISTS "idx_messaging_inbox_audit_type_created" ON "{schema}"."{_AuditTable}" ("operation_type","created_at");
                 CREATE INDEX IF NOT EXISTS "idx_messaging_inbox_audit_operation" ON "{schema}"."{_AuditTable}" ("operation_id");
                 """;

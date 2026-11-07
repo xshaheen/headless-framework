@@ -433,6 +433,266 @@ internal sealed class RelationalMonitoringApi(
         return new(items, currentPage - 1, pageSize, (int)Math.Min(totalCount, int.MaxValue));
     }
 
+    /// <inheritdoc />
+    public async ValueTask<MessageListPage> ListMessagesAsync(
+        MessageListQuery query,
+        MessageListPosition? after,
+        int pageSize,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(query);
+        Argument.IsInclusiveBetween(pageSize, 1, MaxListPageSize);
+
+        var received = query.MessageType == MessageType.Subscribe;
+        var table = received ? _receivedTable : _publishedTable;
+        var (where, bind) = RelationalMessageFilter.Build(_t, _dialect, query);
+
+        if (after is not null)
+        {
+            where += " AND " + RelationalMessageFilter.Before(_t.Added, _t.Id, "AfterAdded", "AfterId");
+        }
+
+        // Only received rows belong to a consumer, a tenant, or an inbox lineage.
+        var receivedColumns = received
+            ? $",{_t.ConsumerIdentity},{_t.TenantPresent},{_t.TenantId},{_t.IsHeld},{_t.GenerationIncarnationId}"
+            : "";
+        var sql = $"""
+            SELECT {_t.Id},{_t.MessageId},{_t.Version},{_t.Name},{_t.IntentType},{_t.Retries},{_t.Added},{_t.ExpiresAt},{_t.StatusName},{_t.NextRetryAt},{_t.LockedUntil},{_t.ChangedAt},{_t.FailureFingerprint}{receivedColumns}
+            FROM {table}
+            WHERE {where}
+            ORDER BY {_t.Added} DESC,{_t.Id} DESC
+            {_dialect.Limit("Limit")};
+            """;
+
+        await using var connection = _storage.CreateConnection();
+        var rows = await RelationalCommand
+            .ExecuteReaderAsync(
+                connection,
+                transaction: null,
+                sql,
+                CommandTimeoutSeconds,
+                command =>
+                {
+                    bind(command);
+                    // One row past the page proves another page follows.
+                    _dialect.AddParameter(command, "Limit", SqlColumnType.Int32, pageSize + 1);
+                    if (after is { } position)
+                    {
+                        _dialect.AddParameter(command, "AfterAdded", SqlColumnType.Timestamp, position.Added);
+                        _dialect.AddParameter(command, "AfterId", SqlColumnType.Guid, position.Id);
+                    }
+                },
+                async (reader, token) =>
+                {
+                    var views = new List<MessageView>();
+                    while (await reader.ReadAsync(token).ConfigureAwait(false))
+                    {
+                        var view = new MessageView
+                        {
+                            StorageId = reader.GetGuid(0),
+                            MessageId = reader.GetString(1),
+                            Version = reader.GetString(2),
+                            Name = reader.GetString(3),
+                            Lane = MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(4)),
+                            Retries = reader.GetInt32(5),
+                            Added = await reader.GetFieldValueAsync<DateTimeOffset>(6, token).ConfigureAwait(false),
+                            ExpiresAt = await _InstantAsync(reader, 7, token).ConfigureAwait(false),
+                            StatusName = Enum.Parse<StatusName>(reader.GetString(8)),
+                            NextRetryAt = await _InstantAsync(reader, 9, token).ConfigureAwait(false),
+                            LockedUntil = await _InstantAsync(reader, 10, token).ConfigureAwait(false),
+                            ChangedAt = (
+                                await reader.GetFieldValueAsync<DateTimeOffset>(11, token).ConfigureAwait(false)
+                            ).ToUniversalTime(),
+                            FailureFingerprint = await _StringAsync(reader, 12, token).ConfigureAwait(false),
+                        };
+
+                        if (received)
+                        {
+                            view.ConsumerIdentity = reader.GetString(13);
+                            view.TenantId = reader.GetBoolean(14) ? reader.GetString(15) : null;
+                            view.IsHeld = reader.GetBoolean(16);
+                            view.IncarnationId = await reader.IsDBNullAsync(17, token).ConfigureAwait(false)
+                                ? null
+                                : reader.GetGuid(17);
+                        }
+
+                        views.Add(view);
+                    }
+
+                    return views;
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        var page = rows.Count > pageSize ? rows.GetRange(0, pageSize) : rows;
+        return new MessageListPage
+        {
+            Items = page,
+            Next = rows.Count > pageSize ? new MessageListPosition(page[^1].Added, page[^1].StorageId) : null,
+        };
+    }
+
+    /// <summary>The most rows one list page returns.</summary>
+    internal const int MaxListPageSize = 500;
+
+    /// <inheritdoc />
+    public async ValueTask<MessageCount> CountMessagesAsync(
+        MessageListQuery query,
+        int cap = MessageCount.DefaultCap,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(query);
+        Argument.IsPositive(cap);
+
+        var table = query.MessageType == MessageType.Subscribe ? _receivedTable : _publishedTable;
+        var (where, bind) = RelationalMessageFilter.Build(_t, _dialect, query);
+
+        await using var connection = _storage.CreateConnection();
+        var matched = await CountCappedAsync(
+                _dialect,
+                connection,
+                _dialect.ReadWithoutWaiting(table),
+                where,
+                bind,
+                cap,
+                CommandTimeoutSeconds,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return MessageCount.Of(matched, cap);
+    }
+
+    /// <summary>
+    /// Counts the rows of <paramref name="source"/> that <paramref name="where"/> matches, reading at most one row past
+    /// <paramref name="cap"/>.
+    /// </summary>
+    internal static async Task<long> CountCappedAsync(
+        ISqlDialect dialect,
+        DbConnection connection,
+        string source,
+        string where,
+        Action<DbCommand>? bind,
+        int cap,
+        int commandTimeoutSeconds,
+        CancellationToken cancellationToken
+    )
+    {
+        // ORDER BY (SELECT NULL) satisfies an engine whose row limit needs an order without asking for a sort.
+        var sql =
+            $"SELECT COUNT(*) FROM (SELECT 1 AS hit FROM {source} WHERE {where} ORDER BY (SELECT NULL) {dialect.Limit("CountLimit")}) AS capped;";
+
+        return Convert.ToInt64(
+            await RelationalCommand
+                .ExecuteScalarAsync(
+                    connection,
+                    transaction: null,
+                    sql,
+                    commandTimeoutSeconds,
+                    command =>
+                    {
+                        bind?.Invoke(command);
+                        dialect.AddParameter(command, "CountLimit", SqlColumnType.Int32, cap + 1);
+                    },
+                    cancellationToken
+                )
+                .ConfigureAwait(false),
+            CultureInfo.InvariantCulture
+        );
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<IReadOnlyList<MessageFailureGroup>> GetFailureGroupsAsync(
+        MessageType messageType,
+        string? consumerIdentity = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var received = messageType == MessageType.Subscribe;
+        // The predicate is written as the partial failure-groups index declares it, so each engine reads that index.
+        var where =
+            $"{_t.StatusName} = '{nameof(StatusName.Failed)}' AND {_t.NextRetryAt} IS NULL AND {_t.IntentType} IN (0, 1)";
+        string sql;
+
+        if (received)
+        {
+            where += $" AND {_t.IsCurrentGeneration} = {_t.True}";
+            if (consumerIdentity is not null)
+            {
+                where += $" AND {_t.ConsumerKeyHash} = @ConsumerKeyHash";
+            }
+
+            // Grouped on the identity's hash: GROUP BY on the text would merge identities that differ only by
+            // trailing spaces on SQL Server. Every row of a group has the same identity bytes, so MIN picks it.
+            sql = $"""
+                SELECT {_t.FailureFingerprint},MIN({_t.ConsumerIdentity}),COUNT(*),MAX({_t.ChangedAt})
+                FROM {_dialect.ReadWithoutWaiting(_receivedTable)}
+                WHERE {where}
+                GROUP BY {_t.FailureFingerprint},{_t.ConsumerKeyHash};
+                """;
+        }
+        else
+        {
+            sql = $"""
+                SELECT {_t.FailureFingerprint},NULL,COUNT(*),MAX({_t.ChangedAt})
+                FROM {_dialect.ReadWithoutWaiting(_publishedTable)}
+                WHERE {where}
+                GROUP BY {_t.FailureFingerprint};
+                """;
+        }
+
+        await using var connection = _storage.CreateConnection();
+        var groups = await RelationalCommand
+            .ExecuteReaderAsync(
+                connection,
+                transaction: null,
+                sql,
+                CommandTimeoutSeconds,
+                command =>
+                {
+                    if (received && consumerIdentity is not null)
+                    {
+                        _dialect.AddParameter(
+                            command,
+                            "ConsumerKeyHash",
+                            SqlColumnType.FixedBinary(32),
+                            RelationalDataStorage.CreateConsumerKeyHash(consumerIdentity)
+                        );
+                    }
+                },
+                async (reader, token) =>
+                {
+                    var rows = new List<MessageFailureGroup>();
+                    while (await reader.ReadAsync(token).ConfigureAwait(false))
+                    {
+                        rows.Add(
+                            new MessageFailureGroup
+                            {
+                                MessageType = messageType,
+                                FailureFingerprint = await _StringAsync(reader, 0, token).ConfigureAwait(false),
+                                ConsumerIdentity = received
+                                    ? await _StringAsync(reader, 1, token).ConfigureAwait(false)
+                                    : null,
+                                Count = (int)Math.Min(_Int64(reader, 2), int.MaxValue),
+                                LastFailedAt = (
+                                    await reader.GetFieldValueAsync<DateTimeOffset>(3, token).ConfigureAwait(false)
+                                ).ToUniversalTime(),
+                            }
+                        );
+                    }
+
+                    return rows;
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return MessageFailureGroupOrder.Sort(groups);
+    }
+
     /// <summary>Returns the total count of published messages in the <c>Failed</c> state.</summary>
     public ValueTask<long> GetPublishedFailedCountAsync(CancellationToken cancellationToken = default)
     {

@@ -9,9 +9,25 @@ namespace Headless.Messaging;
 public interface IScheduledDeliveryOperationsApi
 {
     /// <summary>Queries pending scheduled deliveries without loading message payloads or arbitrary headers.</summary>
+    /// <remarks>A read: <paramref name="authorization"/> needs an authenticated principal, not a named operator.</remarks>
+    /// <exception cref="UnauthorizedAccessException">The principal is not authenticated.</exception>
     ValueTask<IndexPage<ScheduledDeliveryView>> QueryAsync(
         ScheduledDeliveryQuery query,
         OperatorAuthorizationContext authorization,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Counts the pending scheduled deliveries <paramref name="query"/> matches, stopping at <paramref name="cap"/>;
+    /// its paging members are ignored.
+    /// </summary>
+    /// <remarks>A read: <paramref name="authorization"/> needs an authenticated principal, not a named operator.</remarks>
+    /// <exception cref="UnauthorizedAccessException">The principal is not authenticated.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="cap"/> is not positive.</exception>
+    ValueTask<MessageCount> CountAsync(
+        ScheduledDeliveryQuery query,
+        OperatorAuthorizationContext authorization,
+        int cap = MessageCount.DefaultCap,
         CancellationToken cancellationToken = default
     );
 
