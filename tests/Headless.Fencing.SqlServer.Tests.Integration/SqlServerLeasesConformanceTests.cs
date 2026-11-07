@@ -215,4 +215,22 @@ public sealed class SqlServerLeasesConformanceTests(SqlServerFencingFixture fixt
     {
         return base.should_skip_a_lease_another_unit_claimed_when_claiming_inside_a_unit();
     }
+
+    [Fact]
+    public override Task should_read_the_status_on_the_callers_connection_and_hand_it_back_as_passed()
+    {
+        return base.should_read_the_status_on_the_callers_connection_and_hand_it_back_as_passed();
+    }
+
+    [Fact]
+    public override Task should_read_the_status_inside_the_callers_transaction_and_refuse_a_foreign_one()
+    {
+        return base.should_read_the_status_inside_the_callers_transaction_and_refuse_a_foreign_one();
+    }
+
+    [Fact]
+    public override Task should_refuse_a_callers_connection_to_another_database_before_any_statement()
+    {
+        return base.should_refuse_a_callers_connection_to_another_database_before_any_statement();
+    }
 }

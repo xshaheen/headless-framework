@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data.Common;
 using System.Globalization;
 using Headless.Checks;
 using Headless.UnitOfWork;
@@ -368,6 +369,18 @@ internal sealed class InMemoryLeaseStore(
 
         // The committed row, read without the key's lock, like the relational providers' lockless status read.
         return ValueTask.FromResult(_Classify(Table.Read(key), generation, timeProvider.GetUtcNow()));
+    }
+
+    public ValueTask<LeaseFenceStatus> GetStatusAsync(
+        LeaseKey key,
+        long generation,
+        DbConnection connection,
+        DbTransaction? transaction,
+        CancellationToken cancellationToken = default
+    )
+    {
+        // The store has no database, so the caller's connection has nothing to read; the answer is the committed row's.
+        return GetStatusAsync(key, generation, cancellationToken);
     }
 
     #endregion

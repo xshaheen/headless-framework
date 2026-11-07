@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.ComponentModel;
+using System.Data.Common;
 using Headless.Fencing;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
@@ -422,5 +423,36 @@ public sealed class FencedLeasesTests : TestBase
 
         // then
         status.Should().Be(LeaseFenceStatus.Expired);
+    }
+
+    [Fact]
+    public async Task should_forward_a_status_read_on_the_callers_connection_and_transaction()
+    {
+        // given
+        var context = new FencingTestContext();
+        var connection = Substitute.For<DbConnection>();
+        var transaction = Substitute.For<DbTransaction>();
+        context.Store.GetStatusAsync(_Key, 7, connection, transaction, AbortToken).Returns(LeaseFenceStatus.Settled);
+
+        // when
+        var status = await context.Leases.GetStatusAsync(_Lease, connection, transaction, AbortToken);
+
+        // then
+        status.Should().Be(LeaseFenceStatus.Settled);
+    }
+
+    [Fact]
+    public async Task should_refuse_a_null_connection_before_the_store()
+    {
+        // given
+        var context = new FencingTestContext();
+
+        // when
+        var act = async () =>
+            await context.Leases.GetStatusAsync(_Lease, connection: null!, cancellationToken: AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<ArgumentNullException>().WithParameterName("connection");
+        context.Store.ReceivedCalls().Should().BeEmpty();
     }
 }
