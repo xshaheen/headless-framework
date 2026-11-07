@@ -156,29 +156,25 @@ internal sealed partial class RelationalDataStorage
                 {
                     await _LockOperationAsync(connection, transaction, request.OperationId, ct).ConfigureAwait(false);
 
-                    var prior = await _ReadPublishedReceiptAsync(connection, transaction, request.OperationId, ct)
+                    var attempt = new RowOperationReceipt(
+                        request.OperationId,
+                        _PublishedTargetKind,
+                        operationType,
+                        default,
+                        request.StorageId,
+                        ExpectedDueAt: null,
+                        MessageName: null,
+                        MessageId: null,
+                        Lane: null,
+                        request.Actor,
+                        request.StoredReason,
+                        default
+                    );
+                    var replay = await _ReplayRowOperationAsync(connection, transaction, attempt, ct)
                         .ConfigureAwait(false);
-                    if (prior is not null)
+                    if (replay is not null)
                     {
-                        var replay = _ReplayOrConflict(prior, operationType, request);
-                        if (replay.Outcome is InboxOperationOutcome.OperationConflict)
-                        {
-                            await _WriteConflictAuditAsync(
-                                    connection,
-                                    transaction,
-                                    _PublishedTargetKind,
-                                    replay.OperationId,
-                                    incarnationId: null,
-                                    replay.OperationType,
-                                    replay.Actor,
-                                    replay.Reason,
-                                    replay.Outcome,
-                                    ct
-                                )
-                                .ConfigureAwait(false);
-                        }
-
-                        return replay;
+                        return _ToPublishedResult(replay, isReplay: true);
                     }
 
                     var (row, now) = await _ReadPublishedOperationRowAsync(
@@ -214,22 +210,18 @@ internal sealed partial class RelationalDataStorage
                         }
                     }
 
-                    var result = new PublishedOperationResult(
-                        request.OperationId,
-                        operationType,
-                        outcome,
-                        request.StorageId,
-                        row?.MessageName,
-                        row?.MessageId,
-                        row?.Lane,
-                        request.Actor,
-                        request.StoredReason,
-                        now
-                    );
-                    await _WritePublishedReceiptAndAuditAsync(connection, transaction, result, ct)
+                    var receipt = attempt with
+                    {
+                        Outcome = outcome,
+                        MessageName = row?.MessageName,
+                        MessageId = row?.MessageId,
+                        Lane = row?.Lane,
+                        CreatedAt = now,
+                    };
+                    await _WriteRowOperationReceiptAndAuditAsync(connection, transaction, receipt, ct)
                         .ConfigureAwait(false);
 
-                    return result;
+                    return _ToPublishedResult(receipt, isReplay: false);
                 },
                 _timeProvider,
                 cancellationToken
@@ -288,102 +280,20 @@ internal sealed partial class RelationalDataStorage
             .ConfigureAwait(false);
     }
 
-    private async Task<PublishedOperationResult?> _ReadPublishedReceiptAsync(
-        DbConnection connection,
-        DbTransaction transaction,
-        Guid operationId,
-        CancellationToken cancellationToken
-    )
-    {
-        var sql = _dialect.Render(
-            new SqlLockedRead(
-                _t.Receipts,
-                [new SqlKeyColumn(_t.OperationId, "OperationId")],
-                [
-                    _t.TargetKind,
-                    _t.OperationType,
-                    _t.Outcome,
-                    _t.StorageId,
-                    _t.MessageName,
-                    _t.MessageId,
-                    _t.Lane,
-                    _t.Actor,
-                    _t.Reason,
-                    _t.CreatedAt,
-                ]
-            )
+    private static PublishedOperationResult _ToPublishedResult(RowOperationReceipt receipt, bool isReplay) =>
+        new(
+            receipt.OperationId,
+            receipt.OperationType,
+            receipt.Outcome,
+            receipt.StorageId,
+            receipt.MessageName,
+            receipt.MessageId,
+            receipt.Lane,
+            receipt.Actor,
+            receipt.Reason,
+            receipt.CreatedAt,
+            isReplay
         );
-
-        return await RelationalCommand
-            .ExecuteReaderAsync(
-                connection,
-                transaction,
-                sql,
-                CommandTimeoutSeconds,
-                command => _dialect.AddParameter(command, "OperationId", SqlColumnType.Guid, operationId),
-                async (reader, ct) =>
-                {
-                    if (!await reader.ReadAsync(ct).ConfigureAwait(false))
-                    {
-                        return null;
-                    }
-
-                    // A receipt of another target kind under this id never replays as a published one.
-                    var isPublished = string.Equals(
-                        reader.GetString(0),
-                        _PublishedTargetKind,
-                        StringComparison.Ordinal
-                    );
-
-                    return new PublishedOperationResult(
-                        operationId,
-                        Enum.Parse<MessagingOperationType>(reader.GetString(1)),
-                        Enum.Parse<InboxOperationOutcome>(reader.GetString(2)),
-                        isPublished && !reader.IsDBNull(3) ? reader.GetGuid(3) : Guid.Empty,
-                        reader.IsDBNull(4) ? null : reader.GetString(4),
-                        reader.IsDBNull(5) ? null : reader.GetString(5),
-                        reader.IsDBNull(6) ? null : Enum.Parse<MessageLane>(reader.GetString(6)),
-                        reader.GetString(7),
-                        reader.IsDBNull(8) ? null : reader.GetString(8),
-                        reader.GetFieldValue<DateTimeOffset>(9)
-                    );
-                },
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-    }
-
-    private static PublishedOperationResult _ReplayOrConflict(
-        PublishedOperationResult prior,
-        MessagingOperationType operationType,
-        PublishedOperationRequest request
-    )
-    {
-        var matches =
-            prior.OperationType == operationType
-            && prior.StorageId == request.StorageId
-            && string.Equals(prior.Actor, request.Actor, StringComparison.Ordinal)
-            && string.Equals(prior.Reason, request.StoredReason, StringComparison.Ordinal);
-
-        return matches
-            ? prior with
-            {
-                IsReplay = true,
-            }
-            : new PublishedOperationResult(
-                request.OperationId,
-                operationType,
-                InboxOperationOutcome.OperationConflict,
-                request.StorageId,
-                prior.MessageName,
-                prior.MessageId,
-                prior.Lane,
-                request.Actor,
-                request.StoredReason,
-                prior.CreatedAt,
-                IsReplay: true
-            );
-    }
 
     /// <summary>
     /// A published row as an operator operation reads it, locked for the operation's transaction. Whether a send lease
@@ -455,45 +365,6 @@ internal sealed partial class RelationalDataStorage
                     }
 
                     return (row, await reader.GetFieldValueAsync<DateTimeOffset>(0, ct).ConfigureAwait(false));
-                },
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-    }
-
-    private async Task _WritePublishedReceiptAndAuditAsync(
-        DbConnection connection,
-        DbTransaction transaction,
-        PublishedOperationResult result,
-        CancellationToken cancellationToken
-    )
-    {
-        var sql = $"""
-            INSERT INTO {_t.Receipts}({_t.OperationId},{_t.TargetKind},{_t.OperationType},{_t.Outcome},{_t.Actor},{_t.Reason},{_t.StorageId},{_t.MessageName},{_t.MessageId},{_t.Lane},{_t.CreatedAt})
-            VALUES (@OperationId,'{_PublishedTargetKind}',@OperationType,@Outcome,@Actor,@Reason,@StorageId,@MessageName,@MessageId,@Lane,@CreatedAt);
-            INSERT INTO {_t.Audit}({_t.AuditId},{_t.OperationId},{_t.TargetKind},{_t.OperationType},{_t.Actor},{_t.Reason},{_t.Outcome},{_t.CreatedAt})
-            VALUES (@AuditId,@OperationId,'{_PublishedTargetKind}',@OperationType,@Actor,@Reason,@Outcome,@CreatedAt);
-            """;
-
-        await RelationalCommand
-            .ExecuteNonQueryAsync(
-                connection,
-                transaction,
-                sql,
-                CommandTimeoutSeconds,
-                command =>
-                {
-                    _dialect.AddParameter(command, "AuditId", SqlColumnType.Guid, _guidGenerator.Create());
-                    _dialect.AddParameter(command, "OperationId", SqlColumnType.Guid, result.OperationId);
-                    _dialect.AddParameter(command, "OperationType", _StatusType, result.OperationType.ToString());
-                    _dialect.AddParameter(command, "Outcome", _StatusType, result.Outcome.ToString());
-                    _dialect.AddParameter(command, "Actor", SqlColumnType.KeyText(_ActorMaxLength), result.Actor);
-                    _dialect.AddParameter(command, "Reason", SqlColumnType.Text(_ReasonMaxLength), result.Reason);
-                    _dialect.AddParameter(command, "StorageId", SqlColumnType.Guid, result.StorageId);
-                    _dialect.AddParameter(command, "MessageName", _NameType, result.MessageName);
-                    _dialect.AddParameter(command, "MessageId", _MessageIdType, result.MessageId);
-                    _dialect.AddParameter(command, "Lane", _StatusType, result.Lane?.ToString());
-                    _dialect.AddParameter(command, "CreatedAt", SqlColumnType.Timestamp, result.CreatedAt);
                 },
                 cancellationToken
             )

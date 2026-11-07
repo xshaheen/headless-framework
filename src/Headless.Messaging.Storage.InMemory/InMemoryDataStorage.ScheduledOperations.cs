@@ -153,66 +153,21 @@ internal sealed partial class InMemoryDataStorage
 
         lock (_receivedUpsertLock)
         {
+            var attempt = new InMemoryOperationReceipt(
+                request.OperationId,
+                MessagingOperationTargetKind.ScheduledDelivery,
+                operationType,
+                default,
+                request.Actor,
+                request.StoredReason,
+                default,
+                ExpectedDueAt: request.ExpectedDueAt,
+                StorageId: request.StorageId
+            );
             if (_inboxOperationReceipts.TryGetValue(request.OperationId, out var prior))
             {
-                var matches =
-                    prior.TargetKind == MessagingOperationTargetKind.ScheduledDelivery
-                    && prior.OperationType == operationType
-                    && prior.StorageId == request.StorageId
-                    && prior.ExpectedDueAt == request.ExpectedDueAt
-                    && string.Equals(prior.Actor, request.Actor, StringComparison.Ordinal)
-                    && string.Equals(prior.Reason, request.StoredReason, StringComparison.Ordinal);
-
-                if (matches)
-                {
-                    return ValueTask.FromResult(
-                        new ScheduledDeliveryOperationResult(
-                            prior.OperationId,
-                            prior.OperationType,
-                            prior.Outcome,
-                            request.StorageId,
-                            request.ExpectedDueAt,
-                            prior.MessageName,
-                            prior.MessageId,
-                            prior.Lane is { } lane ? Enum.Parse<MessageLane>(lane) : null,
-                            prior.Actor,
-                            prior.Reason,
-                            prior.CreatedAt,
-                            IsReplay: true
-                        )
-                    );
-                }
-
-                var conflictNow = timeProvider.GetUtcNow();
-                _inboxAudit.Add(
-                    new InMemoryInboxAudit(
-                        guidGenerator.Create(),
-                        request.OperationId,
-                        MessagingOperationTargetKind.ScheduledDelivery,
-                        IncarnationId: null,
-                        operationType,
-                        request.Actor,
-                        request.StoredReason,
-                        InboxOperationOutcome.OperationConflict,
-                        conflictNow
-                    )
-                );
-
                 return ValueTask.FromResult(
-                    new ScheduledDeliveryOperationResult(
-                        request.OperationId,
-                        operationType,
-                        InboxOperationOutcome.OperationConflict,
-                        request.StorageId,
-                        request.ExpectedDueAt,
-                        prior.MessageName,
-                        prior.MessageId,
-                        prior.Lane is { } conflictLane ? Enum.Parse<MessageLane>(conflictLane) : null,
-                        request.Actor,
-                        request.StoredReason,
-                        conflictNow,
-                        IsReplay: true
-                    )
+                    _ToScheduledResult(_ReplayOrConflictRowOperation(prior, attempt), request, isReplay: true)
                 );
             }
 
@@ -271,59 +226,44 @@ internal sealed partial class InMemoryDataStorage
             var messageId = row is null ? null : _ReadMessageId(row);
             var messageLane = row?.Lane;
 
-            var receipt = new InMemoryOperationReceipt(
-                request.OperationId,
-                MessagingOperationTargetKind.ScheduledDelivery,
-                operationType,
-                finalOutcome,
-                request.Actor,
-                request.StoredReason,
-                now,
-                ExpectedDueAt: request.ExpectedDueAt,
-                StorageId: request.StorageId,
-                MessageName: messageName,
-                MessageId: messageId,
-                Lane: messageLane?.ToString()
-            );
-            _inboxOperationReceipts.Add(request.OperationId, receipt);
-
-            _inboxAudit.Add(
-                new InMemoryInboxAudit(
-                    guidGenerator.Create(),
-                    request.OperationId,
-                    MessagingOperationTargetKind.ScheduledDelivery,
-                    IncarnationId: null,
-                    operationType,
-                    request.Actor,
-                    request.StoredReason,
-                    finalOutcome,
-                    now
-                )
-            );
+            var receipt = attempt with
+            {
+                Outcome = finalOutcome,
+                CreatedAt = now,
+                MessageName = messageName,
+                MessageId = messageId,
+                Lane = messageLane?.ToString(),
+            };
+            _RecordRowOperation(receipt);
 
             if (finalOutcome == InboxOperationOutcome.Applied && messageLane is { } appliedLane)
             {
                 MessagingMetrics.RecordScheduledOperation(operationType, appliedLane, finalOutcome, "InMemory");
             }
 
-            return ValueTask.FromResult(
-                new ScheduledDeliveryOperationResult(
-                    request.OperationId,
-                    operationType,
-                    finalOutcome,
-                    request.StorageId,
-                    request.ExpectedDueAt,
-                    messageName,
-                    messageId,
-                    messageLane,
-                    request.Actor,
-                    request.StoredReason,
-                    now,
-                    IsReplay: false
-                )
-            );
+            return ValueTask.FromResult(_ToScheduledResult(receipt, request, isReplay: false));
         }
     }
+
+    private static ScheduledDeliveryOperationResult _ToScheduledResult(
+        InMemoryOperationReceipt receipt,
+        ScheduledDeliveryOperationRequest request,
+        bool isReplay
+    ) =>
+        new(
+            receipt.OperationId,
+            receipt.OperationType,
+            receipt.Outcome,
+            request.StorageId,
+            request.ExpectedDueAt,
+            receipt.MessageName,
+            receipt.MessageId,
+            receipt.Lane is { } lane ? Enum.Parse<MessageLane>(lane) : null,
+            receipt.Actor,
+            receipt.Reason,
+            receipt.CreatedAt,
+            isReplay
+        );
 
     /// <summary>
     /// The row's message id header: <see langword="null"/> when the row carries none, and <see cref="string.Empty"/>

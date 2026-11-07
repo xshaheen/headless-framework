@@ -106,9 +106,21 @@ internal sealed partial class InMemoryDataStorage
 
         lock (_receivedUpsertLock)
         {
+            var attempt = new InMemoryOperationReceipt(
+                request.OperationId,
+                MessagingOperationTargetKind.Published,
+                operationType,
+                default,
+                request.Actor,
+                request.StoredReason,
+                default,
+                StorageId: request.StorageId
+            );
             if (_inboxOperationReceipts.TryGetValue(request.OperationId, out var prior))
             {
-                return ValueTask.FromResult(_ReplayOrConflictPublished(prior, operationType, request));
+                return ValueTask.FromResult(
+                    _ToPublishedResult(_ReplayOrConflictRowOperation(prior, attempt), request, isReplay: true)
+                );
             }
 
             var now = timeProvider.GetUtcNow();
@@ -161,114 +173,102 @@ internal sealed partial class InMemoryDataStorage
                 }
             }
 
-            var messageId = row is null ? null : _ReadMessageId(row) ?? string.Empty;
+            var receipt = attempt with
+            {
+                Outcome = outcome,
+                CreatedAt = now,
+                MessageName = row?.Name,
+                MessageId = row is null ? null : _ReadMessageId(row) ?? string.Empty,
+                Lane = row?.Lane.ToString(),
+            };
+            _RecordRowOperation(receipt);
 
-            _inboxOperationReceipts.Add(
-                request.OperationId,
-                new InMemoryOperationReceipt(
-                    request.OperationId,
-                    MessagingOperationTargetKind.Published,
-                    operationType,
-                    outcome,
-                    request.Actor,
-                    request.StoredReason,
-                    now,
-                    StorageId: request.StorageId,
-                    MessageName: row?.Name,
-                    MessageId: messageId,
-                    Lane: row?.Lane.ToString()
-                )
-            );
-            _inboxAudit.Add(
-                new InMemoryInboxAudit(
-                    guidGenerator.Create(),
-                    request.OperationId,
-                    MessagingOperationTargetKind.Published,
-                    IncarnationId: null,
-                    operationType,
-                    request.Actor,
-                    request.StoredReason,
-                    outcome,
-                    now
-                )
-            );
-
-            return ValueTask.FromResult(
-                new PublishedOperationResult(
-                    request.OperationId,
-                    operationType,
-                    outcome,
-                    request.StorageId,
-                    row?.Name,
-                    messageId,
-                    row?.Lane,
-                    request.Actor,
-                    request.StoredReason,
-                    now
-                )
-            );
+            return ValueTask.FromResult(_ToPublishedResult(receipt, request, isReplay: false));
         }
     }
 
-    /// <summary>Replays the receipt a retried request left, or records the refusal of a different request under its id.</summary>
-    private PublishedOperationResult _ReplayOrConflictPublished(
+    private static PublishedOperationResult _ToPublishedResult(
+        InMemoryOperationReceipt receipt,
+        PublishedOperationRequest request,
+        bool isReplay
+    ) =>
+        new(
+            receipt.OperationId,
+            receipt.OperationType,
+            receipt.Outcome,
+            request.StorageId,
+            receipt.MessageName,
+            receipt.MessageId,
+            receipt.Lane is { } lane ? Enum.Parse<MessageLane>(lane) : null,
+            receipt.Actor,
+            receipt.Reason,
+            receipt.CreatedAt,
+            isReplay
+        );
+
+    /// <summary>
+    /// Returns what a request under an already used operation id gets: the stored receipt when the request repeats it,
+    /// otherwise a conflict, audited, that changes nothing. A receipt of another target kind never replays, even for an
+    /// operation type both kinds share.
+    /// </summary>
+    private InMemoryOperationReceipt _ReplayOrConflictRowOperation(
         InMemoryOperationReceipt prior,
-        MessagingOperationType operationType,
-        PublishedOperationRequest request
+        InMemoryOperationReceipt attempt
     )
     {
-        var lane = prior.Lane is { } persisted ? Enum.Parse<MessageLane>(persisted) : (MessageLane?)null;
         var matches =
-            prior.TargetKind == MessagingOperationTargetKind.Published
-            && prior.OperationType == operationType
-            && prior.StorageId == request.StorageId
-            && string.Equals(prior.Actor, request.Actor, StringComparison.Ordinal)
-            && string.Equals(prior.Reason, request.StoredReason, StringComparison.Ordinal);
-
+            prior.TargetKind == attempt.TargetKind
+            && prior.OperationType == attempt.OperationType
+            && prior.StorageId == attempt.StorageId
+            && prior.ExpectedDueAt == attempt.ExpectedDueAt
+            && string.Equals(prior.Actor, attempt.Actor, StringComparison.Ordinal)
+            && string.Equals(prior.Reason, attempt.Reason, StringComparison.Ordinal);
         if (matches)
         {
-            return new PublishedOperationResult(
-                prior.OperationId,
-                prior.OperationType,
-                prior.Outcome,
-                request.StorageId,
-                prior.MessageName,
-                prior.MessageId,
-                lane,
-                prior.Actor,
-                prior.Reason,
-                prior.CreatedAt,
-                IsReplay: true
-            );
+            return prior;
         }
 
         var conflictNow = timeProvider.GetUtcNow();
         _inboxAudit.Add(
             new InMemoryInboxAudit(
                 guidGenerator.Create(),
-                request.OperationId,
-                MessagingOperationTargetKind.Published,
+                attempt.OperationId,
+                attempt.TargetKind,
                 IncarnationId: null,
-                operationType,
-                request.Actor,
-                request.StoredReason,
+                attempt.OperationType,
+                attempt.Actor,
+                attempt.Reason,
                 InboxOperationOutcome.OperationConflict,
                 conflictNow
             )
         );
 
-        return new PublishedOperationResult(
-            request.OperationId,
-            operationType,
-            InboxOperationOutcome.OperationConflict,
-            request.StorageId,
-            prior.MessageName,
-            prior.MessageId,
-            lane,
-            request.Actor,
-            request.StoredReason,
-            conflictNow,
-            IsReplay: true
+        return attempt with
+        {
+            Outcome = InboxOperationOutcome.OperationConflict,
+            CreatedAt = conflictNow,
+            MessageName = prior.MessageName,
+            MessageId = prior.MessageId,
+            Lane = prior.Lane,
+        };
+    }
+
+    /// <summary>Stores a row operation's receipt and its audit entry; the caller holds the store lock.</summary>
+    private void _RecordRowOperation(InMemoryOperationReceipt receipt)
+    {
+        _inboxOperationReceipts.Add(receipt.OperationId, receipt);
+        _inboxAudit.Add(
+            new InMemoryInboxAudit(
+                guidGenerator.Create(),
+                receipt.OperationId,
+                receipt.TargetKind,
+                IncarnationId: null,
+                receipt.OperationType,
+                receipt.Actor,
+                receipt.Reason,
+                receipt.Outcome,
+                receipt.CreatedAt
+            )
         );
     }
 }
