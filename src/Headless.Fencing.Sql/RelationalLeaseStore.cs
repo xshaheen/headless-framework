@@ -26,7 +26,9 @@ namespace Headless.Fencing;
 /// <para>
 /// Autonomous verbs open their own connection at READ COMMITTED, commit before returning, and retry a transient fault
 /// raised before the commit (<see cref="SqlAutonomousTransaction" />). Enlisted verbs run on the unit's connection and transaction, never commit, and never retry:
-/// the failure has already rolled back the caller's transaction, so only the unit's owner can run it again.
+/// the failure has already rolled back the caller's transaction, so only the unit's owner can run it again. The status
+/// read is the exception: one statement with no transaction (<see cref="SqlAutonomousRead" />), so it never takes
+/// SQLite's write lock and pays no <c>BEGIN</c> or <c>COMMIT</c> round trip.
 /// </para>
 /// </remarks>
 #pragma warning disable CA2100 // SQL text is rendered once from validated identifiers and dialect statements; values are parameters.
@@ -563,11 +565,14 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
         CancellationToken cancellationToken = default
     )
     {
-        return _RunAutonomousAsync(
+        // One statement with no transaction: it reads the row as one consistent view either way, and skipping the
+        // BEGIN and COMMIT round trips keeps a per-request liveness check close to the cost of a primary-key read.
+        return SqlAutonomousRead.RunAsync(
             "fencing.status",
-            async (connection, transaction, ct) =>
+            _storage.CreateConnection,
+            async (connection, ct) =>
             {
-                await using var command = _Command(_statusSql, connection, transaction, key);
+                await using var command = _Command(_statusSql, connection, transaction: null, key);
                 await using var reader = await _ReaderAsync(command, ct).ConfigureAwait(false);
 
                 if (!await reader.ReadAsync(ct).ConfigureAwait(false))
@@ -582,6 +587,7 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
                     ? LeaseFenceStatus.Current
                     : _Rejection(key, row, generation);
             },
+            _timeProvider,
             cancellationToken
         );
     }
@@ -762,7 +768,7 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
         );
     }
 
-    private DbCommand _Command(string sql, DbConnection connection, DbTransaction transaction, LeaseKey? key = null)
+    private DbCommand _Command(string sql, DbConnection connection, DbTransaction? transaction, LeaseKey? key = null)
     {
         var command = connection.CreateCommand();
         command.CommandText = sql;

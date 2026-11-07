@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
-using System.Data.Common;
-using System.Diagnostics.CodeAnalysis;
 using Headless.Sql;
 using Headless.Testing.Tests;
 using Headless.Threading;
@@ -18,7 +16,7 @@ public sealed class SqlAutonomousTransactionTests : TestBase
 
         var result = await SqlAutonomousTransaction.RunAsync(
             "test.call",
-            () => _Track(connections),
+            () => SqlAutonomousFakes.Track(connections),
             static (_, _, _) => Task.FromResult(42),
             TimeProvider.System,
             AbortToken
@@ -41,7 +39,7 @@ public sealed class SqlAutonomousTransactionTests : TestBase
         var run = async () =>
             await SqlAutonomousTransaction.RunAsync(
                 operation,
-                () => _Track(connections),
+                () => SqlAutonomousFakes.Track(connections),
                 static (_, _, _) => Task.FromResult(42),
                 TimeProvider.System,
                 AbortToken
@@ -70,8 +68,8 @@ public sealed class SqlAutonomousTransactionTests : TestBase
 
         var result = await SqlAutonomousTransaction.RunAsync(
             "test.call",
-            () => _Track(connections),
-            (_, _, _) => ++attempts == 1 ? throw _Transient(fault) : Task.FromResult(attempts),
+            () => SqlAutonomousFakes.Track(connections),
+            (_, _, _) => ++attempts == 1 ? throw SqlAutonomousFakes.Transient(fault) : Task.FromResult(attempts),
             TimeProvider.System,
             AbortToken
         );
@@ -92,7 +90,11 @@ public sealed class SqlAutonomousTransactionTests : TestBase
 
         var result = await SqlAutonomousTransaction.RunAsync(
             "test.call",
-            () => _Track(connections, beginFault: connections.Count == 0 ? _Transient("driver-flag") : null),
+            () =>
+                SqlAutonomousFakes.Track(
+                    connections,
+                    beginFault: connections.Count == 0 ? SqlAutonomousFakes.Transient("driver-flag") : null
+                ),
             static (_, _, _) => Task.FromResult(7),
             TimeProvider.System,
             AbortToken
@@ -108,13 +110,13 @@ public sealed class SqlAutonomousTransactionTests : TestBase
     public async Task should_not_retry_a_transient_fault_from_the_commit_and_surface_it_unchanged()
     {
         var connections = new List<FakeConnection>();
-        var commitFault = _Transient("40001");
+        var commitFault = SqlAutonomousFakes.Transient("40001");
         var bodyRuns = 0;
 
         var act = async () =>
             await SqlAutonomousTransaction.RunAsync(
                 "test.call",
-                () => _Track(connections, commitFault: commitFault),
+                () => SqlAutonomousFakes.Track(connections, commitFault: commitFault),
                 (_, _, _) => Task.FromResult(++bodyRuns),
                 TimeProvider.System,
                 AbortToken
@@ -138,7 +140,7 @@ public sealed class SqlAutonomousTransactionTests : TestBase
         var act = async () =>
             await SqlAutonomousTransaction.RunAsync<int>(
                 "test.call",
-                () => _Track(connections),
+                () => SqlAutonomousFakes.Track(connections),
                 (_, _, _) => throw fault,
                 TimeProvider.System,
                 AbortToken
@@ -153,12 +155,12 @@ public sealed class SqlAutonomousTransactionTests : TestBase
     {
         using var cancellation = new CancellationTokenSource();
         var connections = new List<FakeConnection>();
-        var fault = _Transient("driver-flag");
+        var fault = SqlAutonomousFakes.Transient("driver-flag");
 
         var act = async () =>
             await SqlAutonomousTransaction.RunAsync<int>(
                 "test.call",
-                () => _Track(connections),
+                () => SqlAutonomousFakes.Track(connections),
                 async (_, _, _) =>
                 {
                     await cancellation.CancelAsync();
@@ -181,8 +183,8 @@ public sealed class SqlAutonomousTransactionTests : TestBase
         var act = async () =>
             await SqlAutonomousTransaction.RunAsync<int>(
                 "test.call",
-                () => _Track(connections),
-                (_, _, _) => throw _Transient("40P01"),
+                () => SqlAutonomousFakes.Track(connections),
+                (_, _, _) => throw SqlAutonomousFakes.Transient("40P01"),
                 TimeProvider.System,
                 AbortToken
             );
@@ -199,7 +201,7 @@ public sealed class SqlAutonomousTransactionTests : TestBase
 
         var result = await SqlAutonomousTransaction.RunAsync(
             "test.call",
-            () => _Track(connections),
+            () => SqlAutonomousFakes.Track(connections),
             async (_, _, _) =>
             {
                 // The write has been decided; the caller is about to be told it happened.
@@ -219,7 +221,7 @@ public sealed class SqlAutonomousTransactionTests : TestBase
     public async Task should_report_each_retry_with_the_number_of_the_attempt_about_to_run()
     {
         var retries = new List<(Exception Fault, int AttemptNumber)>();
-        var fault = _Transient("40001");
+        var fault = SqlAutonomousFakes.Transient("40001");
 
         var act = async () =>
             await SqlAutonomousTransaction.RetryAsync<int>(
@@ -245,7 +247,9 @@ public sealed class SqlAutonomousTransactionTests : TestBase
             {
                 attempts.Add(attempt);
 
-                return attempts.Count == 1 ? throw _Transient("40P01") : Task.FromResult(attempt.CommitStarted);
+                return attempts.Count == 1
+                    ? throw SqlAutonomousFakes.Transient("40P01")
+                    : Task.FromResult(attempt.CommitStarted);
             },
             TimeProvider.System,
             cancellationToken: AbortToken
@@ -259,7 +263,7 @@ public sealed class SqlAutonomousTransactionTests : TestBase
     public async Task should_not_retry_a_transient_fault_once_the_attempt_marked_its_commit()
     {
         var runs = 0;
-        var fault = _Transient("driver-flag");
+        var fault = SqlAutonomousFakes.Transient("driver-flag");
 
         var act = async () =>
             await SqlAutonomousTransaction.RetryAsync<int>(
@@ -277,102 +281,5 @@ public sealed class SqlAutonomousTransactionTests : TestBase
 
         (await act.Should().ThrowAsync<FakeDbException>()).Which.Should().BeSameAs(fault);
         runs.Should().Be(1);
-    }
-
-    private static FakeDbException _Transient(string fault)
-    {
-        // "driver-flag" is a fault the driver marks transient; anything else is a SQLSTATE the classifier knows.
-        return string.Equals(fault, "driver-flag", StringComparison.Ordinal)
-            ? new FakeDbException(isTransient: true)
-            : new FakeDbException(isTransient: false, sqlState: fault);
-    }
-
-    private static FakeConnection _Track(
-        List<FakeConnection> connections,
-        Exception? beginFault = null,
-        Exception? commitFault = null
-    )
-    {
-        var connection = new FakeConnection(beginFault, commitFault);
-        connections.Add(connection);
-
-        return connection;
-    }
-
-    private sealed class FakeDbException(bool isTransient, string? sqlState = null) : DbException("database fault")
-    {
-        public override bool IsTransient { get; } = isTransient;
-
-        public override string? SqlState { get; } = sqlState;
-    }
-
-    private sealed class FakeConnection(Exception? beginFault, Exception? commitFault) : DbConnection
-    {
-        private ConnectionState _state = ConnectionState.Closed;
-
-        public List<FakeTransaction> Transactions { get; } = [];
-
-        public bool WasDisposed { get; private set; }
-
-        [AllowNull]
-        public override string ConnectionString { get; set; } = string.Empty;
-
-        public override string Database => "db";
-
-        public override string DataSource => "localhost";
-
-        public override string ServerVersion => "0";
-
-        public override ConnectionState State => _state;
-
-        public override void ChangeDatabase(string databaseName) => throw new NotSupportedException();
-
-        public override void Close() => _state = ConnectionState.Closed;
-
-        public override void Open() => _state = ConnectionState.Open;
-
-        public override ValueTask DisposeAsync()
-        {
-            WasDisposed = true;
-
-            return base.DisposeAsync();
-        }
-
-        protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel)
-        {
-            if (beginFault is not null)
-            {
-                throw beginFault;
-            }
-
-            var transaction = new FakeTransaction(this, isolationLevel, commitFault);
-            Transactions.Add(transaction);
-
-            return transaction;
-        }
-
-        protected override DbCommand CreateDbCommand() => throw new NotSupportedException();
-    }
-
-    private sealed class FakeTransaction(DbConnection connection, IsolationLevel isolationLevel, Exception? commitFault)
-        : DbTransaction
-    {
-        public bool Committed { get; private set; }
-
-        public override IsolationLevel IsolationLevel { get; } = isolationLevel;
-
-        protected override DbConnection DbConnection { get; } = connection;
-
-        public override void Commit()
-        {
-            if (commitFault is not null)
-            {
-                throw commitFault;
-            }
-
-            Committed = true;
-        }
-
-        public override void Rollback() { }
     }
 }

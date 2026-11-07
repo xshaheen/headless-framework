@@ -593,9 +593,9 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
     {
         return _RunReadOnlyAsync(
             "idempotency.peek",
-            async (connection, transaction, ct) =>
+            async (connection, ct) =>
             {
-                await using var command = _Command(_peekSql, connection, transaction, key);
+                await using var command = _Command(_peekSql, connection, transaction: null, key);
                 await using var reader = await _ReaderAsync(command, ct).ConfigureAwait(false);
 
                 if (!await reader.ReadAsync(ct).ConfigureAwait(false))
@@ -637,9 +637,9 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
     {
         return _RunReadOnlyAsync<IdempotentResult?>(
             "idempotency.result",
-            async (connection, transaction, ct) =>
+            async (connection, ct) =>
             {
-                await using var command = _Command(_resultSql, connection, transaction, key);
+                await using var command = _Command(_resultSql, connection, transaction: null, key);
                 await using var reader = await _ReaderAsync(command, ct).ConfigureAwait(false);
 
                 if (!await reader.ReadAsync(ct).ConfigureAwait(false))
@@ -730,48 +730,24 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
     }
 
     /// <summary>
-    /// Runs a read that takes no lock of its own beyond what its isolation level implies. An engine whose autonomous
-    /// transaction already reads that way runs it as any autonomous call: PostgreSQL's MVCC read never waits, and SQL
-    /// Server at READ COMMITTED without a lock hint never waits behind an update lock, though with
-    /// READ_COMMITTED_SNAPSHOT off it still waits behind an uncommitted writer's exclusive lock. An engine whose
-    /// autonomous transaction takes a write lock at begin (SQLite) supplies a transaction that does not.
+    /// Runs a one-statement read with no transaction (<see cref="SqlAutonomousRead" />). PostgreSQL's MVCC read never
+    /// waits, SQLite's autocommit read takes only a shared lock, and SQL Server at READ COMMITTED without a lock hint
+    /// never waits behind an update lock, though with READ_COMMITTED_SNAPSHOT off it still waits behind an uncommitted
+    /// writer's exclusive lock.
     /// </summary>
     private ValueTask<T> _RunReadOnlyAsync<T>(
         string operation,
-        Func<DbConnection, DbTransaction, CancellationToken, Task<T>> body,
+        Func<DbConnection, CancellationToken, Task<T>> body,
         CancellationToken cancellationToken
     )
     {
-        if (_storage.BeginReadOnlyTransaction is not { } begin)
-        {
-            return _RunAutonomousAsync(operation, body, cancellationToken);
-        }
-
-        return SqlAutonomousTransaction.RetryAsync(
-            operation,
-            async (attempt, ct) =>
-            {
-                await using var connection = _storage.CreateConnection();
-                await connection.OpenAsync(ct).ConfigureAwait(false);
-                await using var transaction = await begin(connection, ct).ConfigureAwait(false);
-                var result = await body(connection, transaction, ct).ConfigureAwait(false);
-
-                // The read wrote nothing, so its commit only ends the transaction.
-                attempt.MarkCommitStarted();
-                await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
-
-                return result;
-            },
-            _timeProvider,
-            onRetry: null,
-            cancellationToken
-        );
+        return SqlAutonomousRead.RunAsync(operation, _storage.CreateConnection, body, _timeProvider, cancellationToken);
     }
 
     private DbCommand _Command(
         string sql,
         DbConnection connection,
-        DbTransaction transaction,
+        DbTransaction? transaction,
         IdempotencyRecordKey? key = null
     )
     {

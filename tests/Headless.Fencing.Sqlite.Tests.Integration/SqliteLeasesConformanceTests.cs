@@ -260,4 +260,10 @@ public sealed class SqliteLeasesConformanceTests(SqliteFencingFixture fixture)
     {
         return base.should_claim_expired_leases_inside_the_callers_unit_and_keep_them_on_a_rollback();
     }
+
+    [Fact]
+    public override Task should_read_the_status_without_waiting_on_an_uncommitted_write_to_the_lease()
+    {
+        return base.should_read_the_status_without_waiting_on_an_uncommitted_write_to_the_lease();
+    }
 }

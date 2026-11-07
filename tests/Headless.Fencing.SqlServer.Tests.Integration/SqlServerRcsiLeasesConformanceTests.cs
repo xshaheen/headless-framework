@@ -233,4 +233,10 @@ public sealed class SqlServerRcsiLeasesConformanceTests(SqlServerRcsiFencingFixt
     {
         return base.should_skip_a_lease_another_unit_claimed_when_claiming_inside_a_unit();
     }
+
+    [Fact]
+    public override Task should_read_the_status_without_waiting_on_an_uncommitted_write_to_the_lease()
+    {
+        return base.should_read_the_status_without_waiting_on_an_uncommitted_write_to_the_lease();
+    }
 }

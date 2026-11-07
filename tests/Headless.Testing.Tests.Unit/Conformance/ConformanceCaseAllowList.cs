@@ -227,6 +227,11 @@ internal static class ConformanceCaseAllowList
             "Without read committed snapshot isolation a plain READ COMMITTED read waits on an uncommitted write's exclusive row lock; SqlServerRcsiIdempotencyConformanceTests runs this case on an RCSI database."
         ),
         new(
+            "SqlServerLeasesConformanceTests",
+            "should_read_the_status_without_waiting_on_an_uncommitted_write_to_the_lease",
+            "Without read committed snapshot isolation a plain READ COMMITTED read waits on an uncommitted write's exclusive row lock; SqlServerRcsiLeasesConformanceTests runs this case on an RCSI database."
+        ),
+        new(
             "SqlServerReaderWriterLockConformanceTests",
             "should_auto_extend_write_lock",
             "A SQL Server application lock is session-scoped with no lease, so there is nothing to auto-extend and the renewal count stays zero."

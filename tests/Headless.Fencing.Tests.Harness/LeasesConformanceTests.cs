@@ -1125,6 +1125,33 @@ public abstract class LeasesConformanceTests<TFixture>(TFixture fixture) : TestB
         (await host.Leases.GetStatusAsync(takeover.Lease!, AbortToken)).Should().Be(LeaseFenceStatus.Current);
     }
 
+    /// <summary>
+    /// Holds the lease row under a write that outlives its own statement (an enlisted, uncommitted settlement), so only
+    /// a provider whose status read never waits behind that lock returns before the unit ends.
+    /// </summary>
+    public virtual async Task should_read_the_status_without_waiting_on_an_uncommitted_write_to_the_lease()
+    {
+        var (kind, resource) = (CreateKind(), CreateResource());
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+        var granted = await host.Leases.GrantAsync(kind, resource, LongDuration, AbortToken);
+
+        await using var unit = await Fixture.BeginUnitAsync(host, AbortToken);
+        (await unit.Unit.Leases.SettleAsync(granted.Lease!, AbortToken)).Should().Be(LeaseSettlementStatus.Settled);
+
+        var status = host.Leases.GetStatusAsync(granted.Lease!, AbortToken).AsTask();
+        var first = await Task.WhenAny(
+            status,
+            Task.Delay(LeasesFixtureExtensions.BlockedObservationWindow, AbortToken)
+        );
+
+        first.Should().BeSameAs(status, "a status read never takes or waits on the lease row's lock");
+        (await status).Should().Be(LeaseFenceStatus.Current, "the settling transaction has not committed yet");
+
+        await unit.CommitAsync(AbortToken);
+
+        (await host.Leases.GetStatusAsync(granted.Lease!, AbortToken)).Should().Be(LeaseFenceStatus.Settled);
+    }
+
     public virtual async Task should_claim_expired_leases_inside_the_callers_unit_and_keep_them_on_a_rollback()
     {
         var kind = CreateKind();
