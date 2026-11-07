@@ -162,6 +162,11 @@ internal static class ConformanceCaseAllowList
             "The in-memory store has no database, so a caller's connection to another database cannot exist."
         ),
         new(
+            "InMemoryLeasesConformanceTests",
+            "should_read_the_current_attempt_on_the_callers_connection_and_hand_it_back_as_passed",
+            "The in-memory store has no database, so there is no caller's connection to read on; it ignores the connection argument."
+        ),
+        new(
             "PostgreSqlDistributedLockConformanceTests",
             "should_get_expiration_for_locked_resource",
             "A PostgreSQL advisory lock is session-scoped with no lease, so expiration is always null."

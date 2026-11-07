@@ -3,7 +3,7 @@
 namespace Headless.Fencing;
 
 /// <summary>
-/// Maximum lengths of the three lease-key parts and of a renewal's progress. Call validation and every provider's
+/// Maximum lengths of the three lease-key parts, of a renewal's progress, and of what a grant stores. Call validation and every provider's
 /// table definition read these, so a value that passes validation always fits its column.
 /// </summary>
 /// <remarks>
@@ -31,4 +31,19 @@ public static class FencingFieldLimits
 
     /// <summary>The maximum length of a progress contract tag.</summary>
     public const int ProgressContractMaxLength = 256;
+
+    /// <summary>
+    /// The maximum length of a grant's holder: an owner tag such as <c>cluster/node@incarnation</c>, which names the
+    /// process that owns the attempt rather than carrying data about it.
+    /// </summary>
+    public const int HolderMaxLength = 200;
+
+    /// <summary>
+    /// The maximum size, in bytes, of a grant's attributes payload: 4 KiB. Attributes come back with every current
+    /// read, often once per request, so the bound keeps that read a small one; put scope claims there, not documents.
+    /// </summary>
+    public const int AttributesMaxBytes = 4 * 1024;
+
+    /// <summary>The maximum length of an attributes contract tag.</summary>
+    public const int AttributesContractMaxLength = 256;
 }

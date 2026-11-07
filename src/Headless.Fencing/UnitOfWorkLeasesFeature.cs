@@ -24,19 +24,19 @@ internal sealed class UnitOfWorkLeasesFeature(
         string kind,
         string resource,
         TimeSpan duration,
-        LeaseTakeover takeover,
+        LeaseGrantOptions options,
         CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNull(unitOfWork);
         var key = resolver.Resolve(kind, resource);
         duration = resolver.ValidateDuration(duration);
-        Argument.IsInEnum(takeover);
+        LeaseRequestResolver.ValidateGrantOptions(options);
 
         _Enlist(unitOfWork, isWrite: true, drawsGeneration: true);
 
         var result = await store
-            .GrantEnlistedAsync(unitOfWork, key, duration, takeover, cancellationToken)
+            .GrantEnlistedAsync(unitOfWork, key, duration, options, cancellationToken)
             .ConfigureAwait(false);
         alerts.OnGranted(result);
 
