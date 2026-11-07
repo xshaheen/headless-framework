@@ -111,6 +111,46 @@ internal sealed class LeaseRequestResolver(ICurrentTenant currentTenant, IOption
         return progress;
     }
 
+    /// <summary>
+    /// Checks a grant's options (the takeover choice, the holder, and the attributes) before anything is written.
+    /// </summary>
+    /// <exception cref="ArgumentNullException"><paramref name="options" /> is <see langword="null" />.</exception>
+    /// <exception cref="ArgumentException">The holder or attributes exceed a limit, or the holder is whitespace.</exception>
+    /// <exception cref="System.ComponentModel.InvalidEnumArgumentException">The takeover is not a defined value.</exception>
+    public static LeaseGrantOptions ValidateGrantOptions(LeaseGrantOptions options)
+    {
+        Argument.IsNotNull(options);
+        Argument.IsInEnum(options.Takeover, paramName: nameof(options));
+
+        if (options.Holder is not null)
+        {
+            // An empty or whitespace holder would match every other blank holder, so a retry could take a lease it
+            // never held; null is the way to store no holder.
+            Argument.IsNotNullOrWhiteSpace(options.Holder, paramName: nameof(options));
+            Argument.HasMaxLength(options.Holder, FencingFieldLimits.HolderMaxLength, paramName: nameof(options));
+        }
+
+        if (options.Attributes is { } attributes)
+        {
+            if (attributes.Payload.Length > FencingFieldLimits.AttributesMaxBytes)
+            {
+                throw new ArgumentException(
+                    $"An attributes payload is {attributes.Payload.Length} bytes; a grant stores at most "
+                        + $"{FencingFieldLimits.AttributesMaxBytes}. Store scope claims, not documents.",
+                    nameof(options)
+                );
+            }
+
+            Argument.HasMaxLength(
+                attributes.Contract,
+                FencingFieldLimits.AttributesContractMaxLength,
+                paramName: nameof(options)
+            );
+        }
+
+        return options;
+    }
+
     private static void _ValidateKind(string kind, string paramName)
     {
         Argument.IsNotNullOrWhiteSpace(kind, paramName: paramName);

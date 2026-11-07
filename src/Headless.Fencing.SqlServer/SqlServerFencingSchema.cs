@@ -19,6 +19,9 @@ internal static class SqlServerFencingSchema
     public const string TakeoverCount = "[TakeoverCount]";
     public const string Progress = "[Progress]";
     public const string ProgressContract = "[ProgressContract]";
+    public const string Holder = "[Holder]";
+    public const string Attributes = "[Attributes]";
+    public const string AttributesContract = "[AttributesContract]";
 
     // Stored as smallint. Expired is never stored: it is Active with an expiry at or before the database clock.
     public const short Active = 0;

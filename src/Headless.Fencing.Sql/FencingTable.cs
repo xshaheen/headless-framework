@@ -38,6 +38,9 @@ internal sealed class FencingTable
         TakeoverCount = column("TakeoverCount");
         Progress = column("Progress");
         ProgressContract = column("ProgressContract");
+        Holder = column("Holder");
+        Attributes = column("Attributes");
+        AttributesContract = column("AttributesContract");
 
         Key = [new(TenantId, "TenantId"), new(Kind, "Kind"), new(Resource, "Resource")];
         KeyColumns = [TenantId, Kind, Resource];
@@ -74,6 +77,12 @@ internal sealed class FencingTable
     public string Progress { get; }
 
     public string ProgressContract { get; }
+
+    public string Holder { get; }
+
+    public string Attributes { get; }
+
+    public string AttributesContract { get; }
 
     public IReadOnlyList<SqlKeyColumn> Key { get; }
 

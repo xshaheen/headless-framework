@@ -239,4 +239,34 @@ public sealed class PostgreSqlLeasesConformanceTests(PostgreSqlFencingFixture fi
     {
         return base.should_refuse_a_callers_connection_to_another_database_before_any_statement();
     }
+
+    [Fact]
+    public override Task should_return_the_held_lease_to_its_live_holder_and_hold_it_against_any_other()
+    {
+        return base.should_return_the_held_lease_to_its_live_holder_and_hold_it_against_any_other();
+    }
+
+    [Fact]
+    public override Task should_return_the_held_lease_to_its_live_holder_inside_a_unit()
+    {
+        return base.should_return_the_held_lease_to_its_live_holder_inside_a_unit();
+    }
+
+    [Fact]
+    public override Task should_read_the_current_attempt_with_its_holder_and_attributes_by_the_database_clock()
+    {
+        return base.should_read_the_current_attempt_with_its_holder_and_attributes_by_the_database_clock();
+    }
+
+    [Fact]
+    public override Task should_read_the_current_attempt_on_the_callers_connection_and_hand_it_back_as_passed()
+    {
+        return base.should_read_the_current_attempt_on_the_callers_connection_and_hand_it_back_as_passed();
+    }
+
+    [Fact]
+    public override Task should_revoke_the_active_attempt_live_or_expired_and_nothing_else()
+    {
+        return base.should_revoke_the_active_attempt_live_or_expired_and_nothing_else();
+    }
 }

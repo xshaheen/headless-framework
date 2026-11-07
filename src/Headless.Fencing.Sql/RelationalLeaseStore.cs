@@ -55,7 +55,10 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
     private readonly string _grantSql;
     private readonly string _grantAfterSweepSql;
     private readonly string _holderLiveSql;
+    private readonly string _regrantSql;
     private readonly string _statusSql;
+    private readonly string _currentSql;
+    private readonly string _revokeSql;
     private readonly string _insertSql;
     private readonly string _renewSql;
     private readonly string _renewWithProgressSql;
@@ -85,11 +88,16 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
         var live = $"{t.State} = {active} AND {t.ExpiresAt} > {now}";
         var current = $"{t.Generation} = @Generation AND {live}";
 
-        // Reads the row's lock and nothing else a decision needs besides its classification; the progress is not
-        // read, so a renewal never ships the stored payload back.
+        // Reads the row's lock and nothing else a decision needs besides its classification; the progress and
+        // attributes are not read, so a renewal never ships a stored payload back. The holder is small and lets a
+        // refused grant recognize its own live attempt while the row is still locked.
         var locked = _dialect.Render(
-            new SqlLockedRead(t.Table, t.Key, [t.Generation, t.State, t.ExpiresAt, t.TakeoverCount])
+            new SqlLockedRead(t.Table, t.Key, [t.Generation, t.State, t.ExpiresAt, t.TakeoverCount, t.Holder])
         );
+        // Every grant that acquires records who holds the new attempt and what it carries, replacing the last
+        // attempt's; absent options store NULL.
+        var grantedBy =
+            $"{t.Holder} = @Holder, {t.Attributes} = @Attributes, {t.AttributesContract} = @AttributesContract";
 
         // Only a takeover of an expired active attempt counts one more, because a sweep already counted an abandoned
         // one and a settlement or release reset the count. Progress is left as it is, so the new attempt can resume.
@@ -106,7 +114,8 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
                         {t.GrantedAt} = {now},
                         {t.ExpiresAt} = {deadline},
                         {t.EndedAt} = NULL,
-                        {t.TakeoverCount} = CASE WHEN {t.State} = {active} THEN {t.TakeoverCount} + 1 ELSE {t.TakeoverCount} END
+                        {t.TakeoverCount} = CASE WHEN {t.State} = {active} THEN {t.TakeoverCount} + 1 ELSE {t.TakeoverCount} END,
+                        {grantedBy}
                     """,
                     Returning: [t.Generation, t.ExpiresAt, t.TakeoverCount, t.Progress, t.ProgressContract]
                 )
@@ -125,7 +134,8 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
                         {t.State} = {active},
                         {t.GrantedAt} = {now},
                         {t.ExpiresAt} = {deadline},
-                        {t.EndedAt} = NULL
+                        {t.EndedAt} = NULL,
+                        {grantedBy}
                     """,
                     Returning: [t.Generation, t.ExpiresAt, t.TakeoverCount, t.Progress, t.ProgressContract]
                 )
@@ -141,6 +151,15 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
             )
         );
 
+        // Runs after a grant's locking read refused an active row held by the caller's own holder tag, while this
+        // transaction still holds that row: the clock decides whether the attempt is still live, and the progress is
+        // what the retried grant hands back.
+        _regrantSql = _dialect.Render(
+            new SqlClockedStatement(
+                $"SELECT CASE WHEN {t.ExpiresAt} > {now} THEN 1 ELSE 0 END, {t.Progress}, {t.ProgressContract} FROM {t.Table} WHERE {byKey};"
+            )
+        );
+
         // No lock and no lock hint: a status read never waits on a grant or fence another transaction holds, and on
         // SQL Server it can still wait behind an uncommitted writer when READ_COMMITTED_SNAPSHOT is off.
         _statusSql = _dialect.Render(
@@ -149,12 +168,38 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
             )
         );
 
+        // The same lockless one-statement read as the status read, returning the whole attempt the row describes.
+        _currentSql = _dialect.Render(
+            new SqlClockedStatement(
+                $"SELECT {t.Generation}, {t.State}, {t.ExpiresAt}, CASE WHEN {t.ExpiresAt} > {now} THEN 1 ELSE 0 END, "
+                    + $"{t.TakeoverCount}, {t.Holder}, {t.Attributes}, {t.AttributesContract} FROM {t.Table} WHERE {byKey};"
+            )
+        );
+
         _insertSql = _dialect.Render(
             new SqlInsertIfAbsent(
                 t.Table,
                 t.Key,
-                [t.Generation, t.State, t.GrantedAt, t.ExpiresAt, t.EndedAt],
-                [_dialect.NextSequenceValue(t.Sequence), active, now, deadline, "NULL"],
+                [
+                    t.Generation,
+                    t.State,
+                    t.GrantedAt,
+                    t.ExpiresAt,
+                    t.EndedAt,
+                    t.Holder,
+                    t.Attributes,
+                    t.AttributesContract,
+                ],
+                [
+                    _dialect.NextSequenceValue(t.Sequence),
+                    active,
+                    now,
+                    deadline,
+                    "NULL",
+                    "@Holder",
+                    "@Attributes",
+                    "@AttributesContract",
+                ],
                 [t.Generation, t.ExpiresAt]
             )
         );
@@ -168,6 +213,8 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
             );
         _settleSql = locked + _Transition(current, _EndSet(FencingTable.Settled));
         _releaseSql = locked + _Transition(current, _EndSet(FencingTable.Released));
+        // Revoke ends whatever attempt is active, live or expired, by key alone: the caller never held its generation.
+        _revokeSql = locked + _Transition($"{t.State} = {active}", _EndSet(FencingTable.Released));
         _fenceSql = locked + _Transition(current, set: null);
 
         _claimFirstSql = _dialect.Render(_Claim(withCursor: false));
@@ -233,13 +280,13 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
     public ValueTask<LeaseGrantResult> GrantAsync(
         LeaseKey key,
         TimeSpan duration,
-        LeaseTakeover takeover,
+        LeaseGrantOptions options,
         CancellationToken cancellationToken = default
     )
     {
         return _RunAutonomousAsync(
             "fencing.grant",
-            (connection, transaction, ct) => _GrantAsync(connection, transaction, key, duration, takeover, ct),
+            (connection, transaction, ct) => _GrantAsync(connection, transaction, key, duration, options, ct),
             cancellationToken
         );
     }
@@ -248,7 +295,7 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
         IUnitOfWork unitOfWork,
         LeaseKey key,
         TimeSpan duration,
-        LeaseTakeover takeover,
+        LeaseGrantOptions options,
         CancellationToken cancellationToken = default
     )
     {
@@ -256,7 +303,7 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
         // connection in between, and a statement on either would fail with a less useful message or run outside it.
         var (connection, transaction) = _RequireLive(Argument.IsNotNull(unitOfWork));
 
-        return await _GrantAsync(connection, transaction, key, duration, takeover, cancellationToken)
+        return await _GrantAsync(connection, transaction, key, duration, options, cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -265,11 +312,11 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
         DbTransaction transaction,
         LeaseKey key,
         TimeSpan duration,
-        LeaseTakeover takeover,
+        LeaseGrantOptions options,
         CancellationToken cancellationToken
     )
     {
-        var afterSweep = takeover == LeaseTakeover.AfterSweep;
+        var afterSweep = options.Takeover == LeaseTakeover.AfterSweep;
 
         for (var round = 1; round <= _MaxGrantRounds; round++)
         {
@@ -280,6 +327,7 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
             )
             {
                 _dialect.AddDuration(command, "Duration", duration);
+                _AddGrantedBy(command, options);
                 granted = await _ExecuteAsync(command, lockedRead: true, _ReadGrantedAsync, cancellationToken)
                     .ConfigureAwait(false);
             }
@@ -307,6 +355,23 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
                         : LeaseGrantResult.Held(before.Generation, before.ExpiresAt, before.TakeoverCount)
             );
 
+            if (
+                decided is { Status: LeaseGrantStatus.Held }
+                && options.Holder is not null
+                && string.Equals(granted.Before?.Holder, options.Holder, StringComparison.Ordinal)
+            )
+            {
+                // The refused row is the caller's own attempt: hand it back unchanged if the database clock still
+                // finds it live, so a grant retried after a lost response is idempotent.
+                var regranted = await _RegrantAsync(connection, transaction, key, granted.Before!, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (regranted is not null)
+                {
+                    return regranted;
+                }
+            }
+
             if (decided is { Status: LeaseGrantStatus.Held } && afterSweep)
             {
                 // The after-sweep fence refuses an expired attempt as well as a live one; tell them apart on the
@@ -328,6 +393,7 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
 
             await using var insert = _Command(_insertSql, connection, transaction, key);
             _dialect.AddDuration(insert, "Duration", duration);
+            _AddGrantedBy(insert, options);
             var inserted = await _ExecuteAsync(insert, lockedRead: false, _ReadInsertedAsync, cancellationToken)
                 .ConfigureAwait(false);
 
@@ -346,6 +412,54 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
         throw new InvalidOperationException(
             $"The lease '{key.Kind}/{key.Resource}' changed between every locking read and insert for "
                 + $"{_MaxGrantRounds} rounds; the grant gave up instead of looping."
+        );
+    }
+
+    private void _AddGrantedBy(DbCommand command, LeaseGrantOptions options)
+    {
+        _dialect.AddParameter(
+            command,
+            "Holder",
+            SqlColumnType.Text(FencingFieldLimits.HolderMaxLength),
+            options.Holder
+        );
+        _dialect.AddParameter(command, "Attributes", SqlColumnType.Binary, options.Attributes?.Payload);
+        _dialect.AddParameter(
+            command,
+            "AttributesContract",
+            SqlColumnType.Text(FencingFieldLimits.AttributesContractMaxLength),
+            options.Attributes?.Contract
+        );
+    }
+
+    private async Task<LeaseGrantResult?> _RegrantAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        LeaseKey key,
+        LeaseRow before,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var command = _Command(_regrantSql, connection, transaction, key);
+        await using var reader = await _ReaderAsync(command, cancellationToken).ConfigureAwait(false);
+
+        // The refused row is locked by this transaction, so it is still there to read. An attempt that expired
+        // since the refusal is not handed back; the grant answers as it would for any other holder.
+        if (
+            !await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
+            || Convert.ToInt32(reader.GetValue(0), CultureInfo.InvariantCulture) != 1
+        )
+        {
+            return null;
+        }
+
+        var progress = await _ReadProgressAsync(reader, 1, cancellationToken).ConfigureAwait(false);
+
+        return LeaseGrantResult.Granted(
+            key.ToLease(before.Generation),
+            before.ExpiresAt,
+            before.TakeoverCount,
+            progress
         );
     }
 
@@ -638,7 +752,13 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
             return LeaseFenceStatus.Stale;
         }
 
-        var row = new LeaseRow(reader.GetInt64(0), reader.GetInt16(1), ExpiresAt: default, TakeoverCount: 0);
+        var row = new LeaseRow(
+            reader.GetInt64(0),
+            reader.GetInt16(1),
+            ExpiresAt: default,
+            TakeoverCount: 0,
+            Holder: null
+        );
         var live = Convert.ToInt32(reader.GetValue(2), CultureInfo.InvariantCulture) == 1;
 
         if (row.Generation == generation && row.State == FencingTable.Active && live)
@@ -654,6 +774,93 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
         }
 
         return _Rejection(key, row, generation);
+    }
+
+    public ValueTask<LeaseSnapshot?> GetCurrentAsync(LeaseKey key, CancellationToken cancellationToken = default)
+    {
+        return SqlAutonomousRead.RunAsync(
+            "fencing.current",
+            _storage.CreateConnection,
+            (connection, ct) => _ReadCurrentAsync(connection, transaction: null, key, ct),
+            _timeProvider,
+            cancellationToken
+        );
+    }
+
+    public async ValueTask<LeaseSnapshot?> GetCurrentAsync(
+        LeaseKey key,
+        DbConnection connection,
+        DbTransaction? transaction,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(connection);
+        _RequireCallerConnection(connection, transaction);
+
+        // The caller owns the connection, so it gets it back in the state it passed: opened here only for this read.
+        var openedHere = connection.State != ConnectionState.Open;
+
+        if (openedHere)
+        {
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        try
+        {
+            return await _ReadCurrentAsync(connection, transaction, key, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            if (openedHere)
+            {
+                await connection.CloseAsync().ConfigureAwait(false);
+            }
+        }
+    }
+
+    private async Task<LeaseSnapshot?> _ReadCurrentAsync(
+        DbConnection connection,
+        DbTransaction? transaction,
+        LeaseKey key,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var command = _Command(_currentSql, connection, transaction, key);
+        await using var reader = await _ReaderAsync(command, cancellationToken).ConfigureAwait(false);
+
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        var row = new LeaseRow(
+            reader.GetInt64(0),
+            reader.GetInt16(1),
+            await reader.GetFieldValueAsync<DateTimeOffset>(2, cancellationToken).ConfigureAwait(false),
+            reader.GetInt32(4),
+            await reader.IsDBNullAsync(5, cancellationToken).ConfigureAwait(false) ? null : reader.GetString(5)
+        );
+        var live = Convert.ToInt32(reader.GetValue(3), CultureInfo.InvariantCulture) == 1;
+
+        // The row's own generation is judged, so the answer is never stale.
+        var status =
+            row.State == FencingTable.Active && live ? LeaseFenceStatus.Current : _Rejection(key, row, row.Generation);
+        LeaseAttributes? attributes = null;
+
+        if (!await reader.IsDBNullAsync(6, cancellationToken).ConfigureAwait(false))
+        {
+            var payload = await reader.GetFieldValueAsync<byte[]>(6, cancellationToken).ConfigureAwait(false);
+            attributes = new LeaseAttributes(payload, reader.GetString(7));
+        }
+
+        return new LeaseSnapshot(
+            key.ToLease(row.Generation),
+            status,
+            row.ExpiresAt,
+            row.Holder,
+            attributes,
+            row.TakeoverCount
+        );
     }
 
     private void _RequireCallerConnection(DbConnection connection, DbTransaction? transaction)
@@ -697,6 +904,35 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
         // The refused row is locked by this transaction, so it is still there to read.
         return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
             && Convert.ToInt32(reader.GetValue(0), CultureInfo.InvariantCulture) == 1;
+    }
+
+    #endregion
+
+    #region Revoke
+
+    public ValueTask<FencedLease?> RevokeAsync(LeaseKey key, CancellationToken cancellationToken = default)
+    {
+        return _RunAutonomousAsync(
+            "fencing.revoke",
+            async (connection, transaction, ct) =>
+            {
+                await using var command = _Command(_revokeSql, connection, transaction, key);
+                var revoked = await _ExecuteAsync(
+                        command,
+                        lockedRead: true,
+                        static (_, _) => ValueTask.FromResult(true),
+                        ct
+                    )
+                    .ConfigureAwait(false);
+
+                // The fence is the active state alone, so an accepted transition ended the generation it locked.
+                return revoked.Match<FencedLease?>(
+                    accepted: (_, before) => key.ToLease(before!.Generation),
+                    rejected: static _ => null
+                );
+            },
+            cancellationToken
+        );
     }
 
     #endregion
@@ -925,7 +1161,8 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
             reader.GetInt64(0),
             reader.GetInt16(1),
             await reader.GetFieldValueAsync<DateTimeOffset>(2, cancellationToken).ConfigureAwait(false),
-            reader.GetInt32(3)
+            reader.GetInt32(3),
+            await reader.IsDBNullAsync(4, cancellationToken).ConfigureAwait(false) ? null : reader.GetString(4)
         );
     }
 
@@ -1013,7 +1250,13 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
 
     #endregion
 
-    private sealed record LeaseRow(long Generation, short State, DateTimeOffset ExpiresAt, int TakeoverCount);
+    private sealed record LeaseRow(
+        long Generation,
+        short State,
+        DateTimeOffset ExpiresAt,
+        int TakeoverCount,
+        string? Holder
+    );
 
     private sealed record GrantedRow(
         long Generation,

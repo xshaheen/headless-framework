@@ -52,6 +52,9 @@ internal static class SqliteFencingSchemaContribution
                 {t.TakeoverCount} INTEGER NOT NULL DEFAULT 0,
                 {t.Progress} BLOB NULL,
                 {t.ProgressContract} TEXT NULL,
+                {t.Holder} TEXT NULL,
+                {t.Attributes} BLOB NULL,
+                {t.AttributesContract} TEXT NULL,
                 CONSTRAINT {name("PK_FencingLeases")} PRIMARY KEY ({t.TenantId}, {t.Kind}, {t.Resource}),
                 CONSTRAINT {name("CK_FencingLeases_Generation")} CHECK ({t.Generation} > 0),
                 CONSTRAINT {name("CK_FencingLeases_State")} CHECK ({t.State} BETWEEN {active} AND {abandoned}),
@@ -59,6 +62,9 @@ internal static class SqliteFencingSchemaContribution
                 CONSTRAINT {name("CK_FencingLeases_TakeoverCount")} CHECK ({t.TakeoverCount} >= 0),
                 CONSTRAINT {name("CK_FencingLeases_Progress")} CHECK (
                     ({t.Progress} IS NULL) = ({t.ProgressContract} IS NULL)
+                ),
+                CONSTRAINT {name("CK_FencingLeases_Attributes")} CHECK (
+                    ({t.Attributes} IS NULL) = ({t.AttributesContract} IS NULL)
                 )
             );
 

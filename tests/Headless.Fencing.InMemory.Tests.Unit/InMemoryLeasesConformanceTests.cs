@@ -217,4 +217,28 @@ public sealed class InMemoryLeasesConformanceTests(InMemoryFencingFixture fixtur
     {
         return base.should_read_the_status_without_waiting_on_an_uncommitted_write_to_the_lease();
     }
+
+    [Fact]
+    public override Task should_return_the_held_lease_to_its_live_holder_and_hold_it_against_any_other()
+    {
+        return base.should_return_the_held_lease_to_its_live_holder_and_hold_it_against_any_other();
+    }
+
+    [Fact]
+    public override Task should_return_the_held_lease_to_its_live_holder_inside_a_unit()
+    {
+        return base.should_return_the_held_lease_to_its_live_holder_inside_a_unit();
+    }
+
+    [Fact]
+    public override Task should_read_the_current_attempt_with_its_holder_and_attributes_by_the_database_clock()
+    {
+        return base.should_read_the_current_attempt_with_its_holder_and_attributes_by_the_database_clock();
+    }
+
+    [Fact]
+    public override Task should_revoke_the_active_attempt_live_or_expired_and_nothing_else()
+    {
+        return base.should_revoke_the_active_attempt_live_or_expired_and_nothing_else();
+    }
 }
