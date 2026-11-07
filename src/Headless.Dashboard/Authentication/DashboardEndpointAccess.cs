@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace Headless.Dashboard.Authentication;
+namespace Headless.Dashboard;
 
 /// <summary>
 /// Applies a dashboard's access rule to endpoints mounted on the host's endpoint routing, where the host's

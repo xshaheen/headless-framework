@@ -4,7 +4,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Text.Json.Serialization;
-using Headless.Dashboard.Authentication;
+using Headless.Dashboard;
 using Headless.Messaging;
 using Headless.Messaging.Dashboard;
 using Headless.Messaging.Persistence;

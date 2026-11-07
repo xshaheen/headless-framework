@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Net.Http.Headers;
 
-namespace Headless.Dashboard.Authentication;
+namespace Headless.Dashboard;
 
 /// <summary>Guards dashboard endpoints against cross-site requests that change state.</summary>
 internal static class DashboardRequestIntegrity

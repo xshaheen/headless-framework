@@ -12,7 +12,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Dashboard.Authentication;
+namespace Headless.Dashboard;
 
 /// <summary>
 /// Provides extension methods for registering dashboard authentication services.

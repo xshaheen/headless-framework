@@ -149,7 +149,7 @@
         <Project Path="src/Headless.Captcha.Turnstile/Headless.Captcha.Turnstile.csproj" />
     </Folder>
     <Folder Name="/Dashboard/Tests/">
-        <Project Path="tests/Headless.Dashboard.Authentication.Tests.Unit/Headless.Dashboard.Authentication.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.Dashboard.Tests.Unit/Headless.Dashboard.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Docs/Tests/">
         <Project Path="tests/Headless.Docs.Examples.Tests.Unit/Headless.Docs.Examples.Tests.Unit.csproj" />
@@ -309,7 +309,7 @@
         <Project Path="tests\Headless.Coordination.Tests.Harness\Headless.Coordination.Tests.Harness.csproj" />
     </Folder>
     <Folder Name="/Dashboard/">
-        <Project Path="src/Headless.Dashboard.Authentication/Headless.Dashboard.Authentication.csproj" />
+        <Project Path="src/Headless.Dashboard/Headless.Dashboard.csproj" />
     </Folder>
     <Folder Name="/Imaging/Tests/">
         <Project Path="tests\Headless.Imaging.NetVips.Tests.Unit\Headless.Imaging.NetVips.Tests.Unit.csproj" />

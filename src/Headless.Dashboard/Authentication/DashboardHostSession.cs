@@ -8,7 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Dashboard.Authentication;
+namespace Headless.Dashboard;
 
 /// <summary>
 /// The dashboard's own session under <see cref="AuthMode.Host"/>: a cookie scheme per dashboard, issued from a host

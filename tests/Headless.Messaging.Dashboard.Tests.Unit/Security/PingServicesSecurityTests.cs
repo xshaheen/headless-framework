@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
-using Headless.Dashboard.Authentication;
+using Headless.Dashboard;
 using Headless.Messaging.Dashboard;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;

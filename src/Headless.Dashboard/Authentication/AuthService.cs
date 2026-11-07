@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
 
-namespace Headless.Dashboard.Authentication;
+namespace Headless.Dashboard;
 
 /// <summary>
 /// Authenticates requests using one of four modes: None, Basic, ApiKey, or Host.

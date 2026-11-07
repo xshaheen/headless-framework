@@ -2,7 +2,7 @@
 
 using Microsoft.AspNetCore.Http;
 
-namespace Headless.Dashboard.Authentication;
+namespace Headless.Dashboard;
 
 /// <summary>
 /// Defines authentication operations for dashboards.

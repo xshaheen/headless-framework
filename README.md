@@ -729,7 +729,7 @@ Cross-cutting utilities that belong to no single domain.
 
 | Package | Description |
 |---------|-------------|
-| [Headless.Dashboard.Authentication](src/Headless.Dashboard.Authentication/README.md) | Shared authentication for the Jobs and Messaging dashboards |
+| [Headless.Dashboard](src/Headless.Dashboard/README.md) | Shared authentication for the Jobs and Messaging dashboards |
 | [Headless.FluentValidation](src/Headless.FluentValidation/README.md) | FluentValidation extensions |
 | [Headless.Generator.Primitives](src/Headless.Generator.Primitives/README.md) | Primitive types source generator |
 | [Headless.Generator.Primitives.Abstractions](src/Headless.Generator.Primitives.Abstractions/README.md) | Generator abstractions |

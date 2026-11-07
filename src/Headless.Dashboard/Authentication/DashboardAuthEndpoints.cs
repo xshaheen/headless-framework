@@ -9,7 +9,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Dashboard.Authentication;
+namespace Headless.Dashboard;
 
 /// <summary>
 /// The endpoints a dashboard's SPA uses to learn and change its sign-in state: <c>GET api/auth/info</c>,

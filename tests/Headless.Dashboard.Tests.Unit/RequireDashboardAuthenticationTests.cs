@@ -4,7 +4,7 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
-using Headless.Dashboard.Authentication;
+using Headless.Dashboard;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
@@ -31,7 +31,7 @@ public sealed class RequireDashboardAuthenticationTests : TestBase
     private const string _Path = "/dashboard-a/api/data";
     private const string _OtherPath = "/dashboard-b/api/data";
     private const string _HostProbePath = "/host-probe";
-    private const string _HandlerCategory = "Headless.Dashboard.Authentication.DashboardAuthenticationHandler";
+    private const string _HandlerCategory = "Headless.Dashboard.DashboardAuthenticationHandler";
 
     private readonly CapturingLoggerProvider _logs = new();
 

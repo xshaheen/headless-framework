@@ -2,7 +2,7 @@
 
 using System.Reflection;
 using System.Text.Encodings.Web;
-using Headless.Dashboard.Authentication;
+using Headless.Dashboard;
 using Headless.Jobs.Endpoints;
 using Headless.Jobs.Infrastructure;
 using Microsoft.AspNetCore.Http;

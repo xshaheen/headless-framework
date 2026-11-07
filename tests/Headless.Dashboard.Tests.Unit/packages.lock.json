@@ -396,7 +396,7 @@
           "Headless.Primitives": "[1.0.0, )"
         }
       },
-      "headless.dashboard.authentication": {
+      "headless.dashboard": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",

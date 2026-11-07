@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net.Http.Headers;
-using Headless.Dashboard.Authentication;
+using Headless.Dashboard;
 using Headless.Messaging.Dashboard;
 
 namespace Tests;

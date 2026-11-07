@@ -1,6 +1,6 @@
 ---
 domain: Dashboards
-packages: Dashboard.Authentication
+packages: Dashboard
 ---
 
 # Dashboards
@@ -9,7 +9,7 @@ packages: Dashboard.Authentication
 
 ## Orientation
 
-Applications normally receive `Headless.Dashboard.Authentication` transitively through `Headless.Jobs.Dashboard` or `Headless.Messaging.Dashboard`. Configure authentication through the owning dashboard builder. Reference the package directly only when building dashboard infrastructure that consumes its shared contracts.
+Applications normally receive `Headless.Dashboard` transitively through `Headless.Jobs.Dashboard` or `Headless.Messaging.Dashboard`. Configure authentication through the owning dashboard builder. Reference the package directly only when building dashboard infrastructure that consumes its shared contracts.
 
 Read [jobs.md](jobs.md) for the Jobs dashboard and [messaging.md](messaging.md) for the Messaging dashboard. This guide owns only their shared authentication boundary.
 
@@ -38,7 +38,7 @@ Read [jobs.md](jobs.md) for the Jobs dashboard and [messaging.md](messaging.md) 
 
 There is no custom-validator mode. To sign operators in with your own credential check, write an ASP.NET Core authentication handler, register it in the host, and use host mode over it.
 
-## Headless.Dashboard.Authentication
+## Headless.Dashboard
 
 Shared authentication primitives used by both dashboard packages: the per-dashboard `IAuthService`, the authentication scheme and policy that check a dashboard's own credential, the host-mode session, its view and operate policies, the sign-in endpoints, and the endpoint conventions that apply them.
 
@@ -110,7 +110,7 @@ The exchange answers `204` and sets the session cookie, `401` when no host schem
 For a standalone integration:
 
 ```bash
-dotnet add package Headless.Dashboard.Authentication
+dotnet add package Headless.Dashboard
 ```
 
 Register the authentication under a name your dashboard owns, map the sign-in endpoints, and protect the dashboard's endpoints with the same name:
