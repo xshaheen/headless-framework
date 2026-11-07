@@ -394,6 +394,74 @@ public abstract class AdditionalOutboxConformanceTests : TestBase
         return builder.Build();
     }
 
+    [Fact]
+    public async Task should_stamp_and_read_changes_of_a_row_through_its_outboxs_storage()
+    {
+        // given
+        var orders = await _CreateDatabaseAsync("orders");
+        var billing = await _CreateDatabaseAsync("billing");
+        using var host = _BuildHost(
+            orders,
+            billing,
+            setup => UseOutboxStorage<BillingOutboxDbContext>(setup.AddOutbox("billing"))
+        );
+        await _StartAsync(host);
+        var outboxes = host.Services.GetRequiredService<MessagingOutboxes>();
+        var billingStorage = outboxes.Secondaries.Single().Storage;
+        var primaryStorage = outboxes.Primary!;
+        var billingStart = await billingStorage.GetMessageChangeStartCursorAsync(AbortToken);
+        var primaryStart = await primaryStorage.GetMessageChangeStartCursorAsync(AbortToken);
+        var marker = $"changes-{Guid.NewGuid():N}";
+
+        // when: a row is committed in the outbox's database and relayed to Succeeded
+        await _PublishAsync<BillingOutboxDbContext>(host.Services, marker);
+        await _WaitForStatusAsync(billing.ConnectionString, marker, "Succeeded");
+        var billingChanges = await _ReadAllChangesAsync(billingStorage, billingStart);
+        var primaryChanges = await _ReadAllChangesAsync(primaryStorage, primaryStart);
+
+        // then: the outbox's storage returns the row's changes, ending with its terminal state; the primary does not
+        var monitoring = billingStorage.GetMonitoringApi();
+        Guid? rowId = null;
+        foreach (var change in billingChanges.Where(c => c.Kind == MessageChangeKind.Published))
+        {
+            var row = await monitoring.GetPublishedMessageAsync(change.Id, AbortToken);
+            if (row?.Content.Contains(marker, StringComparison.Ordinal) is true)
+            {
+                rowId = change.Id;
+            }
+        }
+
+        rowId.Should().NotBeNull("the outbox's change read returns the row committed in its database");
+        billingChanges.Should().NotContain(c => c.Kind == MessageChangeKind.Received, "an outbox has no inbox");
+        billingChanges.Last(c => c.Id == rowId).Status.Should().Be(StatusName.Succeeded);
+        primaryChanges.Should().NotContain(c => c.Id == rowId);
+        await host.StopAsync(AbortToken);
+    }
+
+    // Reads changes until two reads in a row return a short page, so every row committed before them is seen.
+    private static async Task<List<MessageChange>> _ReadAllChangesAsync(
+        IDataStorage storage,
+        MessageChangeCursor cursor
+    )
+    {
+        var changes = new List<MessageChange>();
+        var shortReads = 0;
+        for (var read = 0; read < 100 && shortReads < 2; read++)
+        {
+            var page = await storage.GetMessageChangesAsync(
+                cursor,
+                MessageChangeCursor.DefaultOverlapWindow,
+                500,
+                AbortToken
+            );
+            changes.AddRange(page.Changes);
+            cursor = page.Cursor;
+            shortReads = page.Changes.Count < 500 ? shortReads + 1 : 0;
+        }
+
+        return changes;
+    }
+
     // The bootstrapper is a background service, so the host's start returns before schema initialization ends;
     // joining its bootstrap waits for the primary and for one initialization attempt of every additional outbox.
     private async Task _StartAsync(IHost host)

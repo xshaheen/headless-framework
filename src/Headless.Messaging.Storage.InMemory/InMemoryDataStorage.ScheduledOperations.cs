@@ -225,6 +225,7 @@ internal sealed partial class InMemoryDataStorage
                                 row.ExpiresAt = now;
                                 row.LockedUntil = null;
                                 row.Owner = null;
+                                _StampChange(row);
                             }
                         }
                     }

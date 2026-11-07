@@ -37,6 +37,12 @@ internal sealed class MemoryMessage : MediumMessage
 
     public Guid? HoldOperationId { get; set; }
 
+    /// <summary>
+    /// The row's change marker: moved forward by every write that changes the row's visible state, never by a lease or
+    /// lock write. Written only through the storage's stamp.
+    /// </summary>
+    public DateTimeOffset ChangedAt { get; set; }
+
     public TimeSpan InboxRetention { get; set; } = TimeSpan.FromDays(30);
 
     /// <summary>

@@ -298,7 +298,7 @@ internal sealed partial class RelationalDataStorage
         // Expiry is decided against the database clock by the purge, so the database clock also stamps it.
         var received = _IsReceived(table);
         var set =
-            $"{_t.StatusName}=@StatusName, {_t.NextRetryAt}=NULL, {_t.LockedUntil}=NULL, {_t.Owner}=NULL, {_t.ExpiresAt}={_dialect.ShiftByDuration(SqlDialectTokens.Now, "ExpiresAfter")}";
+            $"{_t.StatusName}=@StatusName, {_t.NextRetryAt}=NULL, {_t.LockedUntil}=NULL, {_t.Owner}=NULL, {_t.ExpiresAt}={_dialect.ShiftByDuration(SqlDialectTokens.Now, "ExpiresAfter")}, {_t.StampChange}";
         if (received)
         {
             // Each poison row records its own failure; the inbox generation ends, and its retention starts.
@@ -1006,7 +1006,8 @@ internal sealed partial class RelationalDataStorage
                 AND {_terminalGuard}
                 """,
                 [_t.ExpiresAt, _t.Id],
-                $"{_t.StatusName}=@QueuedStatusName, {_t.LockedUntil}={_dialect.ShiftByDuration($"CASE WHEN {_t.ExpiresAt} > {SqlDialectTokens.Now} THEN {_t.ExpiresAt} ELSE {SqlDialectTokens.Now} END", "Lease")}, {_t.Owner}=@Owner",
+                // A stale Queued row claimed again only changes its lease, so only a Delayed row's marker moves.
+                $"{_t.StatusName}=@QueuedStatusName, {_t.LockedUntil}={_dialect.ShiftByDuration($"CASE WHEN {_t.ExpiresAt} > {SqlDialectTokens.Now} THEN {_t.ExpiresAt} ELSE {SqlDialectTokens.Now} END", "Lease")}, {_t.Owner}=@Owner, {_t.ChangedAt}=CASE WHEN {_t.StatusName} = @QueuedStatusName THEN {_t.ChangedAt} ELSE {_dialect.NextChangeMarker(_t.ChangedAt)} END",
                 [
                     _t.Id,
                     _t.Content,

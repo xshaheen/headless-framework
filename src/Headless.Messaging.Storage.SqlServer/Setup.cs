@@ -174,7 +174,8 @@ public static class SetupMessagingSqlServer
                 serviceProvider,
                 options.Value.ToStorage(),
                 tableNames,
-                SequentialGuidType.SqlServer
+                SequentialGuidType.SqlServer,
+                holdsReceived: false
             );
 
             return new MessagingOutbox(outboxName, storage, initializer);

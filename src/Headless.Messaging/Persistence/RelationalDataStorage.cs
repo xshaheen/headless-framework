@@ -77,6 +77,7 @@ internal sealed partial class RelationalDataStorage
     private readonly SqlColumnType _ownerType;
     private readonly string _publishedTable;
     private readonly string _receivedTable;
+    private readonly bool _holdsReceived;
     private readonly string _terminalGuard;
     private readonly string _terminalGuardWithRetries;
     private readonly string _nextRetryAtAssignment;
@@ -104,7 +105,8 @@ internal sealed partial class RelationalDataStorage
         IGuidGenerator guidGenerator,
         TimeProvider timeProvider,
         INodeMembership nodeMembership,
-        ILogger<RelationalDataStorage> logger
+        ILogger<RelationalDataStorage> logger,
+        bool holdsReceived = true
     )
     {
         _storage = Argument.IsNotNull(storage);
@@ -120,6 +122,7 @@ internal sealed partial class RelationalDataStorage
         _ownerType = SqlColumnType.Text(storage.OwnerColumnMaxLength);
         _publishedTable = tableNames.GetPublishedTableName();
         _receivedTable = tableNames.GetReceivedTableName();
+        _holdsReceived = holdsReceived;
 
         // A row that is Succeeded or Failed with no retry pending is permanently done: no transition may rewrite it.
         // A Failed row that still has a NextRetryAt is persisted for retry and stays mutable, so the retry processor
@@ -174,12 +177,15 @@ internal sealed partial class RelationalDataStorage
     /// <summary>
     /// Creates the storage for <paramref name="storage"/> from the application's services, its message ids drawn from
     /// the sequential generator keyed by <paramref name="guidType"/>, the order the engine's primary key sorts best.
+    /// <paramref name="holdsReceived"/> is <see langword="false"/> for an additional outbox, whose database holds the
+    /// published table only.
     /// </summary>
     public static RelationalDataStorage Create(
         IServiceProvider services,
         RelationalMessagingStorage storage,
         IStorageTableNames tableNames,
-        SequentialGuidType guidType
+        SequentialGuidType guidType,
+        bool holdsReceived = true
     )
     {
         return new RelationalDataStorage(
@@ -191,7 +197,8 @@ internal sealed partial class RelationalDataStorage
             services.GetRequiredKeyedService<IGuidGenerator>(guidType),
             services.GetRequiredService<TimeProvider>(),
             services.GetRequiredService<INodeMembership>(),
-            services.GetRequiredService<ILogger<RelationalDataStorage>>()
+            services.GetRequiredService<ILogger<RelationalDataStorage>>(),
+            holdsReceived
         );
     }
 

@@ -79,6 +79,15 @@ public interface ISqlDialect
     string ShiftBySeconds(string instant, string seconds);
 
     /// <summary>
+    /// Returns the next change marker of a row whose current marker is <paramref name="previous" />, a timestamp
+    /// expression such as a column: the database clock (<see cref="SqlDialectTokens.Now" />), or
+    /// <paramref name="previous" /> moved forward by <see cref="TimestampPrecision" /> when the clock has not passed it.
+    /// Successive writes of one row therefore get strictly increasing markers, even within one clock tick or after the
+    /// clock steps back.
+    /// </summary>
+    string NextChangeMarker(string previous);
+
+    /// <summary>
     /// Returns the clause that follows an <c>ORDER BY</c> and keeps at most <c>@</c><paramref name="limitParameter" />
     /// rows, after skipping <c>@</c><paramref name="offsetParameter" /> rows when one is given.
     /// </summary>

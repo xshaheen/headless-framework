@@ -303,7 +303,11 @@ internal sealed partial class RelationalDataStorage
                                     ? $"DELETE FROM {_publishedTable} WHERE {_t.Id}=@StorageId AND {_t.Version}=@Version AND {_t.ExpiresAt}=@ExpectedDueAt AND {ScheduledEligibility};"
                                     // Due now: the delayed claim picks the row up on its next pass. A live lease
                                     // means a dispatch already started, so the row is left to it.
-                                    : $"UPDATE {_publishedTable} SET {_t.StatusName}='{nameof(StatusName.Delayed)}',{_t.ExpiresAt}=@Instant,{_t.LockedUntil}=NULL,{_t.Owner}=NULL WHERE {_t.Id}=@StorageId AND {_t.Version}=@Version AND {_t.ExpiresAt}=@ExpectedDueAt AND ({_t.LockedUntil} IS NULL OR {_t.LockedUntil} <= @Instant) AND {ScheduledEligibility};",
+                                    : _dialect.Render(
+                                        new SqlClockedStatement(
+                                            $"UPDATE {_publishedTable} SET {_t.StatusName}='{nameof(StatusName.Delayed)}',{_t.ExpiresAt}=@Instant,{_t.LockedUntil}=NULL,{_t.Owner}=NULL,{_t.StampChange} WHERE {_t.Id}=@StorageId AND {_t.Version}=@Version AND {_t.ExpiresAt}=@ExpectedDueAt AND ({_t.LockedUntil} IS NULL OR {_t.LockedUntil} <= @Instant) AND {ScheduledEligibility};"
+                                        )
+                                    ),
                                 CommandTimeoutSeconds,
                                 command =>
                                 {

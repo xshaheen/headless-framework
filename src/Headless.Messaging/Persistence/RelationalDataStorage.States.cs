@@ -40,8 +40,11 @@ internal sealed partial class RelationalDataStorage
                     $"({_t.Id}=@Id{suffix} AND {_t.IntentType}=@IntentType{suffix} AND {_Same(_t.Owner, "Owner" + suffix)} AND {_Same(_t.LockedUntil, "LockedUntil" + suffix)})";
             }
 
-            var sql =
-                $"UPDATE {_publishedTable} SET {_t.StatusName}=@StatusName, {_t.LockedUntil}=NULL, {_t.Owner}=NULL WHERE {_terminalGuard} AND ({string.Join(" OR ", predicates)});";
+            var sql = _dialect.Render(
+                new SqlClockedStatement(
+                    $"UPDATE {_publishedTable} SET {_t.StatusName}=@StatusName, {_t.LockedUntil}=NULL, {_t.Owner}=NULL, {_t.StampChange} WHERE {_terminalGuard} AND ({string.Join(" OR ", predicates)});"
+                )
+            );
             await RelationalCommand
                 .ExecuteNonQueryAsync(
                     connection,
@@ -298,6 +301,7 @@ internal sealed partial class RelationalDataStorage
         set.Add($"{_t.LockedUntil}=@LockedUntil");
         set.Add($"{_t.Owner}=@Owner");
         set.Add($"{_t.StatusName}=@StatusName");
+        set.Add(_t.StampChange);
 
         // An inline retry passes the generation it holds (@OriginalInlineAttempts set): its transition applies only
         // while the row is still leased to it, so an attempt whose lease another node took over writes nothing.
@@ -987,7 +991,7 @@ internal sealed partial class RelationalDataStorage
         return _RenderTransition(
             _receivedTable,
             fence,
-            $"{_t.NextRetryAt}={_dialect.ShiftByDuration(SqlDialectTokens.Now, "RetryDelay")}, {_t.Owner}=NULL, {_t.LockedUntil}=NULL",
+            $"{_t.NextRetryAt}={_dialect.ShiftByDuration(SqlDialectTokens.Now, "RetryDelay")}, {_t.Owner}=NULL, {_t.LockedUntil}=NULL, {_t.StampChange}",
             [_t.Id]
         );
     }
@@ -1073,9 +1077,11 @@ internal sealed partial class RelationalDataStorage
     private string _RenderInboxRoutability(bool orphaned)
     {
         // The next orphan probe falls due on the database clock, the clock the retry pickup compares it against.
+        // Confirming a routable row runs before every inbox dispatch, so it moves the marker only when it clears an
+        // orphan flag an operator could see.
         var set = orphaned
-            ? $"{_t.IsInboxOrphaned}={_t.True}, {_t.NextRetryAt}={_dialect.ShiftByDuration(SqlDialectTokens.Now, "ProbeInterval")}, {_t.Owner}=NULL, {_t.LockedUntil}=NULL"
-            : $"{_t.IsInboxOrphaned}={_t.False}";
+            ? $"{_t.IsInboxOrphaned}={_t.True}, {_t.NextRetryAt}={_dialect.ShiftByDuration(SqlDialectTokens.Now, "ProbeInterval")}, {_t.Owner}=NULL, {_t.LockedUntil}=NULL, {_t.StampChange}"
+            : $"{_t.IsInboxOrphaned}={_t.False}, {_t.ChangedAt}=CASE WHEN {_t.IsInboxOrphaned} = {_t.True} THEN {_dialect.NextChangeMarker(_t.ChangedAt)} ELSE {_t.ChangedAt} END";
         var fence =
             $"{_t.IntentType}=@IntentType AND {_t.Generation}=@Generation AND {_t.GenerationIncarnationId}=@GenerationIncarnationId AND {_t.AttemptId}=@AttemptId AND {_Same(_t.Owner, "Owner")} AND {_t.LockedUntil}=@LockedUntil AND {_t.LockedUntil} > {SqlDialectTokens.Now}";
 

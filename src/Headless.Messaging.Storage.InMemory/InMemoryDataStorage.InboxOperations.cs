@@ -307,6 +307,7 @@ internal sealed partial class InMemoryDataStorage
                         row.HeldBy = request.Actor;
                         row.HoldReason = request.Reason;
                         row.HoldOperationId = request.OperationId;
+                        _StampChange(row);
                         break;
                     case MessagingOperationType.ReleaseHold:
                         row.IsHeld = false;
@@ -314,10 +315,13 @@ internal sealed partial class InMemoryDataStorage
                         row.HeldBy = null;
                         row.HoldReason = null;
                         row.HoldOperationId = request.OperationId;
+                        _StampChange(row);
                         break;
                     case MessagingOperationType.ForceReprocess:
                         var child = _CreateForcedChild(row, request.OperationId, now);
                         row.IsCurrentGeneration = false;
+                        _StampChange(row);
+                        _StampChange(child);
                         ReceivedMessages[child.StorageId] = child;
                         childStorageId = child.StorageId;
                         childGeneration = child.InboxGeneration!.Number;

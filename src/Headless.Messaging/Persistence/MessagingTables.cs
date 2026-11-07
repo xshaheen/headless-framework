@@ -66,6 +66,8 @@ internal sealed class MessagingTables
         InboxRetentionSeconds = column("InboxRetentionSeconds");
         InboxKeyHash = column("InboxKeyHash");
         ConsumerIdentityHash = column("ConsumerIdentityHash");
+        ChangedAt = column("ChangedAt");
+        StampChange = $"{ChangedAt}={dialect.NextChangeMarker(ChangedAt)}";
 
         OperationId = column("OperationId");
         TargetKind = column("TargetKind");
@@ -187,6 +189,18 @@ internal sealed class MessagingTables
     /// rather than padded text.
     /// </summary>
     public string ConsumerIdentityHash { get; }
+
+    /// <summary>
+    /// The change marker of a published or received row: the database clock when a write last changed the row's
+    /// visible state, kept strictly increasing per row. Change reads order and page by it.
+    /// </summary>
+    public string ChangedAt { get; }
+
+    /// <summary>
+    /// The assignment that moves a row's change marker forward, for the <c>SET</c> list of every statement that changes
+    /// a row's visible state. It reads the database clock as <see cref="SqlDialectTokens.Now" />.
+    /// </summary>
+    public string StampChange { get; }
 
     public string OperationId { get; }
 

@@ -149,7 +149,10 @@ internal static class PostgreSqlMessagingSchemaContribution
                 "inbox_key_hash" BYTEA NULL,
                 -- SHA-256 of a non-inbox row's identity. The text columns compare exactly here, but SQL Server pads
                 -- trailing spaces, so both engines key the row on this hash to treat every identity the same way.
-                "consumer_identity_hash" BYTEA NULL
+                "consumer_identity_hash" BYTEA NULL,
+                -- The change marker every state-changing statement stamps from the statement clock; the default
+                -- covers a row written outside the storage.
+                "changed_at" TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp()
             );
 
             DO $headless$
@@ -224,6 +227,8 @@ internal static class PostgreSqlMessagingSchemaContribution
             -- fetching each heap row of a status that retention keeps in the millions. The step creates the final
             -- schema directly; it does not carry migration DDL for superseded index shapes.
             CREATE INDEX IF NOT EXISTS "idx_messaging_received_status_name_added" ON {received} ("status_name","added") INCLUDE ("intent_type");
+            -- The dashboard's change read pages by (changed_at, id) on every poll of every node.
+            CREATE INDEX IF NOT EXISTS "idx_messaging_received_changed_at_id" ON {received} ("changed_at","id") INCLUDE ("status_name");
 
             CREATE TABLE IF NOT EXISTS "{schema}"."{_ReceiptsTable}"(
                 "operation_id" UUID PRIMARY KEY NOT NULL,
@@ -325,7 +330,9 @@ internal static class PostgreSqlMessagingSchemaContribution
                 "locked_until" TIMESTAMPTZ NULL,
                 "owner" VARCHAR({ownerColumnMaxLength}) NULL,
             	"status_name" VARCHAR(50) NOT NULL,
-                "message_id" VARCHAR(200) NOT NULL
+                "message_id" VARCHAR(200) NOT NULL,
+                -- See the received table's change marker.
+                "changed_at" TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp()
             );
 
             CREATE INDEX IF NOT EXISTS "idx_messaging_published_expires_at_status_name" ON {published}("expires_at","status_name");
@@ -339,6 +346,7 @@ internal static class PostgreSqlMessagingSchemaContribution
             CREATE INDEX IF NOT EXISTS "idx_messaging_published_version_expires_at_queued" ON {published} ("version","expires_at") WHERE "status_name" = 'Queued';
             -- #508 — see the received-table note above; create the final dashboard timeline/statistics index.
             CREATE INDEX IF NOT EXISTS "idx_messaging_published_status_name_added" ON {published} ("status_name","added") INCLUDE ("intent_type");
+            CREATE INDEX IF NOT EXISTS "idx_messaging_published_changed_at_id" ON {published} ("changed_at","id") INCLUDE ("status_name");
             """
         );
     }

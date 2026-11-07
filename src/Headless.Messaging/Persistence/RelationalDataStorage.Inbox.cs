@@ -153,6 +153,7 @@ internal sealed partial class RelationalDataStorage
                     _t.IsCurrentGeneration,
                     _t.IsInboxRecord,
                     _t.InboxRetentionSeconds,
+                    _t.ChangedAt,
                 ],
                 [
                     "@Id",
@@ -183,6 +184,7 @@ internal sealed partial class RelationalDataStorage
                     _t.True,
                     _t.True,
                     "@InboxRetentionSeconds",
+                    SqlDialectTokens.Now,
                 ],
                 [_t.Id],
                 InboxRootPredicate

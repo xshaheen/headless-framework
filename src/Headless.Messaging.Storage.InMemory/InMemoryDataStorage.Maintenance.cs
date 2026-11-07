@@ -303,6 +303,7 @@ internal sealed partial class InMemoryDataStorage
                 row.ExpiresAt = null;
                 row.LockedUntil = null;
                 row.Owner = null;
+                _StampChange(row);
             }
 
             requeued.Add(id);
@@ -394,6 +395,12 @@ internal sealed partial class InMemoryDataStorage
                 }
 
                 var leaseStart = candidate.ExpiresAt > now ? candidate.ExpiresAt.Value : now;
+                // A stale Queued row claimed again only changes its lease.
+                if (candidate.StatusName != StatusName.Queued)
+                {
+                    _StampChange(candidate);
+                }
+
                 candidate.StatusName = StatusName.Queued;
                 candidate.LockedUntil = leaseStart.Add(messagingOptions.Value.RetryPolicy.DispatchTimeout);
                 candidate.Owner = owner;

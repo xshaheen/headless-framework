@@ -138,6 +138,20 @@ public sealed class FaultInjectingDataStorage(IDataStorage inner, FaultScript fa
 
     public IMonitoringApi GetMonitoringApi() => Inner.GetMonitoringApi();
 
+    // Change reads serve the dashboard like the monitoring API, so they pass through without faults.
+    public ValueTask<DateTimeOffset?> GetLatestMessageChangeMarkerAsync(
+        CancellationToken cancellationToken = default
+    ) => Inner.GetLatestMessageChangeMarkerAsync(cancellationToken);
+
+    public ValueTask<IReadOnlyList<MessageChange>> ReadChangedMessagesAsync(
+        MessageChangeKind kind,
+        DateTimeOffset after,
+        DateTimeOffset through,
+        MessageChangePosition? resumeAfter,
+        int maxCount,
+        CancellationToken cancellationToken = default
+    ) => Inner.ReadChangedMessagesAsync(kind, after, through, resumeAfter, maxCount, cancellationToken);
+
     public IInboxOperationsApi GetInboxOperationsApi() => Inner.GetInboxOperationsApi();
 
     public IScheduledDeliveryOperationsApi GetScheduledDeliveryOperationsApi() =>

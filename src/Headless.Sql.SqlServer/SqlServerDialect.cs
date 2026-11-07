@@ -92,6 +92,12 @@ public sealed class SqlServerDialect : ISqlDialect
         return $"DATEADD(second, CONVERT(int, {seconds}), {instant})";
     }
 
+    public string NextChangeMarker(string previous)
+    {
+        // datetimeoffset(7) counts 100-nanosecond ticks. A CASE rather than GREATEST, which needs SQL Server 2022.
+        return $"CASE WHEN {SqlDialectTokens.Now} > {previous} THEN {SqlDialectTokens.Now} ELSE DATEADD(nanosecond, 100, {previous}) END";
+    }
+
     public string Limit(string limitParameter, string? offsetParameter = null)
     {
         return $"OFFSET {(offsetParameter is null ? "0" : "@" + offsetParameter)} ROWS FETCH NEXT @{limitParameter} ROWS ONLY";

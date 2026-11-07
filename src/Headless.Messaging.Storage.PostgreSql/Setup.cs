@@ -177,7 +177,8 @@ public static class SetupMessagingPostgreSql
                 serviceProvider,
                 options.Value.ToStorage(),
                 tableNames,
-                SequentialGuidType.Version7
+                SequentialGuidType.Version7,
+                holdsReceived: false
             );
 
             return new MessagingOutbox(outboxName, storage, initializer);

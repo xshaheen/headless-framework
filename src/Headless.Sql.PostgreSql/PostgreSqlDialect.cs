@@ -82,6 +82,11 @@ public sealed class PostgreSqlDialect : ISqlDialect
         return $"({instant} + ({seconds}) * INTERVAL '1 second')";
     }
 
+    public string NextChangeMarker(string previous)
+    {
+        return $"GREATEST({SqlDialectTokens.Now}, {previous} + INTERVAL '1 microsecond')";
+    }
+
     public string Limit(string limitParameter, string? offsetParameter = null)
     {
         return offsetParameter is null

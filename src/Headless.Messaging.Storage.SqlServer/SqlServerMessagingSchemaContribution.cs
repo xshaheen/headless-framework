@@ -145,6 +145,9 @@ internal static class SqlServerMessagingSchemaContribution
                     -- trailing spaces under every collation, so a key on the text columns would merge two ids
                     -- that differ only by trailing spaces; the hash compares bytes.
                     [ConsumerIdentityHash] [binary](32) NULL,
+                    -- The change marker every state-changing statement stamps from the statement clock; the
+                    -- default covers a row written outside the storage.
+                    [ChangedAt] [datetimeoffset](7) NOT NULL CONSTRAINT [DF_{receivedPrefix}_ChangedAt] DEFAULT TODATETIMEOFFSET(SYSUTCDATETIME(), 0),
                     CONSTRAINT [PK_{receivedPrefix}] PRIMARY KEY CLUSTERED ([Id] ASC)
                 );
             END;
@@ -215,6 +218,10 @@ internal static class SqlServerMessagingSchemaContribution
             -- carry migration DDL for superseded indexes.
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_StatusName_Added' AND object_id = OBJECT_ID(N'{received}'))
                 CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_StatusName_Added] ON {received} ([StatusName] ASC, [Added] ASC) INCLUDE ([IntentType]);
+
+            -- The dashboard's change read pages by (ChangedAt, Id) on every poll of every node.
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_ChangedAt_Id' AND object_id = OBJECT_ID(N'{received}'))
+                CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_ChangedAt_Id] ON {received} ([ChangedAt] ASC, [Id] ASC) INCLUDE ([StatusName]);
 
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_Version_NextRetryAt' AND object_id = OBJECT_ID(N'{received}'))
                 CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_Version_NextRetryAt] ON {received} ([Version] ASC,[IntentType] ASC,[NextRetryAt] ASC) INCLUDE ([Retries],[LockedUntil]) WHERE [NextRetryAt] IS NOT NULL;
@@ -325,6 +332,8 @@ internal static class SqlServerMessagingSchemaContribution
                     [Owner] [nvarchar]({ownerColumnMaxLength}) NULL,
                     [StatusName] [nvarchar](50) NOT NULL,
                     [MessageId] [nvarchar](200) NOT NULL,
+                    -- See the received table's change marker.
+                    [ChangedAt] [datetimeoffset](7) NOT NULL CONSTRAINT [DF_{publishedPrefix}_ChangedAt] DEFAULT TODATETIMEOFFSET(SYSUTCDATETIME(), 0),
                     CONSTRAINT [PK_{publishedPrefix}] PRIMARY KEY CLUSTERED ([Id] ASC)
                 );
             END;
@@ -338,6 +347,9 @@ internal static class SqlServerMessagingSchemaContribution
             -- #508 — see the received-table note above; create the final dashboard timeline/statistics index.
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{publishedPrefix}_StatusName_Added' AND object_id = OBJECT_ID(N'{published}'))
                 CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_StatusName_Added] ON {published} ([StatusName] ASC, [Added] ASC) INCLUDE ([IntentType]);
+
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{publishedPrefix}_ChangedAt_Id' AND object_id = OBJECT_ID(N'{published}'))
+                CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_ChangedAt_Id] ON {published} ([ChangedAt] ASC, [Id] ASC) INCLUDE ([StatusName]);
 
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{publishedPrefix}_Version_NextRetryAt' AND object_id = OBJECT_ID(N'{published}'))
                 CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_Version_NextRetryAt] ON {published} ([Version] ASC,[IntentType] ASC,[NextRetryAt] ASC) INCLUDE ([Retries],[LockedUntil]) WHERE [NextRetryAt] IS NOT NULL;
