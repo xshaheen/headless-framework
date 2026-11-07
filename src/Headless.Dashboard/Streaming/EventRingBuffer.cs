@@ -55,7 +55,14 @@ internal sealed class EventRingBuffer
 
     /// <summary>Appends one event and wakes every stream waiting for one.</summary>
     /// <returns>The event's sequence.</returns>
-    public long Append(StreamEventType type, string moduleId, DashboardChange? change = null, bool stale = false)
+    public long Append(
+        StreamEventType type,
+        string moduleId,
+        DashboardChange? change = null,
+        bool stale = false,
+        string? node = null,
+        IReadOnlyList<string>? unavailable = null
+    )
     {
         TaskCompletionSource appended;
         long sequence;
@@ -70,6 +77,8 @@ internal sealed class EventRingBuffer
                 ModuleId = moduleId,
                 Change = change,
                 Stale = stale,
+                Node = node,
+                Unavailable = unavailable,
             };
 
             appended = _appended;
@@ -173,9 +182,19 @@ internal sealed record StreamEvent
     public DashboardChange? Change { get; init; }
 
     /// <summary>
-    /// Gets, for a <see cref="StreamEventType.ModuleStale"/> event, whether the module's reads are failing.
+    /// Gets, for a <see cref="StreamEventType.ModuleStale"/> or <see cref="StreamEventType.NodeStale"/> event, whether
+    /// the module's or the node's reads are failing.
     /// </summary>
     public bool Stale { get; init; }
+
+    /// <summary>Gets the node a <see cref="StreamEventType.NodeStale"/> or <see cref="StreamEventType.NodeReset"/> event names.</summary>
+    public string? Node { get; init; }
+
+    /// <summary>
+    /// Gets, for a <see cref="StreamEventType.ModuleStale"/> event, the sources the module's reads could not reach, or
+    /// <see langword="null"/> when every source answered.
+    /// </summary>
+    public IReadOnlyList<string>? Unavailable { get; init; }
 }
 
 /// <summary>What a ring event reports.</summary>
@@ -187,8 +206,14 @@ internal enum StreamEventType
     /// <summary>A module's Needs you items may have changed.</summary>
     AttentionChanged,
 
-    /// <summary>A module's change reads started or stopped failing.</summary>
+    /// <summary>A module's change reads started or stopped failing, or reach fewer or more of its sources.</summary>
     ModuleStale,
+
+    /// <summary>A module reported that one node's data started or stopped being out of date.</summary>
+    NodeStale,
+
+    /// <summary>A module reported that one node's views must refetch.</summary>
+    NodeReset,
 
     /// <summary>The change reads restarted; never sent.</summary>
     Gap,

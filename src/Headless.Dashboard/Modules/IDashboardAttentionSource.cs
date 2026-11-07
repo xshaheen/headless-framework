@@ -29,6 +29,30 @@ public interface IDashboardAttentionSource
         DashboardAttentionRequest request,
         CancellationToken cancellationToken
     );
+
+    /// <summary>
+    /// Returns the module's items that need attention now, with the sources, such as stores or nodes, that did not
+    /// answer. The shell calls this member; by default it returns <see cref="GetAttentionAsync"/> with every source
+    /// answered.
+    /// </summary>
+    /// <remarks>
+    /// A module that reads several sources overrides it, so one source that fails leaves the others' items listed and
+    /// is named in <see cref="DashboardAttentionAnswer.UnavailableSources"/>, instead of the whole module showing
+    /// <c>Stale</c>. <see cref="GetAttentionAsync"/> then returns the same items.
+    /// </remarks>
+    /// <param name="request">The request: who is asking.</param>
+    /// <param name="cancellationToken">Cancelled when the request ends or the shell's timeout passes.</param>
+    /// <returns>The items, most urgent first, and the sources that did not answer.</returns>
+    async Task<DashboardAttentionAnswer> GetAttentionAnswerAsync(
+        DashboardAttentionRequest request,
+        CancellationToken cancellationToken
+    )
+    {
+        return new DashboardAttentionAnswer
+        {
+            Items = await GetAttentionAsync(request, cancellationToken).ConfigureAwait(false),
+        };
+    }
 }
 
 /// <summary>A request for a module's attention items.</summary>
@@ -38,6 +62,21 @@ public sealed record DashboardAttentionRequest
 {
     /// <summary>Gets the signed-in user the items are for.</summary>
     public required ClaimsPrincipal User { get; init; }
+}
+
+/// <summary>A module's attention items, and the sources that did not answer.</summary>
+/// <remarks>This record grows by <see langword="init"/> members.</remarks>
+[PublicAPI]
+public sealed record DashboardAttentionAnswer
+{
+    /// <summary>Gets the items, most urgent first.</summary>
+    public required IReadOnlyList<DashboardAttentionItem> Items { get; init; }
+
+    /// <summary>
+    /// Gets the names of the sources, such as stores or nodes, that did not answer, so <see cref="Items"/> covers only
+    /// the others; empty when every source answered.
+    /// </summary>
+    public IReadOnlyList<string> UnavailableSources { get; init; } = [];
 }
 
 /// <summary>One item in Needs you, such as "12 runs failed in the last hour".</summary>

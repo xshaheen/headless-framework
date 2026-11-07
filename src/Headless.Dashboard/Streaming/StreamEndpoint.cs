@@ -12,7 +12,8 @@ namespace Headless.Dashboard;
 
 /// <summary>
 /// <c>GET api/stream?topics=</c>: the browser's one live stream, as server-sent events. Topics are
-/// <c>{module}.{kind}</c>, comma-separated or repeated. The last event id comes from the <c>Last-Event-ID</c> header,
+/// <c>{module}.{kind}</c>, or <c>{module}.{kind}@{node}</c> for the objects one node's own store holds,
+/// comma-separated or repeated. The last event id comes from the <c>Last-Event-ID</c> header,
 /// or the <c>lastEventId</c> query parameter, which a new <c>EventSource</c> needs because it cannot set the header.
 /// </summary>
 /// <remarks>
@@ -87,22 +88,24 @@ internal static class StreamEndpoint
         var buffer = services.GetRequiredService<EventRingBuffer>();
         var epoch = services.GetRequiredService<NodeEpoch>();
 
+        var topics = _ParseTopics(context.Request.Query["topics"], viewable);
+
         // Opened before the start is resolved: a restart of the change readers records its gap first, so a reconnect
         // from before the restart gets reset.
-        var lease = services.GetRequiredService<ChangeReaderCoordinator>().Open();
+        var lease = services.GetRequiredService<ChangeReaderCoordinator>().Open(topics);
         context.Response.RegisterForDispose(lease);
 
         // The head is read before the stale modules: a module reported stale in between is then either in the
         // snapshot or in the ring after the stream's position.
         var start = _ResolveStart(_LastEventId(context.Request), buffer, epoch);
-        var staleModules = services.GetRequiredService<DashboardEventPublisher>().StaleModules();
+        var health = services.GetRequiredService<DashboardEventPublisher>().Health();
 
         var settings = new StreamConnectionSettings
         {
             Start = start,
-            Topics = _ParseTopics(context.Request.Query["topics"], viewable),
+            Topics = topics,
             ViewableModules = viewable,
-            StaleModules = staleModules,
+            Health = health,
             User = user,
             CloseAfter = closeAfter,
             HeartbeatInterval = options.HeartbeatInterval,
@@ -165,11 +168,14 @@ internal static class StreamEndpoint
             foreach (var topic in parts)
             {
                 var separator = topic.IndexOf('.', StringComparison.Ordinal);
+                var node = topic.IndexOf('@', StringComparison.Ordinal);
 
                 if (
                     topic.Length > _MaxTopicLength
                     || separator <= 0
                     || separator == topic.Length - 1
+                    // A node topic names its kind and its node: messaging.received@node-b.
+                    || (node >= 0 && (node <= separator + 1 || node == topic.Length - 1))
                     || !viewable.Contains(topic[..separator])
                     || topics.Contains(topic, StringComparer.Ordinal)
                 )

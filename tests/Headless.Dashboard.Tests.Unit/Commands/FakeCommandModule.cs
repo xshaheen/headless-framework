@@ -13,8 +13,12 @@ namespace Tests.Commands;
 internal sealed class FakeCommandModule(FakeRunStore store)
     : IDashboardModule,
         IDashboardCommandSource,
-        IDashboardOperationRunner
+        IDashboardOperationRunner,
+        IDashboardPeerAccess
 {
+    /// <summary>The host policy a peer call to this module must pass.</summary>
+    public const string PeersPolicy = "DiagPeers";
+
     public const string Requeue = "diag.requeue";
     public const string RetryLater = "diag.retry-later";
     public const string Export = "diag.export";
@@ -25,6 +29,10 @@ internal sealed class FakeCommandModule(FakeRunStore store)
     public string Id => "diag";
 
     public string DisplayName => "Diagnostics";
+
+    public string PeerAuthenticationScheme => PeerKeyHandler.SchemeName;
+
+    public string PeerPolicy => PeersPolicy;
 
     public DashboardModuleAssets Assets { get; } =
         new()

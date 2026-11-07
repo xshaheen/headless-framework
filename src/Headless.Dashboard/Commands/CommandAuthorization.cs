@@ -23,6 +23,10 @@ namespace Headless.Dashboard;
 ///   <item><description>Otherwise, the module's operate policy.</description></item>
 /// </list>
 /// <para>
+/// A call the module's <see cref="IDashboardPeerAccess"/> scheme admitted passes every command check: the module's peer
+/// policy authorized it, and the node that forwarded it checked the permission for its own user.
+/// </para>
+/// <para>
 /// Policies apply under host authentication only. Basic and API-key authentication share one credential for every
 /// module, so an authenticated user may run every command, and no authentication opens every command to everyone.
 /// </para>
@@ -42,6 +46,12 @@ internal static class CommandAuthorization
     /// <exception cref="InvalidOperationException">A module or the shell names a policy the host does not register.</exception>
     public static async Task<string?> GetRefusalAsync(HttpContext context, string moduleId, DashboardCommand command)
     {
+        // A peer call passed the module's peer policy instead; the node that forwarded it checked its own user.
+        if (DashboardPeerAdmission.IsAdmitted(context, moduleId))
+        {
+            return null;
+        }
+
         var services = context.RequestServices;
         var permissions = services.GetRequiredService<DashboardPermissions>();
         var mode = services

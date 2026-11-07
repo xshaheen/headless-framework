@@ -6,7 +6,9 @@ export interface StreamChange {
   module: string
   kind: string
   id: string
-  /** `{module}.{kind}`: the topic the change was sent on. */
+  /** The node whose own store holds the object; absent when every node shares the module's store. */
+  node?: string
+  /** `{module}.{kind}`, or `{module}.{kind}@{node}` for an object with a node: the topic the change was sent on. */
   topic: string
   /** The object's version; a change whose version the view already holds, or an older one, is ignored. */
   version: string
@@ -22,14 +24,19 @@ export interface StreamEventMap {
   reset: Record<string, never>
   change: StreamChange
   'attention.changed': { module: string }
-  'module.stale': { module: string; stale: boolean }
+  /** `unavailable` names the sources the module's reads could not reach while it stays live. */
+  'module.stale': { module: string; stale: boolean; unavailable?: string[] }
+  /** One node's data, on a stream subscribed to a `{module}.{kind}@{node}` topic, went out of date or recovered. */
+  'node.stale': { module: string; node: string; stale: boolean }
+  /** One node's views refetch. */
+  'node.reset': { module: string; node: string }
 }
 
 export type StreamEventName = keyof StreamEventMap
 
 /** The live stream a view subscribes through: the shell's shared client, or a fake in tests. */
 export interface DashboardStream {
-  /** Adds topics (`{module}.{kind}`) this tab needs; returns the call that removes them again. */
+  /** Adds topics (`{module}.{kind}`, or `{module}.{kind}@{node}`) this tab needs; returns the call that removes them again. */
   subscribe(topics: readonly string[]): () => void
   on<K extends StreamEventName>(type: K, handler: (data: StreamEventMap[K]) => void): () => void
   getStatus(): StreamStatus

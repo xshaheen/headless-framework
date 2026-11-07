@@ -14,14 +14,17 @@ namespace Headless.Dashboard;
 /// <remarks>
 /// <para>
 /// Shell events are <c>subscribed</c> (the topics now live), <c>reset</c> (refetch every view: events were missed),
-/// <c>heartbeat</c>, <c>module.stale</c>, and <c>attention.changed</c>; a module's change is a <c>change</c> event.
+/// <c>heartbeat</c>, <c>module.stale</c>, <c>attention.changed</c>, <c>node.stale</c>, and <c>node.reset</c>; a module's
+/// change is a <c>change</c> event.
 /// Every event a ring position stands behind carries the id <c>{epoch}:{sequence}</c>, heartbeats included, so a
 /// reconnect resumes from the last position this stream reached, even through events it filtered out.
 /// </para>
 /// <para>
-/// A change event goes only to a user who may view its module and whose topics include <c>{module}.{kind}</c>, and its
-/// projection passes the module's payload formatter first. <c>module.stale</c> and <c>attention.changed</c> go to
-/// every user who may view the module.
+/// A change event goes only to a user who may view its module and whose topics include its topic exactly:
+/// <c>{module}.{kind}</c>, or <c>{module}.{kind}@{node}</c> for an object with a node, so a stream subscribed to one
+/// node never receives another node's changes. Its projection passes the module's payload formatter first.
+/// <c>module.stale</c> and <c>attention.changed</c> go to every user who may view the module; <c>node.stale</c> and
+/// <c>node.reset</c> go only to a stream subscribed to a topic of that module for that node.
 /// </para>
 /// </remarks>
 internal sealed class StreamConnection(
@@ -39,6 +42,8 @@ internal sealed class StreamConnection(
     internal const string ChangeEvent = "change";
     internal const string ModuleStaleEvent = "module.stale";
     internal const string AttentionChangedEvent = "attention.changed";
+    internal const string NodeStaleEvent = "node.stale";
+    internal const string NodeResetEvent = "node.reset";
 
     /// <summary>The most ring events one read hands the stream before it writes them.</summary>
     private const int _ReadBatch = 256;
@@ -76,12 +81,21 @@ internal sealed class StreamConnection(
             yield return _Item(_EmptyData, ResetEvent, position);
         }
 
-        // Modules already stale when the stream opened reported it before this stream's position.
-        foreach (var moduleId in settings.StaleModules)
+        // Modules and nodes already out of date when the stream opened reported it before this stream's position.
+        foreach (var module in settings.Health.Modules)
         {
-            if (settings.ViewableModules.Contains(moduleId))
+            if (settings.ViewableModules.Contains(module.ModuleId))
             {
-                yield return _Item(_Serialize(new StaleData(moduleId, Stale: true)), ModuleStaleEvent, position);
+                var data = new StaleData(module.ModuleId, module.Stale, module.Unavailable);
+                yield return _Item(_Serialize(data), ModuleStaleEvent, position);
+            }
+        }
+
+        foreach (var (moduleId, node) in settings.Health.StaleNodes)
+        {
+            if (_WatchesNode(moduleId, node))
+            {
+                yield return _Item(_Serialize(new NodeData(moduleId, node, Stale: true)), NodeStaleEvent, position);
             }
         }
 
@@ -145,7 +159,20 @@ internal sealed class StreamConnection(
 
         if (item.Type == StreamEventType.ModuleStale)
         {
-            return _Item(_Serialize(new StaleData(item.ModuleId, item.Stale)), ModuleStaleEvent, item.Sequence);
+            var stale = new StaleData(item.ModuleId, item.Stale, item.Unavailable);
+            return _Item(_Serialize(stale), ModuleStaleEvent, item.Sequence);
+        }
+
+        if (item.Type is StreamEventType.NodeStale or StreamEventType.NodeReset)
+        {
+            if (item.Node is not { } node || !_WatchesNode(item.ModuleId, node))
+            {
+                return null;
+            }
+
+            return item.Type == StreamEventType.NodeStale
+                ? _Item(_Serialize(new NodeData(item.ModuleId, node, item.Stale)), NodeStaleEvent, item.Sequence)
+                : _Item(_Serialize(new NodeData(item.ModuleId, node, Stale: null)), NodeResetEvent, item.Sequence);
         }
 
         if (item.Change is not { } change)
@@ -162,13 +189,47 @@ internal sealed class StreamConnection(
         }
 
         var projection = await _FormatAsync(change, cancellationToken).ConfigureAwait(false);
-        var data = new ChangeData(target.Module, target.Kind, target.Id, topic, change.Version, projection);
+        var data = new ChangeData(
+            target.Module,
+            target.Kind,
+            target.Id,
+            target.Node,
+            topic,
+            change.Version,
+            projection
+        );
 
         return _Item(_Serialize(data), ChangeEvent, item.Sequence);
     }
 
-    /// <summary>The topic of <paramref name="target"/>'s changes: <c>{module}.{kind}</c>.</summary>
-    internal static string Topic(ObjectRef target) => target.Module + "." + target.Kind;
+    /// <summary>
+    /// The topic of <paramref name="target"/>'s changes: <c>{module}.{kind}</c>, or <c>{module}.{kind}@{node}</c> when
+    /// the object names its node.
+    /// </summary>
+    internal static string Topic(ObjectRef target)
+    {
+        return target.Node is { } node
+            ? target.Module + "." + target.Kind + "@" + node
+            : target.Module + "." + target.Kind;
+    }
+
+    // Whether the stream subscribes to a topic of the module for the node: {module}.{kind}@{node} for any kind.
+    private bool _WatchesNode(string moduleId, string node)
+    {
+        foreach (var topic in settings.Topics)
+        {
+            if (
+                topic.Length > moduleId.Length + node.Length + 2
+                && topic.StartsWith(moduleId + ".", StringComparison.Ordinal)
+                && topic.EndsWith("@" + node, StringComparison.Ordinal)
+            )
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     // The projection is a payload like any other: redaction in the browser is not redaction, so it passes the module's
     // formatter for this user, and a projection the formatter cannot turn back into JSON is withheld, which makes the
@@ -243,12 +304,23 @@ internal sealed class StreamConnection(
 
     private sealed record ModuleData(string Module);
 
-    private sealed record StaleData(string Module, bool Stale);
+    private sealed record StaleData(
+        string Module,
+        bool Stale,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? Unavailable
+    );
+
+    private sealed record NodeData(
+        string Module,
+        string Node,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Stale
+    );
 
     private sealed record ChangeData(
         string Module,
         string Kind,
         string Id,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Node,
         string Topic,
         string Version,
         JsonElement? Projection
@@ -267,8 +339,8 @@ internal sealed record StreamConnectionSettings
     /// <summary>Gets the modules the user may view.</summary>
     public required IReadOnlySet<string> ViewableModules { get; init; }
 
-    /// <summary>Gets the modules whose change reads were failing when the stream opened.</summary>
-    public required IReadOnlyList<string> StaleModules { get; init; }
+    /// <summary>Gets the modules and nodes that were out of date when the stream opened.</summary>
+    public required DashboardStreamHealth Health { get; init; }
 
     /// <summary>Gets the signed-in user, for whom projections are formatted.</summary>
     public required ClaimsPrincipal User { get; init; }

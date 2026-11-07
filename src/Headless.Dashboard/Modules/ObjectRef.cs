@@ -21,6 +21,13 @@ public sealed record ObjectRef
 
     /// <summary>Gets the object's id within its kind.</summary>
     public required string Id { get; init; }
+
+    /// <summary>
+    /// Gets the node whose own store holds the object, or <see langword="null"/> when the module's store is shared by
+    /// every node. A change to an object with a node is sent on the topic <c>{module}.{kind}@{node}</c> only.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Node { get; init; }
 }
 
 /// <summary>

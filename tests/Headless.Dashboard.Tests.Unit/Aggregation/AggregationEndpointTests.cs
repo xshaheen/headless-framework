@@ -660,6 +660,79 @@ public sealed class AggregationEndpointTests : TestBase
         otherCalled.Should().BeFalse();
     }
 
+    [Fact]
+    public async Task should_pass_a_partial_count_through_with_its_unavailable_sources_and_keep_stale_for_a_failed_module()
+    {
+        _diagA.Counts = _ =>
+            _Counts(
+                ("Failed", new DashboardCount { Count = 48_120, UnavailableSources = ["outbox-2"] }),
+                ("Queued", new DashboardCount { Count = 3 })
+            );
+        _diagB.Counts = _ => throw new InvalidOperationException("store down");
+
+        await using var app = await _StartAsync();
+        using var client = app.GetTestClient();
+
+        using var response = await client.GetAsync("/dash/api/counts?product=platform", AbortToken);
+
+        var body = await _ReadAsync(response);
+        var counts = body.GetProperty("counts");
+        // A partial count above the cap still stops at it, and keeps the sources it leaves out.
+        _Count(counts, "Failed").Should().Be((10_000, true));
+        _Strings(counts.GetProperty("Failed").GetProperty("unavailable")).Should().Equal("outbox-2");
+        counts.GetProperty("Queued").TryGetProperty("unavailable", out _).Should().BeFalse();
+        body.GetProperty("stale")
+            .EnumerateArray()
+            .Select(m => m.GetProperty("id").GetString())
+            .Should()
+            .Equal("diag-b");
+    }
+
+    [Fact]
+    public async Task should_list_a_partial_modules_attention_and_overview_with_its_unavailable_sources_and_not_as_stale()
+    {
+        _diagB.UnavailableSources = ["node-c"];
+        _diagB.Attention = _ =>
+            Task.FromResult<IReadOnlyList<DashboardAttentionItem>>([
+                new DashboardAttentionItem
+                {
+                    Id = "i-1",
+                    GroupKey = "g",
+                    Title = "Failed on node-b",
+                    Count = 2,
+                },
+            ]);
+        _diagB.Overview = _ =>
+            Task.FromResult<IReadOnlyList<DashboardFigure>>([
+                new DashboardFigure
+                {
+                    Id = "f1",
+                    Label = "Received",
+                    Value = 7,
+                },
+            ]);
+
+        await using var app = await _StartAsync();
+        using var client = app.GetTestClient();
+
+        using var needsYou = await client.GetAsync("/dash/api/needs-you", AbortToken);
+        using var overview = await client.GetAsync("/dash/api/overview", AbortToken);
+
+        var attention = _ModuleSection(await _ReadAsync(needsYou), "diag-b");
+        attention.GetProperty("stale").GetBoolean().Should().BeFalse();
+        attention.GetProperty("items")[0].GetProperty("id").GetString().Should().Be("i-1");
+        _Strings(attention.GetProperty("unavailable")).Should().Equal("node-c");
+
+        var figures = _ModuleSection(await _ReadAsync(overview), "diag-b");
+        figures.GetProperty("stale").GetBoolean().Should().BeFalse();
+        figures.GetProperty("items")[0].GetProperty("id").GetString().Should().Be("f1");
+        _Strings(figures.GetProperty("unavailable")).Should().Equal("node-c");
+
+        // A module that answers through the default members, as the Jobs module does, answers as it always has.
+        var whole = _ModuleSection(await _ReadAsync(overview), "diag-a");
+        whole.TryGetProperty("unavailable", out _).Should().BeFalse();
+    }
+
     [Theory]
     [InlineData("billing")]
     [InlineData("jobs")]
@@ -712,6 +785,16 @@ public sealed class AggregationEndpointTests : TestBase
             counts.ToDictionary(c => c.Key, c => c.Count, StringComparer.Ordinal)
         );
     }
+
+    private static JsonElement _ModuleSection(JsonElement body, string moduleId)
+    {
+        return body.GetProperty("modules")
+            .EnumerateArray()
+            .Single(m => string.Equals(m.GetProperty("id").GetString(), moduleId, StringComparison.Ordinal));
+    }
+
+    private static IEnumerable<string> _Strings(JsonElement array) =>
+        array.EnumerateArray().Select(static item => item.GetString()!);
 
     private static (long Count, bool Capped) _Count(JsonElement counts, string key)
     {

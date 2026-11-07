@@ -44,6 +44,52 @@ public interface IDashboardOverviewSource
     {
         return Task.FromResult<IReadOnlyList<DashboardScheduleTrack>>([]);
     }
+
+    /// <summary>
+    /// Returns the module's Overview figures and schedule tracks, with the sources, such as stores or nodes, that did
+    /// not answer. The shell calls this member; by default it returns <see cref="GetOverviewAsync"/> and
+    /// <see cref="GetScheduleAsync"/> with every source answered.
+    /// </summary>
+    /// <remarks>
+    /// A module that reads several sources overrides it, so one source that fails leaves the others' figures shown and
+    /// is named in <see cref="DashboardOverviewAnswer.UnavailableSources"/>, instead of the whole module showing
+    /// <c>Stale</c>.
+    /// </remarks>
+    /// <param name="request">The request: who is asking.</param>
+    /// <param name="cancellationToken">Cancelled when the request ends or the shell's timeout passes.</param>
+    /// <returns>The figures, the tracks, and the sources that did not answer.</returns>
+    async Task<DashboardOverviewAnswer> GetOverviewAnswerAsync(
+        DashboardOverviewRequest request,
+        CancellationToken cancellationToken
+    )
+    {
+        var figures = GetOverviewAsync(request, cancellationToken);
+        var tracks = GetScheduleAsync(request, cancellationToken);
+
+        return new DashboardOverviewAnswer
+        {
+            Figures = await figures.ConfigureAwait(false),
+            Tracks = await tracks.ConfigureAwait(false),
+        };
+    }
+}
+
+/// <summary>A module's Overview figures and schedule tracks, and the sources that did not answer.</summary>
+/// <remarks>This record grows by <see langword="init"/> members.</remarks>
+[PublicAPI]
+public sealed record DashboardOverviewAnswer
+{
+    /// <summary>Gets at most three figures, in display order.</summary>
+    public required IReadOnlyList<DashboardFigure> Figures { get; init; }
+
+    /// <summary>Gets the schedule tracks, in display order.</summary>
+    public required IReadOnlyList<DashboardScheduleTrack> Tracks { get; init; }
+
+    /// <summary>
+    /// Gets the names of the sources, such as stores or nodes, that did not answer, so the figures and tracks cover
+    /// only the others; empty when every source answered.
+    /// </summary>
+    public IReadOnlyList<string> UnavailableSources { get; init; } = [];
 }
 
 /// <summary>A request for a module's Overview figures.</summary>

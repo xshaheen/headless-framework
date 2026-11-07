@@ -112,6 +112,31 @@ describe('stream client', () => {
     ])
   })
 
+  it('passes node stale and reset events, and a module’s unavailable sources, through as the server sent them', async () => {
+    const leader = openTab()
+    const seen: unknown[] = []
+    leader.on('node.stale', (event) => seen.push(event))
+    leader.on('node.reset', (event) => seen.push(event))
+    leader.on('module.stale', (event) => seen.push(event))
+    leader.subscribe(['messaging.received@node-b'])
+    await vi.advanceTimersByTimeAsync(300)
+
+    expect(sources.open[0]!.param('topics')).toBe('messaging.received@node-b')
+
+    sources.open[0]!.emit('node.stale', { module: 'messaging', node: 'node-b', stale: true }, 'e1:1')
+    sources.open[0]!.emit('node.reset', { module: 'messaging', node: 'node-b' }, 'e1:2')
+    sources.open[0]!.emit('module.stale', { module: 'messaging', stale: false, unavailable: ['outbox-2'] }, 'e1:3')
+    // Malformed events are dropped: a node event without its node, and a stale event without its state.
+    sources.open[0]!.emit('node.reset', { module: 'messaging' }, 'e1:4')
+    sources.open[0]!.emit('node.stale', { module: 'messaging', node: 'node-b' }, 'e1:5')
+
+    expect(seen).toEqual([
+      { module: 'messaging', node: 'node-b', stale: true },
+      { module: 'messaging', node: 'node-b' },
+      { module: 'messaging', stale: false, unavailable: ['outbox-2'] },
+    ])
+  })
+
   it('marks itself stale after 5 s without an event, and live on the next one', async () => {
     const leader = openTab()
     const follower = openTab()

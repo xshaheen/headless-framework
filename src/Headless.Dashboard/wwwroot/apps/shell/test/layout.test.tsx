@@ -180,6 +180,24 @@ describe('shell layout', () => {
     expect(within(sidebar).getByRole('link', { name: /All runs/ }).getAttribute('aria-current')).toBeNull()
   })
 
+  it('shows a count that some sources did not answer as N+, naming them in its accessible name', async () => {
+    const api: ApiHandler = (request) =>
+      request.path === 'counts'
+        ? {
+            product: 'jobs',
+            counts: { Failed: { count: 48120, capped: false, unavailable: ['outbox-2'] }, Queued: { count: 12, capped: false } },
+            stale: [],
+          }
+        : emptyAggregates(request)
+    renderShell(twoProducts(), { path: '/jobs/runs', files: moduleFiles(twoProducts().modules), api })
+
+    const sidebar = await screen.findByRole('navigation', { name: 'Jobs' })
+    const failed = await within(sidebar).findByRole('link', { name: /^Failed\s?48,120\+ · outbox-2 unavailable$/ })
+    expect(failed.querySelector('.hd-side-count > [aria-hidden="true"]')?.textContent).toBe('48,120+')
+    expect(within(sidebar).getByRole('link', { name: /Queued/ }).textContent).toBe('Queued12')
+    expect(within(sidebar).queryByRole('status')?.textContent ?? '').toBe('')
+  })
+
   it('shows an en dash in each count when the counts request fails, and announces it once', async () => {
     const api: ApiHandler = (request) => {
       if (request.path === 'counts') {

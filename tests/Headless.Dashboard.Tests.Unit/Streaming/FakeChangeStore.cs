@@ -32,6 +32,9 @@ internal sealed class FakeChangeStore(TimeProvider time)
         set => _failing = value;
     }
 
+    /// <summary>Gets or sets the sources every read reports it could not reach, as a store spread over nodes does.</summary>
+    public IReadOnlyList<string> UnavailableSources { get; set; } = [];
+
     public int StartCount => Volatile.Read(ref _startCount);
 
     public int ReadCount => Volatile.Read(ref _readCount);
@@ -126,7 +129,14 @@ internal sealed class FakeChangeStore(TimeProvider time)
 
             if (_scripted.TryGetValue(module, out var queue) && queue.TryDequeue(out var batch))
             {
-                return Task.FromResult(new DashboardChangeBatch { Changes = batch, Cursor = next });
+                return Task.FromResult(
+                    new DashboardChangeBatch
+                    {
+                        Changes = batch,
+                        Cursor = next,
+                        UnavailableSources = UnavailableSources,
+                    }
+                );
             }
 
             var from = long.Parse(cursor, CultureInfo.InvariantCulture) - Overlap;
@@ -136,7 +146,14 @@ internal sealed class FakeChangeStore(TimeProvider time)
                 .Select(static entry => entry.Change)
                 .ToArray();
 
-            return Task.FromResult(new DashboardChangeBatch { Changes = changes, Cursor = next });
+            return Task.FromResult(
+                new DashboardChangeBatch
+                {
+                    Changes = changes,
+                    Cursor = next,
+                    UnavailableSources = UnavailableSources,
+                }
+            );
         }
     }
 

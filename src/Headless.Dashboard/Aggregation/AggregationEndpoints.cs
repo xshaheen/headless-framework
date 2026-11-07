@@ -12,7 +12,8 @@ namespace Headless.Dashboard;
 /// The endpoints that gather one answer from every module: <c>GET api/needs-you</c>, <c>GET api/overview</c>,
 /// <c>GET api/resolve?q=</c> (a pasted id), <c>GET api/related?module=&amp;kind=&amp;id=</c> (one object's related
 /// objects), and <c>GET api/counts?product=</c> (one product's sidebar counts). Each lists only the modules the user
-/// may view; a module that times out or fails answers <c>stale: true</c> in its place.
+/// may view; a module that times out or fails answers <c>stale: true</c> in its place, and a module that answers without
+/// some of its sources names them in <c>unavailable</c>.
 /// </summary>
 internal static class AggregationEndpoints
 {
@@ -64,10 +65,10 @@ internal static class AggregationEndpoints
     {
         var user = context.User;
         var answers = await _FanOut(context)
-            .CallAsync<IDashboardAttentionSource, IReadOnlyList<DashboardAttentionItem>>(
+            .CallAsync<IDashboardAttentionSource, DashboardAttentionAnswer>(
                 await _AccessAsync(context).ConfigureAwait(false),
                 "attention",
-                (source, token) => source.GetAttentionAsync(new DashboardAttentionRequest { User = user }, token),
+                (source, token) => source.GetAttentionAnswerAsync(new DashboardAttentionRequest { User = user }, token),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -78,7 +79,11 @@ internal static class AggregationEndpoints
         {
             var commands = await _RecommendedCommandsAsync(context, answer).ConfigureAwait(false);
             modules.Add(
-                _Section(answer, items => items.Select(item => _ToAttentionResponse(item, commands)).ToArray())
+                _Section(
+                    answer,
+                    result => result.Items.Select(item => _ToAttentionResponse(item, commands)).ToArray(),
+                    result => result.UnavailableSources
+                )
             );
         }
 
@@ -89,17 +94,11 @@ internal static class AggregationEndpoints
     {
         var request = new DashboardOverviewRequest { User = context.User };
         var answers = await _FanOut(context)
-            .CallAsync<IDashboardOverviewSource, ModuleOverview>(
+            .CallAsync<IDashboardOverviewSource, DashboardOverviewAnswer>(
                 await _AccessAsync(context).ConfigureAwait(false),
                 "overview",
-                async (source, token) =>
-                {
-                    // One call per module under one timeout, so a module's figures and strip go stale together.
-                    var figures = source.GetOverviewAsync(request, token);
-                    var tracks = source.GetScheduleAsync(request, token);
-
-                    return new ModuleOverview(await figures.ConfigureAwait(false), await tracks.ConfigureAwait(false));
-                },
+                // One call per module under one timeout, so a module's figures and strip go stale together.
+                (source, token) => source.GetOverviewAnswerAsync(request, token),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -111,9 +110,17 @@ internal static class AggregationEndpoints
                     answer.Module.DisplayName,
                     Stale: false,
                     [.. overview.Figures.Take(_MaxFigures)],
-                    overview.Tracks
+                    overview.Tracks,
+                    _Unavailable(overview.UnavailableSources)
                 )
-                : new OverviewSection(answer.Module.Id, answer.Module.DisplayName, answer.Stale, [], [])
+                : new OverviewSection(
+                    answer.Module.Id,
+                    answer.Module.DisplayName,
+                    answer.Stale,
+                    [],
+                    [],
+                    Unavailable: null
+                )
         );
 
         return Results.Json(new OverviewResponse([.. modules]), ShellJson.Web);
@@ -141,7 +148,11 @@ internal static class AggregationEndpoints
             .ConfigureAwait(false);
 
         var modules = answers.Select(answer =>
-            _Section(answer, objects => objects.Select(o => _ToObjectResponse(o, traceTemplate)).ToArray())
+            _Section(
+                answer,
+                objects => objects.Select(o => _ToObjectResponse(o, traceTemplate)).ToArray(),
+                static _ => []
+            )
         );
 
         return Results.Json(new ModulesResponse<ObjectResponse>([.. modules]), ShellJson.Web);
@@ -262,7 +273,10 @@ internal static class AggregationEndpoints
             foreach (var (key, value) in result)
             {
                 var (count, capped) = CapCount(value.Count);
-                counts.TryAdd(key, new CountResponse(count, capped || value.Capped));
+                counts.TryAdd(
+                    key,
+                    new CountResponse(count, capped || value.Capped, _Unavailable(value.UnavailableSources))
+                );
             }
         }
 
@@ -332,12 +346,34 @@ internal static class AggregationEndpoints
 
     private static ModuleSection<TItem> _Section<TResult, TItem>(
         ModuleAnswer<TResult> answer,
-        Func<TResult, IReadOnlyList<TItem>> project
+        Func<TResult, IReadOnlyList<TItem>> project,
+        Func<TResult, IReadOnlyList<string>> unavailable
     )
     {
-        IReadOnlyList<TItem> items = answer is { Stale: false, Result: { } result } ? project(result) : [];
+        if (answer is not { Stale: false, Result: { } result })
+        {
+            return new ModuleSection<TItem>(
+                answer.Module.Id,
+                answer.Module.DisplayName,
+                answer.Stale,
+                [],
+                Unavailable: null
+            );
+        }
 
-        return new ModuleSection<TItem>(answer.Module.Id, answer.Module.DisplayName, answer.Stale, items);
+        return new ModuleSection<TItem>(
+            answer.Module.Id,
+            answer.Module.DisplayName,
+            Stale: false,
+            project(result),
+            _Unavailable(unavailable(result))
+        );
+    }
+
+    // Left out of the answer when every source answered, so a module that never reports one answers as it always has.
+    private static IReadOnlyList<string>? _Unavailable(IReadOnlyList<string>? sources)
+    {
+        return sources is null or { Count: 0 } ? null : sources;
     }
 
     /// <summary>
@@ -347,12 +383,15 @@ internal static class AggregationEndpoints
     /// </summary>
     private static async Task<Dictionary<string, JsonElement>> _RecommendedCommandsAsync(
         HttpContext context,
-        ModuleAnswer<IReadOnlyList<DashboardAttentionItem>> answer
+        ModuleAnswer<DashboardAttentionAnswer> answer
     )
     {
         var described = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
 
-        if (answer is not { Stale: false, Result: { } items } || answer.Module.Module is not IDashboardOperationRunner)
+        if (
+            answer is not { Stale: false, Result.Items: { } items }
+            || answer.Module.Module is not IDashboardOperationRunner
+        )
         {
             return described;
         }
@@ -453,11 +492,16 @@ internal static class AggregationEndpoints
 
     private sealed record ModulesResponse<TItem>(IReadOnlyList<ModuleSection<TItem>> Modules);
 
-    private sealed record ModuleSection<TItem>(string Id, string DisplayName, bool Stale, IReadOnlyList<TItem> Items);
-
-    private sealed record ModuleOverview(
-        IReadOnlyList<DashboardFigure> Figures,
-        IReadOnlyList<DashboardScheduleTrack> Tracks
+    /// <summary>
+    /// One module's part of an answer: <c>stale</c> when the whole module failed, and <c>unavailable</c> naming the
+    /// sources that did not answer when the module answered in part.
+    /// </summary>
+    private sealed record ModuleSection<TItem>(
+        string Id,
+        string DisplayName,
+        bool Stale,
+        IReadOnlyList<TItem> Items,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? Unavailable
     );
 
     private sealed record OverviewResponse(IReadOnlyList<OverviewSection> Modules);
@@ -468,7 +512,8 @@ internal static class AggregationEndpoints
         string DisplayName,
         bool Stale,
         IReadOnlyList<DashboardFigure> Items,
-        IReadOnlyList<DashboardScheduleTrack> Tracks
+        IReadOnlyList<DashboardScheduleTrack> Tracks,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? Unavailable
     );
 
     private sealed record AttentionItemResponse(
@@ -516,5 +561,10 @@ internal static class AggregationEndpoints
         IReadOnlyList<StaleModuleResponse> Stale
     );
 
-    private sealed record CountResponse(long Count, bool Capped);
+    /// <summary>One count; <c>unavailable</c> names the sources it leaves out, so the shell shows <c>N+</c>.</summary>
+    private sealed record CountResponse(
+        long Count,
+        bool Capped,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? Unavailable
+    );
 }

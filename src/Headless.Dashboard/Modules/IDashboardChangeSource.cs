@@ -73,6 +73,13 @@ public sealed record DashboardChangeBatch
 
     /// <summary>Gets the cursor to read from next, in the module's own format.</summary>
     public required string Cursor { get; init; }
+
+    /// <summary>
+    /// Gets the names of the sources, such as stores or nodes, the read could not reach, so <see cref="Changes"/>
+    /// covers only the others. A read that reaches some sources answers with them instead of throwing; the shell sends
+    /// the names with <c>module.stale</c> while the module stays live. Empty when every source answered.
+    /// </summary>
+    public IReadOnlyList<string> UnavailableSources { get; init; } = [];
 }
 
 /// <summary>One changed row, as live views patch it.</summary>

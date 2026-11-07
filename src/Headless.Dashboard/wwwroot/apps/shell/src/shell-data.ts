@@ -142,8 +142,8 @@ export function useResolve(query: string, enabled: boolean): Resolved | undefine
 /** How rarely the sidebar's counts refetch on live changes: a busy module would otherwise recount on every run. */
 const countsDebounceMs = 5_000
 
-/** A product's sidebar counts by count key. */
-export type ProductCounts = Readonly<Record<string, CappedCount>>
+/** A product's sidebar counts by count key; `unavailable` names the sources a partial count leaves out. */
+export type ProductCounts = Readonly<Record<string, CappedCount & { unavailable?: string[] }>>
 
 /**
  * The active product's sidebar counts, from one request, and the modules whose counts did not answer. They refetch
@@ -226,7 +226,7 @@ export function useProductCounts(product: string | undefined, topics: readonly s
     queryFn: async () => {
       last.current = Date.now()
       const answer = await api.request<{
-        counts: Record<string, { count: number; capped: boolean }>
+        counts: Record<string, { count: number; capped: boolean; unavailable?: string[] }>
         stale: { id: string; displayName: string }[]
       }>({
         method: 'GET',
@@ -236,7 +236,11 @@ export function useProductCounts(product: string | undefined, topics: readonly s
 
       return {
         counts: Object.fromEntries(
-          Object.entries(answer.counts).map(([key, count]) => [key, { value: count.count, capped: count.capped }]),
+          // A count that leaves sources out is a floor, so it reads `N+` as a capped one does.
+          Object.entries(answer.counts).map(([key, { count, capped, unavailable }]) => [
+            key,
+            { value: count, capped: capped || !!unavailable, unavailable },
+          ]),
         ) as ProductCounts,
         stale: answer.stale,
       }

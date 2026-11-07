@@ -11,8 +11,8 @@ namespace Headless.Dashboard;
 /// <remarks>
 /// A failed read marks the module's views <c>Stale</c> once and skips doubling numbers of intervals, up to
 /// <see cref="MaxSkippedIntervals"/>, before the next try with the same cursor; the first read that succeeds clears
-/// <c>Stale</c>. The reader's timer starts when the reader is created, so its intervals count from the stream that
-/// started it.
+/// <c>Stale</c>. A read that answers without some of the module's sources is a success that names them. The reader's
+/// timer starts when the reader is created, so its intervals count from the stream that started it.
 /// </remarks>
 internal sealed class ChangeReader : IDisposable
 {
@@ -108,6 +108,10 @@ internal sealed class ChangeReader : IDisposable
                         }
 
                         cursor = batch.Cursor;
+
+                        // A read that reached only some sources is still a success: the module stays live, and its
+                        // views name the sources it missed.
+                        _publisher.ReportUnavailable(_moduleId, batch.UnavailableSources ?? []);
                     }
 
                     // A reader that stopped mid-failure may have left the module marked stale after the stop forgot it,

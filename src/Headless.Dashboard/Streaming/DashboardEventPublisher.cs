@@ -27,6 +27,8 @@ internal sealed class DashboardEventPublisher(EventRingBuffer buffer, TimeProvid
     private readonly Queue<ObjectKey> _versionOrder = new();
     private readonly OrderedDictionary<PendingKey, PendingEvent> _pending = [];
     private readonly HashSet<string> _staleModules = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string[]> _unavailable = new(StringComparer.Ordinal);
+    private readonly HashSet<NodeKey> _staleNodes = [];
     private readonly EventRingBuffer _buffer = Argument.IsNotNull(buffer);
     private readonly TimeProvider _timeProvider = Argument.IsNotNull(timeProvider);
     private ITimer? _flushTimer;
@@ -42,6 +44,36 @@ internal sealed class DashboardEventPublisher(EventRingBuffer buffer, TimeProvid
         Accept(change);
     }
 
+    /// <inheritdoc />
+    public void PublishNodeStale(string moduleId, string node, bool stale)
+    {
+        Argument.IsNotNullOrEmpty(moduleId);
+        Argument.IsNotNullOrEmpty(node);
+
+        var key = new NodeKey(moduleId, node);
+
+        // Recorded before the event is appended, as a module's own stale state is, so a stream opening meanwhile
+        // either finds the node stale or receives the event.
+        lock (_lock)
+        {
+            if (stale ? !_staleNodes.Add(key) : !_staleNodes.Remove(key))
+            {
+                return;
+            }
+        }
+
+        _buffer.Append(StreamEventType.NodeStale, moduleId, stale: stale, node: node);
+    }
+
+    /// <inheritdoc />
+    public void PublishNodeReset(string moduleId, string node)
+    {
+        Argument.IsNotNullOrEmpty(moduleId);
+        Argument.IsNotNullOrEmpty(node);
+
+        _buffer.Append(StreamEventType.NodeReset, moduleId, node: node);
+    }
+
     /// <summary>
     /// Accepts a change from a module or a change reader: queues it for the next flush when its version is newer than
     /// the last one accepted for its object, and drops it otherwise.
@@ -55,7 +87,7 @@ internal sealed class DashboardEventPublisher(EventRingBuffer buffer, TimeProvid
             return;
         }
 
-        var key = new ObjectKey(target.Module, target.Kind, target.Id);
+        var key = new ObjectKey(target.Module, target.Kind, target.Id, target.Node);
 
         lock (_lock)
         {
@@ -76,7 +108,7 @@ internal sealed class DashboardEventPublisher(EventRingBuffer buffer, TimeProvid
             {
                 var attention = new PendingKey(
                     StreamEventType.AttentionChanged,
-                    new ObjectKey(target.Module, string.Empty, string.Empty)
+                    new ObjectKey(target.Module, string.Empty, string.Empty, Node: null)
                 );
                 _Queue(attention, new PendingEvent(target.Module, Change: null));
             }
@@ -89,10 +121,12 @@ internal sealed class DashboardEventPublisher(EventRingBuffer buffer, TimeProvid
     /// </summary>
     /// <remarks>
     /// The module's state is recorded before the event is appended, so a stream that reads the ring's head and then
-    /// <see cref="StaleModules"/> either finds the module stale or receives the event.
+    /// <see cref="Health"/> either finds the module stale or receives the event.
     /// </remarks>
     internal void ReportStale(string moduleId, bool stale)
     {
+        string[]? unavailable;
+
         lock (_lock)
         {
             if (stale)
@@ -103,9 +137,46 @@ internal sealed class DashboardEventPublisher(EventRingBuffer buffer, TimeProvid
             {
                 _staleModules.Remove(moduleId);
             }
+
+            unavailable = _unavailable.GetValueOrDefault(moduleId);
         }
 
-        _buffer.Append(StreamEventType.ModuleStale, moduleId, stale: stale);
+        _buffer.Append(StreamEventType.ModuleStale, moduleId, stale: stale, unavailable: unavailable);
+    }
+
+    /// <summary>
+    /// Reports the sources a module's last change read could not reach, so its live views name them while the module
+    /// stays live. Only a change from the last report reaches the streams.
+    /// </summary>
+    internal void ReportUnavailable(string moduleId, IReadOnlyList<string> sources)
+    {
+        bool stale;
+        string[]? unavailable;
+
+        lock (_lock)
+        {
+            var current = _unavailable.GetValueOrDefault(moduleId) ?? [];
+
+            if (current.SequenceEqual(sources, StringComparer.Ordinal))
+            {
+                return;
+            }
+
+            unavailable = sources.Count == 0 ? null : [.. sources];
+
+            if (unavailable is null)
+            {
+                _unavailable.Remove(moduleId);
+            }
+            else
+            {
+                _unavailable[moduleId] = unavailable;
+            }
+
+            stale = _staleModules.Contains(moduleId);
+        }
+
+        _buffer.Append(StreamEventType.ModuleStale, moduleId, stale: stale, unavailable: unavailable);
     }
 
     /// <summary>
@@ -117,6 +188,19 @@ internal sealed class DashboardEventPublisher(EventRingBuffer buffer, TimeProvid
         lock (_lock)
         {
             _staleModules.Remove(moduleId);
+            _unavailable.Remove(moduleId);
+        }
+    }
+
+    /// <summary>
+    /// Forgets that a node was stale when no stream watches it any more; the module reports the node afresh when one
+    /// does again.
+    /// </summary>
+    internal void ForgetNode(string moduleId, string node)
+    {
+        lock (_lock)
+        {
+            _staleNodes.Remove(new NodeKey(moduleId, node));
         }
     }
 
@@ -129,12 +213,28 @@ internal sealed class DashboardEventPublisher(EventRingBuffer buffer, TimeProvid
         }
     }
 
-    /// <summary>Returns the modules whose change reads are failing, so a stream that opens later shows them.</summary>
-    internal string[] StaleModules()
+    /// <summary>
+    /// Returns the modules whose change reads are failing or miss some sources, and the stale nodes, so a stream that
+    /// opens later shows them.
+    /// </summary>
+    internal DashboardStreamHealth Health()
     {
         lock (_lock)
         {
-            return [.. _staleModules];
+            var modules = new List<ModuleHealth>();
+
+            foreach (var moduleId in _staleModules.Union(_unavailable.Keys, StringComparer.Ordinal))
+            {
+                modules.Add(
+                    new ModuleHealth(
+                        moduleId,
+                        _staleModules.Contains(moduleId),
+                        _unavailable.GetValueOrDefault(moduleId)
+                    )
+                );
+            }
+
+            return new DashboardStreamHealth(modules, [.. _staleNodes.Select(static n => (n.Module, n.Node))]);
         }
     }
 
@@ -211,9 +311,25 @@ internal sealed class DashboardEventPublisher(EventRingBuffer buffer, TimeProvid
         }
     }
 
-    private readonly record struct ObjectKey(string Module, string Kind, string Id);
+    private readonly record struct ObjectKey(string Module, string Kind, string Id, string? Node);
+
+    private readonly record struct NodeKey(string Module, string Node);
 
     private readonly record struct PendingKey(StreamEventType Type, ObjectKey Object);
 
     private sealed record PendingEvent(string ModuleId, DashboardChange? Change);
 }
+
+/// <summary>What a stream that opens now must be told before the ring's events: the modules and nodes not live.</summary>
+/// <param name="Modules">The modules whose change reads are failing or miss some sources.</param>
+/// <param name="StaleNodes">The nodes their modules reported stale.</param>
+internal sealed record DashboardStreamHealth(
+    IReadOnlyList<ModuleHealth> Modules,
+    IReadOnlyList<(string Module, string Node)> StaleNodes
+);
+
+/// <summary>One module's change-read state.</summary>
+/// <param name="ModuleId">The module.</param>
+/// <param name="Stale">Whether its change reads are failing.</param>
+/// <param name="Unavailable">The sources its last read could not reach, or <see langword="null"/>.</param>
+internal sealed record ModuleHealth(string ModuleId, bool Stale, IReadOnlyList<string>? Unavailable);

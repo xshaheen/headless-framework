@@ -35,4 +35,29 @@ public interface IDashboardEventPublisher
     /// <paramref name="change"/>, its target, or its version is <see langword="null"/>.
     /// </exception>
     void Publish(DashboardChange change);
+
+    /// <summary>
+    /// Reports that one node's data, as this node relays it, started or stopped being out of date, such as when the
+    /// node stopped answering. Streams on this node that subscribe to a topic of the module for that node,
+    /// <c>{module}.{kind}@{node}</c>, receive <c>node.stale</c>, and their views of that node alone show <c>Stale</c>.
+    /// </summary>
+    /// <remarks>
+    /// The shell's own publisher implements it; the default, for a substitute publisher, sends nothing. The state is
+    /// kept while a stream watches the node, so a stream that opens later is told at once. A report that repeats the
+    /// current state sends nothing.
+    /// </remarks>
+    /// <param name="moduleId">The module's id.</param>
+    /// <param name="node">The node.</param>
+    /// <param name="stale">Whether the node's data is out of date.</param>
+    /// <exception cref="ArgumentException"><paramref name="moduleId"/> or <paramref name="node"/> is <see langword="null"/> or empty.</exception>
+    void PublishNodeStale(string moduleId, string node, bool stale) { }
+
+    /// <summary>
+    /// Tells the views of one node to refetch, such as after the node's relayed changes were missed. Streams on this
+    /// node that subscribe to a topic of the module for that node receive <c>node.reset</c>.
+    /// </summary>
+    /// <param name="moduleId">The module's id.</param>
+    /// <param name="node">The node.</param>
+    /// <exception cref="ArgumentException"><paramref name="moduleId"/> or <paramref name="node"/> is <see langword="null"/> or empty.</exception>
+    void PublishNodeReset(string moduleId, string node) { }
 }

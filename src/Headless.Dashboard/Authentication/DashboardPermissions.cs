@@ -350,7 +350,8 @@ internal static class DashboardShellAccess
     /// <summary>
     /// Protects every endpoint of <paramref name="group"/> as an endpoint of the module <paramref name="moduleId"/>, or
     /// of the shell itself when it is <see langword="null"/>. An endpoint that carries
-    /// <see cref="DashboardOperateMetadata"/> also requires the operate policy of the module that metadata names.
+    /// <see cref="DashboardOperateMetadata"/> also requires the operate policy of the module that metadata names. A
+    /// module that implements <see cref="IDashboardPeerAccess"/> also admits its peer scheme on its own endpoints.
     /// </summary>
     internal static RouteGroupBuilder RequireDashboardShellAccess(this RouteGroupBuilder group, string? moduleId)
     {
@@ -381,6 +382,7 @@ internal static class DashboardShellAccess
                 .ApplicationServices.GetRequiredService<IOptionsMonitor<AuthConfig>>()
                 .Get(SetupDashboard.AuthenticationName);
             var session = DashboardHostSession.SchemeName(SetupDashboard.AuthenticationName);
+            var peer = config.Mode == AuthMode.None ? null : _FindPeer(endpoint.ApplicationServices, module);
 
             switch (config.Mode)
             {
@@ -390,33 +392,150 @@ internal static class DashboardShellAccess
 
                 case AuthMode.Host:
                     endpoint.Metadata.Add(
-                        new AuthorizationPolicyBuilder(session)
+                        new AuthorizationPolicyBuilder(_Schemes(peer, session))
                             .RequireAuthenticatedUser()
-                            .AddRequirements(new DashboardAccessRequirement(module, operate is not null))
+                            .AddRequirements(new DashboardAccessRequirement(module, operate is not null, peer))
                             .Build()
                     );
                     break;
 
                 default:
+                {
                     // The session cookie serves the browser; the credential header still serves scripts.
                     endpoint.Metadata.Add(
                         new DashboardEndpointMetadata(SetupDashboard.AuthenticationName) { AcceptsSession = true }
                     );
-                    endpoint.Metadata.Add(
-                        new AuthorizationPolicyBuilder(session, SetupDashboard.AuthenticationName)
-                            .RequireAuthenticatedUser()
-                            .Build()
-                    );
+                    var policy = new AuthorizationPolicyBuilder(
+                        _Schemes(peer, session, SetupDashboard.AuthenticationName)
+                    ).RequireAuthenticatedUser();
+
+                    // A peer principal is authenticated too, so it must still pass the module's peer policy.
+                    if (peer is not null)
+                    {
+                        policy.AddRequirements(new DashboardAccessRequirement(module, operate is not null, peer));
+                    }
+
+                    endpoint.Metadata.Add(policy.Build());
                     break;
+                }
             }
         });
+    }
+
+    private static string[] _Schemes(DashboardPeer? peer, params string[] schemes)
+    {
+        return peer is null ? schemes : [.. schemes, peer.Scheme];
+    }
+
+    // The scheme must exist when the endpoint is built: a policy naming a missing scheme would fail every request at
+    // run time, so a typo surfaces when the host maps the dashboard instead.
+    private static DashboardPeer? _FindPeer(IServiceProvider services, string? moduleId)
+    {
+        if (moduleId is null)
+        {
+            return null;
+        }
+
+        var module = services
+            .GetRequiredService<DashboardModuleCatalog>()
+            .Modules.FirstOrDefault(m => string.Equals(m.Id, moduleId, StringComparison.Ordinal));
+
+        if (module is not IDashboardPeerAccess access)
+        {
+            return null;
+        }
+
+        var scheme = access.PeerAuthenticationScheme;
+        var policy = access.PeerPolicy;
+        var schemes = services.GetRequiredService<IOptions<AuthenticationOptions>>().Value;
+
+        if (string.IsNullOrEmpty(scheme) || !schemes.SchemeMap.ContainsKey(scheme))
+        {
+            throw new InvalidOperationException(
+                $"Dashboard module '{moduleId}' admits peer calls through the authentication scheme '{scheme}', which "
+                    + "the host does not register. Register the scheme with AddAuthentication before mapping the "
+                    + "dashboard."
+            );
+        }
+
+        if (string.IsNullOrEmpty(policy))
+        {
+            throw new InvalidOperationException(
+                $"Dashboard module '{moduleId}' admits peer calls without naming the authorization policy they must pass."
+            );
+        }
+
+        return new DashboardPeer(scheme, policy);
+    }
+}
+
+/// <summary>A module's peer admission: the scheme that signs peer calls in and the policy they must pass.</summary>
+internal sealed record DashboardPeer(string Scheme, string Policy);
+
+/// <summary>
+/// Marks a request the module's peer scheme admitted, so the command checks that a signed-in user needs are skipped
+/// for that module.
+/// </summary>
+internal sealed record DashboardPeerAdmission(string ModuleId)
+{
+    /// <summary>Whether the request was admitted as a peer call to <paramref name="moduleId"/>.</summary>
+    public static bool IsAdmitted(HttpContext context, string moduleId)
+    {
+        return context.Features.Get<DashboardPeerAdmission>() is { } admission
+            && string.Equals(admission.ModuleId, moduleId, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Authenticates the request with the peer scheme. Returns <see langword="null"/> when the scheme signed nobody
+    /// in, else whether the peer principal passes the peer policy; a passing request is marked admitted.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The host registers no policy named <see cref="DashboardPeer.Policy"/>.</exception>
+    public static async Task<bool?> TryAdmitAsync(HttpContext context, string moduleId, DashboardPeer peer)
+    {
+        var result = await context.AuthenticateAsync(peer.Scheme).ConfigureAwait(false);
+
+        if (result is not { Succeeded: true, Principal: { } principal })
+        {
+            return null;
+        }
+
+        var services = context.RequestServices;
+        var policy =
+            await services
+                .GetRequiredService<IAuthorizationPolicyProvider>()
+                .GetPolicyAsync(peer.Policy)
+                .ConfigureAwait(false)
+            ?? throw new InvalidOperationException(
+                $"Dashboard module '{moduleId}' admits peer calls under the authorization policy '{peer.Policy}', which "
+                    + "the host does not register."
+            );
+
+        // Only the peer principal is judged, never claims merged from a session the same request may carry.
+        var authorized = await services
+            .GetRequiredService<IAuthorizationService>()
+            .AuthorizeAsync(principal, context, policy)
+            .ConfigureAwait(false);
+
+        if (!authorized.Succeeded)
+        {
+            return false;
+        }
+
+        context.Features.Set(new DashboardPeerAdmission(moduleId));
+
+        return true;
     }
 }
 
 /// <summary>Requires the session to pass a module's view or operate policy, or any view policy for the shell's own.</summary>
 /// <param name="ModuleId">The module the endpoint belongs to, or <see langword="null"/> for the shell's own.</param>
 /// <param name="Operate">Whether the endpoint also needs the operate policy.</param>
-internal sealed record DashboardAccessRequirement(string? ModuleId, bool Operate) : IAuthorizationRequirement;
+/// <param name="Peer">
+/// The module's peer admission, or <see langword="null"/>. A request its scheme authenticates is judged by its policy
+/// alone, instead of by the session's permissions.
+/// </param>
+internal sealed record DashboardAccessRequirement(string? ModuleId, bool Operate, DashboardPeer? Peer = null)
+    : IAuthorizationRequirement;
 
 /// <summary>Succeeds a <see cref="DashboardAccessRequirement"/> through <see cref="DashboardPermissions"/>.</summary>
 /// <remarks>
@@ -433,6 +552,23 @@ internal sealed class DashboardAccessHandler : AuthorizationHandler<DashboardAcc
         if (context.Resource is not HttpContext httpContext)
         {
             return;
+        }
+
+        if (requirement is { Peer: { } peer, ModuleId: { } moduleId })
+        {
+            var admitted = await DashboardPeerAdmission
+                .TryAdmitAsync(httpContext, moduleId, peer)
+                .ConfigureAwait(false);
+
+            if (admitted is not null)
+            {
+                if (admitted.Value)
+                {
+                    context.Succeed(requirement);
+                }
+
+                return;
+            }
         }
 
         var session = await DashboardHostSession

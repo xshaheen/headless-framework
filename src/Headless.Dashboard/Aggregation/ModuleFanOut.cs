@@ -9,7 +9,8 @@ namespace Headless.Dashboard;
 /// <summary>
 /// Calls one capability on every loaded module the user may view, in parallel, each with its own timeout. A module that
 /// times out or throws answers <c>Stale</c> in its place, so one slow or broken module never holds up or breaks the
-/// others.
+/// others. A module that answers without some of its sources returns a result that names them, which passes through
+/// as an answer: <c>Stale</c> means the whole module failed.
 /// </summary>
 internal sealed class ModuleFanOut(
     DashboardManifestProvider manifest,

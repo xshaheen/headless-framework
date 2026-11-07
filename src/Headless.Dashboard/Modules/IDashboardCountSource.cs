@@ -16,6 +16,11 @@ namespace Headless.Dashboard;
 /// capped query.
 /// </para>
 /// <para>
+/// A module that reads several stores or nodes never throws for one of them: it answers with what the others counted
+/// and names the sources that did not answer in <see cref="DashboardCount.UnavailableSources"/>, and the shell shows
+/// <c>N+</c>. <c>Stale</c> stays the answer for a whole module that failed.
+/// </para>
+/// <para>
 /// Implemented by module packages on their <see cref="IDashboardModule"/>. New members arrive as default interface
 /// members; existing members never gain a parameter, and the request record grows instead.
 /// </para>
@@ -55,4 +60,10 @@ public sealed record DashboardCount
     /// shows <c>N+</c>.
     /// </summary>
     public bool Capped { get; init; }
+
+    /// <summary>
+    /// Gets the names of the sources, such as stores or nodes, that did not answer, so <see cref="Count"/> covers only
+    /// the others. The shell shows <c>N+</c> and names these sources; empty when every source answered.
+    /// </summary>
+    public IReadOnlyList<string> UnavailableSources { get; init; } = [];
 }

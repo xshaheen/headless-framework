@@ -13,7 +13,8 @@ namespace Headless.Dashboard;
 /// <see cref="IDashboardAttentionSource"/>, <see cref="IDashboardOverviewSource"/>, <see cref="IDashboardCountSource"/>,
 /// <see cref="IDashboardObjectResolver"/>, <see cref="IDashboardRelatedSource"/>,
 /// <see cref="IDashboardPayloadSource"/>, <see cref="IDashboardPayloadFormatter"/>, <see cref="IDashboardCommandSource"/>,
-/// <see cref="IDashboardOperationRunner"/>, and <see cref="IDashboardChangeSource"/>.
+/// <see cref="IDashboardOperationRunner"/>, <see cref="IDashboardChangeSource"/>, <see cref="IDashboardNodeTopicObserver"/>,
+/// and <see cref="IDashboardPeerAccess"/>.
 /// </para>
 /// <para>
 /// Register a module through <see cref="HeadlessDashboardSetupBuilder.AddModule{TModule, TOptions}"/>, which a module

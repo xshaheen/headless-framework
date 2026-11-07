@@ -48,7 +48,7 @@ export interface StreamClient extends DashboardStream {
   close(): void
 }
 
-const eventNames = ['subscribed', 'reset', 'change', 'attention.changed', 'module.stale', 'heartbeat'] as const
+const eventNames = ['subscribed', 'reset', 'change', 'attention.changed', 'module.stale', 'node.stale', 'node.reset', 'heartbeat'] as const
 type WireEventName = (typeof eventNames)[number]
 
 // EventSource.CLOSED: the browser gave up on the connection (a non-200 answer) and will not retry by itself.
@@ -238,8 +238,17 @@ export function createStreamClient(options: StreamClientOptions): StreamClient {
         }
         return
       case 'module.stale':
-        if (isRecord(data) && typeof data.module === 'string' && typeof data.stale === 'boolean') {
-          emit('module.stale', { module: data.module, stale: data.stale })
+      case 'node.stale':
+      case 'node.reset':
+        // The server sends `node` for a node event and `stale` for a stale one; the rest passes through as sent.
+        if (
+          isRecord(data) &&
+          typeof data.module === 'string' &&
+          (name === 'module.stale' || typeof data.node === 'string') &&
+          (name === 'node.reset' || typeof data.stale === 'boolean') &&
+          (data.unavailable === undefined || isStringArray(data.unavailable))
+        ) {
+          emit(name, data as never)
         }
         return
     }

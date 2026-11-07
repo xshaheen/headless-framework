@@ -57,7 +57,8 @@ function mostSpecificEntry(entries: readonly { to: string }[], search: URLSearch
 
 /**
  * The active product's sidebar: its modules' sections in order, each entry with an icon or a state dot and, when it
- * declares a count key, its count from one request. A count reads an en dash while loading or failed, never 0.
+ * declares a count key, its count from one request. A count reads an en dash while loading or failed, never 0, and
+ * `N+` when some of its sources did not answer, which its accessible name lists.
  */
 export function ProductSidebar({ product, onNavigate }: { product: BootstrapProduct; onNavigate?: () => void }) {
   const { state } = useShell()
@@ -88,7 +89,17 @@ export function ProductSidebar({ product, onNavigate }: { product: BootstrapProd
                   <span className="hd-side-label" title={entry.label}>
                     {entry.label}
                   </span>
-                  {entry.countKey ? <span className="hd-side-count">{count ? format.count(count) : '–'}</span> : null}
+                  {entry.countKey ? (
+                    // A partial count's accessible name lists what it leaves out, in one text node that keeps its spaces.
+                    count?.unavailable ? (
+                      <span className="hd-side-count">
+                        <span aria-hidden="true">{format.count(count)}</span>
+                        <span className="hd-visually-hidden">{`${format.count(count)} · ${count.unavailable.join(', ')} unavailable`}</span>
+                      </span>
+                    ) : (
+                      <span className="hd-side-count">{count ? format.count(count) : '–'}</span>
+                    )
+                  ) : null}
                 </>
               )
               const locked = entry.requires === 'operate' && !state.modules.find((module) => module.id === entry.module)?.canOperate

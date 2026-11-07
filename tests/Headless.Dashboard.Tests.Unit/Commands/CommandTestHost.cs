@@ -1,11 +1,16 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net.Http.Json;
+using System.Security.Claims;
+using System.Text.Encodings.Web;
 using Headless.Dashboard;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Tests.Authentication;
 
 namespace Tests.Commands;
@@ -19,6 +24,9 @@ internal static class CommandTestHost
 {
     public const string Base = "/headless/api/diag/commands";
     public const string LiveOperatorsPolicy = "DiagLiveOperators";
+
+    /// <summary>The peer the module's peer policy trusts; any other peer key signs in a peer it refuses.</summary>
+    public const string TrustedPeer = "node-a";
 
     public static Task<WebApplication> StartAsync(CommandTestHostOptions options, CancellationToken cancellationToken)
     {
@@ -34,6 +42,8 @@ internal static class CommandTestHost
                     })
                     .AddModule<FakeCommandModule, FakeCommandModuleOptions>("diag");
 
+                options.ConfigureDashboard?.Invoke(dashboard);
+
                 if (options.DisabledIds.Length > 0)
                 {
                     dashboard.Contributions(c => c.Disable(options.DisabledIds));
@@ -48,10 +58,17 @@ internal static class CommandTestHost
                     services.AddSingleton(options.Store);
                     services.AddSingleton<IDashboardOperatorLog>(options.Log);
                     services
+                        .AddAuthentication()
+                        .AddScheme<AuthenticationSchemeOptions, PeerKeyHandler>(PeerKeyHandler.SchemeName, _ => { });
+                    services
                         .AddAuthorizationBuilder()
                         .AddPolicy(
                             LiveOperatorsPolicy,
                             policy => policy.RequireAssertion(context => options.Gate.Operate && _IsOperator(context))
+                        )
+                        .AddPolicy(
+                            FakeCommandModule.PeersPolicy,
+                            policy => policy.RequireClaim(PeerKeyHandler.PeerClaim, TrustedPeer)
                         )
                         .AddPolicy(
                             FakeCommandModule.Purge,
@@ -162,4 +179,35 @@ internal sealed class CommandTestHostOptions
     public string[] DisabledIds { get; init; } = [];
 
     public Action<IServiceCollection>? ConfigureServices { get; init; }
+
+    public Action<HeadlessDashboardSetupBuilder>? ConfigureDashboard { get; init; }
+}
+
+/// <summary>
+/// Signs a peer call in from <c>X-Peer-Key: &lt;node&gt;</c> as that node, standing in for the shared-key scheme a
+/// module declares for node-to-node calls; without the header the request gets no result.
+/// </summary>
+internal sealed class PeerKeyHandler(
+    IOptionsMonitor<AuthenticationSchemeOptions> options,
+    ILoggerFactory logger,
+    UrlEncoder encoder
+) : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
+{
+    public const string SchemeName = "DiagPeer";
+    public const string Header = "X-Peer-Key";
+    public const string PeerClaim = "peer";
+
+    protected override Task<AuthenticateResult> HandleAuthenticateAsync()
+    {
+        var node = Request.Headers[Header].ToString();
+
+        if (node.Length == 0)
+        {
+            return Task.FromResult(AuthenticateResult.NoResult());
+        }
+
+        var identity = new ClaimsIdentity([new(ClaimTypes.Name, "peer:" + node), new(PeerClaim, node)], SchemeName);
+
+        return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(new(identity), SchemeName)));
+    }
 }

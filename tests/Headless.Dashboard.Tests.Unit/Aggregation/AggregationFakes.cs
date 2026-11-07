@@ -152,7 +152,40 @@ internal abstract class FakeModule(string id)
 
 internal sealed class DiagAModule() : FakeModule("diag-a");
 
-internal sealed class DiagBModule() : FakeModule("diag-b");
+/// <summary>
+/// The second fake module. It answers attention and Overview through the members that name the sources that did not
+/// answer, as a module reading several stores does; the first module keeps the defaults, as a single-store module does.
+/// </summary>
+internal sealed class DiagBModule() : FakeModule("diag-b"), IDashboardAttentionSource, IDashboardOverviewSource
+{
+    /// <summary>Gets or sets the sources the attention and Overview answers report as not answering.</summary>
+    public IReadOnlyList<string> UnavailableSources { get; set; } = [];
+
+    public async Task<DashboardAttentionAnswer> GetAttentionAnswerAsync(
+        DashboardAttentionRequest request,
+        CancellationToken cancellationToken
+    )
+    {
+        return new DashboardAttentionAnswer
+        {
+            Items = await GetAttentionAsync(request, cancellationToken),
+            UnavailableSources = UnavailableSources,
+        };
+    }
+
+    public async Task<DashboardOverviewAnswer> GetOverviewAnswerAsync(
+        DashboardOverviewRequest request,
+        CancellationToken cancellationToken
+    )
+    {
+        return new DashboardOverviewAnswer
+        {
+            Figures = await GetOverviewAsync(request, cancellationToken),
+            Tracks = await GetScheduleAsync(request, cancellationToken),
+            UnavailableSources = UnavailableSources,
+        };
+    }
+}
 
 internal sealed class DiagAModuleOptions : DashboardModuleOptions;
 
