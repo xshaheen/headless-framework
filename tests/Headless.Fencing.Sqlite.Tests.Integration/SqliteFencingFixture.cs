@@ -17,9 +17,17 @@ namespace Tests;
 /// </summary>
 [UsedImplicitly]
 [CollectionDefinition(DisableParallelization = true)]
-public sealed class SqliteFencingFixture : ICollectionFixture<SqliteFencingFixture>, ILeasesFixture, IAsyncLifetime
+public sealed class SqliteFencingFixture
+    : ICollectionFixture<SqliteFencingFixture>,
+        ILeasesFixture,
+        IFencedRowsFixture,
+        IAsyncLifetime
 {
     private const string _HandoffTable = "fencing_handoffs";
+
+    // Not the storage schema: SQLite has no schemas, so this only prefixes the consumer table's physical name and
+    // keeps it apart from the lease storage's tables.
+    private const string _RowsSchema = "rows";
     private static readonly SqliteDialect _Dialect = SqliteDialect.Instance;
     private static readonly string _Leases = _Dialect.Qualify(HeadlessStorageDefaults.Schema, "fencing_leases");
     private readonly SqliteTestDatabase _database = SqliteTestDatabase.Create();
@@ -28,6 +36,16 @@ public sealed class SqliteFencingFixture : ICollectionFixture<SqliteFencingFixtu
     public string ConnectionString => _database.ConnectionString;
 
     public bool SupportsEnlistedGrant => false;
+
+    public ISqlDialect Dialect => _Dialect;
+
+    public string Schema => _RowsSchema;
+
+    public bool ClaimSkipsLockedRows => false;
+
+    // SqliteDialect.Qualify flattens a schema into the name with an underscore, so the table and the sequence the
+    // fixture created in the rows schema are plain tables under that flattened name.
+    public string UnqualifiedName(string name) => _RowsSchema + "_" + name;
 
     public async ValueTask InitializeAsync()
     {
@@ -41,6 +59,8 @@ public sealed class SqliteFencingFixture : ICollectionFixture<SqliteFencingFixtu
                 resource TEXT NOT NULL,
                 generation INTEGER NOT NULL
             );
+
+            {_WorkItemsDdl()}
             """;
         await command.ExecuteNonQueryAsync(CancellationToken.None);
     }
@@ -156,6 +176,48 @@ public sealed class SqliteFencingFixture : ICollectionFixture<SqliteFencingFixtu
         }
 
         return handoffs;
+    }
+
+    private static string _WorkItemsDdl()
+    {
+        var table = _Dialect.Qualify(_RowsSchema, IFencedRowsFixture.WorkItemsTable);
+        var sequence = _Dialect.Qualify(_RowsSchema, IFencedRowsFixture.GenerationSequence);
+
+        // SQLite has no sequence objects: the sequence is a one-row table the dialect reads, and the triggers advance
+        // it to every generation the table stores, the same shape the lease storage uses.
+        return $"""
+            CREATE TABLE {table} (
+                id TEXT NOT NULL PRIMARY KEY,
+                status TEXT NOT NULL,
+                parent_id TEXT NULL,
+                lease_generation INTEGER NOT NULL DEFAULT 0,
+                lease_state INTEGER NOT NULL DEFAULT 0,
+                lease_expires_at TEXT NULL,
+                lease_holder TEXT NULL,
+                lease_takeover_count INTEGER NOT NULL DEFAULT 0
+            );
+
+            CREATE TABLE {sequence} (
+                id INTEGER NOT NULL PRIMARY KEY CHECK (id = 1),
+                value INTEGER NOT NULL CHECK (value >= 0)
+            );
+
+            INSERT INTO {sequence} (id, value) VALUES (1, 0);
+
+            CREATE TRIGGER {_Dialect.Quote(_RowsSchema + "_work_items_generation_inserted")}
+            AFTER INSERT ON {table}
+            WHEN NEW.lease_generation > (SELECT value FROM {sequence})
+            BEGIN
+                UPDATE {sequence} SET value = NEW.lease_generation WHERE id = 1;
+            END;
+
+            CREATE TRIGGER {_Dialect.Quote(_RowsSchema + "_work_items_generation_updated")}
+            AFTER UPDATE OF lease_generation ON {table}
+            WHEN NEW.lease_generation > (SELECT value FROM {sequence})
+            BEGIN
+                UPDATE {sequence} SET value = NEW.lease_generation WHERE id = 1;
+            END;
+            """;
     }
 
     private async Task<SqliteConnection> _OpenAsync(CancellationToken cancellationToken)

@@ -541,6 +541,7 @@
           "Bogus": "[35.6.5, )",
           "Headless.Fencing": "[1.0.0, )",
           "Headless.Fencing.InMemory": "[1.0.0, )",
+          "Headless.Fencing.Sql": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Testing": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection": "[10.0.13, )",
