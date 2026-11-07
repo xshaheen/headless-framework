@@ -1,0 +1,104 @@
+/* The data table's styles, loaded with the table entry so the shell's first load does not carry them. They read
+   only the tokens in tokens.css. */
+
+.hd-table-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  border-block-start: 1px solid var(--hairline);
+}
+
+.hd-table-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding-block-start: var(--space-2);
+}
+
+.hd-density {
+  display: flex;
+  gap: var(--space-1);
+  margin-inline-start: auto;
+}
+
+.hd-density .hd-btn[aria-pressed='true'] {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+/* The virtualized grid scrolls on its own, so its header stays and only the rows in view are in the page. Rows
+   that arrive above are held in place by the table itself, so the browser's own scroll anchoring stays off. */
+.hd-table {
+  position: relative;
+  inline-size: 100%;
+  max-block-size: max(16rem, calc(100dvh - 18rem));
+  overflow: auto;
+  overflow-anchor: none;
+  outline: none;
+}
+
+.hd-table [role='columnheader'] {
+  display: flex;
+  align-items: center;
+  padding-inline: 10px;
+  border-block-end: 1px solid var(--hairline);
+  background: var(--surface);
+  font: var(--text-label);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.hd-table [role='gridcell'],
+.hd-table [role='rowheader'] {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-inline: 10px;
+  overflow: hidden;
+  font: var(--text-small);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.hd-table .hd-end {
+  justify-content: flex-end;
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.hd-row {
+  border-block-end: 1px solid var(--hairline);
+  background: var(--surface);
+  cursor: pointer;
+  outline: none;
+}
+
+.hd-row[data-hovered] {
+  background: var(--sunken);
+}
+
+.hd-row[data-selected] {
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.hd-row[data-focus-visible] {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+/* A selected row a live change moved out of the filter: still selected, its text muted until the selection drops it. */
+.hd-row[data-no-longer-matches] {
+  color: var(--muted);
+}
+
+.hd-no-match {
+  flex: none;
+}
+
+.hd-load-more {
+  display: flex;
+  align-items: center;
+  padding-inline: 10px;
+}

@@ -1,0 +1,15 @@
+{
+  "name": "headless-framework",
+  "version": "0.0.0",
+  "private": true,
+  "engines": {
+    "node": ">=22.18"
+  },
+  "workspaces": [
+    "src/Headless.Dashboard/wwwroot",
+    "src/Headless.Dashboard/wwwroot/packages/sdk",
+    "src/Headless.Dashboard/wwwroot/packages/vite",
+    "src/Headless.Dashboard/wwwroot/apps/shell",
+    "src/Headless.Dashboard/wwwroot/modules/diagnostics"
+  ]
+}

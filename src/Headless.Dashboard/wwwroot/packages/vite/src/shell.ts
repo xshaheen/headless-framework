@@ -182,6 +182,26 @@ export function shellDocumentPlugin(root: string, specifiers: readonly string[])
   }
 }
 
+/** A React Aria string table for one locale: `react-aria/dist/private/intl/table/fr-FR.mjs`. */
+const reactAriaLocaleModule = /[\\/]react-aria(?:-components)?[\\/]dist[\\/].*[\\/]intl[\\/](?:.*[\\/])?([a-z]{2,3}-[A-Z]{2})\.mjs$/
+
+/**
+ * Empties React Aria's string tables for every locale but `en-US`. The dashboard ships in English, and React Aria
+ * bundles the strings of 34 locales for each component, so the other 33 are dead weight in every entry. An emptied
+ * table exports `undefined`, which React Aria's string dictionary drops and then falls back to `en-US`, the same
+ * contract its own `@react-aria/optimize-locales-plugin` relies on.
+ */
+export function englishOnlyReactAriaPlugin(): Plugin {
+  return {
+    name: 'headless-dashboard-react-aria-locales',
+    load(id) {
+      const locale = reactAriaLocaleModule.exec(id)?.[1]
+
+      return locale && locale !== 'en-US' ? 'export default undefined\n' : null
+    },
+  }
+}
+
 /**
  * The Vite configuration of the dashboard shell: one build holding the shell app and an ES module entry for each
  * import-map specifier (React, React DOM, the compiler runtime, and the SDK), so one copy of each serves every module.
@@ -195,6 +215,7 @@ export function dashboardShell(options: DashboardShellOptions): UserConfig {
     base: './',
     plugins: [
       ...reactPlugins(),
+      englishOnlyReactAriaPlugin(),
       sharedEntriesPlugin(options.root, specifiers),
       shellDocumentPlugin(options.root, specifiers),
     ],

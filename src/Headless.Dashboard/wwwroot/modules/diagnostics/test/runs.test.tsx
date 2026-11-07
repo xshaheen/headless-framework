@@ -171,7 +171,7 @@ describe('diagnostics runs list', () => {
     act(() => answer(detail(row)))
 
     const timeline = await within(inspector).findByRole('region', { name: 'Timeline' })
-    expect(within(timeline).getAllByRole('listitem').map((item) => item.textContent)).toEqual([
+    expect(within(timeline).getAllByRole('row').map((item) => item.textContent)).toEqual([
       'Created 10 minutes ago',
       'Failed 4 minutes ago Gateway timeout',
     ])
@@ -303,6 +303,20 @@ describe('diagnostics runs list', () => {
     const requeue = await within(inspector).findByRole('button', { name: 'Requeue' })
     await waitFor(() => expect(requeue.getAttribute('aria-disabled')).toBe('true'))
     expect(document.getElementById(requeue.getAttribute('aria-describedby')!)?.textContent).toBe('Running - cancel instead')
+  })
+
+  it('does nothing on R when the server refuses the selected run’s requeue, and announces why', async () => {
+    const actor = user()
+    const shell = open([run('run-000001', 'Running')])
+
+    await actor.click(await screen.findByRole('row', { name: /run-000001/ }))
+    const inspector = screen.getByRole('complementary', { name: 'Run run-000001' })
+    await waitFor(() => expect(within(inspector).getByRole('button', { name: 'Requeue' }).getAttribute('aria-disabled')).toBe('true'))
+
+    await actor.keyboard('r')
+
+    expect(within(inspector).getAllByRole('status').map((region) => region.textContent)).toContain('Running - cancel instead')
+    expect(shell.requests.some((request) => request.method === 'POST')).toBe(false)
   })
 
   it('keeps every action disabled until the server says it can run now', async () => {
@@ -504,11 +518,26 @@ describe('diagnostics run page', () => {
 
     const page = await screen.findByRole('article', { name: 'Run run-000001' })
     expect(within(page).getByRole('heading', { name: 'Run' })).toBeTruthy()
-    expect(within(within(page).getByRole('region', { name: 'Timeline' })).getAllByRole('listitem')).toHaveLength(2)
+    expect(within(within(page).getByRole('region', { name: 'Timeline' })).getAllByRole('row')).toHaveLength(2)
 
     await actor.click(within(page).getByRole('button', { name: 'Show payload' }))
 
     expect(await within(page).findByText('***')).toBeTruthy()
+  })
+
+  it('opens a timeline event in the inspector with Enter, and keeps the selection in the URL', async () => {
+    const actor = user()
+    open([run('run-000001', 'Failed')], { path: 'runs/run-000001' })
+
+    const page = await screen.findByRole('article', { name: 'Run run-000001' })
+    expect(screen.getByRole('complementary', { name: 'Run summary' })).toBeTruthy()
+
+    within(page).getAllByRole('row')[0]!.focus()
+    await actor.keyboard('{ArrowDown}{Enter}')
+
+    const inspector = await screen.findByRole('complementary', { name: 'Event Failed' })
+    expect(within(inspector).getByText('Gateway timeout')).toBeTruthy()
+    expect(document.activeElement).toBe(within(page).getAllByRole('row')[1])
   })
 
   it('says the run is gone when the server answers 404', async () => {

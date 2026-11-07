@@ -39,6 +39,16 @@ interface RunListAnswer {
   items: Run[]
   count: number
   countCapped: boolean
+  /** The keyset cursor of the page's last run, when more runs follow it. */
+  nextCursor?: string | null
+}
+
+/** How many runs one list page asks for. */
+const runsPageSize = 100
+
+/** Whether `run` matches `filter` as the server reads it: the status and the last error, each exactly. */
+export function runMatches(run: Run, filter: RunFilter) {
+  return (!filter.status || run.status === filter.status) && (!filter.error || run.lastError === filter.error)
 }
 
 export const runStatuses = ['Queued', 'Running', 'Succeeded', 'Failed'] as const
@@ -59,8 +69,18 @@ export function runsTopic(module: string) {
   return `${module}.run`
 }
 
-export async function fetchRuns(api: DashboardApi, module: string, filter: RunFilter): Promise<DashboardListPage<Run> & { count: CappedCount }> {
-  const query: Record<string, string> = {}
+/** One page of runs, newest first: the first page, or the page after the run `cursor` names. */
+export async function fetchRuns(
+  api: DashboardApi,
+  module: string,
+  filter: RunFilter,
+  cursor?: string,
+): Promise<DashboardListPage<Run> & { count: CappedCount }> {
+  const query: Record<string, string> = { limit: String(runsPageSize) }
+
+  if (cursor) {
+    query.after = cursor
+  }
 
   if (filter.status) {
     query.status = filter.status
@@ -72,7 +92,7 @@ export async function fetchRuns(api: DashboardApi, module: string, filter: RunFi
 
   const answer = await api.request<RunListAnswer>({ method: 'GET', path: `${encodeURIComponent(module)}/runs`, query })
 
-  return { items: answer.items, count: { value: answer.count, capped: answer.countCapped } }
+  return { items: answer.items, count: { value: answer.count, capped: answer.countCapped }, nextCursor: answer.nextCursor ?? null }
 }
 
 export function fetchRun(api: DashboardApi, module: string, id: string) {
@@ -110,47 +130,6 @@ export function useRunCommands() {
 }
 
 /**
- * Why the server refuses each command for `runs` now, such as `Running - cancel instead`. The runs' versions are in
- * the key, so a status change asks again.
- */
-export function useRefusals(runs: readonly Pick<Run, 'id' | 'version'>[]) {
-  const { api } = useDashboard()
-  const module = useModule()
-  const ids = runs.map((run) => run.id)
-  const answer = useQuery({
-    queryKey: ['allowed', module.id, runs.map((run) => `${run.id}@${run.version}`)],
-    queryFn: () => createCommandsApi(api, module.id).allowed('run', ids),
-    enabled: ids.length > 0,
-  })
-
-  return (commandId: string | undefined): string | null => {
-    if (!commandId) {
-      return null
-    }
-
-    // An action is offered only once the server has said it can succeed now, so it stays disabled while that answer
-    // is loading or after it failed, rather than letting the operator run what the server may refuse.
-    if (answer.isPending) {
-      return 'Checking whether this can run…'
-    }
-
-    if (answer.isError) {
-      return 'Could not check whether this can run. Reload to try again.'
-    }
-
-    for (const object of answer.data) {
-      const command = object.commands.find((candidate) => candidate.id === commandId)
-
-      if (command && !command.allowed) {
-        return command.disabledReason ?? 'Not allowed now'
-      }
-    }
-
-    return null
-  }
-}
-
-/**
  * The runs a requeue finished on but whose change has not arrived: each shows `Requeuing…` until its version moves
  * past the one it had when the operator confirmed.
  */
@@ -174,33 +153,4 @@ export function useRequeuing() {
         return next
       }),
   }
-}
-
-const relativeFormat = new Intl.RelativeTimeFormat('en', { numeric: 'auto' })
-
-const exactFormat = new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeStyle: 'long', timeZone: 'UTC' })
-
-const units: readonly [Intl.RelativeTimeFormatUnit, number][] = [
-  ['day', 86_400],
-  ['hour', 3_600],
-  ['minute', 60],
-  ['second', 1],
-]
-
-/** `4 minutes ago`, `in 12 seconds`. */
-export function relativeTime(at: Date, now: number) {
-  const seconds = Math.round((at.getTime() - now) / 1_000)
-
-  for (const [unit, size] of units) {
-    if (Math.abs(seconds) >= size || unit === 'second') {
-      return relativeFormat.format(Math.round(seconds / size), unit)
-    }
-  }
-
-  return relativeFormat.format(0, 'second')
-}
-
-/** The exact time with its zone and offset, for the hover text. The SDK exposes no display time zone yet, so UTC. */
-export function exactTime(at: Date) {
-  return exactFormat.format(at)
 }

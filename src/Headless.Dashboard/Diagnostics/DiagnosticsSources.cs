@@ -58,9 +58,15 @@ internal sealed class DiagnosticsSources(string moduleId, DiagnosticsStore store
         };
     }
 
-    /// <summary>Lists failed runs, one item per error message, the most runs first.</summary>
-    public IReadOnlyList<DashboardAttentionItem> GetAttention()
+    /// <summary>
+    /// Lists failed runs, one item per error message, the most runs first. Each item recommends
+    /// <paramref name="requeueCommandId"/> over its own group, and counts the runs that failed in the last hour as its
+    /// growth.
+    /// </summary>
+    public IReadOnlyList<DashboardAttentionItem> GetAttention(string requeueCommandId)
     {
+        var hourAgo = timeProvider.GetUtcNow().AddHours(-1);
+
         return
         [
             .. store
@@ -81,6 +87,13 @@ internal sealed class DiagnosticsSources(string moduleId, DiagnosticsStore store
                         Count = runs.Length,
                         Target = runs.Length == 1 ? RefOf(runs[0].Id) : null,
                         Since = runs.Min(static run => run.StatusChangedAt),
+                        LastSeenAt = runs.Max(static run => run.StatusChangedAt),
+                        RecentCount = runs.Count(run => run.StatusChangedAt > hourAgo),
+                        RecommendedCommandId = requeueCommandId,
+                        GroupFilter = JsonSerializer.SerializeToElement(
+                            new DiagnosticsRunFilterDocument("Failed", group.Key),
+                            DiagnosticsJsonContext.Default.DiagnosticsRunFilterDocument
+                        ),
                     };
                 })
                 .OrderByDescending(static item => item.Count)

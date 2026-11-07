@@ -1,4 +1,4 @@
-import { Button } from '@headless/dashboard-sdk/components'
+import { Button, PrimaryAction } from '@headless/dashboard-sdk/components'
 import { useOperations, type CommandDefinition } from '@headless/dashboard-sdk/commands'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -109,5 +109,66 @@ describe('shell layout', () => {
     expect(settings.getAttribute('href')).toBeNull()
     expect(within(group).getByText('Needs operate permission')).toBeTruthy()
     expect(await screen.findByText('View only')).toBeTruthy()
+  })
+
+  it('shows every time in the zone chosen in the account menu, in the document bar too, and keeps it after a reload', async () => {
+    localStorage.clear()
+    const user = userEvent.setup()
+    const sections = [
+      {
+        id: 'diag',
+        displayName: 'Diagnostics',
+        stale: false,
+        items: [{ id: 'f', groupKey: 'f', title: 'Failed runs', severity: 'critical', count: 3, capped: false, since: '2026-11-05T15:40:00Z' }],
+      },
+    ]
+    const api = (request: { path: string }) => ({ modules: request.path === 'needs-you' ? sections : [] })
+    const since = async () => (await screen.findByText(/^since /)).getAttribute('title')
+
+    const first = renderShell(shellState([]), { api })
+
+    expect(await since()).toBe('Nov 5, 2026, 15:40:00 UTC')
+    expect(screen.getByTitle('Display time zone').textContent).toBe('UTC')
+
+    await user.selectOptions(screen.getByLabelText('Time zone'), 'Africa/Cairo')
+
+    expect(await since()).toBe('Nov 5, 2026, 17:40:00 GMT+02:00 Africa/Cairo')
+    expect(screen.getByTitle('Display time zone').textContent).toBe('Africa/Cairo')
+
+    first.unmount()
+    renderShell(shellState([]), { api })
+
+    expect(await since()).toBe('Nov 5, 2026, 17:40:00 GMT+02:00 Africa/Cairo')
+    expect(screen.getByTitle('Display time zone').textContent).toBe('Africa/Cairo')
+    localStorage.clear()
+  })
+
+  it('shows a view’s primary action in the document bar, and not on another view', async () => {
+    const modules = [moduleManifest('diag', { displayName: 'Diagnostics' })]
+    const files = {
+      ...moduleFiles(modules),
+      [chunkUrl('diag', 'runs')]: {
+        default: function RunsView() {
+          return (
+            <>
+              <h2>Runs view</h2>
+              <PrimaryAction>
+                <Button variant="primary">Add run</Button>
+              </PrimaryAction>
+            </>
+          )
+        },
+      },
+    }
+    const shell = renderShell(shellState(modules), { path: '/diag/runs', files })
+
+    await screen.findByRole('heading', { name: 'Runs view' })
+    expect(within(screen.getByRole('banner')).getByRole('button', { name: 'Add run' })).toBeTruthy()
+    expect(within(screen.getByRole('main')).queryByRole('button', { name: 'Add run' })).toBeNull()
+
+    await shell.router.navigate('/diag/settings')
+
+    await screen.findByRole('heading', { name: 'Diagnostics settings view' })
+    expect(screen.queryByRole('button', { name: 'Add run' })).toBeNull()
   })
 })

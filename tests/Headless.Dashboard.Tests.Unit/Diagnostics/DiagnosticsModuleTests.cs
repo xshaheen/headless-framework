@@ -92,6 +92,52 @@ public sealed class DiagnosticsModuleTests : TestBase
     }
 
     [Fact]
+    public async Task should_list_every_run_once_newest_first_when_the_list_pages_by_its_next_cursor()
+    {
+        await using var app = await _StartAsync(Environments.Development, dashboard => dashboard.AddDiagnostics());
+        using var client = _Client(app);
+        var store = app.Services.GetRequiredKeyedService<DiagnosticsStore>(_Id);
+        var added = Enumerable.Range(0, 250).Select(_ => store.AddRun().Id).ToList();
+        added.Reverse();
+
+        var seen = new List<string>();
+        var pages = 0;
+        string? cursor = null;
+
+        do
+        {
+            var query = cursor is null ? "limit=100" : "limit=100&after=" + Uri.EscapeDataString(cursor);
+            using var response = await _GetAsync(client, $"/headless/api/{_Id}/runs?{query}");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var page = await _ReadAsync(response);
+
+            page.GetProperty("count").GetInt32().Should().Be(250 + pages);
+            seen.AddRange(
+                page.GetProperty("items").EnumerateArray().Select(static run => run.GetProperty("id").GetString()!)
+            );
+            cursor = page.TryGetProperty("nextCursor", out var next) ? next.GetString() : null;
+            pages++;
+
+            // A run added while the operator scrolls lands above the first page, so it shifts no later page.
+            store.AddRun();
+        } while (cursor is not null && pages < 10);
+
+        pages.Should().Be(3);
+        seen.Should().Equal(added);
+    }
+
+    [Fact]
+    public async Task should_answer_400_when_the_list_cursor_is_not_one_the_list_gave()
+    {
+        await using var app = await _StartAsync(Environments.Development, dashboard => dashboard.AddDiagnostics());
+        using var client = _Client(app);
+
+        using var response = await _GetAsync(client, $"/headless/api/{_Id}/runs?after=not-a-cursor");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
     public async Task should_keep_each_instance_apart_when_a_second_instance_is_added_under_another_id()
     {
         await using var app = await _StartAsync(
@@ -381,6 +427,32 @@ public sealed class DiagnosticsModuleTests : TestBase
         items.Should().OnlyContain(static item => item.Severity == DashboardAttentionSeverity.Critical);
         items[0].Target.Should().BeNull();
         items[1].Target!.Id.Should().Be(single);
+    }
+
+    [Fact]
+    public async Task should_recommend_requeue_over_the_group_and_count_the_last_hour_when_needs_you_asks()
+    {
+        var store = new DiagnosticsStore(_time);
+        _SeedFailed(store, 2, "timeout");
+        _SeedFailed(store, 1, "disk full");
+        _time.Advance(TimeSpan.FromHours(2));
+        _SeedFailed(store, 1, "timeout");
+        var latest = _time.GetUtcNow();
+        var module = _Module(store, new RecordingPublisher());
+
+        var items = await module.GetAttentionAsync(new DashboardAttentionRequest { User = _User }, AbortToken);
+
+        var timeout = items.Single(static item => string.Equals(item.GroupKey, "timeout", StringComparison.Ordinal));
+        var diskFull = items.Single(static item => string.Equals(item.GroupKey, "disk full", StringComparison.Ordinal));
+        timeout.RecommendedCommandId.Should().Be(_Requeue);
+        timeout.RecentCount.Should().Be(1);
+        timeout.LastSeenAt.Should().Be(latest);
+        diskFull.RecentCount.Should().Be(0);
+
+        // The group filter scopes the Operation to the group's own runs: every timeout, and no disk full.
+        var scope = await module.PrepareAsync(_Scope(timeout.GroupFilter!.Value), AbortToken);
+        scope.Count.Should().Be(3);
+        scope.Sample.Should().OnlyContain(run => store.Find(run.Target.Id)!.LastError == "timeout");
     }
 
     [Fact]

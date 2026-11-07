@@ -181,6 +181,14 @@ Everything else is an optional capability interface on the same class, found by 
 
 Needs you, Overview, lookup, and related objects call every module in parallel, list only the modules the user may view, and wait at most `AggregationTimeout` for each. A module that times out or throws answers `stale: true` in its place. Counts stop at 10,000 and report `capped: true`.
 
+A `DashboardAttentionItem` can also say how to resolve it and whether it is still growing:
+
+- **`RecommendedCommandId` and `GroupFilter`.** The id of one of the module's commands, such as its Requeue, and the filter, in the module's own Operation filter shape, that selects every object of the item's group. Needs you shows the command as the item's primary button (`Requeue 23`), and pressing it starts an Operation over `GroupFilter`: the operator gives a reason, the server counts the scope, and nothing runs before the confirm. The shell offers the button only when both members are set, the module implements `IDashboardOperationRunner`, and the host has not disabled the command or hidden it from the UI. A user without the command's permission sees it disabled with `Needs operate permission`.
+- **`RecentCount`.** How many objects joined the item in the module's latest interval, such as the last hour. Above zero, Needs you marks the cause `growing`.
+- **`LastSeenAt`.** When the cause last occurred, beside `Since`, when it began.
+
+`GET {base}/api/needs-you` returns these as `recommended` (`{ command, filter }`, where `command` is described for the signed-in user as `GET {base}/api/{module}/commands` describes it, or `null`), `recentCount`, and `lastSeenAt`. The diagnostic module recommends Requeue over each failure group and counts the runs that failed in the last hour.
+
 The interfaces grow by new capability interfaces and default interface members. An existing member never gains a parameter; the request and result records grow by `init` members instead.
 
 A module package wraps `AddModule` in its own extension, the way `AddDiagnostics` does:
@@ -315,7 +323,7 @@ builder.Services.AddHeadlessDashboard(dashboard =>
 
 ### Diagnostic module
 
-`AddDiagnostics()` adds a module with the id `diagnostics`: an in-memory `DiagnosticsStore` of fake runs that implements every capability above, including commands (`{id}.fail`, `{id}.requeue`, `{id}.add-note`), Operations, and change reads. Its API at `{base}/api/{id}` lists runs (`GET runs`), reads one (`GET runs/{runId}`), and adds a queued run (`POST runs`, an operator action). It adds no table, cache key, or channel to the host, and starts empty.
+`AddDiagnostics()` adds a module with the id `diagnostics`: an in-memory `DiagnosticsStore` of fake runs that implements every capability above, including commands (`{id}.fail`, `{id}.requeue`, `{id}.add-note`), Operations, and change reads. Its API at `{base}/api/{id}` lists runs newest first, one keyset page at a time (`GET runs?limit=&after=`: each page carries a `nextCursor` that `after` takes, `null` on the last page, and a run added while paging never shifts a later page), reads one (`GET runs/{runId}`), and adds a queued run (`POST runs`, an operator action). It adds no table, cache key, or channel to the host, and starts empty.
 
 | `DiagnosticsOptions` member | Default | Description |
 | --- | --- | --- |
@@ -328,7 +336,7 @@ builder.Services.AddHeadlessDashboard(dashboard =>
 
 ### Module front end
 
-The shell is a React application. A module's front end is a small entry plus lazy route chunks that import React, React Router, TanStack Query, and React Aria from the shell through an import map, never from their own bundle. The SDK (`@headless/dashboard-sdk`) and the Vite preset (`@headless/dashboard-vite`) are private packages of the npm workspace at `src/Headless.Dashboard/wwwroot`, where the diagnostic module is built; they are not published to npm in this release.
+The shell is a React application. A module's front end is a small entry plus lazy route chunks that import React, React Router, TanStack Query, and React Aria from the shell through an import map, never from their own bundle. The SDK (`@headless/dashboard-sdk`) and the Vite preset (`@headless/dashboard-vite`) are private packages of the repository-root npm workspace, under `src/Headless.Dashboard/wwwroot`, where the diagnostic module is built; they are not published to npm in this release.
 
 A module's entry exports a `defineModule` call. The build reads the literal itself to write `manifest.json`, so every static field (ids, labels, paths, permissions, event names) must be a literal, not computed:
 
@@ -356,10 +364,11 @@ export default defineModule({
 | SDK entry | Contents |
 | --- | --- |
 | `@headless/dashboard-sdk` | `defineModule`, the dashboard and module context hooks (`useDashboard`, `useModule`), and `Button` |
-| `/components` | The design-system components: `DataTable`, `Inspector`, `Dialog`, `Drawer`, form fields, `CommandPalette`, `PayloadView`, status marks, live regions, and toasts |
-| `/data` | The API client and hooks (`useDashboardApi`, `useDashboardList`, `useDashboardObject`, `useNewRows`), change patching, and capped counts |
+| `/components` | The design-system components: `Inspector` with editable `InspectorField`s (a select commits on change, text on `Enter` or blur, with an optional server preview while typing), `Timeline` (stored events in the same select-into-the-inspector grid as a table), `ScheduleStrip` (SVG marks for the next fires in the scheduler's zone, `[`/`]` widen and narrow it), `Figure` (a value that requires its comparison), `PrimaryAction` (a view's one primary action, drawn in the document bar), `Dialog`, `Drawer`, form fields, `CommandPalette`, `PayloadView`, status marks, live regions, toasts, and the keymap hooks |
+| `/table` | `DataTable`: virtualized, with keyset load-more, column priority, a density remembered per view, and rows that arrive above held behind `N new`. It is its own entry, so the browser loads it with the first view that lists rows, not with the shell |
+| `/data` | The API client and hooks (`useDashboardApi`, `useDashboardList`, `useDashboardKeysetList`, `useDashboardObject`, `useNewRows`), change patching, and capped counts |
 | `/stream` | `useTopics`, `useStreamEvent`, `useStreamStatus`, and the stream client |
-| `/commands` | `CommandAction`, `ActionConfirm`, `SchemaForm`, the commands API, and the Operation runner and panel |
+| `/commands` | `CommandAction` (its `recovery` prop makes it the command `R` runs for the selection, and every allowed action also appears in the palette), `useAllowedActions` (keeps actions disabled until the server answers and says why when it refuses or the check fails), `ActionConfirm`, `SchemaForm`, the commands API, and the Operation runner and panel |
 | `/router` | React Router, re-exported so every module uses the shell's one router |
 | `/query` | TanStack Query, re-exported so every module reads the shell's one data client |
 | `/testing` | `renderModule` |
@@ -380,7 +389,7 @@ export default defineConfig(
 )
 ```
 
-The workspace build then holds the output to the size budgets in `packages/vite/budget.json`, measured as gzip at maximum compression: the shell's first load at most 235,000 bytes, the shell and every SDK entry together at most 250,000 bytes, each module entry at most 10,000 bytes, each view chunk at most 50,000 bytes, and the fonts at most 60,000 bytes. A budget overrun fails the build.
+The workspace build then holds the output to the size budgets in `packages/vite/budget.json`, measured as gzip at maximum compression: the shell's first load at most 235,000 bytes, the shell and every SDK entry together at most 250,000 bytes, each module entry at most 10,000 bytes, each view chunk at most 50,000 bytes, and the fonts at most 60,000 bytes. A budget overrun fails the build. The dashboard ships in English, so the shell build keeps only React Aria's `en-US` strings (its labels and screen-reader announcements); React Aria falls back to them for any other locale.
 
 `renderModule(definition, options)` from `@headless/dashboard-sdk/testing` mounts a module in a test shell, as the dashboard would: its routes, a session, its permissions (`canView` and `canOperate`, both `true` by default), the data client, an Operation host, toasts, and a fake stream. The `api` handler answers the module's API calls; throw a `DashboardApiError` to answer with a status. The result adds `stream` (push events as the server would), `requests` (every API call in order), and `navigate(path)`.
 

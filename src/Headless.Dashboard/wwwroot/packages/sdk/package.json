@@ -6,7 +6,9 @@
   "exports": {
     ".": "./src/index.ts",
     "./components": "./src/components/index.ts",
+    "./table": "./src/components/table/index.ts",
     "./data": "./src/data/index.ts",
+    "./locale": "./src/locale/index.ts",
     "./stream": "./src/stream/index.ts",
     "./commands": "./src/commands/index.ts",
     "./router": "./src/router/index.ts",

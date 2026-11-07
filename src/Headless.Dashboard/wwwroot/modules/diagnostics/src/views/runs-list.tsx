@@ -2,24 +2,28 @@ import { useDashboard, useModule } from '@headless/dashboard-sdk'
 import { useOperations } from '@headless/dashboard-sdk/commands'
 import {
   Button,
-  DataTable,
   Inspector,
-  NewRowsNotice,
+  Mono,
   ObjectHeader,
+  PrimaryAction,
   SelectField,
   StatusMark,
   TextInputField,
   useDelayed,
+  useViewKeys,
 } from '@headless/dashboard-sdk/components'
-import { DashboardApiError, formatCount, listKey, useDashboardList, useDashboardObject } from '@headless/dashboard-sdk/data'
+import { DataTable } from '@headless/dashboard-sdk/table'
+import { DashboardApiError, listKey, useDashboardKeysetList, useDashboardObject, useNewRows } from '@headless/dashboard-sdk/data'
+import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useMutation, useQueryClient } from '@headless/dashboard-sdk/query'
-import { Link, useNavigate, useSearchParams } from '@headless/dashboard-sdk/router'
-import { useEffect, useRef, type KeyboardEvent } from 'react'
+import { Link, useSearchParams } from '@headless/dashboard-sdk/router'
+import { useEffect, useRef } from 'react'
 import { LoadError, RunActions, RunFields, RunTime, RunTimeline, StaleNotice } from '../run-parts.tsx'
 import {
   addRun,
   fetchRun,
   fetchRuns,
+  runMatches,
   runStatuses,
   runStatusMark,
   runsTopic,
@@ -36,23 +40,21 @@ const statusOptions = [{ value: '', label: 'Any status' }, ...runStatuses.map((s
 const layout = { display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'start' } as const
 const canvas = { flex: '1 1 32rem', minInlineSize: 0, display: 'flex', flexDirection: 'column', gap: '0.75rem' } as const
 
-function isTextField(target: EventTarget) {
-  return target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
-}
-
 /** The diagnostic runs: a live list, the selection's inspector, and Requeue over the failed runs as an Operation. */
 export default function RunsList() {
   const { api } = useDashboard()
   const module = useModule()
+  const format = useFormat()
   const client = useQueryClient()
-  const navigate = useNavigate()
   const { start } = useOperations()
   const [params, setParams] = useSearchParams()
   const filter: RunFilter = { status: params.get('status') ?? '', error: params.get('error') ?? '' }
   const selectedIds = new Set(params.getAll('selected'))
   const topic = runsTopic(module.id)
-  const runs = useDashboardList<Run>({ topic, params: filter, fetch: () => fetchRuns(api, module.id, filter) })
-  const showLoading = useDelayed(runs.isPending)
+  const runs = useDashboardKeysetList<Run>({ topic, params: filter, fetchPage: (cursor) => fetchRuns(api, module.id, filter, cursor) })
+  const list = runs.query
+  const newRows = useNewRows(topic)
+  const showLoading = useDelayed(list.isPending)
   const { requeue } = useRunCommands()
   const requeuing = useRequeuing()
   const add = useMutation({
@@ -127,40 +129,19 @@ export default function RunsList() {
     }
   }, [wantsOperation])
 
-  const items = runs.data?.items ?? []
+  const items = runs.rows
   const selectedRuns = items.filter((run) => selectedIds.has(run.id))
   // A link can select a run the loaded page does not hold; the inspector reads that one run by its id instead.
   const [onlySelected] = selectedIds
-  const lookupId = runs.data && selectedIds.size === 1 && selectedRuns.length === 0 ? onlySelected : undefined
-  const count = runs.data?.count
+  const lookupId = list.data && selectedIds.size === 1 && selectedRuns.length === 0 ? onlySelected : undefined
+  const count = runs.count
   const filtered = Boolean(filter.status || filter.error)
   const addReason = module.canOperate ? null : viewOnlyReason
   const requeueReason = requeue && !requeue.canRun ? (requeue.disabledReason ?? viewOnlyReason) : null
 
-  // `X` toggles the focused row in the selection, as the dashboard's lists do.
-  function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    if (event.key.toLowerCase() !== 'x' || event.metaKey || event.ctrlKey || event.altKey || isTextField(event.target)) {
-      return
-    }
-
-    const row = (event.target as HTMLElement).closest('[role="row"]')
-    const id = row?.querySelector<HTMLElement>('[data-run-id]')?.dataset.runId
-
-    if (!id) {
-      return
-    }
-
-    event.preventDefault()
-    const next = new Set(selectedIds)
-
-    if (next.has(id)) {
-      next.delete(id)
-    } else {
-      next.add(id)
-    }
-
-    select(next)
-  }
+  // `/` focuses the view's filter: the free-text one, which is what an operator types into.
+  const filters = useRef<HTMLDivElement>(null)
+  useViewKeys({ filter: () => filters.current?.querySelector<HTMLInputElement>('input')?.focus() })
 
   return (
     <div style={layout}>
@@ -169,69 +150,71 @@ export default function RunsList() {
           <h1 id="diagnostics-runs-title" className="hd-title">
             Runs
           </h1>
-          {count ? <span className="hd-hint">{`${formatCount(count)} ${count.value === 1 && !count.capped ? 'run' : 'runs'}`}</span> : null}
-          <Button variant="primary" disabledReason={addReason} isPending={add.isPending} onPress={() => add.mutate()}>
-            Add run
-          </Button>
+          {count ? <span className="hd-hint">{`${format.count(count)} ${count.value === 1 && !count.capped ? 'run' : 'runs'}`}</span> : null}
+          <PrimaryAction>
+            <Button variant="primary" disabledReason={addReason} isPending={add.isPending} onPress={() => add.mutate()}>
+              Add run
+            </Button>
+          </PrimaryAction>
           <Button disabledReason={requeueReason} onPress={requeueFailed}>
             Requeue failed runs
           </Button>
         </header>
         {add.isError ? <LoadError message={add.error.message} onRetry={() => add.mutate()} /> : null}
-        <div className="hd-actions" role="search" aria-label="Filter runs">
+        <div ref={filters} className="hd-actions" role="search" aria-label="Filter runs">
           <SelectField label="Status" value={filter.status} onChange={(value) => setFilter('status', value)} options={statusOptions} />
           <TextInputField label="Error contains" value={filter.error} onChange={(value) => setFilter('error', value)} />
         </div>
-        <StaleNotice onRefresh={() => void runs.refetch()} />
-        <NewRowsNotice topic={topic} />
-        {runs.isPending ? (
+        <StaleNotice onRefresh={() => void list.refetch()} />
+        {list.isPending ? (
           showLoading ? (
             <div role="status" aria-busy="true" aria-label="Loading runs" className="hd-table-wrap">
               <p className="hd-hint">Loading runs…</p>
             </div>
           ) : null
-        ) : runs.isError ? (
-          <LoadError message={runs.error.message} onRetry={() => void runs.refetch()} />
+        ) : list.isError ? (
+          <LoadError message={list.error.message} onRetry={() => void list.refetch()} />
         ) : (
-          <div onKeyDown={onKeyDown}>
-            <DataTable
-              label="Runs"
-              rows={items}
-              selectionMode="multiple"
-              selectedIds={selectedIds}
-              onSelectionChange={select}
-              onOpen={(run) => navigate(`runs/${encodeURIComponent(run.id)}`)}
-              matchingCount={count?.value}
-              onSelectAllMatching={() => {
-                if (requeue?.canRun) {
-                  start({ module: module.id, command: requeue, filter: matchingFilter, noun: 'matching runs' })
-                }
-              }}
-              emptyState={filtered ? 'No runs match this filter. Clear it to see every run.' : 'No runs yet - add one with Fail on a new run'}
-              columns={[
-                { id: 'id', header: 'Run', cell: (run) => (
-                    <bdi className="hd-mono" data-run-id={run.id}>
-                      {run.id}
-                    </bdi>
-                  ),
-                  isRowHeader: true },
-                {
-                  id: 'status',
-                  header: 'Status',
-                  cell: (run) => <StatusMark {...runStatusMark(run.status, requeuing.isRequeuing(run))} />,
-                },
-                { id: 'attempts', header: 'Attempts', cell: (run) => run.attempts, align: 'end' },
-                { id: 'lastError', header: 'Last error', cell: (run) => run.lastError ?? '' },
-                { id: 'updated', header: 'Updated', cell: (run) => <RunTime value={run.updatedAt} /> },
-              ]}
-            />
-          </div>
+          <DataTable
+            // A new filter is a new list: the held rows and the scroll start again.
+            key={`${filter.status}\n${filter.error}`}
+            label="Runs"
+            viewId={`${module.id}.runs`}
+            rows={items}
+            matches={(run) => runMatches(run, filter)}
+            hasMore={runs.hasMore}
+            isLoadingMore={runs.isLoadingMore}
+            onLoadMore={runs.loadMore}
+            newRows={newRows}
+            selectionMode="multiple"
+            selectedIds={selectedIds}
+            onSelectionChange={select}
+            matchingCount={count?.value}
+            onSelectAllMatching={() => {
+              if (requeue?.canRun) {
+                start({ module: module.id, command: requeue, filter: matchingFilter, noun: 'matching runs' })
+              }
+            }}
+            emptyState={filtered ? 'No runs match this filter. Clear it to see every run.' : 'No runs yet - add one with Fail on a new run'}
+            columns={[
+              { id: 'id', header: 'Run', cell: (run) => <Mono>{run.id}</Mono>, isRowHeader: true, width: 140 },
+              {
+                id: 'status',
+                header: 'Status',
+                cell: (run) => <StatusMark {...runStatusMark(run.status, requeuing.isRequeuing(run))} />,
+                width: 130,
+              },
+              { id: 'attempts', header: 'Attempts', cell: (run) => format.number(run.attempts), align: 'end', priority: 2, width: 90 },
+              { id: 'lastError', header: 'Last error', cell: (run) => run.lastError ?? '', priority: 2, width: '2fr' },
+              { id: 'updated', header: 'Updated', cell: (run) => <RunTime value={run.updatedAt} />, width: '1fr' },
+            ]}
+          />
         )}
       </section>
       <RunsInspector
         runs={selectedRuns}
         lookupId={lookupId}
-        count={count ? formatCount(count) : undefined}
+        count={count ? format.count(count) : undefined}
         isRequeuing={requeuing.isRequeuing}
         onRequeued={requeuing.mark}
         onClose={() => select(new Set())}
@@ -345,7 +328,12 @@ function RunInspector({
         title="Run"
         id={run.id}
         status={status}
-        actions={<RunActions runs={[run]} onRequeued={onRequeued} />}
+        actions={
+          <>
+            <Link to={`runs/${encodeURIComponent(run.id)}`}>Open run page</Link>
+            <RunActions runs={[run]} onRequeued={onRequeued} />
+          </>
+        }
       />
       <RunFields run={run} statusLabel={status.label} />
       {detail.data ? (
@@ -357,7 +345,6 @@ function RunInspector({
           Loading the timeline…
         </p>
       )}
-      <Link to={`runs/${encodeURIComponent(run.id)}`}>Open run page</Link>
     </Inspector>
   )
 }

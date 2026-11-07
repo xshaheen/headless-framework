@@ -14,7 +14,7 @@ namespace Headless.Dashboard;
 /// <remarks>
 /// <para>Its own API, at <c>{base}/api/{id}</c>:</para>
 /// <list type="bullet">
-///   <item><description><c>GET runs?status=&amp;error=&amp;limit=</c>: the runs, newest first, with a capped count.</description></item>
+///   <item><description><c>GET runs?status=&amp;error=&amp;limit=&amp;after=</c>: one keyset page of the runs, newest first, with a capped count and the <c>nextCursor</c> that <c>after</c> takes for the next page.</description></item>
 ///   <item><description><c>GET runs/{runId}</c>: one run with its timeline, or <c>404</c>.</description></item>
 ///   <item><description><c>POST runs</c>: adds a queued run; an operator action.</description></item>
 /// </list>
@@ -95,7 +95,7 @@ internal sealed class DiagnosticsModule
         CancellationToken cancellationToken
     )
     {
-        return Task.FromResult(_sources.GetAttention());
+        return Task.FromResult(_sources.GetAttention(_commands.RequeueId));
     }
 
     public Task<IReadOnlyList<DashboardFigure>> GetOverviewAsync(
@@ -195,29 +195,78 @@ internal sealed class DiagnosticsModule
         return Task.FromResult(_commands.RunChunk(request));
     }
 
-    private JsonHttpResult<DiagnosticsRunList> _ListRuns(string? status, string? error, int? limit)
+    /// <summary>
+    /// One keyset page of the matching runs, newest first. Runs are ordered by the store sequence at which they were
+    /// added, which no two runs share and no write changes, so a page boundary never moves: a run added while the
+    /// operator scrolls lands above the first page, and no run repeats or goes missing across pages.
+    /// </summary>
+    private Results<JsonHttpResult<DiagnosticsRunList>, BadRequest> _ListRuns(
+        string? status,
+        string? error,
+        int? limit,
+        string? after
+    )
     {
+        long? before = null;
+
+        if (!string.IsNullOrEmpty(after))
+        {
+            // The cursor is the added-at sequence of the previous page's last run; the client treats it as opaque.
+            if (!long.TryParse(after, NumberStyles.None, CultureInfo.InvariantCulture, out var sequence))
+            {
+                return TypedResults.BadRequest();
+            }
+
+            before = sequence;
+        }
+
         var filter = DiagnosticsRunFilter.Create(status, error);
         var take = Math.Clamp(limit ?? _DefaultListLimit, 1, MaxListLimit);
         var count = 0;
+        var capped = false;
         var items = new List<DiagnosticsRunSummary>(take);
+        DiagnosticsRun? last = null;
+        var hasMore = false;
 
         foreach (var run in _store.Runs.Where(filter.Matches))
         {
             if (count == CountCap)
             {
-                return _List(items, count, capped: true);
+                capped = true;
+            }
+            else
+            {
+                count++;
             }
 
-            count++;
+            if (before is { } cursor && run.CreatedSequence >= cursor)
+            {
+                continue;
+            }
 
             if (items.Count < take)
             {
                 items.Add(DiagnosticsRunSummary.From(run));
+                last = run;
+            }
+            else
+            {
+                hasMore = true;
+            }
+
+            if (capped && hasMore)
+            {
+                break;
             }
         }
 
-        return _List(items, count, capped: false);
+        var nextCursor =
+            hasMore && last is not null ? last.CreatedSequence.ToString(CultureInfo.InvariantCulture) : null;
+
+        return TypedResults.Json(
+            new DiagnosticsRunList(items, count, capped, nextCursor),
+            DiagnosticsJsonContext.Default.DiagnosticsRunList
+        );
     }
 
     private Results<JsonHttpResult<DiagnosticsRunDetail>, NotFound> _GetRun(string runId)
@@ -236,14 +285,6 @@ internal sealed class DiagnosticsModule
             DiagnosticsRunDetail.From(run),
             DiagnosticsJsonContext.Default.DiagnosticsRunDetail,
             statusCode: StatusCodes.Status201Created
-        );
-    }
-
-    private static JsonHttpResult<DiagnosticsRunList> _List(List<DiagnosticsRunSummary> items, int count, bool capped)
-    {
-        return TypedResults.Json(
-            new DiagnosticsRunList(items, count, capped),
-            DiagnosticsJsonContext.Default.DiagnosticsRunList
         );
     }
 }
@@ -304,8 +345,19 @@ internal sealed record DiagnosticsRunDetail(
     }
 }
 
-/// <summary>One page of runs, and how many runs match, counted no further than <see cref="DiagnosticsModule.CountCap"/>.</summary>
-internal sealed record DiagnosticsRunList(IReadOnlyList<DiagnosticsRunSummary> Items, int Count, bool CountCapped);
+/// <summary>
+/// One page of runs, how many runs match, counted no further than <see cref="DiagnosticsModule.CountCap"/>, and the
+/// cursor of the next page, or <see langword="null"/> on the last page.
+/// </summary>
+internal sealed record DiagnosticsRunList(
+    IReadOnlyList<DiagnosticsRunSummary> Items,
+    int Count,
+    bool CountCapped,
+    string? NextCursor
+);
+
+/// <summary>The filter <see cref="DiagnosticsRunFilter"/> reads, as a Needs-you group hands it to its Operation.</summary>
+internal sealed record DiagnosticsRunFilterDocument(string Status, string Error);
 
 [JsonSourceGenerationOptions(
     JsonSerializerDefaults.Web,
@@ -315,4 +367,5 @@ internal sealed record DiagnosticsRunList(IReadOnlyList<DiagnosticsRunSummary> I
 [JsonSerializable(typeof(DiagnosticsRunSummary))]
 [JsonSerializable(typeof(DiagnosticsRunDetail))]
 [JsonSerializable(typeof(DiagnosticsRunList))]
+[JsonSerializable(typeof(DiagnosticsRunFilterDocument))]
 internal sealed partial class DiagnosticsJsonContext : JsonSerializerContext;

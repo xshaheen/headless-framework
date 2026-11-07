@@ -1,4 +1,4 @@
-import { CommandPalette, type PaletteItem } from '@headless/dashboard-sdk/components'
+import { CommandPalette, useSelectionCommands, type PaletteItem } from '@headless/dashboard-sdk/components'
 import { useDashboardApi } from '@headless/dashboard-sdk/data'
 import { useNavigate } from '@headless/dashboard-sdk/router'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
@@ -76,14 +76,16 @@ function staticItems(
 }
 
 /**
- * The shell's command palette: views, module nav, and client commands from the inlined manifest, plus the objects a
- * pasted id resolves to in any module, looked up once typing settles.
+ * The shell's command palette: views, module nav, and client commands from the inlined manifest, the server commands
+ * the view's selection allows now, and the objects a pasted id resolves to in any module, looked up once typing
+ * settles.
  */
 export function ShellPalette({ isOpen, onOpenChange }: { isOpen: boolean; onOpenChange: (isOpen: boolean) => void }) {
   const { state, loader } = useShell()
   const api = useDashboardApi()
   const navigate = useNavigate()
   const openObject = useOpenObject()
+  const selectionCommands = useSelectionCommands()
   const [query, setQuery] = useState('')
   const [found, setFound] = useState<{ query: string; objects: ResolvedObject[] }>({ query: '', objects: [] })
   const latest = useRef(0)
@@ -135,14 +137,22 @@ export function ShellPalette({ isOpen, onOpenChange }: { isOpen: boolean; onOpen
     found.query === query
       ? found.objects.map((object) => ({
           id: `object:${object.target.module}:${object.target.kind}:${object.target.id}`,
-          // The id is part of the label, so the palette's filter keeps the object the pasted id found.
-          label: `${object.title} ${object.target.id}`,
+          label: object.title,
+          // The palette's filter matches the id too, so it keeps the object the pasted id found.
+          objectId: object.target.id,
           kind: state.modules.find((module) => module.id === object.target.module)?.displayName ?? object.target.module,
           onAction: () => void openObject(object.target).catch(() => undefined),
         }))
       : []
 
-  const items = [...objects, ...staticItems(state, (to) => void navigate(to), runCommand)]
+  // The view offers only the commands the server allows its selection now, so a refused one is absent here.
+  const selection: PaletteItem[] = selectionCommands().map((command) => ({
+    id: `selection:${command.id}`,
+    label: command.label,
+    kind: 'Selection',
+    onAction: command.run,
+  }))
+  const items = [...objects, ...selection, ...staticItems(state, (to) => void navigate(to), runCommand)]
 
   function onInput(event: FormEvent<HTMLDivElement>) {
     if (event.target instanceof HTMLInputElement) {

@@ -121,6 +121,11 @@ def load_graph() -> dict[str, Project]:
             if target_key in projects:
                 project.references.add(target_key)
                 projects[target_key].dependents.add(key)
+    # The repository-root npm workspace files sit outside every project directory, yet they decide what a member
+    # dashboard's SPA build installs, so they select that project and enter its proof's input key.
+    for key in NPM_WORKSPACE_PROJECTS:
+        if key in projects:
+            projects[key].linked_inputs.update(NPM_WORKSPACE_FILES)
     return projects
 
 
@@ -478,6 +483,10 @@ SPA_PROJECTS = (
     "src/Headless.Jobs.Dashboard/Headless.Jobs.Dashboard.csproj",
     "src/Headless.Messaging.Dashboard/Headless.Messaging.Dashboard.csproj",
 )
+# The dashboard projects whose SPA is a member of the repository-root npm workspace, and that workspace's files. The
+# Jobs and Messaging SPAs keep their own lockfiles under their wwwroot, which their project directories already cover.
+NPM_WORKSPACE_PROJECTS = ("src/Headless.Dashboard/Headless.Dashboard.csproj",)
+NPM_WORKSPACE_FILES = ("package.json", "package-lock.json", ".npmrc")
 
 
 def builds_spa(build: list[str], projects: dict[str, Project]) -> bool:

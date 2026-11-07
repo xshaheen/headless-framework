@@ -6,12 +6,6 @@
   "engines": {
     "node": ">=22.18"
   },
-  "workspaces": [
-    "packages/sdk",
-    "packages/vite",
-    "apps/shell",
-    "modules/diagnostics"
-  ],
   "scripts": {
     "build": "npm run type-check && npm run build-only",
     "build-only": "vite build -c apps/shell/vite.config.ts && vite build -c modules/diagnostics/vite.config.ts && node packages/vite/src/cli.ts finalize dist",

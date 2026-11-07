@@ -1,8 +1,8 @@
+import { useOperations } from '@headless/dashboard-sdk/commands'
 import { Button, InspectorField, InspectorFields, Mono, StatusMark, useDelayed } from '@headless/dashboard-sdk/components'
-import { formatCount } from '@headless/dashboard-sdk/data'
+import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useSearchParams } from '@headless/dashboard-sdk/router'
 import { useEffect, useState } from 'react'
-import { exactTime, relativeTime } from '../format.ts'
 import { DockedInspector } from '../layout/inspector-dock.tsx'
 import { useOpenObject } from '../shell-context.tsx'
 import { attentionTotal, useNeedsYou, useRelated, type AttentionItem, type ModuleSection } from '../shell-data.ts'
@@ -66,8 +66,29 @@ function InvestigateButton({ item, variant }: { item: AttentionItem; variant?: '
   )
 }
 
+/**
+ * The item's recommended command as its primary button, such as `Requeue 23`: an Operation over the item's group,
+ * which confirms the scope the server counts before anything runs. A user who may not run it sees the button disabled
+ * with the reason. A plain function rather than a component, so the compiler adds no memo cache of its own: the shell
+ * sits at the edge of its size budget.
+ */
+function recommendedButton(operations: ReturnType<typeof useOperations>, format: ReturnType<typeof useFormat>, module: string, item: AttentionItem) {
+  const recommended = item.recommended
+
+  return recommended ? (
+    <Button
+      variant="primary"
+      disabledReason={recommended.command.disabledReason}
+      onPress={() => operations.start({ module, ...recommended, noun: `${recommended.command.objectKind}s in this group` })}
+    >
+      {`${recommended.command.label} ${format.count({ value: item.count, capped: item.capped })}`}
+    </Button>
+  ) : null
+}
+
 function ItemInspector({ section, item, onClose }: { section: ModuleSection<AttentionItem>; item: AttentionItem; onClose: () => void }) {
   const related = useRelated(item.target)
+  const format = useFormat()
 
   return (
     <DockedInspector label={`Needs you: ${item.title}`} onClose={onClose}>
@@ -77,10 +98,10 @@ function ItemInspector({ section, item, onClose }: { section: ModuleSection<Atte
       </header>
       <InspectorFields>
         <InspectorField label="Module">{section.displayName}</InspectorField>
-        <InspectorField label="Count">{formatCount({ value: item.count, capped: item.capped })}</InspectorField>
+        <InspectorField label="Count">{format.count({ value: item.count, capped: item.capped })}</InspectorField>
         {item.since ? (
           <InspectorField label="Since">
-            <span title={exactTime(item.since)}>{relativeTime(item.since)}</span>
+            <span title={format.exactTime(item.since)}>{format.relativeTime(item.since, { style: 'short' })}</span>
           </InspectorField>
         ) : null}
         {item.target ? (
@@ -134,6 +155,7 @@ function ItemInspector({ section, item, onClose }: { section: ModuleSection<Atte
 function Summary({ sections }: { sections: readonly ModuleSection<AttentionItem>[] }) {
   const count = sections.reduce((sum, section) => sum + section.items.length, 0)
   const modules = sections.filter((section) => section.items.length > 0).length
+  const format = useFormat()
 
   return (
     <DockedInspector label="Needs you summary">
@@ -141,7 +163,7 @@ function Summary({ sections }: { sections: readonly ModuleSection<AttentionItem>
       <p className="hd-prose">
         {count === 0
           ? 'Nothing needs you now.'
-          : `${count} ${count === 1 ? 'cause' : 'causes'} across ${modules} ${modules === 1 ? 'module' : 'modules'}, ${formatCount(attentionTotal(sections))} items in all. Select one to see it here.`}
+          : `${count} ${count === 1 ? 'cause' : 'causes'} across ${modules} ${modules === 1 ? 'module' : 'modules'}, ${format.count(attentionTotal(sections))} items in all. Select one to see it here.`}
       </p>
     </DockedInspector>
   )
@@ -156,6 +178,8 @@ export function NeedsYou() {
   const [params, setParams] = useSearchParams()
   const showSkeleton = useDelayed(needsYou.isPending)
   const selected = params.get('item')
+  const format = useFormat()
+  const operations = useOperations()
 
   function select(key: string | null) {
     setParams(
@@ -249,11 +273,13 @@ export function NeedsYou() {
                       >
                         <span className="hd-attention-title">{item.title}</span>
                         <span className="hd-hint">
-                          {`${formatCount({ value: item.count, capped: item.capped })} items`}
-                          {item.since ? ` · since ${relativeTime(item.since)}` : ''}
+                          {`${format.count({ value: item.count, capped: item.capped })} items`}
+                          {item.since ? ` · since ${format.relativeTime(item.since, { style: 'short' })}` : ''}
+                          {item.recentCount ? ' · growing' : ''}
                         </span>
                       </button>
                       <span className="hd-actions">
+                        {recommendedButton(operations, format, section.id, item)}
                         <InvestigateButton item={item} />
                       </span>
                     </li>

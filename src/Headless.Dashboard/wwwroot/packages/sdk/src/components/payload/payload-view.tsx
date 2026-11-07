@@ -1,7 +1,22 @@
+import { useFormat } from '../../locale/locale.tsx'
 import { Button } from '../button.tsx'
 
-/** The most of a payload the view renders; the rest is one `Copy all` away. */
+/** The most of a payload the view renders, in UTF-8 bytes; the rest is one `Copy all` away. */
 export const payloadDisplayLimit = 64 * 1024
+
+/**
+ * The longest start of `bytes` that fits in `limit` bytes and ends on a whole character: a UTF-8 continuation byte
+ * (`10xxxxxx`) at the cut means the character began before it, so the cut moves back to that character's first byte.
+ */
+function cutUtf8(bytes: Uint8Array, limit: number) {
+  let end = limit
+
+  while (end > 0 && (bytes[end]! & 0b1100_0000) === 0b1000_0000) {
+    end--
+  }
+
+  return new TextDecoder().decode(bytes.subarray(0, end))
+}
 
 /**
  * Indents JSON text without parsing its values, so a large integer such as `9007199254740993` keeps every digit that
@@ -84,10 +99,6 @@ export function formatJson(text: string): string | null {
   return out
 }
 
-function formatSize(bytes: number) {
-  return bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KB`
-}
-
 export interface PayloadViewProps {
   /** The payload as the server's formatter returned it: already redacted. */
   content: string
@@ -101,19 +112,22 @@ export interface PayloadViewProps {
  * HTML: React writes it as text.
  */
 export function PayloadView({ content, contentType, unsupportedVersion }: PayloadViewProps) {
+  const format = useFormat()
+
   if (unsupportedVersion !== undefined) {
     return <p className="hd-payload-note">{`Unsupported contract version ${unsupportedVersion}`}</p>
   }
 
-  const bytes = new TextEncoder().encode(content).length
+  const encoded = new TextEncoder().encode(content)
+  const bytes = encoded.length
   const truncated = bytes > payloadDisplayLimit
   const isJson = !truncated && (contentType === undefined || contentType.includes('json'))
-  const shown = truncated ? content.slice(0, payloadDisplayLimit) : isJson ? (formatJson(content) ?? content) : content
+  const shown = truncated ? cutUtf8(encoded, payloadDisplayLimit) : isJson ? (formatJson(content) ?? content) : content
 
   return (
     <figure className="hd-payload">
       <figcaption className="hd-payload-bar">
-        <span className="hd-hint">{truncated ? `${formatSize(bytes)}, first 64 KB shown` : formatSize(bytes)}</span>
+        <span className="hd-hint">{truncated ? `${format.size(bytes)}, first 64 KB shown` : format.size(bytes)}</span>
         <Button variant="ghost" onPress={() => void navigator.clipboard?.writeText(content)}>
           {truncated ? 'Copy all' : 'Copy'}
         </Button>

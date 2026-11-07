@@ -1,4 +1,5 @@
 import { Button, LiveIndicator } from '@headless/dashboard-sdk/components'
+import { useLocale } from '@headless/dashboard-sdk/locale'
 import { useLocation } from '@headless/dashboard-sdk/router'
 import { routeHandleFor } from '../route-handles.ts'
 import { useShell } from '../shell-context.tsx'
@@ -8,16 +9,19 @@ interface DocumentBarProps {
   isRailOpen: boolean
   onToggleRail: () => void
   onOpenPalette: () => void
+  /** Receives the slot the view's primary action renders into. */
+  primarySlot: (element: HTMLElement | null) => void
 }
 
 /**
- * The document bar: the breadcrumb, the display time zone, the live indicator, and `View only` for a viewer of the
- * module on screen, or of every module on the shell's own views.
+ * The document bar: the breadcrumb, the view's primary action, the display time zone, the live indicator, and
+ * `View only` for a viewer of the module on screen, or of every module on the shell's own views.
  */
-export function DocumentBar({ isRailOpen, onToggleRail, onOpenPalette }: DocumentBarProps) {
+export function DocumentBar({ isRailOpen, onToggleRail, onOpenPalette, primarySlot }: DocumentBarProps) {
   const { state } = useShell()
   const route = routeHandleFor(state, useLocation().pathname)
   const canOperate = useCanOperate(route.module)
+  const { timeZone } = useLocale()
   const crumb = route.crumb
   const title = crumb.at(-1) ?? ''
 
@@ -44,8 +48,9 @@ export function DocumentBar({ isRailOpen, onToggleRail, onOpenPalette }: Documen
         <h1 className="hd-page-title">{title}</h1>
       </nav>
       <span className="hd-docbar-spacer" />
+      <span ref={primarySlot} className="hd-actions" />
       <span className="hd-chip" title="Display time zone">
-        UTC
+        {timeZone}
       </span>
       <LiveIndicator />
       {canOperate ? null : <span className="hd-view-only">View only</span>}

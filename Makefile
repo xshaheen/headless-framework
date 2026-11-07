@@ -48,6 +48,10 @@ need_wiki = [ -n "$($(1))" ] || { echo "$@: no .wiki/ at or above $(REPO_ROOT), 
 DOTNET ?= dotnet
 NPM ?= npm
 SOLUTION ?= headless-framework.slnx
+# The repository-root npm workspace: one lockfile installs the dashboard shell, its SDK, and its modules. The Jobs and
+# Messaging Vue SPAs stay outside it, each with its own lockfile.
+NPM_WORKSPACE_DIR ?= .
+NPM_WORKSPACE_FILES ?= package.json package-lock.json .npmrc
 SHELL_DASHBOARD_DIR ?= src/Headless.Dashboard/wwwroot
 JOBS_DASHBOARD_DIR ?= src/Headless.Jobs.Dashboard/wwwroot
 MESSAGING_DASHBOARD_DIR ?= src/Headless.Messaging.Dashboard/wwwroot
@@ -738,8 +742,9 @@ _node-check:
 	@command -v $(NPM) >/dev/null 2>&1 || { echo "ERROR: '$(NPM)' not found on PATH. Node 22+ is required to build the dashboards. Install from https://nodejs.org (LTS)."; exit 1; }
 
 .PHONY: dashboard-shell
-dashboard-shell: _node-check ## Rebuild the dashboard shell's workspace (npm ci + the shell, module, and budget builds into wwwroot/dist).
-	cd "$(SHELL_DASHBOARD_DIR)" && $(NPM) ci --no-audit --no-fund && $(NPM) run $(DASHBOARD_BUILD_SCRIPT)
+dashboard-shell: _node-check ## Rebuild the dashboard shell (npm ci at the root workspace + the shell, module, and budget builds into wwwroot/dist).
+	cd "$(NPM_WORKSPACE_DIR)" && $(NPM) ci --no-audit --no-fund
+	cd "$(SHELL_DASHBOARD_DIR)" && $(NPM) run $(DASHBOARD_BUILD_SCRIPT)
 
 .PHONY: dashboard-jobs
 dashboard-jobs: _node-check ## Rebuild the Jobs dashboard SPA (npm ci + vite build into wwwroot/dist).
@@ -759,15 +764,17 @@ dashboard-messaging: _node-check ## Rebuild the Messaging dashboard SPA (npm ci 
 # cli-exclude: script:headless-*-dashboard/format -- prettier --write over src/, which no gate checks
 # cli-exclude: script:headless-dashboard/test:unit:watch -- an interactive watcher; dashboard-shell-test runs the suite once
 # cli-exclude: script:headless-dashboard/lint -- eslint --fix writes files; the gate runs lint:check
-# dashboard_check <name> <dir>: install from the lockfile only when node_modules is missing or older than it (the
-# rule eng/DashboardSpa.targets uses), then run every gate script so one failure does not hide the next. Scripts
+# dashboard_check <name> <dir>: install from the nearest lockfile at or above <dir> (the root workspace's for the
+# shell, the SPA's own otherwise) only when the node_modules beside it is missing or older than it (the rule
+# eng/DashboardSpa.targets uses), then run every gate script so one failure does not hide the next. Scripts
 # run through `npm run`, never npx: a wrapper such as Socket's prints a banner over npx output and once hid an
 # eslint result. Exits 3 when a script failed, 4 when npm is missing, 1 when the install failed.
 DASHBOARD_CHECK_FN = dashboard_check() { \
-	local name="$$1" dir="$$2" script failed=""; \
+	local name="$$1" dir="$$2" lock_dir="$$2" script failed=""; \
 	command -v $(NPM) >/dev/null 2>&1 || { echo "ERROR: $(NPM) is not on PATH; the dashboard SPAs need Node 22+. Install from https://nodejs.org" >&2; return 4; }; \
-	if [ ! -f "$$dir/node_modules/.package-lock.json" ] || [ "$$dir/package-lock.json" -nt "$$dir/node_modules/.package-lock.json" ]; then \
-		(cd "$$dir" && $(NPM) ci --no-audit --no-fund) || { echo "[dashboard-$$name] npm ci failed" >&2; return 1; }; \
+	while [ ! -f "$$lock_dir/package-lock.json" ] && [ "$$lock_dir" != . ] && [ "$$lock_dir" != / ]; do lock_dir="$$(dirname "$$lock_dir")"; done; \
+	if [ ! -f "$$lock_dir/node_modules/.package-lock.json" ] || [ "$$lock_dir/package-lock.json" -nt "$$lock_dir/node_modules/.package-lock.json" ]; then \
+		(cd "$$lock_dir" && $(NPM) ci --no-audit --no-fund) || { echo "[dashboard-$$name] npm ci failed" >&2; return 1; }; \
 	fi; \
 	(cd "$$dir" && $(NPM) run lint:check) || failed="$$failed lint:check"; \
 	(cd "$$dir" && $(NPM) run type-check) || failed="$$failed type-check"; \
@@ -798,11 +805,12 @@ dashboards-test: ## Run every dashboard SPA's CI gates (dashboard-shell-test, da
 
 # changed_dashboards prints "<name> <dir>" for each dashboard SPA this side changed vs the merge base with
 # AFFECTED_BASE, committed or not, so a backend-only change pays nothing; with no merge base it prints every one. It
-# diffs the merge base for the same reason FORMAT_CHANGED does.
+# diffs the merge base for the same reason FORMAT_CHANGED does. The shell also answers for the root workspace files.
 CHANGED_DASHBOARDS_FN = changed_dashboards() { \
-	local base spa dir; base="$$(git merge-base "$(AFFECTED_BASE)" HEAD 2>/dev/null || true)"; \
-	for spa in "shell $(SHELL_DASHBOARD_DIR)" "jobs $(JOBS_DASHBOARD_DIR)" "messaging $(MESSAGING_DASHBOARD_DIR)"; do dir="$${spa\#* }"; \
-		if [ -z "$$base" ] || [ -n "$$(git diff --name-only "$$base" -- "$$dir"; git ls-files --others --exclude-standard -- "$$dir")" ]; then echo "$$spa"; fi; \
+	local base spa dir file paths; base="$$(git merge-base "$(AFFECTED_BASE)" HEAD 2>/dev/null || true)"; \
+	for spa in "shell $(SHELL_DASHBOARD_DIR)" "jobs $(JOBS_DASHBOARD_DIR)" "messaging $(MESSAGING_DASHBOARD_DIR)"; do dir="$${spa\#* }"; paths=("$$dir"); \
+		if [ "$${spa%% *}" = shell ]; then for file in $(NPM_WORKSPACE_FILES); do paths+=("$(NPM_WORKSPACE_DIR)/$$file"); done; fi; \
+		if [ -z "$$base" ] || [ -n "$$(git diff --name-only "$$base" -- "$${paths[@]}"; git ls-files --others --exclude-standard -- "$${paths[@]}")" ]; then echo "$$spa"; fi; \
 	done; }
 
 .PHONY: dashboards-test-affected

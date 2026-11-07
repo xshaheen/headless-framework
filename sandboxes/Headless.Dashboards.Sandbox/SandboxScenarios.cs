@@ -30,6 +30,8 @@ public static class SandboxScenarios
         ["scheduled-message"] = "One message published with a 10 minute delay: a row on the Scheduled page.",
         ["diagnostic-runs"] =
             "Six Headless dashboard diagnostic runs: two queued, one running, one succeeded, two failed with one error.",
+        ["diagnostic-runs-long"] =
+            "5,000 Headless dashboard diagnostic runs, enough to scroll the runs view through many pages: every 100th failed, the rest succeeded.",
     };
 
     public static async Task<IReadOnlyList<string>> RunAsync(
@@ -90,6 +92,7 @@ public static class SandboxScenarios
                 ),
             ],
             "diagnostic-runs" => _AddDiagnosticRuns(diagnostics),
+            "diagnostic-runs-long" => _AddLongDiagnosticRunList(diagnostics, count: 5_000),
             "all" => await _RunAllAsync(jobs, bus, diagnostics, cancellationToken),
             _ => throw new KeyNotFoundException(
                 $"Unknown scenario '{name}'. Known: all, {string.Join(", ", Descriptions.Keys)}."
@@ -149,6 +152,23 @@ public static class SandboxScenarios
             .ToArray();
 
         return [.. queued.Select(run => run.Id), running.Id, succeeded.Id, .. failed.Select(run => run.Id)];
+    }
+
+    private static List<string> _AddLongDiagnosticRunList(DiagnosticsStore diagnostics, int count)
+    {
+        var ids = new List<string>(count);
+
+        for (var index = 1; index <= count; index++)
+        {
+            var started = diagnostics.Start(diagnostics.AddRun().Id);
+            var run =
+                index % 100 == 0
+                    ? diagnostics.Fail(started.Id, "Disk quota exceeded")
+                    : diagnostics.Succeed(started.Id);
+            ids.Add(run.Id);
+        }
+
+        return ids;
     }
 
     private static string _Id(Guid id) => id.ToString("D");

@@ -1,4 +1,3 @@
-import { useEffect } from 'react'
 import {
   Autocomplete,
   Dialog as AriaDialog,
@@ -11,13 +10,15 @@ import {
   Text,
   useFilter,
 } from 'react-aria-components'
-import { Kbd } from '../marks.tsx'
+import { Kbd, Mono } from '../marks.tsx'
 
 export interface PaletteItem {
   id: string
   label: string
   /** What the item is: `View`, `Command`, `Run`. */
   kind?: string
+  /** The object's id, shown mono and bidi-isolated after the label, so a right-to-left label never reorders it. */
+  objectId?: string
   shortcut?: string
   onAction: () => void
 }
@@ -51,8 +52,16 @@ export function CommandPalette({ isOpen, onOpenChange, items }: CommandPalettePr
               }}
             >
               {(item) => (
-                <MenuItem id={item.id} textValue={item.label} className="hd-palette-item">
-                  <Text slot="label">{item.label}</Text>
+                <MenuItem id={item.id} textValue={item.objectId ? `${item.label} ${item.objectId}` : item.label} className="hd-palette-item">
+                  <Text slot="label">
+                    {item.label}
+                    {item.objectId ? (
+                      <>
+                        {' '}
+                        <Mono>{item.objectId}</Mono>
+                      </>
+                    ) : null}
+                  </Text>
                   <span className="hd-palette-meta">
                     {item.kind ? <span className="hd-hint">{item.kind}</span> : null}
                     {item.shortcut ? <Kbd>{item.shortcut}</Kbd> : null}
@@ -65,20 +74,4 @@ export function CommandPalette({ isOpen, onOpenChange, items }: CommandPalettePr
       </Modal>
     </ModalOverlay>
   )
-}
-
-/** Opens the palette on `⌘K` (`Ctrl+K` off macOS), from any screen, even while a text field has focus. */
-export function usePaletteShortcut(open: () => void) {
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
-        event.preventDefault()
-        open()
-      }
-    }
-
-    document.addEventListener('keydown', onKeyDown)
-
-    return () => document.removeEventListener('keydown', onKeyDown)
-  }, [open])
 }

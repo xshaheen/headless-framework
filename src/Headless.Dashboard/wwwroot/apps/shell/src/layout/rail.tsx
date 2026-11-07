@@ -1,5 +1,5 @@
-import { formatCount } from '@headless/dashboard-sdk/data'
 import { Button, Kbd } from '@headless/dashboard-sdk/components'
+import { TimeZoneField, useFormat } from '@headless/dashboard-sdk/locale'
 import { NavLink } from '@headless/dashboard-sdk/router'
 import { useId, useState } from 'react'
 import type { BootstrapModule, BootstrapNavEntry } from '../bootstrap.ts'
@@ -63,7 +63,7 @@ function ModuleGroup({ module, onNavigate }: { module: BootstrapModule; onNaviga
 
 /**
  * The rail: Overview, Needs you with its count, one group per module in registration order, then the signed-in
- * operator, the theme, and Sign out. A failed sign-out shows beside Sign out, never over it, and the operator stays
+ * operator, the theme, the display time zone, and Sign out. A failed sign-out shows beside Sign out, never over it, and the operator stays
  * signed in.
  */
 export function Rail({ isOpen, onNavigate }: { isOpen: boolean; onNavigate: () => void }) {
@@ -71,6 +71,7 @@ export function Rail({ isOpen, onNavigate }: { isOpen: boolean; onNavigate: () =
   const needsYou = useNeedsYou()
   const [signOutState, setSignOutState] = useState<'idle' | 'busy' | 'failed'>('idle')
   const total = attentionTotal(needsYou.data)
+  const format = useFormat()
   const signsIn = state.authMode !== 'none'
 
   async function onSignOut() {
@@ -95,8 +96,8 @@ export function Rail({ isOpen, onNavigate }: { isOpen: boolean; onNavigate: () =
       <NavLink to="/needs-you" className={navClass} onClick={onNavigate}>
         Needs you
         {total.value > 0 ? (
-          <span className="hd-nav-count" aria-label={`${formatCount(total)} items`}>
-            {formatCount(total)}
+          <span className="hd-nav-count" aria-label={`${format.count(total)} items`}>
+            {format.count(total)}
           </span>
         ) : null}
       </NavLink>
@@ -106,6 +107,7 @@ export function Rail({ isOpen, onNavigate }: { isOpen: boolean; onNavigate: () =
       <div className="hd-rail-foot">
         {state.session.name ? <span className="hd-rail-who">{state.session.name}</span> : null}
         <ThemeControl />
+        <TimeZoneField />
         {signsIn ? (
           <div className="hd-rail-signout">
             <Button variant="ghost" isPending={signOutState === 'busy'} onPress={() => void onSignOut()}>

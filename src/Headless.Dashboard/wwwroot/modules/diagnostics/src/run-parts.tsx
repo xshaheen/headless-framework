@@ -1,12 +1,14 @@
 import { useDashboard, useModule } from '@headless/dashboard-sdk'
-import { CommandAction, type RowResult } from '@headless/dashboard-sdk/commands'
-import { Button, InspectorField, InspectorFields, Mono } from '@headless/dashboard-sdk/components'
+import { CommandAction, useAllowedActions, type RowResult } from '@headless/dashboard-sdk/commands'
+import { Button, InspectorField, InspectorFields, Mono, Timeline, type StatusTone } from '@headless/dashboard-sdk/components'
+import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useStreamEvent, useStreamStatus } from '@headless/dashboard-sdk/stream'
 import { useState } from 'react'
-import { exactTime, relativeTime, useRefusals, useRunCommands, type Run, type RunEvent } from './runs.ts'
+import { useRunCommands, type Run, type RunEvent } from './runs.ts'
 
 /** A timestamp as relative time, with the exact time and zone on hover. */
 export function RunTime({ value }: { value: string }) {
+  const format = useFormat()
   const at = new Date(value)
 
   if (Number.isNaN(at.getTime())) {
@@ -14,8 +16,8 @@ export function RunTime({ value }: { value: string }) {
   }
 
   return (
-    <time dateTime={value} title={exactTime(at)}>
-      {relativeTime(at, Date.now())}
+    <time dateTime={value} title={format.exactTime(at)}>
+      {format.relativeTime(at)}
     </time>
   )
 }
@@ -62,33 +64,26 @@ export function RunFields({ run, statusLabel }: { run: Run; statusLabel: string 
   )
 }
 
-const eventLabels: Readonly<Record<string, string>> = {
-  Created: 'Created',
-  Started: 'Started',
-  Succeeded: 'Succeeded',
-  Failed: 'Failed',
-  Requeued: 'Requeued',
-  Note: 'Note',
+const eventTones: Readonly<Record<string, StatusTone>> = {
+  Started: 'active',
+  Succeeded: 'healthy',
+  Failed: 'needs',
 }
 
-/** The run's stored events, oldest first: created, each start, failure, requeue, and note. */
-export function RunTimeline({ events }: { events: readonly RunEvent[] }) {
+/**
+ * The run's stored events, oldest first: created, each start, failure, requeue, and note. Selecting one puts it in
+ * `onSelect`'s inspector; the event's id is its position, since the run stores events only in order.
+ */
+export function RunTimeline({ events, selected, onSelect }: { events: readonly RunEvent[]; selected?: string; onSelect?: (id: string) => void }) {
   return (
     <section aria-label="Timeline">
       <h3 className="hd-title">Timeline</h3>
-      <ol className="hd-fields">
-        {events.map((event, index) => (
-          <li key={`${event.at}-${index}`}>
-            <strong>{eventLabels[event.kind] ?? event.kind}</strong> <RunTime value={event.at} />
-            {event.text ? (
-              <>
-                {' '}
-                <span className="hd-hint">{event.text}</span>
-              </>
-            ) : null}
-          </li>
-        ))}
-      </ol>
+      <Timeline
+        label="Run timeline"
+        events={events.map((event, index) => ({ id: String(index), label: event.kind, at: event.at, text: event.text, tone: eventTones[event.kind] }))}
+        selectedId={selected}
+        onSelect={onSelect}
+      />
     </section>
   )
 }
@@ -107,7 +102,7 @@ export interface RunActionsProps {
 export function RunActions({ runs, onRequeued, onChanged }: RunActionsProps) {
   const module = useModule()
   const { all, fail, requeue, addNote } = useRunCommands()
-  const refusal = useRefusals(runs)
+  const refusal = useAllowedActions('run', runs)
   const ids = runs.map((run) => run.id)
   // Captured at render, so the versions are the ones the operator saw when they confirmed.
   const versions = new Map(runs.map((run) => [run.id, run.version]))
@@ -126,6 +121,7 @@ export function RunActions({ runs, onRequeued, onChanged }: RunActionsProps) {
           ids={ids}
           noun={noun}
           variant="primary"
+          recovery
           commands={all}
           disabledReason={refusal(requeue.id)}
           onDone={(rows) => {

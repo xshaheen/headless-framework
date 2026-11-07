@@ -164,7 +164,7 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: |
-            src/Headless.Dashboard/wwwroot/package-lock.json
+            package-lock.json
             src/Headless.Jobs.Dashboard/wwwroot/package-lock.json
             src/Headless.Messaging.Dashboard/wwwroot/package-lock.json
 
@@ -220,16 +220,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # The shell is a member of the repository-root npm workspace, so its lockfile is the root one.
         include:
           - name: Shell
             target: dashboard-shell-test
-            path: src/Headless.Dashboard/wwwroot
+            lockfile: package-lock.json
           - name: Jobs
             target: dashboard-jobs-test
-            path: src/Headless.Jobs.Dashboard/wwwroot
+            lockfile: src/Headless.Jobs.Dashboard/wwwroot/package-lock.json
           - name: Messaging
             target: dashboard-messaging-test
-            path: src/Headless.Messaging.Dashboard/wwwroot
+            lockfile: src/Headless.Messaging.Dashboard/wwwroot/package-lock.json
     steps:
       - name: "Check out repository"
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -242,7 +243,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: ${{ matrix.path }}/package-lock.json
+          cache-dependency-path: ${{ matrix.lockfile }}
 
       # The same target a local run uses: npm ci from the lockfile, then lint, type-check, unit tests, and the
       # Vite build, each run even when an earlier one fails.
@@ -326,7 +327,7 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: |
-            src/Headless.Dashboard/wwwroot/package-lock.json
+            package-lock.json
             src/Headless.Jobs.Dashboard/wwwroot/package-lock.json
             src/Headless.Messaging.Dashboard/wwwroot/package-lock.json
 
@@ -427,7 +428,7 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: |
-            src/Headless.Dashboard/wwwroot/package-lock.json
+            package-lock.json
             src/Headless.Jobs.Dashboard/wwwroot/package-lock.json
             src/Headless.Messaging.Dashboard/wwwroot/package-lock.json
 

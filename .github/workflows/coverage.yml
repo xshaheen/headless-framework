@@ -59,7 +59,7 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: |
-            src/Headless.Dashboard/wwwroot/package-lock.json
+            package-lock.json
             src/Headless.Jobs.Dashboard/wwwroot/package-lock.json
             src/Headless.Messaging.Dashboard/wwwroot/package-lock.json
 

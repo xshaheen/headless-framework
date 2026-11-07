@@ -67,6 +67,31 @@ public sealed record DashboardAttentionItem
 
     /// <summary>Gets when the condition began, from the module's store, or <see langword="null"/>.</summary>
     public DateTimeOffset? Since { get; init; }
+
+    /// <summary>Gets when the cause last occurred, such as the latest failure of the group, or <see langword="null"/>.</summary>
+    public DateTimeOffset? LastSeenAt { get; init; }
+
+    /// <summary>
+    /// Gets how many objects joined the item in the module's most recent interval, such as the last hour. Above zero,
+    /// the shell marks the cause as still growing.
+    /// </summary>
+    public long RecentCount { get; init; }
+
+    /// <summary>
+    /// Gets the id of the module command that resolves the item, such as its Requeue, or <see langword="null"/>.
+    /// </summary>
+    /// <remarks>
+    /// The shell offers the command as the item's primary button and runs it as an Operation over
+    /// <see cref="GroupFilter"/>, so it needs both, and a module that implements <see cref="IDashboardOperationRunner"/>.
+    /// It offers nothing when the host disabled the command or hid it from the UI.
+    /// </remarks>
+    public string? RecommendedCommandId { get; init; }
+
+    /// <summary>
+    /// Gets the filter, in the module's own Operation filter shape, that selects every object of the item's group,
+    /// such as <c>{ "status": "Failed", "error": "..." }</c>; the recommended command's Operation is scoped by it.
+    /// </summary>
+    public JsonElement? GroupFilter { get; init; }
 }
 
 /// <summary>How urgent a Needs-you item is.</summary>

@@ -1,18 +1,19 @@
 import { Button, StatusMark, useDelayed } from '@headless/dashboard-sdk/components'
-import { formatCount } from '@headless/dashboard-sdk/data'
+import { useFormat } from '@headless/dashboard-sdk/locale'
 import { Link } from '@headless/dashboard-sdk/router'
-import { comparisonText, exactTime, figureText, relativeTime } from '../format.ts'
+import { comparisonText, figureText } from '../format.ts'
 import { attentionTotal, useNeedsYou, useOverview, type Figure, type ModuleSection } from '../shell-data.ts'
 
 const topItems = 5
 
 function FigureCell({ module, figure }: { module: string; figure: Figure }) {
-  const comparison = figure.comparison ? comparisonText(figure.value, figure.comparison, figure.unit) : undefined
+  const format = useFormat()
+  const comparison = figure.comparison ? comparisonText(format, figure.value, figure.comparison, figure.unit) : undefined
 
   return (
     <div className="hd-figure">
       <span className="hd-figure-module">{module}</span>
-      <span className="hd-figure-value">{figureText(figure.value, figure.unit)}</span>
+      <span className="hd-figure-value">{figureText(format, figure.value, figure.unit)}</span>
       <span className="hd-figure-label">
         {figure.label}
         {comparison ? (
@@ -39,6 +40,7 @@ function StaleNote({ sections }: { sections: readonly ModuleSection<unknown>[] }
 
 /** Overview: what needs the operator first, then every module's figures with their comparisons. */
 export function Overview() {
+  const format = useFormat()
   const needsYou = useNeedsYou()
   const overview = useOverview()
   const showSkeleton = useDelayed(needsYou.isPending || overview.isPending)
@@ -54,7 +56,7 @@ export function Overview() {
             Needs you
           </h2>
           {items.length > 0 ? (
-            <span className="hd-hint">{`${items.length} ${items.length === 1 ? 'cause' : 'causes'} · ${formatCount(total)} items`}</span>
+            <span className="hd-hint">{`${items.length} ${items.length === 1 ? 'cause' : 'causes'} · ${format.count(total)} items`}</span>
           ) : null}
           <span className="hd-docbar-spacer" />
           <Link to="/needs-you">Open Needs you</Link>
@@ -76,10 +78,10 @@ export function Overview() {
                   <span className="hd-attention-title">{item.title}</span>
                   <span className="hd-hint">{section.displayName}</span>
                 </span>
-                <span className="hd-attention-count">{formatCount({ value: item.count, capped: item.capped })}</span>
+                <span className="hd-attention-count">{format.count({ value: item.count, capped: item.capped })}</span>
                 {item.since ? (
-                  <span className="hd-hint hd-attention-when" title={exactTime(item.since)}>
-                    since {relativeTime(item.since)}
+                  <span className="hd-hint hd-attention-when" title={format.exactTime(item.since)}>
+                    since {format.relativeTime(item.since, { style: 'short' })}
                   </span>
                 ) : (
                   <span />
