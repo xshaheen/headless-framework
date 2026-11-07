@@ -14,17 +14,22 @@ namespace Headless.Jobs;
 /// their groups until they age out.
 /// </para>
 /// <para>
-/// When a handler throws, the executor computes the fingerprint from the live exception: the innermost exception type,
-/// after unwrapping <see cref="AggregateException"/> and <see cref="System.Reflection.TargetInvocationException"/>,
-/// plus the top three stack frames outside <c>System.*</c> and <c>Microsoft.*</c>, each as a method full name with no
-/// line number and with compiler-generated lambda and async state-machine names reduced to the declaring method. The
-/// result is the SHA-256 of those lines, truncated to 16 hex characters. The executor carries it on
-/// <see cref="JobExecutionState.FailureFingerprint"/>, and the store writes it beside the exception text.
+/// When a handler throws, the executor computes the fingerprint from the live exception with
+/// <c>Headless.FailureFingerprint.Compute</c> (in <c>Headless.Extensions</c>), the algorithm every Headless feature
+/// shares: the innermost exception type, after unwrapping <see cref="AggregateException"/> and
+/// <see cref="System.Reflection.TargetInvocationException"/>, plus the top three stack frames outside <c>System.*</c>
+/// and <c>Microsoft.*</c>, each as a method full name with no line number and with compiler-generated lambda and async
+/// state-machine names reduced to the declaring method. The result is the SHA-256 of those lines, truncated to 16 hex
+/// characters. The executor carries it on <see cref="JobExecutionState.FailureFingerprint"/>, and the store writes it
+/// beside the exception text.
 /// </para>
 /// <para>
 /// A failure the store writes itself has no exception, so it stores one of the fixed values below, one per cause, in
 /// the same conditional update that ends the run. A third-party persistence provider writes the same values for the
-/// same causes, so every store groups those failures alike.
+/// same causes, so every store groups those failures alike. Each value equals
+/// <c>Headless.FailureFingerprint.ForCause</c> of its cause name; the values stay constants here because a provider
+/// writes them inside an expression tree (an EF Core <c>SetProperty</c>), and this package does not reference
+/// <c>Headless.Extensions</c>.
 /// </para>
 /// </remarks>
 [PublicAPI]

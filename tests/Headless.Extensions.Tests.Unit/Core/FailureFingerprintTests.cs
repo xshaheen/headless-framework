@@ -5,14 +5,10 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
-using Headless.Hosting;
-using Headless.Jobs;
-using Headless.Jobs.Instrumentation;
+using Headless;
 using Headless.Testing.Tests;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Tests.Execution;
+namespace Tests.Core;
 
 /// <summary>
 /// The failure fingerprint groups failures by cause: the innermost exception type, after unwrapping
@@ -22,7 +18,16 @@ namespace Tests.Execution;
 /// </summary>
 public sealed class FailureFingerprintTests : TestBase
 {
-    private const string _Self = "Tests.Execution.FailureFingerprintTests";
+    private const string _Self = "Tests.Core.FailureFingerprintTests";
+
+    [Fact]
+    public void should_keep_the_v1_output_when_the_exception_was_never_thrown()
+    {
+        // SHA-256 of "System.InvalidOperationException", computed outside this code. A change here breaks every
+        // fingerprint already stored, so it must come with a new version prefix instead.
+        FailureFingerprint.VersionPrefix.Should().Be("v1:");
+        FailureFingerprint.Compute(new InvalidOperationException("x")).Should().Be("v1:386c08bd726234e4");
+    }
 
     [Fact]
     public void should_produce_one_fingerprint_when_the_same_failure_carries_different_ids_in_its_message()
@@ -51,12 +56,24 @@ public sealed class FailureFingerprintTests : TestBase
     public void should_fingerprint_the_innermost_exception_when_it_is_wrapped_in_aggregate_and_target_invocation()
     {
         var timeout = _Catch(_ThrowTimeout);
-        var wrapped = new AggregateException(new TargetInvocationException(timeout));
 
-        var fingerprint = FailureFingerprint.Compute(wrapped);
+        var expected = _Expected("System.TimeoutException", $"{_Self}._ThrowTimeout", $"{_Self}._Catch");
 
-        fingerprint.Should().Be(FailureFingerprint.Compute(timeout));
-        fingerprint.Should().Be(_Expected("System.TimeoutException", $"{_Self}._ThrowTimeout", $"{_Self}._Catch"));
+        FailureFingerprint.Compute(timeout).Should().Be(expected);
+        FailureFingerprint.Compute(new AggregateException(timeout)).Should().Be(expected);
+        FailureFingerprint.Compute(new TargetInvocationException(timeout)).Should().Be(expected);
+        FailureFingerprint
+            .Compute(new AggregateException(new TargetInvocationException(timeout)))
+            .Should()
+            .Be(expected);
+    }
+
+    [Fact]
+    public void should_fingerprint_the_wrapper_when_the_code_chose_to_wrap_the_exception()
+    {
+        var wrapped = new InvalidOperationException("save failed", _Catch(_ThrowTimeout));
+
+        FailureFingerprint.Compute(wrapped).Should().Be(_Expected("System.InvalidOperationException"));
     }
 
     [Fact]
@@ -103,75 +120,59 @@ public sealed class FailureFingerprintTests : TestBase
     }
 
     [Fact]
-    public void should_fingerprint_the_type_alone_when_the_exception_was_never_thrown()
+    public void should_throw_when_the_exception_is_null()
     {
-        FailureFingerprint
-            .Compute(new InvalidOperationException("never thrown"))
-            .Should()
-            .Be(_Expected("System.InvalidOperationException"));
+        var act = () => FailureFingerprint.Compute(null!);
+
+        act.Should().Throw<ArgumentNullException>();
+    }
+
+    [Theory]
+    [InlineData("lease-lapsed")]
+    [InlineData("node-not-alive")]
+    [InlineData("retry-budget-exhausted-by-recovery")]
+    [InlineData("http-503")]
+    // Fifteen and seventeen hex digits cannot equal a 16-character computed hash.
+    [InlineData("abcdef012345678")]
+    [InlineData("abcdef01234567890")]
+    // Sixteen characters that are not all hex digits cannot either.
+    [InlineData("abcdef012345678g")]
+    public void should_prefix_the_cause_with_the_version_when_the_cause_is_valid(string cause)
+    {
+        FailureFingerprint.ForCause(cause).Should().Be("v1:" + cause);
+    }
+
+    [Theory]
+    [InlineData("Lease-Lapsed")]
+    [InlineData("lease lapsed")]
+    [InlineData("lease_lapsed")]
+    [InlineData("lease:lapsed")]
+    [InlineData("v1:lease-lapsed")]
+    [InlineData("délai")]
+    public void should_refuse_a_cause_when_it_has_a_character_outside_lowercase_letters_digits_and_hyphens(string cause)
+    {
+        var act = () => FailureFingerprint.ForCause(cause);
+
+        act.Should().Throw<ArgumentException>().Which.ParamName.Should().Be("cause");
+    }
+
+    [Theory]
+    [InlineData("386c08bd726234e4")]
+    [InlineData("0000000000000000")]
+    [InlineData("abcdefabcdefabcd")]
+    public void should_refuse_a_cause_when_it_could_equal_a_computed_fingerprint(string cause)
+    {
+        var act = () => FailureFingerprint.ForCause(cause);
+
+        act.Should().Throw<ArgumentException>().Which.ParamName.Should().Be("cause");
     }
 
     [Fact]
-    public async Task should_store_the_computed_fingerprint_when_a_job_fails_through_the_handler()
+    public void should_refuse_a_cause_when_it_is_empty()
     {
-        var written = new List<(JobStatus Status, int RetryCount, string? Fingerprint, bool Carried)>();
-        var manager = Substitute.For<IInternalJobManager>();
-        manager.RenewLeaseAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(1));
-        manager
-            .IsTimeJobCancellationRequestedAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<bool?>(false));
-        manager
-            .UpdateTickerAsync(
-                Arg.Do<JobExecutionState>(state =>
-                    written.Add(
-                        (
-                            state.Status,
-                            state.RetryCount,
-                            state.FailureFingerprint,
-                            state.PropertiesToUpdate.Contains(nameof(JobExecutionState.FailureFingerprint))
-                        )
-                    )
-                ),
-                Arg.Any<CancellationToken>()
-            )
-            .Returns(Task.FromResult(1));
+        var act = () => FailureFingerprint.ForCause("");
 
-        var thrown = new List<Exception>();
-        var attempt = 0;
-        var job = new JobExecutionState
-        {
-            JobId = Guid.NewGuid(),
-            FunctionName = "fingerprinted",
-            Type = JobType.TimeJob,
-            ExecutionTime = DateTime.UtcNow,
-            Retries = 1,
-            RetryIntervals = [0],
-            Status = JobStatus.Queued,
-            ClaimOwner = "node-a@1",
-            CachedDelegate = (_, _, _) =>
-            {
-                // A different exception type on the retry gives the retry write and the final write different causes.
-                Exception exception = attempt++ == 0 ? _Catch(() => _ThrowForOrder("order 1")) : _Catch(_ThrowTimeout);
-                thrown.Add(exception);
-                throw exception;
-            },
-        };
-
-        var services = new ServiceCollection();
-        services.AddSingleton(manager);
-        await using var serviceProvider = services.BuildServiceProvider();
-
-        await _Handler(serviceProvider, manager).ExecuteTaskAsync(job, isDue: false, cancellationToken: AbortToken);
-
-        thrown.Should().HaveCount(2);
-        var carried = written.Where(x => x.Carried).ToList();
-        carried.Should().HaveCount(2, "the retry write and the terminal failure write each carry a fingerprint");
-        carried[0].RetryCount.Should().Be(1);
-        carried[0].Status.Should().NotBe(JobStatus.Failed);
-        carried[0].Fingerprint.Should().Be(FailureFingerprint.Compute(thrown[0]));
-        carried[1].Status.Should().Be(JobStatus.Failed);
-        carried[1].Fingerprint.Should().Be(FailureFingerprint.Compute(thrown[1]));
-        carried[0].Fingerprint.Should().NotBe(carried[1].Fingerprint);
+        act.Should().Throw<ArgumentException>();
     }
 
     #region Helpers
@@ -221,21 +222,6 @@ public sealed class FailureFingerprintTests : TestBase
         await Task.Yield();
 
         throw new InvalidOperationException($"failed {id}");
-    }
-
-    private static JobsExecutionTaskHandler _Handler(IServiceProvider serviceProvider, IInternalJobManager manager)
-    {
-        return new JobsExecutionTaskHandler(
-            serviceProvider,
-            TimeProvider.System,
-            Substitute.For<IJobsInstrumentation>(),
-            manager,
-            JobFunctionRegistryBuilder.Build([], [], []),
-            new JobsExecutionCancellationRegistry(),
-            new SchedulerOptionsBuilder(),
-            NullLogger<JobsExecutionTaskHandler>.Instance,
-            new JobsFunctionTagBound(JobFunctionRegistryBuilder.Build([], [], []))
-        );
     }
 
     #endregion
