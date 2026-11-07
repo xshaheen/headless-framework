@@ -81,7 +81,8 @@ internal sealed partial class RelationalDataStorage
     }
 
     /// <summary>
-    /// Updates the status of a published message. Respects the terminal-row guard — rows already
+    /// Updates the status of a published message, including writing <c>ExceptionInfo</c> and
+    /// <c>FailureFingerprint</c> when the send faulted. Respects the terminal-row guard — rows already
     /// in a permanent <c>Succeeded</c> or <c>Failed</c> state with no pending retry are not mutated.
     /// </summary>
     /// <returns><see langword="true"/> if a row was updated; <see langword="false"/> if the guard blocked it.</returns>
@@ -138,8 +139,8 @@ internal sealed partial class RelationalDataStorage
     }
 
     /// <summary>
-    /// Updates the status of a received message, including writing <c>ExceptionInfo</c> when the
-    /// message faulted. Respects the terminal-row guard — permanently completed rows are not mutated.
+    /// Updates the status of a received message, including writing <c>ExceptionInfo</c> and
+    /// <c>FailureFingerprint</c> when the message faulted. Respects the terminal-row guard — permanently completed rows are not mutated.
     /// </summary>
     /// <returns><see langword="true"/> if a row was updated; <see langword="false"/> if the guard blocked it.</returns>
     public ValueTask<bool> ChangeReceiveStateAsync(
@@ -303,6 +304,11 @@ internal sealed partial class RelationalDataStorage
         set.Add($"{_t.StatusName}=@StatusName");
         set.Add(_t.StampChange);
 
+        // Both tables record the failure the caller carries, its text and its fingerprint, in the guarded statement
+        // that writes the state, so a write the guard refuses records nothing.
+        set.Add($"{_t.ExceptionInfo}=@ExceptionInfo");
+        set.Add($"{_t.FailureFingerprint}=@FailureFingerprint");
+
         // An inline retry passes the generation it holds (@OriginalInlineAttempts set): its transition applies only
         // while the row is still leased to it, so an attempt whose lease another node took over writes nothing.
         var fence =
@@ -310,9 +316,8 @@ internal sealed partial class RelationalDataStorage
 
         if (received)
         {
-            // The received table also records the failure, ends the inbox attempt when the lease is released, and
-            // stamps an inbox generation's terminal time and the retention it starts.
-            set.Add($"{_t.ExceptionInfo}=@ExceptionInfo");
+            // The received table also ends the inbox attempt when the lease is released, and stamps an inbox
+            // generation's terminal time and the retention it starts.
             set.Add($"{_t.AttemptId}=CASE WHEN @LockedUntil IS NULL THEN NULL ELSE {_t.AttemptId} END");
             set.Add(
                 $"{_t.TerminalAt}=CASE WHEN {_t.IsInboxRecord} = {_t.True} AND @IsTerminal = {_t.True} THEN {SqlDialectTokens.Now} ELSE {_t.TerminalAt} END"
@@ -373,10 +378,11 @@ internal sealed partial class RelationalDataStorage
                     _dialect.AddParameter(command, "OriginalLockedUntil", SqlColumnType.Timestamp, message.LockedUntil);
                     _dialect.AddParameter(command, "OriginalOwner", _ownerType, message.Owner);
                     _dialect.AddParameter(command, "StatusName", _StatusType, state.ToString("G"));
+                    _dialect.AddParameter(command, "ExceptionInfo", _ContentType, message.ExceptionInfo);
+                    _dialect.AddParameter(command, "FailureFingerprint", _FingerprintType, message.FailureFingerprint);
 
                     if (received)
                     {
-                        _dialect.AddParameter(command, "ExceptionInfo", _ContentType, message.ExceptionInfo);
                         _dialect.AddParameter(command, "IsTerminal", SqlColumnType.Boolean, isTerminal);
                         _BindInboxAttempt(command, message.InboxAttemptFence, matchStorageId: false);
                     }

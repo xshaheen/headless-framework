@@ -116,6 +116,8 @@ internal static class SqlServerMessagingSchemaContribution
                     [StatusName] [nvarchar](50) NOT NULL,
                     [MessageId] [nvarchar](200) COLLATE Latin1_General_100_BIN2 NOT NULL,
                     [ExceptionInfo] [nvarchar](max) NULL,
+                    -- The versioned fingerprint that groups failures by cause, written with the failure's text.
+                    [FailureFingerprint] [nvarchar](64) NULL,
                     [IsInboxRecord] [bit] NOT NULL CONSTRAINT [DF_{receivedPrefix}_IsInboxRecord] DEFAULT 0,
                     [TenantPresent] [bit] NOT NULL CONSTRAINT [DF_{receivedPrefix}_TenantPresent] DEFAULT 0,
                     [TenantId] [nvarchar](200) COLLATE Latin1_General_100_BIN2 NOT NULL CONSTRAINT [DF_{receivedPrefix}_TenantId] DEFAULT N'',
@@ -332,6 +334,9 @@ internal static class SqlServerMessagingSchemaContribution
                     [Owner] [nvarchar]({ownerColumnMaxLength}) NULL,
                     [StatusName] [nvarchar](50) NOT NULL,
                     [MessageId] [nvarchar](200) NOT NULL,
+                    [ExceptionInfo] [nvarchar](max) NULL,
+                    -- See the received table's failure fingerprint.
+                    [FailureFingerprint] [nvarchar](64) NULL,
                     -- See the received table's change marker.
                     [ChangedAt] [datetimeoffset](7) NOT NULL CONSTRAINT [DF_{publishedPrefix}_ChangedAt] DEFAULT TODATETIMEOFFSET(SYSUTCDATETIME(), 0),
                     CONSTRAINT [PK_{publishedPrefix}] PRIMARY KEY CLUSTERED ([Id] ASC)

@@ -42,6 +42,7 @@ internal sealed class MessagingTables
         StatusName = column("StatusName");
         MessageId = column("MessageId");
         ExceptionInfo = column("ExceptionInfo");
+        FailureFingerprint = column("FailureFingerprint");
         IsInboxRecord = column("IsInboxRecord");
         TenantPresent = column("TenantPresent");
         TenantId = column("TenantId");
@@ -136,6 +137,8 @@ internal sealed class MessagingTables
     public string MessageId { get; }
 
     public string ExceptionInfo { get; }
+
+    public string FailureFingerprint { get; }
 
     public string IsInboxRecord { get; }
 

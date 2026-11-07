@@ -51,6 +51,7 @@ public sealed class DeliverByAttemptTests : TestBase
         host.StateWrites().Should().ContainSingle().Which.Should().Be((StatusName.Failed, (RetryDelay?)null));
         host.Exhausted.Should().ContainSingle().Which.Reason.Should().Be(MessageTerminalReason.DeliveryDeadlineExpired);
         message.ExceptionInfo.Should().Contain("deliver_by_exceeded");
+        message.FailureFingerprint.Should().Be("v1:expired");
     }
 
     [Fact]

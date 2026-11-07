@@ -245,6 +245,9 @@ internal sealed partial class RelationalDataStorage
             message.InlineAttempts,
             StatusName.Failed,
             exceptionInfo,
+            // A row stored here failed before any consumer ran; a caller that names no cause stores the poison cause.
+            message.FailureFingerprint
+                ?? MessagingFailureFingerprints.Poison,
             ExpiresAfter: TimeSpan.FromSeconds(Options.FailedMessageExpiredAfter),
             DueAfter: null
         );
@@ -297,6 +300,7 @@ internal sealed partial class RelationalDataStorage
             InlineAttempts: 0,
             StatusName.Scheduled,
             ExceptionInfo: null,
+            FailureFingerprint: null,
             ExpiresAfter: null,
             DueAfter: Options.RetryPolicy.InitialDispatchGrace
         );
@@ -357,6 +361,7 @@ internal sealed partial class RelationalDataStorage
         int InlineAttempts,
         StatusName Status,
         string? ExceptionInfo,
+        string? FailureFingerprint,
         TimeSpan? ExpiresAfter,
         TimeSpan? DueAfter
     );
@@ -393,6 +398,7 @@ internal sealed partial class RelationalDataStorage
                     _t.Owner,
                     _t.StatusName,
                     _t.ExceptionInfo,
+                    _t.FailureFingerprint,
                     _t.ChangedAt,
                 ],
                 [
@@ -412,6 +418,7 @@ internal sealed partial class RelationalDataStorage
                     "NULL",
                     "@StatusName",
                     "@ExceptionInfo",
+                    "@FailureFingerprint",
                     SqlDialectTokens.Now,
                 ],
                 [_t.Id, _t.Added, _t.NextRetryAt],
@@ -424,7 +431,7 @@ internal sealed partial class RelationalDataStorage
                 _receivedTable,
                 [new SqlKeyColumn(_t.Id, "Id")],
                 $"{nonInbox} AND {_terminalGuard} AND ({_t.LockedUntil} IS NULL OR {_t.LockedUntil} <= {SqlDialectTokens.Now})",
-                $"{_t.StatusName}=@StatusName, {_t.ExpiresAt}={expiresAt}, {_t.NextRetryAt}={nextRetryAt}, {_t.LockedUntil}=NULL, {_t.Owner}=NULL, {_t.Content}=@Content, {_t.ExceptionInfo}=@ExceptionInfo, {_t.StampChange}",
+                $"{_t.StatusName}=@StatusName, {_t.ExpiresAt}={expiresAt}, {_t.NextRetryAt}={nextRetryAt}, {_t.LockedUntil}=NULL, {_t.Owner}=NULL, {_t.Content}=@Content, {_t.ExceptionInfo}=@ExceptionInfo, {_t.FailureFingerprint}=@FailureFingerprint, {_t.StampChange}",
                 [_t.Id, _t.Added, _t.NextRetryAt]
             )
         );
@@ -480,6 +487,7 @@ internal sealed partial class RelationalDataStorage
             _dialect.AddParameter(command, "Content", _ContentType, row.Content);
             _dialect.AddParameter(command, "StatusName", _StatusType, row.Status.ToString("G"));
             _dialect.AddParameter(command, "ExceptionInfo", _ContentType, row.ExceptionInfo);
+            _dialect.AddParameter(command, "FailureFingerprint", _FingerprintType, row.FailureFingerprint);
 
             if (row.ExpiresAfter is { } expiresAfter)
             {

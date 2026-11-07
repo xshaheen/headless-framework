@@ -122,6 +122,8 @@ internal static class PostgreSqlMessagingSchemaContribution
             	"status_name" VARCHAR(50) NOT NULL,
                 "message_id" VARCHAR(200) COLLATE "C" NOT NULL,
                 "exception_info" text NULL,
+                -- The versioned fingerprint that groups failures by cause, written with the failure's text.
+                "failure_fingerprint" VARCHAR(64) NULL,
                 "is_inbox_record" BOOLEAN NOT NULL DEFAULT FALSE,
                 "tenant_present" BOOLEAN NOT NULL DEFAULT FALSE,
                 "tenant_id" VARCHAR(200) COLLATE "C" NOT NULL DEFAULT '',
@@ -331,6 +333,9 @@ internal static class PostgreSqlMessagingSchemaContribution
                 "owner" VARCHAR({ownerColumnMaxLength}) NULL,
             	"status_name" VARCHAR(50) NOT NULL,
                 "message_id" VARCHAR(200) NOT NULL,
+                "exception_info" text NULL,
+                -- See the received table's failure fingerprint.
+                "failure_fingerprint" VARCHAR(64) NULL,
                 -- See the received table's change marker.
                 "changed_at" TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp()
             );

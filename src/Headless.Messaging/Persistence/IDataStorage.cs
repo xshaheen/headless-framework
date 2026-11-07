@@ -135,11 +135,12 @@ public interface IDataStorage
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>ExceptionInfo asymmetry:</b> <see cref="MediumMessage.ExceptionInfo"/> is intentionally
-    /// not persisted on the publish path; only the receive path (<see cref="ChangeReceiveStateAsync"/>)
-    /// persists exception info because the <c>Published</c> table schema has no <c>ExceptionInfo</c>
-    /// column. A 4th-provider implementation should mirror this asymmetry — never persist
-    /// <c>ExceptionInfo</c> from this method.
+    /// <b>Failure record:</b> the write also stores the message's <see cref="MediumMessage.ExceptionInfo"/> and
+    /// <see cref="MediumMessage.FailureFingerprint"/>, as they are on the message, in the same guarded statement as
+    /// the state, exactly as <see cref="ChangeReceiveStateAsync"/> does for a received row. A write the terminal guard
+    /// refuses stores neither. The send path sets both on every failure write, the retry writes included; a
+    /// third-party provider must persist both on this method, on <see cref="ChangePublishRetryStateAsync"/>, and on
+    /// the received counterparts, and never derive the fingerprint itself.
     /// </para>
     /// </remarks>
     /// <param name="message">The message whose state is changing.</param>
@@ -184,6 +185,10 @@ public interface IDataStorage
     );
 
     /// <summary>Updates published retry state with optimistic checks for both durable retry counters.</summary>
+    /// <remarks>
+    /// Stores <see cref="MediumMessage.ExceptionInfo"/> and <see cref="MediumMessage.FailureFingerprint"/> with the
+    /// state, as <see cref="ChangePublishStateAsync"/> does.
+    /// </remarks>
     /// <param name="contentWrite">
     /// Whether the transition also rewrites the persisted envelope. See <see cref="MessageContentWrite"/>.
     /// </param>
@@ -492,6 +497,11 @@ public interface IDataStorage
     /// Stores a failed received message envelope in the received table so operators can inspect
     /// and replay messages that caused unhandled exceptions.
     /// </summary>
+    /// <remarks>
+    /// The row stores <see cref="MediumMessage.FailureFingerprint"/> beside <paramref name="exceptionInfo"/>, or
+    /// <see cref="MessagingFailureFingerprints.Poison"/> when the message carries none: a row stored here failed before
+    /// any consumer ran.
+    /// </remarks>
     /// <param name="name">The message name (topic or queue name) as received from the broker.</param>
     /// <param name="consumerIdentity">The identity of the consumer the message was delivered to; received rows are unique per message ID and consumer identity.</param>
     /// <param name="message">The failed received message envelope, including serialized content and delivery intent.</param>
@@ -508,6 +518,7 @@ public interface IDataStorage
 
     /// <summary>
     /// Stores a failed received message using raw serialized content when no <c>MediumMessage</c> envelope is available.
+    /// The row stores the <see cref="MessagingFailureFingerprints.Poison"/> fingerprint.
     /// </summary>
     /// <param name="name">The message name (topic or queue name) as received from the broker.</param>
     /// <param name="consumerIdentity">The identity of the consumer the message was delivered to; received rows are unique per message ID and consumer identity.</param>

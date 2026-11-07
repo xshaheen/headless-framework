@@ -330,6 +330,8 @@ internal sealed partial class InMemoryDataStorage(
             current.Owner = utcLockedUntil is null ? null : nodeMembership.GetOwnerTag();
             current.Retries = message.Retries;
             current.InlineAttempts = message.InlineAttempts;
+            current.ExceptionInfo = message.ExceptionInfo;
+            current.FailureFingerprint = message.FailureFingerprint;
             _WriteContent(current, message, contentWrite);
             _StampChange(current);
             updated = true;
@@ -517,6 +519,7 @@ internal sealed partial class InMemoryDataStorage(
 
                 _WriteContent(current, message, contentWrite);
                 current.ExceptionInfo = message.ExceptionInfo;
+                current.FailureFingerprint = message.FailureFingerprint;
                 _StampChange(current);
                 updated = true;
             }
@@ -888,6 +891,8 @@ internal sealed partial class InMemoryDataStorage(
         // A poisoned row is terminal through NextRetryAt = null, not through its retry count; no consume attempt ran.
         const int retries = 0;
         var indexKey = (version, messageId, consumerIdentity, message.Lane);
+        // A row stored here failed before any consumer ran; a caller that names no cause stores the poison cause.
+        var failureFingerprint = message.FailureFingerprint ?? MessagingFailureFingerprints.Poison;
 
         // Upsert on (Version, MessageId, ConsumerIdentity) — mirrors the SQL providers' MERGE / ON CONFLICT
         // semantics so broker redelivery doesn't accumulate duplicate rows. The terminal-row guard
@@ -938,6 +943,7 @@ internal sealed partial class InMemoryDataStorage(
                 existing.Owner = null;
                 existing.Content = content;
                 existing.ExceptionInfo = exceptionInfo;
+                existing.FailureFingerprint = failureFingerprint;
                 _StampChange(existing);
 
                 return ValueTask.FromResult(true);
@@ -960,6 +966,7 @@ internal sealed partial class InMemoryDataStorage(
                 Owner = null,
                 StatusName = StatusName.Failed,
                 ExceptionInfo = exceptionInfo,
+                FailureFingerprint = failureFingerprint,
                 Version = version,
             };
             _StampChange(row);
@@ -1084,6 +1091,7 @@ internal sealed partial class InMemoryDataStorage(
                 existing.Owner = null;
                 existing.StatusName = StatusName.Scheduled;
                 existing.ExceptionInfo = null;
+                existing.FailureFingerprint = null;
                 _StampChange(existing);
 
                 return ValueTask.FromResult(_ToSnapshot(existing));
@@ -1631,6 +1639,7 @@ internal sealed partial class InMemoryDataStorage(
             InboxAttemptFence = m.InboxAttemptFence,
             IsInboxOrphaned = m.IsInboxOrphaned,
             ExceptionInfo = m.ExceptionInfo,
+            FailureFingerprint = m.FailureFingerprint,
             Lane = m.Lane,
         };
     }

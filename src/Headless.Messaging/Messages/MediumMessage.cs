@@ -108,4 +108,11 @@ public class MediumMessage
     internal (Message Origin, TransportMessage Transport)? PreparedTransport { get; set; }
 
     public string? ExceptionInfo { get; set; }
+
+    /// <summary>
+    /// The versioned fingerprint of the failure in <see cref="ExceptionInfo"/>, which groups failures by cause; see
+    /// <see cref="MessagingFailureFingerprints"/>. Set by the failure paths before the state write, which stores it in
+    /// the same statement; <see langword="null"/> on a row that has not failed.
+    /// </summary>
+    public string? FailureFingerprint { get; set; }
 }

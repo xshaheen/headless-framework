@@ -871,6 +871,11 @@ internal sealed class SubscribeExecutor(
         message.Origin.AddOrUpdateException(ex);
         message.HasUnpersistedOriginChanges = true;
         message.ExceptionInfo = ex.ExpandMessage();
+        // The fingerprint comes from the live exception: the stored text keeps too little of it to derive one later.
+        // An expired deadline is not the consumer's failure, so it groups under the fixed expiry cause.
+        message.FailureFingerprint = decision.IsSilentExpiry
+            ? MessagingFailureFingerprints.Expired
+            : MessagingFailureFingerprints.Of(ex);
         message.ExpiresAt = timeProvider.GetUtcNow().AddSeconds(_options.FailedMessageExpiredAfter);
 
         // Inline-retry budget still available: persist as Scheduled/NULL so a crash mid-delay

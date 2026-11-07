@@ -598,13 +598,9 @@ internal sealed class RelationalMonitoringApi(
             return [];
         }
 
-        // Only the received table records a failure. One list parameter keeps the statement text, and its cached
-        // plan, the same whatever the number of ids.
-        var exceptionInfo = string.Equals(tableName, _receivedTable, StringComparison.Ordinal)
-            ? _t.ExceptionInfo
-            : $"NULL AS {_t.ExceptionInfo}";
+        // One list parameter keeps the statement text, and its cached plan, the same whatever the number of ids.
         var sql =
-            $"SELECT {_t.Id},{_t.Content},{_t.IntentType},{_t.Added},{_t.ExpiresAt},{_t.Retries},{exceptionInfo},{_t.NextRetryAt},{_t.LockedUntil},{_t.StatusName} FROM {_dialect.ReadWithoutWaiting(tableName)} WHERE {_dialect.InList(_t.Id, "Ids", SqlColumnType.Guid)} AND {_t.IntentType} IN (0, 1);";
+            $"SELECT {_t.Id},{_t.Content},{_t.IntentType},{_t.Added},{_t.ExpiresAt},{_t.Retries},{_t.ExceptionInfo},{_t.NextRetryAt},{_t.LockedUntil},{_t.StatusName},{_t.FailureFingerprint} FROM {_dialect.ReadWithoutWaiting(tableName)} WHERE {_dialect.InList(_t.Id, "Ids", SqlColumnType.Guid)} AND {_t.IntentType} IN (0, 1);";
 
         await using var connection = _storage.CreateConnection();
         return await RelationalCommand
@@ -635,6 +631,7 @@ internal sealed class RelationalMonitoringApi(
                                 NextRetryAt = await _InstantAsync(reader, 7, token).ConfigureAwait(false),
                                 LockedUntil = await _InstantAsync(reader, 8, token).ConfigureAwait(false),
                                 StatusName = Enum.Parse<StatusName>(reader.GetString(9)),
+                                FailureFingerprint = await _StringAsync(reader, 10, token).ConfigureAwait(false),
                             }
                         );
                     }

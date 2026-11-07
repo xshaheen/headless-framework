@@ -64,6 +64,7 @@ internal sealed partial class RelationalDataStorage
 
     private static readonly SqlColumnType _IdentityType = SqlColumnType.KeyText(_NameMaxLength);
     private static readonly SqlColumnType _StatusType = SqlColumnType.Text(_StatusMaxLength);
+    private static readonly SqlColumnType _FingerprintType = SqlColumnType.Text(MessagingFailureFingerprints.MaxLength);
 
     private readonly RelationalMessagingStorage _storage;
     private readonly ISqlDialect _dialect;

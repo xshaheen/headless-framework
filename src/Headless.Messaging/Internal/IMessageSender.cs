@@ -473,6 +473,8 @@ internal sealed class MessageSender : IMessageSender
     )
     {
         var originalInlineAttempts = message.InlineAttempts;
+        message.ExceptionInfo = ex.ExpandMessage();
+        message.FailureFingerprint = MessagingFailureFingerprints.Of(ex);
         message.ExpiresAt = _timeProvider.GetUtcNow().AddSeconds(_options.FailedMessageExpiredAfter);
         message.NextRetryAt = null;
         DateTimeOffset? lockedUntil = null;
@@ -527,6 +529,7 @@ internal sealed class MessageSender : IMessageSender
         var originalInlineAttempts = message.InlineAttempts;
         message.Origin.AddOrUpdateException(expired);
         message.ExceptionInfo = expired.ExpandMessage();
+        message.FailureFingerprint = MessagingFailureFingerprints.Expired;
         message.ExpiresAt = _timeProvider.GetUtcNow().AddSeconds(_options.FailedMessageExpiredAfter);
         message.NextRetryAt = null;
         DateTimeOffset? lockedUntil = null;
@@ -719,6 +722,9 @@ internal sealed class MessageSender : IMessageSender
         var originalInlineAttempts = message.InlineAttempts;
 
         message.Origin.AddOrUpdateException(ex);
+        // The fingerprint comes from the live exception: the stored text keeps too little of it to derive one later.
+        message.ExceptionInfo = ex.ExpandMessage();
+        message.FailureFingerprint = MessagingFailureFingerprints.Of(ex);
         message.ExpiresAt = _timeProvider.GetUtcNow().AddSeconds(_options.FailedMessageExpiredAfter);
 
         // Inline-retry budget still available: persist as Scheduled/NULL so a crash mid-delay
