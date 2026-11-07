@@ -24,8 +24,8 @@ internal static class SqlServerMessagingStorageHealthCheck
 
     /// <summary>
     /// Names the check of an additional outbox after the outbox's name, which is unique within the host and does not
-    /// shift when registrations are added or reordered. The <c>outbox-</c> segment keeps an outbox named
-    /// <c>default</c> apart from the primary storage's check.
+    /// shift when registrations are added or reordered. The <c>outbox-</c> segment keeps an outbox
+    /// named "default" apart from the primary storage's check.
     /// </summary>
     /// <param name="outboxName">The name passed to <c>AddOutbox(name)</c>.</param>
     public static string OutboxCheckName(string outboxName) => _NamePrefix + "outbox-" + outboxName;
