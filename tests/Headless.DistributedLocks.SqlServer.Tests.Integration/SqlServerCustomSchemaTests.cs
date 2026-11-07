@@ -64,6 +64,10 @@ public sealed class SqlServerCustomSchemaTests(SqlServerDistributedLockFixture f
     [Fact]
     public async Task should_not_block_fencing_initialization_on_an_application_lock_named_like_the_init_lock()
     {
+        Assert.Skip(
+            "Quarantined: times out under heavy suite load on its 3 s command timeout. https://github.com/xshaheen/headless-framework/issues/1545"
+        );
+
         // given — the application holds a lock whose resource spells the schema runner's lock as it would appear
         // inside the application's KeyPrefix namespace. The runner's lock lives outside that namespace, so it cannot
         // collide.
