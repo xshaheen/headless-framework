@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Dashboard;
 using Headless.Jobs;
 using Headless.Messaging;
 
@@ -27,12 +28,15 @@ public static class SandboxScenarios
         ["cron-progress"] = "Cron definition every 30 s whose occurrences report progress for about 10 s.",
         ["messages"] = "Ten published messages: eight consumed, two failing in the consumer.",
         ["scheduled-message"] = "One message published with a 10 minute delay: a row on the Scheduled page.",
+        ["diagnostic-runs"] =
+            "Six Headless dashboard diagnostic runs: two queued, one running, one succeeded, two failed with one error.",
     };
 
     public static async Task<IReadOnlyList<string>> RunAsync(
         string name,
         IJobScheduler jobs,
         IBus bus,
+        DiagnosticsStore diagnostics,
         CancellationToken cancellationToken
     )
     {
@@ -85,7 +89,8 @@ public static class SandboxScenarios
                     )
                 ),
             ],
-            "all" => await _RunAllAsync(jobs, bus, cancellationToken),
+            "diagnostic-runs" => _AddDiagnosticRuns(diagnostics),
+            "all" => await _RunAllAsync(jobs, bus, diagnostics, cancellationToken),
             _ => throw new KeyNotFoundException(
                 $"Unknown scenario '{name}'. Known: all, {string.Join(", ", Descriptions.Keys)}."
             ),
@@ -95,13 +100,14 @@ public static class SandboxScenarios
     private static async Task<IReadOnlyList<string>> _RunAllAsync(
         IJobScheduler jobs,
         IBus bus,
+        DiagnosticsStore diagnostics,
         CancellationToken cancellationToken
     )
     {
         var created = new List<string>();
         foreach (var scenario in Descriptions.Keys)
         {
-            created.AddRange(await RunAsync(scenario, jobs, bus, cancellationToken));
+            created.AddRange(await RunAsync(scenario, jobs, bus, diagnostics, cancellationToken));
         }
 
         return created;
@@ -129,6 +135,20 @@ public static class SandboxScenarios
         }
 
         return receipts;
+    }
+
+    // Writes straight to the store, as a feature's own code would; the dashboard learns of the runs from its change
+    // reads, so they reach an open view within the change-poll interval.
+    private static IReadOnlyList<string> _AddDiagnosticRuns(DiagnosticsStore diagnostics)
+    {
+        var queued = new[] { diagnostics.AddRun(), diagnostics.AddRun() };
+        var running = diagnostics.Start(diagnostics.AddRun().Id);
+        var succeeded = diagnostics.Succeed(diagnostics.Start(diagnostics.AddRun().Id).Id);
+        var failed = new[] { diagnostics.AddRun(), diagnostics.AddRun() }
+            .Select(run => diagnostics.Fail(diagnostics.Start(run.Id).Id, "Upstream timed out"))
+            .ToArray();
+
+        return [.. queued.Select(run => run.Id), running.Id, succeeded.Id, .. failed.Select(run => run.Id)];
     }
 
     private static string _Id(Guid id) => id.ToString("D");

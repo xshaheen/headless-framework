@@ -474,6 +474,7 @@ def is_documentation(file: str) -> bool:
 
 
 SPA_PROJECTS = (
+    "src/Headless.Dashboard/Headless.Dashboard.csproj",
     "src/Headless.Jobs.Dashboard/Headless.Jobs.Dashboard.csproj",
     "src/Headless.Messaging.Dashboard/Headless.Messaging.Dashboard.csproj",
 )

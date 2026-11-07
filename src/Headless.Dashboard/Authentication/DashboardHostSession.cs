@@ -3,6 +3,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -11,13 +12,15 @@ using Microsoft.Extensions.Options;
 namespace Headless.Dashboard;
 
 /// <summary>
-/// The dashboard's own session under <see cref="AuthMode.Host"/>: a cookie scheme per dashboard, issued from a host
-/// user's identities and claims, with an idle timeout, an absolute lifetime, and optional revalidation.
+/// The dashboard's own session: a cookie scheme per dashboard, issued from a host user's identities and claims under
+/// <see cref="AuthMode.Host"/>, or, for the dashboard shell, from a Basic or API-key credential, with an idle timeout,
+/// an absolute lifetime, and optional revalidation.
 /// </summary>
 /// <remarks>
 /// The absolute expiry, the last revalidation time, and the host schemes that authenticated the user live in the
 /// ticket's <see cref="AuthenticationProperties.Items"/>, which the cookie encrypts and carries across renewals.
 /// <see cref="AuthenticationProperties.IssuedUtc"/> cannot carry the session start: every sliding renewal resets it.
+/// A credential session also carries the <see cref="CredentialFingerprint"/> claim, checked on every validation.
 /// </remarks>
 internal static class DashboardHostSession
 {
@@ -47,6 +50,20 @@ internal static class DashboardHostSession
         }
 
         return name.ToString();
+    }
+
+    /// <summary>
+    /// The dashboard shell's default session cookie name: <c>__Host-headless-dashboard-</c> and the host's application
+    /// name, reduced as <see cref="DefaultCookieName"/> reduces a name, so two applications served from one host name
+    /// keep separate sessions. Without an application name it is <c>__Host-headless-dashboard</c>.
+    /// </summary>
+    internal static string ShellCookieName(string? applicationName)
+    {
+        const string prefix = "headless-dashboard";
+
+        return string.IsNullOrWhiteSpace(applicationName)
+            ? DefaultCookieName(prefix)
+            : DefaultCookieName(prefix + "-" + applicationName.Trim());
     }
 
     /// <summary>
@@ -141,14 +158,18 @@ internal static class DashboardHostSession
             : [];
     }
 
+    /// <summary>The last time the session was revalidated, or <see langword="null"/> when the ticket holds none.</summary>
+    internal static DateTimeOffset? GetValidatedAt(AuthenticationProperties? properties)
+    {
+        return properties is null ? null : _Parse(properties, _ValidatedAtKey);
+    }
+
     private static void _ConfigureCookie(
         CookieAuthenticationOptions cookie,
         string authenticationName,
         DashboardHostAuthenticationOptions host
     )
     {
-        var scheme = SchemeName(authenticationName);
-
         cookie.Cookie.Name = string.IsNullOrEmpty(host.SessionCookieName)
             ? DefaultCookieName(authenticationName)
             : host.SessionCookieName;
@@ -194,19 +215,37 @@ internal static class DashboardHostSession
 
                 return Task.CompletedTask;
             },
-            OnValidatePrincipal = context => _ValidatePrincipalAsync(context, scheme, host),
+            OnValidatePrincipal = context => _ValidatePrincipalAsync(context, authenticationName, host),
         };
     }
 
     private static async Task _ValidatePrincipalAsync(
         CookieValidatePrincipalContext context,
-        string scheme,
+        string authenticationName,
         DashboardHostAuthenticationOptions host
     )
     {
+        var scheme = SchemeName(authenticationName);
         var now = _Now(context.Options);
 
         if (now >= _AbsoluteExpires(context.Properties))
+        {
+            await _EndAsync(context, scheme).ConfigureAwait(false);
+            return;
+        }
+
+        // The configured credential is read on every validation, not captured with the cookie options, so a session
+        // issued for a password or key the host no longer configures ends at its next request.
+        var services = context.HttpContext.RequestServices;
+        var auth = services.GetRequiredService<IOptionsMonitor<AuthConfig>>().Get(authenticationName);
+        if (
+            !CredentialFingerprint.IsCurrent(
+                services.GetRequiredService<IDataProtectionProvider>(),
+                authenticationName,
+                auth,
+                context.Principal!
+            )
+        )
         {
             await _EndAsync(context, scheme).ConfigureAwait(false);
             return;

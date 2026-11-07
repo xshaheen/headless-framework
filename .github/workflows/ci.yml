@@ -164,6 +164,7 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: |
+            src/Headless.Dashboard/wwwroot/package-lock.json
             src/Headless.Jobs.Dashboard/wwwroot/package-lock.json
             src/Headless.Messaging.Dashboard/wwwroot/package-lock.json
 
@@ -220,6 +221,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - name: Shell
+            target: dashboard-shell-test
+            path: src/Headless.Dashboard/wwwroot
           - name: Jobs
             target: dashboard-jobs-test
             path: src/Headless.Jobs.Dashboard/wwwroot
@@ -322,6 +326,7 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: |
+            src/Headless.Dashboard/wwwroot/package-lock.json
             src/Headless.Jobs.Dashboard/wwwroot/package-lock.json
             src/Headless.Messaging.Dashboard/wwwroot/package-lock.json
 
@@ -422,6 +427,7 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: |
+            src/Headless.Dashboard/wwwroot/package-lock.json
             src/Headless.Jobs.Dashboard/wwwroot/package-lock.json
             src/Headless.Messaging.Dashboard/wwwroot/package-lock.json
 

@@ -116,6 +116,22 @@ public static class SetupDashboardAuthentication
     }
 
     /// <summary>
+    /// Ends the session of the dashboard registered through <c>AddHeadlessDashboard(...)</c> by deleting its session
+    /// cookie. Call it from the host's own sign-out so the dashboard session ends with the host's session; the host's
+    /// own cookies and tokens are left alone.
+    /// </summary>
+    /// <param name="context">The host request whose response deletes the cookie.</param>
+    /// <returns>A task that completes when the cookie deletion is written to the response.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="context"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">The dashboard is not registered through <c>AddHeadlessDashboard(...)</c>.</exception>
+    public static Task SignOutHeadlessDashboardAsync(this HttpContext context)
+    {
+        Argument.IsNotNull(context);
+
+        return DashboardHostSession.SignOutAsync(context, SetupDashboard.AuthenticationName);
+    }
+
+    /// <summary>
     /// Maps the sign-in endpoints of the dashboard registered under <paramref name="authenticationName"/> on
     /// <paramref name="dashboard"/>, the route group at the dashboard's base path: <c>GET api/auth/info</c>,
     /// <c>POST api/auth/session</c>, <c>POST api/auth/sign-out</c>, and <c>GET auth/sign-in</c>.

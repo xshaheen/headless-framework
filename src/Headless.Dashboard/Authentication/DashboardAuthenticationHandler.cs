@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Primitives;
 
 namespace Headless.Dashboard;
 
@@ -70,6 +71,11 @@ internal sealed class DashboardAuthenticationHandler(ILogger<DashboardAuthentica
     {
         var metadata = endpoint.Metadata.GetMetadata<DashboardEndpointMetadata>();
         if (!string.Equals(metadata?.AuthenticationName, _scheme.Name, StringComparison.Ordinal))
+        {
+            return AuthenticateResult.NoResult();
+        }
+
+        if (metadata is { AcceptsSession: true } && StringValues.IsNullOrEmpty(_context.Request.Headers.Authorization))
         {
             return AuthenticateResult.NoResult();
         }

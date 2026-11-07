@@ -20,6 +20,12 @@
   <PropertyGroup>
     <DashboardSpaRoot>$(MSBuildProjectDirectory)/wwwroot</DashboardSpaRoot>
     <DashboardSpaDist>$(DashboardSpaRoot)/dist</DashboardSpaDist>
+    <!--
+      The file _BuildDashboardSpa treats as its output. A SPA whose build writes index.html before a later step that
+      can fail sets this to a file its last step writes, so a failed build leaves the target out of date.
+    -->
+    <DashboardSpaBuildStamp Condition="'$(DashboardSpaBuildStamp)' == ''"
+      >$(DashboardSpaDist)/index.html</DashboardSpaBuildStamp>
     <DashboardSpaInputManifest>$(BaseIntermediateOutputPath)dashboard-spa-inputs.txt</DashboardSpaInputManifest>
     <BuildDashboardSpa Condition="'$(BuildDashboardSpa)' == ''">true</BuildDashboardSpa>
     <NpmTool Condition="'$(NpmTool)' == ''">npm</NpmTool>
@@ -69,13 +75,13 @@
     <Exec Command="$(NpmTool) ci" WorkingDirectory="$(DashboardSpaRoot)" />
   </Target>
 
-  <!-- Build the SPA; re-runs only when inputs change or dist/index.html is missing. -->
+  <!-- Build the SPA; re-runs only when inputs change or the build stamp is missing. -->
   <Target
     Name="_BuildDashboardSpa"
     DependsOnTargets="_ComputeDashboardSpaInputs;_RestoreDashboardSpa"
     Condition="'$(BuildDashboardSpa)' == 'true'"
     Inputs="$(MSBuildThisFileFullPath);$(DashboardSpaInputManifest);@(DashboardSpaInput)"
-    Outputs="$(DashboardSpaDist)/index.html"
+    Outputs="$(DashboardSpaBuildStamp)"
   >
     <Message Importance="high" Text="[$(MSBuildProjectName)] Building SPA ($(NpmTool) run build)..." />
     <Exec Command="$(NpmTool) run build" WorkingDirectory="$(DashboardSpaRoot)" />

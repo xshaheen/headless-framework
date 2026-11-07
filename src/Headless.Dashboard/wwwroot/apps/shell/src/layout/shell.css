@@ -1,0 +1,539 @@
+/*
+ * The shell's layout: rail, document bar, Operations, canvas, and inspector dock. Every value reads the SDK's tokens
+ * (tokens.css); the shell adds layout, never a colour of its own.
+ */
+
+.hd-shell {
+  display: grid;
+  grid-template-columns: var(--rail-width) minmax(0, 1fr);
+  block-size: 100vh;
+  block-size: 100dvh;
+}
+
+.hd-skip {
+  position: absolute;
+  inset-inline-start: var(--space-2);
+  inset-block-start: -100px;
+  z-index: 70;
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface);
+  border-radius: var(--radius-control);
+  box-shadow: var(--shadow);
+}
+
+.hd-skip:focus {
+  inset-block-start: var(--space-2);
+}
+
+.hd-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-3) var(--space-2);
+  overflow-y: auto;
+  background: var(--ground);
+  border-inline-end: 1px solid var(--hairline);
+}
+
+.hd-brand {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-1) 10px 14px;
+}
+
+.hd-brand b {
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.hd-nav {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-block-size: var(--control-height);
+  padding-inline: 10px;
+  border-radius: var(--radius-control);
+  color: var(--text);
+  text-decoration: none;
+  transition: background var(--motion-fast);
+}
+
+.hd-nav:hover {
+  background: var(--sunken);
+}
+
+.hd-nav-current {
+  background: var(--accent-soft);
+  font-weight: 500;
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.hd-nav-locked {
+  flex-wrap: wrap;
+  row-gap: 0;
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.hd-nav-locked .hd-why {
+  flex-basis: 100%;
+  padding-block-end: var(--space-1);
+}
+
+.hd-nav-count {
+  margin-inline-start: auto;
+  font: var(--text-label);
+  font-weight: 600;
+  color: var(--alarm);
+  font-variant-numeric: tabular-nums;
+}
+
+.hd-rail-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-block-start: 14px;
+}
+
+.hd-rail-label {
+  padding: 0 10px var(--space-1);
+  font: var(--text-label);
+  color: var(--muted);
+}
+
+.hd-rail-error {
+  margin: 0;
+  padding: var(--space-2) 10px;
+  font: var(--text-small);
+  color: var(--alarm);
+  background: var(--sunken);
+  border-radius: var(--radius-control);
+}
+
+.hd-rail-foot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-block-start: auto;
+  padding: var(--space-3) 10px var(--space-1);
+  border-block-start: 1px solid var(--hairline);
+}
+
+.hd-rail-who {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.hd-rail-signout {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  margin-inline: calc(-1 * var(--space-2));
+}
+
+.hd-rail-scrim {
+  display: none;
+}
+
+/* Operations render before the document bar in the tree; the grid places them below it, on every view. */
+.hd-main {
+  display: grid;
+  grid-template-areas: 'bar' 'notice' 'ops' 'body';
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  min-inline-size: 0;
+  min-block-size: 0;
+}
+
+.hd-docbar {
+  grid-area: bar;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  min-block-size: 53px;
+  padding: 10px var(--space-5);
+  background: var(--ground);
+  border-block-end: 1px solid var(--hairline);
+}
+
+.hd-main > .hd-notice {
+  grid-area: notice;
+  margin: var(--space-2) var(--space-5) 0;
+}
+
+.hd-main > .hd-operations {
+  grid-area: ops;
+  padding-inline: var(--space-6);
+  background: var(--surface);
+  border-block-end: 1px solid var(--hairline);
+}
+
+.hd-crumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  min-inline-size: 0;
+  color: var(--muted);
+}
+
+.hd-crumb-part {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.hd-page-title {
+  margin: 0;
+  font: var(--text-page);
+  color: var(--text);
+  text-wrap: balance;
+}
+
+.hd-docbar-spacer {
+  flex: 1;
+}
+
+.hd-view-only {
+  padding: 3px var(--space-2);
+  font: var(--text-label);
+  color: var(--muted);
+  background: var(--sunken);
+  border-radius: var(--radius-control);
+}
+
+.hd-menu-button {
+  display: none;
+}
+
+.hd-palette-host {
+  display: contents;
+}
+
+.hd-body {
+  grid-area: body;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--inspector-width);
+  min-block-size: 0;
+}
+
+.hd-body:has(> .hd-dock:empty) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.hd-canvas {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  min-inline-size: 0;
+  padding: var(--space-5) var(--space-6) 40px;
+  overflow: auto;
+  background: var(--surface);
+}
+
+.hd-canvas:focus {
+  outline: none;
+}
+
+.hd-dock {
+  display: flex;
+  min-block-size: 0;
+}
+
+.hd-dock:empty {
+  display: none;
+}
+
+.hd-dock > .hd-inspector {
+  flex: 1;
+}
+
+.hd-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.hd-centred {
+  align-items: center;
+  margin: auto;
+  max-inline-size: 46ch;
+  text-align: center;
+}
+
+.hd-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.hd-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+  padding-block-end: var(--space-2);
+  border-block-end: 1px solid var(--hairline);
+}
+
+.hd-prose {
+  margin: 0;
+  font: var(--text-prose);
+  max-inline-size: 72ch;
+}
+
+.hd-muted {
+  color: var(--muted);
+}
+
+.hd-stale-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font: var(--text-small);
+  color: var(--stale);
+}
+
+.hd-skeleton {
+  block-size: 120px;
+  background: var(--sunken);
+  border-radius: var(--radius-control);
+}
+
+.hd-attention-lines {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hd-attention-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: var(--space-4);
+  align-items: center;
+  padding-block: 10px;
+  border-block-end: 1px solid var(--hairline);
+}
+
+.hd-attention-what {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+.hd-attention-title {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.hd-attention-count {
+  font-weight: 600;
+  color: var(--alarm);
+  font-variant-numeric: tabular-nums;
+}
+
+.hd-attention-when {
+  text-align: end;
+}
+
+.hd-figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  border-block: 1px solid var(--hairline);
+}
+
+.hd-figure {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 14px var(--space-4) 14px 0;
+}
+
+.hd-figure + .hd-figure {
+  padding-inline-start: var(--space-4);
+  border-inline-start: 1px solid var(--hairline);
+}
+
+.hd-figure-module {
+  font: var(--text-label);
+  color: var(--muted);
+}
+
+.hd-figure-value {
+  font: var(--text-figure);
+  font-variant-numeric: tabular-nums;
+}
+
+.hd-figure-label {
+  font: var(--text-small);
+  color: var(--muted);
+}
+
+.hd-delta-worse {
+  color: var(--alarm);
+}
+
+.hd-cause {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hd-attention-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-2) var(--space-6);
+  align-items: center;
+  padding-block: var(--space-2);
+  border-block-end: 1px solid var(--hairline);
+}
+
+.hd-attention-item[data-selected] {
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.hd-attention-select {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: var(--space-2) var(--space-2);
+  text-align: start;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+}
+
+.hd-attention-select:hover {
+  background: var(--sunken);
+}
+
+.hd-related {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.hd-related-group ul {
+  display: flex;
+  flex-direction: column;
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  list-style: none;
+  border-block-start: 1px solid var(--hairline);
+}
+
+.hd-related-group li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding-block: var(--space-2);
+  border-block-end: 1px solid var(--hairline);
+}
+
+.hd-related-group h3 {
+  margin: 0;
+}
+
+/*
+ * Below 1280 px a selection's inspector becomes a drawer from the inline end. A summary, shown when nothing is
+ * selected, has no Close, so it stays in the flow below the canvas rather than covering it.
+ */
+@media (max-width: 1279px) {
+  .hd-body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  .hd-dock:has(> .hd-inspector-selection) {
+    position: fixed;
+    inset-block: 0;
+    inset-inline-end: 0;
+    z-index: 30;
+    inline-size: min(var(--inspector-width), 100%);
+    box-shadow: var(--shadow);
+  }
+}
+
+/* Below 768 px the rail becomes a menu, and the inspector a full screen with Close. */
+@media (max-width: 767px) {
+  .hd-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .hd-rail {
+    position: fixed;
+    inset-block: 0;
+    inset-inline-start: 0;
+    z-index: 40;
+    inline-size: min(260px, 85vw);
+    box-shadow: var(--shadow);
+    transform: translateX(-102%);
+    transition: transform var(--motion-panel-out);
+  }
+
+  [dir='rtl'] .hd-rail {
+    transform: translateX(102%);
+  }
+
+  .hd-rail.hd-rail-open {
+    transform: none;
+    transition: transform var(--motion-panel-in);
+  }
+
+  .hd-rail-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 35;
+    background: var(--scrim);
+  }
+
+  .hd-menu-button {
+    display: inline-flex;
+  }
+
+  .hd-docbar {
+    padding: var(--space-2) var(--space-4);
+  }
+
+  .hd-canvas {
+    padding: var(--space-4) var(--space-4) var(--space-6);
+  }
+
+  .hd-main > .hd-operations {
+    padding-inline: var(--space-4);
+  }
+
+  /* Matches the drawer rule's selector, which would otherwise win on specificity and keep it at drawer width. */
+  .hd-dock:has(> .hd-inspector-selection) {
+    inline-size: 100%;
+  }
+
+  .hd-attention-line {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .hd-attention-when {
+    display: none;
+  }
+
+  .hd-attention-item {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .hd-figure + .hd-figure {
+    padding-inline-start: 0;
+    border-inline-start: 0;
+    border-block-start: 1px solid var(--hairline);
+  }
+}
