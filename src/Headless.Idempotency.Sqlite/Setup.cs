@@ -121,11 +121,6 @@ public static class SetupIdempotencySqlite
             factory.BeginAsync((SqliteConnection)connection, cancellationToken),
         static services => services.AddUnitOfWork(),
         SqliteIdempotencySchemaContribution.Create,
-        // Deferred: a peek takes no write lock, so it reads the last committed record while a unit holds the database.
-#pragma warning disable CA1849 // False positive: no async overload begins a deferred transaction, and the driver's async begin is synchronous anyway.
-        static (connection, _) =>
-            ValueTask.FromResult<DbTransaction>(((SqliteConnection)connection).BeginTransaction(deferred: true)),
-#pragma warning restore CA1849
         EnlistedAdmissionRefusal
     );
 
