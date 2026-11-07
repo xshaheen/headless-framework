@@ -88,19 +88,18 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
         var live = $"{t.State} = {active} AND {t.ExpiresAt} > {now}";
         var current = $"{t.Generation} = @Generation AND {live}";
 
-        // Reads the row's lock and nothing else a decision needs besides its classification; the progress and
-        // attributes are not read, so a renewal never ships a stored payload back. The holder is small and lets a
+        // Reads the row's lock and nothing else a decision needs besides its classification; the progress is not
+        // read, so a renewal never ships a stored payload back. The holder is small and lets a
         // refused grant recognize its own live attempt while the row is still locked.
         var locked = _dialect.Render(
             new SqlLockedRead(t.Table, t.Key, [t.Generation, t.State, t.ExpiresAt, t.TakeoverCount, t.Holder])
         );
-        // Every grant that acquires records who holds the new attempt and what it carries, replacing the last
-        // attempt's; absent options store NULL.
-        var grantedBy =
-            $"{t.Holder} = @Holder, {t.Attributes} = @Attributes, {t.AttributesContract} = @AttributesContract";
+        // Every grant that acquires records who holds the new attempt, replacing the last attempt's holder; a grant
+        // without one stores NULL.
+        var grantedBy = $"{t.Holder} = @Holder";
 
         // Only a takeover of an expired active attempt counts one more, because a sweep already counted an abandoned
-        // one and a settlement or release reset the count. Progress is left as it is, so the new attempt can resume.
+        // one and a settlement, release, or revocation reset the count. Progress is left as it is, so the new attempt can resume.
         _grantSql =
             locked
             + _dialect.Render(
@@ -121,7 +120,7 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
                 )
             );
         // The after-sweep grant refuses any active attempt, live or expired, so an expired attempt is never replaced
-        // here; only a sweep's abandonment or the attempt's own settlement or release ends it.
+        // here; only a sweep's abandonment, a revocation, or the attempt's own settlement or release ends it.
         _grantAfterSweepSql =
             locked
             + _dialect.Render(
@@ -172,7 +171,7 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
         _currentSql = _dialect.Render(
             new SqlClockedStatement(
                 $"SELECT {t.Generation}, {t.State}, {t.ExpiresAt}, CASE WHEN {t.ExpiresAt} > {now} THEN 1 ELSE 0 END, "
-                    + $"{t.TakeoverCount}, {t.Holder}, {t.Attributes}, {t.AttributesContract} FROM {t.Table} WHERE {byKey};"
+                    + $"{t.TakeoverCount}, {t.Holder} FROM {t.Table} WHERE {byKey};"
             )
         );
 
@@ -180,26 +179,8 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
             new SqlInsertIfAbsent(
                 t.Table,
                 t.Key,
-                [
-                    t.Generation,
-                    t.State,
-                    t.GrantedAt,
-                    t.ExpiresAt,
-                    t.EndedAt,
-                    t.Holder,
-                    t.Attributes,
-                    t.AttributesContract,
-                ],
-                [
-                    _dialect.NextSequenceValue(t.Sequence),
-                    active,
-                    now,
-                    deadline,
-                    "NULL",
-                    "@Holder",
-                    "@Attributes",
-                    "@AttributesContract",
-                ],
+                [t.Generation, t.State, t.GrantedAt, t.ExpiresAt, t.EndedAt, t.Holder],
+                [_dialect.NextSequenceValue(t.Sequence), active, now, deadline, "NULL", "@Holder"],
                 [t.Generation, t.ExpiresAt]
             )
         );
@@ -214,7 +195,8 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
         _settleSql = locked + _Transition(current, _EndSet(FencingTable.Settled));
         _releaseSql = locked + _Transition(current, _EndSet(FencingTable.Released));
         // Revoke ends whatever attempt is active, live or expired, by key alone: the caller never held its generation.
-        _revokeSql = locked + _Transition($"{t.State} = {active}", _EndSet(FencingTable.Released));
+        // Its own state tells the attempt's holder that someone else ended it, so a settle or release is refused.
+        _revokeSql = locked + _Transition($"{t.State} = {active}", _EndSet(FencingTable.Revoked));
         _fenceSql = locked + _Transition(current, set: null);
 
         _claimFirstSql = _dialect.Render(_Claim(withCursor: false));
@@ -423,13 +405,6 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
             SqlColumnType.Text(FencingFieldLimits.HolderMaxLength),
             options.Holder
         );
-        _dialect.AddParameter(command, "Attributes", SqlColumnType.Binary, options.Attributes?.Payload);
-        _dialect.AddParameter(
-            command,
-            "AttributesContract",
-            SqlColumnType.Text(FencingFieldLimits.AttributesContractMaxLength),
-            options.Attributes?.Contract
-        );
     }
 
     private async Task<LeaseGrantResult?> _RegrantAsync(
@@ -635,6 +610,7 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
                     LeaseFenceStatus.Settled => new LeaseRenewalResult(LeaseRenewalStatus.Settled, ExpiresAt: null),
                     LeaseFenceStatus.Released => new LeaseRenewalResult(LeaseRenewalStatus.Released, ExpiresAt: null),
                     LeaseFenceStatus.Abandoned => new LeaseRenewalResult(LeaseRenewalStatus.Abandoned, ExpiresAt: null),
+                    LeaseFenceStatus.Revoked => new LeaseRenewalResult(LeaseRenewalStatus.Revoked, ExpiresAt: null),
                     _ => new LeaseRenewalResult(LeaseRenewalStatus.Stale, ExpiresAt: null),
                 }
         );
@@ -656,7 +632,8 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
             .ConfigureAwait(false);
 
         // A settled or released row at this generation reports its state whichever verb asked, so a retried settlement
-        // reports success and a release after a settlement reports that the attempt settled.
+        // reports success and a release after a settlement reports that the attempt settled. A revoked row is never
+        // success: the attempt did not end it.
         return ended.Match(
             accepted: (_, _) => success,
             rejected: before =>
@@ -665,6 +642,7 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
                     LeaseFenceStatus.Settled => LeaseSettlementStatus.Settled,
                     LeaseFenceStatus.Released => LeaseSettlementStatus.Released,
                     LeaseFenceStatus.Abandoned => LeaseSettlementStatus.Abandoned,
+                    LeaseFenceStatus.Revoked => LeaseSettlementStatus.Revoked,
                     LeaseFenceStatus.Expired => LeaseSettlementStatus.Expired,
                     _ => LeaseSettlementStatus.Stale,
                 }
@@ -845,22 +823,7 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
         // The row's own generation is judged, so the answer is never stale.
         var status =
             row.State == FencingTable.Active && live ? LeaseFenceStatus.Current : _Rejection(key, row, row.Generation);
-        LeaseAttributes? attributes = null;
-
-        if (!await reader.IsDBNullAsync(6, cancellationToken).ConfigureAwait(false))
-        {
-            var payload = await reader.GetFieldValueAsync<byte[]>(6, cancellationToken).ConfigureAwait(false);
-            attributes = new LeaseAttributes(payload, reader.GetString(7));
-        }
-
-        return new LeaseSnapshot(
-            key.ToLease(row.Generation),
-            status,
-            row.ExpiresAt,
-            row.Holder,
-            attributes,
-            row.TakeoverCount
-        );
+        return new LeaseSnapshot(key.ToLease(row.Generation), status, row.ExpiresAt, row.Holder, row.TakeoverCount);
     }
 
     private void _RequireCallerConnection(DbConnection connection, DbTransaction? transaction)
@@ -1230,6 +1193,7 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
             FencingTable.Settled => LeaseFenceStatus.Settled,
             FencingTable.Released => LeaseFenceStatus.Released,
             FencingTable.Abandoned => LeaseFenceStatus.Abandoned,
+            FencingTable.Revoked => LeaseFenceStatus.Revoked,
             FencingTable.Active => LeaseFenceStatus.Expired,
             _ => throw new InvalidOperationException(
                 $"The lease '{key.Kind}/{key.Resource}' carries an unknown state {before.State.ToString(CultureInfo.InvariantCulture)}; the table was changed outside this provider."

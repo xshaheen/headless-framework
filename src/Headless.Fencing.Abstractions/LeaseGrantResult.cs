@@ -57,9 +57,10 @@ public sealed class LeaseGrantResult
     public long? PreviousGeneration { get; }
 
     /// <summary>
-    /// Gets how many times the lease's work was taken from an expired holder since it last settled or was released:
-    /// each <see cref="LeaseGrantStatus.Takeover" /> grant and each sweep that abandoned an expired attempt adds one.
-    /// For <see cref="LeaseGrantStatus.Held" /> and <see cref="LeaseGrantStatus.Expired" /> it is the holder's count.
+    /// Gets how many times the lease's work was taken from an expired holder since it last settled, was released, or
+    /// was revoked: each <see cref="LeaseGrantStatus.Takeover" /> grant and each sweep that abandoned an expired
+    /// attempt adds one. For <see cref="LeaseGrantStatus.Held" /> and <see cref="LeaseGrantStatus.Expired" /> it is the
+    /// holder's count.
     /// </summary>
     /// <remarks>
     /// A count that keeps rising means executors keep losing the lease before they finish: a crash loop, a renewal

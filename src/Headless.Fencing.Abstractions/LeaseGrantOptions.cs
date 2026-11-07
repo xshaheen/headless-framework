@@ -26,10 +26,4 @@ public sealed class LeaseGrantOptions
     /// empty or whitespace.
     /// </remarks>
     public string? Holder { get; init; }
-
-    /// <summary>
-    /// Gets the attributes stored with the attempt this grant starts, or <see langword="null" /> to store none. They
-    /// stay with that generation until a later grant replaces it.
-    /// </summary>
-    public LeaseAttributes? Attributes { get; init; }
 }

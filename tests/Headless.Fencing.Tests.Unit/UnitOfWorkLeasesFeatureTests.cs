@@ -502,11 +502,7 @@ public sealed class UnitOfWorkLeasesFeatureTests : TestBase
         var context = new FencingTestContext();
         context.Tenant.Id = "t1";
         var (unit, _) = FencingTestContext.ActiveUnit();
-        var options = new LeaseGrantOptions
-        {
-            Holder = "cluster/node-1@3",
-            Attributes = new LeaseAttributes([1, 2, 3], "run.scope/v1"),
-        };
+        var options = new LeaseGrantOptions { Holder = "cluster/node-1@3" };
         var expected = LeaseGrantResult.Held(3, DateTimeOffset.UnixEpoch);
         context
             .Store.GrantEnlistedAsync(unit, _Key, FencingTestContext.Duration, options, AbortToken)

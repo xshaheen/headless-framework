@@ -298,9 +298,9 @@ public sealed class SqliteLeasesConformanceTests(SqliteFencingFixture fixture)
     }
 
     [Fact]
-    public override Task should_read_the_current_attempt_with_its_holder_and_attributes_by_the_database_clock()
+    public override Task should_read_the_current_attempt_with_its_holder_by_the_database_clock()
     {
-        return base.should_read_the_current_attempt_with_its_holder_and_attributes_by_the_database_clock();
+        return base.should_read_the_current_attempt_with_its_holder_by_the_database_clock();
     }
 
     [Fact]
@@ -313,5 +313,29 @@ public sealed class SqliteLeasesConformanceTests(SqliteFencingFixture fixture)
     public override Task should_revoke_the_active_attempt_live_or_expired_and_nothing_else()
     {
         return base.should_revoke_the_active_attempt_live_or_expired_and_nothing_else();
+    }
+
+    [Fact]
+    public override Task should_report_revoked_to_every_verb_of_the_revoked_generation_and_write_nothing()
+    {
+        return base.should_report_revoked_to_every_verb_of_the_revoked_generation_and_write_nothing();
+    }
+
+    [Fact]
+    public override Task should_grant_a_new_generation_with_a_reset_takeover_count_after_a_revoke()
+    {
+        return base.should_grant_a_new_generation_with_a_reset_takeover_count_after_a_revoke();
+    }
+
+    [Fact]
+    public override Task should_read_a_revoked_attempt_as_revoked_and_keep_its_holder()
+    {
+        return base.should_read_a_revoked_attempt_as_revoked_and_keep_its_holder();
+    }
+
+    [Fact]
+    public override Task should_purge_a_revoked_lease_older_than_the_threshold()
+    {
+        return base.should_purge_a_revoked_lease_older_than_the_threshold();
     }
 }

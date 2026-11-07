@@ -80,6 +80,7 @@ public enum StoredLeaseState
     Settled = 1,
     Released = 2,
     Abandoned = 3,
+    Revoked = 4,
 }
 
 /// <summary>One stored lease row.</summary>

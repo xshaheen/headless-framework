@@ -471,12 +471,7 @@ public sealed class FencedLeasesTests : TestBase
     {
         // given
         var context = new FencingTestContext();
-        var options = new LeaseGrantOptions
-        {
-            Takeover = LeaseTakeover.AfterSweep,
-            Holder = "cluster/node-1@3",
-            Attributes = new LeaseAttributes([1, 2, 3], "run.scope/v1"),
-        };
+        var options = new LeaseGrantOptions { Takeover = LeaseTakeover.AfterSweep, Holder = "cluster/node-1@3" };
         var expected = LeaseGrantResult.Granted(_Lease, DateTimeOffset.UnixEpoch);
         context.Store.GrantAsync(_Key, FencingTestContext.Duration, options, AbortToken).Returns(expected);
 
@@ -500,14 +495,6 @@ public sealed class FencedLeasesTests : TestBase
         var context = new FencingTestContext();
         var longHolder = new LeaseGrantOptions { Holder = new string('h', FencingFieldLimits.HolderMaxLength + 1) };
         var blankHolder = new LeaseGrantOptions { Holder = "  " };
-        var largeAttributes = new LeaseGrantOptions
-        {
-            Attributes = new LeaseAttributes(new byte[FencingFieldLimits.AttributesMaxBytes + 1], "run.scope/v1"),
-        };
-        var longContract = new LeaseGrantOptions
-        {
-            Attributes = new LeaseAttributes([1], new string('c', FencingFieldLimits.AttributesContractMaxLength + 1)),
-        };
 
         Func<Task> grant(LeaseGrantOptions options) =>
             async () =>
@@ -517,24 +504,15 @@ public sealed class FencedLeasesTests : TestBase
         await grant(null!).Should().ThrowAsync<ArgumentNullException>();
         await grant(longHolder).Should().ThrowAsync<ArgumentException>().WithParameterName("options");
         await grant(blankHolder).Should().ThrowAsync<ArgumentException>().WithParameterName("options");
-        await grant(largeAttributes).Should().ThrowAsync<ArgumentException>().WithParameterName("options");
-        await grant(longContract).Should().ThrowAsync<ArgumentException>().WithParameterName("options");
         context.Store.ReceivedCalls().Should().BeEmpty();
     }
 
     [Fact]
-    public async Task should_accept_attributes_and_a_holder_at_their_limits()
+    public async Task should_accept_a_holder_at_its_limit()
     {
         // given
         var context = new FencingTestContext();
-        var options = new LeaseGrantOptions
-        {
-            Holder = new string('h', FencingFieldLimits.HolderMaxLength),
-            Attributes = new LeaseAttributes(
-                new byte[FencingFieldLimits.AttributesMaxBytes],
-                new string('c', FencingFieldLimits.AttributesContractMaxLength)
-            ),
-        };
+        var options = new LeaseGrantOptions { Holder = new string('h', FencingFieldLimits.HolderMaxLength) };
         context
             .Store.GrantAsync(_Key, FencingTestContext.Duration, options, AbortToken)
             .Returns(LeaseGrantResult.Held(3, DateTimeOffset.UnixEpoch));
@@ -565,7 +543,6 @@ public sealed class FencedLeasesTests : TestBase
             LeaseFenceStatus.Current,
             DateTimeOffset.UnixEpoch,
             "cluster/node-1@3",
-            Attributes: null,
             TakeoverCount: 0
         );
         var connection = Substitute.For<DbConnection>();

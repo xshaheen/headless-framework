@@ -58,11 +58,11 @@ await leases.SweepExpiredAsync("exports", async (expired, unit, ct) =>
 - Grant with `LeaseTakeover.AfterSweep` when an attempt may already have had an external effect (a call to a provider, an email, a payment). An expired attempt then answers `Expired` instead of being taken over, and only your sweep handler — which can mark the work for review — ends it. The default, `LeaseTakeover.Allowed`, is for work that is safe to repeat or resumes from its progress.
 - `GetStatusAsync(lease)` is a lockless read for dropping late work early (a result from an attempt already replaced). It runs one statement on its own connection with no transaction, so it costs about one round trip and suits a per-request liveness check; on SQLite it takes no write lock, and on SQL Server without read committed snapshot isolation it can still wait behind an uncommitted writer. Code that already holds a connection to the lease database (an EF Core context's `Database.GetDbConnection()`) passes it: `GetStatusAsync(lease, connection, transaction, ct)` runs the same statement there instead of checking a second connection out of the pool, which is about 20% faster on PostgreSQL at 32 concurrent callers. It never guards a write: the answer can change as soon as it returns, so a write that depends on the lease still runs `unit.Leases.FenceAsync` in its own unit.
 - Name the holder on every grant a worker may retry: `GrantAsync(kind, resource, duration, new LeaseGrantOptions { Holder = "cluster/node-1@3" }, ct)`. A retried grant whose first response was lost then gets its own live lease back (same generation, same expiry) instead of `Held`. Make the tag unique per process incarnation, because any grant carrying the same tag gets the live lease back.
-- For a per-request liveness and scope check, read `GetCurrentAsync(kind, resource)` and compare its `Attributes` with the request. It is one primary-key read with no lock, so you do not need to keep your own copy of the generation, owner, or scope. Like `GetStatusAsync`, it never guards a write.
-- `RevokeAsync(kind, resource)` ends whatever attempt is active (cancel or pause from code that never held the token) and returns the lease it ended. The worker learns of it at its next renewal, settlement, or fence, which answers `Released`, so stop the work there.
+- For a per-request liveness check, read `GetCurrentAsync(kind, resource)`. It is one primary-key read with no lock that returns the generation, state, expiry, and holder, so you do not need to keep your own copy of them. Like `GetStatusAsync`, it never guards a write.
+- `RevokeAsync(kind, resource)` ends whatever attempt is active (cancel or pause from code that never held the token) and returns the lease it ended. The worker learns of it at its next renewal, settlement, or fence, which answers `Revoked`, so stop the work there.
 - Expiry is always decided by the database clock, inside the statement that checks it — never by comparing `DateTimeOffset.UtcNow` on the caller's machine. A skewed application clock cannot make a live lease look expired or an expired one look live. The in-memory provider is the one exception: its registered `TimeProvider` is the clock, read after the key's lock is held.
-- `PurgeAsync` only deletes terminal rows (`Settled`, `Released`, `Abandoned`) older than the cutoff; it never weakens the generation guarantee — a lease granted again after its row is purged still gets a generation above every one issued before the purge, because generations are drawn from one store-wide sequence, not a per-row counter.
-- Progress is a resume cursor, not a result store. `LeaseProgress` is at most `FencingFieldLimits.ProgressMaxBytes` (64 KiB) of payload and `ProgressContractMaxLength` (256) characters of contract; a larger one throws `ArgumentException` before any SQL runs. Check the contract tag before decoding the bytes a grant hands back. `LeaseAttributes` has the same shape and smaller limits (`AttributesMaxBytes` 4 KiB, `AttributesContractMaxLength` 256), because every `GetCurrentAsync` returns them. A `Holder` is at most `HolderMaxLength` (200) characters and must not be blank. Each is checked before any SQL runs.
+- `PurgeAsync` only deletes terminal rows (`Settled`, `Released`, `Abandoned`, `Revoked`) older than the cutoff; it never weakens the generation guarantee — a lease granted again after its row is purged still gets a generation above every one issued before the purge, because generations are drawn from one store-wide sequence, not a per-row counter.
+- Progress is a resume cursor, not a result store. `LeaseProgress` is at most `FencingFieldLimits.ProgressMaxBytes` (64 KiB) of payload and `ProgressContractMaxLength` (256) characters of contract; a larger one throws `ArgumentException` before any SQL runs. Check the contract tag before decoding the bytes a grant hands back. A `Holder` is at most `HolderMaxLength` (200) characters and must not be blank. Each is checked before any SQL runs.
 - Read `TakeoverCount` on every grant and on every `ExpiredLease` a sweep hands you. A count above 0 means earlier holders expired without finishing; a count that keeps rising for one resource means the work never gets through, and resuming from the same progress will not fix it on its own.
 - `kind`, `resource`, and the current tenant id are validated against `FencingFieldLimits` (`KindMaxLength` 64, `ResourceMaxLength` 256, `TenantIdMaxLength` 128) before any SQL runs; a value over the limit, or one no provider stores unchanged (leading or trailing whitespace, a NUL character, or an unpaired UTF-16 surrogate), throws `ArgumentException` immediately, on every provider including in-memory. Case, accents, surrogate pairs, and other control characters are distinct keys everywhere.
 
@@ -121,7 +121,7 @@ A lease is identified by `(TenantId, Kind, Resource)` — the tenant from `ICurr
 
 ### Lease state
 
-State is `Active | Settled | Released | Abandoned`. "Expired" is never stored — it is `Active` with an expiry at or before the database clock, evaluated fresh inside each statement.
+State is `Active | Settled | Released | Abandoned | Revoked`. "Expired" is never stored — it is `Active` with an expiry at or before the database clock, evaluated fresh inside each statement.
 
 ```mermaid
 stateDiagram-v2
@@ -130,17 +130,19 @@ stateDiagram-v2
     Active --> Active: grant over expired (takeover, new generation; refused as Expired under AfterSweep)
     Active --> Settled: settle(g) while live
     Active --> Released: release(g) while live
-    Active --> Released: revoke(key), live or expired
+    Active --> Revoked: revoke(key), live or expired
     Active --> Abandoned: sweep claims expired
     Settled --> Active: grant (new generation)
     Released --> Active: grant (new generation)
     Abandoned --> Active: grant (new generation)
+    Revoked --> Active: grant (new generation)
     Settled --> [*]: purge
     Released --> [*]: purge
     Abandoned --> [*]: purge
+    Revoked --> [*]: purge
 ```
 
-`GrantAsync` reads the row and decides: no row, or a terminal row → `Granted` with a new generation; a live `Active` row → `Held` with the current holder's generation and expiry, unless the grant names the holder the row stores (see [Holder and attributes](#holder-and-attributes)); an `Active` row past its expiry → `Takeover`, a new generation, and the previous generation in the result. With `LeaseTakeover.AfterSweep`, an `Active` row past its expiry instead answers `Expired` with that attempt's generation and expiry and writes nothing; the lease becomes grantable once a sweep abandons the attempt or the attempt settles or releases. `RenewAsync`, `SettleAsync`, and `ReleaseAsync` all take the generation they act on and report `Stale` whenever a newer grant replaced it, whichever terminal state ended it otherwise, or (for renew) `Expired` when the generation is current but the lease already lapsed.
+`GrantAsync` reads the row and decides: no row, or a terminal row → `Granted` with a new generation; a live `Active` row → `Held` with the current holder's generation and expiry, unless the grant names the holder the row stores (see [Holder](#holder)); an `Active` row past its expiry → `Takeover`, a new generation, and the previous generation in the result. With `LeaseTakeover.AfterSweep`, an `Active` row past its expiry instead answers `Expired` with that attempt's generation and expiry and writes nothing; the lease becomes grantable once a sweep abandons the attempt, the attempt settles or releases, or code revokes it. `RenewAsync`, `SettleAsync`, and `ReleaseAsync` all take the generation they act on and report `Stale` whenever a newer grant replaced it, whichever terminal state ended it otherwise, or (for renew) `Expired` when the generation is current but the lease already lapsed.
 
 ### Progress and resume
 
@@ -154,8 +156,8 @@ The row keeps the last recorded progress until the work ends:
 | `Takeover` grant | Kept | `LeaseGrantResult.Progress` |
 | Sweep abandons the lease | Kept | `ExpiredLease.Progress` |
 | `Granted` over an abandoned lease | Kept | `LeaseGrantResult.Progress` |
-| Settle or release | Cleared | — |
-| `Granted` over a settled or released lease, or a new lease | None | `null` |
+| Settle, release, or revoke | Cleared | — |
+| `Granted` over a settled, released, or revoked lease, or a new lease | None | `null` |
 
 Keeping progress across a takeover means a holder that takes over and crashes before its first heartbeat does not lose the previous holder's cursor. Keeping it across an abandonment means the attempt a sweep handler routes the work to resumes rather than restarts.
 
@@ -180,7 +182,7 @@ The resumed attempt must tolerate repeating the work between the last recorded p
 
 ### Takeover count
 
-Each lease row counts how many times its work was taken from an expired holder since it last settled or was released (the Kubernetes `Lease` `leaseTransitions` signal). A `Takeover` grant adds one, and a sweep that marks the lease `Abandoned` adds one. A `Granted` grant over an abandoned lease adds nothing, because the sweep already counted that abandonment. Settle and release reset it to 0. `LeaseGrantResult.TakeoverCount` reports it on every grant (for `Held`, the live holder's count), and `ExpiredLease.TakeoverCount` reports it after the abandonment.
+Each lease row counts how many times its work was taken from an expired holder since it last settled, was released, or was revoked (the Kubernetes `Lease` `leaseTransitions` signal). A `Takeover` grant adds one, and a sweep that marks the lease `Abandoned` adds one. A `Granted` grant over an abandoned lease adds nothing, because the sweep already counted that abandonment. Settle, release, and revoke reset it to 0. `LeaseGrantResult.TakeoverCount` reports it on every grant (for `Held`, the live holder's count), and `ExpiredLease.TakeoverCount` reports it after the abandonment.
 
 A rising count means executors keep losing the lease before they finish: a crash loop, a renewal cadence too slow for the lease duration, a GC pause or partition longer than the lease, or two workers flapping over one resource. Alert on it one of two ways:
 
@@ -189,18 +191,28 @@ A rising count means executors keep losing the lease before they finish: a crash
 
 The fencing packages emit no metrics.
 
-### Holder and attributes
+### Holder
 
-A grant can pass `LeaseGrantOptions` (`Takeover`, `Holder`, `Attributes`). Each grant that acquires the lease (`Granted`, `Takeover`, or the first insert) stores both values on the row, or NULL when the options leave them out. They describe that generation. Renewal, settlement, release, a sweep's abandonment, and a revoke leave them unchanged.
+A grant can pass `LeaseGrantOptions` (`Takeover`, `Holder`). Each grant that acquires the lease (`Granted`, `Takeover`, or the first insert) stores the holder on the row, or NULL when the options leave it out. It describes that generation. Renewal, settlement, release, a sweep's abandonment, and a revoke leave it unchanged.
 
 - `Holder` is an owner tag such as `cluster/node@incarnation`. A grant that names the holder of a live attempt (ordinal match, judged by the database clock on the row it holds locked) returns `Granted` with that attempt's lease, expiry, takeover count, and progress. It writes nothing and does not extend the expiry. That makes a grant retried after a lost response idempotent, in both takeover modes and inside a unit. Any other grant still answers `Held`, and once the attempt expires the same holder gets a `Takeover` with a new generation.
-- `Attributes` is a `LeaseAttributes(payload, contract)`: immutable bytes plus a contract tag, fixed at grant time, such as the tenant, workspace, run, and stage an attempt may act on. The store never interprets it.
 
 ### Current attempt and revoke
 
-`GetCurrentAsync(kind, resource)` reads the key's row with one clocked statement and no lock. It returns `null` when the key has no row. Otherwise it returns a `LeaseSnapshot(Lease, Status, ExpiresAt, Holder, Attributes, TakeoverCount)` that judges the row's own generation by the database clock: `Current` (active and unexpired, so `IsLive` is true), `Expired`, `Settled`, `Released`, or `Abandoned`, never `Stale`. The tenant comes from `ICurrentTenant`, as for a grant. One read answers both "is an attempt live?" and "what scope did it start with?", so a per-request check can compare `snapshot.Attributes` with the request and drop the request when the attempt is not live. `GetCurrentAsync(kind, resource, connection, transaction = null, ct)` runs the same statement on the caller's connection, under the same rules as `GetStatusAsync(lease, connection, …)`.
+`GetCurrentAsync(kind, resource)` reads the key's row with one clocked statement and no lock. It returns `null` when the key has no row. Otherwise it returns a `LeaseSnapshot(Lease, Status, ExpiresAt, Holder, TakeoverCount)` that judges the row's own generation by the database clock: `Current` (active and unexpired, so `IsLive` is true), `Expired`, `Settled`, `Released`, `Abandoned`, or `Revoked`, never `Stale`. The tenant comes from `ICurrentTenant`, as for a grant. A per-request check drops the request when the attempt is not live. `GetCurrentAsync(kind, resource, connection, transaction = null, ct)` runs the same statement on the caller's connection, under the same rules as `GetStatusAsync(lease, connection, …)`.
 
-`RevokeAsync(kind, resource)` ends the key's active attempt, live or expired, as `Released`. It runs one fenced transition on its own transaction and returns the lease it ended, or `null` when no attempt is active (no row, or a row already ended). Like a release, it resets the takeover count and clears the progress. After it, that generation's renewal, settlement, release, fence, and status answer `Released`, and the next grant gets a new generation at once.
+`RevokeAsync(kind, resource)` ends the key's active attempt, live or expired, as `Revoked`, its own state, so a reader can tell an attempt that code outside it stopped from one its holder gave up. It runs one fenced transition on its own transaction and returns the lease it ended, or `null` when no attempt is active (no row, or a row already ended). Like a release, it resets the takeover count and clears the progress, and it keeps the holder. After a revoke, the revoked generation gets these answers:
+
+| Call by the revoked generation | Answer | Writes |
+| --- | --- | --- |
+| `unit.Leases.FenceAsync` | Throws `StaleLeaseException` with `Reason` `Revoked` | Nothing |
+| `GetStatusAsync` | `LeaseFenceStatus.Revoked` | Nothing |
+| `RenewAsync` | `LeaseRenewalStatus.Revoked` | Nothing |
+| `SettleAsync`, `ReleaseAsync` | `LeaseSettlementStatus.Revoked`, never success, because the attempt did not end itself | Nothing |
+| `GetCurrentAsync` | `Status` `Revoked`, with the holder kept and a takeover count of 0 | Nothing |
+| `GrantAsync` (any caller) | `Granted` (not `Takeover`) with a new generation, a takeover count of 0, and no progress | The new attempt |
+
+`PurgeAsync` deletes a revoked row once it ended at least `olderThan` ago, as it does a settled or released one.
 
 ### The fence
 
@@ -253,10 +265,10 @@ Reference it from code that grants, renews, or fences leases. Registration lives
 
 ### Design and runtime behavior
 
-- `IFencedLeases`: `GrantAsync(kind, resource, duration, ct)`, `GrantAsync(kind, resource, duration, takeover, ct)`, and `GrantAsync(kind, resource, duration, options, ct)` → `LeaseGrantResult` (`Status`: `Granted` | `Held` | `Takeover` | `Expired`; `Lease`, `ExpiresAt`, `HolderGeneration`, `PreviousGeneration`, `TakeoverCount`, `Progress`, `IsAcquired`). `LeaseTakeover` is `Allowed` (the default: take an expired attempt over) or `AfterSweep` (answer `Expired` until a sweep, settlement, or release ends it); an undefined value throws `InvalidEnumArgumentException`. `LeaseGrantOptions` carries `Takeover` (default `Allowed`), `Holder`, and `Attributes`; a null `options` throws `ArgumentNullException`. `GetCurrentAsync(kind, resource, ct)` and `GetCurrentAsync(kind, resource, connection, transaction = null, ct)` → `LeaseSnapshot?`. `RevokeAsync(kind, resource, ct)` → `FencedLease?`. `GetStatusAsync(lease, ct)` → `LeaseFenceStatus` (`Current` | `Stale` | `Expired` | `Settled` | `Released` | `Abandoned`), read without a lock; `GetStatusAsync(lease, connection, transaction = null, ct)` → the same, on the caller's `DbConnection`. `RenewAsync(lease, duration, ct)` and `RenewAsync(lease, duration, progress, ct)` → `LeaseRenewalResult` (`Status`: `Renewed` | `Expired` | `Stale` | `Settled` | `Released` | `Abandoned`; `ExpiresAt`; `IsRenewed`). `SettleAsync` / `ReleaseAsync(lease, ct)` → `LeaseSettlementStatus` (`Settled` | `Released` | `Stale` | `Expired` | `Abandoned`); both are idempotent for the same generation. `SweepExpiredAsync(kind, handler, limit, ct)` → `LeaseSweepResult(Handled, Failures)`, where `Failures` are `LeaseSweepFailure(Lease, Exception)`. `PurgeAsync(kind, olderThan, ct)` → the row count deleted.
+- `IFencedLeases`: `GrantAsync(kind, resource, duration, ct)`, `GrantAsync(kind, resource, duration, takeover, ct)`, and `GrantAsync(kind, resource, duration, options, ct)` → `LeaseGrantResult` (`Status`: `Granted` | `Held` | `Takeover` | `Expired`; `Lease`, `ExpiresAt`, `HolderGeneration`, `PreviousGeneration`, `TakeoverCount`, `Progress`, `IsAcquired`). `LeaseTakeover` is `Allowed` (the default: take an expired attempt over) or `AfterSweep` (answer `Expired` until a sweep, settlement, release, or revoke ends it); an undefined value throws `InvalidEnumArgumentException`. `LeaseGrantOptions` carries `Takeover` (default `Allowed`) and `Holder`; a null `options` throws `ArgumentNullException`. `GetCurrentAsync(kind, resource, ct)` and `GetCurrentAsync(kind, resource, connection, transaction = null, ct)` → `LeaseSnapshot?`. `RevokeAsync(kind, resource, ct)` → `FencedLease?`. `GetStatusAsync(lease, ct)` → `LeaseFenceStatus` (`Current` | `Stale` | `Expired` | `Settled` | `Released` | `Abandoned` | `Revoked`), read without a lock; `GetStatusAsync(lease, connection, transaction = null, ct)` → the same, on the caller's `DbConnection`. `RenewAsync(lease, duration, ct)` and `RenewAsync(lease, duration, progress, ct)` → `LeaseRenewalResult` (`Status`: `Renewed` | `Expired` | `Stale` | `Settled` | `Released` | `Abandoned` | `Revoked`; `ExpiresAt`; `IsRenewed`). `SettleAsync` / `ReleaseAsync(lease, ct)` → `LeaseSettlementStatus` (`Settled` | `Released` | `Stale` | `Expired` | `Abandoned` | `Revoked`); both are idempotent for the same generation. `SweepExpiredAsync(kind, handler, limit, ct)` → `LeaseSweepResult(Handled, Failures)`, where `Failures` are `LeaseSweepFailure(Lease, Exception)`. `PurgeAsync(kind, olderThan, ct)` → the row count deleted.
 - `FencedLease(TenantId, Kind, Resource, Generation)` — a plain record, safe to persist or hand to another process; `ExpiredLease` adds `ExpiresAt`, `TakeoverCount`, and `Progress` for the value a sweep hands its handler.
 - `LeaseProgress(payload, contract)` — copies the payload; exposes `Payload` (`ReadOnlyMemory<byte>`) and `Contract`. See [Progress and resume](#progress-and-resume).
-- `LeaseAttributes(payload, contract)` — the same shape, fixed at grant time. `LeaseSnapshot(Lease, Status, ExpiresAt, Holder, Attributes, TakeoverCount)` adds `IsLive`. See [Holder and attributes](#holder-and-attributes).
+- `LeaseSnapshot(Lease, Status, ExpiresAt, Holder, TakeoverCount)` adds `IsLive`. See [Holder](#holder) and [Current attempt and revoke](#current-attempt-and-revoke).
 - `unit.Leases` (namespace `Headless.UnitOfWork`) returns a `UnitOfWorkLeases` bound to the unit; repeated reads on one unit return the same instance. It mirrors `IFencedLeases` (grant with no options, a `LeaseTakeover`, or `LeaseGrantOptions`; renew, settle, release) plus `FenceAsync(lease, ct)`, which throws `StaleLeaseException` rather than returning a status, and `ClaimExpiredAsync(kind, after = null, ct)` → `ExpiredLease?`, one sweep claim inside the unit.
 - `unit.Leases` throws `InvalidOperationException` naming `AddHeadlessFencing` when no provider registered the feature.
 
@@ -369,7 +381,7 @@ Enlisted calls need a unit begun over an Npgsql connection or an EF `DbContext` 
 | `ConnectionString` | required | The database that holds the leases and that enlisted units must run on |
 | `CommandTimeout` | 30 seconds | Also bounds how long a grant waits behind another transaction's open fence |
 
-The lease row stores progress as `progress bytea` plus `progress_contract varchar(256)` (both null or both set), the count as `takeover_count integer NOT NULL DEFAULT 0`, the holder as `holder varchar(200) COLLATE "C"`, and the attributes as `attributes bytea` plus `attributes_contract varchar(256)` (both null or both set).
+The lease row stores progress as `progress bytea` plus `progress_contract varchar(256)` (both null or both set), the count as `takeover_count integer NOT NULL DEFAULT 0`, and the holder as `holder varchar(200) COLLATE "C"`.
 
 ### Design and runtime behavior
 
@@ -399,7 +411,7 @@ The parameterless overloads and the shared `headless` schema are described in [s
 
 Enlisted calls need a unit begun over a SqlClient connection or an EF `DbContext` on this same database (`AddUnitOfWork()`, added automatically, or the EF unit-of-work package). Name the database explicitly (`Initial Catalog`) in the connection string.
 
-The lease row stores progress as `Progress varbinary(max)` plus `ProgressContract nvarchar(256)` (both null or both set), the count as `TakeoverCount int NOT NULL DEFAULT 0`, the holder as `Holder nvarchar(200)`, and the attributes as `Attributes varbinary(max)` plus `AttributesContract nvarchar(256)` (both null or both set). The holder is compared ordinally in the store, never by the column's collation.
+The lease row stores progress as `Progress varbinary(max)` plus `ProgressContract nvarchar(256)` (both null or both set), the count as `TakeoverCount int NOT NULL DEFAULT 0`, and the holder as `Holder nvarchar(200)`. The holder is compared ordinally in the store, never by the column's collation.
 
 ### Configuration
 

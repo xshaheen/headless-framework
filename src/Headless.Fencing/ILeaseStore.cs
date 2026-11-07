@@ -12,23 +12,24 @@ namespace Headless.Fencing;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Lease state is active, settled, released, or abandoned; "expired" is never stored. It means active with an expiry
-/// at or before the database's clock, read inside the statement that decides. A generation is drawn from one
+/// Lease state is active, settled, released, abandoned, or revoked; "expired" is never stored. It means active with an
+/// expiry at or before the database's clock, read inside the statement that decides. A generation is drawn from one
 /// store-wide sequence only after the grant holds the lease row's lock, so every grant's generation is above every
 /// earlier one for that key, including after the row was purged.
 /// </para>
 /// <para>
 /// Each row also carries the last progress a successful renewal recorded and a takeover count. A takeover grant and a
 /// sweep's abandonment each add one to the count and keep the progress; a grant over an abandoned row keeps both
-/// without adding; a settlement or release clears both. A grant that acquires the lease returns the row's count and,
-/// unless the row was settled or released, its progress; a held grant returns the holder's count and no progress.
+/// without adding; a settlement, release, or revocation clears both. A grant that acquires the lease returns the row's
+/// count and, unless the row was settled, released, or revoked, its progress; a held grant returns the holder's count
+/// and no progress.
 /// </para>
 /// <para>
-/// A row also carries the holder and attributes of the grant that issued its generation. Every grant that acquires the
-/// lease writes both from its options, or clears them when the options carry none; settlement, release, abandonment,
-/// and revocation keep them. A grant whose holder equals (ordinally) the stored holder of an active row the database
-/// clock still sees as unexpired returns that row's lease as granted, with its expiry, count, and progress, and writes
-/// nothing; the decision is made while the grant holds the row's lock.
+/// A row also carries the holder of the grant that issued its generation. Every grant that acquires the lease writes it
+/// from its options, or clears it when the options carry none; settlement, release, abandonment, and revocation keep
+/// it. A grant whose holder equals (ordinally) the stored holder of an active row the database clock still sees as
+/// unexpired returns that row's lease as granted, with its expiry, count, and progress, and writes nothing; the
+/// decision is made while the grant holds the row's lock.
 /// </para>
 /// <para>
 /// Autonomous verbs commit before returning; a relational provider opens its own connection at READ COMMITTED and
@@ -64,8 +65,8 @@ public interface ILeaseStore
     /// <param name="key">The lease key.</param>
     /// <param name="duration">The lease's time to live from the database's clock.</param>
     /// <param name="options">
-    /// Whether an expired active lease is taken over or reported as expired, and the holder and attributes to store;
-    /// already validated.
+    /// Whether an expired active lease is taken over or reported as expired, and the holder to store; already
+    /// validated.
     /// </param>
     /// <param name="cancellationToken">Token used to cancel the database call.</param>
     /// <returns>The grant's result.</returns>
@@ -84,8 +85,8 @@ public interface ILeaseStore
     /// <param name="key">The lease key.</param>
     /// <param name="duration">The lease's time to live from the database's clock.</param>
     /// <param name="options">
-    /// Whether an expired active lease is taken over or reported as expired, and the holder and attributes to store;
-    /// already validated.
+    /// Whether an expired active lease is taken over or reported as expired, and the holder to store; already
+    /// validated.
     /// </param>
     /// <param name="cancellationToken">Token used to cancel the database command.</param>
     /// <returns>The grant's result.</returns>
@@ -242,7 +243,7 @@ public interface ILeaseStore
 
     /// <summary>
     /// Reads, on the provider's own connection and without a row lock, the attempt the row of <paramref name="key" />
-    /// holds: its generation, its state by the database clock, its expiry, takeover count, holder, and attributes.
+    /// holds: its generation, its state by the database clock, its expiry, takeover count, and holder.
     /// </summary>
     /// <param name="key">The lease key.</param>
     /// <param name="cancellationToken">Token used to cancel the database call.</param>
@@ -270,9 +271,9 @@ public interface ILeaseStore
     );
 
     /// <summary>
-    /// Ends the active attempt of <paramref name="key" />, live or expired, as released on the provider's own
-    /// connection and commits before returning. It is one transition fenced on the row being active, and keeps the
-    /// holder and attributes.
+    /// Ends the active attempt of <paramref name="key" />, live or expired, as revoked on the provider's own
+    /// connection and commits before returning. It is one transition fenced on the row being active; like a release
+    /// it clears the progress and takeover count, and it keeps the holder.
     /// </summary>
     /// <param name="key">The lease key.</param>
     /// <param name="cancellationToken">Token used to cancel the database call.</param>
@@ -306,8 +307,8 @@ public interface ILeaseStore
     );
 
     /// <summary>
-    /// Deletes, in bounded batches on the provider's own connection, the settled, released, and abandoned leases of
-    /// <paramref name="kind" /> that ended at least <paramref name="olderThan" /> before the database's clock.
+    /// Deletes, in bounded batches on the provider's own connection, the settled, released, abandoned, and revoked
+    /// leases of <paramref name="kind" /> that ended at least <paramref name="olderThan" /> before the database's clock.
     /// </summary>
     /// <param name="kind">The lease kind to purge.</param>
     /// <param name="olderThan">How long a lease must have been over before it is deleted.</param>

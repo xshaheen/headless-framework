@@ -24,7 +24,7 @@ public enum LeaseGrantStatus
     /// <summary>
     /// The previous attempt's lease expired without ending, and the grant asked for
     /// <see cref="LeaseTakeover.AfterSweep" />, so the caller got nothing. The lease becomes grantable once a sweep
-    /// abandons the expired attempt, or once it is settled or released.
+    /// abandons the expired attempt, or once it is settled, released, or revoked.
     /// </summary>
     Expired = 3,
 }

@@ -7,13 +7,12 @@ namespace Headless.Fencing.InMemory;
 /// <param name="State">Whether the attempt is active or how it ended; "expired" is never stored.</param>
 /// <param name="GrantedAt">When the last grant happened, by the store's clock.</param>
 /// <param name="ExpiresAt">When the active attempt's lease expires, by the store's clock.</param>
-/// <param name="EndedAt">When the attempt settled, was released, or was abandoned; <see langword="null" /> while active.</param>
-/// <param name="TakeoverCount">Takeovers and abandonments since the lease last settled or was released.</param>
+/// <param name="EndedAt">When the attempt settled, was released, was abandoned, or was revoked; <see langword="null" /> while active.</param>
+/// <param name="TakeoverCount">Takeovers and abandonments since the lease last settled, was released, or was revoked.</param>
 /// <param name="Progress">
-/// The last progress a successful renewal recorded; immutable, so rows share it. Cleared by a settlement or release.
+/// The last progress a successful renewal recorded; immutable, so rows share it. Cleared by a settlement, release, or revocation.
 /// </param>
 /// <param name="Holder">The owner tag the last grant recorded; kept until the next grant replaces it.</param>
-/// <param name="Attributes">The attributes the last grant recorded; immutable, kept until the next grant replaces them.</param>
 internal sealed record InMemoryLease(
     long Generation,
     InMemoryLeaseState State,
@@ -22,8 +21,7 @@ internal sealed record InMemoryLease(
     DateTimeOffset? EndedAt,
     int TakeoverCount,
     LeaseProgress? Progress,
-    string? Holder = null,
-    LeaseAttributes? Attributes = null
+    string? Holder = null
 );
 
 /// <summary>The stored state of a lease.</summary>
@@ -33,4 +31,5 @@ internal enum InMemoryLeaseState
     Settled = 1,
     Released = 2,
     Abandoned = 3,
+    Revoked = 4,
 }

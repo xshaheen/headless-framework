@@ -26,4 +26,7 @@ public enum LeaseRenewalStatus
 
     /// <summary>A sweep abandoned this generation's expired attempt.</summary>
     Abandoned = 5,
+
+    /// <summary>Code that did not hold the lease revoked this generation's attempt.</summary>
+    Revoked = 6,
 }

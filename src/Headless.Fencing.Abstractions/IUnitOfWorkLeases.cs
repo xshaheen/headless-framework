@@ -24,12 +24,12 @@ public interface IUnitOfWorkLeases : IUnitOfWorkFeature
     /// <param name="kind">The lease kind.</param>
     /// <param name="resource">The leased resource within the kind.</param>
     /// <param name="duration">How long the lease lives unless renewed; bounded by the configured limits.</param>
-    /// <param name="options">The takeover choice, and the holder and attributes the grant stores.</param>
+    /// <param name="options">The takeover choice, and the holder the grant stores.</param>
     /// <param name="cancellationToken">Token used to cancel the database command.</param>
     /// <returns>The grant's result.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="options" /> is <see langword="null" />.</exception>
     /// <exception cref="ArgumentException">
-    /// The kind, resource, or current tenant id is invalid, or the options' holder or attributes exceed their limits.
+    /// The kind, resource, or current tenant id is invalid, or the options' holder is whitespace or exceeds its limit.
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="duration" /> is outside the configured bounds.</exception>
     /// <exception cref="System.ComponentModel.InvalidEnumArgumentException">

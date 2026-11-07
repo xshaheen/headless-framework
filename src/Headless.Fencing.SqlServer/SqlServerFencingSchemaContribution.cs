@@ -29,7 +29,7 @@ internal static class SqlServerFencingSchemaContribution
         // limit. One store-wide sequence issues every generation, so a lease granted again after its row was purged
         // still gets a generation above every earlier one. The active index serves the sweep's keyset walk in
         // (ExpiresAt, TenantId, Resource) order; the ended index serves purge. Progress and its contract are stored
-        // together or not at all, and so are the attributes and theirs.
+        // together or not at all.
         var sql = $"""
             IF OBJECT_ID(N'{sequenceName}', N'SO') IS NULL
                 CREATE SEQUENCE {sequence} AS bigint START WITH 1 INCREMENT BY 1 NO CYCLE;
@@ -48,8 +48,6 @@ internal static class SqlServerFencingSchemaContribution
                     {SqlServerFencingSchema.Progress} varbinary(max) NULL,
                     {SqlServerFencingSchema.ProgressContract} nvarchar({FencingFieldLimits.ProgressContractMaxLength}) NULL,
                     {SqlServerFencingSchema.Holder} nvarchar({FencingFieldLimits.HolderMaxLength}) NULL,
-                    {SqlServerFencingSchema.Attributes} varbinary(max) NULL,
-                    {SqlServerFencingSchema.AttributesContract} nvarchar({FencingFieldLimits.AttributesContractMaxLength}) NULL,
                     CONSTRAINT [PK_{t}] PRIMARY KEY CLUSTERED (
                         {SqlServerFencingSchema.TenantId} ASC,
                         {SqlServerFencingSchema.Kind} ASC,
@@ -57,7 +55,7 @@ internal static class SqlServerFencingSchemaContribution
                     ),
                     CONSTRAINT [CK_{t}_Generation] CHECK ({SqlServerFencingSchema.Generation} > 0),
                     CONSTRAINT [CK_{t}_State] CHECK (
-                        {SqlServerFencingSchema.State} BETWEEN {SqlServerFencingSchema.Active} AND {SqlServerFencingSchema.Abandoned}
+                        {SqlServerFencingSchema.State} BETWEEN {SqlServerFencingSchema.Active} AND {SqlServerFencingSchema.Revoked}
                     ),
                     CONSTRAINT [CK_{t}_EndedAt] CHECK (
                         ({SqlServerFencingSchema.State} = {SqlServerFencingSchema.Active} AND {SqlServerFencingSchema.EndedAt} IS NULL)
@@ -67,10 +65,6 @@ internal static class SqlServerFencingSchemaContribution
                     CONSTRAINT [CK_{t}_Progress] CHECK (
                         ({SqlServerFencingSchema.Progress} IS NULL AND {SqlServerFencingSchema.ProgressContract} IS NULL)
                         OR ({SqlServerFencingSchema.Progress} IS NOT NULL AND {SqlServerFencingSchema.ProgressContract} IS NOT NULL)
-                    ),
-                    CONSTRAINT [CK_{t}_Attributes] CHECK (
-                        ({SqlServerFencingSchema.Attributes} IS NULL AND {SqlServerFencingSchema.AttributesContract} IS NULL)
-                        OR ({SqlServerFencingSchema.Attributes} IS NOT NULL AND {SqlServerFencingSchema.AttributesContract} IS NOT NULL)
                     )
                 );
 

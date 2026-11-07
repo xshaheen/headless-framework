@@ -20,14 +20,13 @@ internal static class SqlServerFencingSchema
     public const string Progress = "[Progress]";
     public const string ProgressContract = "[ProgressContract]";
     public const string Holder = "[Holder]";
-    public const string Attributes = "[Attributes]";
-    public const string AttributesContract = "[AttributesContract]";
 
     // Stored as smallint. Expired is never stored: it is Active with an expiry at or before the database clock.
     public const short Active = 0;
     public const short Settled = 1;
     public const short Released = 2;
     public const short Abandoned = 3;
+    public const short Revoked = 4;
 
     // Binary code-point order, so kinds, resources, and tenant ids match case- and accent-sensitively whatever the
     // database's default collation is. It does not stop SQL Server padding trailing spaces before comparing, so 'a'

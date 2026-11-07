@@ -14,8 +14,8 @@ public enum LeaseTakeover
 
     /// <summary>
     /// Refuse while the expired attempt is still active (<see cref="LeaseGrantStatus.Expired" />), and grant only after
-    /// a sweep abandoned it or it was settled or released. Use it for work that may already have produced an external
-    /// effect, so a person or a handler decides what happens next instead of the next grant.
+    /// a sweep abandoned it or it was settled, released, or revoked. Use it for work that may already have produced an
+    /// external effect, so a person or a handler decides what happens next instead of the next grant.
     /// </summary>
     AfterSweep = 1,
 }

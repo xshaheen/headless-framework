@@ -76,11 +76,11 @@ public interface IFencedLeases
 
     /// <summary>
     /// Grants the lease on <paramref name="resource" /> for <paramref name="duration" /> with
-    /// <paramref name="options" />: the takeover choice, and the holder and attributes the attempt is recorded with.
+    /// <paramref name="options" />: the takeover choice, and the holder the attempt is recorded with.
     /// </summary>
     /// <remarks>
-    /// Every grant that acquires the lease stores the options' holder and attributes with its generation, or clears
-    /// them when the options carry none. A grant whose holder equals (ordinally) the stored holder of the live attempt
+    /// Every grant that acquires the lease stores the options' holder with its generation, or clears it when the
+    /// options carry none. A grant whose holder equals (ordinally) the stored holder of the live attempt
     /// returns that attempt as <see cref="LeaseGrantStatus.Granted" /> with its generation, expiry, takeover count,
     /// and progress, and writes nothing: a grant retried after a lost response gets the lease it already holds. The
     /// expiry is not extended. Any other live holder still answers <see cref="LeaseGrantStatus.Held" />.
@@ -88,7 +88,7 @@ public interface IFencedLeases
     /// <param name="kind">The lease kind.</param>
     /// <param name="resource">The leased resource within the kind.</param>
     /// <param name="duration">How long the lease lives unless renewed; bounded by the configured limits.</param>
-    /// <param name="options">The takeover choice, and the holder and attributes the grant stores.</param>
+    /// <param name="options">The takeover choice, and the holder the grant stores.</param>
     /// <param name="cancellationToken">Token used to cancel the database call.</param>
     /// <returns>
     /// The same results as <see cref="GrantAsync(string, string, TimeSpan, LeaseTakeover, CancellationToken)" />, and
@@ -96,7 +96,7 @@ public interface IFencedLeases
     /// </returns>
     /// <exception cref="ArgumentNullException"><paramref name="options" /> is <see langword="null" />.</exception>
     /// <exception cref="ArgumentException">
-    /// The kind, resource, or current tenant id is invalid, or the options' holder or attributes exceed their limits.
+    /// The kind, resource, or current tenant id is invalid, or the options' holder is whitespace or exceeds its limit.
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="duration" /> is outside the configured bounds.</exception>
     /// <exception cref="System.ComponentModel.InvalidEnumArgumentException">
@@ -124,8 +124,8 @@ public interface IFencedLeases
     /// <returns>
     /// <see cref="LeaseFenceStatus.Current" /> while the attempt holds a live lease, otherwise why it no longer does:
     /// <see cref="LeaseFenceStatus.Expired" />, <see cref="LeaseFenceStatus.Stale" /> (a later generation exists or the
-    /// row was purged), <see cref="LeaseFenceStatus.Settled" />, <see cref="LeaseFenceStatus.Released" />, or
-    /// <see cref="LeaseFenceStatus.Abandoned" />.
+    /// row was purged), <see cref="LeaseFenceStatus.Settled" />, <see cref="LeaseFenceStatus.Released" />,
+    /// <see cref="LeaseFenceStatus.Abandoned" />, or <see cref="LeaseFenceStatus.Revoked" />.
     /// </returns>
     /// <exception cref="ArgumentException">The lease's identity or generation is invalid.</exception>
     ValueTask<LeaseFenceStatus> GetStatusAsync(FencedLease lease, CancellationToken cancellationToken = default);
@@ -169,11 +169,11 @@ public interface IFencedLeases
 
     /// <summary>
     /// Reads the attempt the lease row of <paramref name="resource" /> holds for the current tenant, with its state by
-    /// the database clock and the holder and attributes its grant stored, without locking or changing anything.
+    /// the database clock and the holder its grant stored, without locking or changing anything.
     /// </summary>
     /// <remarks>
-    /// One primary-key read answers both whether the attempt is live and what it is scoped to, so per-request code
-    /// needs neither its own copy of the generation nor its own scope table. As with
+    /// One primary-key read answers whether the attempt is live, which generation it is, and who holds it, so
+    /// per-request code needs no copy of the generation of its own. As with
     /// <see cref="GetStatusAsync(FencedLease, CancellationToken)" />, the answer can change as soon as it is returned
     /// and never guards a write.
     /// </remarks>
@@ -222,14 +222,16 @@ public interface IFencedLeases
 
     /// <summary>
     /// Ends the active attempt on <paramref name="resource" /> for the current tenant as
-    /// <see cref="LeaseFenceStatus.Released" />, whether it is live or already expired, without naming its generation.
+    /// <see cref="LeaseFenceStatus.Revoked" />, whether it is live or already expired, without naming its generation.
     /// </summary>
     /// <remarks>
     /// For cancel or pause from code that never held the attempt's lease. It is one fenced transition on the active
-    /// row, so it ends exactly the attempt that was active when it ran; renewal, settlement, and fence by that
-    /// generation then answer <see cref="LeaseFenceStatus.Released" />, and the next grant proceeds at once. The holder
-    /// and attributes stay on the row, describing the revoked generation. A settled, released, or abandoned attempt is
-    /// left as it is.
+    /// row, so it ends exactly the attempt that was active when it ran. Fence, renewal, settlement, release, and status
+    /// reads by that generation then answer <c>Revoked</c>; a settlement or release of it is refused and writes
+    /// nothing. The next grant proceeds at once as <see cref="LeaseGrantStatus.Granted" /> with a new generation, and
+    /// the takeover count and progress reset as a release resets them. The holder stays on the row, describing the
+    /// revoked generation, until that grant replaces it. A settled, released, abandoned, or revoked attempt is left as
+    /// it is.
     /// </remarks>
     /// <param name="kind">The lease kind.</param>
     /// <param name="resource">The leased resource within the kind.</param>
@@ -326,7 +328,7 @@ public interface IFencedLeases
     );
 
     /// <summary>
-    /// Deletes the settled, released, and abandoned leases of <paramref name="kind" /> that ended at least
+    /// Deletes the settled, released, abandoned, and revoked leases of <paramref name="kind" /> that ended at least
     /// <paramref name="olderThan" /> ago, by the database clock. Live and expired-but-active leases are kept.
     /// </summary>
     /// <remarks>

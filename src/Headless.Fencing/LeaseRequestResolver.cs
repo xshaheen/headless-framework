@@ -112,10 +112,10 @@ internal sealed class LeaseRequestResolver(ICurrentTenant currentTenant, IOption
     }
 
     /// <summary>
-    /// Checks a grant's options (the takeover choice, the holder, and the attributes) before anything is written.
+    /// Checks a grant's options (the takeover choice and the holder) before anything is written.
     /// </summary>
     /// <exception cref="ArgumentNullException"><paramref name="options" /> is <see langword="null" />.</exception>
-    /// <exception cref="ArgumentException">The holder or attributes exceed a limit, or the holder is whitespace.</exception>
+    /// <exception cref="ArgumentException">The holder exceeds its limit or is whitespace.</exception>
     /// <exception cref="System.ComponentModel.InvalidEnumArgumentException">The takeover is not a defined value.</exception>
     public static LeaseGrantOptions ValidateGrantOptions(LeaseGrantOptions options)
     {
@@ -128,24 +128,6 @@ internal sealed class LeaseRequestResolver(ICurrentTenant currentTenant, IOption
             // never held; null is the way to store no holder.
             Argument.IsNotNullOrWhiteSpace(options.Holder, paramName: nameof(options));
             Argument.HasMaxLength(options.Holder, FencingFieldLimits.HolderMaxLength, paramName: nameof(options));
-        }
-
-        if (options.Attributes is { } attributes)
-        {
-            if (attributes.Payload.Length > FencingFieldLimits.AttributesMaxBytes)
-            {
-                throw new ArgumentException(
-                    $"An attributes payload is {attributes.Payload.Length} bytes; a grant stores at most "
-                        + $"{FencingFieldLimits.AttributesMaxBytes}. Store scope claims, not documents.",
-                    nameof(options)
-                );
-            }
-
-            Argument.HasMaxLength(
-                attributes.Contract,
-                FencingFieldLimits.AttributesContractMaxLength,
-                paramName: nameof(options)
-            );
         }
 
         return options;

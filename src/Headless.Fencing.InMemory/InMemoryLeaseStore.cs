@@ -138,8 +138,8 @@ internal sealed class InMemoryLeaseStore(
         var generation = storage.NextGeneration();
         var isTakeover = existing is { State: InMemoryLeaseState.Active };
 
-        // A takeover counts one more expired holder; any other grant keeps the count, which a settlement or release
-        // already reset and a sweep's abandonment already raised. Progress is kept either way, so every later
+        // A takeover counts one more expired holder; any other grant keeps the count, which a settlement, release, or
+        // revocation already reset and a sweep's abandonment already raised. Progress is kept either way, so every later
         // attempt resumes from the last one recorded until the work settles.
         var row = new InMemoryLease(
             generation,
@@ -149,8 +149,7 @@ internal sealed class InMemoryLeaseStore(
             EndedAt: null,
             TakeoverCount: (existing?.TakeoverCount ?? 0) + (isTakeover ? 1 : 0),
             Progress: existing?.Progress,
-            Holder: options.Holder,
-            Attributes: options.Attributes
+            Holder: options.Holder
         );
         var lease = key.ToLease(generation);
 
@@ -321,6 +320,7 @@ internal sealed class InMemoryLeaseStore(
             LeaseFenceStatus.Settled => (new LeaseRenewalResult(LeaseRenewalStatus.Settled, ExpiresAt: null), null),
             LeaseFenceStatus.Released => (new LeaseRenewalResult(LeaseRenewalStatus.Released, ExpiresAt: null), null),
             LeaseFenceStatus.Abandoned => (new LeaseRenewalResult(LeaseRenewalStatus.Abandoned, ExpiresAt: null), null),
+            LeaseFenceStatus.Revoked => (new LeaseRenewalResult(LeaseRenewalStatus.Revoked, ExpiresAt: null), null),
             _ => (new LeaseRenewalResult(LeaseRenewalStatus.Stale, ExpiresAt: null), null),
         };
     }
@@ -333,7 +333,8 @@ internal sealed class InMemoryLeaseStore(
     )
     {
         // A settled or released row at this generation reports its state whichever verb asked, so a retried
-        // settlement reports success and a release after a settlement reports that the attempt settled.
+        // settlement reports success and a release after a settlement reports that the attempt settled. A revoked
+        // row is never success: the attempt did not end it.
         return _Classify(existing, generation, now) switch
         {
             LeaseFenceStatus.Current => (
@@ -349,6 +350,7 @@ internal sealed class InMemoryLeaseStore(
             LeaseFenceStatus.Settled => (LeaseSettlementStatus.Settled, null),
             LeaseFenceStatus.Released => (LeaseSettlementStatus.Released, null),
             LeaseFenceStatus.Abandoned => (LeaseSettlementStatus.Abandoned, null),
+            LeaseFenceStatus.Revoked => (LeaseSettlementStatus.Revoked, null),
             LeaseFenceStatus.Expired => (LeaseSettlementStatus.Expired, null),
             _ => (LeaseSettlementStatus.Stale, null),
         };
@@ -415,7 +417,6 @@ internal sealed class InMemoryLeaseStore(
             _Classify(row, row.Generation, timeProvider.GetUtcNow()),
             row.ExpiresAt,
             row.Holder,
-            row.Attributes,
             row.TakeoverCount
         );
 
@@ -451,7 +452,7 @@ internal sealed class InMemoryLeaseStore(
             key,
             row with
             {
-                State = InMemoryLeaseState.Released,
+                State = InMemoryLeaseState.Revoked,
                 EndedAt = timeProvider.GetUtcNow(),
                 TakeoverCount = 0,
                 Progress = null,
@@ -624,6 +625,7 @@ internal sealed class InMemoryLeaseStore(
             InMemoryLeaseState.Settled => LeaseFenceStatus.Settled,
             InMemoryLeaseState.Released => LeaseFenceStatus.Released,
             InMemoryLeaseState.Abandoned => LeaseFenceStatus.Abandoned,
+            InMemoryLeaseState.Revoked => LeaseFenceStatus.Revoked,
             _ when row.ExpiresAt > now => LeaseFenceStatus.Current,
             _ => LeaseFenceStatus.Expired,
         };
