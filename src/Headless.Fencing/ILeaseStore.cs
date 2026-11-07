@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.ComponentModel;
+using System.Data.Common;
 using Headless.UnitOfWork;
 
 namespace Headless.Fencing;
@@ -201,6 +202,28 @@ public interface ILeaseStore
     ValueTask<LeaseFenceStatus> GetStatusAsync(
         LeaseKey key,
         long generation,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Reads the same answer as <see cref="GetStatusAsync(LeaseKey, long, CancellationToken)" /> as one statement on
+    /// the caller's <paramref name="connection" />, opening it for the read when it is closed. It never retries, and a
+    /// provider without a database ignores the connection and the transaction.
+    /// </summary>
+    /// <param name="key">The lease key.</param>
+    /// <param name="generation">The caller's generation.</param>
+    /// <param name="connection">The caller's connection to the lease database.</param>
+    /// <param name="transaction">The connection's open transaction, or <see langword="null" />.</param>
+    /// <param name="cancellationToken">Token used to cancel the database call.</param>
+    /// <returns>What the read found; an absent row is <see cref="LeaseFenceStatus.Stale" />.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// The connection is not the provider's type or reaches another database, or the transaction is not bound to it.
+    /// </exception>
+    ValueTask<LeaseFenceStatus> GetStatusAsync(
+        LeaseKey key,
+        long generation,
+        DbConnection connection,
+        DbTransaction? transaction,
         CancellationToken cancellationToken = default
     );
 

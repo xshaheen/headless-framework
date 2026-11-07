@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data;
 using System.Data.Common;
 using Headless.Checks;
 using Headless.Sql;
@@ -50,6 +51,7 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
     private readonly FencingTable _t;
     private readonly IUnitOfWorkFactory _unitOfWorkFactory;
     private readonly TimeProvider _timeProvider;
+    private readonly SupersededLeaseGenerations _superseded = new();
     private readonly string _grantSql;
     private readonly string _grantAfterSweepSql;
     private readonly string _holderLiveSql;
@@ -565,31 +567,121 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
         CancellationToken cancellationToken = default
     )
     {
+        if (_superseded.Contains(key, generation))
+        {
+            return ValueTask.FromResult(LeaseFenceStatus.Stale);
+        }
+
         // One statement with no transaction: it reads the row as one consistent view either way, and skipping the
         // BEGIN and COMMIT round trips keeps a per-request liveness check close to the cost of a primary-key read.
         return SqlAutonomousRead.RunAsync(
             "fencing.status",
             _storage.CreateConnection,
-            async (connection, ct) =>
-            {
-                await using var command = _Command(_statusSql, connection, transaction: null, key);
-                await using var reader = await _ReaderAsync(command, ct).ConfigureAwait(false);
-
-                if (!await reader.ReadAsync(ct).ConfigureAwait(false))
-                {
-                    return LeaseFenceStatus.Stale;
-                }
-
-                var row = new LeaseRow(reader.GetInt64(0), reader.GetInt16(1), ExpiresAt: default, TakeoverCount: 0);
-                var live = Convert.ToInt32(reader.GetValue(2), CultureInfo.InvariantCulture) == 1;
-
-                return row.Generation == generation && row.State == FencingTable.Active && live
-                    ? LeaseFenceStatus.Current
-                    : _Rejection(key, row, generation);
-            },
+            (connection, ct) => _ReadStatusAsync(connection, transaction: null, key, generation, ct),
             _timeProvider,
             cancellationToken
         );
+    }
+
+    public async ValueTask<LeaseFenceStatus> GetStatusAsync(
+        LeaseKey key,
+        long generation,
+        DbConnection connection,
+        DbTransaction? transaction,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(connection);
+        _RequireCallerConnection(connection, transaction);
+
+        if (_superseded.Contains(key, generation))
+        {
+            return LeaseFenceStatus.Stale;
+        }
+
+        // The caller owns the connection, so it gets it back in the state it passed: opened here only for this read.
+        var openedHere = connection.State != ConnectionState.Open;
+
+        if (openedHere)
+        {
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        try
+        {
+            return await _ReadStatusAsync(connection, transaction, key, generation, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            if (openedHere)
+            {
+                await connection.CloseAsync().ConfigureAwait(false);
+            }
+        }
+    }
+
+    private async Task<LeaseFenceStatus> _ReadStatusAsync(
+        DbConnection connection,
+        DbTransaction? transaction,
+        LeaseKey key,
+        long generation,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var command = _Command(_statusSql, connection, transaction, key);
+        await using var reader = await _ReaderAsync(command, cancellationToken).ConfigureAwait(false);
+
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            // Not remembered: an absent row is a purged lease, but also a grant whose transaction has not committed.
+            return LeaseFenceStatus.Stale;
+        }
+
+        var row = new LeaseRow(reader.GetInt64(0), reader.GetInt16(1), ExpiresAt: default, TakeoverCount: 0);
+        var live = Convert.ToInt32(reader.GetValue(2), CultureInfo.InvariantCulture) == 1;
+
+        if (row.Generation == generation && row.State == FencingTable.Active && live)
+        {
+            return LeaseFenceStatus.Current;
+        }
+
+        // A higher generation on the row means a later grant replaced this one, and generations only grow, so this
+        // generation can never be current again. A lower one may be a grant still uncommitted, so it is not remembered.
+        if (row.Generation > generation)
+        {
+            _superseded.Add(key, generation);
+        }
+
+        return _Rejection(key, row, generation);
+    }
+
+    private void _RequireCallerConnection(DbConnection connection, DbTransaction? transaction)
+    {
+        if (!_dialect.ConnectionType.IsInstanceOfType(connection))
+        {
+            throw new InvalidOperationException(
+                $"{_storage.PackageName} reads lease status only on a {_dialect.ConnectionType.Name}, but the caller "
+                    + $"passed a '{connection.GetType().FullName}'."
+            );
+        }
+
+        if (
+            transaction is not null
+            && (
+                !_dialect.TransactionType.IsInstanceOfType(transaction)
+                || !ReferenceEquals(transaction.Connection, connection)
+            )
+        )
+        {
+            throw new InvalidOperationException(
+                "The transaction is not an open transaction on the connection passed with it, so the status read "
+                    + "would run outside it."
+            );
+        }
+
+        using var configured = _storage.CreateConnection();
+        RelationalEnlistment.RequireSameDatabase(configured, connection, _storage.PackageName, "lease status");
     }
 
     private async Task<bool> _IsHolderLiveAsync(

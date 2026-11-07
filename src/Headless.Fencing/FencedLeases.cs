@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data.Common;
 using Headless.Checks;
 using Headless.UnitOfWork;
 
@@ -48,6 +49,21 @@ internal sealed class FencedLeases(LeaseRequestResolver resolver, ILeaseStore st
         var key = LeaseRequestResolver.ResolveLease(lease);
 
         return await store.GetStatusAsync(key, lease.Generation, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async ValueTask<LeaseFenceStatus> GetStatusAsync(
+        FencedLease lease,
+        DbConnection connection,
+        DbTransaction? transaction = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var key = LeaseRequestResolver.ResolveLease(lease);
+        Argument.IsNotNull(connection);
+
+        return await store
+            .GetStatusAsync(key, lease.Generation, connection, transaction, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public ValueTask<LeaseRenewalResult> RenewAsync(

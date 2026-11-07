@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using System.Data;
 using Headless.Fencing;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
@@ -1123,6 +1124,73 @@ public abstract class LeasesConformanceTests<TFixture>(TFixture fixture) : TestB
         var takeover = await host.Leases.GrantAsync(kind, live, LongDuration, AbortToken);
         (await host.Leases.GetStatusAsync(liveLease, AbortToken)).Should().Be(LeaseFenceStatus.Stale);
         (await host.Leases.GetStatusAsync(takeover.Lease!, AbortToken)).Should().Be(LeaseFenceStatus.Current);
+    }
+
+    public virtual async Task should_read_the_status_on_the_callers_connection_and_hand_it_back_as_passed()
+    {
+        var (kind, resource) = (CreateKind(), CreateResource());
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+        var first = await host.Leases.GrantAsync(kind, resource, ShortDuration, AbortToken);
+        await using var connection = Fixture.CreateConnection();
+
+        (await host.Leases.GetStatusAsync(first.Lease!, connection, cancellationToken: AbortToken))
+            .Should()
+            .Be(LeaseFenceStatus.Current);
+        connection.State.Should().Be(ConnectionState.Closed, "a connection passed closed is closed again");
+
+        await connection.OpenAsync(AbortToken);
+        await ExpireAsync(HostKey(kind, resource));
+
+        (await host.Leases.GetStatusAsync(first.Lease!, connection, cancellationToken: AbortToken))
+            .Should()
+            .Be(LeaseFenceStatus.Expired);
+        connection.State.Should().Be(ConnectionState.Open, "a connection passed open stays open");
+
+        var takeover = await host.Leases.GrantAsync(kind, resource, LongDuration, AbortToken);
+
+        (await host.Leases.GetStatusAsync(first.Lease!, connection, cancellationToken: AbortToken))
+            .Should()
+            .Be(LeaseFenceStatus.Stale);
+        (await host.Leases.GetStatusAsync(first.Lease!, AbortToken))
+            .Should()
+            .Be(LeaseFenceStatus.Stale, "a replaced generation reads stale on every path");
+        (await host.Leases.GetStatusAsync(takeover.Lease!, connection, cancellationToken: AbortToken))
+            .Should()
+            .Be(LeaseFenceStatus.Current);
+    }
+
+    public virtual async Task should_read_the_status_inside_the_callers_transaction_and_refuse_a_foreign_one()
+    {
+        var (kind, resource) = (CreateKind(), CreateResource());
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+        var granted = await host.Leases.GrantAsync(kind, resource, LongDuration, AbortToken);
+        await using var connection = Fixture.CreateConnection();
+        await connection.OpenAsync(AbortToken);
+        await using var transaction = await connection.BeginTransactionAsync(AbortToken);
+
+        (await host.Leases.GetStatusAsync(granted.Lease!, connection, transaction, AbortToken))
+            .Should()
+            .Be(LeaseFenceStatus.Current);
+
+        await using var other = Fixture.CreateConnection();
+        var foreign = async () => await host.Leases.GetStatusAsync(granted.Lease!, other, transaction, AbortToken);
+
+        await foreign.Should().ThrowAsync<InvalidOperationException>().WithMessage("*not an open transaction*");
+        await transaction.RollbackAsync(AbortToken);
+    }
+
+    public virtual async Task should_refuse_a_callers_connection_to_another_database_before_any_statement()
+    {
+        var (kind, resource) = (CreateKind(), CreateResource());
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+        var granted = await host.Leases.GrantAsync(kind, resource, LongDuration, AbortToken);
+        await using var connection = Fixture.CreateOtherDatabaseConnection();
+
+        var act = async () =>
+            await host.Leases.GetStatusAsync(granted.Lease!, connection, cancellationToken: AbortToken);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        connection.State.Should().Be(ConnectionState.Closed, "the database is checked before the connection opens");
     }
 
     /// <summary>

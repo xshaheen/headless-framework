@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data.Common;
 using Headless.UnitOfWork;
 
 namespace Headless.Fencing;
@@ -92,6 +93,43 @@ public interface IFencedLeases
     /// </returns>
     /// <exception cref="ArgumentException">The lease's identity or generation is invalid.</exception>
     ValueTask<LeaseFenceStatus> GetStatusAsync(FencedLease lease, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reads, as one statement on <paramref name="connection" />, whether <paramref name="lease" /> is still the
+    /// current, active, and unexpired attempt by the database clock: the same answer as
+    /// <see cref="GetStatusAsync(FencedLease, CancellationToken)" />, without checking a second connection out of the
+    /// pool.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Use it for a per-request liveness check in code that already holds a connection to the lease database, such as
+    /// an EF Core context's <c>Database.GetDbConnection()</c>. A closed connection is opened for the read and closed
+    /// again; an open one is left open. The read takes no row lock and never retries: the caller owns the connection,
+    /// so a fault surfaces unchanged.
+    /// </para>
+    /// <para>
+    /// When the connection carries an open transaction, pass it as <paramref name="transaction" />: SQL Server
+    /// refuses a command on such a connection that does not name it. The read then sees that transaction's own
+    /// uncommitted writes. A provider without a database (the in-memory store) ignores both arguments.
+    /// </para>
+    /// <para>As with the other overload, the answer never guards a write.</para>
+    /// </remarks>
+    /// <param name="lease">The lease to check.</param>
+    /// <param name="connection">A connection to the database the provider is configured for.</param>
+    /// <param name="transaction">The connection's open transaction, or <see langword="null" /> when it has none.</param>
+    /// <param name="cancellationToken">Token used to cancel the database call.</param>
+    /// <returns>The same statuses as <see cref="GetStatusAsync(FencedLease, CancellationToken)" />.</returns>
+    /// <exception cref="ArgumentException">The lease's identity or generation is invalid.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// The connection is not the provider's connection type or reaches another database, or the transaction is not
+    /// bound to the connection.
+    /// </exception>
+    ValueTask<LeaseFenceStatus> GetStatusAsync(
+        FencedLease lease,
+        DbConnection connection,
+        DbTransaction? transaction = null,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>Moves a live lease's expiry to <paramref name="duration" /> from now, by the database clock.</summary>
     /// <remarks>Any progress recorded by an earlier renewal is kept.</remarks>
