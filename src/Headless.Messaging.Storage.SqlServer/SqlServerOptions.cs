@@ -32,7 +32,7 @@ public sealed class SqlServerOptions
     /// When <see langword="false" />, the storage declares the <c>Durable</c> guarantee, durable consumers need
     /// <c>MessagingOptions.MinimumInboxGuarantee = InboxGuarantee.Durable</c> to start, and they run with no unit of
     /// work. An attempt holds one pooled connection and an open transaction while its handler runs. An additional
-    /// outbox (<c>AddOutbox().UseSqlServer(...)</c>) ignores this setting.
+    /// outbox (<c>AddOutbox(name).UseSqlServer(...)</c>) ignores this setting.
     /// </remarks>
     public bool EnableTransactionalInbox { get; set; } = true;
 

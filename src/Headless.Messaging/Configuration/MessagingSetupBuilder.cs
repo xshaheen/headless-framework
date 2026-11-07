@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Text.RegularExpressions;
 using Headless.Checks;
 using Headless.Messaging.RequestReply;
 using Headless.Reliability;
@@ -22,8 +23,14 @@ namespace Headless.Messaging;
 /// instance if the maintainer forgets to update <c>CopyTo</c>.
 /// </remarks>
 [PublicAPI]
-public sealed class MessagingSetupBuilder : IMessagingBuilder
+public sealed partial class MessagingSetupBuilder : IMessagingBuilder
 {
+    /// <summary>
+    /// The name of the primary storage among the host's outbox storages. <see cref="AddOutbox"/> refuses it, so every
+    /// store a host registers has a distinct name.
+    /// </summary>
+    public const string PrimaryOutboxName = "primary";
+
     private readonly List<string> _consumeOnly = [];
 
     internal MessagingSetupBuilder(IServiceCollection services, MessagingOptions options)
@@ -106,15 +113,25 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
     }
 
     /// <summary>
-    /// Adds an outbox storage for another database, next to the primary storage, so a unit of work begun on that
-    /// database can publish atomically through <c>unit.Outbox</c>.
+    /// Adds an outbox storage named <paramref name="name"/> for another database, next to the primary storage, so a
+    /// unit of work begun on that database can publish atomically through <c>unit.Outbox</c>.
     /// </summary>
+    /// <param name="name">
+    /// The store's name, unique within the host: letters, digits, <c>-</c>, and <c>_</c>, compared case-insensitively.
+    /// <see cref="PrimaryOutboxName"/> is reserved for the primary storage.
+    /// </param>
     /// <returns>A builder that accepts only the storage of the new outbox.</returns>
     /// <remarks>
     /// <para>
     /// The additional outbox holds published rows and relays them under its own lease, so an outage of its
     /// database does not stall the relay of the others. The inbox, retry state, and the dashboard stay on the
     /// primary storage, which must be relational.
+    /// </para>
+    /// <para>
+    /// The name identifies the store in logs, configuration errors, health checks, and the host manifest, and the
+    /// dashboard keys message ids, change cursors, operation scopes, and command routing on it. It is chosen rather
+    /// than derived from the registration's position, because a position shifts when a registration is added or
+    /// reordered, while a chosen name stays bound to its database across redeploys.
     /// </para>
     /// <para>
     /// <c>unit.Outbox</c> writes to the outbox whose database matches the unit's connection. Registering two outboxes,
@@ -124,17 +141,48 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
     /// services.AddHeadlessMessaging(setup =>
     /// {
     ///     setup.UsePostgreSqlEntityFramework&lt;OrdersDb&gt;();
-    ///     setup.AddOutbox().UsePostgreSqlEntityFramework&lt;BillingDb&gt;();
+    ///     setup.AddOutbox("billing").UsePostgreSqlEntityFramework&lt;BillingDb&gt;();
     /// });
     /// </code>
     /// </remarks>
-    public OutboxStorageBuilder AddOutbox()
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="name"/> holds a character other than a letter, digit, <c>-</c>, or <c>_</c>, is
+    /// <see cref="PrimaryOutboxName"/>, or names an outbox this host already registered.
+    /// </exception>
+    public OutboxStorageBuilder AddOutbox(string name)
     {
-        var builder = new OutboxStorageBuilder(this, OutboxBuilders.Count + 1);
+        Argument.IsNotNull(name);
+        Argument.Matches(
+            name,
+            _OutboxNamePattern,
+            $"Outbox name '{name}' must contain only letters, digits, '-', and '_'."
+        );
+
+        if (string.Equals(name, PrimaryOutboxName, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException(
+                $"Outbox name '{name}' is reserved for the primary storage. Choose another name.",
+                nameof(name)
+            );
+        }
+
+        if (OutboxBuilders.Exists(builder => string.Equals(builder.Name, name, StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new ArgumentException(
+                $"An outbox named '{name}' is already registered on this host. Give each outbox its own name.",
+                nameof(name)
+            );
+        }
+
+        var builder = new OutboxStorageBuilder(this, name, OutboxBuilders.Count + 1);
         OutboxBuilders.Add(builder);
 
         return builder;
     }
+
+    [GeneratedRegex("^[A-Za-z0-9_-]+$", RegexOptions.CultureInvariant | RegexOptions.ExplicitCapture, 100)]
+    private static partial Regex _OutboxNamePattern { get; }
 
     /// <summary>
     /// Enables this host to send requests with <see cref="IRequestClient"/> and await their replies, for example

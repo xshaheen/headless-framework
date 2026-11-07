@@ -72,7 +72,6 @@ public static class SetupMessagingPostgreSqlEntityFramework
         {
             var setup = SetupMessagingPostgreSql.AddPostgreSqlOutboxCore(
                 outbox,
-                $"AddOutbox().UsePostgreSqlEntityFramework<{typeof(TContext).Name}>()",
                 options =>
                     options.Configure<IServiceScopeFactory>(
                         (storageOptions, scopeFactory) =>

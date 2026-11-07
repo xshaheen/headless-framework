@@ -49,11 +49,7 @@ internal static class AdditionalOutboxDoubles
         var initializer = Substitute.For<IOutboxStorageInitializer>();
         initializer.GetPublishedTableName().Returns($"{database}.published");
 
-        var outbox = new MessagingOutbox(
-            name ?? $"AddOutbox().UsePostgreSqlEntityFramework<{database}>()",
-            CreateRelationalStorage(database, dataSource),
-            initializer
-        );
+        var outbox = new MessagingOutbox(name ?? database, CreateRelationalStorage(database, dataSource), initializer);
 
         // The substitute initializer returns a completed task, so the initialization completes before returning.
         if (initialized && !outbox.EnsureInitializedAsync(CancellationToken.None).IsCompletedSuccessfully)

@@ -13,7 +13,7 @@ namespace Tests;
 public sealed class SqlServerStorageHealthCheckTests(SqlServerTestFixture fixture) : TestBase
 {
     private const string _PrimaryCheckName = "messaging-storage-sqlserver-default";
-    private const string _OutboxCheckName = "messaging-storage-sqlserver-outbox-1";
+    private const string _OutboxCheckName = "messaging-storage-sqlserver-outbox-health";
 
     // Each outbox check follows whether its own database accepts connections. The outbox database is taken
     // offline rather than the server stopped, because the collection's server serves every other test in the project.
@@ -38,7 +38,7 @@ public sealed class SqlServerStorageHealthCheckTests(SqlServerTestFixture fixtur
             services.AddHeadlessMessaging(setup =>
             {
                 setup.UseSqlServer(fixture.ConnectionString);
-                setup.AddOutbox().UseSqlServer(outboxConnectionString);
+                setup.AddOutbox("health").UseSqlServer(outboxConnectionString);
             });
             await using var provider = services.BuildServiceProvider();
             var health = provider.GetRequiredService<HealthCheckService>();

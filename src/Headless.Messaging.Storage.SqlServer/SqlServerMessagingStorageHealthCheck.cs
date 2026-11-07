@@ -22,10 +22,13 @@ internal static class SqlServerMessagingStorageHealthCheck
 
     public const string PrimaryCheckName = _NamePrefix + "default";
 
-    /// <summary>Names the check of an additional outbox after its ordinal, which is unique within the host.</summary>
-    /// <param name="outboxOptionsName">The outbox's named-options key, which ends with its ordinal.</param>
-    public static string OutboxCheckName(string outboxOptionsName) =>
-        _NamePrefix + "outbox-" + outboxOptionsName[(outboxOptionsName.LastIndexOf('.') + 1)..];
+    /// <summary>
+    /// Names the check of an additional outbox after the outbox's name, which is unique within the host and does not
+    /// shift when registrations are added or reordered. The <c>outbox-</c> segment keeps an outbox named
+    /// <c>default</c> apart from the primary storage's check.
+    /// </summary>
+    /// <param name="outboxName">The name passed to <c>AddOutbox(name)</c>.</param>
+    public static string OutboxCheckName(string outboxName) => _NamePrefix + "outbox-" + outboxName;
 
     public static void Add(IServiceCollection services, string name, Func<IServiceProvider, SqlServerOptions> options)
     {

@@ -122,11 +122,7 @@ public static class SetupMessagingPostgreSql
         public MessagingSetupBuilder UsePostgreSql(IConfiguration configuration)
         {
             Argument.IsNotNull(configuration);
-            return AddPostgreSqlOutboxCore(
-                outbox,
-                "AddOutbox().UsePostgreSql(...)",
-                options => options.Bind(configuration)
-            );
+            return AddPostgreSqlOutboxCore(outbox, options => options.Bind(configuration));
         }
 
         /// <summary>Stores this additional outbox's published rows in PostgreSQL, configured by a delegate.</summary>
@@ -137,11 +133,7 @@ public static class SetupMessagingPostgreSql
         public MessagingSetupBuilder UsePostgreSql(Action<PostgreSqlOptions> configure)
         {
             Argument.IsNotNull(configure);
-            return AddPostgreSqlOutboxCore(
-                outbox,
-                "AddOutbox().UsePostgreSql(...)",
-                options => options.Configure(configure)
-            );
+            return AddPostgreSqlOutboxCore(outbox, options => options.Configure(configure));
         }
 
         /// <summary>Stores this additional outbox's published rows in PostgreSQL, configured with resolved services.</summary>
@@ -152,11 +144,7 @@ public static class SetupMessagingPostgreSql
         public MessagingSetupBuilder UsePostgreSql(Action<PostgreSqlOptions, IServiceProvider> configure)
         {
             Argument.IsNotNull(configure);
-            return AddPostgreSqlOutboxCore(
-                outbox,
-                "AddOutbox().UsePostgreSql(...)",
-                options => options.Configure<IServiceProvider>(configure)
-            );
+            return AddPostgreSqlOutboxCore(outbox, options => options.Configure<IServiceProvider>(configure));
         }
     }
 
@@ -166,37 +154,34 @@ public static class SetupMessagingPostgreSql
     /// </summary>
     internal static MessagingSetupBuilder AddPostgreSqlOutboxCore(
         OutboxStorageBuilder outbox,
-        string registrationName,
         Action<OptionsBuilder<PostgreSqlOptions>> configureOptions
     )
     {
         var optionsName = outbox.OptionsName;
-        var setup = outbox.UseStorage(
-            registrationName,
-            serviceProvider =>
-            {
-                var options = Options.Create(
-                    serviceProvider.GetRequiredService<IOptionsMonitor<PostgreSqlOptions>>().Get(optionsName)
-                );
-                var storageOptions = serviceProvider.GetRequiredService<IOptions<MessagingStorageOptions>>();
-                var tableNames = new RelationalStorageTableNames(PostgreSqlDialect.Instance, storageOptions);
-                // An additional outbox holds published rows only, and its schema is applied by its own runner so an
-                // unreachable outbox database never fails the host's startup.
-                var initializer = ActivatorUtilities.CreateInstance<OutboxSchemaInitializer>(
-                    serviceProvider,
-                    PostgreSqlMessagingSchemaContribution.CreateOutbox(options.Value, storageOptions.Value),
-                    tableNames
-                );
-                var storage = RelationalDataStorage.Create(
-                    serviceProvider,
-                    options.Value.ToStorage(),
-                    tableNames,
-                    SequentialGuidType.Version7
-                );
+        var outboxName = outbox.Name;
+        var setup = outbox.UseStorage(serviceProvider =>
+        {
+            var options = Options.Create(
+                serviceProvider.GetRequiredService<IOptionsMonitor<PostgreSqlOptions>>().Get(optionsName)
+            );
+            var storageOptions = serviceProvider.GetRequiredService<IOptions<MessagingStorageOptions>>();
+            var tableNames = new RelationalStorageTableNames(PostgreSqlDialect.Instance, storageOptions);
+            // An additional outbox holds published rows only, and its schema is applied by its own runner so an
+            // unreachable outbox database never fails the host's startup.
+            var initializer = ActivatorUtilities.CreateInstance<OutboxSchemaInitializer>(
+                serviceProvider,
+                PostgreSqlMessagingSchemaContribution.CreateOutbox(options.Value, storageOptions.Value),
+                tableNames
+            );
+            var storage = RelationalDataStorage.Create(
+                serviceProvider,
+                options.Value.ToStorage(),
+                tableNames,
+                SequentialGuidType.Version7
+            );
 
-                return new MessagingOutbox(registrationName, storage, initializer);
-            }
-        );
+            return new MessagingOutbox(outboxName, storage, initializer);
+        });
 
         // The schema is feature-owned and shared by every outbox, so an outbox on PostgreSQL validates it against
         // PostgreSQL's rules even when the primary storage is another provider.
@@ -215,7 +200,7 @@ public static class SetupMessagingPostgreSql
         );
         PostgreSqlMessagingStorageHealthCheck.Add(
             setup.Services,
-            PostgreSqlMessagingStorageHealthCheck.OutboxCheckName(optionsName),
+            PostgreSqlMessagingStorageHealthCheck.OutboxCheckName(outboxName),
             serviceProvider => serviceProvider.GetRequiredService<IOptionsMonitor<PostgreSqlOptions>>().Get(optionsName)
         );
 

@@ -78,7 +78,7 @@ public abstract class AdditionalOutboxConformanceTests : TestBase
         using var host = _BuildHost(
             orders,
             billing,
-            setup => UseOutboxStorage<BillingOutboxDbContext>(setup.AddOutbox())
+            setup => UseOutboxStorage<BillingOutboxDbContext>(setup.AddOutbox("billing"))
         );
         await _StartAsync(host);
         var marker = $"billing-{Guid.NewGuid():N}";
@@ -105,7 +105,7 @@ public abstract class AdditionalOutboxConformanceTests : TestBase
         using var host = _BuildHost(
             orders,
             billing,
-            setup => UseOutboxStorage<BillingOutboxDbContext>(setup.AddOutbox())
+            setup => UseOutboxStorage<BillingOutboxDbContext>(setup.AddOutbox("billing"))
         );
         await _StartAsync(host);
         var marker = $"rollback-{Guid.NewGuid():N}";
@@ -135,7 +135,7 @@ public abstract class AdditionalOutboxConformanceTests : TestBase
         using var host = _BuildHost(
             orders,
             billing,
-            setup => UseOutboxStorage<BillingOutboxDbContext>(setup.AddOutbox()),
+            setup => UseOutboxStorage<BillingOutboxDbContext>(setup.AddOutbox("billing")),
             services =>
                 services.AddDbContext<ShippingOutboxDbContext>(options =>
                     UseDatabase(options, shipping.ConnectionString)
@@ -165,8 +165,8 @@ public abstract class AdditionalOutboxConformanceTests : TestBase
             billing,
             setup =>
             {
-                UseOutboxStorage<BillingOutboxDbContext>(setup.AddOutbox());
-                UseOutboxStorage(setup.AddOutbox(), billing.ConnectionString);
+                UseOutboxStorage<BillingOutboxDbContext>(setup.AddOutbox("billing"));
+                UseOutboxStorage(setup.AddOutbox("billing-direct"), billing.ConnectionString);
             }
         );
 
@@ -176,9 +176,7 @@ public abstract class AdditionalOutboxConformanceTests : TestBase
         // then
         await act.Should()
             .ThrowAsync<MessagingConfigurationException>()
-            .WithMessage(
-                $"*'AddOutbox().Use*EntityFramework<{nameof(BillingOutboxDbContext)}>()' and 'AddOutbox().Use*' both resolve to database*"
-            );
+            .WithMessage("*'billing' and 'billing-direct' both resolve to database*");
     }
 
     [Fact]
@@ -194,8 +192,8 @@ public abstract class AdditionalOutboxConformanceTests : TestBase
             billing,
             setup =>
             {
-                UseOutboxStorage<BillingOutboxDbContext>(setup.AddOutbox());
-                UseOutboxStorage<ShippingOutboxDbContext>(setup.AddOutbox());
+                UseOutboxStorage<BillingOutboxDbContext>(setup.AddOutbox("billing"));
+                UseOutboxStorage<ShippingOutboxDbContext>(setup.AddOutbox("shipping"));
                 setup.Options.RetryPolicy.InitialDispatchGrace = TimeSpan.FromSeconds(3);
                 setup.Options.RetryProcessor.BaseInterval = TimeSpan.FromMilliseconds(500);
                 setup.Options.RetryProcessor.AdaptivePolling = false;
@@ -250,8 +248,8 @@ public abstract class AdditionalOutboxConformanceTests : TestBase
             billing,
             setup =>
             {
-                UseOutboxStorage<BillingOutboxDbContext>(setup.AddOutbox());
-                UseOutboxStorage<ShippingOutboxDbContext>(setup.AddOutbox());
+                UseOutboxStorage<BillingOutboxDbContext>(setup.AddOutbox("billing"));
+                UseOutboxStorage<ShippingOutboxDbContext>(setup.AddOutbox("shipping"));
             },
             services =>
                 services.AddDbContext<ShippingOutboxDbContext>(options =>
@@ -301,7 +299,7 @@ public abstract class AdditionalOutboxConformanceTests : TestBase
         using var host = _BuildHost(
             orders,
             billing,
-            setup => UseOutboxStorage<BillingOutboxDbContext>(setup.AddOutbox()),
+            setup => UseOutboxStorage<BillingOutboxDbContext>(setup.AddOutbox("billing")),
             setupResources: false
         );
         var runner = host.Services.GetRequiredService<SchemaRunner>();
@@ -329,7 +327,7 @@ public abstract class AdditionalOutboxConformanceTests : TestBase
             billing,
             setup =>
             {
-                UseOutboxStorage<BillingOutboxDbContext>(setup.AddOutbox());
+                UseOutboxStorage<BillingOutboxDbContext>(setup.AddOutbox("billing"));
                 setup.Options.BacklogSamplingInterval = TimeSpan.FromMinutes(5);
             }
         );

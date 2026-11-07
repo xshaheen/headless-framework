@@ -122,7 +122,7 @@ internal sealed class Bootstrapper(
 
             // The primary storage's schema is not created here: a relational provider contributes its DDL to the Headless
             // schema runner, which applies it in IHostedLifecycleService.StartingAsync, before any hosted service (this
-            // BackgroundService included) starts. An invalid AddOutbox() registration fails here, before outbox work.
+            // BackgroundService included) starts. An invalid AddOutbox(name) registration fails here, before outbox work.
             var secondaries = serviceProvider.GetService<MessagingOutboxes>()?.Secondaries ?? [];
 
             // An additional outbox serves only units of work on its own database, and its schema is applied by its own

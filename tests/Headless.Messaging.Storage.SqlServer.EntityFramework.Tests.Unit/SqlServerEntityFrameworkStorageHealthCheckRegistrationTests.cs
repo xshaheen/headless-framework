@@ -24,7 +24,7 @@ public sealed class SqlServerEntityFrameworkStorageHealthCheckRegistrationTests 
         services.AddHeadlessMessaging(setup =>
         {
             setup.UseSqlServerEntityFramework<OrdersDbContext>();
-            setup.AddOutbox().UseSqlServerEntityFramework<BillingDbContext>();
+            setup.AddOutbox("billing").UseSqlServerEntityFramework<BillingDbContext>();
         });
 
         // then
@@ -34,7 +34,7 @@ public sealed class SqlServerEntityFrameworkStorageHealthCheckRegistrationTests 
             .Value.Registrations.Select(registration => registration.Name)
             .Where(name => name.StartsWith("messaging-storage-", StringComparison.Ordinal))
             .Should()
-            .BeEquivalentTo("messaging-storage-sqlserver-default", "messaging-storage-sqlserver-outbox-1");
+            .BeEquivalentTo("messaging-storage-sqlserver-default", "messaging-storage-sqlserver-outbox-billing");
     }
 
     private sealed class OrdersDbContext(DbContextOptions<OrdersDbContext> options) : DbContext(options);

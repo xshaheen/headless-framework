@@ -71,7 +71,7 @@ This is the production default: `Headless.Messaging.RabbitMq` for transport and 
 ## Agent Rules
 
 - **App install pattern**: install `Messaging` + exactly one transport + exactly one storage. Bootstrap fails when zero or multiple storage providers are configured. Core brings shared/bus/queue abstractions transitively for applications.
-- **One outbox per database, not one storage per database**: when units of work run on several databases, keep one primary storage and add `setup.AddOutbox().UsePostgreSqlEntityFramework<TContext>()` or `UseSqlServerEntityFramework<TContext>()` (or `UsePostgreSql(...)` / `UseSqlServer(...)`) for each other database. See [Additional outboxes](#additional-outboxes).
+- **One outbox per database, not one storage per database**: when units of work run on several databases, keep one primary storage and add `setup.AddOutbox(name).UsePostgreSqlEntityFramework<TContext>()` or `UseSqlServerEntityFramework<TContext>()` (or `UsePostgreSql(...)` / `UseSqlServer(...)`) for each other database. See [Additional outboxes](#additional-outboxes).
 - **Library contract pattern**: install `Messaging.Abstractions`, `Messaging.Bus.Abstractions`, or `Messaging.Queue.Abstractions` directly when a library exposes envelopes or publisher interfaces, declares message contracts, or contributes consumers without bootstrapping Core. `ConfigureMessaging`, `Message<T>`, `AddModule<T>`, and `IMessagingModule` all live in `Messaging.Abstractions`; only `Tune` needs `Messaging`. A library that declares consumers still needs the Messaging source generator at build time (the `Messaging` package carries it; in this repository it is a `ProjectReference` with `OutputItemType="Analyzer"`), and the generated module ships compiled into the library. A library never calls `AddHeadlessMessaging`.
 - **Use `InMemory` + `InMemoryStorage` only for dev/testing**, never in production. Data is lost on restart.
 - **OpenTelemetry is native to `Messaging`** (no satellite package). Subscribe traces/metrics with `AddMessagingInstrumentation()` on the `TracerProviderBuilder`/`MeterProviderBuilder`, and configure enrichers/suppression via `setup.Instrumentation` inside `AddHeadlessMessaging(...)`.
@@ -498,16 +498,23 @@ module, register an additional outbox for each of those databases so a unit on i
 services.AddHeadlessMessaging(setup =>
 {
     setup.UsePostgreSqlEntityFramework<OrdersDb>(); // primary: outbox, inbox, retry state, dashboard
-    setup.AddOutbox().UsePostgreSqlEntityFramework<BillingDb>(); // additional: outbox rows and their relay only
-    setup.AddOutbox().UsePostgreSql(builder.Configuration.GetConnectionString("Shipping")!);
+    setup.AddOutbox("billing").UsePostgreSqlEntityFramework<BillingDb>(); // additional: outbox rows and their relay only
+    setup.AddOutbox("shipping").UsePostgreSql(builder.Configuration.GetConnectionString("Shipping")!);
 });
 ```
 
-- **Registration.** `AddOutbox()` returns an `OutboxStorageBuilder` that accepts only a storage:
+- **Name.** `AddOutbox(name)` takes the store's name: letters, digits, `-`, and `_`, unique within the host compared
+  case-insensitively. The primary storage is always named `primary` (`MessagingSetupBuilder.PrimaryOutboxName`),
+  so `AddOutbox("primary")` throws, as do a duplicate name and a name with any other character (an
+  `ArgumentException` naming the problem). The name identifies the store in logs, configuration errors, health
+  checks, and the host manifest, and the dashboard keys message ids, change cursors, operation scopes, and command
+  routing on it. Choose it once and keep it: unlike a position, it does not shift when a registration is added or
+  reordered, so it stays bound to its database across redeploys.
+- **Registration.** `AddOutbox(name)` returns an `OutboxStorageBuilder` that accepts only a storage:
   `UsePostgreSqlEntityFramework<TContext>()` and `UseSqlServerEntityFramework<TContext>()` from the EF storage packages, and `UsePostgreSql(...)` / `UseSqlServer(...)`
   with the same connection-string, `IConfiguration`, and delegate overloads as the primary storage. Each outbox
-  keeps its own named provider options, validated on start. `AddOutbox()` without a storage, or a second storage
-  on one `AddOutbox()`, throws during `AddHeadlessMessaging`.
+  keeps its own named provider options, validated on start. `AddOutbox(name)` without a storage, or a second storage
+  on one `AddOutbox(name)`, throws during `AddHeadlessMessaging`.
 - **Selection.** `unit.Outbox.PublishAsync` / `EnqueueAsync` writes to the primary storage when the unit's
   database is the primary's, and otherwise to the additional outbox whose database matches, decided by the same
   `RelationalDatabaseIdentity` check a single storage runs. A unit that matches no outbox is refused with the
@@ -515,7 +522,7 @@ services.AddHeadlessMessaging(setup =>
 - **Startup validation.** The primary storage must be relational (PostgreSQL or SQL Server): an in-memory primary
   joins every unit and would take the additional outboxes' publishes. Two outboxes, the primary included, that
   resolve to the same database fail host startup with a `MessagingConfigurationException` naming both
-  registrations. Mixing providers is allowed, for example a SQL Server primary with a PostgreSQL outbox.
+  stores (`'primary' and 'billing'`). Mixing providers is allowed, for example a SQL Server primary with a PostgreSQL outbox.
 - **Schema.** Each additional outbox contributes only the published table and its indexes, in the same `MessagingStorageOptions.Schema` as the primary, as its own `MessagingOutbox` feature in that
   database's `headless_schema_history`. It has no received table or inbox history. Its steps are verified by a schema
   runner of its own, lazily and without failing the start: the host's runner fails startup on an unreachable
@@ -2474,9 +2481,9 @@ Messaging contributes readiness checks automatically; there is no `AddMessagingH
 | --- | --- | --- | --- |
 | `messaging` | `AddHeadlessMessaging` | `Unhealthy` | The host has not started, host shutdown has begun, or the broker is unreachable (see [Broker reachability](#broker-reachability)). Applies to consuming and publish-only hosts on every transport |
 | `messaging-consumers` | `AddHeadlessMessaging` | `Degraded` | Any consumer circuit is `Open`, whether it tripped or an operator called `ICircuitBreakerMonitor.ForceOpenAsync`. `HalfOpen` reports healthy: it is already resuming, and reporting it would make alerts flap |
-| `messaging-outboxes` | `AddHeadlessMessaging` with at least one `AddOutbox()` | `Degraded` | An [additional outbox](#additional-outboxes) is not initialized yet. Its initialization keeps retrying and only units of work on that database are refused, so the host stays ready |
+| `messaging-outboxes` | `AddHeadlessMessaging` with at least one `AddOutbox(name)` | `Degraded` | An [additional outbox](#additional-outboxes) is not initialized yet. Its initialization keeps retrying and only units of work on that database are refused, so the host stays ready |
 | `messaging-storage-postgresql-default`, `messaging-storage-sqlserver-default` | The primary PostgreSQL or SQL Server storage, raw or EF; also tagged `database` | `Unhealthy` | A connection from the storage's options cannot open, or `SELECT 1` on it fails |
-| `messaging-storage-postgresql-outbox-{n}`, `messaging-storage-sqlserver-outbox-{n}` | Each additional PostgreSQL or SQL Server outbox; also tagged `database` | `Unhealthy` | The same probe against that outbox's database. `{n}` is the outbox's position, from 1, in `AddOutbox()` call order |
+| `messaging-storage-postgresql-outbox-{name}`, `messaging-storage-sqlserver-outbox-{name}` | Each additional PostgreSQL or SQL Server outbox; also tagged `database` | `Unhealthy` | The same probe against that outbox's database. `{name}` is the name passed to `AddOutbox(name)`, so the check keeps its name when registrations are added or reordered |
 | `messaging-nats` | `UseNats` | `Unhealthy` | A NATS `PING` fails (see [Headless.Messaging.Nats](#headlessmessagingnats)) |
 
 `messaging`, `messaging-consumers`, and `messaging-outboxes` read the running host's state, so they also carry `host-state` (`HeadlessHealthCheckTags.HostState`), and the [`check` command](utilities.md#health-check-command) skips them before the host starts; the storage and NATS checks probe their dependency and run there.
@@ -2531,7 +2538,7 @@ Transports that retry a lost broker inside their own receive loop (Azure Service
   ],
   "outboxes": [
     { "name": "primary", "storage": "PostgreSQL" },
-    { "name": "outbox-1", "storage": "SQL Server" }
+    { "name": "billing", "storage": "SQL Server" }
   ],
   "transports": { "bus": "RabbitMQ", "queue": "RabbitMQ" }
 }
@@ -2542,7 +2549,7 @@ Transports that retry a lost broker inside their own receive loop (Azure Service
 - **`consumeOnly`** appears only on a competing consumer of a host that calls `ConsumeOnly`: `listed` or `not-listed`.
 - **Tuning.** `concurrency` is always written. `inboxRetentionSeconds` appears on competing consumers only, because an every-instance subscription stores no inbox rows. `failurePolicy` appears when the consumer has one, with the same fields as Jobs: the delay fields only when `delayedRetries` is above zero, `failOn` and `failWhenRules` only when set. `rateLimit` carries `algorithm` plus `tokenLimit`, `tokensPerPeriod`, and `replenishmentPeriodSeconds` for `token-bucket`, or `permitLimit` and `windowSeconds` otherwise. `circuitBreaker` lists only the overrides the consumer sets (`enabled`, `failureThreshold`, `openDurationSeconds`, and `customTransientPredicate: true` for a custom predicate); unset values fall back to the host-wide options. `middleware` lists per-consumer middleware type names.
 - **`messages`** is the publish side: one entry per `Message<T>(name, version)` contract, ordered by name, with each lane it declares. A lane shows `deliveryMode` only when the contract pins one (`durable` or `direct`; otherwise publishes use the host default), and `routingAffinity` and `rawPayload` only when set.
-- **`outboxes`** lists the primary storage as `primary`, then each `AddOutbox()` outbox as `outbox-{n}` in call order, matching its `messaging-storage-…-outbox-{n}` health check. `storage` is the database provider (`PostgreSQL`, `SQL Server`) for relational storage and the storage type name otherwise. A host without storage has none.
+- **`outboxes`** lists the primary storage as `primary`, then each additional outbox, in registration order, under the name passed to `AddOutbox(name)`, which its `messaging-storage-…-outbox-{name}` health check also carries. `storage` is the database provider (`PostgreSQL`, `SQL Server`) for relational storage and the storage type name otherwise. A host without storage has none.
 - **`transports`** names the broker of each lane's transport, from `BrokerAddress.Name`; a lane with no transport is absent. The endpoint half of the broker address is never written.
 - **Not described:** runtime subscriptions (they attach after startup and are not in the registry), provider-specific consumer configuration, broker addresses, connection strings, and credentials.
 
@@ -3577,7 +3584,7 @@ History retention uses the shared `MessagingOptions` defaults: cleanup receipts/
 
 ### Runtime behavior
 
-Registers PostgreSQL storage, the monitoring API, table-name resolution, the messaging schema contribution, and the `messaging-storage-postgresql-default` readiness check (`messaging-storage-postgresql-outbox-{n}` for an additional outbox; see [Health checks](#health-checks)). It does not register EF Core or `Headless.UnitOfWork`.
+Registers PostgreSQL storage, the monitoring API, table-name resolution, the messaging schema contribution, and the `messaging-storage-postgresql-default` readiness check (`messaging-storage-postgresql-outbox-{name}` for an additional outbox; see [Health checks](#health-checks)). It does not register EF Core or `Headless.UnitOfWork`.
 
 ## Headless.Messaging.Storage.PostgreSql.EntityFramework
 
@@ -3634,7 +3641,7 @@ Fresh schemas directly create `([StatusName],[Added])` indexes for dashboard tim
 
 ### Runtime behavior
 
-Registers SQL Server storage, the monitoring API, table-name resolution, the messaging schema contribution, and the `messaging-storage-sqlserver-default` readiness check (`messaging-storage-sqlserver-outbox-{n}` for an additional outbox; see [Health checks](#health-checks)). It does not register EF Core or `Headless.UnitOfWork`.
+Registers SQL Server storage, the monitoring API, table-name resolution, the messaging schema contribution, and the `messaging-storage-sqlserver-default` readiness check (`messaging-storage-sqlserver-outbox-{name}` for an additional outbox; see [Health checks](#health-checks)). It does not register EF Core or `Headless.UnitOfWork`.
 
 - **Monitoring skips locked rows**: dashboard counts, pages, and timelines read with `READPAST`, so a row another transaction holds locked (a claim, an admission, a state change in flight) is left out of that read instead of blocking it. PostgreSQL's monitoring reads instead see the row's last committed version. Counts can therefore dip briefly under load on SQL Server.
 - **Inbox operation lock**: concurrent requests of one inbox operation (hold, release, purge, force-reprocess) that share an operation id serialize on a transaction-scoped `sp_getapplock` named `headless.messaging.inbox.operation.{operationId}`, so one applies and the others replay its receipt. The lock has no timeout of its own, so the wait is bounded by `MessagingOptions.CommandTimeout`, and a timed-out request can be retried with the same operation id.

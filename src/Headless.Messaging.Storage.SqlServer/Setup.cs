@@ -119,11 +119,7 @@ public static class SetupMessagingSqlServer
         public MessagingSetupBuilder UseSqlServer(IConfiguration configuration)
         {
             Argument.IsNotNull(configuration);
-            return AddSqlServerOutboxCore(
-                outbox,
-                "AddOutbox().UseSqlServer(...)",
-                options => options.Bind(configuration)
-            );
+            return AddSqlServerOutboxCore(outbox, options => options.Bind(configuration));
         }
 
         /// <summary>Stores this additional outbox's published rows in SQL Server, configured by a delegate.</summary>
@@ -134,11 +130,7 @@ public static class SetupMessagingSqlServer
         public MessagingSetupBuilder UseSqlServer(Action<SqlServerOptions> configure)
         {
             Argument.IsNotNull(configure);
-            return AddSqlServerOutboxCore(
-                outbox,
-                "AddOutbox().UseSqlServer(...)",
-                options => options.Configure(configure)
-            );
+            return AddSqlServerOutboxCore(outbox, options => options.Configure(configure));
         }
 
         /// <summary>Stores this additional outbox's published rows in SQL Server, configured with resolved services.</summary>
@@ -149,11 +141,7 @@ public static class SetupMessagingSqlServer
         public MessagingSetupBuilder UseSqlServer(Action<SqlServerOptions, IServiceProvider> configure)
         {
             Argument.IsNotNull(configure);
-            return AddSqlServerOutboxCore(
-                outbox,
-                "AddOutbox().UseSqlServer(...)",
-                options => options.Configure<IServiceProvider>(configure)
-            );
+            return AddSqlServerOutboxCore(outbox, options => options.Configure<IServiceProvider>(configure));
         }
     }
 
@@ -163,37 +151,34 @@ public static class SetupMessagingSqlServer
     /// </summary>
     internal static MessagingSetupBuilder AddSqlServerOutboxCore(
         OutboxStorageBuilder outbox,
-        string registrationName,
         Action<OptionsBuilder<SqlServerOptions>> configureOptions
     )
     {
         var optionsName = outbox.OptionsName;
-        var setup = outbox.UseStorage(
-            registrationName,
-            serviceProvider =>
-            {
-                var options = Options.Create(
-                    serviceProvider.GetRequiredService<IOptionsMonitor<SqlServerOptions>>().Get(optionsName)
-                );
-                var storageOptions = serviceProvider.GetRequiredService<IOptions<MessagingStorageOptions>>();
-                var tableNames = new RelationalStorageTableNames(SqlServerDialect.Instance, storageOptions);
-                // An additional outbox holds published rows only, and its schema is applied by its own runner so an
-                // unreachable outbox database never fails the host's startup.
-                var initializer = ActivatorUtilities.CreateInstance<OutboxSchemaInitializer>(
-                    serviceProvider,
-                    SqlServerMessagingSchemaContribution.CreateOutbox(options.Value, storageOptions.Value),
-                    tableNames
-                );
-                var storage = RelationalDataStorage.Create(
-                    serviceProvider,
-                    options.Value.ToStorage(),
-                    tableNames,
-                    SequentialGuidType.SqlServer
-                );
+        var outboxName = outbox.Name;
+        var setup = outbox.UseStorage(serviceProvider =>
+        {
+            var options = Options.Create(
+                serviceProvider.GetRequiredService<IOptionsMonitor<SqlServerOptions>>().Get(optionsName)
+            );
+            var storageOptions = serviceProvider.GetRequiredService<IOptions<MessagingStorageOptions>>();
+            var tableNames = new RelationalStorageTableNames(SqlServerDialect.Instance, storageOptions);
+            // An additional outbox holds published rows only, and its schema is applied by its own runner so an
+            // unreachable outbox database never fails the host's startup.
+            var initializer = ActivatorUtilities.CreateInstance<OutboxSchemaInitializer>(
+                serviceProvider,
+                SqlServerMessagingSchemaContribution.CreateOutbox(options.Value, storageOptions.Value),
+                tableNames
+            );
+            var storage = RelationalDataStorage.Create(
+                serviceProvider,
+                options.Value.ToStorage(),
+                tableNames,
+                SequentialGuidType.SqlServer
+            );
 
-                return new MessagingOutbox(registrationName, storage, initializer);
-            }
-        );
+            return new MessagingOutbox(outboxName, storage, initializer);
+        });
 
         // The schema is feature-owned and shared by every outbox, so an outbox on SQL Server validates it against
         // SQL Server's rules even when the primary storage is another provider.
@@ -212,7 +197,7 @@ public static class SetupMessagingSqlServer
         );
         SqlServerMessagingStorageHealthCheck.Add(
             setup.Services,
-            SqlServerMessagingStorageHealthCheck.OutboxCheckName(optionsName),
+            SqlServerMessagingStorageHealthCheck.OutboxCheckName(outboxName),
             serviceProvider => serviceProvider.GetRequiredService<IOptionsMonitor<SqlServerOptions>>().Get(optionsName)
         );
 

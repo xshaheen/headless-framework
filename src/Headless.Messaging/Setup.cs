@@ -85,10 +85,10 @@ public static class SetupMessaging
     {
         var options = setup.Options;
 
-        if (setup.OutboxBuilders.Exists(static builder => !builder.IsConfigured))
+        if (setup.OutboxBuilders.Find(static builder => !builder.IsConfigured) is { } unconfigured)
         {
             throw new InvalidOperationException(
-                "AddOutbox() was called without a storage. Chain UsePostgreSqlEntityFramework<TContext>(), UseSqlServerEntityFramework<TContext>(), UsePostgreSql(...), or UseSqlServer(...) on it."
+                $"AddOutbox(\"{unconfigured.Name}\") was called without a storage. Chain UsePostgreSqlEntityFramework<TContext>(), UseSqlServerEntityFramework<TContext>(), UsePostgreSql(...), or UseSqlServer(...) on it."
             );
         }
 
@@ -152,7 +152,7 @@ public static class SetupMessaging
             sp.GetService<IOptions<TenantTelemetryOptions>>()?.Value
         ));
 
-        // The primary storage plus every AddOutbox() registration. Resolving it validates them together, so the
+        // The primary storage plus every AddOutbox(name) registration. Resolving it validates them together, so the
         // bootstrapper resolves it before storage initialization and a misconfiguration fails host startup.
         services.TryAddSingleton(MessagingOutboxes.Create);
         services.TryAddSingleton<OutboxMessageWriter>();

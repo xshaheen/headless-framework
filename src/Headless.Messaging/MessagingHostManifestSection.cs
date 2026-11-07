@@ -31,8 +31,6 @@ namespace Headless.Messaging;
 internal sealed class MessagingHostManifestSection(ConsumerRegistry registry, IServiceProvider services)
     : IHostManifestSection
 {
-    private const string _PrimaryOutbox = "primary";
-
     private readonly ConsumerRegistry _registry = Argument.IsNotNull(registry);
     private readonly IServiceProvider _services = Argument.IsNotNull(services);
 
@@ -122,16 +120,14 @@ internal sealed class MessagingHostManifestSection(ConsumerRegistry registry, IS
 
         if (outboxes?.Primary is { } primary)
         {
-            _WriteOutbox(writer, _PrimaryOutbox, primary);
+            _WriteOutbox(writer, MessagingSetupBuilder.PrimaryOutboxName, primary);
         }
 
-        // Named by registration order, as their health checks are: the registration's own name describes the call that
-        // made it, which two outboxes on one provider share.
-        var secondaries = outboxes?.Secondaries ?? [];
-
-        for (var i = 0; i < secondaries.Count; i++)
+        // Each additional outbox under its chosen name, which its health check also carries, so an entry keeps its
+        // name when registrations are added or reordered.
+        foreach (var outbox in outboxes?.Secondaries ?? [])
         {
-            _WriteOutbox(writer, "outbox-" + (i + 1).ToString(CultureInfo.InvariantCulture), secondaries[i].Storage);
+            _WriteOutbox(writer, outbox.Name, outbox.Storage);
         }
 
         writer.WriteEndArray();
