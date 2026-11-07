@@ -37,6 +37,8 @@ export interface RenderModuleResult extends RenderResult {
   requests: ApiRequest[]
   /** Opens another route of the module, such as `runs/42`. */
   navigate: (path: string) => Promise<void>
+  /** The URL the module shows now, as the browser's address bar would: its path and search. */
+  location: () => { pathname: string; search: string }
 }
 
 /**
@@ -104,6 +106,7 @@ export function renderModule(definition: ModuleDefinition, options: RenderModule
     api,
     requests,
     navigate: (path) => router.navigate(`/${definition.id}/${path}`),
+    location: () => router.state.location,
   }
 }
 

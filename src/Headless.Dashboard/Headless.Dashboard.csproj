@@ -1,7 +1,7 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <Description>One operations dashboard for a Headless host, plus the authentication the Jobs and Messaging dashboards share.</Description>
+    <Description>One operations dashboard for a Headless host, plus the authentication the Messaging dashboard uses.</Description>
     <PackageTags>headless;dashboard;operations;sse;authentication;dotnet</PackageTags>
   </PropertyGroup>
   <ItemGroup>

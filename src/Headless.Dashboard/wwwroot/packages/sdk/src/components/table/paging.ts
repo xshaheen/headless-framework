@@ -74,7 +74,6 @@ export function useHeldRows(
       return undefined
     }
 
-    // Rows scrolled back into view have been seen.
     const onScroll = () => setHeld((count) => Math.min(count, Math.floor(element.scrollTop / rowHeight)))
     element.addEventListener('scroll', onScroll)
 

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { formatBudgetResult, measureBudgets, type BudgetFile } from './budget.ts'
@@ -21,7 +21,10 @@ rmSync(stamp, { force: true })
 
 const budgetPath = budgetArgument ? resolve(budgetArgument) : fileURLToPath(new URL('../budget.json', import.meta.url))
 
-if (!existsSync(join(dist, 'index.html'))) {
+// The shell's workspace writes index.html; a module built in its own package writes only modules/<id>/manifest.json.
+const hasModule = existsSync(join(dist, 'modules')) && readdirSync(join(dist, 'modules')).some((id) => existsSync(join(dist, 'modules', id, 'manifest.json')))
+
+if (!existsSync(join(dist, 'index.html')) && !hasModule) {
   console.error(`No build output at ${dist}; run the Vite builds first.`)
   process.exit(2)
 }

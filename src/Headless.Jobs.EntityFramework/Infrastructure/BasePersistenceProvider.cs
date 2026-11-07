@@ -1251,7 +1251,7 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
                                     .SetChangedAt()
                                     .SetProperty(x => x.Status, JobStatus.Failed)
                                     .SetProperty(x => x.LockedUntil, _ => null)
-                                    .SetProperty(x => x.ExceptionMessage, "Node is not alive!")
+                                    .SetProperty(x => x.ExceptionMessage, _NodeNotAliveReason)
                                     .SetProperty(x => x.FailureFingerprint, JobFailureFingerprints.NodeNotAlive)
                                     .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
                                     .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
@@ -1280,7 +1280,7 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
                                     .SetChangedAt()
                                     .SetProperty(x => x.Status, JobStatus.Skipped)
                                     .SetProperty(x => x.LockedUntil, _ => null)
-                                    .SetProperty(x => x.SkippedReason, "Node is not alive!")
+                                    .SetProperty(x => x.SkippedReason, _NodeNotAliveReason)
                                     .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
                                     .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
                             _StoreAttemptEnd(JobAttemptOutcome.Skipped, _NodeNotAliveReason)
@@ -1571,7 +1571,7 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
                                     .SetChangedAt()
                                     .SetProperty(x => x.Status, JobStatus.Failed)
                                     .SetProperty(x => x.LockedUntil, _ => null)
-                                    .SetProperty(x => x.ExceptionMessage, "Lease lapsed while running!")
+                                    .SetProperty(x => x.ExceptionMessage, _LeaseLapsedReason)
                                     .SetProperty(x => x.FailureFingerprint, JobFailureFingerprints.LeaseLapsed)
                                     .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
                                     .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
@@ -1595,7 +1595,7 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
                                     .SetChangedAt()
                                     .SetProperty(x => x.Status, JobStatus.Skipped)
                                     .SetProperty(x => x.LockedUntil, _ => null)
-                                    .SetProperty(x => x.SkippedReason, "Lease lapsed while running!")
+                                    .SetProperty(x => x.SkippedReason, _LeaseLapsedReason)
                                     .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
                                     .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
                             _StoreAttemptEnd(JobAttemptOutcome.Skipped, _LeaseLapsedReason)
@@ -3013,7 +3013,7 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
                                     .SetChangedAt()
                                     .SetProperty(x => x.Status, JobStatus.Failed)
                                     .SetProperty(x => x.LockedUntil, _ => null)
-                                    .SetProperty(x => x.ExceptionMessage, "Node is not alive!")
+                                    .SetProperty(x => x.ExceptionMessage, _NodeNotAliveReason)
                                     .SetProperty(x => x.FailureFingerprint, JobFailureFingerprints.NodeNotAlive)
                                     .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
                                     .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
@@ -3043,7 +3043,7 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
                                     .SetChangedAt()
                                     .SetProperty(x => x.Status, JobStatus.Skipped)
                                     .SetProperty(x => x.LockedUntil, _ => null)
-                                    .SetProperty(x => x.SkippedReason, "Node is not alive!")
+                                    .SetProperty(x => x.SkippedReason, _NodeNotAliveReason)
                                     // KTD1b: the occurrence never executed, but re-running it is the reclaim/recovery
                                     // path's job. Materializing a fresh row at the same instant would race that path,
                                     // so the dead owner's row still accounts for its instant.
@@ -3191,7 +3191,7 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
                                     .SetChangedAt()
                                     .SetProperty(x => x.Status, JobStatus.Failed)
                                     .SetProperty(x => x.LockedUntil, _ => null)
-                                    .SetProperty(x => x.ExceptionMessage, "Lease lapsed while running!")
+                                    .SetProperty(x => x.ExceptionMessage, _LeaseLapsedReason)
                                     .SetProperty(x => x.FailureFingerprint, JobFailureFingerprints.LeaseLapsed)
                                     .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
                                     .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
@@ -3218,7 +3218,7 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
                                     .SetChangedAt()
                                     .SetProperty(x => x.Status, JobStatus.Skipped)
                                     .SetProperty(x => x.LockedUntil, _ => null)
-                                    .SetProperty(x => x.SkippedReason, "Lease lapsed while running!")
+                                    .SetProperty(x => x.SkippedReason, _LeaseLapsedReason)
                                     // An ordinary retirement: the instant is spent and nothing owes it a replacement.
                                     .SetProperty(x => x.Disposition, CronOccurrenceDisposition.Accounted)
                                     .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)

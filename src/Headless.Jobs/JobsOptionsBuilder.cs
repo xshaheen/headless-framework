@@ -325,14 +325,6 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
 
     internal Action<IServiceCollection>? ExternalProviderConfigServiceAction { get; set; }
 
-    /// <summary>
-    /// Deferred Dashboard registration set by the Dashboard package's <c>AddDashboard</c> extension and
-    /// replayed by <c>AddHeadlessJobs</c> with the composed per-host
-    /// <see cref="JobsRequestSerializationOptions"/> so Dashboard components share the host's request
-    /// serialization settings.
-    /// </summary>
-    internal Action<IServiceCollection, JobsRequestSerializationOptions>? DashboardServiceAction { get; set; }
-
     [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
     [field: DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
     internal Type? JobExceptionHandlerType { get; private set; }

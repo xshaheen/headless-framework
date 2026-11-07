@@ -82,31 +82,29 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
             .ConfigureAwait(false);
     }
 
-    public async Task<IReadOnlyList<TimeJobAttemptEntity>> GetTimeJobAttemptsAsync(
+    public Task<IReadOnlyList<TimeJobAttemptEntity>> GetTimeJobAttemptsAsync(
         Guid timeJobId,
         CancellationToken cancellationToken = default
     )
     {
-        if (!_AttemptsMapped<TimeJobAttemptEntity>())
-        {
-            return [];
-        }
-
-        await using var dbContext = await DbContextFactory
-            .CreateDbContextAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        return await JobsAttemptLedger
-            .ReadAsync<TimeJobAttemptEntity>(dbContext, timeJobId, cancellationToken)
-            .ConfigureAwait(false);
+        return _GetAttemptsAsync<TimeJobAttemptEntity>(timeJobId, cancellationToken);
     }
 
-    public async Task<IReadOnlyList<CronJobOccurrenceAttemptEntity>> GetCronJobOccurrenceAttemptsAsync(
+    public Task<IReadOnlyList<CronJobOccurrenceAttemptEntity>> GetCronJobOccurrenceAttemptsAsync(
         Guid occurrenceId,
         CancellationToken cancellationToken = default
     )
     {
-        if (!_AttemptsMapped<CronJobOccurrenceAttemptEntity>())
+        return _GetAttemptsAsync<CronJobOccurrenceAttemptEntity>(occurrenceId, cancellationToken);
+    }
+
+    private async Task<IReadOnlyList<TAttempt>> _GetAttemptsAsync<TAttempt>(
+        Guid runId,
+        CancellationToken cancellationToken
+    )
+        where TAttempt : JobAttemptEntity
+    {
+        if (!_AttemptsMapped<TAttempt>())
         {
             return [];
         }
@@ -115,9 +113,7 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        return await JobsAttemptLedger
-            .ReadAsync<CronJobOccurrenceAttemptEntity>(dbContext, occurrenceId, cancellationToken)
-            .ConfigureAwait(false);
+        return await JobsAttemptLedger.ReadAsync<TAttempt>(dbContext, runId, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<bool> _OpenAttemptAsync<TAttempt>(

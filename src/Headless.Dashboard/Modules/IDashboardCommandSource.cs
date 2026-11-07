@@ -256,6 +256,13 @@ public sealed record DashboardCommandResult
 {
     /// <summary>Gets one result per row the call named.</summary>
     public required IReadOnlyList<DashboardRowResult> Rows { get; init; }
+
+    /// <summary>
+    /// Gets why the module refused the whole call without changing anything, such as <c>Paused - resume first</c>, or
+    /// <see langword="null"/> when it ran. The shell answers a refused call with <c>409</c> and this reason, and writes no
+    /// operator-log entry for it, as for any other refused command.
+    /// </summary>
+    public string? Refusal { get; init; }
 }
 
 /// <summary>What a command did to one row.</summary>

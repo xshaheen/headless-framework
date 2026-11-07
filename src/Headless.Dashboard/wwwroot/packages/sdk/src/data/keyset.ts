@@ -1,5 +1,5 @@
 import { useInfiniteQuery } from '@tanstack/react-query'
-import { useMemo, useRef } from 'react'
+import { useMemo } from 'react'
 import { useTopics } from '../stream/hooks.ts'
 import { listKey } from './client.tsx'
 import type { DashboardListPage, ListItem } from './patch.ts'
@@ -18,8 +18,8 @@ export interface DashboardKeysetListOptions<T extends ListItem> {
 
 /**
  * A live keyset-paged list: the first page, then each next page when `loadMore` asks for it, patched row by row from
- * the stream while mounted. `loadMore` asks for a page once: called again before that page answers, or for a cursor
- * already read, it does nothing, so a table can call it on every scroll and focus near its end.
+ * the stream while mounted. `loadMore` does nothing while a next page is loading, so a table can call it on every
+ * scroll and focus near its end; after a page fails, the next call asks for it again.
  */
 export function useDashboardKeysetList<T extends ListItem>(options: DashboardKeysetListOptions<T>) {
   useTopics([options.topic])
@@ -30,18 +30,15 @@ export function useDashboardKeysetList<T extends ListItem>(options: DashboardKey
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
   })
-  const requested = useRef(new Set<string>())
   const pages = query.data?.pages
   const rows = useMemo(() => pages?.flatMap((page) => page.items) ?? [], [pages])
   const nextCursor = pages?.at(-1)?.nextCursor ?? undefined
 
   function loadMore() {
-    if (nextCursor === undefined || requested.current.has(nextCursor)) {
+    if (nextCursor === undefined || query.isFetchingNextPage) {
       return
     }
 
-    requested.current.add(nextCursor)
-    // `cancelRefetch: false` joins a fetch already running instead of restarting it.
     void query.fetchNextPage({ cancelRefetch: false })
   }
 

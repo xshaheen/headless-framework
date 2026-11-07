@@ -1,10 +1,10 @@
 import { DashboardProvider, createDashboardClient } from '@headless/dashboard-sdk'
 import { useShortcut } from '@headless/dashboard-sdk/components'
 import { createFakeStream } from '@headless/dashboard-sdk/testing'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { shellState } from './fixtures/modules.tsx'
+import { moduleManifest, shellState } from './fixtures/modules.tsx'
 import { renderShell } from './harness.tsx'
 
 /** The keys of the shortcut table in the dashboard's design system, as an operator reads them on the key caps. */
@@ -17,7 +17,7 @@ describe('shell keyboard', () => {
 
   it('opens the shortcut list on ?, listing every key of the design system', async () => {
     const user = userEvent.setup()
-    renderShell(shellState([]))
+    renderShell(shellState([moduleManifest('jobs'), moduleManifest('messaging')]))
 
     await screen.findByRole('heading', { name: 'Overview' })
     await user.keyboard('?')
@@ -28,6 +28,20 @@ describe('shell keyboard', () => {
     for (const key of designKeys) {
       expect(caps).toContain(key)
     }
+  })
+
+  it('lists a G chord only when the module it opens is registered', async () => {
+    const user = userEvent.setup()
+    renderShell(shellState([moduleManifest('jobs')]))
+
+    await screen.findByRole('heading', { name: 'Overview' })
+    await user.keyboard('?')
+
+    const list = await screen.findByRole('dialog', { name: 'Keyboard shortcuts' })
+    const caps = [...list.querySelectorAll('kbd')].map((cap) => cap.textContent)
+    expect(caps).toContain('G R')
+    expect(caps).toContain('G N')
+    expect(caps).not.toContain('G M')
   })
 
   it('goes to a view with G then a letter', async () => {
@@ -43,6 +57,28 @@ describe('shell keyboard', () => {
     await user.keyboard('go')
 
     await waitFor(() => expect(shell.router.state.location.pathname).toBe('/'))
+  })
+
+  it('goes to a view with G then a letter while a select has focus, since a select is not a text field', async () => {
+    const user = userEvent.setup()
+    const shell = renderShell(shellState([]))
+
+    await screen.findByRole('heading', { name: 'Overview' })
+    // The view's filter, which `/` focuses, is a select; the rail's Theme stands in for it here.
+    act(() => screen.getByRole('combobox', { name: 'Theme' }).focus())
+    await user.keyboard('gn')
+
+    await waitFor(() => expect(shell.router.state.location.pathname).toBe('/needs-you'))
+  })
+
+  it('goes to the Jobs runs list with G R when the Jobs module is registered', async () => {
+    const user = userEvent.setup()
+    const shell = renderShell(shellState([moduleManifest('jobs')]))
+
+    await screen.findByRole('heading', { name: 'Overview' })
+    await user.keyboard('gr')
+
+    await waitFor(() => expect(shell.router.state.location.pathname).toBe('/jobs'))
   })
 
   it('opens the palette on ⌘K even while a text field has focus, and ignores other keys there', async () => {

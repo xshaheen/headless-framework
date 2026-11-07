@@ -2,8 +2,9 @@
 
 namespace Headless.Jobs.Provider;
 
-// Operator requeue for the in-memory provider: a Failed time job or cron occurrence returns to Idle under the same
-// locks that keyed scheduling and cron materialization hold, so the refusal checks stay true until the write lands.
+// Operator requeue for the in-memory provider: a Failed, Cancelled, or Skipped time job or cron occurrence returns to
+// Idle under the same locks that keyed scheduling and cron materialization hold, so the refusal checks stay true until
+// the write lands.
 internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
@@ -106,9 +107,9 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             return Task.FromResult(JobRequeueOutcome.NotFound);
         }
 
-        if (observed.Status != JobStatus.Failed)
+        if (JobRequeueRules.RefuseCronJobOccurrence(observed.Status) is { } refused)
         {
-            return Task.FromResult(JobRequeueOutcome.NotFailed);
+            return Task.FromResult(refused);
         }
 
         // The per-definition lock is the materialization mutex: every new occurrence of the definition is created
@@ -120,7 +121,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 return Task.FromResult(JobRequeueOutcome.NotFound);
             }
 
-            if (current.Status != JobStatus.Failed)
+            if (JobRequeueRules.RefuseCronJobOccurrence(current.Status) is not null)
             {
                 return Task.FromResult(JobRequeueOutcome.Conflict);
             }

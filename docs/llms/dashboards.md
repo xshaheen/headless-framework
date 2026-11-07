@@ -5,18 +5,18 @@ packages: Dashboard
 
 # Dashboards
 
-> One operations shell that serves feature modules under one base path and one sign-in, plus the shared authentication of the Jobs and Messaging dashboards.
+> One operations shell that serves feature modules under one base path and one sign-in, plus the shared authentication of the Messaging dashboard.
 
 ## Orientation
 
 `Headless.Dashboard` has two parts:
 
-- **The shell.** `services.AddHeadlessDashboard(...)` registers it and `app.MapHeadlessDashboard()` mounts it, by default at `/headless`. It serves every registered module under that base path with one sign-in, one session cookie, one live stream, and one command pipeline. It stores nothing: each module reads its own store. The package ships one module, the diagnostic module (`AddDiagnostics()`), an in-memory store of fake runs that exercises every module capability.
-- **Shared authentication for the Jobs and Messaging dashboards.** `Headless.Jobs.Dashboard` and `Headless.Messaging.Dashboard` keep their own Vue dashboards in this release, mounted by `MapHeadlessJobsDashboard()` and `MapHeadlessMessagingDashboard()`. They are not shell modules yet. They receive this package transitively and configure its authentication through their own builders; see [Jobs and Messaging dashboards](#jobs-and-messaging-dashboards).
+- **The shell.** `services.AddHeadlessDashboard(...)` registers it and `app.MapHeadlessDashboard()` mounts it, by default at `/headless`. It serves every registered module under that base path with one sign-in, one session cookie, one live stream, and one command pipeline. It stores nothing: each module reads its own store. The package ships one module, the diagnostic module (`AddDiagnostics()`), an in-memory store of fake runs that exercises every module capability. `Headless.Jobs.Dashboard` adds the Jobs module (`AddJobs()`); see [Jobs module](#jobs-module).
+- **Shared authentication for the Messaging dashboard.** `Headless.Messaging.Dashboard` keeps its own Vue dashboard in this release, mounted by `MapHeadlessMessagingDashboard()`. It is not a shell module yet. It receives this package transitively and configures its authentication through its own builder; see [Messaging and standalone dashboards](#messaging-and-standalone-dashboards).
 
-A host can run the shell and both Vue dashboards side by side. Each has its own authentication mode, credentials, and session cookie.
+A host can run the shell and the Messaging dashboard side by side. Each has its own authentication mode, credentials, and session cookie.
 
-Read [jobs.md](jobs.md) for the Jobs dashboard and [messaging.md](messaging.md) for the Messaging dashboard.
+Read [jobs.md](jobs.md) for Headless Jobs and [messaging.md](messaging.md) for the Messaging dashboard.
 
 ## Agent Rules
 
@@ -26,9 +26,9 @@ Read [jobs.md](jobs.md) for the Jobs dashboard and [messaging.md](messaging.md) 
 - Call `app.MapHeadlessDashboard()` on the host's endpoints after `UseAuthentication()` and `UseAuthorization()`. A host that registers the shell and never maps it fails to start. The base path cannot be the root.
 - Prefer host authentication when the application already signs its users in. It keeps identity, audit, and revocation in the host's security boundary, and separates viewing from operator actions.
 - Write host view and operate policies from claims only. The dashboard evaluates them against the claims it copied into its own session, not against the host's bearer token or request. A policy that lists authentication schemes passes only for a session issued from one of those schemes.
-- Serve a host-mode dashboard from the host's own origin. The shell is same-origin in every mode, because its session cookie is host-only. Host mode fails at startup with the Vue dashboards' `SetCorsOrigins`, `SetCorsPolicy`, or the Jobs `SetBackendDomain`.
+- Serve a host-mode dashboard from the host's own origin. The shell is same-origin in every mode, because its session cookie is host-only. Host mode fails at startup with the Messaging dashboard's `SetCorsOrigins` or `SetCorsPolicy`.
 - Give every instance of a multi-instance host one shared Data Protection key ring, for example with `Headless.DataProtection.Blobs`. Sessions in every mode, and the shell's Operation tokens, are protected by that key ring. Without it, a session or an Operation token issued by one instance is refused by the next.
-- Call `HttpContext.SignOutHeadlessDashboardAsync()` for the shell, and `SignOutHeadlessDashboardAsync(name)` for each Vue dashboard, from the host's own sign-out, so dashboard sessions end with the application session.
+- Call `HttpContext.SignOutHeadlessDashboardAsync()` for the shell, and `SignOutHeadlessDashboardAsync(name)` for the Messaging dashboard, from the host's own sign-out, so dashboard sessions end with the application session.
 - The shell's document replaces any `Content-Security-Policy` header already on its response. Add the sources a module or the host needs through `ConfigureContentSecurityPolicy`, never by loosening the policy in host middleware.
 - Never embed production credentials or API keys in source, examples, logs, URLs, or frontend storage.
 - `WithNoAuth()` and `AuthMode.None` make a dashboard public. Use them only in an isolated development environment.
@@ -43,11 +43,11 @@ Read [jobs.md](jobs.md) for the Jobs dashboard and [messaging.md](messaging.md) 
 | API key | `WithApiKey(key)` | Automation or a controlled operator client needs bearer access | One shared credential for viewing and operating every module; the application owns key distribution and rotation |
 | None | `WithNoAuth()` | Isolated local development only | No access control |
 
-The Jobs and Messaging dashboard builders take the same four calls. There is no custom-validator mode. To sign operators in with your own credential check, write an ASP.NET Core authentication handler, register it in the host, and use host mode over it.
+The Messaging dashboard builder takes the same four calls. There is no custom-validator mode. To sign operators in with your own credential check, write an ASP.NET Core authentication handler, register it in the host, and use host mode over it.
 
 ## Headless.Dashboard
 
-The dashboard shell, its module contract, its diagnostic module, and the authentication that the shell and the Jobs and Messaging dashboards share.
+The dashboard shell, its module contract, its diagnostic module, and the authentication that the shell and the Messaging dashboard share.
 
 ### Register the shell
 
@@ -146,7 +146,7 @@ builder.Services.Configure<HeadlessDashboardOptions>(options => options.Aggregat
 ### Shell sign-in and sessions
 
 - The shell's session cookie is `__Host-headless-dashboard-` followed by the host's application name, lower-cased with every character that is not an ASCII letter or digit replaced by `-`, so two applications on one host name keep separate sessions. `SessionCookieName` overrides it in host mode. The cookie is `Path=/`, `HttpOnly`, `Secure`, `SameSite=Strict`, and host-only.
-- **Host mode.** A session is issued by `GET {base}/auth/sign-in?returnUrl=`, which challenges `ChallengeScheme` when no host user is signed in, or by `POST {base}/api/auth/session` with the host's own credential. The [Host sessions](#host-sessions) rules apply to the shell as they do to the Vue dashboards. A user gets a session when they pass the shell's `ViewPolicy` or any module's view policy.
+- **Host mode.** A session is issued by `GET {base}/auth/sign-in?returnUrl=`, which challenges `ChallengeScheme` when no host user is signed in, or by `POST {base}/api/auth/session` with the host's own credential. The [Host sessions](#host-sessions) rules apply to the shell as they do to the Messaging dashboard. A user gets a session when they pass the shell's `ViewPolicy` or any module's view policy.
 - **Basic and API key.** The shell's sign-in page at `{base}/sign-in` posts the credential once to `api/auth/session`; the browser then holds only the session cookie. The cookie carries a fingerprint of the credential, so changing the password or key ends every session issued under the old one at its next request. A script can still send the credential as an `Authorization` header (`Basic`, or `Bearer` for the key) on every request.
 - **Per-module access, host mode.** Each module's options derive from `DashboardModuleOptions`, whose `ViewPolicy` and `OperatePolicy` override the shell's. An empty module `ViewPolicy` uses the shell's view policy. An empty module `OperatePolicy` uses the module's `ViewPolicy` when set, else the shell's operate policy. A user may operate a module only if they may also view it. The page lists only the modules the session may view, and the server refuses the rest. Basic and API key share one credential that views and operates every module.
 - `GET {base}/api/auth/info` is anonymous and reports the mode and the session. `POST {base}/api/auth/sign-out` deletes the cookie. `HttpContext.SignOutHeadlessDashboardAsync()` deletes it from host code.
@@ -170,7 +170,7 @@ Everything else is an optional capability interface on the same class, found by 
 | Capability | The shell uses it for |
 | --- | --- |
 | `IDashboardAttentionSource` | Needs you: the items that need an operator, grouped by `GroupKey`. Called whenever Needs you opens or its attention changes, so keep it to one cheap query. |
-| `IDashboardOverviewSource` | Overview: up to three `DashboardFigure`s per module, with an optional comparison. |
+| `IDashboardOverviewSource` | Overview: up to three `DashboardFigure`s per module, each with its comparison, and, through the default member `GetScheduleAsync`, the module's `DashboardScheduleTrack`s on the Overview's schedule strip. A comparison whose `Value` is `null` means the earlier period has nothing to compare; the shell shows its `Label` alone, so the label says why (`no runs finished in the previous 24 h`). |
 | `IDashboardObjectResolver` | The palette's pasted-id lookup (`GET {base}/api/resolve?q=`, at most 256 characters). Answer with an exact-id lookup, never a text search. |
 | `IDashboardRelatedSource` | Related objects of any module's object, drawn as labelled groups (`GET {base}/api/related?module=&kind=&id=`). `GroupIds` declares every group id up front, because each is a contribution the host can disable or reorder. |
 | `IDashboardPayloadSource` | One object's payload (`GET {base}/api/payload?module=&kind=&id=`). |
@@ -271,6 +271,7 @@ The shell owns the endpoints under `{base}/api/{module}/commands`:
 - `GET` lists the module's commands for the caller. `GET allowed?kind=&id=` asks `GetAllowedCommandsAsync` which commands each object allows now (at most 500 objects), so the page disables a control with the module's reason instead of offering an action the module would refuse.
 - `POST {commandId}` runs the command over `ids` in a JSON body that may also carry `arguments`, `reason`, `confirmed`, and `typedCount`. At most 100,000 rows per call.
 - The shell checks every rule before `ExecuteAsync` runs. A command the host disabled, or one the call's channel may not use, answers `404`. A failed permission answers `403`. The body, reason, argument schema, and confirmation answer a `400` validation problem naming each field, with the broken rule in its `rules` extension. The page sends `X-Headless-Dashboard-Channel: ui`; a call without it is an API call. The channel is claimed, not proven, so it decides only which commands are offered and what the log records.
+- A module that refuses the whole call, because the object is not in a state the command applies to, returns a `DashboardCommandResult` with `Refusal` set and changes nothing; the shell answers `409` with the reason as the problem's `detail` and writes no operator-log entry.
 
 A command over a filter runs as an **Operation**, through the module's `IDashboardOperationRunner`:
 
@@ -393,13 +394,106 @@ The workspace build then holds the output to the size budgets in `packages/vite/
 
 `renderModule(definition, options)` from `@headless/dashboard-sdk/testing` mounts a module in a test shell, as the dashboard would: its routes, a session, its permissions (`canView` and `canOperate`, both `true` by default), the data client, an Operation host, toasts, and a fake stream. The `api` handler answers the module's API calls; throw a `DashboardApiError` to answer with a status. The result adds `stream` (push events as the server would), `requests` (every API call in order), and `navigate(path)`.
 
-### Jobs and Messaging dashboards
+### Jobs module
 
-The Jobs and Messaging Vue dashboards authenticate through this package's per-dashboard primitives: the keyed `IAuthService`, the authentication scheme and policy that check a dashboard's own credential, the host-mode session, its view and operate policies, the sign-in endpoints, and the endpoint conventions that apply them. The rules below apply to those dashboards; the shell reuses the host-session rules.
+`AddJobs()` adds the Jobs module (`Headless.Jobs.Dashboard`) under the id `jobs`. It needs `AddHeadlessJobs(...)` in the same host and takes no entity type arguments.
 
-- Configure authentication through the owning dashboard builder (`UseDashboard(...)` or `AddDashboard(...)`), then mount the dashboard on the host's endpoints with `MapHeadlessMessagingDashboard()` or `MapHeadlessJobsDashboard()`. That call is the only mount: a host that registers a dashboard and never maps it fails to start.
+```csharp
+using Headless.Jobs;
+
+builder.Services.AddHeadlessJobs(jobs => jobs.AddModule<MyApp.JobsModule>());
+builder.Services.AddHeadlessDashboard(dashboard => dashboard
+    .WithHostAuthentication(host => { host.ViewPolicy = "ops.view"; host.OperatePolicy = "ops.operate"; })
+    .AddJobs(jobs => jobs.OperatePolicy = "jobs.operate"));
+
+app.MapHeadlessDashboard();
+```
+
+| `JobsDashboardOptions` member | Default | Description |
+| --- | --- | --- |
+| `ViewPolicy`, `OperatePolicy` | the shell's | As for every module. |
+| `ChangeOverlapWindow` | 5 s | How far back each change read reads again. Make it longer than the Jobs store's slowest single write. |
+| `ChangePageSize` | 200 | The most changed rows one change read returns, 1 to 1000. |
+
+`AddJobs(Action<JobsDashboardOptions>)`, `AddJobs(Action<JobsDashboardOptions, IServiceProvider>)`, and `AddJobs(IConfiguration)` configure them.
+
+**Object kinds and topics.** `run` (a time job or a cron occurrence, by its id), `cron-job`, `function` (by name), and `node`. Stream topics are `jobs.run` and `jobs.cron-job`; a change's projection is the run or cron job as its list row shows it, and its version is the row's change marker in ticks. A deleted row goes out with no projection, so open views refetch it and show `This run no longer exists`.
+
+**Commands.** Requeue, Cancel, and Delete need a reason and a confirmation (typed past 100 rows) and run over a filter as Operations. A call on one object the rules refuse changes nothing and answers `409` with the reason, such as `Paused — resume first`.
+
+| Command | On | Allowed when |
+| --- | --- | --- |
+| `jobs.requeue` | `run` | failed, cancelled, or skipped, and the requeue rules accept it |
+| `jobs.cancel` | `run` | a queued or running time job with no cancel requested yet |
+| `jobs.delete` | `run` | not running, and not a keyed time job |
+| `jobs.run-now` | `cron-job` | not paused, and not running when the cron job forbids overlap; the done row's `reason` is the new run's id |
+| `jobs.pause` / `jobs.resume` | `cron-job` | active / paused and not removed from code; each is the other's inverse |
+| `jobs.edit-cron` | `cron-job` | not defined in code; arguments `expression` (required) and `timeZoneId` |
+
+An Operation's filter is `{ kind, functions, statuses, cronJobId, correlationId, fingerprint, from, before, actionableOnly }`. Requeue and Delete freeze on the store's latest change marker at confirm and write each row only while its marker is unchanged, so a run requeued by one chunk that fails again is not touched again; Cancel freezes on creation at confirm and needs no marker, because a running job advances its marker as it reports progress.
+
+**Needs you and Overview.** One item per function and failure fingerprint (`3 failed runs of billing.charge`), recommending `jobs.requeue` over the group's actionable failures; one item per registered function that no live node's run filter claims (`No live node runs billing.charge`), pointing at its `function` object. The Overview shows the share of runs that succeeded, failed runs, and runs that started later than the scheduler's fallback interval after they were due, each over the last 24 hours against the 24 before. The succeeded share is left out while no run finished in the last 24 hours, so an idle system does not read as 0 % succeeded, and compares with nothing, labelled `no runs finished in the previous 24 h`, while no run finished in the 24 hours before. The Overview's schedule strip gets one track per function that has cron jobs: its occurrences due in the last hour in their status tone, and the next fires of its active cron jobs in the next hour; a past tick opens its run and a fire opens its cron job.
+
+**Related and payload.** A run relates to the other runs with its correlation id (`jobs.same-correlation`), its chain (`jobs.chain`), and its cron job (`jobs.cron-job`); a run with a stored W3C trace parent carries its trace id, so the shell offers `Open trace`. Its payload is its stored request as JSON, or `Unsupported contract version N` when this host registers another version. A run and an attempt carry their exception as `exceptionMessage` and `exceptionFrame`: the module reads the JSON the executor stores (the outer message and the root exception's top frame) into the two, and a reason the store wrote itself, such as `Lease lapsed while running!`, arrives as the message with no frame.
+
+**API** at `{base}/api/jobs`, JSON with camelCase names and enums as strings:
+
+| Route | Answer |
+| --- | --- |
+| `GET runs?kind=&function=&status=&cronJobId=&correlationId=&fingerprint=&from=&before=&actionable=&newest=&limit=&after=` | `{ items, count, countCapped, nextCursor }`: one keyset page of runs, newest first unless `newest=false`, `limit` up to 200, a count capped at 10,000; `after` takes `nextCursor` |
+| `GET runs/{id}` | `{ run, children }`, or `404` |
+| `GET runs/{id}/attempts` | `{ items: [{ number, node, startedAt, endedAt, outcome, exceptionMessage, exceptionFrame, failureFingerprint }] }`, or `404` |
+| `GET cron-jobs?function=&fires=` | `{ items }`: every cron job with its plain reading; with `fires`, each active one also carries that many next fires (at most 50), as a Function page draws them on its strip |
+| `GET cron-jobs/{id}?fires=` | one cron job with its next fires (default 5, at most 50; none while paused), or `404` |
+| `GET cron-preview?expression=&timeZoneId=&count=` | `{ timeZoneId, reading, nextFires, validationMessage }` for a draft schedule |
+| `GET functions` | `{ items: [{ name, contractVersion, priority, maxConcurrency, requestType, cronExpression, claimedBy, succeeded, failed, running, waiting, lastExecutedAt, cronJobs }] }`, counts over 24 hours |
+| `GET nodes` | `{ items: [{ identity, state, role, claimedFunctions }] }`: live nodes; without node membership, this host |
+| `POST time-jobs` | an operator action: `{ function, executionTime, timeZoneId, request, description, retries, retryIntervals, children: [{ ..., runCondition }] }` answers `201 { id }`; a time without an offset is read in `timeZoneId`, else the scheduler's zone; a bad body answers `400` |
+| `POST cron-jobs` | an operator action: `{ function, expression, timeZoneId, request, description }` answers `201 { id }` |
+
+**Views.** The package embeds the module's front end, so the rail shows Jobs with four views:
+
+| View | Shows | Acts |
+| --- | --- | --- |
+| Runs (`{base}/jobs`) | One live list of time jobs and occurrences, filtered in the URL by kind, function, status, time range, correlation id, failure fingerprint, and cron job. The inspector shows the selected run's fields, its attempts with node and exception, and its payload on request. | `Requeue`, `Cancel`, and `Delete` on the selection, and over every matching run as an Operation; `Add time job` and `Add chain` |
+| Run page (`runs/{id}`) | The run's header, fields, attempt timeline, chain steps, and payload on request | The same run actions |
+| Cron jobs and cron job page (`cron-jobs`, `cron-jobs/{id}`) | Each cron job's expression, plain reading, and status; the page adds the schedule strip, the next five fires in the cron job's zone, and its occurrences | `Run now`, `Pause` / `Resume`, `Add cron job`; the expression and zone edit in place, showing the server's reading and next fires before they commit, and stay read-only for a cron job defined in code |
+| Functions and function page (`functions`, `functions/{name}`) | Each function's contract version, priority, concurrency, the live nodes whose run filter claims it, its 24-hour counts, strip, cron jobs, and runs | None |
+| Nodes (`nodes`) | Each live node's liveness and the functions its run filter claims | None |
+
+A run with a pending cancel reads `Cancelling…` until the job stops, and a run an action finished on reads `Requeuing…`, `Cancelling…`, or `Deleting…` until its change arrives. `T` on a selected run, and `Trace` beside its correlation id, open the runs list filtered by that correlation id. The palette adds `Go to runs`, `Requeue failed runs`, `Add time job`, `Add chain`, and `Add cron job`. A viewer sees every action disabled with `Needs operate permission`. Per-node scheduler state, and starting or stopping a scheduler, are not part of the module yet.
+
+#### Migrate from `MapHeadlessJobsDashboard`
+
+The Jobs Vue dashboard, its SignalR live-update hub, and its endpoints under `/jobs/dashboard` are removed. The Jobs module replaces them inside the shell, with live changes over the shell's stream. To migrate a host:
+
+1. Delete `AddDashboard(...)` from the `AddHeadlessJobs(...)` delegate, and delete `app.MapHeadlessJobsDashboard()`.
+2. Add `AddJobs()` to `AddHeadlessDashboard(...)`, and map the shell with `app.MapHeadlessDashboard()` if the host does not already.
+3. Move authentication to the shell: its `WithHostAuthentication`, `WithBasicAuth`, `WithApiKey`, or `WithNoAuth` call covers every module. For separate Jobs rights in host mode, set `ViewPolicy` and `OperatePolicy` on `JobsDashboardOptions`.
+4. Point bookmarks and links at `{shell base}/jobs` (by default `/headless/jobs`). Nothing serves `/jobs/dashboard` any more.
+5. Remove the `SetBasePath`, `SetBackendDomain`, `SetCorsOrigins`, `SetCorsPolicy`, and `ConfigureDashboardJsonOptions` settings: the shell is same-origin, serves every module under its own base path, and owns its JSON. Replace `SignOutHeadlessDashboardAsync("Headless.Jobs.Dashboard")` in the host's sign-out with `SignOutHeadlessDashboardAsync()`, which ends the shell's session.
+
+```csharp
+using Headless.Jobs;
+
+builder.Services.AddHeadlessJobs(jobs => jobs.AddModule<MyApp.JobsModule>());
+builder.Services.AddHeadlessDashboard(dashboard => dashboard
+    .WithHostAuthentication(host => { host.ViewPolicy = "ops.view"; host.OperatePolicy = "ops.operate"; })
+    .AddJobs());
+
+var app = builder.Build();
+app.UseAuthentication();
+app.UseAuthorization();
+app.MapHeadlessDashboard();
+```
+
+### Messaging and standalone dashboards
+
+The Messaging Vue dashboard, and a standalone dashboard a host writes itself, authenticate through this package's per-dashboard primitives: the keyed `IAuthService`, the authentication scheme and policy that check a dashboard's own credential, the host-mode session, its view and operate policies, the sign-in endpoints, and the endpoint conventions that apply them. The rules below apply to those dashboards; the shell reuses the host-session rules.
+
+- Configure authentication through the owning dashboard builder (`UseDashboard(...)`), then mount the dashboard on the host's endpoints with `MapHeadlessMessagingDashboard()`. That call is the only mount: a host that registers the dashboard and never maps it fails to start.
 - Mount on the host's endpoints, so the host's `UseAuthorization` evaluates the dashboard's own rule and never the host's fallback policy. A host fallback policy that requires a tenant claim, for example, does not lock out a tenantless operator.
-- Each dashboard owns its authentication. A host that runs the Jobs and Messaging dashboards can give them different modes and credentials; neither registration overrides the other.
+- Each dashboard owns its authentication. A host that runs the shell and the Messaging dashboard can give them different modes and credentials; neither registration overrides the other.
 
 #### Setup
 
@@ -511,7 +605,7 @@ The dashboard builders expose `WithNoAuth()`, `WithBasicAuth(username, password)
 | `ViewPolicy` | the host's default policy | Host policy a user must pass to get a session and to read from the dashboard. |
 | `OperatePolicy` | `ViewPolicy` | Host policy a session must also pass for operator actions, the dashboard's state-changing requests. |
 | `ChallengeScheme` | none | Host scheme `auth/sign-in` challenges when no host user is signed in, such as OpenID Connect. Without it the dashboard offers no Sign in link, and users get a session through the exchange. |
-| `SessionCookieName` | `__Host-` and the dashboard name in lower case: `__Host-headless-jobs-dashboard`, `__Host-headless-messaging-dashboard` | Set it when two applications on one host name mount the same dashboard. It must be a cookie-name token. |
+| `SessionCookieName` | `__Host-` and the dashboard name in lower case, such as `__Host-headless-messaging-dashboard` | Set it when two applications on one host name mount the same dashboard. It must be a cookie-name token. |
 | `SessionIdleTimeout` | 30 minutes | A session with no authenticated dashboard request for this long ends. Must not exceed `SessionLifetime`. |
 | `SessionLifetime` | 8 hours | Absolute lifetime from sign-in, whatever the activity. |
 | `RevalidationInterval` | none | How often `Revalidate` runs for one session. Required when `Revalidate` is set. |
@@ -519,13 +613,13 @@ The dashboard builders expose `WithNoAuth()`, `WithBasicAuth(username, password)
 
 #### Host sessions
 
-- Each dashboard keeps its own session cookie: `Path=/`, `HttpOnly`, `Secure`, `SameSite=Strict`, and host-only. In host mode the dashboard API and the Jobs hub authenticate with that cookie alone. The host's own cookie or bearer token does not open them.
+- Each dashboard keeps its own session cookie: `Path=/`, `HttpOnly`, `Secure`, `SameSite=Strict`, and host-only. In host mode the dashboard API authenticates with that cookie alone. The host's own cookie or bearer token does not open them.
 - A session is issued by `GET {base}/auth/sign-in?returnUrl=` or `POST {base}/api/auth/session`. Both copy the host user's authenticated identities and claims, with their name and role claim types, into the session. A user who fails the view policy, or whom `Revalidate` refuses, gets `403` and no cookie. The host's bearer token is not copied.
 - `auth/sign-in` follows only a local `returnUrl` under the dashboard's base path with no `.` or `..` segment; any other value goes to `{base}/`. It challenges `ChallengeScheme` at most once per sign-in: when the user comes back still not signed in, it answers `401` instead of challenging again.
 - `POST {base}/api/auth/sign-out` deletes the dashboard cookie only. When it fails, the SPA reports the failure and keeps the operator signed in. Otherwise the SPA shows a signed-out page and does not sign in again until the operator chooses Sign in, even while the host session lasts. `HttpContext.SignOutHeadlessDashboardAsync(name)` deletes the same cookie from host code.
 - The host user is found through the host's schemes, never the dashboard's. `auth/sign-in` authenticates the schemes `ViewPolicy` lists, when it lists any; otherwise `ChallengeScheme`, then the default authenticate scheme. The exchange authenticates the `ViewPolicy` schemes, then the default authenticate scheme.
-- A session ends at `SessionLifetime` after sign-in, and after `SessionIdleTimeout` with no authenticated dashboard request. A request made after half the idle window has passed renews the cookie. The SPA's polling counts as activity, so an open Messaging tab stays signed in until the absolute lifetime; a Jobs tab that only listens to the hub expires at the idle timeout. A renewal never moves the cookie's expiry past `SessionLifetime`.
-- A short-lived bearer token exchanged for a session becomes a session that can last up to `SessionLifetime`, after the token itself expires. A host that revokes tokens, disables accounts, or removes roles should set `Revalidate` and `RevalidationInterval`, and should call `SignOutHeadlessDashboardAsync` from its sign-out. Both act on the next dashboard request. An open Jobs hub connection sends none: it closes when the cookie it connected with expires, so it can keep receiving updates for up to `SessionIdleTimeout` after a revocation or sign-out, and never past `SessionLifetime`.
+- A session ends at `SessionLifetime` after sign-in, and after `SessionIdleTimeout` with no authenticated dashboard request. A request made after half the idle window has passed renews the cookie. The SPA's polling counts as activity, so an open Messaging tab stays signed in until the absolute lifetime. A renewal never moves the cookie's expiry past `SessionLifetime`.
+- A short-lived bearer token exchanged for a session becomes a session that can last up to `SessionLifetime`, after the token itself expires. A host that revokes tokens, disables accounts, or removes roles should set `Revalidate` and `RevalidationInterval`, and should call `SignOutHeadlessDashboardAsync` from its sign-out. Both act on the next dashboard request.
 - Policies evaluate against the copied claims. A requirement that reads the request, a header, or the bearer token fails. A policy that lists `AuthenticationSchemes` fails closed: it passes only when one of those schemes authenticated the user the session was issued for.
 - The session cookie is protected by the host's Data Protection key ring. Every instance serving the dashboard must share that key ring; `Headless.DataProtection.Blobs` persists it to blob storage (see [api.md](api.md#headlessdataprotectionblobs)).
 - With `Path=/`, the browser sends the session cookie on every request to the host, not only dashboard requests. It carries the copied claims, so a principal with very many claims can make request headers too large.
@@ -535,27 +629,14 @@ The dashboard builders expose `WithNoAuth()`, `WithBasicAuth(username, password)
 #### Design and runtime behavior
 
 - Credential comparisons are constant-time.
-- Authentication is per dashboard. `AddDashboardAuthentication(name, …)` configures the `AuthConfig` options instance named `name` and registers a scoped `IAuthService` keyed by `name`; the dashboard's authentication scheme, the `/api/auth/info` and `/api/auth/validate` endpoints, and the Jobs hub resolve the service by that key. Nothing registers an unkeyed `IAuthService` or a raw `AuthConfig` singleton.
+- Authentication is per dashboard. `AddDashboardAuthentication(name, …)` configures the `AuthConfig` options instance named `name` and registers a scoped `IAuthService` keyed by `name`; the dashboard's authentication scheme and the `/api/auth/info` and `/api/auth/validate` endpoints resolve the service by that key. Nothing registers an unkeyed `IAuthService` or a raw `AuthConfig` singleton.
 - `RequireDashboardAuthentication(name)` reads the named `AuthConfig` when the host builds its endpoints. `None` allows anonymous access. `Host` requires `{name}.View`: a dashboard session whose user passes `ViewPolicy`, or the host's default policy when it is empty, answering `401` without a session and `403` when the policy refuses. Basic and API key require a user the dashboard's scheme signed in, and refuse any other request with an empty `401`. The scheme checks a credential only on an endpoint that convention marked with its name, so a host whose only registered scheme is a dashboard's (which ASP.NET Core then makes the default) does not check or log a dashboard credential on its own requests.
 - `RequireDashboardOperation(name)` marks operator actions. In host mode it adds `{name}.Operate`, which requires `OperatePolicy`, or `ViewPolicy` when it is empty. Other modes add nothing: Basic and API key share one credential for viewing and operating.
 - On success in Basic or API key mode, `HttpContext.User` for that request is the dashboard identity: one `Name` claim with the `AuthResult.Username`, authentication type `name`. It replaces a host sign-in on that request, so a Messaging operator action records the dashboard credential's user. In host mode `HttpContext.User` is the session's copy of the host user.
-- The Jobs dashboard's name is `DashboardOptionsBuilder.AuthenticationName` (`"Headless.Jobs.Dashboard"`) and the Messaging dashboard's is `MessagingDashboardOptionsBuilder.AuthenticationName` (`"Headless.Messaging.Dashboard"`). To replace one dashboard's `IAuthService`, register yours with `AddKeyedScoped<IAuthService, TService>(name)` before the dashboard registers; the registration keeps an existing keyed service.
-- In Basic and API-key modes, the `access_token` query parameter counts as a credential only on a request routed to a SignalR hub endpoint (its routing metadata, not its path, decides). Every other request must send the `Authorization` header. Host mode accepts no query credential; see [Jobs live-update hub](#jobs-live-update-hub).
-- Every state-changing request to either dashboard (`POST`, `PUT`, `PATCH`, `DELETE`) must carry an `X-Requested-With` header, or it gets `400`. That covers both APIs, `api/auth/session`, and `api/auth/sign-out`, in every mode. A cross-site `<form>` cannot set the header, and a cross-site script that sets it needs a CORS preflight the dashboard refuses.
-- Each dashboard maps a `{base path}` group: its `/api` group and the Jobs hub carry the dashboard's rule; `/auth/sign-in`, `/api/auth/info`, `/api/auth/session`, `/api/auth/sign-out`, `/api/auth/validate`, Messaging's `/api/health`, the SPA shell, and its assets are anonymous. `auth/sign-in`, `api/auth/session`, and `api/auth/sign-out` answer `404` outside host mode. An unmatched `{base path}/api/...` path is a `404`, never the shell, so no path under `/api/` is exempt because of its extension or a segment such as `/assets/` or `/negotiate`. Any other unmatched `GET` under the base path returns the shell, so client routes deep-link. Both map methods refuse the root base path, where the shell would answer every unmatched `GET` in the host.
+- The Messaging dashboard's name is `MessagingDashboardOptionsBuilder.AuthenticationName` (`"Headless.Messaging.Dashboard"`). To replace a dashboard's `IAuthService`, register yours with `AddKeyedScoped<IAuthService, TService>(name)` before the dashboard registers; the registration keeps an existing keyed service.
+- In Basic and API-key modes, the `access_token` query parameter counts as a credential only on a request routed to a SignalR hub endpoint (its routing metadata, not its path, decides), because a browser cannot set headers on a WebSocket. Every other request must send the `Authorization` header. Host mode accepts no query credential.
+- Every state-changing request to such a dashboard (`POST`, `PUT`, `PATCH`, `DELETE`) must carry an `X-Requested-With` header, or it gets `400`. That covers its API, `api/auth/session`, and `api/auth/sign-out`, in every mode. A cross-site `<form>` cannot set the header, and a cross-site script that sets it needs a CORS preflight the dashboard refuses.
+- Each dashboard maps a `{base path}` group: its `/api` group carries the dashboard's rule; `/auth/sign-in`, `/api/auth/info`, `/api/auth/session`, `/api/auth/sign-out`, `/api/auth/validate`, Messaging's `/api/health`, the SPA shell, and its assets are anonymous. `auth/sign-in`, `api/auth/session`, and `api/auth/sign-out` answer `404` outside host mode. An unmatched `{base path}/api/...` path is a `404`, never the shell, so no path under `/api/` is exempt because of its extension or a segment such as `/assets/` or `/negotiate`. Any other unmatched `GET` under the base path returns the shell, so client routes deep-link. `MapHeadlessMessagingDashboard()` refuses the root base path, where the shell would answer every unmatched `GET` in the host.
 - The host pipeline must run `UseAuthorization` between routing and endpoints (a `WebApplication` adds it when the host does not), and `UseAuthentication` before it for host authentication. A host that calls `UseAuthentication()` must also call `UseAuthorization()` after it: the `UseAuthorization` a `WebApplication` adds on its own runs ahead of the host's `UseAuthentication`, so host authentication would not have signed the user in yet. The dashboards attach CORS metadata only when `SetCorsOrigins` or `SetCorsPolicy` configured a policy, which only Basic and API key allow; then the host must also run `UseCors()`. Add host-specific behavior, such as rate limiting, to the builder the map method returns.
 - The SPA shell carries only the base path, the mode, whether auth is enabled, whether sign-in is available, and, for Messaging, the polling interval. Host mode stores nothing in the browser beyond the HttpOnly session cookie; Basic and API key keep the entered credential in the SPA's browser storage. The browser does not enforce a session timeout: the server ends sessions.
 - In host mode the Messaging gateway proxy does not relay requests to other nodes: it serves each request from the node that received it, and clears the node-selection cookies. The SPA hides node switching. Basic and API key relay as before, because the proxy forwards the `Authorization` header and never the `Cookie` header.
-
-#### Jobs live-update hub
-
-The Jobs dashboard pushes job status, progress, and node changes over a SignalR hub at `{base path}/job-notification-hub`. The SPA connects over WebSockets only. The hub carries the API's view rule, so the host's `UseAuthorization` refuses an unauthorized negotiate or connect request before SignalR creates a connection: an unauthenticated client never joins the hub and hears no broadcast. When auth is on, the SPA opens the hub only after sign-in and closes it on sign-out.
-
-| Mode | Credential the SPA sends | How the server checks it |
-| --- | --- | --- |
-| None | nothing | Allowed. |
-| Basic | The Base64 `user:password` credential as the `access_token` query parameter | Compared with the configured credential. |
-| API key | `Bearer:<key>` as `access_token` (a raw key is also accepted) | Compared with the configured key. |
-| Host | The dashboard session cookie; no query token | The session must pass the view policy. A present `Origin` header that names another origin gets `403`. |
-
-In host mode the hub closes an open connection when the session ticket it connected with expires. The SPA then reconnects with the current cookie, or returns to the sign-in page when reconnecting answers `401`. The `Origin` check matters because a sibling subdomain on the same site still receives a `SameSite=Strict` cookie on a WebSocket handshake.

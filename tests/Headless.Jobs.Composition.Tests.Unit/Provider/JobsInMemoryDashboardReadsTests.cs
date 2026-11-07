@@ -206,6 +206,32 @@ public sealed class JobsInMemoryDashboardReadsTests : TestBase
     }
 
     [Fact]
+    public async Task should_put_cancelled_and_skipped_runs_in_a_requeue_scope_but_keep_them_out_of_failure_groups()
+    {
+        // given
+        var store = _Create();
+        var cron = await _AddCronJobAsync(store, "report.build");
+        var failed = await _AddTimeJobAsync(store, JobStatus.Failed, _Base);
+        var cancelled = await _AddTimeJobAsync(store, JobStatus.Cancelled, _Base.AddMinutes(1));
+        var skipped = await _AddOccurrenceAsync(store, cron, JobStatus.Skipped, _Base.AddMinutes(2));
+        await _AddTimeJobAsync(store, JobStatus.Succeeded, _Base.AddMinutes(3));
+        var highWater = (await store.GetLatestChangeMarkerAsync(AbortToken))!.Value;
+
+        // when
+        var chunk = await _Store(store)
+            .ReadJobOperationScopeAsync(_Scope(JobOperationKind.Requeue, highWater), after: null, 10, AbortToken);
+        var groups = await _GroupsAsync(store);
+
+        // then
+        chunk.Targets.Select(x => x.Id).Should().BeEquivalentTo([failed, cancelled, skipped]);
+        groups.Should().ContainSingle().Which.Count.Should().Be(1, "only a failure asks for an operator");
+        var skippedMarker = chunk.Targets.Single(x => x.Id == skipped).ChangedAt;
+        (await store.RequeueCronJobOccurrenceIfUnchangedAsync(skipped, skippedMarker, null, AbortToken))
+            .Should()
+            .Be(JobRequeueOutcome.Requeued);
+    }
+
+    [Fact]
     public async Task should_keep_a_running_run_that_reported_progress_after_confirm_in_a_cancel_scope()
     {
         // given

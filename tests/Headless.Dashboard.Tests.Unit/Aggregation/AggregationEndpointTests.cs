@@ -439,6 +439,48 @@ public sealed class AggregationEndpointTests : TestBase
     }
 
     [Fact]
+    public async Task should_send_each_modules_schedule_tracks_beside_its_overview_figures()
+    {
+        var at = new DateTimeOffset(2026, 11, 5, 12, 30, 0, TimeSpan.Zero);
+        _diagA.Schedule = _ =>
+            Task.FromResult<IReadOnlyList<DashboardScheduleTrack>>([
+                new DashboardScheduleTrack
+                {
+                    Id = "billing.charge",
+                    Label = "billing.charge",
+                    Ticks =
+                    [
+                        new DashboardScheduleTick
+                        {
+                            Id = "r1",
+                            At = at,
+                            Label = "failed",
+                            Tone = "needs",
+                            Target = new ObjectRef
+                            {
+                                Module = "diag-a",
+                                Kind = "run",
+                                Id = "r1",
+                            },
+                        },
+                    ],
+                },
+            ]);
+
+        await using var app = await _StartAsync(withDiagB: false);
+        using var client = app.GetTestClient();
+
+        using var response = await client.GetAsync("/dash/api/overview", AbortToken);
+
+        var track = (await _ReadAsync(response)).GetProperty("modules")[0].GetProperty("tracks")[0];
+        track.GetProperty("label").GetString().Should().Be("billing.charge");
+        var tick = track.GetProperty("ticks")[0];
+        tick.GetProperty("at").GetDateTimeOffset().Should().Be(at);
+        tick.GetProperty("tone").GetString().Should().Be("needs");
+        tick.GetProperty("target").GetProperty("id").GetString().Should().Be("r1");
+    }
+
+    [Fact]
     public async Task should_send_the_payload_masked_by_the_module_formatter_when_an_operator_opens_it()
     {
         _diagA.ObjectKinds = ["run"];

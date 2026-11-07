@@ -100,10 +100,12 @@ updates:
   # SPA dashboard front-ends. wwwroot/dist is generated and embedded at .NET
   # build time (eng/DashboardSpa.targets), never committed, so a lockfile bump
   # is reflected in the embedded bundle automatically on the next build. The
-  # Dashboards workflow only fast-fails if a dashboard stops compiling.
+  # Dashboards workflow only fast-fails if a dashboard stops compiling. "/" is
+  # the repository-root npm workspace: the dashboard shell, its SDK, and the
+  # Jobs dashboard module share its lockfile.
   - package-ecosystem: "npm"
     directories:
-      - "/src/Headless.Jobs.Dashboard/wwwroot"
+      - "/"
       - "/src/Headless.Messaging.Dashboard/wwwroot"
       - "/demo/Headless.Tus.Demo/frontend"
     labels:

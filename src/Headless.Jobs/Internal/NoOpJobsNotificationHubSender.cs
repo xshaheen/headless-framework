@@ -47,11 +47,6 @@ internal sealed class NoOpJobsNotificationHubSender : IJobsNotificationHubSender
 
     public void UpdateHostException(object exceptionMessage) { }
 
-    public Task UpdateNodesAsync(object nodes)
-    {
-        return Task.CompletedTask;
-    }
-
     public Task AddCronOccurrenceAsync(Guid groupId, object occurrence)
     {
         return Task.CompletedTask;

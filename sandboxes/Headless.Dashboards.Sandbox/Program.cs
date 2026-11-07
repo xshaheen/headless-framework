@@ -9,9 +9,9 @@ using Headless.Messaging;
 using Headless.Messaging.Dashboard;
 using Microsoft.EntityFrameworkCore;
 
-// A local test host for the Headless dashboard and the Jobs and Messaging dashboards, started and stopped by the project CLI (`make up`,
-// `make down`). It binds to loopback only and exists so a person or an agent can drive every dashboard state on
-// demand; it is not a sample of production wiring. See sandboxes/README.md.
+// A local test host for the Headless dashboard, with its Jobs and diagnostic modules, and the Messaging dashboard,
+// started and stopped by the project CLI (`make up`, `make down`). It binds to loopback only and exists so a person or
+// an agent can drive every dashboard state on demand; it is not a sample of production wiring. See sandboxes/README.md.
 var builder = WebApplication.CreateBuilder(args);
 var sandbox = builder.Configuration.GetSection("Sandbox").Get<SandboxSettings>() ?? new SandboxSettings();
 var postgres =
@@ -28,9 +28,8 @@ if (postgres is not null)
     builder.Services.AddHeadlessCoordination(setup => setup.UsePostgreSql(postgres));
 }
 
-// The Headless dashboard always runs in host mode, and the Jobs dashboard can too, so the sandbox host sign-in is
-// always registered.
-SandboxHostAuthentication.Add(builder.Services, SandboxJobsDashboardAuth.Secret(sandbox));
+// The Headless dashboard always runs in host mode, so the sandbox host sign-in is always registered.
+SandboxHostAuthentication.Add(builder.Services, sandbox.ResolveHostSecret());
 
 // The diagnostic module's store, shared with the diagnostic-runs scenario so `make seed` can fill it.
 var diagnostics = new DiagnosticsStore();
@@ -43,6 +42,8 @@ builder.Services.AddHeadlessDashboard(dashboard =>
         host.ViewPolicy = SandboxHostAuthentication.ViewPolicy;
         host.OperatePolicy = SandboxHostAuthentication.OperatePolicy;
     });
+    // The Jobs module reads the store AddHeadlessJobs configures below, and inherits the host policies above.
+    dashboard.AddJobs();
     // The diagnostic module registers only in Development, which `make up` sets.
     dashboard.AddDiagnostics(options => options.UseStore(diagnostics));
 });
@@ -62,10 +63,6 @@ builder.Services.AddHeadlessJobs(options =>
     {
         options.UseEntityFramework(ef => ef.UseJobsDbContext<JobsDbContext>(db => db.UseNpgsql(postgres)));
     }
-
-    // No auth by default; Sandbox__JobsDashboardAuth picks another mode so its sign-in and live-update journeys
-    // can be walked next to the Messaging dashboard's own mode.
-    options.AddDashboard(dashboard => SandboxJobsDashboardAuth.Configure(dashboard, sandbox));
 });
 
 builder.Services.AddHeadlessMessaging(setup =>
@@ -130,10 +127,9 @@ app.MapGet(
             {
                 store = sandbox.Store.ToString(),
                 headlessDashboard = "/headless",
-                jobsDashboard = "/jobs/dashboard",
+                jobsModule = "/headless/jobs",
                 messagingDashboard = "/messaging/dashboard",
                 headlessAuth = "host",
-                jobsAuth = sandbox.JobsDashboardAuth.ToString().ToLowerInvariant(),
                 messagingAuth = string.IsNullOrEmpty(sandbox.MessagingDashboardPassword) ? "none" : "basic",
                 scenarios = SandboxScenarios.Descriptions,
             }
@@ -147,6 +143,7 @@ app.MapPost(
     async (
         string name,
         IJobScheduler jobs,
+        ICronJobManager<CronJobEntity> cronJobs,
         IBus bus,
         DiagnosticsStore diagnosticRuns,
         CancellationToken cancellationToken
@@ -159,20 +156,14 @@ app.MapPost(
             );
         }
 
-        var created = await SandboxScenarios.RunAsync(name, jobs, bus, diagnosticRuns, cancellationToken);
+        var created = await SandboxScenarios.RunAsync(name, jobs, cronJobs, bus, diagnosticRuns, cancellationToken);
         return Results.Json(new { scenario = name, created });
     }
 );
 
 SandboxHostAuthentication.MapSignInPage(app, "/sandbox/headless-sign-in", "/headless", "Headless dashboard");
 
-if (sandbox.JobsDashboardAuth == SandboxJobsAuth.Host)
-{
-    SandboxHostAuthentication.MapSignInPage(app, "/sandbox/sign-in", "/jobs/dashboard", "Jobs dashboard");
-}
-
 app.MapHeadlessDashboard();
-app.MapHeadlessJobsDashboard();
 app.MapHeadlessMessagingDashboard();
 
 await app.RunAsync();

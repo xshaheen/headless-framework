@@ -316,7 +316,12 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         {
             (JobRunKind.TimeJob, JobOperationKind.Requeue) => runs.Where(run =>
                 run.ChangedAt <= scope.HighWaterMark
-                && JobRequeueRules.RefuseTimeJob(run.Status, _IsChainMember(run), run.BusinessKey, _IsCurrent(run))
+                && JobRequeueRules.RefuseTimeJob(
+                    run.Status,
+                    _IsChainMember(run.Id, run.ParentId),
+                    run.BusinessKey,
+                    _IsCurrent(run)
+                )
                     is null
             ),
             (JobRunKind.TimeJob, JobOperationKind.Cancel) => runs.Where(run =>
@@ -350,13 +355,12 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             )
             && (
                 !query.ActionableFailuresOnly
-                || JobRequeueRules.RefuseTimeJob(
+                || JobRequeueRules.IsActionableTimeJobFailure(
                     job.Status,
-                    job.ParentId is not null || _GetChildrenIds(job.Id).Length != 0,
+                    _IsChainMember(job.Id, job.ParentId),
                     job.BusinessKey,
                     job.IsCurrentGeneration
                 )
-                    is null
             );
     }
 
@@ -408,9 +412,9 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             );
     }
 
-    private bool _IsChainMember(JobRunSummary run)
+    private bool _IsChainMember(Guid id, Guid? parentId)
     {
-        return run.ParentId is not null || _GetChildrenIds(run.Id).Length != 0;
+        return parentId is not null || _GetChildrenIds(id).Length != 0;
     }
 
     private bool? _IsCurrent(JobRunSummary run)

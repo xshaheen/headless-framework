@@ -1,10 +1,10 @@
 # Headless.Dashboard
 
-One operations dashboard for a Headless host, plus the authentication the Jobs and Messaging dashboards share.
+One operations dashboard for a Headless host, plus the authentication the Messaging dashboard uses.
 
 ## Why use this package
 
-`AddHeadlessDashboard` and `MapHeadlessDashboard` serve every registered feature module under one base path, with one sign-in, one session, live updates that reach every node, and safe bulk commands. The dashboard stores nothing of its own. Operators sign in through the host's own login, Basic, or an API key. The package also ships a diagnostic module for trying the dashboard in Development, and the authentication the Jobs and Messaging dashboards use.
+`AddHeadlessDashboard` and `MapHeadlessDashboard` serve every registered feature module under one base path, with one sign-in, one session, live updates that reach every node, and safe bulk commands. The dashboard stores nothing of its own. Operators sign in through the host's own login, Basic, or an API key. The package also ships a diagnostic module for trying the dashboard in Development, and the authentication the Messaging dashboard uses. `Headless.Jobs.Dashboard` adds the Jobs module.
 
 ## Install
 

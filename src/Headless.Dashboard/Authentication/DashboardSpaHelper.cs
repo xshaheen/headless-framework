@@ -12,7 +12,7 @@ using Microsoft.Extensions.FileProviders;
 namespace Headless.Dashboard;
 
 /// <summary>
-/// Shared SPA helpers used by Jobs and Messaging dashboards.
+/// Shared SPA helpers used by dashboards that serve their own SPA, such as the Messaging dashboard.
 /// </summary>
 internal static partial class DashboardSpaHelper
 {

@@ -83,19 +83,36 @@ internal static class AggregationEndpoints
 
     private static async Task<IResult> _GetOverviewAsync(HttpContext context, CancellationToken cancellationToken)
     {
-        var user = context.User;
+        var request = new DashboardOverviewRequest { User = context.User };
         var answers = await _FanOut(context)
-            .CallAsync<IDashboardOverviewSource, IReadOnlyList<DashboardFigure>>(
+            .CallAsync<IDashboardOverviewSource, ModuleOverview>(
                 await _AccessAsync(context).ConfigureAwait(false),
                 "overview",
-                (source, token) => source.GetOverviewAsync(new DashboardOverviewRequest { User = user }, token),
+                async (source, token) =>
+                {
+                    // One call per module under one timeout, so a module's figures and strip go stale together.
+                    var figures = source.GetOverviewAsync(request, token);
+                    var tracks = source.GetScheduleAsync(request, token);
+
+                    return new ModuleOverview(await figures.ConfigureAwait(false), await tracks.ConfigureAwait(false));
+                },
                 cancellationToken
             )
             .ConfigureAwait(false);
 
-        var modules = answers.Select(answer => _Section(answer, figures => figures.Take(_MaxFigures).ToArray()));
+        var modules = answers.Select(answer =>
+            answer is { Stale: false, Result: { } overview }
+                ? new OverviewSection(
+                    answer.Module.Id,
+                    answer.Module.DisplayName,
+                    Stale: false,
+                    [.. overview.Figures.Take(_MaxFigures)],
+                    overview.Tracks
+                )
+                : new OverviewSection(answer.Module.Id, answer.Module.DisplayName, answer.Stale, [], [])
+        );
 
-        return Results.Json(new ModulesResponse<DashboardFigure>([.. modules]), ShellJson.Web);
+        return Results.Json(new OverviewResponse([.. modules]), ShellJson.Web);
     }
 
     private static async Task<IResult> _ResolveAsync(HttpContext context, CancellationToken cancellationToken)
@@ -363,6 +380,22 @@ internal static class AggregationEndpoints
     private sealed record ModulesResponse<TItem>(IReadOnlyList<ModuleSection<TItem>> Modules);
 
     private sealed record ModuleSection<TItem>(string Id, string DisplayName, bool Stale, IReadOnlyList<TItem> Items);
+
+    private sealed record ModuleOverview(
+        IReadOnlyList<DashboardFigure> Figures,
+        IReadOnlyList<DashboardScheduleTrack> Tracks
+    );
+
+    private sealed record OverviewResponse(IReadOnlyList<OverviewSection> Modules);
+
+    /// <summary>A module's Overview: its figures as <c>items</c>, as every section names them, and its strip tracks.</summary>
+    private sealed record OverviewSection(
+        string Id,
+        string DisplayName,
+        bool Stale,
+        IReadOnlyList<DashboardFigure> Items,
+        IReadOnlyList<DashboardScheduleTrack> Tracks
+    );
 
     private sealed record AttentionItemResponse(
         string Id,

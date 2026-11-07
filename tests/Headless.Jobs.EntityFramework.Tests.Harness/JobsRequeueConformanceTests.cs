@@ -9,8 +9,8 @@ using Microsoft.Extensions.Time.Testing;
 namespace Tests;
 
 /// <summary>
-/// Cross-provider conformance for requeuing a failed time job or cron occurrence: the transition is one conditional
-/// write from <c>Failed</c>, refusals leave the row unchanged, a time job is re-stamped to the database clock so the
+/// Cross-provider conformance for requeuing a failed, cancelled, or skipped time job or cron occurrence: the transition
+/// is one conditional write from those states, refusals leave the row unchanged, a time job is re-stamped to the database clock so the
 /// main peek claims it, and an occurrence keeps its instant and is checked for overlap under the definition row lock.
 /// </summary>
 public abstract class JobsRequeueConformanceTests<TFixture>(TFixture fixture) : TestBase
@@ -228,6 +228,61 @@ public abstract class JobsRequeueConformanceTests<TFixture>(TFixture fixture) : 
         {
             await host.StopAsync(CancellationToken.None);
         }
+    }
+
+    /// <summary>
+    /// A cancelled or skipped time job and occurrence are requeued, through the plain write and the Operation's
+    /// compare-and-set alike, and none of them is an actionable failure.
+    /// </summary>
+    public virtual async Task cancelled_and_skipped_runs_are_requeued_but_are_not_actionable_failures()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("requeue-cancelled-skipped");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        var persistence = _Persistence(host);
+        var cancelled = _FailedJob();
+        cancelled.Status = JobStatus.Cancelled;
+        var skipped = _FailedJob();
+        skipped.Status = JobStatus.Skipped;
+        await persistence.AddTimeJobsAsync([cancelled, skipped], ct);
+        var cronId = await _SeedDefinitionAsync("requeue-cancelled-skipped", CronOverlapPolicy.Allow, ct);
+        var cancelledOccurrence = await _SeedOccurrenceAsync(cronId, JobStatus.Cancelled, _Instant(-3), ct);
+        var skippedOccurrence = await _SeedOccurrenceAsync(cronId, JobStatus.Skipped, _Instant(-2), ct);
+
+        (await persistence.GetJobFailureGroupsAsync(DateTimeOffset.UtcNow.AddHours(-1), cancellationToken: ct))
+            .Should()
+            .BeEmpty("a cancelled or skipped run asks nothing of an operator");
+
+        (await persistence.RequeueTimeJobAsync(cancelled.Id, traceParent: null, ct))
+            .Should()
+            .Be(JobRequeueOutcome.Requeued);
+        (await persistence.RequeueCronJobOccurrenceAsync(cancelledOccurrence, traceParent: null, ct))
+            .Should()
+            .Be(JobRequeueOutcome.Requeued);
+
+        var skippedMarker = (await persistence.GetJobRunAsync(skipped.Id, ct))!.ChangedAt;
+        var skippedOccurrenceMarker = (await persistence.GetJobRunAsync(skippedOccurrence, ct))!.ChangedAt;
+        (await persistence.RequeueTimeJobIfUnchangedAsync(skipped.Id, skippedMarker, traceParent: null, ct))
+            .Should()
+            .Be(JobRequeueOutcome.Requeued);
+        (
+            await persistence.RequeueCronJobOccurrenceIfUnchangedAsync(
+                skippedOccurrence,
+                skippedOccurrenceMarker,
+                traceParent: null,
+                ct
+            )
+        )
+            .Should()
+            .Be(JobRequeueOutcome.Requeued);
+
+        foreach (var id in new[] { cancelled.Id, skipped.Id, cancelledOccurrence, skippedOccurrence })
+        {
+            (await persistence.GetJobRunAsync(id, ct))!.Status.Should().Be(JobStatus.Idle);
+        }
+
+        (await persistence.GetTimeJobByIdAsync(cancelled.Id, ct))!.CancelRequested.Should().BeFalse();
     }
 
     /// <summary>An occurrence that is not Failed is refused; an unknown id is not found.</summary>

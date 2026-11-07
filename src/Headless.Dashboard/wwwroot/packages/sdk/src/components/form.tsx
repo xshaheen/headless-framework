@@ -50,10 +50,12 @@ export interface SelectFieldProps extends FieldBase {
   value: string
   onChange: (value: string) => void
   options: readonly { value: string; label: string }[]
+  /** What an optional field's empty choice reads: `None` by default, `Any status` for a filter. */
+  emptyLabel?: string
 }
 
 /** A labelled choice from a short list, as the platform's own select, which every device handles well. */
-export function SelectField({ label, description, error, isRequired, value, onChange, options }: SelectFieldProps) {
+export function SelectField({ label, description, error, isRequired, value, onChange, options, emptyLabel = 'None' }: SelectFieldProps) {
   const id = useId()
 
   return (
@@ -70,7 +72,7 @@ export function SelectField({ label, description, error, isRequired, value, onCh
         aria-describedby={[description ? `${id}-hint` : '', error ? `${id}-error` : ''].filter(Boolean).join(' ') || undefined}
         onChange={(event) => onChange(event.currentTarget.value)}
       >
-        {isRequired ? null : <option value="">None</option>}
+        {isRequired ? null : <option value="">{emptyLabel}</option>}
         {isRequired && value === '' ? <option value="">Choose…</option> : null}
         {options.map((option) => (
           <option key={option.value} value={option.value}>

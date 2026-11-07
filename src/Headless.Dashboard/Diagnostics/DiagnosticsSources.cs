@@ -91,7 +91,7 @@ internal sealed class DiagnosticsSources(string moduleId, DiagnosticsStore store
                         RecentCount = runs.Count(run => run.StatusChangedAt > hourAgo),
                         RecommendedCommandId = requeueCommandId,
                         GroupFilter = JsonSerializer.SerializeToElement(
-                            new DiagnosticsRunFilterDocument("Failed", group.Key),
+                            new DiagnosticsRunFilterDocument(nameof(DiagnosticsRunStatus.Failed), group.Key),
                             DiagnosticsJsonContext.Default.DiagnosticsRunFilterDocument
                         ),
                     };

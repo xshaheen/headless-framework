@@ -1,4 +1,4 @@
-import { useRef, useState, useSyncExternalStore, type FocusEvent, type ReactNode } from 'react'
+import { useRef, useState, useSyncExternalStore, type FocusEvent, type KeyboardEvent, type ReactNode } from 'react'
 import {
   Cell,
   Column,
@@ -90,14 +90,18 @@ function isNarrow() {
   return typeof window.matchMedia === 'function' && window.matchMedia(narrowQuery).matches
 }
 
+/** Keys that move the focus in the grid; without `Shift` they never change a multi-selection. */
+const moveKeys = new Set(['ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'])
+
 /** The header row's height in px, as `components.css` sets it. */
 const headingHeight = 32
 
 /**
  * The dashboard's list of one object kind, as a virtualized WAI-ARIA grid: only the rows in view are in the page,
  * and the next keyset page loads as the scroll or the focus nears the end. One tab stop; arrow keys, `Home`/`End`,
- * and `J`/`K` move the focus and the selection, `Enter` selects the focused row into the inspector without leaving
- * the list, `X` toggles the focused row in a multi-selection, and `Esc` clears the selection. A row never opens a
+ * and `J`/`K` move the focus (and the selection, in a single-selection list), `Enter` selects the focused row into the
+ * inspector without leaving the list, `X` toggles the focused row in a multi-selection, `Shift` with the arrows extends
+ * it, and `Esc` clears the selection. A row never opens a
  * page; the inspector links to it. Rows that arrive above the ones in view hold the operator's place behind `N new`.
  */
 export function DataTable<T extends { id: string }>({
@@ -123,6 +127,9 @@ export function DataTable<T extends { id: string }>({
   const wrap = useRef<HTMLDivElement>(null)
   const scroller = useRef<HTMLDivElement>(null)
   const focusedId = useRef<string | undefined>(undefined)
+  // React Aria selects the row the focus lands on in its `replace` behavior; a multi-selection built with `X` must
+  // survive Tab and the arrow keys, so a change made while the focus moves is dropped there.
+  const moving = useRef(false)
   const selected = selectedIds ?? ownSelection
   const rowHeight = rowHeights[density]
   const listed = matches ? rows.filter((row) => selected.has(row.id) || matches(row)) : rows
@@ -148,6 +155,10 @@ export function DataTable<T extends { id: string }>({
   const rowHeaderId = columns[headerIndex]?.id
 
   function change(keys: Selection) {
+    if (moving.current && selectionMode === 'multiple') {
+      return
+    }
+
     commit(new Set<string>(keys === 'all' ? listed.map((row) => row.id) : [...keys].map(String)))
   }
 
@@ -171,6 +182,7 @@ export function DataTable<T extends { id: string }>({
   }
 
   function onFocus(event: FocusEvent<HTMLDivElement>) {
+    moving.current = false
     const row = event.target.closest<HTMLElement>('[data-row-id]')
 
     if (!row) {
@@ -198,7 +210,10 @@ export function DataTable<T extends { id: string }>({
       return
     }
 
-    commit(new Set([row.id]))
+    if (selectionMode === 'single') {
+      commit(new Set([row.id]))
+    }
+
     focusedId.current = row.id
     wrap.current?.querySelector<HTMLElement>(`[data-row-id="${CSS.escape(row.id)}"]`)?.focus()
   }
@@ -207,7 +222,6 @@ export function DataTable<T extends { id: string }>({
     next: () => {
       const index = currentIndex()
 
-      // At the last row `J` does nothing.
       if (index < listed.length - 1) {
         moveTo(index + 1)
       }
@@ -247,7 +261,15 @@ export function DataTable<T extends { id: string }>({
   }
 
   return (
-    <div ref={wrap} className="hd-table-wrap" data-density={density} onFocus={onFocus}>
+    <div
+      ref={wrap}
+      className="hd-table-wrap"
+      data-density={density}
+      onFocusCapture={() => (moving.current = true)}
+      onFocus={onFocus}
+      onKeyDownCapture={(event: KeyboardEvent) => (moving.current = !event.shiftKey && moveKeys.has(event.key))}
+      onKeyDown={() => (moving.current = false)}
+    >
       <div className="hd-table-bar">
         {arrived > 0 ? (
           <Button variant="ghost" className="hd-new-rows" onPress={showArrived}>
@@ -265,66 +287,72 @@ export function DataTable<T extends { id: string }>({
           </Button>
         </div>
       ) : null}
-      <Virtualizer layout={TableLayout} layoutOptions={{ rowHeight, headingHeight, loaderHeight: rowHeight }}>
-        <Table
-          ref={scroller}
-          aria-label={label}
-          className="hd-table"
-          selectionMode={selectionMode}
-          selectionBehavior="replace"
-          selectedKeys={selected as Set<Key>}
-          onSelectionChange={change}
-          onRowAction={selectOnly}
-          escapeKeyBehavior="clearSelection"
-        >
-          <TableHeader>
-            {shown.map((column) => (
-              <Column
-                key={column.id}
-                id={column.id}
-                isRowHeader={column.id === rowHeaderId}
-                defaultWidth={column.width}
-                className={column.align === 'end' ? 'hd-end' : undefined}
-              >
-                {column.header}
-              </Column>
-            ))}
-          </TableHeader>
-          <TableBody renderEmptyState={() => <div className="hd-empty">{emptyState}</div>}>
-            {listed.map((row) => {
-              const stale = matches !== undefined && !matches(row)
-
-              return (
-                <Row
-                  key={row.id}
-                  id={row.id}
-                  className="hd-row"
-                  data-row-id={row.id}
-                  data-no-longer-matches={stale || undefined}
+      {/* The empty state sits outside the grid: inside it the virtualizer gives it no height, so its next step
+          (`Clear filters`) could not be seen or clicked. */}
+      {listed.length === 0 && !hasMore ? (
+        <div className="hd-empty">{emptyState}</div>
+      ) : (
+        <Virtualizer layout={TableLayout} layoutOptions={{ rowHeight, headingHeight, loaderHeight: rowHeight }}>
+          <Table
+            ref={scroller}
+            aria-label={label}
+            className="hd-table"
+            selectionMode={selectionMode}
+            selectionBehavior="replace"
+            selectedKeys={selected as Set<Key>}
+            onSelectionChange={change}
+            onRowAction={selectOnly}
+            escapeKeyBehavior="clearSelection"
+          >
+            <TableHeader>
+              {shown.map((column) => (
+                <Column
+                  key={column.id}
+                  id={column.id}
+                  isRowHeader={column.id === rowHeaderId}
+                  defaultWidth={column.width}
+                  className={column.align === 'end' ? 'hd-end' : undefined}
                 >
-                  {shown.map((column) => (
-                    <Cell key={column.id} className={column.align === 'end' ? 'hd-end' : undefined}>
-                      {column.cell(row)}
-                      {/* The space keeps the row's accessible name `r2 No longer matches`, not `r2No longer…`. */}
-                      {stale && column.id === rowHeaderId ? (
-                        <>
-                          {' '}
-                          <span className="hd-chip hd-no-match">No longer matches</span>
-                        </>
-                      ) : null}
-                    </Cell>
-                  ))}
-                </Row>
-              )
-            })}
-            {hasMore && onLoadMore ? (
-              <TableLoadMoreItem className="hd-load-more" isLoading={isLoadingMore} onLoadMore={loadMore}>
-                <span className="hd-hint">Loading more…</span>
-              </TableLoadMoreItem>
-            ) : null}
-          </TableBody>
-        </Table>
-      </Virtualizer>
+                  {column.header}
+                </Column>
+              ))}
+            </TableHeader>
+            <TableBody>
+              {listed.map((row) => {
+                const stale = matches !== undefined && !matches(row)
+
+                return (
+                  <Row
+                    key={row.id}
+                    id={row.id}
+                    className="hd-row"
+                    data-row-id={row.id}
+                    data-no-longer-matches={stale || undefined}
+                  >
+                    {shown.map((column) => (
+                      <Cell key={column.id} className={column.align === 'end' ? 'hd-end' : undefined}>
+                        {column.cell(row)}
+                        {/* The space keeps the row's accessible name `r2 No longer matches`, not `r2No longer…`. */}
+                        {stale && column.id === rowHeaderId ? (
+                          <>
+                            {' '}
+                            <span className="hd-chip hd-no-match">No longer matches</span>
+                          </>
+                        ) : null}
+                      </Cell>
+                    ))}
+                  </Row>
+                )
+              })}
+              {hasMore && onLoadMore ? (
+                <TableLoadMoreItem className="hd-load-more" isLoading={isLoadingMore} onLoadMore={loadMore}>
+                  <span className="hd-hint">Loading more…</span>
+                </TableLoadMoreItem>
+              ) : null}
+            </TableBody>
+          </Table>
+        </Virtualizer>
+      )}
     </div>
   )
 }

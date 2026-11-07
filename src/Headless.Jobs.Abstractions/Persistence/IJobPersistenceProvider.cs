@@ -373,8 +373,8 @@ public partial interface IJobPersistenceProvider<TTimeJob, TCronJob>
     Task<bool?> IsTimeJobCancellationRequestedAsync(Guid jobId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Atomically moves a <c>Failed</c> standalone time job back to <c>Idle</c>: <c>RetryCount</c> 0, exception,
-    /// owner, lease, cancellation flag, and run audit cleared, and <c>ExecutionTime</c> set to the store's current
+    /// Atomically moves a <c>Failed</c>, <c>Cancelled</c>, or <c>Skipped</c> standalone time job back to <c>Idle</c>:
+    /// <c>RetryCount</c> 0, exception, skip reason, owner, lease, cancellation flag, and run audit cleared, and <c>ExecutionTime</c> set to the store's current
     /// instant so the main peek claims it promptly. Stored <c>Retries</c> and <c>RetryIntervals</c> are kept.
     /// <c>TraceParent</c> is replaced with <paramref name="traceParent"/>, because the requeue is the new cause.
     /// </summary>
@@ -384,8 +384,8 @@ public partial interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// <returns>
     /// <see cref="JobRequeueOutcome.Requeued"/> when this call moved the row; otherwise the refusal reason. A chain
     /// member (a row with a parent or with children) and a keyed row that is not its key's current generation are
-    /// refused. The transition is one conditional write from <c>Failed</c>, so of two concurrent requests at most one
-    /// moves the row.
+    /// refused. The transition is one conditional write from those states (see <see cref="JobRequeueRules"/>), so of
+    /// two concurrent requests at most one moves the row.
     /// </returns>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task<JobRequeueOutcome> RequeueTimeJobAsync(
@@ -1134,9 +1134,9 @@ public partial interface IJobPersistenceProvider<TTimeJob, TCronJob>
     Task<int> ReclaimStalledCronJobOccurrencesAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Atomically moves a <c>Failed</c> cron occurrence back to <c>Idle</c>: <c>RetryCount</c> 0 and exception,
-    /// owner, lease, and run audit cleared. <c>ExecutionTime</c> is kept because it identifies the scheduled instant
-    /// the occurrence stands for, so the fallback claim picks the row up. <c>TraceParent</c> is replaced with
+    /// Atomically moves a <c>Failed</c>, <c>Cancelled</c>, or <c>Skipped</c> cron occurrence back to <c>Idle</c>:
+    /// <c>RetryCount</c> 0 and exception, owner, lease, and run audit cleared. <c>ExecutionTime</c> is kept because it
+    /// identifies the scheduled instant the occurrence stands for, so the fallback claim picks the row up. <c>TraceParent</c> is replaced with
     /// <paramref name="traceParent"/>, because the requeue is the new cause.
     /// </summary>
     /// <param name="occurrenceId">Identifier of the occurrence to requeue.</param>

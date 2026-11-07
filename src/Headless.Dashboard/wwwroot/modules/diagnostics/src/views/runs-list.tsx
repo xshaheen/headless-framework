@@ -34,7 +34,7 @@ import {
   type RunFilter,
 } from '../runs.ts'
 
-const statusOptions = [{ value: '', label: 'Any status' }, ...runStatuses.map((status) => ({ value: status, label: status }))]
+const statusOptions = runStatuses.map((status) => ({ value: status, label: status }))
 
 /** The canvas sits beside the inspector, and the two stack once the screen is too narrow for both. */
 const layout = { display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'start' } as const
@@ -162,7 +162,7 @@ export default function RunsList() {
         </header>
         {add.isError ? <LoadError message={add.error.message} onRetry={() => add.mutate()} /> : null}
         <div ref={filters} className="hd-actions" role="search" aria-label="Filter runs">
-          <SelectField label="Status" value={filter.status} onChange={(value) => setFilter('status', value)} options={statusOptions} />
+          <SelectField label="Status" emptyLabel="Any status" value={filter.status} onChange={(value) => setFilter('status', value)} options={statusOptions} />
           <TextInputField label="Error contains" value={filter.error} onChange={(value) => setFilter('error', value)} />
         </div>
         <StaleNotice onRefresh={() => void list.refetch()} />

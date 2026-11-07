@@ -1,3 +1,7 @@
+// The React Compiler's memo caches cost this view more bytes than its rare renders save, and the shell's assets
+// sit at their size budget.
+'use no memo'
+
 import { Button, TextInputField } from '@headless/dashboard-sdk/components'
 import { useEffect, useState, type FormEvent } from 'react'
 import './sign-in.css'

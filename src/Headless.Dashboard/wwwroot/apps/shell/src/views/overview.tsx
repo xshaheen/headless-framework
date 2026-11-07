@@ -1,7 +1,8 @@
-import { Button, StatusMark, useDelayed } from '@headless/dashboard-sdk/components'
+import { Button, ScheduleStrip, StatusMark, useDelayed } from '@headless/dashboard-sdk/components'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { Link } from '@headless/dashboard-sdk/router'
 import { comparisonText, figureText } from '../format.ts'
+import { useOpenObject } from '../shell-context.tsx'
 import { attentionTotal, useNeedsYou, useOverview, type Figure, type ModuleSection } from '../shell-data.ts'
 
 const topItems = 5
@@ -38,15 +39,20 @@ function StaleNote({ sections }: { sections: readonly ModuleSection<unknown>[] }
   ) : null
 }
 
-/** Overview: what needs the operator first, then every module's figures with their comparisons. */
+/**
+ * Overview: what needs the operator first, then every module's figures with their comparisons, then the schedule
+ * strip with every module's tracks.
+ */
 export function Overview() {
   const format = useFormat()
+  const openObject = useOpenObject()
   const needsYou = useNeedsYou()
   const overview = useOverview()
   const showSkeleton = useDelayed(needsYou.isPending || overview.isPending)
   const sections = needsYou.data ?? []
   const items = sections.flatMap((section) => section.items.map((item) => ({ section, item })))
   const total = attentionTotal(sections)
+  const tracks = overview.data?.flatMap((section) => section.tracks ?? []) ?? []
 
   return (
     <div className="hd-view">
@@ -116,6 +122,19 @@ export function Overview() {
           </>
         )}
       </section>
+      {tracks.length > 0 ? (
+        <section aria-label="Schedule" className="hd-section">
+          <ScheduleStrip
+            label="Schedules"
+            tracks={tracks}
+            onSelect={(id) => {
+              const target = tracks.flatMap((track) => track.ticks).find((tick) => tick.id === id)?.target
+              // Opening an object loads its module's entry; a failure leaves the Overview as it is.
+              if (target) openObject(target).catch(() => undefined)
+            }}
+          />
+        </section>
+      ) : null}
     </div>
   )
 }

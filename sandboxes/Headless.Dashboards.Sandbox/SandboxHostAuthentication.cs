@@ -9,7 +9,7 @@ using Microsoft.Extensions.Options;
 namespace Headless.Dashboards.Sandbox;
 
 /// <summary>
-/// A stand-in for an application's own sign-in, so the host mode of the Headless dashboard and the Jobs dashboard can
+/// A stand-in for an application's own sign-in, so the host mode of the Headless dashboard can
 /// be walked without an identity provider. Not a pattern for production: it compares one shared secret.
 /// </summary>
 /// <remarks>

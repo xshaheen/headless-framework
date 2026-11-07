@@ -98,9 +98,17 @@ export function CommandAction({ module, command, ids, noun, disabledReason, comm
   const needsInput = Object.keys(command.arguments.properties).length > 0 || command.requiresReason
   const refusal = !command.canRun ? (command.disabledReason ?? 'Needs operate permission') : disabledReason
   const label = ids.length > 1 ? `${command.label} ${ids.length} ${noun}` : command.label
+  // The confirm names its effect even for one row: a bare verb takes its object (`Cancel run`, never `Cancel` beside
+  // the dismiss button), while a label that already says it (`Add note`) stays.
+  const effect = ids.length > 1 || label.includes(' ') ? label : `${label} ${noun}`
   const client = createCommandsApi(api, module)
 
   function press() {
+    // `R` and the palette call this directly, so a run in flight or an open confirmation does not start another.
+    if (busy || confirming) {
+      return
+    }
+
     if (confirmation === 'none' && !needsInput) {
       void run({ arguments: {} })
     } else {
@@ -110,7 +118,7 @@ export function CommandAction({ module, command, ids, noun, disabledReason, comm
 
   // `R` and the palette go through the same refusal as the button, so a refused command stays refused.
   useViewKeys({ recover: () => (refusal ? setAnnounced(refusal) : press()) }, recovery === true && ids.length > 0)
-  useSelectionCommand(refusal || ids.length === 0 ? null : { id: command.id, label, run: press })
+  useSelectionCommand(refusal || busy || ids.length === 0 ? null : { id: command.id, label, run: press })
 
   async function run(action: ConfirmedAction) {
     setBusy(true)
@@ -184,8 +192,8 @@ export function CommandAction({ module, command, ids, noun, disabledReason, comm
       {shownOutcome && !confirming ? <RowOutcomes outcome={shownOutcome} /> : null}
       <ActionConfirm
         isOpen={confirming}
-        title={label}
-        confirmLabel={label}
+        title={effect}
+        confirmLabel={effect}
         confirmation={confirmation}
         count={ids.length}
         reason={command.requiresReason ? 'required' : 'optional'}

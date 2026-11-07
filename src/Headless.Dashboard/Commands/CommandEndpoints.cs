@@ -27,7 +27,8 @@ namespace Headless.Dashboard;
 /// The shell, not the module, enforces every rule here, so every module's commands behave alike: a command the host
 /// disabled, or one the call's channel may not use, answers <c>404</c>; the command's permission answers <c>403</c>; the
 /// body, the reason, the argument schema, and the confirmation answer <c>400</c> naming the field and the rule. Only
-/// a call that passes all of them reaches the module and writes an operator-log entry.
+/// a call that passes all of them reaches the module and writes an operator-log entry, unless the module refuses the
+/// whole call with <see cref="DashboardCommandResult.Refusal"/>, which answers <c>409</c> and writes none.
 /// </para>
 /// <para>
 /// These routes sit inside the module's own API prefix, <c>{base}/api/{module}</c>, so the <c>commands</c> segment
@@ -449,6 +450,11 @@ internal static class CommandEndpoints
             // propagates to the host's error handling.
             await WriteLogAsync(context, entry with { Failed = ids.Count }).ConfigureAwait(false);
             throw;
+        }
+
+        if (result.Refusal is { } refusal)
+        {
+            return TypedResults.Problem(detail: refusal, statusCode: StatusCodes.Status409Conflict);
         }
 
         var (done, skipped, failed) = Tally(result.Rows);

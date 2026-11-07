@@ -12,26 +12,6 @@ public enum SandboxStore
     Postgres = 1,
 }
 
-/// <summary>How the sandbox secures the Jobs dashboard.</summary>
-public enum SandboxJobsAuth
-{
-    /// <summary>No auth.</summary>
-    None = 0,
-
-    /// <summary>Basic auth: user <see cref="SandboxSettings.JobsDashboardUser"/>, password <see cref="SandboxSettings.JobsDashboardSecret"/>.</summary>
-    Basic = 1,
-
-    /// <summary>API key auth: the key is <see cref="SandboxSettings.JobsDashboardSecret"/>.</summary>
-    ApiKey = 2,
-
-    /// <summary>
-    /// Host auth through a fake sandbox scheme: <c>Bearer &lt;secret&gt;</c> signs in an operator who may view and
-    /// operate, and <c>Bearer viewer-&lt;secret&gt;</c> a viewer who may only view. The <c>/sandbox/sign-in</c> page
-    /// exchanges either token for a dashboard session.
-    /// </summary>
-    Host = 4,
-}
-
 /// <summary>
 /// The <c>Sandbox</c> configuration section. The project CLI sets it through <c>Sandbox__*</c> environment variables;
 /// nothing here is a production default.
@@ -54,17 +34,21 @@ public sealed class SandboxSettings
     public string? MessagingDashboardPassword { get; set; }
 
     /// <summary>
-    /// Jobs dashboard auth mode. The default is <see cref="SandboxJobsAuth.None"/>; the other modes make the sign-in,
-    /// session, and live-update journeys walkable under that mode.
+    /// The secret behind the sandbox host sign-in of the Headless dashboard. When empty, it falls back to
+    /// <see cref="MessagingDashboardPassword"/>, so the one generated secret signs in to both.
     /// </summary>
-    public SandboxJobsAuth JobsDashboardAuth { get; set; } = SandboxJobsAuth.None;
+    public string? HostSecret { get; set; }
 
-    /// <summary>Jobs dashboard Basic-auth user name.</summary>
-    public string JobsDashboardUser { get; set; } = "sandbox";
+    /// <summary>The host sign-in secret: <see cref="HostSecret"/>, else <see cref="MessagingDashboardPassword"/>.</summary>
+    /// <exception cref="InvalidOperationException">Neither is set.</exception>
+    public string ResolveHostSecret()
+    {
+        var secret = string.IsNullOrEmpty(HostSecret) ? MessagingDashboardPassword : HostSecret;
 
-    /// <summary>
-    /// The Jobs dashboard password or API key, by <see cref="JobsDashboardAuth"/>. When empty, it
-    /// falls back to <see cref="MessagingDashboardPassword"/>, so the one generated secret signs in to both.
-    /// </summary>
-    public string? JobsDashboardSecret { get; set; }
+        return string.IsNullOrEmpty(secret)
+            ? throw new InvalidOperationException(
+                "The Headless dashboard's host sign-in needs Sandbox__HostSecret or Sandbox__MessagingDashboardPassword."
+            )
+            : secret;
+    }
 }

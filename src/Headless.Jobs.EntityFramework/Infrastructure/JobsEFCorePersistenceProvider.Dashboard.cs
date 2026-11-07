@@ -428,7 +428,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
 
         if (query.ActionableFailuresOnly)
         {
-            rows = rows.Where(JobRequeueRules.RequeueableTimeJob(jobs));
+            rows = rows.Where(JobRequeueRules.ActionableTimeJobFailure(jobs));
         }
 
         return rows;

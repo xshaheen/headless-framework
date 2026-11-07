@@ -111,7 +111,7 @@ public sealed class JobRequeueTests : TestBase
     [InlineData(JobStatus.Succeeded)]
     [InlineData(JobStatus.InProgress)]
     [InlineData(JobStatus.Idle)]
-    [InlineData(JobStatus.Cancelled)]
+    [InlineData(JobStatus.Queued)]
     public async Task time_job_that_is_not_failed_is_refused_and_unchanged(JobStatus status)
     {
         var (store, _) = _Create();
@@ -125,6 +125,28 @@ public sealed class JobRequeueTests : TestBase
         outcome.Should().Be(JobRequeueOutcome.NotFailed);
         var after = await store.GetTimeJobByIdAsync(job.Id, AbortToken);
         after.Should().BeEquivalentTo(before, options => options.Excluding(x => x!.Children));
+    }
+
+    [Theory]
+    [InlineData(JobStatus.Cancelled)]
+    [InlineData(JobStatus.Skipped)]
+    public async Task cancelled_or_skipped_time_job_returns_to_idle(JobStatus status)
+    {
+        var (store, _) = _Create();
+        var job = _FailedJob();
+        job.Status = status;
+        job.CancelRequested = status == JobStatus.Cancelled;
+        job.SkippedReason = status == JobStatus.Skipped ? "skipped" : null;
+        await store.AddTimeJobsAsync([job], AbortToken);
+
+        (await store.RequeueTimeJobAsync(job.Id, traceParent: null, AbortToken))
+            .Should()
+            .Be(JobRequeueOutcome.Requeued);
+
+        var requeued = await store.GetTimeJobByIdAsync(job.Id, AbortToken);
+        requeued!.Status.Should().Be(JobStatus.Idle);
+        requeued.CancelRequested.Should().BeFalse();
+        requeued.SkippedReason.Should().BeNull();
     }
 
     [Fact]
@@ -241,6 +263,7 @@ public sealed class JobRequeueTests : TestBase
     [InlineData(JobStatus.Succeeded)]
     [InlineData(JobStatus.InProgress)]
     [InlineData(JobStatus.Idle)]
+    [InlineData(JobStatus.Queued)]
     public async Task occurrence_that_is_not_failed_is_refused_and_unchanged(JobStatus status)
     {
         var (store, _) = _Create();
@@ -256,6 +279,25 @@ public sealed class JobRequeueTests : TestBase
         var after = (await store.GetAllCronJobOccurrencesAsync(x => x.Id == occurrence.Id, AbortToken)).Single();
         after.Status.Should().Be(status);
         after.UpdatedAt.Should().Be(occurrence.UpdatedAt);
+    }
+
+    [Theory]
+    [InlineData(JobStatus.Cancelled)]
+    [InlineData(JobStatus.Skipped)]
+    public async Task cancelled_or_skipped_occurrence_returns_to_idle(JobStatus status)
+    {
+        var (store, _) = _Create();
+        var definition = _Definition(CronOverlapPolicy.Allow);
+        await store.InsertCronJobsAsync([definition], AbortToken);
+        var occurrence = _Occurrence(definition, _FailedAt, status);
+        await store.InsertCronJobOccurrencesAsync([occurrence], AbortToken);
+
+        (await store.RequeueCronJobOccurrenceAsync(occurrence.Id, traceParent: null, AbortToken))
+            .Should()
+            .Be(JobRequeueOutcome.Requeued);
+
+        var requeued = (await store.GetAllCronJobOccurrencesAsync(x => x.Id == occurrence.Id, AbortToken)).Single();
+        requeued.Status.Should().Be(JobStatus.Idle);
     }
 
     [Fact]

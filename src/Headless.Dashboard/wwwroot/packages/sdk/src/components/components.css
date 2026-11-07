@@ -723,6 +723,13 @@
   font: var(--text-label);
 }
 
+/* On a phone a slot is a few pixels wide, too narrow for its count; the mark's accessible name still states it. */
+@media (max-width: 767px) {
+  .hd-strip text {
+    display: none;
+  }
+}
+
 .hd-strip .hd-strip-future rect {
   fill: var(--surface);
 }

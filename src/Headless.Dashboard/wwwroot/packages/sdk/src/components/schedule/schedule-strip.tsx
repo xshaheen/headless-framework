@@ -39,8 +39,12 @@ const hour = 3_600_000
 const minSpan = 60_000
 const maxSpan = 7 * 24 * hour
 
-/** Ticks closer than this share of the window merge into one mark with a count. */
-const mergeShare = 0.01
+/**
+ * The window splits into this many equal slots, half each side of now, and the ticks in one slot merge into a mark
+ * with a count. Fixed slots keep merged marks a slot apart, so their counts never run into one another, and never
+ * merge a past run with a future fire.
+ */
+const slots = 24
 
 /**
  * The schedule strip: one track per function or lane over a time axis with a now line, past runs filled in their
@@ -65,19 +69,22 @@ export function ScheduleStrip({ label, tracks, span, onSpanChange, timeZone, onS
 
   // Each track's marks: the ticks inside the window, merged where they would overlap.
   const rows = tracks.map((track) => {
-    const marks: { share: number; ticks: ScheduleTick[] }[] = []
+    const marks: { slot: number; share: number; ticks: ScheduleTick[] }[] = []
     const inWindow = track.ticks
       .map((tick) => ({ tick, share: (Date.parse(tick.at) - start) / (2 * shown) }))
       .filter(({ share }) => share >= 0 && share <= 1)
       .sort((a, b) => a.share - b.share)
 
     for (const { tick, share } of inWindow) {
+      const slot = Math.min(slots - 1, Math.floor(share * slots))
       const last = marks.at(-1)
 
-      if (last && share - last.share < mergeShare) {
+      if (last?.slot === slot) {
+        // A merged mark sits mid-slot, a slot from its neighbours, where its count has room.
+        last.share = (slot + 0.5) / slots
         last.ticks.push(tick)
       } else {
-        marks.push({ share, ticks: [tick] })
+        marks.push({ slot, share, ticks: [tick] })
       }
     }
 

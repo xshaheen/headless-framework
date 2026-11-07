@@ -53,6 +53,9 @@ internal abstract class FakeModule(string id)
     public Func<CancellationToken, Task<IReadOnlyList<DashboardFigure>>> Overview { get; set; } =
         static _ => Task.FromResult<IReadOnlyList<DashboardFigure>>([]);
 
+    public Func<CancellationToken, Task<IReadOnlyList<DashboardScheduleTrack>>> Schedule { get; set; } =
+        static _ => Task.FromResult<IReadOnlyList<DashboardScheduleTrack>>([]);
+
     public Func<string, Task<IReadOnlyList<DashboardObject>>> Resolve { get; set; } =
         static _ => Task.FromResult<IReadOnlyList<DashboardObject>>([]);
 
@@ -105,6 +108,11 @@ internal abstract class FakeModule(string id)
         DashboardOverviewRequest request,
         CancellationToken cancellationToken
     ) => Overview(cancellationToken);
+
+    public Task<IReadOnlyList<DashboardScheduleTrack>> GetScheduleAsync(
+        DashboardOverviewRequest request,
+        CancellationToken cancellationToken
+    ) => Schedule(cancellationToken);
 
     public Task<IReadOnlyList<DashboardObject>> ResolveAsync(
         DashboardResolveRequest request,

@@ -136,7 +136,7 @@ public sealed class AuthServiceTests : TestBase
     [InlineData(AuthMode.ApiKey, "my-key")]
     public async Task reads_access_token_on_a_hub_endpoint_whatever_its_path(AuthMode mode, string accessToken)
     {
-        // The Jobs hub is mapped at /job-notification-hub: no "/hub" segment, so routing metadata, not the path,
+        // A hub mapped at /job-notification-hub has no "/hub" segment, so routing metadata, not the path,
         // decides whether the query credential counts.
         var config = new AuthConfig { Mode = mode, ApiKey = "my-key" };
         var service = new AuthService(config, _logger);

@@ -84,7 +84,6 @@ internal static class JobsAttemptModelConfiguration
             entity.ExcludeFromAudit();
             entity.ToTable(table, schema);
 
-            // The run and its per-run sequence: unique per attempt, and the order a run's history reads in.
             entity
                 .HasKey(attempt => new { attempt.RunId, attempt.Number })
                 .HasName(HeadlessStorageNaming.PrimaryKeyName(style, table));
@@ -93,7 +92,6 @@ internal static class JobsAttemptModelConfiguration
             entity.Property(attempt => attempt.StartedAt).HasConversion(new NullableNormalizeDateTimeValueConverter());
             entity.Property(attempt => attempt.EndedAt).HasConversion(new NullableNormalizeDateTimeValueConverter());
 
-            // Persist enums by name (not ordinal), like the run's Status.
             entity.Property(attempt => attempt.Outcome).HasConversion<string>().HasMaxLength(32);
             entity.Property(attempt => attempt.FailureFingerprint).HasMaxLength(JobFailureFingerprints.MaxLength);
 

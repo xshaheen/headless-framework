@@ -165,7 +165,6 @@ jobs:
           cache: npm
           cache-dependency-path: |
             package-lock.json
-            src/Headless.Jobs.Dashboard/wwwroot/package-lock.json
             src/Headless.Messaging.Dashboard/wwwroot/package-lock.json
 
       - name: "Restore NuGet cache"
@@ -220,14 +219,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The shell is a member of the repository-root npm workspace, so its lockfile is the root one.
+        # The shell and the Jobs module are members of the repository-root npm workspace, so their lockfile is the root one.
         include:
           - name: Shell
             target: dashboard-shell-test
             lockfile: package-lock.json
           - name: Jobs
             target: dashboard-jobs-test
-            lockfile: src/Headless.Jobs.Dashboard/wwwroot/package-lock.json
+            lockfile: package-lock.json
           - name: Messaging
             target: dashboard-messaging-test
             lockfile: src/Headless.Messaging.Dashboard/wwwroot/package-lock.json
@@ -328,7 +327,6 @@ jobs:
           cache: npm
           cache-dependency-path: |
             package-lock.json
-            src/Headless.Jobs.Dashboard/wwwroot/package-lock.json
             src/Headless.Messaging.Dashboard/wwwroot/package-lock.json
 
       # Restore and save are split so there is no post-job cache step (the combined action spent ~15s there
@@ -429,7 +427,6 @@ jobs:
           cache: npm
           cache-dependency-path: |
             package-lock.json
-            src/Headless.Jobs.Dashboard/wwwroot/package-lock.json
             src/Headless.Messaging.Dashboard/wwwroot/package-lock.json
 
       - name: "Restore NuGet cache"

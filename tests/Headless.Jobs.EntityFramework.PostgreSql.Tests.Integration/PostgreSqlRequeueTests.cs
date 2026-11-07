@@ -55,6 +55,12 @@ public abstract class PostgreSqlRequeueTestsBase<TFixture>(TFixture fixture)
     }
 
     [Fact]
+    public override Task cancelled_and_skipped_runs_are_requeued_but_are_not_actionable_failures()
+    {
+        return base.cancelled_and_skipped_runs_are_requeued_but_are_not_actionable_failures();
+    }
+
+    [Fact]
     public override Task occurrence_that_is_not_failed_is_refused()
     {
         return base.occurrence_that_is_not_failed_is_refused();

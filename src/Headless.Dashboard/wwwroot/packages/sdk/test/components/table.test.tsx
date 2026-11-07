@@ -119,6 +119,67 @@ describe('data table', () => {
     expect(inspector()).toBe('r1')
   })
 
+  it('builds a multi-selection with J X J X: J moves the focus and keeps the rows X selected', async () => {
+    const user = userEvent.setup()
+    render(withDashboard(<ListView selectionMode="multiple" />))
+
+    await user.keyboard('j')
+    expect(document.activeElement).toBe(row(/#1/))
+    expect(inspector()).toBe('Nothing selected')
+
+    await user.keyboard('x')
+    await user.keyboard('j')
+    expect(document.activeElement).toBe(row(/#2/))
+    expect(inspector()).toBe('r1')
+
+    await user.keyboard('x')
+    expect(inspector()).toBe('r1, r2')
+  })
+
+  it('moves the focus without selecting on Tab and the arrow keys in a multi-selection list', async () => {
+    const user = userEvent.setup()
+    render(withDashboard(<ListView selectionMode="multiple" />))
+
+    // The filter, then the density toggle's two buttons, then the grid's one tab stop.
+    await user.click(screen.getByRole('textbox', { name: 'Filter' }))
+    await user.tab()
+    await user.tab()
+    await user.tab()
+    expect(document.activeElement).toBe(row(/#1/))
+    expect(inspector()).toBe('Nothing selected')
+
+    await user.keyboard('{ArrowDown}')
+    expect(document.activeElement).toBe(row(/#2/))
+    expect(inspector()).toBe('Nothing selected')
+
+    await user.keyboard('x{Shift>}{ArrowDown}{/Shift}')
+    expect(inspector()).toBe('r2, r3')
+  })
+
+  it('runs a button in the empty state when clicked', async () => {
+    const user = userEvent.setup()
+    const clear = vi.fn()
+    render(
+      withDashboard(
+        <DataTable
+          label="Runs"
+          rows={[]}
+          selectionMode="multiple"
+          columns={[{ id: 'title', header: 'Run', cell: () => '' }]}
+          emptyState={
+            <button type="button" onClick={clear}>
+              Clear filters
+            </button>
+          }
+        />,
+      ),
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Clear filters' }))
+
+    expect(clear).toHaveBeenCalledOnce()
+  })
+
   it('focuses the filter on /, where J types a letter and moves no row', async () => {
     const user = userEvent.setup()
     render(withDashboard(<ListView />))
@@ -321,11 +382,66 @@ describe('virtualized keyset table', () => {
     await waitFor(() => expect(fetchPage).toHaveBeenCalledTimes(2))
     expect(fetchPage.mock.calls.map(([cursor]) => cursor)).toEqual([undefined, 'cursor-of-r100'])
 
-    // The second page answers with no cursor, so nothing more is asked for.
     await screen.findByRole('row', { name: /^r101\b/ })
     sentinelInView()
     scrollTo(200 * 36 - 360)
     expect(fetchPage).toHaveBeenCalledTimes(2)
+  })
+
+  it('asks for the next page again after it failed and the list was retried', async () => {
+    const user = userEvent.setup()
+    let failNext = true
+    const fetchPage = vi.fn(async (cursor: string | undefined): Promise<DashboardListPage<Run>> => {
+      if (cursor === undefined) {
+        return { items: runs(100), nextCursor: 'cursor-of-r100' }
+      }
+
+      if (failNext) {
+        failNext = false
+        throw new Error('Page 2 failed')
+      }
+
+      return { items: runs(100, 101), nextCursor: null }
+    })
+
+    function RetriedRuns() {
+      const list = useDashboardKeysetList<Run>({ topic: 'diag.run', params: {}, fetchPage })
+
+      return (
+        <>
+          {list.query.isError ? (
+            <button type="button" onClick={() => void list.query.refetch()}>
+              Retry
+            </button>
+          ) : null}
+          <DataTable
+            label="Runs"
+            rows={list.rows}
+            columns={runColumns}
+            hasMore={list.hasMore}
+            isLoadingMore={list.isLoadingMore}
+            onLoadMore={list.loadMore}
+            emptyState="No runs yet."
+          />
+        </>
+      )
+    }
+
+    render(withDashboard(<RetriedRuns />))
+    await screen.findByRole('row', { name: /^r1\b/ })
+
+    scrollTo(100 * 36 - 360)
+    sentinelInView()
+    await user.click(await screen.findByRole('button', { name: 'Retry' }))
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull())
+
+    sentinelInView()
+
+    await screen.findByRole('row', { name: /^r101\b/ })
+    expect(fetchPage.mock.calls.map(([cursor]) => cursor).filter((cursor) => cursor !== undefined)).toEqual([
+      'cursor-of-r100',
+      'cursor-of-r100',
+    ])
   })
 
   it('holds the rows in view when three rows arrive above them, and shows 3 new', async () => {

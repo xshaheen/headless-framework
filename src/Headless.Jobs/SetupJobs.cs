@@ -219,7 +219,12 @@ public static class SetupJobs
             IJobPersistenceProvider<TTimeJob, TCronJob>,
             JobsInMemoryPersistenceProvider<TTimeJob, TCronJob>
         >();
-        services.AddSingleton<IJobsNotificationHubSender, NoOpJobsNotificationHubSender>();
+        // TryAdd, so a dashboard registered before AddHeadlessJobs keeps its own sender.
+        services.TryAddSingleton<IJobsNotificationHubSender, NoOpJobsNotificationHubSender>();
+        // The dashboard module takes no entity type arguments; this seam carries the host's types to it.
+        services.TryAddSingleton<IJobsDashboardBackend>(provider => new JobsDashboardBackend<TTimeJob, TCronJob>(
+            provider
+        ));
         services.TryAddSingleton(TimeProvider.System);
 
         // Per-host tenancy DI (see _AddTenancyServices).
@@ -343,7 +348,6 @@ public static class SetupJobs
         );
 
         optionInstance.ExternalProviderConfigServiceAction?.Invoke(services);
-        optionInstance.DashboardServiceAction?.Invoke(services, requestSerializationOptions);
 
         // The durable operational store opts into coordinated membership; wire it after the provider's own
         // services are registered so the require-provider check sees the coordination registration.

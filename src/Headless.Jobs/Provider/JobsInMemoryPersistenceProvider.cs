@@ -1150,7 +1150,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                         {
                             t.Status = JobStatus.Failed;
                             t.LockedUntil = null;
-                            t.ExceptionMessage = "Lease lapsed while running!";
+                            t.ExceptionMessage = _LeaseLapsedReason;
                             t.FailureFingerprint = JobFailureFingerprints.LeaseLapsed;
                             t.ExecutedAt = now;
                         }
@@ -1165,7 +1165,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                         {
                             t.Status = JobStatus.Skipped;
                             t.LockedUntil = null;
-                            t.SkippedReason = "Lease lapsed while running!";
+                            t.SkippedReason = _LeaseLapsedReason;
                             t.ExecutedAt = now;
                         }
                     ):
@@ -1801,7 +1801,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                         {
                             t.Status = JobStatus.Failed;
                             t.LockedUntil = null;
-                            t.ExceptionMessage = "Node is not alive!";
+                            t.ExceptionMessage = _NodeNotAliveReason;
                             t.FailureFingerprint = JobFailureFingerprints.NodeNotAlive;
                             t.ExecutedAt = now;
                         }
@@ -1821,7 +1821,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                         {
                             t.Status = JobStatus.Skipped;
                             t.LockedUntil = null;
-                            t.SkippedReason = "Node is not alive!";
+                            t.SkippedReason = _NodeNotAliveReason;
                             t.ExecutedAt = now;
                         }
                     )
@@ -3588,7 +3588,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                         {
                             t.Status = JobStatus.Failed;
                             t.LockedUntil = null;
-                            t.ExceptionMessage = "Lease lapsed while running!";
+                            t.ExceptionMessage = _LeaseLapsedReason;
                             t.FailureFingerprint = JobFailureFingerprints.LeaseLapsed;
                             t.ExecutedAt = now;
                         }
@@ -3603,7 +3603,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                         {
                             t.Status = JobStatus.Skipped;
                             t.LockedUntil = null;
-                            t.SkippedReason = "Lease lapsed while running!";
+                            t.SkippedReason = _LeaseLapsedReason;
                             // An ordinary retirement: the instant is spent and nothing owes it a replacement.
                             t.Disposition = CronOccurrenceDisposition.Accounted;
                             t.ExecutedAt = now;
@@ -3888,7 +3888,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                         {
                             o.Status = JobStatus.Failed;
                             o.LockedUntil = null;
-                            o.ExceptionMessage = "Node is not alive!";
+                            o.ExceptionMessage = _NodeNotAliveReason;
                             o.FailureFingerprint = JobFailureFingerprints.NodeNotAlive;
                             o.ExecutedAt = now;
                         }
@@ -3908,7 +3908,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                         {
                             o.Status = JobStatus.Skipped;
                             o.LockedUntil = null;
-                            o.SkippedReason = "Node is not alive!";
+                            o.SkippedReason = _NodeNotAliveReason;
                             // KTD1b: the occurrence never executed, but re-running it is the reclaim/recovery path's
                             // job. Materializing a fresh row at the same instant would race that path, so the dead
                             // owner's row still accounts for its instant.

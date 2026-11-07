@@ -1,3 +1,7 @@
+// The React Compiler's memo caches cost this view more bytes than its rare renders save, and the shell's assets
+// sit at their size budget.
+'use no memo'
+
 import { useOperations } from '@headless/dashboard-sdk/commands'
 import { Button, InspectorField, InspectorFields, Mono, StatusMark, useDelayed } from '@headless/dashboard-sdk/components'
 import { useFormat } from '@headless/dashboard-sdk/locale'
@@ -102,6 +106,11 @@ function ItemInspector({ section, item, onClose }: { section: ModuleSection<Atte
         {item.since ? (
           <InspectorField label="Since">
             <span title={format.exactTime(item.since)}>{format.relativeTime(item.since, { style: 'short' })}</span>
+          </InspectorField>
+        ) : null}
+        {item.lastSeenAt ? (
+          <InspectorField label="Last seen">
+            <span title={format.exactTime(item.lastSeenAt)}>{format.relativeTime(item.lastSeenAt, { style: 'short' })}</span>
           </InspectorField>
         ) : null}
         {item.target ? (
@@ -273,8 +282,9 @@ export function NeedsYou() {
                       >
                         <span className="hd-attention-title">{item.title}</span>
                         <span className="hd-hint">
-                          {`${format.count({ value: item.count, capped: item.capped })} items`}
+                          {`${format.count({ value: item.count, capped: item.capped })} ${item.count === 1 && !item.capped ? 'item' : 'items'}`}
                           {item.since ? ` · since ${format.relativeTime(item.since, { style: 'short' })}` : ''}
+                          {item.lastSeenAt ? ` · last seen ${format.relativeTime(item.lastSeenAt, { style: 'short' })}` : ''}
                           {item.recentCount ? ' · growing' : ''}
                         </span>
                       </button>

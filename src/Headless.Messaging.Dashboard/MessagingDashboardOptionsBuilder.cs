@@ -8,7 +8,6 @@ namespace Headless.Messaging.Dashboard;
 
 /// <summary>
 /// Fluent builder for configuring the Messaging Dashboard.
-/// Mirrors Jobs Dashboard's <c>DashboardOptionsBuilder</c> pattern.
 /// </summary>
 public sealed class MessagingDashboardOptionsBuilder
 {
@@ -81,8 +80,6 @@ public sealed class MessagingDashboardOptionsBuilder
         StatsPollingInterval = intervalMs;
         return this;
     }
-
-    // --- Auth fluent API (matches Jobs DashboardOptionsBuilder) ---
 
     /// <summary>Configure no authentication (public dashboard).</summary>
     public MessagingDashboardOptionsBuilder WithNoAuth()
