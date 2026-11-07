@@ -224,6 +224,11 @@ internal static class SqlServerMessagingSchemaContribution
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_StatusName_Added' AND object_id = OBJECT_ID(N'{received}'))
                 CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_StatusName_Added] ON {received} ([StatusName] ASC, [Added] ASC, [Id] ASC) INCLUDE ([IntentType]);
 
+            -- The dashboard's unfiltered list reads newest first by (Added, Id); the StatusName-led index above cannot
+            -- serve that order without a status filter, so this one does, scanned backward.
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_Added_Id' AND object_id = OBJECT_ID(N'{received}'))
+                CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_Added_Id] ON {received} ([Added] ASC, [Id] ASC) INCLUDE ([IntentType]);
+
             -- The failure groups read only failures that ended for good and are still current, grouped by cause and
             -- consumer, so the filtered index holds exactly those rows in group order.
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_FailureGroups' AND object_id = OBJECT_ID(N'{received}'))
@@ -362,6 +367,9 @@ internal static class SqlServerMessagingSchemaContribution
             -- #508 — see the received-table note above; create the final dashboard timeline/statistics index.
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{publishedPrefix}_StatusName_Added' AND object_id = OBJECT_ID(N'{published}'))
                 CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_StatusName_Added] ON {published} ([StatusName] ASC, [Added] ASC, [Id] ASC) INCLUDE ([IntentType]);
+
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{publishedPrefix}_Added_Id' AND object_id = OBJECT_ID(N'{published}'))
+                CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_Added_Id] ON {published} ([Added] ASC, [Id] ASC) INCLUDE ([IntentType]);
 
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{publishedPrefix}_FailureGroups' AND object_id = OBJECT_ID(N'{published}'))
                 EXEC(N'CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_FailureGroups] ON {published} ([FailureFingerprint])

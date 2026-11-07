@@ -18,7 +18,6 @@ internal sealed partial class RelationalDataStorage
 
     public IPublishedOperationsApi GetPublishedOperationsApi() => new RelationalPublishedOperationsApi(this);
 
-    // A separate object rather than this storage: the inbox API already owns the scope reads' signatures.
     private sealed class RelationalPublishedOperationsApi(RelationalDataStorage storage) : IPublishedOperationsApi
     {
         public ValueTask<MessageCount> CountOperationScopeAsync(
@@ -66,21 +65,7 @@ internal sealed partial class RelationalDataStorage
         Argument.IsPositive(cap);
         var (where, bind) = _PublishedScopeFilter(scope);
 
-        await using var connection = _CreateConnection();
-        var matched = await RelationalMonitoringApi
-            .CountCappedAsync(
-                _dialect,
-                connection,
-                _publishedTable,
-                where,
-                bind,
-                cap,
-                CommandTimeoutSeconds,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        return MessageCount.Of(matched, cap);
+        return await _CountScopeAsync(_publishedTable, where, bind, cap, cancellationToken).ConfigureAwait(false);
     }
 
     private async ValueTask<MessageOperationChunk> _ReadPublishedScopeAsync(
@@ -90,67 +75,19 @@ internal sealed partial class RelationalDataStorage
         CancellationToken cancellationToken
     )
     {
-        Argument.IsInclusiveBetween(chunkSize, 1, _MaxOperationChunkSize);
+        Argument.IsInclusiveBetween(chunkSize, 1, MessageOperationChunk.MaxChunkSize);
         var (where, bind) = _PublishedScopeFilter(scope);
 
-        if (afterId is not null)
-        {
-            where += $" AND {_t.Id} > @AfterId";
-        }
-
-        var sql = $"""
-            SELECT {_t.Id},{_t.StatusName},{_t.ChangedAt}
-            FROM {_publishedTable}
-            WHERE {where}
-            ORDER BY {_t.Id}
-            {_dialect.Limit("Limit")};
-            """;
-
-        await using var connection = _CreateConnection();
-        var targets = await RelationalCommand
-            .ExecuteReaderAsync(
-                connection,
-                transaction: null,
-                sql,
-                CommandTimeoutSeconds,
-                command =>
-                {
-                    bind(command);
-                    _dialect.AddParameter(command, "Limit", SqlColumnType.Int32, chunkSize);
-                    if (afterId is { } id)
-                    {
-                        _dialect.AddParameter(command, "AfterId", SqlColumnType.Guid, id);
-                    }
-                },
-                static async (reader, ct) =>
-                {
-                    var rows = new List<MessageOperationTarget>();
-                    while (await reader.ReadAsync(ct).ConfigureAwait(false))
-                    {
-                        rows.Add(
-                            new MessageOperationTarget(
-                                reader.GetGuid(0),
-                                Guid.Empty,
-                                Enum.Parse<StatusName>(reader.GetString(1)),
-                                (
-                                    await reader.GetFieldValueAsync<DateTimeOffset>(2, ct).ConfigureAwait(false)
-                                ).ToUniversalTime()
-                            )
-                        );
-                    }
-
-                    return rows;
-                },
+        return await _ReadScopeChunkAsync(
+                _publishedTable,
+                where,
+                bind,
+                afterId,
+                chunkSize,
+                withIncarnation: false,
                 cancellationToken
             )
             .ConfigureAwait(false);
-
-        // A full chunk may be the scope's last; the next read then returns an empty chunk with no cursor.
-        return new MessageOperationChunk
-        {
-            Targets = targets,
-            Next = targets.Count == chunkSize ? targets[^1].StorageId : null,
-        };
     }
 
     /// <summary>
@@ -244,11 +181,13 @@ internal sealed partial class RelationalDataStorage
                         return replay;
                     }
 
-                    // The row is locked before the clock is read, so whether a send lease is live is decided on a clock
-                    // read after any wait for that lock.
-                    var row = await _ReadPublishedOperationRowAsync(connection, transaction, request.StorageId, ct)
+                    var (row, now) = await _ReadPublishedOperationRowAsync(
+                            connection,
+                            transaction,
+                            request.StorageId,
+                            ct
+                        )
                         .ConfigureAwait(false);
-                    var now = await _ReadNowAsync(connection, transaction, ct).ConfigureAwait(false);
                     var outcome = MessagingOperationEvaluator.EvaluatePublished(
                         operationType,
                         request.ExpectedChangedAt,
@@ -458,20 +397,25 @@ internal sealed partial class RelationalDataStorage
         DateTimeOffset? LockedUntil
     );
 
-    private async Task<PublishedOperationRow?> _ReadPublishedOperationRowAsync(
+    /// <summary>
+    /// Reads the row under its lock, then the database clock in the same batch. The clock statement runs after the
+    /// locked read, so whether a send lease is live is decided on a clock read after any wait for that lock.
+    /// </summary>
+    private async Task<(PublishedOperationRow? Row, DateTimeOffset Now)> _ReadPublishedOperationRowAsync(
         DbConnection connection,
         DbTransaction transaction,
         Guid storageId,
         CancellationToken cancellationToken
     )
     {
-        var sql = _dialect.Render(
-            new SqlLockedRead(
-                _publishedTable,
-                [new SqlKeyColumn(_t.Id, "Id")],
-                [_t.StatusName, _t.NextRetryAt, _t.LockedUntil, _t.ChangedAt, _t.Name, _t.MessageId, _t.IntentType]
-            )
-        );
+        var sql =
+            _dialect.Render(
+                new SqlLockedRead(
+                    _publishedTable,
+                    [new SqlKeyColumn(_t.Id, "Id")],
+                    [_t.StatusName, _t.NextRetryAt, _t.LockedUntil, _t.ChangedAt, _t.Name, _t.MessageId, _t.IntentType]
+                )
+            ) + _dialect.Render(new SqlClockedStatement($"SELECT {SqlDialectTokens.Now};"));
 
         return await RelationalCommand
             .ExecuteReaderAsync(
@@ -482,25 +426,35 @@ internal sealed partial class RelationalDataStorage
                 command => _dialect.AddParameter(command, "Id", SqlColumnType.Guid, storageId),
                 static async (reader, ct) =>
                 {
-                    if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+                    PublishedOperationRow? row = null;
+                    if (await reader.ReadAsync(ct).ConfigureAwait(false))
                     {
-                        return null;
+                        row = new PublishedOperationRow(
+                            new PublishedOperationState(
+                                Enum.Parse<StatusName>(reader.GetString(0)),
+                                HasNextRetry: !reader.IsDBNull(1),
+                                HasLiveLease: false,
+                                (
+                                    await reader.GetFieldValueAsync<DateTimeOffset>(3, ct).ConfigureAwait(false)
+                                ).ToUniversalTime()
+                            ),
+                            reader.GetString(4),
+                            reader.GetString(5),
+                            MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(6)),
+                            reader.IsDBNull(2) ? null : reader.GetFieldValue<DateTimeOffset>(2)
+                        );
                     }
 
-                    return new PublishedOperationRow(
-                        new PublishedOperationState(
-                            Enum.Parse<StatusName>(reader.GetString(0)),
-                            HasNextRetry: !reader.IsDBNull(1),
-                            HasLiveLease: false,
-                            (
-                                await reader.GetFieldValueAsync<DateTimeOffset>(3, ct).ConfigureAwait(false)
-                            ).ToUniversalTime()
-                        ),
-                        reader.GetString(4),
-                        reader.GetString(5),
-                        MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(6)),
-                        reader.IsDBNull(2) ? null : reader.GetFieldValue<DateTimeOffset>(2)
-                    );
+                    // The clock's own result set follows the locked read's, whether or not it found the row.
+                    if (
+                        !await reader.NextResultAsync(ct).ConfigureAwait(false)
+                        || !await reader.ReadAsync(ct).ConfigureAwait(false)
+                    )
+                    {
+                        throw new InvalidOperationException("The database clock read returned no row.");
+                    }
+
+                    return (row, await reader.GetFieldValueAsync<DateTimeOffset>(0, ct).ConfigureAwait(false));
                 },
                 cancellationToken
             )

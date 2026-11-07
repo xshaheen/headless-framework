@@ -372,7 +372,7 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
     )
     {
         Argument.IsNotNull(query);
-        Argument.IsInclusiveBetween(pageSize, 1, 500);
+        Argument.IsInclusiveBetween(pageSize, 1, MessageListPage.MaxPageSize);
         cancellationToken.ThrowIfCancellationRequested();
 
         var received = query.MessageType == MessageType.Subscribe;
@@ -452,10 +452,8 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
                     || string.Equals(message.ConsumerIdentity, consumerIdentity, StringComparison.Ordinal)
                 )
             )
-            .GroupBy(
-                message =>
-                    (Fingerprint: message.FailureFingerprint, Consumer: received ? message.ConsumerIdentity : null),
-                FailureGroupKeyComparer.Instance
+            .GroupBy(message =>
+                (Fingerprint: message.FailureFingerprint, Consumer: received ? message.ConsumerIdentity : null)
             )
             .Select(group => new MessageFailureGroup
             {
@@ -477,22 +475,6 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
                 : storage.PublishedMessages.Values;
 
         return source.Where(message => InMemoryMessageFilter.Matches(message, query));
-    }
-
-    // Groups compare their key text ordinally, as the relational stores compare the identity's hash.
-    private sealed class FailureGroupKeyComparer : IEqualityComparer<(string? Fingerprint, string? Consumer)>
-    {
-        public static readonly FailureGroupKeyComparer Instance = new();
-
-        public bool Equals((string? Fingerprint, string? Consumer) x, (string? Fingerprint, string? Consumer) y) =>
-            string.Equals(x.Fingerprint, y.Fingerprint, StringComparison.Ordinal)
-            && string.Equals(x.Consumer, y.Consumer, StringComparison.Ordinal);
-
-        public int GetHashCode((string? Fingerprint, string? Consumer) obj) =>
-            HashCode.Combine(
-                obj.Fingerprint is null ? 0 : StringComparer.Ordinal.GetHashCode(obj.Fingerprint),
-                obj.Consumer is null ? 0 : StringComparer.Ordinal.GetHashCode(obj.Consumer)
-            );
     }
 
     public ValueTask<IndexPage<UnknownLaneMessageView>> GetUnknownLaneMessagesAsync(

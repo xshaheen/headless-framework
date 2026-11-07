@@ -152,7 +152,7 @@ public static class SetupMessaging
             sp.GetService<IOptions<TenantTelemetryOptions>>()?.Value
         ));
 
-        // The primary storage plus every AddOutbox(name) registration. Resolving it validates them together, so the
+        // Resolving it validates the primary storage and every AddOutbox(name) registration together, so the
         // bootstrapper resolves it before storage initialization and a misconfiguration fails host startup.
         services.TryAddSingleton(MessagingOutboxes.Create);
         services.TryAddSingleton<OutboxMessageWriter>();

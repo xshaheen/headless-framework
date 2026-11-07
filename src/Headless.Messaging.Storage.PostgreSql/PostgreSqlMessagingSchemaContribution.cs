@@ -233,10 +233,13 @@ internal static class PostgreSqlMessagingSchemaContribution
             -- schema directly; it does not carry migration DDL for superseded index shapes.
             -- The id key column makes the index serve the dashboard's status-filtered keyset list on (added, id) too.
             CREATE INDEX IF NOT EXISTS "idx_messaging_received_status_name_added" ON {received} ("status_name","added","id") INCLUDE ("intent_type");
+            -- The dashboard's unfiltered list reads newest first by (added, id); the status-led index above cannot serve
+            -- that order without a status filter, so this one does, scanned backward.
+            CREATE INDEX IF NOT EXISTS "idx_messaging_received_added_id" ON {received} ("added","id") INCLUDE ("intent_type");
             -- The failure groups read only failures that ended for good and are still current, grouped by cause and
             -- consumer, so the partial index holds exactly those rows in group order.
             CREATE INDEX IF NOT EXISTS "idx_messaging_received_failure_groups" ON {received} ("failure_fingerprint","consumer_key_hash")
-                INCLUDE ("changed_at","intent_type") WHERE "status_name" = 'Failed' AND "next_retry_at" IS NULL AND "is_current_generation" = TRUE;
+                INCLUDE ("changed_at","intent_type","consumer_identity") WHERE "status_name" = 'Failed' AND "next_retry_at" IS NULL AND "is_current_generation" = TRUE;
             -- The dashboard's change read pages by (changed_at, id) on every poll of every node.
             CREATE INDEX IF NOT EXISTS "idx_messaging_received_changed_at_id" ON {received} ("changed_at","id") INCLUDE ("status_name");
 
@@ -360,6 +363,7 @@ internal static class PostgreSqlMessagingSchemaContribution
             CREATE INDEX IF NOT EXISTS "idx_messaging_published_version_expires_at_queued" ON {published} ("version","expires_at") WHERE "status_name" = 'Queued';
             -- #508 — see the received-table note above; create the final dashboard timeline/statistics index.
             CREATE INDEX IF NOT EXISTS "idx_messaging_published_status_name_added" ON {published} ("status_name","added","id") INCLUDE ("intent_type");
+            CREATE INDEX IF NOT EXISTS "idx_messaging_published_added_id" ON {published} ("added","id") INCLUDE ("intent_type");
             CREATE INDEX IF NOT EXISTS "idx_messaging_published_failure_groups" ON {published} ("failure_fingerprint")
                 INCLUDE ("changed_at","intent_type") WHERE "status_name" = 'Failed' AND "next_retry_at" IS NULL;
             CREATE INDEX IF NOT EXISTS "idx_messaging_published_changed_at_id" ON {published} ("changed_at","id") INCLUDE ("status_name");

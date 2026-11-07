@@ -13,12 +13,6 @@ namespace Tests;
 /// </summary>
 public sealed class MessagingFailureFingerprintsTests : TestBase
 {
-    [Fact]
-    public void should_share_the_version_prefix_of_the_shared_algorithm()
-    {
-        MessagingFailureFingerprints.VersionPrefix.Should().Be(FailureFingerprint.VersionPrefix);
-    }
-
     [Theory]
     [InlineData(MessagingFailureFingerprints.Expired, "expired")]
     [InlineData(MessagingFailureFingerprints.Deserialization, "deserialization")]

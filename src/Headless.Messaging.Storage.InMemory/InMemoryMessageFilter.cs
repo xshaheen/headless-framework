@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging.Internal;
+
 namespace Headless.Messaging.Storage.InMemory;
 
 /// <summary>
@@ -10,16 +12,13 @@ internal static class InMemoryMessageFilter
 {
     public static bool IsRecognizedLane(MessageLane lane) => lane is MessageLane.Bus or MessageLane.Queue;
 
-    public static bool IsTerminal(MemoryMessage message) =>
-        message.StatusName is StatusName.Succeeded or StatusName.Failed && message.NextRetryAt is null;
-
     public static bool Matches(MemoryMessage message, MessageListQuery query)
     {
         var received = query.MessageType == MessageType.Subscribe;
 
         return IsRecognizedLane(message.Lane)
             && (query.Status is not { } status || message.StatusName == status)
-            && (!query.TerminalOnly || IsTerminal(message))
+            && (!query.TerminalOnly || MessageTerminalState.IsTerminal(message.StatusName, message.NextRetryAt))
             && (query.Lane is not { } lane || message.Lane == lane)
             && (query.Name is null || string.Equals(message.Name, query.Name, StringComparison.Ordinal))
             && (query.MessageId is null || string.Equals(message.Origin.Id, query.MessageId, StringComparison.Ordinal))

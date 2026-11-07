@@ -81,7 +81,7 @@ public static class FailureFingerprint
 
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(input.ToString()));
 
-        return VersionPrefix + Convert.ToHexStringLower(hash)[.._HexLength];
+        return VersionPrefix + Convert.ToHexStringLower(hash.AsSpan(0, _HexLength / 2));
     }
 
     /// <summary>

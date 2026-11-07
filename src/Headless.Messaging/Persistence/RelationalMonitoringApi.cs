@@ -442,7 +442,7 @@ internal sealed class RelationalMonitoringApi(
     )
     {
         Argument.IsNotNull(query);
-        Argument.IsInclusiveBetween(pageSize, 1, MaxListPageSize);
+        Argument.IsInclusiveBetween(pageSize, 1, MessageListPage.MaxPageSize);
 
         var received = query.MessageType == MessageType.Subscribe;
         var table = received ? _receivedTable : _publishedTable;
@@ -453,7 +453,6 @@ internal sealed class RelationalMonitoringApi(
             where += " AND " + RelationalMessageFilter.Before(_t.Added, _t.Id, "AfterAdded", "AfterId");
         }
 
-        // Only received rows belong to a consumer, a tenant, or an inbox lineage.
         var receivedColumns = received
             ? $",{_t.ConsumerIdentity},{_t.TenantPresent},{_t.TenantId},{_t.IsHeld},{_t.GenerationIncarnationId}"
             : "";
@@ -475,7 +474,6 @@ internal sealed class RelationalMonitoringApi(
                 command =>
                 {
                     bind(command);
-                    // One row past the page proves another page follows.
                     _dialect.AddParameter(command, "Limit", SqlColumnType.Int32, pageSize + 1);
                     if (after is { } position)
                     {
@@ -533,9 +531,6 @@ internal sealed class RelationalMonitoringApi(
             Next = rows.Count > pageSize ? new MessageListPosition(page[^1].Added, page[^1].StorageId) : null,
         };
     }
-
-    /// <summary>The most rows one list page returns.</summary>
-    internal const int MaxListPageSize = 500;
 
     /// <inheritdoc />
     public async ValueTask<MessageCount> CountMessagesAsync(

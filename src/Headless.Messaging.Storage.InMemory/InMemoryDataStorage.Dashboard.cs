@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using Headless.Checks;
+using Headless.Messaging.Internal;
 
 namespace Headless.Messaging.Storage.InMemory;
 
@@ -8,8 +10,6 @@ namespace Headless.Messaging.Storage.InMemory;
 // the operator ledger. Each reads under the store lock the single-row operations write under.
 internal sealed partial class InMemoryDataStorage
 {
-    private const int _MaxOperationChunkSize = 500;
-
     private ValueTask<MessageCount> _CountInboxAsync(
         InboxGenerationQuery query,
         OperatorAuthorizationContext authorization,
@@ -37,12 +37,7 @@ internal sealed partial class InMemoryDataStorage
         Argument.IsPositive(cap);
         var inScope = _OperationScopePredicate(scope);
 
-        lock (_receivedUpsertLock)
-        {
-            return ValueTask.FromResult(
-                MessageCount.Of(ReceivedMessages.Values.Where(inScope).Take(cap + 1).Count(), cap)
-            );
-        }
+        return ValueTask.FromResult(_CountScope(ReceivedMessages, inScope, cap));
     }
 
     private ValueTask<MessageOperationChunk> _ReadOperationScopeAsync(
@@ -53,32 +48,62 @@ internal sealed partial class InMemoryDataStorage
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
-        Argument.IsInclusiveBetween(chunkSize, 1, _MaxOperationChunkSize);
+        Argument.IsInclusiveBetween(chunkSize, 1, MessageOperationChunk.MaxChunkSize);
         var inScope = _OperationScopePredicate(scope);
 
+        return ValueTask.FromResult(
+            _ReadScopeChunk(
+                ReceivedMessages,
+                inScope,
+                afterId,
+                chunkSize,
+                static message => message.InboxGeneration!.IncarnationId
+            )
+        );
+    }
+
+    /// <summary>Counts the rows of <paramref name="source"/> in an Operation's scope, up to the cap.</summary>
+    private MessageCount _CountScope(
+        ConcurrentDictionary<Guid, MemoryMessage> source,
+        Func<MemoryMessage, bool> inScope,
+        int cap
+    )
+    {
         lock (_receivedUpsertLock)
         {
-            var targets = ReceivedMessages
+            return MessageCount.Of(source.Values.Where(inScope).Take(cap + 1).Count(), cap);
+        }
+    }
+
+    /// <summary>
+    /// Reads one chunk of the rows of <paramref name="source"/> in an Operation's scope, in identifier order after
+    /// <paramref name="afterId"/>, each target carrying the incarnation <paramref name="incarnation"/> selects.
+    /// </summary>
+    private MessageOperationChunk _ReadScopeChunk(
+        ConcurrentDictionary<Guid, MemoryMessage> source,
+        Func<MemoryMessage, bool> inScope,
+        Guid? afterId,
+        int chunkSize,
+        Func<MemoryMessage, Guid> incarnation
+    )
+    {
+        lock (_receivedUpsertLock)
+        {
+            var targets = source
                 .Values.Where(message =>
                     inScope(message) && (afterId is not { } after || message.StorageId.CompareTo(after) > 0)
                 )
                 .OrderBy(static message => message.StorageId)
                 .Take(chunkSize)
-                .Select(static message => new MessageOperationTarget(
+                .Select(message => new MessageOperationTarget(
                     message.StorageId,
-                    message.InboxGeneration!.IncarnationId,
+                    incarnation(message),
                     message.StatusName,
                     message.ChangedAt
                 ))
                 .ToList();
 
-            return ValueTask.FromResult(
-                new MessageOperationChunk
-                {
-                    Targets = targets,
-                    Next = targets.Count == chunkSize ? targets[^1].StorageId : null,
-                }
-            );
+            return MessageOperationChunk.Of(targets, chunkSize);
         }
     }
 
@@ -102,7 +127,7 @@ internal sealed partial class InMemoryDataStorage
         return message =>
             message.InboxGeneration is not null
             && InMemoryMessageFilter.Matches(message, scope.Query)
-            && InMemoryMessageFilter.IsTerminal(message)
+            && MessageTerminalState.IsTerminal(message.StatusName, message.NextRetryAt)
             && message.ChangedAt <= scope.HighWaterMark
             && eligible(message);
     }

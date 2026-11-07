@@ -113,6 +113,9 @@ public readonly record struct MessageListPosition(DateTimeOffset Added, Guid Id)
 [PublicAPI]
 public sealed record MessageListPage
 {
+    /// <summary>The most rows one list page returns.</summary>
+    public const int MaxPageSize = 500;
+
     /// <summary>Gets the rows, newest first. Their <see cref="MessageView.Content"/> is not projected.</summary>
     public required IReadOnlyList<MessageView> Items { get; init; }
 

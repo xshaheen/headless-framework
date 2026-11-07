@@ -64,9 +64,7 @@ internal sealed partial class InMemoryDataStorage
                 .Take(pageSize)
                 .Select(message => new ScheduledDeliveryView(
                     message.StorageId,
-                    message.Origin?.Headers.TryGetValue(Headers.MessageId, out var msgId) == true
-                        ? msgId ?? string.Empty
-                        : string.Empty,
+                    _ReadMessageId(message) ?? string.Empty,
                     message.Name,
                     message.Lane,
                     message.ExpiresAt ?? DateTimeOffset.MinValue,
@@ -270,10 +268,7 @@ internal sealed partial class InMemoryDataStorage
                 outcome ?? MessagingOperationEvaluator.Evaluate(operationType, request.ExpectedDueAt, state);
 
             var messageName = row?.Name;
-            var messageId =
-                row?.Origin?.Headers.TryGetValue(Headers.MessageId, out var msgId) == true
-                    ? msgId ?? string.Empty
-                    : null;
+            var messageId = row is null ? null : _ReadMessageId(row);
             var messageLane = row?.Lane;
 
             var receipt = new InMemoryOperationReceipt(
@@ -329,4 +324,13 @@ internal sealed partial class InMemoryDataStorage
             );
         }
     }
+
+    /// <summary>
+    /// The row's message id header: <see langword="null"/> when the row carries none, and <see cref="string.Empty"/>
+    /// when the header holds no value.
+    /// </summary>
+    private static string? _ReadMessageId(MemoryMessage message) =>
+        message.Origin?.Headers.TryGetValue(Headers.MessageId, out var messageId) == true
+            ? messageId ?? string.Empty
+            : null;
 }

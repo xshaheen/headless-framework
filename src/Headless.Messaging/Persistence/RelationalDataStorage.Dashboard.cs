@@ -12,9 +12,6 @@ namespace Headless.Messaging.Persistence;
 // the operator ledger. An additional outbox's database holds no received or receipt table, so it reads nothing.
 internal sealed partial class RelationalDataStorage
 {
-    /// <summary>The most generations one Operation scope chunk returns.</summary>
-    private const int _MaxOperationChunkSize = 500;
-
     public async ValueTask<MessageCount> CountAsync(
         InboxGenerationQuery query,
         OperatorAuthorizationContext authorization,
@@ -62,21 +59,7 @@ internal sealed partial class RelationalDataStorage
             return MessageCount.Of(0, cap);
         }
 
-        await using var connection = _CreateConnection();
-        var matched = await RelationalMonitoringApi
-            .CountCappedAsync(
-                _dialect,
-                connection,
-                _receivedTable,
-                where,
-                bind,
-                cap,
-                CommandTimeoutSeconds,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        return MessageCount.Of(matched, cap);
+        return await _CountScopeAsync(_receivedTable, where, bind, cap, cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask<MessageOperationChunk> ReadOperationScopeAsync(
@@ -86,7 +69,7 @@ internal sealed partial class RelationalDataStorage
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsInclusiveBetween(chunkSize, 1, _MaxOperationChunkSize);
+        Argument.IsInclusiveBetween(chunkSize, 1, MessageOperationChunk.MaxChunkSize);
         var (where, bind) = _OperationScopeFilter(scope);
 
         if (!_holdsReceived)
@@ -94,14 +77,59 @@ internal sealed partial class RelationalDataStorage
             return new MessageOperationChunk { Targets = [] };
         }
 
+        return await _ReadScopeChunkAsync(
+                _receivedTable,
+                where,
+                bind,
+                afterId,
+                chunkSize,
+                withIncarnation: true,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>Counts the rows of <paramref name="table"/> an Operation scope's predicate matches, up to the cap.</summary>
+    private async ValueTask<MessageCount> _CountScopeAsync(
+        string table,
+        string where,
+        Action<DbCommand> bind,
+        int cap,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var connection = _CreateConnection();
+        var matched = await RelationalMonitoringApi
+            .CountCappedAsync(_dialect, connection, table, where, bind, cap, CommandTimeoutSeconds, cancellationToken)
+            .ConfigureAwait(false);
+
+        return MessageCount.Of(matched, cap);
+    }
+
+    /// <summary>
+    /// Reads one chunk of an Operation scope's rows of <paramref name="table"/> in identifier order, after
+    /// <paramref name="afterId"/>. A published row has no incarnation, so without <paramref name="withIncarnation"/>
+    /// each target carries <see cref="Guid.Empty"/>.
+    /// </summary>
+    private async ValueTask<MessageOperationChunk> _ReadScopeChunkAsync(
+        string table,
+        string where,
+        Action<DbCommand> bind,
+        Guid? afterId,
+        int chunkSize,
+        bool withIncarnation,
+        CancellationToken cancellationToken
+    )
+    {
         if (afterId is not null)
         {
             where += $" AND {_t.Id} > @AfterId";
         }
 
+        var incarnation = withIncarnation ? $"{_t.GenerationIncarnationId}," : "";
         var sql = $"""
-            SELECT {_t.Id},{_t.GenerationIncarnationId},{_t.StatusName},{_t.ChangedAt}
-            FROM {_receivedTable}
+            SELECT {_t.Id},{incarnation}{_t.StatusName},{_t.ChangedAt}
+            FROM {table}
             WHERE {where}
             ORDER BY {_t.Id}
             {_dialect.Limit("Limit")};
@@ -123,18 +151,21 @@ internal sealed partial class RelationalDataStorage
                         _dialect.AddParameter(command, "AfterId", SqlColumnType.Guid, id);
                     }
                 },
-                static async (reader, ct) =>
+                async (reader, ct) =>
                 {
+                    var offset = withIncarnation ? 1 : 0;
                     var rows = new List<MessageOperationTarget>();
                     while (await reader.ReadAsync(ct).ConfigureAwait(false))
                     {
                         rows.Add(
                             new MessageOperationTarget(
                                 reader.GetGuid(0),
-                                reader.GetGuid(1),
-                                Enum.Parse<StatusName>(reader.GetString(2)),
+                                withIncarnation ? reader.GetGuid(1) : Guid.Empty,
+                                Enum.Parse<StatusName>(reader.GetString(1 + offset)),
                                 (
-                                    await reader.GetFieldValueAsync<DateTimeOffset>(3, ct).ConfigureAwait(false)
+                                    await reader
+                                        .GetFieldValueAsync<DateTimeOffset>(2 + offset, ct)
+                                        .ConfigureAwait(false)
                                 ).ToUniversalTime()
                             )
                         );
@@ -146,12 +177,7 @@ internal sealed partial class RelationalDataStorage
             )
             .ConfigureAwait(false);
 
-        // A full chunk may be the scope's last; the next read then returns an empty chunk with no cursor.
-        return new MessageOperationChunk
-        {
-            Targets = targets,
-            Next = targets.Count == chunkSize ? targets[^1].StorageId : null,
-        };
+        return MessageOperationChunk.Of(targets, chunkSize);
     }
 
     /// <summary>
@@ -207,8 +233,7 @@ internal sealed partial class RelationalDataStorage
 
         if (query.Actor is not null)
         {
-            // The LIKE of the escaped value keeps the match exact on an engine whose equality ignores trailing spaces.
-            where += $" AND {_t.Actor} = @Actor AND {_t.Actor} LIKE @ActorPattern ESCAPE '\\'";
+            where += RelationalMessageFilter.ExactText(_t.Actor, "Actor");
         }
 
         if (query.OperationType is not null)
@@ -253,16 +278,13 @@ internal sealed partial class RelationalDataStorage
                 CommandTimeoutSeconds,
                 command =>
                 {
-                    if (query.Actor is { } actor)
-                    {
-                        _dialect.AddParameter(command, "Actor", SqlColumnType.KeyText(_ActorMaxLength), actor);
-                        _dialect.AddParameter(
-                            command,
-                            "ActorPattern",
-                            SqlColumnType.Text(_Unbounded),
-                            SqlLikePattern.Escape(actor)
-                        );
-                    }
+                    RelationalMessageFilter.BindExactText(
+                        _dialect,
+                        command,
+                        "Actor",
+                        query.Actor,
+                        SqlColumnType.KeyText(_ActorMaxLength)
+                    );
 
                     if (query.OperationType is { } operationType)
                     {
@@ -290,7 +312,6 @@ internal sealed partial class RelationalDataStorage
                         _dialect.AddParameter(command, "AfterId", SqlColumnType.Guid, after.OperationId);
                     }
 
-                    // One row past the page proves another page follows.
                     _dialect.AddParameter(command, "Limit", SqlColumnType.Int32, limit + 1);
                 },
                 static async (reader, ct) =>

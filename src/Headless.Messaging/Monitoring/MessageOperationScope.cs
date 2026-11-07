@@ -94,6 +94,9 @@ public readonly record struct MessageOperationTarget(
 [PublicAPI]
 public sealed record MessageOperationChunk
 {
+    /// <summary>The most targets one chunk of an Operation's scope returns.</summary>
+    public const int MaxChunkSize = 500;
+
     /// <summary>Gets the generations of this chunk, in the store's identifier order.</summary>
     public required IReadOnlyList<MessageOperationTarget> Targets { get; init; }
 
@@ -103,6 +106,22 @@ public sealed record MessageOperationChunk
     /// chunk changed it.
     /// </summary>
     public Guid? Next { get; init; }
+
+    /// <summary>
+    /// Returns the chunk of <paramref name="targets"/> read with <paramref name="chunkSize"/>: a full chunk resumes
+    /// after its last target, and a shorter one is the last.
+    /// </summary>
+    /// <param name="targets">The targets read, at most <paramref name="chunkSize"/>, in the store's identifier order.</param>
+    /// <param name="chunkSize">The most targets the read asked for.</param>
+    internal static MessageOperationChunk Of(IReadOnlyList<MessageOperationTarget> targets, int chunkSize)
+    {
+        // A full chunk may be the scope's last; the next read then returns an empty chunk with no cursor.
+        return new MessageOperationChunk
+        {
+            Targets = targets,
+            Next = targets.Count == chunkSize ? targets[^1].StorageId : null,
+        };
+    }
 }
 
 #pragma warning restore MA0048

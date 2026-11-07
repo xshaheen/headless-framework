@@ -14,7 +14,7 @@ internal sealed partial class RelationalDataStorage
         CancellationToken cancellationToken = default
     )
     {
-        // One index seek per table on (ChangedAt, Id). An additional outbox's database holds no received table.
+        // An additional outbox's database holds no received table.
         var latest = $"SELECT MAX({_t.ChangedAt}) AS m FROM {_dialect.ReadWithoutWaiting(_publishedTable)}";
         if (_holdsReceived)
         {
@@ -64,7 +64,6 @@ internal sealed partial class RelationalDataStorage
             return [];
         }
 
-        // The keyset arm is added only when the pass has a position, so a pass's first page is a plain range seek.
         var keyset = resumeAfter is null
             ? ""
             : $" AND {_dialect.KeysetAfter([_t.ChangedAt, _t.Id], ["PositionAt", "PositionId"])}";

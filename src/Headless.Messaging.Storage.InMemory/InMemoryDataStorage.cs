@@ -891,7 +891,6 @@ internal sealed partial class InMemoryDataStorage(
         // A poisoned row is terminal through NextRetryAt = null, not through its retry count; no consume attempt ran.
         const int retries = 0;
         var indexKey = (version, messageId, consumerIdentity, message.Lane);
-        // A row stored here failed before any consumer ran; a caller that names no cause stores the poison cause.
         var failureFingerprint = message.FailureFingerprint ?? MessagingFailureFingerprints.Poison;
 
         // Upsert on (Version, MessageId, ConsumerIdentity) — mirrors the SQL providers' MERGE / ON CONFLICT

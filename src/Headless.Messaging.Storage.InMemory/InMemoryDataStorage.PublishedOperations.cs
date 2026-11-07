@@ -47,12 +47,7 @@ internal sealed partial class InMemoryDataStorage
         Argument.IsPositive(cap);
         var inScope = _PublishedScopePredicate(scope);
 
-        lock (_receivedUpsertLock)
-        {
-            return ValueTask.FromResult(
-                MessageCount.Of(PublishedMessages.Values.Where(inScope).Take(cap + 1).Count(), cap)
-            );
-        }
+        return ValueTask.FromResult(_CountScope(PublishedMessages, inScope, cap));
     }
 
     private ValueTask<MessageOperationChunk> _ReadPublishedScopeAsync(
@@ -63,33 +58,12 @@ internal sealed partial class InMemoryDataStorage
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
-        Argument.IsInclusiveBetween(chunkSize, 1, _MaxOperationChunkSize);
+        Argument.IsInclusiveBetween(chunkSize, 1, MessageOperationChunk.MaxChunkSize);
         var inScope = _PublishedScopePredicate(scope);
 
-        lock (_receivedUpsertLock)
-        {
-            var targets = PublishedMessages
-                .Values.Where(message =>
-                    inScope(message) && (afterId is not { } after || message.StorageId.CompareTo(after) > 0)
-                )
-                .OrderBy(static message => message.StorageId)
-                .Take(chunkSize)
-                .Select(static message => new MessageOperationTarget(
-                    message.StorageId,
-                    Guid.Empty,
-                    message.StatusName,
-                    message.ChangedAt
-                ))
-                .ToList();
-
-            return ValueTask.FromResult(
-                new MessageOperationChunk
-                {
-                    Targets = targets,
-                    Next = targets.Count == chunkSize ? targets[^1].StorageId : null,
-                }
-            );
-        }
+        return ValueTask.FromResult(
+            _ReadScopeChunk(PublishedMessages, inScope, afterId, chunkSize, static _ => Guid.Empty)
+        );
     }
 
     private static Func<MemoryMessage, bool> _PublishedScopePredicate(MessageOperationScope scope)
@@ -115,7 +89,7 @@ internal sealed partial class InMemoryDataStorage
 
         return message =>
             InMemoryMessageFilter.Matches(message, scope.Query)
-            && InMemoryMessageFilter.IsTerminal(message)
+            && MessageTerminalState.IsTerminal(message.StatusName, message.NextRetryAt)
             && message.ChangedAt <= scope.HighWaterMark
             && eligible(message);
     }
@@ -187,10 +161,7 @@ internal sealed partial class InMemoryDataStorage
                 }
             }
 
-            var messageId =
-                row is null ? null
-                : row.Origin?.Headers.TryGetValue(Headers.MessageId, out var msgId) == true ? msgId ?? string.Empty
-                : string.Empty;
+            var messageId = row is null ? null : _ReadMessageId(row) ?? string.Empty;
 
             _inboxOperationReceipts.Add(
                 request.OperationId,

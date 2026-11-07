@@ -245,9 +245,7 @@ internal sealed partial class RelationalDataStorage
             message.InlineAttempts,
             StatusName.Failed,
             exceptionInfo,
-            // A row stored here failed before any consumer ran; a caller that names no cause stores the poison cause.
-            message.FailureFingerprint
-                ?? MessagingFailureFingerprints.Poison,
+            message.FailureFingerprint ?? MessagingFailureFingerprints.Poison,
             ExpiresAfter: TimeSpan.FromSeconds(Options.FailedMessageExpiredAfter),
             DueAfter: null
         );

@@ -114,10 +114,7 @@ internal sealed partial class RelationalDataStorage
 
         if (!string.IsNullOrEmpty(query.ConsumerIdentity))
         {
-            // The equality seeks; the LIKE of the escaped value keeps the match exact on an engine whose equality
-            // ignores trailing spaces.
-            where +=
-                $" AND {_t.ConsumerIdentity}=@ConsumerIdentity AND {_t.ConsumerIdentity} LIKE @ConsumerIdentityPattern ESCAPE '\\'";
+            where += RelationalMessageFilter.ExactText(_t.ConsumerIdentity, "ConsumerIdentity");
         }
 
         if (query.Lane is not null)
@@ -143,17 +140,12 @@ internal sealed partial class RelationalDataStorage
         void bind(DbCommand command)
         {
             _dialect.AddParameter(command, "IncarnationId", SqlColumnType.Guid, query.IncarnationId);
-            _dialect.AddParameter(
+            RelationalMessageFilter.BindExactText(
+                _dialect,
                 command,
                 "ConsumerIdentity",
-                SqlColumnType.KeyText(_NameMaxLength),
-                query.ConsumerIdentity
-            );
-            _dialect.AddParameter(
-                command,
-                "ConsumerIdentityPattern",
-                SqlColumnType.KeyText(_Unbounded),
-                query.ConsumerIdentity is null ? null : SqlLikePattern.Escape(query.ConsumerIdentity)
+                query.ConsumerIdentity,
+                SqlColumnType.KeyText(_NameMaxLength)
             );
             _dialect.AddParameter(
                 command,

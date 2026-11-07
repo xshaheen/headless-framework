@@ -44,39 +44,33 @@ internal static class RelationalMessageFilter
             where += $" AND {t.IntentType} = @FilterIntentType";
         }
 
-        // The equality seeks; the LIKE of the escaped value keeps the match exact on an engine whose equality ignores
-        // trailing spaces.
-        string exact(string column, string parameter) =>
-            $" AND {column} = @{parameter} AND {column} LIKE @{parameter}Pattern ESCAPE '\\'";
-
         if (query.Name is not null)
         {
-            where += exact(t.Name, "FilterName");
+            where += ExactText(t.Name, "FilterName");
         }
 
         if (query.MessageId is not null)
         {
-            where += exact(t.MessageId, "FilterMessageId");
+            where += ExactText(t.MessageId, "FilterMessageId");
         }
 
         if (query.FailureFingerprint is not null)
         {
-            where += exact(t.FailureFingerprint, "FilterFingerprint");
+            where += ExactText(t.FailureFingerprint, "FilterFingerprint");
         }
 
         if (received && query.ConsumerIdentity is not null)
         {
-            where += exact(t.ConsumerIdentity, "FilterConsumer");
+            where += ExactText(t.ConsumerIdentity, "FilterConsumer");
         }
 
         if (received && query.TenantId is not null)
         {
-            where += $" AND {t.TenantPresent} = {t.True}" + exact(t.TenantId, "FilterTenant");
+            where += $" AND {t.TenantPresent} = {t.True}" + ExactText(t.TenantId, "FilterTenant");
         }
 
         if (query.IsHeld is { } held)
         {
-            // Published rows are never held.
             where +=
                 received ? $" AND {t.IsHeld} = {(held ? t.True : t.False)}"
                 : held ? " AND 1 = 0"
@@ -100,27 +94,11 @@ internal static class RelationalMessageFilter
                 );
             }
 
-            // The pattern is unbounded, so a value longer than its column, which a sized parameter would truncate,
-            // still matches nothing.
-            void text(string parameter, string? value, SqlColumnType type)
-            {
-                if (value is null)
-                {
-                    return;
-                }
-
-                dialect.AddParameter(command, parameter, type, value);
-                dialect.AddParameter(
-                    command,
-                    parameter + "Pattern",
-                    SqlColumnType.Text(-1),
-                    SqlLikePattern.Escape(value)
-                );
-            }
-
-            text("FilterName", query.Name, SqlColumnType.Text(_TextMaxLength));
-            text("FilterMessageId", query.MessageId, SqlColumnType.KeyText(_TextMaxLength));
-            text(
+            BindExactText(dialect, command, "FilterName", query.Name, SqlColumnType.Text(_TextMaxLength));
+            BindExactText(dialect, command, "FilterMessageId", query.MessageId, SqlColumnType.KeyText(_TextMaxLength));
+            BindExactText(
+                dialect,
+                command,
                 "FilterFingerprint",
                 query.FailureFingerprint,
                 SqlColumnType.Text(MessagingFailureFingerprints.MaxLength)
@@ -128,12 +106,48 @@ internal static class RelationalMessageFilter
 
             if (received)
             {
-                text("FilterConsumer", query.ConsumerIdentity, SqlColumnType.KeyText(_TextMaxLength));
-                text("FilterTenant", query.TenantId, SqlColumnType.KeyText(_TextMaxLength));
+                BindExactText(
+                    dialect,
+                    command,
+                    "FilterConsumer",
+                    query.ConsumerIdentity,
+                    SqlColumnType.KeyText(_TextMaxLength)
+                );
+                BindExactText(dialect, command, "FilterTenant", query.TenantId, SqlColumnType.KeyText(_TextMaxLength));
             }
         }
 
         return (where, bind);
+    }
+
+    /// <summary>
+    /// The predicate, prefixed with <c> AND </c>, that <paramref name="column"/> equals the text bound by
+    /// <see cref="BindExactText"/> under <paramref name="parameter"/>. The equality seeks; the <c>LIKE</c> of the
+    /// escaped value keeps the match exact on an engine whose equality ignores trailing spaces.
+    /// </summary>
+    public static string ExactText(string column, string parameter) =>
+        $" AND {column} = @{parameter} AND {column} LIKE @{parameter}Pattern ESCAPE '\\'";
+
+    /// <summary>
+    /// Binds the value and the escaped pattern of an <see cref="ExactText"/> predicate, or nothing when
+    /// <paramref name="value"/> is <see langword="null"/>. The pattern is unbounded, so a value longer than its column,
+    /// which a sized parameter would truncate, still matches nothing.
+    /// </summary>
+    public static void BindExactText(
+        ISqlDialect dialect,
+        DbCommand command,
+        string parameter,
+        string? value,
+        SqlColumnType type
+    )
+    {
+        if (value is null)
+        {
+            return;
+        }
+
+        dialect.AddParameter(command, parameter, type, value);
+        dialect.AddParameter(command, parameter + "Pattern", SqlColumnType.Text(-1), SqlLikePattern.Escape(value));
     }
 
     /// <summary>
