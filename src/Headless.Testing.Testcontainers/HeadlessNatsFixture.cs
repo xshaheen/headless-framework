@@ -3,6 +3,7 @@
 using DotNet.Testcontainers.Builders;
 using Testcontainers.Nats;
 using Testcontainers.Xunit;
+using Xunit;
 
 namespace Headless.Testing.Testcontainers;
 
@@ -17,10 +18,19 @@ public class HeadlessNatsFixture() : ContainerFixture<NatsBuilder, NatsContainer
     {
         return base.Configure()
             .WithImage(TestImages.Nats)
-            .WithWaitStrategy(
-                Wait.ForUnixContainer()
-                    .UntilMessageIsLogged("Server is ready")
-                    .UntilExternalTcpPortIsAvailable(NatsBuilder.NatsClientPort)
-            );
+            .WithWaitStrategy(Wait.ForUnixContainer().UntilMessageIsLogged("Server is ready"));
+    }
+
+    /// <inheritdoc />
+    protected override async ValueTask InitializeAsync()
+    {
+        await base.InitializeAsync().ConfigureAwait(false);
+        await ContainerHostPort
+            .EnsureReachableAsync(
+                Container,
+                NatsBuilder.NatsClientPort,
+                cancellationToken: TestContext.Current.CancellationToken
+            )
+            .ConfigureAwait(false);
     }
 }

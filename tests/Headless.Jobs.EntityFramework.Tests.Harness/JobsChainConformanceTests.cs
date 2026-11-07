@@ -862,7 +862,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
     {
         var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
-        using var host = fixture.BuildHost("chain-immediate", fastMembership: true);
+        using var host = fixture.BuildHost("chain-immediate");
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
         await host.StartAsync(ct);
 
@@ -921,7 +921,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
     {
         var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
-        using var host = fixture.BuildHost("chain-immediate-batch", fastMembership: true);
+        using var host = fixture.BuildHost("chain-immediate-batch");
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
         await host.StartAsync(ct);
 
@@ -1342,8 +1342,8 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
     {
         var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
-        using var hostA = fixture.BuildHost("native-a", fastMembership: true);
-        using var hostB = fixture.BuildHost("native-b", fastMembership: true);
+        using var hostA = fixture.BuildHost("native-a");
+        using var hostB = fixture.BuildHost("native-b");
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(hostA, ct);
         await hostA.StartAsync(ct);
         await hostB.StartAsync(ct);
