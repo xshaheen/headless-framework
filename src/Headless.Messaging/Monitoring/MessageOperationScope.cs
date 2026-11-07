@@ -6,24 +6,33 @@ namespace Headless.Messaging;
 
 #pragma warning disable MA0048 // A topic file: its types are peers with no main type, so the file is named for the topic.
 
-/// <summary>A command an Operation applies to every received inbox generation in its scope.</summary>
+/// <summary>A command an Operation applies to every row in its scope.</summary>
 [PublicAPI]
 #pragma warning disable CA1008 // Every Operation applies one command, so a zero member would name none.
 public enum MessageOperationKind
 {
     /// <summary>
-    /// Re-execute terminal current generations, each through <see cref="IInboxOperationsApi.ForceReprocessAsync"/>.
+    /// Re-execute terminal current received generations, each through
+    /// <see cref="IInboxOperationsApi.ForceReprocessAsync"/>.
     /// </summary>
     ReExecute = 1,
 
-    /// <summary>Delete terminal unheld generations, each through <see cref="IInboxOperationsApi.PurgeAsync"/>.</summary>
+    /// <summary>
+    /// Delete terminal rows: unheld received generations through <see cref="IInboxOperationsApi.PurgeAsync"/>, or
+    /// published rows through <see cref="IPublishedOperationsApi.PurgeAsync"/>.
+    /// </summary>
     Delete = 2,
+
+    /// <summary>
+    /// Send published rows that failed for good again, each through <see cref="IPublishedOperationsApi.ResendAsync"/>.
+    /// </summary>
+    Resend = 3,
 }
 #pragma warning restore CA1008
 
 /// <summary>
-/// The scope of an Operation over received inbox generations, frozen when the operator confirmed it: the generations
-/// <see cref="Query"/> matches that the command may apply to and whose change marker was at or before
+/// The scope of an Operation over received inbox generations or published rows, frozen when the operator confirmed
+/// it: the rows <see cref="Query"/> matches that the command may apply to and whose change marker was at or before
 /// <see cref="HighWaterMark"/>.
 /// </summary>
 /// <remarks>
@@ -37,6 +46,11 @@ public enum MessageOperationKind
 /// serving one chunk on two nodes, re-executes no message twice: a stale chunk's write is refused by the single-row
 /// call, which checks the generation again under its lock.
 /// </para>
+/// <para>
+/// Re-send and delete over published rows keep the same promise another way: each chunk target carries the row's
+/// change marker, and the single-row write applies only while the row still carries it. A row re-sent and failed
+/// again after the read has a later marker, so a stale chunk's write is refused and a new read leaves the row out.
+/// </para>
 /// <para>This record grows by <see langword="init"/> members.</para>
 /// </remarks>
 [PublicAPI]
@@ -46,8 +60,9 @@ public sealed record MessageOperationScope
     public required MessageOperationKind Kind { get; init; }
 
     /// <summary>
-    /// Gets the generations the Operation covers. Its <see cref="MessageListQuery.MessageType"/> must be
-    /// <see cref="MessageType.Subscribe"/>.
+    /// Gets the rows the Operation covers. Its <see cref="MessageListQuery.MessageType"/> is
+    /// <see cref="MessageType.Subscribe"/> for <see cref="IInboxOperationsApi"/> and <see cref="MessageType.Publish"/>
+    /// for <see cref="IPublishedOperationsApi"/>.
     /// </summary>
     public required MessageListQuery Query { get; init; }
 
@@ -55,11 +70,16 @@ public sealed record MessageOperationScope
     public required DateTimeOffset HighWaterMark { get; init; }
 }
 
-/// <summary>One generation in an Operation's scope, with the state the single-row write expects.</summary>
-/// <param name="StorageId">The generation's storage identifier.</param>
-/// <param name="IncarnationId">The generation's incarnation, the single-row write's expected incarnation.</param>
-/// <param name="Status">The generation's status, the single-row write's expected status.</param>
-/// <param name="ChangedAt">The generation's change marker when the scope read returned it.</param>
+/// <summary>One row in an Operation's scope, with the state the single-row write expects.</summary>
+/// <param name="StorageId">The row's storage identifier.</param>
+/// <param name="IncarnationId">
+/// A received generation's incarnation, the single-row write's expected incarnation; <see cref="Guid.Empty"/> for a
+/// published row, which has none.
+/// </param>
+/// <param name="Status">The row's status, the inbox single-row write's expected status.</param>
+/// <param name="ChangedAt">
+/// The row's change marker when the scope read returned it, the published single-row write's expected marker.
+/// </param>
 [PublicAPI]
 [StructLayout(LayoutKind.Auto)]
 public readonly record struct MessageOperationTarget(

@@ -57,6 +57,9 @@ public enum MessagingOperationTargetKind
 {
     Inbox = 0,
     ScheduledDelivery = 1,
+
+    /// <summary>A published row, re-sent or deleted through <see cref="IPublishedOperationsApi"/>.</summary>
+    Published = 2,
 }
 
 /// <summary>Authenticated authority shared by safe queries and audited mutations.</summary>
@@ -155,6 +158,9 @@ public enum MessagingOperationType
     Cleanup = 4,
     Revoke = 5,
     DispatchNow = 6,
+
+    /// <summary>A published row that failed for good was sent again with a fresh retry budget.</summary>
+    Resend = 7,
 }
 
 [PublicAPI]

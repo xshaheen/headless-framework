@@ -157,6 +157,8 @@ public sealed class FaultInjectingDataStorage(IDataStorage inner, FaultScript fa
     public IScheduledDeliveryOperationsApi GetScheduledDeliveryOperationsApi() =>
         Inner.GetScheduledDeliveryOperationsApi();
 
+    public IPublishedOperationsApi GetPublishedOperationsApi() => Inner.GetPublishedOperationsApi();
+
     public ValueTask<InboxHistoryRetentionCutoffs> GetInboxHistoryRetentionCutoffsAsync(
         CancellationToken cancellationToken = default
     )

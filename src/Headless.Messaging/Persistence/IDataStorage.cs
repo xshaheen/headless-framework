@@ -20,6 +20,12 @@ public interface IDataStorage
             $"Messaging storage provider '{GetType().FullName}' does not support scheduled-delivery operations."
         );
 
+    /// <summary>Returns the audited, provider-neutral published-row administration API: re-send and delete.</summary>
+    IPublishedOperationsApi GetPublishedOperationsApi() =>
+        throw new NotSupportedException(
+            $"Messaging storage provider '{GetType().FullName}' does not support published-message operations."
+        );
+
     /// <summary>Reads one provider-clock snapshot with the current history retention settings.</summary>
     /// <remarks>Use database time for SQL providers and the injected clock for InMemory. Reuse this snapshot throughout a collector invocation.</remarks>
     ValueTask<InboxHistoryRetentionCutoffs> GetInboxHistoryRetentionCutoffsAsync(
