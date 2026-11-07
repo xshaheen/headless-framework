@@ -12,6 +12,8 @@ namespace Headless.Fencing.InMemory;
 /// <param name="Progress">
 /// The last progress a successful renewal recorded; immutable, so rows share it. Cleared by a settlement or release.
 /// </param>
+/// <param name="Holder">The owner tag the last grant recorded; kept until the next grant replaces it.</param>
+/// <param name="Attributes">The attributes the last grant recorded; immutable, kept until the next grant replaces them.</param>
 internal sealed record InMemoryLease(
     long Generation,
     InMemoryLeaseState State,
@@ -19,7 +21,9 @@ internal sealed record InMemoryLease(
     DateTimeOffset ExpiresAt,
     DateTimeOffset? EndedAt,
     int TakeoverCount,
-    LeaseProgress? Progress
+    LeaseProgress? Progress,
+    string? Holder = null,
+    LeaseAttributes? Attributes = null
 );
 
 /// <summary>The stored state of a lease.</summary>

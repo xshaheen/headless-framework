@@ -19,6 +19,9 @@ internal static class PostgreSqlFencingSchema
     public const string TakeoverCount = "takeover_count";
     public const string Progress = "progress";
     public const string ProgressContract = "progress_contract";
+    public const string Holder = "holder";
+    public const string Attributes = "attributes";
+    public const string AttributesContract = "attributes_contract";
 
     // Stored as smallint. Expired is never stored: it is Active with an expiry at or before the database clock.
     public const short Active = 0;

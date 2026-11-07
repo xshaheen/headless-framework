@@ -32,7 +32,7 @@ public sealed class PostgreSqlLeaseDeadlockRetryTests(PostgreSqlFencingFixture f
             .GrantAsync(
                 new LeaseKey("", "deadlock", Guid.NewGuid().ToString("N")),
                 TimeSpan.FromMinutes(1),
-                LeaseTakeover.Allowed,
+                new LeaseGrantOptions(),
                 AbortToken
             )
             .AsTask();
@@ -63,7 +63,7 @@ public sealed class PostgreSqlLeaseDeadlockRetryTests(PostgreSqlFencingFixture f
             .GrantAsync(
                 new LeaseKey("", "deadlock", Guid.NewGuid().ToString("N")),
                 TimeSpan.FromMinutes(1),
-                LeaseTakeover.Allowed,
+                new LeaseGrantOptions(),
                 AbortToken
             )
             .AsTask();

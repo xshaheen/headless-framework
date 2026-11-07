@@ -24,7 +24,7 @@ internal static class PostgreSqlFencingSchemaContribution
         // byte) whatever the database's default collation is. One store-wide sequence issues every generation, so a
         // lease granted again after its row was purged still gets a generation above every earlier one. The active
         // index serves the sweep's keyset walk in (expires_at, tenant_id, resource) order; the ended index serves
-        // purge. Progress and its contract are stored together or not at all.
+        // purge. Progress and its contract are stored together or not at all, and so are the attributes and theirs.
         var sql = $"""
             CREATE SEQUENCE IF NOT EXISTS {sequence} AS bigint START WITH 1 INCREMENT BY 1 NO CYCLE;
 
@@ -40,6 +40,9 @@ internal static class PostgreSqlFencingSchemaContribution
                 {PostgreSqlFencingSchema.TakeoverCount} integer NOT NULL DEFAULT 0,
                 {PostgreSqlFencingSchema.Progress} bytea NULL,
                 {PostgreSqlFencingSchema.ProgressContract} varchar({FencingFieldLimits.ProgressContractMaxLength}) NULL,
+                {PostgreSqlFencingSchema.Holder} varchar({FencingFieldLimits.HolderMaxLength}) COLLATE "C" NULL,
+                {PostgreSqlFencingSchema.Attributes} bytea NULL,
+                {PostgreSqlFencingSchema.AttributesContract} varchar({FencingFieldLimits.AttributesContractMaxLength}) NULL,
                 CONSTRAINT "pk_{t}" PRIMARY KEY (
                     {PostgreSqlFencingSchema.TenantId},
                     {PostgreSqlFencingSchema.Kind},
@@ -55,6 +58,9 @@ internal static class PostgreSqlFencingSchemaContribution
                 CONSTRAINT "ck_{t}_takeover_count" CHECK ({PostgreSqlFencingSchema.TakeoverCount} >= 0),
                 CONSTRAINT "ck_{t}_progress" CHECK (
                     ({PostgreSqlFencingSchema.Progress} IS NULL) = ({PostgreSqlFencingSchema.ProgressContract} IS NULL)
+                ),
+                CONSTRAINT "ck_{t}_attributes" CHECK (
+                    ({PostgreSqlFencingSchema.Attributes} IS NULL) = ({PostgreSqlFencingSchema.AttributesContract} IS NULL)
                 )
             );
 

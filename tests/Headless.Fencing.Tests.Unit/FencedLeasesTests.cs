@@ -25,7 +25,7 @@ public sealed class FencedLeasesTests : TestBase
             .Store.GrantAsync(
                 new LeaseKey("t1", "job", "order-1"),
                 FencingTestContext.Duration,
-                LeaseTakeover.Allowed,
+                FencingTestContext.TakeoverOnly(LeaseTakeover.Allowed),
                 AbortToken
             )
             .Returns(expected);
@@ -44,7 +44,12 @@ public sealed class FencedLeasesTests : TestBase
         var context = new FencingTestContext();
         var requested = FencingTestContext.Duration + TimeSpan.FromTicks(7);
         context
-            .Store.GrantAsync(_Key, FencingTestContext.Duration, LeaseTakeover.Allowed, AbortToken)
+            .Store.GrantAsync(
+                _Key,
+                FencingTestContext.Duration,
+                FencingTestContext.TakeoverOnly(LeaseTakeover.Allowed),
+                AbortToken
+            )
             .Returns(LeaseGrantResult.Held(3, DateTimeOffset.UnixEpoch));
         context
             .Store.RenewAsync(_Key, 7, FencingTestContext.Duration, null, AbortToken)
@@ -57,7 +62,12 @@ public sealed class FencedLeasesTests : TestBase
         // then
         await context
             .Store.Received(1)
-            .GrantAsync(_Key, FencingTestContext.Duration, LeaseTakeover.Allowed, AbortToken);
+            .GrantAsync(
+                _Key,
+                FencingTestContext.Duration,
+                FencingTestContext.TakeoverOnly(LeaseTakeover.Allowed),
+                AbortToken
+            );
         await context.Store.Received(1).RenewAsync(_Key, 7, FencingTestContext.Duration, null, AbortToken);
     }
 
@@ -369,7 +379,7 @@ public sealed class FencedLeasesTests : TestBase
             .Store.GrantAsync(
                 new LeaseKey("t1", "job", "order-1"),
                 FencingTestContext.Duration,
-                LeaseTakeover.AfterSweep,
+                FencingTestContext.TakeoverOnly(LeaseTakeover.AfterSweep),
                 AbortToken
             )
             .Returns(expected);
@@ -405,7 +415,7 @@ public sealed class FencedLeasesTests : TestBase
 
         // then
         await grant.Should().ThrowAsync<InvalidEnumArgumentException>();
-        await context.Store.DidNotReceiveWithAnyArgs().GrantAsync(default, default, default, AbortToken);
+        await context.Store.DidNotReceiveWithAnyArgs().GrantAsync(default, default, default!, AbortToken);
     }
 
     [Fact]
@@ -450,6 +460,141 @@ public sealed class FencedLeasesTests : TestBase
         // when
         var act = async () =>
             await context.Leases.GetStatusAsync(_Lease, connection: null!, cancellationToken: AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<ArgumentNullException>().WithParameterName("connection");
+        context.Store.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_hand_the_store_the_grant_options_as_passed()
+    {
+        // given
+        var context = new FencingTestContext();
+        var options = new LeaseGrantOptions
+        {
+            Takeover = LeaseTakeover.AfterSweep,
+            Holder = "cluster/node-1@3",
+            Attributes = new LeaseAttributes([1, 2, 3], "run.scope/v1"),
+        };
+        var expected = LeaseGrantResult.Granted(_Lease, DateTimeOffset.UnixEpoch);
+        context.Store.GrantAsync(_Key, FencingTestContext.Duration, options, AbortToken).Returns(expected);
+
+        // when
+        var result = await context.Leases.GrantAsync(
+            "job",
+            "order-1",
+            FencingTestContext.Duration,
+            options,
+            AbortToken
+        );
+
+        // then
+        result.Should().BeSameAs(expected);
+    }
+
+    [Fact]
+    public async Task should_reject_null_or_oversized_grant_options_before_the_store()
+    {
+        // given
+        var context = new FencingTestContext();
+        var longHolder = new LeaseGrantOptions { Holder = new string('h', FencingFieldLimits.HolderMaxLength + 1) };
+        var blankHolder = new LeaseGrantOptions { Holder = "  " };
+        var largeAttributes = new LeaseGrantOptions
+        {
+            Attributes = new LeaseAttributes(new byte[FencingFieldLimits.AttributesMaxBytes + 1], "run.scope/v1"),
+        };
+        var longContract = new LeaseGrantOptions
+        {
+            Attributes = new LeaseAttributes([1], new string('c', FencingFieldLimits.AttributesContractMaxLength + 1)),
+        };
+
+        Func<Task> grant(LeaseGrantOptions options) =>
+            async () =>
+                await context.Leases.GrantAsync("job", "order-1", FencingTestContext.Duration, options, AbortToken);
+
+        // when / then
+        await grant(null!).Should().ThrowAsync<ArgumentNullException>();
+        await grant(longHolder).Should().ThrowAsync<ArgumentException>().WithParameterName("options");
+        await grant(blankHolder).Should().ThrowAsync<ArgumentException>().WithParameterName("options");
+        await grant(largeAttributes).Should().ThrowAsync<ArgumentException>().WithParameterName("options");
+        await grant(longContract).Should().ThrowAsync<ArgumentException>().WithParameterName("options");
+        context.Store.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_accept_attributes_and_a_holder_at_their_limits()
+    {
+        // given
+        var context = new FencingTestContext();
+        var options = new LeaseGrantOptions
+        {
+            Holder = new string('h', FencingFieldLimits.HolderMaxLength),
+            Attributes = new LeaseAttributes(
+                new byte[FencingFieldLimits.AttributesMaxBytes],
+                new string('c', FencingFieldLimits.AttributesContractMaxLength)
+            ),
+        };
+        context
+            .Store.GrantAsync(_Key, FencingTestContext.Duration, options, AbortToken)
+            .Returns(LeaseGrantResult.Held(3, DateTimeOffset.UnixEpoch));
+
+        // when
+        var result = await context.Leases.GrantAsync(
+            "job",
+            "order-1",
+            FencingTestContext.Duration,
+            options,
+            AbortToken
+        );
+
+        // then
+        result.Status.Should().Be(LeaseGrantStatus.Held);
+    }
+
+    [Fact]
+    public async Task should_read_and_revoke_the_current_attempt_by_the_resolved_key()
+    {
+        // given
+        var context = new FencingTestContext();
+        context.Tenant.Id = "t1";
+        var key = new LeaseKey("t1", "job", "order-1");
+        var lease = new FencedLease("t1", "job", "order-1", 7);
+        var snapshot = new LeaseSnapshot(
+            lease,
+            LeaseFenceStatus.Current,
+            DateTimeOffset.UnixEpoch,
+            "cluster/node-1@3",
+            Attributes: null,
+            TakeoverCount: 0
+        );
+        var connection = Substitute.For<DbConnection>();
+        var transaction = Substitute.For<DbTransaction>();
+        context.Store.GetCurrentAsync(key, AbortToken).Returns(snapshot);
+        context.Store.GetCurrentAsync(key, connection, transaction, AbortToken).Returns(snapshot);
+        context.Store.RevokeAsync(key, AbortToken).Returns(lease);
+
+        // when
+        var current = await context.Leases.GetCurrentAsync("job", "order-1", AbortToken);
+        var onConnection = await context.Leases.GetCurrentAsync("job", "order-1", connection, transaction, AbortToken);
+        var revoked = await context.Leases.RevokeAsync("job", "order-1", AbortToken);
+
+        // then
+        current.Should().BeSameAs(snapshot);
+        current!.IsLive.Should().BeTrue();
+        onConnection.Should().BeSameAs(snapshot);
+        revoked.Should().Be(lease);
+    }
+
+    [Fact]
+    public async Task should_refuse_a_null_connection_for_the_current_read_before_the_store()
+    {
+        // given
+        var context = new FencingTestContext();
+
+        // when
+        var act = async () =>
+            await context.Leases.GetCurrentAsync("job", "order-1", connection: null!, cancellationToken: AbortToken);
 
         // then
         await act.Should().ThrowAsync<ArgumentNullException>().WithParameterName("connection");
