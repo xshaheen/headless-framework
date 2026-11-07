@@ -40,6 +40,9 @@ builder.Services.AddHeadlessDashboard(dashboard =>
     });
     // The Jobs module reads the store AddHeadlessJobs configures below, and inherits the host policies above.
     dashboard.AddJobs();
+    // The Messaging module reads the stores AddHeadlessMessaging configures below. It serves beside the standalone
+    // Messaging dashboard UseDashboard(...) registers, which stays at /messaging/dashboard.
+    dashboard.AddMessaging();
 });
 
 builder.Services.AddHeadlessJobs(options =>
@@ -122,6 +125,7 @@ app.MapGet(
                 store = sandbox.Store.ToString(),
                 headlessDashboard = "/headless",
                 jobsModule = "/headless/jobs",
+                messagingModule = "/headless/messaging",
                 messagingDashboard = "/messaging/dashboard",
                 headlessAuth = "host",
                 messagingAuth = string.IsNullOrEmpty(sandbox.MessagingDashboardPassword) ? "none" : "basic",

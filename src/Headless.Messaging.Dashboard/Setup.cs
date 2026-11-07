@@ -4,11 +4,17 @@ using System.Reflection;
 using System.Text.Encodings.Web;
 using Headless.Checks;
 using Headless.Dashboard;
+using Headless.Hosting;
+using Headless.Messaging.Internal;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Dashboard;
 
@@ -16,11 +22,129 @@ public static class SetupMessagingDashboard
 {
     private const string _EmbeddedFileNamespace = "Headless.Messaging.Dashboard.wwwroot.dist";
 
+    private const string _MissingMessaging =
+        "The Messaging dashboard module (AddMessaging) needs Headless Messaging. Call "
+        + "services.AddHeadlessMessaging(...) to register it.";
+
     private static readonly JsonSerializerOptions _JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         Encoder = JavaScriptEncoder.Default,
     };
+
+    extension(HeadlessDashboardSetupBuilder dashboard)
+    {
+        /// <summary>
+        /// Adds the Messaging module to the unified dashboard under <see cref="MessagingDashboardOptions.ModuleId"/>:
+        /// published and received messages of the main store and every additional outbox <c>AddHeadlessMessaging</c>
+        /// configured, with Needs you, Overview figures, sidebar counts, id lookup, payloads, and live changes from
+        /// every node.
+        /// </summary>
+        /// <remarks>
+        /// The module reads the stores <c>AddHeadlessMessaging</c> registered, so it takes none. A host that adds it
+        /// without calling <c>AddHeadlessMessaging</c> fails to start with a message naming that call. It serves beside
+        /// the standalone dashboard <c>UseDashboard(...)</c> registers; the two share nothing but the stores.
+        /// </remarks>
+        /// <returns>The same builder for chaining.</returns>
+        /// <exception cref="InvalidOperationException">A module with the id <c>messaging</c> is already added.</exception>
+        public HeadlessDashboardSetupBuilder AddMessaging()
+        {
+            return dashboard.AddMessaging(static _ => { });
+        }
+
+        /// <summary>Adds the Messaging module configured by <paramref name="setupAction"/>.</summary>
+        /// <param name="setupAction">Configures the module's policies, node name, and store reads.</param>
+        /// <returns>The same builder for chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="setupAction"/> is <see langword="null"/>.</exception>
+        /// <exception cref="InvalidOperationException">A module with the id <c>messaging</c> is already added.</exception>
+        public HeadlessDashboardSetupBuilder AddMessaging(Action<MessagingDashboardOptions> setupAction)
+        {
+            Argument.IsNotNull(setupAction);
+
+            dashboard.Services.Configure<MessagingDashboardOptions, MessagingDashboardOptionsValidator>(setupAction);
+
+            return _AddMessagingModule(dashboard);
+        }
+
+        /// <summary>Adds the Messaging module configured by <paramref name="setupAction"/>, with the service provider.</summary>
+        /// <param name="setupAction">Configures the module's policies, node name, and store reads.</param>
+        /// <returns>The same builder for chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="setupAction"/> is <see langword="null"/>.</exception>
+        /// <exception cref="InvalidOperationException">A module with the id <c>messaging</c> is already added.</exception>
+        public HeadlessDashboardSetupBuilder AddMessaging(
+            Action<MessagingDashboardOptions, IServiceProvider> setupAction
+        )
+        {
+            Argument.IsNotNull(setupAction);
+
+            dashboard.Services.Configure<MessagingDashboardOptions, MessagingDashboardOptionsValidator>(setupAction);
+
+            return _AddMessagingModule(dashboard);
+        }
+
+        /// <summary>
+        /// Adds the Messaging module bound from <paramref name="configuration"/>, with the keys <c>ViewPolicy</c>,
+        /// <c>OperatePolicy</c>, <c>NodeName</c>, <c>ChangeOverlapWindow</c>, <c>ChangePageSize</c>, and
+        /// <c>StoreTimeout</c>.
+        /// </summary>
+        /// <param name="configuration">The configuration section to bind.</param>
+        /// <returns>The same builder for chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="configuration"/> is <see langword="null"/>.</exception>
+        /// <exception cref="InvalidOperationException">A module with the id <c>messaging</c> is already added.</exception>
+        public HeadlessDashboardSetupBuilder AddMessaging(IConfiguration configuration)
+        {
+            Argument.IsNotNull(configuration);
+
+            dashboard.Services.Configure<MessagingDashboardOptions, MessagingDashboardOptionsValidator>(configuration);
+
+            return _AddMessagingModule(dashboard);
+        }
+    }
+
+    private static HeadlessDashboardSetupBuilder _AddMessagingModule(HeadlessDashboardSetupBuilder dashboard)
+    {
+        var services = dashboard.Services;
+
+        // The module reads the stores AddHeadlessMessaging registers; without them nothing could serve a request, so
+        // the host fails at start rather than on the first dashboard call.
+        services.RequireRegisteredService<MessagingMarkerService>(
+            "the Messaging dashboard module (AddMessaging)",
+            "Call services.AddHeadlessMessaging(...) to register Headless Messaging."
+        );
+
+        services.TryAddSingleton(provider =>
+            MessagingStores.Create(
+                provider.GetService<MessagingOutboxes>() ?? throw new InvalidOperationException(_MissingMessaging),
+                provider.GetRequiredService<IOptions<MessagingDashboardOptions>>().Value,
+                provider.GetRequiredService<ILogger<MessagingStores>>()
+            )
+        );
+        services.TryAddSingleton<MessagingMetricsEventListener>();
+        services.TryAddSingleton(provider => new MessagingChangePublisher(
+            provider.GetRequiredService<MessagingStores>(),
+            provider.GetRequiredService<IDashboardEventPublisher>(),
+            provider.GetRequiredService<ILogger<MessagingChangePublisher>>()
+        ));
+        services.TryAddSingleton(provider => new MessagingModule(
+            provider.GetRequiredService<MessagingStores>(),
+            provider.GetRequiredService<MessagingMetricsEventListener>(),
+            provider.GetRequiredService<IOptions<MessagingDashboardOptions>>().Value,
+            provider
+        ));
+
+        // Added first, so a second AddMessaging throws before it registers a second observer.
+        var result = dashboard.AddModule<MessagingModule, MessagingDashboardOptions>(
+            MessagingDashboardOptions.ModuleId
+        );
+
+        // The senders and consumers report each state write here, so this node's streams show it at once; other
+        // nodes' writes arrive through the change reader.
+        services.AddSingleton<IMessageStateObserver>(provider =>
+            provider.GetRequiredService<MessagingChangePublisher>()
+        );
+
+        return result;
+    }
 
     /// <summary>
     /// Mounts the Messaging Dashboard registered by <c>UseDashboard(...)</c> on the host's endpoint routing, under its

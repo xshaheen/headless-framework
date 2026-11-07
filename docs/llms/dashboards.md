@@ -11,8 +11,8 @@ packages: Dashboard
 
 `Headless.Dashboard` has two parts:
 
-- **The shell.** `services.AddHeadlessDashboard(...)` registers it and `app.MapHeadlessDashboard()` mounts it, by default at `/headless`. It serves every registered module under that base path with one sign-in, one session cookie, one live stream, and one command pipeline. It stores nothing: each module reads its own store. The package ships no module of its own. `Headless.Jobs.Dashboard` adds the Jobs module (`AddJobs()`); see [Jobs module](#jobs-module).
-- **Shared authentication for the Messaging dashboard.** `Headless.Messaging.Dashboard` keeps its own Vue dashboard in this release, mounted by `MapHeadlessMessagingDashboard()`. It is not a shell module yet. It receives this package transitively and configures its authentication through its own builder; see [Messaging and standalone dashboards](#messaging-and-standalone-dashboards).
+- **The shell.** `services.AddHeadlessDashboard(...)` registers it and `app.MapHeadlessDashboard()` mounts it, by default at `/headless`. It serves every registered module under that base path with one sign-in, one session cookie, one live stream, and one command pipeline. It stores nothing: each module reads its own store. The package ships no module of its own. `Headless.Jobs.Dashboard` adds the Jobs module (`AddJobs()`), and `Headless.Messaging.Dashboard` adds the Messaging module (`AddMessaging()`); see [Jobs module](#jobs-module) and [Messaging module](#messaging-module).
+- **Shared authentication for the standalone Messaging dashboard.** `Headless.Messaging.Dashboard` also keeps its own Vue dashboard in this release, mounted by `MapHeadlessMessagingDashboard()`, beside the Messaging module. It receives this package transitively and configures its authentication through its own builder; see [Messaging and standalone dashboards](#messaging-and-standalone-dashboards).
 
 A host can run the shell and the Messaging dashboard side by side. Each has its own authentication mode, credentials, and session cookie.
 
@@ -508,6 +508,75 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapHeadlessDashboard();
 ```
+
+### Messaging module
+
+`AddMessaging()` adds the Messaging module (`Headless.Messaging.Dashboard`) under the id `messaging`. It needs `AddHeadlessMessaging(...)` with a storage in the same host; a host that adds it without `AddHeadlessMessaging` fails to start with a message naming that call. It reads the main store, named `primary`, and every additional outbox registered with `AddOutbox(name)`, by that name. It serves beside the standalone Messaging dashboard (`UseDashboard(...)` and `MapHeadlessMessagingDashboard()`), which keeps working unchanged; the two share only the stores and the real-time throughput listener.
+
+```csharp
+using Headless.Dashboard;
+using Headless.Messaging.Dashboard;
+
+builder.Services.AddHeadlessMessaging(setup =>
+{
+    setup.UsePostgreSql(builder.Configuration.GetConnectionString("Orders")!);
+    setup.AddOutbox("billing").UsePostgreSql(builder.Configuration.GetConnectionString("Billing")!);
+});
+builder.Services.AddHeadlessDashboard(dashboard => dashboard
+    .WithHostAuthentication(host => { host.ViewPolicy = "ops.view"; host.OperatePolicy = "ops.operate"; })
+    .AddJobs()
+    .AddMessaging(messaging => messaging.NodeName = builder.Configuration["NodeName"]!));
+
+app.MapHeadlessDashboard();
+```
+
+| `MessagingDashboardOptions` member | Default | Description |
+| --- | --- | --- |
+| `ViewPolicy`, `OperatePolicy` | the shell's | As for every module. |
+| `NodeName` | the machine name | This node's name in every object id. Give each node a stable name without `~` or white space. |
+| `ChangeOverlapWindow` | 5 s | How far back each change read of a store reads again. It must exceed the longest transaction that enlists an outbox write: a row that commits later than this after its write is not streamed, and shows on the next read of its list. |
+| `ChangePageSize` | 200 | The most changed rows one change read returns per store, 1 to 1000. |
+| `StoreTimeout` | 1.5 s | How long a read that covers several stores waits for one of them before naming it unavailable. Keep it below the shell's `AggregationTimeout`. |
+
+`AddMessaging(Action<MessagingDashboardOptions>)`, `AddMessaging(Action<MessagingDashboardOptions, IServiceProvider>)`, and `AddMessaging(IConfiguration)` configure them.
+
+**Object kinds, ids, and topics.** `published` and `received`. An object id is `{node}~{store}~{storage id}`, such as `node-a~billing~0192f3c1-…`: the node that served it by its `NodeName`, the store (`primary` for the main store), and the row's storage id. Stream topics are `messaging.published` and `messaging.received`; the stores are shared by every node, so a change carries no `node` and goes to the plain topic. A change's projection is the row as its list shows it (`id`, `store`, `storageId`, `messageId`, `name`, `lane`, `status`, `consumer`, `retries`, `added`, `expiresAt`, `nextRetryAt`, `changedAt`, `failureFingerprint`, `tenantId`, `isHeld`, `terminal`), and its version is the row's change marker in ticks. A deleted row goes out with no projection.
+
+**Several stores.** Counts, Needs you, Overview, lookups, lists, and the change stream read every store at once, each bounded by `StoreTimeout`. A store that fails or does not answer in time is named in `unavailable` while the others answer; the module is never marked stale for one store. The change cursor keeps one position per store and table, so a slow store neither holds the others back nor loses its place, and a store that was down starts from its current position once it answers.
+
+**Live changes.** A write this node's senders and consumers make reaches its streams at once: the pipeline reports the write after it landed, and the module reads the row back with its marker. A write another node makes, or one inside an application transaction, arrives through this node's change read of the stores, within `ChangePollInterval` plus the read.
+
+**Sidebar counts.** One capped count per key; a published count adds up every store:
+
+| Key | Rows |
+| --- | --- |
+| `published.all`, `received.all` | every row of the table |
+| `published.succeeded`, `received.succeeded` | sent / consumed |
+| `published.failed`, `received.failed` | failed for good: `Failed` with no retry pending |
+| `published.retrying`, `received.retrying` | failed with a retry pending: the failed count less the terminal count |
+| `published.delayed`, `published.scheduled`, `published.queued` | waiting for their delivery time / stored and waiting for the first send / claimed by a sender |
+| `received.held` | held by an operator |
+| `hosts.unknown-lanes` | rows of every store and table whose lane this host does not recognize |
+
+**Attention and Overview.** One item per failure fingerprint of the failures that ended for good: per consumer for received rows (`2 messages received by billing.charge-consumer failed for good`, pointing at the `consumer`), per store for published rows. Items of one cause share a `GroupKey` across stores, and each carries its list filter `{ store, status, terminalOnly, consumer, fingerprint }`. One warning item per store and table holding rows in an unknown lane. The Overview shows the messages that failed for good, the messages waiting for a retry, and this node's consume rate over the last minute, which is left out while the node measured no second of it.
+
+**Lookup and payload.** The palette accepts a full object id, a bare storage id, or a message id. A storage id or a message id is looked up in every store, and each match is listed with its store in its title; a message id matches byte for byte, trailing spaces included, on every provider. An id naming another node finds nothing on this node. A payload is the row's stored envelope as JSON.
+
+**API** at `{base}/api/messaging`. Every route is a read, so a viewer without a named operator can call it:
+
+| Route | Answer |
+| --- | --- |
+| `GET published?store=&status=&terminal=&retrying=&name=&fingerprint=&limit=&after=` | `{ items, count, countCapped, nextCursor, unavailable }`: one keyset page, newest first, merged over every store unless `store` names one; `limit` up to 200; `retrying=true` lists failures with a retry pending |
+| `GET received?status=&terminal=&retrying=&consumer=&name=&fingerprint=&held=&limit=&after=` | the same over the main store's received rows |
+| `GET messages/{kind}/{id}` | `{ row, headers, content, exceptionInfo }`, or `404` |
+| `GET received/generations?messageId=&consumer=` | `{ items }`: every received row of the message, oldest first |
+| `GET scheduled?store=&name=&page=&perPage=` | `{ store, supported, items, totalCount, reason }`; a provider without scheduled-delivery operations answers `supported: false` with the reason, not an error |
+| `GET consumers`, `GET contracts` | `{ items }`: the consumers and the message contracts of the host manifest's `messaging` section |
+| `GET circuits` | `{ items: [{ consumer, state, consecutiveFailures, failureThreshold, openedAt, estimatedRemainingOpenDuration }] }` |
+| `GET nodes` | `{ items: [{ name, isLocal, stores }] }`: this node and the stores it reads |
+| `GET metrics/realtime` | `{ seconds, publishedPerSecond, consumedPerSecond, consumeElapsedMs }`: the last 300 seconds; a second this node did not measure, such as one before it started, is `null`, never `0` |
+
+This release serves the local node only, ships no commands, and embeds only the module's `manifest.json`, which declares its sidebar; its views come with its front end.
 
 ### Messaging and standalone dashboards
 

@@ -1,0 +1,60 @@
+{
+  "id": "messaging",
+  "sdkVersion": "1.0.0",
+  "css": [],
+  "product": "messaging",
+  "sidebar": [
+    {
+      "entries": [
+        { "id": "messaging.nav.dashboard", "label": "Dashboard", "route": "", "icon": "dashboard" }
+      ]
+    },
+    {
+      "label": "Published",
+      "entries": [
+        { "id": "messaging.nav.published", "label": "All", "route": "published", "icon": "runs", "countKey": "published.all" },
+        { "id": "messaging.nav.published.succeeded", "label": "Succeeded", "route": "published?status=Succeeded", "state": "ok", "countKey": "published.succeeded" },
+        { "id": "messaging.nav.published.failed", "label": "Failed", "route": "published?status=Failed&terminal=true", "state": "fail", "countKey": "published.failed" },
+        { "id": "messaging.nav.published.retrying", "label": "Retrying", "route": "published?retrying=true", "state": "proc", "countKey": "published.retrying" },
+        { "id": "messaging.nav.published.delayed", "label": "Delayed", "route": "published?status=Delayed", "state": "sched", "countKey": "published.delayed" },
+        { "id": "messaging.nav.published.scheduled", "label": "Scheduled", "route": "published?status=Scheduled", "state": "sched", "countKey": "published.scheduled" },
+        { "id": "messaging.nav.published.queued", "label": "Queued", "route": "published?status=Queued", "state": "enq", "countKey": "published.queued" },
+        { "id": "messaging.nav.scheduled-deliveries", "label": "Scheduled deliveries", "route": "scheduled", "icon": "recurring" }
+      ]
+    },
+    {
+      "label": "Received",
+      "entries": [
+        { "id": "messaging.nav.received", "label": "All", "route": "received", "icon": "runs", "countKey": "received.all" },
+        { "id": "messaging.nav.received.succeeded", "label": "Succeeded", "route": "received?status=Succeeded", "state": "ok", "countKey": "received.succeeded" },
+        { "id": "messaging.nav.received.failed", "label": "Failed", "route": "received?status=Failed&terminal=true", "state": "fail", "countKey": "received.failed" },
+        { "id": "messaging.nav.received.retrying", "label": "Retrying", "route": "received?retrying=true", "state": "proc", "countKey": "received.retrying" },
+        { "id": "messaging.nav.received.held", "label": "Held", "route": "received?held=true", "state": "off", "countKey": "received.held" }
+      ]
+    },
+    {
+      "label": "Definitions",
+      "entries": [
+        { "id": "messaging.nav.consumers", "label": "Consumers", "route": "consumers", "icon": "function" },
+        { "id": "messaging.nav.contracts", "label": "Contracts", "route": "contracts", "icon": "runs" }
+      ]
+    },
+    {
+      "label": "Hosts",
+      "entries": [
+        { "id": "messaging.nav.nodes", "label": "Nodes", "route": "nodes", "icon": "server" },
+        { "id": "messaging.nav.unknown-lanes", "label": "Unknown lanes", "route": "unknown-lanes", "state": "fail", "countKey": "hosts.unknown-lanes" }
+      ]
+    },
+    {
+      "label": "Audit",
+      "entries": [
+        { "id": "messaging.nav.operator-log", "label": "Operator log", "route": "operator-log", "icon": "runs" }
+      ]
+    }
+  ],
+  "routes": [],
+  "objectKinds": { "published": {}, "received": {} },
+  "commands": [],
+  "events": []
+}

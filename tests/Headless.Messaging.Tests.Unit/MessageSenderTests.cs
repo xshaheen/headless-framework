@@ -152,6 +152,26 @@ public sealed class MessageSenderTests : TestBase
     }
 
     [Fact]
+    public async Task should_tell_state_observers_about_a_sent_row_once_its_success_write_landed()
+    {
+        // given
+        var storage = Substitute.For<IDataStorage>();
+        var serializer = Substitute.For<IMessageSerializer>();
+        await using var transport = new CapturingTransport();
+        var observer = Substitute.For<IMessageStateObserver>();
+        var sender = _CreateSender(storage, serializer, transport, new MessagingOptions(), stateObserver: observer);
+        var message = _CreateMediumMessage();
+        message.PreparedTransport = (message.Origin, new TransportMessage(message.Origin.Headers, "{}"u8.ToArray()));
+
+        // when
+        var result = await sender.SendAsync(message);
+
+        // then
+        result.Succeeded.Should().BeTrue();
+        observer.Received(1).OnStateWritten(MessageType.Publish, message);
+    }
+
+    [Fact]
     public async Task should_serialize_again_when_the_prepared_transport_no_longer_matches_the_origin()
     {
         // given a prepared transport built for an envelope the message no longer carries
@@ -203,7 +223,8 @@ public sealed class MessageSenderTests : TestBase
         TransportConnectivity? connectivity = null,
         TimeProvider? timeProvider = null,
         ILoggerProvider? loggerProvider = null,
-        TimeProvider? backoffClock = null
+        TimeProvider? backoffClock = null,
+        IMessageStateObserver? stateObserver = null
     )
     {
         storage
@@ -271,6 +292,11 @@ public sealed class MessageSenderTests : TestBase
         }
 
         services.AddSingleton(connectivity ?? new TransportConnectivity());
+
+        if (stateObserver is not null)
+        {
+            services.AddSingleton(stateObserver);
+        }
 
         var provider = services.BuildServiceProvider();
         return new MessageSender(provider.GetRequiredService<ILogger<MessageSender>>(), provider);

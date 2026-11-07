@@ -62,7 +62,8 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         IDataStorage storage,
         MessagingOptions options,
         ICircuitBreakerStateManager? circuitBreaker = null,
-        TimeProvider? timeProvider = null
+        TimeProvider? timeProvider = null,
+        IMessageStateObserver? stateObserver = null
     )
     {
         storage
@@ -103,6 +104,11 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             setup.UseInMemory();
             setup.UseProcessLocalInMemoryStorage();
         });
+
+        if (stateObserver is not null)
+        {
+            services.AddSingleton(stateObserver);
+        }
 
         var provider = services.BuildServiceProvider();
         var logger = provider.GetRequiredService<ILogger<SubscribeExecutor>>();
@@ -148,6 +154,58 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
             );
+    }
+
+    [Fact]
+    public async Task should_tell_state_observers_about_a_success_write_that_landed()
+    {
+        // given
+        var storage = Substitute.For<IDataStorage>();
+        var invoker = Substitute.For<ISubscribeInvoker>();
+        invoker
+            .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new ConsumerExecutedResult(null, null, "id", null, null)));
+        var observer = Substitute.For<IMessageStateObserver>();
+        var executor = _CreateExecutor(invoker, storage, new MessagingOptions(), stateObserver: observer);
+        var message = _CreateMediumMessage();
+
+        // when
+        await executor.ExecuteAsync(message, _EmptyScope, _CreateDescriptor(), AbortToken);
+
+        // then
+        observer.Received(1).OnStateWritten(MessageType.Subscribe, message);
+    }
+
+    [Fact]
+    public async Task should_not_tell_state_observers_about_a_success_write_the_store_refused()
+    {
+        // given: the row is already terminal, so the fenced write changes nothing
+        var storage = Substitute.For<IDataStorage>();
+        var invoker = Substitute.For<ISubscribeInvoker>();
+        invoker
+            .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new ConsumerExecutedResult(null, null, "id", null, null)));
+        var observer = Substitute.For<IMessageStateObserver>();
+        var executor = _CreateExecutor(invoker, storage, new MessagingOptions(), stateObserver: observer);
+        storage
+            .ChangeReceiveRetryStateAsync(
+                Arg.Any<MediumMessage>(),
+                StatusName.Succeeded,
+                Arg.Any<MessageContentWrite>(),
+                Arg.Any<RetryDelay?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(false));
+        var message = _CreateMediumMessage();
+
+        // when
+        await executor.ExecuteAsync(message, _EmptyScope, _CreateDescriptor(), AbortToken);
+
+        // then
+        observer.DidNotReceiveWithAnyArgs().OnStateWritten(default, default!);
     }
 
     [Fact]

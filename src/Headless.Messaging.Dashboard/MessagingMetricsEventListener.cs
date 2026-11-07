@@ -13,10 +13,12 @@ internal sealed class MessagingMetricsEventListener : EventListener
     {
         _timeProvider = timeProvider ?? TimeProvider.System;
 
+        // The seconds before the listener started were never measured, so they read as no value, not as zero: a
+        // chart of a node that just started must not show five minutes of idle throughput it never saw.
         for (var i = 0; i < HistorySize; i++)
         {
-            PublishedPerSec.Add(0);
-            InvokeSubscriberPerSec.Add(0);
+            PublishedPerSec.Add(null);
+            InvokeSubscriberPerSec.Add(null);
             InvokeSubscriberElapsedMs.Add(null);
         }
     }
@@ -24,6 +26,36 @@ internal sealed class MessagingMetricsEventListener : EventListener
     public CircularBuffer<int?> PublishedPerSec { get; } = new(HistorySize);
     public CircularBuffer<int?> InvokeSubscriberPerSec { get; } = new(HistorySize);
     public CircularBuffer<int?> InvokeSubscriberElapsedMs { get; } = new(HistorySize);
+
+    /// <summary>Returns the consumed-per-second values of the last <paramref name="seconds"/> seconds, oldest first.</summary>
+    public IReadOnlyList<int?> LastSeconds(int seconds)
+    {
+        var values = InvokeSubscriberPerSec.ToArray();
+
+        return values[Math.Max(0, values.Length - seconds)..];
+    }
+
+    /// <summary>
+    /// Returns the last <see cref="HistorySize"/> seconds as Unix seconds and the value of each series in each,
+    /// <see langword="null"/> for a second the listener did not measure.
+    /// </summary>
+    public (long[] Seconds, int?[] Published, int?[] Consumed, int?[] ConsumeElapsedMs) GetSeries()
+    {
+        var end = _timeProvider.GetUtcNow().ToUnixTimeSeconds();
+        var seconds = new long[HistorySize];
+
+        for (var i = 0; i < HistorySize; i++)
+        {
+            seconds[i] = end - HistorySize + i;
+        }
+
+        return (
+            seconds,
+            PublishedPerSec.ToArray(),
+            InvokeSubscriberPerSec.ToArray(),
+            InvokeSubscriberElapsedMs.ToArray()
+        );
+    }
 
     public CircularBuffer<int?>[] GetRealTimeMetrics()
     {

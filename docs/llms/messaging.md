@@ -547,9 +547,10 @@ services.AddHeadlessMessaging(setup =>
   outbox concurrently. An unreachable outbox database backs off alone; the primary and the other outboxes keep
   relaying. The collector expires published rows in every outbox, dead-owner recovery reclaims published rows in
   every outbox, and `IMessageRevoker.RevokeAsync` finds a scheduled row in whichever outbox holds it.
-- **What stays on the primary.** The inbox, received-message retry state, consumer bookkeeping, the monitoring
-  API, and the dashboard read only the primary storage, so the dashboard does not list an additional outbox's
-  rows.
+- **What stays on the primary.** The inbox, received-message retry state, consumer bookkeeping, and the
+  standalone dashboard read only the primary storage, so that dashboard does not list an additional outbox's rows.
+  Each outbox's own `GetMonitoringApi()` reads its published rows, and the unified dashboard's Messaging module
+  (`AddMessaging()`) reads every outbox beside the primary; see [dashboards.md](dashboards.md#messaging-module).
 - **Jobs.** Jobs keeps one store. To schedule a job atomically with a unit on an additional outbox's database,
   publish a message through `unit.Outbox` and schedule the job from that message's consumer on the Jobs database.
   The outbox row commits with the unit, and the consumer's inbox and `unit.Jobs` give the job the same guarantee.
@@ -2596,6 +2597,10 @@ Transports that retry a lost broker inside their own receive loop (Azure Service
 Web-based dashboard for monitoring and managing distributed messaging infrastructure.
 
 Read [dashboards.md](dashboards.md) for the shared authentication modes and production security boundary.
+
+The package also adds the Messaging module of the unified dashboard: `AddHeadlessDashboard(d => d.AddMessaging())` serves published and received messages of the primary store and every additional outbox at `{base}/messaging`, with sidebar counts, Needs you, Overview, id lookup, payloads, and live changes. [dashboards.md](dashboards.md#messaging-module) covers its options, ids, count keys, and API. The standalone dashboard below keeps working beside it.
+
+The real-time throughput both dashboards read reports `null`, not `0`, for every second the node did not measure, such as the seconds before it started.
 
 ### API and behavior
 

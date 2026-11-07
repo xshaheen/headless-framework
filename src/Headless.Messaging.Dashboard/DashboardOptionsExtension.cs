@@ -50,7 +50,8 @@ internal sealed class DashboardOptionsExtension(Action<MessagingDashboardOptions
             )
             .ValidateOnStart();
 
-        services.AddSingleton<MessagingMetricsEventListener>();
+        // TryAdd: the Messaging module of the unified dashboard reads the same listener when both are registered.
+        services.TryAddSingleton<MessagingMetricsEventListener>();
         services.TryAddSingleton<MessagingDashboardCache>();
         services.TryAddSingleton<KeyedAsyncLock>();
         services

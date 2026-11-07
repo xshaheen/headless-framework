@@ -73,6 +73,8 @@ internal sealed class SubscribeExecutor(
 
     private readonly MessagingOptions _options = options.Value;
 
+    private readonly MessageStateObservers _stateObservers = new(provider);
+
     // The lease-renewal timeout waits out a store that stopped answering, so it runs apart from the app clock.
     private readonly TimeProvider _backoffClock = BackoffClock.Resolve(provider);
 
@@ -680,7 +682,11 @@ internal sealed class SubscribeExecutor(
             .ConfigureAwait(false);
         executionState?.RecordLeaseTransition(updated, lockedUntil);
 
-        if (!updated)
+        if (updated)
+        {
+            _stateObservers.Notify(MessageType.Subscribe, message);
+        }
+        else
         {
             logger.SkippingSuccessfulAlreadyTerminal(message.StorageId);
         }
@@ -982,6 +988,11 @@ internal sealed class SubscribeExecutor(
             )
             .ConfigureAwait(false);
         executionState?.RecordLeaseTransition(affected, lockedUntil);
+
+        if (affected)
+        {
+            _stateObservers.Notify(MessageType.Subscribe, message);
+        }
 
         // The terminal write took effect, so this attempt owns the request's outcome and answers it, before the
         // terminal callback runs so the caller is not held up by it. An expired request's caller is gone.

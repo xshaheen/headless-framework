@@ -76,6 +76,12 @@
         "resolved": "5.0.0-1.25277.114",
         "contentHash": "tgmnwUv1iqiQFVp1hVRDR9mUy9/i6BS75l9FkFD/T76aAlU1XEjVYsS0Jkz/nbQg+vVvyxgglDhiOXwAvoIvMg=="
       },
+      "Microsoft.Extensions.TimeProvider.Testing": {
+        "type": "Direct",
+        "requested": "[10.11.0, )",
+        "resolved": "10.11.0",
+        "contentHash": "DTivKZ2Du0dJideTTa6vPj/eXKNRu+RxtjBX7NOOUXHBtHx1ehbE+lM+j3/5M3wU6BqzcZqEEyR4+FnPKs2rTA=="
+      },
       "Microsoft.Sbom.Targets": {
         "type": "Direct",
         "requested": "[4.1.13, 4.1.13]",
@@ -473,6 +479,38 @@
           "OpenTelemetry.Api": "[1.20.1, )"
         }
       },
+      "headless.jobs": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Coordination": "[1.0.0, )",
+          "Headless.Coordination.Abstractions": "[1.0.0, )",
+          "Headless.DistributedLocks.Abstractions": "[1.0.0, )",
+          "Headless.Jobs.Abstractions": "[1.0.0, )",
+          "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
+          "Headless.UnitOfWork": "[1.0.0, )",
+          "NCrontab.Signed": "[3.4.0, )",
+          "OpenTelemetry.Api": "[1.20.1, )",
+          "Polly.Core": "[8.8.0, )"
+        }
+      },
+      "headless.jobs.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Reliability.Abstractions": "[1.0.0, )",
+          "Headless.UnitOfWork.Abstractions": "[1.0.0, )"
+        }
+      },
+      "headless.jobs.dashboard": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Coordination.Abstractions": "[1.0.0, )",
+          "Headless.Dashboard": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Jobs": "[1.0.0, )",
+          "Headless.Jobs.Abstractions": "[1.0.0, )"
+        }
+      },
       "headless.messaging": {
         "type": "Project",
         "dependencies": {
@@ -621,11 +659,11 @@
           "xunit.v3.extensibility.core": "4.0.1"
         }
       },
-      "Microsoft.Extensions.TimeProvider.Testing": {
+      "NCrontab.Signed": {
         "type": "CentralTransitive",
-        "requested": "[10.11.0, )",
-        "resolved": "10.11.0",
-        "contentHash": "DTivKZ2Du0dJideTTa6vPj/eXKNRu+RxtjBX7NOOUXHBtHx1ehbE+lM+j3/5M3wU6BqzcZqEEyR4+FnPKs2rTA=="
+        "requested": "[3.4.0, )",
+        "resolved": "3.4.0",
+        "contentHash": "wmlQgd8QVU74L68wiMtiKKex4dr+YoowsJndS2xJcMEJ5265twZqJPawMghXaLdTxwfc6RvWAewMaX/Q8vdduw=="
       },
       "Newtonsoft.Json": {
         "type": "CentralTransitive",

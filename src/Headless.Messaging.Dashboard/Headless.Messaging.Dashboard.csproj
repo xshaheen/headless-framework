@@ -17,6 +17,10 @@
     <ProjectReference Include="..\Headless.Dashboard\Headless.Dashboard.csproj" />
     <ProjectReference Include="..\Headless.Messaging\Headless.Messaging.csproj" />
   </ItemGroup>
+  <!-- The unified dashboard's Messaging module reads its manifest from these resources (MessagingAssets). -->
+  <ItemGroup>
+    <EmbeddedResource Include="ModuleUi/manifest.json" />
+  </ItemGroup>
   <!-- Builds wwwroot SPA and embeds wwwroot/dist/** at build time (dist is gitignored, not committed). -->
   <Import Project="$(MSBuildThisFileDirectory)..\..\eng\DashboardSpa.targets" />
 </Project>
