@@ -29,6 +29,17 @@ internal interface IInternalJobManager
     Task<int> UpdateTickerAsync(JobExecutionState context, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Opens the run's next attempt under its <see cref="JobExecutionState.ClaimOwner"/> as the executor invokes the
+    /// handler. Returns <see langword="false"/> when nothing was opened (no claim owner, the run left
+    /// <c>InProgress</c>, or the provider keeps no attempt history).
+    /// </summary>
+    Task<bool> OpenAttemptAsync(
+        JobExecutionState context,
+        DateTime startedAt,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
     /// Hands a started run back to <c>Idle</c> under its <see cref="JobExecutionState.ClaimOwner"/> without charging
     /// its retry budget, because a graceful stop kept it from starting. Returns the affected row count; <c>0</c>
     /// means a peer already owns the row.

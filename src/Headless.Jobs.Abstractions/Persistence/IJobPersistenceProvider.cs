@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Linq.Expressions;
+using Headless.Checks;
 
 namespace Headless.Jobs;
 
@@ -76,7 +77,7 @@ namespace Headless.Jobs;
 /// <typeparam name="TTimeJob">The application's concrete time job entity type.</typeparam>
 /// <typeparam name="TCronJob">The application's concrete cron job entity type.</typeparam>
 [PublicAPI]
-public interface IJobPersistenceProvider<TTimeJob, TCronJob>
+public partial interface IJobPersistenceProvider<TTimeJob, TCronJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {
@@ -1891,6 +1892,260 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
                 .OrderByDescending(x => x.LastSeen)
                 .Select(x => (x.OwnerId, x.Count)),
         ];
+    }
+
+    #endregion
+
+    #region Attempt history
+
+    /// <summary>
+    /// Opens the next attempt of a running time job: inserts an attempt numbered one past the run's last, with the
+    /// claim owner and start time, when the job is still <c>InProgress</c> under <paramref name="claimOwner"/>.
+    /// </summary>
+    /// <param name="timeJobId">The running time job.</param>
+    /// <param name="claimOwner">The owner that claimed the run and is about to invoke its handler.</param>
+    /// <param name="startedAt">When the executor invokes the handler (UTC).</param>
+    /// <param name="cancellationToken">Token that aborts the write.</param>
+    /// <returns><see langword="true"/> when an attempt was opened.</returns>
+    /// <remarks>
+    /// The executor calls it once per handler invocation, outside any other write, and treats it as best effort: a
+    /// failed open never fails the run, and the write that ends the attempt then inserts it closed. Serialize the open
+    /// with the writes that move the run out of <c>InProgress</c> (the relational store locks the run row), so an open
+    /// that loses to such a write inserts nothing. The default opens nothing and returns <see langword="false"/>, so a
+    /// provider without attempt history keeps working.
+    /// </remarks>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<bool> OpenTimeJobAttemptAsync(
+        Guid timeJobId,
+        string claimOwner,
+        DateTime startedAt,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return Task.FromResult(false);
+    }
+
+    /// <summary>
+    /// Opens the next attempt of a running cron occurrence, as <see cref="OpenTimeJobAttemptAsync"/> describes for a
+    /// time job.
+    /// </summary>
+    /// <param name="occurrenceId">The running occurrence.</param>
+    /// <param name="claimOwner">The owner that claimed the run and is about to invoke its handler.</param>
+    /// <param name="startedAt">When the executor invokes the handler (UTC).</param>
+    /// <param name="cancellationToken">Token that aborts the write.</param>
+    /// <returns><see langword="true"/> when an attempt was opened.</returns>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<bool> OpenCronJobOccurrenceAttemptAsync(
+        Guid occurrenceId,
+        string claimOwner,
+        DateTime startedAt,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return Task.FromResult(false);
+    }
+
+    /// <summary>Returns every attempt of a time job, in attempt order.</summary>
+    /// <param name="timeJobId">The time job.</param>
+    /// <param name="cancellationToken">Token that aborts the query.</param>
+    /// <returns>The attempts, first attempt first; empty when the job has none or does not exist.</returns>
+    /// <remarks>The default returns no attempts, for a provider without attempt history.</remarks>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<IReadOnlyList<TimeJobAttemptEntity>> GetTimeJobAttemptsAsync(
+        Guid timeJobId,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return Task.FromResult<IReadOnlyList<TimeJobAttemptEntity>>([]);
+    }
+
+    /// <summary>Returns every attempt of a cron occurrence, in attempt order.</summary>
+    /// <param name="occurrenceId">The cron occurrence.</param>
+    /// <param name="cancellationToken">Token that aborts the query.</param>
+    /// <returns>The attempts, first attempt first; empty when the occurrence has none or does not exist.</returns>
+    /// <remarks>The default returns no attempts, for a provider without attempt history.</remarks>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<IReadOnlyList<CronJobOccurrenceAttemptEntity>> GetCronJobOccurrenceAttemptsAsync(
+        Guid occurrenceId,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return Task.FromResult<IReadOnlyList<CronJobOccurrenceAttemptEntity>>([]);
+    }
+
+    #endregion
+
+    #region Change reads
+
+    /// <summary>
+    /// Returns the latest change marker (<see cref="BaseJobEntity.ChangedAt"/>) across time jobs, cron jobs, and cron
+    /// job occurrences.
+    /// </summary>
+    /// <param name="cancellationToken">Token that aborts the query.</param>
+    /// <returns>The latest marker, or <see langword="null"/> when the store holds no row.</returns>
+    /// <remarks>
+    /// One of the two reads <see cref="ReadChangesAsync"/> is built on; a provider that stamps
+    /// <see cref="BaseJobEntity.ChangedAt"/> implements both. The default throws, because a store that does not stamp
+    /// the marker cannot report changes.
+    /// </remarks>
+    /// <exception cref="NotSupportedException">The provider does not support change reads.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<DateTime?> GetLatestChangeMarkerAsync(CancellationToken cancellationToken = default)
+    {
+        throw new NotSupportedException($"{GetType().Name} does not support Jobs change reads.");
+    }
+
+    /// <summary>
+    /// Returns at most <paramref name="maxCount"/> rows of one table whose change marker lies after
+    /// <paramref name="after"/> and at or before <paramref name="through"/>, ordered by marker and then identifier,
+    /// starting after <paramref name="resumeAfter"/>.
+    /// </summary>
+    /// <param name="kind">The table to read.</param>
+    /// <param name="after">Exclusive lower bound of the marker.</param>
+    /// <param name="through">Inclusive upper bound of the marker.</param>
+    /// <param name="resumeAfter">
+    /// The keyset position of the last row an earlier call returned, exclusive, or <see langword="null"/> to start at
+    /// <paramref name="after"/>.
+    /// </param>
+    /// <param name="maxCount">The most rows to return.</param>
+    /// <param name="cancellationToken">Token that aborts the query.</param>
+    /// <returns>The rows, in <c>(ChangedAt, Id)</c> order as the store orders identifiers.</returns>
+    /// <remarks>
+    /// One of the two reads <see cref="ReadChangesAsync"/> is built on. Back it with an index on
+    /// <c>(ChangedAt, Id)</c>: every node with an open dashboard stream calls it on every poll. The default throws.
+    /// </remarks>
+    /// <exception cref="NotSupportedException">The provider does not support change reads.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<IReadOnlyList<JobChange>> ReadChangedRowsAsync(
+        JobChangeKind kind,
+        DateTime after,
+        DateTime through,
+        JobChangePosition? resumeAfter,
+        int maxCount,
+        CancellationToken cancellationToken = default
+    )
+    {
+        throw new NotSupportedException($"{GetType().Name} does not support Jobs change reads.");
+    }
+
+    /// <summary>
+    /// Returns a cursor at the store's latest change marker, so reads from it return the rows changed from now on.
+    /// </summary>
+    /// <param name="cancellationToken">Token that aborts the query.</param>
+    /// <returns>The cursor to pass to the first <see cref="ReadChangesAsync"/>.</returns>
+    /// <exception cref="NotSupportedException">The provider does not support change reads.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    async Task<JobChangeCursor> GetChangeStartCursorAsync(CancellationToken cancellationToken = default)
+    {
+        return JobChangeCursor.StartAt(await GetLatestChangeMarkerAsync(cancellationToken).ConfigureAwait(false));
+    }
+
+    /// <summary>
+    /// Returns at most <paramref name="pageSize"/> rows changed since <paramref name="cursor"/> across time jobs, cron
+    /// jobs, and cron job occurrences, and the cursor to read from next.
+    /// </summary>
+    /// <param name="cursor">A cursor <see cref="GetChangeStartCursorAsync"/> or an earlier read returned.</param>
+    /// <param name="pageSize">The most rows to return.</param>
+    /// <param name="overlapWindow">
+    /// How far before the end of one pass the next pass starts. Make it longer than the commit delay of the store's
+    /// longest autonomous write, the time between stamping a row and committing it.
+    /// </param>
+    /// <param name="cancellationToken">Token that aborts the query.</param>
+    /// <returns>The changed rows and the next cursor.</returns>
+    /// <remarks>
+    /// <para>
+    /// Reads run in passes (see <see cref="JobChangeCursor"/>). A read pages forward through the current pass; when
+    /// the pass is exhausted it starts the next one at the store's latest marker, and when the exhausted pass returned
+    /// nothing it reads the first page of the next pass in the same call. A row can be returned by more than one read,
+    /// once per write and again while its marker lies inside an overlap window; <see cref="JobChange.Version"/> tells
+    /// the repeats apart.
+    /// </para>
+    /// <para>
+    /// A write enlisted in a caller's unit of work commits with the caller's transaction, possibly long after it was
+    /// stamped; the unit re-stamps those rows after commit, so the overlap window needs to cover only the store's own
+    /// writes. If the process stops between the commit and the re-stamp, the row shows on the next read of it rather
+    /// than through a change read.
+    /// </para>
+    /// <para>
+    /// Default interface method built on <see cref="GetLatestChangeMarkerAsync"/> and
+    /// <see cref="ReadChangedRowsAsync"/>; a provider implements those two and inherits the pass logic.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="cursor"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="pageSize"/> is not positive, or <paramref name="overlapWindow"/> is negative.
+    /// </exception>
+    /// <exception cref="NotSupportedException">The provider does not support change reads.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    async Task<JobChangePage> ReadChangesAsync(
+        JobChangeCursor cursor,
+        int pageSize,
+        TimeSpan overlapWindow,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(cursor);
+        Argument.IsPositive(pageSize);
+        Argument.IsPositiveOrZero(overlapWindow);
+
+        var (changes, next, passComplete) = await _ReadPassPageAsync(cursor, pageSize, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!passComplete)
+        {
+            return new JobChangePage { Changes = changes, Cursor = next };
+        }
+
+        var latest = await GetLatestChangeMarkerAsync(cancellationToken).ConfigureAwait(false);
+        var nextPass = cursor.NextPass(latest, overlapWindow);
+
+        if (changes.Count != 0)
+        {
+            return new JobChangePage { Changes = changes, Cursor = nextPass };
+        }
+
+        (changes, next, _) = await _ReadPassPageAsync(nextPass, pageSize, cancellationToken).ConfigureAwait(false);
+
+        return new JobChangePage { Changes = changes, Cursor = next };
+    }
+
+    private async Task<(IReadOnlyList<JobChange> Changes, JobChangeCursor Next, bool PassComplete)> _ReadPassPageAsync(
+        JobChangeCursor cursor,
+        int pageSize,
+        CancellationToken cancellationToken
+    )
+    {
+        JobChangeKind[] kinds = [JobChangeKind.TimeJob, JobChangeKind.CronJob, JobChangeKind.CronJobOccurrence];
+        var read = new List<JobChange>();
+        var exhausted = true;
+
+        foreach (var kind in kinds)
+        {
+            var rows = await ReadChangedRowsAsync(
+                    kind,
+                    cursor.PassAfter,
+                    cursor.PassThrough,
+                    cursor.PositionOf(kind),
+                    pageSize,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            exhausted &= rows.Count < pageSize;
+            read.AddRange(rows);
+        }
+
+        // OrderBy is stable, so each table's rows keep the store's (ChangedAt, Id) order and the page takes a prefix
+        // of each table: the table's position can move to the last row taken from it.
+        var page = read.OrderBy(static change => change.ChangedAt).Take(pageSize).ToArray();
+        var next = cursor;
+
+        foreach (var change in page)
+        {
+            next = next.WithPosition(change.Kind, new JobChangePosition(change.ChangedAt, change.Id));
+        }
+
+        return (page, next, exhausted && read.Count <= pageSize);
     }
 
     #endregion

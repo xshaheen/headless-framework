@@ -90,7 +90,9 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>
             .Subject;
         settle.Parameters.Values.Should().NotContain(parameter => parameter.IsTemporal, settle.Sql);
         settle.Sql.Should().Contain(Fixture.EfTranslatedDatabaseClockSql);
-        settle.InExplicitTransaction.Should().BeFalse("the database clock is read in the settle's own statement");
+        // The settle shares a transaction with its attempt close and is that transaction's first statement, so
+        // PostgreSQL's transaction-start now() is the settle's own instant. The due-time bounds below, against a node
+        // clock two minutes behind, prove the store clock decided it.
 
         var (status, ownerId, lockedUntil, exceptionMessage, skippedReason) = await Fixture.ReadTimeJobDetailAsync(
             id,

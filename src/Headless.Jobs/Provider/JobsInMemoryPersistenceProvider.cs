@@ -229,6 +229,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                     updatedTicker.OwnerId = _ownerId;
                     updatedTicker.LockedUntil = now.UtcDateTime.Add(_leaseDuration);
                     updatedTicker.UpdatedAt = now;
+                    updatedTicker.ChangedAt = _NextChangeMarker();
                     updatedTicker.Status = JobStatus.Queued;
 
                     if (
@@ -242,6 +243,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                         _SyncReconcileCandidate(updatedTicker);
                         var claimedIds = _ClaimIdleDescendants(timeJob.Id, now);
                         timeJob.UpdatedAt = now;
+                        timeJob.ChangedAt = _NextChangeMarker();
                         timeJob.OwnerId = _ownerId;
                         timeJob.LockedUntil = now.UtcDateTime.Add(_leaseDuration);
                         timeJob.Status = JobStatus.Queued;
@@ -308,6 +310,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             claimed.OwnerId = _ownerId;
             claimed.LockedUntil = now.UtcDateTime.Add(_leaseDuration);
             claimed.UpdatedAt = now;
+            claimed.ChangedAt = _NextChangeMarker();
 
             if (_TryUpdateTimeJob(jobId, claimed, existing))
             {
@@ -362,6 +365,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                     updatedTicker.OwnerId = _ownerId;
                     updatedTicker.LockedUntil = now.UtcDateTime.Add(_leaseDuration);
                     updatedTicker.UpdatedAt = now;
+                    updatedTicker.ChangedAt = _NextChangeMarker();
                     updatedTicker.Status = JobStatus.Queued;
 
                     if (
@@ -412,6 +416,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                     updatedTicker.LockedUntil = null;
                     updatedTicker.Status = JobStatus.Idle;
                     updatedTicker.UpdatedAt = now;
+                    updatedTicker.ChangedAt = _NextChangeMarker();
 
                     if (_TryUpdateTimeJob(id, updatedTicker, job))
                     {
@@ -476,12 +481,14 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             var updated = _CloneTicker(current);
             updated.LockedUntil = null;
             updated.UpdatedAt = now;
+            updated.ChangedAt = _NextChangeMarker();
 
             switch (policyOverride ?? current.OnNodeDeath)
             {
                 case NodeDeathPolicy.MarkFailed:
                     updated.Status = JobStatus.Failed;
                     updated.ExceptionMessage = reason;
+                    updated.FailureFingerprint = JobFailureFingerprints.InterruptedByShutdown;
                     updated.ExecutedAt = now;
                     break;
                 case NodeDeathPolicy.Skip:
@@ -503,6 +510,15 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
             if (_TryUpdateTimeJob(jobId, updated, current))
             {
+                _CloseInterruptedAttempt(
+                    _timeJobAttempts,
+                    jobId,
+                    claimOwner,
+                    reason,
+                    policyOverride,
+                    current.OnNodeDeath,
+                    now
+                );
                 _SyncReconcileCandidate(updated);
                 return 1;
             }
@@ -590,6 +606,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
             if (_TryUpdateTimeJob(functionContext.JobId, updatedTicker, job))
             {
+                _CloseExecutorAttempt(_timeJobAttempts, functionContext);
                 _SyncReconcileCandidate(updatedTicker);
                 return Task.FromResult(1);
             }
@@ -633,6 +650,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 var updated = _CloneTicker(job);
                 updated.CancelRequested = true;
                 updated.UpdatedAt = now;
+                updated.ChangedAt = _NextChangeMarker();
 
                 if (
                     job.Status == JobStatus.Idle
@@ -696,6 +714,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                     released.OwnerId = null;
                     released.LockedUntil = null;
                     released.UpdatedAt = now;
+                    released.ChangedAt = _NextChangeMarker();
                     if (!_TryUpdateTimeJob(childId, released, child))
                     {
                         continue;
@@ -747,6 +766,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             skipped.LockedUntil = null;
             skipped.SkippedReason = reason;
             skipped.UpdatedAt = now;
+            skipped.ChangedAt = _NextChangeMarker();
             if (_TryUpdateTimeJob(jobId, skipped, job))
             {
                 _SyncReconcileCandidate(skipped);
@@ -890,6 +910,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             released.OwnerId = null;
             released.LockedUntil = null;
             released.UpdatedAt = now;
+            released.ChangedAt = _NextChangeMarker();
             if (_TryUpdateTimeJob(childId, released, child))
             {
                 _SyncReconcileCandidate(released);
@@ -981,6 +1002,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             updatedTicker.LockedUntil = now.UtcDateTime.Add(_leaseDuration);
             updatedTicker.Status = JobStatus.InProgress;
             updatedTicker.UpdatedAt = now;
+            updatedTicker.ChangedAt = _NextChangeMarker();
 
             if (_TryUpdateTimeJob(id, updatedTicker, job))
             {
@@ -1074,16 +1096,18 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         // Swap against the row the decision was made on, not a fresh read: a terminal write or a lease renewal that
         // lands after the scan replaces the row, so the swap fails and the job is left alone, as the EF reclaim's
         // predicate-guarded UPDATE leaves it.
-        bool tryApply(TTimeJob decidedOn, Action<TTimeJob> mutate)
+        bool tryApply(TTimeJob decidedOn, JobAttemptEnd attemptEnd, Action<TTimeJob> mutate)
         {
             var updated = _CloneTicker(decidedOn);
             mutate(updated);
             updated.UpdatedAt = now;
+            updated.ChangedAt = _NextChangeMarker();
             if (!_TryUpdateTimeJob(decidedOn.Id, updated, decidedOn))
             {
                 return false;
             }
 
+            _CloseAttempt(_timeJobAttempts, decidedOn.Id, decidedOn.OwnerId, attemptEnd, insertWhenMissing: true);
             _SyncReconcileCandidate(updated);
             return true;
         }
@@ -1102,6 +1126,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 case NodeDeathPolicy.Retry
                     when tryApply(
                         job,
+                        _StoreAttemptEnd(JobAttemptOutcome.Lost, now, _LeaseLapsedReason),
                         t =>
                         {
                             t.OwnerId = null;
@@ -1115,11 +1140,18 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 case NodeDeathPolicy.MarkFailed
                     when tryApply(
                         job,
+                        _StoreAttemptEnd(
+                            JobAttemptOutcome.Failed,
+                            now,
+                            _LeaseLapsedReason,
+                            JobFailureFingerprints.LeaseLapsed
+                        ),
                         t =>
                         {
                             t.Status = JobStatus.Failed;
                             t.LockedUntil = null;
                             t.ExceptionMessage = "Lease lapsed while running!";
+                            t.FailureFingerprint = JobFailureFingerprints.LeaseLapsed;
                             t.ExecutedAt = now;
                         }
                     ):
@@ -1128,6 +1160,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 case NodeDeathPolicy.Skip
                     when tryApply(
                         job,
+                        _StoreAttemptEnd(JobAttemptOutcome.Skipped, now, _LeaseLapsedReason),
                         t =>
                         {
                             t.Status = JobStatus.Skipped;
@@ -1428,6 +1461,9 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             var node = flattened[index];
 
             // Nothing else can mutate a parked barrier row (every predicate excludes it), so this swap always wins.
+            // The reveal is the write readers see, so it carries its own marker: the barrier's marker stamped a row
+            // that is now replaced, and a change read that already passed it must still see the revealed row.
+            node.ChangedAt = _NextChangeMarker();
             _TryUpdateTimeJob(node.Id, node, barriers[index]);
             _SyncReconcileCandidate(node);
         }
@@ -1590,7 +1626,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
     // An edit writes only what the caller schedules. Ownership, business lineage, and the scheduling trace context are
     // captured at scheduling, and the run state belongs to the scheduler and the executing node, so they come from the
     // stored row; then the edit releases any claim, which the rule above only allows on a not-yet-started row.
-    private static void _KeepStoredStateAndRelease(TTimeJob job, TTimeJob stored, DateTimeOffset now)
+    private void _KeepStoredStateAndRelease(TTimeJob job, TTimeJob stored, DateTimeOffset now)
     {
         job.TenantId = stored.TenantId;
         job.CorrelationId = stored.CorrelationId;
@@ -1601,6 +1637,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         job.ExecutedAt = stored.ExecutedAt;
         job.ElapsedTime = stored.ElapsedTime;
         job.ExceptionMessage = stored.ExceptionMessage;
+        job.FailureFingerprint = stored.FailureFingerprint;
         job.SkippedReason = stored.SkippedReason;
         job.ProgressPercent = stored.ProgressPercent;
         job.ProgressMessage = stored.ProgressMessage;
@@ -1610,9 +1647,15 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         job.OwnerId = null;
         job.LockedUntil = null;
         job.UpdatedAt = now;
+        job.ChangedAt = _NextChangeMarker();
     }
 
     public Task<int> RemoveTimeJobsAsync(Guid[] jobIds, CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(_RemoveTimeJobs(jobIds));
+    }
+
+    private int _RemoveTimeJobs(Guid[] jobIds)
     {
         lock (_keyedOperations)
         {
@@ -1654,10 +1697,20 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 if (removed.ParentId.HasValue)
                 {
                     _RemoveChildIndex(removed.ParentId.Value, removed.Id);
+
+                    // A deleted row leaves no marker behind, so the surviving parent carries the change: its chain
+                    // lost a member. Stamped in place, as the marker alone changes and the row's other fields stay.
+                    if (
+                        !visited.Contains(removed.ParentId.Value)
+                        && _timeJobs.TryGetValue(removed.ParentId.Value, out var parent)
+                    )
+                    {
+                        parent.ChangedAt = _NextChangeMarker();
+                    }
                 }
             }
 
-            return Task.FromResult(count);
+            return count;
         }
     }
 
@@ -1672,14 +1725,21 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         // Swap against the row the decision was made on, not a fresh read: a terminal write or a lease renewal that
         // lands after the scan replaces the row, so the swap fails and the job is left alone, as the EF reclaim's
         // predicate-guarded UPDATE leaves it.
-        bool tryApply(TTimeJob decidedOn, Action<TTimeJob> mutate)
+        bool tryApply(TTimeJob decidedOn, JobAttemptEnd? attemptEnd, Action<TTimeJob> mutate)
         {
             var updated = _CloneTicker(decidedOn);
             mutate(updated);
             updated.UpdatedAt = now;
+            updated.ChangedAt = _NextChangeMarker();
             if (!_TryUpdateTimeJob(decidedOn.Id, updated, decidedOn))
             {
                 return false;
+            }
+
+            // Only a started (InProgress) row has an attempt to close; an Idle or Queued release passes none.
+            if (attemptEnd is not null)
+            {
+                _CloseAttempt(_timeJobAttempts, decidedOn.Id, decidedOn.OwnerId, attemptEnd, insertWhenMissing: true);
             }
 
             _SyncReconcileCandidate(updated);
@@ -1709,6 +1769,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 if (
                     tryApply(
                         job,
+                        inProgressLapsed ? _StoreAttemptEnd(JobAttemptOutcome.Lost, now, _NodeNotAliveReason) : null,
                         t =>
                         {
                             t.OwnerId = null;
@@ -1730,11 +1791,18 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 if (
                     tryApply(
                         job,
+                        _StoreAttemptEnd(
+                            JobAttemptOutcome.Failed,
+                            now,
+                            _NodeNotAliveReason,
+                            JobFailureFingerprints.NodeNotAlive
+                        ),
                         t =>
                         {
                             t.Status = JobStatus.Failed;
                             t.LockedUntil = null;
                             t.ExceptionMessage = "Node is not alive!";
+                            t.FailureFingerprint = JobFailureFingerprints.NodeNotAlive;
                             t.ExecutedAt = now;
                         }
                     )
@@ -1748,6 +1816,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 if (
                     tryApply(
                         job,
+                        _StoreAttemptEnd(JobAttemptOutcome.Skipped, now, _NodeNotAliveReason),
                         t =>
                         {
                             t.Status = JobStatus.Skipped;
@@ -1816,7 +1885,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 {
                     if (pair.Value.Status is JobStatus.Idle or JobStatus.Queued)
                     {
-                        _cronOccurrences.TryRemove(pair.Key, out _);
+                        _TryRemoveOccurrence(pair.Key);
                     }
                 }
 
@@ -1828,6 +1897,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                         retired.IsPaused = true;
                         retired.InitIdentifier = JobsSeedId.RetiredMarker(current.InitIdentifier!);
                         retired.UpdatedAt = now;
+                        retired.ChangedAt = _NextChangeMarker();
                         _SetCronJob(retired);
                     }
 
@@ -1844,7 +1914,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
                 foreach (var pair in _cronOccurrences.Where(x => x.Value.CronJobId == removedId).ToArray())
                 {
-                    _cronOccurrences.TryRemove(pair.Key, out _);
+                    _TryRemoveOccurrence(pair.Key);
                 }
             }
         }
@@ -1889,6 +1959,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
                         updated.ScheduleRevision++;
                         updated.UpdatedAt = now;
+                        updated.ChangedAt = _NextChangeMarker();
 
                         // The stored projection was derived under the OLD expression. Reset the position to
                         // the uninitialized sentinel so the next wake re-derives it by the creation rule under
@@ -1910,6 +1981,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                             skipped.Status = JobStatus.Skipped;
                             skipped.ExecutedAt = now;
                             skipped.UpdatedAt = now;
+                            skipped.ChangedAt = _NextChangeMarker();
                             skipped.SkippedReason = "Cron definition updated";
                             // KTD1a: THE producer that owes a re-fire. Seeding retires the old-expression rows
                             // without creating a replacement and resets the projection to be re-derived, so the
@@ -1939,6 +2011,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 InitIdentifier = entry.Marker,
                 CreatedAt = now,
                 UpdatedAt = now,
+                ChangedAt = _NextChangeMarker(),
                 // A copy, so the stored row never aliases the caller's buffer.
                 Request = entry.Request?.ToArray() ?? [],
                 CorrelationId = entry.CorrelationId,
@@ -2220,6 +2293,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                         OnNodeDeath = request.OnNodeDeath,
                         CreatedAt = request.OperationTimeUtc,
                         UpdatedAt = request.OperationTimeUtc,
+                        ChangedAt = _NextChangeMarker(),
                         // Execution reads Function off this navigation; the relational provider gets it from an
                         // Include on the claim read, so attach it here to keep the two providers interchangeable.
                         CronJob = current,
@@ -2243,6 +2317,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 repurposed.LockedUntil = null;
                 repurposed.RecoveredFromUtc = step.ExecutionTimeUtc;
                 repurposed.UpdatedAt = request.OperationTimeUtc;
+                repurposed.ChangedAt = _NextChangeMarker();
                 repurposed.CronJob ??= current;
                 _cronOccurrences[repurposed.Id] = repurposed;
                 coalescedRun = _CloneCronOccurrence(repurposed);
@@ -2278,6 +2353,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 skipped.LockedUntil = null;
                 skipped.ExecutedAt = request.OperationTimeUtc;
                 skipped.UpdatedAt = request.OperationTimeUtc;
+                skipped.ChangedAt = _NextChangeMarker();
                 skipped.SkippedReason = "Cron occurrence missed and resolved by recovery";
                 // Recovery resolves the backlog: the single coalesced run (or, under Skip, deliberate nothing)
                 // stands in for these instants, so they are accounted for.
@@ -2304,6 +2380,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 skippedRun.Status = JobStatus.Skipped;
                 skippedRun.ExecutedAt = request.OperationTimeUtc;
                 skippedRun.UpdatedAt = request.OperationTimeUtc;
+                skippedRun.ChangedAt = _NextChangeMarker();
                 skippedRun.SkippedReason = CronOverlapRule.SkippedReason;
                 skippedRun.Disposition = CronOccurrenceDisposition.Accounted;
                 _cronOccurrences[skippedRun.Id] = skippedRun;
@@ -2552,6 +2629,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                         OnNodeDeath = current.OnNodeDeath,
                         CreatedAt = storeUtcNow,
                         UpdatedAt = storeUtcNow,
+                        ChangedAt = _NextChangeMarker(),
                     };
 
                     if (skipForOverlap)
@@ -2597,6 +2675,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                     retired.LockedUntil = null;
                     retired.ExecutedAt = storeUtcNow;
                     retired.UpdatedAt = storeUtcNow;
+                    retired.ChangedAt = _NextChangeMarker();
                     retired.SkippedReason = CronOverlapRule.SkippedReason;
                     retired.Disposition = CronOccurrenceDisposition.Accounted;
                     _cronOccurrences[existingId] = retired;
@@ -2649,6 +2728,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             updated.IsPaused = true;
             updated.ScheduleRevision++;
             updated.UpdatedAt = operationTimeUtc;
+            updated.ChangedAt = _NextChangeMarker();
 
             foreach (var pair in _cronOccurrences.Where(x => x.Value.CronJobId == cronJobId).ToArray())
             {
@@ -2661,6 +2741,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 skipped.Status = JobStatus.Skipped;
                 skipped.ExecutedAt = operationTimeUtc;
                 skipped.UpdatedAt = operationTimeUtc;
+                skipped.ChangedAt = _NextChangeMarker();
                 skipped.SkippedReason = "Cron definition paused";
                 // A paused definition must not fire; resume creates its own occurrence. Nothing is owed at this
                 // instant, so the retired row accounts for it.
@@ -2711,6 +2792,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             updated.IsPaused = false;
             updated.ScheduleRevision++;
             updated.UpdatedAt = operationTimeUtc;
+            updated.ChangedAt = _NextChangeMarker();
             // The position moves with the pause state and revision, so a resumed definition never carries a
             // pre-pause watermark that would read as a backlog spanning the whole pause.
             updated.ReconciledThroughUtc = scheduleAnchorUtc;
@@ -2724,6 +2806,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 var replacement = _CloneCronOccurrence(nextOccurrence);
                 replacement.CronJob = updated;
                 replacement.SnapshotContract(updated);
+                replacement.ChangedAt = _NextChangeMarker();
                 _cronOccurrences[nextOccurrence.Id] = replacement;
             }
 
@@ -2800,6 +2883,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 definition.ScheduleRevision = revisionChanged ? current.ScheduleRevision + 1 : current.ScheduleRevision;
                 definition.CreatedAt = current.CreatedAt;
                 definition.UpdatedAt = operationTimeUtc;
+                definition.ChangedAt = _NextChangeMarker();
 
                 // Rebase the position on a schedule-changing edit so the old expression's projection cannot
                 // survive it; a metadata-only edit leaves the position exactly where it was. The provider supplies
@@ -2867,6 +2951,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                         skipped.Status = JobStatus.Skipped;
                         skipped.ExecutedAt = operationTimeUtc;
                         skipped.UpdatedAt = operationTimeUtc;
+                        skipped.ChangedAt = _NextChangeMarker();
                         skipped.SkippedReason = "Cron definition updated";
                         // KTD1a: the SAME SkippedReason the seeding migration writes, and the opposite accounting
                         // answer. This path rebases the projection and installs the replacement occurrence itself
@@ -2884,6 +2969,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                         && !_DefersReplacementToMaterialization(definition.Id, definition.OnOverlap)
                     )
                     {
+                        replacement.ChangedAt = _NextChangeMarker();
                         _cronOccurrences[replacement.Id] = replacement;
                     }
                 }
@@ -3175,6 +3261,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                     updatedOccurrence.OwnerId = _ownerId;
                     updatedOccurrence.LockedUntil = now.UtcDateTime.Add(_leaseDuration);
                     updatedOccurrence.UpdatedAt = now;
+                    updatedOccurrence.ChangedAt = _NextChangeMarker();
                     updatedOccurrence.Status = JobStatus.Queued;
                     // #464: re-stamp the policy from the cron def (context) so EF and in-memory agree on re-queue.
                     updatedOccurrence.OnNodeDeath = context.OnNodeDeath;
@@ -3213,6 +3300,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                         OnNodeDeath = context.OnNodeDeath,
                         CreatedAt = context.NextCronOccurrence?.CreatedAt ?? now,
                         UpdatedAt = now,
+                        ChangedAt = _NextChangeMarker(),
                         RetryCount = 0,
                         CronJob = currentDefinition,
                     };
@@ -3280,6 +3368,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                     updatedOccurrence.OwnerId = _ownerId;
                     updatedOccurrence.LockedUntil = now.UtcDateTime.Add(_leaseDuration);
                     updatedOccurrence.UpdatedAt = now;
+                    updatedOccurrence.ChangedAt = _NextChangeMarker();
                     updatedOccurrence.Status = JobStatus.Queued;
 
                     if (
@@ -3318,6 +3407,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             // Return 1 only when the completion was actually applied (mirror EF affected-row count).
             if (_cronOccurrences.TryUpdate(functionContext.JobId, updatedOccurrence, occurrence))
             {
+                _CloseExecutorAttempt(_occurrenceAttempts, functionContext);
                 return Task.FromResult(1);
             }
         }
@@ -3390,6 +3480,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             updated.ProgressMessage = progress.Message;
             updated.ProgressUpdatedAt = now;
             updated.UpdatedAt = now;
+            updated.ChangedAt = _NextChangeMarker();
 
             if (_TryUpdateTimeJob(jobId, updated, job))
             {
@@ -3424,6 +3515,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             updated.ProgressMessage = progress.Message;
             updated.ProgressUpdatedAt = now;
             updated.UpdatedAt = now;
+            updated.ChangedAt = _NextChangeMarker();
 
             if (_cronOccurrences.TryUpdate(occurrenceId, updated, occurrence))
             {
@@ -3441,12 +3533,23 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         var affected = 0;
 
         // Swap against the row the decision was made on, not a fresh read (see the time-job reclaim).
-        bool tryApply(CronJobOccurrenceEntity<TCronJob> decidedOn, Action<CronJobOccurrenceEntity<TCronJob>> mutate)
+        bool tryApply(
+            CronJobOccurrenceEntity<TCronJob> decidedOn,
+            JobAttemptEnd attemptEnd,
+            Action<CronJobOccurrenceEntity<TCronJob>> mutate
+        )
         {
             var updated = _CloneCronOccurrence(decidedOn);
             mutate(updated);
             updated.UpdatedAt = now;
-            return _cronOccurrences.TryUpdate(decidedOn.Id, updated, decidedOn);
+            updated.ChangedAt = _NextChangeMarker();
+            if (!_cronOccurrences.TryUpdate(decidedOn.Id, updated, decidedOn))
+            {
+                return false;
+            }
+
+            _CloseAttempt(_occurrenceAttempts, decidedOn.Id, decidedOn.OwnerId, attemptEnd, insertWhenMissing: true);
+            return true;
         }
 
         var stalled = _cronOccurrences
@@ -3461,6 +3564,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 case NodeDeathPolicy.Retry
                     when tryApply(
                         occurrence,
+                        _StoreAttemptEnd(JobAttemptOutcome.Lost, now, _LeaseLapsedReason),
                         t =>
                         {
                             t.OwnerId = null;
@@ -3474,11 +3578,18 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 case NodeDeathPolicy.MarkFailed
                     when tryApply(
                         occurrence,
+                        _StoreAttemptEnd(
+                            JobAttemptOutcome.Failed,
+                            now,
+                            _LeaseLapsedReason,
+                            JobFailureFingerprints.LeaseLapsed
+                        ),
                         t =>
                         {
                             t.Status = JobStatus.Failed;
                             t.LockedUntil = null;
                             t.ExceptionMessage = "Lease lapsed while running!";
+                            t.FailureFingerprint = JobFailureFingerprints.LeaseLapsed;
                             t.ExecutedAt = now;
                         }
                     ):
@@ -3487,6 +3598,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 case NodeDeathPolicy.Skip
                     when tryApply(
                         occurrence,
+                        _StoreAttemptEnd(JobAttemptOutcome.Skipped, now, _LeaseLapsedReason),
                         t =>
                         {
                             t.Status = JobStatus.Skipped;
@@ -3528,6 +3640,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                     updatedOccurrence.LockedUntil = null;
                     updatedOccurrence.Status = JobStatus.Idle;
                     updatedOccurrence.UpdatedAt = now;
+                    updatedOccurrence.ChangedAt = _NextChangeMarker();
 
                     _cronOccurrences.TryUpdate(id, updatedOccurrence, occurrence);
                 }
@@ -3582,12 +3695,14 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             var updated = _CloneCronOccurrence(current);
             updated.LockedUntil = null;
             updated.UpdatedAt = now;
+            updated.ChangedAt = _NextChangeMarker();
 
             switch (policyOverride ?? current.OnNodeDeath)
             {
                 case NodeDeathPolicy.MarkFailed:
                     updated.Status = JobStatus.Failed;
                     updated.ExceptionMessage = reason;
+                    updated.FailureFingerprint = JobFailureFingerprints.InterruptedByShutdown;
                     updated.ExecutedAt = now;
                     break;
                 case NodeDeathPolicy.Skip:
@@ -3605,6 +3720,15 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
             if (_cronOccurrences.TryUpdate(occurrenceId, updated, current))
             {
+                _CloseInterruptedAttempt(
+                    _occurrenceAttempts,
+                    occurrenceId,
+                    claimOwner,
+                    reason,
+                    policyOverride,
+                    current.OnNodeDeath,
+                    now
+                );
                 return 1;
             }
         }
@@ -3679,12 +3803,34 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         var affected = 0;
 
         // Swap against the row the decision was made on, not a fresh read (see the time-job reclaim).
-        bool tryApply(CronJobOccurrenceEntity<TCronJob> decidedOn, Action<CronJobOccurrenceEntity<TCronJob>> mutate)
+        bool tryApply(
+            CronJobOccurrenceEntity<TCronJob> decidedOn,
+            JobAttemptEnd? attemptEnd,
+            Action<CronJobOccurrenceEntity<TCronJob>> mutate
+        )
         {
             var updated = _CloneCronOccurrence(decidedOn);
             mutate(updated);
             updated.UpdatedAt = now;
-            return _cronOccurrences.TryUpdate(decidedOn.Id, updated, decidedOn);
+            updated.ChangedAt = _NextChangeMarker();
+            if (!_cronOccurrences.TryUpdate(decidedOn.Id, updated, decidedOn))
+            {
+                return false;
+            }
+
+            // Only a started (InProgress) row has an attempt to close; an Idle or Queued release passes none.
+            if (attemptEnd is not null)
+            {
+                _CloseAttempt(
+                    _occurrenceAttempts,
+                    decidedOn.Id,
+                    decidedOn.OwnerId,
+                    attemptEnd,
+                    insertWhenMissing: true
+                );
+            }
+
+            return true;
         }
 
         // Per-policy dead-node transition (#315, #316) — mirrors EF ReleaseDeadNodeOccurrenceResourcesAsync.
@@ -3710,6 +3856,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 if (
                     tryApply(
                         occurrence,
+                        inProgressLapsed ? _StoreAttemptEnd(JobAttemptOutcome.Lost, now, _NodeNotAliveReason) : null,
                         o =>
                         {
                             o.OwnerId = null;
@@ -3731,11 +3878,18 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 if (
                     tryApply(
                         occurrence,
+                        _StoreAttemptEnd(
+                            JobAttemptOutcome.Failed,
+                            now,
+                            _NodeNotAliveReason,
+                            JobFailureFingerprints.NodeNotAlive
+                        ),
                         o =>
                         {
                             o.Status = JobStatus.Failed;
                             o.LockedUntil = null;
                             o.ExceptionMessage = "Node is not alive!";
+                            o.FailureFingerprint = JobFailureFingerprints.NodeNotAlive;
                             o.ExecutedAt = now;
                         }
                     )
@@ -3749,6 +3903,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 if (
                     tryApply(
                         occurrence,
+                        _StoreAttemptEnd(JobAttemptOutcome.Skipped, now, _NodeNotAliveReason),
                         o =>
                         {
                             o.Status = JobStatus.Skipped;
@@ -3941,6 +4096,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
                 occurrence.SnapshotContract(definition);
                 occurrence.CronJob = definition;
+                occurrence.ChangedAt = _NextChangeMarker();
                 if (_cronOccurrences.TryAdd(occurrence.Id, _CloneCronOccurrence(occurrence)))
                 {
                     count++;
@@ -3970,7 +4126,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         var count = 0;
         foreach (var id in cronJobOccurrences)
         {
-            if (_cronOccurrences.TryRemove(id, out _))
+            if (_TryRemoveOccurrence(id))
             {
                 count++;
             }
@@ -4011,6 +4167,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             updated.LockedUntil = now.UtcDateTime.Add(_leaseDuration);
             updated.Status = JobStatus.InProgress;
             updated.UpdatedAt = now;
+            updated.ChangedAt = _NextChangeMarker();
 
             if (_cronOccurrences.TryUpdate(id, updated, occurrence))
             {
@@ -4077,6 +4234,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             RetryIntervals = job.RetryIntervals,
             CreatedAt = job.CreatedAt,
             UpdatedAt = job.UpdatedAt,
+            ChangedAt = job.ChangedAt,
             ParentId = job.ParentId,
             ExecutionTime = job.ExecutionTime,
             OwnerId = job.OwnerId,
@@ -4127,6 +4285,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 RetryIntervals = ch.RetryIntervals,
                 CreatedAt = ch.CreatedAt,
                 UpdatedAt = ch.UpdatedAt,
+                ChangedAt = ch.ChangedAt,
                 ParentId = ch.ParentId,
                 RunCondition = ch.RunCondition,
                 OnNodeDeath = ch.OnNodeDeath,
@@ -4251,6 +4410,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         JobContract.ValidateVersion(definition.ContractVersion);
         lock (_cronJobDueIndexLock)
         {
+            definition.ChangedAt = _NextChangeMarker();
             if (!_cronJobs.TryAdd(definition.Id, definition))
             {
                 return false;
@@ -4381,6 +4541,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             ParentId = job.ParentId,
             Request = job.Request?.ToArray(),
             ExceptionMessage = job.ExceptionMessage,
+            FailureFingerprint = job.FailureFingerprint,
             SkippedReason = job.SkippedReason,
             ElapsedTime = job.ElapsedTime,
             ProgressPercent = job.ProgressPercent,
@@ -4392,6 +4553,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             CancelRequested = job.CancelRequested,
             CreatedAt = job.CreatedAt,
             UpdatedAt = job.UpdatedAt,
+            ChangedAt = job.ChangedAt,
             Description = job.Description,
             Children = [],
         };
@@ -4424,6 +4586,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             LockedUntil = occurrence.LockedUntil,
             OnNodeDeath = occurrence.OnNodeDeath,
             ExceptionMessage = occurrence.ExceptionMessage,
+            FailureFingerprint = occurrence.FailureFingerprint,
             SkippedReason = occurrence.SkippedReason,
             // Same reasoning as RecoveredFromUtc above: the occupied-instant rule reads this and nothing else, so a
             // clone that dropped it would silently turn a seeding-migration retirement into an ordinary one.
@@ -4435,6 +4598,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             ExecutedAt = occurrence.ExecutedAt,
             CreatedAt = occurrence.CreatedAt,
             UpdatedAt = occurrence.UpdatedAt,
+            ChangedAt = occurrence.ChangedAt,
         };
     }
 
@@ -4463,6 +4627,12 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         if (propsToUpdate.Contains(nameof(JobExecutionState.ExceptionDetails)) && context.Status != JobStatus.Skipped)
         {
             job.ExceptionMessage = context.ExceptionDetails;
+        }
+
+        // FAILURE FINGERPRINT
+        if (propsToUpdate.Contains(nameof(JobExecutionState.FailureFingerprint)))
+        {
+            job.FailureFingerprint = context.FailureFingerprint;
         }
 
         // ELAPSED_TIME
@@ -4494,6 +4664,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
         // UPDATED_AT ALWAYS
         job.UpdatedAt = _timeProvider.GetUtcNow();
+        job.ChangedAt = _NextChangeMarker();
     }
 
     private void _ApplyFunctionContextToCronOccurrence(
@@ -4529,6 +4700,12 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             occurrence.ExceptionMessage = context.ExceptionDetails;
         }
 
+        // FAILURE FINGERPRINT
+        if (propsToUpdate.Contains(nameof(JobExecutionState.FailureFingerprint)))
+        {
+            occurrence.FailureFingerprint = context.FailureFingerprint;
+        }
+
         // ELAPSED_TIME
         if (propsToUpdate.Contains(nameof(JobExecutionState.ElapsedTime)))
         {
@@ -4558,6 +4735,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
         // UPDATED_AT ALWAYS
         occurrence.UpdatedAt = _timeProvider.GetUtcNow();
+        occurrence.ChangedAt = _NextChangeMarker();
     }
 
     #endregion

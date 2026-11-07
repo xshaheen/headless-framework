@@ -12,12 +12,37 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {
-    public async Task<JobRequeueOutcome> RequeueCronJobOccurrenceAsync(
+    public Task<JobRequeueOutcome> RequeueCronJobOccurrenceAsync(
         Guid occurrenceId,
         string? traceParent,
         CancellationToken cancellationToken = default
     )
     {
+        return _RequeueCronJobOccurrenceAsync(occurrenceId, expectedChangedAt: null, traceParent, cancellationToken);
+    }
+
+    public Task<JobRequeueOutcome> RequeueCronJobOccurrenceIfUnchangedAsync(
+        Guid occurrenceId,
+        DateTime expectedChangedAt,
+        string? traceParent,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return _RequeueCronJobOccurrenceAsync(occurrenceId, expectedChangedAt, traceParent, cancellationToken);
+    }
+
+    // An Operation passes the marker its scope read returned; the final conditional write carries it, so a row written
+    // since then is not requeued again.
+    private async Task<JobRequeueOutcome> _RequeueCronJobOccurrenceAsync(
+        Guid occurrenceId,
+        DateTime? expectedChangedAt,
+        string? traceParent,
+        CancellationToken cancellationToken
+    )
+    {
+        var marker = expectedChangedAt is { } expected ? DateTime.SpecifyKind(expected, DateTimeKind.Utc) : default;
+        var compareMarker = expectedChangedAt is not null;
+
         await using var readContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -31,6 +56,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                 x.Status,
                 x.CronJobId,
                 x.ExecutionTime,
+                x.ChangedAt,
             })
             .SingleOrDefaultAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -43,6 +69,11 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         if (observed.Status != JobStatus.Failed)
         {
             return JobRequeueOutcome.NotFailed;
+        }
+
+        if (compareMarker && observed.ChangedAt != marker)
+        {
+            return JobRequeueOutcome.Conflict;
         }
 
         return await JobsStoreTransaction
@@ -103,13 +134,19 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                     }
 
                     var affected = await occurrences
-                        .Where(x => x.Id == occurrenceId && x.Status == JobStatus.Failed)
+                        .Where(x =>
+                            x.Id == occurrenceId
+                            && x.Status == JobStatus.Failed
+                            && (!compareMarker || x.ChangedAt == marker)
+                        )
                         .ExecuteUpdateAsync(
                             setter =>
                                 setter
+                                    .SetChangedAt()
                                     .SetProperty(x => x.Status, JobStatus.Idle)
                                     .SetProperty(x => x.RetryCount, 0)
                                     .SetProperty(x => x.ExceptionMessage, _ => null)
+                                    .SetProperty(x => x.FailureFingerprint, _ => null)
                                     .SetProperty(x => x.SkippedReason, _ => null)
                                     .SetProperty(x => x.OwnerId, _ => null)
                                     .SetProperty(x => x.LockedUntil, _ => null)

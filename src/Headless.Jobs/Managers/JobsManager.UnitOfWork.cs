@@ -2,6 +2,7 @@
 
 using System.Data;
 using System.Data.Common;
+using System.Runtime.ExceptionServices;
 using Headless.Jobs.BackgroundServices;
 using Headless.Jobs.Internal;
 using Headless.UnitOfWork;
@@ -157,6 +158,69 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
 
             return ValueTask.CompletedTask;
         });
+    }
+
+    // Registers a coordinated write's post-commit signal, preceded by the re-stamp of the rows it wrote. The rows were
+    // stamped inside the caller's transaction, possibly long before it committed, so another node's change read may
+    // already have passed that stamp; the re-stamp moves them to the current end of the change stream. The re-stamp
+    // rides inside the commit's one signal rather than beside it, so a commit still costs one slot of the bounded
+    // channel and is dropped, logged, and recovered as one unit. A re-stamp the worker drops or a process that stops
+    // before it runs leaves the rows visible to a refetch, not to a change read.
+    private void _SignalOnCommit(
+        CoordinatedJobContext context,
+        JobsPostCommitSignal signal,
+        JobChangeKind kind,
+        Guid[] ids
+    )
+    {
+        _SignalOnCommit(context.UnitOfWork, new ChangeMarkerRestampSignal(context.Writer, kind, ids, signal));
+    }
+
+    // A coordinated time-job write inserts each entity with its whole chain, so every node of the tree is re-stamped.
+    private static Guid[] _WrittenTimeJobIds(IEnumerable<TTimeJob> entities)
+    {
+        var ids = new List<Guid>();
+        var pending = new Stack<TTimeJob>(entities);
+
+        while (pending.TryPop(out var job))
+        {
+            ids.Add(job.Id);
+
+            foreach (var child in job.Children)
+            {
+                pending.Push(child);
+            }
+        }
+
+        return [.. ids];
+    }
+
+    // Re-stamps first, so a change read the inner signal's notification triggers already sees the rows at the end of the
+    // stream. A failed re-stamp never withholds the dispatch and scheduler wake: the inner side effects still run, and
+    // the re-stamp failure is rethrown afterwards for the worker to log against the job scope.
+    private sealed record ChangeMarkerRestampSignal(
+        ICoordinatedJobWriter<TTimeJob, TCronJob> Writer,
+        JobChangeKind Kind,
+        Guid[] Ids,
+        JobsPostCommitSignal Inner
+    ) : JobsPostCommitSignal(Inner.JobScope)
+    {
+        public override async Task RunAsync(DateTimeOffset now, CancellationToken cancellationToken)
+        {
+            ExceptionDispatchInfo? restampFailure = null;
+
+            try
+            {
+                await Writer.RestampChangesAsync(Kind, Ids, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception e) when (e is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+            {
+                restampFailure = ExceptionDispatchInfo.Capture(e);
+            }
+
+            await Inner.RunAsync(now, cancellationToken).ConfigureAwait(false);
+            restampFailure?.Throw();
+        }
     }
 
     // Signal kinds. Each carries what the worker needs to run the existing side-effect methods against rows that are

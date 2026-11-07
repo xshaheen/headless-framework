@@ -265,7 +265,9 @@ public sealed class SqlServerClaimStrategyTests(SqlServerJobsCoordinationFixture
             await connection.OpenAsync(cleanup.Token);
             await using var command = connection.CreateCommand();
             command.CommandText =
-                "DROP TABLE IF EXISTS [mapped_jobs].[native_cron_occurrences];"
+                "DROP TABLE IF EXISTS [mapped_jobs].[TimeJobAttempts];"
+                + "DROP TABLE IF EXISTS [mapped_jobs].[CronJobOccurrenceAttempts];"
+                + "DROP TABLE IF EXISTS [mapped_jobs].[native_cron_occurrences];"
                 + "DROP TABLE IF EXISTS [mapped_jobs].[native_time_jobs];"
                 + "DROP TABLE IF EXISTS [mapped_jobs].[CronJobs];"
                 // The reservation table follows the configured schema like every other Jobs table, so it lands here

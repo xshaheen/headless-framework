@@ -32,6 +32,10 @@ public sealed class TimeJobEditRuntimePropertiesTests : TestBase
         nameof(TimeJobEntity.TraceParent),
     ];
 
+    // The store stamps the change marker on every write, an edit included, so the caller's value never lands; it is
+    // not run state, and the relational store overwrites it in the statement rather than through the guard list.
+    private static readonly string[] _StoreStamped = [nameof(BaseJobEntity.ChangedAt)];
+
     // Identity, graph shape, validated or reference-typed members, and the keyed-job metadata an ordinary edit
     // rejects outright, none of which an edit test can vary freely.
     private static readonly string[] _NotVaried =
@@ -83,7 +87,9 @@ public sealed class TimeJobEditRuntimePropertiesTests : TestBase
             .Where(pair => !Equals(pair.Key.GetValue(stored), pair.Value))
             .Select(pair => pair.Key.Name);
 
-        keptFromStore.Should().BeEquivalentTo(TimeJobEditGuard.RuntimeProperties.Concat(_Lineage));
+        keptFromStore
+            .Should()
+            .BeEquivalentTo(TimeJobEditGuard.RuntimeProperties.Concat(_Lineage).Concat(_StoreStamped));
     }
 
     private static IEnumerable<PropertyInfo> _VariableProperties()

@@ -14,6 +14,17 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         CancellationToken cancellationToken = default
     )
     {
+        return _RequeueTimeJobAsync(jobId, expectedChangedAt: null, traceParent, cancellationToken);
+    }
+
+    // An Operation passes the marker its scope read returned, so a row changed since then is not requeued again.
+    private Task<JobRequeueOutcome> _RequeueTimeJobAsync(
+        Guid jobId,
+        DateTime? expectedChangedAt,
+        string? traceParent,
+        CancellationToken cancellationToken
+    )
+    {
         // The keyed-operations lock is what keyed scheduling holds while it reads and supersedes a generation, so the
         // current-generation check and the write below cannot interleave with a supersede.
         lock (_keyedOperations)
@@ -36,11 +47,17 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 return Task.FromResult(refused);
             }
 
+            if (expectedChangedAt is { } expected && job.ChangedAt != expected)
+            {
+                return Task.FromResult(JobRequeueOutcome.Conflict);
+            }
+
             var now = _timeProvider.GetUtcNow();
             var updated = _CloneTicker(job);
             updated.Status = JobStatus.Idle;
             updated.RetryCount = 0;
             updated.ExceptionMessage = null;
+            updated.FailureFingerprint = null;
             updated.SkippedReason = null;
             updated.OwnerId = null;
             updated.LockedUntil = null;
@@ -54,6 +71,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             updated.ExecutionTime = now.UtcDateTime;
             updated.TraceParent = traceParent;
             updated.UpdatedAt = now;
+            updated.ChangedAt = _NextChangeMarker();
 
             if (!_TryUpdateTimeJob(jobId, updated, job))
             {
@@ -69,6 +87,16 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         Guid occurrenceId,
         string? traceParent,
         CancellationToken cancellationToken = default
+    )
+    {
+        return _RequeueCronJobOccurrenceAsync(occurrenceId, expectedChangedAt: null, traceParent, cancellationToken);
+    }
+
+    private Task<JobRequeueOutcome> _RequeueCronJobOccurrenceAsync(
+        Guid occurrenceId,
+        DateTime? expectedChangedAt,
+        string? traceParent,
+        CancellationToken cancellationToken
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -93,6 +121,11 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             }
 
             if (current.Status != JobStatus.Failed)
+            {
+                return Task.FromResult(JobRequeueOutcome.Conflict);
+            }
+
+            if (expectedChangedAt is { } expected && current.ChangedAt != expected)
             {
                 return Task.FromResult(JobRequeueOutcome.Conflict);
             }
@@ -134,6 +167,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             updated.Status = JobStatus.Idle;
             updated.RetryCount = 0;
             updated.ExceptionMessage = null;
+            updated.FailureFingerprint = null;
             updated.SkippedReason = null;
             updated.OwnerId = null;
             updated.LockedUntil = null;
@@ -145,6 +179,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             updated.ProgressUpdatedAt = null;
             updated.TraceParent = traceParent;
             updated.UpdatedAt = now;
+            updated.ChangedAt = _NextChangeMarker();
 
             return Task.FromResult(
                 _cronOccurrences.TryUpdate(occurrenceId, updated, current)
