@@ -23,4 +23,42 @@ public sealed partial class InMemoryDataStorageTests
     [Fact]
     public override Task should_refuse_a_published_write_without_a_named_operator() =>
         base.should_refuse_a_published_write_without_a_named_operator();
+
+    [Fact]
+    public override Task should_leave_a_published_row_with_a_pending_retry_untouched() =>
+        base.should_leave_a_published_row_with_a_pending_retry_untouched();
+
+    [Fact]
+    public override Task should_leave_a_published_row_with_a_live_send_lease_untouched() =>
+        base.should_leave_a_published_row_with_a_live_send_lease_untouched();
+
+    [Fact]
+    public override Task should_refuse_to_resend_a_published_row_that_succeeded() =>
+        base.should_refuse_to_resend_a_published_row_that_succeeded();
+
+    [Fact]
+    public override Task should_replay_a_repeated_published_request_with_one_receipt() =>
+        base.should_replay_a_repeated_published_request_with_one_receipt();
+
+    [Fact]
+    public override Task should_refuse_a_published_operation_id_reused_by_a_different_request() =>
+        base.should_refuse_a_published_operation_id_reused_by_a_different_request();
+
+    [Fact]
+    public override Task should_scope_a_published_delete_to_both_terminal_statuses_and_a_resend_to_failures() =>
+        base.should_scope_a_published_delete_to_both_terminal_statuses_and_a_resend_to_failures();
+
+    protected override Task SetPublishedLeaseAsync(
+        Guid storageId,
+        TimeSpan liveFor,
+        CancellationToken cancellationToken
+    )
+    {
+        _EnsureInitialized();
+        var row = _storage!.PublishedMessages[storageId];
+        row.LockedUntil = TimeProvider.GetUtcNow() + liveFor;
+        row.Owner = "another-node";
+
+        return Task.CompletedTask;
+    }
 }

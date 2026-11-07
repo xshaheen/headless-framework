@@ -172,7 +172,7 @@ public abstract partial class DataStorageTestsBase
         var consumer = $"scope-consumer-{Guid.NewGuid():N}";
         var first = await _AdmitTerminalInboxAsync(storage, consumer);
         var second = await _AdmitTerminalInboxAsync(storage, consumer);
-        var mark = (await storage.GetLatestMessageChangeMarkerAsync(AbortToken))!.Value;
+        var mark = await _SeedMarkerBeforeNowAsync(published: false, first.StorageId, second.StorageId);
         var late = await _AdmitTerminalInboxAsync(storage, consumer);
         var scope = new MessageOperationScope
         {

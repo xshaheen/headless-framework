@@ -141,7 +141,7 @@ public abstract partial class DataStorageTestsBase
         var first = await _FailPublishedAsync(storage, name);
         var second = await _FailPublishedAsync(storage, name);
         await _FailPublishedAsync(storage, name, RetryDelay.Exactly(TimeSpan.FromHours(1)));
-        var mark = (await storage.GetLatestMessageChangeMarkerAsync(AbortToken))!.Value;
+        var mark = await _SeedMarkerBeforeNowAsync(published: true, first.StorageId, second.StorageId);
         var late = await _FailPublishedAsync(storage, name);
         var scope = new MessageOperationScope
         {
@@ -282,6 +282,285 @@ public abstract partial class DataStorageTestsBase
         var row = await storage.GetMonitoringApi().GetPublishedMessageAsync(message.StorageId, AbortToken);
         row.Should().NotBeNull();
         row!.NextRetryAt.Should().BeNull();
+    }
+
+    /// <summary>
+    /// Gives a published row a send lease that stays live for <paramref name="liveFor"/> on the store's clock, written
+    /// below the storage: the storage takes no lease on a terminal row, yet a lease a sender took before the row turned
+    /// terminal can still be live when an operator acts on it.
+    /// </summary>
+    protected virtual Task SetPublishedLeaseAsync(Guid storageId, TimeSpan liveFor, CancellationToken cancellationToken)
+    {
+        throw new NotSupportedException("This storage cannot seed a published send lease.");
+    }
+
+    public virtual async Task should_leave_a_published_row_with_a_pending_retry_untouched()
+    {
+        // given: a published row that failed with a retry still pending
+        var storage = GetStorage();
+        var published = storage.GetPublishedOperationsApi();
+        var actor = $"published-pending-{Guid.NewGuid():N}";
+        var message = await _FailPublishedAsync(
+            storage,
+            $"published-pending-{Guid.NewGuid():N}",
+            RetryDelay.Exactly(TimeSpan.FromHours(1))
+        );
+        var before = await _PublishedSnapshotAsync(storage, message.StorageId);
+
+        // when: an operator re-sends it, then deletes it
+        var resend = await published.ResendAsync(
+            new PublishedOperationRequest(Guid.NewGuid(), message.StorageId, null, "re-send", _Operator(actor)),
+            AbortToken
+        );
+        var purge = await published.PurgeAsync(
+            new PublishedOperationRequest(Guid.NewGuid(), message.StorageId, null, "delete", _Operator(actor)),
+            AbortToken
+        );
+
+        // then: the pipeline still owns the row, so both are refused as active and the row is as it was
+        resend.Outcome.Should().Be(InboxOperationOutcome.Active);
+        purge.Outcome.Should().Be(InboxOperationOutcome.Active);
+        (await _PublishedSnapshotAsync(storage, message.StorageId)).Should().Be(before);
+    }
+
+    public virtual async Task should_leave_a_published_row_with_a_live_send_lease_untouched()
+    {
+        // given: a published row that failed for good while a sender still holds its lease
+        var storage = GetStorage();
+        var published = storage.GetPublishedOperationsApi();
+        var actor = $"published-leased-{Guid.NewGuid():N}";
+        var message = await _FailPublishedAsync(storage, $"published-leased-{Guid.NewGuid():N}");
+        await SetPublishedLeaseAsync(message.StorageId, TimeSpan.FromHours(1), AbortToken);
+        var before = await _PublishedSnapshotAsync(storage, message.StorageId);
+
+        // when: an operator re-sends it, then deletes it
+        var resend = await published.ResendAsync(
+            new PublishedOperationRequest(Guid.NewGuid(), message.StorageId, null, "re-send", _Operator(actor)),
+            AbortToken
+        );
+        var purge = await published.PurgeAsync(
+            new PublishedOperationRequest(Guid.NewGuid(), message.StorageId, null, "delete", _Operator(actor)),
+            AbortToken
+        );
+
+        // then: a send is in flight, so both are refused as active and the row is as it was
+        resend.Outcome.Should().Be(InboxOperationOutcome.Active);
+        purge.Outcome.Should().Be(InboxOperationOutcome.Active);
+        (await _PublishedSnapshotAsync(storage, message.StorageId)).Should().Be(before);
+    }
+
+    public virtual async Task should_refuse_to_resend_a_published_row_that_succeeded()
+    {
+        // given: a published row that succeeded
+        var storage = GetStorage();
+        var published = storage.GetPublishedOperationsApi();
+        var actor = $"published-succeeded-{Guid.NewGuid():N}";
+        var message = await _SucceedPublishedAsync(storage, $"published-succeeded-{Guid.NewGuid():N}");
+        var before = await _PublishedSnapshotAsync(storage, message.StorageId);
+
+        // when
+        var result = await published.ResendAsync(
+            new PublishedOperationRequest(Guid.NewGuid(), message.StorageId, null, "re-send", _Operator(actor)),
+            AbortToken
+        );
+        var ledger = await _PublishedLedgerAsync(storage, actor);
+
+        // then: only a failure is re-sent; the refusal is in the ledger and the row is as it was
+        result.Outcome.Should().Be(InboxOperationOutcome.StateConflict);
+        (await _PublishedSnapshotAsync(storage, message.StorageId)).Should().Be(before);
+        ledger.Items.Should().ContainSingle().Which.Outcome.Should().Be(InboxOperationOutcome.StateConflict);
+    }
+
+    public virtual async Task should_replay_a_repeated_published_request_with_one_receipt()
+    {
+        // given: a published row that failed for good
+        var storage = GetStorage();
+        var published = storage.GetPublishedOperationsApi();
+        var actor = $"published-replay-{Guid.NewGuid():N}";
+        var message = await _FailPublishedAsync(storage, $"published-replay-{Guid.NewGuid():N}");
+        var request = new PublishedOperationRequest(
+            Guid.NewGuid(),
+            message.StorageId,
+            null,
+            "re-send after repair",
+            _Operator(actor)
+        );
+
+        // when: the same request arrives twice
+        var first = await published.ResendAsync(request, AbortToken);
+        var replay = await published.ResendAsync(request, AbortToken);
+        var ledger = await _PublishedLedgerAsync(storage, actor);
+
+        // then: the second returns the first's receipt, flagged as a replay, and the ledger holds one receipt
+        first.Outcome.Should().Be(InboxOperationOutcome.Applied);
+        first.IsReplay.Should().BeFalse();
+        replay.Should().Be(first with { IsReplay = true });
+        ledger.Items.Should().ContainSingle().Which.OperationId.Should().Be(request.OperationId);
+    }
+
+    public virtual async Task should_refuse_a_published_operation_id_reused_by_a_different_request()
+    {
+        // given: one failed row re-sent under an operation id, and another failed row
+        var storage = GetStorage();
+        var published = storage.GetPublishedOperationsApi();
+        var actor = $"published-conflict-{Guid.NewGuid():N}";
+        var name = $"published-conflict-{Guid.NewGuid():N}";
+        var message = await _FailPublishedAsync(storage, name);
+        var other = await _FailPublishedAsync(storage, name);
+        var request = new PublishedOperationRequest(
+            Guid.NewGuid(),
+            message.StorageId,
+            null,
+            "re-send after repair",
+            _Operator(actor)
+        );
+        var first = await published.ResendAsync(request, AbortToken);
+        var otherBefore = await _PublishedSnapshotAsync(storage, other.StorageId);
+
+        // when: the same operation id arrives for another row, with another reason, and as a delete
+        var otherRow = await published.ResendAsync(request with { StorageId = other.StorageId }, AbortToken);
+        var otherReason = await published.ResendAsync(request with { Reason = "another reason" }, AbortToken);
+        var otherType = await published.PurgeAsync(request, AbortToken);
+        var ledger = await _PublishedLedgerAsync(storage, actor);
+
+        // then: each is a refused conflict that changes nothing, and the ledger keeps the first receipt alone
+        first.Outcome.Should().Be(InboxOperationOutcome.Applied);
+        foreach (var conflict in new[] { otherRow, otherReason, otherType })
+        {
+            conflict.Outcome.Should().Be(InboxOperationOutcome.OperationConflict);
+            conflict.IsReplay.Should().BeTrue();
+            conflict.OperationId.Should().Be(request.OperationId);
+        }
+
+        otherRow.StorageId.Should().Be(other.StorageId);
+        otherReason.Reason.Should().Be("another reason");
+        otherType.OperationType.Should().Be(MessagingOperationType.Purge);
+        (await _PublishedSnapshotAsync(storage, other.StorageId)).Should().Be(otherBefore);
+        (await storage.GetMonitoringApi().GetPublishedMessageAsync(message.StorageId, AbortToken))
+            .Should()
+            .NotBeNull("the delete under a used id was refused");
+        var receipt = ledger.Items.Should().ContainSingle().Which;
+        receipt.OperationId.Should().Be(request.OperationId);
+        receipt.StorageId.Should().Be(message.StorageId);
+        receipt.Reason.Should().Be("re-send after repair");
+        receipt.OperationType.Should().Be(MessagingOperationType.Resend);
+        receipt.Outcome.Should().Be(InboxOperationOutcome.Applied);
+    }
+
+    public virtual async Task should_scope_a_published_delete_to_both_terminal_statuses_and_a_resend_to_failures()
+    {
+        // given: a success, a failure for good, and a failure still waiting for a retry
+        var storage = GetStorage();
+        var published = storage.GetPublishedOperationsApi();
+        var name = $"published-delete-scope-{Guid.NewGuid():N}";
+        var succeeded = await _SucceedPublishedAsync(storage, name);
+        var failed = await _FailPublishedAsync(storage, name);
+        await _FailPublishedAsync(storage, name, RetryDelay.Exactly(TimeSpan.FromHours(1)));
+        var delete = new MessageOperationScope
+        {
+            Kind = MessageOperationKind.Delete,
+            Query = new MessageListQuery { MessageType = MessageType.Publish, Name = name },
+            HighWaterMark = (await storage.GetLatestMessageChangeMarkerAsync(AbortToken))!.Value,
+        };
+        var resend = delete with { Kind = MessageOperationKind.Resend };
+
+        // when
+        var deleteCount = await published.CountOperationScopeAsync(delete, cancellationToken: AbortToken);
+        var deleteTargets = await _ReadWholePublishedScopeAsync(published, delete, chunkSize: 1);
+        var resendCount = await published.CountOperationScopeAsync(resend, cancellationToken: AbortToken);
+        var resendTargets = await _ReadWholePublishedScopeAsync(published, resend, chunkSize: 1);
+
+        // then: a delete takes both terminal rows, a re-send the failure only, and neither the pending retry
+        deleteCount.Should().Be(new MessageCount(2, Capped: false));
+        deleteTargets
+            .Select(static target => target.StorageId)
+            .Should()
+            .BeEquivalentTo([succeeded.StorageId, failed.StorageId]);
+        deleteTargets
+            .Single(target => target.StorageId == succeeded.StorageId)
+            .Status.Should()
+            .Be(StatusName.Succeeded);
+        resendCount.Should().Be(new MessageCount(1, Capped: false));
+        resendTargets.Select(static target => target.StorageId).Should().Equal(failed.StorageId);
+        resendTargets.Should().OnlyContain(static target => target.Status == StatusName.Failed);
+    }
+
+    private static async Task<MediumMessage> _SucceedPublishedAsync(IDataStorage storage, string name)
+    {
+        var message = await storage.StoreMessageAsync(name, CreateMessage(), cancellationToken: AbortToken);
+        (
+            await storage.ChangePublishStateAsync(
+                message,
+                StatusName.Succeeded,
+                retryDelay: null,
+                cancellationToken: AbortToken
+            )
+        )
+            .Should()
+            .BeTrue();
+
+        return message;
+    }
+
+    /// <summary>The fields of a published row an operator write would change.</summary>
+    private static async Task<PublishedRowSnapshot> _PublishedSnapshotAsync(IDataStorage storage, Guid storageId)
+    {
+        var row = await storage.GetMonitoringApi().GetPublishedMessageAsync(storageId, AbortToken);
+        row.Should().NotBeNull();
+
+        return new PublishedRowSnapshot(
+            row!.StatusName,
+            row.NextRetryAt,
+            row.Retries,
+            row.InlineAttempts,
+            row.ExpiresAt,
+            row.LockedUntil,
+            row.Owner
+        );
+    }
+
+    private static ValueTask<MessagingOperationReceiptPage> _PublishedLedgerAsync(IDataStorage storage, string actor) =>
+        storage
+            .GetInboxOperationsApi()
+            .QueryReceiptsAsync(
+                new MessagingOperationReceiptQuery
+                {
+                    Actor = actor,
+                    TargetKind = MessagingOperationTargetKind.Published,
+                },
+                _Viewer(),
+                AbortToken
+            );
+
+    private sealed record PublishedRowSnapshot(
+        StatusName? Status,
+        DateTimeOffset? NextRetryAt,
+        int Retries,
+        int InlineAttempts,
+        DateTimeOffset? ExpiresAt,
+        DateTimeOffset? LockedUntil,
+        string? Owner
+    );
+
+    /// <summary>
+    /// Moves the given rows' change markers an hour into the past and returns that instant as a confirmed mark.
+    /// </summary>
+    /// <remarks>
+    /// Every write after it stamps the store's clock, which is then strictly later than the mark. Confirming at the
+    /// store's latest marker instead races the clock: a row written in the same clock tick, or after a row stamped
+    /// one tick ahead of the clock, carries a marker at or before that mark and lands inside the frozen scope.
+    /// Whole milliseconds keep the value exact in every store's timestamp precision.
+    /// </remarks>
+    private async Task<DateTimeOffset> _SeedMarkerBeforeNowAsync(bool published, params Guid[] storageIds)
+    {
+        var past = DateTimeOffset.UtcNow.AddHours(-1);
+        var mark = new DateTimeOffset(past.Ticks - (past.Ticks % TimeSpan.TicksPerMillisecond), TimeSpan.Zero);
+        foreach (var storageId in storageIds)
+        {
+            await SetChangeMarkerAsync(published, storageId, mark, AbortToken);
+        }
+
+        return mark;
     }
 
     private static async Task<MediumMessage> _FailPublishedAsync(

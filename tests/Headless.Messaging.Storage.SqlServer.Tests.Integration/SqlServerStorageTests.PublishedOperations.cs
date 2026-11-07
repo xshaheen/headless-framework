@@ -1,5 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Dapper;
+using Microsoft.Data.SqlClient;
+
 namespace Tests;
 
 public partial class SqlServerStorageTests
@@ -23,4 +26,44 @@ public partial class SqlServerStorageTests
     [Fact]
     public override Task should_refuse_a_published_write_without_a_named_operator() =>
         base.should_refuse_a_published_write_without_a_named_operator();
+
+    [Fact]
+    public override Task should_leave_a_published_row_with_a_pending_retry_untouched() =>
+        base.should_leave_a_published_row_with_a_pending_retry_untouched();
+
+    [Fact]
+    public override Task should_leave_a_published_row_with_a_live_send_lease_untouched() =>
+        base.should_leave_a_published_row_with_a_live_send_lease_untouched();
+
+    [Fact]
+    public override Task should_refuse_to_resend_a_published_row_that_succeeded() =>
+        base.should_refuse_to_resend_a_published_row_that_succeeded();
+
+    [Fact]
+    public override Task should_replay_a_repeated_published_request_with_one_receipt() =>
+        base.should_replay_a_repeated_published_request_with_one_receipt();
+
+    [Fact]
+    public override Task should_refuse_a_published_operation_id_reused_by_a_different_request() =>
+        base.should_refuse_a_published_operation_id_reused_by_a_different_request();
+
+    [Fact]
+    public override Task should_scope_a_published_delete_to_both_terminal_statuses_and_a_resend_to_failures() =>
+        base.should_scope_a_published_delete_to_both_terminal_statuses_and_a_resend_to_failures();
+
+    protected override async Task SetPublishedLeaseAsync(
+        Guid storageId,
+        TimeSpan liveFor,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var connection = new SqlConnection(fixture.ConnectionString);
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                "UPDATE headless.MessagingPublished SET LockedUntil=TODATETIMEOFFSET(DATEADD(second,@LiveForSeconds,SYSUTCDATETIME()),0), Owner='another-node' WHERE Id=@Id;",
+                new { Id = storageId, LiveForSeconds = (int)liveFor.TotalSeconds },
+                cancellationToken: cancellationToken
+            )
+        );
+    }
 }
