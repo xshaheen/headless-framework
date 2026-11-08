@@ -540,7 +540,7 @@ app.MapHeadlessDashboard();
 
 `AddMessaging(Action<MessagingDashboardOptions>)`, `AddMessaging(Action<MessagingDashboardOptions, IServiceProvider>)`, and `AddMessaging(IConfiguration)` configure them.
 
-**Object kinds, ids, and topics.** `published` and `received`. An object id is `{node}~{store}~{storage id}`, such as `node-a~billing~0192f3c1-…`: the node that served it by its `NodeName`, the store (`primary` for the main store), and the row's storage id. Stream topics are `messaging.published` and `messaging.received`; the stores are shared by every node, so a change carries no `node` and goes to the plain topic. A change's projection is the row as its list shows it (`id`, `store`, `storageId`, `messageId`, `name`, `lane`, `status`, `consumer`, `retries`, `added`, `expiresAt`, `nextRetryAt`, `changedAt`, `failureFingerprint`, `tenantId`, `isHeld`, `terminal`), and its version is the row's change marker in ticks. A deleted row goes out with no projection.
+**Object kinds, ids, and topics.** `published`, `received`, `circuit` (a consumer's circuit breaker on one node, by `{node}~{consumer}`), and `node` (by its `NodeName`). A row's object id is `{node}~{store}~{storage id}`, such as `node-a~billing~0192f3c1-…`: the node that served it by its `NodeName`, the store (`primary` for the main store), and the row's storage id. Stream topics are `messaging.published` and `messaging.received`; the stores are shared by every node, so a change carries no `node` and goes to the plain topic. A change's projection is the row as its list shows it (`id`, `store`, `storageId`, `messageId`, `name`, `lane`, `status`, `consumer`, `retries`, `added`, `expiresAt`, `nextRetryAt`, `changedAt`, `failureFingerprint`, `tenantId`, `isHeld`, `terminal`), and its version is the row's change marker in ticks. A deleted row goes out with no projection.
 
 **Several stores.** Counts, Needs you, Overview, lookups, lists, and the change stream read every store at once, each bounded by `StoreTimeout`. A store that fails or does not answer in time is named in `unavailable` while the others answer; the module is never marked stale for one store. The change cursor keeps one position per store and table, so a slow store neither holds the others back nor loses its place, and a store that was down starts from its current position once it answers.
 
@@ -576,7 +576,27 @@ app.MapHeadlessDashboard();
 | `GET nodes` | `{ items: [{ name, isLocal, stores }] }`: this node and the stores it reads |
 | `GET metrics/realtime` | `{ seconds, publishedPerSecond, consumedPerSecond, consumeElapsedMs }`: the last 300 seconds; a second this node did not measure, such as one before it started, is `null`, never `0` |
 
-This release serves the local node only, ships no commands, and embeds only the module's `manifest.json`, which declares its sidebar; its views come with its front end.
+**Commands.** Every command runs through the shell's command routes at `{base}/api/messaging/commands`, so a viewer sees each one disabled with `Needs operate permission` and a call answers `403`. A call on one object the rules refuse changes nothing and answers `409` with the reason, such as `Release first`. A command that writes a row needs an operator with a stable name, because the store records who acted; a user without one sees `Sign in with a named account`. Re-execute, Purge, Re-send, Delete, Revoke, and Force open ask for a confirmation; no single-row command needs a reason, but a re-send or delete records the reason given on its receipt with the operator's name.
+
+| Command | On | Allowed when |
+| --- | --- | --- |
+| `messaging.re-execute` | `received` | failed for good and not held (`Release first`); runs the consumer again as a new generation |
+| `messaging.purge` | `received` | failed for good and not held (`Held — release first`) |
+| `messaging.hold` / `messaging.release` | `received` | finished and not held / held; each is the other's inverse |
+| `messaging.re-send` | `published` | `Failed` with no retry pending (`Not failed`) |
+| `messaging.delete` | `published` | not waiting for a send or a retry |
+| `messaging.dispatch-now` | `published` | a pending scheduled delivery (`Not a pending scheduled delivery`) that no sender has leased (`Leased by a node — try again shortly`) |
+| `messaging.revoke` | `published` | a pending scheduled delivery, leased or not |
+| `messaging.reset-circuit` / `messaging.force-open` | `circuit` | not closed / not open (`Already closed`, `Already open`) |
+| `messaging.reset-backpressure` | `node` | the node runs a retry processor (`No retry processor on this node`) that is backed off (`Not backed off`) |
+
+A row that is still being processed is refused with `Still processing`, and a row that changed between its read and the write with `Changed since it was read`. The inbox commands act on an inbox generation: a received row stored without one, by a store that predates generations, is refused with `Not supported by this store`, as is a scheduled command on a provider without scheduled-delivery operations. Every published command on an additional outbox is refused with `Not supported for additional outboxes`: receipts and scheduled-delivery operations live in the main store.
+
+Circuit and node commands act on the node that serves the call, write no receipt, and are recorded only in the operator log; an id naming another node, for a row as for a circuit or node, is refused with `Served by another node`. With Kubernetes discovery (an `INodeDiscoveryProvider` registered and no `CurrentNodeIdentity`), a call reaches whichever pod the Service routes it to, so both are disabled with `Acts on one pod; Kubernetes discovery addresses a Service`.
+
+Re-execute, Purge, Re-send, and Delete run over a filter as Operations, which always need a reason (a confirm without one answers `400` with `errors.reason`). The filter is the list scope `{ store, status, terminalOnly, consumer, name, fingerprint }`, in the main store only. Confirm freezes the scope on the store's latest change marker, and each chunk writes a row only while its marker is unchanged, so a row another chunk, node, or earlier run already changed is skipped with its reason, never written twice; an Operation stopped part-way and run again on another node changes each row once. A re-execute scope leaves held rows out. One row's failure, such as a receipt that could not be written, is reported as `Failed` on that row while the Operation runs on.
+
+The module embeds its `manifest.json`, which declares its sidebar; its views come with its front end.
 
 ### Messaging and standalone dashboards
 

@@ -34,9 +34,16 @@ internal static class DashboardOperatorAuthority
         new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "headless-host")], "Host"))
     );
 
-    public static OperatorAuthorityResult Resolve(HttpContext httpContext)
+    public static OperatorAuthorityResult Resolve(HttpContext httpContext) => Resolve(httpContext.User);
+
+    /// <summary>
+    /// Resolves the operator <paramref name="user"/> is recorded as: the name, else the name-identifier claim, else
+    /// <c>sub</c>. A user not signed in, or signed in under a placeholder name such as <c>anonymous</c>, names no
+    /// operator, so a write that must be audited is refused.
+    /// </summary>
+    public static OperatorAuthorityResult Resolve(ClaimsPrincipal user)
     {
-        if (httpContext.User.Identity is not { IsAuthenticated: true } identity)
+        if (user.Identity is not { IsAuthenticated: true } identity)
         {
             return OperatorAuthorityResult.Unauthenticated();
         }
@@ -73,7 +80,7 @@ internal static class DashboardOperatorAuthority
             return OperatorAuthorityResult.PlaceholderActor();
         }
 
-        var principal = new ClaimsPrincipal(httpContext.User.Identities.Select(static id => id.Clone()));
+        var principal = new ClaimsPrincipal(user.Identities.Select(static id => id.Clone()));
         var auditIdentity = (ClaimsIdentity)principal.Identity!;
         foreach (var claim in auditIdentity.FindAll(auditIdentity.NameClaimType).ToArray())
         {

@@ -63,6 +63,32 @@ public sealed class OperationTests : TestBase
     }
 
     [Fact]
+    public async Task should_refuse_the_confirm_naming_the_reason_when_a_command_that_needs_no_reason_runs_over_a_filter_without_one()
+    {
+        _store.SeedFailed(10);
+        await using var app = await _StartAsync();
+        using var client = ShellTestHost.Client(app);
+        var cookie = await ShellTestHost.SignInAsync(client, _Operator, AbortToken);
+
+        using var response = await PostAsync(
+            client,
+            $"{Base}/{FakeCommandModule.Purge}/confirm",
+            new { filter = new { queue = "default" } },
+            cookie,
+            AbortToken
+        );
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await ReadAsync(response, AbortToken))
+            .GetProperty("rules")
+            .GetProperty("reason")
+            .GetString()
+            .Should()
+            .Be("required");
+        _log.Entries.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task should_refuse_a_tampered_token_at_the_next_chunk()
     {
         _store.SeedFailed(10);

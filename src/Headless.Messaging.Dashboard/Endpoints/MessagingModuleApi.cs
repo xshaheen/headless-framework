@@ -356,7 +356,7 @@ internal sealed class MessagingModuleApi(
                         CurrentPage = Math.Max((page ?? 1) - 1, 0),
                         PageSize = Math.Clamp(perPage ?? 20, 1, _MaxScheduledPageSize),
                     },
-                    new OperatorAuthorizationContext(_Reader(context.User)),
+                    new OperatorAuthorizationContext(Reader(context.User)),
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -378,7 +378,7 @@ internal sealed class MessagingModuleApi(
     // The shell authorized the viewer before this endpoint ran. Without dashboard authentication its user is not
     // signed in, yet a read needs only an authenticated principal, never a named operator, so the read runs as the
     // dashboard's viewer.
-    private static ClaimsPrincipal _Reader(ClaimsPrincipal user) =>
+    internal static ClaimsPrincipal Reader(ClaimsPrincipal user) =>
         user.Identity?.IsAuthenticated == true ? user : _DashboardViewer;
 
     private static readonly ClaimsPrincipal _DashboardViewer = new(
@@ -403,6 +403,7 @@ internal sealed class MessagingModuleApi(
             {
                 items.Add(
                     new MessagingCircuitView(
+                        MessagingViews.CircuitId(_stores.NodeName, consumer),
                         consumer,
                         snapshot.State,
                         snapshot.ConsecutiveFailures,

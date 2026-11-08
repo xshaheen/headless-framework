@@ -74,6 +74,12 @@ internal static class OperationEndpoints
 
         var (arguments, errors) = CommandEndpoints.Validate(command!, body);
 
+        // An Operation changes many rows at once, so it always records why, even for a command one row runs without one.
+        if (!command!.RequiresReason && string.IsNullOrWhiteSpace(body.Reason))
+        {
+            errors.Insert(0, new CommandFieldError("reason", "required", "An Operation requires a reason."));
+        }
+
         if (body.Filter is null)
         {
             errors.Insert(0, new CommandFieldError("filter", "required", "Send the filter the Operation runs over."));

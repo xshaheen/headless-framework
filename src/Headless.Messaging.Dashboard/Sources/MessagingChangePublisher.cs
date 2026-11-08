@@ -63,6 +63,18 @@ internal sealed class MessagingChangePublisher : IMessageStateObserver, IAsyncDi
         _EnsureReader();
     }
 
+    /// <summary>
+    /// Queues a row an operator command just changed on this node, so this node's streams show it without waiting for
+    /// the change reader; the read-back runs off the command's request.
+    /// </summary>
+    public void Enqueue(MessageType type, Guid storageId, string messageId, MessagingStore store)
+    {
+        if (_queue.Writer.TryWrite((type, storageId, messageId, store)))
+        {
+            _EnsureReader();
+        }
+    }
+
     /// <summary>Reads a row back now and publishes it; does nothing when the row is not found.</summary>
     public async Task PublishAsync(
         MessageType type,

@@ -7,12 +7,15 @@ namespace Headless.Messaging.Dashboard;
 
 /// <summary>
 /// The Messaging module of the unified dashboard: published and received messages of every Messaging store, with
-/// Needs you, Overview figures, sidebar counts, id lookup, payloads, and live changes from every node.
+/// Needs you, Overview figures, sidebar counts, id lookup, payloads, live changes from every node, and the operator
+/// commands and Operations over them.
 /// </summary>
 /// <remarks>
 /// <para>
 /// Its object kinds are <c>published</c> and <c>received</c>, so its stream topics are <c>messaging.published</c> and
-/// <c>messaging.received</c>. An object id is <c>{node}~{store}~{storage id}</c> (see <see cref="MessagingViews"/>).
+/// <c>messaging.received</c>, plus <c>circuit</c> and <c>node</c>, which only commands target. An object id is
+/// <c>{node}~{store}~{storage id}</c> (see <see cref="MessagingViews"/>). Commands are listed on
+/// <see cref="MessagingCommands"/>.
 /// The module reads the main store and every additional outbox; a store that fails or is slow is named in the
 /// answers' unavailable sources while the others answer, so the module is never marked stale for one store. Its sidebar
 /// count keys are listed on <see cref="MessagingCounts"/>, and its own API is mapped by <see cref="MessagingModuleApi"/>.
@@ -29,12 +32,15 @@ internal sealed class MessagingModule
         IDashboardCountSource,
         IDashboardObjectResolver,
         IDashboardPayloadSource,
-        IDashboardChangeSource
+        IDashboardChangeSource,
+        IDashboardCommandSource,
+        IDashboardOperationRunner
 {
     private readonly MessagingSources _sources;
     private readonly MessagingCounts _counts;
     private readonly MessagingChangeSource _changes;
     private readonly MessagingModuleApi _api;
+    private readonly MessagingCommands _commands;
 
     public MessagingModule(
         MessagingStores stores,
@@ -52,6 +58,49 @@ internal sealed class MessagingModule
         _sources = new MessagingSources(stores, _counts, metrics);
         _changes = new MessagingChangeSource(stores, options.ChangePageSize, options.ChangeOverlapWindow);
         _api = new MessagingModuleApi(stores, _sources, metrics, services);
+        _commands = new MessagingCommands(stores, _sources, services);
+    }
+
+    public IReadOnlyList<DashboardCommand> Commands => MessagingCommands.All;
+
+    public Task<IReadOnlyList<DashboardCommandAvailability>> GetAllowedCommandsAsync(
+        DashboardAllowedCommandsRequest request,
+        CancellationToken cancellationToken
+    )
+    {
+        Argument.IsNotNull(request);
+
+        return _commands.GetAllowedAsync(request.Targets, request.User, cancellationToken);
+    }
+
+    public Task<DashboardCommandResult> ExecuteAsync(
+        DashboardCommandRequest request,
+        CancellationToken cancellationToken
+    )
+    {
+        Argument.IsNotNull(request);
+
+        return _commands.ExecuteAsync(request, cancellationToken);
+    }
+
+    public Task<DashboardOperationScope> PrepareAsync(
+        DashboardOperationScopeRequest request,
+        CancellationToken cancellationToken
+    )
+    {
+        Argument.IsNotNull(request);
+
+        return _commands.PrepareAsync(request, cancellationToken);
+    }
+
+    public Task<DashboardOperationChunk> RunChunkAsync(
+        DashboardOperationChunkRequest request,
+        CancellationToken cancellationToken
+    )
+    {
+        Argument.IsNotNull(request);
+
+        return _commands.RunChunkAsync(request, cancellationToken);
     }
 
     public string Id => MessagingDashboardOptions.ModuleId;

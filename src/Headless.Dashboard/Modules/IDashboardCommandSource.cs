@@ -86,7 +86,10 @@ public sealed record DashboardCommand
     /// </summary>
     public DashboardConfirmation Confirmation { get; init; }
 
-    /// <summary>Gets a value indicating whether the operator must give a reason, which the operator log records.</summary>
+    /// <summary>
+    /// Gets a value indicating whether the operator must give a reason, which the operator log records. Whatever is
+    /// declared, the command run over a filter as an Operation requires one.
+    /// </summary>
     public bool RequiresReason { get; init; }
 
     /// <summary>

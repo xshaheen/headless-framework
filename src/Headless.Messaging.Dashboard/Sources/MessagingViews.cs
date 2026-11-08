@@ -24,6 +24,39 @@ internal static class MessagingViews
     /// <summary>A consumer identity, from the host manifest.</summary>
     public const string ConsumerKind = "consumer";
 
+    /// <summary>
+    /// One node's circuit breaker for one consumer, with the id <c>{node}~{circuit key}</c>. A circuit lives in a node's
+    /// memory, so its id names the node and its commands act on that node alone.
+    /// </summary>
+    public const string CircuitKind = "circuit";
+
+    /// <summary>A node serving the module, with its node name as the id; its retry back-pressure lives in its memory.</summary>
+    public const string NodeKind = "node";
+
+    public static string CircuitId(string node, string circuitKey) =>
+        node + MessagingObjectId.Separator.ToString() + circuitKey;
+
+    /// <summary>
+    /// Splits a circuit id at its first separator: a node name never holds one, and the circuit key may.
+    /// </summary>
+    public static bool TryParseCircuitId(string? id, out string node, out string circuitKey)
+    {
+        var separator = id?.IndexOf(MessagingObjectId.Separator, StringComparison.Ordinal) ?? -1;
+
+        if (separator <= 0 || separator == id!.Length - 1)
+        {
+            node = string.Empty;
+            circuitKey = string.Empty;
+
+            return false;
+        }
+
+        node = id[..separator];
+        circuitKey = id[(separator + 1)..];
+
+        return true;
+    }
+
     public static string KindOf(MessageType type) => type == MessageType.Publish ? PublishedKind : ReceivedKind;
 
     public static string KindOf(Persistence.MessageChangeKind kind) =>
@@ -306,7 +339,9 @@ internal sealed record MessagingScheduledList(
 );
 
 /// <summary>One consumer's circuit breaker, as the circuits view lists it.</summary>
+/// <param name="Id">The circuit's object id, <c>{node}~{circuit key}</c>, which its commands act on.</param>
 internal sealed record MessagingCircuitView(
+    string Id,
     string Consumer,
     CircuitBreakerState State,
     int ConsecutiveFailures,

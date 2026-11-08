@@ -2598,7 +2598,7 @@ Web-based dashboard for monitoring and managing distributed messaging infrastruc
 
 Read [dashboards.md](dashboards.md) for the shared authentication modes and production security boundary.
 
-The package also adds the Messaging module of the unified dashboard: `AddHeadlessDashboard(d => d.AddMessaging())` serves published and received messages of the primary store and every additional outbox at `{base}/messaging`, with sidebar counts, Needs you, Overview, id lookup, payloads, and live changes. [dashboards.md](dashboards.md#messaging-module) covers its options, ids, count keys, and API. The standalone dashboard below keeps working beside it.
+The package also adds the Messaging module of the unified dashboard: `AddHeadlessDashboard(d => d.AddMessaging())` serves published and received messages of the primary store and every additional outbox at `{base}/messaging`, with sidebar counts, Needs you, Overview, id lookup, payloads, live changes, and operator commands and Operations. [dashboards.md](dashboards.md#messaging-module) covers its options, ids, count keys, commands, and API. The standalone dashboard below keeps working beside it.
 
 The real-time throughput both dashboards read reports `null`, not `0`, for every second the node did not measure, such as the seconds before it started.
 
