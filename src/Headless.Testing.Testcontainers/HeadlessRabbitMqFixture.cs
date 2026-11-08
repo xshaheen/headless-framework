@@ -110,6 +110,12 @@ public class HeadlessRabbitMqFixture : IAsyncLifetime
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
+        // The log-based wait can pass on a restarted broker before the rabbit app runs, and every rabbitmqctl command
+        // below fails until it does.
+        await _container
+            .ExecAsync(["rabbitmqctl", "await_startup", "--timeout", "120"], cancellationToken)
+            .ConfigureAwait(false);
+
         if (_shared)
         {
             // A client that leaves out the virtual host lands in the default one, where every run would meet every

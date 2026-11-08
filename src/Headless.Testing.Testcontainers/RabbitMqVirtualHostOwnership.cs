@@ -144,7 +144,10 @@ internal sealed class RabbitMqVirtualHostOwnership : IAsyncDisposable
         var result = await container.ExecAsync(["rabbitmqctl", .. arguments], cancellationToken).ConfigureAwait(false);
 
         // Another sweeper may delete the same dead virtual host first.
-        if (result.ExitCode != 0 && !(allowMissing && result.Stderr.Contains("not_found", StringComparison.Ordinal)))
+        if (
+            result.ExitCode != 0
+            && !(allowMissing && result.Stderr.Contains("does not exist", StringComparison.Ordinal))
+        )
         {
             throw new InvalidOperationException(
                 string.Create(
