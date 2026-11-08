@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Jobs.Internal;
 using Headless.Reliability;
 using Microsoft.Extensions.Logging;
 using Polly;
@@ -10,7 +11,9 @@ namespace Headless.Jobs;
 /// <summary>
 /// Runs a job's attempts in process. The job's failure policy classifies each failure and paces retries the row stores
 /// no interval for; the row's durable <c>Retries</c> budget decides how many retries remain. No host setting caps or
-/// overrides either, so the policy a job declares is the policy it runs with.
+/// overrides either, so the policy a job declares is the policy it runs with. A run allowed to defer hands a retry
+/// whose delay exceeds <see cref="DeferThreshold"/> back to the caller instead of waiting it out, so the wait happens in
+/// the store and not in a worker.
 /// </summary>
 internal sealed class JobsRetryPipeline
 {
@@ -19,6 +22,14 @@ internal sealed class JobsRetryPipeline
     // The wait before a retry that neither a stored interval nor the policy's delayed tier paces; it is the delay every
     // retry waited before jobs carried a failure policy.
     private static readonly TimeSpan _UnpacedRetryDelay = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// The longest retry delay a deferrable run still waits in process. It matches the claim's due slack: a shorter
+    /// wait costs less than the write and re-claim that would replace it, which could not bring the retry closer to
+    /// its instant than the slack anyway.
+    /// </summary>
+    internal static TimeSpan DeferThreshold => JobsDueSlack.Duration;
+
     private readonly JobFunctionRegistry _registry;
     private readonly ILogger _logger;
     private readonly ResiliencePipeline _pipeline;
@@ -48,18 +59,32 @@ internal sealed class JobsRetryPipeline
             .Build();
     }
 
-    public async Task ExecuteAsync(
+    /// <summary>
+    /// Runs the job's attempts, retrying in process until one succeeds, the budget or a fail rule ends the run, or a
+    /// deferrable run reaches a retry whose delay exceeds <see cref="DeferThreshold"/>.
+    /// </summary>
+    /// <returns>
+    /// <see langword="null"/> when the run ended in process (success, or the failure propagated); otherwise the retry
+    /// the caller must reschedule, which only a run started with <paramref name="canDefer"/> set returns.
+    /// </returns>
+    public async Task<JobsRetryDeferral?> ExecuteAsync(
         JobExecutionState job,
+        bool canDefer,
         Func<int, CancellationToken, ValueTask> attempt,
         Func<int, Exception, TimeSpan, CancellationToken, ValueTask> onRetry,
         CancellationToken cancellationToken
     )
     {
         var resilienceContext = ResilienceContextPool.Shared.Get(cancellationToken);
-        resilienceContext.Properties.Set(
-            _ExecutionKey,
-            new ExecutionState(job, job.RetryCount, _registry.GetFailurePolicy(job.FunctionName), attempt, onRetry)
+        var execution = new ExecutionState(
+            job,
+            job.RetryCount,
+            _registry.GetFailurePolicy(job.FunctionName),
+            canDefer,
+            attempt,
+            onRetry
         );
+        resilienceContext.Properties.Set(_ExecutionKey, execution);
         try
         {
             await _pipeline
@@ -74,6 +99,14 @@ internal sealed class JobsRetryPipeline
                     resilienceContext
                 )
                 .ConfigureAwait(false);
+
+            return null;
+        }
+        // The predicate declined the retry only to hand it back, so Polly rethrew the attempt's failure; that failure
+        // travels in the deferral instead of failing the run.
+        catch (Exception) when (execution.Deferral is not null)
+        {
+            return execution.Deferral;
         }
         finally
         {
@@ -107,16 +140,37 @@ internal sealed class JobsRetryPipeline
             return ValueTask.FromResult(false);
         }
 
-        return ValueTask.FromResult(execution.StartingRetryCount + args.AttemptNumber < execution.Job.Retries);
+        var retryIndex = execution.StartingRetryCount + args.AttemptNumber;
+        if (retryIndex >= execution.Job.Retries)
+        {
+            return ValueTask.FromResult(false);
+        }
+
+        if (execution.CanDefer)
+        {
+            var delay = _RetryDelay(execution, retryIndex);
+            if (delay > DeferThreshold)
+            {
+                execution.Deferral = new JobsRetryDeferral(retryIndex + 1, delay, exception);
+                return ValueTask.FromResult(false);
+            }
+        }
+
+        return ValueTask.FromResult(true);
     }
 
     private static ValueTask<TimeSpan?> _DelayAsync(RetryDelayGeneratorArguments<object> args)
     {
         var execution = args.Context.Properties.GetValue(_ExecutionKey, null!);
+        return ValueTask.FromResult<TimeSpan?>(
+            _RetryDelay(execution, execution.StartingRetryCount + args.AttemptNumber)
+        );
+    }
 
-        // The durable count, not Polly's in-process attempt number, indexes the schedule, so a run resumed after a
-        // crash continues where the previous process stopped.
-        var retryIndex = execution.StartingRetryCount + args.AttemptNumber;
+    // The durable count, not Polly's in-process attempt number, indexes the schedule, so a run resumed after a crash
+    // or a deferred retry continues where the previous attempt stopped.
+    private static TimeSpan _RetryDelay(ExecutionState execution, int retryIndex)
+    {
         if (execution.Job.RetryIntervals is { Length: > 0 } intervals)
         {
             // RetryIntervals is an unvalidated public int[] on the job entity, so a negative value (a plausible typo)
@@ -124,12 +178,10 @@ internal sealed class JobsRetryPipeline
             // oversized one would park the row far past any delay a failure policy may declare.
             var seconds = intervals[Math.Min(retryIndex, intervals.Length - 1)];
             var delay = TimeSpan.FromSeconds(Math.Max(seconds, 0));
-            return ValueTask.FromResult<TimeSpan?>(
-                delay > FailurePolicyDefinition.MaxDelayLimit ? FailurePolicyDefinition.MaxDelayLimit : delay
-            );
+            return delay > FailurePolicyDefinition.MaxDelayLimit ? FailurePolicyDefinition.MaxDelayLimit : delay;
         }
 
-        return ValueTask.FromResult<TimeSpan?>(_PolicyDelay(execution.Policy, retryIndex));
+        return _PolicyDelay(execution.Policy, retryIndex);
     }
 
     // A row that stores no intervals (a manager-added row, or a call that set only a retry count) is paced by the
@@ -160,11 +212,33 @@ internal sealed class JobsRetryPipeline
             .ConfigureAwait(false);
     }
 
-    private sealed record ExecutionState(
-        JobExecutionState Job,
-        int StartingRetryCount,
-        FailurePolicyDefinition Policy,
-        Func<int, CancellationToken, ValueTask> Attempt,
-        Func<int, Exception, TimeSpan, CancellationToken, ValueTask> OnRetry
-    );
+    private sealed class ExecutionState(
+        JobExecutionState job,
+        int startingRetryCount,
+        FailurePolicyDefinition policy,
+        bool canDefer,
+        Func<int, CancellationToken, ValueTask> attempt,
+        Func<int, Exception, TimeSpan, CancellationToken, ValueTask> onRetry
+    )
+    {
+        public JobExecutionState Job { get; } = job;
+
+        public int StartingRetryCount { get; } = startingRetryCount;
+
+        public FailurePolicyDefinition Policy { get; } = policy;
+
+        public bool CanDefer { get; } = canDefer;
+
+        public Func<int, CancellationToken, ValueTask> Attempt { get; } = attempt;
+
+        public Func<int, Exception, TimeSpan, CancellationToken, ValueTask> OnRetry { get; } = onRetry;
+
+        public JobsRetryDeferral? Deferral { get; set; }
+    }
 }
+
+/// <summary>A retry the pipeline handed back to wait in the store instead of in process.</summary>
+/// <param name="RetryCount">The attempts spent, the failed one included.</param>
+/// <param name="Delay">The wait before the next attempt.</param>
+/// <param name="Exception">The failure that spent the attempt.</param>
+internal sealed record JobsRetryDeferral(int RetryCount, TimeSpan Delay, Exception Exception);

@@ -1166,6 +1166,35 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
                 .ConfigureAwait(false);
     }
 
+    public async Task<int> RescheduleRetryAsync(
+        JobExecutionState context,
+        int retryCount,
+        TimeSpan retryAfter,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (context.ClaimOwner is not { Length: > 0 } claimOwner)
+        {
+            return 0;
+        }
+
+        var affected = await persistenceProvider
+            .RescheduleTimeJobRetryAsync(context.JobId, claimOwner, retryCount, retryAfter, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (affected > 0)
+        {
+            // The store stamped the due time on its own clock, so this node has no store-domain instant to hand
+            // RestartIfNeeded. One unconditional re-poll peeks the row on the store clock and plans the wake from it.
+            serviceProvider.GetService<IJobsHostScheduler>()?.Restart();
+
+            // The row left InProgress and the node stays up, so an open dashboard must refresh now, not after the wait.
+            await notificationHubSender.UpdateTimeJobFromExecutionState<TTimeJob>(context).ConfigureAwait(false);
+        }
+
+        return affected;
+    }
+
     public async Task<int> RenewLeaseAsync(
         JobExecutionState functionContext,
         CancellationToken cancellationToken = default

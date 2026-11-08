@@ -457,13 +457,33 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         return Task.FromResult(_SettleInterruptedTimeJob(jobId, claimOwner, reason, retryAfter, policyOverride: null));
     }
 
-    // A policy override settles the row as that policy; without one, the row's own node-death policy decides.
+    public Task<int> RescheduleTimeJobRetryAsync(
+        Guid jobId,
+        string claimOwner,
+        int retryCount,
+        TimeSpan retryAfter,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(claimOwner);
+        Argument.IsPositiveOrZero(retryCount);
+        Argument.IsPositiveOrZero(retryAfter);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        return Task.FromResult(
+            _SettleInterruptedTimeJob(jobId, claimOwner, reason: null, retryAfter, NodeDeathPolicy.Retry, retryCount)
+        );
+    }
+
+    // A policy override settles the row as that policy; without one, the row's own node-death policy decides. A retry
+    // count, when given, replaces the stored one on the Retry path (a failed run rescheduled to wait out its delay).
     private int _SettleInterruptedTimeJob(
         Guid jobId,
         string claimOwner,
         string? reason,
         TimeSpan? retryAfter,
-        NodeDeathPolicy? policyOverride
+        NodeDeathPolicy? policyOverride,
+        int? retryCount = null
     )
     {
         while (
@@ -492,6 +512,11 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 default:
                     updated.Status = JobStatus.Idle;
                     updated.OwnerId = null;
+                    if (retryCount is { } count)
+                    {
+                        updated.RetryCount = count;
+                    }
+
                     // The remaining wait runs from the settle's instant.
                     if (retryAfter is { } remaining)
                     {

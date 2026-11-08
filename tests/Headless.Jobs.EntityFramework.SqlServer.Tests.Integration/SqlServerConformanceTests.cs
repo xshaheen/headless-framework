@@ -246,6 +246,14 @@ public abstract class SqlServerConformanceTestsBase<TFixture>(TFixture fixture)
     [InlineData((int)NodeDeathPolicy.Retry)]
     [InlineData((int)NodeDeathPolicy.MarkFailed)]
     [InlineData((int)NodeDeathPolicy.Skip)]
+    public override Task retry_reschedule_charges_the_attempt_and_waits_at_the_store_clock_under_any_policy(
+        int policy
+    ) => base.retry_reschedule_charges_the_attempt_and_waits_at_the_store_clock_under_any_policy(policy);
+
+    [Theory]
+    [InlineData((int)NodeDeathPolicy.Retry)]
+    [InlineData((int)NodeDeathPolicy.MarkFailed)]
+    [InlineData((int)NodeDeathPolicy.Skip)]
     public override Task graceful_settlement_of_a_cron_occurrence_applies_its_policy_without_charging(int policy) =>
         base.graceful_settlement_of_a_cron_occurrence_applies_its_policy_without_charging(policy);
 
