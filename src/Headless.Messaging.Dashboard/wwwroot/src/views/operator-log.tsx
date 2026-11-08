@@ -30,8 +30,22 @@ interface ReceiptPage {
 const targetKinds = ['Inbox', 'ScheduledDelivery', 'Published'] as const
 const targetLabels: Readonly<Record<string, string>> = { Inbox: 'Received', ScheduledDelivery: 'Scheduled delivery', Published: 'Published' }
 
+// The ledger records a storage operation; the log names it as the command an operator chose.
+const operationLabels: Readonly<Record<string, string>> = {
+  Hold: 'Hold',
+  ReleaseHold: 'Release',
+  ForceReprocess: 'Re-execute',
+  Purge: 'Purge',
+  Cleanup: 'Cleanup',
+  Revoke: 'Revoke',
+  DispatchNow: 'Dispatch now',
+  Resend: 'Re-send',
+}
+
+// A receipt is applied or one of the refusals (NotFound, StateConflict, Active, Held, OperationConflict): a refused
+// action changed nothing, so it reads as off, not as a failure.
 function outcomeTone(outcome: string): DashboardStateRole {
-  return outcome === 'Done' ? 'ok' : outcome === 'Failed' ? 'fail' : 'off'
+  return outcome === 'Applied' ? 'ok' : 'off'
 }
 
 /** The operator ledger in the main store, newest first: every audited intervention, a refused one included. */
@@ -109,7 +123,7 @@ export default function OperatorLogView() {
               id: 'operation',
               header: 'Action',
               cell: (row) => (
-                <CellText title={row.reason ?? undefined}>{`${row.operationType} · ${targetLabels[row.targetKind] ?? row.targetKind}`}</CellText>
+                <CellText title={row.reason ?? undefined}>{`${operationLabels[row.operationType] ?? row.operationType} · ${targetLabels[row.targetKind] ?? row.targetKind}`}</CellText>
               ),
               isRowHeader: true,
               width: '1fr',
@@ -129,7 +143,7 @@ export default function OperatorLogView() {
               header: 'Message',
               cell: (row) => (
                 <CellText title={row.messageId ?? undefined}>
-                  <Mono>{[row.messageName, row.outboxName ? `(${row.outboxName})` : undefined].filter(Boolean).join(' ')}</Mono>
+                  <Mono>{[row.messageName ?? row.messageId ?? row.storageId, row.outboxName ? `(${row.outboxName})` : undefined].filter(Boolean).join(' ')}</Mono>
                 </CellText>
               ),
               priority: 2,

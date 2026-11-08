@@ -64,6 +64,8 @@ describe('messaging lists', () => {
     await waitFor(() => expect(within(chips).getAllByRole('button')).toHaveLength(3))
     expect(within(chips).getByRole('button', { name: /Billing\.OrderPlacedConsumer/ }).textContent).toContain('7')
     expect(within(chips).getByRole('button', { name: /orders:billing-handler/ }).textContent).toContain('2')
+    // One consumer can fail several ways, so a chip names its cause too.
+    expect(within(chips).getByRole('button', { name: /orders:billing-handler · deserialization/ })).toBeTruthy()
 
     await actor.click(within(chips).getByRole('button', { name: /orders:billing-handler/ }))
 

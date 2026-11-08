@@ -447,9 +447,16 @@ function MessagesTable({ kind, viewId, frame, messages, matches, newRows, failed
   )
 }
 
+/** The part of a `v{n}:{token}` fingerprint a chip shows: a 16-character hash shortened to 6, a fixed cause whole. */
+function shortFingerprint(fingerprint: string): string {
+  const token = fingerprint.slice(fingerprint.indexOf(':') + 1)
+
+  return /^[0-9a-f]{16}$/.test(token) ? token.slice(0, 6) : token
+}
+
 /**
  * The Failed list's causes: `All`, then one chip per failure group the server counts on this node, labelled by its
- * consumer or store; the chip's title names its fingerprint.
+ * consumer or store and its fingerprint; the chip's title names the whole fingerprint.
  */
 function FailureChips({
   kind,
@@ -471,9 +478,17 @@ function FailureChips({
     // The local node's groups carry no node; a peer's carry its name, which may also be this node's own.
     const groupNode = group && local && group.node === local.name ? '' : group?.node
 
-    // A group stored without a fingerprint has no filter that selects only its rows.
+    // A failure group carries no readable cause, and one consumer can fail several ways, so each chip also names its
+    // fingerprint: the first characters of a computed hash, or a fixed cause such as `expired` whole.
     return group && group.kind === kind && groupNode === node && group.fingerprint
-      ? [{ id: item.id, group, label: (kind === 'received' ? group.consumer : group.store) || group.fingerprint, count: { value: item.count, capped: item.capped } }]
+      ? [
+          {
+            id: item.id,
+            group,
+            label: `${(kind === 'received' ? group.consumer : group.store) || 'unknown'} · ${shortFingerprint(group.fingerprint)}`,
+            count: { value: item.count, capped: item.capped },
+          },
+        ]
       : []
   })
 

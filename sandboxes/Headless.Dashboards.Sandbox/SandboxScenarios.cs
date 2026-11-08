@@ -220,7 +220,7 @@ public static class SandboxScenarios
 
         foreach (var orderId in new[] { 8301, 8317, 8452 })
         {
-            var message = new SandboxOrderPlaced(orderId, ShouldFail: true, "timed out reserving stock");
+            var message = new SandboxOrderPlaced(orderId, ShouldFail: true, SandboxOrderPlaced.StockTimeoutCause);
             receipts.Add(_Id(await bus.PublishAsync(message, cancellationToken)));
         }
 

@@ -124,4 +124,32 @@ describe('messaging operator log', () => {
     await waitFor(() => expect(new URLSearchParams(view.location().search).get('targetKind')).toBe('Inbox'))
     await waitFor(() => expect(view.requests.some((request) => request.path === 'messaging/receipts' && request.query?.targetKind === 'Inbox')).toBe(true))
   })
+
+  it('names a receipt by the command the operator chose, and by its message id when it has no name', async () => {
+    open(
+      {
+        extra: (request) =>
+          request.path === 'messaging/receipts'
+            ? {
+                items: [
+                  {
+                    operationId: '0192f3c1-0000-7000-8000-000000000001',
+                    targetKind: 'Inbox',
+                    operationType: 'ForceReprocess',
+                    outcome: 'Applied',
+                    actor: 'ops',
+                    reason: 'stock service restored',
+                    createdAt: '2026-11-08T05:00:00Z',
+                    messageId: 'order-8452',
+                  },
+                ],
+              }
+            : undefined,
+      },
+      { path: 'operator-log' },
+    )
+
+    expect(await screen.findByText('Re-execute · Received')).toBeTruthy()
+    expect(screen.getByText('order-8452')).toBeTruthy()
+  })
 })
