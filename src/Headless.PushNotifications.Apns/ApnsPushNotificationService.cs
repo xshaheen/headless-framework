@@ -554,7 +554,7 @@ internal sealed class ApnsPushNotificationService(
                 logger.LogDeviceTokenUnregistered(
                     (int)answer.Status,
                     answer.Error.Reason ?? "no reason",
-                    _Mask(deviceToken)
+                    deviceToken.MaskEnd(visibleLength: 8)
                 );
             }
             else if (result.Response.IsFailed() && logger.IsEnabled(LogLevel.Warning))
@@ -562,7 +562,7 @@ internal sealed class ApnsPushNotificationService(
                 logger.LogNotificationRejected(
                     (int)answer.Status,
                     answer.Error.Reason ?? "no reason",
-                    _Mask(deviceToken)
+                    deviceToken.MaskEnd(visibleLength: 8)
                 );
             }
 
@@ -570,7 +570,7 @@ internal sealed class ApnsPushNotificationService(
             // send failed, so they get their own error events instead of the per-token rejection warning.
             if (ApnsFailureClassifier.IsTokenConfigurationProblem(answer.Error.Reason))
             {
-                logger.LogTokenConfigurationError(answer.Error.Reason!, _Mask(deviceToken));
+                logger.LogTokenConfigurationError(answer.Error.Reason!, deviceToken.MaskEnd(visibleLength: 8));
             }
             else if (string.Equals(answer.Error.Reason, "TooManyProviderTokenUpdates", StringComparison.Ordinal))
             {
@@ -588,7 +588,7 @@ internal sealed class ApnsPushNotificationService(
             // multicast already has.
             if (logger.IsEnabled(LogLevel.Error))
             {
-                logger.LogSendFailed(e, _Mask(deviceToken));
+                logger.LogSendFailed(e, deviceToken.MaskEnd(visibleLength: 8));
             }
 
             // A caller-chosen apns-id is the caller's correlation key, so it survives a failed send; a generated one
@@ -763,11 +763,6 @@ internal sealed class ApnsPushNotificationService(
         }
 
         return IPAddress.TryParse(host.AsSpan().Trim(['[', ']']), out var address) && IPAddress.IsLoopback(address);
-    }
-
-    private static string _Mask(string deviceToken)
-    {
-        return deviceToken.Length > 8 ? deviceToken[..8] + "***" : "***";
     }
 
     private readonly record struct ApnsAnswer(HttpStatusCode Status, ApnsErrorBody Error, string? UniqueId);

@@ -118,6 +118,7 @@ Headless.Jobs.EntityFramework
 Headless.Jobs.EntityFramework.PostgreSql
 Headless.Jobs.EntityFramework.SqlServer
 Headless.Jobs.SourceGenerator
+Headless.Logging.Redaction
 Headless.Logging.Serilog
 Headless.Media.Indexing
 Headless.Media.Indexing.Abstractions

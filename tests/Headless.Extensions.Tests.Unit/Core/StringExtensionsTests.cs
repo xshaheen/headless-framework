@@ -433,4 +433,39 @@ public sealed class StringExtensionsTests(ITestOutputHelper output) : IDisposabl
 
         input.NormalizeLineEndings().Should().Be(expected);
     }
+
+    [Theory]
+    [InlineData("device-token-123", 8, "device-t***")]
+    [InlineData("abcdefgh", 8, "***")]
+    [InlineData("abc", 8, "***")]
+    [InlineData("", 0, "***")]
+    [InlineData("secret", 0, "***")]
+    public void should_keep_the_prefix_and_mask_the_rest_when_mask_end(string input, int visibleLength, string expected)
+    {
+        input.MaskEnd(visibleLength).Should().Be(expected);
+    }
+
+    [Fact]
+    public void should_return_null_and_use_custom_mask_when_mask_end()
+    {
+        ((string?)null).MaskEnd(4).Should().BeNull();
+        "0123456789".MaskEnd(4, "[redacted]").Should().Be("0123[redacted]");
+    }
+
+    [Fact]
+    public void should_not_split_a_surrogate_pair_when_mask_end()
+    {
+        // The cut at 3 lands between the emoji's two chars, so the prefix backs off to the two letters.
+        var masked = ("ab" + _Emoji + "cdef").MaskEnd(3);
+
+        masked.Should().Be("ab***");
+    }
+
+    [Fact]
+    public void should_throw_when_mask_end_visible_length_is_negative()
+    {
+        var act = () => "value".MaskEnd(-1);
+
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
 }

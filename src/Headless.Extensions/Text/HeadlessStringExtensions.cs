@@ -42,6 +42,42 @@ public static class HeadlessStringExtensions
     }
 
     /// <summary>
+    /// Keeps the first <paramref name="visibleLength"/> characters of <paramref name="input"/> and replaces the rest
+    /// with <paramref name="mask"/>, so a log can name a token or identifier by its prefix without carrying it whole.
+    /// </summary>
+    /// <param name="input">The value to mask.</param>
+    /// <param name="visibleLength">How many leading characters stay readable.</param>
+    /// <param name="mask">The text that stands for the hidden characters. Defaults to <c>***</c>.</param>
+    /// <returns>
+    /// <see langword="null"/> for <see langword="null"/>; <paramref name="mask"/> alone when <paramref name="input"/> is
+    /// no longer than <paramref name="visibleLength"/>, because showing all of a short value would hide nothing;
+    /// otherwise the prefix followed by <paramref name="mask"/>.
+    /// </returns>
+    /// <remarks>The prefix never ends inside a surrogate pair, so the result is always valid UTF-16.</remarks>
+    [SystemPure]
+    [JetBrainsPure]
+    [return: NotNullIfNotNull(nameof(input))]
+    public static string? MaskEnd(this string? input, [NonNegativeValue] int visibleLength, string mask = "***")
+    {
+        Argument.IsPositiveOrZero(visibleLength);
+        Argument.IsNotNull(mask);
+
+        if (input is null)
+        {
+            return null;
+        }
+
+        if (input.Length <= visibleLength)
+        {
+            return mask;
+        }
+
+        var end = _SplitsSurrogatePair(input, visibleLength) ? visibleLength - 1 : visibleLength;
+
+        return string.Concat(input.AsSpan(0, end), mask);
+    }
+
+    /// <summary>
     /// Limits string length to a specified value by discarding a number of trailing characters and adds a specified
     /// suffix (ex "...") if any characters were discarded.
     /// </summary>

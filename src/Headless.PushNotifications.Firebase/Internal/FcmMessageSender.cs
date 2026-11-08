@@ -170,7 +170,7 @@ internal sealed class FcmMessageSender : IFcmMessageSender, IDisposable
             {
                 if (result.Response.IsFailed())
                 {
-                    _logger.FailedToSendPushNotification(failure, _Mask(target.Value));
+                    _logger.FailedToSendPushNotification(failure, target.Value.MaskEnd(visibleLength: 8));
                 }
 
                 break;
@@ -369,11 +369,6 @@ internal sealed class FcmMessageSender : IFcmMessageSender, IDisposable
         {
             activity.SetStatus(ActivityStatusCode.Error, FcmMetrics.ToTagValue(result.FailureKind!.Value));
         }
-    }
-
-    private static string _Mask(string clientIdentifier)
-    {
-        return clientIdentifier.Length > 8 ? clientIdentifier[..8] + "***" : "***";
     }
 
     public void Dispose()
