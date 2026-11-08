@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
+using System.Diagnostics;
 using Headless.Fencing;
 using Headless.Sql;
 using Headless.Testing.Tests;
@@ -1264,6 +1265,46 @@ public abstract class FencedRowsConformanceTests<TFixture>(TFixture fixture) : T
 
     #endregion
 
+    public virtual async Task should_give_up_waiting_on_a_held_row_after_the_tables_command_timeout()
+    {
+        var bounded = FencedRowTable<Guid>.Create(
+            Fixture.Dialect,
+            Fixture.Schema,
+            IFencedRowsFixture.WorkItemsTable,
+            FencedRowKey<Guid>.Scalar("id", SqlColumnType.Guid),
+            commandTimeoutSeconds: 1
+        );
+        var id = await InsertAsync("pending");
+        await using var connection = Fixture.CreateConnection();
+        var row = (await FencedRows.GrantAsync(bounded, connection, null, id, LongDuration, new(), AbortToken))!.Row!;
+        await using var holder = await OpenAsync();
+        await using var transaction = await holder.BeginTransactionAsync(AbortToken);
+
+        (await FencedRows.FenceAsync(bounded, holder, transaction, row, AbortToken))
+            .Should()
+            .Be(LeaseFenceStatus.Current);
+
+        await using var writer = await OpenAsync();
+        await using var writerTransaction = await BeginWaitingTransactionAsync(writer);
+        var started = Stopwatch.GetTimestamp();
+
+        // The provider default is 30 seconds; well under it proves the table's bound reached the statement.
+        var write = async () =>
+            await FencedRows.WriteAsync(
+                bounded,
+                writer,
+                writerTransaction,
+                row,
+                SetStatus("progress"),
+                static (_, _) => ValueTask.FromResult(true),
+                AbortToken
+            );
+
+        await write.Should().ThrowAsync<DbException>();
+        Stopwatch.GetElapsedTime(started).Should().BeLessThan(TimeSpan.FromSeconds(15));
+        await transaction.RollbackAsync(AbortToken);
+    }
+
     #region Helpers
 
     protected static string Tag() => "batch-" + Guid.NewGuid().ToString("N");
@@ -1279,6 +1320,13 @@ public abstract class FencedRowsConformanceTests<TFixture>(TFixture fixture) : T
             holder,
             Bind: command => Dialect.AddParameter(command, "Tag", _Status, tag)
         );
+
+    /// <summary>
+    /// Begins a transaction whose first statement, not the begin itself, waits on a row another transaction holds, so
+    /// the wait runs under that statement's command timeout.
+    /// </summary>
+    protected virtual async Task<DbTransaction> BeginWaitingTransactionAsync(DbConnection connection) =>
+        await connection.BeginTransactionAsync(AbortToken);
 
     protected FencedRowWrite SetStatus(string status) =>
         new(Set: "status = @Status", Bind: command => Dialect.AddParameter(command, "Status", _Status, status));

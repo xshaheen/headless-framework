@@ -131,7 +131,7 @@ public static class FencedRows
                 transaction,
                 async (tx, ct) =>
                 {
-                    await using var command = _Command(connection, tx, sql);
+                    await using var command = _Command(table, connection, tx, sql);
                     table.Dialect.AddDuration(command, FencedRowTable<TKey>.DurationParameter, claim.Duration);
                     _AddHolder(table, command, claim.Holder);
                     table.Dialect.AddParameter(
@@ -1113,7 +1113,7 @@ public static class FencedRows
                 transaction,
                 async (tx, ct) =>
                 {
-                    await using var command = _Command(connection, tx, sql);
+                    await using var command = _Command(table, connection, tx, sql);
                     _BindConsumer(command, write?.Bind, nameof(write));
                     table.Dialect.AddParameter(
                         command,
@@ -1212,7 +1212,7 @@ public static class FencedRows
                 transaction,
                 async (tx, ct) =>
                 {
-                    await using var command = _Command(connection, tx, sql);
+                    await using var command = _Command(table, connection, tx, sql);
                     var index = 0;
 
                     foreach (var holder in holders)
@@ -1347,6 +1347,25 @@ public static class FencedRows
         return command;
     }
 
+    // The table's bound applies to every statement it renders; a call without a table keeps the provider's default.
+    private static DbCommand _Command<TKey>(
+        FencedRowTable<TKey> table,
+        DbConnection connection,
+        DbTransaction? transaction,
+        string sql
+    )
+        where TKey : notnull
+    {
+        var command = _Command(connection, transaction, sql);
+
+        if (table.CommandTimeoutSeconds is { } seconds)
+        {
+            command.CommandTimeout = seconds;
+        }
+
+        return command;
+    }
+
     private static DbCommand _Command<TKey>(
         FencedRowTable<TKey> table,
         DbConnection connection,
@@ -1356,7 +1375,7 @@ public static class FencedRows
     )
         where TKey : notnull
     {
-        var command = _Command(connection, transaction, sql);
+        var command = _Command(table, connection, transaction, sql);
         table.BindKey(command, key);
 
         return command;

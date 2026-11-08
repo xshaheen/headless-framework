@@ -1,5 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data.Common;
+using Microsoft.Data.Sqlite;
+
 namespace Tests;
 
 /// <summary>The fenced-row conformance suite on SQLite.</summary>
@@ -7,6 +10,11 @@ namespace Tests;
 public sealed class SqliteFencedRowsConformanceTests(SqliteFencingFixture fixture)
     : FencedRowsConformanceTests<SqliteFencingFixture>(fixture)
 {
+    // SQLite's default begin takes the write lock, waiting under the connection's timeout instead of the command's; a
+    // deferred begin leaves that wait to the first write.
+    protected override Task<DbTransaction> BeginWaitingTransactionAsync(DbConnection connection) =>
+        Task.FromResult<DbTransaction>(((SqliteConnection)connection).BeginTransaction(deferred: true));
+
     [Fact]
     public override Task should_grant_generation_one_to_a_fresh_row_and_store_the_lease_on_it()
     {
@@ -107,6 +115,12 @@ public sealed class SqliteFencedRowsConformanceTests(SqliteFencingFixture fixtur
     public override Task should_refuse_a_composed_write_whose_row_lock_was_held_past_the_expiry()
     {
         return base.should_refuse_a_composed_write_whose_row_lock_was_held_past_the_expiry();
+    }
+
+    [Fact]
+    public override Task should_give_up_waiting_on_a_held_row_after_the_tables_command_timeout()
+    {
+        return base.should_give_up_waiting_on_a_held_row_after_the_tables_command_timeout();
     }
 
     [Fact]

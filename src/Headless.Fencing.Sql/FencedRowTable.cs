@@ -57,11 +57,13 @@ public sealed class FencedRowTable<TKey>
         FencedRowKey<TKey> key,
         FencedRowColumns columns,
         string? generationSequence,
-        int holderMaxLength
+        int holderMaxLength,
+        int? commandTimeoutSeconds
     )
     {
         Dialect = dialect;
         HolderMaxLength = holderMaxLength;
+        CommandTimeoutSeconds = commandTimeoutSeconds;
         Key = key;
         Name = schema is null ? table : schema + "." + table;
         Table = schema is null ? dialect.Quote(table) : dialect.Qualify(schema, table);
@@ -146,6 +148,9 @@ public sealed class FencedRowTable<TKey>
     /// </summary>
     public int HolderMaxLength { get; }
 
+    // Null keeps the provider's default.
+    internal int? CommandTimeoutSeconds { get; }
+
     internal static string ActiveLiteral { get; } = _StateLiteral(RowLeaseState.Active);
 
     internal string Table { get; }
@@ -215,9 +220,17 @@ public sealed class FencedRowTable<TKey>
     /// <see cref="FencingFieldLimits.HolderMaxLength" />. At most 850, so the column fits a SQL Server index key: an
     /// nvarchar index key is capped at 1700 bytes, two a character.
     /// </param>
+    /// <param name="commandTimeoutSeconds">
+    /// How long, in seconds, each statement may run before the provider gives up, or <see langword="null" /> for the
+    /// provider's default. A statement that waits on a row another transaction holds counts that wait, so a store that
+    /// bounds its own statements passes the same bound here.
+    /// </param>
     /// <returns>The table descriptor.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="dialect" /> or <paramref name="key" /> is <see langword="null" />.</exception>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="holderMaxLength" /> is not between 1 and 850.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="holderMaxLength" /> is not between 1 and 850, or <paramref name="commandTimeoutSeconds" /> is zero
+    /// or negative.
+    /// </exception>
     /// <exception cref="ArgumentException">
     /// A name, <paramref name="schema" /> included when it is not <see langword="null" />, is empty or white space, or two
     /// columns share a name.
@@ -229,7 +242,8 @@ public sealed class FencedRowTable<TKey>
         FencedRowKey<TKey> key,
         FencedRowColumns? columns = null,
         string? generationSequence = null,
-        int? holderMaxLength = null
+        int? holderMaxLength = null,
+        int? commandTimeoutSeconds = null
     )
     {
         Argument.IsNotNull(dialect);
@@ -269,7 +283,12 @@ public sealed class FencedRowTable<TKey>
         Argument.IsPositive(holderLimit, paramName: nameof(holderMaxLength));
         Argument.IsLessThanOrEqualTo(holderLimit, MaxHolderMaxLength, paramName: nameof(holderMaxLength));
 
-        return new(dialect, schema, table, key, columns, generationSequence, holderLimit);
+        if (commandTimeoutSeconds is { } seconds)
+        {
+            Argument.IsPositive(seconds, paramName: nameof(commandTimeoutSeconds));
+        }
+
+        return new(dialect, schema, table, key, columns, generationSequence, holderLimit, commandTimeoutSeconds);
     }
 
     /// <summary>
