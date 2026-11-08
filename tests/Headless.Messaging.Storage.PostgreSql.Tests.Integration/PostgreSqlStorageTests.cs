@@ -1462,7 +1462,7 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
         var result = await connection.QueryFirstOrDefaultAsync<string>(
             $"""
             SELECT table_name FROM information_schema.tables
-            WHERE table_catalog='messages_test' AND table_schema = '{schema}' AND table_name = '{table}'
+            WHERE table_catalog = current_database() AND table_schema = '{schema}' AND table_name = '{table}'
             """
         );
         result.Should().Be(table);
