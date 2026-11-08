@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.ComponentModel;
 using Headless.Fencing;
 using Headless.Testing.Tests;
 
@@ -372,5 +373,48 @@ public sealed class LeaseRequestResolverTests : TestBase
 
         progress.Payload.ToArray().Should().Equal(1, 2, 3);
         progress.Contract.Should().Be("exports.cursor/v1");
+    }
+
+    [Fact]
+    public void should_hold_a_holder_to_the_limit_the_caller_passes()
+    {
+        var atLimit = new LeaseGrantOptions { Holder = new string('h', 405) };
+        var overLimit = new LeaseGrantOptions { Holder = new string('h', 406) };
+
+        LeaseRequestResolver.ValidateGrantOptions(atLimit, 405).Should().BeSameAs(atLimit);
+        LeaseRequestResolver.ValidateGrantOptions(new LeaseGrantOptions(), 1).Holder.Should().BeNull();
+        var act = () => LeaseRequestResolver.ValidateGrantOptions(overLimit, 405);
+
+        act.Should().Throw<ArgumentException>().WithParameterName("options");
+    }
+
+    [Theory]
+    [InlineData("   ")]
+    [InlineData("node\0a")]
+    [InlineData(" node-a")]
+    public void should_refuse_a_holder_no_provider_stores_unchanged_under_a_caller_limit(string holder)
+    {
+        var act = () => LeaseRequestResolver.ValidateGrantOptions(new LeaseGrantOptions { Holder = holder }, 405);
+
+        act.Should().Throw<ArgumentException>().WithParameterName("options");
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void should_refuse_a_holder_limit_that_is_not_positive(int holderMaxLength)
+    {
+        var act = () => LeaseRequestResolver.ValidateGrantOptions(new LeaseGrantOptions(), holderMaxLength);
+
+        act.Should().Throw<ArgumentOutOfRangeException>().WithParameterName(nameof(holderMaxLength));
+    }
+
+    [Fact]
+    public void should_refuse_an_undefined_takeover_under_a_caller_limit()
+    {
+        var act = () =>
+            LeaseRequestResolver.ValidateGrantOptions(new LeaseGrantOptions { Takeover = (LeaseTakeover)99 }, 405);
+
+        act.Should().Throw<InvalidEnumArgumentException>();
     }
 }
