@@ -129,7 +129,7 @@ export function MessagesView({ kind }: { kind: MessageKind }) {
   const listId = listName(filter)
   const state = describe(kind, listId)
   const failed = listId === 'failed'
-  const scoped = canScope(filter)
+  const scoped = canScope(filter, kind)
 
   useNodeReset()
 

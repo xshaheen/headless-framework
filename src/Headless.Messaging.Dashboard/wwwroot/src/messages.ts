@@ -114,11 +114,13 @@ export function messageMatches(row: MessageRow, filter: MessageFilter) {
 }
 
 /**
- * Whether an Operation can scope by `filter`. An Operation's filter names a store, status, terminal, consumer, name,
- * and fingerprint; it cannot say retrying or held, so those lists act on the checked rows only.
+ * Whether an Operation can scope by `filter` on a `kind` list. An Operation's filter names a store, status, terminal,
+ * consumer, name, and fingerprint; it cannot say retrying or held, so those lists act on the checked rows only. An
+ * Operation also runs on one store, so a published list that merges every store acts on the checked rows until a store
+ * is picked: otherwise its count would cover rows the Operation never touches.
  */
-export function canScope(filter: MessageFilter) {
-  return !filter.retrying && !filter.held
+export function canScope(filter: MessageFilter, kind: MessageKind) {
+  return !filter.retrying && !filter.held && (kind !== 'published' || Boolean(filter.store))
 }
 
 /** The filter as an Operation's scope, on `node`: the server freezes exactly the rows it matches at confirm. */

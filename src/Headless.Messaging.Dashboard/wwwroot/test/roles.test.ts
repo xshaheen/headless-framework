@@ -70,8 +70,11 @@ describe('messaging roles', () => {
     const retrying = readFilter(new URLSearchParams('retrying=true&status=Failed'), 'received')
 
     expect(retrying.status).toBe('')
-    expect(canScope(retrying)).toBe(false)
-    expect(canScope(readFilter(new URLSearchParams('held=true'), 'received'))).toBe(false)
+    expect(canScope(retrying, 'received')).toBe(false)
+    expect(canScope(readFilter(new URLSearchParams('held=true'), 'received'), 'received')).toBe(false)
+    // An Operation runs on one store, so a published list over every store cannot select all its matches.
+    expect(canScope(readFilter(new URLSearchParams('status=failed'), 'published'), 'published')).toBe(false)
+    expect(canScope(readFilter(new URLSearchParams('status=failed&store=orders'), 'published'), 'published')).toBe(true)
     expect(operationScope(readFilter(new URLSearchParams('status=failed&terminal=true&store=orders'), 'published'), 'node-b')).toEqual({
       node: 'node-b',
       store: 'orders',
