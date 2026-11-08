@@ -243,8 +243,7 @@ public sealed class RetryProcessorConsumeFilterTests : TestBase
             .BeTrue();
         var identity = new MessageLeaseIdentity(
             message.StorageId,
-            message.Owner,
-            message.LockedUntil!.Value,
+            message.Lease.Generation,
             MessageLane.Bus,
             message.InboxAttemptFence
         );

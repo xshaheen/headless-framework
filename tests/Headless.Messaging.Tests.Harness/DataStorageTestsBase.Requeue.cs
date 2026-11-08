@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Fencing;
 using Headless.Messaging;
 using Headless.Messaging.Persistence;
 using Tests.Guarantees;
@@ -68,7 +69,7 @@ public abstract partial class DataStorageTestsBase
         row.InlineAttempts.Should().Be(0);
         row.NextRetryAt.Should().NotBeNull();
         row.ExpiresAt.Should().BeNull();
-        row.LockedUntil.Should().BeNull();
+        row.Lease.State.Should().NotBe(RowLeaseState.Active);
 
         var untouched = await storage.GetMonitoringApi().GetPublishedMessageAsync(pending.StorageId, AbortToken);
         untouched!.Retries.Should().Be(1, "a row still waiting for a retry keeps its budget");

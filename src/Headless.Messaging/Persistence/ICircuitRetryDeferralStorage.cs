@@ -7,9 +7,8 @@ namespace Headless.Messaging.Persistence;
 /// while releasing that exact claimed lease generation.
 /// </summary>
 /// <remarks>
-/// Implementations update only <c>NextRetryAt</c> (store now plus the delay), <c>Owner</c>, and
-/// <c>LockedUntil</c>. The update must use store-authoritative lease validity and compare the complete
-/// identity; a stale generation is a successful no-op from Core's perspective and returns
+/// Implementations update only <c>NextRetryAt</c> (store now plus the delay) and release the row lease. The update must
+/// use store-authoritative lease validity and compare the complete identity; a stale generation is a successful no-op from Core's perspective and returns
 /// <see langword="false"/>.
 /// </remarks>
 internal interface ICircuitRetryDeferralStorage

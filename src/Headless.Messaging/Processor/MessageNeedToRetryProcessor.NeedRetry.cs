@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using Headless.Checks;
 using Headless.DistributedLocks;
+using Headless.Fencing;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Transport;
@@ -754,7 +755,7 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
     )
     {
         return ClaimedBatchLeaseRenewal.Start(
-            messages.Where(static message => message.LockedUntil.HasValue),
+            messages.Where(static message => message.Lease.State is RowLeaseState.Active),
             renew,
             _options.Value.RetryPolicy,
             context.TimeProvider,

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Fencing;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
 using Headless.Primitives;
@@ -97,9 +98,9 @@ internal sealed partial class InMemoryDataStorage
                     message.Lane,
                     message.ExpiresAt ?? DateTimeOffset.MinValue,
                     "Pending",
-                    message.LockedUntil is not null && message.LockedUntil > now,
-                    message.Owner,
-                    message.LockedUntil,
+                    _HasLiveLease(message, now),
+                    message.Lease.State == RowLeaseState.Active ? message.Lease.Holder : null,
+                    message.Lease.State == RowLeaseState.Active ? message.Lease.ExpiresAt : null,
                     message.InlineAttempts
                 ))
                 .ToList();
@@ -199,7 +200,7 @@ internal sealed partial class InMemoryDataStorage
                     )
                     {
                         row = current;
-                        var hasLiveLease = current.LockedUntil is not null && current.LockedUntil > now;
+                        var hasLiveLease = _HasLiveLease(current, now);
                         state = new ScheduledDeliveryOperationState(
                             current.StatusName,
                             current.InlineAttempts,
@@ -223,8 +224,7 @@ internal sealed partial class InMemoryDataStorage
                             {
                                 row.StatusName = StatusName.Delayed;
                                 row.ExpiresAt = now;
-                                row.LockedUntil = null;
-                                row.Owner = null;
+                                row.Lease = RowLeaseRules.Revoke(row.Lease).Next;
                             }
                         }
                     }

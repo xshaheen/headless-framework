@@ -2,6 +2,7 @@
 
 using System.Data;
 using System.Data.Common;
+using Headless.Fencing;
 using Headless.Messaging.Internal;
 using Headless.Sql;
 
@@ -81,8 +82,8 @@ internal sealed partial class RelationalDataStorage
             : string.Empty;
         // A received row starts a new inbox attempt with each claim, so a stale attempt is fenced out.
         var attemptAssignment = received
-            ? $", {_t.AttemptId} = CASE WHEN {_t.IsInboxRecord} = {_t.True} THEN {_dialect.NewGuid()} ELSE NULL END"
-            : string.Empty;
+            ? $"{_t.AttemptId} = CASE WHEN {_t.IsInboxRecord} = {_t.True} THEN {_dialect.NewGuid()} ELSE NULL END"
+            : null;
         string[] returning = received ? [.. _RetryClaimColumns(), .. _InboxClaimColumns()] : _RetryClaimColumns();
         // The claim carries no retry cap. A received row's budget belongs to its consumer's failure policy and a
         // published row's to MaxPersistedRetries; the executor and the sender check it after the claim and end a row
@@ -94,17 +95,16 @@ internal sealed partial class RelationalDataStorage
         // capacity nor get mutated.
         //
         // Due time and lease are both the database's: NextRetryAt is compared against the same clock that stamps
-        // the lease, so a replica whose clock is skewed neither picks a row up early nor leaves it waiting.
-        var sql = _dialect.Render(
-            new SqlClaimNext(
-                table,
-                [_t.Id],
-                $"{_t.Version} = @Version AND {_t.IntentType} = @IntentType AND {_t.NextRetryAt} IS NOT NULL AND {_t.NextRetryAt} <= {SqlDialectTokens.Now} AND ({_t.LockedUntil} IS NULL OR {_t.LockedUntil} <= {SqlDialectTokens.Now}){orphanFilter}{consumerFilter} AND {_terminalGuard}",
-                [_t.NextRetryAt, _t.Id],
-                $"{_t.LockedUntil} = {_dialect.ShiftByDuration(SqlDialectTokens.Now, "Lease")}, {_t.Owner} = @Owner{attemptAssignment}",
-                returning,
-                BatchSizeParameter: "BatchSize"
-            )
+        // the lease, so a replica whose clock is skewed neither picks a row up early nor leaves it waiting. Each
+        // claimed row is granted its own new lease generation, the token every later write of the attempt carries.
+        var scope = FencedRows.GrantScope(_LeaseTable(table), _ClaimPrefix);
+        var holder = LeaseHolder;
+        var sql = scope.RenderClaim(
+            $"{_t.Version} = @Version AND {_t.IntentType} = @IntentType AND {_t.NextRetryAt} IS NOT NULL AND {_t.NextRetryAt} <= {SqlDialectTokens.Now}{orphanFilter}{consumerFilter} AND {_terminalGuard}",
+            [_t.NextRetryAt, _t.Id],
+            attemptAssignment,
+            returning,
+            "BatchSize"
         );
 
         return await SqlAutonomousTransaction
@@ -135,8 +135,7 @@ internal sealed partial class RelationalDataStorage
                                     SqlColumnType.Int16,
                                     MessageLaneCompatibility.ToPersistedValue(lane)
                                 );
-                                _dialect.AddDuration(command, "Lease", Options.RetryPolicy.DispatchTimeout);
-                                _BindOwner(command, "Owner", hasLease: true);
+                                scope.Bind(command, Options.RetryPolicy.DispatchTimeout, holder);
 
                                 if (filterConsumers)
                                 {
@@ -149,7 +148,7 @@ internal sealed partial class RelationalDataStorage
                                 }
                             },
                             (reader, token) =>
-                                _ReadRetryClaimAsync(reader, table, lane, received, poisonMessages, token),
+                                _ReadRetryClaimAsync(reader, table, lane, received, holder, poisonMessages, token),
                             ct
                         )
                         .ConfigureAwait(false);
@@ -165,18 +164,27 @@ internal sealed partial class RelationalDataStorage
             .ConfigureAwait(false);
     }
 
+    // The prefix of a claim's grant parameters: ClaimDuration and ClaimHolder.
+    private const string _ClaimPrefix = "Claim";
+
+    /// <summary>
+    /// Reads the lease a claim granted a row: the generation and expiry at ordinals 1 and 2, as the grant scope returns
+    /// them, and the takeover count at <paramref name="takeoverOrdinal"/>.
+    /// </summary>
+    private static RowLeaseSnapshot _ReadClaimedLease(DbDataReader reader, string? holder, int takeoverOrdinal)
+    {
+        return new RowLeaseSnapshot(
+            Convert.ToInt64(reader.GetValue(1), CultureInfo.InvariantCulture),
+            RowLeaseState.Active,
+            reader.GetFieldValue<DateTimeOffset>(2),
+            holder,
+            Convert.ToInt32(reader.GetValue(takeoverOrdinal), CultureInfo.InvariantCulture)
+        );
+    }
+
+    // The claim reads the key, the granted generation, and its expiry first (ordinals 0-2), then these.
     private string[] _RetryClaimColumns() =>
-        [
-            _t.Id,
-            _t.Content,
-            _t.IntentType,
-            _t.Retries,
-            _t.InlineAttempts,
-            _t.Added,
-            _t.NextRetryAt,
-            _t.LockedUntil,
-            _t.Owner,
-        ];
+        [_t.Content, _t.IntentType, _t.Retries, _t.InlineAttempts, _t.Added, _t.NextRetryAt, _t.LeaseTakeoverCount];
 
     private string[] _InboxClaimColumns() =>
         [
@@ -198,6 +206,7 @@ internal sealed partial class RelationalDataStorage
         string table,
         MessageLane lane,
         bool received,
+        string? holder,
         List<PoisonMessage> poisonMessages,
         CancellationToken cancellationToken
     )
@@ -206,8 +215,8 @@ internal sealed partial class RelationalDataStorage
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             var storageId = reader.GetGuid(0);
-            var content = reader.GetString(1);
-            var persistedLane = MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(2));
+            var content = reader.GetString(3);
+            var persistedLane = MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(4));
             if (persistedLane != lane)
             {
                 throw new InvalidOperationException(
@@ -224,31 +233,27 @@ internal sealed partial class RelationalDataStorage
                     Origin = _serializer.Deserialize(content)!,
                     Content = content,
                     Lane = persistedLane,
-                    Retries = reader.GetInt32(3),
-                    InlineAttempts = reader.GetInt32(4),
-#pragma warning disable CA1849 // the GetString(1) above already pulls the large Content column synchronously, so these remaining small columns cannot add blocking this row has not already paid for.
-                    Added = reader.GetFieldValue<DateTimeOffset>(5),
-                    NextRetryAt = reader.IsDBNull(6) ? null : reader.GetFieldValue<DateTimeOffset>(6),
-                    LockedUntil = reader.IsDBNull(7) ? null : reader.GetFieldValue<DateTimeOffset>(7),
-                    Owner = reader.IsDBNull(8) ? null : reader.GetString(8),
+                    Retries = reader.GetInt32(5),
+                    InlineAttempts = reader.GetInt32(6),
+#pragma warning disable CA1849 // the GetString(3) above already pulls the large Content column synchronously, so these remaining small columns cannot add blocking this row has not already paid for.
+                    Added = reader.GetFieldValue<DateTimeOffset>(7),
+                    NextRetryAt = reader.IsDBNull(8) ? null : reader.GetFieldValue<DateTimeOffset>(8),
+                    Lease = _ReadClaimedLease(reader, holder, takeoverOrdinal: 9),
 #pragma warning restore CA1849
                 };
 
-                if (received && reader.GetBoolean(9))
+                if (received && reader.GetBoolean(10))
                 {
-                    var generation = reader.GetInt64(16);
-                    var incarnationId = reader.GetGuid(17);
-                    var lockedUntil =
-                        mediumMessage.LockedUntil
-                        ?? throw new InvalidOperationException("Claimed inbox row has no durable lease deadline.");
-                    var attemptId = reader.GetGuid(18);
+                    var generation = reader.GetInt64(17);
+                    var incarnationId = reader.GetGuid(18);
+                    var attemptId = reader.GetGuid(19);
                     mediumMessage.InboxKey = new InboxKey(
-                        reader.GetBoolean(10) ? reader.GetString(11) : null,
-                        reader.GetString(12),
-                        persistedLane,
+                        reader.GetBoolean(11) ? reader.GetString(12) : null,
                         reader.GetString(13),
+                        persistedLane,
                         reader.GetString(14),
                         reader.GetString(15),
+                        reader.GetString(16),
                         generation
                     );
                     mediumMessage.InboxGeneration = new InboxGeneration(generation, incarnationId);
@@ -258,10 +263,9 @@ internal sealed partial class RelationalDataStorage
                         generation,
                         incarnationId,
                         attemptId,
-                        mediumMessage.Owner,
-                        lockedUntil
+                        mediumMessage.Lease.Generation
                     );
-                    mediumMessage.IsInboxOrphaned = reader.GetBoolean(19);
+                    mediumMessage.IsInboxOrphaned = reader.GetBoolean(20);
                 }
             }
             catch (Exception ex)
@@ -298,7 +302,7 @@ internal sealed partial class RelationalDataStorage
         // Expiry is decided against the database clock by the purge, so the database clock also stamps it.
         var received = _IsReceived(table);
         var set =
-            $"{_t.StatusName}=@StatusName, {_t.NextRetryAt}=NULL, {_t.LockedUntil}=NULL, {_t.Owner}=NULL, {_t.ExpiresAt}={_dialect.ShiftByDuration(SqlDialectTokens.Now, "ExpiresAfter")}";
+            $"{_t.StatusName}=@StatusName, {_t.NextRetryAt}=NULL, {_RevokeAnyLeaseAssignments(ending: RowLeaseState.Settled)}, {_t.ExpiresAt}={_dialect.ShiftByDuration(SqlDialectTokens.Now, "ExpiresAfter")}";
         if (received)
         {
             // Each poison row records its own failure; the inbox generation ends, and its retention starts.
@@ -384,10 +388,10 @@ internal sealed partial class RelationalDataStorage
     }
 
     /// <summary>
-    /// Shortens the remaining lease on published messages owned by nodes in <paramref name="deadOwners"/>
-    /// by setting <c>LockedUntil</c> to the current time, allowing live replicas to re-claim them.
+    /// Revokes the active leases on published messages held by nodes in <paramref name="deadOwners"/>, so live replicas
+    /// can claim them again without waiting for each lease to expire.
     /// </summary>
-    /// <returns>The number of rows whose leases were reclaimed.</returns>
+    /// <returns>The number of rows whose leases were revoked.</returns>
     public ValueTask<int> ReclaimDeadPublishedOwnersAsync(
         IReadOnlyCollection<string> deadOwners,
         CancellationToken cancellationToken = default
@@ -402,10 +406,10 @@ internal sealed partial class RelationalDataStorage
     }
 
     /// <summary>
-    /// Shortens the remaining lease on received messages owned by nodes in <paramref name="deadOwners"/>
-    /// by setting <c>LockedUntil</c> to the current time, allowing live replicas to re-claim them.
+    /// Revokes the active leases on received messages held by nodes in <paramref name="deadOwners"/>, so live replicas
+    /// can claim them again without waiting for each lease to expire.
     /// </summary>
-    /// <returns>The number of rows whose leases were reclaimed.</returns>
+    /// <returns>The number of rows whose leases were revoked.</returns>
     public ValueTask<int> ReclaimDeadReceivedOwnersAsync(
         IReadOnlyCollection<string> deadOwners,
         CancellationToken cancellationToken = default
@@ -426,89 +430,40 @@ internal sealed partial class RelationalDataStorage
         CancellationToken cancellationToken
     )
     {
-        // An empty list matches no row, so the early return only skips the round trip.
         if (deadOwners.Count == 0)
         {
             return 0;
         }
 
-        // Intentionally version-agnostic: reclaim only shortens leases on rows owned by dead node incarnations, then
-        // the normal version-filtered pickup decides what this service version may dispatch. One list parameter keeps
-        // the update's text, and its cached plan, the same whatever the number of dead owners.
-        var sql = _dialect.Render(
-            new SqlClockedStatement(
-                $"UPDATE {table} SET {_t.LockedUntil} = {SqlDialectTokens.Now} WHERE {_t.Owner} IS NOT NULL AND {_dialect.InList(_t.Owner, "DeadOwners", _ownerType)} AND {_t.LockedUntil} > {SqlDialectTokens.Now} AND {_t.IntentType} IN (0, 1) AND {_terminalGuard};"
-            )
-        );
+        // Intentionally version-agnostic: reclaim only revokes leases held by dead node incarnations, then the normal
+        // version-filtered pickup decides what this service version may dispatch. Each revoked generation is fenced,
+        // so a dead holder that comes back cannot write, renew, or end the row.
+        var holders = deadOwners.Distinct(StringComparer.Ordinal).ToArray();
+        var leaseTable = _LeaseTable(table);
+        var write = _Write(condition: $"{_t.IntentType} IN (0, 1) AND {_terminalGuard}");
+        var reclaimed = 0;
 
-        return await SqlAutonomousTransaction
-            .RunAsync(
-                operation,
-                _CreateConnection,
-                async (connection, transaction, ct) =>
-                {
-                    // The dead owners' rows are locked first, waiting out any writer that holds one, so the update
-                    // reads the database clock after that wait and decides which leases are still live on it.
-                    foreach (var chunk in deadOwners.Chunk(_MaxCommandParameters))
-                    {
-                        var lockSql = string.Join(
-                            '\n',
-                            chunk.Select(
-                                (_, i) =>
-                                    _dialect.Render(
-                                        new SqlLockedRead(
-                                            table,
-                                            [
-                                                new SqlKeyColumn(
-                                                    _t.Owner,
-                                                    "Owner" + i.ToString(CultureInfo.InvariantCulture)
-                                                ),
-                                            ],
-                                            [_t.Id],
-                                            $"{_t.Owner} IS NOT NULL"
-                                        )
-                                    )
-                            )
-                        );
+        // Each holder binds its own parameter, so a long list goes in chunks; each batch is its own short transaction.
+        foreach (var chunk in holders.Chunk(_MaxCommandParameters - 1))
+        {
+            int revoked;
+            do
+            {
+                revoked = await _RunAsync(
+                        operation,
+                        transaction: null,
+                        (connection, tx, ct) =>
+                            FencedRows
+                                .RevokeHeldByAsync(leaseTable, connection, tx, chunk, _LeaseReleaseBatchSize, write, ct)
+                                .AsTask(),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+                reclaimed += revoked;
+            } while (revoked == _LeaseReleaseBatchSize);
+        }
 
-                        await RelationalCommand
-                            .ExecuteNonQueryAsync(
-                                connection,
-                                transaction,
-                                lockSql,
-                                CommandTimeoutSeconds,
-                                command =>
-                                {
-                                    for (var i = 0; i < chunk.Length; i++)
-                                    {
-                                        _dialect.AddParameter(
-                                            command,
-                                            "Owner" + i.ToString(CultureInfo.InvariantCulture),
-                                            _ownerType,
-                                            chunk[i]
-                                        );
-                                    }
-                                },
-                                ct
-                            )
-                            .ConfigureAwait(false);
-                    }
-
-                    return await RelationalCommand
-                        .ExecuteNonQueryAsync(
-                            connection,
-                            transaction,
-                            sql,
-                            CommandTimeoutSeconds,
-                            command => _dialect.AddListParameter(command, "DeadOwners", _ownerType, deadOwners),
-                            ct
-                        )
-                        .ConfigureAwait(false);
-                },
-                _timeProvider,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
+        return reclaimed;
     }
 
     /// <summary>
@@ -984,41 +939,32 @@ internal sealed partial class RelationalDataStorage
     {
         // One claim statement moves due delayed (and stale queued) rows to Queued and leases them past their due
         // time, skipping rows another replica holds. Due time and lease are both the database's clock.
-        var sql = _dialect.Render(
-            new SqlClaimNext(
-                _publishedTable,
-                [_t.Id],
-                $"""
-                {_t.Version}=@Version
-                AND {_t.IntentType} IN (0, 1)
-                AND ({_t.LockedUntil} IS NULL OR {_t.LockedUntil} <= {SqlDialectTokens.Now})
-                AND (
-                    ({_t.StatusName}=@DelayedStatusName AND {_t.ExpiresAt} < {_dialect.ShiftByDuration(
-                    SqlDialectTokens.Now,
-                    "Lookahead"
-                )})
-                    OR ({_t.StatusName}=@QueuedStatusName AND {_t.ExpiresAt} < {_dialect.ShiftByDuration(
-                    SqlDialectTokens.Now,
-                    "Lookback",
-                    subtract: true
-                )})
-                )
-                AND {_terminalGuard}
-                """,
-                [_t.ExpiresAt, _t.Id],
-                $"{_t.StatusName}=@QueuedStatusName, {_t.LockedUntil}={_dialect.ShiftByDuration($"CASE WHEN {_t.ExpiresAt} > {SqlDialectTokens.Now} THEN {_t.ExpiresAt} ELSE {SqlDialectTokens.Now} END", "Lease")}, {_t.Owner}=@Owner",
-                [
-                    _t.Id,
-                    _t.Content,
-                    _t.IntentType,
-                    _t.Retries,
-                    _t.InlineAttempts,
-                    _t.Added,
-                    _t.ExpiresAt,
-                    _t.LockedUntil,
-                    _t.Owner,
-                ],
-                BatchSizeParameter: "BatchSize"
+        var scope = FencedRows.GrantScope(_t.PublishedLease, _ClaimPrefix);
+        var holder = LeaseHolder;
+        var sql = scope.RenderClaim(
+            $"""
+            {_t.Version}=@Version
+            AND {_t.IntentType} IN (0, 1)
+            AND (
+                ({_t.StatusName}=@DelayedStatusName AND {_t.ExpiresAt} < {_dialect.ShiftByDuration(
+                SqlDialectTokens.Now,
+                "Lookahead"
+            )})
+                OR ({_t.StatusName}=@QueuedStatusName AND {_t.ExpiresAt} < {_dialect.ShiftByDuration(
+                SqlDialectTokens.Now,
+                "Lookback",
+                subtract: true
+            )})
+            )
+            AND {_terminalGuard}
+            """,
+            [_t.ExpiresAt, _t.Id],
+            $"{_t.StatusName}=@QueuedStatusName",
+            [_t.Content, _t.IntentType, _t.Retries, _t.InlineAttempts, _t.Added, _t.ExpiresAt, _t.LeaseTakeoverCount],
+            "BatchSize",
+            deadlineExpression: _dialect.ShiftByDuration(
+                $"CASE WHEN {_t.ExpiresAt} > {SqlDialectTokens.Now} THEN {_t.ExpiresAt} ELSE {SqlDialectTokens.Now} END",
+                _ClaimPrefix + "Duration"
             )
         );
 
@@ -1060,10 +1006,9 @@ internal sealed partial class RelationalDataStorage
                                     SqlColumnType.Int32,
                                     Options.SchedulerBatchSize
                                 );
-                                _dialect.AddDuration(command, "Lease", Options.RetryPolicy.DispatchTimeout);
-                                _BindOwner(command, "Owner", hasLease: true);
+                                scope.Bind(command, Options.RetryPolicy.DispatchTimeout, holder);
                             },
-                            (reader, token) => _ReadDelayedClaimAsync(reader, poisonMessages, token),
+                            (reader, token) => _ReadDelayedClaimAsync(reader, holder, poisonMessages, token),
                             ct
                         )
                         .ConfigureAwait(false);
@@ -1092,6 +1037,7 @@ internal sealed partial class RelationalDataStorage
 
     private async Task<List<MediumMessage>> _ReadDelayedClaimAsync(
         DbDataReader reader,
+        string? holder,
         List<PoisonMessage> poisonMessages,
         CancellationToken cancellationToken
     )
@@ -1100,7 +1046,7 @@ internal sealed partial class RelationalDataStorage
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             var storageId = reader.GetGuid(0);
-            var content = reader.GetString(1);
+            var content = reader.GetString(3);
             try
             {
                 messages.Add(
@@ -1109,19 +1055,18 @@ internal sealed partial class RelationalDataStorage
                         StorageId = storageId,
                         Origin = _serializer.Deserialize(content)!,
                         Content = content,
-                        Lane = MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(2)),
-                        Retries = reader.GetInt32(3),
-                        InlineAttempts = reader.GetInt32(4),
+                        Lane = MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(4)),
+                        Retries = reader.GetInt32(5),
+                        InlineAttempts = reader.GetInt32(6),
                         Added = await reader
-                            .GetFieldValueAsync<DateTimeOffset>(5, cancellationToken)
-                            .ConfigureAwait(false),
-                        ExpiresAt = await reader
-                            .GetFieldValueAsync<DateTimeOffset>(6, cancellationToken)
-                            .ConfigureAwait(false),
-                        LockedUntil = await reader
                             .GetFieldValueAsync<DateTimeOffset>(7, cancellationToken)
                             .ConfigureAwait(false),
-                        Owner = await _ReadStringAsync(reader, 8, cancellationToken).ConfigureAwait(false),
+                        ExpiresAt = await reader
+                            .GetFieldValueAsync<DateTimeOffset>(8, cancellationToken)
+                            .ConfigureAwait(false),
+#pragma warning disable CA1849 // the GetString(3) above already pulls the large Content column synchronously, so these small lease columns cannot add blocking this row has not already paid for.
+                        Lease = _ReadClaimedLease(reader, holder, takeoverOrdinal: 9),
+#pragma warning restore CA1849
                     }
                 );
             }

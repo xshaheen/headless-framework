@@ -48,9 +48,9 @@ internal static class PostgreSqlMessagingSchemaContribution
     {
         var schema = storageOptions.Schema;
         var tables = inbox
-            ? _InboxTablesSql(schema, options.OwnerColumnMaxLength)
-                + _PublishedTableSql(schema, options.OwnerColumnMaxLength)
-            : _PublishedTableSql(schema, options.OwnerColumnMaxLength);
+            ? _InboxTablesSql(schema, options.LeaseHolderMaxLength)
+                + _PublishedTableSql(schema, options.LeaseHolderMaxLength)
+            : _PublishedTableSql(schema, options.LeaseHolderMaxLength);
 
         // Creation order: the audit table references the receipts table, so the reverse drops it first.
         IReadOnlyList<SchemaObject> objects = inbox
@@ -80,8 +80,8 @@ internal static class PostgreSqlMessagingSchemaContribution
                 new SchemaStep(
                     PickupIndexesStepVersion,
                     inbox
-                        ? "Create the retry-pickup, owner, and history-selection indexes."
-                        : "Create the published retry-pickup and owner indexes.",
+                        ? "Create the retry-pickup, lease-holder, and history-selection indexes."
+                        : "Create the published retry-pickup and lease-holder indexes.",
                     _PickupIndexesSql(schema, inbox)
                 ),
                 new SchemaStep(
@@ -95,7 +95,7 @@ internal static class PostgreSqlMessagingSchemaContribution
         );
     }
 
-    private static string _InboxTablesSql(string schema, int ownerColumnMaxLength)
+    private static string _InboxTablesSql(string schema, int leaseHolderMaxLength)
     {
         var received = _Table(schema, "MessagingReceived");
 
@@ -117,8 +117,11 @@ internal static class PostgreSqlMessagingSchemaContribution
             	"added" TIMESTAMPTZ NOT NULL,
                 "expires_at" TIMESTAMPTZ NULL,
                 "next_retry_at" TIMESTAMPTZ NULL,
-                "locked_until" TIMESTAMPTZ NULL,
-                "owner" VARCHAR({ownerColumnMaxLength}) NULL,
+                "lease_generation" BIGINT NOT NULL DEFAULT 0,
+                "lease_state" SMALLINT NOT NULL DEFAULT 0,
+                "lease_expires_at" TIMESTAMPTZ NULL,
+                "lease_holder" VARCHAR({leaseHolderMaxLength}) NULL,
+                "lease_takeover_count" INT NOT NULL DEFAULT 0,
             	"status_name" VARCHAR(50) NOT NULL,
                 "message_id" VARCHAR(200) COLLATE "C" NOT NULL,
                 "exception_info" text NULL,
@@ -304,7 +307,7 @@ internal static class PostgreSqlMessagingSchemaContribution
         );
     }
 
-    private static string _PublishedTableSql(string schema, int ownerColumnMaxLength)
+    private static string _PublishedTableSql(string schema, int leaseHolderMaxLength)
     {
         var published = _Table(schema, "MessagingPublished");
 
@@ -322,8 +325,11 @@ internal static class PostgreSqlMessagingSchemaContribution
             	"added" TIMESTAMPTZ NOT NULL,
                 "expires_at" TIMESTAMPTZ NULL,
                 "next_retry_at" TIMESTAMPTZ NULL,
-                "locked_until" TIMESTAMPTZ NULL,
-                "owner" VARCHAR({ownerColumnMaxLength}) NULL,
+                "lease_generation" BIGINT NOT NULL DEFAULT 0,
+                "lease_state" SMALLINT NOT NULL DEFAULT 0,
+                "lease_expires_at" TIMESTAMPTZ NULL,
+                "lease_holder" VARCHAR({leaseHolderMaxLength}) NULL,
+                "lease_takeover_count" INT NOT NULL DEFAULT 0,
             	"status_name" VARCHAR(50) NOT NULL,
                 "message_id" VARCHAR(200) NOT NULL
             );
@@ -367,8 +373,8 @@ internal static class PostgreSqlMessagingSchemaContribution
         // with a plain CREATE INDEX inside the step transaction: the runner applies a step once, when the tables
         // are fresh, so the brief write lock a non-concurrent build takes never meets a large backlog.
         var publishedSql = $"""
-            CREATE INDEX IF NOT EXISTS "idx_messaging_published_version_next_retry_at" ON {published} ("version","intent_type","next_retry_at") INCLUDE ("retries","locked_until") WHERE "next_retry_at" IS NOT NULL;
-            CREATE INDEX IF NOT EXISTS "idx_messaging_published_owner_not_null" ON {published} ("owner") WHERE "owner" IS NOT NULL;
+            CREATE INDEX IF NOT EXISTS "idx_messaging_published_version_next_retry_at" ON {published} ("version","intent_type","next_retry_at") INCLUDE ("retries","lease_state","lease_expires_at") WHERE "next_retry_at" IS NOT NULL;
+            CREATE INDEX IF NOT EXISTS "idx_messaging_published_lease_holder_active" ON {published} ("lease_holder") WHERE "lease_state" = 1;
 
             """;
 
@@ -379,8 +385,8 @@ internal static class PostgreSqlMessagingSchemaContribution
 
         return publishedSql
             + $"""
-                CREATE INDEX IF NOT EXISTS "idx_messaging_received_version_next_retry_at" ON {received} ("version","intent_type","next_retry_at") INCLUDE ("retries","locked_until") WHERE "next_retry_at" IS NOT NULL;
-                CREATE INDEX IF NOT EXISTS "idx_messaging_received_owner_not_null" ON {received} ("owner") WHERE "owner" IS NOT NULL;
+                CREATE INDEX IF NOT EXISTS "idx_messaging_received_version_next_retry_at" ON {received} ("version","intent_type","next_retry_at") INCLUDE ("retries","lease_state","lease_expires_at") WHERE "next_retry_at" IS NOT NULL;
+                CREATE INDEX IF NOT EXISTS "idx_messaging_received_lease_holder_active" ON {received} ("lease_holder") WHERE "lease_state" = 1;
 
                 CREATE INDEX IF NOT EXISTS "idx_messaging_inbox_receipts_type_created" ON "{schema}"."{_ReceiptsTable}" ("operation_type","created_at");
                 CREATE INDEX IF NOT EXISTS "idx_messaging_inbox_audit_type_created" ON "{schema}"."{_AuditTable}" ("operation_type","created_at");
