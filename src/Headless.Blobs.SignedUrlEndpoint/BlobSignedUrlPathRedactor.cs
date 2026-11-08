@@ -1,7 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using Headless.Checks;
+using Headless.Logging;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Options;
@@ -19,7 +21,7 @@ namespace Headless.Blobs;
 /// <c>RequestPath</c> property of Serilog request logging (<c>UseSerilogRequestLogging</c>).
 /// </remarks>
 [PublicAPI]
-public sealed class BlobSignedUrlPathRedactor
+public sealed class BlobSignedUrlPathRedactor : ILogPathRedactor
 {
     /// <summary>The text that replaces everything below the route prefix.</summary>
     public const string RedactedSegment = "***";
@@ -74,6 +76,21 @@ public sealed class BlobSignedUrlPathRedactor
         }
 
         redacted = default;
+
+        return false;
+    }
+
+    /// <inheritdoc />
+    bool ILogPathRedactor.TryRedact(string path, [NotNullWhen(true)] out string? redacted)
+    {
+        if (TryRedact(new PathString(path), out var redactedPath))
+        {
+            redacted = redactedPath.ToString();
+
+            return true;
+        }
+
+        redacted = null;
 
         return false;
     }

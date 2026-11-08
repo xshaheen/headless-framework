@@ -50,7 +50,7 @@ builder.Host.UseSerilog(
 - In text format the console theme is `AnsiConsoleTheme.Code` in Development and `ConsoleTheme.None` elsewhere — driven by `IHostEnvironment.IsDevelopment()`. JSON output carries no theme.
 - `IPAddress` values are automatically destructured to their string representation (`ip?.ToString() ?? string.Empty`) — no custom destructuring policy needed.
 - To keep personal data and secrets out of Serilog output, mark the members with a `DataClassificationAttribute` (the Headless ones are `[SecretData]`, `[PrivateData]`, and `[IdentifierData]`) and register the redactors (`services.AddHeadlessRedaction(...)` from `Headless.Logging.Redaction`, or Microsoft's `services.AddRedaction(...)`). The reloadable profile then redacts those members whenever Serilog destructures a value (`{@Value}`), in every sink and in the events `writeToProviders` forwards to OpenTelemetry. Do not write a Serilog enricher or destructuring policy that masks by property name. A plain `{Value}` hole renders `ToString()` and is not redacted, so a type that holds a secret still overrides `ToString()`.
-- Under `UseSerilog`, a `[LoggerMessage]` parameter that carries a classification attribute reaches no Serilog sink: the property is dropped and the rendered text keeps the literal `{Name}` hole. Microsoft's `EnableRedaction` never runs, because Serilog replaces the `ILoggerFactory`. Log a classified value as a member of a destructured object instead.
+- To redact a `[LoggerMessage]` parameter that carries a classification attribute, call `builder.Services.AddHeadlessLogRedaction()` **after** `UseSerilog(…)`. Without it, Serilog's factory drops the parameter and the rendered text keeps the literal `{Name}` hole, because Microsoft's `EnableRedaction` only runs inside Microsoft's own factory. A logger factory registered after `AddHeadlessLogRedaction` replaces the wrapper; the host then logs `LogRedactionFactoryReplaced` (Warning) at startup. Calling it again after that registration fixes it.
 - All enrichers (`Environment`, `Thread`, `Process`, `Machine`, `LogContext`, `Application`, `Version`, `CommitHash`) are registered internally; **do not add them again** via separate `Serilog.Enrichers.*` calls.
 - `Headless.Extensions` is a transitive dependency via `Headless.Logging.Serilog`; do not reference it separately just for `AssemblyInformation`.
 - The output template is exposed as `SerilogFactory.OutputTemplate` (a `public const string`) — reference it if you write a custom sink that must match the standard format.
@@ -65,10 +65,15 @@ builder.Host.UseSerilog(
 - `services.AddHeadlessRedaction(configure?)` — registers Microsoft's redaction (`IRedactorProvider`) with all three classifications erased.
 - `services.AddHeadlessRedaction(hmacSection, configure?)` and `AddHeadlessRedaction(configureHmac, configure?)` — the same, except `Private` and `Identifier` become HMAC pseudonyms keyed by `HmacRedactorOptions` (a Base64 `Key` of at least 44 characters, and a `KeyId`).
 - `PrefixMaskRedactor` — keeps the first characters (8 by default) and appends `***`, for device tokens and similar; map it to a classification yourself.
+- `services.AddHeadlessLogRedaction()` — wraps the registered `ILoggerFactory`, whichever stack owns it, so every entry is redacted before any provider sees it: a classified `[LoggerMessage]` parameter goes through the registered `IRedactorProvider` and reaches providers as an ordinary property and in the rendered text, and a credential path an `ILogPathRedactor` recognizes is replaced in ASP.NET Core's request scope (`RequestPath`) and its request lines (`Path`). Idempotent; call it after every registration of a logger factory, such as `UseSerilog`.
+- `ILogPathRedactor` — declares request paths that carry a credential (`bool TryRedact(string path, out string? redacted)`); register implementations as `ILogPathRedactor` singletons. `UseSignedUrlEndpoint` registers one for signed blob URLs.
 
 ```csharp
 // Program.cs: pseudonyms keyed from configuration (keep the key in a secret store)
 builder.Services.AddHeadlessRedaction(builder.Configuration.GetSection("Redaction:Hmac"));
+
+builder.Host.UseSerilog(/* ... */, writeToProviders: true);
+builder.Services.AddHeadlessLogRedaction(); // after UseSerilog, so it wraps Serilog's factory
 
 public sealed record Customer(
     [property: PrivateData] string Email,
@@ -85,6 +90,8 @@ public sealed record Customer(
 - **Unmapped classifications fail closed.** A classification with no redactor, or a combination such as `[PrivateData][IdentifierData]` on one member, uses the erasing fallback.
 - **`configure` runs after the defaults,** so it can map another classification or replace a default, for example `redaction.SetRedactor<PrefixMaskRedactor>(new DataClassificationSet(HeadlessDataClassifications.Identifier))`.
 - **A pseudonym is still personal data** when it identifies a person: it reduces risk and is not anonymization. Rotating the key breaks correlation across the rotation.
+- **The wrapper copies, never holds.** A `[LoggerMessage]` call passes a thread-local state that the generator clears when `Log` returns, so the wrapper copies the plain values and the redacted ones into a fresh state for providers; the raw classified values never leave the call. A level no provider listens to costs nothing.
+- **Only ASP.NET Core's hosting category is path-rewritten.** Every other category passes through untouched, and a logger with nothing to redact (no redactor provider, not the hosting category) is returned unwrapped.
 - **The names avoid ASP.NET Core Identity's `[PersonalData]`**, so an app that uses both never hits an ambiguous attribute.
 
 ### Install

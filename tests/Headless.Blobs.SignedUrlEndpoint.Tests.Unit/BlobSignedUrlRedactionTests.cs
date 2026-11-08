@@ -2,6 +2,8 @@
 
 using System.Diagnostics;
 using Headless.Blobs;
+using Headless.Hosting;
+using Headless.Logging;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -195,9 +197,9 @@ public sealed class BlobSignedUrlRedactionTests : TestBase
         // when
         await using var provider = services.BuildServiceProvider();
 
-        // then
-        provider.GetRequiredService<ILoggerFactory>().Should().BeOfType<BlobSignedUrlRedactingLoggerFactory>();
+        // then: one factory registration, wrapped once, so a hosting line is rewritten and not double-wrapped
         services.Count(d => d.ServiceType == typeof(ILoggerFactory)).Should().Be(1);
+        provider.GetRequiredService<ILoggerFactory>().GetType().Name.Should().Be("RedactingLoggerFactory");
     }
 
     [Fact]
@@ -216,10 +218,53 @@ public sealed class BlobSignedUrlRedactionTests : TestBase
         await using var provider = services.BuildServiceProvider();
 
         // when
-        _ = provider.GetServices<IStartupFilter>().Should().ContainSingle().Subject.Configure(_ => { });
+        foreach (var validator in provider.GetServices<IHeadlessStartupValidator>())
+        {
+            await validator.ValidateAsync(AbortToken);
+        }
 
         // then
-        captured.Should().Contain("SignedUrlHostingLogsNotRedacted");
+        captured.Should().Contain("LogRedactionFactoryReplaced");
+    }
+
+    [Fact]
+    public async Task should_redact_again_when_log_redaction_is_added_after_the_later_logger_factory()
+    {
+        // given - the documented fix: call AddHeadlessLogRedaction again after the factory that replaced the wrapper
+        var captured = new List<(string Message, string? Path, string? ScopePath)>();
+        using var stateProvider = new StateProvider(captured);
+        var events = new List<string>();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessBlobs(setup =>
+        {
+            setup.RegisterDefaultProvider(s => s.AddSingleton(Substitute.For<IBlobStorage>()));
+            setup.UseSignedUrlEndpoint(options => options.BaseUrl = new Uri("https://api.example.com"));
+        });
+        services.AddSingleton<ILoggerFactory>(_ => new LoggerFactory([stateProvider, new EventNameProvider(events)]));
+        services.AddHeadlessLogRedaction();
+        await using var provider = services.BuildServiceProvider();
+
+        // when
+        provider
+            .GetRequiredService<ILoggerFactory>()
+            .CreateLogger(_HostingCategory)
+            .Log(
+                LogLevel.Information,
+                default,
+                new HostingState(("Path", "/blobs/" + _Token)),
+                null,
+                (st, _) => "line"
+            );
+
+        foreach (var validator in provider.GetServices<IHeadlessStartupValidator>())
+        {
+            await validator.ValidateAsync(AbortToken);
+        }
+
+        // then
+        captured.Should().ContainSingle().Which.Path.Should().Be("/blobs/***");
+        events.Should().NotContain("LogRedactionFactoryReplaced");
     }
 
     [Theory]
@@ -229,14 +274,9 @@ public sealed class BlobSignedUrlRedactionTests : TestBase
     {
         // given
         var captured = new List<(string Message, string? Path, string? ScopePath)>();
-        using var provider = _BuildProvider("https://api.example.com", "/blobs");
         using var stateProvider = new StateProvider(captured);
-        using var inner = new LoggerFactory([stateProvider]);
-        using var factory = new BlobSignedUrlRedactingLoggerFactory(
-            inner,
-            provider.GetRequiredService<BlobSignedUrlPathRedactor>()
-        );
-        var logger = factory.CreateLogger(BlobSignedUrlRedactingLoggerFactory.HostingDiagnosticsCategory);
+        using var provider = _BuildProvider("https://api.example.com", "/blobs", stateProvider);
+        var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger(_HostingCategory);
 
         // when
         using (logger.BeginScope(new HostingState(("RequestPath", path), ("RequestId", "0HN"))))
@@ -263,14 +303,10 @@ public sealed class BlobSignedUrlRedactionTests : TestBase
     {
         // given
         var captured = new List<(string Message, string? Path, string? ScopePath)>();
-        using var provider = _BuildProvider("https://api.example.com", "/blobs");
         using var stateProvider = new StateProvider(captured);
-        using var inner = new LoggerFactory([stateProvider]);
-        using var factory = new BlobSignedUrlRedactingLoggerFactory(
-            inner,
-            provider.GetRequiredService<BlobSignedUrlPathRedactor>()
-        );
-        var hosting = factory.CreateLogger(BlobSignedUrlRedactingLoggerFactory.HostingDiagnosticsCategory);
+        using var provider = _BuildProvider("https://api.example.com", "/blobs", stateProvider);
+        var factory = provider.GetRequiredService<ILoggerFactory>();
+        var hosting = factory.CreateLogger(_HostingCategory);
         var other = factory.CreateLogger("App.Orders");
 
         // when
@@ -281,10 +317,22 @@ public sealed class BlobSignedUrlRedactionTests : TestBase
         captured.Should().Equal(("line", "/orders/7", null), ("x", "/blobs/" + _Token, null));
     }
 
-    private static ServiceProvider _BuildProvider(string baseUrl, string routePrefix)
+    private const string _HostingCategory = "Microsoft.AspNetCore.Hosting.Diagnostics";
+
+    private static ServiceProvider _BuildProvider(
+        string baseUrl,
+        string routePrefix,
+        ILoggerProvider? loggerProvider = null
+    )
     {
         var services = new ServiceCollection();
-        services.AddLogging();
+        services.AddLogging(logging =>
+        {
+            if (loggerProvider is not null)
+            {
+                logging.AddProvider(loggerProvider);
+            }
+        });
         services.AddHeadlessBlobs(setup =>
         {
             setup.RegisterDefaultProvider(s => s.AddSingleton(Substitute.For<IBlobStorage>()));
