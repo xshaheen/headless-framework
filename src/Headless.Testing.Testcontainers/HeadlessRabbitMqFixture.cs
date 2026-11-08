@@ -110,11 +110,7 @@ public class HeadlessRabbitMqFixture : IAsyncLifetime
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
-        // The log-based wait can pass on a restarted broker before the rabbit app runs, and every rabbitmqctl command
-        // below fails until it does.
-        await _container
-            .ExecAsync(["rabbitmqctl", "await_startup", "--timeout", "120"], cancellationToken)
-            .ConfigureAwait(false);
+        await _WaitUntilBrokerAnswersAsync(_container, cancellationToken).ConfigureAwait(false);
 
         if (_shared)
         {
@@ -155,6 +151,36 @@ public class HeadlessRabbitMqFixture : IAsyncLifetime
         if (_container is not null && !_shared)
         {
             await _container.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    // The log-based wait can pass on a restarted broker before the rabbit app runs, and every rabbitmqctl command
+    // fails until it does. `rabbitmqctl await_startup` returns at once with an error while the node itself is still
+    // booting, so poll a cheap command instead.
+    private static async Task _WaitUntilBrokerAnswersAsync(
+        RabbitMqContainer container,
+        CancellationToken cancellationToken
+    )
+    {
+        var deadline = DateTimeOffset.UtcNow + TimeSpan.FromMinutes(2);
+
+        while (true)
+        {
+            var result = await container
+                .ExecAsync(["rabbitmqctl", "list_vhosts", "-q"], cancellationToken)
+                .ConfigureAwait(false);
+
+            if (result.ExitCode == 0)
+            {
+                return;
+            }
+
+            if (DateTimeOffset.UtcNow > deadline)
+            {
+                throw new InvalidOperationException($"The RabbitMQ broker did not start answering: {result.Stderr}");
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(500), cancellationToken).ConfigureAwait(false);
         }
     }
 
