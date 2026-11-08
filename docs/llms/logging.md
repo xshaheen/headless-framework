@@ -1,6 +1,6 @@
 ---
 domain: Logging
-packages: Logging.Serilog
+packages: Logging.Redaction, Logging.Serilog
 ---
 
 # Logging
@@ -9,7 +9,7 @@ packages: Logging.Serilog
 
 ## Orientation
 
-Single package: `Headless.Logging.Serilog`. Provides `SerilogFactory` — a static factory that supplies two distinct `LoggerConfiguration` setups via extension methods:
+Two packages. `Headless.Logging.Redaction` holds the data-classification taxonomy and its redactors, which decide what a log may carry. `Headless.Logging.Serilog` provides `SerilogFactory` — a static factory that supplies two distinct `LoggerConfiguration` setups via extension methods:
 
 1. **Bootstrap** (`ConfigureBootstrapLoggerConfiguration`) — minimal logger active before DI is built; catches startup crashes to file and console.
 2. **Reloadable** (`ConfigureReloadableLoggerConfiguration`) — full production logger wired into `IConfiguration`; respects runtime level changes in `appsettings.json` and enriches with application metadata.
@@ -49,11 +49,49 @@ builder.Host.UseSerilog(
 - The Debug sink is active only in `#DEBUG` builds (conditional via `[Conditional("DEBUG")]`); do not guard it yourself.
 - In text format the console theme is `AnsiConsoleTheme.Code` in Development and `ConsoleTheme.None` elsewhere — driven by `IHostEnvironment.IsDevelopment()`. JSON output carries no theme.
 - `IPAddress` values are automatically destructured to their string representation (`ip?.ToString() ?? string.Empty`) — no custom destructuring policy needed.
-- To keep personal data and secrets out of Serilog output, mark the members with a `DataClassificationAttribute` and register Microsoft's redaction (`services.AddRedaction(...)`, package `Microsoft.Extensions.Compliance.Redaction`). The reloadable profile then redacts those members whenever Serilog destructures a value (`{@Value}`), in every sink and in the events `writeToProviders` forwards to OpenTelemetry. Do not write a Serilog enricher or destructuring policy that masks by property name. A plain `{Value}` hole renders `ToString()` and is not redacted, so a type that holds a secret still overrides `ToString()`.
+- To keep personal data and secrets out of Serilog output, mark the members with a `DataClassificationAttribute` (the Headless ones are `[SecretData]`, `[PrivateData]`, and `[IdentifierData]`) and register the redactors (`services.AddHeadlessRedaction(...)` from `Headless.Logging.Redaction`, or Microsoft's `services.AddRedaction(...)`). The reloadable profile then redacts those members whenever Serilog destructures a value (`{@Value}`), in every sink and in the events `writeToProviders` forwards to OpenTelemetry. Do not write a Serilog enricher or destructuring policy that masks by property name. A plain `{Value}` hole renders `ToString()` and is not redacted, so a type that holds a secret still overrides `ToString()`.
 - Under `UseSerilog`, a `[LoggerMessage]` parameter that carries a classification attribute reaches no Serilog sink: the property is dropped and the rendered text keeps the literal `{Name}` hole. Microsoft's `EnableRedaction` never runs, because Serilog replaces the `ILoggerFactory`. Log a classified value as a member of a destructured object instead.
 - All enrichers (`Environment`, `Thread`, `Process`, `Machine`, `LogContext`, `Application`, `Version`, `CommitHash`) are registered internally; **do not add them again** via separate `Serilog.Enrichers.*` calls.
 - `Headless.Extensions` is a transitive dependency via `Headless.Logging.Serilog`; do not reference it separately just for `AssemblyInformation`.
 - The output template is exposed as `SerilogFactory.OutputTemplate` (a `public const string`) — reference it if you write a custom sink that must match the standard format.
+
+---
+## Headless.Logging.Redaction
+
+### API and behavior
+
+- `HeadlessDataClassifications` — the taxonomy (`TaxonomyName` = `"Headless"`): `Secret` (credentials and keys), `Private` (personal data about a person), `Identifier` (ids operators correlate on that should not appear raw).
+- `[SecretData]`, `[PrivateData]`, `[IdentifierData]` — `DataClassificationAttribute`s for properties, fields, parameters, and types.
+- `services.AddHeadlessRedaction(configure?)` — registers Microsoft's redaction (`IRedactorProvider`) with all three classifications erased.
+- `services.AddHeadlessRedaction(hmacSection, configure?)` and `AddHeadlessRedaction(configureHmac, configure?)` — the same, except `Private` and `Identifier` become HMAC pseudonyms keyed by `HmacRedactorOptions` (a Base64 `Key` of at least 44 characters, and a `KeyId`).
+- `PrefixMaskRedactor` — keeps the first characters (8 by default) and appends `***`, for device tokens and similar; map it to a classification yourself.
+
+```csharp
+// Program.cs: pseudonyms keyed from configuration (keep the key in a secret store)
+builder.Services.AddHeadlessRedaction(builder.Configuration.GetSection("Redaction:Hmac"));
+
+public sealed record Customer(
+    [property: PrivateData] string Email,
+    [property: IdentifierData] string AccountNumber,
+    [property: SecretData] string ApiKey,
+    string Tier
+);
+```
+
+### Design constraints
+
+- **Secrets are always erased; HMAC applies only to private data and identifiers.** Nobody correlates on a password, so it never gets a pseudonym, even with a key.
+- **Without a key, everything is erased.** An erased member keeps its name with an empty value. Add a key when operators need "same person" or "same id" across events.
+- **Unmapped classifications fail closed.** A classification with no redactor, or a combination such as `[PrivateData][IdentifierData]` on one member, uses the erasing fallback.
+- **`configure` runs after the defaults,** so it can map another classification or replace a default, for example `redaction.SetRedactor<PrefixMaskRedactor>(new DataClassificationSet(HeadlessDataClassifications.Identifier))`.
+- **A pseudonym is still personal data** when it identifies a person: it reduces risk and is not anonymization. Rotating the key breaks correlation across the rotation.
+- **The names avoid ASP.NET Core Identity's `[PersonalData]`**, so an app that uses both never hits an ambiguous attribute.
+
+### Install
+
+```bash
+dotnet add package Headless.Logging.Redaction
+```
 
 ---
 ## Headless.Logging.Serilog

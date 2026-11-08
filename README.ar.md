@@ -17,7 +17,7 @@
 [![GitHub Stars](https://img.shields.io/github/stars/xshaheen/headless-framework?style=social)](https://github.com/xshaheen/headless-framework)
 [![English](https://img.shields.io/badge/lang-English-2563EB?style=flat-square)](README.md)
 
-216 package &bull; نفس الـ setup في كل حتة &bull; بدّل أي provider بسطر واحد
+217 package &bull; نفس الـ setup في كل حتة &bull; بدّل أي provider بسطر واحد
 
 [ليه Headless](#ليه-headless) &bull; [ابدأ في 60 ثانية](#ابدأ-في-60-ثانية) &bull; [Setup واحد لكل المجالات](#setup-واحد-لكل-المجالات) &bull; [إيه اللي في الصندوق](#إيه-اللي-في-الصندوق) &bull; [فهرس الحزم](#فهرس-الحزم)
 
@@ -293,7 +293,7 @@ packages الـ providers دي packages عادية على NuGet. عشان تضي
 </div>
 
 <details dir="rtl" align="right">
-<summary><strong>كل الـ 216 package، مرتّبة حسب الـ domain</strong> — اضغط للعرض</summary>
+<summary><strong>كل الـ 217 package، مرتّبة حسب الـ domain</strong> — اضغط للعرض</summary>
 
 ### API & Web
 
@@ -460,6 +460,7 @@ Image processing بـ backends قابلة للتبديل: resize، وcrop، وco
 
 | Package | الوصف |
 |---------|-------|
+| [Headless.Logging.Redaction](src/Headless.Logging.Redaction/README.md) | taxonomy لتصنيف البيانات وredactors بتشيل الأسرار والبيانات الشخصية من الـ logs |
 | [Headless.Logging.Serilog](src/Headless.Logging.Serilog/README.md) | أدوات logging على Serilog |
 
 ### Media
