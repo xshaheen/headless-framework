@@ -1187,6 +1187,9 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
             // The store stamped the due time on its own clock, so this node has no store-domain instant to hand
             // RestartIfNeeded. One unconditional re-poll peeks the row on the store clock and plans the wake from it.
             serviceProvider.GetService<IJobsHostScheduler>()?.Restart();
+
+            // The row left InProgress and the node stays up, so an open dashboard must refresh now, not after the wait.
+            await notificationHubSender.UpdateTimeJobFromExecutionState<TTimeJob>(context).ConfigureAwait(false);
         }
 
         return affected;

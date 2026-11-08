@@ -75,7 +75,7 @@ public sealed class JobsDurableRetryTests : TestBase
             .UpdateTickerAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>());
         await fixture
             .ExceptionHandler.DidNotReceiveWithAnyArgs()
-            .HandleExceptionAsync(default!, default, default, default);
+            .HandleExceptionAsync(default!, default, default, AbortToken);
     }
 
     [Theory]
@@ -105,7 +105,7 @@ public sealed class JobsDurableRetryTests : TestBase
         await fixture.Observed.Task.WaitAsync(_RunBound, AbortToken);
 
         // then
-        await fixture.Manager.DidNotReceiveWithAnyArgs().RescheduleRetryAsync(default!, default, default, default);
+        await fixture.Manager.DidNotReceiveWithAnyArgs().RescheduleRetryAsync(default!, default, default, AbortToken);
         await fixture.Manager.Received(1).UpdateTickerAsync(context, Arg.Any<CancellationToken>());
         fixture.Invocations.Should().Be(1);
 
@@ -119,7 +119,8 @@ public sealed class JobsDurableRetryTests : TestBase
     [InlineData(NodeDeathPolicy.Skip)]
     public async Task should_free_the_worker_during_the_delay_and_run_the_retry_when_it_is_due(NodeDeathPolicy policy)
     {
-        // given: one worker, and a job whose first attempt fails with a 2 s retry delay
+        // given: one worker, and a job whose first attempt fails with a 5 s retry delay, long enough for other work to
+        // run inside it on a loaded runner
         var probe = new RetryProbe(failures: 1);
         using var host = _BuildHost(probe);
         await host.StartAsync(AbortToken);
@@ -127,8 +128,9 @@ public sealed class JobsDurableRetryTests : TestBase
         {
             var scheduler = host.Services.GetRequiredService<IJobScheduler>();
             var store = _Store(host);
+            var beforeEnqueue = DateTime.UtcNow;
             var id = await scheduler.EnqueueAsync<RetryJob>(
-                o => o.WithRetries(2).WithRetryIntervals(2).WithNodeDeathPolicy(policy),
+                o => o.WithRetries(2).WithRetryIntervals(5).WithNodeDeathPolicy(policy),
                 AbortToken
             );
 
@@ -139,7 +141,7 @@ public sealed class JobsDurableRetryTests : TestBase
             waiting.Status.Should().Be(JobStatus.Idle);
             waiting.OwnerId.Should().BeNull();
             waiting.LockedUntil.Should().BeNull();
-            waiting.ExecutionTime.Should().BeAfter(DateTime.UtcNow.AddSeconds(0.5));
+            waiting.ExecutionTime.Should().BeOnOrAfter(beforeEnqueue.AddSeconds(5));
 
             // and the only worker runs other work meanwhile
             await scheduler.EnqueueAsync<OtherJob>(o => o.WithRetries(0), AbortToken);
@@ -149,7 +151,8 @@ public sealed class JobsDurableRetryTests : TestBase
             // and the retry runs once it is due
             var done = await _WaitForAsync(store, id, row => row.Status is JobStatus.Succeeded or JobStatus.DueDone);
             done.RetryCount.Should().Be(1);
-            done.ExecutedAt.Should().BeOnOrAfter(waiting.ExecutionTime!.Value.AddSeconds(-1));
+            done.ExecutedAt.Should()
+                .BeOnOrAfter(new DateTimeOffset(waiting.ExecutionTime!.Value.AddSeconds(-1), TimeSpan.Zero));
             probe.Invocations.Should().Be(2);
         }
         finally
@@ -194,9 +197,49 @@ public sealed class JobsDurableRetryTests : TestBase
         }
     }
 
+    [Fact]
+    public async Task should_fail_the_job_once_after_its_last_rescheduled_retry_fails()
+    {
+        // given: every attempt fails, and both retries wait in the store
+        var probe = new RetryProbe(failures: int.MaxValue);
+        var exhausted = 0;
+        var exhaustedOnce = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var host = _BuildHost(
+            probe,
+            onExhausted: () =>
+            {
+                Interlocked.Increment(ref exhausted);
+                exhaustedOnce.TrySetResult();
+            }
+        );
+        await host.StartAsync(AbortToken);
+        try
+        {
+            var store = _Store(host);
+            var id = await host
+                .Services.GetRequiredService<IJobScheduler>()
+                .EnqueueAsync<RetryJob>(o => o.WithRetries(2).WithRetryIntervals(2), AbortToken);
+
+            // when: the callback follows the stored Failed
+            await exhaustedOnce.Task.WaitAsync(_RunBound, AbortToken);
+            var failed = (await store.GetTimeJobByIdAsync(id, AbortToken))!;
+
+            // then: the last retry still ran, then the budget ended the job
+            failed.Status.Should().Be(JobStatus.Failed);
+            failed.RetryCount.Should().Be(2);
+            probe.Invocations.Should().Be(3);
+            Volatile.Read(ref exhausted).Should().Be(1);
+        }
+        finally
+        {
+            await host.StopAsync(AbortToken);
+        }
+    }
+
     private static IHost _BuildHost(
         RetryProbe probe,
-        IJobPersistenceProvider<TimeJobEntity, CronJobEntity>? store = null
+        IJobPersistenceProvider<TimeJobEntity, CronJobEntity>? store = null,
+        Action? onExhausted = null
     )
     {
         return new HostBuilder()
@@ -206,6 +249,13 @@ public sealed class JobsDurableRetryTests : TestBase
                 services.AddHeadlessJobs(options =>
                     options
                         .AddModule<RetryJobsModule>()
+                        .ConfigureRetries(retry =>
+                            retry.OnExhausted = (_, _) =>
+                            {
+                                onExhausted?.Invoke();
+                                return Task.CompletedTask;
+                            }
+                        )
                         .ConfigureScheduler(scheduler =>
                         {
                             scheduler.MaxConcurrency = 1;
