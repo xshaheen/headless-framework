@@ -16,9 +16,12 @@ internal sealed class TurnstileSiteVerify(
     string name,
     IOptionsMonitor<TurnstileOptions> optionsMonitor,
     IHttpClientFactory clientFactory,
-    ILogger<TurnstileSiteVerify>? logger
+    ILogger<TurnstileSiteVerify>? logger,
+    bool logResponseBody
 ) : ITurnstileVerifier
 {
+    private const string _BodyOmitted = "(omitted outside Development)";
+
     private static readonly Uri _SiteVerifyUri = new("turnstile/v0/siteverify", UriKind.Relative);
 
     public Task<TurnstileVerifyResult> VerifyAsync(
@@ -85,9 +88,11 @@ internal sealed class TurnstileSiteVerify(
         {
             if (logger?.IsEnabled(LogLevel.Warning) is true)
             {
-                var responseBody = await httpResponseMessage
-                    .Content.ReadAsStringAsync(cancellationToken)
-                    .ConfigureAwait(false);
+                // A provider error body can echo request detail, so it is read and logged only in Development.
+                var responseBody = logResponseBody
+                    ? await httpResponseMessage.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false)
+                    : _BodyOmitted;
+
                 logger.LogTurnstileHttpFailure(httpResponseMessage.StatusCode, responseBody);
             }
 
