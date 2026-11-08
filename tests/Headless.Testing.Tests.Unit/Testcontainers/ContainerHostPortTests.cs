@@ -25,7 +25,12 @@ public sealed class ContainerHostPortTests : TestBase
         using var listener = _Listen();
         var container = _Container(_PortOf(listener));
 
-        await ContainerHostPort.EnsureReachableAsync(container, _ContainerPort, _Timeout, AbortToken);
+        await ContainerHostPort.EnsureReachableAsync(
+            container,
+            _ContainerPort,
+            _Timeout,
+            cancellationToken: AbortToken
+        );
 
         await container.DidNotReceive().StopAsync(Arg.Any<CancellationToken>());
     }
@@ -43,7 +48,12 @@ public sealed class ContainerHostPortTests : TestBase
                 return Task.CompletedTask;
             });
 
-        await ContainerHostPort.EnsureReachableAsync(container, _ContainerPort, _Timeout, AbortToken);
+        await ContainerHostPort.EnsureReachableAsync(
+            container,
+            _ContainerPort,
+            _Timeout,
+            cancellationToken: AbortToken
+        );
 
         await container.Received(1).StopAsync(Arg.Any<CancellationToken>());
         await container.Received(1).StartAsync(Arg.Any<CancellationToken>());
@@ -62,11 +72,35 @@ public sealed class ContainerHostPortTests : TestBase
             });
 
         var act = async () =>
-            await ContainerHostPort.EnsureReachableAsync(container, _ContainerPort, _Timeout, AbortToken);
+            await ContainerHostPort.EnsureReachableAsync(
+                container,
+                _ContainerPort,
+                _Timeout,
+                cancellationToken: AbortToken
+            );
 
         var thrown = await act.Should().ThrowAsync<InvalidOperationException>();
         thrown.Which.Message.Should().Contain($":{_ClosedPort} ").And.Contain($":{_OtherClosedPort}.");
         await container.Received(1).StartAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_fail_without_restarting_a_container_other_runs_share()
+    {
+        var container = _Container(_ClosedPort);
+
+        var act = async () =>
+            await ContainerHostPort.EnsureReachableAsync(
+                container,
+                _ContainerPort,
+                _Timeout,
+                allowRestart: false,
+                cancellationToken: AbortToken
+            );
+
+        var thrown = await act.Should().ThrowAsync<InvalidOperationException>();
+        thrown.Which.Message.Should().Contain("not restarted");
+        await container.DidNotReceive().StopAsync(Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -77,7 +111,12 @@ public sealed class ContainerHostPortTests : TestBase
         var container = _Container(_ClosedPort);
 
         var act = async () =>
-            await ContainerHostPort.EnsureReachableAsync(container, _ContainerPort, _Timeout, cancelled.Token);
+            await ContainerHostPort.EnsureReachableAsync(
+                container,
+                _ContainerPort,
+                _Timeout,
+                cancellationToken: cancelled.Token
+            );
 
         await act.Should().ThrowAsync<OperationCanceledException>();
         await container.DidNotReceive().StopAsync(Arg.Any<CancellationToken>());

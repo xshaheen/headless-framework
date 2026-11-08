@@ -7,7 +7,6 @@ using Headless.Testing.Testcontainers;
 using Headless.UnitOfWork;
 using Npgsql;
 using NpgsqlTypes;
-using Testcontainers.PostgreSql;
 
 namespace Tests;
 
@@ -23,18 +22,9 @@ public sealed class PostgreSqlFencingFixture
         ICollectionFixture<PostgreSqlFencingFixture>,
         ILeasesFixture
 {
-    private const string _OtherDatabase = "fencing_other";
     private const string _HandoffTable = "fencing_handoffs";
 
-    public string ConnectionString => Container.GetConnectionString();
-
-    public string OtherDatabaseConnectionString =>
-        new NpgsqlConnectionStringBuilder(ConnectionString) { Database = _OtherDatabase }.ToString();
-
-    protected override PostgreSqlBuilder Configure()
-    {
-        return base.Configure().WithDatabase("fencing_test").WithUsername("postgres").WithPassword("postgres");
-    }
+    public string OtherDatabaseConnectionString => ConnectionStringFor(DerivedDatabaseName("other"));
 
     protected override async ValueTask InitializeAsync()
     {
@@ -60,14 +50,7 @@ public sealed class PostgreSqlFencingFixture
             await reset.ExecuteNonQueryAsync(CancellationToken.None);
         }
 
-        await using var exists = new NpgsqlCommand("SELECT 1 FROM pg_database WHERE datname = @name", connection);
-        exists.Parameters.AddWithValue("name", _OtherDatabase);
-
-        if (await exists.ExecuteScalarAsync(CancellationToken.None) is null)
-        {
-            await using var create = new NpgsqlCommand($"""CREATE DATABASE "{_OtherDatabase}";""", connection);
-            await create.ExecuteNonQueryAsync(CancellationToken.None);
-        }
+        await CreateDatabaseAsync(DerivedDatabaseName("other"), CancellationToken.None);
     }
 
     public void ConfigureProvider(HeadlessFencingSetupBuilder setup)

@@ -5,9 +5,7 @@ using Headless.Testing.Testcontainers;
 using NATS.Client.Core;
 using NATS.Client.JetStream;
 using NATS.Client.JetStream.Models;
-using Npgsql;
 using Testcontainers.Nats;
-using Testcontainers.PostgreSql;
 using Tests.Fixtures;
 
 namespace Tests;
@@ -29,7 +27,7 @@ public sealed class NatsPostgreSqlFixture : MessagingStackFixtureBase
     public NatsPostgreSqlFixture()
     {
         _nats = new NatsStackComponent();
-        _postgreSql = new PostgreSqlStackComponent();
+        _postgreSql = new PostgreSqlComponent();
         RegisterComponents(_nats, _postgreSql);
     }
 
@@ -147,48 +145,7 @@ public sealed class NatsPostgreSqlFixture : MessagingStackFixtureBase
         }
     }
 
-    private sealed class PostgreSqlStackComponent : IAsyncLifetime
-    {
-        private readonly PostgreSqlContainer _container = new PostgreSqlBuilder(TestImages.PostgreSql)
-            .WithLabel("type", "nats-postgresql-pg")
-            .WithDatabase("messages_test")
-            .WithUsername("postgres")
-            .WithPassword("postgres")
-            .Build();
-
-        public string ConnectionString => _container.GetConnectionString();
-
-        public async ValueTask InitializeAsync()
-        {
-            await _container.StartAsync();
-        }
-
-        public async ValueTask DisposeAsync()
-        {
-            await _container.DisposeAsync();
-        }
-
-        public async Task ResetAsync()
-        {
-            try
-            {
-                await using var connection = new NpgsqlConnection(ConnectionString);
-                await connection.OpenAsync();
-
-                await using var command = connection.CreateCommand();
-                command.CommandText = """
-                    TRUNCATE TABLE headless.messaging_published;
-                    TRUNCATE TABLE headless.messaging_received;
-                    """;
-
-                await command.ExecuteNonQueryAsync();
-            }
-            catch (PostgresException)
-            {
-                // Schema may not exist before the first storage initializer run.
-            }
-        }
-    }
+    private sealed class PostgreSqlComponent : PostgreSqlStackComponent;
 }
 
 [CollectionDefinition("NatsPostgreSql", DisableParallelization = true)]

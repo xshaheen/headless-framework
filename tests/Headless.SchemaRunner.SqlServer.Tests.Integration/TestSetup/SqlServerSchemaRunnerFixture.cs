@@ -27,8 +27,6 @@ public sealed partial class SqlServerSchemaRunnerFixture
         ICollectionFixture<SqlServerSchemaRunnerFixture>,
         ISchemaRunnerFixture
 {
-    private const string _Database = "schema_runner_test";
-
     public ISchemaDialect Dialect => SqlServerSchemaDialect.Instance;
 
     // Sequences 1, Idempotency 1, Coordination 1.
@@ -42,20 +40,7 @@ public sealed partial class SqlServerSchemaRunnerFixture
     public bool ForeignCreatorForcesRerun => false;
 
     private string DatabaseConnectionString =>
-        new SqlConnectionStringBuilder(ConnectionString) { InitialCatalog = _Database, MaxPoolSize = 20 }.ToString();
-
-    // The database can only be created once the container accepts logins.
-    protected override async ValueTask InitializeAsync()
-    {
-        await base.InitializeAsync();
-        await using var master = new SqlConnection(ConnectionString);
-        await master.OpenAsync(CancellationToken.None);
-        await using var create = new SqlCommand(
-            $"IF DB_ID(N'{_Database}') IS NULL CREATE DATABASE [{_Database}];",
-            master
-        );
-        await create.ExecuteNonQueryAsync(CancellationToken.None);
-    }
+        new SqlConnectionStringBuilder(ConnectionString) { MaxPoolSize = 20 }.ToString();
 
     public SchemaRunner CreateRunner(string schema)
     {

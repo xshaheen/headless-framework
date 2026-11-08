@@ -11,7 +11,7 @@ using Microsoft.Data.SqlClient;
 namespace Tests;
 
 /// <summary>
-/// SQL Server leaf fixture for the idempotency conformance suite: one container whose database holds the idempotency
+/// SQL Server leaf fixture for the idempotency conformance suite: the fixture's own database holds the idempotency
 /// records, with read committed snapshot isolation off;
 /// <see cref="SqlServerRcsiIdempotencyFixture" /> runs the same storage with it on. Tests run serially because the
 /// blocking scenarios measure how long a call waits.
@@ -22,8 +22,6 @@ public sealed class SqlServerIdempotencyFixture
     : SqlServerIdempotencyFixtureBase,
         ICollectionFixture<SqlServerIdempotencyFixture>
 {
-    protected override string Database => "idempotency_test";
-
     public override bool ReadCommittedSnapshot => false;
 }
 
@@ -37,8 +35,6 @@ public sealed class SqlServerRcsiIdempotencyFixture
     : SqlServerIdempotencyFixtureBase,
         ICollectionFixture<SqlServerRcsiIdempotencyFixture>
 {
-    protected override string Database => "idempotency_rcsi_test";
-
     public override bool ReadCommittedSnapshot => true;
 }
 
@@ -46,33 +42,24 @@ public abstract class SqlServerIdempotencyFixtureBase : HeadlessSqlServerFixture
 {
     private const string _Records = $"[{HeadlessStorageDefaults.Schema}].[IdempotencyRecords]";
 
-    protected abstract string Database { get; }
-
     /// <summary>Whether the database runs read committed snapshot isolation.</summary>
     public abstract bool ReadCommittedSnapshot { get; }
 
-    /// <summary>Connection string of the shared database (the base one points at master).</summary>
-    public string DatabaseConnectionString =>
-        new SqlConnectionStringBuilder(ConnectionString) { InitialCatalog = Database }.ToString();
+    /// <summary>Connection string of the database that holds the records: the fixture's own database.</summary>
+    public string DatabaseConnectionString => ConnectionString;
 
-    // The database can only be created once the container accepts logins.
+    // The isolation level can only be set once the base fixture created the database.
     protected override async ValueTask InitializeAsync()
     {
         await base.InitializeAsync();
 
-        await using (var master = new SqlConnection(ConnectionString))
+        await using (var master = new SqlConnection(AdminConnectionString))
         {
             await master.OpenAsync(CancellationToken.None);
 
-            await using var create = new SqlCommand(
-                $"IF DB_ID(N'{Database}') IS NULL CREATE DATABASE [{Database}];",
-                master
-            );
-            await create.ExecuteNonQueryAsync(CancellationToken.None);
-
             var snapshot = ReadCommittedSnapshot ? "ON" : "OFF";
             await using var alter = new SqlCommand(
-                $"ALTER DATABASE [{Database}] SET READ_COMMITTED_SNAPSHOT {snapshot} WITH ROLLBACK IMMEDIATE;",
+                $"ALTER DATABASE [{DatabaseName}] SET READ_COMMITTED_SNAPSHOT {snapshot} WITH ROLLBACK IMMEDIATE;",
                 master
             );
             await alter.ExecuteNonQueryAsync(CancellationToken.None);
@@ -92,7 +79,7 @@ public abstract class SqlServerIdempotencyFixtureBase : HeadlessSqlServerFixture
         if (probed != (ReadCommittedSnapshot ? 1 : 0))
         {
             throw new InvalidOperationException(
-                $"The database '{Database}' reports is_read_committed_snapshot_on = {probed}."
+                $"The database '{DatabaseName}' reports is_read_committed_snapshot_on = {probed}."
             );
         }
     }

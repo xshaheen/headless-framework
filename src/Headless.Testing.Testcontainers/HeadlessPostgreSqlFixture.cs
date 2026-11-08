@@ -65,7 +65,9 @@ public class HeadlessPostgreSqlFixture : IAsyncLifetime
     /// <summary>Returns the connection string of <paramref name="database"/> on this fixture's server.</summary>
     public string ConnectionStringFor(string database)
     {
+#pragma warning disable RS0030 // The one sanctioned call: it supplies host, port, and credentials, and the database is replaced.
         return new NpgsqlConnectionStringBuilder(Container.GetConnectionString()) { Database = database }.ToString();
+#pragma warning restore RS0030
     }
 
     /// <summary>
@@ -108,7 +110,12 @@ public class HeadlessPostgreSqlFixture : IAsyncLifetime
 
         _container = await SharedTestContainers.StartAsync(_Build, cancellationToken).ConfigureAwait(false);
         await ContainerHostPort
-            .EnsureReachableAsync(_container, PostgreSqlBuilder.PostgreSqlPort, cancellationToken: cancellationToken)
+            .EnsureReachableAsync(
+                _container,
+                PostgreSqlBuilder.PostgreSqlPort,
+                allowRestart: !_shared,
+                cancellationToken: cancellationToken
+            )
             .ConfigureAwait(false);
         _ownership = await PostgreSqlDatabaseOwnership
             .CreateAsync(AdminConnectionString, cancellationToken)

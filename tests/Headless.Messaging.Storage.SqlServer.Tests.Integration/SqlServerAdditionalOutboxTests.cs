@@ -11,16 +11,17 @@ namespace Tests;
 [Collection<SqlServerTestFixture>]
 public sealed class SqlServerAdditionalOutboxTests(SqlServerTestFixture fixture) : AdditionalOutboxConformanceTests
 {
+    protected override string NewDatabaseName(string role) => fixture.DerivedDatabaseName(base.NewDatabaseName(role));
+
     protected override async Task<string> CreateDatabaseAsync(string name)
     {
-        await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.ExecuteAsync($"CREATE DATABASE [{name}];");
+        await fixture.CreateDatabaseAsync(name, AbortToken);
 
         // A database recreated under an earlier name must not be refused by a pool still blocking on the login
         // failures of its absence (SqlClient's pool blocking period).
         SqlConnection.ClearAllPools();
 
-        return new SqlConnectionStringBuilder(fixture.ConnectionString) { InitialCatalog = name }.ConnectionString;
+        return fixture.ConnectionStringFor(name);
     }
 
     protected override async Task DropDatabaseAsync(string name)
@@ -40,7 +41,7 @@ public sealed class SqlServerAdditionalOutboxTests(SqlServerTestFixture fixture)
         {
             try
             {
-                await using var connection = new SqlConnection(fixture.ConnectionString);
+                await using var connection = new SqlConnection(fixture.AdminConnectionString);
                 await connection.ExecuteAsync(
                     $"""
                     SET DEADLOCK_PRIORITY HIGH;

@@ -37,6 +37,11 @@ public static class SharedTestContainers
 
     private const int _MaxAttachAttempts = 5;
 
+    // Part of every shared container's name. Bump it whenever owner naming, locking, or the sweep changes, so a
+    // checkout on the new protocol never shares a server with one still running the old, whose locks the new sweep
+    // would not recognise.
+    private const string _ProtocolVersion = "v1";
+
     /// <summary>Gets whether this process shares server containers across fixtures and processes.</summary>
     public static bool IsEnabled { get; } =
         string.Equals(Environment.GetEnvironmentVariable(Variable), "true", StringComparison.OrdinalIgnoreCase);
@@ -48,7 +53,7 @@ public static class SharedTestContainers
     /// </summary>
     internal static string ContainerName(string kind, string image, string settings)
     {
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(image + "\n" + settings));
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(_ProtocolVersion + "\n" + image + "\n" + settings));
         return $"headless-testing-{kind}-{Convert.ToHexStringLower(hash, 0, 6)}";
     }
 

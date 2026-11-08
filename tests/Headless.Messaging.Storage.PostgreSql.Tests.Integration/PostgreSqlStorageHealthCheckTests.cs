@@ -1,12 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging;
-using Headless.Testing.Testcontainers;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Npgsql;
-using Testcontainers.PostgreSql;
 
 namespace Tests;
 
@@ -23,9 +21,9 @@ public sealed class PostgreSqlStorageHealthCheckTests : TestBase
     public async Task should_report_the_outbox_store_unhealthy_once_its_database_stops()
     {
         // given
-        await using var container = new PostgreSqlBuilder(TestImages.PostgreSql).Build();
-        await container.StartAsync(AbortToken);
-        var connectionString = new NpgsqlConnectionStringBuilder(container.GetConnectionString())
+        await using var server = new PrivatePostgreSqlServer();
+        await server.StartAsync();
+        var connectionString = new NpgsqlConnectionStringBuilder(server.ConnectionString)
         {
             Timeout = 5,
         }.ConnectionString;
@@ -46,7 +44,7 @@ public sealed class PostgreSqlStorageHealthCheckTests : TestBase
         running.Status.Should().Be(HealthStatus.Healthy);
 
         // when the database stops, with the connection the first probe returned still in the pool
-        await container.StopAsync(AbortToken);
+        await server.Container.StopAsync(AbortToken);
         var stopped = await _CheckAsync(health);
 
         // then

@@ -11,12 +11,11 @@ using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
-using Testcontainers.PostgreSql;
 
 namespace Tests;
 
 /// <summary>
-/// One Testcontainers Postgres instance shared by every test, backing both the Jobs operational store (schema
+/// One Postgres database shared by every test in the collection, backing both the Jobs operational store (schema
 /// <c>jobs</c>) and the Coordination Postgres provider (its own <c>coordination_*</c> tables in <see langword="public"/>).
 /// Serialized at the collection level because tests reset the whole database between runs.
 /// </summary>
@@ -27,8 +26,6 @@ public class PostgreSqlJobsCoordinationFixture
         ICollectionFixture<PostgreSqlJobsCoordinationFixture>,
         IJobsApplicationConfigurationFixture
 {
-    public string ConnectionString => Container.GetConnectionString();
-
     public StorageNamingStyle NamingStyle => StorageNamingStyle.SnakeCase;
 
     public string QualifiedTimeJobsTable => "headless.time_jobs";
@@ -55,17 +52,6 @@ public class PostgreSqlJobsCoordinationFixture
         + "DROP SCHEMA IF EXISTS consumer_jobs CASCADE;"
         + "DROP TABLE IF EXISTS jobs_probe;"
         + "DROP TABLE IF EXISTS coordination_liveness, coordination_descriptor, coordination_node_generation CASCADE;";
-
-    protected override PostgreSqlBuilder Configure()
-    {
-        return base.Configure()
-            .WithDatabase("jobs_coordination_test")
-            .WithUsername("postgres")
-            .WithPassword("postgres")
-            // The process-boundary smoke test starts a second host while the suite fixture still owns pooled
-            // connections. Leave headroom so provider validation cannot fail before the child reaches Jobs code.
-            .WithCommand("-c", "max_connections=300");
-    }
 
     public string CreateProbeTableSql => "DROP TABLE IF EXISTS jobs_probe; CREATE TABLE jobs_probe (id integer);";
 

@@ -129,7 +129,7 @@ public class HeadlessSqlServerFixture : IAsyncLifetime
         _shared = SharedTestContainers.IsEnabled && ShareContainer;
         _container = await SharedTestContainers.StartAsync(_Build, cancellationToken).ConfigureAwait(false);
         await ContainerHostPort
-            .EnsureReachableAsync(_container, 1433, cancellationToken: cancellationToken)
+            .EnsureReachableAsync(_container, 1433, allowRestart: !_shared, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
         await _WaitUntilLoginSucceedsAsync().ConfigureAwait(false);
         _ownership = await SqlServerDatabaseOwnership

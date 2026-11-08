@@ -6,7 +6,6 @@ using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Npgsql;
-using Testcontainers.PostgreSql;
 
 namespace Tests;
 
@@ -24,13 +23,6 @@ public sealed class PostgreSqlUnitOfWorkFixture
         IUnitOfWorkRunFixture,
         IUnitOfWorkResourceFixture
 {
-    public string ConnectionString => Container.GetConnectionString();
-
-    protected override PostgreSqlBuilder Configure()
-    {
-        return base.Configure().WithDatabase("unit_of_work_test").WithUsername("postgres").WithPassword("postgres");
-    }
-
     public UnitOfWorkResourceSession CreateSession(CapturingLoggerProvider? logs = null)
     {
         var provider = BuildProvider(logs);

@@ -330,8 +330,10 @@ public sealed class SqlServerInboxOperationPolicyTests(SqlServerTestFixture fixt
         {
             await using var observer = new SqlConnection(fixture.ConnectionString);
             await observer.OpenAsync(AbortToken);
+            // The table name is the default one every run of this suite uses, so the database filter keeps a blocked
+            // request of another run on the same server from counting.
             await using var waiting = new SqlCommand(
-                "SELECT COUNT(*) FROM sys.dm_exec_requests r CROSS APPLY sys.dm_exec_sql_text(r.sql_handle) t WHERE r.blocking_session_id > 0 AND CHARINDEX(@Table,t.text) > 0;",
+                "SELECT COUNT(*) FROM sys.dm_exec_requests r CROSS APPLY sys.dm_exec_sql_text(r.sql_handle) t WHERE r.blocking_session_id > 0 AND r.database_id = DB_ID() AND CHARINDEX(@Table,t.text) > 0;",
                 observer
             );
             waiting.Parameters.AddWithValue("@Table", table);

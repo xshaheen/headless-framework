@@ -10,13 +10,12 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
-using Testcontainers.PostgreSql;
 
 namespace Tests.Fixtures;
 
 /// <summary>
 /// Base test fixture for PostgreSQL-based DbContext integration tests.
-/// Provides PostgreSQL container setup and shared test infrastructure.
+/// Provides a PostgreSQL database of the fixture's own and shared test infrastructure.
 /// </summary>
 /// <typeparam name="TContext">The DbContext type.</typeparam>
 public abstract class PostgreSqlDbContextTestFixture<TContext> : IDbContextTestFixture<TContext>, IAsyncLifetime
@@ -26,13 +25,14 @@ public abstract class PostgreSqlDbContextTestFixture<TContext> : IDbContextTestF
     private static readonly string _UserId = Guid.NewGuid().ToString();
     private static readonly DateTimeOffset _Now = _Faker.Date.RecentOffset().ToUniversalTime();
 
-    private readonly PostgreSqlContainer _postgreSqlContainer = _CreatePostgreSqlContainer();
-
     public string UserId => _UserId;
 
     public DateTimeOffset Now => _Now;
 
-    public string SqlConnectionString => _postgreSqlContainer.GetConnectionString();
+    /// <summary>Gets the PostgreSQL fixture, for a test that needs a further database beside the fixture's own.</summary>
+    public HeadlessPostgreSqlFixture PostgreSql { get; } = new();
+
+    public string SqlConnectionString => PostgreSql.ConnectionString;
 
     public ServiceProvider ServiceProvider { get; private set; } = null!;
 
@@ -44,7 +44,7 @@ public abstract class PostgreSqlDbContextTestFixture<TContext> : IDbContextTestF
 
     public virtual async ValueTask InitializeAsync()
     {
-        await _postgreSqlContainer.StartAsync();
+        await ((IAsyncLifetime)PostgreSql).InitializeAsync();
         var services = CreateServiceCollection();
         ServiceProvider = services.BuildServiceProvider();
         await OnDatabaseInitializeAsync();
@@ -52,9 +52,8 @@ public abstract class PostgreSqlDbContextTestFixture<TContext> : IDbContextTestF
 
     public virtual async ValueTask DisposeAsync()
     {
-        await _postgreSqlContainer.StopAsync();
-        await _postgreSqlContainer.DisposeAsync();
         await ServiceProvider.DisposeAsync();
+        await PostgreSql.DisposeAsync();
         GC.SuppressFinalize(this);
     }
 
@@ -96,14 +95,4 @@ public abstract class PostgreSqlDbContextTestFixture<TContext> : IDbContextTestF
     /// Configures the DbContext registration. Override to customize DbContext options.
     /// </summary>
     protected abstract void ConfigureDbContext(IServiceCollection services);
-
-    private static PostgreSqlContainer _CreatePostgreSqlContainer()
-    {
-        return new PostgreSqlBuilder(TestImages.PostgreSql)
-            .WithLabel("type", "orm-harness")
-            .WithDatabase("framework_test")
-            .WithUsername("postgres")
-            .WithPassword("postgres")
-            .Build();
-    }
 }

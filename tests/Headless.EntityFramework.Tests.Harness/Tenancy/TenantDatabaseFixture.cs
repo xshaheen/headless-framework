@@ -17,7 +17,6 @@ using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Testcontainers.MsSql;
-using Testcontainers.PostgreSql;
 using Tests.Fixtures;
 
 namespace Tests.Tenancy;
@@ -31,6 +30,7 @@ public enum TenantDatabaseProvider
 public abstract class TenantDatabaseFixture(TenantDatabaseProvider provider, TenantDataPlacement? placement = null)
     : IAsyncLifetime
 {
+    private HeadlessPostgreSqlFixture? _postgreSql;
     private IContainer? _container;
     private string _connectionString = null!;
 
@@ -40,24 +40,26 @@ public abstract class TenantDatabaseFixture(TenantDatabaseProvider provider, Ten
     public ServiceProvider Services { get; private set; } = null!;
     public string MigrationSql { get; private set; } = "";
 
+    /// <summary>Gets the database the fixture created for <see cref="Placement"/>.</summary>
+    public string DatabaseName { get; private set; } = null!;
+
     public async ValueTask InitializeAsync()
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(3));
         if (Provider == TenantDatabaseProvider.PostgreSql)
         {
-            var container = new PostgreSqlBuilder(TestImages.PostgreSql)
-                .WithDatabase(Placement.Database)
-                .WithUsername("postgres")
-                .WithPassword("postgres")
-                .WithLabel("type", "tenant-conformance")
-                .Build();
-            _container = container;
-            await container.StartAsync(timeout.Token);
-            _connectionString = container.GetConnectionString();
+            // The placement's database is derived from the fixture's own, so the server may be shared with other runs.
+            var postgreSql = new HeadlessPostgreSqlFixture();
+            _postgreSql = postgreSql;
+            await ((IAsyncLifetime)postgreSql).InitializeAsync();
+            DatabaseName = postgreSql.DerivedDatabaseName(Placement.Database);
+            await postgreSql.CreateDatabaseAsync(DatabaseName, timeout.Token);
+            _connectionString = postgreSql.ConnectionStringFor(DatabaseName);
         }
         else
         {
-            // Azure SQL Edge does not prove SQL Server 2022 behavior on ARM hosts.
+            // Azure SQL Edge does not prove SQL Server 2022 behavior on ARM hosts, and HeadlessSqlServerFixture runs it
+            // there by default, so this path keeps a private SQL Server 2022 container of its own.
             var container = new MsSqlBuilder(new DockerImage(TestImages.MsSqlServer, new Platform("linux/amd64")))
                 .WithLabel("type", "tenant-conformance")
                 .Build();
@@ -72,7 +74,8 @@ public abstract class TenantDatabaseFixture(TenantDatabaseProvider provider, Ten
                 ((int)(await command.ExecuteScalarAsync(timeout.Token))!).Should().Be(16);
             }
 
-            connectionString.InitialCatalog = Placement.Database;
+            DatabaseName = Placement.Database;
+            connectionString.InitialCatalog = DatabaseName;
             _connectionString = connectionString.ConnectionString;
         }
 
@@ -161,6 +164,11 @@ public abstract class TenantDatabaseFixture(TenantDatabaseProvider provider, Ten
         if (Services is not null)
         {
             await Services.DisposeAsync();
+        }
+
+        if (_postgreSql is not null)
+        {
+            await _postgreSql.DisposeAsync();
         }
 
         if (_container is not null)

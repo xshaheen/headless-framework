@@ -11,7 +11,7 @@ public sealed class PostgreSqlDialectConformanceTests(NpgsqlTestFixture fixture)
 {
     protected override ISqlDialect Dialect => PostgreSqlDialect.Instance;
 
-    protected override string ConnectionString => fixture.Container.GetConnectionString();
+    protected override string ConnectionString => fixture.ConnectionString;
 
     protected override string CreateTableSql(string schema, string table)
     {

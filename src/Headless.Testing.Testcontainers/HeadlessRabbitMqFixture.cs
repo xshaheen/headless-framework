@@ -48,11 +48,19 @@ public class HeadlessRabbitMqFixture : IAsyncLifetime
     public string VirtualHost => Ownership.VirtualHost;
 
     /// <summary>Gets the AMQP URI of this fixture's virtual host.</summary>
-    public string ConnectionString =>
-        new UriBuilder(Container.GetConnectionString())
+    public string ConnectionString
+    {
+        get
         {
-            Path = "/" + Uri.EscapeDataString(VirtualHost),
-        }.Uri.ToString();
+#pragma warning disable RS0030 // The one sanctioned call: it supplies host, port, and credentials, and the virtual host is replaced.
+            var uri = new UriBuilder(Container.GetConnectionString())
+            {
+                Path = "/" + Uri.EscapeDataString(VirtualHost),
+            };
+#pragma warning restore RS0030
+            return uri.Uri.ToString();
+        }
+    }
 
     /// <summary>Gets the broker's host name.</summary>
     public string HostName => Container.Hostname;
@@ -95,8 +103,23 @@ public class HeadlessRabbitMqFixture : IAsyncLifetime
 
         _container = await SharedTestContainers.StartAsync(_Build, cancellationToken).ConfigureAwait(false);
         await ContainerHostPort
-            .EnsureReachableAsync(_container, RabbitMqBuilder.RabbitMqPort, cancellationToken: cancellationToken)
+            .EnsureReachableAsync(
+                _container,
+                RabbitMqBuilder.RabbitMqPort,
+                allowRestart: !_shared,
+                cancellationToken: cancellationToken
+            )
             .ConfigureAwait(false);
+        if (_shared)
+        {
+            // A client that leaves out the virtual host lands in the default one, where every run would meet every
+            // other run's exchanges. Refuse it there, so a connection that forgot VirtualHost fails at once instead of
+            // sharing state.
+            await _container
+                .ExecAsync(["rabbitmqctl", "clear_permissions", "-p", "/", UserName], cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         _ownership = await RabbitMqVirtualHostOwnership
             .CreateAsync(_container, (ushort)Port, UserName, Password, cancellationToken)
             .ConfigureAwait(false);

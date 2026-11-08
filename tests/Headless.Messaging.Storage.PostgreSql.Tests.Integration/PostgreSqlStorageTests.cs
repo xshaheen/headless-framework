@@ -1542,7 +1542,6 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
     public async Task should_initialize_core_schema_when_restricted_role_cannot_create_pg_trgm()
     {
         await RestrictedPostgreSqlDatabase.ExecuteAsync(
-            fixture.ConnectionString,
             preinstallTrgm: false,
             async connectionString =>
             {
@@ -1581,7 +1580,6 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
     public async Task should_create_trgm_indexes_for_restricted_role_when_extension_is_preinstalled()
     {
         await RestrictedPostgreSqlDatabase.ExecuteAsync(
-            fixture.ConnectionString,
             preinstallTrgm: true,
             async connectionString =>
             {
@@ -2439,6 +2437,7 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
                         SELECT 1
                         FROM pg_locks
                         WHERE locktype = 'advisory'
+                          AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
                           AND classid::bigint = @LockClassId
                           AND objid::bigint = @LockObjectId
                           AND NOT granted

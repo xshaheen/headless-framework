@@ -20,7 +20,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
-/// <summary>One SQL Server container; each test creates and drops its own database inside it.</summary>
+/// <summary>One SQL Server instance; each test creates and drops its own database, derived from the fixture's.</summary>
 [UsedImplicitly]
 [CollectionDefinition(DisableParallelization = true)]
 public sealed class SqlServerSharedSchemaFixture
@@ -70,16 +70,10 @@ public sealed partial class SqlServerSharedSchemaTests(SqlServerSharedSchemaFixt
 
     protected override async Task<string> CreateDatabaseAsync(CancellationToken cancellationToken)
     {
-        var database = $"shared_schema_{Guid.NewGuid():N}";
+        var database = fixture.DerivedDatabaseName($"t_{Guid.NewGuid():N}");
+        await fixture.CreateDatabaseAsync(database, cancellationToken);
 
-        await using (var connection = new SqlConnection(fixture.ConnectionString))
-        {
-            await connection.OpenAsync(cancellationToken);
-            await using var command = new SqlCommand($"CREATE DATABASE [{database}];", connection);
-            await command.ExecuteNonQueryAsync(cancellationToken);
-        }
-
-        return new SqlConnectionStringBuilder(fixture.ConnectionString) { InitialCatalog = database }.ToString();
+        return fixture.ConnectionStringFor(database);
     }
 
     protected override async Task DropDatabaseAsync(string connectionString, CancellationToken cancellationToken)
@@ -87,7 +81,7 @@ public sealed partial class SqlServerSharedSchemaTests(SqlServerSharedSchemaFixt
         var database = new SqlConnectionStringBuilder(connectionString).InitialCatalog;
         SqlConnection.ClearAllPools();
 
-        await using var connection = new SqlConnection(fixture.ConnectionString);
+        await using var connection = new SqlConnection(fixture.AdminConnectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(
             $"""

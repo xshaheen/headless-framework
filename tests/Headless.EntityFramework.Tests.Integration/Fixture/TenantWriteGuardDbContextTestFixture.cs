@@ -9,7 +9,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
-using Testcontainers.PostgreSql;
 using Tests.Fixtures;
 
 namespace Tests.Fixture;
@@ -18,7 +17,7 @@ public abstract class TenantWriteGuardDbContextTestFixtureBase : IAsyncLifetime
 {
     private static readonly Faker _Faker = new();
 
-    private PostgreSqlContainer _postgreSqlContainer = null!;
+    private readonly HeadlessPostgreSqlFixture _postgreSql = new();
 
     public static string UserId { get; } = Guid.NewGuid().ToString();
 
@@ -26,9 +25,7 @@ public abstract class TenantWriteGuardDbContextTestFixtureBase : IAsyncLifetime
 
     protected abstract bool GuardEnabled { get; }
 
-    protected abstract string ContainerLabel { get; }
-
-    public string SqlConnectionString => _postgreSqlContainer.GetConnectionString();
+    public string SqlConnectionString => _postgreSql.ConnectionString;
 
     public ServiceProvider ServiceProvider { get; private set; } = null!;
 
@@ -40,8 +37,7 @@ public abstract class TenantWriteGuardDbContextTestFixtureBase : IAsyncLifetime
 
     public async ValueTask InitializeAsync()
     {
-        _postgreSqlContainer = _CreatePostgreSqlContainer(ContainerLabel);
-        await _postgreSqlContainer.StartAsync();
+        await ((IAsyncLifetime)_postgreSql).InitializeAsync();
 
         var builder = Host.CreateApplicationBuilder();
         var services = builder.Services;
@@ -73,7 +69,7 @@ public abstract class TenantWriteGuardDbContextTestFixtureBase : IAsyncLifetime
     public async ValueTask DisposeAsync()
     {
         await ServiceProvider.DisposeAsync();
-        await _postgreSqlContainer.DisposeAsync();
+        await _postgreSql.DisposeAsync();
         GC.SuppressFinalize(this);
     }
 
@@ -87,30 +83,16 @@ public abstract class TenantWriteGuardDbContextTestFixtureBase : IAsyncLifetime
         await db.Tests.IgnoreQueryFilters().ExecuteDeleteAsync();
         await db.Basics.ExecuteDeleteAsync();
     }
-
-    private static PostgreSqlContainer _CreatePostgreSqlContainer(string label)
-    {
-        return new PostgreSqlBuilder(TestImages.PostgreSql)
-            .WithLabel("type", label)
-            .WithDatabase("headless_test")
-            .WithUsername("postgres")
-            .WithPassword("postgres")
-            .Build();
-    }
 }
 
 public sealed class TenantWriteGuardEnabledFixture : TenantWriteGuardDbContextTestFixtureBase
 {
     protected override bool GuardEnabled => true;
-
-    protected override string ContainerLabel => "tenant-write-guard-enabled";
 }
 
 public sealed class TenantWriteGuardDisabledFixture : TenantWriteGuardDbContextTestFixtureBase
 {
     protected override bool GuardEnabled => false;
-
-    protected override string ContainerLabel => "tenant-write-guard-disabled";
 }
 
 [CollectionDefinition]

@@ -2,7 +2,6 @@
 
 using Headless.Testing.Testcontainers;
 using Microsoft.Data.SqlClient;
-using Testcontainers.RabbitMq;
 using Tests.Fixtures;
 
 namespace Tests;
@@ -18,11 +17,17 @@ public sealed class RabbitMqSqlServerFixture : MessagingStackFixtureBase
         RegisterComponents(_rabbitMq, _sqlServer);
     }
 
-    public string RabbitMqHostName => _rabbitMq.Container.Hostname;
+    public string RabbitMqHostName => _rabbitMq.HostName;
 
-    public int RabbitMqPort => _rabbitMq.Container.GetMappedPublicPort(RabbitMqBuilder.RabbitMqPort);
+    public int RabbitMqPort => _rabbitMq.Port;
 
-    public string StorageConnectionString => _sqlServer.DatabaseConnectionString;
+    public string RabbitMqUserName => _rabbitMq.UserName;
+
+    public string RabbitMqPassword => _rabbitMq.Password;
+
+    public string RabbitMqVirtualHost => _rabbitMq.VirtualHost;
+
+    public string StorageConnectionString => _sqlServer.ConnectionString;
 
     public Task ResetAsync() => _sqlServer.ResetAsync();
 
@@ -33,33 +38,19 @@ public sealed class RabbitMqSqlServerFixture : MessagingStackFixtureBase
     public Task UnpauseBrokerAsync(CancellationToken cancellationToken) =>
         _rabbitMq.Container.UnpauseAsync(cancellationToken);
 
-    private sealed class RabbitMqComponent : HeadlessRabbitMqFixture;
+    private sealed class RabbitMqComponent : HeadlessRabbitMqFixture
+    {
+        // Its tests pause the broker, which would freeze every other fixture on a shared one.
+        protected override bool ShareContainer => false;
+    }
 
     private sealed class SqlServerComponent : HeadlessSqlServerFixture
     {
-        private const string _Database = "messages_test";
-
-        public string DatabaseConnectionString =>
-            new SqlConnectionStringBuilder(ConnectionString) { InitialCatalog = _Database }.ConnectionString;
-
-        protected override async ValueTask InitializeAsync()
-        {
-            await base.InitializeAsync();
-
-            await using var connection = new SqlConnection(ConnectionString);
-            await connection.OpenAsync();
-            await using var command = connection.CreateCommand();
-            command.CommandText = $"""
-                CREATE DATABASE [{_Database}];
-                """;
-            await command.ExecuteNonQueryAsync();
-        }
-
         public async Task ResetAsync()
         {
             try
             {
-                await using var connection = new SqlConnection(DatabaseConnectionString);
+                await using var connection = new SqlConnection(ConnectionString);
                 await connection.OpenAsync();
                 await using var command = connection.CreateCommand();
                 command.CommandText =

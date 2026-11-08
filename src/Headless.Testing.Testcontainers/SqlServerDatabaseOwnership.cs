@@ -154,12 +154,14 @@ internal sealed class SqlServerDatabaseOwnership : IAsyncDisposable
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
             // SINGLE_USER WITH ROLLBACK IMMEDIATE ends any session still in the database, which DROP DATABASE
-            // otherwise waits on or refuses.
+            // otherwise waits on or refuses. A database a test left OFFLINE has no sessions and refuses the ALTER, but
+            // drops as it is.
             await using var command = new SqlCommand(
                 $"""
                 IF DB_ID(N'{database}') IS NOT NULL
                 BEGIN
-                    ALTER DATABASE [{database}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
+                    IF DATABASEPROPERTYEX(N'{database}', 'Status') = 'ONLINE'
+                        ALTER DATABASE [{database}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
                     DROP DATABASE [{database}];
                 END
                 """,

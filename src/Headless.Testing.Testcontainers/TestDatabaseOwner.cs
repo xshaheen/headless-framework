@@ -26,6 +26,9 @@ internal static class TestDatabaseOwner
     /// <summary>The length of an owner id, the prefix included.</summary>
     public const int IdLength = 15;
 
+    // PostgreSQL truncates identifiers past 63 bytes without an error, which would give two derived names one database.
+    private const int _MaxNameLength = 63;
+
     /// <summary>Returns a new owner id.</summary>
     public static string NewId()
     {
@@ -48,13 +51,19 @@ internal static class TestDatabaseOwner
     }
 
     /// <summary>Returns the name of a database derived from owner <paramref name="ownerId"/>.</summary>
-    /// <exception cref="ArgumentException">The suffix is empty or holds a character other than a-z, 0-9, or _.</exception>
+    /// <exception cref="ArgumentException">
+    /// The suffix is empty, holds a character other than a-z, 0-9, or _, or makes the name longer than 63 characters.
+    /// </exception>
     public static string Derived(string ownerId, string suffix)
     {
-        if (suffix.Length == 0 || suffix.AsSpan().ContainsAnyExcept(_SuffixCharacters))
+        if (
+            suffix.Length == 0
+            || suffix.AsSpan().ContainsAnyExcept(_SuffixCharacters)
+            || ownerId.Length + 1 + suffix.Length > _MaxNameLength
+        )
         {
             throw new ArgumentException(
-                "A database suffix must be non-empty and use only lowercase letters, digits, and underscores.",
+                "A database suffix must be non-empty, use only lowercase letters, digits, and underscores, and keep the name within 63 characters.",
                 nameof(suffix)
             );
         }

@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Testing.Testcontainers;
-using Testcontainers.PostgreSql;
 
 namespace Tests;
 
@@ -9,15 +8,4 @@ namespace Tests;
 [CollectionDefinition(DisableParallelization = true)]
 public sealed class PostgreSqlPermissionsFixture
     : HeadlessPostgreSqlFixture,
-        ICollectionFixture<PostgreSqlPermissionsFixture>
-{
-    public string ConnectionString => Container.GetConnectionString();
-
-    protected override PostgreSqlBuilder Configure()
-    {
-        return base.Configure()
-            .WithDatabase("permissions_storage_test")
-            .WithUsername("postgres")
-            .WithPassword("postgres");
-    }
-}
+        ICollectionFixture<PostgreSqlPermissionsFixture>;

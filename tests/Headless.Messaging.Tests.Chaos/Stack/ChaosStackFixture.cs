@@ -4,7 +4,6 @@ using Headless.Coordination;
 using Headless.Messaging;
 using Headless.Testing.Testcontainers;
 using RabbitMQ.Client;
-using Testcontainers.RabbitMq;
 using Tests.Toxiproxy;
 
 namespace Tests.Stack;
@@ -37,9 +36,15 @@ public abstract class ChaosStackFixture : IAsyncLifetime
         private set;
     }
 
-    public string BrokerHost => _rabbitMq.Container.Hostname;
+    public string BrokerHost => _rabbitMq.HostName;
 
-    public int BrokerPort => _rabbitMq.Container.GetMappedPublicPort(RabbitMqBuilder.RabbitMqPort);
+    public int BrokerPort => _rabbitMq.Port;
+
+    public string BrokerUserName => _rabbitMq.UserName;
+
+    public string BrokerPassword => _rabbitMq.Password;
+
+    public string BrokerVirtualHost => _rabbitMq.VirtualHost;
 
     /// <summary>Gets the connection string that reaches the database directly.</summary>
     public abstract string StorageConnectionString { get; }
@@ -114,8 +119,9 @@ public abstract class ChaosStackFixture : IAsyncLifetime
         {
             HostName = BrokerHost,
             Port = BrokerPort,
-            UserName = RabbitMqBuilder.DefaultUsername,
-            Password = RabbitMqBuilder.DefaultPassword,
+            UserName = BrokerUserName,
+            Password = BrokerPassword,
+            VirtualHost = BrokerVirtualHost,
         };
 
         await using var connection = await factory.CreateConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -127,5 +133,9 @@ public abstract class ChaosStackFixture : IAsyncLifetime
         return declared.MessageCount;
     }
 
-    private sealed class RabbitMqComponent : HeadlessRabbitMqFixture;
+    private sealed class RabbitMqComponent : HeadlessRabbitMqFixture
+    {
+        // A chaos run measures recovery under load, so its broker keeps a server no other run shares.
+        protected override bool ShareContainer => false;
+    }
 }
