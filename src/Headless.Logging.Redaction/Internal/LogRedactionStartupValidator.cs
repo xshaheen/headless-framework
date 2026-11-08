@@ -21,7 +21,9 @@ internal sealed class LogRedactionStartupValidator(IServiceProvider services, IL
     public Task ValidateAsync(CancellationToken cancellationToken)
     {
         var hasRules =
-            services.GetService<IRedactorProvider>() is not null || services.GetServices<ILogPathRedactor>().Any();
+            services.GetService<IRedactorProvider>() is not null
+            || services.GetServices<ILogPathRedactor>().Any()
+            || services.GetServices<ILogTextRedactor>().Any();
 
         if (hasRules && loggerFactory is not RedactingLoggerFactory)
         {

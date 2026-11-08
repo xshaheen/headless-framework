@@ -25,7 +25,8 @@ namespace Headless.Logging.Internal;
 internal sealed class RedactingLoggerFactory(
     ILoggerFactory inner,
     IRedactorProvider? redactorProvider,
-    ILogPathRedactor[] pathRedactors
+    ILogPathRedactor[] pathRedactors,
+    ILogTextRedactor[] textRedactors
 ) : ILoggerFactory
 {
     /// <summary>The category ASP.NET Core's hosting layer opens the request scope and writes the request lines under.</summary>
@@ -34,6 +35,12 @@ internal sealed class RedactingLoggerFactory(
     public ILogger CreateLogger(string categoryName)
     {
         var logger = inner.CreateLogger(categoryName);
+
+        // Text scrubbing sits beneath the other stages, so it scans their already-redacted copies.
+        if (textRedactors.Length > 0)
+        {
+            logger = new TextScrubbingLogger(logger, textRedactors);
+        }
 
         var redactsPaths =
             pathRedactors.Length > 0
