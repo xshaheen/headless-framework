@@ -5,6 +5,8 @@ using Headless.IO;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
 
 namespace Headless.Blobs;
@@ -19,10 +21,7 @@ internal static class BlobSignedUrlEndpoint
         IMimeTypeProvider mimeTypeProvider
     )
     {
-        if (
-            !signer.TryRead(token, BlobSignedUrlAccess.Download, out var grant)
-            || _ResolveStorage(context.RequestServices, grant.Store) is not { } storage
-        )
+        if (_Authorize(token, BlobSignedUrlAccess.Download, context, signer) is not ({ } storage, { } grant))
         {
             return Results.NotFound();
         }
@@ -66,10 +65,7 @@ internal static class BlobSignedUrlEndpoint
 
     public static async Task<IResult> UploadAsync(string token, HttpContext context, BlobSignedUrlSigner signer)
     {
-        if (
-            !signer.TryRead(token, BlobSignedUrlAccess.Upload, out var grant)
-            || _ResolveStorage(context.RequestServices, grant.Store) is not { } storage
-        )
+        if (_Authorize(token, BlobSignedUrlAccess.Upload, context, signer) is not ({ } storage, { } grant))
         {
             return Results.NotFound();
         }
@@ -116,6 +112,71 @@ internal static class BlobSignedUrlEndpoint
         );
 
         return Results.Ok();
+    }
+
+    // Returns the grant and the store to serve it from, or null for any failure, after logging the outcome.
+    private static (IBlobStorage Storage, BlobSignedUrlGrant Grant)? _Authorize(
+        string token,
+        BlobSignedUrlAccess access,
+        HttpContext context,
+        BlobSignedUrlSigner signer
+    )
+    {
+        var status = signer.Read(token, access, out var grant);
+        var storage =
+            status == BlobSignedUrlTokenStatus.Valid ? _ResolveStorage(context.RequestServices, grant!.Store) : null;
+
+        var outcome = status switch
+        {
+            BlobSignedUrlTokenStatus.Valid when storage is null => "store-not-found",
+            BlobSignedUrlTokenStatus.Valid => "accepted",
+            BlobSignedUrlTokenStatus.Unreadable => "unreadable",
+            BlobSignedUrlTokenStatus.WrongOperation => "wrong-operation",
+            BlobSignedUrlTokenStatus.Expired => "expired",
+            _ => "rejected",
+        };
+
+        _Log(context, token, access, outcome, grant);
+
+        return storage is null ? null : (storage, grant!);
+    }
+
+    private static void _Log(
+        HttpContext context,
+        string token,
+        BlobSignedUrlAccess access,
+        string outcome,
+        BlobSignedUrlGrant? grant
+    )
+    {
+        var services = context.RequestServices;
+
+        if (
+            services.GetService<ILoggerFactory>()?.CreateLogger(BlobSignedUrlAccessLog.Category) is not { } logger
+            || !logger.IsEnabled(LogLevel.Information)
+        )
+        {
+            return;
+        }
+
+        var fingerprint = BlobSignedUrlAccessLog.Fingerprint(token);
+        var logLocation = services.GetService<IOptions<BlobSignedUrlOptions>>()?.Value.LogBlobLocation == true;
+
+        if (logLocation && grant is not null)
+        {
+            logger.LogSignedUrlAccess(
+                access,
+                outcome,
+                fingerprint,
+                grant.ExpiresAt,
+                grant.Location.Container,
+                grant.Location.Path
+            );
+        }
+        else
+        {
+            logger.LogSignedUrlAccess(access, outcome, fingerprint, grant?.ExpiresAt);
+        }
     }
 
     private static string _FileName(string path)

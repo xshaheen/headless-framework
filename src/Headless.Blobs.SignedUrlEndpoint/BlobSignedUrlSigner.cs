@@ -61,34 +61,34 @@ internal sealed class BlobSignedUrlSigner(
     }
 
     /// <summary>
-    /// Verifies <paramref name="token"/> and returns its grant when it is authentic, unexpired, and for
-    /// <paramref name="access"/>. Every failure collapses into <see langword="false"/> so the endpoint answers all of
-    /// them with the same 404.
+    /// Verifies <paramref name="token"/> and returns why it is or is not usable for <paramref name="access"/>. The
+    /// endpoint answers every failure with the same 404; the status only feeds its log entry.
     /// </summary>
-    public bool TryRead(string token, BlobSignedUrlAccess access, [NotNullWhen(true)] out BlobSignedUrlGrant? grant)
+    /// <param name="token">The token from the URL.</param>
+    /// <param name="access">The operation the request asks for.</param>
+    /// <param name="grant">The decoded grant whenever the token is authentic, even when it is rejected.</param>
+    public BlobSignedUrlTokenStatus Read(string token, BlobSignedUrlAccess access, out BlobSignedUrlGrant? grant)
     {
         grant = null;
 
-        BlobSignedUrlGrant candidate;
-
         try
         {
-            candidate = _Deserialize(_protector.Value.Unprotect(Base64Url.DecodeFromChars(token)));
+            grant = _Deserialize(_protector.Value.Unprotect(Base64Url.DecodeFromChars(token)));
         }
         catch (Exception e)
             when (e is FormatException or CryptographicException or EndOfStreamException or ArgumentException)
         {
-            return false;
+            return BlobSignedUrlTokenStatus.Unreadable;
         }
 
-        if (candidate.Access != access || candidate.ExpiresAt <= timeProvider.GetUtcNow())
+        if (grant.Access != access)
         {
-            return false;
+            return BlobSignedUrlTokenStatus.WrongOperation;
         }
 
-        grant = candidate;
-
-        return true;
+        return grant.ExpiresAt <= timeProvider.GetUtcNow()
+            ? BlobSignedUrlTokenStatus.Expired
+            : BlobSignedUrlTokenStatus.Valid;
     }
 
     private static byte[] _Serialize(BlobSignedUrlGrant grant)
@@ -175,3 +175,12 @@ internal sealed record BlobSignedUrlGrant(
     long? MaxLength,
     string? FileName
 );
+
+/// <summary>Why a signed-URL token is or is not usable for the request.</summary>
+internal enum BlobSignedUrlTokenStatus
+{
+    Valid = 0,
+    Unreadable = 1,
+    WrongOperation = 2,
+    Expired = 3,
+}
