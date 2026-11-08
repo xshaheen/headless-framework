@@ -115,7 +115,9 @@ internal sealed class LeaseRequestResolver(ICurrentTenant currentTenant, IOption
     /// Checks a grant's options (the takeover choice and the holder) before anything is written.
     /// </summary>
     /// <exception cref="ArgumentNullException"><paramref name="options" /> is <see langword="null" />.</exception>
-    /// <exception cref="ArgumentException">The holder exceeds its limit or is whitespace.</exception>
+    /// <exception cref="ArgumentException">
+    /// The holder is whitespace, exceeds its limit, or is not portable key text.
+    /// </exception>
     /// <exception cref="System.ComponentModel.InvalidEnumArgumentException">The takeover is not a defined value.</exception>
     public static LeaseGrantOptions ValidateGrantOptions(LeaseGrantOptions options)
     {
@@ -128,6 +130,10 @@ internal sealed class LeaseRequestResolver(ICurrentTenant currentTenant, IOption
             // never held; null is the way to store no holder.
             Argument.IsNotNullOrWhiteSpace(options.Holder, paramName: nameof(options));
             Argument.HasMaxLength(options.Holder, FencingFieldLimits.HolderMaxLength, paramName: nameof(options));
+
+            // The retry matches the stored holder ordinally, so a holder a provider cannot store unchanged (NUL, an
+            // unpaired surrogate) would make a retried grant answer Held: the same rule as the lease's own key.
+            Argument.IsPortableKey(options.Holder, paramName: nameof(options));
         }
 
         return options;

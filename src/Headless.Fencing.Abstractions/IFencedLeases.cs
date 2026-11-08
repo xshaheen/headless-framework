@@ -96,7 +96,8 @@ public interface IFencedLeases
     /// </returns>
     /// <exception cref="ArgumentNullException"><paramref name="options" /> is <see langword="null" />.</exception>
     /// <exception cref="ArgumentException">
-    /// The kind, resource, or current tenant id is invalid, or the options' holder is whitespace or exceeds its limit.
+    /// The kind, resource, or current tenant id is invalid, or the options' holder is whitespace, exceeds its limit, or is not
+    /// portable key text.
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="duration" /> is outside the configured bounds.</exception>
     /// <exception cref="System.ComponentModel.InvalidEnumArgumentException">

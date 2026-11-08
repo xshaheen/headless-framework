@@ -489,12 +489,14 @@ public sealed class FencedLeasesTests : TestBase
     }
 
     [Fact]
-    public async Task should_reject_null_or_oversized_grant_options_before_the_store()
+    public async Task should_reject_null_oversized_blank_or_unportable_grant_options_before_the_store()
     {
         // given
         var context = new FencingTestContext();
         var longHolder = new LeaseGrantOptions { Holder = new string('h', FencingFieldLimits.HolderMaxLength + 1) };
         var blankHolder = new LeaseGrantOptions { Holder = "  " };
+        var nulHolder = new LeaseGrantOptions { Holder = "node\0a" };
+        var loneSurrogateHolder = new LeaseGrantOptions { Holder = "node-\uD800" };
 
         Func<Task> grant(LeaseGrantOptions options) =>
             async () =>
@@ -504,6 +506,8 @@ public sealed class FencedLeasesTests : TestBase
         await grant(null!).Should().ThrowAsync<ArgumentNullException>();
         await grant(longHolder).Should().ThrowAsync<ArgumentException>().WithParameterName("options");
         await grant(blankHolder).Should().ThrowAsync<ArgumentException>().WithParameterName("options");
+        await grant(nulHolder).Should().ThrowAsync<ArgumentException>().WithParameterName("options");
+        await grant(loneSurrogateHolder).Should().ThrowAsync<ArgumentException>().WithParameterName("options");
         context.Store.ReceivedCalls().Should().BeEmpty();
     }
 

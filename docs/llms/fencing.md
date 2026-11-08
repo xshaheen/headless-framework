@@ -193,7 +193,7 @@ The fencing packages emit no metrics.
 
 ### Holder
 
-A grant can pass `LeaseGrantOptions` (`Takeover`, `Holder`). Each grant that acquires the lease (`Granted`, `Takeover`, or the first insert) stores the holder on the row, or NULL when the options leave it out. It describes that generation. Renewal, settlement, release, a sweep's abandonment, and a revoke leave it unchanged.
+A grant can pass `LeaseGrantOptions` (`Takeover`, `Holder`). Each grant that acquires the lease (`Granted`, `Takeover`, or the first insert) stores the holder on the row, or NULL when the options leave it out. It describes that generation. Renewal, settlement, release, a sweep's abandonment, and a revoke leave it unchanged. A holder follows the key rules: a blank, oversized, or non-portable holder (NUL, an unpaired surrogate, surrounding white space) throws `ArgumentException` before anything is written, on every provider.
 
 - `Holder` is an owner tag such as `cluster/node@incarnation`. A grant that names the holder of a live attempt (ordinal match, judged by the database clock on the row it holds locked) returns `Granted` with that attempt's lease, expiry, takeover count, and progress. It writes nothing and does not extend the expiry. That makes a grant retried after a lost response idempotent, in both takeover modes and inside a unit. Any other grant still answers `Held`, and once the attempt expires the same holder gets a `Takeover` with a new generation.
 
@@ -216,7 +216,7 @@ A grant can pass `LeaseGrantOptions` (`Takeover`, `Holder`). Each grant that acq
 
 ### The fence
 
-`FenceAsync` is a locking read, not a predicate appended to the caller's own write: PostgreSQL reads the row `FOR NO KEY UPDATE`, SQL Server `WITH (UPDLOCK, HOLDLOCK, ROWLOCK)`. It throws `StaleLeaseException` unless the generation is current, the lease is `Active`, and it has not expired — and the lock it takes holds that answer true until the caller's transaction ends, so no concurrent grant, renew, or sweep can invalidate it out from under the still-open write. `LeaseFenceStatus` on the exception says why: `Stale`, `Expired`, `Settled`, `Released`, or `Abandoned`.
+`FenceAsync` is a locking read, not a predicate appended to the caller's own write: PostgreSQL reads the row `FOR NO KEY UPDATE`, SQL Server `WITH (UPDLOCK, HOLDLOCK, ROWLOCK)`. It throws `StaleLeaseException` unless the generation is current, the lease is `Active`, and it has not expired — and the lock it takes holds that answer true until the caller's transaction ends, so no concurrent grant, renew, or sweep can invalidate it out from under the still-open write. `LeaseFenceStatus` on the exception says why: `Stale`, `Expired`, `Settled`, `Released`, `Abandoned`, or `Revoked`.
 
 `IFencedLeases.GetStatusAsync(lease)` answers the same question without a lock and outside any unit: `Current` while the generation is current, active, and unexpired by the database clock, otherwise the same reasons. A settlement or release ends the generation, so a token handed to another process (in a message, a JWT claim, a result payload) reads as `Settled` or `Released` afterwards, and as `Stale` once a later grant replaced it. Use it to drop late results and events early; keep the fence for the write itself.
 
