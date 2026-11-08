@@ -495,9 +495,9 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
         await connection.ExecuteAsync(
             $"""
             INSERT INTO headless.{tableName}
-                ("id", "version", "name", "content", "intent_type", "retries", "inline_attempts", "added", "expires_at", "next_retry_at", "locked_until", "owner", "status_name", "message_id"{receivedColumns})
+                ("id", "version", "name", "content", "intent_type", "retries", "inline_attempts", "added", "expires_at", "next_retry_at", "status_name", "message_id"{receivedColumns})
             SELECT id, 'v1', 'unknown-lane-diagnostic', 'not-a-message-envelope', 77, 0, 0,
-                   @Added, NULL, @NextRetryAt, NULL, NULL, 'Failed', id::text{receivedValues}
+                   @Added, NULL, @NextRetryAt, 'Failed', id::text{receivedValues}
             FROM unnest(@Ids::uuid[]) AS id;
             """,
             new
@@ -575,8 +575,8 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
         await connection.ExecuteAsync(
             $"""
             INSERT INTO headless.{tableName}
-                ("id", "version", "name", "content", "intent_type", "retries", "inline_attempts", "added", "expires_at", "next_retry_at", "locked_until", "owner", "status_name", "message_id"{receivedColumns})
-            VALUES (@Id, 'v1', 'unknown-lane-ordinary-read', 'not-a-message-envelope', 77, 0, 0, @Added, NULL, @Added, NULL, NULL, 'Failed', @MessageId{receivedValues});
+                ("id", "version", "name", "content", "intent_type", "retries", "inline_attempts", "added", "expires_at", "next_retry_at", "status_name", "message_id"{receivedColumns})
+            VALUES (@Id, 'v1', 'unknown-lane-ordinary-read', 'not-a-message-envelope', 77, 0, 0, @Added, NULL, @Added, 'Failed', @MessageId{receivedValues});
             """,
             new
             {

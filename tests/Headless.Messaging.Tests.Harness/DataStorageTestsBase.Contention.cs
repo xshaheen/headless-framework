@@ -177,7 +177,7 @@ public abstract partial class DataStorageTestsBase
                 StatusName.Succeeded,
                 MessageContentWrite.Preserve,
                 retryDelay: null,
-                lockedUntil: null,
+                keepLease: false,
                 originalRetries: attempt.Retries,
                 originalInlineAttempts: attempt.InlineAttempts,
                 AbortToken
@@ -187,7 +187,7 @@ public abstract partial class DataStorageTestsBase
                 StatusName.Succeeded,
                 MessageContentWrite.Preserve,
                 retryDelay: null,
-                lockedUntil: null,
+                keepLease: false,
                 originalRetries: attempt.Retries,
                 originalInlineAttempts: attempt.InlineAttempts,
                 AbortToken

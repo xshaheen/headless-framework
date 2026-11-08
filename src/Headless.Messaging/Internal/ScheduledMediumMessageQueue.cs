@@ -2,6 +2,7 @@
 
 using System.Runtime.CompilerServices;
 using Headless.Checks;
+using Headless.Fencing;
 
 namespace Headless.Messaging.Internal;
 
@@ -163,8 +164,9 @@ internal sealed class ScheduledMediumMessageQueue(TimeProvider timeProvider, int
 
     private static bool _HoldsNewerLease(MediumMessage incoming, MediumMessage queued)
     {
-        return incoming.LockedUntil is { } incomingLease
-            && (queued.LockedUntil is not { } queuedLease || incomingLease > queuedLease);
+        // A row's lease generation only grows, so the copy with the higher active generation holds the current lease.
+        return incoming.Lease.State is RowLeaseState.Active
+            && (queued.Lease.State is not RowLeaseState.Active || incoming.Lease.Generation > queued.Lease.Generation);
     }
 
     private MediumMessage? _TryDequeueDueMessage(out TimeSpan? delay)

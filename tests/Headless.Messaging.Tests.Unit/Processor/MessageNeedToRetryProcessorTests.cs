@@ -5,6 +5,7 @@ using System.Diagnostics.Metrics;
 using System.Reflection;
 using System.Threading.Channels;
 using Headless.DistributedLocks;
+using Headless.Fencing;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
@@ -270,12 +271,10 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var lockedUntil = DateTimeOffset.UtcNow.AddMinutes(5);
         var first = _CreateMessage();
         first.Lane = lane;
-        first.Owner = "node-a";
-        first.LockedUntil = lockedUntil;
+        first.Lease = new RowLeaseSnapshot(1, RowLeaseState.Active, lockedUntil, "node-a", 0);
         var second = _CreateMessage();
         second.Lane = lane;
-        second.Owner = "node-a";
-        second.LockedUntil = lockedUntil;
+        second.Lease = new RowLeaseSnapshot(1, RowLeaseState.Active, lockedUntil, "node-a", 0);
         MediumMessage[] messages = [first, second];
 
         storage
@@ -349,7 +348,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         var identities = await released.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
         identities.Select(identity => identity.StorageId).Should().BeEquivalentTo(messages.Select(m => m.StorageId));
-        identities.Should().OnlyContain(identity => identity.Lane == lane && identity.Owner == "node-a");
+        identities.Should().OnlyContain(identity => identity.Lane == lane && identity.Generation == 1);
     }
 
     [Theory]
@@ -377,8 +376,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             .Select(_ =>
             {
                 var message = _CreateMessage();
-                message.Owner = "node-a";
-                message.LockedUntil = claimedUntil;
+                message.Lease = new RowLeaseSnapshot(1, RowLeaseState.Active, claimedUntil, "node-a", 0);
                 return message;
             })
             .ToArray();
@@ -399,7 +397,13 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         ValueTask<bool> renew(NSubstitute.Core.CallInfo call)
         {
             var message = call.Arg<MediumMessage>();
-            message.LockedUntil = clock.GetUtcNow() + call.Arg<TimeSpan>();
+            message.Lease = new RowLeaseSnapshot(
+                1,
+                RowLeaseState.Active,
+                clock.GetUtcNow() + call.Arg<TimeSpan>(),
+                null,
+                0
+            );
             renewed.Enqueue(message.StorageId);
             renewalCalls.Writer.TryWrite(true);
             return ValueTask.FromResult(true);
@@ -417,7 +421,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var slowDispatchStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         async Task dispatch(MediumMessage message)
         {
-            leaseAtTurn[message.StorageId] = message.LockedUntil;
+            leaseAtTurn[message.StorageId] = message.Lease.ExpiresAt;
             if (ReferenceEquals(message, rows[0]))
             {
                 slowDispatchStarted.TrySetResult();
@@ -547,8 +551,13 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var second = _CreateMessage();
         foreach (var message in new[] { circuit, first, second })
         {
-            message.Owner = "node-a";
-            message.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(5);
+            message.Lease = new RowLeaseSnapshot(
+                1,
+                RowLeaseState.Active,
+                DateTimeOffset.UtcNow.AddMinutes(5),
+                "node-a",
+                0
+            );
         }
 
         first.InboxKey = new InboxKey(null, first.Origin.Id, MessageLane.Bus, first.Origin.Name, "v1", "missing", 0);
@@ -598,8 +607,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     )
     {
         var message = _CreateMessage("obsolete-consumer");
-        message.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(1);
-        message.Owner = "node-a";
+        message.Lease = new RowLeaseSnapshot(1, RowLeaseState.Active, DateTimeOffset.UtcNow.AddMinutes(1), "node-a", 0);
         message.InboxKey = new InboxKey(
             TenantId: null,
             message.Origin.Id,
@@ -648,8 +656,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     )
     {
         var message = _CreateMessage("obsolete-consumer");
-        message.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(1);
-        message.Owner = "node-a";
+        message.Lease = new RowLeaseSnapshot(1, RowLeaseState.Active, DateTimeOffset.UtcNow.AddMinutes(1), "node-a", 0);
         message.IsInboxOrphaned = true;
         message.InboxKey = new InboxKey(
             TenantId: null,
@@ -722,8 +729,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         // The meter is process-global; a per-test consumer identity isolates measurements from parallel tests.
         var consumerIdentity = $"tests.retry.routable-metric.{Guid.NewGuid():N}";
         var message = _CreateMessage("obsolete-consumer");
-        message.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(1);
-        message.Owner = "node-a";
+        message.Lease = new RowLeaseSnapshot(1, RowLeaseState.Active, DateTimeOffset.UtcNow.AddMinutes(1), "node-a", 0);
         message.IsInboxOrphaned = wasOrphaned;
         message.InboxKey = new InboxKey(
             TenantId: null,
@@ -796,8 +802,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     public async Task inbox_retry_should_dispatch_routable_row_without_confirming_it_when_it_is_not_orphaned()
     {
         var message = _CreateMessage("obsolete-consumer");
-        message.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(1);
-        message.Owner = "node-a";
+        message.Lease = new RowLeaseSnapshot(1, RowLeaseState.Active, DateTimeOffset.UtcNow.AddMinutes(1), "node-a", 0);
         message.InboxKey = new InboxKey(
             TenantId: null,
             message.Origin.Id,
@@ -892,16 +897,14 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var nextProbeAt = now.Add(remaining);
         var lockedUntil = now.AddMinutes(5);
         var message = _CreateMessage("open-consumer");
-        message.Owner = "node-a";
-        message.LockedUntil = lockedUntil;
+        message.Lease = new RowLeaseSnapshot(1, RowLeaseState.Active, lockedUntil, "node-a", 0);
         message.InboxAttemptFence = new InboxAttemptFence(
             message.StorageId,
             MessageLane.Bus,
             3,
             Guid.NewGuid(),
             Guid.NewGuid(),
-            message.Owner,
-            lockedUntil
+            message.Lease.Generation
         );
         var healthy = _CreateMessage("healthy-consumer");
 
@@ -949,8 +952,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
                     request.Identity
                         == new MessageLeaseIdentity(
                             message.StorageId,
-                            "node-a",
-                            lockedUntil,
+                            message.Lease.Generation,
                             MessageLane.Bus,
                             message.InboxAttemptFence
                         )
@@ -968,8 +970,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     {
         var lockedUntil = DateTimeOffset.UtcNow.AddMinutes(5);
         var open = _CreateMessage("open-consumer");
-        open.Owner = "node-a";
-        open.LockedUntil = lockedUntil;
+        open.Lease = new RowLeaseSnapshot(1, RowLeaseState.Active, lockedUntil, "node-a", 0);
         var healthy = _CreateMessage("healthy-consumer");
 
         var storage = Substitute.For<IDataStorage, ICircuitRetryDeferralStorage, IGracefulLeaseReleaseStorage>();
@@ -1036,7 +1037,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var outcomeKind = (CircuitRetryProbeOutcomeKind)outcomeValue;
         var nextProbeAt = DateTimeOffset.UtcNow.AddMinutes(2);
         var message = _CreateMessage("probe-consumer");
-        message.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(5);
+        message.Lease = new RowLeaseSnapshot(1, RowLeaseState.Active, DateTimeOffset.UtcNow.AddMinutes(5), null, 0);
         var storage = Substitute.For<IDataStorage, ICircuitRetryDeferralStorage, IGracefulLeaseReleaseStorage>();
         _SetupReceivedMessages(storage, message);
         var stateManager = Substitute.For<ICircuitBreakerStateManager>();
@@ -1074,7 +1075,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     public async Task cancellation_while_probe_is_pending_retains_claim()
     {
         var message = _CreateMessage("probe-consumer");
-        message.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(5);
+        message.Lease = new RowLeaseSnapshot(1, RowLeaseState.Active, DateTimeOffset.UtcNow.AddMinutes(5), null, 0);
         var storage = Substitute.For<IDataStorage, ICircuitRetryDeferralStorage, IGracefulLeaseReleaseStorage>();
         _SetupReceivedMessages(storage, message);
         var outcome = new TaskCompletionSource<CircuitRetryProbeOutcome>(
@@ -1113,7 +1114,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     public async Task abandoned_acquired_probe_releases_shared_probe_slot()
     {
         var message = _CreateMessage("probe-consumer");
-        message.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(5);
+        message.Lease = new RowLeaseSnapshot(1, RowLeaseState.Active, DateTimeOffset.UtcNow.AddMinutes(5), null, 0);
         var storage = Substitute.For<IDataStorage, IGracefulLeaseReleaseStorage>();
         _SetupReceivedMessages(storage, message);
         var stateManager = Substitute.For<ICircuitBreakerStateManager>();
@@ -1176,8 +1177,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     public async Task pending_probe_with_no_outcome_retains_exact_claim_without_blocking_next_healthy_pickup()
     {
         var message = _CreateMessage("probe-consumer");
-        message.Owner = "node-a";
-        message.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(5);
+        message.Lease = new RowLeaseSnapshot(1, RowLeaseState.Active, DateTimeOffset.UtcNow.AddMinutes(5), "node-a", 0);
         var storage = Substitute.For<IDataStorage, ICircuitRetryDeferralStorage, IGracefulLeaseReleaseStorage>();
         _SetupReceivedMessages(storage, message);
         var outcome = new TaskCompletionSource<CircuitRetryProbeOutcome>(
@@ -1229,11 +1229,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     {
         var now = DateTimeOffset.UtcNow;
         var pending = _CreateMessage("probe-consumer");
-        pending.Owner = "node-a";
-        pending.LockedUntil = now.AddMinutes(5);
+        pending.Lease = new RowLeaseSnapshot(1, RowLeaseState.Active, now.AddMinutes(5), "node-a", 0);
         var deferred = _CreateMessage("open-consumer");
-        deferred.Owner = "node-a";
-        deferred.LockedUntil = now.AddMinutes(5);
+        deferred.Lease = new RowLeaseSnapshot(1, RowLeaseState.Active, now.AddMinutes(5), "node-a", 0);
         var storage = Substitute.For<IDataStorage, ICircuitRetryDeferralStorage, IGracefulLeaseReleaseStorage>();
         _SetupReceivedMessages(storage, pending, deferred);
         ((ICircuitRetryDeferralStorage)storage)
@@ -1279,8 +1277,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     {
         var (sut, dispatcher, cb) = _Create(baseIntervalSeconds: 0, adaptivePolling: false);
         var open = _CreateMessage("consumer-a");
-        open.Owner = "node-a";
-        open.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(5);
+        open.Lease = new RowLeaseSnapshot(1, RowLeaseState.Active, DateTimeOffset.UtcNow.AddMinutes(5), "node-a", 0);
         cb.IsOpen(_CircuitKey("consumer-a")).Returns(true);
         var storage = Substitute.For<IDataStorage, ICircuitRetryDeferralStorage, IGracefulLeaseReleaseStorage>();
         _SetupReceivedMessages(storage, open);
@@ -1337,7 +1334,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     public async Task should_hand_probe_release_to_dispatcher_when_probe_row_is_transferred()
     {
         var message = _CreateMessage("probe-consumer");
-        message.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(5);
+        message.Lease = new RowLeaseSnapshot(1, RowLeaseState.Active, DateTimeOffset.UtcNow.AddMinutes(5), null, 0);
         var storage = Substitute.For<IDataStorage, IGracefulLeaseReleaseStorage>();
         _SetupReceivedMessages(storage, message);
         var stateManager = Substitute.For<ICircuitBreakerStateManager>();
@@ -1375,7 +1372,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     public async Task unsupported_deferral_provider_warns_once_and_retains_claim()
     {
         var message = _CreateMessage("open-consumer");
-        message.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(5);
+        message.Lease = new RowLeaseSnapshot(1, RowLeaseState.Active, DateTimeOffset.UtcNow.AddMinutes(5), null, 0);
         var storage = Substitute.For<IDataStorage, IGracefulLeaseReleaseStorage>();
         _SetupReceivedMessages(storage, message);
         var stateManager = Substitute.For<ICircuitBreakerStateManager>();
@@ -1929,8 +1926,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     public async Task should_release_ordinary_claims_when_orphan_pickup_is_canceled()
     {
         var message = _CreateMessage();
-        message.Owner = "node-a";
-        message.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(5);
+        message.Lease = new RowLeaseSnapshot(1, RowLeaseState.Active, DateTimeOffset.UtcNow.AddMinutes(5), "node-a", 0);
         var storage = Substitute.For<IDataStorage, IGracefulLeaseReleaseStorage>();
         _SetupReceivedMessages(storage, message);
         storage

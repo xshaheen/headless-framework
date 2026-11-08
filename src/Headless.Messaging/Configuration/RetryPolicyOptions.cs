@@ -108,13 +108,13 @@ public sealed class RetryPolicyOptions
     /// </summary>
     /// <remarks>
     /// <para>
-    /// While <c>LockedUntil</c> is in the future, the persisted retry processor excludes the row.
+    /// While the row's lease is live, the persisted retry processor excludes the row.
     /// Handlers that run longer than this lease remain at-least-once and may be re-dispatched.
     /// </para>
     /// <para>
     /// <b>Rolling-restart retry gap:</b> graceful shutdown releases only the exact lease generations
     /// of locally completed attempts or work abandoned before execution. A handler still running at
-    /// the shutdown deadline, or a process that crashes, keeps its lease until <c>LockedUntil</c>
+    /// the shutdown deadline, or a process that crashes, keeps its lease until it
     /// expires. Startup warns when this value exceeds <see cref="InitialDispatchGrace"/> by more than
     /// two minutes. Measure the longest valid handler duration before aligning the values; shortening
     /// the lease below valid execution time increases overlapping at-least-once delivery.
@@ -129,7 +129,7 @@ public sealed class RetryPolicyOptions
     /// renewal cannot let the lease lapse.
     /// </summary>
     /// <remarks>
-    /// Each renewal re-stamps <c>LockedUntil</c> to the store's clock plus <see cref="DispatchTimeout"/> and is fenced on
+    /// Each renewal moves the lease expiry to the store's clock plus <see cref="DispatchTimeout"/> and is fenced on
     /// the lease the attempt holds. A renewal that finds the lease gone cancels the attempt's token and the attempt writes no
     /// state; the row is then recovered like a crashed attempt. A renewal that throws or times out is retried on the next
     /// tick while the lease it last confirmed is still live, and cancels the attempt only once that lease could lapse

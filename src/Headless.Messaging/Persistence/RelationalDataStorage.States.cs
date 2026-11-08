@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
+using Headless.Fencing;
 using Headless.Messaging.Internal;
 using Headless.Sql;
 
@@ -8,9 +9,26 @@ namespace Headless.Messaging.Persistence;
 
 internal sealed partial class RelationalDataStorage
 {
+    // The prefix of the lease take's grant parameters: TakeDuration and TakeHolder.
+    private const string _TakePrefix = "Take";
+
+    /// <summary>Reads the five lease columns a fenced write returns, the first at ordinal 1.</summary>
+    private static readonly Func<DbDataReader, CancellationToken, ValueTask<RowLeaseSnapshot>> _ReadReturnedLease =
+        static (reader, cancellationToken) => RowLeaseReader.ReadAsync(reader, 1, cancellationToken);
+
+    /// <summary>Reads nothing back: the caller needs only whether the write applied.</summary>
+    private static readonly Func<DbDataReader, CancellationToken, ValueTask<bool>> _ReadNothing = static (_, _) =>
+        ValueTask.FromResult(true);
+
     /// <summary>
-    /// Hands published messages back to <c>Delayed</c> status, each only while its row still carries the lease the
-    /// message recorded. No-op when <paramref name="messages"/> is empty.
+    /// The pre-rendered parts of one state change: the assignments and condition a fenced write composes with the lease,
+    /// and the whole statement of an unfenced write.
+    /// </summary>
+    private sealed record ChangeStateSql(string Set, string Condition, string Unfenced);
+
+    /// <summary>
+    /// Hands published messages back to <c>Delayed</c> status, each only while its row still carries the lease
+    /// generation the message recorded. No-op when <paramref name="messages"/> is empty.
     /// </summary>
     public async ValueTask ChangePublishStateToDelayedAsync(
         IReadOnlyCollection<MediumMessage> messages,
@@ -22,59 +40,116 @@ internal sealed partial class RelationalDataStorage
             return;
         }
 
-        // The lease is cleared with the status flip so the row is re-claimable at once instead of after the lease
-        // expires. The match on the recorded lease is what makes that safe: the shutdown flush also holds unleased
-        // hand-off copies, and the row behind one may since have been claimed by another node that is sending it.
-        // Resetting that row would let a third node send it again and reject the claimer's success write.
-        // Each row binds four parameters.
-        var batchSize = Math.Min(_LeaseReleaseBatchSize, (_MaxCommandParameters - 1) / 4);
+        // A leased copy releases its own generation with the status flip, so the row is re-claimable at once instead of
+        // after the lease expires. The shutdown flush also holds unleased hand-off copies, and the row behind one may
+        // since have been claimed by another node that is sending it: resetting that row would let a third node send it
+        // again. So an unleased copy flips only a row no attempt holds, still at the generation the copy read.
+        // Rows are locked in id order so two flushes over the same rows cannot deadlock.
+        var leased = messages
+            .Where(static message => message.Lease.State == RowLeaseState.Active)
+            .OrderBy(static message => message.StorageId)
+            .ToArray();
+        var unleased = messages
+            .Where(static message => message.Lease.State != RowLeaseState.Active)
+            .OrderBy(static message => message.StorageId)
+            .ToArray();
+        var leaseTable = _t.PublishedLease;
 
-        await using var connection = _CreateConnection();
-        foreach (var batch in messages.Chunk(batchSize))
-        {
-            var predicates = new string[batch.Length];
-            for (var index = 0; index < batch.Length; index++)
-            {
-                var suffix = index.ToString(CultureInfo.InvariantCulture);
-                predicates[index] =
-                    $"({_t.Id}=@Id{suffix} AND {_t.IntentType}=@IntentType{suffix} AND {_Same(_t.Owner, "Owner" + suffix)} AND {_Same(_t.LockedUntil, "LockedUntil" + suffix)})";
-            }
-
-            var sql =
-                $"UPDATE {_publishedTable} SET {_t.StatusName}=@StatusName, {_t.LockedUntil}=NULL, {_t.Owner}=NULL WHERE {_terminalGuard} AND ({string.Join(" OR ", predicates)});";
-            await RelationalCommand
-                .ExecuteNonQueryAsync(
-                    connection,
-                    transaction: null,
-                    sql,
-                    CommandTimeoutSeconds,
-                    command =>
+        await _RunAsync(
+                "messaging.change_publish_state_to_delayed",
+                transaction: null,
+                async (connection, transaction, ct) =>
+                {
+                    foreach (var message in leased)
                     {
-                        _dialect.AddParameter(command, "StatusName", _StatusType, nameof(StatusName.Delayed));
-                        for (var index = 0; index < batch.Length; index++)
-                        {
-                            var message = batch[index];
-                            var suffix = index.ToString(CultureInfo.InvariantCulture);
-                            _dialect.AddParameter(command, "Id" + suffix, SqlColumnType.Guid, message.StorageId);
-                            _dialect.AddParameter(
-                                command,
-                                "IntentType" + suffix,
-                                SqlColumnType.Int16,
-                                MessageLaneCompatibility.ToPersistedValue(message.Lane)
-                            );
-                            _dialect.AddParameter(command, "Owner" + suffix, _ownerType, message.Owner);
-                            _dialect.AddParameter(
-                                command,
-                                "LockedUntil" + suffix,
-                                SqlColumnType.Timestamp,
-                                message.LockedUntil
-                            );
-                        }
-                    },
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
+                        var lane = MessageLaneCompatibility.ToPersistedValue(message.Lane);
+                        await FencedRows
+                            .ReleaseAsync(
+                                leaseTable,
+                                connection,
+                                transaction,
+                                _LeaseRow(leaseTable, message),
+                                _Write(
+                                    set: $"{_t.StatusName}=@StatusName",
+                                    condition: _releaseLeaseCondition[0],
+                                    bind: command =>
+                                    {
+                                        _dialect.AddParameter(
+                                            command,
+                                            "StatusName",
+                                            _StatusType,
+                                            nameof(StatusName.Delayed)
+                                        );
+                                        _dialect.AddParameter(command, "IntentType", SqlColumnType.Int16, lane);
+                                    }
+                                ),
+                                _ReadNothing,
+                                ct
+                            )
+                            .ConfigureAwait(false);
+                    }
+
+                    // Each unleased row binds three parameters.
+                    var batchSize = Math.Min(_LeaseReleaseBatchSize, (_MaxCommandParameters - 1) / 3);
+                    foreach (var batch in unleased.Chunk(batchSize))
+                    {
+                        await _DelayUnleasedAsync(connection, transaction, batch, ct).ConfigureAwait(false);
+                    }
+
+                    return true;
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    private Task<int> _DelayUnleasedAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        MediumMessage[] batch,
+        CancellationToken cancellationToken
+    )
+    {
+        var predicates = new string[batch.Length];
+        for (var index = 0; index < batch.Length; index++)
+        {
+            var suffix = index.ToString(CultureInfo.InvariantCulture);
+            predicates[index] =
+                $"({_t.Id}=@Id{suffix} AND {_t.IntentType}=@IntentType{suffix} AND {_t.LeaseGeneration}=@Generation{suffix})";
         }
+
+        var sql =
+            $"UPDATE {_publishedTable} SET {_t.StatusName}=@StatusName WHERE {_t.LeaseState} <> {_t.ActiveLease} AND {_terminalGuard} AND ({string.Join(" OR ", predicates)});";
+
+        return RelationalCommand.ExecuteNonQueryAsync(
+            connection,
+            transaction,
+            sql,
+            CommandTimeoutSeconds,
+            command =>
+            {
+                _dialect.AddParameter(command, "StatusName", _StatusType, nameof(StatusName.Delayed));
+                for (var index = 0; index < batch.Length; index++)
+                {
+                    var message = batch[index];
+                    var suffix = index.ToString(CultureInfo.InvariantCulture);
+                    _dialect.AddParameter(command, "Id" + suffix, SqlColumnType.Guid, message.StorageId);
+                    _dialect.AddParameter(
+                        command,
+                        "IntentType" + suffix,
+                        SqlColumnType.Int16,
+                        MessageLaneCompatibility.ToPersistedValue(message.Lane)
+                    );
+                    _dialect.AddParameter(
+                        command,
+                        "Generation" + suffix,
+                        SqlColumnType.Int64,
+                        message.Lease.Generation
+                    );
+                }
+            },
+            cancellationToken
+        );
     }
 
     /// <summary>
@@ -88,7 +163,7 @@ internal sealed partial class RelationalDataStorage
         MessageContentWrite contentWrite = MessageContentWrite.Preserve,
         DbTransaction? transaction = null,
         RetryDelay? retryDelay = null,
-        DateTimeOffset? lockedUntil = null,
+        bool keepLease = false,
         int? originalRetries = null,
         CancellationToken cancellationToken = default
     )
@@ -101,7 +176,7 @@ internal sealed partial class RelationalDataStorage
             contentWrite,
             transaction,
             retryDelay,
-            lockedUntil,
+            keepLease,
             originalRetries,
             originalInlineAttempts: null,
             cancellationToken
@@ -113,7 +188,7 @@ internal sealed partial class RelationalDataStorage
         StatusName state,
         MessageContentWrite contentWrite,
         RetryDelay? retryDelay,
-        DateTimeOffset? lockedUntil,
+        bool keepLease,
         int originalRetries,
         int originalInlineAttempts,
         CancellationToken cancellationToken = default
@@ -127,7 +202,7 @@ internal sealed partial class RelationalDataStorage
             contentWrite,
             transaction: null,
             retryDelay,
-            lockedUntil,
+            keepLease,
             originalRetries,
             originalInlineAttempts,
             cancellationToken
@@ -144,7 +219,7 @@ internal sealed partial class RelationalDataStorage
         StatusName state,
         MessageContentWrite contentWrite = MessageContentWrite.Preserve,
         RetryDelay? retryDelay = null,
-        DateTimeOffset? lockedUntil = null,
+        bool keepLease = false,
         int? originalRetries = null,
         CancellationToken cancellationToken = default
     )
@@ -157,7 +232,7 @@ internal sealed partial class RelationalDataStorage
             contentWrite,
             transaction: null,
             retryDelay,
-            lockedUntil,
+            keepLease,
             originalRetries,
             originalInlineAttempts: null,
             cancellationToken
@@ -169,7 +244,7 @@ internal sealed partial class RelationalDataStorage
         StatusName state,
         MessageContentWrite contentWrite,
         RetryDelay? retryDelay,
-        DateTimeOffset? lockedUntil,
+        bool keepLease,
         int originalRetries,
         int originalInlineAttempts,
         CancellationToken cancellationToken = default
@@ -183,7 +258,7 @@ internal sealed partial class RelationalDataStorage
             contentWrite,
             transaction: null,
             retryDelay,
-            lockedUntil,
+            keepLease,
             originalRetries,
             originalInlineAttempts,
             cancellationToken
@@ -204,7 +279,7 @@ internal sealed partial class RelationalDataStorage
             message.HasUnpersistedOriginChanges ? MessageContentWrite.Refresh : MessageContentWrite.Preserve,
             transaction,
             retryDelay: null,
-            lockedUntil: null,
+            keepLease: false,
             originalRetries: message.Retries,
             originalInlineAttempts: message.InlineAttempts,
             cancellationToken
@@ -282,10 +357,10 @@ internal sealed partial class RelationalDataStorage
     /// <summary>
     /// Renders the state change of a row in the received or published table, with or without rewriting its content.
     /// </summary>
-    private string _RenderChangeState(bool received, bool refreshContent)
+    private ChangeStateSql _RenderChangeState(bool received, bool refreshContent)
     {
         var table = received ? _receivedTable : _publishedTable;
-        var set = new List<string>(capacity: 12);
+        var set = new List<string>(capacity: 10);
         if (refreshContent)
         {
             set.Add($"{_t.Content}=@Content");
@@ -295,31 +370,37 @@ internal sealed partial class RelationalDataStorage
         set.Add($"{_t.InlineAttempts}=@InlineAttempts");
         set.Add($"{_t.ExpiresAt}=@ExpiresAt");
         set.Add($"{_t.NextRetryAt}={_nextRetryAtAssignment}");
-        set.Add($"{_t.LockedUntil}=@LockedUntil");
-        set.Add($"{_t.Owner}=@Owner");
         set.Add($"{_t.StatusName}=@StatusName");
 
-        // An inline retry passes the generation it holds (@OriginalInlineAttempts set): its transition applies only
-        // while the row is still leased to it, so an attempt whose lease another node took over writes nothing.
-        var fence =
-            $"{_terminalGuardWithRetries} AND (@OriginalInlineAttempts IS NULL OR ({_Same(_t.LockedUntil, "OriginalLockedUntil")} AND {_Same(_t.Owner, "OriginalOwner")} AND {_t.LockedUntil} > {SqlDialectTokens.Now}))";
+        var condition = _terminalGuardWithRetries;
 
         if (received)
         {
-            // The received table also records the failure, ends the inbox attempt when the lease is released, and
-            // stamps an inbox generation's terminal time and the retention it starts.
+            // The received table also records the failure, ends the inbox attempt with the lease, and stamps an inbox
+            // generation's terminal time and the retention it starts.
             set.Add($"{_t.ExceptionInfo}=@ExceptionInfo");
-            set.Add($"{_t.AttemptId}=CASE WHEN @LockedUntil IS NULL THEN NULL ELSE {_t.AttemptId} END");
+            set.Add($"{_t.AttemptId}=CASE WHEN @KeepLease = {_t.True} THEN {_t.AttemptId} ELSE NULL END");
             set.Add(
                 $"{_t.TerminalAt}=CASE WHEN {_t.IsInboxRecord} = {_t.True} AND @IsTerminal = {_t.True} THEN {SqlDialectTokens.Now} ELSE {_t.TerminalAt} END"
             );
             set.Add(
                 $"{_t.EffectiveExpiresAt}=CASE WHEN {_t.IsInboxRecord} = {_t.True} AND @IsTerminal = {_t.True} THEN {_dialect.ShiftBySeconds(SqlDialectTokens.Now, _t.InboxRetentionSeconds)} ELSE {_t.EffectiveExpiresAt} END"
             );
-            fence += $" AND {_InboxAttemptGuard(matchStorageId: false)}";
+            condition += $" AND {_InboxAttemptGuard(matchStorageId: false)}";
         }
 
-        return _RenderTransition(table, fence, string.Join(", ", set), [_t.Id]);
+        var assignments = string.Join(", ", set);
+
+        // A write that holds no lease generation ends whatever attempt holds the row unless it keeps the lease: it is
+        // rewriting the row's outcome, so the attempt is over.
+        var unfenced = _RenderTransition(
+            table,
+            condition,
+            assignments + ", " + _RevokeAnyLeaseAssignments(unless: $"@KeepLease = {_t.True}"),
+            [_t.Id]
+        );
+
+        return new ChangeStateSql(assignments, condition, unfenced);
     }
 
     private async ValueTask<bool> _ChangeStateAsync(
@@ -330,7 +411,7 @@ internal sealed partial class RelationalDataStorage
         MessageContentWrite contentWrite,
         DbTransaction? transaction,
         RetryDelay? retryDelay,
-        DateTimeOffset? lockedUntil,
+        bool keepLease,
         int? originalRetries,
         int? originalInlineAttempts,
         CancellationToken cancellationToken
@@ -340,47 +421,88 @@ internal sealed partial class RelationalDataStorage
         var refreshContent = contentWrite is MessageContentWrite.Refresh;
         var content = refreshContent ? _RefreshContent(message) : null;
         var isTerminal = state is StatusName.Succeeded or StatusName.Failed && retryDelay is null;
+        var sql = _changeStateSql[(received ? 2 : 0) | (refreshContent ? 1 : 0)];
 
-        return await _RunTransitionAsync(
+        void bind(DbCommand command)
+        {
+            if (refreshContent)
+            {
+                _dialect.AddParameter(command, "Content", _ContentType, content);
+            }
+
+            _dialect.AddParameter(command, "Retries", SqlColumnType.Int32, message.Retries);
+            _dialect.AddParameter(command, "InlineAttempts", SqlColumnType.Int32, message.InlineAttempts);
+            _dialect.AddParameter(command, "ExpiresAt", SqlColumnType.Timestamp, message.ExpiresAt);
+            _BindRetryDelay(command, retryDelay);
+            _dialect.AddParameter(command, "KeepLease", SqlColumnType.Boolean, keepLease);
+            _dialect.AddParameter(command, "OriginalRetries", SqlColumnType.Int32, originalRetries);
+            _dialect.AddParameter(command, "OriginalInlineAttempts", SqlColumnType.Int32, originalInlineAttempts);
+            _dialect.AddParameter(command, "StatusName", _StatusType, state.ToString("G"));
+
+            if (received)
+            {
+                _dialect.AddParameter(command, "ExceptionInfo", _ContentType, message.ExceptionInfo);
+                _dialect.AddParameter(command, "IsTerminal", SqlColumnType.Boolean, isTerminal);
+                _BindInboxAttempt(command, message.InboxAttemptFence, matchStorageId: false);
+            }
+        }
+
+        if (originalInlineAttempts is null)
+        {
+            return await _RunTransitionAsync(
+                    operation,
+                    transaction,
+                    sql.Unfenced,
+                    command =>
+                    {
+                        _dialect.AddParameter(command, "Id", SqlColumnType.Guid, message.StorageId);
+                        bind(command);
+                    },
+                    _ReadAppliedAsync,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+
+        // An inline retry passes the attempt counter it read, and with it the lease generation it holds: its transition
+        // applies only while that generation is still current by the database clock, so an attempt whose lease another
+        // node took over writes nothing. A terminal outcome settles the lease, a retry schedule releases it so pickup can
+        // take the row again, and an in-flight inline retry keeps it.
+        var leaseTable = _LeaseTable(table);
+        var row = _LeaseRow(leaseTable, message);
+        var write = _Write(sql.Set, sql.Condition, _t.LeaseColumnNames, bind);
+
+        var written = await _RunAsync(
                 operation,
                 transaction,
-                _changeStateSql[(received ? 2 : 0) | (refreshContent ? 1 : 0)],
-                command =>
+                async (connection, tx, ct) =>
                 {
-                    if (refreshContent)
+                    if (keepLease)
                     {
-                        _dialect.AddParameter(command, "Content", _ContentType, content);
+                        return await FencedRows
+                            .WriteAsync(leaseTable, connection, tx, row, write, _ReadReturnedLease, ct)
+                            .ConfigureAwait(false);
                     }
 
-                    _dialect.AddParameter(command, "Id", SqlColumnType.Guid, message.StorageId);
-                    _dialect.AddParameter(command, "Retries", SqlColumnType.Int32, message.Retries);
-                    _dialect.AddParameter(command, "InlineAttempts", SqlColumnType.Int32, message.InlineAttempts);
-                    _dialect.AddParameter(command, "ExpiresAt", SqlColumnType.Timestamp, message.ExpiresAt);
-                    _BindRetryDelay(command, retryDelay);
-                    _dialect.AddParameter(command, "LockedUntil", SqlColumnType.Timestamp, lockedUntil);
-                    _BindOwner(command, "Owner", hasLease: lockedUntil is not null);
-                    _dialect.AddParameter(command, "OriginalRetries", SqlColumnType.Int32, originalRetries);
-                    _dialect.AddParameter(
-                        command,
-                        "OriginalInlineAttempts",
-                        SqlColumnType.Int32,
-                        originalInlineAttempts
-                    );
-                    _dialect.AddParameter(command, "OriginalLockedUntil", SqlColumnType.Timestamp, message.LockedUntil);
-                    _dialect.AddParameter(command, "OriginalOwner", _ownerType, message.Owner);
-                    _dialect.AddParameter(command, "StatusName", _StatusType, state.ToString("G"));
-
-                    if (received)
-                    {
-                        _dialect.AddParameter(command, "ExceptionInfo", _ContentType, message.ExceptionInfo);
-                        _dialect.AddParameter(command, "IsTerminal", SqlColumnType.Boolean, isTerminal);
-                        _BindInboxAttempt(command, message.InboxAttemptFence, matchStorageId: false);
-                    }
+                    return isTerminal
+                        ? await FencedRows
+                            .SettleAsync(leaseTable, connection, tx, row, write, _ReadReturnedLease, ct)
+                            .ConfigureAwait(false)
+                        : await FencedRows
+                            .ReleaseAsync(leaseTable, connection, tx, row, write, _ReadReturnedLease, ct)
+                            .ConfigureAwait(false);
                 },
-                _ReadAppliedAsync,
                 cancellationToken
             )
             .ConfigureAwait(false);
+
+        if (!written.IsAccepted)
+        {
+            return false;
+        }
+
+        message.Lease = written.Match(static (lease, _) => lease, static _ => default);
+        return true;
     }
 
     public ValueTask<bool> ReservePublishAttemptAsync(
@@ -413,22 +535,12 @@ internal sealed partial class RelationalDataStorage
         );
     }
 
-    /// <summary>Renders the attempt reservation of a held lease in the received or published table.</summary>
-    private string _RenderReserveAttempt(bool received)
+    /// <summary>Renders the condition an attempt reservation adds to the lease fence in the received or published table.</summary>
+    private string _RenderReserveAttemptCondition(bool received)
     {
-        var fence =
-            $"{_terminalGuardWithRetries} AND {_Same(_t.LockedUntil, "LockedUntil")} AND {_Same(_t.Owner, "CurrentOwner")} AND {_t.LockedUntil} > {SqlDialectTokens.Now}";
-        if (received)
-        {
-            fence += $" AND {_InboxAttemptGuard(matchStorageId: true)}";
-        }
-
-        return _RenderTransition(
-            received ? _receivedTable : _publishedTable,
-            fence,
-            $"{_t.InlineAttempts}=@InlineAttempts, {_t.LockedUntil}={_dialect.ShiftByDuration(SqlDialectTokens.Now, "Lease")}",
-            [_t.LockedUntil, _t.Owner]
-        );
+        return received
+            ? $"{_terminalGuardWithRetries} AND {_InboxAttemptGuard(matchStorageId: true)}"
+            : _terminalGuardWithRetries;
     }
 
     private async ValueTask<bool> _ReserveAttemptAsync(
@@ -440,36 +552,64 @@ internal sealed partial class RelationalDataStorage
     )
     {
         // Durable attempt reservation: the counter is a compare-and-set on the attempt the caller read, and only the
-        // live lease holder may move it. The claim leased a whole batch at once and its rows run one after another, so
-        // the reservation also re-stamps the lease from the same clock reading: a row reserved late in the batch starts
-        // its attempt with a full lease instead of whatever the batch lease has left.
-        var received = _IsReceived(table);
+        // current lease generation may move it. The claim leased a whole batch at once and its rows run one after
+        // another, so the reservation also renews the lease from the database clock: a row reserved late in the batch
+        // starts its attempt with a full lease instead of whatever the batch lease has left. Both statements run in one
+        // transaction under the row lock, the reservation first, so a refused reservation leaves the lease untouched.
+        if (message.Lease.State != RowLeaseState.Active)
+        {
+            return false;
+        }
 
-        var lease = await _RunTransitionAsync(
+        var received = _IsReceived(table);
+        var leaseTable = _LeaseTable(table);
+        var row = _LeaseRow(leaseTable, message);
+        var write = _Write(
+            set: $"{_t.InlineAttempts}=@InlineAttempts",
+            condition: _reserveAttemptCondition[received ? 1 : 0],
+            returning: _t.LeaseColumnNames,
+            bind: command =>
+            {
+                _dialect.AddParameter(command, "InlineAttempts", SqlColumnType.Int32, message.InlineAttempts);
+                _dialect.AddParameter(command, "OriginalRetries", SqlColumnType.Int32, message.Retries);
+                _dialect.AddParameter(command, "OriginalInlineAttempts", SqlColumnType.Int32, originalInlineAttempts);
+
+                if (received)
+                {
+                    _BindInboxAttempt(command, message.InboxAttemptFence, matchStorageId: true);
+                }
+            }
+        );
+        var dispatchTimeout = Options.RetryPolicy.DispatchTimeout;
+
+        var lease = await _RunAsync<RowLeaseSnapshot?>(
                 operation,
                 transaction: null,
-                _reserveAttemptSql[received ? 1 : 0],
-                command =>
+                async (connection, tx, ct) =>
                 {
-                    _dialect.AddParameter(command, "Id", SqlColumnType.Guid, message.StorageId);
-                    _dialect.AddParameter(command, "InlineAttempts", SqlColumnType.Int32, message.InlineAttempts);
-                    _dialect.AddParameter(command, "OriginalRetries", SqlColumnType.Int32, message.Retries);
-                    _dialect.AddParameter(
-                        command,
-                        "OriginalInlineAttempts",
-                        SqlColumnType.Int32,
-                        originalInlineAttempts
-                    );
-                    _dialect.AddParameter(command, "LockedUntil", SqlColumnType.Timestamp, message.LockedUntil);
-                    _dialect.AddParameter(command, "CurrentOwner", _ownerType, message.Owner);
-                    _dialect.AddDuration(command, "Lease", Options.RetryPolicy.DispatchTimeout);
-
-                    if (received)
+                    var written = await FencedRows
+                        .WriteAsync(leaseTable, connection, tx, row, write, _ReadReturnedLease, ct)
+                        .ConfigureAwait(false);
+                    if (
+                        written.Match(static (stored, _) => (RowLeaseSnapshot?)stored, static _ => null) is not { } held
+                    )
                     {
-                        _BindInboxAttempt(command, message.InboxAttemptFence, matchStorageId: true);
+                        return null;
                     }
+
+                    // The row lock is held, so only the lease running out between the two statements refuses the
+                    // renewal; the attempt then holds no lease to run under.
+                    var renewed = await FencedRows
+                        .RenewAsync(leaseTable, connection, tx, row, dispatchTimeout, ct)
+                        .ConfigureAwait(false);
+
+                    return renewed.Status == LeaseRenewalStatus.Renewed
+                        ? held with
+                        {
+                            ExpiresAt = renewed.ExpiresAt,
+                        }
+                        : null;
                 },
-                (reader, ct) => _ReadLeaseAsync(reader, readsAttempt: false, ct),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -479,7 +619,7 @@ internal sealed partial class RelationalDataStorage
             return false;
         }
 
-        _AdoptLease(message, stored.LockedUntil, stored.Owner);
+        message.Lease = stored;
         return true;
     }
 
@@ -515,8 +655,8 @@ internal sealed partial class RelationalDataStorage
 
     /// <summary>
     /// Slides a held lease forward while its attempt runs. Fenced on the exact lease generation the caller holds and on
-    /// that lease still being live, and stamped from the same database-clock reading, so a renewal can never revive a
-    /// lease that lapsed or take one another node now holds.
+    /// that generation still being live, and stamped from the same database-clock reading, so a renewal can never revive
+    /// a lease that lapsed or take one another node now holds.
     /// </summary>
     private async ValueTask<bool> _RenewLeaseAsync(
         string operation,
@@ -526,78 +666,35 @@ internal sealed partial class RelationalDataStorage
         CancellationToken cancellationToken
     )
     {
-        if (message.LockedUntil is null)
+        if (message.Lease.State != RowLeaseState.Active)
         {
             return false;
         }
 
-        var received = _IsReceived(table);
+        var leaseTable = _LeaseTable(table);
+        var row = _LeaseRow(leaseTable, message);
 
-        var lease = await _RunTransitionAsync(
+        var renewed = await _RunAsync(
                 operation,
                 transaction: null,
-                _renewLeaseSql[received ? 1 : 0],
-                command =>
-                {
-                    _dialect.AddParameter(command, "Id", SqlColumnType.Guid, message.StorageId);
-                    _dialect.AddParameter(command, "LockedUntil", SqlColumnType.Timestamp, message.LockedUntil);
-                    _dialect.AddParameter(command, "CurrentOwner", _ownerType, message.Owner);
-                    _dialect.AddDuration(command, "Lease", leaseDuration);
-
-                    if (received)
-                    {
-                        _BindInboxAttempt(command, message.InboxAttemptFence, matchStorageId: true);
-                    }
-                },
-                (reader, ct) => _ReadLeaseAsync(reader, readsAttempt: false, ct),
+                (connection, tx, ct) =>
+                    FencedRows.RenewAsync(leaseTable, connection, tx, row, leaseDuration, ct).AsTask(),
                 cancellationToken
             )
             .ConfigureAwait(false);
 
-        if (lease is not { } stored)
+        if (renewed.Status != LeaseRenewalStatus.Renewed)
         {
             return false;
         }
 
-        _AdoptLease(message, stored.LockedUntil, stored.Owner);
+        message.Lease = message.Lease with { ExpiresAt = renewed.ExpiresAt };
         return true;
     }
 
-    /// <summary>Renders the renewal of a held lease in the received or published table.</summary>
-    private string _RenderRenewLease(bool received)
-    {
-        var fence =
-            $"{_terminalGuard} AND {_t.LockedUntil}=@LockedUntil AND {_Same(_t.Owner, "CurrentOwner")} AND {_t.LockedUntil} > {SqlDialectTokens.Now}";
-        if (received)
-        {
-            fence += $" AND {_InboxAttemptGuard(matchStorageId: true)}";
-        }
-
-        return _RenderTransition(
-            received ? _receivedTable : _publishedTable,
-            fence,
-            $"{_t.LockedUntil}={_dialect.ShiftByDuration(SqlDialectTokens.Now, "Lease")}",
-            [_t.LockedUntil, _t.Owner]
-        );
-    }
-
     /// <summary>
-    /// Copies a re-stamped lease onto the caller's message, inbox attempt fence included, so every later fenced write
-    /// matches the durable row.
-    /// </summary>
-    private static void _AdoptLease(MediumMessage message, DateTimeOffset lockedUntil, string? owner)
-    {
-        message.LockedUntil = lockedUntil;
-        message.Owner = owner;
-        if (message.InboxAttemptFence is { } fence)
-        {
-            message.InboxAttemptFence = fence with { LockedUntil = lockedUntil, Owner = owner };
-        }
-    }
-
-    /// <summary>
-    /// Acquires a dispatch lease on a published message by setting <c>LockedUntil</c> and <c>Owner</c>.
-    /// Only succeeds if the row is currently unleased or its existing lease has expired.
+    /// Takes a dispatch lease on a published message: a new lease generation, held by this node.
+    /// Only succeeds if no live attempt holds the row.
     /// </summary>
     /// <returns><see langword="true"/> if the lease was acquired; <see langword="false"/> if another node already holds it.</returns>
     public ValueTask<bool> LeasePublishAsync(
@@ -634,8 +731,8 @@ internal sealed partial class RelationalDataStorage
     }
 
     /// <summary>
-    /// Acquires a dispatch lease on a received message by setting <c>LockedUntil</c> and <c>Owner</c>.
-    /// Only succeeds if the row is currently unleased or its existing lease has expired.
+    /// Takes a dispatch lease on a received message: a new lease generation, held by this node.
+    /// Only succeeds if no live attempt holds the row.
     /// </summary>
     /// <returns><see langword="true"/> if the lease was acquired; <see langword="false"/> if another node already holds it.</returns>
     public ValueTask<bool> LeaseReceiveAsync(
@@ -672,13 +769,14 @@ internal sealed partial class RelationalDataStorage
     }
 
     /// <summary>
-    /// Takes the dispatch lease when the row is unleased or its lease has expired, and, given
-    /// <paramref name="reserve"/>, reserves the next inline attempt in the same transition (the fresh-dispatch fast
-    /// path). No owner match is required: this path is taking the lease, not holding it.
+    /// Grants a new lease generation when no live attempt holds the row and, given <paramref name="reserve"/>, reserves
+    /// the next inline attempt in the same statement (the fresh-dispatch fast path). No holder match is required: this
+    /// path is taking the lease, not holding it.
     /// </summary>
     /// <remarks>
     /// Ownership time is the database's: one clock reading decides whether the old lease expired and sets the new
-    /// deadline, and the stored deadline is read back so the caller's fence matches durable state exactly.
+    /// expiry, and the granted lease is read back so the caller's fence matches durable state exactly. The take waits
+    /// out another writer of the row and reads the clock after that wait, like every other one-row transition.
     /// </remarks>
     private async ValueTask<bool> _LeaseAsync(
         string operation,
@@ -692,37 +790,56 @@ internal sealed partial class RelationalDataStorage
         var received = _IsReceived(table);
         // A received row starts a new inbox attempt with each lease it takes, so a stale attempt is fenced out.
         var newAttempt = reserve is not null && received;
+        var scope = FencedRows.GrantScope(_LeaseTable(table), _TakePrefix);
+        var holder = LeaseHolder;
+        var sql = _leaseSql[(received ? 2 : 0) | (reserve is null ? 0 : 1)];
 
-        var lease = await _RunTransitionAsync(
+        var taken = await _RunAsync(
                 operation,
                 transaction: null,
-                _leaseSql[(received ? 2 : 0) | (reserve is null ? 0 : 1)],
-                command =>
-                {
-                    _dialect.AddParameter(command, "Id", SqlColumnType.Guid, message.StorageId);
-                    _dialect.AddDuration(command, "Lease", leaseDuration);
-                    _BindOwner(command, "Owner", hasLease: true);
+                (connection, tx, ct) =>
+                    RelationalCommand.ExecuteReaderAsync(
+                        connection,
+                        tx,
+                        sql,
+                        CommandTimeoutSeconds,
+                        command =>
+                        {
+                            _dialect.AddParameter(command, "Id", SqlColumnType.Guid, message.StorageId);
+                            scope.Bind(command, leaseDuration, holder);
 
-                    if (reserve is not null)
-                    {
-                        _dialect.AddParameter(command, "InlineAttempts", SqlColumnType.Int32, message.InlineAttempts);
-                        _dialect.AddParameter(command, "OriginalRetries", SqlColumnType.Int32, message.Retries);
-                        _dialect.AddParameter(command, "OriginalInlineAttempts", SqlColumnType.Int32, reserve);
-                    }
-                },
-                async (reader, ct) => await _ReadLeaseAsync(reader, newAttempt, ct).ConfigureAwait(false),
+                            if (reserve is not null)
+                            {
+                                _dialect.AddParameter(
+                                    command,
+                                    "InlineAttempts",
+                                    SqlColumnType.Int32,
+                                    message.InlineAttempts
+                                );
+                                _dialect.AddParameter(command, "OriginalRetries", SqlColumnType.Int32, message.Retries);
+                                _dialect.AddParameter(command, "OriginalInlineAttempts", SqlColumnType.Int32, reserve);
+                            }
+                        },
+                        async (reader, token) =>
+                        {
+                            // The take renders through _RenderTransition, whose locking read returns its own result first.
+                            await RelationalCommand.SkipResultsAsync(reader, 1, token).ConfigureAwait(false);
+
+                            return await _ReadTakenLeaseAsync(reader, newAttempt, holder, token).ConfigureAwait(false);
+                        },
+                        ct
+                    ),
                 cancellationToken
             )
             .ConfigureAwait(false);
 
-        if (lease is not { } stored)
+        if (taken is not { } stored)
         {
             return false;
         }
 
-        // Mirror the durable deadline the server issued, not a locally recomputed one.
-        message.LockedUntil = stored.LockedUntil;
-        message.Owner = stored.Owner;
+        // Mirror the lease the server granted, not a locally recomputed one.
+        message.Lease = stored.Lease;
         if (stored.AttemptId is { } attemptId && message.InboxGeneration is { } generation)
         {
             message.InboxAttemptFence = new InboxAttemptFence(
@@ -731,8 +848,7 @@ internal sealed partial class RelationalDataStorage
                 generation.Number,
                 generation.IncarnationId,
                 attemptId,
-                stored.Owner,
-                stored.LockedUntil
+                stored.Lease.Generation
             );
         }
 
@@ -746,45 +862,56 @@ internal sealed partial class RelationalDataStorage
     private string _RenderLease(bool received, bool reserve)
     {
         var newAttempt = reserve && received;
-        var set = $"{_t.LockedUntil}={_dialect.ShiftByDuration(SqlDialectTokens.Now, "Lease")}, {_t.Owner}=@Owner";
+        var scope = FencedRows.GrantScope(received ? _t.ReceivedLease : _t.PublishedLease, _TakePrefix);
+        var set = new List<string>(capacity: 3) { scope.Assignments() };
         if (reserve)
         {
-            set += $", {_t.InlineAttempts}=@InlineAttempts";
+            set.Add($"{_t.InlineAttempts}=@InlineAttempts");
         }
 
         if (newAttempt)
         {
-            set += $", {_t.AttemptId}=CASE WHEN {_t.IsInboxRecord} = {_t.True} THEN {_dialect.NewGuid()} ELSE NULL END";
+            set.Add($"{_t.AttemptId}=CASE WHEN {_t.IsInboxRecord} = {_t.True} THEN {_dialect.NewGuid()} ELSE NULL END");
         }
 
-        var fence =
-            $"({_t.LockedUntil} IS NULL OR {_t.LockedUntil} <= {SqlDialectTokens.Now}) AND {(reserve ? _terminalGuardWithRetries : _terminalGuard)}";
-        string[] returning = newAttempt ? [_t.LockedUntil, _t.Owner, _t.AttemptId] : [_t.LockedUntil, _t.Owner];
+        string[] returning = newAttempt
+            ? [.. scope.Returning, _t.LeaseTakeoverCount, _t.AttemptId]
+            : [.. scope.Returning, _t.LeaseTakeoverCount];
 
-        return _RenderTransition(received ? _receivedTable : _publishedTable, fence, set, returning);
+        // A one-row take, unlike the batch claim, waits on the row's lock instead of skipping the row, so a take racing
+        // another writer decides on the row that writer left. The grant is allowed only when no live attempt holds it.
+        var fence =
+            $"NOT ({_t.LeaseState} = {_t.ActiveLease} AND {_t.LeaseExpiresAt} > {SqlDialectTokens.Now}) AND {(reserve ? _terminalGuardWithRetries : _terminalGuard)}";
+
+        return _RenderTransition(received ? _receivedTable : _publishedTable, fence, string.Join(", ", set), returning);
     }
 
-    private static async Task<(DateTimeOffset LockedUntil, string? Owner, Guid? AttemptId)?> _ReadLeaseAsync(
+    /// <summary>
+    /// Reads a lease take's one row: whether the fence applied, then the key, the granted generation and expiry, the
+    /// takeover count, and the new inbox attempt when the take started one.
+    /// </summary>
+    private static async Task<(RowLeaseSnapshot Lease, Guid? AttemptId)?> _ReadTakenLeaseAsync(
         DbDataReader reader,
         bool readsAttempt,
+        string? holder,
         CancellationToken cancellationToken
     )
     {
-        if (!await _ReadAppliedAsync(reader, cancellationToken).ConfigureAwait(false))
+        // A fenced transition always returns one row; a refused take returns it with the applied flag false.
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false) || !reader.GetBoolean(0))
         {
             return null;
         }
 
-        var lockedUntil =
-            await _ReadInstantAsync(reader, 1, cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidOperationException("A taken lease has no durable deadline.");
-        var owner = await _ReadStringAsync(reader, 2, cancellationToken).ConfigureAwait(false);
+        var generation = Convert.ToInt64(reader.GetValue(2), CultureInfo.InvariantCulture);
+        var expiresAt = await reader.GetFieldValueAsync<DateTimeOffset>(3, cancellationToken).ConfigureAwait(false);
+        var takeovers = Convert.ToInt32(reader.GetValue(4), CultureInfo.InvariantCulture);
         Guid? attemptId =
-            readsAttempt && !await reader.IsDBNullAsync(3, cancellationToken).ConfigureAwait(false)
-                ? reader.GetGuid(3)
+            readsAttempt && !await reader.IsDBNullAsync(5, cancellationToken).ConfigureAwait(false)
+                ? reader.GetGuid(5)
                 : null;
 
-        return (lockedUntil, owner, attemptId);
+        return (new RowLeaseSnapshot(generation, RowLeaseState.Active, expiresAt, holder, takeovers), attemptId);
     }
 
     public ValueTask<bool> ReleasePublishedLeaseAsync(
@@ -820,53 +947,14 @@ internal sealed partial class RelationalDataStorage
     }
 
     /// <summary>
-    /// The identity a graceful release matches: the exact lease generation the store returned to its holder, so a
-    /// release never clears a lease another node has taken since.
+    /// Renders the condition a graceful release adds to the lease fence: the lane the identity names and, on the
+    /// received table, the inbox attempt it carries.
     /// </summary>
-    private string _LeaseIdentityPredicate(bool received, string suffix)
+    private string _RenderReleaseLeaseCondition(bool received)
     {
-        var inboxGuard = received
-            ? $" AND ({_t.IsInboxRecord} = {_t.False} OR ({_t.Id}=@InboxStorageId{suffix} AND {_t.IntentType}=@InboxIntentType{suffix} AND {_t.Generation}=@InboxGeneration{suffix} AND {_t.GenerationIncarnationId}=@InboxGenerationIncarnationId{suffix} AND {_t.AttemptId}=@InboxAttemptId{suffix} AND {_Same(_t.Owner, "InboxOwner" + suffix)} AND {_t.LockedUntil}=@InboxLockedUntil{suffix}))"
-            : "";
+        var condition = $"{_t.IntentType}=@IntentType AND {_terminalGuard}";
 
-        return $"({_t.Id}=@Id{suffix} AND {_t.IntentType}=@IntentType{suffix} AND {_Same(_t.Owner, "Owner" + suffix)} AND {_t.LockedUntil}=@LockedUntil{suffix}{inboxGuard})";
-    }
-
-    private void _BindLeaseIdentity(DbCommand command, MessageLeaseIdentity identity, bool received, string suffix)
-    {
-        var fence = identity.InboxAttemptFence;
-        _dialect.AddParameter(command, "Id" + suffix, SqlColumnType.Guid, identity.StorageId);
-        _dialect.AddParameter(
-            command,
-            "IntentType" + suffix,
-            SqlColumnType.Int16,
-            MessageLaneCompatibility.ToPersistedValue(identity.Lane)
-        );
-        _dialect.AddParameter(command, "Owner" + suffix, _ownerType, identity.Owner);
-        _dialect.AddParameter(command, "LockedUntil" + suffix, SqlColumnType.Timestamp, identity.LockedUntil);
-
-        if (!received)
-        {
-            return;
-        }
-
-        _dialect.AddParameter(command, "InboxStorageId" + suffix, SqlColumnType.Guid, fence?.StorageId);
-        _dialect.AddParameter(
-            command,
-            "InboxIntentType" + suffix,
-            SqlColumnType.Int16,
-            fence is null ? null : MessageLaneCompatibility.ToPersistedValue(fence.Lane)
-        );
-        _dialect.AddParameter(command, "InboxGeneration" + suffix, SqlColumnType.Int64, fence?.Generation);
-        _dialect.AddParameter(
-            command,
-            "InboxGenerationIncarnationId" + suffix,
-            SqlColumnType.Guid,
-            fence?.GenerationIncarnationId
-        );
-        _dialect.AddParameter(command, "InboxAttemptId" + suffix, SqlColumnType.Guid, fence?.AttemptId);
-        _dialect.AddParameter(command, "InboxOwner" + suffix, _ownerType, fence?.Owner);
-        _dialect.AddParameter(command, "InboxLockedUntil" + suffix, SqlColumnType.Timestamp, fence?.LockedUntil);
+        return received ? $"{condition} AND {_InboxAttemptGuard(matchStorageId: true)}" : condition;
     }
 
     private async ValueTask<bool> _ReleaseLeaseAsync(
@@ -875,25 +963,13 @@ internal sealed partial class RelationalDataStorage
         CancellationToken cancellationToken
     )
     {
-        var received = _IsReceived(table);
-        var sql =
-            $"UPDATE {table} SET {_t.Owner}=NULL, {_t.LockedUntil}=NULL WHERE {_LeaseIdentityPredicate(received, "")} AND {_terminalGuard};";
-
-        await using var connection = _CreateConnection();
-        var changed = await RelationalCommand
-            .ExecuteNonQueryAsync(
-                connection,
-                transaction: null,
-                sql,
-                CommandTimeoutSeconds,
-                command => _BindLeaseIdentity(command, identity, received, ""),
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        return changed == 1;
+        return await _ReleaseLeasesAsync(table, [identity], cancellationToken).ConfigureAwait(false) == 1;
     }
 
+    /// <summary>
+    /// Releases each identity's lease generation, so a release never ends a lease another node has taken since. Each
+    /// row is its own fenced transition in one transaction, locked in id order so two releases cannot deadlock.
+    /// </summary>
     private async ValueTask<int> _ReleaseLeasesAsync(
         string table,
         IReadOnlyCollection<MessageLeaseIdentity> identities,
@@ -906,45 +982,62 @@ internal sealed partial class RelationalDataStorage
         }
 
         var received = _IsReceived(table);
-        // A received identity binds eleven parameters, a published one four.
-        var batchSize = Math.Min(_LeaseReleaseBatchSize, _MaxCommandParameters / (received ? 11 : 4));
-        var released = 0;
+        var leaseTable = _LeaseTable(table);
+        var condition = _releaseLeaseCondition[received ? 1 : 0];
+        var ordered = identities.OrderBy(static identity => identity.StorageId).ToArray();
 
-        await using var connection = _CreateConnection();
-        foreach (var batch in identities.Chunk(batchSize))
-        {
-            var predicates = new string[batch.Length];
-            for (var index = 0; index < batch.Length; index++)
-            {
-                predicates[index] = _LeaseIdentityPredicate(received, index.ToString(CultureInfo.InvariantCulture));
-            }
-
-            var sql =
-                $"UPDATE {table} SET {_t.Owner}=NULL, {_t.LockedUntil}=NULL WHERE {_terminalGuard} AND ({string.Join(" OR ", predicates)});";
-            released += await RelationalCommand
-                .ExecuteNonQueryAsync(
-                    connection,
-                    transaction: null,
-                    sql,
-                    CommandTimeoutSeconds,
-                    command =>
+        return await _RunAsync(
+                "messaging.release_leases",
+                transaction: null,
+                async (connection, tx, ct) =>
+                {
+                    var released = 0;
+                    foreach (var identity in ordered)
                     {
-                        for (var index = 0; index < batch.Length; index++)
-                        {
-                            _BindLeaseIdentity(
-                                command,
-                                batch[index],
-                                received,
-                                index.ToString(CultureInfo.InvariantCulture)
-                            );
-                        }
-                    },
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-        }
+                        var write = _Write(
+                            condition: condition,
+                            bind: command =>
+                            {
+                                _BindLane(command, identity.Lane);
+                                if (received)
+                                {
+                                    _BindInboxAttempt(command, identity.InboxAttemptFence, matchStorageId: true);
+                                }
+                            }
+                        );
+                        var result = await FencedRows
+                            .ReleaseAsync(
+                                leaseTable,
+                                connection,
+                                tx,
+                                new FencedRow<Guid>(leaseTable.Name, identity.StorageId, identity.Generation),
+                                write,
+                                _ReadNothing,
+                                ct
+                            )
+                            .ConfigureAwait(false);
 
-        return released;
+                        if (result.IsAccepted)
+                        {
+                            released++;
+                        }
+                    }
+
+                    return released;
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    private void _BindLane(DbCommand command, MessageLane lane)
+    {
+        _dialect.AddParameter(
+            command,
+            "IntentType",
+            SqlColumnType.Int16,
+            MessageLaneCompatibility.ToPersistedValue(lane)
+        );
     }
 
     public async ValueTask<bool> DeferReceivedRetryAsync(
@@ -953,43 +1046,40 @@ internal sealed partial class RelationalDataStorage
     )
     {
         var identity = deferral.Identity;
+        var leaseTable = _t.ReceivedLease;
+        var write = _Write(
+            set: _deferReceivedRetrySet,
+            condition: _releaseLeaseCondition[1],
+            bind: command =>
+            {
+                _BindLane(command, identity.Lane);
+                _dialect.AddDuration(command, "RetryDelay", deferral.Delay);
+                _BindInboxAttempt(command, identity.InboxAttemptFence, matchStorageId: true);
+            }
+        );
 
-        return await _RunTransitionAsync(
+        // The deferral releases the held generation with the new due time, so the row waits out the circuit instead of
+        // its lease.
+        var deferred = await _RunAsync(
                 "messaging.defer_received_retry",
                 transaction: null,
-                _deferReceivedRetrySql,
-                command =>
-                {
-                    _dialect.AddParameter(command, "Id", SqlColumnType.Guid, identity.StorageId);
-                    _dialect.AddParameter(
-                        command,
-                        "IntentType",
-                        SqlColumnType.Int16,
-                        MessageLaneCompatibility.ToPersistedValue(identity.Lane)
-                    );
-                    _dialect.AddParameter(command, "Owner", _ownerType, identity.Owner);
-                    _dialect.AddParameter(command, "LockedUntil", SqlColumnType.Timestamp, identity.LockedUntil);
-                    _dialect.AddDuration(command, "RetryDelay", deferral.Delay);
-                    _BindInboxAttempt(command, identity.InboxAttemptFence, matchStorageId: true);
-                },
-                _ReadAppliedAsync,
+                (connection, tx, ct) =>
+                    FencedRows
+                        .ReleaseAsync(
+                            leaseTable,
+                            connection,
+                            tx,
+                            new FencedRow<Guid>(leaseTable.Name, identity.StorageId, identity.Generation),
+                            write,
+                            _ReadNothing,
+                            ct
+                        )
+                        .AsTask(),
                 cancellationToken
             )
             .ConfigureAwait(false);
-    }
 
-    /// <summary>Renders the circuit deferral of a held received row's retry.</summary>
-    private string _RenderDeferReceivedRetry()
-    {
-        var fence =
-            $"{_t.IntentType}=@IntentType AND {_Same(_t.Owner, "Owner")} AND {_t.LockedUntil}=@LockedUntil AND {_t.LockedUntil} > {SqlDialectTokens.Now} AND {_InboxAttemptGuard(matchStorageId: true)} AND {_terminalGuard}";
-
-        return _RenderTransition(
-            _receivedTable,
-            fence,
-            $"{_t.NextRetryAt}={_dialect.ShiftByDuration(SqlDialectTokens.Now, "RetryDelay")}, {_t.Owner}=NULL, {_t.LockedUntil}=NULL",
-            [_t.Id]
-        );
+        return deferred.IsAccepted;
     }
 
     public ValueTask<bool> DeferReceivedInboxOrphanAsync(
@@ -1008,7 +1098,7 @@ internal sealed partial class RelationalDataStorage
             cancellationToken
         );
 
-    // Orphaning defers the probe and releases ownership; confirming keeps the live claim so the caller can dispatch.
+    // Orphaning defers the probe and releases the lease; confirming keeps the live lease so the caller can dispatch.
     // Both accept an already-matching orphan flag because the fence, not a state change, authorizes the caller.
     private async ValueTask<bool> _SetInboxRoutabilityAsync(
         string operation,
@@ -1022,63 +1112,77 @@ internal sealed partial class RelationalDataStorage
             return false;
         }
 
-        var (changed, nextRetryAt) = await _RunTransitionAsync(
+        var leaseTable = _t.ReceivedLease;
+        var row = new FencedRow<Guid>(leaseTable.Name, fence.StorageId, fence.LeaseGeneration);
+        var write = _Write(
+            set: _inboxRoutabilitySet[orphaned ? 1 : 0],
+            condition: _inboxRoutabilityCondition,
+            returning: _inboxRoutabilityReturning,
+            bind: command =>
+            {
+                _dialect.AddDuration(command, "ProbeInterval", Options.OrphanProbeInterval);
+                _BindLane(command, fence.Lane);
+                _dialect.AddParameter(command, "Generation", SqlColumnType.Int64, fence.Generation);
+                _dialect.AddParameter(
+                    command,
+                    "GenerationIncarnationId",
+                    SqlColumnType.Guid,
+                    fence.GenerationIncarnationId
+                );
+                _dialect.AddParameter(command, "AttemptId", SqlColumnType.Guid, fence.AttemptId);
+            }
+        );
+
+        var written = await _RunAsync(
                 operation,
                 transaction: null,
-                _inboxRoutabilitySql[orphaned ? 1 : 0],
-                command =>
-                {
-                    _dialect.AddParameter(command, "Id", SqlColumnType.Guid, fence.StorageId);
-                    _dialect.AddDuration(command, "ProbeInterval", Options.OrphanProbeInterval);
-                    _dialect.AddParameter(
-                        command,
-                        "IntentType",
-                        SqlColumnType.Int16,
-                        MessageLaneCompatibility.ToPersistedValue(fence.Lane)
-                    );
-                    _dialect.AddParameter(command, "Generation", SqlColumnType.Int64, fence.Generation);
-                    _dialect.AddParameter(
-                        command,
-                        "GenerationIncarnationId",
-                        SqlColumnType.Guid,
-                        fence.GenerationIncarnationId
-                    );
-                    _dialect.AddParameter(command, "AttemptId", SqlColumnType.Guid, fence.AttemptId);
-                    _dialect.AddParameter(command, "Owner", _ownerType, fence.Owner);
-                    _dialect.AddParameter(command, "LockedUntil", SqlColumnType.Timestamp, fence.LockedUntil);
-                },
-                static async (reader, ct) =>
-                    await _ReadAppliedAsync(reader, ct).ConfigureAwait(false)
-                        ? (true, await _ReadInstantAsync(reader, 1, ct).ConfigureAwait(false))
-                        : (false, null),
+                async (connection, tx, ct) =>
+                    orphaned
+                        ? await FencedRows
+                            .ReleaseAsync(leaseTable, connection, tx, row, write, _ReadRoutabilityAsync, ct)
+                            .ConfigureAwait(false)
+                        : await FencedRows
+                            .WriteAsync(leaseTable, connection, tx, row, write, _ReadRoutabilityAsync, ct)
+                            .ConfigureAwait(false),
                 cancellationToken
             )
             .ConfigureAwait(false);
 
-        if (changed)
+        if (!written.IsAccepted)
         {
-            message.IsInboxOrphaned = orphaned;
-            if (orphaned)
-            {
-                message.NextRetryAt = nextRetryAt;
-                message.Owner = null;
-                message.LockedUntil = null;
-            }
+            return false;
         }
 
-        return changed;
+        var (lease, nextRetryAt) = written.Match(static (stored, _) => stored, static _ => default);
+        message.IsInboxOrphaned = orphaned;
+        message.Lease = lease;
+        if (orphaned)
+        {
+            message.NextRetryAt = nextRetryAt;
+        }
+
+        return true;
     }
 
-    /// <summary>Renders the transition that marks a held inbox row orphaned (deferring its probe) or routable.</summary>
-    private string _RenderInboxRoutability(bool orphaned)
+    /// <summary>Reads the lease and the next retry time a routability write returns.</summary>
+    private static async ValueTask<(RowLeaseSnapshot Lease, DateTimeOffset? NextRetryAt)> _ReadRoutabilityAsync(
+        DbDataReader reader,
+        CancellationToken cancellationToken
+    )
+    {
+        var lease = await RowLeaseReader.ReadAsync(reader, 1, cancellationToken).ConfigureAwait(false);
+        var nextRetryAt = await _ReadInstantAsync(reader, 1 + RowLeaseReader.ColumnCount, cancellationToken)
+            .ConfigureAwait(false);
+
+        return (lease, nextRetryAt);
+    }
+
+    /// <summary>Renders the assignments that mark a held inbox row orphaned (deferring its probe) or routable.</summary>
+    private string _RenderInboxRoutabilitySet(bool orphaned)
     {
         // The next orphan probe falls due on the database clock, the clock the retry pickup compares it against.
-        var set = orphaned
-            ? $"{_t.IsInboxOrphaned}={_t.True}, {_t.NextRetryAt}={_dialect.ShiftByDuration(SqlDialectTokens.Now, "ProbeInterval")}, {_t.Owner}=NULL, {_t.LockedUntil}=NULL"
+        return orphaned
+            ? $"{_t.IsInboxOrphaned}={_t.True}, {_t.NextRetryAt}={_dialect.ShiftByDuration(SqlDialectTokens.Now, "ProbeInterval")}"
             : $"{_t.IsInboxOrphaned}={_t.False}";
-        var fence =
-            $"{_t.IntentType}=@IntentType AND {_t.Generation}=@Generation AND {_t.GenerationIncarnationId}=@GenerationIncarnationId AND {_t.AttemptId}=@AttemptId AND {_Same(_t.Owner, "Owner")} AND {_t.LockedUntil}=@LockedUntil AND {_t.LockedUntil} > {SqlDialectTokens.Now}";
-
-        return _RenderTransition(_receivedTable, fence, set, [_t.NextRetryAt]);
     }
 }

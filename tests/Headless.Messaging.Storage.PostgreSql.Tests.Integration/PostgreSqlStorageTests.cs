@@ -3,6 +3,7 @@
 using Dapper;
 using Headless;
 using Headless.Coordination;
+using Headless.Fencing;
 using Headless.Hosting.Schema;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
@@ -44,7 +45,7 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
         await connection.ExecuteAsync(
             new CommandDefinition(
                 """
-                UPDATE headless.messaging_received SET "content"='not-json',"next_retry_at"=statement_timestamp()-INTERVAL '1 minute',"locked_until"=statement_timestamp()-INTERVAL '1 minute' WHERE "id"=@Id;
+                UPDATE headless.messaging_received SET "content"='not-json',"next_retry_at"=statement_timestamp()-INTERVAL '1 minute',"lease_expires_at"=statement_timestamp()-INTERVAL '1 minute' WHERE "id"=@Id;
                 """,
                 new { Id = storageId },
                 cancellationToken: cancellationToken
@@ -61,7 +62,7 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
         return await connection.QuerySingleAsync<PersistedInboxPoisonState>(
             new CommandDefinition(
                 """
-                SELECT statement_timestamp() AS "DatabaseNow","status_name" AS "StatusName","terminal_at" AS "TerminalAt","effective_expires_at" AS "EffectiveExpiresAt","attempt_id" AS "AttemptId","next_retry_at" AS "NextRetryAt","locked_until" AS "LockedUntil","owner" AS "Owner","content" AS "Content" FROM headless.messaging_received WHERE "id"=@Id;
+                SELECT statement_timestamp() AS "DatabaseNow","status_name" AS "StatusName","terminal_at" AS "TerminalAt","effective_expires_at" AS "EffectiveExpiresAt","attempt_id" AS "AttemptId","next_retry_at" AS "NextRetryAt","lease_state" AS "LeaseState","content" AS "Content" FROM headless.messaging_received WHERE "id"=@Id;
                 """,
                 new { Id = storageId },
                 cancellationToken: cancellationToken
@@ -160,7 +161,7 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
         await connection.OpenAsync(cancellationToken);
         var tableName = published ? "messaging_published" : "messaging_received";
         return await connection.QuerySingleAsync<PersistedLeaseIdentity>(
-            $"""SELECT "locked_until" AS "LockedUntil", "owner" AS "Owner" FROM headless.{tableName} WHERE "id"=@Id""",
+            $"""SELECT "lease_generation" AS "LeaseGeneration", "lease_state" AS "LeaseState", "lease_expires_at" AS "LeaseExpiresAt", "lease_holder" AS "LeaseHolder" FROM headless.{tableName} WHERE "id"=@Id""",
             new { Id = storageId }
         );
     }
@@ -184,9 +185,9 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
         var receivedValues = published ? string.Empty : ", 'unsupported-lane-consumer', NULL, @ConsumerIdentityHash";
         var sql = $"""
             INSERT INTO headless.{tableName}
-                ("id", "version", "name", "content", "intent_type", "retries", "added", "expires_at", "next_retry_at", "locked_until", "owner", "status_name", "message_id"{receivedColumns})
+                ("id", "version", "name", "content", "intent_type", "retries", "added", "expires_at", "next_retry_at", "lease_generation", "lease_state", "lease_expires_at", "lease_holder", "status_name", "message_id"{receivedColumns})
             VALUES
-                (@Id, 'v1', 'unsupported-lane', @Content, @IntentType, 0, @Added, NULL, @NextRetryAt, @LockedUntil, 'stale-unsupported-lane-owner', 'Failed', @MessageId{receivedValues});
+                (@Id, 'v1', 'unsupported-lane', @Content, @IntentType, 0, @Added, NULL, @NextRetryAt, 1, 1, @LeaseExpiresAt, 'stale-unsupported-lane-owner', 'Failed', @MessageId{receivedValues});
             """;
 
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
@@ -201,7 +202,7 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
                     IntentType = rawLane,
                     Added = TimeProvider.GetUtcNow(),
                     NextRetryAt = nextRetryAt,
-                    LockedUntil = nextRetryAt,
+                    LeaseExpiresAt = nextRetryAt,
                     MessageId = $"unsupported-lane-{id:N}",
                     ConsumerIdentityHash = RelationalDataStorage.CreateConsumerIdentityHash(
                         "v1",
@@ -229,7 +230,8 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
         var exceptionInfo = published ? "NULL::text" : "\"exception_info\"";
         var sql = $"""
             SELECT "intent_type" AS "RawLane", "status_name" AS "StatusName", "expires_at" AS "ExpiresAt",
-                   "next_retry_at" AS "NextRetryAt", "locked_until" AS "LockedUntil", "owner" AS "Owner",
+                   "next_retry_at" AS "NextRetryAt", "lease_generation" AS "LeaseGeneration", "lease_state" AS "LeaseState",
+                   "lease_expires_at" AS "LeaseExpiresAt", "lease_holder" AS "LeaseHolder",
                    {exceptionInfo} AS "ExceptionInfo"
             FROM headless.{tableName}
             WHERE "id"=@Id;
@@ -817,7 +819,7 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
             var persisted = await controlConnection.QuerySingleAsync<DelayedClaimState>(
                 new CommandDefinition(
                     """
-                    SELECT "status_name" AS "StatusName", "locked_until" AS "LockedUntil", "owner" AS "Owner"
+                    SELECT "status_name" AS "StatusName", "lease_state" AS "LeaseState", "lease_holder" AS "LeaseHolder"
                     FROM headless.messaging_published
                     WHERE "id"=@Id;
                     """,
@@ -826,8 +828,8 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
                 )
             );
             persisted.StatusName.Should().Be(nameof(StatusName.Queued));
-            persisted.LockedUntil.Should().NotBeNull();
-            persisted.Owner.Should().Be(NodeMembership.GetOwnerTag());
+            persisted.LeaseState.Should().Be((short)RowLeaseState.Active);
+            persisted.LeaseHolder.Should().Be(NodeMembership.GetLeaseHolder());
         }
         finally
         {
@@ -1167,6 +1169,14 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
+    public override Task should_refuse_every_write_from_a_holder_whose_lease_was_granted_again(bool published)
+    {
+        return base.should_refuse_every_write_from_a_holder_whose_lease_was_granted_again(published);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
     public override Task should_not_renew_a_lease_that_lapsed_and_another_node_took(bool published)
     {
         return base.should_not_renew_a_lease_that_lapsed_and_another_node_took(published);
@@ -1279,9 +1289,15 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
     }
 
     [Fact]
-    public override Task should_not_reclaim_dead_owner_rows_with_expired_lease()
+    public override Task should_revoke_dead_owner_rows_with_expired_lease()
     {
-        return base.should_not_reclaim_dead_owner_rows_with_expired_lease();
+        return base.should_revoke_dead_owner_rows_with_expired_lease();
+    }
+
+    [Fact]
+    public override Task should_lease_and_reclaim_rows_under_the_longest_owner_tag()
+    {
+        return base.should_lease_and_reclaim_rows_under_the_longest_owner_tag();
     }
 
     #endregion
@@ -1316,11 +1332,11 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
         (await storage.LeasePublishAsync(message, leaseDuration, AbortToken)).Should().BeTrue();
 
         var persistedLease = await connection.QuerySingleAsync<PersistedLease>(
-            """SELECT statement_timestamp() AS "DatabaseTimeAfter", "locked_until" AS "LockedUntil", "owner" AS "Owner" FROM headless.messaging_published WHERE "id"=@Id""",
+            """SELECT statement_timestamp() AS "DatabaseTimeAfter", "lease_generation" AS "LeaseGeneration", "lease_expires_at" AS "LeaseExpiresAt", "lease_holder" AS "LeaseHolder" FROM headless.messaging_published WHERE "id"=@Id""",
             new { Id = message.StorageId }
         );
-        persistedLease.LockedUntil.Should().BeOnOrAfter(databaseTimeBefore.Add(leaseDuration));
-        persistedLease.LockedUntil.Should().BeOnOrBefore(persistedLease.DatabaseTimeAfter.Add(leaseDuration));
+        persistedLease.LeaseExpiresAt.Should().BeOnOrAfter(databaseTimeBefore.Add(leaseDuration));
+        persistedLease.LeaseExpiresAt.Should().BeOnOrBefore(persistedLease.DatabaseTimeAfter.Add(leaseDuration));
     }
 
     [Fact]
@@ -1347,7 +1363,7 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         var before = await connection.QuerySingleAsync<PersistedLease>(
-            """SELECT statement_timestamp() AS "DatabaseTimeAfter", "locked_until" AS "LockedUntil", "owner" AS "Owner" FROM headless.messaging_received WHERE "id"=@Id""",
+            """SELECT statement_timestamp() AS "DatabaseTimeAfter", "lease_generation" AS "LeaseGeneration", "lease_expires_at" AS "LeaseExpiresAt", "lease_holder" AS "LeaseHolder" FROM headless.messaging_received WHERE "id"=@Id""",
             new { Id = stored.StorageId }
         );
 
@@ -1361,13 +1377,14 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
             AbortToken
         );
         var after = await connection.QuerySingleAsync<PersistedLease>(
-            """SELECT statement_timestamp() AS "DatabaseTimeAfter", "locked_until" AS "LockedUntil", "owner" AS "Owner" FROM headless.messaging_received WHERE "id"=@Id""",
+            """SELECT statement_timestamp() AS "DatabaseTimeAfter", "lease_generation" AS "LeaseGeneration", "lease_expires_at" AS "LeaseExpiresAt", "lease_holder" AS "LeaseHolder" FROM headless.messaging_received WHERE "id"=@Id""",
             new { Id = stored.StorageId }
         );
 
         redelivery.StorageId.Should().NotBe(stored.StorageId, "the active-lease guard must reject the upsert");
-        after.LockedUntil.Should().Be(before.LockedUntil);
-        after.Owner.Should().Be(before.Owner);
+        after.LeaseGeneration.Should().Be(before.LeaseGeneration);
+        after.LeaseExpiresAt.Should().Be(before.LeaseExpiresAt);
+        after.LeaseHolder.Should().Be(before.LeaseHolder);
     }
 
     [Fact]
@@ -1635,19 +1652,14 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
             $"""SELECT "next_retry_at" FROM headless.{tableName} WHERE "id" = @Id""",
             new { Id = id }
         );
-        var lockedUntil = await assertConnection.ExecuteScalarAsync<DateTimeOffset?>(
-            $"""SELECT "locked_until" FROM headless.{tableName} WHERE "id" = @Id""",
-            new { Id = id }
-        );
-        var owner = await assertConnection.ExecuteScalarAsync<string?>(
-            $"""SELECT "owner" FROM headless.{tableName} WHERE "id" = @Id""",
+        var leaseState = await assertConnection.ExecuteScalarAsync<short>(
+            $"""SELECT "lease_state" FROM headless.{tableName} WHERE "id" = @Id""",
             new { Id = id }
         );
 
         statusName.Should().Be(nameof(StatusName.Failed));
         nextRetryAt.Should().BeNull();
-        lockedUntil.Should().BeNull();
-        owner.Should().BeNull();
+        leaseState.Should().NotBe((short)RowLeaseState.Active);
 
         if (string.Equals(tableName, "messaging_received", StringComparison.Ordinal))
         {
@@ -1799,12 +1811,12 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
         await connection.OpenAsync(AbortToken);
         await _InsertRetryRowAsync(connection, tableName, id, rawLane: 77, content, now.AddMinutes(-1));
         await connection.ExecuteAsync(
-            $"""UPDATE headless.{tableName} SET "locked_until" = @LockedUntil, "owner" = @Owner WHERE "id" = @Id""",
+            $"""UPDATE headless.{tableName} SET "lease_generation" = 1, "lease_state" = 1, "lease_expires_at" = @LeaseExpiresAt, "lease_holder" = @LeaseHolder WHERE "id" = @Id""",
             new
             {
                 Id = id,
-                LockedUntil = now.AddMinutes(5),
-                Owner = deadOwner,
+                LeaseExpiresAt = now.AddMinutes(5),
+                LeaseHolder = deadOwner,
             }
         );
         var before = await _ReadPersistedRowJsonAsync(connection, tableName, id);
@@ -1879,7 +1891,7 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
     [Theory]
     [InlineData("messaging_published")]
     [InlineData("messaging_received")]
-    public async Task should_create_owner_column_with_shared_width(string table)
+    public async Task should_create_lease_holder_column_with_the_default_width(string table)
     {
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
@@ -1887,20 +1899,20 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
         var dataType = await connection.QueryFirstOrDefaultAsync<string>(
             """
             SELECT data_type FROM information_schema.columns
-            WHERE table_schema = 'headless' AND table_name = @Table AND column_name = 'owner'
+            WHERE table_schema = 'headless' AND table_name = @Table AND column_name = 'lease_holder'
             """,
             new { Table = table }
         );
         var maxLength = await connection.QueryFirstOrDefaultAsync<int?>(
             """
             SELECT character_maximum_length FROM information_schema.columns
-            WHERE table_schema = 'headless' AND table_name = @Table AND column_name = 'owner'
+            WHERE table_schema = 'headless' AND table_name = @Table AND column_name = 'lease_holder'
             """,
             new { Table = table }
         );
 
         dataType.Should().Be("character varying");
-        maxLength.Should().Be(DataStorageConstants.OwnerColumnMaxLength);
+        maxLength.Should().Be(DataStorageConstants.LeaseHolderMaxLength);
     }
 
     // -------------------------------------------------------------------------
@@ -1955,9 +1967,9 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
     }
 
     [Theory]
-    [InlineData("idx_messaging_received_owner_not_null")]
-    [InlineData("idx_messaging_published_owner_not_null")]
-    public async Task should_key_owner_index_on_owner_with_not_null_filter(string indexName)
+    [InlineData("idx_messaging_received_lease_holder_active")]
+    [InlineData("idx_messaging_published_lease_holder_active")]
+    public async Task should_key_lease_holder_index_on_active_leases(string indexName)
     {
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
@@ -1980,7 +1992,7 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
             )
         ).ToList();
 
-        columns.Should().BeEquivalentTo(["owner"], opts => opts.WithStrictOrdering());
+        columns.Should().BeEquivalentTo(["lease_holder"], opts => opts.WithStrictOrdering());
 
         var predicate = await connection.QueryFirstOrDefaultAsync<string>(
             """
@@ -1993,7 +2005,7 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
             new { IndexName = indexName }
         );
 
-        predicate.Should().NotBeNull().And.Contain("owner").And.Contain("IS NOT NULL");
+        predicate.Should().NotBeNull().And.Contain("lease_state").And.Contain("= 1");
     }
 
     [Theory]
@@ -2013,18 +2025,18 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
         var seedSql = tableSuffix switch
         {
             "messaging_received" => $$"""
-                INSERT INTO {{qualifiedTable}} ("id","version","name","consumer_identity","content","intent_type","retries","added","expires_at","next_retry_at","locked_until","status_name","message_id","consumer_identity_hash")
+                INSERT INTO {{qualifiedTable}} ("id","version","name","consumer_identity","content","intent_type","retries","added","expires_at","next_retry_at","status_name","message_id","consumer_identity_hash")
                 SELECT gen_random_uuid(), 'v1', 'plan-test', 'plan-test-consumer', '{}', (g % 2)::smallint, 0, now(), NULL,
                        CASE WHEN g % 2 = 0 THEN now() - interval '1 minute' ELSE NULL END,
-                       NULL, 'Failed', 'plan-' || g, sha256(convert_to('plan-' || g, 'UTF8'))
+                       'Failed', 'plan-' || g, sha256(convert_to('plan-' || g, 'UTF8'))
                 FROM generate_series(1000, 1000 + {{seedRows - 1}}) g
                 ON CONFLICT DO NOTHING;
                 """,
             "messaging_published" => $$"""
-                INSERT INTO {{qualifiedTable}} ("id","version","name","content","intent_type","retries","added","expires_at","next_retry_at","locked_until","status_name","message_id")
+                INSERT INTO {{qualifiedTable}} ("id","version","name","content","intent_type","retries","added","expires_at","next_retry_at","status_name","message_id")
                 SELECT gen_random_uuid(), 'v1', 'plan-test', '{}', (g % 2)::smallint, 0, now(), NULL,
                        CASE WHEN g % 2 = 0 THEN now() - interval '1 minute' ELSE NULL END,
-                       NULL, 'Failed', 'plan-' || g
+                       'Failed', 'plan-' || g
                 FROM generate_series(1000, 1000 + {{seedRows - 1}}) g
                 ON CONFLICT DO NOTHING;
                 """,
@@ -2241,9 +2253,9 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
             await connection.ExecuteAsync(
                 """
                 INSERT INTO headless.messaging_published
-                    ("id", "version", "name", "content", "intent_type", "retries", "added", "expires_at", "next_retry_at", "locked_until", "owner", "status_name", "message_id")
+                    ("id", "version", "name", "content", "intent_type", "retries", "added", "expires_at", "next_retry_at", "status_name", "message_id")
                 VALUES
-                    (@Id, 'v1', 'poison-published', 'not-json', 0, 0, @Now, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId);
+                    (@Id, 'v1', 'poison-published', 'not-json', 0, 0, @Now, NULL, @NextRetryAt, 'Failed', @MessageId);
                 """,
                 new
                 {
@@ -2259,9 +2271,9 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
         await connection.ExecuteAsync(
             """
             INSERT INTO headless.messaging_received
-                ("id", "version", "name", "consumer_identity", "content", "intent_type", "retries", "added", "expires_at", "next_retry_at", "locked_until", "owner", "status_name", "message_id", "exception_info", "consumer_identity_hash")
+                ("id", "version", "name", "consumer_identity", "content", "intent_type", "retries", "added", "expires_at", "next_retry_at", "status_name", "message_id", "exception_info", "consumer_identity_hash")
             VALUES
-                (@Id, 'v1', 'poison-received', 'poison-group', 'not-json', 0, 0, @Now, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId, NULL, @ConsumerIdentityHash);
+                (@Id, 'v1', 'poison-received', 'poison-group', 'not-json', 0, 0, @Now, NULL, @NextRetryAt, 'Failed', @MessageId, NULL, @ConsumerIdentityHash);
             """,
             new
             {
@@ -2292,9 +2304,9 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
             return connection.ExecuteAsync(
                 """
                 INSERT INTO headless.messaging_published
-                    ("id", "version", "name", "content", "intent_type", "retries", "added", "expires_at", "next_retry_at", "locked_until", "owner", "status_name", "message_id")
+                    ("id", "version", "name", "content", "intent_type", "retries", "added", "expires_at", "next_retry_at", "status_name", "message_id")
                 VALUES
-                    (@Id, 'v1', 'healthy-published', @Content, 0, 0, @Now, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId);
+                    (@Id, 'v1', 'healthy-published', @Content, 0, 0, @Now, NULL, @NextRetryAt, 'Failed', @MessageId);
                 """,
                 new
                 {
@@ -2310,9 +2322,9 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
         return connection.ExecuteAsync(
             """
             INSERT INTO headless.messaging_received
-                ("id", "version", "name", "consumer_identity", "content", "intent_type", "retries", "added", "expires_at", "next_retry_at", "locked_until", "owner", "status_name", "message_id", "exception_info", "consumer_identity_hash")
+                ("id", "version", "name", "consumer_identity", "content", "intent_type", "retries", "added", "expires_at", "next_retry_at", "status_name", "message_id", "exception_info", "consumer_identity_hash")
             VALUES
-                (@Id, 'v1', 'healthy-received', 'healthy-group', @Content, 0, 0, @Now, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId, NULL, @ConsumerIdentityHash);
+                (@Id, 'v1', 'healthy-received', 'healthy-group', @Content, 0, 0, @Now, NULL, @NextRetryAt, 'Failed', @MessageId, NULL, @ConsumerIdentityHash);
             """,
             new
             {
@@ -2347,9 +2359,9 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
             return connection.ExecuteAsync(
                 """
                 INSERT INTO headless.messaging_published
-                    ("id", "version", "name", "content", "intent_type", "retries", "inline_attempts", "added", "expires_at", "next_retry_at", "locked_until", "owner", "status_name", "message_id")
+                    ("id", "version", "name", "content", "intent_type", "retries", "inline_attempts", "added", "expires_at", "next_retry_at", "status_name", "message_id")
                 VALUES
-                    (@Id, 'v1', 'lane-contract-published', @Content, @RawLane, 0, 0, @Added, @ExpiresAt, @NextRetryAt, NULL, NULL, @StatusName, @MessageId);
+                    (@Id, 'v1', 'lane-contract-published', @Content, @RawLane, 0, 0, @Added, @ExpiresAt, @NextRetryAt, @StatusName, @MessageId);
                 """,
                 new
                 {
@@ -2368,9 +2380,9 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
         return connection.ExecuteAsync(
             """
             INSERT INTO headless.messaging_received
-                ("id", "version", "name", "consumer_identity", "content", "intent_type", "retries", "inline_attempts", "added", "expires_at", "next_retry_at", "locked_until", "owner", "status_name", "message_id", "exception_info", "consumer_identity_hash")
+                ("id", "version", "name", "consumer_identity", "content", "intent_type", "retries", "inline_attempts", "added", "expires_at", "next_retry_at", "status_name", "message_id", "exception_info", "consumer_identity_hash")
             VALUES
-                (@Id, 'v1', 'lane-contract-received', 'lane-contract-group', @Content, @RawLane, 0, 0, @Added, @ExpiresAt, @NextRetryAt, NULL, NULL, @StatusName, @MessageId, NULL, @ConsumerIdentityHash);
+                (@Id, 'v1', 'lane-contract-received', 'lane-contract-group', @Content, @RawLane, 0, 0, @Added, @ExpiresAt, @NextRetryAt, @StatusName, @MessageId, NULL, @ConsumerIdentityHash);
             """,
             new
             {
@@ -2462,18 +2474,20 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
     {
         public required string StatusName { get; init; }
 
-        public DateTime? LockedUntil { get; init; }
+        public short LeaseState { get; init; }
 
-        public string? Owner { get; init; }
+        public string? LeaseHolder { get; init; }
     }
 
     private sealed class PersistedLease
     {
         public required DateTime DatabaseTimeAfter { get; init; }
 
-        public required DateTime LockedUntil { get; init; }
+        public long LeaseGeneration { get; init; }
 
-        public string? Owner { get; init; }
+        public required DateTime LeaseExpiresAt { get; init; }
+
+        public string? LeaseHolder { get; init; }
     }
 
     #endregion

@@ -67,8 +67,8 @@ public sealed class SqlServerClockAfterLockTests(SqlServerTestFixture fixture) :
 
         // then
         acquired.Should().BeTrue();
-        var lockedUntil = await _ReadInstantAsync("LockedUntil", stored.StorageId);
-        (lockedUntil - lease).Should().BeOnOrAfter(released);
+        var leaseExpiresAt = await _ReadInstantAsync("LeaseExpiresAt", stored.StorageId);
+        (leaseExpiresAt - lease).Should().BeOnOrAfter(released);
     }
 
     [Fact]

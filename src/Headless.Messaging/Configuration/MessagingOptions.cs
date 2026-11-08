@@ -280,7 +280,7 @@ public sealed class MessagingOptions
     /// watch path is best-effort acceleration. Defaults to <see langword="null"/>, which means half the coordination
     /// <c>DeadRetentionWindow</c> (15 seconds with default coordination options): relational providers keep a dead
     /// identity observable for only that window, so a slower reconcile could miss it and leave its rows to wait for
-    /// their <c>LockedUntil</c> lease. An explicit value above that ceiling is clamped to it with a warning.
+    /// their lease to expire. An explicit value above that ceiling is clamped to it with a warning.
     /// </remarks>
     public TimeSpan? DeadNodeReconcileInterval { get; set; }
 

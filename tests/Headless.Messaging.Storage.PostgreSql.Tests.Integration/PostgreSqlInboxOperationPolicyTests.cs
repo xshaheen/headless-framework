@@ -236,7 +236,7 @@ public sealed class PostgreSqlInboxOperationPolicyTests(PostgreSqlTestFixture fi
         await connection.OpenAsync(AbortToken);
         var table = tableNames.GetReceivedTableName();
         await using var expire = new NpgsqlCommand(
-            $"""UPDATE {table} SET "locked_until"=clock_timestamp()-INTERVAL '1 second', "next_retry_at"=clock_timestamp()-INTERVAL '1 second' WHERE "id"=@Id;""",
+            $"""UPDATE {table} SET "lease_expires_at"=clock_timestamp()-INTERVAL '1 second', "next_retry_at"=clock_timestamp()-INTERVAL '1 second' WHERE "id"=@Id;""",
             connection
         );
         expire.Parameters.AddWithValue("@Id", message.StorageId);

@@ -202,7 +202,7 @@ internal sealed class ResponderExecutorHost : IAsyncDisposable
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<RetryDelay?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -404,7 +404,7 @@ internal sealed class ResponderExecutorHost : IAsyncDisposable
                     status,
                     Arg.Any<MessageContentWrite>(),
                     Arg.Any<RetryDelay?>(),
-                    Arg.Any<DateTimeOffset?>(),
+                    Arg.Any<bool>(),
                     Arg.Any<int>(),
                     Arg.Any<int>(),
                     Arg.Any<CancellationToken>()

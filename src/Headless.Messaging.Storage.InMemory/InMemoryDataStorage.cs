@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using System.Data.Common;
 using Headless.Coordination;
+using Headless.Fencing;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Transactions;
@@ -140,20 +141,37 @@ internal sealed partial class InMemoryDataStorage(
                     !_IsSupportedLane(message.Lane)
                     || message.Lane != expected.Lane
                     || MessageTerminalState.IsTerminal(message.StatusName, message.NextRetryAt)
-                    // Only the lease the caller recorded may be handed back, mirroring the relational providers: an
-                    // unleased hand-off copy must not reset a row another node has claimed and is sending since.
-                    || !string.Equals(message.Owner, expected.Owner, StringComparison.Ordinal)
-                    || message.LockedUntil != expected.LockedUntil
+                )
+                {
+                    continue;
+                }
+
+                // Mirrors the relational providers: a leased copy releases its own generation with the status flip, so
+                // the row is re-claimable at once. An unleased hand-off copy flips only a row no attempt holds, still at
+                // the generation the copy read, so it cannot reset a row another node has claimed and is sending since.
+                if (expected.Lease.State == RowLeaseState.Active)
+                {
+                    var released = RowLeaseRules.Release(
+                        message.Lease,
+                        expected.Lease.Generation,
+                        timeProvider.GetUtcNow()
+                    );
+                    if (released.Status != LeaseSettlementStatus.Released)
+                    {
+                        continue;
+                    }
+
+                    message.Lease = released.Next;
+                }
+                else if (
+                    message.Lease.State == RowLeaseState.Active
+                    || message.Lease.Generation != expected.Lease.Generation
                 )
                 {
                     continue;
                 }
 
                 message.StatusName = StatusName.Delayed;
-
-                // Release the lease so the handed-back row is re-claimable at once instead of after it expires.
-                message.LockedUntil = null;
-                message.Owner = null;
             }
         }
 
@@ -166,7 +184,7 @@ internal sealed partial class InMemoryDataStorage(
         MessageContentWrite contentWrite = MessageContentWrite.Preserve,
         DbTransaction? dbTransaction = null,
         RetryDelay? retryDelay = null,
-        DateTimeOffset? lockedUntil = null,
+        bool keepLease = false,
         int? originalRetries = null,
         CancellationToken cancellationToken = default
     )
@@ -176,7 +194,7 @@ internal sealed partial class InMemoryDataStorage(
             state,
             contentWrite,
             retryDelay,
-            lockedUntil,
+            keepLease,
             originalRetries,
             originalInlineAttempts: null,
             cancellationToken
@@ -188,7 +206,7 @@ internal sealed partial class InMemoryDataStorage(
         StatusName state,
         MessageContentWrite contentWrite,
         RetryDelay? retryDelay,
-        DateTimeOffset? lockedUntil,
+        bool keepLease,
         int originalRetries,
         int originalInlineAttempts,
         CancellationToken cancellationToken = default
@@ -199,7 +217,7 @@ internal sealed partial class InMemoryDataStorage(
             state,
             contentWrite,
             retryDelay,
-            lockedUntil,
+            keepLease,
             originalRetries,
             originalInlineAttempts,
             cancellationToken
@@ -271,7 +289,7 @@ internal sealed partial class InMemoryDataStorage(
         StatusName state,
         MessageContentWrite contentWrite,
         RetryDelay? retryDelay,
-        DateTimeOffset? lockedUntil,
+        bool keepLease,
         int? originalRetries,
         int? originalInlineAttempts,
         CancellationToken cancellationToken
@@ -306,12 +324,14 @@ internal sealed partial class InMemoryDataStorage(
             }
 
             if (
-                originalInlineAttempts.HasValue
-                && (
-                    current.LockedUntil != message.LockedUntil
-                    || !string.Equals(current.Owner, message.Owner, StringComparison.Ordinal)
-                    || current.LockedUntil is null
-                    || current.LockedUntil <= timeProvider.GetUtcNow()
+                !_TryEndLease(
+                    current,
+                    message,
+                    state,
+                    retryDelay,
+                    keepLease,
+                    fenced: originalInlineAttempts.HasValue,
+                    out var lease
                 )
             )
             {
@@ -319,12 +339,10 @@ internal sealed partial class InMemoryDataStorage(
             }
 
             var utcNextRetryAt = retryDelay?.ResolveDueAt(timeProvider.GetUtcNow(), current.NextRetryAt);
-            var utcLockedUntil = lockedUntil;
             current.StatusName = state;
             current.ExpiresAt = message.ExpiresAt;
             current.NextRetryAt = utcNextRetryAt;
-            current.LockedUntil = utcLockedUntil;
-            current.Owner = utcLockedUntil is null ? null : nodeMembership.GetOwnerTag();
+            _ApplyLease(current, message, lease, fenced: originalInlineAttempts.HasValue);
             current.Retries = message.Retries;
             current.InlineAttempts = message.InlineAttempts;
             _WriteContent(current, message, contentWrite);
@@ -345,7 +363,7 @@ internal sealed partial class InMemoryDataStorage(
             message,
             leaseDuration,
             timeProvider,
-            nodeMembership.GetOwnerTag(),
+            nodeMembership.GetLeaseHolder(),
             cancellationToken
         );
     }
@@ -363,7 +381,7 @@ internal sealed partial class InMemoryDataStorage(
             leaseDuration,
             originalInlineAttempts,
             timeProvider,
-            nodeMembership.GetOwnerTag(),
+            nodeMembership.GetLeaseHolder(),
             fenceGenerator: null,
             cancellationToken: cancellationToken
         );
@@ -374,7 +392,7 @@ internal sealed partial class InMemoryDataStorage(
         StatusName state,
         MessageContentWrite contentWrite = MessageContentWrite.Preserve,
         RetryDelay? retryDelay = null,
-        DateTimeOffset? lockedUntil = null,
+        bool keepLease = false,
         int? originalRetries = null,
         CancellationToken cancellationToken = default
     )
@@ -384,7 +402,7 @@ internal sealed partial class InMemoryDataStorage(
             state,
             contentWrite,
             retryDelay,
-            lockedUntil,
+            keepLease,
             originalRetries,
             originalInlineAttempts: null,
             cancellationToken
@@ -396,7 +414,7 @@ internal sealed partial class InMemoryDataStorage(
         StatusName state,
         MessageContentWrite contentWrite,
         RetryDelay? retryDelay,
-        DateTimeOffset? lockedUntil,
+        bool keepLease,
         int originalRetries,
         int originalInlineAttempts,
         CancellationToken cancellationToken = default
@@ -407,7 +425,7 @@ internal sealed partial class InMemoryDataStorage(
             state,
             contentWrite,
             retryDelay,
-            lockedUntil,
+            keepLease,
             originalRetries,
             originalInlineAttempts,
             cancellationToken
@@ -438,7 +456,7 @@ internal sealed partial class InMemoryDataStorage(
         StatusName state,
         MessageContentWrite contentWrite,
         RetryDelay? retryDelay,
-        DateTimeOffset? lockedUntil,
+        bool keepLease,
         int? originalRetries,
         int? originalInlineAttempts,
         CancellationToken cancellationToken
@@ -478,12 +496,14 @@ internal sealed partial class InMemoryDataStorage(
                 }
 
                 if (
-                    originalInlineAttempts.HasValue
-                    && (
-                        current.LockedUntil != message.LockedUntil
-                        || !string.Equals(current.Owner, message.Owner, StringComparison.Ordinal)
-                        || current.LockedUntil is null
-                        || current.LockedUntil <= timeProvider.GetUtcNow()
+                    !_TryEndLease(
+                        current,
+                        message,
+                        state,
+                        retryDelay,
+                        keepLease,
+                        fenced: originalInlineAttempts.HasValue,
+                        out var lease
                     )
                 )
                 {
@@ -491,15 +511,13 @@ internal sealed partial class InMemoryDataStorage(
                 }
 
                 var utcNextRetryAt = retryDelay?.ResolveDueAt(timeProvider.GetUtcNow(), current.NextRetryAt);
-                var utcLockedUntil = lockedUntil;
                 current.StatusName = state;
                 current.ExpiresAt = message.ExpiresAt;
                 current.NextRetryAt = utcNextRetryAt;
-                current.LockedUntil = utcLockedUntil;
-                current.Owner = utcLockedUntil is null ? null : nodeMembership.GetOwnerTag();
+                _ApplyLease(current, message, lease, fenced: originalInlineAttempts.HasValue);
                 current.Retries = message.Retries;
                 current.InlineAttempts = message.InlineAttempts;
-                current.InboxAttemptFence = utcLockedUntil is null ? null : message.InboxAttemptFence;
+                current.InboxAttemptFence = keepLease ? current.InboxAttemptFence : null;
                 if (
                     current.InboxGeneration is not null
                     && state is StatusName.Succeeded or StatusName.Failed
@@ -533,7 +551,7 @@ internal sealed partial class InMemoryDataStorage(
                 message,
                 leaseDuration,
                 timeProvider,
-                nodeMembership.GetOwnerTag(),
+                nodeMembership.GetLeaseHolder(),
                 cancellationToken
             );
         }
@@ -554,7 +572,7 @@ internal sealed partial class InMemoryDataStorage(
                 leaseDuration,
                 originalInlineAttempts,
                 timeProvider,
-                nodeMembership.GetOwnerTag(),
+                nodeMembership.GetLeaseHolder(),
                 guidGenerator,
                 cancellationToken
             );
@@ -700,11 +718,12 @@ internal sealed partial class InMemoryDataStorage(
 
             lock (current)
             {
+                var now = timeProvider.GetUtcNow();
                 if (
                     current.InboxKey is null
                     || !_MatchesInboxFence(current, message.InboxAttemptFence)
-                    || current.LockedUntil is null
-                    || current.LockedUntil <= timeProvider.GetUtcNow()
+                    || RowLeaseRules.Judge(current.Lease, message.InboxAttemptFence!.LeaseGeneration, now)
+                        != LeaseFenceStatus.Current
                 )
                 {
                     return ValueTask.FromResult(false);
@@ -714,13 +733,13 @@ internal sealed partial class InMemoryDataStorage(
                 message.IsInboxOrphaned = orphaned;
                 if (orphaned)
                 {
-                    current.NextRetryAt = timeProvider.GetUtcNow().Add(messagingOptions.Value.OrphanProbeInterval);
-                    current.Owner = null;
-                    current.LockedUntil = null;
+                    // Orphaning releases the held generation with the probe delay; confirming keeps the live lease.
+                    current.Lease = RowLeaseRules.Release(current.Lease, current.Lease.Generation, now).Next;
+                    current.NextRetryAt = now.Add(messagingOptions.Value.OrphanProbeInterval);
                     message.NextRetryAt = current.NextRetryAt;
-                    message.Owner = null;
-                    message.LockedUntil = null;
                 }
+
+                message.Lease = current.Lease;
 
                 return ValueTask.FromResult(true);
             }
@@ -783,8 +802,6 @@ internal sealed partial class InMemoryDataStorage(
             Added = added,
             ExpiresAt = publishAt,
             NextRetryAt = publishAt is null ? added.Add(messagingOptions.Value.RetryPolicy.InitialDispatchGrace) : null,
-            LockedUntil = null,
-            Owner = null,
             Retries = 0,
             InlineAttempts = 0,
         };
@@ -801,8 +818,6 @@ internal sealed partial class InMemoryDataStorage(
             Added = stored.Added,
             ExpiresAt = stored.ExpiresAt,
             NextRetryAt = stored.NextRetryAt,
-            LockedUntil = stored.LockedUntil,
-            Owner = stored.Owner,
             StatusName = statusName,
             Version = messagingOptions.Value.Version,
         };
@@ -922,8 +937,7 @@ internal sealed partial class InMemoryDataStorage(
                 existing.Retries = retries;
                 existing.ExpiresAt = expiresAt;
                 existing.NextRetryAt = null;
-                existing.LockedUntil = null;
-                existing.Owner = null;
+                existing.Lease = RowLeaseRules.Revoke(existing.Lease).Next;
                 existing.Content = content;
                 existing.ExceptionInfo = exceptionInfo;
 
@@ -943,8 +957,6 @@ internal sealed partial class InMemoryDataStorage(
                 Added = now,
                 ExpiresAt = expiresAt,
                 NextRetryAt = null,
-                LockedUntil = null,
-                Owner = null,
                 StatusName = StatusName.Failed,
                 ExceptionInfo = exceptionInfo,
                 Version = version,
@@ -1037,20 +1049,19 @@ internal sealed partial class InMemoryDataStorage(
                 // identity is keyed on (Version, MessageId, ConsumerIdentity) so those values are pinned at
                 // insert time and never need refreshing across redeliveries of the same identity.
                 //
-                // #10 — gate the ENTIRE update under the active-lease check, matching the SQL
-                // providers' `WHERE ... AND (LockedUntil IS NULL OR LockedUntil <= now())` clause
-                // that suppresses the whole `ON CONFLICT DO UPDATE` when the lease is active.
+                // #10 — gate the ENTIRE update under the live-lease check, matching the SQL
+                // providers' `WHERE ... AND (LeaseState <> Active OR LeaseExpiresAt <= now())` clause
+                // that suppresses the whole `ON CONFLICT DO UPDATE` while an attempt holds the row.
                 // A redelivered message that arrives mid-dispatch must not mutate Retries (which
                 // would silently rewind the counter), StatusName, Content, or any other column —
-                // not just LockedUntil. The post-fix-#7 Retries-CAS catches the Retries case, but
+                // not just the lease. The post-fix-#7 Retries-CAS catches the Retries case, but
                 // StatusName/Content/ExceptionInfo writes are not CAS-guarded and would corrupt
                 // the row in subtle ways otherwise.
                 var nowUtc = timeProvider.GetUtcNow();
-                var leaseActive = existing.LockedUntil is not null && existing.LockedUntil > nowUtc;
-                if (leaseActive)
+                if (_HasLiveLease(existing, nowUtc))
                 {
                     // Match SQL's guard-blocked upsert contract: return the fresh, unpersisted candidate.
-                    // Its synthetic id makes the executor's follow-up lease fail, while a null LockedUntil
+                    // Its synthetic id makes the executor's follow-up lease fail, while its unleased state
                     // prevents the atomic-pickup fast path from treating another dispatcher's lease as ours.
                     return ValueTask.FromResult(
                         _CreateUnstoredReceivedMessage(message, serialized, added, initialNextRetryAt)
@@ -1065,8 +1076,7 @@ internal sealed partial class InMemoryDataStorage(
                 existing.Added = added;
                 existing.ExpiresAt = null;
                 existing.NextRetryAt = initialNextRetryAt;
-                existing.LockedUntil = null;
-                existing.Owner = null;
+                existing.Lease = RowLeaseRules.Revoke(existing.Lease).Next;
                 existing.StatusName = StatusName.Scheduled;
                 existing.ExceptionInfo = null;
 
@@ -1104,8 +1114,6 @@ internal sealed partial class InMemoryDataStorage(
             Added = added,
             ExpiresAt = null,
             NextRetryAt = initialNextRetryAt,
-            LockedUntil = null,
-            Owner = null,
             Retries = 0,
             InlineAttempts = 0,
         };
@@ -1157,8 +1165,6 @@ internal sealed partial class InMemoryDataStorage(
             Added = mdMessage.Added,
             ExpiresAt = mdMessage.ExpiresAt,
             NextRetryAt = mdMessage.NextRetryAt,
-            LockedUntil = mdMessage.LockedUntil,
-            Owner = mdMessage.Owner,
             StatusName = StatusName.Scheduled,
             Version = version,
         };
@@ -1368,22 +1374,15 @@ internal sealed partial class InMemoryDataStorage(
 
             lock (current)
             {
-                var identity = deferral.Identity;
-                if (
-                    current.Lane != identity.Lane
-                    || !string.Equals(current.Owner, identity.Owner, StringComparison.Ordinal)
-                    || current.LockedUntil != identity.LockedUntil
-                    || (current.InboxGeneration is not null && !_MatchesInboxFence(current, identity.InboxAttemptFence))
-                    || current.LockedUntil <= timeProvider.GetUtcNow()
-                    || MessageTerminalState.IsTerminal(current.StatusName, current.NextRetryAt)
-                )
+                // The deferral releases the held generation with the new due time, so the row waits out the circuit
+                // instead of its lease.
+                var now = timeProvider.GetUtcNow();
+                if (!_TryReleaseLease(current, deferral.Identity, now))
                 {
                     return ValueTask.FromResult(false);
                 }
 
-                current.NextRetryAt = timeProvider.GetUtcNow().Add(deferral.Delay);
-                current.Owner = null;
-                current.LockedUntil = null;
+                current.NextRetryAt = now.Add(deferral.Delay);
                 return ValueTask.FromResult(true);
             }
         }
@@ -1408,7 +1407,7 @@ internal sealed partial class InMemoryDataStorage(
         }
     }
 
-    private static int _ReleaseLeases(
+    private int _ReleaseLeases(
         ConcurrentDictionary<Guid, MemoryMessage> source,
         IReadOnlyCollection<MessageLeaseIdentity> identities,
         CancellationToken cancellationToken
@@ -1426,7 +1425,7 @@ internal sealed partial class InMemoryDataStorage(
         return released;
     }
 
-    private static bool _ReleaseLease(
+    private bool _ReleaseLease(
         ConcurrentDictionary<Guid, MemoryMessage> source,
         MessageLeaseIdentity identity,
         CancellationToken cancellationToken
@@ -1442,21 +1441,111 @@ internal sealed partial class InMemoryDataStorage(
 
         lock (current)
         {
-            if (
-                current.Lane != identity.Lane
-                || !string.Equals(current.Owner, identity.Owner, StringComparison.Ordinal)
-                || current.LockedUntil != identity.LockedUntil
-                || (current.InboxGeneration is not null && !_MatchesInboxFence(current, identity.InboxAttemptFence))
-                || MessageTerminalState.IsTerminal(current.StatusName, current.NextRetryAt)
-            )
-            {
-                return false;
-            }
+            return _TryReleaseLease(current, identity, timeProvider.GetUtcNow());
+        }
+    }
 
-            current.Owner = null;
-            current.LockedUntil = null;
+    /// <summary>
+    /// Releases the lease generation <paramref name="identity" /> holds, so a release never ends a lease another node has
+    /// taken since; the row must still be in the identity's lane, non-terminal, and on the identity's inbox attempt.
+    /// </summary>
+    private static bool _TryReleaseLease(MemoryMessage current, MessageLeaseIdentity identity, DateTimeOffset now)
+    {
+        if (
+            current.Lane != identity.Lane
+            || (current.InboxGeneration is not null && !_MatchesInboxFence(current, identity.InboxAttemptFence))
+            || MessageTerminalState.IsTerminal(current.StatusName, current.NextRetryAt)
+        )
+        {
+            return false;
+        }
+
+        // A generation already released reports Released without a write; like the relational release, which fences on
+        // an active lease, only a release that ends the live generation counts.
+        var released = RowLeaseRules.Release(current.Lease, identity.Generation, now);
+        if (released.Status != LeaseSettlementStatus.Released || !released.Wrote)
+        {
+            return false;
+        }
+
+        current.Lease = released.Next;
+        return true;
+    }
+
+    /// <summary>
+    /// Judges and computes the lease a state change leaves, as the relational providers do. A fenced write (an inline
+    /// retry that passed the attempt counter it read) applies only while the caller's generation is still current: it
+    /// keeps the lease while the inline retry is in flight, settles it on a terminal outcome, and releases it on a retry
+    /// schedule. An unfenced write rewrites the row's outcome, so it revokes whatever attempt holds the row unless it
+    /// keeps the lease.
+    /// </summary>
+    private bool _TryEndLease(
+        MemoryMessage current,
+        MediumMessage message,
+        StatusName state,
+        RetryDelay? retryDelay,
+        bool keepLease,
+        bool fenced,
+        out RowLeaseSnapshot lease
+    )
+    {
+        if (!fenced)
+        {
+            lease = keepLease ? current.Lease : RowLeaseRules.Revoke(current.Lease).Next;
             return true;
         }
+
+        var now = timeProvider.GetUtcNow();
+        var generation = message.Lease.Generation;
+        lease = current.Lease;
+
+        if (keepLease)
+        {
+            return RowLeaseRules.Judge(current.Lease, generation, now) == LeaseFenceStatus.Current;
+        }
+
+        if (state is StatusName.Succeeded or StatusName.Failed && retryDelay is null)
+        {
+            var settled = RowLeaseRules.Settle(current.Lease, generation, now);
+            lease = settled.Next;
+            return settled.Status == LeaseSettlementStatus.Settled;
+        }
+
+        var released = RowLeaseRules.Release(current.Lease, generation, now);
+        lease = released.Next;
+        return released.Status == LeaseSettlementStatus.Released;
+    }
+
+    /// <summary>Stores the lease a state change left; a fenced write also hands it back on the caller's copy.</summary>
+    private static void _ApplyLease(MemoryMessage current, MediumMessage message, RowLeaseSnapshot lease, bool fenced)
+    {
+        current.Lease = lease;
+        if (fenced)
+        {
+            message.Lease = lease;
+        }
+    }
+
+    private static bool _HasLiveLease(MediumMessage row, DateTimeOffset now)
+    {
+        return row.Lease.State == RowLeaseState.Active
+            && RowLeaseRules.Judge(row.Lease, row.Lease.Generation, now) == LeaseFenceStatus.Current;
+    }
+
+    /// <summary>
+    /// Grants a new lease generation to <paramref name="holder" /> unless a live attempt holds the row. A live lease the
+    /// same holder already holds is refused too, as the relational claim skips every live row.
+    /// </summary>
+    private static bool _TryGrantLease(MemoryMessage current, DateTimeOffset now, TimeSpan duration, string? holder)
+    {
+        var granted = RowLeaseRules.Grant(current.Lease, now, duration, new LeaseGrantOptions { Holder = holder });
+        if (!granted.Wrote)
+        {
+            return false;
+        }
+
+        current.Lease = granted.Next;
+        return true;
     }
 
     private List<MediumMessage> _ClaimMessagesOfNeedRetry(
@@ -1470,16 +1559,17 @@ internal sealed partial class InMemoryDataStorage(
         cancellationToken.ThrowIfCancellationRequested();
         _ = MessageLaneCompatibility.ToPersistedValue(lane);
         var now = timeProvider.GetUtcNow();
-        var newLease = now.Add(messagingOptions.Value.RetryPolicy.DispatchTimeout);
+        var leaseDuration = messagingOptions.Value.RetryPolicy.DispatchTimeout;
+        var holder = nodeMembership.GetLeaseHolder();
         var retryBatchSize = orphaned is true
             ? messagingOptions.Value.OrphanProbeBatchSize
             : messagingOptions.Value.RetryBatchSize;
         var version = messagingOptions.Value.Version;
 
         // Atomic claim-and-return mirrors the SQL providers' single-statement UPDATE...RETURNING/
-        // OUTPUT semantics: the pickup query both leases (sets LockedUntil = now + DispatchTimeout)
+        // OUTPUT semantics: the pickup query both leases (grants a new lease generation for DispatchTimeout)
         // and returns the rows in one step, preventing two concurrent pickups from observing the
-        // same "LockedUntil IS NULL" row and double-dispatching. Each candidate row is leased under
+        // same unleased row and double-dispatching. Each candidate row is leased under
         // its per-row lock so the claim is atomic with respect to other writers.
         //
         // Return a snapshot (plain MediumMessage), not the live MemoryMessage reference, so that
@@ -1540,17 +1630,15 @@ internal sealed partial class InMemoryDataStorage(
                     continue;
                 }
 
-                if (candidate.LockedUntil is not null && candidate.LockedUntil > now)
-                {
-                    continue;
-                }
-
                 // Terminal-row exclusion is already enforced by the NextRetryAt > now check
                 // above (terminal Succeeded/Failed rows have NextRetryAt IS NULL and so are
                 // rejected by the `NextRetryAt is null` guard). The redundant terminal-status
                 // block was unreachable and has been removed.
-                candidate.LockedUntil = newLease;
-                candidate.Owner = nodeMembership.GetOwnerTag();
+                if (!_TryGrantLease(candidate, now, leaseDuration, holder))
+                {
+                    continue;
+                }
+
                 if (candidate.InboxGeneration is not null)
                 {
                     candidate.InboxAttemptFence = new InboxAttemptFence(
@@ -1559,8 +1647,7 @@ internal sealed partial class InMemoryDataStorage(
                         candidate.InboxGeneration.Number,
                         candidate.InboxGeneration.IncarnationId,
                         guidGenerator.Create(),
-                        candidate.Owner,
-                        newLease
+                        candidate.Lease.Generation
                     );
                 }
 
@@ -1603,8 +1690,7 @@ internal sealed partial class InMemoryDataStorage(
             Added = m.Added,
             ExpiresAt = m.ExpiresAt,
             NextRetryAt = m.NextRetryAt,
-            LockedUntil = m.LockedUntil,
-            Owner = m.Owner,
+            Lease = m.Lease,
             Retries = m.Retries,
             InlineAttempts = m.InlineAttempts,
             InboxKey = m.InboxKey,
@@ -1624,8 +1710,7 @@ internal sealed partial class InMemoryDataStorage(
             && fence.Lane == current.Lane
             && current.InboxGeneration?.Number == fence.Generation
             && current.InboxGeneration?.IncarnationId == fence.GenerationIncarnationId
-            && string.Equals(current.Owner, fence.Owner, StringComparison.Ordinal)
-            && current.LockedUntil == fence.LockedUntil;
+            && current.Lease.Generation == fence.LeaseGeneration;
     }
 
     private static ValueTask<bool> _LeaseAsync(
@@ -1633,7 +1718,7 @@ internal sealed partial class InMemoryDataStorage(
         MediumMessage message,
         TimeSpan leaseDuration,
         TimeProvider timeProvider,
-        string? owner,
+        string? holder,
         CancellationToken cancellationToken
     )
     {
@@ -1651,25 +1736,19 @@ internal sealed partial class InMemoryDataStorage(
                 return ValueTask.FromResult(false);
             }
 
-            // #15 — explicit lease-contention guard: refuse to acquire the lease when another writer
-            // holds it (LockedUntil in the future). Mirrors the WHERE LockedUntil IS NULL OR <= @Now
-            // predicate added to the SQL providers' _LeaseMessageAsync.
-            var nowUtc = timeProvider.GetUtcNow();
-            if (current.LockedUntil is not null && current.LockedUntil > nowUtc)
+            // #15 — explicit lease-contention guard: refuse to acquire the lease while a live attempt holds
+            // the row, as the SQL providers' lease take skips live rows.
+            if (!_TryGrantLease(current, timeProvider.GetUtcNow(), leaseDuration, holder))
             {
                 return ValueTask.FromResult(false);
             }
 
-            var lockedUntil = nowUtc.Add(leaseDuration);
-            current.LockedUntil = lockedUntil;
-            current.Owner = owner;
-            message.LockedUntil = lockedUntil;
-            message.Owner = owner;
+            message.Lease = current.Lease;
             return ValueTask.FromResult(true);
         }
     }
 
-    private int _ReclaimDeadOwners(
+    private static int _ReclaimDeadOwners(
         ConcurrentDictionary<Guid, MemoryMessage> messages,
         IReadOnlyCollection<string> deadOwners,
         CancellationToken cancellationToken
@@ -1687,8 +1766,7 @@ internal sealed partial class InMemoryDataStorage(
         // Always build an Ordinal HashSet so the owner comparison matches the PostgreSQL/SqlServer
         // exact-string semantics. The previous `as ISet<string>` fast path was both dead (the sole
         // caller passes a string[]) and a latent trap (a non-Ordinal ISet would silently diverge).
-        var deadOwnerSet = new HashSet<string>(deadOwners, StringComparer.Ordinal);
-        var now = timeProvider.GetUtcNow();
+        var deadHolders = new HashSet<string>(deadOwners, StringComparer.Ordinal);
         var reclaimed = 0;
 
         foreach (var message in messages.Values)
@@ -1697,22 +1775,24 @@ internal sealed partial class InMemoryDataStorage(
 
             lock (message)
             {
-                if (!_IsSupportedLane(message.Lane) || message.Owner is null || !deadOwnerSet.Contains(message.Owner))
+                if (
+                    !_IsSupportedLane(message.Lane)
+                    || message.Lease.Holder is not { } holder
+                    || !deadHolders.Contains(holder)
+                    || MessageTerminalState.IsTerminal(message.StatusName, message.NextRetryAt)
+                )
                 {
                     continue;
                 }
 
-                if (MessageTerminalState.IsTerminal(message.StatusName, message.NextRetryAt))
+                // Revokes the active attempt, live or expired, so the dead holder's generation is fenced out.
+                var revoked = RowLeaseRules.Revoke(message.Lease);
+                if (!revoked.Wrote)
                 {
                     continue;
                 }
 
-                if (message.LockedUntil is null || message.LockedUntil <= now)
-                {
-                    continue;
-                }
-
-                message.LockedUntil = now;
+                message.Lease = revoked.Next;
                 reclaimed++;
             }
         }

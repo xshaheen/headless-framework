@@ -117,10 +117,9 @@ public interface IDataStorage
     /// while each row still carries the lease its message recorded.
     /// </summary>
     /// <remarks>
-    /// A row matches when its <see cref="MediumMessage.Owner"/> and <see cref="MediumMessage.LockedUntil"/> equal the
-    /// message's recorded values, both <see langword="null"/> included: an unleased copy resets only an unleased row,
-    /// and a claimed copy resets only the exact lease generation it claimed. A row another node has leased since, an
-    /// unknown row, and a terminal row are left unchanged.
+    /// A copy whose <see cref="MediumMessage.Lease"/> is active releases only that exact lease generation, judged live
+    /// by the store's clock; an unleased copy resets only a row no attempt holds. A row another node has leased since,
+    /// an unknown row, and a terminal row are left unchanged.
     /// </remarks>
     /// <param name="messages">The messages to hand back, each carrying the lease identity it holds.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
@@ -154,11 +153,12 @@ public interface IDataStorage
     /// clock retry pickup compares against. Pass <see langword="null"/> to clear the persisted due time. Only
     /// retry-transition paths pass a value.
     /// </param>
-    /// <param name="lockedUntil">
-    /// UTC timestamp until which the row is leased by an active dispatch attempt. Pass
-    /// <see langword="null"/> on terminal and retry-schedule writes so the row becomes
-    /// pickup-eligible again. Only retry-transition or in-flight paths supply a value; the
-    /// pre-attempt lease itself is taken via the Lease* methods, which let the STORE derive the deadline.
+    /// <param name="keepLease">
+    /// Whether the caller's lease (<see cref="MediumMessage.Lease"/>) stays held after the write, as it does while an
+    /// inline retry is still in flight. Pass <see langword="false"/> on terminal and retry-schedule writes: a terminal
+    /// write settles the lease and a retry-schedule write releases it, so the row becomes pickup-eligible again. A
+    /// fenced write (one that passes the original counters) applies only while the caller still holds that lease
+    /// generation. The pre-attempt lease itself is taken via the Lease* methods, which let the STORE derive the deadline.
     /// </param>
     /// <param name="originalRetries">
     /// Optimistic-concurrency token. When supplied, storage applies <c>AND Retries = @OriginalRetries</c>
@@ -177,7 +177,7 @@ public interface IDataStorage
         MessageContentWrite contentWrite = MessageContentWrite.Preserve,
         DbTransaction? transaction = null,
         RetryDelay? retryDelay = null,
-        DateTimeOffset? lockedUntil = null,
+        bool keepLease = false,
         int? originalRetries = null,
         CancellationToken cancellationToken = default
     );
@@ -191,7 +191,7 @@ public interface IDataStorage
         StatusName state,
         MessageContentWrite contentWrite,
         RetryDelay? retryDelay,
-        DateTimeOffset? lockedUntil,
+        bool keepLease,
         int originalRetries,
         int originalInlineAttempts,
         CancellationToken cancellationToken = default
@@ -199,11 +199,12 @@ public interface IDataStorage
 
     /// <summary>Atomically reserves the next published delivery attempt under the active lease.</summary>
     /// <remarks>
-    /// The reservation also slides the lease forward: the store re-stamps <c>LockedUntil</c> to its own clock plus
-    /// <c>RetryPolicy.DispatchTimeout</c> in the same statement, so a row reserved late in a claimed batch still holds a
-    /// full lease when its attempt starts. It applies only while the caller's <c>Owner</c> and <c>LockedUntil</c> still
-    /// match the row and that lease is live by the store's clock. On success the caller's <c>LockedUntil</c>,
-    /// <c>Owner</c>, and inbox attempt fence carry the new lease identity, which every later fenced write uses.
+    /// The reservation also slides the lease forward: the store renews the lease deadline to its own clock plus
+    /// <c>RetryPolicy.DispatchTimeout</c> in the same transaction, so a row reserved late in a claimed batch still holds
+    /// a full lease when its attempt starts. It applies only while the caller's lease generation
+    /// (<see cref="MediumMessage.Lease"/>) is still the row's and that lease is live by the store's clock. On success
+    /// the caller's <see cref="MediumMessage.Lease"/> carries the new deadline; the generation every later fenced write
+    /// uses does not change.
     /// </remarks>
     ValueTask<bool> ReservePublishAttemptAsync(
         MediumMessage message,
@@ -216,9 +217,9 @@ public interface IDataStorage
     /// <c>RetryPolicy.DispatchTimeout</c> keeps its row and is not dispatched a second time by another node.
     /// </summary>
     /// <remarks>
-    /// Applies only while the caller's <c>Owner</c> and <c>LockedUntil</c> still match a non-terminal row and that
-    /// lease is live by the store's clock; the store stamps the new deadline from that same clock. On success the
-    /// caller's <c>LockedUntil</c> carries the new lease identity. The default throws
+    /// Applies only while the caller's lease generation is still the row's and that lease is live by the store's
+    /// clock; the store stamps the new deadline from that same clock. On success the caller's
+    /// <see cref="MediumMessage.Lease"/> carries the new deadline. The default throws
     /// <see cref="NotSupportedException"/>; the core then keeps the lease it reserved for the attempt.
     /// </remarks>
     /// <param name="message">The message whose lease the caller holds.</param>
@@ -240,10 +241,10 @@ public interface IDataStorage
         );
 
     /// <summary>
-    /// Writes a pre-attempt lease on a published message, setting <c>LockedUntil</c> on the row so
+    /// Writes a pre-attempt lease on a published message, granting the row's lease to this node so
     /// the persisted retry processor excludes it while a dispatch attempt is active.
     /// </summary>
-    /// <param name="message">The message to lease. On success the caller's <c>LockedUntil</c> is also updated.</param>
+    /// <param name="message">The message to lease. On success the caller's <see cref="MediumMessage.Lease"/> carries the granted lease.</param>
     /// <param name="leaseDuration">
     /// How long the lease should last. The STORE derives the absolute deadline from its own clock, so a lease
     /// written by one node and evaluated by another cannot be skewed by either node's wall clock. A negative
@@ -272,7 +273,7 @@ public interface IDataStorage
     /// <param name="message">
     /// The message to lease. The caller pre-increments <c>InlineAttempts</c> (the reservation value
     /// written on success) and rolls it back when this method returns <see langword="false"/>. On
-    /// success the caller's <c>LockedUntil</c> and <c>Owner</c> are also updated.
+    /// success the caller's <see cref="MediumMessage.Lease"/> carries the granted lease.
     /// </param>
     /// <param name="leaseDuration">
     /// How long the lease should last. The STORE derives the absolute deadline from its own clock, so a lease
@@ -308,11 +309,12 @@ public interface IDataStorage
     /// clock retry pickup compares against. Pass <see langword="null"/> to clear the persisted due time. Only
     /// retry-transition paths pass a value.
     /// </param>
-    /// <param name="lockedUntil">
-    /// UTC timestamp until which the row is leased by an active dispatch attempt. Pass
-    /// <see langword="null"/> on terminal and retry-schedule writes so the row becomes
-    /// pickup-eligible again. Only retry-transition or in-flight paths supply a value; the
-    /// pre-attempt lease itself is taken via the Lease* methods, which let the STORE derive the deadline.
+    /// <param name="keepLease">
+    /// Whether the caller's lease (<see cref="MediumMessage.Lease"/>) stays held after the write, as it does while an
+    /// inline retry is still in flight. Pass <see langword="false"/> on terminal and retry-schedule writes: a terminal
+    /// write settles the lease and a retry-schedule write releases it, so the row becomes pickup-eligible again. A
+    /// fenced write (one that passes the original counters) applies only while the caller still holds that lease
+    /// generation. The pre-attempt lease itself is taken via the Lease* methods, which let the STORE derive the deadline.
     /// </param>
     /// <param name="originalRetries">
     /// Optimistic-concurrency token. When supplied, storage applies <c>AND Retries = @OriginalRetries</c>
@@ -330,7 +332,7 @@ public interface IDataStorage
         StatusName state,
         MessageContentWrite contentWrite = MessageContentWrite.Preserve,
         RetryDelay? retryDelay = null,
-        DateTimeOffset? lockedUntil = null,
+        bool keepLease = false,
         int? originalRetries = null,
         CancellationToken cancellationToken = default
     );
@@ -344,7 +346,7 @@ public interface IDataStorage
         StatusName state,
         MessageContentWrite contentWrite,
         RetryDelay? retryDelay,
-        DateTimeOffset? lockedUntil,
+        bool keepLease,
         int originalRetries,
         int originalInlineAttempts,
         CancellationToken cancellationToken = default
@@ -352,11 +354,12 @@ public interface IDataStorage
 
     /// <summary>Atomically reserves the next received delivery attempt under the active lease.</summary>
     /// <remarks>
-    /// The reservation also slides the lease forward: the store re-stamps <c>LockedUntil</c> to its own clock plus
-    /// <c>RetryPolicy.DispatchTimeout</c> in the same statement, so a row reserved late in a claimed batch still holds a
-    /// full lease when its attempt starts. It applies only while the caller's <c>Owner</c> and <c>LockedUntil</c> still
-    /// match the row and that lease is live by the store's clock. On success the caller's <c>LockedUntil</c>,
-    /// <c>Owner</c>, and inbox attempt fence carry the new lease identity, which every later fenced write uses.
+    /// The reservation also slides the lease forward: the store renews the lease deadline to its own clock plus
+    /// <c>RetryPolicy.DispatchTimeout</c> in the same transaction, so a row reserved late in a claimed batch still holds
+    /// a full lease when its attempt starts. It applies only while the caller's lease generation
+    /// (<see cref="MediumMessage.Lease"/>) is still the row's and that lease is live by the store's clock. On success
+    /// the caller's <see cref="MediumMessage.Lease"/> carries the new deadline; the generation every later fenced write
+    /// uses does not change.
     /// </remarks>
     ValueTask<bool> ReserveReceiveAttemptAsync(
         MediumMessage message,
@@ -369,8 +372,8 @@ public interface IDataStorage
     /// <c>RetryPolicy.DispatchTimeout</c> keeps its row and does not run a second time on another node.
     /// </summary>
     /// <remarks>
-    /// Same contract as <see cref="RenewPublishLeaseAsync"/>; an inbox row also requires the caller's complete inbox
-    /// attempt fence, and on success that fence carries the new lease identity too.
+    /// Same contract as <see cref="RenewPublishLeaseAsync"/>. The lease generation fences the renewal on its own: a
+    /// renewal does not start a new inbox attempt, so the inbox attempt fence is neither checked nor changed.
     /// </remarks>
     /// <param name="message">The message whose lease the caller holds.</param>
     /// <param name="leaseDuration">How long the renewed lease lasts from the store's clock.</param>
@@ -389,10 +392,10 @@ public interface IDataStorage
         );
 
     /// <summary>
-    /// Writes a pre-attempt lease on a received message, setting <c>LockedUntil</c> on the row so
+    /// Writes a pre-attempt lease on a received message, granting the row's lease to this node so
     /// the persisted retry processor excludes it while a consume attempt is active.
     /// </summary>
-    /// <param name="message">The message to lease. On success the caller's <c>LockedUntil</c> is also updated.</param>
+    /// <param name="message">The message to lease. On success the caller's <see cref="MediumMessage.Lease"/> carries the granted lease.</param>
     /// <param name="leaseDuration">
     /// How long the lease should last. The STORE derives the absolute deadline from its own clock, so a lease
     /// written by one node and evaluated by another cannot be skewed by either node's wall clock. A negative
@@ -590,7 +593,7 @@ public interface IDataStorage
     /// <remarks>
     /// <para>
     /// <b>Atomic claim-and-return:</b> returned rows are already leased — the same statement that
-    /// selects them advances <c>LockedUntil</c> to <c>now + RetryPolicyOptions.DispatchTimeout</c>. Relational
+    /// selects them grants each row's lease until <c>now + RetryPolicyOptions.DispatchTimeout</c>. Relational
     /// providers use their database clock for the due-time comparison, the lease-expiry comparison, and stamping.
     /// In-memory providers use their injected <see cref="TimeProvider"/> for all three.
     /// Callers do NOT need to invoke <see cref="LeasePublishAsync"/> immediately after pickup; the
@@ -647,7 +650,7 @@ public interface IDataStorage
     /// <remarks>
     /// <para>
     /// <b>Atomic claim-and-return:</b> returned rows are already leased — the same statement that
-    /// selects them advances <c>LockedUntil</c> to <c>now + RetryPolicyOptions.DispatchTimeout</c>. Relational
+    /// selects them grants each row's lease until <c>now + RetryPolicyOptions.DispatchTimeout</c>. Relational
     /// providers use their database clock for the due-time comparison, the lease-expiry comparison, and stamping.
     /// In-memory providers use their injected <see cref="TimeProvider"/> for all three.
     /// Callers do NOT need to invoke <see cref="LeaseReceiveAsync"/> immediately after pickup; the
@@ -753,7 +756,7 @@ public interface IDataStorage
 /// winner to <see cref="StatusName.Queued"/>, and stamp an ownership lease from the same authoritative
 /// store clock used to test lease expiry. For a future schedule, the lease must extend from the later
 /// of that clock or the message expiration time so it remains valid until the first dispatch attempt.
-/// The returned messages must reflect the committed durable <c>LockedUntil</c> and <c>Owner</c> values.
+/// The returned messages must carry the committed row lease in <see cref="MediumMessage.Lease"/>.
 /// </para>
 /// <para>
 /// Providers that do not implement this capability continue through

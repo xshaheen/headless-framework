@@ -1,6 +1,7 @@
 using System.Data.Common;
 using System.Diagnostics;
 using System.Reflection;
+using Headless.Fencing;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
@@ -36,7 +37,7 @@ public sealed class DispatcherTests : TestBase
             .SendRetryAsync(Arg.Any<MediumMessage>(), Arg.Any<IServiceProvider>(), Arg.Any<RetryExecutionState>())
             .Returns(call =>
             {
-                call.Arg<RetryExecutionState>().RecordLeaseTransition(affected: true, lockedUntil: null);
+                call.Arg<RetryExecutionState>().RecordLeaseTransition(affected: true, keepLease: false);
                 return OperateResult.Success;
             });
         var storage = Substitute.For<IDataStorage, IGracefulLeaseReleaseStorage>();
@@ -50,7 +51,7 @@ public sealed class DispatcherTests : TestBase
             _scopeFactory
         );
         await dispatcher.StartAsync(AbortToken);
-        var message = _CreateRetryMessage(owner: "node-a", lockedUntil: DateTimeOffset.UtcNow.AddMinutes(5));
+        var message = _CreateRetryMessage(owner: "node-a", leaseExpiresAt: DateTimeOffset.UtcNow.AddMinutes(5));
 
         await ((IRetryDispatcher)dispatcher).DispatchPublishedAsync(message, AbortToken);
 
@@ -75,7 +76,7 @@ public sealed class DispatcherTests : TestBase
             )
             .Returns(call =>
             {
-                call.Arg<RetryExecutionState>().RecordLeaseTransition(affected: true, lockedUntil: null);
+                call.Arg<RetryExecutionState>().RecordLeaseTransition(affected: true, keepLease: false);
                 return OperateResult.Success;
             });
         var storage = Substitute.For<IDataStorage, IGracefulLeaseReleaseStorage>();
@@ -89,7 +90,7 @@ public sealed class DispatcherTests : TestBase
             _scopeFactory
         );
         await dispatcher.StartAsync(AbortToken);
-        var message = _CreateRetryMessage(owner: "node-a", lockedUntil: DateTimeOffset.UtcNow.AddMinutes(5));
+        var message = _CreateRetryMessage(owner: "node-a", leaseExpiresAt: DateTimeOffset.UtcNow.AddMinutes(5));
 
         await ((IRetryDispatcher)dispatcher).DispatchReceivedAsync(message, AbortToken);
 
@@ -116,9 +117,8 @@ public sealed class DispatcherTests : TestBase
             .Returns(call =>
             {
                 var executionState = call.Arg<RetryExecutionState>();
-                var message = call.Arg<MediumMessage>();
-                executionState.RecordLeaseTransition(affected: true, lockedUntil: null);
-                executionState.RecordLeaseTransition(affected: true, message.LockedUntil);
+                executionState.RecordLeaseTransition(affected: true, keepLease: false);
+                executionState.RecordLeaseTransition(affected: true, keepLease: true);
                 return OperateResult.Success;
             });
         var storage = Substitute.For<IDataStorage, IGracefulLeaseReleaseStorage>();
@@ -132,7 +132,7 @@ public sealed class DispatcherTests : TestBase
             _scopeFactory
         );
         await dispatcher.StartAsync(AbortToken);
-        var message = _CreateRetryMessage(owner: "node-a", lockedUntil: DateTimeOffset.UtcNow.AddMinutes(5));
+        var message = _CreateRetryMessage(owner: "node-a", leaseExpiresAt: DateTimeOffset.UtcNow.AddMinutes(5));
 
         await ((IRetryDispatcher)dispatcher).DispatchPublishedAsync(message, AbortToken);
 
@@ -140,9 +140,7 @@ public sealed class DispatcherTests : TestBase
             .Received(1)
             .ReleasePublishedLeaseAsync(
                 Arg.Is<MessageLeaseIdentity>(identity =>
-                    identity.StorageId == message.StorageId
-                    && identity.Owner == message.Owner
-                    && identity.LockedUntil == message.LockedUntil
+                    identity.StorageId == message.StorageId && identity.Generation == message.Lease.Generation
                 ),
                 Arg.Any<CancellationToken>()
             );
@@ -156,7 +154,7 @@ public sealed class DispatcherTests : TestBase
             .SendRetryAsync(Arg.Any<MediumMessage>(), Arg.Any<IServiceProvider>(), Arg.Any<RetryExecutionState>())
             .Returns(call =>
             {
-                call.Arg<RetryExecutionState>().RecordLeaseTransition(affected: false, lockedUntil: null);
+                call.Arg<RetryExecutionState>().RecordLeaseTransition(affected: false, keepLease: false);
                 return OperateResult.Success;
             });
         var storage = Substitute.For<IDataStorage, IGracefulLeaseReleaseStorage>();
@@ -170,7 +168,7 @@ public sealed class DispatcherTests : TestBase
             _scopeFactory
         );
         await dispatcher.StartAsync(AbortToken);
-        var message = _CreateRetryMessage(owner: "node-a", lockedUntil: DateTimeOffset.UtcNow.AddMinutes(5));
+        var message = _CreateRetryMessage(owner: "node-a", leaseExpiresAt: DateTimeOffset.UtcNow.AddMinutes(5));
 
         await ((IRetryDispatcher)dispatcher).DispatchPublishedAsync(message, AbortToken);
 
@@ -178,9 +176,7 @@ public sealed class DispatcherTests : TestBase
             .Received(1)
             .ReleasePublishedLeaseAsync(
                 Arg.Is<MessageLeaseIdentity>(identity =>
-                    identity.StorageId == message.StorageId
-                    && identity.Owner == message.Owner
-                    && identity.LockedUntil == message.LockedUntil
+                    identity.StorageId == message.StorageId && identity.Generation == message.Lease.Generation
                 ),
                 Arg.Any<CancellationToken>()
             );
@@ -195,7 +191,7 @@ public sealed class DispatcherTests : TestBase
             .SendRetryAsync(Arg.Any<MediumMessage>(), Arg.Any<IServiceProvider>(), Arg.Any<RetryExecutionState>())
             .Returns(call =>
             {
-                call.Arg<RetryExecutionState>().RecordLeaseTransition(affected: true, lockedUntil: null);
+                call.Arg<RetryExecutionState>().RecordLeaseTransition(affected: true, keepLease: false);
                 completed.TrySetResult();
                 return OperateResult.Success;
             });
@@ -210,7 +206,7 @@ public sealed class DispatcherTests : TestBase
             _scopeFactory
         );
         await dispatcher.StartAsync(AbortToken);
-        var message = _CreateRetryMessage(owner: "node-a", lockedUntil: DateTimeOffset.UtcNow.AddMinutes(5));
+        var message = _CreateRetryMessage(owner: "node-a", leaseExpiresAt: DateTimeOffset.UtcNow.AddMinutes(5));
 
         await ((IRetryDispatcher)dispatcher).DispatchPublishedAsync(message, AbortToken);
         await completed.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
@@ -238,7 +234,7 @@ public sealed class DispatcherTests : TestBase
             )
             .Returns(call =>
             {
-                call.Arg<RetryExecutionState>().RecordLeaseTransition(affected: true, lockedUntil: null);
+                call.Arg<RetryExecutionState>().RecordLeaseTransition(affected: true, keepLease: false);
                 completed.TrySetResult();
                 return OperateResult.Success;
             });
@@ -259,7 +255,7 @@ public sealed class DispatcherTests : TestBase
             _scopeFactory
         );
         await dispatcher.StartAsync(AbortToken);
-        var message = _CreateRetryMessage(owner: "node-a", lockedUntil: DateTimeOffset.UtcNow.AddMinutes(5));
+        var message = _CreateRetryMessage(owner: "node-a", leaseExpiresAt: DateTimeOffset.UtcNow.AddMinutes(5));
 
         await ((IRetryDispatcher)dispatcher).DispatchReceivedAsync(message, AbortToken);
         await completed.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
@@ -318,8 +314,8 @@ public sealed class DispatcherTests : TestBase
         );
         await dispatcher.StartAsync(AbortToken);
         var retryDispatcher = (IRetryDispatcher)dispatcher;
-        var running = _CreateRetryMessage(owner: "node-a", lockedUntil: DateTimeOffset.UtcNow.AddMinutes(5));
-        var probe = _CreateRetryMessage(owner: "node-a", lockedUntil: DateTimeOffset.UtcNow.AddMinutes(5));
+        var running = _CreateRetryMessage(owner: "node-a", leaseExpiresAt: DateTimeOffset.UtcNow.AddMinutes(5));
+        var probe = _CreateRetryMessage(owner: "node-a", leaseExpiresAt: DateTimeOffset.UtcNow.AddMinutes(5));
         var probeReleases = 0;
 
         (await retryDispatcher.DispatchReceivedAsync(running, AbortToken)).Should().BeTrue();
@@ -356,8 +352,7 @@ public sealed class DispatcherTests : TestBase
             .Returns(async call =>
             {
                 var executionState = call.Arg<RetryExecutionState>();
-                var message = call.Arg<MediumMessage>();
-                executionState.RecordLeaseTransition(affected: true, message.LockedUntil);
+                executionState.RecordLeaseTransition(affected: true, keepLease: true);
                 runningEntered.TrySetResult();
                 await releaseRunning.Task.ConfigureAwait(false);
                 return OperateResult.Success;
@@ -394,8 +389,8 @@ public sealed class DispatcherTests : TestBase
         using var cts = new CancellationTokenSource();
         await dispatcher.StartAsync(cts.Token);
 
-        var running = _CreateRetryMessage(owner: "node-a", lockedUntil: DateTimeOffset.UtcNow.AddMinutes(5));
-        var queued = _CreateRetryMessage(owner: "node-a", lockedUntil: DateTimeOffset.UtcNow.AddMinutes(5));
+        var running = _CreateRetryMessage(owner: "node-a", leaseExpiresAt: DateTimeOffset.UtcNow.AddMinutes(5));
+        var queued = _CreateRetryMessage(owner: "node-a", leaseExpiresAt: DateTimeOffset.UtcNow.AddMinutes(5));
         var retryDispatcher = (IRetryDispatcher)dispatcher;
 
         await retryDispatcher.DispatchPublishedAsync(running, AbortToken);
@@ -405,9 +400,7 @@ public sealed class DispatcherTests : TestBase
         var disposeTask = dispatcher.DisposeAsync(TimeSpan.FromSeconds(2), AbortToken).AsTask();
         var releasedIdentity = await leaseReleased.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
 
-        releasedIdentity
-            .Should()
-            .Be(new MessageLeaseIdentity(queued.StorageId, queued.Owner, queued.LockedUntil!.Value, queued.Lane));
+        releasedIdentity.Should().Be(new MessageLeaseIdentity(queued.StorageId, queued.Lease.Generation, queued.Lane));
         await ((IGracefulLeaseReleaseStorage)storage)
             .DidNotReceive()
             .ReleasePublishedLeaseAsync(
@@ -486,8 +479,8 @@ public sealed class DispatcherTests : TestBase
         );
         await dispatcher.StartAsync(AbortToken);
         var retryDispatcher = (IRetryDispatcher)dispatcher;
-        var running = _CreateRetryMessage(owner: "node-a", lockedUntil: DateTimeOffset.UtcNow.AddMinutes(5));
-        var queued = _CreateRetryMessage(owner: "node-a", lockedUntil: DateTimeOffset.UtcNow.AddMinutes(5));
+        var running = _CreateRetryMessage(owner: "node-a", leaseExpiresAt: DateTimeOffset.UtcNow.AddMinutes(5));
+        var queued = _CreateRetryMessage(owner: "node-a", leaseExpiresAt: DateTimeOffset.UtcNow.AddMinutes(5));
 
         await retryDispatcher.DispatchPublishedAsync(running, AbortToken);
         await runningEntered.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
@@ -526,7 +519,7 @@ public sealed class DispatcherTests : TestBase
         );
         using var cts = new CancellationTokenSource();
         await dispatcher.StartAsync(cts.Token);
-        var message = _CreateRetryMessage(owner: "node-a", lockedUntil: DateTimeOffset.UtcNow.AddMinutes(5));
+        var message = _CreateRetryMessage(owner: "node-a", leaseExpiresAt: DateTimeOffset.UtcNow.AddMinutes(5));
         message.Retries = 1;
 
         await ((IRetryDispatcher)dispatcher).DispatchPublishedAsync(message, AbortToken);
@@ -536,7 +529,7 @@ public sealed class DispatcherTests : TestBase
         await releaser
             .Received(1)
             .ReleasePublishedLeaseAsync(
-                new MessageLeaseIdentity(message.StorageId, message.Owner, message.LockedUntil!.Value, message.Lane),
+                new MessageLeaseIdentity(message.StorageId, message.Lease.Generation, message.Lane),
                 Arg.Any<CancellationToken>()
             );
         await releaser
@@ -566,7 +559,7 @@ public sealed class DispatcherTests : TestBase
         );
         using var cts = new CancellationTokenSource();
         await dispatcher.StartAsync(cts.Token);
-        var message = _CreateRetryMessage(owner: "node-a", lockedUntil: DateTimeOffset.UtcNow.AddMinutes(5));
+        var message = _CreateRetryMessage(owner: "node-a", leaseExpiresAt: DateTimeOffset.UtcNow.AddMinutes(5));
         message.Retries = 1;
         using var preCanceled = new CancellationTokenSource();
         await preCanceled.CancelAsync();
@@ -577,7 +570,7 @@ public sealed class DispatcherTests : TestBase
         await releaser
             .Received(1)
             .ReleasePublishedLeaseAsync(
-                new MessageLeaseIdentity(message.StorageId, message.Owner, message.LockedUntil!.Value, message.Lane),
+                new MessageLeaseIdentity(message.StorageId, message.Lease.Generation, message.Lane),
                 Arg.Any<CancellationToken>()
             );
         await releaser
@@ -604,8 +597,7 @@ public sealed class DispatcherTests : TestBase
             )
             .Returns(call =>
             {
-                var message = call.Arg<MediumMessage>();
-                call.Arg<RetryExecutionState>().RecordLeaseTransition(affected: true, message.LockedUntil);
+                call.Arg<RetryExecutionState>().RecordLeaseTransition(affected: true, keepLease: true);
                 return OperateResult.Success;
             });
         var options = Options.Create(new MessagingOptions());
@@ -620,7 +612,7 @@ public sealed class DispatcherTests : TestBase
         );
         using var cts = new CancellationTokenSource();
         await dispatcher.StartAsync(cts.Token);
-        var message = _CreateRetryMessage(owner: "node-a", lockedUntil: DateTimeOffset.UtcNow.AddMinutes(5));
+        var message = _CreateRetryMessage(owner: "node-a", leaseExpiresAt: DateTimeOffset.UtcNow.AddMinutes(5));
         message.Retries = 1;
 
         await ((IRetryDispatcher)dispatcher).DispatchReceivedAsync(message, AbortToken);
@@ -637,7 +629,7 @@ public sealed class DispatcherTests : TestBase
         await releaser
             .Received(1)
             .ReleaseReceivedLeaseAsync(
-                new MessageLeaseIdentity(message.StorageId, message.Owner, message.LockedUntil!.Value, message.Lane),
+                new MessageLeaseIdentity(message.StorageId, message.Lease.Generation, message.Lane),
                 Arg.Any<CancellationToken>()
             );
         await releaser
@@ -2402,7 +2394,7 @@ public sealed class DispatcherTests : TestBase
 
         releaseStart.Set();
         await Task.WhenAll(startTask, quiesceTask);
-        var message = _CreateRetryMessage(owner: "node-a", lockedUntil: DateTimeOffset.UtcNow.AddMinutes(5));
+        var message = _CreateRetryMessage(owner: "node-a", leaseExpiresAt: DateTimeOffset.UtcNow.AddMinutes(5));
 
         var transferred = await ((IRetryDispatcher)dispatcher).DispatchReceivedAsync(message, AbortToken);
 
@@ -2474,11 +2466,10 @@ public sealed class DispatcherTests : TestBase
         };
     }
 
-    private static MediumMessage _CreateRetryMessage(string? owner, DateTimeOffset lockedUntil)
+    private static MediumMessage _CreateRetryMessage(string? owner, DateTimeOffset leaseExpiresAt)
     {
         var message = _CreateTestMessage();
-        message.Owner = owner;
-        message.LockedUntil = lockedUntil;
+        message.Lease = new RowLeaseSnapshot(1, RowLeaseState.Active, leaseExpiresAt, owner, 0);
         return message;
     }
 

@@ -290,7 +290,7 @@ internal sealed partial class InMemoryDataStorage
                     row.IsCurrentGeneration,
                     row.InboxKey!.Generation,
                     row.IsInboxOrphaned,
-                    row.LockedUntil > now
+                    _HasLiveLease(row, now)
                 );
             var outcome = MessagingOperationEvaluator.Evaluate(operationType, request.ExpectedStatus, state);
             Guid? childStorageId = null;

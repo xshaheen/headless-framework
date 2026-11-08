@@ -12,7 +12,12 @@ namespace Headless.Messaging.Persistence;
 internal sealed class RelationalStorageTableNames(ISqlDialect dialect, IOptions<MessagingStorageOptions> storageOptions)
     : IStorageTableNames
 {
-    private readonly MessagingTables _tables = MessagingTables.For(dialect, storageOptions);
+    // Only the table names are read here, never a lease table, so the holder width does not matter.
+    private readonly MessagingTables _tables = MessagingTables.For(
+        dialect,
+        storageOptions,
+        DataStorageConstants.LeaseHolderMaxLength
+    );
 
     public string GetPublishedTableName() => _tables.Published;
 

@@ -2,6 +2,7 @@
 
 using System.Diagnostics;
 using Headless.Checks;
+using Headless.Fencing;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Retry;
 using Headless.Messaging.Transport;
@@ -154,7 +155,7 @@ internal sealed class MessageSender : IMessageSender
         // A storage-returned lease is already acquired under the provider's authoritative clock.
         // Core must not reinterpret its expiry through the application clock; reservation and
         // state-write predicates validate the stored lease identity and activity.
-        var needsLease = message.LockedUntil is null;
+        var needsLease = message.Lease.State is not RowLeaseState.Active;
 
         // A crashed dispatch that already reserved its final attempt must not run another; a row already past
         // MaxPersistedRetries (the cap was lowered since it was scheduled) must not be sent at all. Both end through
@@ -475,7 +476,7 @@ internal sealed class MessageSender : IMessageSender
         var originalInlineAttempts = message.InlineAttempts;
         message.ExpiresAt = _timeProvider.GetUtcNow().AddSeconds(_options.FailedMessageExpiredAfter);
         message.NextRetryAt = null;
-        DateTimeOffset? lockedUntil = null;
+        const bool keepLease = false;
 
         var affected = await _StorageOf(message)
             .ChangePublishRetryStateAsync(
@@ -485,13 +486,13 @@ internal sealed class MessageSender : IMessageSender
                 // before any transport attempt, so no exception is stamped onto Origin.
                 MessageContentWrite.Preserve,
                 retryDelay: null,
-                lockedUntil,
+                keepLease,
                 originalRetries: message.Retries,
                 originalInlineAttempts,
                 cancellationToken: CancellationToken.None
             )
             .ConfigureAwait(false);
-        executionState?.RecordLeaseTransition(affected, lockedUntil);
+        executionState?.RecordLeaseTransition(affected, keepLease);
 
         _logger.StoredMessageMissingLaneTransport(ex, message.StorageId, message.Lane.ToString("D"));
 
@@ -529,7 +530,7 @@ internal sealed class MessageSender : IMessageSender
         message.ExceptionInfo = expired.ExpandMessage();
         message.ExpiresAt = _timeProvider.GetUtcNow().AddSeconds(_options.FailedMessageExpiredAfter);
         message.NextRetryAt = null;
-        DateTimeOffset? lockedUntil = null;
+        const bool keepLease = false;
 
         var affected = await _StorageOf(message)
             .ChangePublishRetryStateAsync(
@@ -538,13 +539,13 @@ internal sealed class MessageSender : IMessageSender
                 // The expiry reason is stamped onto Origin above, so the stored envelope must be refreshed with it.
                 MessageContentWrite.Refresh,
                 retryDelay: null,
-                lockedUntil,
+                keepLease,
                 originalRetries: message.Retries,
                 originalInlineAttempts,
                 cancellationToken: CancellationToken.None
             )
             .ConfigureAwait(false);
-        executionState?.RecordLeaseTransition(affected, lockedUntil);
+        executionState?.RecordLeaseTransition(affected, keepLease);
 
         // A write the storage guard refused means another worker already settled the row, so this drop is not ours to
         // count; the attempt still ends without sending.
@@ -579,7 +580,7 @@ internal sealed class MessageSender : IMessageSender
     )
     {
         message.ExpiresAt = _timeProvider.GetUtcNow().AddSeconds(_options.SucceedMessageExpiredAfter);
-        DateTimeOffset? lockedUntil = null;
+        const bool keepLease = false;
         var updated = await _StorageOf(message)
             .ChangePublishRetryStateAsync(
                 message,
@@ -588,13 +589,13 @@ internal sealed class MessageSender : IMessageSender
                 // byte-identical — re-serializing it would be a wasted write on the hottest path.
                 MessageContentWrite.Preserve,
                 retryDelay: null,
-                lockedUntil,
+                keepLease,
                 originalRetries: message.Retries,
                 originalInlineAttempts: message.InlineAttempts,
                 cancellationToken
             )
             .ConfigureAwait(false);
-        executionState?.RecordLeaseTransition(updated, lockedUntil);
+        executionState?.RecordLeaseTransition(updated, keepLease);
 
         if (!updated)
         {
@@ -780,7 +781,7 @@ internal sealed class MessageSender : IMessageSender
         // #14 — Preserve the active pickup lease on inline-in-flight transitions; clear it on
         // persisted-retry and terminal transitions so the retry processor can re-pick the row.
         // Mirrors the consume path's _PersistFailedStateAsync.
-        var lockedUntil = state.IsInlineRetryInFlight ? message.LockedUntil : null;
+        var keepLease = state.IsInlineRetryInFlight && message.Lease.State is RowLeaseState.Active;
         var affected = await _StorageOf(message)
             .ChangePublishRetryStateAsync(
                 message,
@@ -789,13 +790,13 @@ internal sealed class MessageSender : IMessageSender
                 // until this write refreshes it.
                 MessageContentWrite.Refresh,
                 state.NextRetry,
-                lockedUntil,
+                keepLease,
                 originalRetries,
                 originalInlineAttempts,
                 CancellationToken.None
             )
             .ConfigureAwait(false);
-        executionState?.RecordLeaseTransition(affected, lockedUntil);
+        executionState?.RecordLeaseTransition(affected, keepLease);
 
         // Stop and Exhausted both end the row; counting only a write that landed counts each message once, whichever
         // replica's terminal write won.

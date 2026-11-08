@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Fencing;
 using Headless.Messaging;
 using Headless.Messaging.Persistence;
 using Tests.Guarantees;
@@ -7,8 +8,9 @@ using Tests.Guarantees;
 namespace Tests;
 
 /// <summary>
-/// The dispatch lease of a claimed retry row: re-stamped when its attempt is reserved, slid forward while the attempt
-/// runs, and never revived once another node holds it.
+/// The dispatch lease of a claimed retry row: renewed when its attempt is reserved, slid forward while the attempt
+/// runs, and never revived once another node holds it. The lease is a fenced row lease, so every write a holder makes
+/// names its generation and a replaced generation writes nothing.
 /// </summary>
 public abstract partial class DataStorageTestsBase
 {
@@ -29,7 +31,7 @@ public abstract partial class DataStorageTestsBase
         var claimed = (await _PickUpRetriesAsync(storage, published)).ToList();
         claimed.Select(m => m.StorageId).Should().Contain([early.StorageId, late.StorageId]);
         var lateRow = claimed.Single(m => m.StorageId == late.StorageId);
-        var batchLease = lateRow.LockedUntil!.Value;
+        var batchLease = lateRow.Lease.ExpiresAt!.Value;
 
         // when: the rows before it use most of the batch lease, then the late row reserves its attempt
         await _ElapseAsync(TimeSpan.FromSeconds(1.5));
@@ -40,11 +42,12 @@ public abstract partial class DataStorageTestsBase
 
         // then: the attempt starts with a full lease, and the caller holds the stored identity
         reserved.Should().BeTrue();
-        lateRow.LockedUntil.Should().BeAfter(batchLease.AddSeconds(1));
+        lateRow.Lease.ExpiresAt.Should().BeAfter(batchLease.AddSeconds(1));
         if (await GetPersistedLeaseIdentityAsync(published, lateRow.StorageId, AbortToken) is { } persisted)
         {
-            lateRow.LockedUntil.Should().Be(persisted.LockedUntil);
-            lateRow.Owner.Should().Be(persisted.Owner);
+            lateRow.Lease.Generation.Should().Be(persisted.LeaseGeneration);
+            lateRow.Lease.ExpiresAt.Should().Be(persisted.LeaseExpiresAt);
+            lateRow.Lease.Holder.Should().Be(persisted.LeaseHolder);
         }
 
         // and: once the batch lease has passed, another node reclaims the untouched row but not the reserved one
@@ -64,6 +67,8 @@ public abstract partial class DataStorageTestsBase
         var lease = TimeSpan.FromSeconds(2);
         (await _LeaseAsync(storage, published, message, lease)).Should().BeTrue();
         var staleHolder = _CopyLease(message);
+        staleHolder.Lease = staleHolder.Lease with { Generation = staleHolder.Lease.Generation - 1 };
+        var leaseBefore = message.Lease.ExpiresAt!.Value;
 
         // when: the attempt renews before its lease ends
         await _ElapseAsync(TimeSpan.FromSeconds(1.5));
@@ -71,13 +76,14 @@ public abstract partial class DataStorageTestsBase
 
         // then: the lease slides forward and the caller holds the stored identity
         renewed.Should().BeTrue();
-        message.LockedUntil.Should().BeAfter(staleHolder.LockedUntil!.Value.AddSeconds(1));
+        message.Lease.ExpiresAt.Should().BeAfter(leaseBefore.AddSeconds(1));
         if (await GetPersistedLeaseIdentityAsync(published, message.StorageId, AbortToken) is { } persisted)
         {
-            message.LockedUntil.Should().Be(persisted.LockedUntil);
+            message.Lease.ExpiresAt.Should().Be(persisted.LeaseExpiresAt);
+            message.Lease.Generation.Should().Be(persisted.LeaseGeneration);
         }
 
-        // and: a holder of the replaced generation cannot renew it
+        // and: a holder of an earlier generation cannot renew it
         (await _RenewAsync(storage, published, staleHolder, lease))
             .Should()
             .BeFalse();
@@ -97,7 +103,7 @@ public abstract partial class DataStorageTestsBase
         NodeMembership.SetIdentity($"lapsed-owner-{published}");
         var message = await _StoreRetryDueAsync(storage, published, "renew-lapsed");
         (await _LeaseAsync(storage, published, message, TimeSpan.FromMilliseconds(500))).Should().BeTrue();
-        var heldLease = message.LockedUntil;
+        var heldLease = message.Lease;
         await _ElapseAsync(TimeSpan.FromMilliseconds(750));
         NodeMembership.SetIdentity($"lapsed-taker-{published}");
         (await _LeaseAsync(storage, published, _CopyLease(message), TimeSpan.FromMinutes(1))).Should().BeTrue();
@@ -107,7 +113,7 @@ public abstract partial class DataStorageTestsBase
 
         // then: the renewal fails and leaves the caller's identity as it was
         renewed.Should().BeFalse();
-        message.LockedUntil.Should().Be(heldLease);
+        message.Lease.Should().Be(heldLease);
     }
 
     public virtual async Task should_stamp_reserved_and_renewed_leases_from_the_database_clock(
@@ -148,9 +154,96 @@ public abstract partial class DataStorageTestsBase
         // then: the deadline is one lease past the database's clock, not the node's
         applied.Should().BeTrue();
         message
-            .LockedUntil.Should()
+            .Lease.ExpiresAt.Should()
             .BeOnOrAfter(databaseTimeBefore.Add(lease))
             .And.BeOnOrBefore(databaseTimeAfter.Add(lease));
+    }
+
+    [Guarantee("MSG-LEASE-02")]
+    public virtual async Task should_refuse_every_write_from_a_holder_whose_lease_was_granted_again(bool published)
+    {
+        // given: holder A's lease lapsed and holder B leased the row again
+        var storage = GetStorage();
+        NodeMembership.SetIdentity($"re-leased-stale-{published}");
+        var stale = await _StoreRetryDueAsync(storage, published, "re-leased");
+        (await _LeaseAsync(storage, published, stale, _ShortLease)).Should().BeTrue();
+        await _ElapseAsync(_ShortLease * 5);
+        var successor = _CopyLease(stale);
+        NodeMembership.SetIdentity($"re-leased-successor-{published}");
+        (await _LeaseAsync(storage, published, successor, TimeSpan.FromMinutes(1))).Should().BeTrue();
+        successor.Lease.Generation.Should().BeGreaterThan(stale.Lease.Generation);
+        var staleIdentity = new MessageLeaseIdentity(
+            stale.StorageId,
+            stale.Lease.Generation,
+            stale.Lane,
+            stale.InboxAttemptFence
+        );
+
+        // when: A writes its outcome, releases the lease, and (for an inbox row) defers its retry
+        var stateWritten = await _WriteFencedOutcomeAsync(storage, published, stale);
+        var releaser = storage.Should().BeAssignableTo<IGracefulLeaseReleaseStorage>().Subject;
+        var released = published
+            ? await releaser.ReleasePublishedLeaseAsync(staleIdentity, AbortToken)
+            : await releaser.ReleaseReceivedLeaseAsync(staleIdentity, AbortToken);
+
+        // then: the database refuses every write of the replaced generation
+        stateWritten.Should().BeFalse("a replaced lease generation must not write the row's outcome");
+        released.Should().BeFalse("a replaced lease generation must not end its successor's lease");
+        if (!published && storage is ICircuitRetryDeferralStorage deferrer)
+        {
+            (
+                await deferrer.DeferReceivedRetryAsync(
+                    new CircuitRetryDeferral(staleIdentity, TimeSpan.FromMinutes(5)),
+                    AbortToken
+                )
+            )
+                .Should()
+                .BeFalse("a replaced lease generation must not defer its successor's retry");
+        }
+
+        // and: B still holds the row and writes its outcome
+        if (await GetPersistedLeaseIdentityAsync(published, successor.StorageId, AbortToken) is { } persisted)
+        {
+            persisted.LeaseGeneration.Should().Be(successor.Lease.Generation);
+            persisted.LeaseState.Should().Be((short)RowLeaseState.Active);
+            persisted.LeaseHolder.Should().Be(successor.Lease.Holder);
+        }
+
+        var successorWritten = await _WriteFencedOutcomeAsync(storage, published, successor);
+        successorWritten.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// Writes a delivery's outcome the way the dispatcher ends an attempt: through the fenced state write, which only the
+    /// lease generation the message carries may apply.
+    /// </summary>
+    private static async Task<bool> _WriteFencedOutcomeAsync(
+        IDataStorage storage,
+        bool published,
+        MediumMessage message
+    )
+    {
+        return published
+            ? await storage.ChangePublishRetryStateAsync(
+                message,
+                StatusName.Succeeded,
+                MessageContentWrite.Preserve,
+                retryDelay: null,
+                keepLease: false,
+                message.Retries,
+                message.InlineAttempts,
+                AbortToken
+            )
+            : await storage.ChangeReceiveRetryStateAsync(
+                message,
+                StatusName.Succeeded,
+                MessageContentWrite.Preserve,
+                retryDelay: null,
+                keepLease: false,
+                message.Retries,
+                message.InlineAttempts,
+                AbortToken
+            );
     }
 
     private async Task<MediumMessage> _StoreRetryDueAsync(IDataStorage storage, bool published, string name)
@@ -211,8 +304,7 @@ public abstract partial class DataStorageTestsBase
             Lane = message.Lane,
             Retries = message.Retries,
             InlineAttempts = message.InlineAttempts,
-            LockedUntil = message.LockedUntil,
-            Owner = message.Owner,
+            Lease = message.Lease,
             InboxAttemptFence = message.InboxAttemptFence,
         };
     }

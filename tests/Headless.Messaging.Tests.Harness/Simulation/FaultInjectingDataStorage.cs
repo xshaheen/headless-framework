@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using System.Data.Common;
 using Headless.Checks;
+using Headless.Fencing;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
@@ -285,7 +286,7 @@ public sealed class FaultInjectingDataStorage(IDataStorage inner, FaultScript fa
         MessageContentWrite contentWrite = MessageContentWrite.Preserve,
         DbTransaction? transaction = null,
         RetryDelay? retryDelay = null,
-        DateTimeOffset? lockedUntil = null,
+        bool keepLease = false,
         int? originalRetries = null,
         CancellationToken cancellationToken = default
     )
@@ -300,7 +301,7 @@ public sealed class FaultInjectingDataStorage(IDataStorage inner, FaultScript fa
                         contentWrite,
                         transaction,
                         retryDelay,
-                        lockedUntil,
+                        keepLease,
                         originalRetries,
                         cancellationToken
                     ),
@@ -314,7 +315,7 @@ public sealed class FaultInjectingDataStorage(IDataStorage inner, FaultScript fa
         StatusName state,
         MessageContentWrite contentWrite,
         RetryDelay? retryDelay,
-        DateTimeOffset? lockedUntil,
+        bool keepLease,
         int originalRetries,
         int originalInlineAttempts,
         CancellationToken cancellationToken = default
@@ -329,7 +330,7 @@ public sealed class FaultInjectingDataStorage(IDataStorage inner, FaultScript fa
                         state,
                         contentWrite,
                         retryDelay,
-                        lockedUntil,
+                        keepLease,
                         originalRetries,
                         originalInlineAttempts,
                         cancellationToken
@@ -413,7 +414,7 @@ public sealed class FaultInjectingDataStorage(IDataStorage inner, FaultScript fa
         StatusName state,
         MessageContentWrite contentWrite = MessageContentWrite.Preserve,
         RetryDelay? retryDelay = null,
-        DateTimeOffset? lockedUntil = null,
+        bool keepLease = false,
         int? originalRetries = null,
         CancellationToken cancellationToken = default
     )
@@ -427,7 +428,7 @@ public sealed class FaultInjectingDataStorage(IDataStorage inner, FaultScript fa
                         state,
                         contentWrite,
                         retryDelay,
-                        lockedUntil,
+                        keepLease,
                         originalRetries,
                         cancellationToken
                     ),
@@ -441,7 +442,7 @@ public sealed class FaultInjectingDataStorage(IDataStorage inner, FaultScript fa
         StatusName state,
         MessageContentWrite contentWrite,
         RetryDelay? retryDelay,
-        DateTimeOffset? lockedUntil,
+        bool keepLease,
         int originalRetries,
         int originalInlineAttempts,
         CancellationToken cancellationToken = default
@@ -456,7 +457,7 @@ public sealed class FaultInjectingDataStorage(IDataStorage inner, FaultScript fa
                         state,
                         contentWrite,
                         retryDelay,
-                        lockedUntil,
+                        keepLease,
                         originalRetries,
                         originalInlineAttempts,
                         cancellationToken
@@ -961,15 +962,14 @@ public sealed class FaultInjectingDataStorage(IDataStorage inner, FaultScript fa
 
     private bool _TrackLease(bool granted, MediumMessage message, bool published, bool renewal)
     {
-        if (!granted || message.LockedUntil is not { } lockedUntil || _faults.LeaseLifetime is null)
+        if (!granted || message.Lease.State != RowLeaseState.Active || _faults.LeaseLifetime is null)
         {
             return granted;
         }
 
         var identity = new MessageLeaseIdentity(
             message.StorageId,
-            message.Owner,
-            lockedUntil,
+            message.Lease.Generation,
             message.Lane,
             message.InboxAttemptFence
         );

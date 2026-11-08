@@ -2,6 +2,7 @@
 
 using Dapper;
 using Headless;
+using Headless.Fencing;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
@@ -40,7 +41,7 @@ public partial class SqlServerStorageTests(SqlServerTestFixture fixture) : DataS
         await connection.ExecuteAsync(
             new CommandDefinition(
                 """
-                UPDATE headless.MessagingReceived SET Content=N'not-json',NextRetryAt=DATEADD(minute,-1,SYSUTCDATETIME()),LockedUntil=DATEADD(minute,-1,SYSUTCDATETIME()) WHERE Id=@Id;
+                UPDATE headless.MessagingReceived SET Content=N'not-json',NextRetryAt=DATEADD(minute,-1,SYSUTCDATETIME()),LeaseExpiresAt=DATEADD(minute,-1,SYSUTCDATETIME()) WHERE Id=@Id;
                 """,
                 new { Id = storageId },
                 cancellationToken: cancellationToken
@@ -57,7 +58,7 @@ public partial class SqlServerStorageTests(SqlServerTestFixture fixture) : DataS
         return await connection.QuerySingleAsync<PersistedInboxPoisonState>(
             new CommandDefinition(
                 """
-                SELECT CONVERT(datetimeoffset(7),SYSUTCDATETIME()) AS DatabaseNow,StatusName,TerminalAt,EffectiveExpiresAt,AttemptId,NextRetryAt,LockedUntil,Owner,Content FROM headless.MessagingReceived WHERE Id=@Id;
+                SELECT CONVERT(datetimeoffset(7),SYSUTCDATETIME()) AS DatabaseNow,StatusName,TerminalAt,EffectiveExpiresAt,AttemptId,NextRetryAt,LeaseState,Content FROM headless.MessagingReceived WHERE Id=@Id;
                 """,
                 new { Id = storageId },
                 cancellationToken: cancellationToken
@@ -156,7 +157,7 @@ public partial class SqlServerStorageTests(SqlServerTestFixture fixture) : DataS
         await connection.OpenAsync(cancellationToken);
         var tableName = published ? "MessagingPublished" : "MessagingReceived";
         return await connection.QuerySingleAsync<PersistedLeaseIdentity>(
-            $"SELECT LockedUntil, Owner FROM headless.{tableName} WHERE Id = @Id",
+            $"SELECT LeaseGeneration, LeaseState, LeaseExpiresAt, LeaseHolder FROM headless.{tableName} WHERE Id = @Id",
             new { Id = storageId }
         );
     }
@@ -178,9 +179,9 @@ public partial class SqlServerStorageTests(SqlServerTestFixture fixture) : DataS
         var receivedValues = published ? string.Empty : ", 'unsupported-lane-consumer', NULL, @ConsumerIdentityHash";
         var sql = $"""
             INSERT INTO headless.{tableName}
-                (Id, Version, Name, Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, LockedUntil, Owner, StatusName, MessageId{receivedColumns})
+                (Id, Version, Name, Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, LeaseGeneration, LeaseState, LeaseExpiresAt, LeaseHolder, StatusName, MessageId{receivedColumns})
             VALUES
-                (@Id, 'v1', 'unsupported-lane', @Content, @IntentType, 0, @Added, NULL, @NextRetryAt, @LockedUntil, 'stale-unsupported-lane-owner', 'Failed', @MessageId{receivedValues});
+                (@Id, 'v1', 'unsupported-lane', @Content, @IntentType, 0, @Added, NULL, @NextRetryAt, 1, 1, @LeaseExpiresAt, 'stale-unsupported-lane-owner', 'Failed', @MessageId{receivedValues});
             """;
 
         await using var connection = new SqlConnection(fixture.ConnectionString);
@@ -195,7 +196,7 @@ public partial class SqlServerStorageTests(SqlServerTestFixture fixture) : DataS
                     IntentType = rawLane,
                     Added = TimeProvider.GetUtcNow(),
                     NextRetryAt = nextRetryAt,
-                    LockedUntil = nextRetryAt,
+                    LeaseExpiresAt = nextRetryAt,
                     MessageId = $"unsupported-lane-{id:N}",
                     ConsumerIdentityHash = RelationalDataStorage.CreateConsumerIdentityHash(
                         "v1",
@@ -222,7 +223,7 @@ public partial class SqlServerStorageTests(SqlServerTestFixture fixture) : DataS
         var tableName = published ? "MessagingPublished" : "MessagingReceived";
         var exceptionInfo = published ? "CAST(NULL AS nvarchar(max))" : "ExceptionInfo";
         var sql = $"""
-            SELECT IntentType AS RawLane, StatusName, ExpiresAt, NextRetryAt, LockedUntil, Owner,
+            SELECT IntentType AS RawLane, StatusName, ExpiresAt, NextRetryAt, LeaseGeneration, LeaseState, LeaseExpiresAt, LeaseHolder,
                    {exceptionInfo} AS ExceptionInfo
             FROM headless.{tableName}
             WHERE Id=@Id;
@@ -898,7 +899,7 @@ public partial class SqlServerStorageTests(SqlServerTestFixture fixture) : DataS
             .ContainSingle(m => m.StorageId == storedMessage.StorageId)
             .Subject;
 
-        claimed.LockedUntil.Should().BeAfter(beforeClaim.AddMilliseconds(100));
+        claimed.Lease.ExpiresAt.Should().BeAfter(beforeClaim.AddMilliseconds(100));
     }
 
     [Theory]
@@ -1090,6 +1091,14 @@ public partial class SqlServerStorageTests(SqlServerTestFixture fixture) : DataS
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
+    public override Task should_refuse_every_write_from_a_holder_whose_lease_was_granted_again(bool published)
+    {
+        return base.should_refuse_every_write_from_a_holder_whose_lease_was_granted_again(published);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
     public override Task should_not_renew_a_lease_that_lapsed_and_another_node_took(bool published)
     {
         return base.should_not_renew_a_lease_that_lapsed_and_another_node_took(published);
@@ -1202,9 +1211,15 @@ public partial class SqlServerStorageTests(SqlServerTestFixture fixture) : DataS
     }
 
     [Fact]
-    public override Task should_not_reclaim_dead_owner_rows_with_expired_lease()
+    public override Task should_revoke_dead_owner_rows_with_expired_lease()
     {
-        return base.should_not_reclaim_dead_owner_rows_with_expired_lease();
+        return base.should_revoke_dead_owner_rows_with_expired_lease();
+    }
+
+    [Fact]
+    public override Task should_lease_and_reclaim_rows_under_the_longest_owner_tag()
+    {
+        return base.should_lease_and_reclaim_rows_under_the_longest_owner_tag();
     }
 
     #endregion
@@ -1308,7 +1323,7 @@ public partial class SqlServerStorageTests(SqlServerTestFixture fixture) : DataS
     [Theory]
     [InlineData("MessagingPublished")]
     [InlineData("MessagingReceived")]
-    public async Task should_create_owner_column_with_shared_width(string tableName)
+    public async Task should_create_lease_holder_column_with_the_default_width(string tableName)
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
@@ -1316,20 +1331,20 @@ public partial class SqlServerStorageTests(SqlServerTestFixture fixture) : DataS
         var dataType = await connection.QueryFirstOrDefaultAsync<string>(
             """
             SELECT DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS
-            WHERE TABLE_SCHEMA = 'headless' AND TABLE_NAME = @TableName AND COLUMN_NAME = 'Owner'
+            WHERE TABLE_SCHEMA = 'headless' AND TABLE_NAME = @TableName AND COLUMN_NAME = 'LeaseHolder'
             """,
             new { TableName = tableName }
         );
         var maxLength = await connection.QueryFirstOrDefaultAsync<int?>(
             """
             SELECT CHARACTER_MAXIMUM_LENGTH FROM INFORMATION_SCHEMA.COLUMNS
-            WHERE TABLE_SCHEMA = 'headless' AND TABLE_NAME = @TableName AND COLUMN_NAME = 'Owner'
+            WHERE TABLE_SCHEMA = 'headless' AND TABLE_NAME = @TableName AND COLUMN_NAME = 'LeaseHolder'
             """,
             new { TableName = tableName }
         );
 
         dataType.Should().Be("nvarchar");
-        maxLength.Should().Be(DataStorageConstants.OwnerColumnMaxLength);
+        maxLength.Should().Be(DataStorageConstants.LeaseHolderMaxLength);
     }
 
     [Fact]
@@ -1429,7 +1444,7 @@ public partial class SqlServerStorageTests(SqlServerTestFixture fixture) : DataS
         {
             await repairConnection.OpenAsync(AbortToken);
             await repairConnection.ExecuteAsync(
-                $"UPDATE headless.{tableName} SET IntentType = 1, LockedUntil = NULL, Owner = NULL WHERE Id = @Id",
+                $"UPDATE headless.{tableName} SET IntentType = 1, LeaseState = 3, LeaseExpiresAt = NULL WHERE Id = @Id",
                 new { Id = unknownId }
             );
         }
@@ -1551,14 +1566,9 @@ public partial class SqlServerStorageTests(SqlServerTestFixture fixture) : DataS
 
         await using var assertConnection = new SqlConnection(fixture.ConnectionString);
         var unknownRows = (
-            await assertConnection.QueryAsync<(
-                Guid Id,
-                short IntentType,
-                string StatusName,
-                DateTimeOffset? LockedUntil
-            )>(
+            await assertConnection.QueryAsync<(Guid Id, short IntentType, string StatusName, short LeaseState)>(
                 """
-                SELECT Id, IntentType, StatusName, LockedUntil
+                SELECT Id, IntentType, StatusName, LeaseState
                 FROM headless.MessagingPublished
                 WHERE Id IN @Ids
                 ORDER BY Id;
@@ -1567,7 +1577,7 @@ public partial class SqlServerStorageTests(SqlServerTestFixture fixture) : DataS
             )
         ).ToList();
         unknownRows.Should().HaveCount(3);
-        unknownRows.Should().AllSatisfy(row => row.LockedUntil.Should().BeNull());
+        unknownRows.Should().AllSatisfy(row => row.LeaseState.Should().NotBe((short)RowLeaseState.Active));
         unknownRows.Single(row => row.Id == unknownExpiredId).IntentType.Should().Be(70);
         unknownRows.Single(row => row.Id == unknownDelayedId).StatusName.Should().Be(nameof(StatusName.Delayed));
         unknownRows.Single(row => row.Id == unknownQueuedId).StatusName.Should().Be(nameof(StatusName.Queued));
@@ -1608,19 +1618,14 @@ public partial class SqlServerStorageTests(SqlServerTestFixture fixture) : DataS
             $"SELECT NextRetryAt FROM headless.{tableName} WHERE Id = @Id",
             new { Id = id }
         );
-        var lockedUntil = await assertConnection.ExecuteScalarAsync<DateTimeOffset?>(
-            $"SELECT LockedUntil FROM headless.{tableName} WHERE Id = @Id",
-            new { Id = id }
-        );
-        var owner = await assertConnection.ExecuteScalarAsync<string?>(
-            $"SELECT Owner FROM headless.{tableName} WHERE Id = @Id",
+        var leaseState = await assertConnection.ExecuteScalarAsync<short>(
+            $"SELECT LeaseState FROM headless.{tableName} WHERE Id = @Id",
             new { Id = id }
         );
 
         statusName.Should().Be(nameof(StatusName.Failed));
         nextRetryAt.Should().BeNull();
-        lockedUntil.Should().BeNull();
-        owner.Should().BeNull();
+        leaseState.Should().NotBe((short)RowLeaseState.Active);
 
         if (string.Equals(tableName, "MessagingReceived", StringComparison.Ordinal))
         {
@@ -1983,9 +1988,9 @@ public partial class SqlServerStorageTests(SqlServerTestFixture fixture) : DataS
     }
 
     [Theory]
-    [InlineData("MessagingReceived", "IX_MessagingReceived_Owner_NotNull")]
-    [InlineData("MessagingPublished", "IX_MessagingPublished_Owner_NotNull")]
-    public async Task should_key_owner_filtered_index_on_owner_with_not_null_filter(string tableName, string indexName)
+    [InlineData("MessagingReceived", "IX_MessagingReceived_LeaseHolder_Active")]
+    [InlineData("MessagingPublished", "IX_MessagingPublished_LeaseHolder_Active")]
+    public async Task should_key_lease_holder_filtered_index_on_active_leases(string tableName, string indexName)
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
@@ -2009,7 +2014,7 @@ public partial class SqlServerStorageTests(SqlServerTestFixture fixture) : DataS
             )
         ).ToList();
 
-        columns.Should().BeEquivalentTo(["Owner"], opts => opts.WithStrictOrdering());
+        columns.Should().BeEquivalentTo(["LeaseHolder"], opts => opts.WithStrictOrdering());
 
         var filterDefinition = await connection.QueryFirstOrDefaultAsync<string>(
             """
@@ -2026,9 +2031,9 @@ public partial class SqlServerStorageTests(SqlServerTestFixture fixture) : DataS
 
         filterDefinition
             .Should()
-            .NotBeNull("the owner reclaim index must be filtered, not a full nonclustered index")
-            .And.Contain("Owner", "the filter must reference Owner")
-            .And.Contain("IS NOT NULL", "the filter must exclude rows without a Coordination owner");
+            .NotBeNull("the dead-owner reclaim index must be filtered, not a full nonclustered index")
+            .And.Contain("LeaseState", "the filter must reference the lease state")
+            .And.Contain("(1)", "the filter must keep only active leases");
     }
 
     private RelationalDataStorage _CreateStorage(MessagingOptions messagingOptions)
@@ -2068,9 +2073,9 @@ public partial class SqlServerStorageTests(SqlServerTestFixture fixture) : DataS
             await connection.ExecuteAsync(
                 """
                 INSERT INTO headless.MessagingPublished
-                    (Id, Version, Name, Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, LockedUntil, Owner, StatusName, MessageId)
+                    (Id, Version, Name, Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, StatusName, MessageId)
                 VALUES
-                    (@Id, 'v1', 'poison-published', 'not-json', 0, 0, @Now, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId);
+                    (@Id, 'v1', 'poison-published', 'not-json', 0, 0, @Now, NULL, @NextRetryAt, 'Failed', @MessageId);
                 """,
                 new
                 {
@@ -2086,9 +2091,9 @@ public partial class SqlServerStorageTests(SqlServerTestFixture fixture) : DataS
         await connection.ExecuteAsync(
             """
             INSERT INTO headless.MessagingReceived
-                (Id, Version, Name, ConsumerIdentity, Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, LockedUntil, Owner, StatusName, MessageId, ExceptionInfo, ConsumerIdentityHash)
+                (Id, Version, Name, ConsumerIdentity, Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, StatusName, MessageId, ExceptionInfo, ConsumerIdentityHash)
             VALUES
-                (@Id, 'v1', 'poison-received', 'poison-group', 'not-json', 0, 0, @Now, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId, NULL, @ConsumerIdentityHash);
+                (@Id, 'v1', 'poison-received', 'poison-group', 'not-json', 0, 0, @Now, NULL, @NextRetryAt, 'Failed', @MessageId, NULL, @ConsumerIdentityHash);
             """,
             new
             {
@@ -2119,9 +2124,9 @@ public partial class SqlServerStorageTests(SqlServerTestFixture fixture) : DataS
         return connection.ExecuteAsync(
             """
             INSERT INTO headless.MessagingPublished
-                (Id, Version, Name, Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, LockedUntil, Owner, StatusName, MessageId)
+                (Id, Version, Name, Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, StatusName, MessageId)
             VALUES
-                (@Id, 'v1', 'sql-provider-test', @Content, @IntentType, 0, @Now, @ExpiresAt, @NextRetryAt, NULL, NULL, @StatusName, @MessageId);
+                (@Id, 'v1', 'sql-provider-test', @Content, @IntentType, 0, @Now, @ExpiresAt, @NextRetryAt, @StatusName, @MessageId);
             """,
             new
             {
@@ -2151,9 +2156,9 @@ public partial class SqlServerStorageTests(SqlServerTestFixture fixture) : DataS
             return connection.ExecuteAsync(
                 """
                 INSERT INTO headless.MessagingPublished
-                    (Id, Version, Name, Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, LockedUntil, Owner, StatusName, MessageId)
+                    (Id, Version, Name, Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, StatusName, MessageId)
                 VALUES
-                    (@Id, 'v1', 'healthy-published', @Content, @IntentType, 0, @Now, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId);
+                    (@Id, 'v1', 'healthy-published', @Content, @IntentType, 0, @Now, NULL, @NextRetryAt, 'Failed', @MessageId);
                 """,
                 new
                 {
@@ -2170,9 +2175,9 @@ public partial class SqlServerStorageTests(SqlServerTestFixture fixture) : DataS
         return connection.ExecuteAsync(
             """
             INSERT INTO headless.MessagingReceived
-                (Id, Version, Name, ConsumerIdentity, Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, LockedUntil, Owner, StatusName, MessageId, ExceptionInfo, ConsumerIdentityHash)
+                (Id, Version, Name, ConsumerIdentity, Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, StatusName, MessageId, ExceptionInfo, ConsumerIdentityHash)
             VALUES
-                (@Id, 'v1', 'healthy-received', 'healthy-group', @Content, @IntentType, 0, @Now, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId, NULL, @ConsumerIdentityHash);
+                (@Id, 'v1', 'healthy-received', 'healthy-group', @Content, @IntentType, 0, @Now, NULL, @NextRetryAt, 'Failed', @MessageId, NULL, @ConsumerIdentityHash);
             """,
             new
             {
