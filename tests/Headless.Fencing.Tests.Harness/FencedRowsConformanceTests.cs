@@ -428,8 +428,8 @@ public abstract class FencedRowsConformanceTests<TFixture>(TFixture fixture) : T
         await FencedRows.GrantAsync(_table, connection, null, expired, LongDuration, new(), AbortToken);
         await ExpireAsync(expired);
 
-        (await FencedRows.RevokeAsync(_table, connection, null, live, AbortToken)).Should().Be(row);
-        (await FencedRows.RevokeAsync(_table, connection, null, expired, AbortToken))
+        (await FencedRows.RevokeAsync(_table, connection, null, live, cancellationToken: AbortToken)).Should().Be(row);
+        (await FencedRows.RevokeAsync(_table, connection, null, expired, cancellationToken: AbortToken))
             .Should()
             .Be(new FencedRow<Guid>(_table.Name, expired, 1));
 
@@ -437,10 +437,12 @@ public abstract class FencedRowsConformanceTests<TFixture>(TFixture fixture) : T
         stored.Lease.State.Should().Be(RowLeaseState.Revoked);
         stored.Lease.Holder.Should().Be("node-a", "a revoked attempt keeps its holder for the operator");
 
-        (await FencedRows.RevokeAsync(_table, connection, null, live, AbortToken))
+        (await FencedRows.RevokeAsync(_table, connection, null, live, cancellationToken: AbortToken))
             .Should()
             .BeNull("nothing is active any more");
-        (await FencedRows.RevokeAsync(_table, connection, null, Guid.NewGuid(), AbortToken)).Should().BeNull();
+        (await FencedRows.RevokeAsync(_table, connection, null, Guid.NewGuid(), cancellationToken: AbortToken))
+            .Should()
+            .BeNull();
         (await FencedRows.RenewAsync(_table, connection, null, row, LongDuration, AbortToken))
             .Status.Should()
             .Be(LeaseRenewalStatus.Revoked);
@@ -784,7 +786,13 @@ public abstract class FencedRowsConformanceTests<TFixture>(TFixture fixture) : T
 
         do
         {
-            swept = await FencedRows.AbandonExpiredAsync(_table, connection, null, batch, AbortToken);
+            swept = await FencedRows.AbandonExpiredAsync(
+                _table,
+                connection,
+                null,
+                batch,
+                cancellationToken: AbortToken
+            );
         } while (swept == batch);
 
         var abandoned = await ReadAsync(expired);
@@ -808,6 +816,86 @@ public abstract class FencedRowsConformanceTests<TFixture>(TFixture fixture) : T
         next!.Status.Should().Be(LeaseGrantStatus.Granted, "a grant waiting for the sweep proceeds once it ran");
         next.Row!.Generation.Should().Be(2);
         next.TakeoverCount.Should().Be(1, "the sweep's takeover still counts until the next attempt settles");
+    }
+
+    public virtual async Task should_land_the_consumers_write_only_on_rows_a_revocation_or_a_sweep_ends()
+    {
+        var tag = Tag();
+        var revoked = await InsertAsync(tag);
+        var idle = await InsertAsync(tag);
+        var first = await InsertAsync(tag);
+        var second = await InsertAsync(tag);
+        var expired = await InsertAsync(tag);
+        var live = await InsertAsync(tag);
+        await using var connection = Fixture.CreateConnection();
+        var revokedRow = (
+            await FencedRows.GrantAsync(_table, connection, null, revoked, LongDuration, new(), AbortToken)
+        )!.Row!;
+        var firstRow = (
+            await FencedRows.GrantAsync(_table, connection, null, first, LongDuration, new(), AbortToken)
+        )!.Row!;
+        var secondRow = (
+            await FencedRows.GrantAsync(_table, connection, null, second, LongDuration, new(), AbortToken)
+        )!.Row!;
+        var expiredRow = (
+            await FencedRows.GrantAsync(_table, connection, null, expired, LongDuration, new(), AbortToken)
+        )!.Row!;
+        await FencedRows.GrantAsync(_table, connection, null, live, LongDuration, new(), AbortToken);
+        await ExpireAsync(expired);
+
+        (await FencedRows.RevokeAsync(_table, connection, null, revoked, SetStatus("cancelled"), AbortToken))
+            .Should()
+            .Be(revokedRow);
+        (await FencedRows.RevokeAsync(_table, connection, null, idle, SetStatus("cancelled"), AbortToken))
+            .Should()
+            .BeNull("no attempt was active");
+        (
+            await FencedRows.RevokeAsync(
+                _table,
+                connection,
+                null,
+                [second, idle, first],
+                SetStatus("cancelled"),
+                AbortToken
+            )
+        )
+            .Should()
+            .Equal(secondRow, null, firstRow);
+
+        // The condition narrows the sweep to this test's rows, so rows other tests leave expired stay as they are.
+        var sweep = new FencedRowWrite(
+            Set: "status = @Swept",
+            Condition: "status = @Tag",
+            Bind: command =>
+            {
+                Dialect.AddParameter(command, "Swept", _Status, "swept");
+                Dialect.AddParameter(command, "Tag", _Status, tag);
+            }
+        );
+        (await FencedRows.AbandonExpiredAsync(_table, connection, null, 50, sweep, AbortToken)).Should().Be(1);
+
+        foreach (var id in new[] { revoked, first, second })
+        {
+            var stored = await ReadAsync(id);
+            stored.Status.Should().Be("cancelled", "the write lands in the statement that revokes");
+            stored.Lease.State.Should().Be(RowLeaseState.Revoked);
+        }
+
+        (await ReadAsync(idle)).Status.Should().Be(tag, "a row with no active attempt is not revoked or written");
+        var abandoned = await ReadAsync(expired);
+        abandoned.Status.Should().Be("swept", "the write lands in the statement that abandons");
+        abandoned.Lease.State.Should().Be(RowLeaseState.Abandoned);
+        (await ReadAsync(live))
+            .Should()
+            .Match<StoredWorkItem>(x => x.Status == tag && x.Lease.State == RowLeaseState.Active);
+        (await FencedRows.SettleAsync(_table, connection, null, revokedRow, SetStatus("done"), AbortToken))
+            .Should()
+            .Be(LeaseSettlementStatus.Revoked, "the revoked attempt's own write is refused");
+        (await FencedRows.SettleAsync(_table, connection, null, expiredRow, SetStatus("done"), AbortToken))
+            .Should()
+            .Be(LeaseSettlementStatus.Abandoned, "the abandoned attempt's own write is refused");
+        (await ReadAsync(revoked)).Status.Should().Be("cancelled");
+        (await ReadAsync(expired)).Status.Should().Be("swept");
     }
 
     #endregion

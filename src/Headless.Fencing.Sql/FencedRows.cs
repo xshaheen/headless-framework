@@ -439,17 +439,7 @@ public static class FencedRows
             return [];
         }
 
-        var order = Enumerable.Range(0, rows.Count).ToArray();
-
-        if (
-            typeof(IComparable<TKey>).IsAssignableFrom(typeof(TKey))
-            || typeof(IComparable).IsAssignableFrom(typeof(TKey))
-        )
-        {
-            var comparer = Comparer<TKey>.Default;
-            // A stable sort, so two tokens of one key end in the order given.
-            order = [.. order.OrderBy(i => rows[i].Key, comparer)];
-        }
+        var order = _KeyOrder(rows.Count, i => rows[i].Key);
 
         return await _RunAsync(
                 table,
@@ -666,18 +656,76 @@ public static class FencedRows
     /// Ends the row's active attempt, live or expired, as revoked, without its generation: an operator's or owner's
     /// cancellation of whoever holds the row.
     /// </summary>
+    /// <param name="table">The row's table.</param>
+    /// <param name="connection">The caller's connection.</param>
+    /// <param name="transaction">The caller's transaction, or <see langword="null" /> for the helper to run its own.</param>
+    /// <param name="key">The row's key.</param>
+    /// <param name="write">
+    /// The consumer's own assignments, applied in the same statement only when an attempt was active, such as the row's
+    /// cancelled status; <see langword="null" /> to write the lease alone. Only <see cref="FencedRowWrite.Set" /> and
+    /// <see cref="FencedRowWrite.Bind" /> apply.
+    /// </param>
+    /// <param name="cancellationToken">Token used to cancel the statement.</param>
     /// <returns>The token of the attempt revoked, or <see langword="null" /> when no attempt was active or no row has the key.</returns>
     public static async ValueTask<FencedRow<TKey>?> RevokeAsync<TKey>(
         FencedRowTable<TKey> table,
         DbConnection connection,
         DbTransaction? transaction,
         TKey key,
+        FencedRowWrite? write = null,
         CancellationToken cancellationToken = default
     )
         where TKey : notnull
     {
         Argument.IsNotNull(table);
         Argument.IsNotNull(key);
+        var sql = _RevokeSql(table, write);
+
+        return await _RunAsync(
+                table,
+                connection,
+                transaction,
+                (tx, ct) => _RevokeOneAsync(table, connection, tx, sql, key, write?.Bind, ct),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>Revokes the active attempts of several rows, each judged on its own, in one transaction.</summary>
+    /// <remarks>
+    /// When the key type is comparable the rows are locked in key order, so two batches over the same rows cannot
+    /// deadlock; otherwise they are locked in the order given. <paramref name="write" /> applies to each row revoked.
+    /// </remarks>
+    /// <returns>
+    /// Each key's revoked token, or <see langword="null" /> where no attempt was active or no row has the key, in the
+    /// order <paramref name="keys" /> lists them.
+    /// </returns>
+    public static async ValueTask<IReadOnlyList<FencedRow<TKey>?>> RevokeAsync<TKey>(
+        FencedRowTable<TKey> table,
+        DbConnection connection,
+        DbTransaction? transaction,
+        IReadOnlyList<TKey> keys,
+        FencedRowWrite? write = null,
+        CancellationToken cancellationToken = default
+    )
+        where TKey : notnull
+    {
+        Argument.IsNotNull(table);
+        Argument.IsNotNull(keys);
+
+        foreach (var key in keys)
+        {
+            Argument.IsNotNull(key, paramName: nameof(keys));
+        }
+
+        var sql = _RevokeSql(table, write);
+
+        if (keys.Count == 0)
+        {
+            return [];
+        }
+
+        var order = _KeyOrder(keys.Count, i => keys[i]);
 
         return await _RunAsync(
                 table,
@@ -685,18 +733,62 @@ public static class FencedRows
                 transaction,
                 async (tx, ct) =>
                 {
-                    await using var command = _Command(table, connection, tx, table.RevokeSql, key);
-                    var revoked = await _ExecuteAsync(command, _ReadGenerationAsync, ct).ConfigureAwait(false);
+                    var revoked = new FencedRow<TKey>?[keys.Count];
 
-                    // The fence is the active state alone, so an accepted transition ended the generation it locked.
-                    return revoked.Match<FencedRow<TKey>?>(
-                        accepted: (_, before) => new FencedRow<TKey>(table.Name, key, before!.Lease.Generation),
-                        rejected: static _ => null
-                    );
+                    foreach (var i in order)
+                    {
+                        revoked[i] = await _RevokeOneAsync(table, connection, tx, sql, keys[i], write?.Bind, ct)
+                            .ConfigureAwait(false);
+                    }
+
+                    return (IReadOnlyList<FencedRow<TKey>?>)revoked;
                 },
                 cancellationToken
             )
             .ConfigureAwait(false);
+    }
+
+    private static string _RevokeSql<TKey>(FencedRowTable<TKey> table, FencedRowWrite? write)
+        where TKey : notnull
+    {
+        if (write is null)
+        {
+            return table.RevokeSql;
+        }
+
+        Argument.IsNotNullOrWhiteSpace(write.Set, paramName: nameof(write));
+
+        if (write.Condition is not null || write.Returning is not null)
+        {
+            throw new ArgumentException(
+                "A revocation reports the attempt it ended, not columns, and its fence is the active state alone.",
+                nameof(write)
+            );
+        }
+
+        return table.RenderRevoke(write.Set);
+    }
+
+    private static async Task<FencedRow<TKey>?> _RevokeOneAsync<TKey>(
+        FencedRowTable<TKey> table,
+        DbConnection connection,
+        DbTransaction transaction,
+        string sql,
+        TKey key,
+        Action<DbCommand>? bind,
+        CancellationToken cancellationToken
+    )
+        where TKey : notnull
+    {
+        await using var command = _Command(table, connection, transaction, sql, key);
+        _BindConsumer(command, bind, "write");
+        var revoked = await _ExecuteAsync(command, _ReadGenerationAsync, cancellationToken).ConfigureAwait(false);
+
+        // The fence is the active state alone, so an accepted transition ended the generation it locked.
+        return revoked.Match<FencedRow<TKey>?>(
+            accepted: (_, before) => new FencedRow<TKey>(table.Name, key, before!.Lease.Generation),
+            rejected: static _ => null
+        );
     }
 
     /// <summary>
@@ -810,18 +902,46 @@ public static class FencedRows
     /// abandoned state. Run it in a loop until it returns fewer than <paramref name="batchSize" />, each call a short
     /// transaction.
     /// </remarks>
+    /// <param name="table">The rows' table.</param>
+    /// <param name="connection">The caller's connection.</param>
+    /// <param name="transaction">The caller's transaction, or <see langword="null" /> for the helper to run its own.</param>
+    /// <param name="batchSize">The most rows to abandon.</param>
+    /// <param name="write">
+    /// The consumer's part of the sweep, or <see langword="null" /> for the lease alone:
+    /// <see cref="FencedRowWrite.Condition" /> narrows which expired rows it takes, and <see cref="FencedRowWrite.Set" />
+    /// lands in the same statement on each row it abandons, such as moving the row's own status back to pending.
+    /// <see cref="FencedRowWrite.Returning" /> does not apply.
+    /// </param>
+    /// <param name="cancellationToken">Token used to cancel the sweep.</param>
     /// <returns>The number of rows abandoned.</returns>
     public static async ValueTask<int> AbandonExpiredAsync<TKey>(
         FencedRowTable<TKey> table,
         DbConnection connection,
         DbTransaction? transaction,
         int batchSize,
+        FencedRowWrite? write = null,
         CancellationToken cancellationToken = default
     )
         where TKey : notnull
     {
         Argument.IsNotNull(table);
         Argument.IsPositive(batchSize);
+        var sql = table.AbandonSql;
+
+        if (write is not null)
+        {
+            if (write.Set is null && write.Condition is null)
+            {
+                throw new ArgumentException("A sweep's write needs assignments, a condition, or both.", nameof(write));
+            }
+
+            if (write.Returning is not null)
+            {
+                throw new ArgumentException("A sweep reports how many rows it abandoned, not columns.", nameof(write));
+            }
+
+            sql = table.RenderAbandon(write.Condition, write.Set);
+        }
 
         return await _RunAsync(
                 table,
@@ -829,7 +949,8 @@ public static class FencedRows
                 transaction,
                 async (tx, ct) =>
                 {
-                    await using var command = _Command(connection, tx, table.AbandonSql);
+                    await using var command = _Command(connection, tx, sql);
+                    _BindConsumer(command, write?.Bind, nameof(write));
                     table.Dialect.AddParameter(
                         command,
                         FencedRowTable<TKey>.BatchSizeParameter,
@@ -988,6 +1109,23 @@ public static class FencedRows
     /// reserved prefix or named as a dialect's own variable: a consumer <c>@LeaseGeneration</c> would shadow the fence's
     /// own, and on SQL Server a consumer <c>@now</c> collides with the batch's <c>DECLARE @now</c>.
     /// </summary>
+    private static int[] _KeyOrder<TKey>(int count, Func<int, TKey> key)
+        where TKey : notnull
+    {
+        var order = Enumerable.Range(0, count).ToArray();
+
+        if (
+            typeof(IComparable<TKey>).IsAssignableFrom(typeof(TKey))
+            || typeof(IComparable).IsAssignableFrom(typeof(TKey))
+        )
+        {
+            // A stable sort, so two entries of one key end in the order given.
+            order = [.. order.OrderBy(key, Comparer<TKey>.Default)];
+        }
+
+        return order;
+    }
+
     private static void _BindConsumer(DbCommand command, Action<DbCommand>? bind, string paramName)
     {
         if (bind is null)
