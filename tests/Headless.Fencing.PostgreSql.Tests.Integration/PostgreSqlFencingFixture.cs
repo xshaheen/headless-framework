@@ -58,7 +58,7 @@ public sealed class PostgreSqlFencingFixture
                     lease_generation bigint NOT NULL DEFAULT 0,
                     lease_state smallint NOT NULL DEFAULT 0,
                     lease_expires_at timestamptz NULL,
-                    lease_holder varchar(200) NULL,
+                    lease_holder varchar(405) NULL,
                     lease_takeover_count integer NOT NULL DEFAULT 0
                 );
 

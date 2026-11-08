@@ -39,6 +39,10 @@ public sealed class FencedRowTable<TKey>
     internal const string BatchSizeParameter = "LeaseBatchSize";
     internal const string ReservedPrefix = "Lease";
 
+    // nvarchar stores two bytes a character and SQL Server caps a nonclustered index key at 1700 bytes, so a holder
+    // column wider than this cannot be indexed there.
+    internal const int MaxHolderMaxLength = 850;
+
     // Variables a dialect declares inside the rendered transition (SQL Server's DECLARE @now and @applied); a consumer
     // parameter of the same name fails the batch's compilation.
     internal static readonly FrozenSet<string> DialectVariables = FrozenSet.ToFrozenSet(
@@ -52,10 +56,12 @@ public sealed class FencedRowTable<TKey>
         string table,
         FencedRowKey<TKey> key,
         FencedRowColumns columns,
-        string? generationSequence
+        string? generationSequence,
+        int holderMaxLength
     )
     {
         Dialect = dialect;
+        HolderMaxLength = holderMaxLength;
         Key = key;
         Name = schema is null ? table : schema + "." + table;
         Table = schema is null ? dialect.Quote(table) : dialect.Qualify(schema, table);
@@ -134,6 +140,12 @@ public sealed class FencedRowTable<TKey>
     /// <summary>Gets how the table's key maps to its columns.</summary>
     public FencedRowKey<TKey> Key { get; }
 
+    /// <summary>
+    /// Gets the longest holder the table's holder column stores; every grant, claim, and holder revocation on the table
+    /// refuses a longer one.
+    /// </summary>
+    public int HolderMaxLength { get; }
+
     internal static string ActiveLiteral { get; } = _StateLiteral(RowLeaseState.Active);
 
     internal string Table { get; }
@@ -198,8 +210,14 @@ public sealed class FencedRowTable<TKey>
     /// store, or <see langword="null" /> for each row to count its own. Read the remarks on key reuse before choosing
     /// <see langword="null" />.
     /// </param>
+    /// <param name="holderMaxLength">
+    /// The width of the table's holder column, or <see langword="null" /> for
+    /// <see cref="FencingFieldLimits.HolderMaxLength" />. At most 850, so the column fits a SQL Server index key: an
+    /// nvarchar index key is capped at 1700 bytes, two a character.
+    /// </param>
     /// <returns>The table descriptor.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="dialect" /> or <paramref name="key" /> is <see langword="null" />.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="holderMaxLength" /> is not between 1 and 850.</exception>
     /// <exception cref="ArgumentException">
     /// A name, <paramref name="schema" /> included when it is not <see langword="null" />, is empty or white space, or two
     /// columns share a name.
@@ -210,7 +228,8 @@ public sealed class FencedRowTable<TKey>
         string table,
         FencedRowKey<TKey> key,
         FencedRowColumns? columns = null,
-        string? generationSequence = null
+        string? generationSequence = null,
+        int? holderMaxLength = null
     )
     {
         Argument.IsNotNull(dialect);
@@ -246,7 +265,11 @@ public sealed class FencedRowTable<TKey>
             Argument.IsNotNullOrWhiteSpace(generationSequence);
         }
 
-        return new(dialect, schema, table, key, columns, generationSequence);
+        var holderLimit = holderMaxLength ?? FencingFieldLimits.HolderMaxLength;
+        Argument.IsPositive(holderLimit, paramName: nameof(holderMaxLength));
+        Argument.IsLessThanOrEqualTo(holderLimit, MaxHolderMaxLength, paramName: nameof(holderMaxLength));
+
+        return new(dialect, schema, table, key, columns, generationSequence, holderLimit);
     }
 
     /// <summary>

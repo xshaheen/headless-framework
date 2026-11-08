@@ -94,7 +94,7 @@ public abstract class SqlServerFencingFixtureBase : HeadlessSqlServerFixture, IL
                 [lease_generation] bigint NOT NULL DEFAULT 0,
                 [lease_state] smallint NOT NULL DEFAULT 0,
                 [lease_expires_at] datetimeoffset(7) NULL,
-                [lease_holder] nvarchar(200) NULL,
+                [lease_holder] nvarchar(405) NULL,
                 [lease_takeover_count] int NOT NULL DEFAULT 0
             );
 

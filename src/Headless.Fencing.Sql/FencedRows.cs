@@ -61,7 +61,7 @@ public static class FencedRows
         Argument.IsNotNull(table);
         Argument.IsNotNull(key);
         Argument.IsPositive(duration);
-        LeaseRequestResolver.ValidateGrantOptions(options);
+        LeaseRequestResolver.ValidateGrantOptions(options, table.HolderMaxLength);
 
         return await _RunAsync(
                 table,
@@ -105,7 +105,8 @@ public static class FencedRows
         Argument.IsPositive(claim.BatchSize, paramName: nameof(claim));
         Argument.IsPositive(claim.Duration, paramName: nameof(claim));
         LeaseRequestResolver.ValidateGrantOptions(
-            new LeaseGrantOptions { Holder = claim.Holder, Takeover = claim.Takeover }
+            new LeaseGrantOptions { Holder = claim.Holder, Takeover = claim.Takeover },
+            table.HolderMaxLength
         );
 
         var fence = claim.Takeover == LeaseTakeover.AfterSweep ? table.AfterSweepFence : table.GrantableFence;
@@ -1176,7 +1177,7 @@ public static class FencedRows
         foreach (var holder in holders)
         {
             Argument.IsNotNull(holder, paramName: nameof(holders));
-            LeaseRequestResolver.ValidateGrantOptions(new LeaseGrantOptions { Holder = holder });
+            LeaseRequestResolver.ValidateGrantOptions(new LeaseGrantOptions { Holder = holder }, table.HolderMaxLength);
         }
 
         if (write is not null)
@@ -1219,7 +1220,7 @@ public static class FencedRows
                         table.Dialect.AddParameter(
                             command,
                             FencedRowTable<TKey>.HolderListParameter(index++),
-                            SqlColumnType.Text(FencingFieldLimits.HolderMaxLength),
+                            SqlColumnType.Text(table.HolderMaxLength),
                             holder
                         );
                     }
@@ -1373,7 +1374,7 @@ public static class FencedRows
         table.Dialect.AddParameter(
             command,
             FencedRowTable<TKey>.HolderParameter,
-            SqlColumnType.Text(FencingFieldLimits.HolderMaxLength),
+            SqlColumnType.Text(table.HolderMaxLength),
             holder
         );
     }
