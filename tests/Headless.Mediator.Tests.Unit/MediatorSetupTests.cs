@@ -5,6 +5,8 @@ using Headless.Mediator;
 using Headless.Mediator.Behaviors;
 using Mediator;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Hosting.Internal;
 
 namespace Tests;
 
@@ -60,36 +62,29 @@ public sealed class MediatorSetupTests
             .Be(ServiceLifetime.Scoped);
     }
 
-    [Fact]
-    public void should_leave_payload_logging_off_when_no_registration_asks_for_it()
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData("Production", false)]
+    [InlineData("Staging", false)]
+    [InlineData("Development", true)]
+    public void should_log_payloads_only_in_the_development_environment(string? environment, bool expected)
     {
-        // given
+        // given: no environment registered counts as Production
         var services = new ServiceCollection();
 
-        // when
+        if (environment is not null)
+        {
+            services.AddSingleton<IHostEnvironment>(new HostingEnvironment { EnvironmentName = environment });
+        }
+
+        // when: several registrations share one setting
         services.AddMediatorLoggingBehaviors();
         services.AddMediatorValidationRequestBehavior();
 
         // then
-        using var provider = services.BuildServiceProvider();
-        provider.GetRequiredService<MediatorPayloadLogging>().Enabled.Should().BeFalse();
-    }
-
-    [Fact]
-    public void should_turn_payload_logging_on_when_any_registration_asks_for_it()
-    {
-        // given
-        var services = new ServiceCollection();
-
-        // when: the opt-in sits between two registrations that leave the default
-        services.AddMediatorValidationRequestBehavior();
-        services.AddMediatorLoggingBehaviors(logPayloads: true);
-        services.AddMediatorRequestResponseLoggingBehaviors();
-
-        // then
         services.Where(d => d.ServiceType == typeof(MediatorPayloadLogging)).Should().ContainSingle();
         using var provider = services.BuildServiceProvider();
-        provider.GetRequiredService<MediatorPayloadLogging>().Enabled.Should().BeTrue();
+        provider.GetRequiredService<MediatorPayloadLogging>().Enabled.Should().Be(expected);
     }
 
     [Fact]
