@@ -161,6 +161,33 @@ public sealed class DataClassificationDestructuringPolicyTests : TestBase
     }
 
     [Fact]
+    public void should_redact_classified_byte_buffer_as_one_value_from_its_content()
+    {
+        byte[] key = [1, 2, 3, 1];
+
+        var structure = _DestructureStructure(new WithBuffers { Key = key });
+
+        structure.Scalar(nameof(WithBuffers.Key)).Should().Be(_Pseudonym(Convert.ToBase64String(key)));
+    }
+
+    [Fact]
+    public void should_redact_classified_char_buffer_as_one_value_from_its_content()
+    {
+        var structure = _DestructureStructure(new WithBuffers { Password = "s3cr3t".ToCharArray() });
+
+        structure.Scalar(nameof(WithBuffers.Password)).Should().Be(_Pseudonym("s3cr3t"));
+    }
+
+    [Fact]
+    public void should_redact_classified_collection_type_to_one_string()
+    {
+        var value = _Destructure(new Parent { Phones = ["0100", "0122"] });
+
+        var parent = value.Should().BeOfType<StructureValue>().Subject;
+        parent.Scalar(nameof(Parent.Phones)).Should().Be(_Pseudonym("Phones(2)"));
+    }
+
+    [Fact]
     public void should_redact_destructured_values_when_reloadable_profile_finds_redactor_provider()
     {
         var services = new ServiceCollection().AddRedaction(_ConfigureRedaction);
@@ -311,6 +338,8 @@ public sealed class DataClassificationDestructuringPolicyTests : TestBase
         public Payload? Child { get; init; }
 
         public ApiToken? Token { get; init; }
+
+        public Phones? Phones { get; init; }
     }
 
     [PersonalData]
@@ -387,6 +416,21 @@ public sealed class DataClassificationDestructuringPolicyTests : TestBase
     {
         [PersonalData]
         public IReadOnlyList<string?> Names { get; init; } = [];
+    }
+
+    public sealed class WithBuffers
+    {
+        [PersonalData]
+        public byte[]? Key { get; init; }
+
+        [PersonalData]
+        public char[]? Password { get; init; }
+    }
+
+    [PersonalData]
+    public sealed class Phones : List<string>
+    {
+        public override string ToString() => string.Create(CultureInfo.InvariantCulture, $"Phones({Count})");
     }
 
     public sealed class WithNumber

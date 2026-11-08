@@ -86,8 +86,8 @@ builder.Host.UseSerilog(
 
 - A classified property keeps its name. It holds the redactor's output, so an erasing redactor yields `""` and the log still shows that the property was set, while a `null` value stays `null`.
 - A property with several classifications is redacted as one combined set; with no redactor mapped for that set, the provider's fallback redactor applies.
-- A classified collection is redacted element by element, which keeps the count and, with an HMAC redactor, shows which elements repeat.
-- A classification on a type redacts the whole value to one string: its `ToString()` passed through the redactor.
+- A classified collection property is redacted element by element, which keeps the count and, with an HMAC redactor, shows which elements repeat. A `string`, `char[]`, or `byte[]` is one value, redacted whole from its content (a `byte[]` as Base64): per-character tokens would act as a substitution cipher over a secret buffer.
+- A classification on a type redacts the whole value to one string, its `ToString()` passed through the redactor, even when the type implements `IEnumerable`.
 - `DataClassification.None` (`[NoDataClassification]`) counts as unclassified.
 - Properties are read the way Serilog reads them: inherited ones are included, overrides inherit the classification from the base declaration, indexers and non-public getters are skipped, and a throwing getter logs a message naming the exception type.
 - Values are formatted with the invariant culture, so a pseudonym is the same on every host.

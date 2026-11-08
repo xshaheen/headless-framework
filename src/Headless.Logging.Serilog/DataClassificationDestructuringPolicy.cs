@@ -34,15 +34,17 @@ namespace Headless.Logging;
 /// default destructuring. For a handled type:
 /// </para>
 /// <list type="bullet">
-///   <item>A type-level classification redacts the whole value to one string.</item>
+///   <item>A type-level classification redacts the whole value to one string, even when the type is a collection.</item>
 ///   <item>
 ///   A classified property keeps its name and holds the redactor's output. An erasing redactor yields an empty
 ///   string, so the log still shows the property was set. A <see langword="null"/> value stays
 ///   <see langword="null"/>. Several classifications on one property are redacted as one combined set.
 ///   </item>
 ///   <item>
-///   A classified collection (any <see cref="IEnumerable"/> except <see cref="string"/>) is redacted element by
-///   element, so the log keeps the count and, with a pseudonymizing redactor, which elements repeat.
+///   A classified collection property is redacted element by element, so the log keeps the count and, with a
+///   pseudonymizing redactor, which elements repeat. A <see cref="string"/>, <c>char[]</c>, or <c>byte[]</c> is one
+///   value, redacted whole from its content (a byte buffer as Base64), so a secret buffer never shows its length or
+///   repeats per character.
 ///   </item>
 ///   <item>
 ///   Unclassified properties are destructured by Serilog as usual, which applies this policy again to nested
@@ -80,7 +82,7 @@ public sealed class DataClassificationDestructuringPolicy(IRedactorProvider reda
         }
 
         result = shape.TypeClassifications is { } typeClassifications
-            ? _Redact(value, typeClassifications)
+            ? _RedactWhole(value, typeClassifications)
             : _DestructureMembers(value, shape, propertyValueFactory);
 
         return true;
@@ -99,7 +101,7 @@ public sealed class DataClassificationDestructuringPolicy(IRedactorProvider reda
             }
 
             var logValue = member.Classifications is { } classifications
-                ? _Redact(propertyValue, classifications)
+                ? _RedactProperty(propertyValue, classifications)
                 : factory.CreatePropertyValue(propertyValue, destructureObjects: true);
 
             properties.Add(new LogEventProperty(member.Property.Name, logValue));
@@ -108,7 +110,14 @@ public sealed class DataClassificationDestructuringPolicy(IRedactorProvider reda
         return new StructureValue(properties, shape.TypeTag);
     }
 
-    private LogEventPropertyValue _Redact(object? value, DataClassificationSet classifications)
+    // A classified type is one value whatever it implements: a collection type is still redacted to one string,
+    // as the type-level contract promises.
+    private ScalarValue _RedactWhole(object value, DataClassificationSet classifications)
+    {
+        return new ScalarValue(_RedactScalar(_redactorProvider.GetRedactor(classifications), value));
+    }
+
+    private LogEventPropertyValue _RedactProperty(object? value, DataClassificationSet classifications)
     {
         if (value is null)
         {
@@ -117,7 +126,7 @@ public sealed class DataClassificationDestructuringPolicy(IRedactorProvider reda
 
         var redactor = _redactorProvider.GetRedactor(classifications);
 
-        if (value is IEnumerable sequence and not string)
+        if (value is IEnumerable sequence && !_IsSingleValue(value))
         {
             var elements = new List<LogEventPropertyValue>();
 
@@ -132,11 +141,23 @@ public sealed class DataClassificationDestructuringPolicy(IRedactorProvider reda
         return new ScalarValue(_RedactScalar(redactor, value));
     }
 
+    // A string, character buffer, or byte buffer is one secret, not a list of values. Redacting it element by element
+    // would give each character or byte its own deterministic token: a substitution cipher that shows the secret's
+    // length, repeats, and frequencies, and that anyone who can compute the redactor can reverse.
+    private static bool _IsSingleValue(object value) => value is string or char[] or byte[];
+
     private static string _RedactScalar(Redactor redactor, object value)
     {
-        // Invariant culture keeps a pseudonym stable across hosts: the same number or date must hash the same way
-        // whatever the server's culture.
-        return redactor.Redact(value, format: null, CultureInfo.InvariantCulture);
+        return value switch
+        {
+            // The buffers have no meaningful ToString, so redact their content: the same buffer then yields the same
+            // pseudonym, and an erasing redactor still erases it.
+            char[] chars => redactor.Redact(new string(chars)),
+            byte[] bytes => redactor.Redact(Convert.ToBase64String(bytes)),
+            // Invariant culture keeps a pseudonym stable across hosts: the same number or date must hash the same
+            // way whatever the server's culture.
+            _ => redactor.Redact(value, format: null, CultureInfo.InvariantCulture),
+        };
     }
 
     // Mirrors Serilog's PropertyValueConverter: a throwing getter becomes a message naming the exception type, so
