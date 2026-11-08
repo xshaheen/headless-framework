@@ -390,6 +390,7 @@
         <Project Path="tests\Headless.Testing.AspNetCore.Tests.TestHost\Headless.Testing.AspNetCore.Tests.TestHost.csproj" />
         <Project Path="tests\Headless.Testing.AspNetCore.Tests.Unit\Headless.Testing.AspNetCore.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Testing.Tests.Unit\Headless.Testing.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Testing.Testcontainers.Tests.Integration\Headless.Testing.Testcontainers.Tests.Integration.csproj" />
     </Folder>
     <Folder Name="/MediaIndexing/">
         <Project Path="src\Headless.Media.Indexing.Abstractions\Headless.Media.Indexing.Abstractions.csproj" />

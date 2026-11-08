@@ -24,6 +24,7 @@ internal sealed class RabbitMqProviderConformanceDriver(RabbitMqFixture fixture)
         setup.UseRabbitMq(options =>
         {
             options.HostName = fixture.HostName;
+            options.VirtualHost = fixture.VirtualHost;
             options.Port = fixture.Port;
             options.UserName = fixture.UserName;
             options.Password = fixture.Password;

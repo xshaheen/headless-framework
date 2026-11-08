@@ -193,6 +193,7 @@ public sealed class RabbitMqReplyTransportTests(RabbitMqFixture fixture) : TestB
         var options = new RabbitMqMessagingOptions
         {
             HostName = fixture.HostName,
+            VirtualHost = fixture.VirtualHost,
             Port = fixture.Port,
             UserName = fixture.UserName,
             Password = fixture.Password,
@@ -222,6 +223,7 @@ public sealed class RabbitMqReplyTransportTests(RabbitMqFixture fixture) : TestB
             setup.UseRabbitMq(options =>
             {
                 options.HostName = fixture.HostName;
+                options.VirtualHost = fixture.VirtualHost;
                 options.Port = fixture.Port;
                 options.UserName = fixture.UserName;
                 options.Password = fixture.Password;

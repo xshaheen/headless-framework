@@ -37,7 +37,11 @@ public sealed class PostgreSqlChaosFixture : ChaosStackFixture
     public override void UseCoordination(HeadlessCoordinationSetupBuilder setup, string connectionString) =>
         setup.UsePostgreSql(connectionString);
 
-    private sealed class PostgreSqlComponent() : PostgreSqlStackComponent("messages_chaos");
+    private sealed class PostgreSqlComponent : PostgreSqlStackComponent
+    {
+        // A chaos run measures recovery under load, so its store keeps a server no other run shares.
+        protected override bool ShareContainer => false;
+    }
 }
 
 [CollectionDefinition(Name, DisableParallelization = true)]

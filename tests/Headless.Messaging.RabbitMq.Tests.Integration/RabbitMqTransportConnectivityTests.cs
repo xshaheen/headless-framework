@@ -26,8 +26,8 @@ public sealed class RabbitMqTransportConnectivityTests : TransportConnectivityTe
     {
         setup.UseRabbitMq(options =>
         {
-            options.HostName = _broker.Host;
-            options.Port = _broker.Port;
+            options.HostName = _broker.ForwardedHost;
+            options.Port = _broker.ForwardedPort;
             options.UserName = RabbitMqBuilder.DefaultUsername;
             options.Password = RabbitMqBuilder.DefaultPassword;
         });
@@ -60,14 +60,17 @@ internal sealed class FixedPortRabbitMqFixture : HeadlessRabbitMqFixture
 {
     private readonly BrokerPortForwarder _forwarder;
 
+    // Its tests stop and start the broker, which would cut every other fixture on a shared one.
+    protected override bool ShareContainer => false;
+
     public FixedPortRabbitMqFixture()
     {
         _forwarder = new BrokerPortForwarder(() => Container, RabbitMqBuilder.RabbitMqPort);
     }
 
-    public string Host => _forwarder.Host;
+    public string ForwardedHost => _forwarder.Host;
 
-    public int Port => _forwarder.Port;
+    public int ForwardedPort => _forwarder.Port;
 
     public ValueTask StartAsync()
     {

@@ -4,15 +4,12 @@ using Headless.Testing.Testcontainers;
 
 namespace Tests;
 
-// Reuse is scoped by the fixture's assembly. Keep these low-level lock fixtures in the harness assembly
-// so Jobs integration workers cannot reset their database or stop their container during a contention test.
+// The key-lock contention tests get a database of their own, so a Jobs test resetting its database never drops the
+// tables a contention test is racing on. The server itself may be shared with other fixtures and runs.
 [CollectionDefinition(DisableParallelization = true)]
 public sealed class JobsKeyLockPostgreSqlFixture
     : HeadlessPostgreSqlFixture,
-        ICollectionFixture<JobsKeyLockPostgreSqlFixture>
-{
-    public string ConnectionString => Container.GetConnectionString();
-}
+        ICollectionFixture<JobsKeyLockPostgreSqlFixture>;
 
 [CollectionDefinition(DisableParallelization = true)]
 public sealed class JobsKeyLockSqlServerFixture
