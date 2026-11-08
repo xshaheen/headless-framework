@@ -139,6 +139,18 @@ public sealed class PostgreSqlIdempotencyConformanceTests(PostgreSqlIdempotencyF
     }
 
     [Fact]
+    public override Task should_answer_stale_to_an_older_attempt_renewing_after_a_newer_one_released()
+    {
+        return base.should_answer_stale_to_an_older_attempt_renewing_after_a_newer_one_released();
+    }
+
+    [Fact]
+    public override Task should_end_an_attempt_once_whichever_verb_comes_second()
+    {
+        return base.should_end_an_attempt_once_whichever_verb_comes_second();
+    }
+
+    [Fact]
     public override Task should_refuse_a_fence_in_a_long_enlisted_unit_once_the_lease_expired()
     {
         return base.should_refuse_a_fence_in_a_long_enlisted_unit_once_the_lease_expired();

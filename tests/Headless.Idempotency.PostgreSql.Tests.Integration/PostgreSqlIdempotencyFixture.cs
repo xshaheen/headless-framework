@@ -59,7 +59,11 @@ public sealed class PostgreSqlIdempotencyFixture
         await connection.OpenAsync(cancellationToken);
         await using var command = new NpgsqlCommand(
             $"""
-            SELECT status, fingerprint_algorithm, fingerprint, generation, lease_expires_at, result, result_contract,
+            -- The logical record the store reads: a settled lease is a completed record, only an active or settled lease
+            -- names a generation, and only an active one has an expiry.
+            SELECT CASE WHEN lease_state = 2 THEN 1 ELSE 0 END::smallint, fingerprint_algorithm, fingerprint,
+                CASE WHEN lease_state IN (1, 2) THEN lease_generation END,
+                CASE WHEN lease_state = 1 THEN lease_expires_at END, result, result_contract,
                 retention_until, recovery_point, recovery_state, recovery_contract
             FROM {_Records}
             WHERE tenant_id = @tenant AND idempotency_key = @recordKey
@@ -128,7 +132,7 @@ public sealed class PostgreSqlIdempotencyFixture
         await using var command = new NpgsqlCommand(
             $"""
             UPDATE {_Records} SET lease_expires_at = lease_expires_at - @age
-            WHERE tenant_id = @tenant AND idempotency_key = @recordKey AND lease_expires_at IS NOT NULL
+            WHERE tenant_id = @tenant AND idempotency_key = @recordKey AND lease_state = 1
             """,
             connection
         );

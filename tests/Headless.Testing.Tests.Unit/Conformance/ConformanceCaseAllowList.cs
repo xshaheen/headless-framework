@@ -103,6 +103,11 @@ internal static class ConformanceCaseAllowList
         ),
         new(
             "CacheIdempotencyConformanceTests",
+            "should_answer_stale_to_an_older_attempt_renewing_after_a_newer_one_released",
+            "The cache entry keeps no lease state per generation: once a newer attempt released the key, an older attempt's renewal finds a released entry and answers Released, not the relational and in-memory providers' Stale."
+        ),
+        new(
+            "CacheIdempotencyConformanceTests",
             "should_refuse_a_recovery_point_from_an_attempt_that_lost_the_key_and_write_nothing",
             "Ends with an enlisted recovery point; the cache provider refuses enlistment. The provider's own tests cover the autonomous refusals."
         ),

@@ -652,6 +652,73 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
     }
 
     /// <summary>
+    /// Only the generation that ended a record can learn how it ended: an older attempt renewing after a newer one
+    /// released the key is told it is stale, not that its own attempt was released.
+    /// </summary>
+    public virtual async Task should_answer_stale_to_an_older_attempt_renewing_after_a_newer_one_released()
+    {
+        var key = CreateKey();
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+
+        var older = await AdmitAsync(host, key);
+        await Fixture.ShiftLeaseIntoPastAsync(HostKey(key), LongLease + TimeSpan.FromMinutes(1), AbortToken);
+        var newer = await AdmitAsync(host, key);
+        newer.IsTakeover.Should().BeTrue();
+        (await host.Operations.ReleaseAsync(newer, AbortToken)).Should().Be(IdempotentLeaseStatus.Released);
+
+        (await host.Operations.RenewAsync(older, LongLease, AbortToken))
+            .Should()
+            .Be(new IdempotentLeaseRenewal(IdempotentLeaseStatus.Stale, ExpiresAt: null));
+        (await host.Operations.RenewAsync(newer, LongLease, AbortToken))
+            .Status.Should()
+            .Be(IdempotentLeaseStatus.Released, "the generation that released the key still sees its own release");
+    }
+
+    /// <summary>
+    /// An attempt ends once: after a release it can no longer complete, after a completion a release reports the
+    /// completion and keeps the result, and a repeated release reports the release again, all without writing.
+    /// </summary>
+    public virtual async Task should_end_an_attempt_once_whichever_verb_comes_second()
+    {
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+
+        // Released, then completed: refused, and the record stays released.
+        var releasedKey = CreateKey();
+        var released = await AdmitAsync(host, releasedKey);
+        await host.Operations.ReleaseAsync(released, AbortToken);
+        var releasedBefore = await Fixture.ReadRecordAsync(HostKey(releasedKey), AbortToken);
+
+        var complete = async () =>
+            await host.Operations.CompleteAsync(released, Payload("late"), Contract, cancellationToken: AbortToken);
+
+        (await complete.Should().ThrowAsync<StaleAdmissionException>())
+            .Which.Reason.Should()
+            .Be(IdempotentLeaseStatus.Released);
+        (await Fixture.ReadRecordAsync(HostKey(releasedKey), AbortToken))
+            .Should()
+            .BeEquivalentTo(releasedBefore, "a refused completion writes nothing");
+
+        // Released twice: the second release reports success and writes nothing.
+        (await host.Operations.ReleaseAsync(released, AbortToken))
+            .Should()
+            .Be(IdempotentLeaseStatus.Released);
+        (await Fixture.ReadRecordAsync(HostKey(releasedKey), AbortToken))
+            .Should()
+            .BeEquivalentTo(releasedBefore, "a repeated release writes nothing");
+
+        // Completed, then released: the completion stands.
+        var completedKey = CreateKey();
+        var completed = await AdmitAsync(host, completedKey);
+        await host.Operations.CompleteAsync(completed, Payload("done"), Contract, cancellationToken: AbortToken);
+        var completedBefore = await Fixture.ReadRecordAsync(HostKey(completedKey), AbortToken);
+
+        (await host.Operations.ReleaseAsync(completed, AbortToken)).Should().Be(IdempotentLeaseStatus.Completed);
+        var completedAfter = await Fixture.ReadRecordAsync(HostKey(completedKey), AbortToken);
+        completedAfter.Should().BeEquivalentTo(completedBefore, "a release after a completion writes nothing");
+        Text(completedAfter!.Result!).Should().Be("done");
+    }
+
+    /// <summary>
     /// A fence inside a unit that began while the lease was live must still refuse once the lease expired: every
     /// decision reads the database clock after the row lock, never a clock frozen at transaction start.
     /// </summary>

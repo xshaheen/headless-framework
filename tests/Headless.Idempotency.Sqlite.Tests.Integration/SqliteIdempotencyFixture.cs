@@ -63,7 +63,11 @@ public sealed class SqliteIdempotencyFixture
         await using var connection = await _OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
-            SELECT status, fingerprint_algorithm, fingerprint, generation, lease_expires_at, result, result_contract,
+            -- The logical record the store reads: a settled lease is a completed record, only an active or settled lease
+            -- names a generation, and only an active one has an expiry.
+            SELECT CASE WHEN lease_state = 2 THEN 1 ELSE 0 END, fingerprint_algorithm, fingerprint,
+                CASE WHEN lease_state IN (1, 2) THEN lease_generation END,
+                CASE WHEN lease_state = 1 THEN lease_expires_at END, result, result_contract,
                 retention_until, recovery_point, recovery_state, recovery_contract
             FROM {_Records}
             WHERE tenant_id = @tenant AND idempotency_key = @recordKey
@@ -115,7 +119,7 @@ public sealed class SqliteIdempotencyFixture
         CancellationToken cancellationToken
     )
     {
-        (await _ShiftAsync("lease_expires_at", key, by, cancellationToken))
+        (await _ShiftAsync("lease_expires_at", key, by, cancellationToken, "lease_state = 1"))
             .Should()
             .Be(1, "the lease to age must exist");
     }
@@ -133,14 +137,15 @@ public sealed class SqliteIdempotencyFixture
         string column,
         IdempotencyRecordKey key,
         TimeSpan by,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        string? condition = null
     )
     {
         await using var connection = await _OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
             UPDATE {_Records} SET {column} = {_Dialect.ShiftByDuration(column, "age", subtract: true)}
-            WHERE tenant_id = @tenant AND idempotency_key = @recordKey AND {column} IS NOT NULL
+            WHERE tenant_id = @tenant AND idempotency_key = @recordKey AND {condition ?? $"{column} IS NOT NULL"}
             """;
         _AddKey(command, key);
         _Dialect.AddDuration(command, "age", by);

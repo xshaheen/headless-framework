@@ -1150,6 +1150,7 @@
         "dependencies": {
           "FluentValidation": "[12.2.0, )",
           "Headless.Checks": "[1.0.0, )",
+          "Headless.Fencing.Sql": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Idempotency.Abstractions": "[1.0.0, )",
           "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
