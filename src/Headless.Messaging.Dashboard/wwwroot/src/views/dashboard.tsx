@@ -1,10 +1,22 @@
 import { useDashboard } from '@headless/dashboard-sdk'
-import { Card, CardRow, Cards, Mono, PageFrame, PageHeader, usePageFrame } from '@headless/dashboard-sdk/components'
+import { Button, Card, CardRow, Cards, Mono, PageFrame, PageHeader, usePageFrame } from '@headless/dashboard-sdk/components'
 import { listKey, useDashboardKeysetList } from '@headless/dashboard-sdk/data'
 import { useQueryClient } from '@headless/dashboard-sdk/query'
 import { Link } from '@headless/dashboard-sdk/router'
 import { fetchMessages, failureGroupPath, parseFailureGroup, readFilter, rowMark, topicOf, type MessageKind, type MessageRow } from '../messages.ts'
-import { LoadError, MessagingStats, NodeSwitch, Skeleton, StaleNotice, Time, useMessagingAttention, useNode, useNodeReset, type AttentionItem } from '../parts.tsx'
+import {
+  AttentionGaps,
+  LoadError,
+  MessagingStats,
+  NodeSwitch,
+  Skeleton,
+  StaleNotice,
+  Time,
+  useMessagingAttention,
+  useNode,
+  useNodeReset,
+  type AttentionItem,
+} from '../parts.tsx'
 
 const cardRows = 6
 
@@ -58,34 +70,44 @@ function attentionPath(item: AttentionItem) {
 }
 
 function MessagingAttention() {
-  const { answer, items } = useMessagingAttention()
+  const { answer, items, stale, unavailable, complete } = useMessagingAttention()
+  const retry = () => void answer.refetch()
+  // A source that did not answer is a row of its own, so the card never reads as the whole story without it.
+  const gap = unavailable.length > 0 ? `Not answering: ${unavailable.join(', ')}. Items from these may be missing.` : undefined
 
   return (
     <Card
       title="Needs attention"
-      caption={items.length > 0 ? String(items.length) : undefined}
+      caption={items.length > 0 ? `${items.length}${complete ? '' : '+'}` : undefined}
       empty={
         answer.isError ? (
-          <LoadError message={answer.error.message} onRetry={() => void answer.refetch()} />
+          <LoadError message={answer.error.message} onRetry={retry} />
         ) : answer.isPending ? (
           <Skeleton label="Loading what needs attention" rows={2} />
+        ) : stale || !complete ? (
+          <AttentionGaps stale={stale} unavailable={unavailable} onRetry={retry} />
         ) : (
           'Nothing in Messaging needs attention.'
         )
       }
     >
-      {items.map((item) => {
-        const path = attentionPath(item)
+      {items.length > 0
+        ? [
+            ...items.map((item) => {
+              const path = attentionPath(item)
 
-        return (
-          <CardRow
-            key={item.id}
-            tone={item.severity === 'critical' ? 'fail' : 'proc'}
-            name={path ? <Link to={path}>{item.title}</Link> : item.title}
-            value={item.lastSeenAt ? <Time value={item.lastSeenAt} short /> : undefined}
-          />
-        )
-      })}
+              return (
+                <CardRow
+                  key={item.id}
+                  tone={item.severity === 'critical' ? 'fail' : 'proc'}
+                  name={path ? <Link to={path}>{item.title}</Link> : item.title}
+                  value={item.lastSeenAt ? <Time value={item.lastSeenAt} short /> : undefined}
+                />
+              )
+            }),
+            ...(gap ? [<CardRow key="unavailable" tone="off" name={<span role="status">{gap}</span>} actions={<Button variant="ghost" onPress={retry}>Retry</Button>} />] : []),
+          ]
+        : null}
     </Card>
   )
 }

@@ -1,7 +1,7 @@
 import { Mono, PageFrame, PageHeader, usePageFrame } from '@headless/dashboard-sdk/components'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { DataTable } from '@headless/dashboard-sdk/table'
-import { CellText, LoadError, MessagingStats, Skeleton, Time, useMessagingAttention } from '../parts.tsx'
+import { AttentionGaps, CellText, LoadError, MessagingStats, Skeleton, Time, useMessagingAttention } from '../parts.tsx'
 
 /** `[{node}:]unknown-lane:{store}:{kind}`; the store and kind are read from the end, as a node name may hold a colon. */
 export function parseUnknownLane(id: string) {
@@ -22,7 +22,7 @@ export function parseUnknownLane(id: string) {
  */
 export default function UnknownLanesView() {
   const format = useFormat()
-  const { answer, items } = useMessagingAttention()
+  const { answer, items, stale, unavailable, complete } = useMessagingAttention()
   const rows = items.flatMap((item) => {
     const lane = parseUnknownLane(item.id)
 
@@ -47,21 +47,27 @@ export default function UnknownLanesView() {
         <LoadError message={answer.error.message} onRetry={() => void answer.refetch()} />
       ) : answer.isPending ? (
         <Skeleton label="Loading unknown lanes" rows={2} />
+      ) : stale ? (
+        <AttentionGaps stale unavailable={unavailable} onRetry={() => void answer.refetch()} />
       ) : (
-        <DataTable
-          label="Unknown lanes"
-          viewId="messaging.unknown-lanes"
-          frame={frame}
-          rows={rows}
-          emptyState="Every stored row is on a lane some consumer registers."
-          columns={[
-            { id: 'title', header: 'Report', cell: (row) => <CellText title={row.title}>{row.title}</CellText>, isRowHeader: true, width: '2fr' },
-            { id: 'store', header: 'Store', cell: (row) => <Mono>{row.store}</Mono>, width: 120 },
-            { id: 'node', header: 'Node', cell: (row) => <Mono>{row.node}</Mono>, priority: 2, width: 120 },
-            { id: 'count', header: 'Rows', cell: (row) => format.count({ value: row.count, capped: row.capped }), align: 'end', width: 90 },
-            { id: 'seen', header: 'Last seen', cell: (row) => (row.lastSeenAt ? <Time value={row.lastSeenAt} short /> : ''), priority: 2, width: 110 },
-          ]}
-        />
+        <>
+          <AttentionGaps stale={false} unavailable={unavailable} onRetry={() => void answer.refetch()} />
+          <DataTable
+            label="Unknown lanes"
+            viewId="messaging.unknown-lanes"
+            frame={frame}
+            rows={rows}
+            // Only an answer from every source shows that no row sits on an unknown lane.
+            emptyState={complete ? 'Every stored row is on a lane some consumer registers.' : 'No unknown lanes in the sources that answered.'}
+            columns={[
+              { id: 'title', header: 'Report', cell: (row) => <CellText title={row.title}>{row.title}</CellText>, isRowHeader: true, width: '2fr' },
+              { id: 'store', header: 'Store', cell: (row) => <Mono>{row.store}</Mono>, width: 120 },
+              { id: 'node', header: 'Node', cell: (row) => <Mono>{row.node}</Mono>, priority: 2, width: 120 },
+              { id: 'count', header: 'Rows', cell: (row) => format.count({ value: row.count, capped: row.capped }), align: 'end', width: 90 },
+              { id: 'seen', header: 'Last seen', cell: (row) => (row.lastSeenAt ? <Time value={row.lastSeenAt} short /> : ''), priority: 2, width: 110 },
+            ]}
+          />
+        </>
       )}
     </PageFrame>
   )

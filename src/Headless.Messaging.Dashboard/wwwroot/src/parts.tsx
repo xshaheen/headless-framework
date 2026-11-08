@@ -198,15 +198,32 @@ export function useNodes() {
 }
 
 /**
- * The node the views read: the URL's `node`, or empty for the local node. The local node's own name reads as empty,
- * so its views share one cache and one topic whichever link opened them.
+ * The node last chosen in this dashboard session, by the session's query client. The shell builds the sidebar,
+ * palette, and command links from fixed routes that carry no `node`, so without it every such link would fall back to
+ * the local node. A fresh load starts empty, so a shared link without `node` still reads the local node.
+ */
+const chosenNodes = new WeakMap<object, string>()
+
+/**
+ * The node the views read: the URL's `node`, else the node last chosen in this session, else empty for the local
+ * node. The local node's own name reads as empty, so its views share one cache and one topic whichever link opened
+ * them.
  */
 export function useNode() {
   const [params] = useSearchParams()
+  const client = useQueryClient()
   const nodes = useNodes()
-  const requested = params.get('node') ?? ''
+  const inUrl = params.get('node')
+  const requested = inUrl ?? chosenNodes.get(client) ?? ''
   const local = nodes.data?.items.find((item) => item.isLocal)
   const node = local && requested === local.name ? '' : requested
+
+  useEffect(() => {
+    // A link that names its node, such as an object's, is a choice too.
+    if (inUrl !== null) {
+      chosenNodes.set(client, inUrl)
+    }
+  }, [client, inUrl])
 
   return {
     node,
@@ -219,28 +236,31 @@ export function useNode() {
 
 /**
  * Which node the views read, and the switch between nodes when forwarding is on; without it, the local node's name.
- * A dashboard-only host serves no node of its own, so it opens on the first node discovery lists.
+ * A dashboard-only host serves no node of its own, so it opens on the first node discovery lists. A view reached by a
+ * link without `node` gets the session's node written back to its URL, so the URL keeps naming what the view shows.
  */
 export function NodeSwitch() {
-  const [, setParams] = useSearchParams()
+  const [params, setParams] = useSearchParams()
+  const client = useQueryClient()
   const { node, nodes, local, forwarding } = useNode()
   const peers = (nodes.data?.items ?? []).filter((item) => !item.isLocal)
   const first = peers[0]?.name
   const needsPeer = nodes.data !== undefined && !local && node === ''
+  const missing = params.get('node') === null ? node || (needsPeer ? first : undefined) : undefined
 
   useEffect(() => {
-    if (needsPeer && first) {
+    if (missing) {
       setParams(
         (current) => {
           const next = new URLSearchParams(current)
-          next.set('node', first)
+          next.set('node', missing)
 
           return next
         },
         { replace: true },
       )
     }
-  }, [needsPeer, first, setParams])
+  }, [missing, setParams])
 
   if (!nodes.data) {
     return null
@@ -262,14 +282,16 @@ export function NodeSwitch() {
 
   // A switch is a new place to go back from, and the open row belongs to the node left behind.
   function choose(value: string) {
+    const toLocal = !value || value === local?.name
+    chosenNodes.set(client, toLocal ? '' : value)
     setParams((current) => {
       const next = new URLSearchParams(current)
       next.delete('open')
 
-      if (value && value !== local?.name) {
-        next.set('node', value)
-      } else {
+      if (toLocal) {
         next.delete('node')
+      } else {
+        next.set('node', value)
       }
 
       return next
@@ -368,19 +390,59 @@ export interface AttentionItem {
   target?: { kind: string; id: string } | null
 }
 
+interface AttentionSection {
+  id: string
+  displayName: string
+  /** The module timed out or failed, so `items` says nothing. */
+  stale: boolean
+  /** The stores or nodes the module answered without, so `items` may be missing some. */
+  unavailable?: string[]
+  items: AttentionItem[]
+}
+
 /**
  * The Messaging items of the shell's Attention aggregate. The query key and answer shape are the Attention pill's own,
- * so both read one cached answer and the pill's refetch on `attention.changed` updates these too.
+ * so both read one cached answer and the pill's refetch on `attention.changed` updates these too. `complete` holds only
+ * when every source answered: an empty list means nothing needs attention only then.
  */
 export function useMessagingAttention() {
   const { api } = useDashboard()
   const answer = useQuery({
     queryKey: ['shell', 'attention'],
-    queryFn: async () =>
-      (await api.request<{ modules: { id: string; items: AttentionItem[] }[] }>({ method: 'GET', path: 'needs-you' })).modules,
+    queryFn: async () => (await api.request<{ modules: AttentionSection[] }>({ method: 'GET', path: 'needs-you' })).modules,
   })
+  const section = answer.data?.find((candidate) => candidate.id === 'messaging')
+  // No Messaging section in a successful answer means the module did not answer at all.
+  const stale = answer.data !== undefined && (!section || section.stale)
+  const unavailable = section?.unavailable ?? []
 
-  return { answer, items: answer.data?.find((section) => section.id === 'messaging')?.items ?? [] }
+  return {
+    answer,
+    items: stale ? [] : (section?.items ?? []),
+    stale,
+    unavailable,
+    complete: answer.data !== undefined && !stale && unavailable.length === 0,
+  }
+}
+
+/** Why the Attention answer cannot be trusted as complete: stale with Retry, or the sources it left out. */
+export function AttentionGaps({ stale, unavailable, onRetry }: { stale: boolean; unavailable: string[]; onRetry: () => void }) {
+  if (stale) {
+    return <LoadError message="Messaging did not answer, so what needs attention is unknown." onRetry={onRetry} />
+  }
+
+  if (unavailable.length > 0) {
+    return (
+      <div className="hd-banner" role="status">
+        <span>{`Not answering: ${unavailable.join(', ')}. Items from these may be missing.`}</span>
+        <Button variant="ghost" onPress={onRetry}>
+          Retry
+        </Button>
+      </div>
+    )
+  }
+
+  return null
 }
 
 export interface RealtimeMetrics {
