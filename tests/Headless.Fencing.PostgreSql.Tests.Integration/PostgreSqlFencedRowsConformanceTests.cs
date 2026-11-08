@@ -116,6 +116,12 @@ public sealed class PostgreSqlFencedRowsConformanceTests(PostgreSqlFencingFixtur
     }
 
     [Fact]
+    public override Task should_give_up_waiting_on_a_held_row_after_the_tables_command_timeout()
+    {
+        return base.should_give_up_waiting_on_a_held_row_after_the_tables_command_timeout();
+    }
+
+    [Fact]
     public override Task should_grant_a_subtree_the_roots_deadline_with_a_generation_per_child()
     {
         return base.should_grant_a_subtree_the_roots_deadline_with_a_generation_per_child();
