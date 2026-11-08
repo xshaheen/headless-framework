@@ -1,11 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using Headless.Checks;
 using Headless.Logging;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Blobs;
@@ -25,10 +23,6 @@ public sealed class BlobSignedUrlPathRedactor : ILogPathRedactor
 {
     /// <summary>The text that replaces everything below the route prefix.</summary>
     public const string RedactedSegment = "***";
-
-    // Every place the request path can reach a trace. url.path is what ASP.NET Core and the OpenTelemetry
-    // instrumentation set today; http.target (older semantic conventions) and url.full come from other instrumentation.
-    private static readonly string[] _PathTags = ["url.path", "http.target", "url.full"];
 
     private readonly PathString[] _prefixes;
 
@@ -93,49 +87,5 @@ public sealed class BlobSignedUrlPathRedactor : ILogPathRedactor
         redacted = null;
 
         return false;
-    }
-
-    /// <summary>
-    /// Rewrites the path tags of the request's server activity, and of the current activity when instrumentation
-    /// started a separate one, when the request targets a signed URL.
-    /// </summary>
-    internal void RedactActivities(HttpContext context)
-    {
-        var request = context.Request;
-
-        if (!TryRedact(request.Path, out var redactedPath))
-        {
-            return;
-        }
-
-        // Matches how ASP.NET Core and the OpenTelemetry instrumentation build url.path.
-        var raw = request.PathBase.Add(request.Path).ToString();
-        var redacted = request.PathBase.Add(redactedPath).ToString();
-
-        var serverActivity = context.Features.Get<IHttpActivityFeature>()?.Activity;
-        _RedactTags(serverActivity, raw, redacted);
-
-        // The OpenTelemetry instrumentation exports a sibling of the server activity, and sets the tags on it, when
-        // the incoming trace context does not match the one ASP.NET Core extracted.
-        if (Activity.Current is { } current && !ReferenceEquals(current, serverActivity))
-        {
-            _RedactTags(current, raw, redacted);
-        }
-    }
-
-    private static void _RedactTags(Activity? activity, string raw, string redacted)
-    {
-        if (activity is null)
-        {
-            return;
-        }
-
-        foreach (var tag in _PathTags)
-        {
-            if (activity.GetTagItem(tag) is string value && value.Contains(raw, StringComparison.Ordinal))
-            {
-                activity.SetTag(tag, value.Replace(raw, redacted, StringComparison.Ordinal));
-            }
-        }
     }
 }

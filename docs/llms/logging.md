@@ -1,6 +1,6 @@
 ---
 domain: Logging
-packages: Logging.Redaction, Logging.Serilog
+packages: Logging.Redaction, Logging.Redaction.AspNetCore, Logging.Serilog
 ---
 
 # Logging
@@ -9,7 +9,7 @@ packages: Logging.Redaction, Logging.Serilog
 
 ## Orientation
 
-Two packages. `Headless.Logging.Redaction` holds the data-classification taxonomy and its redactors, which decide what a log may carry. `Headless.Logging.Serilog` provides `SerilogFactory` — a static factory that supplies two distinct `LoggerConfiguration` setups via extension methods:
+Three packages. `Headless.Logging.Redaction` holds the data-classification taxonomy and its redactors, which decide what a log may carry. `Headless.Logging.Redaction.AspNetCore` applies declared credential paths to ASP.NET Core's HTTP logging and to OpenTelemetry spans, and wires Microsoft's HTTP logging redaction with the taxonomy. `Headless.Logging.Serilog` provides `SerilogFactory` — a static factory that supplies two distinct `LoggerConfiguration` setups via extension methods:
 
 1. **Bootstrap** (`ConfigureBootstrapLoggerConfiguration`) — minimal logger active before DI is built; catches startup crashes to file and console.
 2. **Reloadable** (`ConfigureReloadableLoggerConfiguration`) — full production logger wired into `IConfiguration`; respects runtime level changes in `appsettings.json` and enriches with application metadata.
@@ -105,21 +105,13 @@ public sealed record Customer(
 | A classified `[LoggerMessage]` / `[LogProperties]` parameter | `AddHeadlessLogRedaction()` under any logger factory; Microsoft's `EnableRedaction` also covers it when Microsoft's factory is in charge |
 | ASP.NET Core's request scope and request lines | `AddHeadlessLogRedaction()` with an `ILogPathRedactor` (the signed-URL endpoint registers one) |
 | A plain `{Value}` hole, an interpolated message | the value's `ToString()`, and `AddLogTextRedaction` for known shapes |
-| HTTP logging (`UseHttpLogging`) | Microsoft's `AddHttpLoggingRedaction` (package `Microsoft.AspNetCore.Diagnostics.Middleware`), mapping headers and route parameters to the Headless classifications |
+| HTTP logging (`UseHttpLogging`) | `AddHeadlessHttpLoggingRedaction()` (credential headers erased, route parameters you classify), and `AddHeadlessRequestLogRedaction()` for a declared credential path |
+| Span tags (`url.path`, `http.target`, `url.full`) | `AddHeadlessRequestLogRedaction()` for the request span; `AddHeadlessLogPathRedaction()` on the tracer provider for every span, outgoing calls included (`AddHeadlessServiceDefaults` adds it) |
 | Outgoing `HttpClient` logging | Microsoft's `AddExtendedHttpClientLogging` (package `Microsoft.Extensions.Http.Diagnostics`), with the same classifications |
 | Exported OTLP logs and spans | everything above, plus the collector backstop below |
 | Exception messages and stack traces | nothing: keep secrets out of them |
 
-HTTP logging speaks the same classifications, so one taxonomy covers it. `AddHttpLoggingRedaction` is marked `[Experimental]` by Microsoft (suppress the diagnostic its build warning names), registers HTTP logging itself, and logs no request header you do not classify; the pipeline still needs `app.UseHttpLogging()`. `AddExtendedHttpClientLogging` replaces the default `HttpClient` logger rather than adding beside it.
-
-```csharp
-builder.Services.AddHeadlessRedaction(builder.Configuration.GetSection("Redaction:Hmac"));
-builder.Services.AddHttpLoggingRedaction(options =>
-{
-    options.RequestHeadersDataClasses.Add(HeaderNames.Authorization, HeadlessDataClassifications.Secret);
-    options.RouteParameterDataClasses.Add("userId", HeadlessDataClassifications.Identifier);
-});
-```
+HTTP logging speaks the same classifications, so one taxonomy covers it; see [Headless.Logging.Redaction.AspNetCore](#headlessloggingredactionaspnetcore). `AddExtendedHttpClientLogging` replaces the default `HttpClient` logger rather than adding beside it.
 
 ### Collector backstop
 
@@ -140,6 +132,43 @@ processors:
 
 ```bash
 dotnet add package Headless.Logging.Redaction
+```
+
+---
+## Headless.Logging.Redaction.AspNetCore
+
+### API and behavior
+
+- `services.AddHeadlessRequestLogRedaction()` — applies every registered `ILogPathRedactor` wherever ASP.NET Core writes the request path: the request scope and request lines (it calls `AddHeadlessLogRedaction()`), the `Path` field of the HTTP logging record (an `IHttpLoggingInterceptor`), and the request span's `url.path`, `http.target`, and `url.full` tags (an `IStartupFilter` middleware, first in the pipeline). Idempotent. `UseSignedUrlEndpoint` calls it.
+- `tracing.AddHeadlessLogPathRedaction()` — a `TracerProviderBuilder` processor that rewrites the same three tags on every span when it ends, server and client alike, so an outgoing `HttpClient` call to a credential URL is covered too. A matching value loses its query and fragment, because a credential URL can carry the same secret there. Processors run in the order they are added: add it before any exporter. `AddHeadlessServiceDefaults` adds it ahead of its user hook and the OTLP exporter.
+- `services.AddHeadlessHttpLoggingRedaction(configure?)` — Microsoft's `AddHttpLoggingRedaction` with `Authorization`, `Proxy-Authorization`, and `Cookie` request headers and the `Set-Cookie` response header classified `HeadlessDataClassifications.Secret` (logged by name, value erased), plus `AddHeadlessRequestLogRedaction()`. `configure` runs after the defaults; classify route parameters and any other header you want logged there. Microsoft marks the API experimental, so the method carries `[Experimental("EXTEXP0013")]`: suppress that diagnostic at the call site. It registers HTTP logging itself; the pipeline still needs `app.UseHttpLogging()`. Idempotent: a second call adds only its `configure`.
+
+### Design constraints
+
+- **The request span is redacted when the first middleware runs.** ASP.NET Core and the OpenTelemetry instrumentation set `url.path` when the activity starts and do not set it again, so exporters receive the redacted value. A sampler, or a processor's `OnStart`, runs before the middleware and still sees the raw path.
+- **The span processor only sees spans its tracer provider records,** after every instrumentation has set its tags. An exporter added before it exports the raw value.
+- **Microsoft's middleware logs no header you do not classify.** Classifying a header logs its name with the redacted value; an unclassified header is left out entirely.
+
+### Install
+
+```bash
+dotnet add package Headless.Logging.Redaction.AspNetCore
+```
+
+```csharp
+builder.Services.AddHeadlessRedaction(builder.Configuration.GetSection("Redaction:Hmac"));
+#pragma warning disable EXTEXP0013 // Microsoft's HTTP logging redaction is experimental.
+builder.Services.AddHeadlessHttpLoggingRedaction(options =>
+    options.RouteParameterDataClasses["userId"] = HeadlessDataClassifications.Identifier);
+#pragma warning restore EXTEXP0013
+builder.Services.AddOpenTelemetry().WithTracing(tracing => tracing
+    .AddAspNetCoreInstrumentation()
+    .AddHttpClientInstrumentation()
+    .AddHeadlessLogPathRedaction() // before the exporter
+    .AddOtlpExporter());
+
+var app = builder.Build();
+app.UseHttpLogging();
 ```
 
 ---

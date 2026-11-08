@@ -1459,6 +1459,7 @@
           "Headless.Api": "[1.0.0, )",
           "Headless.Context": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
+          "Headless.Logging.Redaction.AspNetCore": "[1.0.0, )",
           "Headless.OpenApi": "[1.0.0, )",
           "Microsoft.AspNetCore.OpenApi": "[10.0.13, )",
           "Microsoft.Extensions.Http.Resilience": "[10.11.0, )",
@@ -1594,6 +1595,26 @@
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Microsoft.Extensions.Http.Resilience": "[10.11.0, )"
+        }
+      },
+      "headless.logging.redaction": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
+          "Microsoft.Extensions.Compliance.Abstractions": "[10.11.0, )",
+          "Microsoft.Extensions.Compliance.Redaction": "[10.11.0, )",
+          "Microsoft.Extensions.Telemetry.Abstractions": "[10.11.0, )"
+        }
+      },
+      "headless.logging.redaction.aspnetcore": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Logging.Redaction": "[1.0.0, )",
+          "Microsoft.AspNetCore.Diagnostics.Middleware": "[10.11.0, )",
+          "OpenTelemetry": "[1.20.1, )"
         }
       },
       "headless.multitenancy": {
@@ -1871,6 +1892,18 @@
           "xunit.v3.extensibility.core": "4.0.1"
         }
       },
+      "Microsoft.AspNetCore.Diagnostics.Middleware": {
+        "type": "CentralTransitive",
+        "requested": "[10.11.0, )",
+        "resolved": "10.11.0",
+        "contentHash": "0hhrJq5P+A04gYNoX89PdCyB/lZ+ggwRMsXlcS+rzEsqB5g7WSO8QetZ+D6QuEQHEZnJGbnFqvmggStR1xZLmw==",
+        "dependencies": {
+          "Microsoft.Extensions.Compliance.Abstractions": "10.11.0",
+          "Microsoft.Extensions.DependencyInjection.AutoActivation": "10.11.0",
+          "Microsoft.Extensions.Telemetry": "10.11.0",
+          "Microsoft.Extensions.Telemetry.Abstractions": "10.11.0"
+        }
+      },
       "Microsoft.AspNetCore.MiddlewareAnalysis": {
         "type": "CentralTransitive",
         "requested": "[10.0.13, )",
@@ -1913,6 +1946,16 @@
         "dependencies": {
           "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.13",
           "Microsoft.Extensions.ObjectPool": "10.0.13"
+        }
+      },
+      "Microsoft.Extensions.Compliance.Redaction": {
+        "type": "CentralTransitive",
+        "requested": "[10.11.0, )",
+        "resolved": "10.11.0",
+        "contentHash": "PXaJ04SHx1tb3+XR61E6wlQsWkANqTPJOvRfhiYh7Da+moJK2h9132IB9Mfv2kIhYbs8zt5eUnoh0iPEygf7og==",
+        "dependencies": {
+          "Microsoft.Extensions.Compliance.Abstractions": "10.11.0",
+          "Microsoft.Extensions.Options.ConfigurationExtensions": "10.0.13"
         }
       },
       "Microsoft.Extensions.Configuration.Abstractions": {
