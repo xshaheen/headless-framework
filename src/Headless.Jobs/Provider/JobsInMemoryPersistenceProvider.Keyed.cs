@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Fencing;
 
 namespace Headless.Jobs.Provider;
 
@@ -56,8 +57,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
                 if (
                     current.Status != JobStatus.Idle
-                    || current.OwnerId is not null
-                    || current.LockedUntil is not null
+                    || current.Lease.State == RowLeaseState.Active
                     || current.CancelRequested
                 )
                 {
@@ -85,12 +85,11 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             row.Generation = checked((current?.Generation ?? 0) + 1);
             row.IsCurrentGeneration = true;
             row.Status = JobStatus.Idle;
-            row.OwnerId = null;
-            row.LockedUntil = null;
+            row.Lease = default;
             row.CreatedAt = row.UpdatedAt = _timeProvider.GetUtcNow();
             var barrier = _CloneTicker(row);
             barrier.Status = JobStatus.InProgress;
-            barrier.LockedUntil = _timeProvider.GetUtcNow().UtcDateTime.Add(_PublicationBarrierLease);
+            barrier.Lease = _BarrierLease(row.Lease, _timeProvider.GetUtcNow().Add(_PublicationBarrierLease));
             barrier.IsCurrentGeneration = false;
             if (!_TryAddTimeJob(row.Id, barrier))
             {
@@ -171,8 +170,8 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 var updated = _CloneTicker(current);
                 updated.CancelRequested = true;
                 updated.UpdatedAt = _timeProvider.GetUtcNow();
-                var pending =
-                    current.Status == JobStatus.Idle && current.OwnerId is null && current.LockedUntil is null;
+                // An idle row under an active lease is a claimed chain descendant, so only the running chain may end it.
+                var pending = current.Status == JobStatus.Idle && current.Lease.State != RowLeaseState.Active;
                 if (pending)
                 {
                     updated.Status = JobStatus.Cancelled;

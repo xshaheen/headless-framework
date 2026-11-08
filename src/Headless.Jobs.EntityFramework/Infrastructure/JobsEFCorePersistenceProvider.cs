@@ -3,6 +3,7 @@
 using System.Linq.Expressions;
 using Headless.Caching;
 using Headless.Checks;
+using Headless.Fencing;
 using Headless.Jobs.Internal;
 using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
@@ -327,8 +328,8 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         var timeJobs = dbContext.Set<TTimeJob>().AsNoTracking();
 
         var ownerRows = await timeJobs
-            .Where(x => x.ParentId == null && x.LockedUntil != null && x.OwnerId != null)
-            .GroupBy(x => x.OwnerId!)
+            .Where(x => x.ParentId == null && x.Lease.State == RowLeaseState.Active && x.Lease.Holder != null)
+            .GroupBy(x => x.Lease.Holder!)
             .Select(group => new
             {
                 group.Key,
@@ -515,7 +516,15 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                         {
                             foreach (var runtimeProperty in TimeJobEditGuard.RuntimeProperties)
                             {
-                                entry.Property(runtimeProperty).IsModified = false;
+                                // The lease maps as a complex property, which the scalar-property lookup rejects.
+                                if (entry.Metadata.FindComplexProperty(runtimeProperty) is not null)
+                                {
+                                    entry.ComplexProperty(runtimeProperty).IsModified = false;
+                                }
+                                else
+                                {
+                                    entry.Property(runtimeProperty).IsModified = false;
+                                }
                             }
                         }
                     }
@@ -554,8 +563,8 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         // Read before the release clears it: a pre-claimed root's loaded children carry this owner.
         var ownersBeforeEdit = await jobs.AsNoTracking()
             .Where(row => editedIds.Contains(row.Id))
-            .Select(row => new { row.Id, row.OwnerId })
-            .ToDictionaryAsync(row => row.Id, row => row.OwnerId, cancellationToken)
+            .Select(row => new { row.Id, Owner = row.Lease.State == RowLeaseState.Active ? row.Lease.Holder : null })
+            .ToDictionaryAsync(row => row.Id, row => row.Owner, cancellationToken)
             .ConfigureAwait(false);
 
         var released = await jobs.Where(row => editedIds.Contains(row.Id))
@@ -564,9 +573,10 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                 setter =>
                     setter
                         .SetProperty(row => row.Status, JobStatus.Idle)
-                        .SetProperty(row => row.OwnerId, _ => null)
-                        .SetProperty(row => row.LockedUntil, _ => null)
-                        .SetProperty(row => row.UpdatedAt, storeNow),
+                        .SetProperty(row => row.UpdatedAt, storeNow)
+                        // The edit ends any claim's lease in the same statement, so the claimed attempt is refused at
+                        // its admission instead of running the edited row.
+                        .EndLease(RowLeaseState.Revoked),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -583,8 +593,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             if (editedIds.Contains(candidate.Id))
             {
                 candidate.Status = JobStatus.Idle;
-                candidate.OwnerId = null;
-                candidate.LockedUntil = null;
+                candidate.Lease = _Revoked(candidate.Lease);
                 candidate.UpdatedAt = storeNow;
             }
             else if (context.Entry(candidate).State == EntityState.Modified)
@@ -599,11 +608,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             var cleared = await jobs.Where(row => ids.Contains(row.Id))
                 .Where(_CarriedDescendantEditable(group.Key))
                 .ExecuteUpdateAsync(
-                    setter =>
-                        setter
-                            .SetProperty(row => row.OwnerId, _ => null)
-                            .SetProperty(row => row.LockedUntil, _ => null)
-                            .SetProperty(row => row.UpdatedAt, storeNow),
+                    setter => setter.SetProperty(row => row.UpdatedAt, storeNow).EndLease(RowLeaseState.Revoked),
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -615,11 +620,22 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
 
             foreach (var id in ids)
             {
-                byId[id].OwnerId = null;
-                byId[id].LockedUntil = null;
+                byId[id].Lease = _Revoked(byId[id].Lease);
                 byId[id].UpdatedAt = storeNow;
             }
         }
+    }
+
+    // The in-memory mirror of EndLease, so the persisted intent matches the row the statement wrote.
+    private static RowLeaseSnapshot _Revoked(RowLeaseSnapshot lease)
+    {
+        return lease.State == RowLeaseState.Active
+            ? lease with
+            {
+                State = RowLeaseState.Revoked,
+                TakeoverCount = 0,
+            }
+            : lease;
     }
 
     // Binds the guard's root-owner parameter to a captured value, so EF sends it as a query parameter.
@@ -907,8 +923,8 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                                     // A paused definition must not fire; resume creates its own occurrence. Nothing is
                                     // owed at this instant, so the retired row accounts for it.
                                     .SetProperty(x => x.Disposition, CronOccurrenceDisposition.Accounted)
-                                    .SetProperty(x => x.OwnerId, _ => null)
-                                    .SetProperty(x => x.LockedUntil, _ => null),
+                                    // A claimed occurrence's attempt must not start the retired row.
+                                    .EndLease(RowLeaseState.Revoked),
                             cancellationToken
                         )
                         .ConfigureAwait(false);
@@ -1236,8 +1252,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                                             // expression edit — which is exactly why the rule reads this column and
                                             // never the free-form string the two producers share.
                                             .SetProperty(x => x.Disposition, CronOccurrenceDisposition.Superseded)
-                                            .SetProperty(x => x.OwnerId, _ => null)
-                                            .SetProperty(x => x.LockedUntil, _ => null),
+                                            .EndLease(RowLeaseState.Revoked),
                                     cancellationToken
                                 )
                                 .ConfigureAwait(false);
@@ -1636,8 +1651,8 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         var occurrences = dbContext.Set<CronJobOccurrenceEntity<TCronJob>>().AsNoTracking();
 
         var ownerRows = await occurrences
-            .Where(x => x.LockedUntil != null && x.OwnerId != null)
-            .GroupBy(x => x.OwnerId!)
+            .Where(x => x.Lease.State == RowLeaseState.Active && x.Lease.Holder != null)
+            .GroupBy(x => x.Lease.Holder!)
             .Select(group => new
             {
                 group.Key,
@@ -1797,41 +1812,65 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
-        // Only acquire occurrences that are acquirable (Idle/Queued and not locked by another node)
-        var query = dbContext
-            .Set<CronJobOccurrenceEntity<TCronJob>>()
+        var occurrences = dbContext.Set<CronJobOccurrenceEntity<TCronJob>>();
+
+        // The EF predicates pick the candidates; the grant re-checks each one on the row it updates through the
+        // version token it was read at, so an occurrence edited or claimed since is left alone.
+        var candidates = await occurrences
+            .AsNoTracking()
             .Where(x => ((IEnumerable<Guid>)occurrenceIds).Contains(x.Id))
             .WhereRunnable(RunFilter)
             .WhereNotClusterLimited(ClusterConcurrency)
-            .WhereCanAcquireUsingDatabaseClock(owner);
-
-        // Lock and mark InProgress
-        var affected = await query
-            .ExecuteUpdateAsync(
-                setter =>
-                    setter
-                        .SetProperty(x => x.OwnerId, owner)
-                        .SetProperty(x => x.LockedUntil, _ => DateTime.UtcNow.AddSeconds(LeaseDuration.TotalSeconds))
-                        .SetProperty(x => x.Status, JobStatus.InProgress)
-                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
-                cancellationToken
-            )
+            .WhereCanAcquireUsingDatabaseClock(owner)
+            .Select(x => new { x.Id, x.UpdatedAt })
+            .ToArrayAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        if (affected == 0)
+        if (candidates.Length == 0)
         {
             return [];
         }
 
-        // Return acquired occurrences with CronJob populated
-        return await dbContext
-            .Set<CronJobOccurrenceEntity<TCronJob>>()
-            .AsNoTracking()
-            .Where(x =>
-                ((IEnumerable<Guid>)occurrenceIds).Contains(x.Id)
-                && x.OwnerId == owner
-                && x.Status == JobStatus.InProgress
+        // LEASE-DEADLINE WRITE — autocommit, so the expiry is the statement's database clock.
+        var set = JobsRowSet.For<CronJobOccurrenceEntity<TCronJob>>(dbContext);
+        var idColumn = set.Column(nameof(CronJobOccurrenceEntity<>.Id));
+        var updatedColumn = set.Column(nameof(CronJobOccurrenceEntity<>.UpdatedAt));
+        var tokens = string.Join(
+            " OR ",
+            candidates.Select(c =>
+                $"({idColumn} = {set.Parameter(nameof(CronJobOccurrenceEntity<>.Id), c.Id)} AND {updatedColumn} = {set.Parameter(nameof(CronJobOccurrenceEntity<>.UpdatedAt), c.UpdatedAt)})"
             )
+        );
+        set.Value(nameof(CronJobOccurrenceEntity<>.Status), JobStatus.InProgress)
+            .DatabaseNow(nameof(CronJobOccurrenceEntity<>.UpdatedAt));
+
+        var granted = await JobsLeaseGrant
+            .GrantAsync<CronJobOccurrenceEntity<TCronJob>>(
+                JobsLeaseRows.CronOccurrences<TCronJob>(dbContext),
+                dbContext,
+                set,
+                candidates.Select(c => c.Id).ToArray(),
+                tokens,
+                deadline: null,
+                LeaseDuration,
+                owner,
+                // Mirrors the acquire predicate's owner arm; the new generation fences off the earlier dispatch.
+                reclaimOwn: true,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (granted.Count == 0)
+        {
+            return [];
+        }
+
+        var grantedIds = granted.Select(x => x.Id).ToArray();
+
+        // Read after the grant, so each occurrence carries the lease its run fences on.
+        return await occurrences
+            .AsNoTracking()
+            .Where(x => ((IEnumerable<Guid>)grantedIds).Contains(x.Id))
             .Include(x => x.CronJob)
             .ToArrayAsync(cancellationToken)
             .ConfigureAwait(false);

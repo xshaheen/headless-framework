@@ -522,9 +522,12 @@ public abstract class JobsSchedulePositionConformanceTests<TFixture>(TFixture fi
 
             claimed.Should().ContainSingle();
             claimed[0].Id.Should().Be(materialized.OccurrenceId.Value);
-            var (owner, lockedUntil) = await fixture.ReadCronOccurrenceClaimAsync(claimed[0].Id, ct);
-            owner.Should().NotBeNull("the restarted node must own the later claim");
-            lockedUntil.Should().NotBeNull("the later claim owns the lease stamp");
+            var lease = await fixture.ReadCronOccurrenceClaimAsync(claimed[0].Id, ct);
+            JobsCoordinationFixtureExtensions
+                .ActiveHolder(lease)
+                .Should()
+                .NotBeNull("the restarted node must own the later claim");
+            lease.ExpiresAt.Should().NotBeNull("the later claim owns the lease stamp");
         }
         finally
         {

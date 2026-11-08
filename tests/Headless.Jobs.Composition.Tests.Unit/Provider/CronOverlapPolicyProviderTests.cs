@@ -413,8 +413,10 @@ public sealed class CronOverlapPolicyProviderTests : TestBase
             CronJobId = definitionId,
             ExecutionTime = executionTime,
             Status = status,
-            OwnerId = status is JobStatus.Queued or JobStatus.InProgress ? "node-b@1" : null,
-            LockedUntil = status is JobStatus.Queued or JobStatus.InProgress ? _Now.UtcDateTime.AddMinutes(5) : null,
+            Lease = TestLeases.Held(
+                status is JobStatus.Queued or JobStatus.InProgress ? "node-b@1" : null,
+                status is JobStatus.Queued or JobStatus.InProgress ? _Now.AddMinutes(5) : null
+            ),
             CreatedAt = _Now.AddHours(-2),
             UpdatedAt = _Now.AddHours(-2),
         };

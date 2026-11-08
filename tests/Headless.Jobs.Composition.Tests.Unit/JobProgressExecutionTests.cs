@@ -173,7 +173,8 @@ public sealed class JobProgressExecutionTests : TestBase
                 RetryCount = claimed.RetryCount,
                 Retries = claimed.Retries,
                 RetryIntervals = claimed.RetryIntervals,
-                ClaimOwner = claimed.OwnerId,
+                ClaimOwner = claimed.Lease.Holder,
+                ClaimGeneration = claimed.Lease.Generation,
             };
             var registry = JobFunctionRegistryBuilder.Build(
                 [

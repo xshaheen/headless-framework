@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
+using Headless.Fencing;
 using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Jobs.Provider;
@@ -246,8 +247,7 @@ public sealed class CronSchedulePositionProviderTests : TestBase
         occurrences[0].Id.Should().Be(result.OccurrenceId!.Value);
         occurrences[0].ExecutionTime.Should().Be(_Projection);
         occurrences[0].Status.Should().Be(JobStatus.Idle);
-        occurrences[0].OwnerId.Should().BeNull();
-        occurrences[0].LockedUntil.Should().BeNull();
+        occurrences[0].Lease.State.Should().NotBe(RowLeaseState.Active);
     }
 
     [Fact]
@@ -459,8 +459,8 @@ public sealed class CronSchedulePositionProviderTests : TestBase
 
         claimed.Should().ContainSingle();
         claimed[0].Status.Should().Be(JobStatus.Queued);
-        claimed[0].OwnerId.Should().Be(_Owner);
-        claimed[0].LockedUntil.Should().Be(_Now.UtcDateTime.AddMinutes(5));
+        claimed[0].Lease.Holder.Should().Be(_Owner);
+        claimed[0].Lease.ExpiresAt.Should().Be(_Now.AddMinutes(5));
     }
 
     private static async Task _AssertPositionUnchangedAsync(

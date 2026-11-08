@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Fencing;
 using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Jobs.Internal;
@@ -50,15 +51,14 @@ public sealed class CronControlProviderTests : TestBase
             pending.ExecutedAt.Should().Be(_Now);
             pending.UpdatedAt.Should().Be(_Now);
             pending.SkippedReason.Should().Be("Cron definition paused");
-            pending.OwnerId.Should().BeNull();
-            pending.LockedUntil.Should().BeNull();
+            pending.Lease.State.Should().NotBe(RowLeaseState.Active);
         }
 
         var running = occurrences.Single(x => x.Id == inProgress.Id);
         running.Status.Should().Be(JobStatus.InProgress);
         running.ExecutedAt.Should().BeNull();
-        running.OwnerId.Should().Be(_Owner);
-        running.LockedUntil.Should().Be(lockedUntil);
+        running.Lease.Holder.Should().Be(_Owner);
+        running.Lease.ExpiresAt.Should().Be(new DateTimeOffset(lockedUntil));
     }
 
     [Fact]
@@ -392,8 +392,7 @@ public sealed class CronControlProviderTests : TestBase
             Id = Guid.NewGuid(),
             CronJobId = definitionId,
             Status = status,
-            OwnerId = owner,
-            LockedUntil = lockedUntil,
+            Lease = TestLeases.Held(owner, lockedUntil),
             ExecutionTime = executionTime ?? _Now.UtcDateTime.AddMinutes(1),
             CreatedAt = _Now.AddMinutes(-5),
             UpdatedAt = _Now.AddMinutes(-2),

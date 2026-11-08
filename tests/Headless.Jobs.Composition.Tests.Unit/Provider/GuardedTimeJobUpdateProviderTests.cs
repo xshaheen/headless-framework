@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Fencing;
 using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Jobs.Provider;
@@ -64,7 +65,7 @@ public sealed class GuardedTimeJobUpdateProviderTests : TestBase
         copy.Description = "edited";
         copy.Status = JobStatus.Succeeded;
         copy.RetryCount = 9;
-        copy.OwnerId = _NodeB;
+        copy.Lease = TestLeases.Held(_NodeB, _Now.Add(_Lease));
         copy.ExceptionMessage = "forged";
         time.Advance(TimeSpan.FromSeconds(3));
 
@@ -74,7 +75,7 @@ public sealed class GuardedTimeJobUpdateProviderTests : TestBase
         stored.Description.Should().Be("edited");
         stored.Status.Should().Be(JobStatus.Idle);
         stored.RetryCount.Should().Be(1);
-        stored.OwnerId.Should().BeNull();
+        stored.Lease.State.Should().NotBe(RowLeaseState.Active);
         stored.ExceptionMessage.Should().BeNull();
         stored.UpdatedAt.Should().Be(_Now.AddSeconds(3));
     }
@@ -93,15 +94,22 @@ public sealed class GuardedTimeJobUpdateProviderTests : TestBase
 
         var stored = (await provider.GetTimeJobByIdAsync(job.Id, AbortToken))!;
         stored.Status.Should().Be(JobStatus.Idle);
-        stored.OwnerId.Should().BeNull();
-        stored.LockedUntil.Should().BeNull();
+        stored.Lease.State.Should().NotBe(RowLeaseState.Active);
         stored.ExecutionTime.Should().Be(newTime);
 
         var start = new JobExecutionState { FunctionName = string.Empty, ClaimOwner = _NodeA }.SetProperty(
             x => x.Status,
             JobStatus.InProgress
         );
-        (await provider.UpdateTimeJobsWithUnifiedContextAsync([job.Id], start, AbortToken)).Should().BeEmpty();
+        (
+            await provider.UpdateTimeJobsWithUnifiedContextAsync(
+                [JobsLeaseTables.TimeJob(job.Id, job.Lease.Generation)],
+                start,
+                AbortToken
+            )
+        )
+            .Should()
+            .BeEmpty();
     }
 
     [Fact]
@@ -164,8 +172,7 @@ public sealed class GuardedTimeJobUpdateProviderTests : TestBase
         {
             var stored = (await provider.GetTimeJobByIdAsync(id, AbortToken))!;
             stored.Status.Should().Be(JobStatus.Idle);
-            stored.OwnerId.Should().BeNull();
-            stored.LockedUntil.Should().BeNull();
+            stored.Lease.State.Should().NotBe(RowLeaseState.Active);
         }
 
         (await provider.GetTimeJobByIdAsync(child.Id, AbortToken))!.Description.Should().Be("edited child");
@@ -213,8 +220,7 @@ public sealed class GuardedTimeJobUpdateProviderTests : TestBase
             Id = Guid.NewGuid(),
             Function = "fn",
             Status = JobStatus.Idle,
-            OwnerId = descendantOwner,
-            LockedUntil = lease,
+            Lease = TestLeases.Held(descendantOwner, lease),
             RunCondition = RunCondition.OnSuccess,
         };
         var child = new FakeTimeJob
@@ -222,8 +228,7 @@ public sealed class GuardedTimeJobUpdateProviderTests : TestBase
             Id = Guid.NewGuid(),
             Function = "fn",
             Status = JobStatus.Idle,
-            OwnerId = descendantOwner,
-            LockedUntil = lease,
+            Lease = TestLeases.Held(descendantOwner, lease),
             RunCondition = RunCondition.OnSuccess,
             Children = [grandChild],
         };
@@ -234,14 +239,13 @@ public sealed class GuardedTimeJobUpdateProviderTests : TestBase
 
     private static (
         JobStatus Status,
-        string? OwnerId,
-        DateTime? LockedUntil,
+        RowLeaseSnapshot Lease,
         int RetryCount,
         string? Description,
         DateTime? ExecutionTime,
         DateTimeOffset UpdatedAt
     ) _Snapshot(FakeTimeJob job) =>
-        (job.Status, job.OwnerId, job.LockedUntil, job.RetryCount, job.Description, job.ExecutionTime, job.UpdatedAt);
+        (job.Status, job.Lease, job.RetryCount, job.Description, job.ExecutionTime, job.UpdatedAt);
 
     private static (JobsInMemoryPersistenceProvider<FakeTimeJob, FakeCronJob> Provider, FakeTimeProvider Time) _Create()
     {
@@ -261,8 +265,7 @@ public sealed class GuardedTimeJobUpdateProviderTests : TestBase
             Id = Guid.NewGuid(),
             Function = "fn",
             Status = status,
-            OwnerId = owner,
-            LockedUntil = lockedUntil,
+            Lease = TestLeases.Held(owner, lockedUntil),
             OnNodeDeath = NodeDeathPolicy.Retry,
             ExecutionTime = _Now.UtcDateTime.AddMinutes(10),
             UpdatedAt = _Now,

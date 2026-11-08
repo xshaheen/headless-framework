@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using System.Data.Common;
 using Headless;
+using Headless.Fencing;
 using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Jobs.Infrastructure;
@@ -291,7 +292,7 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
                     .ExecuteUpdateAsync(
                         setters =>
                             setters
-                                .SetProperty(x => x.LockedUntil, DateTime.UtcNow.AddMinutes(-5))
+                                .SetProperty(x => x.Lease.ExpiresAt, DateTimeOffset.UtcNow.AddMinutes(-5))
                                 .SetProperty(x => x.ExecutionTime, DateTime.UtcNow.AddMinutes(-10))
                                 .SetProperty(x => x.RetryCount, 2),
                         ct
@@ -583,18 +584,15 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
             var claimedRootIds = claimedRoots.Select(x => x.Id).ToHashSet();
             foreach (var root in roots.Where(x => claimedRootIds.Contains(x.Id)))
             {
-                var (_, ownerId, lockedUntil, _, _) = await fixture.ReadTimeJobDetailAsync(root.Id, ct);
-                ownerId.Should().NotBeNullOrWhiteSpace();
-                lockedUntil.Should().NotBeNull();
+                var rootLease = (await fixture.ReadTimeJobDetailAsync(root.Id, ct)).Lease;
+                JobsCoordinationFixtureExtensions.ActiveHolder(rootLease).Should().NotBeNullOrWhiteSpace();
+                rootLease.ExpiresAt.Should().NotBeNull();
 
                 foreach (var descendant in root.Children.SelectMany(x => x.Children.Prepend(x)))
                 {
-                    var (_, descendantOwnerId, descendantLockedUntil, _, _) = await fixture.ReadTimeJobDetailAsync(
-                        descendant.Id,
-                        ct
-                    );
-                    descendantOwnerId.Should().Be(ownerId);
-                    descendantLockedUntil.Should().Be(lockedUntil);
+                    var descendantLease = (await fixture.ReadTimeJobDetailAsync(descendant.Id, ct)).Lease;
+                    JobsCoordinationFixtureExtensions.ActiveHolder(descendantLease).Should().Be(rootLease.Holder);
+                    descendantLease.ExpiresAt.Should().Be(rootLease.ExpiresAt);
                 }
             }
         }
@@ -742,7 +740,7 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
                     ct
                 )
                 .ToArrayAsync(ct);
-            var currentOwner = ownerProbe.Should().ContainSingle().Which.OwnerId;
+            var currentOwner = ownerProbe.Should().ContainSingle().Which.Lease.Holder;
             currentOwner.Should().NotBeNullOrWhiteSpace();
 
             var cases = new[]
@@ -819,8 +817,9 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
             claims.Select(x => x.Id).Should().BeEquivalentTo(expectedIds);
             foreach (var claim in claims)
             {
-                claim.OwnerId.Should().Be(currentOwner);
-                claim.LockedUntil.Should().BeAfter(now.UtcDateTime);
+                claim.Lease.State.Should().Be(RowLeaseState.Active);
+                claim.Lease.Holder.Should().Be(currentOwner);
+                claim.Lease.ExpiresAt.Should().BeAfter(now);
             }
         }
         finally
@@ -854,7 +853,7 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
             var probe = new TimeJobEntity { Id = Guid.NewGuid(), Function = "owner_probe" };
             await persistence.AddTimeJobsAsync([probe], ct);
             var probeClaim = await persistence.QueueTimeJobsAsync([probe], ct).ToArrayAsync(ct);
-            var currentOwner = probeClaim.Should().ContainSingle().Which.OwnerId;
+            var currentOwner = probeClaim.Should().ContainSingle().Which.Lease.Holder;
             currentOwner.Should().NotBeNullOrWhiteSpace();
 
             var now = DateTime.UtcNow;
@@ -944,7 +943,7 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
 
             var candidates = new List<TimeJobEntity>();
             var expectedIds = new HashSet<Guid>();
-            var refusedBefore = new Dictionary<Guid, (int Status, string? OwnerId, DateTime? LockedUntil)>();
+            var refusedBefore = new Dictionary<Guid, (int Status, RowLeaseSnapshot Lease)>();
             foreach (var testCase in cases)
             {
                 var id = Guid.NewGuid();
@@ -974,8 +973,8 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
                 }
                 else
                 {
-                    var (status, ownerId, lockedUntil, _, _) = await fixture.ReadTimeJobDetailAsync(id, ct);
-                    refusedBefore[id] = (status, ownerId, lockedUntil);
+                    var (status, lease, _, _) = await fixture.ReadTimeJobDetailAsync(id, ct);
+                    refusedBefore[id] = (status, lease);
                 }
             }
 
@@ -984,14 +983,15 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
             claims.Select(x => x.Id).Should().BeEquivalentTo(expectedIds);
             foreach (var claim in claims)
             {
-                claim.OwnerId.Should().Be(currentOwner);
+                claim.Lease.State.Should().Be(RowLeaseState.Active);
+                claim.Lease.Holder.Should().Be(currentOwner);
                 claim.Status.Should().Be(JobStatus.Queued);
             }
 
             foreach (var (id, before) in refusedBefore)
             {
-                var (status, ownerId, lockedUntil, _, _) = await fixture.ReadTimeJobDetailAsync(id, ct);
-                (status, ownerId, lockedUntil).Should().Be(before);
+                var (status, lease, _, _) = await fixture.ReadTimeJobDetailAsync(id, ct);
+                (status, lease).Should().Be(before);
             }
         }
         finally
@@ -1056,10 +1056,9 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
 
         seamCalls.Should().Be(2, "both due roots were peeked before either was claimed");
         claimed.Select(x => x.Id).Should().Equal(untouchedId);
-        var (status, ownerId, lockedUntil, _, _) = await fixture.ReadTimeJobDetailAsync(rescheduledId, ct);
+        var (status, activeHolder) = await fixture.ReadTimeJobAsync(rescheduledId, ct);
         status.Should().Be((int)JobStatus.Idle);
-        ownerId.Should().BeNull();
-        lockedUntil.Should().BeNull();
+        activeHolder.Should().BeNull();
     }
 
     public virtual async Task expired_fallback_claim_reclaims_an_unstarted_row_under_every_node_death_policy()
@@ -1293,8 +1292,8 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
             var claims = await persistence.QueueTimedOutTimeJobsAsync(ct).ToArrayAsync(ct);
 
             claims.Should().ContainSingle().Which.Id.Should().Be(visible.Id);
-            (await fixture.ReadTimeJobDetailAsync(visible.Id, ct)).OwnerId.Should().NotBeNullOrWhiteSpace();
-            (await fixture.ReadTimeJobDetailAsync(hidden.Id, ct)).OwnerId.Should().BeNull();
+            (await fixture.ReadTimeJobAsync(visible.Id, ct)).ActiveHolder.Should().NotBeNullOrWhiteSpace();
+            (await fixture.ReadTimeJobAsync(hidden.Id, ct)).ActiveHolder.Should().BeNull();
         }
         finally
         {
@@ -1335,16 +1334,14 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
 #pragma warning restore FAA0001
             secondSweep.Should().ContainSingle().Which.Id.Should().Be(visibleRoots[^1].Id);
             thirdSweep.Should().BeEmpty();
-            (await fixture.ReadTimeJobDetailAsync(hiddenRoot.Id, ct)).OwnerId.Should().BeNull();
-            var (_, claimedOwner, claimedLease, _, _) = await fixture.ReadTimeJobDetailAsync(visibleRoots[0].Id, ct);
+            (await fixture.ReadTimeJobAsync(hiddenRoot.Id, ct)).ActiveHolder.Should().BeNull();
+            var claimedLease = (await fixture.ReadTimeJobDetailAsync(visibleRoots[0].Id, ct)).Lease;
+            var claimedOwner = JobsCoordinationFixtureExtensions.ActiveHolder(claimedLease);
             foreach (var descendant in visibleRoots[0].Children.SelectMany(x => x.Children.Prepend(x)))
             {
-                var (_, descendantOwner, descendantLease, _, _) = await fixture.ReadTimeJobDetailAsync(
-                    descendant.Id,
-                    ct
-                );
-                descendantOwner.Should().Be(claimedOwner);
-                descendantLease.Should().Be(claimedLease);
+                var descendantLease = (await fixture.ReadTimeJobDetailAsync(descendant.Id, ct)).Lease;
+                JobsCoordinationFixtureExtensions.ActiveHolder(descendantLease).Should().Be(claimedOwner);
+                descendantLease.ExpiresAt.Should().Be(claimedLease.ExpiresAt);
             }
 
             var cronId = Guid.NewGuid();
@@ -1939,11 +1936,11 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
                 .ToArrayAsync(ct);
 
             claimed.Should().ContainSingle();
-            claimed[0].LockedUntil.Should().BeAfter(committedAt.UtcDateTime);
-            claimed[0].LockedUntil.Should().Be(claimed[0].UpdatedAt.UtcDateTime.Add(leaseDuration));
+            claimed[0].Lease.ExpiresAt.Should().BeAfter(committedAt);
+            claimed[0].Lease.ExpiresAt.Should().Be(claimed[0].UpdatedAt.Add(leaseDuration));
 
-            var (_, lockedUntil) = await fixture.ReadCronOccurrenceClaimAsync(claimed[0].Id, ct);
-            lockedUntil.Should().Be(claimed[0].LockedUntil);
+            var storedLease = await fixture.ReadCronOccurrenceClaimAsync(claimed[0].Id, ct);
+            storedLease.ExpiresAt.Should().Be(claimed[0].Lease.ExpiresAt);
         }
         finally
         {
@@ -1997,7 +1994,7 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
 
             claimedIds.Should().OnlyHaveUniqueItems().And.BeEquivalentTo(ids);
             var stored = await persistence.GetTimeJobsAsync(x => ids.Contains(x.Id), ct);
-            stored.Should().OnlyContain(x => x.Status == JobStatus.Queued && x.OwnerId != null);
+            stored.Should().OnlyContain(x => x.Status == JobStatus.Queued && x.Lease.State == RowLeaseState.Active);
         }
         finally
         {
@@ -2110,10 +2107,9 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
             claimed.Select(x => x.Id).Should().Equal(matching.Id);
             foreach (var refused in new[] { ids[0], ids[1] })
             {
-                var (status, ownerId, lockedUntil, _, _) = await fixture.ReadTimeJobDetailAsync(refused, ct);
+                var (status, activeHolder) = await fixture.ReadTimeJobAsync(refused, ct);
                 status.Should().Be((int)JobStatus.Idle);
-                ownerId.Should().BeNull();
-                lockedUntil.Should().BeNull();
+                activeHolder.Should().BeNull();
             }
         }
         finally

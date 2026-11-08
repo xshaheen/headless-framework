@@ -276,8 +276,7 @@ public sealed class CronOverlapDispatchTests : TestBase
             CronJobId = definitionId,
             ExecutionTime = executionTime ?? _Due.AddHours(-1),
             Status = JobStatus.InProgress,
-            OwnerId = "node-b@1",
-            LockedUntil = _Now.AddMinutes(5),
+            Lease = TestLeases.Held("node-b@1", _Now.AddMinutes(5)),
             CreatedAt = new DateTimeOffset(_Now.AddHours(-1), TimeSpan.Zero),
             UpdatedAt = new DateTimeOffset(_Now.AddHours(-1), TimeSpan.Zero),
         };

@@ -110,8 +110,7 @@ public sealed class CrashRetryBudgetProviderTests : TestBase
             Id = Guid.NewGuid(),
             Function = "fn",
             Status = status,
-            OwnerId = owner,
-            LockedUntil = lockedUntil,
+            Lease = TestLeases.Held(owner, lockedUntil),
             OnNodeDeath = NodeDeathPolicy.Retry,
             ExecutionTime = _Now.UtcDateTime.AddMinutes(-2),
         };
@@ -127,8 +126,7 @@ public sealed class CrashRetryBudgetProviderTests : TestBase
         {
             Id = Guid.NewGuid(),
             Status = status,
-            OwnerId = owner,
-            LockedUntil = lockedUntil,
+            Lease = TestLeases.Held(owner, lockedUntil),
             OnNodeDeath = NodeDeathPolicy.Retry,
             ExecutionTime = _Now.UtcDateTime.AddMinutes(-1),
             CronJobId = Guid.NewGuid(),

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Fencing;
 using Headless.Jobs;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
@@ -25,7 +26,7 @@ public sealed class SqlServerJobsModelNamingTests : TestBase
 
         entity.GetTableName().Should().Be("TimeJobs");
         entity.ColumnName(nameof(TimeJobEntity.ExecutionTime)).Should().Be("ExecutionTime");
-        entity.ColumnName(nameof(TimeJobEntity.LockedUntil)).Should().Be("LockedUntil");
+        entity.LeaseColumnName(nameof(RowLeaseSnapshot.ExpiresAt)).Should().Be("LeaseExpiresAt");
         entity.FindPrimaryKey()!.GetName().Should().Be("PK_TimeJobs");
         entity.GetForeignKeys().Single().GetConstraintName().Should().Be("FK_TimeJobs_TimeJobs_ParentId");
         entity
