@@ -68,11 +68,37 @@ public sealed partial class SerilogOpenTelemetryLogTests : TestBase
         customer.Should().Contain(StarRedactor.Output).And.Contain("Gold").And.NotContain("Alice");
     }
 
+    [Fact]
+    public async Task should_export_classified_logger_message_parameter_redacted_under_serilog()
+    {
+        // given: the documented order, AddHeadlessLogRedaction after UseSerilog so it wraps Serilog's factory
+        var logs = new ConcurrentQueue<CapturedLog>();
+        await using var app = await _CreateAppAsync(
+            logs,
+            services =>
+                services.AddRedaction(redaction =>
+                    redaction.SetRedactor<StarRedactor>(new DataClassificationSet(_Personal))
+                ),
+            afterSerilog: services => services.AddHeadlessLogRedaction()
+        );
+        var logger = app.Services.GetRequiredService<ILogger<SerilogOpenTelemetryLogTests>>();
+
+        // when
+        LogClassifiedProbe(logger, "alice@example.com", 42);
+
+        // then: the parameter reaches the exporter redacted, and the rendered text carries it instead of a {Email} hole
+        var record = await _WaitForLogAsync(logs, AbortToken);
+        record.Attributes.Should().Contain(a => a.Key == "Email" && Equals(a.Value, StarRedactor.Output));
+        record.Message.Should().Contain(StarRedactor.Output).And.NotContain("{Email}").And.NotContain("alice");
+        record.Attributes.Select(a => a.Value?.ToString()).Should().NotContain("alice@example.com");
+    }
+
     private Task<WebApplication> _CreateAppAsync(ConcurrentQueue<CapturedLog> logs) => _CreateAppAsync(logs, _ => { });
 
     private async Task<WebApplication> _CreateAppAsync(
         ConcurrentQueue<CapturedLog> logs,
-        Action<IServiceCollection> configureServices
+        Action<IServiceCollection> configureServices,
+        Action<IServiceCollection>? afterSerilog = null
     )
     {
         var builder = WebApplication.CreateBuilder(
@@ -109,6 +135,8 @@ public sealed partial class SerilogOpenTelemetryLogTests : TestBase
             writeToProviders: true
         );
 
+        afterSerilog?.Invoke(builder.Services);
+
         var app = builder.Build();
         await app.StartAsync(AbortToken);
 
@@ -139,6 +167,9 @@ public sealed partial class SerilogOpenTelemetryLogTests : TestBase
 
     [LoggerMessage(EventId = 1, Level = LogLevel.Information, Message = _LogMessage + " for {OrderId}")]
     private static partial void LogProbe(ILogger logger, int orderId);
+
+    [LoggerMessage(EventId = 2, Level = LogLevel.Information, Message = _LogMessage + " from {Email} for {OrderId}")]
+    private static partial void LogClassifiedProbe(ILogger logger, [PersonalData] string email, int orderId);
 
     private static DataClassification _Personal => new("Tests", "Personal");
 

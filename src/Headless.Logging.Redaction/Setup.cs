@@ -1,10 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Hosting;
+using Headless.Logging.Internal;
 using Microsoft.Extensions.Compliance.Classification;
 using Microsoft.Extensions.Compliance.Redaction;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Headless.Logging;
 
@@ -91,6 +94,47 @@ public static class SetupLoggingRedaction
                 redaction.SetHmacRedactor(configureHmac, _Pseudonymized);
                 _AddDefaults(redaction, configure);
             });
+        }
+
+        /// <summary>
+        /// Wraps the registered <see cref="ILoggerFactory"/> so every log entry is redacted before any provider sees it:
+        /// classified <c>[LoggerMessage]</c> parameters through the registered <see cref="IRedactorProvider"/>, and
+        /// credential paths that an <see cref="ILogPathRedactor"/> recognizes in ASP.NET Core's request scope and
+        /// request lines.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// The wrapper works whichever logging stack owns the factory. Under Serilog's <c>UseSerilog</c> it is the only
+        /// thing that redacts a classified <c>[LoggerMessage]</c> parameter: without it the parameter is dropped and the
+        /// text keeps a literal <c>{Name}</c> hole, because Serilog's factory never runs Microsoft's
+        /// <c>EnableRedaction</c>.
+        /// </para>
+        /// <para>
+        /// Call it after every call that registers a logger factory, such as <c>UseSerilog</c>: a factory registered
+        /// later replaces the wrapped one. Calling it again is safe, and wraps the factories registered since; a factory
+        /// is never wrapped twice. When a later registration does replace it, the host logs a warning at startup.
+        /// </para>
+        /// </remarks>
+        /// <returns>The same <see cref="IServiceCollection"/> instance.</returns>
+        public IServiceCollection AddHeadlessLogRedaction()
+        {
+            Argument.IsNotNull(services);
+
+            // Every ILoggerFactory registration is wrapped, so the last one, the one the container resolves, always is.
+            services.TryDecorateWith<ILoggerFactory>(
+                (inner, provider) =>
+                    inner is RedactingLoggerFactory
+                        ? inner
+                        : new RedactingLoggerFactory(
+                            inner,
+                            provider.GetService<IRedactorProvider>(),
+                            [.. provider.GetServices<ILogPathRedactor>()]
+                        )
+            );
+
+            services.AddStartupValidator<LogRedactionStartupValidator>();
+
+            return services;
         }
     }
 

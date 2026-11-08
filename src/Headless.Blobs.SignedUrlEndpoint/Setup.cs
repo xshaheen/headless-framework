@@ -2,6 +2,7 @@
 
 using Headless.Checks;
 using Headless.IO;
+using Headless.Logging;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -30,9 +31,10 @@ public static class SetupBlobSignedUrl
         /// The token in a URL's path is replaced by <c>***</c> in HTTP logging (<c>UseHttpLogging</c>), in the
         /// request activity's <c>url.path</c>, <c>http.target</c>, and <c>url.full</c> tags, and in ASP.NET Core's own
         /// request scope (<c>RequestPath</c>) and its "Request starting" and "Request finished" lines. The hosting logs
-        /// are rewritten by decorating the registered <see cref="ILoggerFactory"/>, so a logger factory registered
-        /// after this call, such as Serilog's <c>UseSerilog</c>, replaces the decorator; the host then logs a warning
-        /// at startup. Call this after the logger factory is registered.
+        /// are rewritten by the shared log redaction wrapper (<c>AddHeadlessLogRedaction</c>, which this call
+        /// registers) around the registered <see cref="ILoggerFactory"/>. A logger factory registered after this call,
+        /// such as Serilog's <c>UseSerilog</c>, replaces it, and the host logs a warning at startup: call
+        /// <c>AddHeadlessLogRedaction()</c> again after it.
         /// </para>
         /// </remarks>
         public HeadlessBlobsSetupBuilder UseSignedUrlEndpoint(Action<BlobSignedUrlOptions> setupAction)
@@ -54,18 +56,14 @@ public static class SetupBlobSignedUrl
                 services.AddHttpLoggingInterceptor<BlobSignedUrlHttpLoggingInterceptor>();
 
                 // ASP.NET Core opens its request scope and writes its request lines before any middleware, through a
-                // logger it takes from this factory when the server starts.
-                if (!services.Any(static d => d.ServiceType == typeof(BlobSignedUrlLogRedactionMarker)))
-                {
-                    services.AddSingleton<BlobSignedUrlLogRedactionMarker>();
-                    services.TryDecorateWith<ILoggerFactory>(
-                        static (inner, provider) =>
-                            new BlobSignedUrlRedactingLoggerFactory(
-                                inner,
-                                provider.GetRequiredService<BlobSignedUrlPathRedactor>()
-                            )
-                    );
-                }
+                // logger it takes from the container's factory when the server starts; the shared log redaction
+                // wrapper rewrites them for every declared credential path.
+                services.TryAddEnumerable(
+                    ServiceDescriptor.Singleton<ILogPathRedactor, BlobSignedUrlPathRedactor>(static provider =>
+                        provider.GetRequiredService<BlobSignedUrlPathRedactor>()
+                    )
+                );
+                services.AddHeadlessLogRedaction();
 
                 services.TryAddEnumerable(
                     ServiceDescriptor.Singleton<IStartupFilter, BlobSignedUrlTraceRedactionStartupFilter>()
@@ -99,9 +97,6 @@ public static class SetupBlobSignedUrl
             return setup;
         }
     }
-
-    /// <summary>Records that the logger factory was decorated, so a second registration does not wrap it twice.</summary>
-    private sealed class BlobSignedUrlLogRedactionMarker;
 
     private static IBlobStorage _Wrap(IBlobStorage inner, string? store, IServiceProvider provider)
     {
