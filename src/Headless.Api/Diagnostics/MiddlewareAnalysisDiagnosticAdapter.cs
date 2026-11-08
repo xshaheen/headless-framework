@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Logging;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 
@@ -11,10 +12,18 @@ namespace Headless.Api;
 /// <c>DiagnosticListener.Subscribe(observer, IsEnabled)</c> after calling
 /// <see cref="AddMiddlewareAnalyzerFilterExtensions.AddMiddlewareAnalyzerFilter"/>.
 /// </summary>
+/// <param name="logger">The logger the entries are written to.</param>
+/// <param name="pathRedactors">
+/// Replace a credential path, such as a signed URL's token, in the logged request path. Empty when no feature declares one.
+/// </param>
 [PublicAPI]
-public sealed partial class MiddlewareAnalysisDiagnosticAdapter(ILogger logger)
-    : IObserver<KeyValuePair<string, object?>>
+public sealed partial class MiddlewareAnalysisDiagnosticAdapter(
+    ILogger logger,
+    IReadOnlyList<ILogPathRedactor>? pathRedactors = null
+) : IObserver<KeyValuePair<string, object?>>
 {
+    private readonly IReadOnlyList<ILogPathRedactor> _pathRedactors = pathRedactors ?? [];
+
     /// <summary>Whether this observer handles the named diagnostic event.</summary>
     /// <param name="eventName">The diagnostic event name.</param>
     /// <returns><see langword="true"/> for the three middleware analysis events; otherwise <see langword="false"/>.</returns>
@@ -72,7 +81,13 @@ public sealed partial class MiddlewareAnalysisDiagnosticAdapter(ILogger logger)
     /// <summary>Handles the <see cref="DiagnosticSources.AnalysisOnMiddlewareStarting"/> event.</summary>
     public void OnMiddlewareStarting(HttpContext httpContext, string name, long timestamp)
     {
-        Extensions.MiddlewareStarting(logger, timestamp, name, httpContext.Request.Path);
+        if (!logger.IsEnabled(LogLevel.Information))
+        {
+            return;
+        }
+
+        var path = ILogPathRedactor.RedactAny(_pathRedactors, httpContext.Request.Path.Value ?? string.Empty);
+        Extensions.MiddlewareStarting(logger, timestamp, name, path);
     }
 
     /// <summary>Handles the <see cref="DiagnosticSources.AnalysisOnMiddlewareFinished"/> event.</summary>
@@ -102,7 +117,7 @@ public sealed partial class MiddlewareAnalysisDiagnosticAdapter(ILogger logger)
             Message = "Middleware(Starting): '{Name}' Request Path: '{Path}' TimeStamp: {Timestamp}",
             SkipEnabledCheck = false
         )]
-        internal static partial void MiddlewareStarting(ILogger logger, long timestamp, string name, PathString path);
+        internal static partial void MiddlewareStarting(ILogger logger, long timestamp, string name, string path);
 
         [LoggerMessage(
             EventId = 101,

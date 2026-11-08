@@ -40,7 +40,10 @@ internal sealed class LogPathTraceRedactionStartupFilter(IEnumerable<ILogPathRed
     {
         var request = context.Request;
 
-        if (request.Path.Value is not { } path || !_TryRedact(path, out var redactedPath))
+        if (
+            request.Path.Value is not { } path
+            || !ILogPathRedactor.TryRedactAny(_redactors, path, out var redactedPath)
+        )
         {
             return;
         }
@@ -62,22 +65,5 @@ internal sealed class LogPathTraceRedactionStartupFilter(IEnumerable<ILogPathRed
         {
             LogPathTags.Replace(current, raw, redacted);
         }
-    }
-
-    private bool _TryRedact(string path, out string redacted)
-    {
-        foreach (var redactor in _redactors)
-        {
-            if (redactor.TryRedact(path, out var value))
-            {
-                redacted = value;
-
-                return true;
-            }
-        }
-
-        redacted = string.Empty;
-
-        return false;
     }
 }

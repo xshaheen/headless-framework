@@ -1,12 +1,14 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using FluentValidation.Results;
 using Headless;
 using Headless.Api;
 using Headless.Api.Resources;
 using Headless.Context;
 using Headless.DistributedLocks;
+using Headless.Logging;
 using Headless.MultiTenancy;
 using Headless.Primitives;
 using Headless.Testing.Tests;
@@ -456,7 +458,12 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         // then
         result.Should().BeTrue();
         httpContext.Response.StatusCode.Should().Be(StatusCodes.Status409Conflict);
-        logger.Entries.Should().Contain(e => e.EventId.Id == 5013 && e.Level == LogLevel.Warning);
+        // the provider message can carry the duplicate value, so neither the exception nor its text is logged
+        logger
+            .Entries.Should()
+            .ContainSingle(e => e.EventId.Id == 5013 && e.Level == LogLevel.Warning)
+            .Which.Exception.Should()
+            .BeNull();
         await problemDetailsService
             .Received(1)
             .TryWriteAsync(
@@ -1187,11 +1194,47 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         await problemDetailsService.Received(1).TryWriteAsync(Arg.Any<ProblemDetailsContext>());
     }
 
+    [Fact]
+    public async Task should_log_the_request_path_with_a_declared_credential_replaced()
+    {
+        // given: a signed-URL style path whose last segment is a credential
+        var problemDetailsService = Substitute.For<IProblemDetailsService>();
+        problemDetailsService.TryWriteAsync(Arg.Any<ProblemDetailsContext>()).Returns(true);
+        var logger = new CapturingLogger<HeadlessApiExceptionHandler>();
+        var handler = _CreateHandler(
+            problemDetailsService,
+            _CreateRealCreator(),
+            logger,
+            pathRedactors: [new BlobsPathRedactor()]
+        );
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Path = "/blobs/live-token";
+
+        // when
+        await handler.TryHandleAsync(httpContext, new MissingTenantContextException(), AbortToken);
+
+        // then
+        logger.Entries.Should().NotBeEmpty();
+        logger.Entries.Should().OnlyContain(e => !e.Message.Contains("live-token", StringComparison.Ordinal));
+        logger.Entries.Should().Contain(e => e.Message.Contains("/blobs/***", StringComparison.Ordinal));
+    }
+
+    private sealed class BlobsPathRedactor : ILogPathRedactor
+    {
+        public bool TryRedact(string path, [NotNullWhen(true)] out string? redacted)
+        {
+            redacted = path.StartsWith("/blobs/", StringComparison.Ordinal) ? "/blobs/***" : null;
+
+            return redacted is not null;
+        }
+    }
+
     private static HeadlessApiExceptionHandler _CreateHandler(
         IProblemDetailsService problemDetailsService,
         IProblemDetailsCreator creator,
         ILogger<HeadlessApiExceptionHandler>? logger = null,
-        HeadlessProblemDetailsOptions? mappings = null
+        HeadlessProblemDetailsOptions? mappings = null,
+        ILogPathRedactor[]? pathRedactors = null
     )
     {
         var jsonOptions = Options.Create(new JsonOptions());
@@ -1200,7 +1243,8 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
             problemDetailsService,
             creator,
             Options.Create(mappings ?? new HeadlessProblemDetailsOptions()),
-            logger ?? NullLogger<HeadlessApiExceptionHandler>.Instance
+            logger ?? NullLogger<HeadlessApiExceptionHandler>.Instance,
+            pathRedactors ?? []
         );
     }
 

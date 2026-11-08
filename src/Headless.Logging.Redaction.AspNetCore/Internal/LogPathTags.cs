@@ -58,16 +58,13 @@ internal static class LogPathTags
         var queryStart = value.AsSpan(pathStart).IndexOfAny('?', '#');
         var path = queryStart < 0 ? value[pathStart..] : value.Substring(pathStart, queryStart);
 
-        foreach (var redactor in redactors)
+        if (!ILogPathRedactor.TryRedactAny(redactors, path, out var redactedPath))
         {
-            if (redactor.TryRedact(path, out var redactedPath))
-            {
-                redacted = string.Concat(value.AsSpan(0, pathStart), redactedPath);
-
-                return true;
-            }
+            return false;
         }
 
-        return false;
+        redacted = string.Concat(value.AsSpan(0, pathStart), redactedPath);
+
+        return true;
     }
 }
