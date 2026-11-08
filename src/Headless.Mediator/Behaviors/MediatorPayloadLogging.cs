@@ -2,27 +2,22 @@
 
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 
 namespace Headless.Mediator.Behaviors;
 
 /// <summary>Whether the logging behaviors write whole message and response objects into their Debug entries.</summary>
 /// <remarks>
 /// A message or response carries whatever the caller put in it: passwords, tokens, personal data. Logging it whole is a
-/// debugging aid an app opts into, never a default.
+/// debugging aid, so it is on only when the host runs in the Development environment. A host with no
+/// <see cref="IHostEnvironment"/> registered counts as Production.
 /// </remarks>
 internal sealed record MediatorPayloadLogging(bool Enabled)
 {
-    // Any registration that opts in wins, so registering the behaviors twice with different values never turns
-    // payloads off behind the caller that asked for them.
-    internal static void Register(IServiceCollection services, bool logPayloads)
+    internal static void Register(IServiceCollection services)
     {
-        if (logPayloads)
-        {
-            services.Replace(ServiceDescriptor.Singleton(new MediatorPayloadLogging(Enabled: true)));
-        }
-        else
-        {
-            services.TryAddSingleton(new MediatorPayloadLogging(Enabled: false));
-        }
+        services.TryAddSingleton(static provider => new MediatorPayloadLogging(
+            provider.GetService<IHostEnvironment>()?.IsDevelopment() == true
+        ));
     }
 }

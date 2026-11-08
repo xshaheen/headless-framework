@@ -33,10 +33,10 @@ public sealed class ValidationRequestPreProcessorTests
                 CancellationToken.None
             );
 
-        // then: the failure names the rejected property either way; the message content needs the opt-in
+        // then: the failure names the rejected property either way; the message content needs Development
         await action.Should().ThrowExactlyAsync<FluentValidation.ValidationException>();
         var entry = logger.Messages.Should().ContainSingle().Subject;
-        entry.Should().Contain("'Product Id' must not be empty.");
+        entry.Should().Contain("ProductId: 'Product Id' must not be empty.");
         entry.Contains("hunter2", StringComparison.Ordinal).Should().Be(logPayloads);
     }
 
