@@ -473,7 +473,13 @@ public abstract class FencedRowsConformanceTests<TFixture>(TFixture fixture) : T
         await FencedRows.ReleaseAsync(_table, connection, null, yOld, cancellationToken: AbortToken);
         var yRow = (await FencedRows.GrantAsync(_table, connection, null, y, LongDuration, new(), AbortToken))!.Row!;
 
-        var statuses = await FencedRows.ReleaseAsync(_table, connection, null, [xRow, yRow, yOld], AbortToken);
+        var statuses = await FencedRows.ReleaseAsync(
+            _table,
+            connection,
+            null,
+            [xRow, yRow, yOld],
+            cancellationToken: AbortToken
+        );
 
         xRow.Generation.Should().Be(1);
         yRow.Generation.Should().Be(2);
@@ -486,6 +492,34 @@ public abstract class FencedRowsConformanceTests<TFixture>(TFixture fixture) : T
         (await ReadAsync(y))
             .Lease.Should()
             .Be((await ReadAsync(y)).Lease with { Generation = 2, State = RowLeaseState.Released });
+    }
+
+    public virtual async Task should_land_the_consumers_write_on_each_row_a_batch_release_ends()
+    {
+        var x = await InsertAsync("pending");
+        var y = await InsertAsync("pending");
+        await using var connection = Fixture.CreateConnection();
+        var xRow = (await FencedRows.GrantAsync(_table, connection, null, x, LongDuration, new(), AbortToken))!.Row!;
+        var yOld = (await FencedRows.GrantAsync(_table, connection, null, y, LongDuration, new(), AbortToken))!.Row!;
+        await FencedRows.ReleaseAsync(_table, connection, null, yOld, cancellationToken: AbortToken);
+        await FencedRows.GrantAsync(_table, connection, null, y, LongDuration, new(), AbortToken);
+
+        var statuses = await FencedRows.ReleaseAsync(
+            _table,
+            connection,
+            null,
+            [xRow, yOld],
+            SetStatus("delayed"),
+            AbortToken
+        );
+
+        statuses.Should().Equal(LeaseSettlementStatus.Released, LeaseSettlementStatus.Stale);
+        var released = await ReadAsync(x);
+        released.Status.Should().Be("delayed", "the write lands in the statement that releases the row");
+        released.Lease.State.Should().Be(RowLeaseState.Released);
+        var held = await ReadAsync(y);
+        held.Status.Should().Be("pending", "a refused release writes nothing");
+        held.Lease.Should().Be(held.Lease with { Generation = 2, State = RowLeaseState.Active });
     }
 
     #endregion
@@ -569,6 +603,145 @@ public abstract class FencedRowsConformanceTests<TFixture>(TFixture fixture) : T
         var stored = await ReadAsync(id);
         stored.Status.Should().Be("progress");
         stored.Lease.State.Should().Be(RowLeaseState.Active, "a fenced write keeps the lease active");
+    }
+
+    public virtual async Task should_end_under_a_condition_read_columns_back_and_tell_a_refused_condition_from_a_lost_lease()
+    {
+        var settled = await InsertAsync("pending");
+        var expired = await InsertAsync("pending");
+        var released = await InsertAsync("pending");
+        await using var connection = Fixture.CreateConnection();
+        var settledRow = (
+            await FencedRows.GrantAsync(_table, connection, null, settled, LongDuration, new(), AbortToken)
+        )!.Row!;
+        var expiredRow = (
+            await FencedRows.GrantAsync(_table, connection, null, expired, LongDuration, new(), AbortToken)
+        )!.Row!;
+        var releasedRow = (
+            await FencedRows.GrantAsync(_table, connection, null, released, LongDuration, new(), AbortToken)
+        )!.Row!;
+        await ExpireAsync(expired);
+
+        var refused = await FencedRows.ReleaseAsync(
+            _table,
+            connection,
+            null,
+            settledRow,
+            _ConditionalEnd("done", expected: "other"),
+            _ReadStatusAsync,
+            AbortToken
+        );
+        var applied = await FencedRows.SettleAsync(
+            _table,
+            connection,
+            null,
+            settledRow,
+            _ConditionalEnd("done", expected: "pending"),
+            _ReadStatusAsync,
+            AbortToken
+        );
+        var retried = await FencedRows.SettleAsync(
+            _table,
+            connection,
+            null,
+            settledRow,
+            _ConditionalEnd("done", expected: "done"),
+            _ReadStatusAsync,
+            AbortToken
+        );
+        var lost = await FencedRows.ReleaseAsync(
+            _table,
+            connection,
+            null,
+            expiredRow,
+            _ConditionalEnd("done", expected: "pending"),
+            _ReadStatusAsync,
+            AbortToken
+        );
+        var conditionOnly = new FencedRowWrite(
+            Condition: "status = @Expected",
+            Returning: ["status"],
+            Bind: command => Dialect.AddParameter(command, "Expected", _Status, "pending")
+        );
+        var releasedOnly = await FencedRows.ReleaseAsync(
+            _table,
+            connection,
+            null,
+            releasedRow,
+            conditionOnly,
+            _ReadStatusAsync,
+            AbortToken
+        );
+
+        refused.IsAccepted.Should().BeFalse();
+        refused
+            .Before!.Status.Should()
+            .Be(LeaseFenceStatus.Current, "the lease is live; the consumer's condition failed");
+        applied.IsAccepted.Should().BeTrue();
+        applied.Match<string?>(accepted: (status, _) => status, rejected: _ => null).Should().Be("done");
+        applied.Before!.Status.Should().Be(LeaseFenceStatus.Current);
+        retried.IsAccepted.Should().BeFalse();
+        retried.Before!.Status.Should().Be(LeaseFenceStatus.Settled, "a retry can tell its first attempt landed");
+        lost.IsAccepted.Should().BeFalse();
+        lost.Before!.Status.Should().Be(LeaseFenceStatus.Expired);
+        releasedOnly.IsAccepted.Should().BeTrue("the write's assignments are optional on an end");
+        releasedOnly.Match<string?>(accepted: (status, _) => status, rejected: _ => null).Should().Be("pending");
+
+        var stored = await ReadAsync(settled);
+        stored.Status.Should().Be("done");
+        stored.Lease.State.Should().Be(RowLeaseState.Settled);
+        var kept = await ReadAsync(expired);
+        kept.Status.Should().Be("pending", "the lost attempt's end writes nothing");
+        kept.Lease.State.Should().Be(RowLeaseState.Active, "only a sweep or a grant ends an expired attempt");
+        (await ReadAsync(released)).Lease.State.Should().Be(RowLeaseState.Released);
+    }
+
+    public virtual async Task should_claim_through_a_scope_only_rows_the_lease_lets_a_new_attempt_take()
+    {
+        var tag = Tag();
+        var idle = await InsertAsync(tag);
+        var released = await InsertAsync(tag);
+        var expired = await InsertAsync(tag);
+        var held = await InsertAsync(tag);
+        await using var connection = Fixture.CreateConnection();
+        var releasedRow = (
+            await FencedRows.GrantAsync(_table, connection, null, released, LongDuration, new(), AbortToken)
+        )!.Row!;
+        await FencedRows.ReleaseAsync(_table, connection, null, releasedRow, cancellationToken: AbortToken);
+        await FencedRows.GrantAsync(_table, connection, null, expired, LongDuration, new(), AbortToken);
+        await ExpireAsync(expired);
+        await FencedRows.GrantAsync(_table, connection, null, held, LongDuration, new(), AbortToken);
+
+        var scope = FencedRows.GrantScope(_table, "Claim");
+
+        // Waiting for the sweep leaves the expired attempt in place; allowing a takeover then claims only that row.
+        var afterSweep = await _ClaimThroughScopeAsync(scope, tag, LeaseTakeover.AfterSweep, batchSize: 10);
+        var allowed = await _ClaimThroughScopeAsync(scope, tag, LeaseTakeover.Allowed, batchSize: 10);
+
+        afterSweep
+            .Select(x => (x.Id, x.Generation, x.Status))
+            .Should()
+            .BeEquivalentTo(new[] { (idle, 1L, "claimed"), (released, 2L, "claimed") }, "a held row is never claimed");
+        allowed
+            .Should()
+            .Equal(new[] { (expired, 2L, "claimed") }, "the consumer's assignment lands with the takeover's grant");
+        (await ReadAsync(expired))
+            .Lease.Should()
+            .Match<RowLeaseSnapshot>(x =>
+                x.State == RowLeaseState.Active && x.TakeoverCount == 1 && x.Holder == "node-c"
+            );
+        (await ReadAsync(held)).Status.Should().Be(tag);
+        (
+            await FencedRows.GetStatusAsync(
+                _table,
+                connection,
+                null,
+                new FencedRow<Guid>(_table.Name, expired, 2),
+                AbortToken
+            )
+        )
+            .Should()
+            .Be(LeaseFenceStatus.Current);
     }
 
     public virtual async Task should_refuse_a_composed_write_whose_row_lock_was_held_past_the_expiry()
@@ -898,6 +1071,79 @@ public abstract class FencedRowsConformanceTests<TFixture>(TFixture fixture) : T
         (await ReadAsync(expired)).Status.Should().Be("swept");
     }
 
+    public virtual async Task should_revoke_only_active_attempts_the_listed_holders_hold_and_land_the_write()
+    {
+        var tag = Tag();
+        var nodeA = tag + "-a";
+        var nodeB = tag + "-b";
+        var nodeC = tag + "-c";
+        var live = await InsertAsync(tag);
+        var expired = await InsertAsync(tag);
+        var other = await InsertAsync(tag);
+        var ended = await InsertAsync(tag);
+        var third = await InsertAsync(tag);
+        await using var connection = Fixture.CreateConnection();
+        var liveRow = (
+            await FencedRows.GrantAsync(_table, connection, null, live, LongDuration, Holder(nodeA), AbortToken)
+        )!.Row!;
+        await FencedRows.GrantAsync(_table, connection, null, expired, LongDuration, Holder(nodeA), AbortToken);
+        await ExpireAsync(expired);
+        await FencedRows.GrantAsync(_table, connection, null, other, LongDuration, Holder(nodeB), AbortToken);
+        var endedRow = (
+            await FencedRows.GrantAsync(_table, connection, null, ended, LongDuration, Holder(nodeA), AbortToken)
+        )!.Row!;
+        await FencedRows.ReleaseAsync(_table, connection, null, endedRow, cancellationToken: AbortToken);
+        await FencedRows.GrantAsync(_table, connection, null, third, LongDuration, Holder(nodeC), AbortToken);
+        var write = new FencedRowWrite(
+            Set: "status = @Revoked",
+            Condition: "status = @Tag",
+            Bind: command =>
+            {
+                Dialect.AddParameter(command, "Revoked", _Status, "revoked");
+                Dialect.AddParameter(command, "Tag", _Status, tag);
+            }
+        );
+
+        (await FencedRows.RevokeHeldByAsync(_table, connection, null, [], 10, write, AbortToken)).Should().Be(0);
+
+        // A batch of two over three matching rows leaves one for the next call, and the call after that finds none.
+        var batches = new List<int>();
+
+        for (var i = 0; i < 3; i++)
+        {
+            batches.Add(
+                await FencedRows.RevokeHeldByAsync(_table, connection, null, [nodeA, nodeC], 2, write, AbortToken)
+            );
+        }
+
+        batches.Should().Equal(2, 1, 0);
+
+        foreach (var id in new[] { live, expired, third })
+        {
+            var stored = await ReadAsync(id);
+            stored.Status.Should().Be("revoked", "the write lands in the statement that revokes");
+            stored.Lease.State.Should().Be(RowLeaseState.Revoked);
+            stored.Lease.TakeoverCount.Should().Be(0);
+        }
+
+        (await ReadAsync(other))
+            .Should()
+            .Match<StoredWorkItem>(
+                x => x.Status == tag && x.Lease.State == RowLeaseState.Active,
+                "another holder's attempt is untouched"
+            );
+        (await ReadAsync(ended))
+            .Should()
+            .Match<StoredWorkItem>(
+                x => x.Status == tag && x.Lease.State == RowLeaseState.Released && x.Lease.Holder == nodeA,
+                "an ended attempt keeps its holder as a record and is not revoked"
+            );
+        (await FencedRows.SettleAsync(_table, connection, null, liveRow, SetStatus("done"), AbortToken))
+            .Should()
+            .Be(LeaseSettlementStatus.Revoked, "the revoked holder's own write is refused");
+        (await ReadAsync(live)).Status.Should().Be("revoked");
+    }
+
     #endregion
 
     #region Guards and generation source
@@ -912,7 +1158,8 @@ public abstract class FencedRowsConformanceTests<TFixture>(TFixture fixture) : T
 
         var settle = async () =>
             await FencedRows.SettleAsync(_table, connection, null, foreign, cancellationToken: AbortToken);
-        var batch = async () => await FencedRows.ReleaseAsync(_table, connection, null, [foreign], AbortToken);
+        var batch = async () =>
+            await FencedRows.ReleaseAsync(_table, connection, null, [foreign], cancellationToken: AbortToken);
 
         await settle.Should().ThrowAsync<ArgumentException>();
         await batch.Should().ThrowAsync<ArgumentException>();
@@ -1105,6 +1352,64 @@ public abstract class FencedRowsConformanceTests<TFixture>(TFixture fixture) : T
         Dialect.AddDuration(command, "Shift", by ?? (LongDuration * 2));
 
         (await command.ExecuteNonQueryAsync(AbortToken)).Should().Be(1, "the work item to age must exist");
+    }
+
+    private FencedRowWrite _ConditionalEnd(string next, string expected) =>
+        new(
+            Set: "status = @Next",
+            Condition: "status = @Expected",
+            Returning: ["status"],
+            Bind: command =>
+            {
+                Dialect.AddParameter(command, "Next", _Status, next);
+                Dialect.AddParameter(command, "Expected", _Status, expected);
+            }
+        );
+
+    private async Task<List<(Guid Id, long Generation, string Status)>> _ClaimThroughScopeAsync(
+        FencedRowGrantScope<Guid> scope,
+        string tag,
+        LeaseTakeover takeover,
+        int batchSize
+    )
+    {
+        var sql = scope.RenderClaim(
+            "status = @Tag",
+            [Dialect.Quote("id")],
+            "status = @Claimed",
+            [Dialect.Quote("status")],
+            "Batch",
+            takeover
+        );
+        var claimed = new List<(Guid Id, long Generation, string Status)>();
+        await using var claimer = await OpenAsync();
+        await using var transaction = await claimer.BeginTransactionAsync(AbortToken);
+
+        await using (var command = claimer.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = sql;
+            scope.Bind(command, LongDuration, "node-c");
+            Dialect.AddParameter(command, "Tag", _Status, tag);
+            Dialect.AddParameter(command, "Claimed", _Status, "claimed");
+            Dialect.AddParameter(command, "Batch", SqlColumnType.Int32, batchSize);
+            await using var reader = await command.ExecuteReaderAsync(AbortToken);
+
+            do
+            {
+                while (await reader.ReadAsync(AbortToken))
+                {
+                    // The scope's columns come first: the key, the generation, the expiry; then the consumer's.
+                    claimed.Add(
+                        (await reader.GetFieldValueAsync<Guid>(0, AbortToken), reader.GetInt64(1), reader.GetString(3))
+                    );
+                }
+            } while (await reader.NextResultAsync(AbortToken));
+        }
+
+        await transaction.CommitAsync(AbortToken);
+
+        return claimed;
     }
 
     private static ValueTask<string> _ReadStatusAsync(DbDataReader reader, CancellationToken cancellationToken) =>

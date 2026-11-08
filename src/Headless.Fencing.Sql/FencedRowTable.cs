@@ -320,6 +320,36 @@ public sealed class FencedRowTable<TKey>
         );
     }
 
+    /// <summary>
+    /// Revokes up to the batch size of active attempts held by any of <paramref name="holderCount" /> holders, bound as
+    /// <c>@LeaseHolder0</c> onward, skipping rows another transaction holds, narrowed by <paramref name="condition" /> and
+    /// applying <paramref name="set" /> beside the revocation, both optional.
+    /// </summary>
+    internal string RenderRevokeHeldBy(int holderCount, string? condition, string? set)
+    {
+        var holders = string.Join(
+            ", ",
+            Enumerable.Range(0, holderCount).Select(static i => "@" + HolderListParameter(i))
+        );
+        var filter = $"{State} = {ActiveLiteral} AND {Holder} IN ({holders})";
+        var assignments = EndAssignments(RowLeaseState.Revoked);
+
+        return Dialect.Render(
+            new SqlClaimNext(
+                Table,
+                KeyColumns,
+                condition is null ? filter : $"{filter} AND ({condition})",
+                [ExpiresAt],
+                set is null ? assignments : assignments + ", " + set,
+                [Generation],
+                BatchSizeParameter
+            )
+        );
+    }
+
+    internal static string HolderListParameter(int index) =>
+        HolderParameter + index.ToString(CultureInfo.InvariantCulture);
+
     internal string RenderTransition(string fence, string? set, IReadOnlyList<string> returning)
     {
         return LockedRead + Dialect.Render(new SqlFencedTransition(Table, KeyParameters, fence, set, returning));
