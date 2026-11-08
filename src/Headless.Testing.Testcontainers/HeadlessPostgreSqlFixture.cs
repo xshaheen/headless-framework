@@ -8,7 +8,8 @@ using Xunit;
 namespace Headless.Testing.Testcontainers;
 
 /// <summary>
-/// PostgreSQL test fixture pinned to <see cref="TestImages.PostgreSql"/> that gives each fixture a database of its own.
+/// PostgreSQL test fixture on <see cref="TestImages.PostgreSql"/>, or the <see cref="Image"/> a subclass names, that gives
+/// each fixture a database of its own.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -45,6 +46,17 @@ public class HeadlessPostgreSqlFixture : IAsyncLifetime
     /// read server-wide state another run would disturb.
     /// </summary>
     protected virtual bool ShareContainer => true;
+
+    /// <summary>
+    /// Gets the image the fixture runs, <see cref="TestImages.PostgreSql"/> unless overridden. Override it for a
+    /// server that needs extensions the default image lacks, such as PostGIS. The image is part of the shared
+    /// container's name, so fixtures on different images share separate servers and never attach to each other's.
+    /// </summary>
+    /// <remarks>
+    /// The image must keep the official <c>postgres</c> entrypoint: the fixture passes <c>-c max_connections</c> and
+    /// sets the superuser through <c>POSTGRES_USER</c> and <c>POSTGRES_PASSWORD</c>.
+    /// </remarks>
+    protected virtual string Image => TestImages.PostgreSql;
 
     /// <summary>Gets the started container, for its host, mapped port, or command execution.</summary>
     public PostgreSqlContainer Container =>
@@ -151,7 +163,8 @@ public class HeadlessPostgreSqlFixture : IAsyncLifetime
 
     private PostgreSqlContainer _Build()
     {
-        var builder = new PostgreSqlBuilder(TestImages.PostgreSql)
+        var image = Image;
+        var builder = new PostgreSqlBuilder(image)
             .WithUsername("postgres")
             .WithPassword("postgres")
             .WithDatabase("postgres")
@@ -160,7 +173,7 @@ public class HeadlessPostgreSqlFixture : IAsyncLifetime
         builder = _shared
             ? SharedTestContainers.AsShared<PostgreSqlBuilder, PostgreSqlContainer>(
                 builder,
-                SharedTestContainers.ContainerName("postgresql", TestImages.PostgreSql, _MaxConnections)
+                SharedTestContainers.ContainerName("postgresql", image, _MaxConnections)
             )
             : ConfigureContainer(builder);
 
