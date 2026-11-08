@@ -442,7 +442,7 @@ Testcontainers fixtures for integration testing.
   - `HeadlessLocalStackFixture`
   - `HeadlessMinioFixture`
   - `HeadlessSqlServerFixture` (a database of its own per fixture; architecture-aware: SQL Server 2022 on x86_64, Azure SQL Edge on ARM64; set `HEADLESS_SQLSERVER_IMAGE` to override, see below)
-- `SharedTestContainers` — opt-in sharing of one long-lived SQL Server, PostgreSQL, and RabbitMQ container across fixtures and test processes; set `HEADLESS_TESTCONTAINERS_SHARED=true` to turn it on (see [Shared containers](#shared-containers))
+- `SharedTestContainers` — sharing of one long-lived SQL Server, PostgreSQL, and RabbitMQ container across fixtures and test processes, on by default; set `HEADLESS_TESTCONTAINERS_SHARED=false` to turn it off (see [Shared containers](#shared-containers))
 - `HeadlessRedisFixture.FlushAllAsync(ct)` and the `RedisContainer.FlushAllAsync(ct)` extension (`HeadlessRedisContainerExtensions`, namespace `Testcontainers.Redis`) — delete every key in every database by running `redis-cli FLUSHALL` inside the container, so a collection's next test starts clean without a client connection or `allowAdmin`
 - `RedisBuilder.WithHostPingWaitStrategy()` (same holder) — holds the container start until Redis answers `PING` from the test host through the mapped port. `HeadlessRedisFixture` applies it; call it on a `RedisBuilder` a test builds itself, so the first `ConnectionMultiplexer.ConnectAsync` after `StartAsync` is not refused (see [Readiness from the test host](#readiness-from-the-test-host))
 - Every fixture except Redis and Kafka checks its service port from the host after the start and restarts the container once if nothing answers. A desktop Docker engine can fail to forward the host port it picked, leaving a healthy container that refuses every connection; a restart picks another port. A second failure stops the fixture with a message naming both ports. Redis's wait strategy already pings through the host. Kafka is left out because its startup script records the mapped port once, so a restarted broker would keep advertising the dead port.
@@ -465,14 +465,14 @@ The fixture holds a session lock named after its id for its whole life (`sp_geta
 
 #### Shared containers
 
-By default every fixture starts a fresh container, and Testcontainers' Ryuk sidecar removes it when the run ends, even after a crash. With `HEADLESS_TESTCONTAINERS_SHARED=true`, the SQL Server, PostgreSQL, and RabbitMQ fixtures instead attach to one container per image, named `headless-testing-<kind>-<hash>` and labelled `org.headless.testing.shared=true`, and leave it running on dispose. Logical isolation keeps their data apart, so several modules and several checkouts can run at once against one server, and a rerun starts against a warm one.
+The SQL Server, PostgreSQL, and RabbitMQ fixtures attach to one container per image, named `headless-testing-<kind>-<hash>` and labelled `org.headless.testing.shared=true`, and leave it running on dispose. Logical isolation keeps their data apart, so concurrent fixtures, modules, and checkouts run against one server, and a rerun starts against a warm one. With `HEADLESS_TESTCONTAINERS_SHARED=false`, every fixture starts a fresh container instead, and Testcontainers' Ryuk sidecar removes it when the run ends, even after a crash; use it on a host that must leave no container behind.
 
 - Two processes that find no shared container both try to create it. Docker refuses the second container name with 409 Conflict, and the loser attaches to the winner's container.
-- Ryuk never removes a shared container, so a host that turns sharing on removes idle ones itself, by the label.
+- Ryuk never removes a shared container. Remove idle ones by the label: `docker rm -f -v $(docker ps -aq --filter label=org.headless.testing.shared=true)`. A CI runner that is discarded after the job needs nothing.
 - A fixture that stops, pauses, or restarts its server, changes server-wide settings, creates logins or roles, or asserts on server-wide views (`pg_stat_activity`, `sys.dm_exec_sessions`) overrides `ShareContainer => false` and keeps a private container in either mode.
 - Redis, NATS, Kafka, Azurite, LocalStack, and MinIO stay private: Redis pub/sub and `FLUSHALL` cross its numbered databases, and the others carry no isolation boundary their tests use.
 
-Testcontainers reuse stays banned for test code (`WithReuse` fails the build with RS0030, `eng/BannedSymbols.Testcontainers.txt`): a reused container keeps one run's schema and rows for the next. `SharedTestContainers` is the one place that calls it, behind the opt-in and with logical isolation around it.
+Testcontainers reuse stays banned for test code (`WithReuse` fails the build with RS0030, `eng/BannedSymbols.Testcontainers.txt`): a reused container keeps one run's schema and rows for the next. `SharedTestContainers` is the one place that calls it, with logical isolation around it.
 
 #### Readiness from the test host
 
@@ -536,8 +536,8 @@ No configuration required. Containers use sensible defaults.
 ### Runtime behavior
 
 - Starts Docker containers during test execution
-- Private containers are removed after tests complete; Ryuk removes them if the test process dies first
-- Shared containers stay running; each fixture drops its own databases or virtual host, and the next fixture start sweeps those of a run that died
+- Shared containers stay running after the run; private containers (`ShareContainer => false`, or `HEADLESS_TESTCONTAINERS_SHARED=false`) are removed when tests complete, or by Ryuk if the test process dies first
+- In shared containers each fixture drops its own databases or virtual host, and the next fixture start sweeps those of a run that died
 ## Tenant isolation
 
 A tenant-isolation test seeds a row as tenant A and then probes it as tenant B. The kit spans two packages so `Headless.Testing` stays free of EF Core. The HTTP assertion needs only an `HttpClient`, so it works with `HeadlessTestServer.CreateClient()` or any other client:

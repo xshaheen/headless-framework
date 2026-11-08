@@ -11,15 +11,15 @@ using DotNet.Testcontainers.Containers;
 namespace Headless.Testing.Testcontainers;
 
 /// <summary>
-/// Opt-in sharing of one long-lived server container per image across test processes. Each fixture still gets its own
+/// Sharing of one long-lived server container per image across test processes, on by default. Each fixture still gets its own
 /// database or virtual host on that server, so only the server process is shared.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Sharing is off unless <see cref="Variable"/> is <c>"true"</c>. Off, every fixture starts a fresh container that the
-/// resource reaper removes after the run, exactly as before. On, the fixture attaches to (or creates) the container
-/// named <c>headless-testing-{kind}-{hash}</c>; the reaper never removes it, so a host that turns sharing on also owns
-/// removing idle shared containers, which carry the <see cref="Label"/> label.
+/// Sharing is on unless <see cref="Variable"/> is <c>"false"</c>. On, the fixture attaches to (or creates) the container
+/// named <c>headless-testing-{kind}-{hash}</c> and leaves it running for the next run; the resource reaper never removes
+/// it, so remove idle shared containers by the <see cref="Label"/> label. Off, every fixture starts a fresh container
+/// that the resource reaper removes after the run, which suits a host that must leave no container behind.
 /// </para>
 /// <para>
 /// The container name is the cross-process lock: two processes that both find no shared container race to create it,
@@ -29,7 +29,7 @@ namespace Headless.Testing.Testcontainers;
 [PublicAPI]
 public static class SharedTestContainers
 {
-    /// <summary>The environment variable that turns container sharing on when set to <c>"true"</c>.</summary>
+    /// <summary>The environment variable that turns container sharing off when set to <c>"false"</c>.</summary>
     public const string Variable = "HEADLESS_TESTCONTAINERS_SHARED";
 
     /// <summary>The label every shared container carries, so a host can find and remove idle ones.</summary>
@@ -44,7 +44,7 @@ public static class SharedTestContainers
 
     /// <summary>Gets whether this process shares server containers across fixtures and processes.</summary>
     public static bool IsEnabled { get; } =
-        string.Equals(Environment.GetEnvironmentVariable(Variable), "true", StringComparison.OrdinalIgnoreCase);
+        !string.Equals(Environment.GetEnvironmentVariable(Variable), "false", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Returns the deterministic container name for a shared server of <paramref name="kind"/> built from
