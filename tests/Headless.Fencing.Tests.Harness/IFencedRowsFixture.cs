@@ -13,9 +13,9 @@ namespace Tests;
 /// <remarks>
 /// The table has a Guid primary key <c>id</c>, a text <c>status</c>, a nullable Guid <c>parent_id</c>, and the five
 /// lease columns under their default names: <c>lease_generation</c> (bigint, default 0), <c>lease_state</c> (smallint,
-/// default 0), <c>lease_expires_at</c> (nullable instant), <c>lease_holder</c> (nullable text of up to 200
-/// characters), and <c>lease_takeover_count</c> (int, default 0). The suite inserts and reads its own rows through
-/// the dialect, so the fixture owns only the DDL.
+/// default 0), <c>lease_expires_at</c> (nullable instant), <c>lease_holder</c> (nullable text of up to 405
+/// characters, the widest holder limit a suite table sets), and <c>lease_takeover_count</c> (int, default 0). The
+/// suite inserts and reads its own rows through the dialect, so the fixture owns only the DDL.
 /// </remarks>
 public interface IFencedRowsFixture
 {

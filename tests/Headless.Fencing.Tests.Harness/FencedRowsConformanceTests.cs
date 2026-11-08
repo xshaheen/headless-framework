@@ -1425,6 +1425,62 @@ public abstract class FencedRowsConformanceTests<TFixture>(TFixture fixture) : T
         );
 
     #endregion
+
+    #region Per-table holder limit
+
+    public virtual async Task should_hold_a_holder_to_the_limit_its_table_was_created_with()
+    {
+        var table = FencedRowTable<Guid>.Create(
+            Fixture.Dialect,
+            Fixture.Schema,
+            IFencedRowsFixture.WorkItemsTable,
+            FencedRowKey<Guid>.Scalar("id", SqlColumnType.Guid),
+            holderMaxLength: 405
+        );
+        var id = await InsertAsync("pending");
+        var refused = await InsertAsync("pending");
+        var tag = Tag();
+        await InsertAsync(tag);
+        var widest = new string('h', 405);
+        var tooLong = new string('h', 406);
+        await using var connection = Fixture.CreateConnection();
+
+        var granted = await FencedRows.GrantAsync(
+            table,
+            connection,
+            null,
+            id,
+            LongDuration,
+            Holder(widest),
+            AbortToken
+        );
+        var grantTooLong = async () =>
+            await FencedRows.GrantAsync(table, connection, null, refused, LongDuration, Holder(tooLong), AbortToken);
+        var claimTooLong = async () =>
+            await FencedRows.ClaimAsync(table, connection, null, Claim(tag, 10, tooLong), AbortToken);
+
+        table.HolderMaxLength.Should().Be(405);
+        _table.HolderMaxLength.Should().Be(FencingFieldLimits.HolderMaxLength);
+        _CreateWithHolderLimit(0).Should().Throw<ArgumentOutOfRangeException>();
+        _CreateWithHolderLimit(851).Should().Throw<ArgumentOutOfRangeException>("an nvarchar index key caps at 850");
+        granted!.Status.Should().Be(LeaseGrantStatus.Granted);
+        (await ReadAsync(id)).Lease.Holder.Should().Be(widest, "the table's own limit, not the default 200, applies");
+        await grantTooLong.Should().ThrowAsync<ArgumentException>();
+        await claimTooLong.Should().ThrowAsync<ArgumentException>();
+        (await ReadAsync(refused)).Lease.Generation.Should().Be(0, "a refused holder is checked before any statement");
+    }
+
+    private Func<FencedRowTable<Guid>> _CreateWithHolderLimit(int holderMaxLength) =>
+        () =>
+            FencedRowTable<Guid>.Create(
+                Fixture.Dialect,
+                Fixture.Schema,
+                IFencedRowsFixture.WorkItemsTable,
+                FencedRowKey<Guid>.Scalar("id", SqlColumnType.Guid),
+                holderMaxLength: holderMaxLength
+            );
+
+    #endregion
 }
 
 /// <summary>A work item as the consumer table holds it: its own status and its lease columns.</summary>

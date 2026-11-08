@@ -159,14 +159,9 @@ public sealed class FencedRowGrantScope<TKey>
     {
         Argument.IsNotNull(command);
         Argument.IsPositive(duration);
-        LeaseRequestResolver.ValidateGrantOptions(new LeaseGrantOptions { Holder = holder });
+        LeaseRequestResolver.ValidateGrantOptions(new LeaseGrantOptions { Holder = holder }, _table.HolderMaxLength);
 
         _table.Dialect.AddDuration(command, Prefix + "Duration", duration);
-        _table.Dialect.AddParameter(
-            command,
-            Prefix + "Holder",
-            SqlColumnType.Text(FencingFieldLimits.HolderMaxLength),
-            holder
-        );
+        _table.Dialect.AddParameter(command, Prefix + "Holder", SqlColumnType.Text(_table.HolderMaxLength), holder);
     }
 }

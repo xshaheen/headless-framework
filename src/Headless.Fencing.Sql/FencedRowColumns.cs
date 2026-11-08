@@ -9,8 +9,9 @@ namespace Headless.Fencing;
 /// <remarks>
 /// The columns hold <see cref="RowLeaseSnapshot" />: the generation (64-bit integer, not null, default 0), the state
 /// (16-bit integer, not null, default 0, so a fresh row is <see cref="RowLeaseState.Idle" />), the expiry (an instant
-/// with offset, null until the first grant), the holder (text of at most <c>FencingFieldLimits.HolderMaxLength</c>
-/// characters, null), and the takeover count (32-bit integer, not null, default 0).
+/// with offset, null until the first grant), the holder (text of at most <c>FencedRowTable.HolderMaxLength</c>
+/// characters, <c>FencingFieldLimits.HolderMaxLength</c> by default, null), and the takeover count (32-bit integer,
+/// not null, default 0).
 /// </remarks>
 [PublicAPI]
 public sealed class FencedRowColumns

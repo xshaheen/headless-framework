@@ -186,4 +186,10 @@ public sealed class SqliteFencedRowsConformanceTests(SqliteFencingFixture fixtur
     {
         return base.should_revoke_only_active_attempts_the_listed_holders_hold_and_land_the_write();
     }
+
+    [Fact]
+    public override Task should_hold_a_holder_to_the_limit_its_table_was_created_with()
+    {
+        return base.should_hold_a_holder_to_the_limit_its_table_was_created_with();
+    }
 }
