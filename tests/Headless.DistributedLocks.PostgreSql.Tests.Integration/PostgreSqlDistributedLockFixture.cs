@@ -4,7 +4,6 @@ using Headless.DistributedLocks;
 using Headless.Hosting.Schema;
 using Headless.Testing.Testcontainers;
 using Microsoft.Extensions.DependencyInjection;
-using Testcontainers.PostgreSql;
 
 namespace Tests;
 
@@ -14,16 +13,6 @@ public sealed class PostgreSqlDistributedLockFixture
     : HeadlessPostgreSqlFixture,
         ICollectionFixture<PostgreSqlDistributedLockFixture>
 {
-    public string ConnectionString => Container.GetConnectionString();
-
-    protected override PostgreSqlBuilder Configure()
-    {
-        return base.Configure()
-            .WithDatabase("distributed_locks_test")
-            .WithUsername("postgres")
-            .WithPassword("postgres");
-    }
-
     protected override async ValueTask InitializeAsync()
     {
         await base.InitializeAsync();

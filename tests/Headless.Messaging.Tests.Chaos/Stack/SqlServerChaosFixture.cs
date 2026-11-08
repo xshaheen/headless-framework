@@ -14,7 +14,7 @@ public sealed class SqlServerChaosFixture : ChaosStackFixture
 
     public override string Database => "SQL Server";
 
-    public override string StorageConnectionString => _sqlServer.DatabaseConnectionString;
+    public override string StorageConnectionString => _sqlServer.ConnectionString;
 
     public override string ProxiedStorageConnectionString =>
         new SqlConnectionStringBuilder(StorageConnectionString)
@@ -40,23 +40,8 @@ public sealed class SqlServerChaosFixture : ChaosStackFixture
 
     private sealed class SqlServerComponent : HeadlessSqlServerFixture
     {
-        private const string _Database = "messages_chaos";
-
-        public string DatabaseConnectionString =>
-            new SqlConnectionStringBuilder(ConnectionString) { InitialCatalog = _Database }.ConnectionString;
-
-        protected override async ValueTask InitializeAsync()
-        {
-            await base.InitializeAsync();
-
-            await using var connection = new SqlConnection(ConnectionString);
-            await connection.OpenAsync();
-            await using var command = connection.CreateCommand();
-            command.CommandText = $"""
-                CREATE DATABASE [{_Database}];
-                """;
-            await command.ExecuteNonQueryAsync();
-        }
+        // A chaos run measures recovery under load, so its store keeps a server no other run shares.
+        protected override bool ShareContainer => false;
     }
 }
 

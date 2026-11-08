@@ -65,13 +65,16 @@ public sealed class SqlServerDistributedLockConformanceTests : DistributedLockTe
         await admin.OpenAsync(cancellationToken);
 
         // The conformance collection disables parallelization and each test holds a single application lock, so the
-        // only granted APPLICATION lock (other than this admin connection) belongs to the handle under test.
+        // only granted APPLICATION lock in this fixture's database (other than this admin connection) belongs to the
+        // handle under test. The database filter matters: every test fixture on the server holds an owner lock of its
+        // own in master, and killing one would let another run's sweep drop that fixture's databases.
         await using var lookup = admin.CreateCommand();
         lookup.CommandText = """
             SELECT TOP (1) request_session_id
             FROM sys.dm_tran_locks
             WHERE resource_type = 'APPLICATION'
               AND request_status = 'GRANT'
+              AND resource_database_id = DB_ID()
               AND request_session_id <> @@SPID;
             """;
 

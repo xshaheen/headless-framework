@@ -91,8 +91,10 @@ public sealed class SqlServerClaimStrategyTests(SqlServerJobsCoordinationFixture
     public async Task claims_execute_when_read_committed_snapshot_is_enabled()
     {
         var ct = AbortToken;
-        var databaseName = $"jobs_rcsi_{Guid.NewGuid():N}";
-        var masterConnectionString = fixture.ConnectionString;
+        // Derived from the fixture's own database, so a run killed before the drop below leaves a database the next
+        // run's sweep removes.
+        var databaseName = fixture.DerivedDatabaseName($"rcsi_{Guid.NewGuid():N}");
+        var masterConnectionString = fixture.AdminConnectionString;
         var databaseConnectionString = new SqlConnectionStringBuilder(masterConnectionString)
         {
             InitialCatalog = databaseName,

@@ -7,9 +7,12 @@
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Testing.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Testing.Testcontainers.Tests.Integration" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.SqlClient" />
+    <PackageReference Include="Npgsql" />
+    <PackageReference Include="RabbitMQ.Client" />
     <PackageReference Include="Testcontainers" />
     <PackageReference Include="Testcontainers.Azurite" />
     <PackageReference Include="Testcontainers.LocalStack" />

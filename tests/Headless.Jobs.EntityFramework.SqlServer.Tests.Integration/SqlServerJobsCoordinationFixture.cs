@@ -16,7 +16,7 @@ namespace Tests;
 
 /// <summary>
 /// One Testcontainers SQL Server instance shared by every test, backing the Jobs operational store, the Coordination
-/// SQL Server provider, and Messaging storage, all in the shared <c>headless</c> schema in <c>master</c>.
+/// SQL Server provider, and Messaging storage, all in the shared <c>headless</c> schema of the fixture's own database.
 /// Serialized at the collection level because tests reset the whole database between runs.
 /// </summary>
 [UsedImplicitly]

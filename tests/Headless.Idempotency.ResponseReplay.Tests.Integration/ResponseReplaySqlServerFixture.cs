@@ -8,7 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Tests;
 
 /// <summary>
-/// SQL Server fixture for the end-to-end idempotency middleware suite: one container whose database holds both the
+/// SQL Server fixture for the end-to-end idempotency middleware suite: the fixture's own database holds both the
 /// fenced leases and the idempotency records. Tests run serially because the concurrency scenarios measure how long
 /// a request blocks.
 /// </summary>
@@ -18,31 +18,10 @@ public sealed class ResponseReplaySqlServerFixture
     : HeadlessSqlServerFixture,
         ICollectionFixture<ResponseReplaySqlServerFixture>
 {
-    private const string _Database = "api_idempotency_test";
-
-    /// <summary>Connection string of the shared database (the base one points at master).</summary>
-    private string DatabaseConnectionString =>
-        new SqlConnectionStringBuilder(ConnectionString) { InitialCatalog = _Database }.ToString();
-
     // Each host gets its own pool, and a couple of tests run several hosts at once; a bounded pool keeps a runaway
     // test from exhausting the container's worker threads instead of contending.
     private string PooledConnectionString =>
-        new SqlConnectionStringBuilder(DatabaseConnectionString) { MaxPoolSize = 30 }.ToString();
-
-    // The database can only be created once the container accepts logins.
-    protected override async ValueTask InitializeAsync()
-    {
-        await base.InitializeAsync();
-
-        await using var master = new SqlConnection(ConnectionString);
-        await master.OpenAsync(CancellationToken.None);
-
-        await using var create = new SqlCommand(
-            $"IF DB_ID(N'{_Database}') IS NULL CREATE DATABASE [{_Database}];",
-            master
-        );
-        await create.ExecuteNonQueryAsync(CancellationToken.None);
-    }
+        new SqlConnectionStringBuilder(ConnectionString) { MaxPoolSize = 30 }.ToString();
 
     /// <summary>Registers idempotency on this fixture's database.</summary>
     public void ConfigureStore(IServiceCollection services)

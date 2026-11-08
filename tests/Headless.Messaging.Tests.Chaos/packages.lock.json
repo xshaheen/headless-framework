@@ -1081,6 +1081,8 @@
         "dependencies": {
           "Headless.Extensions": "[1.0.0, )",
           "Microsoft.Data.SqlClient": "[7.1.1, )",
+          "Npgsql": "[10.0.3, )",
+          "RabbitMQ.Client": "[7.2.2, )",
           "Testcontainers": "[4.16.0, )",
           "Testcontainers.Azurite": "[4.16.0, )",
           "Testcontainers.Kafka": "[4.16.0, )",

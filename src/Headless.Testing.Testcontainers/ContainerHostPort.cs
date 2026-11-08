@@ -32,11 +32,20 @@ internal static class ContainerHostPort
     private static readonly TimeSpan _PollInterval = TimeSpan.FromMilliseconds(250);
 
     /// <summary>Returns once <paramref name="containerPort"/> accepts a connection from the host.</summary>
-    /// <exception cref="InvalidOperationException">The port stayed closed after one restart.</exception>
+    /// <param name="container">The started container.</param>
+    /// <param name="containerPort">The container port to reach through its host mapping.</param>
+    /// <param name="reachableTimeout">How long to wait for the port before the restart, and again after it.</param>
+    /// <param name="allowRestart">
+    /// Whether a closed port may restart the container. A shared container serves other runs, whose sessions and
+    /// owner locks a restart would cut, so its fixture passes <see langword="false"/> and fails instead.
+    /// </param>
+    /// <param name="cancellationToken">Cancels the wait.</param>
+    /// <exception cref="InvalidOperationException">The port stayed closed after one restart, or with no restart allowed.</exception>
     public static async ValueTask EnsureReachableAsync(
         IContainer container,
         int containerPort,
         TimeSpan? reachableTimeout = null,
+        bool allowRestart = true,
         CancellationToken cancellationToken = default
     )
     {
@@ -45,6 +54,15 @@ internal static class ContainerHostPort
         if (await _WaitUntilReachableAsync(container, containerPort, timeout, cancellationToken).ConfigureAwait(false))
         {
             return;
+        }
+
+        if (!allowRestart)
+        {
+            throw new InvalidOperationException(
+                $"Container port {containerPort.ToString(CultureInfo.InvariantCulture)} of shared container {container.Name} "
+                    + $"refused host connections on {container.Hostname}:{container.GetMappedPublicPort(containerPort).ToString(CultureInfo.InvariantCulture)}. "
+                    + "Other runs use this container, so it is not restarted; remove it to let the next run create a new one."
+            );
         }
 
         var deadPort = container.GetMappedPublicPort(containerPort);

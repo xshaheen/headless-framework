@@ -2,21 +2,15 @@
 
 using Headless.Testing.Testcontainers;
 using Npgsql;
-using Testcontainers.PostgreSql;
 
 namespace Tests.Fixtures;
 
 /// <summary>
-/// The PostgreSQL store of a messaging stack suite: a fresh container that empties the outbox and inbox tables between
-/// tests.
+/// The PostgreSQL store of a messaging stack suite: a database of its own that empties the outbox and inbox tables
+/// between tests.
 /// </summary>
-public abstract class PostgreSqlStackComponent(string databaseName = "messages_test") : HeadlessPostgreSqlFixture
+public abstract class PostgreSqlStackComponent : HeadlessPostgreSqlFixture
 {
-    public string ConnectionString => Container.GetConnectionString();
-
-    protected override PostgreSqlBuilder Configure() =>
-        base.Configure().WithDatabase(databaseName).WithUsername("postgres").WithPassword("postgres");
-
     public async Task ResetAsync()
     {
         try

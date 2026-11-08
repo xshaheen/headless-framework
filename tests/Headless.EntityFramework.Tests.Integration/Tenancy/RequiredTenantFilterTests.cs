@@ -7,7 +7,6 @@ using Headless.Testing.Tests;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Npgsql;
 using Tests.Fixture;
 
 namespace Tests.Tenancy;
@@ -24,10 +23,9 @@ public sealed class RequiredTenantFilterTests(HeadlessDbContextTestFixture fixtu
     public async Task should_return_no_rows_from_a_required_tenant_column_when_no_tenant_is_set()
     {
         // given: one row stored for a tenant, in a database of this test's own
-        var connectionString = new NpgsqlConnectionStringBuilder(fixture.SqlConnectionString)
-        {
-            Database = $"required_tenant_{Guid.NewGuid():N}",
-        }.ConnectionString;
+        var database = fixture.PostgreSql.DerivedDatabaseName($"t_{Guid.NewGuid():N}");
+        await fixture.PostgreSql.CreateDatabaseAsync(database, AbortToken);
+        var connectionString = fixture.PostgreSql.ConnectionStringFor(database);
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddHeadlessDbContext<RequiredTenantDbContext>(options => options.UseNpgsql(connectionString));

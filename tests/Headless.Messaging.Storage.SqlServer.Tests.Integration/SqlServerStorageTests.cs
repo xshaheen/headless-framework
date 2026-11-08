@@ -1849,21 +1849,16 @@ public partial class SqlServerStorageTests(SqlServerTestFixture fixture) : DataS
         string tableName
     )
     {
-        var databaseName = $"headless_messaging_rcsi_{Guid.NewGuid():N}";
-        var masterBuilder = new SqlConnectionStringBuilder(fixture.ConnectionString)
+        var databaseName = fixture.DerivedDatabaseName($"rcsi_{Guid.NewGuid():N}");
+        var masterBuilder = new SqlConnectionStringBuilder(fixture.AdminConnectionString) { Pooling = false };
+        var databaseBuilder = new SqlConnectionStringBuilder(fixture.ConnectionStringFor(databaseName))
         {
-            InitialCatalog = "master",
-            Pooling = false,
-        };
-        var databaseBuilder = new SqlConnectionStringBuilder(fixture.ConnectionString)
-        {
-            InitialCatalog = databaseName,
             Pooling = false,
         };
 
         await using var master = new SqlConnection(masterBuilder.ConnectionString);
         await master.OpenAsync(AbortToken);
-        await master.ExecuteAsync($"CREATE DATABASE [{databaseName}];");
+        await fixture.CreateDatabaseAsync(databaseName, AbortToken);
 
         try
         {

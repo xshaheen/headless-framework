@@ -10,7 +10,6 @@ using Npgsql;
 using Respawn;
 using Respawn.Graph;
 using StackExchange.Redis;
-using Testcontainers.PostgreSql;
 using Testcontainers.Redis;
 
 namespace Tests.TestSetup;
@@ -18,7 +17,7 @@ namespace Tests.TestSetup;
 [CollectionDefinition]
 public sealed class SettingsTestFixture : ICollectionFixture<SettingsTestFixture>, IAsyncLifetime
 {
-    private readonly PostgreSqlContainer _postgreSqlContainer = _CreatePostgreSqlContainer();
+    private readonly HeadlessPostgreSqlFixture _postgreSql = new();
     private readonly RedisContainer _redisContainer = _CreateRedisContainer();
 
     public string SqlConnectionString { get; private set; } = null!;
@@ -43,19 +42,19 @@ public sealed class SettingsTestFixture : ICollectionFixture<SettingsTestFixture
     public async ValueTask DisposeAsync()
     {
         await SqlConnection.DisposeAsync();
-        await _postgreSqlContainer.DisposeAsync();
+        await _postgreSql.DisposeAsync();
         await Multiplexer.DisposeAsync();
         await _redisContainer.DisposeAsync();
     }
 
     private async Task _StartContainersAsync()
     {
-        await Task.WhenAll(_postgreSqlContainer.StartAsync(), _redisContainer.StartAsync());
+        await Task.WhenAll(((IAsyncLifetime)_postgreSql).InitializeAsync().AsTask(), _redisContainer.StartAsync());
     }
 
     private async Task _InitializePostgreSqlAsync()
     {
-        SqlConnectionString = _postgreSqlContainer.GetConnectionString();
+        SqlConnectionString = _postgreSql.ConnectionString;
         SqlConnection = new NpgsqlConnection(SqlConnectionString);
         await SqlConnection.OpenAsync();
         await _RunMigrationAsync();
@@ -107,16 +106,6 @@ public sealed class SettingsTestFixture : ICollectionFixture<SettingsTestFixture
         {
             await initializer.StartingAsync(CancellationToken.None);
         }
-    }
-
-    private static PostgreSqlContainer _CreatePostgreSqlContainer()
-    {
-        return new PostgreSqlBuilder(TestImages.PostgreSql)
-            .WithLabel("type", "settings")
-            .WithDatabase("headless_test")
-            .WithUsername("postgres")
-            .WithPassword("postgres")
-            .Build();
     }
 
     private static RedisContainer _CreateRedisContainer()

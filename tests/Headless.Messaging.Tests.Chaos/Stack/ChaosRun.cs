@@ -9,7 +9,6 @@ using Headless.Messaging.Persistence;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Testcontainers.RabbitMq;
 using Tests.Ledger;
 
 namespace Tests.Stack;
@@ -338,8 +337,9 @@ public sealed class ChaosRun : IAsyncDisposable
             {
                 rabbitMq.HostName = brokerHost;
                 rabbitMq.Port = brokerPort;
-                rabbitMq.UserName = RabbitMqBuilder.DefaultUsername;
-                rabbitMq.Password = RabbitMqBuilder.DefaultPassword;
+                rabbitMq.UserName = _stack.BrokerUserName;
+                rabbitMq.Password = _stack.BrokerPassword;
+                rabbitMq.VirtualHost = _stack.BrokerVirtualHost;
                 rabbitMq.ExchangeName = Prefix;
                 rabbitMq.QueueArguments.QueueType = "quorum";
                 rabbitMq.QueueArguments.DeliveryLimit = Settings.DeliveryLimit;

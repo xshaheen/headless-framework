@@ -7,7 +7,6 @@ using Headless.Testing.Testcontainers;
 using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
-using Testcontainers.PostgreSql;
 
 namespace Tests;
 
@@ -18,8 +17,6 @@ public sealed class PostgreSqlSettingsFixture
         ICollectionFixture<PostgreSqlSettingsFixture>,
         ISettingsStorageFixture
 {
-    public string ConnectionString => Container.GetConnectionString();
-
     public Type ProviderExceptionType => typeof(PostgresException);
 
     public void UseStorage(HeadlessSettingsSetupBuilder setup, string connectionString)
@@ -102,13 +99,15 @@ public sealed class PostgreSqlSettingsFixture
         return pairs;
     }
 
-    protected override PostgreSqlBuilder Configure()
-    {
-        return base.Configure().WithDatabase("settings_storage_test").WithUsername("postgres").WithPassword("postgres");
-    }
+    // The refusal tests only need a second database on the same server; a derived one keeps them off the shared
+    // server's admin database.
+    public string OtherDatabaseConnectionString => ConnectionStringFor(DerivedDatabaseName("other"));
 
-    public string OtherDatabaseConnectionString =>
-        new NpgsqlConnectionStringBuilder(ConnectionString) { Database = "postgres" }.ConnectionString;
+    protected override async ValueTask InitializeAsync()
+    {
+        await base.InitializeAsync();
+        await CreateDatabaseAsync(DerivedDatabaseName("other"), CancellationToken.None);
+    }
 
     public DbConnection CreateConnection(string connectionString)
     {

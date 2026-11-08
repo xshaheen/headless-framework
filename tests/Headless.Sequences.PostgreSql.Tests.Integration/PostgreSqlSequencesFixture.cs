@@ -8,7 +8,6 @@ using Headless.Testing.Testcontainers;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
-using Testcontainers.PostgreSql;
 
 namespace Tests;
 
@@ -24,32 +23,12 @@ public sealed class PostgreSqlSequencesFixture
         ICollectionFixture<PostgreSqlSequencesFixture>,
         ISequencesFixture
 {
-    private const string _OtherDatabase = "sequences_other";
-
-    public string ConnectionString => Container.GetConnectionString();
-
-    public string OtherDatabaseConnectionString =>
-        new NpgsqlConnectionStringBuilder(ConnectionString) { Database = _OtherDatabase }.ToString();
-
-    protected override PostgreSqlBuilder Configure()
-    {
-        return base.Configure().WithDatabase("sequences_test").WithUsername("postgres").WithPassword("postgres");
-    }
+    public string OtherDatabaseConnectionString => ConnectionStringFor(DerivedDatabaseName("other"));
 
     protected override async ValueTask InitializeAsync()
     {
         await base.InitializeAsync();
-        await using var connection = new NpgsqlConnection(ConnectionString);
-        await connection.OpenAsync(CancellationToken.None);
-
-        await using var exists = new NpgsqlCommand("SELECT 1 FROM pg_database WHERE datname = @name", connection);
-        exists.Parameters.AddWithValue("name", _OtherDatabase);
-
-        if (await exists.ExecuteScalarAsync(CancellationToken.None) is null)
-        {
-            await using var create = new NpgsqlCommand($"""CREATE DATABASE "{_OtherDatabase}";""", connection);
-            await create.ExecuteNonQueryAsync(CancellationToken.None);
-        }
+        await CreateDatabaseAsync(DerivedDatabaseName("other"), CancellationToken.None);
     }
 
     public void ConfigureUnitOfWork(IServiceCollection services)

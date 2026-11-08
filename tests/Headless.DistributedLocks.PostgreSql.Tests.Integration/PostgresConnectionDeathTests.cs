@@ -79,8 +79,10 @@ public sealed class PostgresConnectionDeathTests(PostgreSqlDistributedLockFixtur
         command.CommandText = """
             SELECT pg_terminate_backend(l.pid)
             FROM pg_catalog.pg_locks l
+            JOIN pg_catalog.pg_database d ON d.oid = l.database
             WHERE l.locktype = 'advisory'
               AND l.granted
+              AND d.datname = pg_catalog.current_database()
               AND l.classid = @classId
               AND l.objid = @objId
               AND l.objsubid = @objSubId

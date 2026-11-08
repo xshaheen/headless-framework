@@ -7,7 +7,6 @@ using Headless.Testing.Testcontainers;
 using Headless.UnitOfWork;
 using Npgsql;
 using NpgsqlTypes;
-using Testcontainers.PostgreSql;
 
 namespace Tests;
 
@@ -25,17 +24,10 @@ public sealed class PostgreSqlIdempotencyFixture
 {
     private const string _Records = $"\"{HeadlessStorageDefaults.Schema}\".idempotency_records";
 
-    public string ConnectionString => Container.GetConnectionString();
-
     // Each host gets its own pool, and the contention tests run several hosts at once; the default pool of 100 per
     // host would let them exceed the container's max_connections and fail with 53300 instead of contending.
     private string PooledConnectionString =>
         new NpgsqlConnectionStringBuilder(ConnectionString) { MaxPoolSize = 30 }.ToString();
-
-    protected override PostgreSqlBuilder Configure()
-    {
-        return base.Configure().WithDatabase("idempotency_test").WithUsername("postgres").WithPassword("postgres");
-    }
 
     protected override async ValueTask InitializeAsync()
     {

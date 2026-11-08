@@ -28,8 +28,8 @@ public sealed class RabbitMqBrokerFaultTests(RabbitMqFixture fixture) : BrokerFa
         {
             await broker.StartAsync();
             var session = await RabbitMqFixture.CreateConformanceSessionAsync(
-                broker.Host,
-                broker.Port,
+                broker.ForwardedHost,
+                broker.ForwardedPort,
                 cancellationToken
             );
 

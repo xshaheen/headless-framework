@@ -8,22 +8,22 @@ namespace Tests;
 internal static class RestrictedPostgreSqlDatabase
 {
     public static async Task ExecuteAsync(
-        string adminConnectionString,
         bool preinstallTrgm,
         Func<string, Task> assertion,
         CancellationToken cancellationToken
     )
     {
-        var suffix = Guid.NewGuid().ToString("N");
-        var database = $"messages_restricted_{suffix}";
-        var role = $"messaging_app_{suffix}";
+        // The restricted login is a role, which lives on the server rather than in a database, so it gets a server of
+        // its own and leaves with it.
+        await using var server = new PrivatePostgreSqlServer();
+        await server.StartAsync();
+
+        var role = $"messaging_app_{Guid.NewGuid():N}";
         const string password = "restricted-test-password";
-        var adminBuilder = new NpgsqlConnectionStringBuilder(adminConnectionString) { Database = "postgres" };
-        var roleCreated = false;
-        var databaseCreated = false;
+        var database = server.DatabaseName;
         string? restrictedConnectionString = null;
 
-        await using var adminConnection = new NpgsqlConnection(adminBuilder.ConnectionString);
+        await using var adminConnection = new NpgsqlConnection(server.AdminConnectionString);
         await adminConnection.OpenAsync(cancellationToken);
 
         try
@@ -34,14 +34,8 @@ internal static class RestrictedPostgreSqlDatabase
                     cancellationToken: cancellationToken
                 )
             );
-            roleCreated = true;
-            await adminConnection.ExecuteAsync(
-                new CommandDefinition($"CREATE DATABASE \"{database}\";", cancellationToken: cancellationToken)
-            );
-            databaseCreated = true;
 
-            var databaseAdminBuilder = new NpgsqlConnectionStringBuilder(adminConnectionString) { Database = database };
-            await using (var databaseAdminConnection = new NpgsqlConnection(databaseAdminBuilder.ConnectionString))
+            await using (var databaseAdminConnection = new NpgsqlConnection(server.ConnectionString))
             {
                 await databaseAdminConnection.OpenAsync(cancellationToken);
                 await databaseAdminConnection.ExecuteAsync(
@@ -87,9 +81,8 @@ internal static class RestrictedPostgreSqlDatabase
                 );
             }
 
-            var restrictedBuilder = new NpgsqlConnectionStringBuilder(adminConnectionString)
+            var restrictedBuilder = new NpgsqlConnectionStringBuilder(server.ConnectionString)
             {
-                Database = database,
                 Username = role,
                 Password = password,
             };
@@ -98,34 +91,11 @@ internal static class RestrictedPostgreSqlDatabase
         }
         finally
         {
-            using var cleanupCts = new CancellationTokenSource(TimeSpan.FromSeconds(30), TimeProvider.System);
-            var cleanupToken = cleanupCts.Token;
-
+            // Disposing the server removes the role and the database; only this process's pooled sessions need closing.
             if (restrictedConnectionString is not null)
             {
                 await using var restrictedConnection = new NpgsqlConnection(restrictedConnectionString);
                 NpgsqlConnection.ClearPool(restrictedConnection);
-            }
-
-            if (databaseCreated)
-            {
-                await adminConnection.ExecuteAsync(
-                    new CommandDefinition(
-                        "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = @Database AND pid <> pg_backend_pid();",
-                        new { Database = database },
-                        cancellationToken: cleanupToken
-                    )
-                );
-                await adminConnection.ExecuteAsync(
-                    new CommandDefinition($"DROP DATABASE IF EXISTS \"{database}\";", cancellationToken: cleanupToken)
-                );
-            }
-
-            if (roleCreated)
-            {
-                await adminConnection.ExecuteAsync(
-                    new CommandDefinition($"DROP ROLE IF EXISTS \"{role}\";", cancellationToken: cleanupToken)
-                );
             }
         }
     }

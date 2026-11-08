@@ -104,7 +104,7 @@ public abstract class TenantIsolationKitConformanceTests<TFixture>(TFixture fixt
         await using var command = db.Database.GetDbConnection().CreateCommand();
         command.CommandText = $"SELECT COUNT(*) FROM {sql.DelimitIdentifier("Rows", fixture.Placement.Schema)}";
         Convert.ToInt32(await command.ExecuteScalarAsync(AbortToken), CultureInfo.InvariantCulture).Should().Be(1);
-        db.Database.GetDbConnection().Database.Should().Be(fixture.Placement.Database);
+        db.Database.GetDbConnection().Database.Should().Be(fixture.DatabaseName);
     }
 
     private MetadataTenantContext _Create()

@@ -5,7 +5,6 @@ using Headless.Messaging;
 using Headless.Messaging.RabbitMq;
 using Headless.UnitOfWork;
 using Npgsql;
-using Testcontainers.RabbitMq;
 
 namespace Tests;
 
@@ -28,8 +27,9 @@ public sealed class RabbitMqPostgreSqlMessagingIntegrationTests(RabbitMqPostgreS
         {
             rabbitMq.HostName = fixture.RabbitMqHostName;
             rabbitMq.Port = fixture.RabbitMqPort;
-            rabbitMq.UserName = RabbitMqBuilder.DefaultUsername;
-            rabbitMq.Password = RabbitMqBuilder.DefaultPassword;
+            rabbitMq.UserName = fixture.RabbitMqUserName;
+            rabbitMq.Password = fixture.RabbitMqPassword;
+            rabbitMq.VirtualHost = fixture.RabbitMqVirtualHost;
             rabbitMq.ExchangeName = _prefix;
         });
     }
