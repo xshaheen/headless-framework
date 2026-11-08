@@ -571,9 +571,12 @@ public abstract class FencedRowsConformanceTests<TFixture>(TFixture fixture) : T
 
     public virtual async Task should_refuse_a_composed_write_whose_row_lock_was_held_past_the_expiry()
     {
+        // Long enough to stay live through opening the holder's connection and fencing on a loaded container, and
+        // waited out in full below, so the lease has expired by the time the write gets the row.
+        var lease = ShortDuration * 3;
         var id = await InsertAsync("pending");
         await using var connection = Fixture.CreateConnection();
-        var row = (await FencedRows.GrantAsync(_table, connection, null, id, ShortDuration, new(), AbortToken))!.Row!;
+        var row = (await FencedRows.GrantAsync(_table, connection, null, id, lease, new(), AbortToken))!.Row!;
         await using var holder = await OpenAsync();
         await using var transaction = await holder.BeginTransactionAsync(AbortToken);
 
@@ -602,7 +605,7 @@ public abstract class FencedRowsConformanceTests<TFixture>(TFixture fixture) : T
         first.Should().NotBeSameAs(pending, "the write waits on the row the fence holds");
 
         // The lease runs out while the write waits: a clock read before the row lock would still call it live.
-        await Task.Delay(ShortDuration, AbortToken);
+        await Task.Delay(lease, AbortToken);
         await transaction.CommitAsync(AbortToken);
         var written = await pending.WaitAsync(LeasesFixtureExtensions.ReleaseTimeout, AbortToken);
 
