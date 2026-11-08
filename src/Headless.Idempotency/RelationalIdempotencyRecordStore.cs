@@ -3,6 +3,7 @@
 using System.Data.Common;
 using System.Runtime.CompilerServices;
 using Headless.Checks;
+using Headless.Fencing;
 using Headless.Sql;
 using Headless.UnitOfWork;
 
@@ -22,10 +23,13 @@ namespace Headless.Idempotency;
 /// finds the committed row.
 /// </para>
 /// <para>
-/// Admit, complete, release, recovery point, and renewal are one fenced transition each: a single conditional
-/// <c>UPDATE</c> whose <c>WHERE</c> is the fence, so the check and the write are one decision. Admit draws its
+/// A record's lease is a fenced row (<see cref="FencedRows" />): its five lease columns sit on the record row, and a
+/// completed record is one whose lease is settled. Admit, complete, release, recovery point, and renewal are one fenced
+/// transition each: a single conditional <c>UPDATE</c> whose <c>WHERE</c> is the fence, so the check and the write are
+/// one decision. Admit is the store's own transition, because it also resets the record's outcome columns; it draws its
 /// generation from the store-wide sequence in that <c>UPDATE</c>'s own assignment, so a generation is drawn only for an
-/// admission that applies and only after the row's lock is held.
+/// admission that applies and only after the row's lock is held. The other four go through <see cref="FencedRows" />,
+/// with the record's own columns composed into the lease's statement.
 /// </para>
 /// <para>
 /// Autonomous verbs (renew, peek, purge) open their own connection at READ COMMITTED, commit before returning, and
@@ -41,6 +45,9 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
     // next locking read finds it. Only a row purged again in that window could send the loop round once more.
     private const int _MaxLockRounds = 5;
 
+    // The grant scope's parameters are named from this prefix; "Lease" names are the fenced-row helpers' own.
+    private const string _AdmitPrefix = "Admit";
+
     // timestamptz and datetimeoffset both reach back past year 1, so a purge cutoff further back than this would
     // overflow. No record can have been retained that long ago, so clamping the age deletes exactly the same rows.
     private static readonly TimeSpan _MaxPurgeAge = TimeSpan.FromDays(700_000);
@@ -48,22 +55,25 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
     private readonly RelationalIdempotencyStorage _storage;
     private readonly ISqlDialect _dialect;
     private readonly IdempotencyTable _t;
+    private readonly FencedRowTable<IdempotencyRecordKey> _leases;
     private readonly IUnitOfWorkFactory _unitOfWorkFactory;
     private readonly TimeProvider _timeProvider;
     private readonly string _lockSql;
     private readonly string _insertSql;
     private readonly string _admitKeepingRecoveryPointSql;
     private readonly string _admitClearingRecoveryPointSql;
-    private readonly string _completeSql;
-    private readonly string _releaseSql;
-    private readonly string _setRecoveryPointSql;
-    private readonly string _renewSql;
+    private readonly string _completeSet;
+    private readonly string _releaseSet;
+    private readonly string _setRecoveryPointSet;
     private readonly string _peekSql;
     private readonly string _resultSql;
     private readonly string _purgeSql;
 
     // The units this store began for its autonomous calls, tracked only when enlisted admissions are refused.
     private static readonly object _OwnUnit = new();
+
+    // Insert and admit run without a locking read, so their refusals carry no row.
+    private static readonly object _NoLockedRow = new();
     private readonly ConditionalWeakTable<IUnitOfWork, object> _ownUnits = [];
 
     public RelationalIdempotencyRecordStore(
@@ -75,14 +85,14 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
         _storage = storage;
         _dialect = storage.Dialect;
         _t = storage.Table;
+        _leases = storage.Table.CreateLeaseTable(storage.Dialect, storage.CommandTimeoutSeconds);
         _unitOfWorkFactory = unitOfWorkFactory;
         _timeProvider = timeProvider;
 
         const string now = SqlDialectTokens.Now;
         var t = _t;
-        var pending = IdempotencyTable.StatusLiteral(IdempotencyRecordStatus.Pending);
-        var completed = IdempotencyTable.StatusLiteral(IdempotencyRecordStatus.Completed);
-        var ownedByGeneration = $"{t.Generation} = @Generation AND {t.Status} = {pending}";
+        var active = IdempotencyTable.StateLiteral(RowLeaseState.Active);
+        var live = $"{t.LeaseState} = {active} AND {t.LeaseExpiresAt} > {now}";
 
         // The locking read waits out any other holder; the clock is a statement of its own after it, because a column
         // the locking statement computed itself could be evaluated before the wait.
@@ -92,10 +102,10 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
                     t.Table,
                     t.KeyColumns,
                     [
-                        t.Status,
+                        t.LeaseState,
                         t.FingerprintAlgorithm,
                         t.Fingerprint,
-                        t.Generation,
+                        t.LeaseGeneration,
                         t.LeaseExpiresAt,
                         t.Result,
                         t.ResultContract,
@@ -109,31 +119,31 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
 
         // Runs only after a locking read found no row. On PostgreSQL its clock is read before any wait on a concurrent
         // inserter, which can only shorten the retention by that wait; an admission extends it again under the lock.
+        // The lease columns take their defaults: idle, at generation 0, which no admission ever draws.
         _insertSql = _dialect.Render(
             new SqlInsertIfAbsent(
                 t.Table,
                 t.KeyColumns,
-                [t.Status, t.FingerprintAlgorithm, t.Fingerprint, t.RetentionUntil],
-                [pending, "@FingerprintAlgorithm", "@Fingerprint", _dialect.ShiftByDuration(now, "Retention")],
+                [t.FingerprintAlgorithm, t.Fingerprint, t.RetentionUntil],
+                ["@FingerprintAlgorithm", "@Fingerprint", _dialect.ShiftByDuration(now, "Retention")],
                 [t.RetentionUntil]
             )
         );
 
         // Also the in-place reset of a record past its retention: every outcome column is overwritten. The fence
         // restates what the caller decided under the same lock, that no live attempt holds the record; the clock only
-        // moved forward since, so a lease judged expired then is expired now.
+        // moved forward since, so a lease judged expired then is expired now. The grant is the fenced-row grant, so an
+        // admission over an expired attempt counts one more takeover.
         var admitSet = $"""
-            {t.Status} = {pending},
+            {FencedRows.GrantScope(_leases, _AdmitPrefix).Assignments()},
                 {t.FingerprintAlgorithm} = @FingerprintAlgorithm,
                 {t.Fingerprint} = @Fingerprint,
-                {t.Generation} = {_dialect.NextSequenceValue(t.Sequence)},
-                {t.LeaseExpiresAt} = {_dialect.ShiftByDuration(now, "LeaseDuration")},
                 {t.Result} = NULL,
                 {t.ResultContract} = NULL,
                 {t.RetentionUntil} = {_ExtendedRetention()}
             """;
-        var notHeld = $"{t.Status} <> {pending} OR {t.LeaseExpiresAt} IS NULL OR {t.LeaseExpiresAt} <= {now}";
-        _admitKeepingRecoveryPointSql = _Transition(notHeld, admitSet, [t.Generation, t.LeaseExpiresAt]);
+        var notHeld = $"NOT ({live})";
+        _admitKeepingRecoveryPointSql = _Transition(notHeld, admitSet, [t.LeaseGeneration, t.LeaseExpiresAt]);
         _admitClearingRecoveryPointSql = _Transition(
             notHeld,
             $"""
@@ -142,56 +152,27 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
                 {t.RecoveryState} = NULL,
                 {t.RecoveryContract} = NULL
             """,
-            [t.Generation, t.LeaseExpiresAt]
+            [t.LeaseGeneration, t.LeaseExpiresAt]
         );
 
-        // The completing generation is kept, so a second completion by the same attempt finds its own completed record
-        // and is refused instead of overwriting the stored result.
-        _completeSql = _Transition(
-            ownedByGeneration,
-            $"""
-            {t.Status} = {completed},
-                {t.LeaseExpiresAt} = NULL,
-                {t.Result} = @Result,
+        // Settling keeps the completing generation, so only that attempt learns its record completed.
+        _completeSet = $"""
+            {t.Result} = @Result,
                 {t.ResultContract} = @ResultContract,
                 {t.RecoveryPoint} = NULL,
                 {t.RecoveryState} = NULL,
                 {t.RecoveryContract} = NULL,
                 {t.RetentionUntil} = {_ExtendedRetention()}
-            """,
-            [t.Generation]
-        );
+            """;
 
         // The recovery point is kept: a released attempt may have finished steps the next attempt should not redo.
-        _releaseSql = _Transition(
-            ownedByGeneration,
-            $"""
-            {t.Generation} = NULL,
-                {t.LeaseExpiresAt} = NULL,
-                {t.RetentionUntil} = {_ExtendedRetention()}
-            """,
-            [t.Status]
-        );
+        _releaseSet = $"{t.RetentionUntil} = {_ExtendedRetention()}";
 
-        // The lease was judged live under the same lock, so the fence only restates the generation.
-        _setRecoveryPointSql = _Transition(
-            ownedByGeneration,
-            $"""
+        _setRecoveryPointSet = $"""
             {t.RecoveryPoint} = @RecoveryPoint,
                 {t.RecoveryState} = @RecoveryState,
                 {t.RecoveryContract} = @RecoveryContract
-            """,
-            [t.Generation]
-        );
-
-        // A refusal is classified from the row the locking read found, so the renewal ships nothing else back.
-        _renewSql =
-            _dialect.Render(new SqlLockedRead(t.Table, t.KeyColumns, [t.Status, t.Generation, t.LeaseExpiresAt]))
-            + _Transition(
-                $"{ownedByGeneration} AND {t.LeaseExpiresAt} > {now}",
-                $"{t.LeaseExpiresAt} = {_dialect.ShiftByDuration(now, "LeaseDuration")}",
-                [t.LeaseExpiresAt]
-            );
+            """;
 
         // No row lock and no lock hint. PostgreSQL's MVCC read never waits. SQL Server reads at plain READ COMMITTED:
         // its shared lock is compatible with the update lock a locked read holds, so a peek never queues behind one,
@@ -199,14 +180,14 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
         // timeout, and an enlisted unit holds that lock until the unit ends.
         _peekSql = _dialect.Render(
             new SqlClockedStatement(
-                $"SELECT {t.Status}, {t.RetentionUntil}, {now}, {t.Generation}, {t.LeaseExpiresAt} FROM {t.Table} WHERE {t.TenantId} = @TenantId AND {t.Key} = @IdempotencyKey;"
+                $"SELECT {t.LeaseState}, {t.RetentionUntil}, {now}, CASE WHEN {live} THEN 1 ELSE 0 END FROM {t.Table} WHERE {t.TenantId} = @TenantId AND {t.Key} = @IdempotencyKey;"
             )
         );
 
-        // The same lock-free read as the peek, returning the stored result with the status it belongs to.
+        // The same lock-free read as the peek, returning the stored result with the lease state it belongs to.
         _resultSql = _dialect.Render(
             new SqlClockedStatement(
-                $"SELECT {t.Status}, {t.RetentionUntil}, {now}, {t.Result}, {t.ResultContract} FROM {t.Table} WHERE {t.TenantId} = @TenantId AND {t.Key} = @IdempotencyKey;"
+                $"SELECT {t.LeaseState}, {t.RetentionUntil}, {now}, {t.Result}, {t.ResultContract} FROM {t.Table} WHERE {t.TenantId} = @TenantId AND {t.Key} = @IdempotencyKey;"
             )
         );
 
@@ -217,7 +198,7 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
             new SqlDeleteBatch(
                 t.Table,
                 t.KeyColumnNames,
-                $"{t.RetentionUntil} <= {_dialect.ShiftByDuration(now, "OlderThan", subtract: true)} AND ({t.LeaseExpiresAt} IS NULL OR {t.LeaseExpiresAt} <= {now})",
+                $"{t.RetentionUntil} <= {_dialect.ShiftByDuration(now, "OlderThan", subtract: true)} AND NOT ({live})",
                 "Limit"
             )
         );
@@ -299,14 +280,13 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
                 return existing;
             }
 
-            SqlFenced<RenewalRow, DateTimeOffset> inserted;
+            SqlFenced<object, DateTimeOffset> inserted;
 
             await using (var command = _Command(_insertSql, connection, transaction, key))
             {
                 _AddFingerprint(command, fingerprint);
                 _dialect.AddDuration(command, "Retention", retention);
-                inserted = await _ExecuteAsync(command, lockedRead: false, _ReadTimestampAsync, cancellationToken)
-                    .ConfigureAwait(false);
+                inserted = await _ExecuteAsync(command, _ReadTimestampAsync, cancellationToken).ConfigureAwait(false);
             }
 
             // Not inserted: another transaction committed the row after the locking read; the next round locks it.
@@ -379,16 +359,21 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
 
         var now = await reader.GetFieldValueAsync<DateTimeOffset>(0, cancellationToken).ConfigureAwait(false);
 
+        // Only an active or settled lease names the record's attempt: an idle record was never admitted, and a released
+        // one is held by no attempt. Only an active lease has an expiry that still means anything.
+        var holdsGeneration = row.State is RowLeaseState.Active or RowLeaseState.Settled;
+        var leaseExpiresAt = row.State == RowLeaseState.Active ? row.LeaseExpiresAt : null;
+
         return new IdempotencyRecordState(
             Inserted: false,
-            row.Status,
+            row.State == RowLeaseState.Settled ? IdempotencyRecordStatus.Completed : IdempotencyRecordStatus.Pending,
             row.Fingerprint,
-            row.Generation,
-            row.LeaseExpiresAt,
+            holdsGeneration ? row.Generation : null,
+            leaseExpiresAt,
             row.Result,
             row.RetentionUntil,
             IsRetentionElapsed: row.RetentionUntil <= now,
-            IsLeaseLive: row.LeaseExpiresAt > now,
+            IsLeaseLive: leaseExpiresAt > now,
             row.RecoveryPoint
         );
     }
@@ -417,11 +402,10 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
             key
         );
         _AddFingerprint(command, fingerprint);
-        _dialect.AddDuration(command, "LeaseDuration", leaseDuration);
+        FencedRows.GrantScope(_leases, _AdmitPrefix).Bind(command, leaseDuration, holder: null);
         _dialect.AddDuration(command, "Retention", retention);
 
-        var admitted = await _ExecuteAsync(command, lockedRead: false, _ReadGrantAsync, cancellationToken)
-            .ConfigureAwait(false);
+        var admitted = await _ExecuteAsync(command, _ReadGrantAsync, cancellationToken).ConfigureAwait(false);
 
         return admitted.Match(
             accepted: static (grant, _) => grant,
@@ -446,18 +430,28 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
         Argument.IsNotNull(contract);
         var (connection, transaction) = _RequireLive(Argument.IsNotNull(unitOfWork));
 
-        await using var command = _Command(_completeSql, connection, transaction, key);
-        _dialect.AddParameter(command, "Generation", SqlColumnType.Int64, generation);
-        _dialect.AddParameter(command, "Result", SqlColumnType.Binary, result);
-        _dialect.AddParameter(
-            command,
-            "ResultContract",
-            SqlColumnType.Text(IdempotencyFieldLimits.ContractMaxLength),
-            contract
+        var write = new FencedRowWrite(
+            Set: _completeSet,
+            Bind: command =>
+            {
+                _dialect.AddParameter(command, "Result", SqlColumnType.Binary, result);
+                _dialect.AddParameter(
+                    command,
+                    "ResultContract",
+                    SqlColumnType.Text(IdempotencyFieldLimits.ContractMaxLength),
+                    contract
+                );
+                _dialect.AddDuration(command, "Retention", retention);
+            }
         );
-        _dialect.AddDuration(command, "Retention", retention);
 
-        await _WriteOwnedAsync(command, key, "complete", cancellationToken).ConfigureAwait(false);
+        var status = await _FencedAsync(
+                ct => FencedRows.SettleAsync(_leases, connection, transaction, _Token(key, generation), write, ct),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        _RequireEnded(status, LeaseSettlementStatus.Settled, key, "complete");
     }
 
     public async ValueTask ReleaseAsync(
@@ -470,11 +464,18 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
     {
         var (connection, transaction) = _RequireLive(Argument.IsNotNull(unitOfWork));
 
-        await using var command = _Command(_releaseSql, connection, transaction, key);
-        _dialect.AddParameter(command, "Generation", SqlColumnType.Int64, generation);
-        _dialect.AddDuration(command, "Retention", retention);
+        var write = new FencedRowWrite(
+            Set: _releaseSet,
+            Bind: command => _dialect.AddDuration(command, "Retention", retention)
+        );
 
-        await _WriteOwnedAsync(command, key, "release", cancellationToken).ConfigureAwait(false);
+        var status = await _FencedAsync(
+                ct => FencedRows.ReleaseAsync(_leases, connection, transaction, _Token(key, generation), write, ct),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        _RequireEnded(status, LeaseSettlementStatus.Released, key, "release");
     }
 
     public async ValueTask SetRecoveryPointAsync(
@@ -491,49 +492,71 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
         Argument.IsNotNull(contract);
         var (connection, transaction) = _RequireLive(Argument.IsNotNull(unitOfWork));
 
-        await using var command = _Command(_setRecoveryPointSql, connection, transaction, key);
-        _dialect.AddParameter(command, "Generation", SqlColumnType.Int64, generation);
-        _dialect.AddParameter(
-            command,
-            "RecoveryPoint",
-            SqlColumnType.Text(IdempotencyFieldLimits.RecoveryPointMaxLength),
-            point
-        );
-        _dialect.AddParameter(command, "RecoveryState", SqlColumnType.Binary, state);
-        _dialect.AddParameter(
-            command,
-            "RecoveryContract",
-            SqlColumnType.Text(IdempotencyFieldLimits.ContractMaxLength),
-            contract
+        var write = new FencedRowWrite(
+            Set: _setRecoveryPointSet,
+            Bind: command =>
+            {
+                _dialect.AddParameter(
+                    command,
+                    "RecoveryPoint",
+                    SqlColumnType.Text(IdempotencyFieldLimits.RecoveryPointMaxLength),
+                    point
+                );
+                _dialect.AddParameter(command, "RecoveryState", SqlColumnType.Binary, state);
+                _dialect.AddParameter(
+                    command,
+                    "RecoveryContract",
+                    SqlColumnType.Text(IdempotencyFieldLimits.ContractMaxLength),
+                    contract
+                );
+            }
         );
 
-        await _WriteOwnedAsync(command, key, "set the recovery point of", cancellationToken).ConfigureAwait(false);
-    }
-
-    private static async Task _WriteOwnedAsync(
-        DbCommand command,
-        IdempotencyRecordKey key,
-        string verb,
-        CancellationToken cancellationToken
-    )
-    {
-        var written = await _ExecuteAsync(
-                command,
-                lockedRead: false,
-                static (_, _) => ValueTask.FromResult(true),
+        var written = await _FencedAsync(
+                ct =>
+                    FencedRows.WriteAsync(
+                        _leases,
+                        connection,
+                        transaction,
+                        _Token(key, generation),
+                        write,
+                        static (_, _) => ValueTask.FromResult(true),
+                        ct
+                    ),
                 cancellationToken
             )
             .ConfigureAwait(false);
 
-        // The caller locked the record and checked its generation in this transaction, so the row cannot have changed
-        // since; a refusal means the table was changed outside this provider or the caller skipped the lock.
         _ = written.Match(
             accepted: static (_, _) => true,
-            rejected: _ =>
-                throw new InvalidOperationException(
-                    $"Could not {verb} the idempotency record '{key.Key}': it was not found at the expected generation "
-                        + "inside the transaction that locked it."
-                )
+            rejected: before =>
+                throw _NotOwned(key, "set the recovery point of", before?.Status.ToString() ?? "missing")
+        );
+    }
+
+    /// <summary>
+    /// The caller locked the record and found it held by this generation in this transaction, so only an attempt
+    /// that expired between that read and this write, a table changed outside this provider, or a caller that skipped
+    /// the lock reaches a refusal.
+    /// </summary>
+    private static void _RequireEnded(
+        LeaseSettlementStatus status,
+        LeaseSettlementStatus expected,
+        IdempotencyRecordKey key,
+        string verb
+    )
+    {
+        if (status != expected)
+        {
+            throw _NotOwned(key, verb, status.ToString());
+        }
+    }
+
+    private static InvalidOperationException _NotOwned(IdempotencyRecordKey key, string verb, string found)
+    {
+        return new InvalidOperationException(
+            $"Could not {verb} the idempotency record '{key.Key}': its lease was not current at the expected "
+                + $"generation inside the transaction that locked it (found: {found})."
         );
     }
 
@@ -552,35 +575,42 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
             "idempotency.renew",
             async (connection, transaction, ct) =>
             {
-                await using var command = _Command(_renewSql, connection, transaction, key);
-                _dialect.AddParameter(command, "Generation", SqlColumnType.Int64, generation);
-                _dialect.AddDuration(command, "LeaseDuration", leaseDuration);
-
-                var renewed = await _ExecuteAsync(command, lockedRead: true, _ReadTimestampAsync, ct)
+                var renewed = await _FencedAsync(
+                        token =>
+                            FencedRows.RenewAsync(
+                                _leases,
+                                connection,
+                                transaction,
+                                _Token(key, generation),
+                                leaseDuration,
+                                token
+                            ),
+                        ct
+                    )
                     .ConfigureAwait(false);
 
-                // The fence is this generation, pending, and live by the database clock, so a refused row still pending
-                // at this generation has an expired lease.
-                return renewed.Match(
-                    accepted: static (expiresAt, _) =>
-                        new IdempotentLeaseRenewal(IdempotentLeaseStatus.Current, expiresAt),
-                    rejected: before =>
-                        before is null
-                            ? new IdempotentLeaseRenewal(IdempotentLeaseStatus.Stale, ExpiresAt: null)
-                            : IdempotencyLeaseClassifier.Classify(
-                                before.Status,
-                                before.Generation,
-                                isLeaseLive: false,
-                                generation
-                            ) switch
-                            {
-                                IdempotentLeaseStatus.Expired => new IdempotentLeaseRenewal(
-                                    IdempotentLeaseStatus.Expired,
-                                    before.LeaseExpiresAt
-                                ),
-                                var refused => new IdempotentLeaseRenewal(refused, ExpiresAt: null),
-                            }
-                );
+                // Settled and released are reported only to the generation that ended the lease; any other
+                // generation, including one a later attempt replaced and then released, is stale.
+                return renewed.Status switch
+                {
+                    LeaseRenewalStatus.Renewed => new IdempotentLeaseRenewal(
+                        IdempotentLeaseStatus.Current,
+                        renewed.ExpiresAt
+                    ),
+                    LeaseRenewalStatus.Expired => new IdempotentLeaseRenewal(
+                        IdempotentLeaseStatus.Expired,
+                        renewed.ExpiresAt
+                    ),
+                    LeaseRenewalStatus.Settled => new IdempotentLeaseRenewal(
+                        IdempotentLeaseStatus.Completed,
+                        ExpiresAt: null
+                    ),
+                    LeaseRenewalStatus.Released => new IdempotentLeaseRenewal(
+                        IdempotentLeaseStatus.Released,
+                        ExpiresAt: null
+                    ),
+                    _ => new IdempotentLeaseRenewal(IdempotentLeaseStatus.Stale, ExpiresAt: null),
+                };
             },
             cancellationToken
         );
@@ -603,7 +633,7 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
                     return IdempotencyPeekStatus.Absent;
                 }
 
-                var status = (IdempotencyRecordStatus)reader.GetInt16(0);
+                var state = (RowLeaseState)reader.GetInt16(0);
                 var retentionUntil = await reader.GetFieldValueAsync<DateTimeOffset>(1, ct).ConfigureAwait(false);
                 var now = await reader.GetFieldValueAsync<DateTimeOffset>(2, ct).ConfigureAwait(false);
 
@@ -612,19 +642,14 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
                     return IdempotencyPeekStatus.Absent;
                 }
 
-                if (status == IdempotencyRecordStatus.Completed)
+                if (state == RowLeaseState.Settled)
                 {
                     return IdempotencyPeekStatus.Completed;
                 }
 
-                // A waiter polls this to learn when it may take the key, so a record no attempt holds (released, or
-                // its lease expired) must read differently from one an attempt is still running under.
-                var generation = await _ReadInt64OrNullAsync(reader, 3, ct).ConfigureAwait(false);
-                var leaseExpiresAt = await _ReadTimestampOrNullAsync(reader, 4, ct).ConfigureAwait(false);
-
-                return generation is not null && leaseExpiresAt > now
-                    ? IdempotencyPeekStatus.Pending
-                    : IdempotencyPeekStatus.Released;
+                // A waiter polls this to learn when it may take the key, so a record no attempt holds (never admitted,
+                // released, or its lease expired) must read differently from one an attempt is still running under.
+                return reader.GetInt32(3) == 1 ? IdempotencyPeekStatus.Pending : IdempotencyPeekStatus.Released;
             },
             cancellationToken
         );
@@ -647,16 +672,16 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
                     return null;
                 }
 
-                var status = (IdempotencyRecordStatus)reader.GetInt16(0);
+                var state = (RowLeaseState)reader.GetInt16(0);
                 var retentionUntil = await reader.GetFieldValueAsync<DateTimeOffset>(1, ct).ConfigureAwait(false);
                 var now = await reader.GetFieldValueAsync<DateTimeOffset>(2, ct).ConfigureAwait(false);
 
-                if (status != IdempotencyRecordStatus.Completed || retentionUntil <= now)
+                if (state != RowLeaseState.Settled || retentionUntil <= now)
                 {
                     return null;
                 }
 
-                // A completed record always carries its result and contract (a check constraint enforces it).
+                // A settled record always carries its result and contract (a check constraint enforces it).
                 var result = await reader.GetFieldValueAsync<byte[]>(3, ct).ConfigureAwait(false);
 
                 return new IdempotentResult(result, reader.GetString(4));
@@ -786,9 +811,29 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
         _dialect.AddParameter(command, "Fingerprint", SqlColumnType.Binary, fingerprint.Hash);
     }
 
-    private static async Task<SqlFenced<RenewalRow, TAccepted>> _ExecuteAsync<TAccepted>(
+    private FencedRow<IdempotencyRecordKey> _Token(IdempotencyRecordKey key, long generation) =>
+        new(_leases.Name, key, generation);
+
+    /// <summary>Runs a fenced-row operation, surfacing a provider error raised by the cancellation as a cancellation.</summary>
+    private static async Task<T> _FencedAsync<T>(
+        Func<CancellationToken, ValueTask<T>> operation,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            return await operation(cancellationToken).ConfigureAwait(false);
+        }
+        // SqlClient reports a command it cancelled mid-flight as a provider error; surface the cancellation asked for.
+        catch (DbException ex) when (cancellationToken.IsCancellationRequested)
+        {
+            throw new OperationCanceledException(ex.Message, ex, cancellationToken);
+        }
+    }
+
+    /// <summary>Runs an insert or an admission, neither of which starts with a locking read.</summary>
+    private static async Task<SqlFenced<object, TAccepted>> _ExecuteAsync<TAccepted>(
         DbCommand command,
-        bool lockedRead,
         Func<DbDataReader, CancellationToken, ValueTask<TAccepted>> readAccepted,
         CancellationToken cancellationToken
     )
@@ -796,7 +841,13 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
         try
         {
             return await SqlFencedCommand
-                .ExecuteAsync(command, lockedRead, _ReadRenewalRowAsync, readAccepted, cancellationToken)
+                .ExecuteAsync(
+                    command,
+                    lockedRead: false,
+                    static (_, _) => ValueTask.FromResult(_NoLockedRow),
+                    readAccepted,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
         }
         // SqlClient reports a command it cancelled mid-flight as a provider error; surface the cancellation asked for.
@@ -821,16 +872,16 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
     /// <summary>Reads the whole record a locking read returned, from ordinal 0.</summary>
     private static async Task<RecordRow> _ReadRecordAsync(DbDataReader reader, CancellationToken cancellationToken)
     {
-        var status = (IdempotencyRecordStatus)reader.GetInt16(0);
+        var state = (RowLeaseState)reader.GetInt16(0);
         var fingerprint = new IdempotencyFingerprint(
             reader.GetString(1),
             await reader.GetFieldValueAsync<byte[]>(2, cancellationToken).ConfigureAwait(false)
         );
-        var generation = await _ReadInt64OrNullAsync(reader, 3, cancellationToken).ConfigureAwait(false);
+        var generation = reader.GetInt64(3);
         var leaseExpiresAt = await _ReadTimestampOrNullAsync(reader, 4, cancellationToken).ConfigureAwait(false);
         IdempotentResult? result = null;
 
-        if (status == IdempotencyRecordStatus.Completed)
+        if (state == RowLeaseState.Settled)
         {
             result = new IdempotentResult(
                 await reader.GetFieldValueAsync<byte[]>(5, cancellationToken).ConfigureAwait(false),
@@ -852,20 +903,7 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
             );
         }
 
-        return new RecordRow(status, fingerprint, generation, leaseExpiresAt, result, retentionUntil, recoveryPoint);
-    }
-
-    /// <summary>Reads the renewal's locking read: status, generation, and lease expiry, from ordinal 0.</summary>
-    private static async ValueTask<RenewalRow> _ReadRenewalRowAsync(
-        DbDataReader reader,
-        CancellationToken cancellationToken
-    )
-    {
-        return new RenewalRow(
-            (IdempotencyRecordStatus)reader.GetInt16(0),
-            await _ReadInt64OrNullAsync(reader, 1, cancellationToken).ConfigureAwait(false),
-            await _ReadTimestampOrNullAsync(reader, 2, cancellationToken).ConfigureAwait(false)
-        );
+        return new RecordRow(state, fingerprint, generation, leaseExpiresAt, result, retentionUntil, recoveryPoint);
     }
 
     private static ValueTask<DateTimeOffset> _ReadTimestampAsync(
@@ -885,17 +923,6 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
             reader.GetInt64(1),
             await reader.GetFieldValueAsync<DateTimeOffset>(2, cancellationToken).ConfigureAwait(false)
         );
-    }
-
-    private static async Task<long?> _ReadInt64OrNullAsync(
-        DbDataReader reader,
-        int ordinal,
-        CancellationToken cancellationToken
-    )
-    {
-        return await reader.IsDBNullAsync(ordinal, cancellationToken).ConfigureAwait(false)
-            ? null
-            : reader.GetInt64(ordinal);
     }
 
     private static async Task<DateTimeOffset?> _ReadTimestampOrNullAsync(
@@ -924,16 +951,13 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
 
     /// <summary>A record as a locking read found it.</summary>
     private sealed record RecordRow(
-        IdempotencyRecordStatus Status,
+        RowLeaseState State,
         IdempotencyFingerprint Fingerprint,
-        long? Generation,
+        long Generation,
         DateTimeOffset? LeaseExpiresAt,
         IdempotentResult? Result,
         DateTimeOffset RetentionUntil,
         IdempotentRecoveryPoint? RecoveryPoint
     );
-
-    /// <summary>What a renewal's locking read finds: enough to classify a refused renewal.</summary>
-    private sealed record RenewalRow(IdempotencyRecordStatus Status, long? Generation, DateTimeOffset? LeaseExpiresAt);
 }
 #pragma warning restore CA2100

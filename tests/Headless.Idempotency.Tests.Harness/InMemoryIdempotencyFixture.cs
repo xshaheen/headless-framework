@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
+using Headless.Fencing;
 using Headless.Idempotency;
 using Headless.Idempotency.InMemory;
 using Headless.UnitOfWork;
@@ -45,11 +46,13 @@ public class InMemoryIdempotencyFixture : IIdempotencyFixture, IDisposable
             row is null
                 ? null
                 : new StoredRecord(
-                    row.Status,
+                    row.Lease.State == RowLeaseState.Settled
+                        ? IdempotencyRecordStatus.Completed
+                        : IdempotencyRecordStatus.Pending,
                     row.Fingerprint.Algorithm,
                     row.Fingerprint.Hash.ToArray(),
-                    row.Generation,
-                    row.LeaseExpiresAt,
+                    row.Lease.State is RowLeaseState.Active or RowLeaseState.Settled ? row.Lease.Generation : null,
+                    row.Lease.State == RowLeaseState.Active ? row.Lease.ExpiresAt : null,
                     row.Result?.Payload.ToArray(),
                     row.Result?.Contract,
                     row.RetentionUntil,
@@ -73,8 +76,8 @@ public class InMemoryIdempotencyFixture : IIdempotencyFixture, IDisposable
     {
         var row = _storage.Table.Read(key);
         row.Should().NotBeNull("the lease to age must exist");
-        row!.LeaseExpiresAt.Should().NotBeNull("the lease to age must exist");
-        _storage.Table.Write(key, row with { LeaseExpiresAt = row.LeaseExpiresAt - by });
+        row!.Lease.State.Should().Be(RowLeaseState.Active, "the lease to age must exist");
+        _storage.Table.Write(key, row with { Lease = row.Lease with { ExpiresAt = row.Lease.ExpiresAt - by } });
 
         return Task.CompletedTask;
     }
