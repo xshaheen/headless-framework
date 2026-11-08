@@ -22,12 +22,22 @@ public static class SetupMediator
         /// Consumers must register any <see cref="FluentValidation.IValidator{T}" />
         /// implementations separately. Registration is idempotent.
         /// </remarks>
+        /// <param name="lifetime">The behavior's service lifetime.</param>
+        /// <param name="logPayloads">
+        /// <see langword="true"/> to write the whole message and response objects into the Debug entries. They carry whatever
+        /// the caller put in them, so leave this off unless the log pipeline redacts classified members (for example
+        /// <c>Headless.Logging.Serilog</c> with <c>AddRedaction</c>). Any registration that passes <see langword="true"/>
+        /// turns payloads on for every Mediator logging behavior.
+        /// </param>
         /// <returns>The same <see cref="IServiceCollection" /> instance.</returns>
         public IServiceCollection AddMediatorValidationRequestBehavior(
-            ServiceLifetime lifetime = ServiceLifetime.Scoped
+            ServiceLifetime lifetime = ServiceLifetime.Scoped,
+            bool logPayloads = false
         )
         {
             Argument.IsNotNull(services);
+
+            MediatorPayloadLogging.Register(services, logPayloads);
 
             var serviceDescriptor = ServiceDescriptor.Describe(
                 typeof(IPipelineBehavior<,>),
@@ -45,13 +55,23 @@ public static class SetupMediator
         /// Consumers must register <see cref="ICurrentUser" /> separately.
         /// Registration is idempotent.
         /// </remarks>
+        /// <param name="lifetime">The behaviors' service lifetime.</param>
+        /// <param name="logPayloads">
+        /// <see langword="true"/> to write the whole message and response objects into the Debug entries. They carry whatever
+        /// the caller put in them, so leave this off unless the log pipeline redacts classified members (for example
+        /// <c>Headless.Logging.Serilog</c> with <c>AddRedaction</c>). Any registration that passes <see langword="true"/>
+        /// turns payloads on for every Mediator logging behavior.
+        /// </param>
         /// <returns>The same <see cref="IServiceCollection" /> instance.</returns>
-        public IServiceCollection AddMediatorLoggingBehaviors(ServiceLifetime lifetime = ServiceLifetime.Scoped)
+        public IServiceCollection AddMediatorLoggingBehaviors(
+            ServiceLifetime lifetime = ServiceLifetime.Scoped,
+            bool logPayloads = false
+        )
         {
             Argument.IsNotNull(services);
 
-            services.AddMediatorRequestResponseLoggingBehaviors(lifetime);
-            services.AddMediatorSlowRequestsLoggingBehaviors(lifetime);
+            services.AddMediatorRequestResponseLoggingBehaviors(lifetime, logPayloads);
+            services.AddMediatorSlowRequestsLoggingBehaviors(lifetime, logPayloads);
 
             return services;
         }
@@ -61,12 +81,22 @@ public static class SetupMediator
         /// Consumers must register <see cref="ICurrentUser" /> separately.
         /// Registration is idempotent.
         /// </remarks>
+        /// <param name="lifetime">The behaviors' service lifetime.</param>
+        /// <param name="logPayloads">
+        /// <see langword="true"/> to write the whole message and response objects into the Debug entries. They carry whatever
+        /// the caller put in them, so leave this off unless the log pipeline redacts classified members (for example
+        /// <c>Headless.Logging.Serilog</c> with <c>AddRedaction</c>). Any registration that passes <see langword="true"/>
+        /// turns payloads on for every Mediator logging behavior.
+        /// </param>
         /// <returns>The same <see cref="IServiceCollection" /> instance.</returns>
         public IServiceCollection AddMediatorRequestResponseLoggingBehaviors(
-            ServiceLifetime lifetime = ServiceLifetime.Scoped
+            ServiceLifetime lifetime = ServiceLifetime.Scoped,
+            bool logPayloads = false
         )
         {
             Argument.IsNotNull(services);
+
+            MediatorPayloadLogging.Register(services, logPayloads);
 
             services.TryAddEnumerable(
                 ServiceDescriptor.Describe(typeof(IPipelineBehavior<,>), typeof(RequestLoggingBehavior<,>), lifetime)
@@ -84,12 +114,22 @@ public static class SetupMediator
         /// Consumers must register <see cref="ICurrentUser" /> separately.
         /// Registration is idempotent.
         /// </remarks>
+        /// <param name="lifetime">The behavior's service lifetime.</param>
+        /// <param name="logPayloads">
+        /// <see langword="true"/> to write the whole message and response objects into the Debug entries. They carry whatever
+        /// the caller put in them, so leave this off unless the log pipeline redacts classified members (for example
+        /// <c>Headless.Logging.Serilog</c> with <c>AddRedaction</c>). Any registration that passes <see langword="true"/>
+        /// turns payloads on for every Mediator logging behavior.
+        /// </param>
         /// <returns>The same <see cref="IServiceCollection" /> instance.</returns>
         public IServiceCollection AddMediatorSlowRequestsLoggingBehaviors(
-            ServiceLifetime lifetime = ServiceLifetime.Scoped
+            ServiceLifetime lifetime = ServiceLifetime.Scoped,
+            bool logPayloads = false
         )
         {
             Argument.IsNotNull(services);
+
+            MediatorPayloadLogging.Register(services, logPayloads);
 
             var serviceDescriptor = ServiceDescriptor.Describe(
                 typeof(IPipelineBehavior<,>),

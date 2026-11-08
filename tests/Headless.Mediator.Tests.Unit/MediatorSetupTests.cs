@@ -61,6 +61,38 @@ public sealed class MediatorSetupTests
     }
 
     [Fact]
+    public void should_leave_payload_logging_off_when_no_registration_asks_for_it()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        services.AddMediatorLoggingBehaviors();
+        services.AddMediatorValidationRequestBehavior();
+
+        // then
+        using var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<MediatorPayloadLogging>().Enabled.Should().BeFalse();
+    }
+
+    [Fact]
+    public void should_turn_payload_logging_on_when_any_registration_asks_for_it()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when: the opt-in sits between two registrations that leave the default
+        services.AddMediatorValidationRequestBehavior();
+        services.AddMediatorLoggingBehaviors(logPayloads: true);
+        services.AddMediatorRequestResponseLoggingBehaviors();
+
+        // then
+        services.Where(d => d.ServiceType == typeof(MediatorPayloadLogging)).Should().ContainSingle();
+        using var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<MediatorPayloadLogging>().Enabled.Should().BeTrue();
+    }
+
+    [Fact]
     public void should_throw_argument_null_exception_when_services_is_null()
     {
         // given

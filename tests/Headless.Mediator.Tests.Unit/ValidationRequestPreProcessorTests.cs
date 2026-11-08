@@ -3,12 +3,43 @@
 using FluentValidation;
 using Headless.Mediator.Behaviors;
 using Mediator;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Tests;
 
 public sealed class ValidationRequestPreProcessorTests
 {
+    private static readonly MediatorPayloadLogging _PayloadsOff = new(Enabled: false);
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task should_log_failures_always_and_the_message_only_when_payloads_are_on(bool logPayloads)
+    {
+        // given
+        var logger = new CapturingLogger<ValidationRequestPreProcessor<SecretRequest, TestResponse>>();
+        var behavior = new ValidationRequestPreProcessor<SecretRequest, TestResponse>(
+            [new SecretRequestValidator()],
+            logger,
+            new MediatorPayloadLogging(logPayloads)
+        );
+
+        // when
+        var action = async () =>
+            await behavior.Handle(
+                new SecretRequest(ProductId: "", Password: "hunter2"),
+                (_, _) => new ValueTask<TestResponse>(new TestResponse()),
+                CancellationToken.None
+            );
+
+        // then: the failure names the rejected property either way; the message content needs the opt-in
+        await action.Should().ThrowExactlyAsync<FluentValidation.ValidationException>();
+        var entry = logger.Messages.Should().ContainSingle().Subject;
+        entry.Should().Contain("'Product Id' must not be empty.");
+        entry.Contains("hunter2", StringComparison.Ordinal).Should().Be(logPayloads);
+    }
+
     [Fact]
     public async Task should_invoke_next_when_no_validators_are_registered()
     {
@@ -16,7 +47,8 @@ public sealed class ValidationRequestPreProcessorTests
         var response = new TestResponse();
         var behavior = new ValidationRequestPreProcessor<TestRequest, TestResponse>(
             [],
-            NullLogger<ValidationRequestPreProcessor<TestRequest, TestResponse>>.Instance
+            NullLogger<ValidationRequestPreProcessor<TestRequest, TestResponse>>.Instance,
+            _PayloadsOff
         );
         var callCount = 0;
 
@@ -39,7 +71,8 @@ public sealed class ValidationRequestPreProcessorTests
         var response = new TestResponse();
         var behavior = new ValidationRequestPreProcessor<TestRequest, TestResponse>(
             [new TestRequestValidator()],
-            NullLogger<ValidationRequestPreProcessor<TestRequest, TestResponse>>.Instance
+            NullLogger<ValidationRequestPreProcessor<TestRequest, TestResponse>>.Instance,
+            _PayloadsOff
         );
         var callCount = 0;
 
@@ -62,7 +95,8 @@ public sealed class ValidationRequestPreProcessorTests
         var response = new TestResponse();
         var behavior = new ValidationRequestPreProcessor<TestRequest, TestResponse>(
             [new TestRequestValidator()],
-            NullLogger<ValidationRequestPreProcessor<TestRequest, TestResponse>>.Instance
+            NullLogger<ValidationRequestPreProcessor<TestRequest, TestResponse>>.Instance,
+            _PayloadsOff
         );
         var callCount = 0;
 
@@ -87,7 +121,8 @@ public sealed class ValidationRequestPreProcessorTests
         var response = new TestResponse();
         var behavior = new ValidationRequestPreProcessor<TestRequest, TestResponse>(
             [new TestRequestValidator(), new SecondTestRequestValidator()],
-            NullLogger<ValidationRequestPreProcessor<TestRequest, TestResponse>>.Instance
+            NullLogger<ValidationRequestPreProcessor<TestRequest, TestResponse>>.Instance,
+            _PayloadsOff
         );
         var callCount = 0;
 
@@ -112,7 +147,8 @@ public sealed class ValidationRequestPreProcessorTests
         var probe = new OverlapProbe();
         var behavior = new ValidationRequestPreProcessor<TestRequest, TestResponse>(
             [new SlowAsyncValidator(probe, "first"), new SlowAsyncValidator(probe, "second")],
-            NullLogger<ValidationRequestPreProcessor<TestRequest, TestResponse>>.Instance
+            NullLogger<ValidationRequestPreProcessor<TestRequest, TestResponse>>.Instance,
+            _PayloadsOff
         );
 
         // when
@@ -137,7 +173,8 @@ public sealed class ValidationRequestPreProcessorTests
         var action = () =>
             new ValidationRequestPreProcessor<TestRequest, TestResponse>(
                 validators!,
-                NullLogger<ValidationRequestPreProcessor<TestRequest, TestResponse>>.Instance
+                NullLogger<ValidationRequestPreProcessor<TestRequest, TestResponse>>.Instance,
+                _PayloadsOff
             );
 
         // then
@@ -151,7 +188,7 @@ public sealed class ValidationRequestPreProcessorTests
         NullLogger<ValidationRequestPreProcessor<TestRequest, TestResponse>>? logger = null;
 
         // when
-        var action = () => new ValidationRequestPreProcessor<TestRequest, TestResponse>([], logger!);
+        var action = () => new ValidationRequestPreProcessor<TestRequest, TestResponse>([], logger!, _PayloadsOff);
 
         // then
         action.Should().ThrowExactly<ArgumentNullException>().WithParameterName(nameof(logger));
@@ -170,6 +207,34 @@ public sealed class ValidationRequestPreProcessorTests
     private sealed record TestRequest(string ProductId) : IRequest<TestResponse>;
 
     private sealed record TestResponse;
+
+    private sealed record SecretRequest(string ProductId, string Password) : IRequest<TestResponse>;
+
+    private sealed class SecretRequestValidator : AbstractValidator<SecretRequest>
+    {
+        public SecretRequestValidator()
+        {
+            RuleFor(request => request.ProductId).NotEmpty();
+        }
+    }
+
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        public List<string> Messages { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        ) => Messages.Add(formatter(state, exception));
+    }
 
     private sealed class TestRequestValidator : AbstractValidator<TestRequest>
     {

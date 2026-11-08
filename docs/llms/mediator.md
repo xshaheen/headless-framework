@@ -24,7 +24,8 @@ There is exactly one package in this domain. No provider choice is required.
 - **Do NOT push HTTP response shaping into behaviors.** Filters, exception handlers, problem-details factories, and response compression belong in `Headless.Api` or standard ASP.NET Core middleware.
 - **What does belong in the pipeline:** FluentValidation pre-processors, request/response logging, slow-request alerts, typed response transforms, domain-specific retry policies for transient handler faults, instrumentation hooks — anything that operates purely on `IRequest<TResponse>` without HTTP semantics.
 - **`ServiceLifetime` is `Scoped` by default.** Pass `ServiceLifetime.Transient` or `ServiceLifetime.Singleton` explicitly if a behavior must not share state across the request scope. The same lifetime applies to all behaviors registered by a composite call like `AddMediatorLoggingBehaviors`.
-- **`CriticalRequestLoggingBehavior` logs at `Warning`.** The threshold is hard-coded at 1 second. Do not use it as a general performance monitor — it is an alert for unusually slow handlers. The Warning entry carries only the message/response type names, elapsed time, and user ID; the full request/response payloads are emitted in a separate Debug-level entry (`Mediator:SlowMessagePayload`) so credentials or PII inside commands and responses never reach production logs at Warning.
+- **`CriticalRequestLoggingBehavior` logs at `Warning`.** The threshold is hard-coded at 1 second. Do not use it as a general performance monitor — it is an alert for unusually slow handlers. The Warning entry carries only the message/response type names, elapsed time, and user ID.
+- **Payloads stay out of the logs unless you opt in.** By default the Debug entries carry the user ID, the message and response type names, and (for validation) each failure's property name and message, never the message or response objects. Pass `logPayloads: true` to any of the registration extensions to add the whole objects (`{@Message}`, `{@Response}`, and the separate `Mediator:SlowMessagePayload` entry). They hold whatever the caller put in them (passwords, tokens, personal data), so turn it on only for a debugging session or where the log pipeline redacts sensitive members. Any registration that passes `true` turns payloads on for every Mediator logging behavior.
 
 ## Core Concepts
 
@@ -38,9 +39,9 @@ The three logging behaviors are registered by `AddMediatorLoggingBehaviors()`:
 
 | Behavior | Base class | Log level | Logs |
 | --- | --- | --- | --- |
-| `RequestLoggingBehavior<TMessage, TResponse>` | `MessagePreProcessor<,>` | Debug | Message name + payload before handler |
-| `ResponseLoggingBehavior<TMessage, TResponse>` | `MessagePostProcessor<,>` | Debug | Message + response after handler |
-| `CriticalRequestLoggingBehavior<TMessage, TResponse>` | `IPipelineBehavior<,>` | Warning (names) + Debug (payload) | Elapsed time + type names at Warning; full payloads in a separate Debug entry when handler takes ≥ 1 second |
+| `RequestLoggingBehavior<TMessage, TResponse>` | `MessagePreProcessor<,>` | Debug | Message name before handler; the message too with `logPayloads: true` |
+| `ResponseLoggingBehavior<TMessage, TResponse>` | `MessagePostProcessor<,>` | Debug | Message and response names after handler; both objects too with `logPayloads: true` |
+| `CriticalRequestLoggingBehavior<TMessage, TResponse>` | `IPipelineBehavior<,>` | Warning (names) + Debug (payload, opt-in) | Elapsed time + type names at Warning when the handler takes ≥ 1 second; with `logPayloads: true`, the full payloads in a separate Debug entry |
 
 All three inject `ICurrentUser` so they include the current user ID in log entries and work identically in API, worker, and console hosts.
 
