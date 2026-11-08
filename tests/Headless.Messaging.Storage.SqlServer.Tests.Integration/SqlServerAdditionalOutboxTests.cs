@@ -33,10 +33,12 @@ public sealed class SqlServerAdditionalOutboxTests(SqlServerTestFixture fixture)
         // sessions. The drop takes deadlock priority, and a rare victim of it retries. A relay whose session the
         // ALTER killed retries at once and can take the one single-user connection before the DROP, which fails the
         // drop as in use and every later ALTER as single-user and occupied; each attempt therefore kills the
-        // database's sessions first.
+        // database's sessions first. A session can end between the SELECT that lists it and its KILL, which fails the
+        // batch as not an active process; the next attempt lists the sessions again.
         const int deadlockVictim = 1205;
         const int databaseInUse = 3702;
         const int singleUserOccupied = 5064;
+        const int sessionAlreadyEnded = 6106;
         for (var attempt = 1; ; attempt++)
         {
             try
@@ -62,7 +64,9 @@ public sealed class SqlServerAdditionalOutboxTests(SqlServerTestFixture fixture)
             }
             catch (SqlException ex)
                 when (ex.Errors.Cast<SqlError>()
-                        .Any(e => e.Number is deadlockVictim or databaseInUse or singleUserOccupied)
+                        .Any(e =>
+                            e.Number is deadlockVictim or databaseInUse or singleUserOccupied or sessionAlreadyEnded
+                        )
                     && attempt < 10
                 )
             {
