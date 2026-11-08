@@ -80,6 +80,7 @@ internal sealed class MessagingTables
         Reason = column("Reason");
         Outcome = column("Outcome");
         StorageId = column("StorageId");
+        OutboxName = column("OutboxName");
         MessageName = column("MessageName");
         Lane = column("Lane");
         ChildStorageId = column("ChildStorageId");
@@ -229,6 +230,8 @@ internal sealed class MessagingTables
     public string Outcome { get; }
 
     public string StorageId { get; }
+
+    public string OutboxName { get; }
 
     public string MessageName { get; }
 

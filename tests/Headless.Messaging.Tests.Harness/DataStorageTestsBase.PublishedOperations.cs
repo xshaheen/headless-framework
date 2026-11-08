@@ -66,6 +66,9 @@ public abstract partial class DataStorageTestsBase
         ledger.Items.Should().OnlyContain(static receipt => receipt.OperationType == MessagingOperationType.Resend);
         ledger.Items.Should().OnlyContain(static receipt => receipt.Outcome == InboxOperationOutcome.Applied);
         ledger.Items.Should().OnlyContain(receipt => receipt.MessageName == name);
+        ledger
+            .Items.Should()
+            .OnlyContain(static receipt => receipt.OutboxName == null, "the rows are in the main store");
         var firstReceipt = ledger
             .Items.Should()
             .ContainSingle(receipt => receipt.OperationId == firstResult.OperationId)
@@ -445,6 +448,73 @@ public abstract partial class DataStorageTestsBase
         receipt.Reason.Should().Be("re-send after repair");
         receipt.OperationType.Should().Be(MessagingOperationType.Resend);
         receipt.Outcome.Should().Be(InboxOperationOutcome.Applied);
+    }
+
+    public virtual async Task should_record_an_additional_outbox_receipt_once_and_refuse_its_operation_id_for_another_outbox()
+    {
+        // given: a change an additional outbox applied to a row this ledger does not hold
+        var storage = GetStorage();
+        var outboxOperations = (IAdditionalOutboxOperations)storage;
+        var actor = $"outbox-receipt-{Guid.NewGuid():N}";
+        var applied = new PublishedOperationResult(
+            Guid.NewGuid(),
+            MessagingOperationType.Resend,
+            InboxOperationOutcome.Applied,
+            Guid.NewGuid(),
+            "billing.invoice",
+            Guid.NewGuid().ToString("N"),
+            MessageLane.Bus,
+            actor,
+            "billing broker recovered",
+            DateTimeOffset.UtcNow
+        );
+
+        // when: the receipt is recorded, recorded again, and then recorded under the same id for another outbox
+        var first = await outboxOperations.RecordOutboxReceiptAsync("billing", applied, AbortToken);
+        var replay = await outboxOperations.RecordOutboxReceiptAsync("billing", applied, AbortToken);
+        var otherOutbox = await outboxOperations.RecordOutboxReceiptAsync("shipping", applied, AbortToken);
+        var ledger = await _PublishedLedgerAsync(storage, actor);
+
+        // then: one receipt describes the change, the repeat replays it, and the other outbox is a conflict
+        first.Outcome.Should().Be(InboxOperationOutcome.Applied);
+        first.IsReplay.Should().BeFalse();
+        replay.IsReplay.Should().BeTrue();
+        replay.Outcome.Should().Be(InboxOperationOutcome.Applied);
+        otherOutbox.Outcome.Should().Be(InboxOperationOutcome.OperationConflict);
+        var receipt = ledger.Items.Should().ContainSingle().Which;
+        receipt.OperationId.Should().Be(applied.OperationId);
+        receipt.StorageId.Should().Be(applied.StorageId);
+        receipt.OperationType.Should().Be(MessagingOperationType.Resend);
+        receipt.Outcome.Should().Be(InboxOperationOutcome.Applied);
+        receipt.Reason.Should().Be("billing broker recovered");
+        receipt.OutboxName.Should().Be("billing");
+    }
+
+    public virtual async Task should_refuse_a_published_write_without_a_receipt_on_the_store_that_holds_the_ledger()
+    {
+        // given: a failed row on the store that holds the operator ledger
+        var storage = GetStorage();
+        var message = await _FailPublishedAsync(storage, $"outbox-apply-{Guid.NewGuid():N}");
+        var before = await _PublishedSnapshotAsync(storage, message.StorageId);
+        var request = new PublishedOperationRequest(
+            Guid.NewGuid(),
+            message.StorageId,
+            null,
+            "re-send after repair",
+            _Operator($"outbox-apply-{Guid.NewGuid():N}")
+        );
+
+        // when
+        var apply = async () =>
+            await ((IAdditionalOutboxOperations)storage).ApplyPublishedWithoutReceiptAsync(
+                MessagingOperationType.Resend,
+                request,
+                AbortToken
+            );
+
+        // then: the change would leave no audit row, so it is refused and the row stays as it was
+        await apply.Should().ThrowAsync<InvalidOperationException>();
+        (await _PublishedSnapshotAsync(storage, message.StorageId)).Should().Be(before);
     }
 
     public virtual async Task should_scope_a_published_delete_to_both_terminal_statuses_and_a_resend_to_failures()

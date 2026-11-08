@@ -159,6 +159,224 @@ public sealed class MessagingCommandRuleTests : TestBase
         failed.Reason.Should().Be("The receipt could not be written.");
     }
 
+    [Theory]
+    [InlineData(MessagingCommands.ResendId, MessagingOperationType.Resend)]
+    [InlineData(MessagingCommands.DeleteId, MessagingOperationType.Purge)]
+    public async Task should_change_the_row_on_the_outbox_and_record_its_receipt_in_the_main_store_when_the_row_is_in_an_additional_outbox(
+        string commandId,
+        MessagingOperationType expectedType
+    )
+    {
+        // given
+        await using var main = _MainStore(out var primary);
+        await using var billing = _MainStore(out var backing);
+        var row = await MessagingRows.PublishedAsync(backing, "invoice-1", StatusName.Failed, AbortToken);
+        var outbox = _Outbox(backing);
+        await using var services = new ServiceCollection().BuildServiceProvider();
+        var module = _Module(_Stores(primary, outbox), services);
+        var id = $"node-a~billing~{row.StorageId:D}";
+
+        // when
+        var result = await module.ExecuteAsync(_Request(commandId, id), AbortToken);
+
+        // then
+        result.Refusal.Should().BeNull();
+        var done = result.Rows.Should().ContainSingle().Subject;
+        done.Outcome.Should().Be(DashboardRowOutcome.Done);
+        done.Reason.Should().BeNull();
+        await ((IAdditionalOutboxOperations)outbox)
+            .Received(1)
+            .ApplyPublishedWithoutReceiptAsync(
+                expectedType,
+                Arg.Is<PublishedOperationRequest>(write => write.StorageId == row.StorageId),
+                Arg.Any<CancellationToken>()
+            );
+        var receipt = (await _PublishedReceiptsAsync(primary)).Should().ContainSingle().Subject;
+        receipt.OperationType.Should().Be(expectedType);
+        receipt.Outcome.Should().Be(InboxOperationOutcome.Applied);
+        receipt.StorageId.Should().Be(row.StorageId);
+        receipt.Actor.Should().Be("ops");
+        receipt.Reason.Should().Be("operator check");
+        receipt.OutboxName.Should().Be("billing");
+    }
+
+    [Fact]
+    public async Task should_keep_the_row_done_and_note_the_missing_receipt_when_the_main_store_receipt_write_fails_for_an_outbox_row()
+    {
+        // given
+        await using var main = _MainStore(out var real);
+        await using var billing = _MainStore(out var backing);
+        var row = await MessagingRows.PublishedAsync(backing, "invoice-1", StatusName.Failed, AbortToken);
+        var primary = Substitute.For<IDataStorage, IAdditionalOutboxOperations>();
+        primary.GetMonitoringApi().Returns(real.GetMonitoringApi());
+        ((IAdditionalOutboxOperations)primary)
+            .RecordOutboxReceiptAsync(
+                Arg.Any<string>(),
+                Arg.Any<PublishedOperationResult>(),
+                Arg.Any<CancellationToken>()
+            )
+            .ThrowsAsync(new InvalidOperationException("The ledger is unreachable."));
+        await using var services = new ServiceCollection().BuildServiceProvider();
+        var module = _Module(_Stores(primary, _Outbox(backing)), services);
+        var id = $"node-a~billing~{row.StorageId:D}";
+
+        // when
+        var result = await module.ExecuteAsync(_Request(MessagingCommands.ResendId, id), AbortToken);
+
+        // then: the outbox already re-sent the row, so the change stands and the gap is reported beside it
+        var done = result.Rows.Should().ContainSingle().Subject;
+        done.Outcome.Should().Be(DashboardRowOutcome.Done);
+        done.Reason.Should().Be("The receipt was not recorded: The ledger is unreachable.");
+        var resent = await backing.GetMonitoringApi().GetPublishedMessageAsync(row.StorageId, AbortToken);
+        resent!.NextRetryAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task should_skip_the_row_as_not_supported_when_the_outbox_storage_cannot_write_without_a_receipt()
+    {
+        // given
+        await using var main = _MainStore(out var primary);
+        await using var billing = _MainStore(out var backing);
+        var row = await MessagingRows.PublishedAsync(backing, "invoice-1", StatusName.Failed, AbortToken);
+        var outbox = Substitute.For<IDataStorage>();
+        outbox.GetMonitoringApi().Returns(backing.GetMonitoringApi());
+        await using var services = new ServiceCollection().BuildServiceProvider();
+        var module = _Module(_Stores(primary, outbox), services);
+        var id = $"node-a~billing~{row.StorageId:D}";
+
+        // when
+        var result = await module.ExecuteAsync(_Request(MessagingCommands.ResendId, id), AbortToken);
+
+        // then
+        result.Refusal.Should().Be(MessagingCommands.NotSupportedForOutboxes);
+        var skipped = result.Rows.Should().ContainSingle().Subject;
+        skipped.Outcome.Should().Be(DashboardRowOutcome.Skipped);
+        skipped.Reason.Should().Be(MessagingCommands.NotSupportedForOutboxes);
+        (await _PublishedReceiptsAsync(primary)).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_run_a_re_send_operation_over_the_outbox_with_receipts_in_the_main_store_when_the_filter_names_the_outbox()
+    {
+        // given
+        await using var main = _MainStore(out var primary);
+        await using var billing = _MainStore(out var backing);
+        var first = await MessagingRows.PublishedAsync(backing, "invoice-1", StatusName.Failed, AbortToken);
+        var second = await MessagingRows.PublishedAsync(backing, "invoice-2", StatusName.Failed, AbortToken);
+        await using var services = new ServiceCollection().BuildServiceProvider();
+        var module = _Module(_Stores(primary, _Outbox(backing)), services);
+        using var filter = JsonDocument.Parse("""{ "store": "billing", "status": "Failed" }""");
+
+        // when
+        var scope = await module.PrepareAsync(
+            new DashboardOperationScopeRequest
+            {
+                CommandId = MessagingCommands.ResendId,
+                Filter = filter.RootElement,
+                CountLimit = 100,
+                SampleSize = 5,
+                User = _Operator(),
+            },
+            AbortToken
+        );
+        var chunk = await module.RunChunkAsync(
+            new DashboardOperationChunkRequest
+            {
+                CommandId = MessagingCommands.ResendId,
+                Filter = filter.RootElement,
+                HighWaterMark = scope.HighWaterMark,
+                ChunkSize = 500,
+                Reason = "billing broker recovered",
+                User = _Operator(),
+            },
+            AbortToken
+        );
+
+        // then
+        scope.Count.Should().Be(2);
+        chunk.NextCursor.Should().BeNull();
+        chunk.Rows.Should().HaveCount(2).And.OnlyContain(row => row.Outcome == DashboardRowOutcome.Done);
+        chunk
+            .Rows.Select(row => row.Id)
+            .Should()
+            .BeEquivalentTo($"node-a~billing~{first.StorageId:D}", $"node-a~billing~{second.StorageId:D}");
+        (await _PublishedReceiptsAsync(primary))
+            .Should()
+            .OnlyContain(static receipt => receipt.OutboxName == "billing")
+            .And.Subject.Select(receipt => receipt.StorageId)
+            .Should()
+            .BeEquivalentTo([first.StorageId, second.StorageId]);
+    }
+
+    [Fact]
+    public async Task should_refuse_a_received_row_operation_when_the_filter_names_an_additional_outbox()
+    {
+        // given
+        await using var main = _MainStore(out var primary);
+        await using var billing = _MainStore(out var backing);
+        await using var services = new ServiceCollection().BuildServiceProvider();
+        var module = _Module(_Stores(primary, _Outbox(backing)), services);
+        using var filter = JsonDocument.Parse("""{ "store": "billing" }""");
+
+        // when
+        var prepare = async () =>
+            await module.PrepareAsync(
+                new DashboardOperationScopeRequest
+                {
+                    CommandId = MessagingCommands.ReExecuteId,
+                    Filter = filter.RootElement,
+                    CountLimit = 100,
+                    SampleSize = 5,
+                    User = _Operator(),
+                },
+                AbortToken
+            );
+
+        // then
+        await prepare.Should().ThrowAsync<ArgumentException>().WithMessage("Store 'billing' is an additional outbox*");
+    }
+
+    // A second in-memory store stands in for the outbox's database: its own API performs the write, while the ledger
+    // the tests read is the main store's.
+    private static IDataStorage _Outbox(IDataStorage backing)
+    {
+        var outbox = Substitute.For<IDataStorage, IAdditionalOutboxOperations>();
+        var published = backing.GetPublishedOperationsApi();
+        outbox.GetMonitoringApi().Returns(backing.GetMonitoringApi());
+        outbox.GetPublishedOperationsApi().Returns(published);
+        outbox
+            .GetLatestMessageChangeMarkerAsync(Arg.Any<CancellationToken>())
+            .Returns(call => backing.GetLatestMessageChangeMarkerAsync(call.Arg<CancellationToken>()));
+        ((IAdditionalOutboxOperations)outbox)
+            .ApplyPublishedWithoutReceiptAsync(
+                Arg.Any<MessagingOperationType>(),
+                Arg.Any<PublishedOperationRequest>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(call =>
+                call.Arg<MessagingOperationType>() == MessagingOperationType.Resend
+                    ? published.ResendAsync(call.Arg<PublishedOperationRequest>(), call.Arg<CancellationToken>())
+                    : published.PurgeAsync(call.Arg<PublishedOperationRequest>(), call.Arg<CancellationToken>())
+            );
+
+        return outbox;
+    }
+
+    private static async Task<IReadOnlyList<MessagingOperationReceiptView>> _PublishedReceiptsAsync(
+        IDataStorage storage
+    )
+    {
+        var page = await storage
+            .GetInboxOperationsApi()
+            .QueryReceiptsAsync(
+                new MessagingOperationReceiptQuery { TargetKind = MessagingOperationTargetKind.Published },
+                new OperatorAuthorizationContext(_Operator()),
+                AbortToken
+            );
+
+        return page.Items;
+    }
+
     private ServiceProvider _MainStore(out IDataStorage storage)
     {
         var services = new ServiceCollection();

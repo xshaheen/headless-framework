@@ -280,7 +280,8 @@ public sealed record DashboardRowResult
     public required DashboardRowOutcome Outcome { get; init; }
 
     /// <summary>
-    /// Gets why the row was skipped or failed, such as <c>no longer failed</c>, or <see langword="null"/>.
+    /// Gets why the row was skipped or failed, such as <c>no longer failed</c>, or <see langword="null"/>. A done row
+    /// may carry a note the operator needs beside the change, such as a part of it that did not complete.
     /// </summary>
     public string? Reason { get; init; }
 }

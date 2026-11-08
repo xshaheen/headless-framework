@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using System.Security.Claims;
 using System.Threading.Channels;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
@@ -410,6 +411,7 @@ public sealed class SimulationKitTests : TestBase
             typeof(IDeliveryCoordinationResolver),
             typeof(ICoordinatedMessageStore),
             typeof(IMessageRevocationStorage),
+            typeof(IAdditionalOutboxOperations),
         ];
 
         // when
@@ -421,6 +423,50 @@ public sealed class SimulationKitTests : TestBase
         decoratorCapabilities.Should().BeEquivalentTo(innerCapabilities);
         store.Services.GetRequiredService<IDataStorage>().Should().BeSameAs(store.Storage);
         store.Services.GetRequiredService<IDeliveryCoordinationResolver>().Should().BeSameAs(store.Storage);
+    }
+
+    [Fact]
+    public async Task should_record_an_additional_outbox_receipt_in_the_wrapped_store_when_written_through_the_decorator()
+    {
+        // given
+        await using var store = _CreateStore();
+        var applied = new PublishedOperationResult(
+            Guid.NewGuid(),
+            MessagingOperationType.Purge,
+            InboxOperationOutcome.Applied,
+            Guid.NewGuid(),
+            SimulationOrder.Name,
+            "order-1",
+            MessageLane.Bus,
+            "ops",
+            "billing broker recovered",
+            store.Clock.GetUtcNow()
+        );
+
+        // when
+        var first = await ((IAdditionalOutboxOperations)store.Storage).RecordOutboxReceiptAsync(
+            "billing",
+            applied,
+            AbortToken
+        );
+        var direct = await ((IAdditionalOutboxOperations)store.Storage.Inner).RecordOutboxReceiptAsync(
+            "billing",
+            applied,
+            AbortToken
+        );
+
+        // then: the wrapped store already holds the receipt, so writing it there directly replays it
+        first.IsReplay.Should().BeFalse();
+        direct.IsReplay.Should().BeTrue();
+        direct.Outcome.Should().Be(InboxOperationOutcome.Applied);
+        var ledger = await store
+            .Storage.GetInboxOperationsApi()
+            .QueryReceiptsAsync(
+                new MessagingOperationReceiptQuery { Actor = "ops" },
+                new OperatorAuthorizationContext(new ClaimsPrincipal(new ClaimsIdentity(authenticationType: "test"))),
+                AbortToken
+            );
+        ledger.Items.Should().ContainSingle().Which.OutboxName.Should().Be("billing");
     }
 
     private static async Task<SimulationHost> _StartConsumerHostAsync()

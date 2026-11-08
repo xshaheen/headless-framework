@@ -91,20 +91,29 @@ internal static class OperationEndpoints
         }
 
         var filter = body.Filter!.Value;
+        DashboardOperationScope scope;
 
-        var scope = await ((IDashboardOperationRunner)module.Module)
-            .PrepareAsync(
-                new DashboardOperationScopeRequest
-                {
-                    CommandId = command!.Id,
-                    Filter = filter,
-                    CountLimit = CommandRules.MaxRows,
-                    SampleSize = CommandRules.SampleSize,
-                    User = context.User,
-                },
-                cancellationToken
-            )
-            .ConfigureAwait(false);
+        try
+        {
+            scope = await ((IDashboardOperationRunner)module.Module)
+                .PrepareAsync(
+                    new DashboardOperationScopeRequest
+                    {
+                        CommandId = command!.Id,
+                        Filter = filter,
+                        CountLimit = CommandRules.MaxRows,
+                        SampleSize = CommandRules.SampleSize,
+                        User = context.User,
+                    },
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+        catch (ArgumentException exception)
+        {
+            // The runner refuses a filter it does not accept, such as an unknown store, before it reads anything.
+            return CommandEndpoints.Invalid(new CommandFieldError("filter", "invalid", _Message(exception)));
+        }
 
         if (scope.Count > CommandRules.MaxRows)
         {
@@ -277,6 +286,14 @@ internal static class OperationEndpoints
                 )
                 .ConfigureAwait(false);
         }
+        catch (ArgumentException exception)
+        {
+            // The runner checks the scope and the cursor before it changes a row, so a refused one changed nothing and,
+            // like every other refused call, writes no log entry.
+            return CommandEndpoints.Invalid(
+                new CommandFieldError(body.Cursor is null ? "token" : "cursor", "invalid", _Message(exception))
+            );
+        }
         catch
         {
             // The module may have changed some rows of the chunk before it failed; the attempt is recorded before the
@@ -308,6 +325,19 @@ internal static class OperationEndpoints
             new OperationChunkResponse(token.OperationId, chunk.Rows, chunk.NextCursor, chunk.NextCursor is null),
             CommandEndpoints.JsonOptions
         );
+    }
+
+    /// <summary>
+    /// The refusal without the <c> (Parameter 'request')</c> suffix .NET adds for a developer: the operator who reads it
+    /// never named that parameter.
+    /// </summary>
+    private static string _Message(ArgumentException exception)
+    {
+        var suffix = $" (Parameter '{exception.ParamName}')";
+
+        return exception.ParamName is not null && exception.Message.EndsWith(suffix, StringComparison.Ordinal)
+            ? exception.Message[..^suffix.Length]
+            : exception.Message;
     }
 
     private static JsonElement _ParseElement(string json)

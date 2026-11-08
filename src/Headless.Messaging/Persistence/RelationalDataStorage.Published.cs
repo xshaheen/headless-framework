@@ -10,9 +10,10 @@ namespace Headless.Messaging.Persistence;
 #pragma warning disable CA1849 // Buffered row reads cannot add blocking I/O.
 
 // Audited re-send and delete of published rows, single-row and as Operations over a frozen scope. The receipt is
-// written in the transaction that changes the row; an additional outbox's database holds no ledger, so it serves
-// the scope reads and refuses the writes.
-internal sealed partial class RelationalDataStorage
+// written in the transaction that changes the row. An additional outbox's database holds no ledger: its public API
+// serves the scope reads and refuses the writes, and the dashboard applies a write through the internal seam, then
+// records the receipt on the primary storage.
+internal sealed partial class RelationalDataStorage : IAdditionalOutboxOperations
 {
     private const string _PublishedTargetKind = "Published";
 
@@ -156,20 +157,7 @@ internal sealed partial class RelationalDataStorage
                 {
                     await _LockOperationAsync(connection, transaction, request.OperationId, ct).ConfigureAwait(false);
 
-                    var attempt = new RowOperationReceipt(
-                        request.OperationId,
-                        _PublishedTargetKind,
-                        operationType,
-                        default,
-                        request.StorageId,
-                        ExpectedDueAt: null,
-                        MessageName: null,
-                        MessageId: null,
-                        Lane: null,
-                        request.Actor,
-                        request.StoredReason,
-                        default
-                    );
+                    var attempt = _PublishedAttempt(operationType, request);
                     var replay = await _ReplayRowOperationAsync(connection, transaction, attempt, ct)
                         .ConfigureAwait(false);
                     if (replay is not null)
@@ -177,47 +165,8 @@ internal sealed partial class RelationalDataStorage
                         return _ToPublishedResult(replay, isReplay: true);
                     }
 
-                    var (row, now) = await _ReadPublishedOperationRowAsync(
-                            connection,
-                            transaction,
-                            request.StorageId,
-                            ct
-                        )
+                    var receipt = await _ApplyPublishedOperationAsync(connection, transaction, attempt, request, ct)
                         .ConfigureAwait(false);
-                    var outcome = MessagingOperationEvaluator.EvaluatePublished(
-                        operationType,
-                        request.ExpectedChangedAt,
-                        row is null ? null : row.State with { HasLiveLease = row.LockedUntil > now }
-                    );
-
-                    if (outcome is InboxOperationOutcome.Applied)
-                    {
-                        var written = await _WritePublishedOperationAsync(
-                                connection,
-                                transaction,
-                                operationType,
-                                request,
-                                now,
-                                ct
-                            )
-                            .ConfigureAwait(false);
-
-                        // The locked read decided the row is eligible; a write that still changes nothing is a refusal,
-                        // never a second change.
-                        if (written == 0)
-                        {
-                            outcome = InboxOperationOutcome.StateConflict;
-                        }
-                    }
-
-                    var receipt = attempt with
-                    {
-                        Outcome = outcome,
-                        MessageName = row?.MessageName,
-                        MessageId = row?.MessageId,
-                        Lane = row?.Lane,
-                        CreatedAt = now,
-                    };
                     await _WriteRowOperationReceiptAndAuditAsync(connection, transaction, receipt, ct)
                         .ConfigureAwait(false);
 
@@ -227,6 +176,195 @@ internal sealed partial class RelationalDataStorage
                 cancellationToken
             )
             .ConfigureAwait(false);
+    }
+
+    async ValueTask<PublishedOperationResult> IAdditionalOutboxOperations.ApplyPublishedWithoutReceiptAsync(
+        MessagingOperationType operationType,
+        PublishedOperationRequest request,
+        CancellationToken cancellationToken
+    )
+    {
+        Argument.IsNotNull(request);
+        request.Validate();
+        _EnsurePublishedOperationType(operationType);
+
+        // A ledger-holding store records its receipt in the write's own transaction; skipping it here would leave a
+        // change no audit row describes.
+        if (_holdsReceived)
+        {
+            throw new InvalidOperationException(
+                "This storage holds the operator ledger: re-send or delete through its published operations API."
+            );
+        }
+
+        return await SqlAutonomousTransaction
+            .RunAsync(
+                operationType is MessagingOperationType.Resend
+                    ? "messaging.outbox_published_resend"
+                    : "messaging.outbox_published_purge",
+                _CreateConnection,
+                async (connection, transaction, ct) =>
+                {
+                    var receipt = await _ApplyPublishedOperationAsync(
+                            connection,
+                            transaction,
+                            _PublishedAttempt(operationType, request),
+                            request,
+                            ct
+                        )
+                        .ConfigureAwait(false);
+
+                    return _ToPublishedResult(receipt, isReplay: false);
+                },
+                _timeProvider,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    async ValueTask<PublishedOperationResult> IAdditionalOutboxOperations.RecordOutboxReceiptAsync(
+        string outbox,
+        PublishedOperationResult applied,
+        CancellationToken cancellationToken
+    )
+    {
+        Argument.IsNotNullOrWhiteSpace(outbox);
+        Argument.IsNotNull(applied);
+        _EnsurePublishedOperationType(applied.OperationType);
+
+        if (!_holdsReceived)
+        {
+            throw new NotSupportedException(
+                "An additional outbox's database holds no operator ledger, so it cannot record a published-message operation."
+            );
+        }
+
+        var receipt = new RowOperationReceipt(
+            applied.OperationId,
+            _PublishedTargetKind,
+            applied.OperationType,
+            applied.Outcome,
+            applied.StorageId,
+            ExpectedDueAt: null,
+            applied.MessageName,
+            applied.MessageId,
+            applied.Lane,
+            applied.Actor,
+            applied.Reason,
+            applied.CreatedAt,
+            outbox
+        );
+
+        return await SqlAutonomousTransaction
+            .RunAsync(
+                "messaging.outbox_published_receipt",
+                _CreateConnection,
+                async (connection, transaction, ct) =>
+                {
+                    await _LockOperationAsync(connection, transaction, receipt.OperationId, ct).ConfigureAwait(false);
+
+                    var replay = await _ReplayRowOperationAsync(connection, transaction, receipt, ct)
+                        .ConfigureAwait(false);
+                    if (replay is not null)
+                    {
+                        return _ToPublishedResult(replay, isReplay: true);
+                    }
+
+                    await _WriteRowOperationReceiptAndAuditAsync(connection, transaction, receipt, ct)
+                        .ConfigureAwait(false);
+
+                    return _ToPublishedResult(receipt, isReplay: false);
+                },
+                _timeProvider,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    private static void _EnsurePublishedOperationType(MessagingOperationType operationType)
+    {
+        if (operationType is not (MessagingOperationType.Resend or MessagingOperationType.Purge))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(operationType),
+                operationType,
+                "A published-row operation re-sends or deletes."
+            );
+        }
+    }
+
+    private static RowOperationReceipt _PublishedAttempt(
+        MessagingOperationType operationType,
+        PublishedOperationRequest request
+    ) =>
+        new(
+            request.OperationId,
+            _PublishedTargetKind,
+            operationType,
+            default,
+            request.StorageId,
+            ExpectedDueAt: null,
+            MessageName: null,
+            MessageId: null,
+            Lane: null,
+            request.Actor,
+            request.StoredReason,
+            default
+        );
+
+    /// <summary>
+    /// Locks and reads the row, decides the outcome on the database clock, and applies it. Returns the receipt the
+    /// change earns; the caller decides where it is recorded.
+    /// </summary>
+    private async Task<RowOperationReceipt> _ApplyPublishedOperationAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        RowOperationReceipt attempt,
+        PublishedOperationRequest request,
+        CancellationToken cancellationToken
+    )
+    {
+        var (row, now) = await _ReadPublishedOperationRowAsync(
+                connection,
+                transaction,
+                request.StorageId,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+        var outcome = MessagingOperationEvaluator.EvaluatePublished(
+            attempt.OperationType,
+            request.ExpectedChangedAt,
+            row is null ? null : row.State with { HasLiveLease = row.LockedUntil > now }
+        );
+
+        if (outcome is InboxOperationOutcome.Applied)
+        {
+            var written = await _WritePublishedOperationAsync(
+                    connection,
+                    transaction,
+                    attempt.OperationType,
+                    request,
+                    now,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            // The locked read decided the row is eligible; a write that still changes nothing is a refusal, never a
+            // second change.
+            if (written == 0)
+            {
+                outcome = InboxOperationOutcome.StateConflict;
+            }
+        }
+
+        return attempt with
+        {
+            Outcome = outcome,
+            MessageName = row?.MessageName,
+            MessageId = row?.MessageId,
+            Lane = row?.Lane,
+            CreatedAt = now,
+        };
     }
 
     /// <summary>

@@ -54,7 +54,6 @@ internal sealed class JobsCommands(
                 Label = "Requeue",
                 ObjectKind = JobsViews.RunKind,
                 Confirmation = DashboardConfirmation.Confirm,
-                // The shell cannot ask a reason only of an Operation, and an Operation must carry one.
                 RequiresReason = true,
             },
             new()

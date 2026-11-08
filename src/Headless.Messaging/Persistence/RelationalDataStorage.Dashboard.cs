@@ -262,7 +262,7 @@ internal sealed partial class RelationalDataStorage
         }
 
         var sql = $"""
-            SELECT {_t.OperationId},{_t.TargetKind},{_t.OperationType},{_t.Outcome},{_t.Actor},{_t.Reason},{_t.CreatedAt},{_t.StorageId},{_t.GenerationIncarnationId},{_t.ChildStorageId},{_t.MessageName},{_t.MessageId}
+            SELECT {_t.OperationId},{_t.TargetKind},{_t.OperationType},{_t.Outcome},{_t.Actor},{_t.Reason},{_t.CreatedAt},{_t.StorageId},{_t.GenerationIncarnationId},{_t.ChildStorageId},{_t.MessageName},{_t.MessageId},{_t.OutboxName}
             FROM {_t.Receipts}
             WHERE {where}
             ORDER BY {_t.CreatedAt} DESC,{_t.OperationId} DESC
@@ -334,7 +334,8 @@ internal sealed partial class RelationalDataStorage
                                 reader.IsDBNull(8) ? null : reader.GetGuid(8),
                                 reader.IsDBNull(9) ? null : reader.GetGuid(9),
                                 reader.IsDBNull(10) ? null : reader.GetString(10),
-                                reader.IsDBNull(11) ? null : reader.GetString(11)
+                                reader.IsDBNull(11) ? null : reader.GetString(11),
+                                reader.IsDBNull(12) ? null : reader.GetString(12)
                             )
                         );
                     }

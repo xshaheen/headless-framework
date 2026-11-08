@@ -480,7 +480,7 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
             ) AS "ConstraintCount", (
                 SELECT COUNT(*) FROM information_schema.columns
                 WHERE table_schema='headless' AND table_name='messaging_inbox_operation_receipts'
-                  AND column_name IN ('expected_status','outcome','child_incarnation_id','target_kind','expected_due_at','message_name','message_id','lane')
+                  AND column_name IN ('expected_status','outcome','child_incarnation_id','target_kind','expected_due_at','message_name','message_id','lane','outbox_name')
             ) AS "ReceiptColumnCount";
             """
         );
@@ -491,7 +491,7 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
 
         indexCount.Should().Be(2);
         constraintCount.Should().Be(2);
-        receiptColumnCount.Should().Be(8);
+        receiptColumnCount.Should().Be(9);
         steps.Should().Equal("1", "2", "3");
     }
 

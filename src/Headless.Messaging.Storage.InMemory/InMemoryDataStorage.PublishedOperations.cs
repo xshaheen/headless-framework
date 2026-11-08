@@ -2,12 +2,14 @@
 
 using Headless.Checks;
 using Headless.Messaging.Internal;
+using Headless.Messaging.Persistence;
 
 namespace Headless.Messaging.Storage.InMemory;
 
 // Audited re-send and delete of published rows, single-row and as Operations over a frozen scope. Each write and its
-// receipt happen under the store lock the ledger read takes.
-internal sealed partial class InMemoryDataStorage
+// receipt happen under the store lock the ledger read takes. A row an additional outbox holds is changed there, and
+// only its receipt is recorded here.
+internal sealed partial class InMemoryDataStorage : IAdditionalOutboxOperations
 {
     private sealed class InMemoryPublishedOperationsApi(InMemoryDataStorage storage) : IPublishedOperationsApi
     {
@@ -191,12 +193,18 @@ internal sealed partial class InMemoryDataStorage
         InMemoryOperationReceipt receipt,
         PublishedOperationRequest request,
         bool isReplay
+    ) => _ToPublishedResult(receipt, request.StorageId, isReplay);
+
+    private static PublishedOperationResult _ToPublishedResult(
+        InMemoryOperationReceipt receipt,
+        Guid storageId,
+        bool isReplay
     ) =>
         new(
             receipt.OperationId,
             receipt.OperationType,
             receipt.Outcome,
-            request.StorageId,
+            storageId,
             receipt.MessageName,
             receipt.MessageId,
             receipt.Lane is { } lane ? Enum.Parse<MessageLane>(lane) : null,
@@ -205,6 +213,65 @@ internal sealed partial class InMemoryDataStorage
             receipt.CreatedAt,
             isReplay
         );
+
+    // The in-memory storage is always the primary: it holds the ledger and is never an additional outbox.
+    ValueTask<PublishedOperationResult> IAdditionalOutboxOperations.ApplyPublishedWithoutReceiptAsync(
+        MessagingOperationType operationType,
+        PublishedOperationRequest request,
+        CancellationToken cancellationToken
+    ) =>
+        throw new InvalidOperationException(
+            "This storage holds the operator ledger: re-send or delete through its published operations API."
+        );
+
+    ValueTask<PublishedOperationResult> IAdditionalOutboxOperations.RecordOutboxReceiptAsync(
+        string outbox,
+        PublishedOperationResult applied,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Argument.IsNotNullOrWhiteSpace(outbox);
+        Argument.IsNotNull(applied);
+
+        if (applied.OperationType is not (MessagingOperationType.Resend or MessagingOperationType.Purge))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(applied),
+                applied.OperationType,
+                "A published-row operation re-sends or deletes."
+            );
+        }
+
+        var receipt = new InMemoryOperationReceipt(
+            applied.OperationId,
+            MessagingOperationTargetKind.Published,
+            applied.OperationType,
+            applied.Outcome,
+            applied.Actor,
+            applied.Reason,
+            applied.CreatedAt,
+            StorageId: applied.StorageId,
+            MessageName: applied.MessageName,
+            MessageId: applied.MessageId,
+            Lane: applied.Lane?.ToString(),
+            OutboxName: outbox
+        );
+
+        lock (_receivedUpsertLock)
+        {
+            if (_inboxOperationReceipts.TryGetValue(applied.OperationId, out var prior))
+            {
+                return ValueTask.FromResult(
+                    _ToPublishedResult(_ReplayOrConflictRowOperation(prior, receipt), applied.StorageId, isReplay: true)
+                );
+            }
+
+            _RecordRowOperation(receipt);
+
+            return ValueTask.FromResult(_ToPublishedResult(receipt, applied.StorageId, isReplay: false));
+        }
+    }
 
     /// <summary>
     /// Returns what a request under an already used operation id gets: the stored receipt when the request repeats it,
@@ -221,6 +288,7 @@ internal sealed partial class InMemoryDataStorage
             && prior.OperationType == attempt.OperationType
             && prior.StorageId == attempt.StorageId
             && prior.ExpectedDueAt == attempt.ExpectedDueAt
+            && string.Equals(prior.OutboxName, attempt.OutboxName, StringComparison.Ordinal)
             && string.Equals(prior.Actor, attempt.Actor, StringComparison.Ordinal)
             && string.Equals(prior.Reason, attempt.Reason, StringComparison.Ordinal);
         if (matches)

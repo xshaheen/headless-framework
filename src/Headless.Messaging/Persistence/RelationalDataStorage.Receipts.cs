@@ -13,7 +13,8 @@ internal sealed partial class RelationalDataStorage
 {
     /// <summary>
     /// A row-targeted operation's receipt, or the request it is compared with. <see cref="ExpectedDueAt"/> is set only by
-    /// a kind fenced on a due instant, and only such a kind reads and writes that column.
+    /// a kind fenced on a due instant, and only such a kind reads and writes that column. <see cref="OutboxName"/> names
+    /// the additional outbox that holds the row, or is <see langword="null"/> for a row this storage holds.
     /// </summary>
     private sealed record RowOperationReceipt(
         Guid OperationId,
@@ -27,7 +28,8 @@ internal sealed partial class RelationalDataStorage
         MessageLane? Lane,
         string Actor,
         string? Reason,
-        DateTimeOffset CreatedAt
+        DateTimeOffset CreatedAt,
+        string? OutboxName = null
     );
 
     /// <summary>
@@ -61,6 +63,7 @@ internal sealed partial class RelationalDataStorage
             && prior.OperationType == attempt.OperationType
             && prior.StorageId == attempt.StorageId
             && prior.ExpectedDueAt == attempt.ExpectedDueAt
+            && string.Equals(prior.OutboxName, attempt.OutboxName, StringComparison.Ordinal)
             && string.Equals(prior.Actor, attempt.Actor, StringComparison.Ordinal)
             && string.Equals(prior.Reason, attempt.Reason, StringComparison.Ordinal);
         if (matches)
@@ -115,6 +118,7 @@ internal sealed partial class RelationalDataStorage
                 _t.Actor,
                 _t.Reason,
                 _t.CreatedAt,
+                _t.OutboxName,
             ]
             :
             [
@@ -128,6 +132,7 @@ internal sealed partial class RelationalDataStorage
                 _t.Actor,
                 _t.Reason,
                 _t.CreatedAt,
+                _t.OutboxName,
             ];
         var sql = _dialect.Render(
             new SqlLockedRead(_t.Receipts, [new SqlKeyColumn(_t.OperationId, "OperationId")], columns)
@@ -162,7 +167,8 @@ internal sealed partial class RelationalDataStorage
                         reader.IsDBNull(after + 2) ? null : Enum.Parse<MessageLane>(reader.GetString(after + 2)),
                         reader.GetString(after + 3),
                         reader.IsDBNull(after + 4) ? null : reader.GetString(after + 4),
-                        reader.GetFieldValue<DateTimeOffset>(after + 5)
+                        reader.GetFieldValue<DateTimeOffset>(after + 5),
+                        reader.IsDBNull(after + 6) ? null : reader.GetString(after + 6)
                     );
                 },
                 cancellationToken
@@ -181,8 +187,8 @@ internal sealed partial class RelationalDataStorage
         var dueColumn = receipt.ExpectedDueAt is null ? "" : $"{_t.ExpectedDueAt},";
         var dueValue = receipt.ExpectedDueAt is null ? "" : "@ExpectedDueAt,";
         var sql = $"""
-            INSERT INTO {_t.Receipts}({_t.OperationId},{_t.TargetKind},{_t.OperationType},{_t.Outcome},{_t.Actor},{_t.Reason},{dueColumn}{_t.StorageId},{_t.MessageName},{_t.MessageId},{_t.Lane},{_t.CreatedAt})
-            VALUES (@OperationId,'{receipt.TargetKind}',@OperationType,@Outcome,@Actor,@Reason,{dueValue}@StorageId,@MessageName,@MessageId,@Lane,@CreatedAt);
+            INSERT INTO {_t.Receipts}({_t.OperationId},{_t.TargetKind},{_t.OperationType},{_t.Outcome},{_t.Actor},{_t.Reason},{dueColumn}{_t.StorageId},{_t.OutboxName},{_t.MessageName},{_t.MessageId},{_t.Lane},{_t.CreatedAt})
+            VALUES (@OperationId,'{receipt.TargetKind}',@OperationType,@Outcome,@Actor,@Reason,{dueValue}@StorageId,@OutboxName,@MessageName,@MessageId,@Lane,@CreatedAt);
             INSERT INTO {_t.Audit}({_t.AuditId},{_t.OperationId},{_t.TargetKind},{_t.OperationType},{_t.Actor},{_t.Reason},{_t.Outcome},{_t.CreatedAt})
             VALUES (@AuditId,@OperationId,'{receipt.TargetKind}',@OperationType,@Actor,@Reason,@Outcome,@CreatedAt);
             """;
@@ -207,6 +213,7 @@ internal sealed partial class RelationalDataStorage
                     }
 
                     _dialect.AddParameter(command, "StorageId", SqlColumnType.Guid, receipt.StorageId);
+                    _dialect.AddParameter(command, "OutboxName", _MessageIdType, receipt.OutboxName);
                     _dialect.AddParameter(command, "MessageName", _NameType, receipt.MessageName);
                     _dialect.AddParameter(command, "MessageId", _MessageIdType, receipt.MessageId);
                     _dialect.AddParameter(command, "Lane", _StatusType, receipt.Lane?.ToString());

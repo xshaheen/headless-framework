@@ -365,6 +365,9 @@ public abstract partial class DataStorageTestsBase
         ledger.Items.Should().OnlyContain(receipt => receipt.Actor == actor);
         ledger.Items.Should().OnlyContain(static receipt => receipt.OperationType == MessagingOperationType.Hold);
         ledger.Items.Should().OnlyContain(static receipt => receipt.TargetKind == MessagingOperationTargetKind.Inbox);
+        ledger
+            .Items.Should()
+            .OnlyContain(static receipt => receipt.OutboxName == null, "inbox rows are never in an outbox");
         ledger.Next.Should().BeNull();
         firstPage.Items.Should().ContainSingle().Which.OperationId.Should().Be(ledger.Items[0].OperationId);
         firstPage.Next.Should().NotBeNull();

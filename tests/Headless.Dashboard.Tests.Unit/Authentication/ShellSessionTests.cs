@@ -181,7 +181,7 @@ public sealed partial class ShellSessionTests : TestBase
     public async Task should_delete_the_shell_session_cookie_when_the_host_signs_out_without_naming_the_dashboard()
     {
         await using var app = await _StartHostModeAsync(mapHost: host =>
-            host.MapPost("/host/logout", (HttpContext context) => context.SignOutHeadlessDashboardAsync())
+            host.MapPost("/host/logout", context => context.SignOutHeadlessDashboardAsync())
         );
         using var client = ShellTestHost.Client(app);
         var cookie = await ShellTestHost.SignInAsync(client, "Bearer ops", AbortToken);

@@ -175,7 +175,8 @@ internal sealed partial class InMemoryDataStorage
                     receipt.GenerationIncarnationId,
                     receipt.ChildStorageId,
                     receipt.MessageName,
-                    receipt.MessageId
+                    receipt.MessageId,
+                    receipt.OutboxName
                 ))
                 .ToList();
 

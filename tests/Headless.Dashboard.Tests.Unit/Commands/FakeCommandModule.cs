@@ -120,6 +120,9 @@ internal sealed class FakeCommandModule(FakeRunStore store)
     /// <summary>When set, every chunk request is recorded and then throws this, as a module failing mid-chunk would.</summary>
     public Exception? ChunkFailure { get; set; }
 
+    /// <summary>When set, every confirm request throws this, as a module refusing the filter would.</summary>
+    public Exception? PrepareFailure { get; set; }
+
     public static DashboardObject ToObject(FakeRun run)
     {
         return new DashboardObject
@@ -198,6 +201,11 @@ internal sealed class FakeCommandModule(FakeRunStore store)
         CancellationToken cancellationToken
     )
     {
+        if (PrepareFailure is { } failure)
+        {
+            throw failure;
+        }
+
         return Task.FromResult(store.Prepare(_Queue(request.Filter), request.CountLimit, request.SampleSize));
     }
 

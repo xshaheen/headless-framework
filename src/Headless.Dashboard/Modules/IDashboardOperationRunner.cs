@@ -61,6 +61,9 @@ public interface IDashboardOperationRunner
     /// <param name="request">The command, the filter, the count limit, and who is asking.</param>
     /// <param name="cancellationToken">Cancelled when the request ends.</param>
     /// <returns>The exact count, up to one past the limit, a sample, and the mark.</returns>
+    /// <exception cref="ArgumentException">
+    /// The filter is not one the module accepts for the command. The shell answers <c>400</c> with the message.
+    /// </exception>
     Task<DashboardOperationScope> PrepareAsync(
         DashboardOperationScopeRequest request,
         CancellationToken cancellationToken
@@ -73,6 +76,10 @@ public interface IDashboardOperationRunner
     /// <param name="request">The frozen scope, the cursor, and who is asking.</param>
     /// <param name="cancellationToken">Cancelled when the request ends.</param>
     /// <returns>The per-row outcomes and the cursor to resume from; a <see langword="null"/> cursor ends the run.</returns>
+    /// <exception cref="ArgumentException">
+    /// The filter, the mark, or the cursor is not one the module returned, checked before any row changes. The shell
+    /// answers <c>400</c> with the message.
+    /// </exception>
     Task<DashboardOperationChunk> RunChunkAsync(
         DashboardOperationChunkRequest request,
         CancellationToken cancellationToken

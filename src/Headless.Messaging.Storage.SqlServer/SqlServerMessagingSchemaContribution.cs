@@ -259,6 +259,8 @@ internal static class SqlServerMessagingSchemaContribution
                     [Reason] [nvarchar](1000) NULL,
                     [Outcome] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NOT NULL,
                     [StorageId] [uniqueidentifier] NULL,
+                    -- The additional outbox that holds the row, or NULL when the primary storage holds it.
+                    [OutboxName] [nvarchar](200) COLLATE Latin1_General_100_BIN2 NULL,
                     [MessageName] [nvarchar](200) NULL,
                     [MessageId] [nvarchar](200) COLLATE Latin1_General_100_BIN2 NULL,
                     [Lane] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NULL,
@@ -304,6 +306,7 @@ internal static class SqlServerMessagingSchemaContribution
                OR COL_LENGTH(N'{schema}.{_ReceiptsTable}',N'Outcome') IS NULL
                OR COL_LENGTH(N'{schema}.{_ReceiptsTable}',N'TargetKind') IS NULL
                OR COL_LENGTH(N'{schema}.{_ReceiptsTable}',N'ExpectedDueAt') IS NULL
+               OR COL_LENGTH(N'{schema}.{_ReceiptsTable}',N'OutboxName') IS NULL
                OR COL_LENGTH(N'{schema}.{_AuditTable}',N'TargetKind') IS NULL
                 THROW 50004, N'Headless.Messaging inbox schema is incomplete: the lifecycle, retention or operation receipt contract is missing.', 1;
             """

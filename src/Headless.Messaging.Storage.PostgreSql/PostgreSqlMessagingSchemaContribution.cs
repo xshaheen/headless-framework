@@ -255,6 +255,8 @@ internal static class PostgreSqlMessagingSchemaContribution
                 "reason" VARCHAR(1000) NULL,
                 "outcome" VARCHAR(50) COLLATE "C" NOT NULL,
                 "storage_id" UUID NULL,
+                -- The additional outbox that holds the row, or NULL when the primary storage holds it.
+                "outbox_name" VARCHAR(200) COLLATE "C" NULL,
                 "message_name" VARCHAR(200) NULL,
                 "message_id" VARCHAR(200) COLLATE "C" NULL,
                 "lane" VARCHAR(50) COLLATE "C" NULL,
@@ -312,6 +314,8 @@ internal static class PostgreSqlMessagingSchemaContribution
                         WHERE table_schema='{schema}' AND table_name='{_ReceiptsTable}' AND column_name='target_kind')
                     AND EXISTS (SELECT 1 FROM information_schema.columns
                         WHERE table_schema='{schema}' AND table_name='{_ReceiptsTable}' AND column_name='expected_due_at')
+                    AND EXISTS (SELECT 1 FROM information_schema.columns
+                        WHERE table_schema='{schema}' AND table_name='{_ReceiptsTable}' AND column_name='outbox_name')
                     AND EXISTS (SELECT 1 FROM information_schema.columns
                         WHERE table_schema='{schema}' AND table_name='{_AuditTable}' AND column_name='target_kind')
                 ) THEN

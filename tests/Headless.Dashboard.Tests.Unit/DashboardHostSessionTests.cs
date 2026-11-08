@@ -662,7 +662,7 @@ public sealed class DashboardHostSessionTests : TestBase
                 await context.SignInAsync(_HostCookieScheme, new ClaimsPrincipal(identity));
             }
         );
-        app.MapPost("/host/logout", (HttpContext context) => context.SignOutHeadlessDashboardAsync(_Name));
+        app.MapPost("/host/logout", context => context.SignOutHeadlessDashboardAsync(_Name));
 
         await app.StartAsync(AbortToken);
         return app;

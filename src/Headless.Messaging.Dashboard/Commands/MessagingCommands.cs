@@ -3,6 +3,7 @@
 using System.Security.Claims;
 using Headless.Checks;
 using Headless.Dashboard;
+using Headless.Messaging.Persistence;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -245,8 +246,8 @@ internal sealed class MessagingCommands(MessagingStores stores, MessagingSources
     /// and a mark holding the store's latest change marker, past which no row joins the scope.
     /// </summary>
     /// <exception cref="ArgumentException">
-    /// The command does not run over a filter, the filter is malformed or names an unknown store, or the store holds no
-    /// operator ledger.
+    /// The command does not run over a filter, the filter is malformed or names an unknown store, or a received-row
+    /// command names an additional outbox, which holds no received rows.
     /// </exception>
     public async Task<DashboardOperationScope> PrepareAsync(
         DashboardOperationScopeRequest request,
@@ -254,7 +255,7 @@ internal sealed class MessagingCommands(MessagingStores stores, MessagingSources
     )
     {
         var (type, kind) = _OperationKind(request.CommandId);
-        var (store, filter) = _ParseFilter(request.Filter);
+        var (store, filter) = _ParseFilter(type, request.Filter);
         var highWater = await store.Storage.GetLatestMessageChangeMarkerAsync(cancellationToken).ConfigureAwait(false);
         var scope = _Scope(type, kind, filter, highWater ?? DateTimeOffset.MinValue);
 
@@ -309,7 +310,7 @@ internal sealed class MessagingCommands(MessagingStores stores, MessagingSources
     )
     {
         var (type, kind) = _OperationKind(request.CommandId);
-        var (store, filter) = _ParseFilter(request.Filter);
+        var (store, filter) = _ParseFilter(type, request.Filter);
         var scope = _Scope(type, kind, filter, _ParseMark(request.HighWaterMark));
         Guid? after = null;
 
@@ -398,7 +399,6 @@ internal sealed class MessagingCommands(MessagingStores stores, MessagingSources
             }
             else
             {
-                var published = store.Storage.GetPublishedOperationsApi();
                 var write = new PublishedOperationRequest(
                     Guid.CreateVersion7(),
                     target.StorageId,
@@ -406,11 +406,16 @@ internal sealed class MessagingCommands(MessagingStores stores, MessagingSources
                     reason,
                     authorization
                 );
-                var result =
-                    kind == MessageOperationKind.Resend
-                        ? await published.ResendAsync(write, cancellationToken).ConfigureAwait(false)
-                        : await published.PurgeAsync(write, cancellationToken).ConfigureAwait(false);
-                outcome = result.Outcome;
+                var (published, receiptFailure) = await _WritePublishedAsync(
+                        store,
+                        kind == MessageOperationKind.Resend,
+                        write,
+                        id,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                return _PublishedRow(id, published, receiptFailure);
             }
 
             return outcome == InboxOperationOutcome.Applied ? _Done(id) : _Skipped(id, _OutcomeReason(outcome));
@@ -575,7 +580,7 @@ internal sealed class MessagingCommands(MessagingStores stores, MessagingSources
         }
 
         var (_, objectId, store, _) = found!.Value;
-        var published = store.Storage.GetPublishedOperationsApi();
+        var isResend = string.Equals(command, ResendId, StringComparison.Ordinal);
         var write = new PublishedOperationRequest(
             Guid.CreateVersion7(),
             objectId.StorageId,
@@ -583,21 +588,92 @@ internal sealed class MessagingCommands(MessagingStores stores, MessagingSources
             request.Reason,
             authorization
         );
-        var result = string.Equals(command, ResendId, StringComparison.Ordinal)
-            ? await published.ResendAsync(write, cancellationToken).ConfigureAwait(false)
-            : await published.PurgeAsync(write, cancellationToken).ConfigureAwait(false);
+        var (result, receiptFailure) = await _WritePublishedAsync(store, isResend, write, id, cancellationToken)
+            .ConfigureAwait(false);
 
-        if (result.Outcome != InboxOperationOutcome.Applied)
-        {
-            return (_Skipped(id, _OutcomeReason(result.Outcome)), true);
-        }
-
-        if (string.Equals(command, ResendId, StringComparison.Ordinal))
+        if (result.Outcome == InboxOperationOutcome.Applied && isResend)
         {
             _Publish(MessageType.Publish, objectId.StorageId, view.MessageId, store);
         }
 
-        return (_Done(id), false);
+        return (_PublishedRow(id, result, receiptFailure), result.Outcome != InboxOperationOutcome.Applied);
+    }
+
+    /// <summary>
+    /// Re-sends or deletes a published row. The main store writes the row and its receipt in one transaction. An
+    /// additional outbox holds no ledger: the row changes there, then the receipt goes to the main store tagged with
+    /// the outbox's name. The two databases are not written atomically, so a receipt that fails to write leaves the
+    /// change in place and is returned beside the outcome instead of thrown.
+    /// </summary>
+    /// <exception cref="NotSupportedException">The outbox's storage cannot apply a write without its receipt.</exception>
+    private async Task<(PublishedOperationResult Result, string? ReceiptFailure)> _WritePublishedAsync(
+        MessagingStore store,
+        bool isResend,
+        PublishedOperationRequest write,
+        string id,
+        CancellationToken cancellationToken
+    )
+    {
+        if (store.HoldsReceived)
+        {
+            var published = store.Storage.GetPublishedOperationsApi();
+            var result = isResend
+                ? await published.ResendAsync(write, cancellationToken).ConfigureAwait(false)
+                : await published.PurgeAsync(write, cancellationToken).ConfigureAwait(false);
+
+            return (result, null);
+        }
+
+        if (
+            store.Storage is not IAdditionalOutboxOperations outbox
+            || _stores.Primary.Storage is not IAdditionalOutboxOperations ledger
+        )
+        {
+            throw new NotSupportedException("The storage cannot apply an additional outbox's published operation.");
+        }
+
+        var applied = await outbox
+            .ApplyPublishedWithoutReceiptAsync(
+                isResend ? MessagingOperationType.Resend : MessagingOperationType.Purge,
+                write,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        try
+        {
+            await ledger.RecordOutboxReceiptAsync(store.Name, applied, cancellationToken).ConfigureAwait(false);
+
+            return (applied, null);
+        }
+#pragma warning disable CA1031 // The row already changed on the outbox; any receipt failure is reported beside that outcome, not as a failed write.
+        catch (Exception exception) when (exception is not OperationCanceledException)
+#pragma warning restore CA1031
+        {
+            _services
+                .GetService<ILogger<MessagingCommands>>()
+                ?.LogMessagingOutboxReceiptFailed(exception, id, store.Name);
+
+            return (applied, exception.Message);
+        }
+    }
+
+    private static DashboardRowResult _PublishedRow(string id, PublishedOperationResult result, string? receiptFailure)
+    {
+        var row =
+            result.Outcome == InboxOperationOutcome.Applied ? _Done(id) : _Skipped(id, _OutcomeReason(result.Outcome));
+
+        if (receiptFailure is null)
+        {
+            return row;
+        }
+
+        var note = $"The receipt was not recorded: {receiptFailure}";
+
+        return row with
+        {
+            Reason = row.Reason is null ? note : $"{row.Reason}. {note}",
+        };
     }
 
     private async Task<(DashboardRowResult Row, bool Refused)> _ApplyToScheduledAsync(
@@ -766,8 +842,9 @@ internal sealed class MessagingCommands(MessagingStores stores, MessagingSources
             return (null, null, refusal);
         }
 
-        // Only the main store holds the operator ledger every published write records its receipt in.
-        if (!found!.Value.Store.HoldsReceived)
+        // An outbox row's write runs on the outbox and its receipt on the main store; without both halves of that
+        // seam no audited write can run, so the row is refused before it is read.
+        if (!found!.Value.Store.HoldsReceived && !_CanWriteOutbox(found.Value.Store))
         {
             return (null, null, NotSupportedForOutboxes);
         }
@@ -776,6 +853,9 @@ internal sealed class MessagingCommands(MessagingStores stores, MessagingSources
 
         return view is null ? (null, null, Gone) : (found, view, null);
     }
+
+    private bool _CanWriteOutbox(MessagingStore store) =>
+        store.Storage is IAdditionalOutboxOperations && _stores.Primary.Storage is IAdditionalOutboxOperations;
 
     private async Task<(Found? Found, ScheduledDeliveryView? View, string? Refusal)> _ReadScheduledAsync(
         string id,
@@ -961,7 +1041,7 @@ internal sealed class MessagingCommands(MessagingStores stores, MessagingSources
             _ => throw new ArgumentException($"Command '{commandId}' does not run over a filter.", nameof(commandId)),
         };
 
-    private (MessagingStore Store, MessagingListScope Filter) _ParseFilter(JsonElement filter)
+    private (MessagingStore Store, MessagingListScope Filter) _ParseFilter(MessageType type, JsonElement filter)
     {
         MessagingListScope scope;
 
@@ -980,9 +1060,9 @@ internal sealed class MessagingCommands(MessagingStores stores, MessagingSources
             (string.IsNullOrEmpty(scope.Store) ? _stores.Primary : _stores.Find(scope.Store))
             ?? throw new ArgumentException($"The filter names an unknown store '{scope.Store}'.", nameof(filter));
 
-        // Received rows live in the main store only, and every audited write records its receipt in that store's
-        // ledger, so an Operation over an additional outbox has nothing it may change.
-        if (!store.HoldsReceived)
+        // Received rows live in the main store only, so a received-row Operation over an additional outbox has nothing
+        // to change. A published-row Operation runs over the outbox and records its receipts in the main store.
+        if (type == MessageType.Subscribe && !store.HoldsReceived)
         {
             throw new ArgumentException(
                 $"Store '{store.Name}' is an additional outbox; {NotSupportedForOutboxes.ToLowerInvariant()}.",
@@ -1093,4 +1173,17 @@ internal static partial class MessagingCommandsLogs
         Message = "Messaging dashboard command failed on row {RowId}; the row is reported failed."
     )]
     internal static partial void LogMessagingCommandFailed(this ILogger logger, Exception exception, string rowId);
+
+    [LoggerMessage(
+        EventId = 2141,
+        EventName = "MessagingDashboardOutboxReceiptFailed",
+        Level = LogLevel.Warning,
+        Message = "Messaging dashboard changed row {RowId} on outbox {Outbox} but did not record its receipt in the main store."
+    )]
+    internal static partial void LogMessagingOutboxReceiptFailed(
+        this ILogger logger,
+        Exception exception,
+        string rowId,
+        string outbox
+    );
 }

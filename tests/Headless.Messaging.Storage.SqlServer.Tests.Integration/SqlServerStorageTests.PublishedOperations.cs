@@ -48,6 +48,14 @@ public partial class SqlServerStorageTests
         base.should_refuse_a_published_operation_id_reused_by_a_different_request();
 
     [Fact]
+    public override Task should_record_an_additional_outbox_receipt_once_and_refuse_its_operation_id_for_another_outbox() =>
+        base.should_record_an_additional_outbox_receipt_once_and_refuse_its_operation_id_for_another_outbox();
+
+    [Fact]
+    public override Task should_refuse_a_published_write_without_a_receipt_on_the_store_that_holds_the_ledger() =>
+        base.should_refuse_a_published_write_without_a_receipt_on_the_store_that_holds_the_ledger();
+
+    [Fact]
     public override Task should_scope_a_published_delete_to_both_terminal_statuses_and_a_resend_to_failures() =>
         base.should_scope_a_published_delete_to_both_terminal_statuses_and_a_resend_to_failures();
 

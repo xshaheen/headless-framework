@@ -240,6 +240,22 @@ public sealed record MessagingOperationReceiptQuery
 public readonly record struct MessagingOperationReceiptPosition(DateTimeOffset CreatedAt, Guid OperationId);
 
 /// <summary>One receipt in the operator ledger.</summary>
+/// <param name="OperationId">The operation identifier the receipt answers.</param>
+/// <param name="TargetKind">The kind of row the operation targeted.</param>
+/// <param name="OperationType">What the operation did.</param>
+/// <param name="Outcome">The operation's outcome.</param>
+/// <param name="Actor">The operator who ran the operation.</param>
+/// <param name="Reason">The reason the operator gave, or <see langword="null"/>.</param>
+/// <param name="CreatedAt">The receipt's time.</param>
+/// <param name="StorageId">The storage identifier of the targeted row, or <see langword="null"/>.</param>
+/// <param name="IncarnationId">The targeted delivery incarnation, or <see langword="null"/>.</param>
+/// <param name="ChildStorageId">The storage identifier of a row the operation created, or <see langword="null"/>.</param>
+/// <param name="MessageName">The targeted message's name, or <see langword="null"/>.</param>
+/// <param name="MessageId">The targeted message's identifier, or <see langword="null"/>.</param>
+/// <param name="OutboxName">
+/// The additional outbox whose row the operation changed, or <see langword="null"/> when the row is in the main store
+/// that holds this ledger.
+/// </param>
 [PublicAPI]
 public sealed record MessagingOperationReceiptView(
     Guid OperationId,
@@ -253,7 +269,8 @@ public sealed record MessagingOperationReceiptView(
     Guid? IncarnationId,
     Guid? ChildStorageId,
     string? MessageName,
-    string? MessageId
+    string? MessageId,
+    string? OutboxName
 );
 
 /// <summary>One page of the operator ledger, newest first, and the position of the next page.</summary>

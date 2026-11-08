@@ -93,7 +93,8 @@ internal sealed partial class InMemoryDataStorage
         string? Lane = null,
         Guid? ChildStorageId = null,
         long? ChildGeneration = null,
-        Guid? ChildIncarnationId = null
+        Guid? ChildIncarnationId = null,
+        string? OutboxName = null
     );
 
     public IInboxOperationsApi GetInboxOperationsApi() => new InMemoryInboxOperationsApi(this);

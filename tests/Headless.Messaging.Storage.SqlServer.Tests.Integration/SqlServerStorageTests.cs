@@ -429,7 +429,7 @@ public partial class SqlServerStorageTests(SqlServerTestFixture fixture) : DataS
             ) AS ConstraintCount, (
                 SELECT COUNT_BIG(*) FROM sys.columns
                 WHERE object_id=OBJECT_ID(N'headless.MessagingInboxOperationReceipts')
-                  AND name IN(N'ExpectedStatus',N'Outcome',N'ChildIncarnationId',N'TargetKind',N'ExpectedDueAt',N'MessageName',N'MessageId',N'Lane')
+                  AND name IN(N'ExpectedStatus',N'Outcome',N'ChildIncarnationId',N'TargetKind',N'ExpectedDueAt',N'MessageName',N'MessageId',N'Lane',N'OutboxName')
             ) AS ReceiptColumnCount;
             """
         );
@@ -440,7 +440,7 @@ public partial class SqlServerStorageTests(SqlServerTestFixture fixture) : DataS
 
         indexCount.Should().Be(2);
         constraintCount.Should().Be(2);
-        receiptColumnCount.Should().Be(8);
+        receiptColumnCount.Should().Be(9);
         steps.Should().Equal("1", "2");
     }
 
