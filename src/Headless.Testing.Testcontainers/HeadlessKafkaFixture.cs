@@ -2,7 +2,6 @@
 
 using Testcontainers.Kafka;
 using Testcontainers.Xunit;
-using Xunit;
 
 namespace Headless.Testing.Testcontainers;
 
@@ -17,17 +16,4 @@ public class HeadlessKafkaFixture() : ContainerFixture<KafkaBuilder, KafkaContai
 
     /// <summary>Gets the Kafka bootstrap server address.</summary>
     public string ConnectionString => Container.GetBootstrapAddress();
-
-    /// <inheritdoc />
-    protected override async ValueTask InitializeAsync()
-    {
-        await base.InitializeAsync().ConfigureAwait(false);
-        await ContainerHostPort
-            .EnsureReachableAsync(
-                Container,
-                KafkaBuilder.KafkaPort,
-                cancellationToken: TestContext.Current.CancellationToken
-            )
-            .ConfigureAwait(false);
-    }
 }

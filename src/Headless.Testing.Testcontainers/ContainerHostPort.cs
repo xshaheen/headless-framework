@@ -14,6 +14,16 @@ namespace Headless.Testing.Testcontainers;
 /// already holds that port the forward fails, and the only trace is in the engine's own log, so the container is healthy
 /// and every connection to it is refused. A wait strategy cannot recover from this because the port stays dead for the
 /// container's whole run. A restart makes Docker pick another port.
+/// <para>
+/// A restart keeps the container's filesystem, so it suits only a module that reads the mapped port at connection time.
+/// Kafka writes the mapped port into a startup script once and keeps advertising the dead port after a restart, so its
+/// fixture does not use this check.
+/// </para>
+/// <para>
+/// The check proves that something on the host accepts the connection, not that this container does. A forward that
+/// failed because a client socket held the port is refused and caught here; one that failed because another listener
+/// held the port reaches that listener and passes.
+/// </para>
 /// </remarks>
 internal static class ContainerHostPort
 {
