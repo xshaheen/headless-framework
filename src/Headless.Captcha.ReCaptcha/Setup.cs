@@ -5,6 +5,7 @@ using Headless.Http.Resilience;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -183,7 +184,8 @@ public static class SetupReCaptcha
                     (string)key,
                     sp.GetRequiredService<IOptionsMonitor<ReCaptchaOptions>>(),
                     sp.GetRequiredService<IHttpClientFactory>(),
-                    sp.GetService<ILogger<ReCaptchaSiteVerifyV3>>()
+                    sp.GetService<ILogger<ReCaptchaSiteVerifyV3>>(),
+                    sp.GetService<IHostEnvironment>()?.IsDevelopment() == true
                 )
         );
         services.AddKeyedSingleton<ICaptchaVerifier>(
@@ -226,7 +228,8 @@ public static class SetupReCaptcha
                     (string)key,
                     sp.GetRequiredService<IOptionsMonitor<ReCaptchaOptions>>(),
                     sp.GetRequiredService<IHttpClientFactory>(),
-                    sp.GetService<ILogger<ReCaptchaSiteVerifyV2>>()
+                    sp.GetService<ILogger<ReCaptchaSiteVerifyV2>>(),
+                    sp.GetService<IHostEnvironment>()?.IsDevelopment() == true
                 )
         );
 

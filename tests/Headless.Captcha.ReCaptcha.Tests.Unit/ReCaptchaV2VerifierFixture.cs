@@ -26,9 +26,27 @@ public sealed class ReCaptchaV2VerifierFixture : ICaptchaVerifierFixture, IDispo
         return CreateVerifier(handler, configure: null);
     }
 
+    public ICaptchaVerifier CreateVerifierWithServices(
+        StubSiteVerifyHandler handler,
+        Action<IServiceCollection> configureServices
+    )
+    {
+        return CreateVerifier(handler, configure: null, configureServices);
+    }
+
     public ICaptchaVerifier CreateVerifier(StubSiteVerifyHandler handler, Action<ReCaptchaOptions>? configure)
     {
+        return CreateVerifier(handler, configure, configureServices: null);
+    }
+
+    private ICaptchaVerifier CreateVerifier(
+        StubSiteVerifyHandler handler,
+        Action<ReCaptchaOptions>? configure,
+        Action<IServiceCollection>? configureServices
+    )
+    {
         var services = new ServiceCollection();
+        configureServices?.Invoke(services);
 
         services.AddHeadlessCaptcha(builder => builder.UseReCaptchaV2(_Configuration()));
 
