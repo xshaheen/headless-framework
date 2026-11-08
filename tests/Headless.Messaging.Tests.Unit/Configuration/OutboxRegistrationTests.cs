@@ -57,6 +57,8 @@ public sealed class OutboxRegistrationTests : TestBase
     [InlineData("billing.eu")]
     [InlineData("billing/eu")]
     [InlineData("فواتير")]
+    [InlineData("billing\n")]
+    [InlineData("primary\n")]
     public void should_refuse_a_name_that_is_not_a_slug(string name)
     {
         var services = new ServiceCollection();

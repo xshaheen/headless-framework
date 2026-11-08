@@ -181,7 +181,8 @@ public sealed partial class MessagingSetupBuilder : IMessagingBuilder
         return builder;
     }
 
-    [GeneratedRegex("^[A-Za-z0-9_-]+$", RegexOptions.CultureInvariant | RegexOptions.ExplicitCapture, 100)]
+    // \z, not $: in .NET $ also matches before a final newline, which would admit "billing\n" beside "billing".
+    [GeneratedRegex(@"^[A-Za-z0-9_-]+\z", RegexOptions.CultureInvariant | RegexOptions.ExplicitCapture, 100)]
     private static partial Regex _OutboxNamePattern { get; }
 
     /// <summary>
