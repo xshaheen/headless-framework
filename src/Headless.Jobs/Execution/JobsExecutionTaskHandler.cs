@@ -1002,6 +1002,7 @@ internal sealed class JobsExecutionTaskHandler
                 await _RescheduleRetryAsync(
                         context,
                         deferral,
+                        cancellationRegistration,
                         executionOwnsRegistration,
                         beginCompletionAsync,
                         cancellationToken
@@ -1150,6 +1151,7 @@ internal sealed class JobsExecutionTaskHandler
     private async Task _RescheduleRetryAsync(
         JobExecutionState context,
         JobsRetryDeferral deferral,
+        JobsExecutionCancellationRegistration cancellationRegistration,
         Func<bool> executionOwnsRegistration,
         Func<Task<bool>> beginCompletionAsync,
         CancellationToken cancellationToken
@@ -1165,6 +1167,13 @@ internal sealed class JobsExecutionTaskHandler
         {
             return;
         }
+
+        // Leave the registry before the row can come due again. A completing registration makes this node refuse a new
+        // claim of the same job as lease loss, and the write below makes the retry claimable after the delay less the
+        // claim slack, while this run still wakes the scheduler, pushes to the dashboard and awaits the consumer's
+        // exception handler. The row stays InProgress under this run's lease until the write, so nothing can claim it
+        // in between; the identity-checked removal on exit then finds nothing to remove.
+        _cancellationRegistry.TryRemove(cancellationRegistration);
 
         int affected;
         try

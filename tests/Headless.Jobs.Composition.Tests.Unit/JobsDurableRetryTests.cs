@@ -236,10 +236,40 @@ public sealed class JobsDurableRetryTests : TestBase
         }
     }
 
+    [Fact]
+    public async Task should_run_a_rescheduled_retry_that_comes_due_while_the_failed_run_still_reports_its_exception()
+    {
+        // given: two workers, a delay just above the claim slack, and an exception handler that returns only once the
+        // retry has started, so the retry is claimed while the failed run is still reporting its failure
+        var probe = new RetryProbe(failures: 1);
+        using var host = _BuildHost(probe, maxConcurrency: 2, exceptionHandler: new HoldUntilRetryStartsHandler(probe));
+        await host.StartAsync(AbortToken);
+        try
+        {
+            var store = _Store(host);
+            var id = await host
+                .Services.GetRequiredService<IJobScheduler>()
+                .EnqueueAsync<RetryJob>(o => o.WithRetries(2).WithRetryIntervals(2), AbortToken);
+
+            // when
+            var done = await _WaitForAsync(store, id, row => row.Status is JobStatus.Succeeded or JobStatus.DueDone);
+
+            // then: the retry ran instead of being dropped as a lost lease
+            done.RetryCount.Should().Be(1);
+            probe.Invocations.Should().Be(2);
+        }
+        finally
+        {
+            await host.StopAsync(AbortToken);
+        }
+    }
+
     private static IHost _BuildHost(
         RetryProbe probe,
         IJobPersistenceProvider<TimeJobEntity, CronJobEntity>? store = null,
-        Action? onExhausted = null
+        Action? onExhausted = null,
+        int maxConcurrency = 1,
+        IJobExceptionHandler? exceptionHandler = null
     )
     {
         return new HostBuilder()
@@ -258,7 +288,7 @@ public sealed class JobsDurableRetryTests : TestBase
                         )
                         .ConfigureScheduler(scheduler =>
                         {
-                            scheduler.MaxConcurrency = 1;
+                            scheduler.MaxConcurrency = maxConcurrency;
                             scheduler.ShutdownTimeout = TimeSpan.FromSeconds(2);
                         })
                 );
@@ -266,6 +296,11 @@ public sealed class JobsDurableRetryTests : TestBase
                 if (store is not null)
                 {
                     services.AddSingleton(store);
+                }
+
+                if (exceptionHandler is not null)
+                {
+                    services.AddSingleton(exceptionHandler);
                 }
             })
             .Build();
@@ -449,12 +484,51 @@ public sealed class JobsDurableRetryTests : TestBase
 
         public int Invocations => Volatile.Read(ref _invocations);
 
+        // Completes when the job function runs for the second time, i.e. when its first retry starts.
+        public TaskCompletionSource RetryStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
         public Task RunAsync()
         {
-            return Interlocked.Increment(ref _invocations) <= failures
+            var invocation = Interlocked.Increment(ref _invocations);
+            if (invocation >= 2)
+            {
+                RetryStarted.TrySetResult();
+            }
+
+            return invocation <= failures
                 ? Task.FromException(new InvalidOperationException("the attempt fails"))
                 : Task.CompletedTask;
         }
+    }
+
+    // A slow consumer handler, made deterministic: it is still running when the rescheduled retry is claimed.
+    private sealed class HoldUntilRetryStartsHandler(RetryProbe probe) : IJobExceptionHandler
+    {
+        public async Task HandleExceptionAsync(
+            Exception exception,
+            Guid jobId,
+            JobType jobType,
+            CancellationToken cancellationToken = default
+        )
+        {
+            using var bound = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            bound.CancelAfter(_RunBound);
+            try
+            {
+                await probe.RetryStarted.Task.WaitAsync(bound.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                // The retry never started; the test's own wait reports the failure.
+            }
+        }
+
+        public Task HandleCanceledExceptionAsync(
+            Exception exception,
+            Guid jobId,
+            JobType jobType,
+            CancellationToken cancellationToken = default
+        ) => Task.CompletedTask;
     }
 
     public sealed class RetryJob : IJob
