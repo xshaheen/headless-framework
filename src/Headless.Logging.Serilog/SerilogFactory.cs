@@ -3,6 +3,7 @@
 using System.Diagnostics;
 using System.Net;
 using Headless.Reflection;
+using Microsoft.Extensions.Compliance.Redaction;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Serilog;
@@ -191,6 +192,11 @@ public static class SerilogFactory
     /// <list type="bullet">
     ///   <item>Reads the <c>Serilog</c> configuration section, enabling log-level overrides without a restart.</item>
     ///   <item>When <paramref name="services"/> is not null, also reads DI-registered sink/enricher contributions.</item>
+    ///   <item>
+    ///   When <paramref name="services"/> has an <see cref="IRedactorProvider"/> (registered by <c>AddRedaction</c>),
+    ///   redacts <c>DataClassificationAttribute</c>-marked members of destructured values through it
+    ///   (<see cref="DataClassificationDestructuringPolicy"/>), ahead of every other destructuring policy.
+    ///   </item>
     ///   <item>Enrichers: log context, distributed tracing span, environment name, thread/process/machine IDs,
     ///   application name, version, and commit hash (from entry-assembly metadata).</item>
     ///   <item>
@@ -224,6 +230,13 @@ public static class SerilogFactory
     )
     {
         options ??= new SerilogOptions();
+
+        // Added before every other policy because Serilog uses the first policy that handles a value: a
+        // configuration- or DI-registered policy for the same type must not bypass the classification.
+        if (services?.GetService(typeof(IRedactorProvider)) is IRedactorProvider redactorProvider)
+        {
+            loggerConfiguration.Destructure.WithRedaction(redactorProvider);
+        }
 
         loggerConfiguration
             .ReadFrom.Configuration(
