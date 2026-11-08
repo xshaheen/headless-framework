@@ -49,25 +49,16 @@ public static class SetupBlobSignedUrl
                 services.TryAddSingleton<IMimeTypeProvider, MimeTypeProvider>();
                 services.TryAddSingleton<BlobSignedUrlSigner>();
 
-                // The token is a live credential, so its path stays out of HTTP logging and traces whenever the
-                // endpoint exists. Without HTTP logging or an activity listener, neither hook changes anything, and
-                // a request outside the route prefix costs one path comparison.
+                // The token is a live credential, so its path stays out of the request scope and lines, HTTP logging,
+                // and the request span whenever the endpoint exists. A request outside the route prefix costs one path
+                // comparison per stage.
                 services.TryAddSingleton<BlobSignedUrlPathRedactor>();
-                services.AddHttpLoggingInterceptor<BlobSignedUrlHttpLoggingInterceptor>();
-
-                // ASP.NET Core opens its request scope and writes its request lines before any middleware, through a
-                // logger it takes from the container's factory when the server starts; the shared log redaction
-                // wrapper rewrites them for every declared credential path.
                 services.TryAddEnumerable(
                     ServiceDescriptor.Singleton<ILogPathRedactor, BlobSignedUrlPathRedactor>(static provider =>
                         provider.GetRequiredService<BlobSignedUrlPathRedactor>()
                     )
                 );
-                services.AddHeadlessLogRedaction();
-
-                services.TryAddEnumerable(
-                    ServiceDescriptor.Singleton<IStartupFilter, BlobSignedUrlTraceRedactionStartupFilter>()
-                );
+                services.AddHeadlessRequestLogRedaction();
 
                 // Cross-cutting extensions run after every provider contribution, so every store is registered by now.
                 services.TryDecorateWith<IBlobStorage>((inner, provider) => _Wrap(inner, store: null, provider));
