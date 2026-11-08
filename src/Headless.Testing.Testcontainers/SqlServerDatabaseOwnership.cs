@@ -66,7 +66,7 @@ internal sealed class SqlServerDatabaseOwnership : IAsyncDisposable
     /// <summary>Creates <paramref name="database"/> unless it exists. The name must belong to this owner.</summary>
     public async Task CreateDatabaseAsync(string database, CancellationToken cancellationToken)
     {
-        if (TestDatabaseOwner.OwnerOf(database) != OwnerId)
+        if (!string.Equals(TestDatabaseOwner.OwnerOf(database), OwnerId, StringComparison.Ordinal))
         {
             throw new ArgumentException($"Database {database} does not belong to owner {OwnerId}.", nameof(database));
         }
@@ -98,7 +98,7 @@ internal sealed class SqlServerDatabaseOwnership : IAsyncDisposable
         var owners = (await _ListOwnedDatabasesAsync(cancellationToken).ConfigureAwait(false))
             .Select(TestDatabaseOwner.OwnerOf)
             .OfType<string>()
-            .Where(owner => owner != OwnerId)
+            .Where(owner => !string.Equals(owner, OwnerId, StringComparison.Ordinal))
             .Distinct(StringComparer.Ordinal)
             .ToList();
 
@@ -145,7 +145,7 @@ internal sealed class SqlServerDatabaseOwnership : IAsyncDisposable
     private async Task _DropOwnedDatabasesAsync(string owner, CancellationToken cancellationToken)
     {
         var databases = (await _ListOwnedDatabasesAsync(cancellationToken).ConfigureAwait(false))
-            .Where(name => TestDatabaseOwner.OwnerOf(name) == owner)
+            .Where(name => string.Equals(TestDatabaseOwner.OwnerOf(name), owner, StringComparison.Ordinal))
             .ToList();
 
         foreach (var database in databases)

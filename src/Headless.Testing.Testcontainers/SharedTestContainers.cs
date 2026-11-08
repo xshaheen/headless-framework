@@ -16,7 +16,7 @@ namespace Headless.Testing.Testcontainers;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Sharing is off unless <see cref="Variable"/> is <c>true</c>. Off, every fixture starts a fresh container that the
+/// Sharing is off unless <see cref="Variable"/> is <c>"true"</c>. Off, every fixture starts a fresh container that the
 /// resource reaper removes after the run, exactly as before. On, the fixture attaches to (or creates) the container
 /// named <c>headless-testing-{kind}-{hash}</c>; the reaper never removes it, so a host that turns sharing on also owns
 /// removing idle shared containers, which carry the <see cref="Label"/> label.
@@ -29,7 +29,7 @@ namespace Headless.Testing.Testcontainers;
 [PublicAPI]
 public static class SharedTestContainers
 {
-    /// <summary>The environment variable that turns container sharing on when set to <c>true</c>.</summary>
+    /// <summary>The environment variable that turns container sharing on when set to <c>"true"</c>.</summary>
     public const string Variable = "HEADLESS_TESTCONTAINERS_SHARED";
 
     /// <summary>The label every shared container carries, so a host can find and remove idle ones.</summary>

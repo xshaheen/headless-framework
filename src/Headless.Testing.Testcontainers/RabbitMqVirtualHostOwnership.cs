@@ -97,11 +97,13 @@ internal sealed class RabbitMqVirtualHostOwnership : IAsyncDisposable
             .ConfigureAwait(false);
 
         var candidates = _Rows(virtualHosts)
-            .Where(row => TestDatabaseOwner.OwnerOf(row[0]) == row[0])
             .Where(row =>
-                row.Length < 2
-                || !long.TryParse(row[1], CultureInfo.InvariantCulture, out var created)
-                || DateTimeOffset.UtcNow - DateTimeOffset.FromUnixTimeSeconds(created) > _CreationGrace
+                string.Equals(TestDatabaseOwner.OwnerOf(row[0]), row[0], StringComparison.Ordinal)
+                && (
+                    row.Length < 2
+                    || !long.TryParse(row[1], CultureInfo.InvariantCulture, out var created)
+                    || DateTimeOffset.UtcNow - DateTimeOffset.FromUnixTimeSeconds(created) > _CreationGrace
+                )
             )
             .Select(row => row[0])
             .ToList();

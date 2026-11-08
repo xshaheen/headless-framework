@@ -16,6 +16,7 @@ namespace Headless.Testing.Testcontainers;
 internal static class TestDatabaseOwner
 {
     private static readonly SearchValues<char> _HexDigits = SearchValues.Create("0123456789abcdef");
+
     private static readonly SearchValues<char> _SuffixCharacters = SearchValues.Create(
         "abcdefghijklmnopqrstuvwxyz0123456789_"
     );
