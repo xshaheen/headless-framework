@@ -459,6 +459,7 @@
           "Headless.Coordination.Abstractions": "[1.0.0, )",
           "Headless.DistributedLocks.Abstractions": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
+          "Headless.Fencing.Sql": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Messaging.Abstractions": "[1.0.0, )",
           "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
