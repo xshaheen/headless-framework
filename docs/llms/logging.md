@@ -66,6 +66,7 @@ builder.Host.UseSerilog(
 - `services.AddHeadlessRedaction(hmacSection, configure?)` and `AddHeadlessRedaction(configureHmac, configure?)` — the same, except `Private` and `Identifier` become HMAC pseudonyms keyed by `HmacRedactorOptions` (a Base64 `Key` of at least 44 characters, and a `KeyId`).
 - `PrefixMaskRedactor` — keeps the first characters (8 by default) and appends `***`, for device tokens and similar; map it to a classification yourself.
 - `services.AddHeadlessLogRedaction()` — wraps the registered `ILoggerFactory`, whichever stack owns it, so every entry is redacted before any provider sees it: a classified `[LoggerMessage]` parameter goes through the registered `IRedactorProvider` and reaches providers as an ordinary property and in the rendered text, and a credential path an `ILogPathRedactor` recognizes is replaced in ASP.NET Core's request scope (`RequestPath`) and its request lines (`Path`). Idempotent; call it after every registration of a logger factory, such as `UseSerilog`.
+- `services.AddLogTextRedaction(pattern, replacement = "***")` and `ILogTextRedactor` / `RegexLogTextRedactor` — opt-in masking of value shapes no classification reaches (a 14-digit national id, a card number) in every entry's rendered text, string property values, and string scope values. Applied by the `AddHeadlessLogRedaction` wrapper; nothing is scanned until one is registered.
 - `ILogPathRedactor` — declares request paths that carry a credential (`bool TryRedact(string path, out string? redacted)`); register implementations as `ILogPathRedactor` singletons. `UseSignedUrlEndpoint` registers one for signed blob URLs.
 
 ```csharp
@@ -93,6 +94,47 @@ public sealed record Customer(
 - **The wrapper copies, never holds.** A `[LoggerMessage]` call passes a thread-local state that the generator clears when `Log` returns, so the wrapper copies the plain values and the redacted ones into a fresh state for providers; the raw classified values never leave the call. A level no provider listens to costs nothing.
 - **Only ASP.NET Core's hosting category is path-rewritten.** Every other category passes through untouched, and a logger with nothing to redact (no redactor provider, not the hosting category) is returned unwrapped.
 - **The names avoid ASP.NET Core Identity's `[PersonalData]`**, so an app that uses both never hits an ambiguous attribute.
+- **Text redaction is a net, not the control.** It runs on every string of every entry in every category, and a shape can match an unrelated value that looks the same. Classify first; add a pattern only for shapes that reach logs as free text, such as an interpolated message. Give the pattern a match timeout: a timed-out match replaces the whole text, so a slow match never lets a value through. It runs after classification and path redaction, so it scans their redacted copies.
+- **Exception text is out of reach.** Providers read an exception's message and stack trace from the exception object, so neither classification nor text redaction rewrites them. Do not put a secret in an exception message.
+
+### Channel coverage
+
+| Channel | What redacts it |
+| --- | --- |
+| A destructured value (`{@Value}`) under Serilog | `DataClassificationDestructuringPolicy`, which the reloadable Serilog profile adds when `AddHeadlessRedaction`/`AddRedaction` is registered |
+| A classified `[LoggerMessage]` / `[LogProperties]` parameter | `AddHeadlessLogRedaction()` under any logger factory; Microsoft's `EnableRedaction` also covers it when Microsoft's factory is in charge |
+| ASP.NET Core's request scope and request lines | `AddHeadlessLogRedaction()` with an `ILogPathRedactor` (the signed-URL endpoint registers one) |
+| A plain `{Value}` hole, an interpolated message | the value's `ToString()`, and `AddLogTextRedaction` for known shapes |
+| HTTP logging (`UseHttpLogging`) | Microsoft's `AddHttpLoggingRedaction` (package `Microsoft.AspNetCore.Diagnostics.Middleware`), mapping headers and route parameters to the Headless classifications |
+| Outgoing `HttpClient` logging | Microsoft's `AddExtendedHttpClientLogging` (package `Microsoft.Extensions.Http.Diagnostics`), with the same classifications |
+| Exported OTLP logs and spans | everything above, plus the collector backstop below |
+| Exception messages and stack traces | nothing: keep secrets out of them |
+
+HTTP logging speaks the same classifications, so one taxonomy covers it. `AddHttpLoggingRedaction` is marked `[Experimental]` by Microsoft (suppress the diagnostic its build warning names), registers HTTP logging itself, and logs no request header you do not classify; the pipeline still needs `app.UseHttpLogging()`. `AddExtendedHttpClientLogging` replaces the default `HttpClient` logger rather than adding beside it.
+
+```csharp
+builder.Services.AddHeadlessRedaction(builder.Configuration.GetSection("Redaction:Hmac"));
+builder.Services.AddHttpLoggingRedaction(options =>
+{
+    options.RequestHeadersDataClasses.Add(HeaderNames.Authorization, HeadlessDataClassifications.Secret);
+    options.RouteParameterDataClasses.Add("userId", HeadlessDataClassifications.Identifier);
+});
+```
+
+### Collector backstop
+
+Redact in the app first: a value that reaches the collector has already crossed the network, and console and file logs never reach it. For exported telemetry, add the OpenTelemetry Collector's `redaction` processor as a second line. List the attribute keys the backend may receive in `allowed_keys` so anything else is dropped (fail closed), add `blocked_values` regexes for shapes that must never pass, and set `hash_function` so blocked values are hashed rather than erased, which keeps "same value" searchable. A keyed hash (`hmac-sha256` with `hmac_key`) cannot be reversed by hashing guesses; the processor also accepts `md5`, `sha1`, `sha3`, and `hmac-sha512`. `blocked_values` checks the values of allowed attribute keys (and map-shaped log bodies), not a plain-text body:
+
+```yaml
+processors:
+  redaction:
+    allow_all_keys: false
+    allowed_keys: [http.request.method, http.response.status_code, url.path, service.name]
+    blocked_values: ["\\b\\d{14}\\b"]
+    hash_function: hmac-sha256
+    hmac_key: "${env:REDACTION_HMAC_KEY}"
+    summary: info
+```
 
 ### Install
 

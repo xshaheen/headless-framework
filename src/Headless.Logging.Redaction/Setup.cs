@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Text.RegularExpressions;
 using Headless.Checks;
 using Headless.Hosting;
 using Headless.Logging.Internal;
@@ -128,13 +129,34 @@ public static class SetupLoggingRedaction
                         : new RedactingLoggerFactory(
                             inner,
                             provider.GetService<IRedactorProvider>(),
-                            [.. provider.GetServices<ILogPathRedactor>()]
+                            [.. provider.GetServices<ILogPathRedactor>()],
+                            [.. provider.GetServices<ILogTextRedactor>()]
                         )
             );
 
             services.AddStartupValidator<LogRedactionStartupValidator>();
 
             return services;
+        }
+
+        /// <summary>
+        /// Masks every match of <paramref name="pattern"/> in the text of every log entry: the rendered message, string
+        /// property values, and string scope values. Opt-in, for value shapes no classification reaches.
+        /// </summary>
+        /// <remarks>
+        /// Applied by the wrapper <c>AddHeadlessLogRedaction()</c> registers, so call that too, after any logger factory
+        /// registration. It scans every string of every entry, so prefer classification where you can, and give the
+        /// pattern a match timeout: a timed-out match replaces the whole text. Exception messages are not rewritten.
+        /// Each call adds one redactor; they run in registration order.
+        /// </remarks>
+        /// <param name="pattern">The shape to mask.</param>
+        /// <param name="replacement">The text that replaces each match. Defaults to <c>***</c>.</param>
+        /// <returns>The same <see cref="IServiceCollection"/> instance.</returns>
+        public IServiceCollection AddLogTextRedaction(Regex pattern, string replacement = "***")
+        {
+            Argument.IsNotNull(services);
+
+            return services.AddSingleton<ILogTextRedactor>(new RegexLogTextRedactor(pattern, replacement));
         }
     }
 
