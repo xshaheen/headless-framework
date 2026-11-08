@@ -106,6 +106,71 @@ public sealed class GracefulStopReleaseProviderTests : TestBase
         stored.ExecutionTime.Should().Be(new DateTime(2026, 06, 17, 12, 03, remainingSeconds, DateTimeKind.Utc));
     }
 
+    [Theory]
+    [InlineData(NodeDeathPolicy.Retry)]
+    [InlineData(NodeDeathPolicy.MarkFailed)]
+    [InlineData(NodeDeathPolicy.Skip)]
+    public async Task should_reschedule_a_failed_retry_to_idle_at_the_store_clock_plus_the_delay_under_any_policy(
+        NodeDeathPolicy policy
+    )
+    {
+        // given: the store's clock has moved on since the job was claimed
+        var clock = new FakeTimeProvider(_Now);
+        var provider = _Create(clock);
+        var job = _TimeJob(JobStatus.InProgress, _Owner, policy, retryCount: 1);
+        await provider.AddTimeJobsAsync([job], AbortToken);
+        clock.Advance(TimeSpan.FromMinutes(3));
+
+        // when
+        var affected = await provider.RescheduleTimeJobRetryAsync(
+            job.Id,
+            _Owner,
+            2,
+            TimeSpan.FromSeconds(60),
+            AbortToken
+        );
+
+        // then: the failed attempt is charged and the retry is due a delay after the store's instant
+        affected.Should().Be(1);
+        var stored = (await provider.GetTimeJobByIdAsync(job.Id, AbortToken))!;
+        stored.Status.Should().Be(JobStatus.Idle);
+        stored.OwnerId.Should().BeNull();
+        stored.LockedUntil.Should().BeNull();
+        stored.RetryCount.Should().Be(2);
+        stored.ExecutionTime.Should().Be(new DateTime(2026, 06, 17, 12, 04, 00, DateTimeKind.Utc));
+    }
+
+    [Theory]
+    [InlineData(JobStatus.Queued, _Owner)]
+    [InlineData(JobStatus.Idle, _Owner)]
+    [InlineData(JobStatus.Failed, _Owner)]
+    [InlineData(JobStatus.InProgress, _Peer)]
+    public async Task should_not_reschedule_a_row_that_is_not_running_under_the_claim_owner(
+        JobStatus status,
+        string ownerId
+    )
+    {
+        // given
+        var provider = _Create();
+        var job = _TimeJob(status, ownerId, NodeDeathPolicy.Retry);
+        await provider.AddTimeJobsAsync([job], AbortToken);
+
+        // when
+        var affected = await provider.RescheduleTimeJobRetryAsync(
+            job.Id,
+            _Owner,
+            1,
+            TimeSpan.FromSeconds(60),
+            AbortToken
+        );
+
+        // then
+        affected.Should().Be(0);
+        var stored = (await provider.GetTimeJobByIdAsync(job.Id, AbortToken))!;
+        stored.Status.Should().Be(status);
+        stored.RetryCount.Should().Be(0);
+    }
+
     [Fact]
     public async Task should_settle_an_interrupted_retry_time_job_at_its_stored_instant_when_no_delay_is_owed()
     {

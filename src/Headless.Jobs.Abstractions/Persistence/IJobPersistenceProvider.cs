@@ -269,6 +269,42 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     );
 
     /// <summary>
+    /// Hands a failed <c>InProgress</c> time job back to <c>Idle</c> to wait out a long retry delay in the store
+    /// instead of in a worker: <c>RetryCount</c> becomes <paramref name="retryCount"/>, owner and lease are cleared,
+    /// and <c>ExecutionTime</c> becomes the store's instant plus <paramref name="retryAfter"/>, so the next claim
+    /// runs the retry when it is due. The row's <c>OnNodeDeath</c> policy plays no part: the run is not interrupted,
+    /// it failed and has budget left.
+    /// </summary>
+    /// <param name="jobId">The failed job.</param>
+    /// <param name="claimOwner">
+    /// The owner that claimed the run. Only an <c>InProgress</c> row still stamped with it is rescheduled, so a row a
+    /// peer already reclaimed is left alone.
+    /// </param>
+    /// <param name="retryCount">The attempts spent so far, the failed one included; never negative.</param>
+    /// <param name="retryAfter">
+    /// The retry delay, never negative. The store adds it to its own clock at the write, so the retry becomes due
+    /// after the delay whatever the writing node's clock says. A store that has no clock of its own adds it to its
+    /// <see cref="TimeProvider"/>.
+    /// </param>
+    /// <param name="cancellationToken">Token that aborts the write before it starts.</param>
+    /// <returns><c>1</c> when the row was rescheduled; <c>0</c> when the fence excluded it.</returns>
+    /// <remarks>
+    /// The write commits even when the host's stop token has fired, and repeating it after it landed matches no row.
+    /// </remarks>
+    /// <exception cref="ArgumentException"><paramref name="claimOwner"/> is <see langword="null"/> or empty.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="retryCount"/> or <paramref name="retryAfter"/> is negative.
+    /// </exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<int> RescheduleTimeJobRetryAsync(
+        Guid jobId,
+        string claimOwner,
+        int retryCount,
+        TimeSpan retryAfter,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
     /// Reads — without claiming — the batch of acquirable time jobs due in the earliest pending one-second
     /// bucket. This is the scheduler's peek: it decides what to attempt next and how long to sleep, and the
     /// scheduler claims the result via <see cref="QueueTimeJobsAsync"/> only once the earliest job is due by the

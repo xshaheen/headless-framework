@@ -48,6 +48,19 @@ internal interface IInternalJobManager
     );
 
     /// <summary>
+    /// Hands a failed time job with retries left back to <c>Idle</c> with <paramref name="retryCount"/> spent, due
+    /// after <paramref name="retryAfter"/> on the store's clock, so the retry waits in the store rather than in a
+    /// worker; then wakes the local scheduler so it plans for the new due time. Returns the affected row count;
+    /// <c>0</c> means a peer already owns the row.
+    /// </summary>
+    Task<int> RescheduleRetryAsync(
+        JobExecutionState context,
+        int retryCount,
+        TimeSpan retryAfter,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
     /// Renews the running job's lease (#316) under its <see cref="JobExecutionState.ClaimOwner"/>, dispatching to the
     /// time or cron occurrence renew by <see cref="JobExecutionState.Type"/>. Returns the affected row count:
     /// <c>0</c> means the lease was lost — including when the node's live identity is gone or is no longer the claim

@@ -270,6 +270,41 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ConfigureAwait(false);
     }
 
+    public async Task<int> RescheduleTimeJobRetryAsync(
+        Guid jobId,
+        string claimOwner,
+        int retryCount,
+        TimeSpan retryAfter,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(claimOwner);
+        Argument.IsPositiveOrZero(retryCount);
+        Argument.IsPositiveOrZero(retryAfter);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(CancellationToken.None)
+            .ConfigureAwait(false);
+
+        // The delay is added to the database clock inside this autocommit statement, as the interrupted-settle write
+        // does, so a skewed node clock cannot move the retry's due time.
+        var delaySeconds = retryAfter.TotalSeconds;
+        return await _InterruptedTimeJob(dbContext, jobId, claimOwner)
+            .ExecuteUpdateAsync(
+                setter =>
+                    setter
+                        .SetProperty(x => x.Status, JobStatus.Idle)
+                        .SetProperty(x => x.OwnerId, _ => null)
+                        .SetProperty(x => x.LockedUntil, _ => null)
+                        .SetProperty(x => x.RetryCount, retryCount)
+                        .SetProperty(x => x.ExecutionTime, _ => DateTime.UtcNow.AddSeconds(delaySeconds))
+                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                CancellationToken.None
+            )
+            .ConfigureAwait(false);
+    }
+
     private static IQueryable<TTimeJob> _InterruptedTimeJob(TDbContext dbContext, Guid jobId, string claimOwner)
     {
         return dbContext.Set<TTimeJob>().Where(x => x.Id == jobId).WhereRunningBy(claimOwner);

@@ -164,6 +164,79 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>
         (await Fixture.ReadTimeJobAsync(notStarted, ct)).Should().Be(((int)JobStatus.Queued, _StopOwner));
     }
 
+    public virtual async Task retry_reschedule_charges_the_attempt_and_waits_at_the_store_clock_under_any_policy(
+        int policy
+    )
+    {
+        var ct = AbortToken;
+        await Fixture.ResetDatabaseAsync(ct);
+
+        // The node lags the database by two minutes, so a due time it computed itself would miss the tolerance below.
+        var capture = new LeaseSqlCapture();
+        using var host = Fixture.BuildHost(
+            "node-a",
+            timeProvider: new SkewedTimeProvider(TimeSpan.FromMinutes(-2)),
+            interceptor: capture
+        );
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+        var id = Guid.NewGuid();
+        var peerId = Guid.NewGuid();
+        await Fixture.SeedTimeJobAsync(
+            id,
+            "RetryReschedule",
+            (int)JobStatus.InProgress,
+            _StopOwner,
+            ct,
+            (NodeDeathPolicy)policy,
+            lockedUntil: DateTime.UtcNow.AddMinutes(5)
+        );
+        await Fixture.SeedTimeJobAsync(
+            peerId,
+            "RetryReschedule",
+            (int)JobStatus.InProgress,
+            _StopPeer,
+            ct,
+            lockedUntil: DateTime.UtcNow.AddMinutes(5)
+        );
+        var delay = TimeSpan.FromSeconds(60);
+
+        capture.Clear();
+        var storeBefore = await _StoreUtcNowAsync(ct);
+        (await persistence.RescheduleTimeJobRetryAsync(id, _StopOwner, 2, delay, ct)).Should().Be(1);
+        var storeAfter = await _StoreUtcNowAsync(ct);
+
+        // The database computes the due time: the write binds no instant, only the delay in seconds.
+        var reschedule = capture
+            .Statements.Should()
+            .ContainSingle(statement =>
+                statement.Sql.TrimStart().StartsWith("UPDATE", StringComparison.OrdinalIgnoreCase)
+            )
+            .Subject;
+        reschedule.Parameters.Values.Should().NotContain(parameter => parameter.IsTemporal, reschedule.Sql);
+        reschedule.Sql.Should().Contain(Fixture.EfTranslatedDatabaseClockSql);
+
+        // The node-death policy plays no part: the run failed with budget left, it was not interrupted.
+        var (status, ownerId, lockedUntil, _, _) = await Fixture.ReadTimeJobDetailAsync(id, ct);
+        status.Should().Be((int)JobStatus.Idle);
+        ownerId.Should().BeNull();
+        lockedUntil.Should().BeNull();
+        (await Fixture.ReadTimeJobRetryCountAsync(id, ct)).Should().Be(2);
+        (await persistence.GetTimeJobByIdAsync(id, ct))!
+            .ExecutionTime.Should()
+            .BeOnOrAfter(storeBefore + delay - TimeSpan.FromSeconds(1))
+            .And.BeOnOrBefore(storeAfter + delay + TimeSpan.FromSeconds(1));
+
+        // A row a peer reclaimed, and a repeat of the landed write, match nothing.
+        (await persistence.RescheduleTimeJobRetryAsync(peerId, _StopOwner, 1, delay, ct))
+            .Should()
+            .Be(0);
+        (await persistence.RescheduleTimeJobRetryAsync(id, _StopOwner, 3, delay, ct)).Should().Be(0);
+        (await Fixture.ReadTimeJobAsync(peerId, ct)).Should().Be(((int)JobStatus.InProgress, _StopPeer));
+        (await Fixture.ReadTimeJobRetryCountAsync(id, ct)).Should().Be(2);
+    }
+
     public virtual async Task graceful_settlement_of_a_cron_occurrence_applies_its_policy_without_charging(int policy)
     {
         var ct = AbortToken;
