@@ -1,0 +1,15 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>Entity Framework Core mapping for Headless fenced rows: maps a lease kept as columns on an entity's own row, builds the relational table descriptor from the model, and selects lease candidates by the database clock.</Description>
+    <PackageTags>headless;fencing;lease;fencing-token;entity-framework;ef-core;dotnet</PackageTags>
+    <RootNamespace>Headless.Fencing</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
+    <ProjectReference Include="..\Headless.Fencing.Sql\Headless.Fencing.Sql.csproj" />
+  </ItemGroup>
+</Project>
