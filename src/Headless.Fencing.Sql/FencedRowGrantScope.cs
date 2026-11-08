@@ -53,6 +53,12 @@ public sealed class FencedRowGrantScope<TKey>
     /// Renders the grant's assignments for a <c>SET</c> clause, over unqualified columns and
     /// <see cref="SqlDialectTokens.Now" />, which the consumer's statement resolves to the database clock.
     /// </summary>
+    /// <remarks>
+    /// The assignments carry no lease fence: they grant whichever rows the consumer's statement selects, taking over
+    /// a live attempt as readily as a free row. The statement's filter must therefore select only rows no live
+    /// attempt holds, or rows the caller already holds, such as a subtree under a root it has just claimed. To claim
+    /// rows, use <see cref="RenderClaim" />, which adds the table's fence to the consumer's filter.
+    /// </remarks>
     /// <param name="deadlineExpression">
     /// A trusted SQL expression for the expiry, such as the root row's stored deadline so a subtree expires with its
     /// root, or <see langword="null" /> for the clock plus the bound duration.
