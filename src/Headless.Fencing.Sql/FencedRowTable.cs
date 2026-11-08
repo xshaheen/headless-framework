@@ -118,18 +118,7 @@ public sealed class FencedRowTable<TKey>
             )
         );
 
-        // A sweep skips rows another transaction holds, so it never waits on a live fence or a concurrent sweeper.
-        AbandonSql = dialect.Render(
-            new SqlClaimNext(
-                Table,
-                KeyColumns,
-                $"{State} = {ActiveLiteral} AND {ExpiresAt} <= {now}",
-                [ExpiresAt],
-                $"{State} = {_StateLiteral(RowLeaseState.Abandoned)}, {TakeoverCount} = {TakeoverCount} + 1",
-                [Generation],
-                BatchSizeParameter
-            )
-        );
+        AbandonSql = RenderAbandon(condition: null, set: null);
     }
 
     /// <summary>
@@ -292,6 +281,43 @@ public sealed class FencedRowTable<TKey>
         {
             Dialect.AddParameter(command, KeyParameters[i].Parameter, parts[i].Type, parts[i].Value(key));
         }
+    }
+
+    /// <summary>
+    /// Revokes the active attempt and applies <paramref name="set" /> in the same statement, fenced on the active state
+    /// alone, as <see cref="RevokeSql" /> is.
+    /// </summary>
+    internal string RenderRevoke(string set)
+    {
+        return RenderTransition(
+            $"{State} = {ActiveLiteral}",
+            EndAssignments(RowLeaseState.Revoked) + ", " + set,
+            [Generation]
+        );
+    }
+
+    /// <summary>
+    /// The sweep of expired active attempts, narrowed by <paramref name="condition" /> and applying
+    /// <paramref name="set" /> beside the abandonment, both optional.
+    /// </summary>
+    internal string RenderAbandon(string? condition, string? set)
+    {
+        const string now = SqlDialectTokens.Now;
+        var filter = $"{State} = {ActiveLiteral} AND {ExpiresAt} <= {now}";
+        var assignments = $"{State} = {_StateLiteral(RowLeaseState.Abandoned)}, {TakeoverCount} = {TakeoverCount} + 1";
+
+        // A sweep skips rows another transaction holds, so it never waits on a live fence or a concurrent sweeper.
+        return Dialect.Render(
+            new SqlClaimNext(
+                Table,
+                KeyColumns,
+                condition is null ? filter : $"{filter} AND ({condition})",
+                [ExpiresAt],
+                set is null ? assignments : assignments + ", " + set,
+                [Generation],
+                BatchSizeParameter
+            )
+        );
     }
 
     internal string RenderTransition(string fence, string? set, IReadOnlyList<string> returning)

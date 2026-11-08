@@ -134,6 +134,12 @@ public sealed class SqliteFencedRowsConformanceTests(SqliteFencingFixture fixtur
     }
 
     [Fact]
+    public override Task should_land_the_consumers_write_only_on_rows_a_revocation_or_a_sweep_ends()
+    {
+        return base.should_land_the_consumers_write_only_on_rows_a_revocation_or_a_sweep_ends();
+    }
+
+    [Fact]
     public override Task should_throw_for_a_token_another_table_issued_before_any_statement()
     {
         return base.should_throw_for_a_token_another_table_issued_before_any_statement();
