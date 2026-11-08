@@ -1,10 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Data.Common;
+using System.Reflection;
+using System.Runtime.ExceptionServices;
 using Headless.Coordination;
+using Headless.Fencing;
 using Headless.Jobs;
 using Headless.Testing.Tests;
-using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Time.Testing;
@@ -49,13 +50,22 @@ public abstract class JobsProgressConformanceTests<TFixture>(TFixture fixture) :
                 ct,
                 lockedUntil: lease
             );
+            await _HandToForeignOwnerAsync(fixture.QualifiedTimeJobsTable, foreign, ct);
             await fixture.SeedTimeJobAsync(queued, _Function, (int)JobStatus.Queued, owner, ct, lockedUntil: lease);
             var store = _Store(writer);
 
-            (await store.UpdateTimeJobProgressAsync(owned, owner, new(10, "warming up"), ct)).Should().BeTrue();
-            (await store.UpdateTimeJobProgressAsync(owned, owner, new(42.5, "halfway"), ct)).Should().BeTrue();
-            (await store.UpdateTimeJobProgressAsync(foreign, owner, new(99, "not mine"), ct)).Should().BeFalse();
-            (await store.UpdateTimeJobProgressAsync(queued, owner, new(99, "not running"), ct)).Should().BeFalse();
+            (await store.UpdateTimeJobProgressAsync(JobsLeaseTables.TimeJob(owned, 1), new(10, "warming up"), ct))
+                .Should()
+                .BeTrue();
+            (await store.UpdateTimeJobProgressAsync(JobsLeaseTables.TimeJob(owned, 1), new(42.5, "halfway"), ct))
+                .Should()
+                .BeTrue();
+            (await store.UpdateTimeJobProgressAsync(JobsLeaseTables.TimeJob(foreign, 1), new(99, "not mine"), ct))
+                .Should()
+                .BeFalse();
+            (await store.UpdateTimeJobProgressAsync(JobsLeaseTables.TimeJob(queued, 1), new(99, "not running"), ct))
+                .Should()
+                .BeFalse();
 
             // A dashboard refresh is a fresh read through any node's store, here one that never wrote anything.
             var page = await _Store(reader).GetTimeJobsPaginatedAsync(x => x.Function == _Function, 1, 10, ct);
@@ -67,7 +77,7 @@ public abstract class JobsProgressConformanceTests<TFixture>(TFixture fixture) :
             page.Items.Single(x => x.Id == queued).ProgressPercent.Should().BeNull();
 
             // Each report replaces the stored one whole, so a report without a message clears it.
-            (await store.UpdateTimeJobProgressAsync(owned, owner, new(50), ct))
+            (await store.UpdateTimeJobProgressAsync(JobsLeaseTables.TimeJob(owned, 1), new(50), ct))
                 .Should()
                 .BeTrue();
             var cleared = (await _Store(reader).GetTimeJobByIdAsync(owned, ct))!;
@@ -119,10 +129,21 @@ public abstract class JobsProgressConformanceTests<TFixture>(TFixture fixture) :
                 instant.AddMinutes(1),
                 ct
             );
+            await _HandToForeignOwnerAsync(fixture.QualifiedCronJobOccurrencesTable, foreign, ct);
             var store = _Store(writer);
 
-            (await store.UpdateCronJobOccurrenceProgressAsync(owned, owner, new(75, "nearly"), ct)).Should().BeTrue();
-            (await store.UpdateCronJobOccurrenceProgressAsync(foreign, owner, new(75), ct)).Should().BeFalse();
+            (
+                await store.UpdateCronJobOccurrenceProgressAsync(
+                    JobsLeaseTables.CronOccurrence(owned, 1),
+                    new(75, "nearly"),
+                    ct
+                )
+            )
+                .Should()
+                .BeTrue();
+            (await store.UpdateCronJobOccurrenceProgressAsync(JobsLeaseTables.CronOccurrence(foreign, 1), new(75), ct))
+                .Should()
+                .BeFalse();
 
             var rows = await _Store(reader).GetAllCronJobOccurrencesAsync(x => x.CronJobId == cronId, ct);
             var ownedRow = rows.Single(x => x.Id == owned);
@@ -162,7 +183,7 @@ public abstract class JobsProgressConformanceTests<TFixture>(TFixture fixture) :
             );
             var store = _Store(host);
 
-            (await store.UpdateTimeJobProgressAsync(id, owner, new(5), ct)).Should().BeTrue();
+            (await store.UpdateTimeJobProgressAsync(JobsLeaseTables.TimeJob(id, 1), new(5), ct)).Should().BeTrue();
 
             (await store.GetTimeJobByIdAsync(id, ct))!
                 .ProgressUpdatedAt.Should()
@@ -201,10 +222,11 @@ public abstract class JobsProgressConformanceTests<TFixture>(TFixture fixture) :
             ct,
             lockedUntil: DateTime.UtcNow.AddMinutes(5)
         );
+        await _HandToForeignOwnerAsync(fixture.QualifiedTimeJobsTable, reclaimed, ct);
         var store = _Store(host);
 
-        (await store.UpdateTimeJobProgressAsync(id, claimOwner, new(5), ct)).Should().BeTrue();
-        (await store.UpdateTimeJobProgressAsync(reclaimed, claimOwner, new(5), ct)).Should().BeFalse();
+        (await store.UpdateTimeJobProgressAsync(JobsLeaseTables.TimeJob(id, 1), new(5), ct)).Should().BeTrue();
+        (await store.UpdateTimeJobProgressAsync(JobsLeaseTables.TimeJob(reclaimed, 1), new(5), ct)).Should().BeFalse();
         (await store.GetTimeJobByIdAsync(id, ct))!.ProgressPercent.Should().Be(5);
         (await store.GetTimeJobByIdAsync(reclaimed, ct))!.ProgressPercent.Should().BeNull();
     }
@@ -244,7 +266,7 @@ public abstract class JobsProgressConformanceTests<TFixture>(TFixture fixture) :
                 ct
             );
             var store = _Store(host);
-            await store.UpdateTimeJobProgressAsync(timeJob, owner, new(60, "last written"), ct);
+            await store.UpdateTimeJobProgressAsync(JobsLeaseTables.TimeJob(timeJob, 1), new(60, "last written"), ct);
 
             var timeJobAffected = await store.UpdateTimeJobAsync(
                 _Terminal(timeJob, owner, JobType.TimeJob, JobStatus.Succeeded, new JobProgress(100, "done")),
@@ -303,8 +325,12 @@ public abstract class JobsProgressConformanceTests<TFixture>(TFixture fixture) :
             );
             await fixture.SeedTimeJobAsync(failed, _Function, (int)JobStatus.InProgress, owner, ct, lockedUntil: lease);
             var store = _Store(host);
-            await store.UpdateTimeJobProgressAsync(crashed, owner, new(80, "before the crash"), ct);
-            await store.UpdateTimeJobProgressAsync(failed, owner, new(40, "failed here"), ct);
+            await store.UpdateTimeJobProgressAsync(
+                JobsLeaseTables.TimeJob(crashed, 1),
+                new(80, "before the crash"),
+                ct
+            );
+            await store.UpdateTimeJobProgressAsync(JobsLeaseTables.TimeJob(failed, 1), new(40, "failed here"), ct);
 
             // The crashed run's lease lapses; the stalled sweep releases it for another attempt.
             await _ExpireLeaseAsync(crashed, ct);
@@ -346,9 +372,9 @@ public abstract class JobsProgressConformanceTests<TFixture>(TFixture fixture) :
         // so only the leading write and the terminal write may touch the progress columns.
         using var host = fixture.BuildHost(
             "progress-runner",
-            interceptor: writes,
             configureJobs: jobs => jobs.ConfigureScheduler(s => s.ProgressReportInterval = TimeSpan.FromMinutes(1)),
-            runBackgroundServices: true
+            runBackgroundServices: true,
+            configureServices: writes.Decorate
         );
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
         await host.StartAsync(ct);
@@ -379,9 +405,13 @@ public abstract class JobsProgressConformanceTests<TFixture>(TFixture fixture) :
                 .Be(
                     $"report {JobsCoordinationFixtureExtensions.ProgressReports.ToString(System.Globalization.CultureInfo.InvariantCulture)}"
                 );
+            // The terminal write carries the last report, so the throttle leaves at most the leading progress write.
             writes
                 .Count.Should()
-                .BeInRange(1, 2, "the throttle coalesces the reports into the leading write and the terminal write");
+                .BeLessThanOrEqualTo(
+                    1,
+                    "the throttle coalesces the reports into the leading write and the terminal write"
+                );
         }
         finally
         {
@@ -414,7 +444,11 @@ public abstract class JobsProgressConformanceTests<TFixture>(TFixture fixture) :
                 ct
             );
             var store = _Store(host);
-            await store.UpdateCronJobOccurrenceProgressAsync(occurrence, owner, new(40, "failed here"), ct);
+            await store.UpdateCronJobOccurrenceProgressAsync(
+                JobsLeaseTables.CronOccurrence(occurrence, 1),
+                new(40, "failed here"),
+                ct
+            );
             await store.UpdateCronJobOccurrenceAsync(
                 _Terminal(occurrence, owner, JobType.CronJobOccurrence, JobStatus.Failed, progress: null),
                 ct
@@ -441,11 +475,11 @@ public abstract class JobsProgressConformanceTests<TFixture>(TFixture fixture) :
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = fixture.Sql(
-            $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"LockedUntil\" = @past WHERE \"Id\" = @id;"
+            $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"LeaseExpiresAt\" = @past WHERE \"Id\" = @id;"
         );
         var past = command.CreateParameter();
         past.ParameterName = "@past";
-        past.Value = DateTime.UtcNow.AddMinutes(-10);
+        past.Value = DateTimeOffset.UtcNow.AddMinutes(-10);
         command.Parameters.Add(past);
         var idParameter = command.CreateParameter();
         idParameter.ParameterName = "@id";
@@ -453,6 +487,15 @@ public abstract class JobsProgressConformanceTests<TFixture>(TFixture fixture) :
         command.Parameters.Add(idParameter);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
+
+    // A peer's takeover draws the next generation, so a write fenced on this node's generation 1 no longer matches.
+    private Task _HandToForeignOwnerAsync(string table, Guid id, CancellationToken cancellationToken) =>
+        fixture.OverwriteLeaseAsync(
+            table,
+            id,
+            new RowLeaseSnapshot(2, RowLeaseState.Active, DateTimeOffset.UtcNow.AddMinutes(5), _ForeignOwner, 1),
+            cancellationToken
+        );
 
     private static JobExecutionState _Terminal(
         Guid id,
@@ -468,6 +511,8 @@ public abstract class JobsProgressConformanceTests<TFixture>(TFixture fixture) :
             FunctionName = _Function,
             Type = type,
             ClaimOwner = claimOwner,
+            // Every scenario seeds its held rows at generation 1.
+            ClaimGeneration = 1,
         }
             .SetProperty(x => x.Status, status)
             .SetProperty(x => x.ExecutedAt, DateTimeOffset.UtcNow);
@@ -507,49 +552,82 @@ public abstract class JobsProgressConformanceTests<TFixture>(TFixture fixture) :
         }
 
         throw new TimeoutException(
-            $"Job {id} did not finish within 60 s; last state: status={job?.Status}, owner={job?.OwnerId}, "
-                + $"lockedUntil={job?.LockedUntil:O}, executionTime={job?.ExecutionTime:O}, progress={job?.ProgressPercent}, "
+            $"Job {id} did not finish within 60 s; last state: status={job?.Status}, owner={job?.Lease.Holder}, "
+                + $"lease={job?.Lease.State}/{job?.Lease.ExpiresAt:O}, executionTime={job?.ExecutionTime:O}, progress={job?.ProgressPercent}, "
                 + $"exception={job?.ExceptionMessage}"
         );
     }
 
-    /// <summary>Counts the statements that write the progress columns, whatever the provider's column naming.</summary>
-    private sealed class ProgressWriteCounter : DbCommandInterceptor
+    /// <summary>
+    /// Counts the run's progress writes at the persistence boundary. The writes run as fenced raw commands on the
+    /// context's connection, which EF interceptors never see, so the count is taken where the throttle hands them off.
+    /// </summary>
+    internal sealed class ProgressWriteCounter
     {
         private int _count;
 
         public int Count => Volatile.Read(ref _count);
 
-        public override InterceptionResult<int> NonQueryExecuting(
-            DbCommand command,
-            CommandEventData eventData,
-            InterceptionResult<int> result
-        )
+        /// <summary>Replaces the registered store with one that counts its progress writes.</summary>
+        public void Decorate(IServiceCollection services)
         {
-            _Count(command);
-            return base.NonQueryExecuting(command, eventData, result);
+            var registered = services.Last(descriptor =>
+                descriptor.ServiceType == typeof(IJobPersistenceProvider<TimeJobEntity, CronJobEntity>)
+            );
+            var factory =
+                registered.ImplementationFactory
+                ?? throw new InvalidOperationException("The Jobs store is expected to register through a factory.");
+            services.Remove(registered);
+            services.AddSingleton(provider =>
+                CountingStore.Wrap((IJobPersistenceProvider<TimeJobEntity, CronJobEntity>)factory(provider), this)
+            );
         }
 
-        public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
-            DbCommand command,
-            CommandEventData eventData,
-            InterceptionResult<int> result,
-            CancellationToken cancellationToken = default
+        public void Increment() => Interlocked.Increment(ref _count);
+    }
+
+#pragma warning disable CA1852 // False positive: DispatchProxy.Create derives the proxy type at run time, so it cannot be sealed.
+    internal class CountingStore : DispatchProxy
+#pragma warning restore CA1852
+    {
+        private IJobPersistenceProvider<TimeJobEntity, CronJobEntity> _inner = null!;
+        private Action _onProgressWrite = null!;
+
+        internal static IJobPersistenceProvider<TimeJobEntity, CronJobEntity> Wrap(
+            IJobPersistenceProvider<TimeJobEntity, CronJobEntity> inner,
+            ProgressWriteCounter counter
         )
         {
-            _Count(command);
-            return base.NonQueryExecutingAsync(command, eventData, result, cancellationToken);
+            var proxy = Create<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>, CountingStore>();
+            var store = (CountingStore)(object)proxy;
+            store._inner = inner;
+            store._onProgressWrite = counter.Increment;
+            return proxy;
         }
 
-        private void _Count(DbCommand command)
+        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
         {
-            var text = command.CommandText.Replace("_", "", StringComparison.Ordinal);
+            var method = targetMethod ?? throw new InvalidOperationException("The proxy was invoked without a method.");
+
             if (
-                text.TrimStart().StartsWith("UPDATE", StringComparison.OrdinalIgnoreCase)
-                && text.Contains("progresspercent", StringComparison.OrdinalIgnoreCase)
+                string.Equals(
+                    method.Name,
+                    nameof(IJobPersistenceProvider<,>.UpdateTimeJobProgressAsync),
+                    StringComparison.Ordinal
+                )
             )
             {
-                Interlocked.Increment(ref _count);
+                _onProgressWrite();
+            }
+
+            try
+            {
+                return method.Invoke(_inner, args);
+            }
+            catch (TargetInvocationException exception) when (exception.InnerException is not null)
+            {
+                ExceptionDispatchInfo.Capture(exception.InnerException).Throw();
+                throw;
             }
         }
     }

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Fencing;
 using Headless.Jobs;
 using Headless.Jobs.BackgroundServices;
 using Headless.Jobs.JobsThreadPool;
@@ -60,8 +61,7 @@ public sealed class JobsAdmissionWorkItemTests : TestBase
             Id = Guid.NewGuid(),
             Function = "fn",
             Status = JobStatus.Queued,
-            OwnerId = owner,
-            LockedUntil = DateTime.UtcNow.AddMinutes(5),
+            Lease = TestLeases.Held(owner, DateTime.UtcNow.AddMinutes(5)),
             ExecutionTime = DateTime.UtcNow,
         };
         await store.AddTimeJobsAsync([job], AbortToken);
@@ -71,6 +71,7 @@ public sealed class JobsAdmissionWorkItemTests : TestBase
             JobId = job.Id,
             Type = JobType.TimeJob,
             ClaimOwner = owner,
+            ClaimGeneration = job.Lease.Generation,
         };
         await using var pool = new JobsTaskScheduler(maxConcurrency: 1, TimeProvider.System);
         pool.BeginDrain();
@@ -91,8 +92,7 @@ public sealed class JobsAdmissionWorkItemTests : TestBase
         // then
         var stored = await store.GetTimeJobByIdAsync(job.Id, AbortToken);
         stored!.Status.Should().Be(JobStatus.Idle);
-        stored.OwnerId.Should().BeNull();
-        stored.LockedUntil.Should().BeNull();
+        stored.Lease.State.Should().NotBe(RowLeaseState.Active);
         stored.RetryCount.Should().Be(0);
     }
 }

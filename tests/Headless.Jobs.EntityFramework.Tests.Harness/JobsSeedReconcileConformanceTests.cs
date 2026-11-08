@@ -245,7 +245,9 @@ public abstract class JobsSeedReconcileConformanceTests<TFixture>(TFixture fixtu
         {
             JobId = occurrenceId,
             FunctionName = declared.Function,
+            Type = JobType.CronJobOccurrence,
             ClaimOwner = "seed-worker",
+            ClaimGeneration = 1,
         };
         completed.SetProperty(x => x.Status, JobStatus.Succeeded);
         (await persistence.UpdateCronJobOccurrenceAsync(completed, ct))

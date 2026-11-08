@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless;
+using Headless.Fencing;
 using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Jobs.BackgroundServices;
@@ -79,8 +80,7 @@ public sealed class JobsWakeClockDomainTests : TestBase
         wake.WakeAtStoreUtc.Should().Be(future.ExecutionTime);
         var stored = await provider.GetTimeJobByIdAsync(future.Id, AbortToken);
         stored!.Status.Should().Be(JobStatus.Idle);
-        stored.OwnerId.Should().BeNull();
-        stored.LockedUntil.Should().BeNull();
+        stored.Lease.State.Should().NotBe(RowLeaseState.Active);
     }
 
     [Fact]
@@ -115,7 +115,7 @@ public sealed class JobsWakeClockDomainTests : TestBase
         acquired.Select(x => x.Id).Should().Equal(due.Id);
         var stored = await provider.GetTimeJobByIdAsync(future.Id, AbortToken);
         stored!.Status.Should().Be(JobStatus.Idle);
-        stored.OwnerId.Should().BeNull();
+        stored.Lease.State.Should().NotBe(RowLeaseState.Active);
     }
 
     [Fact]
@@ -141,11 +141,9 @@ public sealed class JobsWakeClockDomainTests : TestBase
         var (_, provider) = _CreateManager();
         var held = _TimeJob(_StoreNow.AddSeconds(2));
         held.Status = JobStatus.Queued;
-        held.OwnerId = "node-a";
-        held.LockedUntil = _StoreNow.AddMinutes(5);
+        held.Lease = TestLeases.Held("node-a", _StoreNow.AddMinutes(5));
         var lapsed = _TimeJob(_StoreNow.AddSeconds(2));
-        lapsed.OwnerId = "node-b";
-        lapsed.LockedUntil = _StoreNow.AddMinutes(-1);
+        lapsed.Lease = TestLeases.Held("node-b", _StoreNow.AddMinutes(-1));
         await provider.AddTimeJobsAsync([held, lapsed], AbortToken);
 
         var peek = await provider.GetEarliestTimeJobsAsync(AbortToken);
@@ -164,12 +162,10 @@ public sealed class JobsWakeClockDomainTests : TestBase
         await provider.InsertCronJobsAsync([heldDefinition, lapsedDefinition], AbortToken);
         var held = _CronOccurrence(heldDefinition.Id, _StoreNow.AddSeconds(1));
         held.Status = JobStatus.Queued;
-        held.OwnerId = "node-a";
-        held.LockedUntil = _StoreNow.AddMinutes(5);
+        held.Lease = TestLeases.Held("node-a", _StoreNow.AddMinutes(5));
         var lapsed = _CronOccurrence(lapsedDefinition.Id, _StoreNow.AddSeconds(2));
         lapsed.Status = JobStatus.Queued;
-        lapsed.OwnerId = "node-b";
-        lapsed.LockedUntil = _StoreNow.AddMinutes(-1);
+        lapsed.Lease = TestLeases.Held("node-b", _StoreNow.AddMinutes(-1));
         await provider.InsertCronJobOccurrencesAsync([held, lapsed], AbortToken);
 
         var peek = await provider.GetEarliestAvailableCronOccurrenceAsync([], AbortToken);

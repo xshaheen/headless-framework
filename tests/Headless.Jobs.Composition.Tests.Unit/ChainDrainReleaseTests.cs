@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless;
+using Headless.Fencing;
 using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Jobs.Instrumentation;
@@ -58,11 +59,14 @@ public sealed class ChainDrainReleaseTests : TestBase
         };
         (await store.AddTimeJobsAsync([root, child], AbortToken)).Should().Be(2);
         var claimed = (await store.AcquireImmediateTimeJobsAsync([root.Id], AbortToken)).Single();
-        var identity = new StampOwnerIdentity(claimed.OwnerId!, drainBeforeStart ? null : scheduler.BeginDrain);
+        var identity = new StampOwnerIdentity(claimed.Lease.Holder!, drainBeforeStart ? null : scheduler.BeginDrain);
         var rootRan = false;
         var childRan = false;
         var context = _State(claimed, RunCondition.InProgress);
-        context.TimeJobChildren.Add(_State(child, RunCondition.InProgress, claimed.OwnerId));
+        var childState = _State(child, RunCondition.InProgress, claimed.Lease.Holder);
+        // The claim grants the child its own generation, so the child's state carries the stored one.
+        childState.ClaimGeneration = (await store.GetTimeJobByIdAsync(child.Id, AbortToken))!.Lease.Generation;
+        context.TimeJobChildren.Add(childState);
         var registry = _Registry(() => rootRan = true, () => childRan = true);
         JobsExecutionContext.CacheFunctionReferences(context, registry);
         JobsExecutionContext.CacheFunctionReferences(context.TimeJobChildren[0], registry);
@@ -96,7 +100,7 @@ public sealed class ChainDrainReleaseTests : TestBase
         var storedRoot = await store.GetTimeJobByIdAsync(root.Id, AbortToken);
         storedRoot!.Status.Should().Be(JobStatus.Idle);
         storedRoot.RetryCount.Should().Be(1, "a graceful stop is not an attempt the job used up");
-        storedRoot.OwnerId.Should().BeNull();
+        storedRoot.Lease.State.Should().NotBe(RowLeaseState.Active);
         var storedChild = await store.GetTimeJobByIdAsync(child.Id, AbortToken);
         storedChild!.Status.Should().Be(JobStatus.Idle);
         storedChild.ExecutedAt.Should().BeNull();
@@ -175,7 +179,8 @@ public sealed class ChainDrainReleaseTests : TestBase
             RetryCount = row.RetryCount,
             Retries = row.Retries,
             RetryIntervals = row.RetryIntervals,
-            ClaimOwner = claimOwner ?? row.OwnerId,
+            ClaimOwner = claimOwner ?? row.Lease.Holder,
+            ClaimGeneration = row.Lease.Generation,
         };
     }
 

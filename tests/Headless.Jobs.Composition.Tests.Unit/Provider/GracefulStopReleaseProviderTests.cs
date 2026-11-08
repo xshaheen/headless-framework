@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Fencing;
 using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Jobs.Provider;
@@ -25,6 +26,10 @@ public sealed class GracefulStopReleaseProviderTests : TestBase
     private const string _Reason = "interrupted by host shutdown";
     private static readonly DateTimeOffset _Now = new(2026, 06, 17, 12, 00, 00, TimeSpan.Zero);
 
+    // The generation this node's claim drew. A peer that reclaimed the row drew the next one, so this node's writes
+    // carry a stale generation for it.
+    private const long _ClaimGeneration = 1;
+
     [Fact]
     public async Task should_release_a_started_time_job_to_idle_without_charging_it()
     {
@@ -34,14 +39,13 @@ public sealed class GracefulStopReleaseProviderTests : TestBase
         await provider.AddTimeJobsAsync([job], AbortToken);
 
         // when
-        var affected = await provider.ReleaseInProgressTimeJobAsync(job.Id, _Owner, AbortToken);
+        var affected = await provider.ReleaseInProgressTimeJobAsync(_Claimed(job), AbortToken);
 
         // then: the release ignores the policy, because the job never ran
         affected.Should().Be(1);
         var stored = (await provider.GetTimeJobByIdAsync(job.Id, AbortToken))!;
         stored.Status.Should().Be(JobStatus.Idle);
-        stored.OwnerId.Should().BeNull();
-        stored.LockedUntil.Should().BeNull();
+        stored.Lease.State.Should().NotBe(RowLeaseState.Active);
         stored.RetryCount.Should().Be(1);
         stored.ExecutionTime.Should().Be(job.ExecutionTime, "the release keeps the row due at its stored instant");
     }
@@ -63,15 +67,15 @@ public sealed class GracefulStopReleaseProviderTests : TestBase
         await provider.AddTimeJobsAsync([job], AbortToken);
 
         // when
-        var released = await provider.ReleaseInProgressTimeJobAsync(job.Id, _Owner, AbortToken);
-        var settled = await provider.SettleInterruptedTimeJobAsync(job.Id, _Owner, _Reason, null, AbortToken);
+        var released = await provider.ReleaseInProgressTimeJobAsync(_Claimed(job), AbortToken);
+        var settled = await provider.SettleInterruptedTimeJobAsync(_Claimed(job), _Reason, null, AbortToken);
 
         // then
         released.Should().Be(0);
         settled.Should().Be(0);
         var stored = (await provider.GetTimeJobByIdAsync(job.Id, AbortToken))!;
         stored.Status.Should().Be(status);
-        stored.OwnerId.Should().Be(ownerId);
+        stored.Lease.Holder.Should().Be(ownerId);
     }
 
     [Theory]
@@ -90,8 +94,7 @@ public sealed class GracefulStopReleaseProviderTests : TestBase
 
         // when
         var affected = await provider.SettleInterruptedTimeJobAsync(
-            job.Id,
-            _Owner,
+            _Claimed(job),
             _Reason,
             TimeSpan.FromSeconds(remainingSeconds),
             AbortToken
@@ -101,7 +104,7 @@ public sealed class GracefulStopReleaseProviderTests : TestBase
         affected.Should().Be(1);
         var stored = (await provider.GetTimeJobByIdAsync(job.Id, AbortToken))!;
         stored.Status.Should().Be(JobStatus.Idle);
-        stored.OwnerId.Should().BeNull();
+        stored.Lease.State.Should().NotBe(RowLeaseState.Active);
         stored.RetryCount.Should().Be(1, "a graceful stop is not an attempt the job used up");
         stored.ExecutionTime.Should().Be(new DateTime(2026, 06, 17, 12, 03, remainingSeconds, DateTimeKind.Utc));
     }
@@ -123,8 +126,7 @@ public sealed class GracefulStopReleaseProviderTests : TestBase
 
         // when
         var affected = await provider.RescheduleTimeJobRetryAsync(
-            job.Id,
-            _Owner,
+            _Claimed(job),
             2,
             TimeSpan.FromSeconds(60),
             AbortToken
@@ -134,8 +136,7 @@ public sealed class GracefulStopReleaseProviderTests : TestBase
         affected.Should().Be(1);
         var stored = (await provider.GetTimeJobByIdAsync(job.Id, AbortToken))!;
         stored.Status.Should().Be(JobStatus.Idle);
-        stored.OwnerId.Should().BeNull();
-        stored.LockedUntil.Should().BeNull();
+        stored.Lease.State.Should().NotBe(RowLeaseState.Active);
         stored.RetryCount.Should().Be(2);
         stored.ExecutionTime.Should().Be(new DateTime(2026, 06, 17, 12, 04, 00, DateTimeKind.Utc));
     }
@@ -157,8 +158,7 @@ public sealed class GracefulStopReleaseProviderTests : TestBase
 
         // when
         var affected = await provider.RescheduleTimeJobRetryAsync(
-            job.Id,
-            _Owner,
+            _Claimed(job),
             1,
             TimeSpan.FromSeconds(60),
             AbortToken
@@ -180,7 +180,7 @@ public sealed class GracefulStopReleaseProviderTests : TestBase
         await provider.AddTimeJobsAsync([job], AbortToken);
 
         // when
-        var affected = await provider.SettleInterruptedTimeJobAsync(job.Id, _Owner, _Reason, null, AbortToken);
+        var affected = await provider.SettleInterruptedTimeJobAsync(_Claimed(job), _Reason, null, AbortToken);
 
         // then
         affected.Should().Be(1);
@@ -204,8 +204,7 @@ public sealed class GracefulStopReleaseProviderTests : TestBase
 
         // when
         var affected = await provider.SettleInterruptedTimeJobAsync(
-            job.Id,
-            _Owner,
+            _Claimed(job),
             _Reason,
             TimeSpan.FromMinutes(1),
             AbortToken
@@ -215,8 +214,8 @@ public sealed class GracefulStopReleaseProviderTests : TestBase
         affected.Should().Be(1);
         var stored = (await provider.GetTimeJobByIdAsync(job.Id, AbortToken))!;
         stored.Status.Should().Be(expected);
-        stored.OwnerId.Should().Be(_Owner);
-        stored.LockedUntil.Should().BeNull();
+        stored.Lease.Holder.Should().Be(_Owner);
+        stored.Lease.State.Should().NotBe(RowLeaseState.Active);
         stored.RetryCount.Should().Be(0);
         stored.ExecutionTime.Should().Be(job.ExecutionTime);
         (expected == JobStatus.Failed ? stored.ExceptionMessage : stored.SkippedReason).Should().Be(_Reason);
@@ -237,8 +236,7 @@ public sealed class GracefulStopReleaseProviderTests : TestBase
 
         // when
         var affected = await provider.SettleInterruptedCronJobOccurrenceAsync(
-            occurrence.Id,
-            _Owner,
+            _Claimed(occurrence),
             _Reason,
             AbortToken
         );
@@ -248,9 +246,9 @@ public sealed class GracefulStopReleaseProviderTests : TestBase
         var stored = await _OccurrenceAsync(provider, occurrence.Id);
         stored.Status.Should().Be(expected);
         stored.RetryCount.Should().Be(1);
-        stored.LockedUntil.Should().BeNull();
+        stored.Lease.State.Should().NotBe(RowLeaseState.Active);
         stored.ExecutionTime.Should().Be(occurrence.ExecutionTime);
-        stored.OwnerId.Should().Be(policy == NodeDeathPolicy.Retry ? null : _Owner);
+        stored.Lease.Holder.Should().Be(_Owner, "an ended lease keeps the holder that last held it");
 
         if (expected == JobStatus.Failed)
         {
@@ -271,13 +269,13 @@ public sealed class GracefulStopReleaseProviderTests : TestBase
         var occurrence = await _AddOccurrenceAsync(provider, JobStatus.InProgress, _Owner, NodeDeathPolicy.Skip);
 
         // when
-        var affected = await provider.ReleaseInProgressCronJobOccurrenceAsync(occurrence.Id, _Owner, AbortToken);
+        var affected = await provider.ReleaseInProgressCronJobOccurrenceAsync(_Claimed(occurrence), AbortToken);
 
         // then
         affected.Should().Be(1);
         var stored = await _OccurrenceAsync(provider, occurrence.Id);
         stored.Status.Should().Be(JobStatus.Idle);
-        stored.OwnerId.Should().BeNull();
+        stored.Lease.State.Should().NotBe(RowLeaseState.Active);
         stored.RetryCount.Should().Be(1);
     }
 
@@ -289,20 +287,15 @@ public sealed class GracefulStopReleaseProviderTests : TestBase
         var occurrence = await _AddOccurrenceAsync(provider, JobStatus.InProgress, _Peer, NodeDeathPolicy.Retry);
 
         // when
-        var released = await provider.ReleaseInProgressCronJobOccurrenceAsync(occurrence.Id, _Owner, AbortToken);
-        var settled = await provider.SettleInterruptedCronJobOccurrenceAsync(
-            occurrence.Id,
-            _Owner,
-            _Reason,
-            AbortToken
-        );
+        var released = await provider.ReleaseInProgressCronJobOccurrenceAsync(_Claimed(occurrence), AbortToken);
+        var settled = await provider.SettleInterruptedCronJobOccurrenceAsync(_Claimed(occurrence), _Reason, AbortToken);
 
         // then
         released.Should().Be(0);
         settled.Should().Be(0);
         var stored = await _OccurrenceAsync(provider, occurrence.Id);
         stored.Status.Should().Be(JobStatus.InProgress);
-        stored.OwnerId.Should().Be(_Peer);
+        stored.Lease.Holder.Should().Be(_Peer);
     }
 
     private static JobsInMemoryPersistenceProvider<FakeTimeJob, FakeCronJob> _Create(FakeTimeProvider? clock = null)
@@ -323,8 +316,8 @@ public sealed class GracefulStopReleaseProviderTests : TestBase
             Id = Guid.NewGuid(),
             Function = "fn",
             Status = status,
-            OwnerId = owner,
-            LockedUntil = _Now.UtcDateTime.AddMinutes(5),
+            // An unowned row was never granted, so it carries no lease at all rather than a holderless live one.
+            Lease = TestLeases.Held(owner, owner is null ? null : _Now.AddMinutes(5), _GenerationHeldBy(owner)),
             OnNodeDeath = policy,
             RetryCount = retryCount,
             ExecutionTime = _Now.UtcDateTime.AddMinutes(-2),
@@ -348,8 +341,7 @@ public sealed class GracefulStopReleaseProviderTests : TestBase
         {
             Id = Guid.NewGuid(),
             Status = status,
-            OwnerId = owner,
-            LockedUntil = _Now.UtcDateTime.AddMinutes(5),
+            Lease = TestLeases.Held(owner, _Now.AddMinutes(5), _GenerationHeldBy(owner)),
             OnNodeDeath = policy,
             RetryCount = 1,
             // Not the default, so a Skip settlement visibly marks the instant accounted for.
@@ -371,4 +363,12 @@ public sealed class GracefulStopReleaseProviderTests : TestBase
         var all = await provider.GetAllCronJobOccurrencesAsync(predicate: null, AbortToken);
         return all.Single(x => x.Id == id);
     }
+
+    private static long _GenerationHeldBy(string? owner) =>
+        string.Equals(owner, _Peer, StringComparison.Ordinal) ? _ClaimGeneration + 1 : _ClaimGeneration;
+
+    private static FencedRow<Guid> _Claimed(FakeTimeJob job) => JobsLeaseTables.TimeJob(job.Id, _ClaimGeneration);
+
+    private static FencedRow<Guid> _Claimed(CronJobOccurrenceEntity<FakeCronJob> occurrence) =>
+        JobsLeaseTables.CronOccurrence(occurrence.Id, _ClaimGeneration);
 }

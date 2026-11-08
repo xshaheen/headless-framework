@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Coordination;
+using Headless.Fencing;
 using Headless.Jobs;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -39,7 +40,7 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>
         staleCopy.ExecutionTime = DateTime.UtcNow.AddHours(1);
         staleCopy.Status = JobStatus.Idle;
         staleCopy.RetryCount = 3;
-        staleCopy.OwnerId = null;
+        staleCopy.Lease = default;
 
         (await manager.UpdateAsync(staleCopy, ct)).IsSucceeded.Should().BeFalse();
 
@@ -111,17 +112,25 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>
 
             _ShouldSucceed(await manager.UpdateAsync(copy, ct));
 
-            var (status, ownerId, lockedUntil, _, _) = await Fixture.ReadTimeJobDetailAsync(job.Id, ct);
+            // The edit returns the row to Idle and ends the claim's lease, so that claim can no longer write.
+            var (status, lease, _, _) = await Fixture.ReadTimeJobDetailAsync(job.Id, ct);
             status.Should().Be((int)JobStatus.Idle);
-            ownerId.Should().BeNull();
-            lockedUntil.Should().BeNull();
+            lease.State.Should().NotBe(RowLeaseState.Active);
             (await persistence.GetTimeJobByIdAsync(job.Id, ct))!.ExecutionTime.Should().Be(newTime);
 
             var start = new JobExecutionState { FunctionName = string.Empty, ClaimOwner = owner }.SetProperty(
                 x => x.Status,
                 JobStatus.InProgress
             );
-            (await persistence.UpdateTimeJobsWithUnifiedContextAsync([job.Id], start, ct)).Should().BeEmpty();
+            (
+                await persistence.UpdateTimeJobsWithUnifiedContextAsync(
+                    [JobsLeaseTables.TimeJob(job.Id, lease.Generation)],
+                    start,
+                    ct
+                )
+            )
+                .Should()
+                .BeEmpty();
             (await Fixture.ReadTimeJobAsync(job.Id, ct)).Should().Be(((int)JobStatus.Idle, null));
         }
         finally
@@ -239,10 +248,9 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>
 
             foreach (var id in new[] { root.Id, child.Id })
             {
-                var (status, ownerId, lockedUntil, _, _) = await Fixture.ReadTimeJobDetailAsync(id, ct);
+                var (status, lease, _, _) = await Fixture.ReadTimeJobDetailAsync(id, ct);
                 status.Should().Be((int)JobStatus.Idle);
-                ownerId.Should().BeNull();
-                lockedUntil.Should().BeNull();
+                lease.State.Should().NotBe(RowLeaseState.Active);
             }
 
             (await persistence.GetTimeJobByIdAsync(child.Id, ct))!.Description.Should().Be("edited child");
@@ -335,29 +343,37 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>
         result.IsSucceeded.Should().BeTrue(result.Exception?.ToString());
     }
 
-    private async Task _StampTimeJobAsync(Guid id, JobStatus status, string? ownerId, CancellationToken ct)
+    private async Task _StampTimeJobAsync(Guid id, JobStatus status, string ownerId, CancellationToken ct)
     {
-        await using var connection = Fixture.CreateConnection();
-        await connection.OpenAsync(ct);
-        await using var command = connection.CreateCommand();
-        command.CommandText = Fixture.Sql(
-            $"UPDATE {Fixture.QualifiedTimeJobsTable} SET \"Status\" = @status, \"OwnerId\" = @ownerId WHERE \"Id\" = @id;"
+        await using (var connection = Fixture.CreateConnection())
+        {
+            await connection.OpenAsync(ct);
+            await using var command = connection.CreateCommand();
+            command.CommandText = Fixture.Sql(
+                $"UPDATE {Fixture.QualifiedTimeJobsTable} SET \"Status\" = @status WHERE \"Id\" = @id;"
+            );
+            // Status persists as its enum name.
+            JobsCoordinationFixtureExtensions.AddParameter(command, "@status", status.ToString());
+            JobsCoordinationFixtureExtensions.AddParameter(command, "@id", id);
+            (await command.ExecuteNonQueryAsync(ct)).Should().Be(1);
+        }
+
+        // A live lease, so the row reads as held by that owner.
+        await Fixture.OverwriteLeaseAsync(
+            Fixture.QualifiedTimeJobsTable,
+            id,
+            new RowLeaseSnapshot(1, RowLeaseState.Active, DateTimeOffset.UtcNow.AddMinutes(5), ownerId, 0),
+            ct
         );
-        // Status persists as its enum name.
-        JobsCoordinationFixtureExtensions.AddParameter(command, "@status", status.ToString());
-        JobsCoordinationFixtureExtensions.AddParameter(command, "@ownerId", (object?)ownerId ?? DBNull.Value);
-        JobsCoordinationFixtureExtensions.AddParameter(command, "@id", id);
-        (await command.ExecuteNonQueryAsync(ct)).Should().Be(1);
     }
 
     private static (
         JobStatus Status,
-        string? OwnerId,
-        DateTime? LockedUntil,
+        RowLeaseSnapshot Lease,
         int RetryCount,
         string? Description,
         DateTime? ExecutionTime,
         DateTimeOffset UpdatedAt
     ) _GuardedSnapshot(TimeJobEntity job) =>
-        (job.Status, job.OwnerId, job.LockedUntil, job.RetryCount, job.Description, job.ExecutionTime, job.UpdatedAt);
+        (job.Status, job.Lease, job.RetryCount, job.Description, job.ExecutionTime, job.UpdatedAt);
 }

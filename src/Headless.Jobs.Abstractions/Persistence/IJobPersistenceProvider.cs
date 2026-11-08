@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Linq.Expressions;
+using Headless.Fencing;
 
 namespace Headless.Jobs;
 
@@ -38,12 +39,20 @@ namespace Headless.Jobs;
 /// <b>Ownership and fencing vocabulary</b> used throughout the member docs:
 /// <list type="bullet">
 /// <item><description>
-/// <i>Owner</i> — the <c>cluster/node@incarnation</c> identity of the node holding a row, stored in <c>OwnerId</c>.
+/// <i>Owner</i> — the <c>cluster/node@incarnation</c> identity of the node holding a row, stored as the lease's
+/// <see cref="RowLeaseSnapshot.Holder"/>.
 /// </description></item>
 /// <item><description>
-/// <i>Lease</i> — <c>LockedUntil</c>, the UTC instant after which another node may reclaim the row. Providers
-/// stamp it from their own time authority: the injected <see cref="TimeProvider"/> for in-memory storage, the
-/// database clock for relational storage.
+/// <i>Lease</i> — the row's <see cref="RowLeaseSnapshot"/>: a generation every claim draws anew, a state, and the
+/// deadline after which another node may reclaim the row. Providers judge the deadline on their own time authority:
+/// the injected <see cref="TimeProvider"/> for in-memory storage, the database clock for relational storage. A lease
+/// that ends (settled, released, revoked, or abandoned) keeps its holder and deadline for diagnostics.
+/// </description></item>
+/// <item><description>
+/// <i>Claimed row</i> — the <see cref="FencedRow{TKey}"/> a claim hands out (<see cref="JobExecutionState.ClaimedRow"/>):
+/// the row id and the generation it was granted. Every write a run makes is fenced on that generation, so a write
+/// from an attempt whose lease expired or ended is refused, even when the same owner has since claimed the row
+/// again.
 /// </description></item>
 /// <item><description>
 /// <i>Claim owner</i> — the owner stamped on a row when this node claimed it, carried with the run in
@@ -51,17 +60,16 @@ namespace Headless.Jobs;
 /// identity, which disappears when the node leaves membership or passes its self-fence deadline.
 /// </description></item>
 /// <item><description>
-/// <i>Completion fence</i> — an update applies only while the row is still stamped with the claim owner AND is
-/// still non-terminal (<c>Idle</c>, <c>Queued</c>, or <c>InProgress</c>), so a late completion cannot clobber a row
-/// that a sweep already reclaimed or terminalized. Settling writes (completion, failure, retry count, progress,
-/// release) need only this fence, so a run that finishes after its node left still records its outcome while no
-/// peer has reclaimed the row. Writes that extend or start ownership (lease renewal, admission to
-/// <c>InProgress</c>) additionally require the node's live identity to equal the claim owner, so a fenced node
-/// cannot keep its rows alive.
+/// <i>Completion fence</i> — an update applies only while the claimed row's generation is still the row's live
+/// lease: same generation, active, and before its deadline on the store clock. A sweep, cancel, delete, or edit that
+/// changes the row ends the lease in the same write, so a late completion cannot clobber it. Settling writes
+/// (completion, failure, retry count, progress, release) need only this fence, so a run that finishes after its node
+/// left still records its outcome while its lease is live. Writes that extend or start ownership (lease renewal,
+/// admission to <c>InProgress</c>) additionally require the node's live identity to equal the claim owner, so a
+/// fenced node cannot keep its rows alive.
 /// </description></item>
 /// <item><description>
-/// <i>Acquirable</i> — the row is <c>Idle</c> or <c>Queued</c> and either unowned or past its lease, so this
-/// node may claim it.
+/// <i>Acquirable</i> — the row is <c>Idle</c> or <c>Queued</c> and holds no live lease, so this node may claim it.
 /// </description></item>
 /// </list>
 /// </para>
@@ -182,15 +190,16 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// lease cleared so another node can pick it up. Used on graceful shutdown and when dispatch is abandoned
     /// after a successful claim.
     /// </summary>
-    /// <param name="timeJobIds">
-    /// The jobs to release. An <b>empty</b> array is not a no-op: it releases every <c>Queued</c> row
-    /// <paramref name="claimOwner"/> has claimed but not started. Releasable means <c>Queued</c> AND stamped with
-    /// <paramref name="claimOwner"/> — <c>InProgress</c> work, foreign or unowned rows, and <c>Idle</c> owned rows (a
-    /// running chain's claimed descendants) are never matched by either form.
+    /// <param name="rows">
+    /// The claimed rows to release, each fenced on its own generation. An <b>empty</b> array is not a no-op: it
+    /// releases every <c>Queued</c> row whose live lease <paramref name="claimOwner"/> holds. Releasable means
+    /// <c>Queued</c> AND under the given live lease — <c>InProgress</c> work, foreign or unleased rows, and <c>Idle</c>
+    /// leased rows (a running chain's claimed descendants) are never matched by either form.
     /// </param>
     /// <param name="claimOwner">
-    /// The owner that claimed the rows (<see cref="JobExecutionState.ClaimOwner"/>). The release fences on it rather
-    /// than on the node's live identity, so a draining node can still hand its claims back after it left membership.
+    /// The owner that claimed the rows (<see cref="JobExecutionState.ClaimOwner"/>), which scopes the empty form. The
+    /// release does not consult the node's live identity, so a draining node can still hand its claims back after it
+    /// left membership.
     /// </param>
     /// <param name="cancellationToken">Token that aborts the release.</param>
     /// <returns>A task that completes when the release has been applied.</returns>
@@ -201,7 +210,7 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// <exception cref="ArgumentException"><paramref name="claimOwner"/> is <see langword="null"/> or empty.</exception>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task ReleaseAcquiredTimeJobsAsync(
-        Guid[] timeJobIds,
+        FencedRow<Guid>[] rows,
         string claimOwner,
         CancellationToken cancellationToken = default
     );
@@ -213,10 +222,9 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// once. A run the stop interrupted, including one waiting between retries, is settled by
     /// <see cref="SettleInterruptedTimeJobAsync"/> instead.
     /// </summary>
-    /// <param name="jobId">The job to release.</param>
-    /// <param name="claimOwner">
-    /// The owner that claimed the run (<see cref="JobExecutionState.ClaimOwner"/>). Only an <c>InProgress</c> row
-    /// still stamped with it is released, so a row a peer already reclaimed is left alone.
+    /// <param name="row">
+    /// The claimed run (<see cref="JobExecutionState.ClaimedRow"/>). Only an <c>InProgress</c> row whose live lease is
+    /// still this generation is released, so a row a peer already reclaimed is left alone.
     /// </param>
     /// <param name="cancellationToken">Token that aborts the release before it starts.</param>
     /// <returns><c>1</c> when the row was released; <c>0</c> when the fence excluded it.</returns>
@@ -224,22 +232,16 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// The write commits even when the host's stop token has fired. It is fenced on the run it releases, so repeating
     /// it after it landed matches no row.
     /// </remarks>
-    /// <exception cref="ArgumentException"><paramref name="claimOwner"/> is <see langword="null"/> or empty.</exception>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
-    Task<int> ReleaseInProgressTimeJobAsync(
-        Guid jobId,
-        string claimOwner,
-        CancellationToken cancellationToken = default
-    );
+    Task<int> ReleaseInProgressTimeJobAsync(FencedRow<Guid> row, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Settles a time job that a graceful host stop interrupted, by the row's <c>OnNodeDeath</c> policy and without
     /// charging its retry budget: <c>Retry</c> → <c>Idle</c> with owner and lease cleared, <c>MarkFailed</c> →
     /// <c>Failed</c>, <c>Skip</c> → <c>Skipped</c>, the last two recording <paramref name="reason"/>.
     /// </summary>
-    /// <param name="jobId">The interrupted job.</param>
-    /// <param name="claimOwner">
-    /// The owner that claimed the run. Only an <c>InProgress</c> row still stamped with it is settled.
+    /// <param name="row">
+    /// The claimed run. Only an <c>InProgress</c> row whose live lease is still this generation is settled.
     /// </param>
     /// <param name="reason">The exception message (<c>MarkFailed</c>) or skip reason (<c>Skip</c>) to record.</param>
     /// <param name="retryAfter">
@@ -255,14 +257,11 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// <c>RetryCount</c>: the node that ran the job is the one settling it, so the run is known to have stopped. The
     /// write commits even when the host's stop token has fired, and repeating it after it landed matches no row.
     /// </remarks>
-    /// <exception cref="ArgumentException">
-    /// <paramref name="claimOwner"/> or <paramref name="reason"/> is <see langword="null"/> or empty.
-    /// </exception>
+    /// <exception cref="ArgumentException"><paramref name="reason"/> is <see langword="null"/> or empty.</exception>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="retryAfter"/> is negative.</exception>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task<int> SettleInterruptedTimeJobAsync(
-        Guid jobId,
-        string claimOwner,
+        FencedRow<Guid> row,
         string reason,
         TimeSpan? retryAfter,
         CancellationToken cancellationToken = default
@@ -270,15 +269,14 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
 
     /// <summary>
     /// Hands a failed <c>InProgress</c> time job back to <c>Idle</c> to wait out a long retry delay in the store
-    /// instead of in a worker: <c>RetryCount</c> becomes <paramref name="retryCount"/>, owner and lease are cleared,
-    /// and <c>ExecutionTime</c> becomes the store's instant plus <paramref name="retryAfter"/>, so the next claim
+    /// instead of in a worker: <c>RetryCount</c> becomes <paramref name="retryCount"/>, the attempt's lease is
+    /// released, and <c>ExecutionTime</c> becomes the store's instant plus <paramref name="retryAfter"/>, so the next claim
     /// runs the retry when it is due. The row's <c>OnNodeDeath</c> policy plays no part: the run is not interrupted,
     /// it failed and has budget left.
     /// </summary>
-    /// <param name="jobId">The failed job.</param>
-    /// <param name="claimOwner">
-    /// The owner that claimed the run. Only an <c>InProgress</c> row still stamped with it is rescheduled, so a row a
-    /// peer already reclaimed is left alone.
+    /// <param name="row">
+    /// The claimed run. Only an <c>InProgress</c> row whose live lease is still this generation is rescheduled, so a
+    /// row a peer already reclaimed is left alone.
     /// </param>
     /// <param name="retryCount">The attempts spent so far, the failed one included; never negative.</param>
     /// <param name="retryAfter">
@@ -291,14 +289,13 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// <remarks>
     /// The write commits even when the host's stop token has fired, and repeating it after it landed matches no row.
     /// </remarks>
-    /// <exception cref="ArgumentException"><paramref name="claimOwner"/> is <see langword="null"/> or empty.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="row"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <paramref name="retryCount"/> or <paramref name="retryAfter"/> is negative.
     /// </exception>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task<int> RescheduleTimeJobRetryAsync(
-        Guid jobId,
-        string claimOwner,
+        FencedRow<Guid> row,
         int retryCount,
         TimeSpan retryAfter,
         CancellationToken cancellationToken = default
@@ -345,15 +342,16 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// <see cref="JobExecutionState.PropertiesToUpdate"/>.
     /// </summary>
     /// <param name="functionContext">
-    /// The execution state to stamp; <see cref="JobExecutionState.JobId"/> selects the row and
-    /// <see cref="JobExecutionState.ClaimOwner"/> is the owner the fence requires. The node's live identity is not
-    /// consulted, so the outcome of a run that finishes after its node left membership still persists.
+    /// The execution state to stamp; <see cref="JobExecutionState.ClaimedRow"/> selects the row and the generation
+    /// the fence requires. The node's live identity is not consulted, so the outcome of a run that finishes after its
+    /// node left membership still persists while its lease is live. A terminal status ends the lease as settled in
+    /// the same write; a return to <c>Idle</c> releases it.
     /// </param>
     /// <param name="cancellationToken">Token that aborts the update.</param>
     /// <returns>
-    /// <c>1</c> when the completion was applied, or <c>0</c> when the fence excluded the row because a sweep
-    /// already reclaimed or terminalized it, the owner changed, the row no longer exists, or the state carries no
-    /// claim owner. <c>0</c> is a normal outcome, not an error — the caller must not retry it as a failure.
+    /// <c>1</c> when the completion was applied, or <c>0</c> when the fence excluded the row because its lease
+    /// expired or ended (a sweep, cancel, or edit), a later claim replaced it, the row no longer exists, or the state
+    /// carries no claimed row. <c>0</c> is a normal outcome, not an error — the caller must not retry it as a failure.
     /// </returns>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task<int> UpdateTimeJobAsync(JobExecutionState functionContext, CancellationToken cancellationToken = default);
@@ -472,19 +470,18 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     Task<int> SkipStrandedTimedChildrenAsync(CancellationToken cancellationToken = default) => Task.FromResult(0);
 
     /// <summary>
-    /// Applies <paramref name="functionContext"/> to time jobs still stamped with its
-    /// <see cref="JobExecutionState.ClaimOwner"/> and returns the IDs that were actually stamped. Callers must execute
-    /// only the returned IDs.
+    /// Applies <paramref name="functionContext"/> to the claimed time jobs whose live lease is still the given
+    /// generation and returns the IDs that were actually stamped. Callers must execute only the returned IDs.
     /// </summary>
-    /// <param name="timeJobIds">The claimed jobs to stamp with the shared execution state.</param>
+    /// <param name="rows">The claimed rows to stamp with the shared execution state, each fenced on its generation.</param>
     /// <param name="functionContext">
     /// The state to apply to every listed job; only the members named in
     /// <see cref="JobExecutionState.PropertiesToUpdate"/> are persisted. A state with no claim owner stamps nothing.
     /// </param>
     /// <param name="cancellationToken">Token that aborts the batch.</param>
     /// <returns>
-    /// The subset of <paramref name="timeJobIds"/> that passed the fence and were stamped, in no guaranteed
-    /// order. Empty when none survived.
+    /// The ids of <paramref name="rows"/> that passed the fence and were stamped, in no guaranteed order. Empty when
+    /// none survived.
     /// </returns>
     /// <remarks>
     /// This is also the claim-to-start recheck. When <paramref name="functionContext"/> carries an
@@ -494,7 +491,7 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// </remarks>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task<Guid[]> UpdateTimeJobsWithUnifiedContextAsync(
-        Guid[] timeJobIds,
+        FencedRow<Guid>[] rows,
         JobExecutionState functionContext,
         CancellationToken cancellationToken = default
     );
@@ -528,16 +525,16 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     Task<TimeJobEntity[]> AcquireImmediateTimeJobsAsync(Guid[] ids, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Slides the running time job's lease forward (<c>LockedUntil = now + LeaseDuration</c>) while the node's live
-    /// identity equals <paramref name="claimOwner"/> and the row is still stamped with it and running (#316).
-    /// Returns the affected row count: <c>1</c> when the lease was renewed, <c>0</c> when it was lost — the caller
-    /// treats <c>0</c> as cancel-on-loss.
+    /// Slides the running time job's lease deadline to <c>now + LeaseDuration</c> on the store clock while the node's
+    /// live identity equals <paramref name="claimOwner"/> and the row is still running under the claimed generation
+    /// (#316). Returns the affected row count: <c>1</c> when the lease was renewed, <c>0</c> when it was lost — the
+    /// caller treats <c>0</c> as cancel-on-loss.
     /// </summary>
-    /// <param name="jobId">Identifier of the job whose lease is being renewed.</param>
+    /// <param name="row">The claimed row whose lease is being renewed (<see cref="JobExecutionState.ClaimedRow"/>).</param>
     /// <param name="claimOwner">The owner that claimed the row (<see cref="JobExecutionState.ClaimOwner"/>).</param>
     /// <param name="cancellationToken">Token that aborts the renewal.</param>
     /// <returns>
-    /// <c>1</c> renewed; <c>0</c> lost because the row was reclaimed, re-owned, or terminalized, or because the node
+    /// <c>1</c> renewed; <c>0</c> lost because the lease expired or ended, a later claim replaced it, or because the node
     /// has no live identity or a different one (it left membership, passed its self-fence deadline, or restarted as
     /// a new incarnation).
     /// </returns>
@@ -549,35 +546,38 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// </remarks>
     /// <exception cref="ArgumentException"><paramref name="claimOwner"/> is <see langword="null"/> or empty.</exception>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
-    Task<int> RenewTimeJobLeaseAsync(Guid jobId, string claimOwner, CancellationToken cancellationToken = default);
+    Task<int> RenewTimeJobLeaseAsync(
+        FencedRow<Guid> row,
+        string claimOwner,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// Stores the running time job's latest progress report, stamping <c>ProgressUpdatedAt</c> with the store's clock.
-    /// Only an <c>InProgress</c> row still stamped with <paramref name="claimOwner"/> is written, so a node that lost
-    /// the lease cannot overwrite the new owner's progress.
+    /// Only an <c>InProgress</c> row whose live lease is still the claimed generation is written, so a run that lost
+    /// the lease cannot overwrite the next attempt's progress.
     /// </summary>
-    /// <param name="jobId">Identifier of the running time job.</param>
-    /// <param name="claimOwner">The owner that claimed the row (<see cref="JobExecutionState.ClaimOwner"/>).</param>
+    /// <param name="row">The claimed running job (<see cref="JobExecutionState.ClaimedRow"/>).</param>
     /// <param name="progress">The report to store; it replaces the stored percent and message whole.</param>
     /// <param name="cancellationToken">Token that aborts the write.</param>
     /// <returns>
     /// <see langword="true"/> when the row was written; <see langword="false"/> when it is not running under
-    /// <paramref name="claimOwner"/>.
+    /// <paramref name="row"/>'s live generation.
     /// </returns>
-    /// <exception cref="ArgumentException"><paramref name="claimOwner"/> is <see langword="null"/> or empty.</exception>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task<bool> UpdateTimeJobProgressAsync(
-        Guid jobId,
-        string claimOwner,
+        FencedRow<Guid> row,
         JobProgress progress,
         CancellationToken cancellationToken = default
     );
 
     /// <summary>
-    /// Reclaims time jobs stuck <c>InProgress</c> whose lease lapsed (<c>LockedUntil &lt;= now</c>), independent of
+    /// Reclaims time jobs stuck <c>InProgress</c> whose lease lapsed on the store clock, independent of
     /// node death (#316 — the gap-closer). Applies the same per-<c>OnNodeDeath</c> transitions as the dead-node
     /// sweep: <c>Retry</c> → released to <c>Idle</c> (re-claimable), <c>MarkFailed</c> → <c>Failed</c>, <c>Skip</c> →
-    /// <c>Skipped</c>. A healthy renewing job keeps a future lease and is never matched. Returns the affected count.
+    /// <c>Skipped</c>. A healthy renewing job keeps a future lease and is never matched. Every transition ends the
+    /// lapsed lease as abandoned in the same write, so the stalled attempt's late completion is refused. Returns the
+    /// affected count.
     /// </summary>
     /// <param name="cancellationToken">Token that aborts the sweep.</param>
     /// <returns>The number of rows transitioned by this sweep; <c>0</c> when nothing had stalled.</returns>
@@ -989,11 +989,10 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// Releases cron occurrences this node claimed but will not execute, returning each to <c>Idle</c> with its
     /// owner and lease cleared. The cron mirror of <see cref="ReleaseAcquiredTimeJobsAsync"/>.
     /// </summary>
-    /// <param name="occurrenceIds">
-    /// The occurrences to release. An <b>empty</b> array is not a no-op: it releases every <c>Queued</c>
-    /// occurrence <paramref name="claimOwner"/> has claimed but not started. Releasable means <c>Queued</c> AND
-    /// stamped with <paramref name="claimOwner"/> — <c>InProgress</c>, foreign, unowned, and <c>Idle</c> owned rows
-    /// are never matched by either form.
+    /// <param name="rows">
+    /// The claimed occurrences to release, each fenced on its generation. An <b>empty</b> array is not a no-op: it
+    /// releases every <c>Queued</c> occurrence whose live lease <paramref name="claimOwner"/> holds. <c>InProgress</c>,
+    /// foreign, unleased, and <c>Idle</c> leased rows are never matched by either form.
     /// </param>
     /// <param name="claimOwner">
     /// The owner that claimed the occurrences (<see cref="JobExecutionState.ClaimOwner"/>); see
@@ -1008,7 +1007,7 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// <exception cref="ArgumentException"><paramref name="claimOwner"/> is <see langword="null"/> or empty.</exception>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task ReleaseAcquiredCronJobOccurrencesAsync(
-        Guid[] occurrenceIds,
+        FencedRow<Guid>[] rows,
         string claimOwner,
         CancellationToken cancellationToken = default
     );
@@ -1017,17 +1016,14 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// Hands a started cron occurrence back to <c>Idle</c> without charging its retry budget. The cron mirror of
     /// <see cref="ReleaseInProgressTimeJobAsync"/>; the occurrence keeps its execution time, which identifies it.
     /// </summary>
-    /// <param name="occurrenceId">The occurrence to release.</param>
-    /// <param name="claimOwner">
-    /// The owner that claimed the run. Only an <c>InProgress</c> row still stamped with it is released.
+    /// <param name="row">
+    /// The claimed run. Only an <c>InProgress</c> row whose live lease is still this generation is released.
     /// </param>
     /// <param name="cancellationToken">Token that aborts the release before it starts.</param>
     /// <returns><c>1</c> when the row was released; <c>0</c> when the fence excluded it.</returns>
-    /// <exception cref="ArgumentException"><paramref name="claimOwner"/> is <see langword="null"/> or empty.</exception>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task<int> ReleaseInProgressCronJobOccurrenceAsync(
-        Guid occurrenceId,
-        string claimOwner,
+        FencedRow<Guid> row,
         CancellationToken cancellationToken = default
     );
 
@@ -1036,20 +1032,16 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// charging its retry budget. The cron mirror of <see cref="SettleInterruptedTimeJobAsync"/>; a <c>Skip</c>
     /// settlement also marks the occurrence's instant accounted for, as the dead-node sweep does.
     /// </summary>
-    /// <param name="occurrenceId">The interrupted occurrence.</param>
-    /// <param name="claimOwner">
-    /// The owner that claimed the run. Only an <c>InProgress</c> row still stamped with it is settled.
+    /// <param name="row">
+    /// The claimed run. Only an <c>InProgress</c> row whose live lease is still this generation is settled.
     /// </param>
     /// <param name="reason">The exception message (<c>MarkFailed</c>) or skip reason (<c>Skip</c>) to record.</param>
     /// <param name="cancellationToken">Token that aborts the write before it starts.</param>
     /// <returns><c>1</c> when the row was settled; <c>0</c> when the fence excluded it.</returns>
-    /// <exception cref="ArgumentException">
-    /// <paramref name="claimOwner"/> or <paramref name="reason"/> is <see langword="null"/> or empty.
-    /// </exception>
+    /// <exception cref="ArgumentException"><paramref name="reason"/> is <see langword="null"/> or empty.</exception>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task<int> SettleInterruptedCronJobOccurrenceAsync(
-        Guid occurrenceId,
-        string claimOwner,
+        FencedRow<Guid> row,
         string reason,
         CancellationToken cancellationToken = default
     );
@@ -1071,14 +1063,14 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// Applies <paramref name="functionContext"/> to still-owned cron occurrences and returns the IDs that were
     /// actually stamped. Callers must execute only the returned IDs.
     /// </summary>
-    /// <param name="timeJobIds">The claimed occurrence identifiers to stamp with the shared execution state.</param>
+    /// <param name="rows">The claimed occurrences to stamp with the shared execution state, each fenced on its generation.</param>
     /// <param name="functionContext">
     /// The state to apply to every listed occurrence; only the members named in
     /// <see cref="JobExecutionState.PropertiesToUpdate"/> are persisted.
     /// </param>
     /// <param name="cancellationToken">Token that aborts the batch.</param>
     /// <returns>
-    /// The subset of <paramref name="timeJobIds"/> that passed the fence and were stamped, in no guaranteed order.
+    /// The ids of <paramref name="rows"/> that passed the fence and were stamped, in no guaranteed order.
     /// </returns>
     /// <remarks>
     /// The cron mirror of <see cref="UpdateTimeJobsWithUnifiedContextAsync"/>, including the claim-owner fence and the
@@ -1087,7 +1079,7 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// </remarks>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task<Guid[]> UpdateCronJobOccurrencesWithUnifiedContextAsync(
-        Guid[] timeJobIds,
+        FencedRow<Guid>[] rows,
         JobExecutionState functionContext,
         CancellationToken cancellationToken = default
     );
@@ -1114,11 +1106,11 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     );
 
     /// <summary>
-    /// Slides the running cron occurrence's lease forward (<c>LockedUntil = now + LeaseDuration</c>) while the node's
-    /// live identity equals <paramref name="claimOwner"/> and the occurrence is still stamped with it and running
-    /// (#316). The cron mirror of <see cref="RenewTimeJobLeaseAsync"/>.
+    /// Slides the running cron occurrence's lease deadline to <c>now + LeaseDuration</c> on the store clock while the
+    /// node's live identity equals <paramref name="claimOwner"/> and the occurrence is still running under the claimed
+    /// generation (#316). The cron mirror of <see cref="RenewTimeJobLeaseAsync"/>.
     /// </summary>
-    /// <param name="occurrenceId">Identifier of the occurrence whose lease is being renewed.</param>
+    /// <param name="row">The claimed occurrence whose lease is being renewed.</param>
     /// <param name="claimOwner">The owner that claimed the row (<see cref="JobExecutionState.ClaimOwner"/>).</param>
     /// <param name="cancellationToken">Token that aborts the renewal.</param>
     /// <returns><c>1</c> renewed; <c>0</c> lost — see <see cref="RenewTimeJobLeaseAsync"/>.</returns>
@@ -1129,28 +1121,25 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// <exception cref="ArgumentException"><paramref name="claimOwner"/> is <see langword="null"/> or empty.</exception>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task<int> RenewCronJobOccurrenceLeaseAsync(
-        Guid occurrenceId,
+        FencedRow<Guid> row,
         string claimOwner,
         CancellationToken cancellationToken = default
     );
 
     /// <summary>
     /// Stores the running cron occurrence's latest progress report. The cron mirror of
-    /// <see cref="UpdateTimeJobProgressAsync"/>, with the same claim-owner fence.
+    /// <see cref="UpdateTimeJobProgressAsync"/>, with the same generation fence.
     /// </summary>
-    /// <param name="occurrenceId">Identifier of the running cron occurrence.</param>
-    /// <param name="claimOwner">The owner that claimed the row (<see cref="JobExecutionState.ClaimOwner"/>).</param>
+    /// <param name="row">The claimed running occurrence.</param>
     /// <param name="progress">The report to store; it replaces the stored percent and message whole.</param>
     /// <param name="cancellationToken">Token that aborts the write.</param>
     /// <returns>
     /// <see langword="true"/> when the row was written; <see langword="false"/> when it is not running under
-    /// <paramref name="claimOwner"/>.
+    /// <paramref name="row"/>'s live generation.
     /// </returns>
-    /// <exception cref="ArgumentException"><paramref name="claimOwner"/> is <see langword="null"/> or empty.</exception>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task<bool> UpdateCronJobOccurrenceProgressAsync(
-        Guid occurrenceId,
-        string claimOwner,
+        FencedRow<Guid> row,
         JobProgress progress,
         CancellationToken cancellationToken = default
     );
@@ -1413,7 +1402,7 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     }
 
     /// <summary>
-    /// Returns per-owner counts of ROOT time jobs that currently hold a lease (<c>LockedUntil != null</c>),
+    /// Returns per-owner counts of ROOT time jobs that currently hold an active lease (<c>Lease.State == Active</c>),
     /// aggregated in storage — the dashboard's machines panel read.
     /// </summary>
     /// <param name="cancellationToken">Token that aborts the query.</param>
@@ -1425,7 +1414,7 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// Groups by the owner id's exact string; owner identity is case-insensitive, so a caller that merges several
     /// sources' counts folds case-insensitively client-side (first source's casing wins, matching this member's
     /// recency ordering). Counts ROOT jobs only, matching the read the dashboard previously made through
-    /// <see cref="GetTimeJobsAsync"/> with a <c>LockedUntil != null</c> predicate. Default interface method: the
+    /// <see cref="GetTimeJobsAsync"/> with an active-lease predicate. Default interface method: the
     /// default projects through <see cref="GetTimeJobsAsync"/> and aggregates client-side; providers that can
     /// express a <c>GROUP BY</c> should override it.
     /// </remarks>
@@ -1434,13 +1423,14 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
         CancellationToken cancellationToken = default
     )
     {
-        var timeJobs = await GetTimeJobsAsync(x => x.LockedUntil != null, cancellationToken).ConfigureAwait(false);
+        var timeJobs = await GetTimeJobsAsync(x => x.Lease.State == RowLeaseState.Active, cancellationToken)
+            .ConfigureAwait(false);
 
         return
         [
             .. timeJobs
-                .Where(x => x.OwnerId != null)
-                .GroupBy(x => x.OwnerId!)
+                .Where(x => x.Lease.Holder != null)
+                .GroupBy(x => x.Lease.Holder!)
                 .Select(group => (OwnerId: group.Key, Count: group.Count(), LastSeen: group.Max(x => x.ExecutionTime)))
                 .OrderByDescending(x => x.LastSeen ?? DateTime.MinValue)
                 .Select(x => (x.OwnerId, x.Count)),
@@ -1895,7 +1885,7 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     }
 
     /// <summary>
-    /// Returns per-owner counts of cron occurrences that currently hold a lease (<c>LockedUntil != null</c>),
+    /// Returns per-owner counts of cron occurrences that currently hold an active lease (<c>Lease.State == Active</c>),
     /// aggregated in storage — the dashboard's machines panel read. The cron counterpart of
     /// <see cref="GetTimeJobLockedOwnerCountsAsync"/>.
     /// </summary>
@@ -1915,14 +1905,17 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
         CancellationToken cancellationToken = default
     )
     {
-        var occurrences = await GetAllCronJobOccurrencesAsync(x => x.LockedUntil != null, cancellationToken)
+        var occurrences = await GetAllCronJobOccurrencesAsync(
+                x => x.Lease.State == RowLeaseState.Active,
+                cancellationToken
+            )
             .ConfigureAwait(false);
 
         return
         [
             .. occurrences
-                .Where(x => x.OwnerId != null)
-                .GroupBy(x => x.OwnerId!)
+                .Where(x => x.Lease.Holder != null)
+                .GroupBy(x => x.Lease.Holder!)
                 .Select(group => (OwnerId: group.Key, Count: group.Count(), LastSeen: group.Max(x => x.ExecutionTime)))
                 .OrderByDescending(x => x.LastSeen)
                 .Select(x => (x.OwnerId, x.Count)),

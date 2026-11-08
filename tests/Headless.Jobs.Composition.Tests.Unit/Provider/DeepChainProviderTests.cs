@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Reflection;
+using Headless.Fencing;
 using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Jobs.Provider;
@@ -110,8 +111,8 @@ public sealed class DeepChainProviderTests : TestBase
         foreach (var seeded in chain.Skip(1))
         {
             var stored = await provider.GetTimeJobByIdAsync(seeded.Id, AbortToken);
-            stored!.OwnerId.Should().Be(_NodeA);
-            stored.LockedUntil.Should().Be(_Now.Add(_Lease));
+            stored!.Lease.Holder.Should().Be(_NodeA);
+            stored.Lease.ExpiresAt.Should().Be(new DateTimeOffset(_Now.Add(_Lease)));
         }
     }
 
@@ -158,8 +159,7 @@ public sealed class DeepChainProviderTests : TestBase
 
         // The out-of-bounds grandchild is neither hydrated nor leased.
         var grandChild = await provider.GetTimeJobByIdAsync(chain[2].Id, AbortToken);
-        grandChild!.OwnerId.Should().BeNull();
-        grandChild.LockedUntil.Should().BeNull();
+        grandChild!.Lease.State.Should().NotBe(RowLeaseState.Active);
     }
 
     [Fact]
@@ -216,8 +216,7 @@ public sealed class DeepChainProviderTests : TestBase
 
         // c3 (below the non-idle frontier) is never leased.
         var storedC3 = await provider.GetTimeJobByIdAsync(c3.Id, AbortToken);
-        storedC3!.OwnerId.Should().BeNull();
-        storedC3.LockedUntil.Should().BeNull();
+        storedC3!.Lease.State.Should().NotBe(RowLeaseState.Active);
     }
 
     [Fact]
@@ -328,8 +327,7 @@ public sealed class DeepChainProviderTests : TestBase
         {
             var stored = await provider.GetTimeJobByIdAsync(node.Id, AbortToken);
             stored!.Status.Should().Be(JobStatus.Idle, "the barrier InProgress state is cleared on reveal");
-            stored.LockedUntil.Should().BeNull("the synthetic barrier lease is cleared on reveal");
-            stored.OwnerId.Should().BeNull();
+            stored.Lease.State.Should().NotBe(RowLeaseState.Active, "the synthetic barrier lease is cleared on reveal");
         }
     }
 

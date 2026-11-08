@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless;
+using Headless.Fencing;
 using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Jobs.Instrumentation;
@@ -50,8 +51,7 @@ public sealed class JobRunOwnershipTests : TestBase
         invoked.Should().BeFalse();
         var stored = await harness.StoredAsync();
         stored.Status.Should().Be(JobStatus.Idle);
-        stored.OwnerId.Should().BeNull();
-        stored.LockedUntil.Should().BeNull();
+        stored.Lease.State.Should().NotBe(RowLeaseState.Active);
         stored.RetryCount.Should().Be(1);
     }
 
@@ -87,7 +87,7 @@ public sealed class JobRunOwnershipTests : TestBase
         context.LeaseLost.Should().BeTrue();
         var stored = await harness.StoredAsync();
         stored.Status.Should().Be(JobStatus.InProgress);
-        stored.OwnerId.Should().Be(claimed.OwnerId);
+        stored.Lease.Holder.Should().Be(claimed.Lease.Holder);
         stored.RetryCount.Should().Be(claimed.RetryCount);
         stored.ExecutedAt.Should().BeNull();
     }
@@ -194,7 +194,7 @@ public sealed class JobRunOwnershipTests : TestBase
         child.LeaseLost.Should().BeTrue();
         var storedChild = await harness.StoredChildAsync();
         storedChild.Status.Should().Be(JobStatus.InProgress);
-        storedChild.OwnerId.Should().Be(child.ClaimOwner);
+        storedChild.Lease.Holder.Should().Be(child.ClaimOwner);
         storedChild.ExecutedAt.Should().BeNull();
     }
 
@@ -437,7 +437,7 @@ public sealed class JobRunOwnershipTests : TestBase
         public async Task<JobExecutionState> ClaimAsync()
         {
             var claimed = (await _store.AcquireImmediateTimeJobsAsync([_job.Id], AbortToken)).Single();
-            Identity.Owner = claimed.OwnerId!;
+            Identity.Owner = claimed.Lease.Holder!;
             var context = new JobExecutionState
             {
                 JobId = claimed.Id,
@@ -449,11 +449,14 @@ public sealed class JobRunOwnershipTests : TestBase
                 RetryCount = claimed.RetryCount,
                 Retries = claimed.Retries,
                 RetryIntervals = claimed.RetryIntervals,
-                ClaimOwner = claimed.OwnerId,
+                ClaimOwner = claimed.Lease.Holder,
+                ClaimGeneration = claimed.Lease.Generation,
             };
 
             if (_child is not null)
             {
+                // The claim grants the child its own generation, so read it back rather than assume the root's.
+                var claimedChild = (await _store.GetTimeJobByIdAsync(_child.Id, AbortToken))!;
                 context.TimeJobChildren.Add(
                     new JobExecutionState
                     {
@@ -468,7 +471,8 @@ public sealed class JobRunOwnershipTests : TestBase
                         RetryCount = _child.RetryCount,
                         Retries = _child.Retries,
                         RetryIntervals = _child.RetryIntervals,
-                        ClaimOwner = claimed.OwnerId,
+                        ClaimOwner = claimed.Lease.Holder,
+                        ClaimGeneration = claimedChild.Lease.Generation,
                     }
                 );
             }

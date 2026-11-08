@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Fencing;
 using Headless.Jobs;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -45,7 +46,11 @@ public sealed class JobsClusterConcurrencyTests : TestBase
         var released = direct
             .Concat(swept)
             .First(x => string.Equals(x.Function, TestJobs.BillingCloseDay, StringComparison.Ordinal));
-        await store.ReleaseAcquiredTimeJobsAsync([released.Id], released.OwnerId!, AbortToken);
+        await store.ReleaseAcquiredTimeJobsAsync(
+            [JobsLeaseTables.TimeJob(released.Id, released.Lease.Generation)],
+            released.Lease.Holder!,
+            AbortToken
+        );
         var refilled = await store.QueueTimedOutTimeJobsAsync(AbortToken).ToArrayAsync(AbortToken);
 
         // then
@@ -98,7 +103,7 @@ public sealed class JobsClusterConcurrencyTests : TestBase
         // when
         var saturatedPeek = await store.GetEarliestTimeJobsAsync(AbortToken);
         clock.Advance(TimeSpan.FromSeconds(1));
-        await store.ReleaseAcquiredTimeJobsAsync([], saturating[0].OwnerId!, AbortToken);
+        await store.ReleaseAcquiredTimeJobsAsync([], saturating[0].Lease.Holder!, AbortToken);
         var freedPeek = await store.GetEarliestTimeJobsAsync(AbortToken);
 
         // then
@@ -135,7 +140,7 @@ public sealed class JobsClusterConcurrencyTests : TestBase
         waiting
             .Should()
             .HaveCount(definitions.Length - 1)
-            .And.OnlyContain(x => x.Status == JobStatus.Idle && x.OwnerId == null && x.LockedUntil == null);
+            .And.OnlyContain(x => x.Status == JobStatus.Idle && x.Lease.State != RowLeaseState.Active);
         (await _LiveLeasesAsync(store, clock)).Should().Be(_Limit);
 
         // when the instant is overdue and every earlier lease has lapsed, the fallback sweep fills the limit and stops
@@ -200,7 +205,7 @@ public sealed class JobsClusterConcurrencyTests : TestBase
         (await _LiveLeasesAsync(store, clock)).Should().Be(0);
         var stored = await store.GetTimeJobByIdAsync(future.Id, AbortToken);
         stored!.Status.Should().Be(JobStatus.Idle);
-        stored.OwnerId.Should().BeNull();
+        stored.Lease.State.Should().NotBe(RowLeaseState.Active);
     }
 
     private static FakeTimeProvider _Clock() => new(new DateTimeOffset(2030, 1, 1, 0, 0, 0, TimeSpan.Zero));
@@ -210,19 +215,21 @@ public sealed class JobsClusterConcurrencyTests : TestBase
         TimeProvider clock
     )
     {
-        var now = clock.GetUtcNow().UtcDateTime;
+        var now = clock.GetUtcNow();
         var timeJobs = await store.GetTimeJobsAsync(x => x.Function == TestJobs.BillingCloseDay, AbortToken);
         var occurrences = await store.GetAllCronJobOccurrencesAsync(
             x => x.Function == TestJobs.BillingCloseDay,
             AbortToken
         );
 
-        return timeJobs.Count(x => _HoldsSlot(x.Status, x.LockedUntil, now))
-            + occurrences.Count(x => _HoldsSlot(x.Status, x.LockedUntil, now));
+        return timeJobs.Count(x => _HoldsSlot(x.Status, x.Lease, now))
+            + occurrences.Count(x => _HoldsSlot(x.Status, x.Lease, now));
     }
 
-    private static bool _HoldsSlot(JobStatus status, DateTime? lockedUntil, DateTime now) =>
-        status is JobStatus.Queued or JobStatus.InProgress && lockedUntil > now;
+    private static bool _HoldsSlot(JobStatus status, RowLeaseSnapshot lease, DateTimeOffset now) =>
+        status is JobStatus.Queued or JobStatus.InProgress
+        && lease.State == RowLeaseState.Active
+        && lease.ExpiresAt > now;
 
     private static TimeJobEntity _TimeJob(string function, DateTime executionTime) =>
         new()

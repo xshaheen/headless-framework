@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless;
+using Headless.Fencing;
 using Headless.Jobs;
 using Headless.Jobs.Managers;
 using Headless.MultiTenancy;
@@ -228,6 +229,7 @@ public sealed class InternalJobsManagerTests : TestBase
             Type = JobType.TimeJob,
             Status = JobStatus.Queued,
             ClaimOwner = _ClaimOwner,
+            ClaimGeneration = _ClaimGeneration,
         };
         var lost = new JobExecutionState
         {
@@ -236,10 +238,15 @@ public sealed class InternalJobsManagerTests : TestBase
             Type = JobType.TimeJob,
             Status = JobStatus.Queued,
             ClaimOwner = _ClaimOwner,
+            ClaimGeneration = _ClaimGeneration,
         };
 
         provider
-            .UpdateTimeJobsWithUnifiedContextAsync(Arg.Any<Guid[]>(), Arg.Any<JobExecutionState>(), AbortToken)
+            .UpdateTimeJobsWithUnifiedContextAsync(
+                Arg.Any<FencedRow<Guid>[]>(),
+                Arg.Any<JobExecutionState>(),
+                AbortToken
+            )
             .Returns(Task.FromResult<Guid[]>([owned.JobId]));
         sender.UpdateTimeJobFromExecutionState<FakeTimeJob>(Arg.Any<JobExecutionState>()).Returns(Task.CompletedTask);
 
@@ -263,12 +270,17 @@ public sealed class InternalJobsManagerTests : TestBase
         var second = _ReleaseState(Guid.NewGuid(), JobType.TimeJob);
         second.ClaimOwner = "node-a@2";
         provider
-            .UpdateTimeJobsWithUnifiedContextAsync(Arg.Any<Guid[]>(), Arg.Any<JobExecutionState>(), AbortToken)
+            .UpdateTimeJobsWithUnifiedContextAsync(
+                Arg.Any<FencedRow<Guid>[]>(),
+                Arg.Any<JobExecutionState>(),
+                AbortToken
+            )
             .Returns(call =>
             {
                 var owner = call.Arg<JobExecutionState>().ClaimOwner;
                 return Task.FromResult<Guid[]>([
-                    .. call.Arg<Guid[]>()
+                    .. call.Arg<FencedRow<Guid>[]>()
+                        .Select(row => row.Key)
                         .Where(id =>
                             (id == first.JobId && string.Equals(owner, _ClaimOwner, StringComparison.Ordinal))
                             || (id == second.JobId && string.Equals(owner, "node-a@2", StringComparison.Ordinal))
@@ -585,10 +597,14 @@ public sealed class InternalJobsManagerTests : TestBase
 
         await provider
             .Received(1)
-            .ReleaseAcquiredTimeJobsAsync(Arg.Is<Guid[]>(x => x.Length == 0), _ClaimOwner, AbortToken);
+            .ReleaseAcquiredTimeJobsAsync(Arg.Is<FencedRow<Guid>[]>(x => x.Length == 0), _ClaimOwner, AbortToken);
         await provider
             .Received(1)
-            .ReleaseAcquiredCronJobOccurrencesAsync(Arg.Is<Guid[]>(x => x.Length == 0), _ClaimOwner, AbortToken);
+            .ReleaseAcquiredCronJobOccurrencesAsync(
+                Arg.Is<FencedRow<Guid>[]>(x => x.Length == 0),
+                _ClaimOwner,
+                AbortToken
+            );
 
         provider.ClearReceivedCalls();
 
@@ -596,10 +612,14 @@ public sealed class InternalJobsManagerTests : TestBase
 
         await provider
             .Received(1)
-            .ReleaseAcquiredTimeJobsAsync(Arg.Is<Guid[]>(x => x.Length == 0), _ClaimOwner, AbortToken);
+            .ReleaseAcquiredTimeJobsAsync(Arg.Is<FencedRow<Guid>[]>(x => x.Length == 0), _ClaimOwner, AbortToken);
         await provider
             .Received(1)
-            .ReleaseAcquiredCronJobOccurrencesAsync(Arg.Is<Guid[]>(x => x.Length == 0), _ClaimOwner, AbortToken);
+            .ReleaseAcquiredCronJobOccurrencesAsync(
+                Arg.Is<FencedRow<Guid>[]>(x => x.Length == 0),
+                _ClaimOwner,
+                AbortToken
+            );
     }
 
     [Fact]
@@ -614,10 +634,18 @@ public sealed class InternalJobsManagerTests : TestBase
 
         await provider
             .DidNotReceive()
-            .ReleaseAcquiredTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+            .ReleaseAcquiredTimeJobsAsync(
+                Arg.Any<FencedRow<Guid>[]>(),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>()
+            );
         await provider
             .DidNotReceive()
-            .ReleaseAcquiredCronJobOccurrencesAsync(Arg.Any<Guid[]>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+            .ReleaseAcquiredCronJobOccurrencesAsync(
+                Arg.Any<FencedRow<Guid>[]>(),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -635,11 +663,17 @@ public sealed class InternalJobsManagerTests : TestBase
 
         await provider
             .Received(1)
-            .ReleaseAcquiredTimeJobsAsync(Arg.Is<Guid[]>(x => x.Single() == timeJobId), _ClaimOwner, AbortToken);
+            .ReleaseAcquiredTimeJobsAsync(
+                Arg.Is<FencedRow<Guid>[]>(x => x.Single() == JobsLeaseTables.TimeJob(timeJobId, _ClaimGeneration)),
+                _ClaimOwner,
+                AbortToken
+            );
         await provider
             .Received(1)
             .ReleaseAcquiredCronJobOccurrencesAsync(
-                Arg.Is<Guid[]>(x => x.Single() == occurrenceId),
+                Arg.Is<FencedRow<Guid>[]>(x =>
+                    x.Single() == JobsLeaseTables.CronOccurrence(occurrenceId, _ClaimGeneration)
+                ),
                 _ClaimOwner,
                 AbortToken
             );
@@ -651,10 +685,18 @@ public sealed class InternalJobsManagerTests : TestBase
         // A one-type batch must not escalate the other type into the release-everything form.
         await provider
             .Received(1)
-            .ReleaseAcquiredTimeJobsAsync(Arg.Is<Guid[]>(x => x.Single() == timeJobId), _ClaimOwner, AbortToken);
+            .ReleaseAcquiredTimeJobsAsync(
+                Arg.Is<FencedRow<Guid>[]>(x => x.Single() == JobsLeaseTables.TimeJob(timeJobId, _ClaimGeneration)),
+                _ClaimOwner,
+                AbortToken
+            );
         await provider
             .DidNotReceive()
-            .ReleaseAcquiredCronJobOccurrencesAsync(Arg.Any<Guid[]>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+            .ReleaseAcquiredCronJobOccurrencesAsync(
+                Arg.Any<FencedRow<Guid>[]>(),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -672,10 +714,18 @@ public sealed class InternalJobsManagerTests : TestBase
 
         await provider
             .Received(1)
-            .ReleaseAcquiredTimeJobsAsync(Arg.Is<Guid[]>(x => x.Single() == first.JobId), _ClaimOwner, AbortToken);
+            .ReleaseAcquiredTimeJobsAsync(
+                Arg.Is<FencedRow<Guid>[]>(x => x.Single().Key == first.JobId),
+                _ClaimOwner,
+                AbortToken
+            );
         await provider
             .Received(1)
-            .ReleaseAcquiredTimeJobsAsync(Arg.Is<Guid[]>(x => x.Single() == second.JobId), "node-a@2", AbortToken);
+            .ReleaseAcquiredTimeJobsAsync(
+                Arg.Is<FencedRow<Guid>[]>(x => x.Single().Key == second.JobId),
+                "node-a@2",
+                AbortToken
+            );
     }
 
     [Fact]
@@ -705,6 +755,9 @@ public sealed class InternalJobsManagerTests : TestBase
     }
 
     private const string _ClaimOwner = "node-a@1";
+
+    // The lease generation the claim drew; the manager must hand it to every fenced write it issues for the row.
+    private const long _ClaimGeneration = 1;
 
     private static readonly DateTime _StoreNow = new(2026, 8, 15, 12, 0, 0, DateTimeKind.Utc);
 
@@ -752,6 +805,7 @@ public sealed class InternalJobsManagerTests : TestBase
             Status = JobStatus.Queued,
             RunCondition = RunCondition.OnSuccess,
             ClaimOwner = _ClaimOwner,
+            ClaimGeneration = _ClaimGeneration,
         };
     }
 
@@ -837,7 +891,7 @@ public sealed class InternalJobsManagerTests : TestBase
             Id = Guid.NewGuid(),
             Function = "claimed",
             ExecutionTime = _StoreNow,
-            OwnerId = _ClaimOwner,
+            Lease = TestLeases.Held(_ClaimOwner, expiresAt: null),
         };
 
         provider
@@ -857,7 +911,9 @@ public sealed class InternalJobsManagerTests : TestBase
         await provider
             .Received(1)
             .ReleaseAcquiredTimeJobsAsync(
-                Arg.Is<Guid[]>(ids => ids.Single() == claimed.Id),
+                Arg.Is<FencedRow<Guid>[]>(rows =>
+                    rows.Single() == JobsLeaseTables.TimeJob(claimed.Id, claimed.Lease.Generation)
+                ),
                 _ClaimOwner,
                 Arg.Any<CancellationToken>()
             );

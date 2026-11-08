@@ -252,12 +252,12 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>
                 // Pickup projections contain execution inputs; the persisted row owns claim and key metadata.
                 var leased = await store.GetTimeJobByIdAsync(due.Id, AbortToken);
                 leased!.BusinessKey.Should().Be("store-due");
-                leased.LockedUntil.Should().NotBeNull();
+                leased.Lease.ExpiresAt.Should().NotBeNull();
                 var leaseDuration = host.Services.GetRequiredService<SchedulerOptionsBuilder>().LeaseDuration;
                 leased
-                    .LockedUntil!.Value.Should()
-                    .BeOnOrAfter((beforeClaim + leaseDuration - precision).UtcDateTime)
-                    .And.BeOnOrBefore((afterClaim + leaseDuration + precision).UtcDateTime);
+                    .Lease.ExpiresAt!.Value.Should()
+                    .BeOnOrAfter(beforeClaim + leaseDuration - precision)
+                    .And.BeOnOrBefore(afterClaim + leaseDuration + precision);
             },
             clock: new FastNodeClock()
         );

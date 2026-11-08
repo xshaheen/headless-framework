@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Fencing;
 using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Jobs.Provider;
@@ -51,9 +52,9 @@ public sealed class PausedFallbackSweepProviderTests : TestBase
             x.Id
         );
         stored[pausedIdle.Id].Status.Should().Be(JobStatus.Idle);
-        stored[pausedIdle.Id].OwnerId.Should().BeNull();
+        stored[pausedIdle.Id].Lease.State.Should().NotBe(RowLeaseState.Active);
         stored[pausedLapsed.Id].Status.Should().Be(JobStatus.Queued);
-        stored[pausedLapsed.Id].OwnerId.Should().Be("node-b");
+        stored[pausedLapsed.Id].Lease.Holder.Should().Be("node-b");
     }
 
     private static JobsInMemoryPersistenceProvider<FakeTimeJob, FakeCronJob> _Create()
@@ -79,8 +80,7 @@ public sealed class PausedFallbackSweepProviderTests : TestBase
             Id = Guid.NewGuid(),
             Function = definition.Function,
             Status = status,
-            OwnerId = owner,
-            LockedUntil = lockedUntil,
+            Lease = TestLeases.Held(owner, lockedUntil),
             OnNodeDeath = NodeDeathPolicy.Retry,
             ExecutionTime = _Now.UtcDateTime.AddMinutes(-2),
             CronJobId = definition.Id,

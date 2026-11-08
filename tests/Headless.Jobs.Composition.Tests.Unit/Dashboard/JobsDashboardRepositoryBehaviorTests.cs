@@ -235,8 +235,7 @@ public sealed class JobsDashboardRepositoryBehaviorTests : TestBase
                 ExecutionTime = executionTime.UtcDateTime,
                 CreatedAt = createdAt,
                 UpdatedAt = createdAt,
-                OwnerId = ownerId,
-                LockedUntil = ownerId is null ? null : _Now.AddMinutes(5).UtcDateTime,
+                Lease = TestLeases.Held(ownerId, ownerId is null ? null : _Now.AddMinutes(5)),
             };
 
         public CronJobEntity CronJob(string function, DateTimeOffset createdAt) =>
@@ -265,8 +264,7 @@ public sealed class JobsDashboardRepositoryBehaviorTests : TestBase
                 ExecutionTime = executionTime.UtcDateTime,
                 CreatedAt = createdAt,
                 UpdatedAt = createdAt,
-                OwnerId = ownerId,
-                LockedUntil = ownerId is null ? null : _Now.AddMinutes(5).UtcDateTime,
+                Lease = TestLeases.Held(ownerId, ownerId is null ? null : _Now.AddMinutes(5)),
             };
 
         public void Dispose()

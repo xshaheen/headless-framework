@@ -2,6 +2,7 @@
 
 using System.Linq.Expressions;
 using System.Reflection;
+using Headless.Fencing;
 
 namespace Headless.Jobs;
 
@@ -120,15 +121,35 @@ public class JobExecutionState
     /// <see cref="PropertiesToUpdate"/>.
     /// </summary>
     /// <remarks>
-    /// Writes that settle the run (completion, failure, retry count, progress, release) fence on this owner rather
-    /// than on the node's live identity: the live identity disappears once the node leaves membership or passes its
-    /// self-fence deadline, and a correct run that finishes in that window must still record its outcome while no
-    /// peer has reclaimed the row. Writes that extend or start ownership (lease renewal, admission to
+    /// Writes that settle the run (completion, failure, retry count, progress, release) fence on
+    /// <see cref="ClaimGeneration"/>, not on the node's live identity: the live identity disappears once the node
+    /// leaves membership or passes its self-fence deadline, and a correct run that finishes in that window must still
+    /// record its outcome while its lease is live. Writes that extend or start ownership (lease renewal, admission to
     /// <c>InProgress</c>) additionally require the live identity to equal this owner, so a fenced node cannot keep
-    /// its rows alive. <see langword="null"/> means no claim is known, and every owner-fenced write then matches no
-    /// row.
+    /// its rows alive. A release of everything a node holds also scopes by this owner.
     /// </remarks>
     public string? ClaimOwner { get; set; }
+
+    /// <summary>
+    /// Transient, non-persisted lease generation the claim drew for this row (its <c>Lease.Generation</c> when it was
+    /// claimed). Every chain descendant carries its own generation, because each row's claim draws its own. It is
+    /// never part of <see cref="PropertiesToUpdate"/>.
+    /// </summary>
+    /// <remarks>
+    /// Every write that settles, renews, or reports on the run is fenced on this generation and on the lease still
+    /// being live by the database clock, so an attempt that lost the row cannot write it, even after the same owner
+    /// claims the row again. <see langword="null"/> means no claim is known, and every fenced write then matches no
+    /// row.
+    /// </remarks>
+    public long? ClaimGeneration { get; set; }
+
+    /// <summary>
+    /// The fenced row this state's claim holds, or <see langword="null"/> when <see cref="ClaimGeneration"/> is not
+    /// set. Its table is the logical <see cref="JobsLeaseTables"/> name for <see cref="Type"/>; a provider maps it to
+    /// its own table.
+    /// </summary>
+    public FencedRow<Guid>? ClaimedRow =>
+        ClaimGeneration is { } generation ? new(JobsLeaseTables.For(Type), JobId, generation) : null;
 
     /// <summary>The time the job was scheduled to run (UTC).</summary>
     public DateTime ExecutionTime { get; set; }

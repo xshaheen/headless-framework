@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless;
+using Headless.Fencing;
 using Headless.Jobs;
 using Headless.Jobs.Provider;
 using Headless.Testing.Tests;
@@ -50,8 +51,7 @@ public sealed class FallbackClaimRescheduleProviderTests : TestBase
         (await sweep.MoveNextAsync()).Should().BeFalse();
         var stored = await provider.GetTimeJobByIdAsync(second.Id, AbortToken);
         stored!.Status.Should().Be(JobStatus.Idle);
-        stored.OwnerId.Should().BeNull();
-        stored.LockedUntil.Should().BeNull();
+        stored.Lease.State.Should().NotBe(RowLeaseState.Active);
     }
 
     [Theory]
@@ -96,8 +96,7 @@ public sealed class FallbackClaimRescheduleProviderTests : TestBase
         claimed.Should().BeEmpty();
         var stored = await provider.GetTimeJobByIdAsync(root.Id, AbortToken);
         stored!.Status.Should().Be(JobStatus.Idle);
-        stored.OwnerId.Should().BeNull();
-        stored.LockedUntil.Should().BeNull();
+        stored.Lease.State.Should().NotBe(RowLeaseState.Active);
     }
 
     // The scheduler's peek hands the claim the row's id, function, and the UpdatedAt it read.

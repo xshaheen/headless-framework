@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Fencing;
 using Headless.Jobs;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -215,12 +216,12 @@ public abstract class JobsRecoveryConformanceTests<TFixture>(TFixture fixture) :
 
         var stored = (await persistence.GetAllCronJobOccurrencesAsync(x => x.CronJobId == cronId, ct)).Single();
         stored
-            .OwnerId.Should()
-            .BeNull(
-                "the claim path's in-progress transition requires OwnerId == owner, so revoking it is what makes the "
-                    + "prior owner drop the row"
+            .Lease.State.Should()
+            .NotBe(
+                RowLeaseState.Active,
+                "the prior owner's writes fence on its live lease, so ending that lease is what makes the prior owner "
+                    + "drop the row"
             );
-        stored.LockedUntil.Should().BeNull();
         stored.RecoveredFromUtc.Should().NotBeNull();
         stored.Status.Should().Be(JobStatus.Idle);
     }
@@ -543,7 +544,7 @@ public abstract class JobsRecoveryConformanceTests<TFixture>(TFixture fixture) :
 
         var stored = (await persistence.GetAllCronJobOccurrencesAsync(x => x.CronJobId == cronId, ct)).Single();
         stored.Status.Should().Be(JobStatus.InProgress, "running work is never disturbed by recovery");
-        stored.OwnerId.Should().Be("node-b@1");
+        JobsCoordinationFixtureExtensions.ActiveHolder(stored.Lease).Should().Be("node-b@1");
 
         var position = await fixture.ReadCronSchedulePositionAsync(cronId, ct);
         position

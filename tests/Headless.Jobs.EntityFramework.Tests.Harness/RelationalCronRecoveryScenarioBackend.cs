@@ -134,7 +134,7 @@ public sealed class RelationalCronRecoveryScenarioBackend(IJobsCoordinationFixtu
                     coalesced.Id,
                     coalesced.ExecutionTime,
                     coalesced.RecoveredFromUtc,
-                    coalesced.OwnerId
+                    JobsCoordinationFixtureExtensions.ActiveHolder(coalesced.Lease)
                 )
                 : null;
 
@@ -156,7 +156,8 @@ public sealed class RelationalCronRecoveryScenarioBackend(IJobsCoordinationFixtu
             await connection.OpenAsync(cancellationToken);
             await using var command = connection.CreateCommand();
             command.CommandText = fixture.Sql(
-                "SELECT \"Id\", \"ExecutionTime\", \"Status\", \"Disposition\", \"OwnerId\", \"RecoveredFromUtc\" "
+                "SELECT \"Id\", \"ExecutionTime\", \"Status\", \"Disposition\", \"RecoveredFromUtc\", "
+                    + $"{JobsCoordinationFixtureExtensions.LeaseColumnList} "
                     + $"FROM {fixture.QualifiedCronJobOccurrencesTable} WHERE \"CronJobId\" = @cronJobId;"
             );
             JobsCoordinationFixtureExtensions.AddParameter(command, "@cronJobId", cronJobId);
@@ -166,8 +167,9 @@ public sealed class RelationalCronRecoveryScenarioBackend(IJobsCoordinationFixtu
 
             while (await reader.ReadAsync(cancellationToken))
             {
-                var hasOwner = !await reader.IsDBNullAsync(4, cancellationToken);
-                var hasRecoveryStamp = !await reader.IsDBNullAsync(5, cancellationToken);
+                var hasRecoveryStamp = !await reader.IsDBNullAsync(4, cancellationToken);
+                // The row's owner is the holder of a live lease; an ended lease keeps a holder that owns nothing.
+                var lease = await JobsCoordinationFixtureExtensions.ReadLeaseAsync(reader, 5, cancellationToken);
 
                 rows.Add(
                     new CronOccurrenceRowSnapshot(
@@ -175,8 +177,8 @@ public sealed class RelationalCronRecoveryScenarioBackend(IJobsCoordinationFixtu
                         _Utc(reader.GetDateTime(1)),
                         reader.GetString(2),
                         reader.GetString(3),
-                        hasOwner ? reader.GetString(4) : null,
-                        hasRecoveryStamp ? _Utc(reader.GetDateTime(5)) : null
+                        JobsCoordinationFixtureExtensions.ActiveHolder(lease),
+                        hasRecoveryStamp ? _Utc(reader.GetDateTime(4)) : null
                     )
                 );
             }
