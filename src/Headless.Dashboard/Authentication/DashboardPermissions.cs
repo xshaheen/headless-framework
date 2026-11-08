@@ -523,6 +523,10 @@ internal sealed record DashboardPeerAdmission(string ModuleId)
 
         context.Features.Set(new DashboardPeerAdmission(moduleId));
 
+        // The module's endpoints act for the peer principal alone: its claims name who the call is for, and a session
+        // cookie the same request carries must not lend its identity to a peer call.
+        context.User = principal;
+
         return true;
     }
 }

@@ -80,7 +80,7 @@ public sealed class ConsulNodeDiscoveryProvider : INodeDiscoveryProvider, IDispo
                     {
                         Id = info.ServiceID,
                         Name = info.ServiceName,
-                        Address = info.ServiceAddress,
+                        Address = _options.Scheme + "://" + info.ServiceAddress,
                         Port = info.ServicePort,
                         Tags = string.Join(", ", info.ServiceTags),
                     })
@@ -126,7 +126,7 @@ public sealed class ConsulNodeDiscoveryProvider : INodeDiscoveryProvider, IDispo
                     {
                         Id = info.ServiceID,
                         Name = info.ServiceName,
-                        Address = "http://" + info.ServiceAddress,
+                        Address = _options.Scheme + "://" + info.ServiceAddress,
                         Port = info.ServicePort,
                         Tags = string.Join(", ", info.ServiceTags),
                     })

@@ -2742,7 +2742,7 @@ Configure `ConsulDiscoveryOptions` through `UseConsulDiscovery(...)`:
 - `NodeName` — the service name this node registers under, and the name the gateway uses to recognize the current node. Set it: Consul rejects a registration without a service name, and the failure is only logged.
 - `NodeId` — optional service ID; Consul uses `NodeName` when it is `null`.
 - `MatchPath` — the dashboard base path used in the health-check URL. Default: `/messaging/dashboard`.
-- `Scheme` — `http` registers an HTTP health check on `{MatchPath}/api/health`; `https` registers a TCP check. Default: `http`.
+- `Scheme` — `http` registers an HTTP health check on `{MatchPath}/api/health`; `https` registers a TCP check. It is also the scheme of every discovered node's address, so the unified dashboard calls the node over it; dashboard forwarding refuses an `http` node unless `AllowInsecurePeers` is set ([Forwarding to other nodes](dashboards.md#forwarding-to-other-nodes)). Default: `http`.
 - `CustomTags` — extra tags merged with the built-in `Headless`, `Messaging`, `Client`, `Dashboard` tags.
 
 ### Runtime behavior
@@ -2779,6 +2779,9 @@ Configure `K8sDiscoveryOptions` through `UseK8sDiscovery(...)`:
 
 - `K8sClientConfig` — Kubernetes client configuration used to query the cluster. Defaults to `KubernetesClientConfiguration.BuildDefaultConfig()`. Its configured namespace is the only namespace eligible for dashboard discovery and proxy selection; discovery fails closed when no namespace is configured.
 - `ShowOnlyExplicitVisibleNodes` — when `true` (default), only Services labeled `headless.messaging.visibility:show` are listed as visible dashboard nodes. Set to `false` to show all discovered Services.
+- `Scheme` — the scheme (`http` or `https`) of the address each discovered Service is called at. Dashboard forwarding refuses an `http` node unless `AllowInsecurePeers` is set, so a deployment that forwards serves the dashboard over HTTPS inside the cluster and sets `https`. Default: `http`.
+
+A dashboard-only host that shows the Services Kubernetes lists uses `AddHeadlessDashboard(d => d.AddMessagingStandalone(messaging => ..., k8s => ...))`, which replaces the removed `AddMessagingDashboardStandalone(IServiceCollection, ...)`; see [Dashboard-only host](dashboards.md#dashboard-only-host).
 
 The dashboard stores the selected Service name rather than a client-composed endpoint. The server resolves that name in the configured namespace and reuses the list's visibility and port-label rules before forwarding. Invalid, hidden, cross-namespace, and stale selections are cleared.
 

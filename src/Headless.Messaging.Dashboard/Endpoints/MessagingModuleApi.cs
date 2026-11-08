@@ -19,14 +19,16 @@ namespace Headless.Messaging.Dashboard;
 /// a named operator can make it.
 /// </summary>
 /// <remarks>
-/// Ids are <c>{node}~{store}~{storage id}</c>; this node answers only for itself, so an id naming another node is
-/// <c>404</c>. A list that covers several stores names the stores that did not answer in <c>unavailable</c>.
+/// Ids are <c>{node}~{store}~{storage id}</c>. Without forwarding this node answers only for itself, so an id naming
+/// another node is <c>404</c>; with forwarding, a read that names another node by <c>?node=</c> or by its id is
+/// answered by that node (see <see cref="NodeRelayFilter"/>). A list that covers several stores names the stores that did not answer in <c>unavailable</c>.
 /// </remarks>
 internal sealed class MessagingModuleApi(
     MessagingStores stores,
     MessagingSources sources,
     MessagingMetricsEventListener metrics,
-    IServiceProvider services
+    IServiceProvider services,
+    MessagingForwarding? forwarding = null
 )
 {
     /// <summary>The most rows one list call returns.</summary>
@@ -40,9 +42,11 @@ internal sealed class MessagingModuleApi(
     private readonly MessagingMetricsEventListener _metrics = Argument.IsNotNull(metrics);
     private readonly IServiceProvider _services = Argument.IsNotNull(services);
 
-    public void Map(IEndpointRouteBuilder routes)
+    /// <summary>Maps the reads on <paramref name="routes"/>, and the node list, which is always this node's, on <paramref name="local"/>.</summary>
+    public void Map(IEndpointRouteBuilder routes, IEndpointRouteBuilder local)
     {
         Argument.IsNotNull(routes);
+        Argument.IsNotNull(local);
 
         routes.MapGet("/published", _ListPublishedAsync);
         routes.MapGet("/received", _ListReceivedAsync);
@@ -52,7 +56,7 @@ internal sealed class MessagingModuleApi(
         routes.MapGet("/consumers", _Consumers);
         routes.MapGet("/contracts", _Contracts);
         routes.MapGet("/circuits", _Circuits);
-        routes.MapGet("/nodes", _Nodes);
+        local.MapGet("/nodes", _NodesAsync);
         routes.MapGet("/metrics/realtime", _Realtime);
     }
 
@@ -421,18 +425,46 @@ internal sealed class MessagingModuleApi(
         );
     }
 
-    // Only this node for now: a node answers for the stores it reads, and every node of a deployment reads the same.
-    private JsonHttpResult<MessagingNodeList> _Nodes() =>
-        TypedResults.Json(
-            new MessagingNodeList([
+    // This node, unless it is a dashboard-only host that reads no store, and every node discovery lists, each with what
+    // the last forwarded call to it found.
+    private async Task<JsonHttpResult<MessagingNodeList>> _NodesAsync(CancellationToken cancellationToken)
+    {
+        var items = new List<MessagingNodeView>();
+
+        if (forwarding?.IsStandalone != true)
+        {
+            items.Add(
                 new MessagingNodeView(
                     _stores.NodeName,
                     IsLocal: true,
                     [.. _stores.All.Select(static store => store.Name)]
-                ),
-            ]),
+                )
+            );
+        }
+
+        string? discovery = null;
+
+        if (forwarding?.IsEnabled == true)
+        {
+            var peers = await forwarding.Directory.GetPeersAsync(cancellationToken).ConfigureAwait(false);
+
+            items.AddRange(
+                peers.Select(peer => new MessagingNodeView(
+                    peer.Name,
+                    IsLocal: false,
+                    Stores: [],
+                    State: forwarding.Directory.StatusOf(peer.Name)?.State.ToWire()
+                ))
+            );
+
+            discovery = forwarding.Directory.DiscoveryState;
+        }
+
+        return TypedResults.Json(
+            new MessagingNodeList(items) { Discovery = discovery },
             MessagingDashboardJsonContext.Default.MessagingNodeList
         );
+    }
 
     private JsonHttpResult<MessagingRealtimeMetrics> _Realtime()
     {

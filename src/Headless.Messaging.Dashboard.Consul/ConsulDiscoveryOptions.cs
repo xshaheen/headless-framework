@@ -52,7 +52,14 @@ public sealed class ConsulDiscoveryOptions
     /// <summary>Dashboard path segment appended to the health-check URL. Default: <c>/messaging/dashboard</c>.</summary>
     public string MatchPath { get; set; } = DefaultMatchPath;
 
-    /// <summary>URL scheme for the Consul health-check endpoint (<c>http</c> or <c>https</c>). Default: <c>http</c>.</summary>
+    /// <summary>
+    /// URL scheme (<c>http</c> or <c>https</c>) of the Consul health-check endpoint and of the address the dashboard
+    /// calls every discovered node at. Default: <c>http</c>.
+    /// </summary>
+    /// <remarks>
+    /// Dashboard forwarding refuses an <c>http</c> node unless its <c>AllowInsecurePeers</c> is set, so a deployment
+    /// that forwards sets <c>https</c> on every node.
+    /// </remarks>
     public string Scheme { get; set; } = DefaultScheme;
 
     /// <summary>Additional tags merged with the built-in Headless tags when registering with Consul.</summary>

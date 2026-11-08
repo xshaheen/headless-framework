@@ -352,10 +352,19 @@ internal sealed record MessagingCircuitView(
 
 internal sealed record MessagingCircuitList(IReadOnlyList<MessagingCircuitView> Items);
 
-/// <summary>A node serving the module; for now only the node that answers.</summary>
-internal sealed record MessagingNodeView(string Name, bool IsLocal, IReadOnlyList<string> Stores);
+/// <summary>A node serving the module: this node, or one discovery lists.</summary>
+/// <param name="Stores">The stores the node reads; empty for another node, which names its own.</param>
+/// <param name="State">
+/// What the last forwarded call to another node found, such as <c>not-answering</c>, or null before the first call
+/// and for this node.
+/// </param>
+internal sealed record MessagingNodeView(string Name, bool IsLocal, IReadOnlyList<string> Stores, string? State = null);
 
-internal sealed record MessagingNodeList(IReadOnlyList<MessagingNodeView> Items);
+internal sealed record MessagingNodeList(IReadOnlyList<MessagingNodeView> Items)
+{
+    /// <summary>Gets what the last discovery read found, or null when forwarding is off.</summary>
+    public string? Discovery { get; init; }
+}
 
 /// <summary>
 /// The last five minutes of this node's throughput, one entry per second. A second the node did not measure, such
@@ -371,6 +380,9 @@ internal sealed record MessagingRealtimeMetrics(
 /// <summary>The filter a received or published list sends, and a Needs-you group hands over.</summary>
 internal sealed record MessagingListScope
 {
+    /// <summary>The node whose rows the filter selects; <see langword="null"/> for the node that runs it.</summary>
+    public string? Node { get; init; }
+
     public string? Store { get; init; }
 
     public StatusName? Status { get; init; }

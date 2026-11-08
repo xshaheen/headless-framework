@@ -76,6 +76,30 @@ public sealed class ConsulNodeDiscoveryProviderTests : TestBase
     }
 
     [Fact]
+    public async Task should_address_nodes_over_https_when_scheme_is_https()
+    {
+        // given
+        using var cache = new MessagingDashboardCache();
+        using var handler = new CatalogHandler();
+        using var consul = _CreateConsulClient(handler, out var httpClient);
+        using var http = httpClient;
+        using var provider = _CreateProvider(
+            cache,
+            new ConsulDiscoveryOptions { NodeName = "test-node", Scheme = "https" },
+            consul
+        );
+
+        // when
+        var nodes = await provider.GetNodesAsync(cancellationToken: AbortToken);
+        var node = await provider.GetNodeAsync("orders", cancellationToken: AbortToken);
+
+        // then
+        nodes.Should().ContainSingle().Which.Address.Should().Be("https://10.0.0.5");
+        node.Should().NotBeNull();
+        node!.Address.Should().Be("https://10.0.0.5");
+    }
+
+    [Fact]
     public async Task should_reuse_one_client_when_getting_nodes_repeatedly()
     {
         // given

@@ -30,9 +30,9 @@ internal sealed class MessagingStores
     {
         Argument.IsNotNullOrWhiteSpace(nodeName);
         Argument.IsNotNull(stores);
-        Argument.IsNotEmpty(stores);
 
-        if (!stores[0].HoldsReceived)
+        // A dashboard-only host reads no store of its own: every answer comes from the nodes it forwards to.
+        if (stores.Count > 0 && !stores[0].HoldsReceived)
         {
             throw new ArgumentException("The first store must be the main store.", nameof(stores));
         }
@@ -41,6 +41,14 @@ internal sealed class MessagingStores
         All = stores;
         Timeout = timeout;
         _logger = logger ?? NullLogger<MessagingStores>.Instance;
+    }
+
+    /// <summary>An empty store set, for a dashboard-only host that forwards every read to the nodes it discovers.</summary>
+    public static MessagingStores Empty(MessagingDashboardOptions options, ILogger<MessagingStores> logger)
+    {
+        Argument.IsNotNull(options);
+
+        return new MessagingStores(options.NodeName, [], options.StoreTimeout, logger);
     }
 
     /// <summary>Builds the store set of a host from the outboxes <c>AddHeadlessMessaging</c> registered.</summary>
@@ -81,7 +89,13 @@ internal sealed class MessagingStores
     public IReadOnlyList<MessagingStore> All { get; }
 
     /// <summary>Gets the main store, which holds the received rows.</summary>
-    public MessagingStore Primary => All[0];
+    /// <exception cref="InvalidOperationException">The host reads no store of its own.</exception>
+    public MessagingStore Primary =>
+        All.Count > 0
+            ? All[0]
+            : throw new InvalidOperationException(
+                "This dashboard-only host reads no Messaging store of its own; the request must go to a Messaging node."
+            );
 
     /// <summary>Gets how long a read that covers several stores waits for one of them.</summary>
     public TimeSpan Timeout { get; }

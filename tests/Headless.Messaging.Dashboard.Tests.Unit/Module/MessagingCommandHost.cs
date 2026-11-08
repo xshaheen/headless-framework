@@ -220,7 +220,7 @@ internal static class MessagingCommandHost
         };
 
     /// <summary>Signs in <c>Authorization: Bearer &lt;role&gt;</c> as a user named for, and in, that role.</summary>
-    private sealed class RoleBearerHandler(
+    internal sealed class RoleBearerHandler(
         IOptionsMonitor<AuthenticationSchemeOptions> options,
         ILoggerFactory logger,
         UrlEncoder encoder

@@ -43,6 +43,20 @@ public sealed class MessagingDashboardOptions : DashboardModuleOptions
     /// so one slow store does not mark the whole module stale.
     /// </summary>
     public TimeSpan StoreTimeout { get; set; } = TimeSpan.FromSeconds(1.5);
+
+    /// <summary>
+    /// Gets or sets how this node calls the other Messaging nodes discovery lists, and how it admits their calls.
+    /// Forwarding is off until a key or a policy is set.
+    /// </summary>
+    public MessagingForwardingOptions Forwarding { get; set; } = new();
+
+    /// <summary>
+    /// Gets or sets the most this node lets a call forwarded from another node do. Defaults to
+    /// <see cref="MessagingForwardedAccess.View"/>: forwarded calls read, and every forwarded command is refused with
+    /// "Node {name} accepts view-only forwarded calls". Set <see cref="MessagingForwardedAccess.Operate"/> to run the
+    /// commands the serving node decided its operator may run.
+    /// </summary>
+    public MessagingForwardedAccess ForwardedAccess { get; set; } = MessagingForwardedAccess.View;
 }
 
 internal sealed class MessagingDashboardOptionsValidator : AbstractValidator<MessagingDashboardOptions>
@@ -76,5 +90,9 @@ internal sealed class MessagingDashboardOptionsValidator : AbstractValidator<Mes
             .WithMessage("ChangePageSize must be between 1 and 1000.");
 
         RuleFor(x => x.StoreTimeout).GreaterThan(TimeSpan.Zero).WithMessage("StoreTimeout must be positive.");
+
+        RuleFor(x => x.Forwarding).NotNull().SetValidator(new MessagingForwardingOptionsValidator());
+
+        RuleFor(x => x.ForwardedAccess).IsInEnum();
     }
 }

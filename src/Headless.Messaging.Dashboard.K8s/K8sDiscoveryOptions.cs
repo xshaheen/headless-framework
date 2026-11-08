@@ -24,4 +24,14 @@ public class K8sDiscoveryOptions
     /// with label "headless.messaging.visibility:show" will be listed in the nodes section.
     /// </summary>
     public bool ShowOnlyExplicitVisibleNodes { get; set; } = true;
+
+    /// <summary>
+    /// URL scheme (<c>http</c> or <c>https</c>) of the address the dashboard calls each discovered service at.
+    /// Default: <c>http</c>.
+    /// </summary>
+    /// <remarks>
+    /// Dashboard forwarding refuses an <c>http</c> node unless its <c>AllowInsecurePeers</c> is set, so a deployment
+    /// that forwards serves the dashboard over HTTPS inside the cluster and sets <c>https</c> here.
+    /// </remarks>
+    public string Scheme { get; set; } = "http";
 }

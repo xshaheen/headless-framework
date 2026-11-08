@@ -104,7 +104,7 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
     private static object? _ReadClient(K8sNodeDiscoveryProvider provider)
     {
         return typeof(K8sNodeDiscoveryProvider)
-            .GetField("_client", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .GetField("_client", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly)!
             .GetValue(provider);
     }
 
@@ -115,6 +115,44 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
     ) : K8sNodeDiscoveryProvider(logger, cache, options)
     {
         public void DisposeUnmanagedOnly() => Dispose(disposing: false);
+    }
+
+    #endregion
+
+    #region Address Tests
+
+    [Theory]
+    [InlineData("http")]
+    [InlineData("https")]
+    public void should_address_the_service_with_the_configured_scheme_when_mapping_a_service(string scheme)
+    {
+        // given
+        _options.ShowOnlyExplicitVisibleNodes = false;
+        _options.Scheme = scheme;
+        var service = new V1Service
+        {
+            Metadata = new V1ObjectMeta { Name = "orders", Uid = "uid-1" },
+            Spec = new V1ServiceSpec { Ports = [new V1ServicePort { Port = 8443 }] },
+        };
+        var method = typeof(K8sNodeDiscoveryProvider).GetMethod(
+            "_MapService",
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+            [typeof(V1Service), typeof(string)]
+        );
+
+        // when
+        var node = (Node?)method!.Invoke(_provider, [service, "shop"]);
+
+        // then
+        node.Should().NotBeNull();
+        node!.Address.Should().Be(scheme + "://orders.shop");
+        node.Port.Should().Be(8443);
+    }
+
+    [Fact]
+    public void should_default_to_http_when_no_scheme_is_set()
+    {
+        new K8sDiscoveryOptions().Scheme.Should().Be("http");
     }
 
     #endregion

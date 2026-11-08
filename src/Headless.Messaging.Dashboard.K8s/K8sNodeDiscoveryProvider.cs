@@ -197,7 +197,7 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, MessagingDashboardC
         {
             Id = service.Uid(),
             Name = service.Name(),
-            Address = "http://" + service.Metadata.Name + "." + ns,
+            Address = options.Scheme + "://" + service.Metadata.Name + "." + ns,
             Port = port,
             Tags = string.Join(',', service.Labels()?.Select(x => x.Key + ":" + x.Value) ?? []),
         };

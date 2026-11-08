@@ -539,6 +539,10 @@ app.MapHeadlessDashboard();
 | `ChangeOverlapWindow` | 5 s | How far back each change read of a store reads again. It must exceed the longest transaction that enlists an outbox write: a row that commits later than this after its write is not streamed, and shows on the next read of its list. |
 | `ChangePageSize` | 200 | The most changed rows one change read returns per store, 1 to 1000. |
 | `StoreTimeout` | 1.5 s | How long a read that covers several stores waits for one of them before naming it unavailable. Keep it below the shell's `AggregationTimeout`. |
+| `Forwarding.Key` | `null` | The key every node of the deployment shares, at least 32 characters. Sent in `X-Headless-Forwarding-Key` and compared in fixed time. Setting it, or `Forwarding.Policy`, turns forwarding on; see [Forwarding to other nodes](#forwarding-to-other-nodes). |
+| `Forwarding.Policy` | `null` | A host authorization policy that admits a calling node through the host's own service-identity scheme, used instead of the key. Set one of the two, not both. |
+| `Forwarding.AllowInsecurePeers` | `false` | Lets this node call a peer that discovery lists at an `http://` address. |
+| `ForwardedAccess` | `View` | The most a call another node forwards here may do: `View` reads only, `Operate` also runs the commands the serving node decided its operator may run. |
 
 `AddMessaging(Action<MessagingDashboardOptions>)`, `AddMessaging(Action<MessagingDashboardOptions, IServiceProvider>)`, and `AddMessaging(IConfiguration)` configure them.
 
@@ -594,11 +598,65 @@ app.MapHeadlessDashboard();
 
 A row that is still being processed is refused with `Still processing`, and a row that changed between its read and the write with `Changed since it was read`. The inbox commands act on an inbox generation: a received row stored without one, by a store that predates generations, is refused with `Not supported by this store`, as is a scheduled command on a provider without scheduled-delivery operations. Re-send and Delete also work on a published row of an additional outbox: the change runs on that outbox's store, and its receipt, which names the outbox in `OutboxName`, goes to the main store's ledger. The two writes are not atomic, so a receipt that fails after the row changed leaves the row `Done` with the note `The receipt was not recorded: …` in its reason, and the change stands. The scheduled-delivery commands on an outbox row are refused with `Not supported for additional outboxes`, because scheduled-delivery operations live in the main store.
 
-Circuit and node commands act on the node that serves the call, write no receipt, and are recorded only in the operator log; an id naming another node, for a row as for a circuit or node, is refused with `Served by another node`. With Kubernetes discovery (an `INodeDiscoveryProvider` registered and no `CurrentNodeIdentity`), a call reaches whichever pod the Service routes it to, so both are disabled with `Acts on one pod; Kubernetes discovery addresses a Service`.
+Circuit and node commands act on the node that serves the call, write no receipt, and are recorded only in the operator log. With forwarding off, an id naming another node, for a row as for a circuit or node, is refused with `Served by another node`; with forwarding on, the command goes to that node, as [Forwarding to other nodes](#forwarding-to-other-nodes) describes. With Kubernetes discovery (an `INodeDiscoveryProvider` registered and no `CurrentNodeIdentity`), a call reaches whichever pod the Service routes it to, so both are disabled with `Acts on one pod; Kubernetes discovery addresses a Service`.
 
 Re-execute, Purge, Re-send, and Delete run over a filter as Operations, which always need a reason (a confirm without one answers `400` with `errors.reason`). The filter is the list scope `{ store, status, terminalOnly, consumer, name, fingerprint }`. A Re-send or Delete Operation whose `store` names an additional outbox runs over that outbox, with each receipt in the main store; Re-execute and Purge run over the main store only, and a filter naming an outbox or an unknown store answers `400` on `filter`. Confirm freezes the scope on the store's latest change marker, and each chunk writes a row only while its marker is unchanged, so a row another chunk, node, or earlier run already changed is skipped with its reason, never written twice; an Operation stopped part-way and run again on another node changes each row once. A re-execute scope leaves held rows out. One row's failure, such as a main-store receipt that could not be written, is reported as `Failed` on that row while the Operation runs on.
 
 The module embeds its `manifest.json`, which declares its sidebar; its views come with its front end.
+
+#### Forwarding to other nodes
+
+A node whose stores another node cannot read, such as a service with its own database, shows its rows on every other node through forwarding: the serving node sends the request to the node that owns the rows, which reads its own stores, formats its own payloads, and answers. Forwarding is off until `Forwarding.Key` or `Forwarding.Policy` is set, and needs an `INodeDiscoveryProvider` (Consul or Kubernetes discovery) to list the nodes. Give every node of the deployment the same mode, and make each discovery entry's name the node's `NodeName`.
+
+```csharp
+builder.Services.AddHeadlessDashboard(dashboard => dashboard
+    .WithHostAuthentication(host => { host.ViewPolicy = "ops.view"; host.OperatePolicy = "ops.operate"; })
+    .AddMessaging(messaging =>
+    {
+        messaging.NodeName = "orders-api";
+        messaging.Forwarding.Key = builder.Configuration["Dashboard:ForwardingKey"]; // 32+ characters, from a secret store
+        messaging.ForwardedAccess = MessagingForwardedAccess.Operate; // default View: forwarded calls only read
+    }));
+```
+
+- **Admission.** A forwarded call is admitted by the scheme `HeadlessDashboardForwarding`: with `Policy` set, the host's policy decides and the key handler is not used; otherwise the call must carry the shared key. The operator and access headers are read only after admission, and only on the Messaging module's endpoints, so a browser that sends them without the key is judged by its own session. The outbound calls use the named `HttpClient` `Headless.Messaging.Dashboard.Forwarding`; in policy mode, configure it to present the node's service identity, such as a client certificate.
+- **Access.** The serving node checks its own operator's view and operate permissions and sends the result. The peer acts at the lower of that decision and its own `ForwardedAccess`, and records the operator as `{name} via {serving node}`, such as `ops via orders-api`, on receipts and in the operator log. A forwarded write that asserts view access is refused with `403`, and so is a write whose operator is a placeholder rather than a named account.
+- **The key stays secret.** It never appears in the manifest, logs, startup errors, or responses, and is compared in fixed time.
+- **Which node answers.** A read names its node with `?node=`; a command or Operation names it through the object ids or the filter's `node`. A node name resolves only against discovery entries: a name discovery does not list answers `404` with `Discovery lists no Messaging node named '{node}'.` and no call leaves the node, so a caller cannot point a node at an address of its choosing. A call another node forwarded is always served where it lands, and a node never forwards to itself.
+- **No local fallback.** A peer that cannot answer is never replaced with this node's rows. A read answers `502` with the state in `X-Headless-Node-State` and the problem's detail; a command answers `409` with the same sentence.
+
+| State (`X-Headless-Node-State`) | What the operator reads |
+| --- | --- |
+| `not-answering` | `Node {node} is not answering` |
+| `key-rejected` | `Node {node} rejected this node's forwarding key` (the peer answered `401`) |
+| `policy-denied` | `Node {node} denied this node by its forwarding policy` |
+| `view-only` | `Node {node} accepts view-only forwarded calls`: the peer keeps the default `ForwardedAccess`; its commands show disabled with this reason |
+| `insecure-peer` | `Node {node} is an insecure peer: its address is not https, and AllowInsecurePeers is off`; no request is sent |
+
+- **HTTPS.** A peer whose discovery address is `http://` gets no request unless `AllowInsecurePeers` is set, because the credential and the operator's name would cross the network in clear text. Set `Scheme = "https"` on `ConsulDiscoveryOptions` or `K8sDiscoveryOptions`.
+- **Needs you** lists every node's items, each title ending in ` (node {node})`; another node's item ids and group keys are prefixed with `{node}:` and its filter names the node. Each peer's answer is cached for 30 seconds. A peer that cannot answer becomes one critical item, `node-state:{node}`, titled with its state; two discovery entries with the same name are one node and give one item.
+- **Live changes.** A stream on this node that subscribes to `messaging.received@{node}` or `messaging.published@{node}` makes this node read that peer's change feed about once a second while the topic is watched, and stops with the last watcher. The changes arrive on the node topic. A peer that stops answering or leaves discovery marks only its own views stale (`node.stale`), within 5 seconds of leaving discovery, and loses its cursor. A peer that no longer knows the cursor, such as after a restart, answers `410`; the stream starts a new cursor and sends `node.reset`, so that node's views refetch.
+- **Operations.** Confirm and every chunk of an Operation whose filter names another node run on that node. The serving node keeps the scope token and sends the filter, the marker, the cursor, the operator, and the reason, so the peer's ledger records each chunk as `{name} via {serving node}`.
+
+A host refuses to start when forwarding runs under `WithNoAuth()`, when the key is shorter than 32 characters or blank, when both a key and a policy are set, or when the policy is not registered, has no authentication scheme, uses the forwarding scheme, or is also the dashboard's view or operate policy. None of these messages quotes the key.
+
+#### Dashboard-only host
+
+`AddMessagingStandalone(...)` adds the Messaging module to a host that has no Messaging stores of its own and shows the nodes discovery lists, each through forwarding. It needs forwarding (`Forwarding.Key` or `Forwarding.Policy`) and a registered discovery provider; without either the host fails to start with a message naming the missing piece. A read without `?node=` opens on the first node discovery lists; with none reachable it answers `503` with `No Messaging node reachable.` and the discovery state, such as `Service discovery lists no other Messaging node.` A command that names no node is refused, because this host holds no rows.
+
+```csharp
+builder.Services.AddHeadlessDashboard(dashboard => dashboard
+    .WithHostAuthentication(host => { host.ViewPolicy = "ops.view"; host.OperatePolicy = "ops.operate"; })
+    .AddMessagingStandalone(
+        messaging =>
+        {
+            messaging.NodeName = "ops-dashboard";
+            messaging.Forwarding.Key = builder.Configuration["Dashboard:ForwardingKey"];
+        },
+        k8s => k8s.Scheme = "https")); // Headless.Messaging.Dashboard.K8s
+```
+
+`AddMessagingStandalone(Action<MessagingDashboardOptions>)`, its `IServiceProvider` and `IConfiguration` overloads, and the Kubernetes overload above replace `AddMessagingDashboardStandalone(IServiceCollection, ...)`, which is removed.
 
 ### Messaging and standalone dashboards
 

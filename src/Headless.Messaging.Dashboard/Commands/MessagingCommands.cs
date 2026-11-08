@@ -1056,6 +1056,16 @@ internal sealed class MessagingCommands(MessagingStores stores, MessagingSources
             throw new ArgumentException("The filter is not a Messaging list filter.", nameof(filter), exception);
         }
 
+        // A filter for another node's rows is sent to that node; one that reaches this node unrouted must not run
+        // over this node's rows instead.
+        if (!string.IsNullOrEmpty(scope.Node) && !string.Equals(scope.Node, _stores.NodeName, StringComparison.Ordinal))
+        {
+            throw new ArgumentException(
+                $"The filter selects the rows of node '{scope.Node}', not this node's.",
+                nameof(filter)
+            );
+        }
+
         var store =
             (string.IsNullOrEmpty(scope.Store) ? _stores.Primary : _stores.Find(scope.Store))
             ?? throw new ArgumentException($"The filter names an unknown store '{scope.Store}'.", nameof(filter));
