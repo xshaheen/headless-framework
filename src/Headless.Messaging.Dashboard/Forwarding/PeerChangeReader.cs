@@ -105,6 +105,7 @@ internal sealed class PeerChangeReader(
     private async Task _RunAsync(string node, CancellationToken cancellationToken)
     {
         string? cursor = null;
+        var lostFeed = false;
         var stale = false;
         var failures = 0;
         var skip = 0;
@@ -135,7 +136,19 @@ internal sealed class PeerChangeReader(
 
                 var (next, ok, reset) = read;
 
-                // A node gone from discovery loses its cursor: the feed it names may not come back as it was.
+                // A node gone from discovery loses its cursor: the feed it names may not come back as it was. The
+                // feed it starts on its return begins at its latest change, so the views reset then, or they would
+                // keep rows that changed while it was gone.
+                if (cursor is not null && next is null && !reset)
+                {
+                    lostFeed = true;
+                }
+                else if (cursor is null && next is not null && lostFeed)
+                {
+                    reset = true;
+                    lostFeed = false;
+                }
+
                 cursor = next;
 
                 if (reset)

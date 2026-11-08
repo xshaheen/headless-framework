@@ -517,6 +517,7 @@ app.MapHeadlessDashboard();
 
 ```csharp
 using Headless.Dashboard;
+using Headless.Jobs;
 using Headless.Messaging.Dashboard;
 
 builder.Services.AddHeadlessMessaging(setup =>
@@ -645,6 +646,10 @@ A host refuses to start when forwarding runs under `WithNoAuth()`, when the key 
 `AddMessagingStandalone(...)` adds the Messaging module to a host that has no Messaging stores of its own and shows the nodes discovery lists, each through forwarding. It needs forwarding (`Forwarding.Key` or `Forwarding.Policy`) and a registered discovery provider; without either the host fails to start with a message naming the missing piece. A read without `?node=` opens on the first node discovery lists; with none reachable it answers `503` with `No Messaging node reachable.` and the discovery state, such as `Service discovery lists no other Messaging node.` A command that names no node is refused, because this host holds no rows.
 
 ```csharp
+using Headless.Dashboard;
+using Headless.Messaging.Dashboard;
+using Headless.Messaging.Dashboard.K8s;
+
 builder.Services.AddHeadlessDashboard(dashboard => dashboard
     .WithHostAuthentication(host => { host.ViewPolicy = "ops.view"; host.OperatePolicy = "ops.operate"; })
     .AddMessagingStandalone(

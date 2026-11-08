@@ -98,6 +98,34 @@ public sealed class PeerChangeReaderTests : TestBase
     }
 
     [Fact]
+    public async Task should_reset_node_b_views_when_node_b_returns_to_discovery_after_its_cursor_was_dropped()
+    {
+        // given: node A follows node B's feed, then node B leaves discovery and node A drops its cursor
+        _discoveryA.Set(ForwardingHost.Entry("node-b", "https://node-b"));
+        await using var nodeB = await _StartPeerAsync("node-b");
+        await using var nodeA = await _StartAAsync();
+        using var reader = _Reader(nodeA);
+        var started = _network.NextCallAsync(call => _IsStart(call, "node-b"));
+        reader.Watch("node-b");
+        await _AdvanceUntilAsync(started);
+        var stale = _publisher.NextAsync(e => string.Equals(e.Kind, "stale", StringComparison.Ordinal));
+        _discoveryA.Set();
+        await _AdvanceUntilAsync(stale);
+        _publisher.Events.Should().NotContain(e => string.Equals(e.Kind, "reset", StringComparison.Ordinal));
+        var reset = _publisher.NextAsync(e => string.Equals(e.Kind, "reset", StringComparison.Ordinal));
+        var restarted = _network.NextCallAsync(call => _IsStart(call, "node-b"));
+
+        // when: node B comes back, and its feed starts again at its latest change
+        _discoveryA.Set(ForwardingHost.Entry("node-b", "https://node-b"));
+        await _AdvanceUntilAsync(Task.WhenAll(reset, restarted));
+
+        // then: node B's views refetch, because changes made while it was gone are not in the new feed
+        (await reset)
+            .Node.Should()
+            .Be("node-b");
+    }
+
+    [Fact]
     public async Task should_restart_the_feed_and_reset_node_b_views_when_node_b_no_longer_knows_the_cursor()
     {
         // given
