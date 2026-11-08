@@ -5,9 +5,11 @@
     <OutputType>Exe</OutputType>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Compliance.Redaction" />
     <PackageReference Include="xunit.v3.mtp-v2" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Logging.Serilog\Headless.Logging.Serilog.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
   </ItemGroup>
 </Project>

@@ -89,6 +89,16 @@
           "Microsoft.Extensions.Logging": "10.0.13"
         }
       },
+      "Microsoft.Extensions.Compliance.Redaction": {
+        "type": "Direct",
+        "requested": "[10.11.0, )",
+        "resolved": "10.11.0",
+        "contentHash": "PXaJ04SHx1tb3+XR61E6wlQsWkANqTPJOvRfhiYh7Da+moJK2h9132IB9Mfv2kIhYbs8zt5eUnoh0iPEygf7og==",
+        "dependencies": {
+          "Microsoft.Extensions.Compliance.Abstractions": "10.11.0",
+          "Microsoft.Extensions.Options.ConfigurationExtensions": "10.0.13"
+        }
+      },
       "Microsoft.Sbom.Targets": {
         "type": "Direct",
         "requested": "[4.1.13, 4.1.13]",
@@ -916,6 +926,7 @@
         "type": "Project",
         "dependencies": {
           "Headless.Extensions": "[1.0.0, )",
+          "Microsoft.Extensions.Compliance.Abstractions": "[10.11.0, )",
           "Serilog": "[4.4.0, )",
           "Serilog.Enrichers.Environment": "[3.0.1, )",
           "Serilog.Enrichers.Process": "[3.0.0, )",

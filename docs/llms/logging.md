@@ -49,6 +49,8 @@ builder.Host.UseSerilog(
 - The Debug sink is active only in `#DEBUG` builds (conditional via `[Conditional("DEBUG")]`); do not guard it yourself.
 - In text format the console theme is `AnsiConsoleTheme.Code` in Development and `ConsoleTheme.None` elsewhere — driven by `IHostEnvironment.IsDevelopment()`. JSON output carries no theme.
 - `IPAddress` values are automatically destructured to their string representation (`ip?.ToString() ?? string.Empty`) — no custom destructuring policy needed.
+- To keep personal data and secrets out of Serilog output, mark the members with a `DataClassificationAttribute` and register Microsoft's redaction (`services.AddRedaction(...)`, package `Microsoft.Extensions.Compliance.Redaction`). The reloadable profile then redacts those members whenever Serilog destructures a value (`{@Value}`), in every sink and in the events `writeToProviders` forwards to OpenTelemetry. Do not write a Serilog enricher or destructuring policy that masks by property name. A plain `{Value}` hole renders `ToString()` and is not redacted, so a type that holds a secret still overrides `ToString()`.
+- Under `UseSerilog`, a `[LoggerMessage]` parameter that carries a classification attribute reaches no Serilog sink: the property is dropped and the rendered text keeps the literal `{Name}` hole. Microsoft's `EnableRedaction` never runs, because Serilog replaces the `ILoggerFactory`. Log a classified value as a member of a destructured object instead.
 - All enrichers (`Environment`, `Thread`, `Process`, `Machine`, `LogContext`, `Application`, `Version`, `CommitHash`) are registered internally; **do not add them again** via separate `Serilog.Enrichers.*` calls.
 - `Headless.Extensions` is a transitive dependency via `Headless.Logging.Serilog`; do not reference it separately just for `AssemblyInformation`.
 - The output template is exposed as `SerilogFactory.OutputTemplate` (a `public const string`) — reference it if you write a custom sink that must match the standard format.
@@ -63,6 +65,7 @@ builder.Host.UseSerilog(
 - Standard enrichers applied automatically: `LogContext`, `EnvironmentName`, `ThreadId`, `ProcessId`, `ProcessName`, `MachineName`, `Application`, `Version`, `CommitHash`.
 - Trace correlation comes from Serilog itself: every event records the current `Activity`'s trace and span IDs (`LogEvent.TraceId`, `LogEvent.SpanId`), which compact JSON writes as `@tr` and `@sp` and text templates read as `{TraceId}` and `{SpanId}`. No `TraceId`, `SpanId`, or `ParentId` event properties are added; a sink or query that reads those properties must read the built-in fields instead.
 - `IPAddress` destructuring policy converts IP addresses to strings.
+- `DataClassificationDestructuringPolicy` redacts the members of a destructured value that carry a `DataClassificationAttribute`, through the `IRedactorProvider` that `AddRedaction` registers. `ConfigureReloadableLoggerConfiguration` adds it first, ahead of configuration- and DI-registered policies, whenever `services` resolves an `IRedactorProvider`; `loggerConfiguration.Destructure.WithRedaction(provider)` adds it to any other logger. Without a provider, classified members log unchanged.
 - `SerilogOptions` to choose the console format (`ConsoleFormat`) and tune file output: directory, rolling interval, retention limit, buffering, flush interval.
 - `SerilogConsoleFormat` — `Text` (rendered with `OutputTemplate`) or `Json` (`CompactJsonFormatter` from `Serilog.Formatting.Compact`).
 - `SerilogFactory.OutputTemplate` — shared `public const string` matching `[{UtcTimestamp:yyyy-MM-dd HH:mm:ss.fff}Z {Level:u3}] {RequestPath} {SourceContext} {Message:lj}{NewLine}{Exception}`, used by the text console, Debug, and file sinks.
@@ -78,6 +81,18 @@ builder.Host.UseSerilog(
 **`WriteToFiles` defaults to `true`** but the option exists to support container deployments where structured logs go to stdout only. When `false`, the three level-specific sinks are skipped entirely; the console sink and Debug sink remain.
 
 **Environment-aware console format**: outside Development the console writes compact JSON, because container platforms and log aggregators (Datadog, CloudWatch, Loki) read stdout line by line: a JSON line keeps every structured property as a field, and a multi-line exception stays inside one event instead of splitting into several records. In Development the themed text template stays readable. File and Debug sinks always write text with `OutputTemplate`.
+
+**Classification-driven redaction**: the same `DataClassificationAttribute` and `AddRedaction` mapping that Microsoft logging uses also drives Serilog, so an app states once which members are personal or secret. The policy applies these rules to a destructured value:
+
+- A classified property keeps its name. It holds the redactor's output, so an erasing redactor yields `""` and the log still shows that the property was set, while a `null` value stays `null`.
+- A property with several classifications is redacted as one combined set; with no redactor mapped for that set, the provider's fallback redactor applies.
+- A classified collection is redacted element by element, which keeps the count and, with an HMAC redactor, shows which elements repeat.
+- A classification on a type redacts the whole value to one string: its `ToString()` passed through the redactor.
+- `DataClassification.None` (`[NoDataClassification]`) counts as unclassified.
+- Properties are read the way Serilog reads them: inherited ones are included, overrides inherit the classification from the base declaration, indexers and non-public getters are skipped, and a throwing getter logs a message naming the exception type.
+- Values are formatted with the invariant culture, so a pseudonym is the same on every host.
+
+The policy is adapted from Serilog.Redaction (Apache-2.0; see the package's `THIRD-PARTY-NOTICES.md`).
 
 **`SerilogFactory.OutputTemplate`** is `public const` so custom downstream sinks or formatters can reference the canonical template without duplicating the string.
 
