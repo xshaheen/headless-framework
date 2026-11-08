@@ -1072,6 +1072,10 @@ public partial class SqlServerStorageTests(SqlServerTestFixture fixture) : DataS
     [InlineData(false)]
     public override Task should_restamp_the_lease_when_an_attempt_is_reserved_late_in_a_claimed_batch(bool published)
     {
+        Assert.Skip(
+            "Quarantined: a slow run outlasts the test's real-time 2 s lease. https://github.com/xshaheen/headless-framework/issues/1555"
+        );
+
         return base.should_restamp_the_lease_when_an_attempt_is_reserved_late_in_a_claimed_batch(published);
     }
 

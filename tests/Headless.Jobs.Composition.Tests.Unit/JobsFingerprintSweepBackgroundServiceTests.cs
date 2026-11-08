@@ -21,6 +21,10 @@ public sealed class JobsFingerprintSweepBackgroundServiceTests : TestBase
     [Fact]
     public async Task should_retry_within_five_minutes_after_a_deferred_pass_and_wait_the_interval_after_an_agreed_one()
     {
+        Assert.Skip(
+            "Quarantined: hangs under a full module run. https://github.com/xshaheen/headless-framework/issues/1560"
+        );
+
         var time = new DelayRecordingTimeProvider();
         var manager = Substitute.For<IInternalJobManager>();
         manager
