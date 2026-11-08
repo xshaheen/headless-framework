@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections;
+using System.Globalization;
 using Microsoft.Extensions.Logging;
 
 namespace Headless.Logging.Internal;
@@ -10,8 +11,15 @@ namespace Headless.Logging.Internal;
 /// rendered message, before the provider sees them.
 /// </summary>
 /// <remarks>
+/// <para>
 /// It sits beneath the classification and path stages, so it only ever sees their already-redacted copies. Every value
 /// a provider might keep is copied out during the call.
+/// </para>
+/// <para>
+/// A non-string value is scanned in its invariant text form, because a template-rendering provider such as Serilog
+/// prints the value itself and ignores the scrubbed formatter output. A value whose text matches is replaced by its
+/// scrubbed text; any other value keeps its type.
+/// </para>
 /// </remarks>
 internal sealed class TextScrubbingLogger(ILogger inner, ILogTextRedactor[] redactors) : ILogger
 {
@@ -24,9 +32,17 @@ internal sealed class TextScrubbingLogger(ILogger inner, ILogTextRedactor[] reda
         {
             string text => inner.BeginScope(_Scrub(text)),
             IEnumerable<KeyValuePair<string, object?>> values => inner.BeginScope(
-                new ScrubbedState(_Scrub(values), state.ToString() is { } t ? _Scrub(t) : string.Empty)
+                new ScrubbedState(_Scrub(values), _ScrubText(state))
             ),
-            _ => inner.BeginScope(state),
+            // KeyValuePair is a struct, so a string-valued dictionary is not covariant with the object-valued case.
+            IEnumerable<KeyValuePair<string, string>> values => inner.BeginScope(
+                new ScrubbedState(
+                    _Scrub(values.Select(static pair => new KeyValuePair<string, object?>(pair.Key, pair.Value))),
+                    _ScrubText(state)
+                )
+            ),
+            // Providers print any other scope (an anonymous object, a custom type) through ToString, so scan that text.
+            _ => _ScrubValue(state) is string scrubbed ? inner.BeginScope(scrubbed) : inner.BeginScope(state),
         };
     }
 
@@ -54,8 +70,34 @@ internal sealed class TextScrubbingLogger(ILogger inner, ILogTextRedactor[] reda
 
     private KeyValuePair<string, object?>[] _Scrub(IEnumerable<KeyValuePair<string, object?>> values)
     {
-        return [.. values.Select(pair => pair.Value is string text ? new(pair.Key, _Scrub(text)) : pair)];
+        return [.. values.Select(pair => new KeyValuePair<string, object?>(pair.Key, _ScrubValue(pair.Value)))];
     }
+
+    private object? _ScrubValue(object? value)
+    {
+        switch (value)
+        {
+            case null:
+                return null;
+            case string text:
+                return _Scrub(text);
+        }
+
+        var formatted = Convert.ToString(value, CultureInfo.InvariantCulture);
+
+        if (formatted is null)
+        {
+            return value;
+        }
+
+        var scrubbed = _Scrub(formatted);
+
+        return ReferenceEquals(scrubbed, formatted) || string.Equals(scrubbed, formatted, StringComparison.Ordinal)
+            ? value
+            : scrubbed;
+    }
+
+    private string _ScrubText(object state) => state.ToString() is { } text ? _Scrub(text) : string.Empty;
 
     private string _Scrub(string text)
     {

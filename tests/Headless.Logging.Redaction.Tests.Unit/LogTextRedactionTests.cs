@@ -1,10 +1,14 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Globalization;
 using System.Text.RegularExpressions;
 using Headless.Logging;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Serilog.Core;
+using Serilog.Events;
+using Serilog.Extensions.Logging;
 
 namespace Tests;
 
@@ -67,6 +71,56 @@ public sealed partial class LogTextRedactionTests : TestBase
     }
 
     [Fact]
+    public void should_mask_a_non_string_value_under_a_template_rendering_provider()
+    {
+        // given: Serilog renders from the template and the property values, never from the formatter output
+        var sink = new CollectingSink();
+        using var serilog = new Serilog.LoggerConfiguration().WriteTo.Sink(sink).CreateLogger();
+        var services = new ServiceCollection();
+        services.AddSingleton<ILoggerFactory>(new SerilogLoggerFactory(serilog));
+        services.AddLogTextRedaction(_Pattern());
+        services.AddHeadlessLogRedaction();
+        using var provider = services.BuildServiceProvider();
+        var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("App");
+
+        // when: the id arrives as a number, as a string, and inside an object's text
+        LogCitizenNumber(logger, 29001011234567L, 3);
+        LogCitizen(logger, _NationalId, 3);
+        LogCitizenObject(logger, new Citizen(_NationalId));
+
+        // then: every rendering is masked, and a value that does not match keeps its type
+        sink.Events.Select(e => e.RenderMessage(CultureInfo.InvariantCulture))
+            .Should()
+            .Equal("Citizen \"***\" has 3 requests", "Citizen \"***\" has 3 requests", "Citizen \"id=***\"");
+        sink.Events[0].Properties["Count"].Should().BeEquivalentTo(new ScalarValue(3));
+    }
+
+    [Fact]
+    public void should_mask_a_string_dictionary_scope_and_an_object_scope()
+    {
+        // given
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+        var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("App");
+
+        // when
+        using (logger.BeginScope(new Dictionary<string, string>(StringComparer.Ordinal) { ["Citizen"] = _NationalId }))
+        using (logger.BeginScope(new Citizen(_NationalId)))
+        {
+            LogRaw(logger, "inside");
+        }
+
+        // then
+        sink.Scopes.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain(new KeyValuePair<string, object?>("Citizen", "***"));
+        sink.ScopeTexts.Should()
+            .Contain("id=***")
+            .And.NotContain(text => text.Contains(_NationalId, StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void should_leave_text_without_a_match_unchanged()
     {
         // given
@@ -109,6 +163,12 @@ public sealed partial class LogTextRedactionTests : TestBase
     [LoggerMessage(1, LogLevel.Information, "Citizen {NationalId} has {Count} requests")]
     private static partial void LogCitizen(ILogger logger, string nationalId, int count);
 
+    [LoggerMessage(3, LogLevel.Information, "Citizen {NationalId} has {Count} requests")]
+    private static partial void LogCitizenNumber(ILogger logger, long nationalId, int count);
+
+    [LoggerMessage(4, LogLevel.Information, "Citizen {Citizen}")]
+    private static partial void LogCitizenObject(ILogger logger, Citizen citizen);
+
     [LoggerMessage(2, LogLevel.Information, "{Text}")]
     private static partial void LogRaw(ILogger logger, string text);
 
@@ -124,6 +184,18 @@ public sealed partial class LogTextRedactionTests : TestBase
         return services.BuildServiceProvider();
     }
 
+    private sealed record Citizen(string Id)
+    {
+        public override string ToString() => $"id={Id}";
+    }
+
+    private sealed class CollectingSink : ILogEventSink
+    {
+        public List<LogEvent> Events { get; } = [];
+
+        public void Emit(LogEvent logEvent) => Events.Add(logEvent);
+    }
+
     private sealed record Entry(string Text, IReadOnlyList<KeyValuePair<string, object?>> Properties);
 
     private sealed class CapturingProvider : ILoggerProvider, ISupportExternalScope
@@ -133,6 +205,8 @@ public sealed partial class LogTextRedactionTests : TestBase
         public List<Entry> Entries { get; } = [];
 
         public List<IReadOnlyList<KeyValuePair<string, object?>>> Scopes { get; } = [];
+
+        public List<string> ScopeTexts { get; } = [];
 
         public ILogger CreateLogger(string categoryName) => new Logger(this);
 
@@ -161,14 +235,18 @@ public sealed partial class LogTextRedactionTests : TestBase
                     : [];
 
                 owner._scopes?.ForEachScope(
-                    static (scope, scopes) =>
+                    static (scope, owner) =>
                     {
                         if (scope is IEnumerable<KeyValuePair<string, object?>> values)
                         {
-                            scopes.Add([.. values]);
+                            owner.Scopes.Add([.. values]);
+                        }
+                        else if (scope?.ToString() is { } text)
+                        {
+                            owner.ScopeTexts.Add(text);
                         }
                     },
-                    owner.Scopes
+                    owner
                 );
 
                 owner.Entries.Add(new Entry(formatter(state, exception), properties));
