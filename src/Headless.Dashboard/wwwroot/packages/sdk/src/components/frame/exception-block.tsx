@@ -9,29 +9,32 @@ export interface ExceptionBlockProps {
   /** The exception's type, such as `System.TimeoutException`; left out when the server does not serve it. */
   type?: string
   message: string
-  /** The stack frames, one per entry, without the leading `at`. */
-  frames?: readonly string[]
+  /**
+   * Everything under the message, as stored, one line each. A line that starts `at` is a frame; any other line, such
+   * as an inner exception's `Type: message` or `--- End of inner exception stack trace ---`, reads as it is.
+   */
+  stack?: string
 }
 
-/** The frames shown before `Full stack`: enough to see where it threw without pushing the fields out of view. */
-const shownFrames = 3
+/** The lines shown before `Full stack`: enough to see where it threw without pushing the fields out of view. */
+const shownLines = 3
 
-/** A failure's exception: the type in the danger tone, the message, and its frames, with Full stack and Copy. */
-export function ExceptionBlock({ type, message, frames = [] }: ExceptionBlockProps) {
+/** A failure's exception: the type in the danger tone, the message, and its stack, with Full stack and Copy. */
+export function ExceptionBlock({ type, message, stack }: ExceptionBlockProps) {
   const [full, setFull] = useState(false)
-  const lines = frames.map((frame) => `   at ${frame}`)
+  const lines = stackLines(stack)
 
   return (
     <div className="hd-exception">
       <pre className="hd-mono">
         {type ? <b>{type}: </b> : null}
         {message}
-        {(full ? lines : lines.slice(0, shownFrames)).map((line, index) => (
+        {(full ? lines : lines.slice(0, shownLines)).map((line, index) => (
           <span key={index}>{`\n${line}`}</span>
         ))}
       </pre>
       <div>
-        {lines.length > shownFrames ? (
+        {lines.length > shownLines ? (
           <Button variant="ghost" aria-expanded={full} onPress={() => setFull(!full)}>
             Full stack
           </Button>
@@ -46,4 +49,13 @@ export function ExceptionBlock({ type, message, frames = [] }: ExceptionBlockPro
       </div>
     </div>
   )
+}
+
+/** The stack's lines, frames indented under their exception, so an inner exception reads as a heading, not a frame. */
+function stackLines(stack: string | undefined) {
+  return (stack ?? '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => (line.startsWith('at ') ? `   ${line}` : line))
 }

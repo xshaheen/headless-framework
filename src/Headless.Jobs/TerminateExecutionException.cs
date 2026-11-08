@@ -76,8 +76,46 @@ public sealed class TerminateExecutionException : Exception
     }
 }
 
+/// <summary>
+/// The exception a failed attempt stores: the outer exception's type and message, and everything under them, so an
+/// operator reads the whole failure, inner exceptions included, and not only where the innermost one threw.
+/// </summary>
 internal sealed class ExceptionDetailClassForSerialization
 {
+    /// <summary>Gets or sets the outer exception's full type name, such as <c>System.TimeoutException</c>.</summary>
+    public string? Type { get; set; }
+
     public required string Message { get; set; }
+
+    /// <summary>
+    /// Gets or sets the outer exception's frames, each starting <c>at</c>, then each inner exception as a
+    /// <c>Type: message</c> line followed by its own frames.
+    /// </summary>
     public string? StackTrace { get; set; }
+
+    /// <summary>Returns <paramref name="exception"/> as the JSON a failed attempt stores.</summary>
+    public static string Serialize(Exception exception)
+    {
+        // ExpandMessage writes the inner chain (and a flattened AggregateException) the way Messaging stores its
+        // failures, bounded to a few levels so a deep chain cannot grow a row without limit.
+        var stackTrace =
+            exception is AggregateException
+                ? exception.ExpandMessage()
+                : string.Join(
+                    Environment.NewLine,
+                    new[] { exception.StackTrace?.TrimEnd(), exception.InnerException?.ExpandMessage() }.Where(
+                        static part => !string.IsNullOrEmpty(part)
+                    )
+                );
+
+        return JsonSerializer.Serialize(
+            new ExceptionDetailClassForSerialization
+            {
+                Type = exception.GetType().FullName,
+                Message = exception.Message,
+                StackTrace = stackTrace.Length == 0 ? null : stackTrace,
+            },
+            JobsExceptionJsonContext.Default.ExceptionDetailClassForSerialization
+        );
+    }
 }

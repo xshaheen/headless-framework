@@ -81,13 +81,13 @@ describe('HistoryList', () => {
 })
 
 describe('ExceptionBlock', () => {
-  const frames = ['Billing.Charge()', 'Billing.Run()', 'Jobs.Runner.Run()', 'Jobs.Host.Loop()']
+  const stack = ['at Billing.Charge()', 'at Billing.Run()', 'at Jobs.Runner.Run()', 'at Jobs.Host.Loop()'].join('\n')
 
-  it('shows the first frames until Full stack, and copies the whole exception', async () => {
+  it('shows the first lines until Full stack, and copies the whole exception', async () => {
     const user = userEvent.setup()
     const writeText = vi.fn(async () => undefined)
     vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } })
-    render(<ExceptionBlock type="System.TimeoutException" message="The charge timed out." frames={frames} />)
+    render(<ExceptionBlock type="System.TimeoutException" message="The charge timed out." stack={stack} />)
 
     expect(screen.queryByText(/Jobs\.Host\.Loop/)).toBeNull()
 
@@ -104,9 +104,29 @@ describe('ExceptionBlock', () => {
     vi.unstubAllGlobals()
   })
 
-  it('offers no Full stack when every frame already shows', () => {
-    render(<ExceptionBlock type="System.InvalidOperationException" message="No handler." frames={frames.slice(0, 2)} />)
+  it('offers no Full stack when every line already shows', () => {
+    render(
+      <ExceptionBlock
+        type="System.InvalidOperationException"
+        message="No handler."
+        stack={'at Billing.Charge()\nat Billing.Run()'}
+      />,
+    )
 
     expect(screen.queryByRole('button', { name: 'Full stack' })).toBeNull()
+  })
+
+  it('shows an inner exception as its own line, not as a frame', () => {
+    const nested = [
+      'at Billing.Charge()',
+      'TimeoutException: The gateway did not answer.',
+      'at Gateway.Send()',
+      '--- End of inner exception stack trace ---',
+    ].join('\n')
+    render(<ExceptionBlock type="System.InvalidOperationException" message="Charge failed." stack={nested} />)
+
+    expect(screen.getByText(/Charge failed/).closest('pre')?.textContent).toBe(
+      'System.InvalidOperationException: Charge failed.\n   at Billing.Charge()\nTimeoutException: The gateway did not answer.\n   at Gateway.Send()',
+    )
   })
 })

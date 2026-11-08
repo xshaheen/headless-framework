@@ -33,7 +33,7 @@ describe('Card', () => {
 
 describe('ExceptionBlock without a served type', () => {
   it('renders the message and its frames with no type line', () => {
-    render(<ExceptionBlock message="Card declined" frames={['Billing.Charge()']} />)
+    render(<ExceptionBlock message="Card declined" stack="at Billing.Charge()" />)
 
     expect(screen.getByText(/Card declined/).closest('pre')?.textContent).toBe('Card declined\n   at Billing.Charge()')
     expect(document.querySelector('.hd-exception b')).toBeNull()

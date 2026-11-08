@@ -692,7 +692,7 @@ internal sealed class JobsExecutionTaskHandler
                         + "was not invoked again."
                 );
                 var exhaustedAt = _timeProvider.GetUtcNow();
-                var exhaustedDetails = _SerializeException(exhaustedByRecovery);
+                var exhaustedDetails = ExceptionDetailClassForSerialization.Serialize(exhaustedByRecovery);
                 context
                     .SetProperty(x => x.Status, JobStatus.Failed)
                     .SetProperty(x => x.ExecutedAt, exhaustedAt)
@@ -854,7 +854,7 @@ internal sealed class JobsExecutionTaskHandler
                                     attemptEnd(
                                         JobAttemptOutcome.Failed,
                                         _timeProvider.GetUtcNow(),
-                                        _SerializeException(exception),
+                                        ExceptionDetailClassForSerialization.Serialize(exception),
                                         retryFingerprint
                                     )
                                 );
@@ -932,7 +932,7 @@ internal sealed class JobsExecutionTaskHandler
                     }
 
                     var cancelledAt = _timeProvider.GetUtcNow();
-                    var cancelledDetails = _SerializeException(ex);
+                    var cancelledDetails = ExceptionDetailClassForSerialization.Serialize(ex);
                     context
                         .SetProperty(x => x.Status, JobStatus.Cancelled)
                         .SetProperty(x => x.ExecutedAt, cancelledAt)
@@ -1111,7 +1111,7 @@ internal sealed class JobsExecutionTaskHandler
             }
             else if (lastException != null)
             {
-                var failedDetails = _SerializeException(lastException);
+                var failedDetails = ExceptionDetailClassForSerialization.Serialize(lastException);
                 var failedFingerprint = FailureFingerprint.Compute(lastException);
                 context
                     .SetProperty(x => x.Status, JobStatus.Failed)
@@ -1705,32 +1705,6 @@ internal sealed class JobsExecutionTaskHandler
             JobStatus.Cancelled => JobAttemptOutcome.Cancelled,
             _ => JobAttemptOutcome.Skipped,
         };
-
-    private static Exception _GetRootException(Exception ex)
-    {
-        while (ex.InnerException != null)
-        {
-            ex = ex.InnerException;
-        }
-
-        return ex;
-    }
-
-    private static string _SerializeException(Exception ex)
-    {
-        var rootException = _GetRootException(ex);
-        var stackTrace = new StackTrace(rootException, fNeedFileInfo: true);
-        var frame = stackTrace.GetFrame(0);
-
-        return JsonSerializer.Serialize(
-            new ExceptionDetailClassForSerialization
-            {
-                Message = ex.Message,
-                StackTrace = frame?.ToString() ?? rootException.StackTrace,
-            },
-            JobsExceptionJsonContext.Default.ExceptionDetailClassForSerialization
-        );
-    }
 
     private static bool _ShouldRunChild(JobExecutionState childContext, JobStatus parentStatus)
     {

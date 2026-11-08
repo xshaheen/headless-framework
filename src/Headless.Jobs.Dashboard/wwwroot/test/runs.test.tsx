@@ -161,7 +161,7 @@ describe('jobs runs list', () => {
   })
 
   it('opens a run in the docked panel, in the URL as open, with its exception and its attempts newest first', async () => {
-    const failed = run('Failed', { function: 'a.failed', exceptionMessage: 'Gateway timeout', exceptionFrame: 'Billing.Charge()' })
+    const failed = run('Failed', { function: 'a.failed', exceptionMessage: 'Gateway timeout', exceptionStack: 'at Billing.Charge()' })
     const view = list({
       runs: [failed],
       attempts: {
@@ -691,7 +691,7 @@ describe('jobs run page', () => {
   })
 
   it('shows the panel’s content as its own page, with nothing to close or detach', async () => {
-    const failed = run('Failed', { function: 'a.failed', exceptionMessage: 'Card declined', exceptionFrame: 'MoveNext at offset 596 in /src/Sandbox/SandboxJobs.cs:96:13' })
+    const failed = run('Failed', { function: 'a.failed', exceptionType: 'System.InvalidOperationException', exceptionMessage: 'Card declined', exceptionStack: 'at MoveNext at offset 596 in /src/Sandbox/SandboxJobs.cs:96:13\nTimeoutException: The gateway did not answer.' })
     open(
       {
         runs: [failed],
@@ -703,7 +703,7 @@ describe('jobs run page', () => {
     const page = await screen.findByRole('region', { name: `Run ${failed.id}` })
     expect(within(page).getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['Overview', 'Arguments', 'Chain'])
     expect(within(page).getByText(/MoveNext at offset 596/).closest('pre')?.textContent).toBe(
-      'Card declined\n   at MoveNext at offset 596 in /src/Sandbox/SandboxJobs.cs:96:13',
+      'System.InvalidOperationException: Card declined\n   at MoveNext at offset 596 in /src/Sandbox/SandboxJobs.cs:96:13\nTimeoutException: The gateway did not answer.',
     )
     expect(within(page).queryByRole('button', { name: 'Close details' })).toBeNull()
     expect(within(page).queryByRole('link', { name: 'Open in its own page' })).toBeNull()

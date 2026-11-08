@@ -25,10 +25,12 @@ export interface Run {
   elapsedMilliseconds: number
   retryCount: number
   node?: string
+  /** The outer exception's type, such as `System.TimeoutException`, when the stored detail names it. */
+  exceptionType?: string
   /** The exception's message, read from the stored detail on the server. */
   exceptionMessage?: string
-  /** The top frame of the exception's stack, when the stored detail has one. */
-  exceptionFrame?: string
+  /** The outer exception's frames and every inner exception under it, when the stored detail has them. */
+  exceptionStack?: string
   failureFingerprint?: string
   skippedReason?: string
   progressPercent?: number
@@ -60,8 +62,9 @@ export interface Attempt {
   startedAt?: string
   endedAt?: string
   outcome?: AttemptOutcome
+  exceptionType?: string
   exceptionMessage?: string
-  exceptionFrame?: string
+  exceptionStack?: string
   failureFingerprint?: string
 }
 

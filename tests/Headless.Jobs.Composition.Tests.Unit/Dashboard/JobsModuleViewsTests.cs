@@ -1,44 +1,46 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Runtime.CompilerServices;
 using Headless.Jobs;
 using Headless.Testing.Tests;
 
 namespace Tests.Dashboard;
 
 /// <summary>
-/// The exception a run and an attempt show: the executor stores a failure as JSON (outer message and the root
-/// exception's top frame), and the dashboard reads it back as a message and a frame, never as the stored JSON.
+/// The exception a run and an attempt show: the executor stores a failure as JSON (the outer type and message, then its
+/// frames and every inner exception), and the dashboard reads it back as text, never as the stored JSON.
 /// </summary>
 public sealed class JobsModuleViewsTests : TestBase
 {
     private const string _Message = "Chain step 'charge card' failed on purpose.";
-    private const string _Frame = "MoveNext at offset 596 in /src/Sandbox/SandboxJobs.cs:96:13";
+    private const string _InnerMessage = "The gateway did not answer.";
 
-    private static readonly string _Stored = JsonSerializer.Serialize(
-        new ExceptionDetailClassForSerialization { Message = _Message, StackTrace = _Frame },
-        JobsExceptionJsonContext.Default.ExceptionDetailClassForSerialization
-    );
+    private static readonly string _Stored = ExceptionDetailClassForSerialization.Serialize(_Thrown());
 
     [Fact]
-    public void should_show_the_message_and_frame_of_a_run_when_its_exception_is_stored_as_json()
+    public void should_show_the_type_message_and_full_stack_of_a_run_when_its_exception_is_stored_as_json()
     {
         // when
         var view = JobsRunView.From(_Run(_Stored));
 
         // then
+        view.ExceptionType.Should().Be(typeof(InvalidOperationException).FullName);
         view.ExceptionMessage.Should().Be(_Message);
-        view.ExceptionFrame.Should().Be(_Frame);
+        view.ExceptionStack.Should().Contain($"{nameof(JobsModuleViewsTests)}.{nameof(_Charge)}");
+        view.ExceptionStack.Should().Contain($"{nameof(TimeoutException)}: {_InnerMessage}");
+        view.ExceptionStack.Should().Contain($"{nameof(JobsModuleViewsTests)}.{nameof(_Gateway)}");
     }
 
     [Fact]
-    public void should_show_the_message_and_frame_of_an_attempt_when_its_exception_is_stored_as_json()
+    public void should_show_the_type_message_and_full_stack_of_an_attempt_when_its_exception_is_stored_as_json()
     {
         // when
         var view = JobsAttemptView.From(new TimeJobAttemptEntity { Number = 1, ExceptionMessage = _Stored });
 
         // then
+        view.ExceptionType.Should().Be(typeof(InvalidOperationException).FullName);
         view.ExceptionMessage.Should().Be(_Message);
-        view.ExceptionFrame.Should().Be(_Frame);
+        view.ExceptionStack.Should().Contain($"{nameof(TimeoutException)}: {_InnerMessage}");
     }
 
     [Theory]
@@ -50,8 +52,9 @@ public sealed class JobsModuleViewsTests : TestBase
         var view = JobsRunView.From(_Run(stored));
 
         // then
+        view.ExceptionType.Should().BeNull();
         view.ExceptionMessage.Should().Be(stored);
-        view.ExceptionFrame.Should().BeNull();
+        view.ExceptionStack.Should().BeNull();
     }
 
     [Fact]
@@ -61,9 +64,40 @@ public sealed class JobsModuleViewsTests : TestBase
         var view = JobsRunView.From(_Run(null));
 
         // then
+        view.ExceptionType.Should().BeNull();
         view.ExceptionMessage.Should().BeNull();
-        view.ExceptionFrame.Should().BeNull();
+        view.ExceptionStack.Should().BeNull();
     }
+
+    private static Exception _Thrown()
+    {
+        try
+        {
+            _Charge();
+        }
+        catch (InvalidOperationException exception)
+        {
+            return exception;
+        }
+
+        throw new InvalidOperationException("The charge was expected to throw.");
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void _Charge()
+    {
+        try
+        {
+            _Gateway();
+        }
+        catch (TimeoutException exception)
+        {
+            throw new InvalidOperationException(_Message, exception);
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void _Gateway() => throw new TimeoutException(_InnerMessage);
 
     private static JobRunSummary _Run(string? exception) =>
         new()

@@ -515,13 +515,11 @@ export function MessagingStats() {
   )
 }
 
-/** The stored exception's first line, and the rest of it as the frames under it. */
+/** The stored exception's first line, and the rest of it (frames and inner exceptions) as the stack under it. */
 function exceptionParts(info: string) {
   const [first = '', ...rest] = info.split('\n')
-  // A stored stack's lines start `at`; the block adds its own.
-  const frames = rest.map((line) => line.trim().replace(/^at /, '')).filter(Boolean)
 
-  return { message: first, frames }
+  return { message: first, stack: rest.join('\n') }
 }
 
 function Optional({ label, value, span }: { label: string; value: ReactNode; span?: 2 }) {

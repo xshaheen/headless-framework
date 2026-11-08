@@ -325,21 +325,19 @@ export function JobsStats() {
   )
 }
 
-/** The message's first line, and the rest of it with the stored frame as the frames under it. */
-function exceptionParts(message: string, frame?: string) {
+/** The message's first line, and the rest of it with the stored stack under it. */
+function exceptionParts(message: string, stack?: string) {
   const [first = '', ...rest] = message.split('\n')
-  // A stored stack's lines start `at`; the block adds its own.
-  const frames = [...rest, ...(frame ? frame.split('\n') : [])].map((line) => line.trim().replace(/^at /, '')).filter(Boolean)
 
-  return { message: first, frames }
+  return { message: first, stack: [...rest, ...(stack ? [stack] : [])].join('\n') }
 }
 
 /**
- * A stored exception as its block. The server stores the outer message and the root exception's top frame, not the
- * exception's type, so the block shows no type.
+ * A stored exception as its block: the outer exception's type and message, then its frames and every inner exception.
+ * A reason the store wrote itself has no type and no stack.
  */
-export function RunException({ message, frame }: { message: string; frame?: string }) {
-  return <ExceptionBlock {...exceptionParts(message, frame)} />
+export function RunException({ type, message, stack }: { type?: string; message: string; stack?: string }) {
+  return <ExceptionBlock type={type} {...exceptionParts(message, stack)} />
 }
 
 function TraceLink({ traceId }: { traceId: string }) {
@@ -377,7 +375,9 @@ export function RunFields({ run }: { run: Run }) {
 
   return (
     <>
-      {run.exceptionMessage ? <RunException message={run.exceptionMessage} frame={run.exceptionFrame} /> : null}
+      {run.exceptionMessage ? (
+        <RunException type={run.exceptionType} message={run.exceptionMessage} stack={run.exceptionStack} />
+      ) : null}
       <FieldGrid>
         <GridField label="Kind">{kindLabel(run.kind)}</GridField>
         <GridField label="Retries">{format.number(run.retryCount)}</GridField>
