@@ -416,18 +416,31 @@ public static class FencedRows
     /// type is comparable the rows are locked in key order, so two batches over the same rows cannot deadlock; otherwise
     /// they are locked in the order given.
     /// </remarks>
+    /// <param name="table">The rows' table.</param>
+    /// <param name="connection">The caller's connection.</param>
+    /// <param name="transaction">The caller's transaction, or <see langword="null" /> to run in one of the helper's own.</param>
+    /// <param name="rows">The tokens.</param>
+    /// <param name="write">
+    /// The consumer's assignments and their parameters, applied to each row its release ends, or
+    /// <see langword="null" />. Only <see cref="FencedRowWrite.Set" /> and <see cref="FencedRowWrite.Bind" /> apply, and
+    /// <see cref="FencedRowWrite.Bind" /> runs once per row's statement.
+    /// </param>
+    /// <param name="cancellationToken">Token used to cancel the operation.</param>
     /// <returns>Each token's outcome, in the order <paramref name="rows" /> lists them.</returns>
     public static async ValueTask<IReadOnlyList<LeaseSettlementStatus>> ReleaseAsync<TKey>(
         FencedRowTable<TKey> table,
         DbConnection connection,
         DbTransaction? transaction,
         IReadOnlyList<FencedRow<TKey>> rows,
+        FencedRowWrite? write = null,
         CancellationToken cancellationToken = default
     )
         where TKey : notnull
     {
         Argument.IsNotNull(table);
         Argument.IsNotNull(rows);
+
+        var sql = _EndSql(table, write, RowLeaseState.Released);
 
         foreach (var row in rows)
         {
@@ -455,9 +468,9 @@ public static class FencedRows
                                 table,
                                 connection,
                                 tx,
-                                table.ReleaseSql,
+                                sql,
                                 rows[i],
-                                bind: null,
+                                write?.Bind,
                                 LeaseSettlementStatus.Released,
                                 ct
                             )
@@ -507,13 +520,156 @@ public static class FencedRows
         Argument.IsNotNullOrWhiteSpace(write.Set, paramName: nameof(write));
         Argument.IsNotNull(readReturning);
 
+        return await _WriteAsync(
+                table,
+                connection,
+                transaction,
+                row,
+                write,
+                write.Set,
+                readReturning,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Ends a live generation as settled with the consumer's write composed into the same statement, narrowed by its
+    /// condition and reading columns back, classified as <see cref="WriteAsync{TKey,TAccepted}" /> classifies a write.
+    /// </summary>
+    /// <param name="table">The row's table.</param>
+    /// <param name="connection">The caller's connection.</param>
+    /// <param name="transaction">The caller's transaction, or <see langword="null" /> to run in one of the helper's own.</param>
+    /// <param name="row">The token.</param>
+    /// <param name="write">
+    /// The write: <see cref="FencedRowWrite.Set" /> joins the settlement's own assignments and may be omitted;
+    /// <see cref="FencedRowWrite.Condition" /> narrows the fence; <see cref="FencedRowWrite.Returning" /> names the columns
+    /// to read back (the generation when omitted).
+    /// </param>
+    /// <param name="readReturning">Reads the returned columns, the first at ordinal 1.</param>
+    /// <param name="cancellationToken">Token used to cancel the operation.</param>
+    /// <returns>
+    /// Whether the settlement applied, with the lease the locking read found and how it judged the generation. A refused
+    /// settlement whose lease was still current failed the consumer's own condition; a generation already settled is
+    /// refused with <see cref="LeaseFenceStatus.Settled" />, so a retry can tell its first attempt landed.
+    /// </returns>
+    public static ValueTask<SqlFenced<LockedRowLease, TAccepted>> SettleAsync<TKey, TAccepted>(
+        FencedRowTable<TKey> table,
+        DbConnection connection,
+        DbTransaction? transaction,
+        FencedRow<TKey> row,
+        FencedRowWrite write,
+        Func<DbDataReader, CancellationToken, ValueTask<TAccepted>> readReturning,
+        CancellationToken cancellationToken = default
+    )
+        where TKey : notnull
+    {
+        return _EndWritingAsync(
+            table,
+            connection,
+            transaction,
+            row,
+            write,
+            RowLeaseState.Settled,
+            readReturning,
+            cancellationToken
+        );
+    }
+
+    /// <summary>
+    /// Ends a live generation as released with the consumer's write composed into the same statement, narrowed by its
+    /// condition and reading columns back, classified as <see cref="WriteAsync{TKey,TAccepted}" /> classifies a write.
+    /// </summary>
+    /// <param name="table">The row's table.</param>
+    /// <param name="connection">The caller's connection.</param>
+    /// <param name="transaction">The caller's transaction, or <see langword="null" /> to run in one of the helper's own.</param>
+    /// <param name="row">The token.</param>
+    /// <param name="write">
+    /// The write: <see cref="FencedRowWrite.Set" /> joins the release's own assignments and may be omitted;
+    /// <see cref="FencedRowWrite.Condition" /> narrows the fence; <see cref="FencedRowWrite.Returning" /> names the columns
+    /// to read back (the generation when omitted).
+    /// </param>
+    /// <param name="readReturning">Reads the returned columns, the first at ordinal 1.</param>
+    /// <param name="cancellationToken">Token used to cancel the operation.</param>
+    /// <returns>
+    /// Whether the release applied, with the lease the locking read found and how it judged the generation. A refused
+    /// release whose lease was still current failed the consumer's own condition.
+    /// </returns>
+    public static ValueTask<SqlFenced<LockedRowLease, TAccepted>> ReleaseAsync<TKey, TAccepted>(
+        FencedRowTable<TKey> table,
+        DbConnection connection,
+        DbTransaction? transaction,
+        FencedRow<TKey> row,
+        FencedRowWrite write,
+        Func<DbDataReader, CancellationToken, ValueTask<TAccepted>> readReturning,
+        CancellationToken cancellationToken = default
+    )
+        where TKey : notnull
+    {
+        return _EndWritingAsync(
+            table,
+            connection,
+            transaction,
+            row,
+            write,
+            RowLeaseState.Released,
+            readReturning,
+            cancellationToken
+        );
+    }
+
+    private static async ValueTask<SqlFenced<LockedRowLease, TAccepted>> _EndWritingAsync<TKey, TAccepted>(
+        FencedRowTable<TKey> table,
+        DbConnection connection,
+        DbTransaction? transaction,
+        FencedRow<TKey> row,
+        FencedRowWrite write,
+        RowLeaseState state,
+        Func<DbDataReader, CancellationToken, ValueTask<TAccepted>> readReturning,
+        CancellationToken cancellationToken
+    )
+        where TKey : notnull
+    {
+        Argument.IsNotNull(table);
+        _RequireTable(table, row);
+        Argument.IsNotNull(write);
+        Argument.IsNotNull(readReturning);
+
+        if (write.Set is not null)
+        {
+            Argument.IsNotNullOrWhiteSpace(write.Set, paramName: nameof(write));
+        }
+
+        var set = write.Set is null ? table.EndAssignments(state) : table.EndAssignments(state) + ", " + write.Set;
+
+        return await _WriteAsync(table, connection, transaction, row, write, set, readReturning, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Runs one fenced transition whose assignments are <paramref name="set" />, narrowed by the write's condition, and
+    /// classifies a refusal: a lease-fence refusal reports its status, and a held lease whose condition failed reports
+    /// <see cref="LeaseFenceStatus.Current" />.
+    /// </summary>
+    private static async Task<SqlFenced<LockedRowLease, TAccepted>> _WriteAsync<TKey, TAccepted>(
+        FencedRowTable<TKey> table,
+        DbConnection connection,
+        DbTransaction? transaction,
+        FencedRow<TKey> row,
+        FencedRowWrite write,
+        string set,
+        Func<DbDataReader, CancellationToken, ValueTask<TAccepted>> readReturning,
+        CancellationToken cancellationToken
+    )
+        where TKey : notnull
+    {
         if (write.Condition is not null)
         {
             Argument.IsNotNullOrWhiteSpace(write.Condition, paramName: nameof(write));
         }
 
         var fence = write.Condition is null ? table.Current : $"{table.Current} AND ({write.Condition})";
-        var sql = table.RenderTransition(fence, write.Set, _Returning(table, write.Returning));
+        var sql = table.RenderTransition(fence, set, _Returning(table, write.Returning));
 
         return await _RunAsync(
                 table,
@@ -581,27 +737,7 @@ public static class FencedRows
         Argument.IsNotNull(table);
         _RequireTable(table, row);
 
-        var sql = state == RowLeaseState.Settled ? table.SettleSql : table.ReleaseSql;
-
-        if (write is not null)
-        {
-            Argument.IsNotNullOrWhiteSpace(write.Set, paramName: nameof(write));
-
-            if (write.Condition is not null || write.Returning is not null)
-            {
-                throw new ArgumentException(
-                    "A settle or release reports a status, not columns, and its fence is the lease's alone; use "
-                        + "WriteAsync for a conditional write or one that reads columns back.",
-                    nameof(write)
-                );
-            }
-
-            sql = table.RenderTransition(
-                table.Current,
-                table.EndAssignments(state) + ", " + write.Set,
-                [table.Generation]
-            );
-        }
+        var sql = _EndSql(table, write, state);
 
         return await _RunAsync(
                 table,
@@ -611,6 +747,33 @@ public static class FencedRows
                 cancellationToken
             )
             .ConfigureAwait(false);
+    }
+
+    /// <summary>The end transition for <paramref name="state" />, with the consumer's assignments when given.</summary>
+    private static string _EndSql<TKey>(FencedRowTable<TKey> table, FencedRowWrite? write, RowLeaseState state)
+        where TKey : notnull
+    {
+        if (write is null)
+        {
+            return state == RowLeaseState.Settled ? table.SettleSql : table.ReleaseSql;
+        }
+
+        Argument.IsNotNullOrWhiteSpace(write.Set, paramName: nameof(write));
+
+        if (write.Condition is not null || write.Returning is not null)
+        {
+            throw new ArgumentException(
+                "This settle or release reports a status, not columns, and its fence is the lease's alone; use the "
+                    + "overload that reads the returned columns for a conditional end or one that reads columns back.",
+                nameof(write)
+            );
+        }
+
+        return table.RenderTransition(
+            table.Current,
+            table.EndAssignments(state) + ", " + write.Set,
+            [table.Generation]
+        );
     }
 
     private static async Task<LeaseSettlementStatus> _EndAsync<TKey>(
@@ -966,6 +1129,117 @@ public static class FencedRows
                     }
 
                     return abandoned;
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Revokes up to <paramref name="batchSize" /> active attempts, live or expired, whose recorded holder is one of
+    /// <paramref name="holders" />, skipping rows another transaction holds, in one locked statement.
+    /// </summary>
+    /// <remarks>
+    /// Use it when the holders are known to be gone, such as workers whose heartbeat stopped, so their rows can be
+    /// granted again without waiting for each lease to expire. Each revoked generation is fenced: the holder's late
+    /// write, renewal, or end is refused. Run it in a loop until it returns fewer than <paramref name="batchSize" />,
+    /// each call a short transaction. A row whose last attempt ended keeps its holder as a record and is not touched.
+    /// </remarks>
+    /// <param name="table">The rows' table.</param>
+    /// <param name="connection">The caller's connection.</param>
+    /// <param name="transaction">The caller's transaction, or <see langword="null" /> for the helper to run its own.</param>
+    /// <param name="holders">The holders whose active attempts to revoke; each is bound as its own parameter.</param>
+    /// <param name="batchSize">The most rows to revoke.</param>
+    /// <param name="write">
+    /// The consumer's part of the revocation, or <see langword="null" /> for the lease alone:
+    /// <see cref="FencedRowWrite.Condition" /> narrows which rows it takes, and <see cref="FencedRowWrite.Set" /> lands in
+    /// the same statement on each row it revokes. <see cref="FencedRowWrite.Returning" /> does not apply.
+    /// </param>
+    /// <param name="cancellationToken">Token used to cancel the operation.</param>
+    /// <returns>The number of rows revoked; 0 without a round trip when <paramref name="holders" /> is empty.</returns>
+    /// <exception cref="ArgumentException">A holder is blank or longer than its limit, or the write is invalid.</exception>
+    public static async ValueTask<int> RevokeHeldByAsync<TKey>(
+        FencedRowTable<TKey> table,
+        DbConnection connection,
+        DbTransaction? transaction,
+        IReadOnlyCollection<string> holders,
+        int batchSize,
+        FencedRowWrite? write = null,
+        CancellationToken cancellationToken = default
+    )
+        where TKey : notnull
+    {
+        Argument.IsNotNull(table);
+        Argument.IsNotNull(holders);
+        Argument.IsPositive(batchSize);
+
+        foreach (var holder in holders)
+        {
+            Argument.IsNotNull(holder, paramName: nameof(holders));
+            LeaseRequestResolver.ValidateGrantOptions(new LeaseGrantOptions { Holder = holder });
+        }
+
+        if (write is not null)
+        {
+            if (write.Set is null && write.Condition is null)
+            {
+                throw new ArgumentException(
+                    "A revocation's write needs assignments, a condition, or both.",
+                    nameof(write)
+                );
+            }
+
+            if (write.Returning is not null)
+            {
+                throw new ArgumentException(
+                    "A revocation reports how many rows it revoked, not columns.",
+                    nameof(write)
+                );
+            }
+        }
+
+        if (holders.Count == 0)
+        {
+            return 0;
+        }
+
+        var sql = table.RenderRevokeHeldBy(holders.Count, write?.Condition, write?.Set);
+
+        return await _RunAsync(
+                table,
+                connection,
+                transaction,
+                async (tx, ct) =>
+                {
+                    await using var command = _Command(connection, tx, sql);
+                    var index = 0;
+
+                    foreach (var holder in holders)
+                    {
+                        table.Dialect.AddParameter(
+                            command,
+                            FencedRowTable<TKey>.HolderListParameter(index++),
+                            SqlColumnType.Text(FencingFieldLimits.HolderMaxLength),
+                            holder
+                        );
+                    }
+
+                    table.Dialect.AddParameter(
+                        command,
+                        FencedRowTable<TKey>.BatchSizeParameter,
+                        SqlColumnType.Int32,
+                        batchSize
+                    );
+                    _BindConsumer(command, write?.Bind, nameof(write));
+                    await using var reader = await _ReaderAsync(command, ct).ConfigureAwait(false);
+                    var revoked = 0;
+
+                    while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                    {
+                        revoked++;
+                    }
+
+                    return revoked;
                 },
                 cancellationToken
             )

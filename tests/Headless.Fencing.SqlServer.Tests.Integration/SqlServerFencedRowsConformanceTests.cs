@@ -168,4 +168,28 @@ public sealed class SqlServerFencedRowsConformanceTests(SqlServerFencingFixture 
     {
         return base.should_grant_and_settle_on_a_table_and_a_sequence_named_without_a_schema();
     }
+
+    [Fact]
+    public override Task should_land_the_consumers_write_on_each_row_a_batch_release_ends()
+    {
+        return base.should_land_the_consumers_write_on_each_row_a_batch_release_ends();
+    }
+
+    [Fact]
+    public override Task should_end_under_a_condition_read_columns_back_and_tell_a_refused_condition_from_a_lost_lease()
+    {
+        return base.should_end_under_a_condition_read_columns_back_and_tell_a_refused_condition_from_a_lost_lease();
+    }
+
+    [Fact]
+    public override Task should_claim_through_a_scope_only_rows_the_lease_lets_a_new_attempt_take()
+    {
+        return base.should_claim_through_a_scope_only_rows_the_lease_lets_a_new_attempt_take();
+    }
+
+    [Fact]
+    public override Task should_revoke_only_active_attempts_the_listed_holders_hold_and_land_the_write()
+    {
+        return base.should_revoke_only_active_attempts_the_listed_holders_hold_and_land_the_write();
+    }
 }
