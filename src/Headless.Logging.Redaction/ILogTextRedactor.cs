@@ -4,7 +4,7 @@ namespace Headless.Logging;
 
 /// <summary>
 /// Masks value shapes an app knows are sensitive, such as a national id or a card number, in the text of every log
-/// entry: the rendered message, string property values, and string scope values.
+/// entry: the rendered message, property values, and scope values.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -16,7 +16,9 @@ namespace Headless.Logging;
 /// <para>
 /// Register implementations as <see cref="ILogTextRedactor"/> singletons (or with <c>AddLogTextRedaction</c>) and call
 /// <c>AddHeadlessLogRedaction()</c>. Nothing is scanned until one is registered. Exception messages and stack traces are
-/// not rewritten: providers read them from the exception object.
+/// not rewritten: providers read them from the exception object. A non-string value is scanned in its invariant text
+/// form and replaced by its masked text only when that text matches; the members of a destructured <c>{@Value}</c> are
+/// not scanned.
 /// </para>
 /// </remarks>
 [PublicAPI]

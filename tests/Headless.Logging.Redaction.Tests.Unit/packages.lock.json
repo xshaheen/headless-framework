@@ -222,6 +222,19 @@
         "resolved": "5.0.1",
         "contentHash": "uzofr/lI6d9kqNVPQHIWk6YmU7zNnI5cy6rA6HLDAdJ+g7w/sh7z7zc04c84vPkNKCmxCVPMeKP0DBCHPpb2pw=="
       },
+      "Serilog.Extensions.Hosting": {
+        "type": "Direct",
+        "requested": "[10.0.0, )",
+        "resolved": "10.0.0",
+        "contentHash": "E7juuIc+gzoGxgzFooFgAV8g9BfiSXNKsUok9NmEpyAXg2odkcPsMa/Yo4axkJRlh0se7mkYQ1GXDaBemR+b6w==",
+        "dependencies": {
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.0",
+          "Microsoft.Extensions.Hosting.Abstractions": "10.0.0",
+          "Microsoft.Extensions.Logging.Abstractions": "10.0.0",
+          "Serilog": "4.3.0",
+          "Serilog.Extensions.Logging": "10.0.0"
+        }
+      },
       "SmartAnalyzers.MultithreadingAnalyzer": {
         "type": "Direct",
         "requested": "[1.1.31, )",
@@ -529,6 +542,15 @@
         "type": "Transitive",
         "resolved": "1.1.1",
         "contentHash": "CU0/Iuv5VDynK8I8pDLwkgF0rZhbQoZahtodfL0M3x2gFkpBRApKs8RyMyNlAi1mwExE4gsmqQXk4aFVvW9a4Q=="
+      },
+      "Serilog.Extensions.Logging": {
+        "type": "Transitive",
+        "resolved": "10.0.0",
+        "contentHash": "vx0kABKl2dWbBhhqAfTOk53/i8aV/5VaT3a6il9gn72Wqs2pM7EK2OB6No6xdqK2IaY6Zf9gdjLuK9BVa2rT+Q==",
+        "dependencies": {
+          "Microsoft.Extensions.Logging": "10.0.0",
+          "Serilog": "4.2.0"
+        }
       },
       "System.Diagnostics.EventLog": {
         "type": "Transitive",
@@ -883,6 +905,12 @@
         "requested": "[1.20.1, )",
         "resolved": "1.20.1",
         "contentHash": "QO9hlwadOdJGR4vDpJyDnl9B62v7epIBSTIHUA4C+bCtrRaB4TWmYSnu3QVOIe7caH8dt7NaHRei6zebESJJyw=="
+      },
+      "Serilog": {
+        "type": "CentralTransitive",
+        "requested": "[4.4.0, )",
+        "resolved": "4.4.0",
+        "contentHash": "ZC6Le3rr4TVJJjS4KsQAesxeF1EhW9qcZmmG7eP5Y2G3+gTGkJEUXkq4+tZNPtyp05I0wWOxnIjwtxFweJsObw=="
       },
       "xunit.v3.assert": {
         "type": "CentralTransitive",
