@@ -23,6 +23,13 @@ public sealed class BlobSignedUrlOptions
     /// <c>/blobs</c>.
     /// </summary>
     public string RoutePrefix { get; set; } = "/blobs";
+
+    /// <summary>
+    /// Whether the endpoint's access log entry names the blob's container and path. Defaults to
+    /// <see langword="false"/>: a key often embeds a user or tenant id, and the token fingerprint already correlates
+    /// the entry with the code that minted the URL.
+    /// </summary>
+    public bool LogBlobLocation { get; set; }
 }
 
 internal sealed class BlobSignedUrlOptionsValidator : AbstractValidator<BlobSignedUrlOptions>
