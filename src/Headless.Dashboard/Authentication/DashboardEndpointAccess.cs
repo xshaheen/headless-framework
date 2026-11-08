@@ -2,7 +2,6 @@
 
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -42,16 +41,5 @@ internal static class DashboardEndpointAccess
                 );
             }
         });
-    }
-
-    /// <summary>
-    /// Names the dashboard's CORS policy on <paramref name="builder"/> only when one was configured: the host's pipeline
-    /// runs <c>UseCors</c> only if the host adds it, and an endpoint with CORS metadata and no CORS middleware throws
-    /// at request time.
-    /// </summary>
-    internal static TBuilder RequireDashboardCors<TBuilder>(this TBuilder builder, string policyName, bool configured)
-        where TBuilder : IEndpointConventionBuilder
-    {
-        return configured ? builder.RequireCors(policyName) : builder;
     }
 }

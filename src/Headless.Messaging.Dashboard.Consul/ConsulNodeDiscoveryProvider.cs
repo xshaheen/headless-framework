@@ -17,29 +17,18 @@ public sealed class ConsulNodeDiscoveryProvider : INodeDiscoveryProvider, IDispo
     private const string _MessagingTag = "messaging";
 
     private readonly ILogger<ConsulNodeDiscoveryProvider> _logger;
-    private readonly MessagingDashboardCache _cache;
     private readonly ConsulDiscoveryOptions _options;
 
     // One client for the provider's lifetime: each ConsulClient owns an HttpClient and its handler, so a client per
-    // call opens new sockets on every stats refresh and gateway lookup.
+    // call opens new sockets on every discovery read.
     private readonly ConsulClient _consul;
 
-    public ConsulNodeDiscoveryProvider(
-        ILoggerFactory logger,
-        MessagingDashboardCache cache,
-        ConsulDiscoveryOptions options
-    )
-        : this(logger, cache, options, _CreateClient(options)) { }
+    public ConsulNodeDiscoveryProvider(ILoggerFactory logger, ConsulDiscoveryOptions options)
+        : this(logger, options, _CreateClient(options)) { }
 
-    internal ConsulNodeDiscoveryProvider(
-        ILoggerFactory logger,
-        MessagingDashboardCache cache,
-        ConsulDiscoveryOptions options,
-        ConsulClient consul
-    )
+    internal ConsulNodeDiscoveryProvider(ILoggerFactory logger, ConsulDiscoveryOptions options, ConsulClient consul)
     {
         _logger = logger.CreateLogger<ConsulNodeDiscoveryProvider>();
-        _cache = cache;
         _options = options;
         _consul = consul;
     }
@@ -135,8 +124,6 @@ public sealed class ConsulNodeDiscoveryProvider : INodeDiscoveryProvider, IDispo
                 nodes.AddRange(node);
             }
 
-            _cache.Set("messaging.nodes.count", nodes.Count, TimeSpan.FromSeconds(60));
-
             return nodes;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -145,8 +132,6 @@ public sealed class ConsulNodeDiscoveryProvider : INodeDiscoveryProvider, IDispo
         }
         catch (Exception ex)
         {
-            _cache.Set("messaging.nodes.count", 0, TimeSpan.FromSeconds(20));
-
             _logger.LogConsulGetNodesException(ex.Message, ex.InnerException?.Message);
             return [];
         }
@@ -156,27 +141,18 @@ public sealed class ConsulNodeDiscoveryProvider : INodeDiscoveryProvider, IDispo
     {
         try
         {
+            // A TCP check for either scheme: the unified dashboard serves no anonymous health route, and an HTTP
+            // check against an authenticated one would fail and deregister the node.
             var healthCheck = new AgentServiceCheck
             {
                 DeregisterCriticalServiceAfter = TimeSpan.FromSeconds(30),
                 Interval = TimeSpan.FromSeconds(10),
                 Status = HealthStatus.Passing,
-            };
-
-            if (_options.Scheme.Equals("http", StringComparison.OrdinalIgnoreCase))
-            {
-                healthCheck.HTTP = string.Create(
-                    CultureInfo.InvariantCulture,
-                    $"http://{_options.CurrentNodeHostName}:{_options.CurrentNodePort}{_options.MatchPath}/api/health"
-                );
-            }
-            else if (_options.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase))
-            {
-                healthCheck.TCP = string.Create(
+                TCP = string.Create(
                     CultureInfo.InvariantCulture,
                     $"{_options.CurrentNodeHostName}:{_options.CurrentNodePort}"
-                );
-            }
+                ),
+            };
 
             var tags = new[] { "Headless", "Messaging", "Client", "Dashboard" };
             if (_options.CustomTags is { Length: > 0 })

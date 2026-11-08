@@ -3,7 +3,6 @@
 using System.Net;
 using System.Text;
 using Consul;
-using Headless.Messaging.Dashboard;
 using Headless.Messaging.Dashboard.Consul;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -15,10 +14,9 @@ public sealed class ConsulNodeDiscoveryProviderTests : TestBase
     [Fact]
     public async Task should_preserve_caller_cancellation_when_getting_node()
     {
-        using var cache = new MessagingDashboardCache();
         using var cancellationSource = new CancellationTokenSource();
         await cancellationSource.CancelAsync();
-        using var provider = _CreateProvider(cache);
+        using var provider = _CreateProvider();
 
         Func<Task> act = async () =>
             _ = await provider.GetNodeAsync("test-node", cancellationToken: cancellationSource.Token);
@@ -29,10 +27,9 @@ public sealed class ConsulNodeDiscoveryProviderTests : TestBase
     [Fact]
     public async Task should_preserve_caller_cancellation_when_getting_nodes()
     {
-        using var cache = new MessagingDashboardCache();
         using var cancellationSource = new CancellationTokenSource();
         await cancellationSource.CancelAsync();
-        using var provider = _CreateProvider(cache);
+        using var provider = _CreateProvider();
 
         Func<Task> act = async () => _ = await provider.GetNodesAsync(cancellationToken: cancellationSource.Token);
 
@@ -42,10 +39,9 @@ public sealed class ConsulNodeDiscoveryProviderTests : TestBase
     [Fact]
     public async Task should_preserve_caller_cancellation_when_registering_node()
     {
-        using var cache = new MessagingDashboardCache();
         using var cancellationSource = new CancellationTokenSource();
         await cancellationSource.CancelAsync();
-        using var provider = _CreateProvider(cache);
+        using var provider = _CreateProvider();
 
         var act = () => provider.RegisterNodeAsync(cancellationSource.Token);
 
@@ -56,11 +52,10 @@ public sealed class ConsulNodeDiscoveryProviderTests : TestBase
     public async Task should_query_only_messaging_tagged_services_when_getting_nodes()
     {
         // given
-        using var cache = new MessagingDashboardCache();
         using var handler = new CatalogHandler();
         using var consul = _CreateConsulClient(handler, out var httpClient);
         using var http = httpClient;
-        using var provider = _CreateProvider(cache, new ConsulDiscoveryOptions { NodeName = "test-node" }, consul);
+        using var provider = _CreateProvider(new ConsulDiscoveryOptions { NodeName = "test-node" }, consul);
 
         // when
         var nodes = await provider.GetNodesAsync(cancellationToken: AbortToken);
@@ -71,20 +66,16 @@ public sealed class ConsulNodeDiscoveryProviderTests : TestBase
         nodes[0].Address.Should().Be("http://10.0.0.5");
         nodes[0].Port.Should().Be(8080);
         handler.RequestedPaths.Should().BeEquivalentTo(["/v1/catalog/services", "/v1/catalog/service/orders"]);
-        cache.TryGetValue<int>("messaging.nodes.count", out var count).Should().BeTrue();
-        count.Should().Be(1);
     }
 
     [Fact]
     public async Task should_address_nodes_over_https_when_scheme_is_https()
     {
         // given
-        using var cache = new MessagingDashboardCache();
         using var handler = new CatalogHandler();
         using var consul = _CreateConsulClient(handler, out var httpClient);
         using var http = httpClient;
         using var provider = _CreateProvider(
-            cache,
             new ConsulDiscoveryOptions { NodeName = "test-node", Scheme = "https" },
             consul
         );
@@ -103,11 +94,10 @@ public sealed class ConsulNodeDiscoveryProviderTests : TestBase
     public async Task should_reuse_one_client_when_getting_nodes_repeatedly()
     {
         // given
-        using var cache = new MessagingDashboardCache();
         using var handler = new CatalogHandler();
         using var consul = _CreateConsulClient(handler, out var httpClient);
         using var http = httpClient;
-        using var provider = _CreateProvider(cache, new ConsulDiscoveryOptions { NodeName = "test-node" }, consul);
+        using var provider = _CreateProvider(new ConsulDiscoveryOptions { NodeName = "test-node" }, consul);
 
         // when
         await provider.GetNodesAsync(cancellationToken: AbortToken);
@@ -118,29 +108,25 @@ public sealed class ConsulNodeDiscoveryProviderTests : TestBase
     }
 
     [Fact]
-    public async Task should_report_no_nodes_and_cache_zero_when_catalog_listing_fails()
+    public async Task should_report_no_nodes_when_catalog_listing_fails()
     {
         // given
-        using var cache = new MessagingDashboardCache();
         using var handler = new CatalogHandler { Status = HttpStatusCode.InternalServerError };
         using var consul = _CreateConsulClient(handler, out var httpClient);
         using var http = httpClient;
-        using var provider = _CreateProvider(cache, new ConsulDiscoveryOptions { NodeName = "test-node" }, consul);
+        using var provider = _CreateProvider(new ConsulDiscoveryOptions { NodeName = "test-node" }, consul);
 
         // when
         var nodes = await provider.GetNodesAsync(cancellationToken: AbortToken);
 
         // then
         nodes.Should().BeEmpty();
-        cache.TryGetValue<int>("messaging.nodes.count", out var count).Should().BeTrue();
-        count.Should().Be(0);
     }
 
     [Fact]
-    public async Task should_register_tcp_check_and_custom_tags_when_scheme_is_https()
+    public async Task should_register_custom_tags_when_registering_node()
     {
         // given
-        using var cache = new MessagingDashboardCache();
         using var handler = new CatalogHandler();
         using var consul = _CreateConsulClient(handler, out var httpClient);
         using var http = httpClient;
@@ -153,7 +139,7 @@ public sealed class ConsulNodeDiscoveryProviderTests : TestBase
             CurrentNodePort = 7443,
             CustomTags = ["blue", "Messaging"],
         };
-        using var provider = _CreateProvider(cache, options, consul);
+        using var provider = _CreateProvider(options, consul);
 
         // when
         await provider.RegisterNodeAsync(AbortToken);
@@ -165,10 +151,9 @@ public sealed class ConsulNodeDiscoveryProviderTests : TestBase
     }
 
     [Fact]
-    public async Task should_register_http_check_when_scheme_is_http()
+    public async Task should_register_tcp_check_when_scheme_is_http()
     {
         // given
-        using var cache = new MessagingDashboardCache();
         using var handler = new CatalogHandler();
         using var consul = _CreateConsulClient(handler, out var httpClient);
         using var http = httpClient;
@@ -178,20 +163,19 @@ public sealed class ConsulNodeDiscoveryProviderTests : TestBase
             CurrentNodeHostName = "node.internal",
             CurrentNodePort = 5000,
         };
-        using var provider = _CreateProvider(cache, options, consul);
+        using var provider = _CreateProvider(options, consul);
 
         // when
         await provider.RegisterNodeAsync(AbortToken);
 
         // then
-        handler.LastBody.Should().Contain("http://node.internal:5000/messaging/dashboard/api/health");
+        handler.LastBody.Should().Contain("\"TCP\":\"node.internal:5000\"").And.NotContain("\"HTTP\"");
     }
 
-    private static ConsulNodeDiscoveryProvider _CreateProvider(MessagingDashboardCache cache)
+    private static ConsulNodeDiscoveryProvider _CreateProvider()
     {
         return new(
             NullLoggerFactory.Instance,
-            cache,
             new ConsulDiscoveryOptions
             {
                 DiscoveryServerHostName = "127.0.0.1",
@@ -201,13 +185,9 @@ public sealed class ConsulNodeDiscoveryProviderTests : TestBase
         );
     }
 
-    private static ConsulNodeDiscoveryProvider _CreateProvider(
-        MessagingDashboardCache cache,
-        ConsulDiscoveryOptions options,
-        ConsulClient consul
-    )
+    private static ConsulNodeDiscoveryProvider _CreateProvider(ConsulDiscoveryOptions options, ConsulClient consul)
     {
-        return new(NullLoggerFactory.Instance, cache, options, consul);
+        return new(NullLoggerFactory.Instance, options, consul);
     }
 
     private static ConsulClient _CreateConsulClient(CatalogHandler handler, out HttpClient httpClient)

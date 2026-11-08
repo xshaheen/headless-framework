@@ -5,8 +5,7 @@ wiring favors reaching every state quickly over showing production setup. For co
 
 ## Dashboard sandbox
 
-`Headless.Dashboards.Sandbox` serves the Headless dashboard, with its Jobs module, and the Messaging
-dashboard on loopback. The project CLI owns it:
+`Headless.Dashboards.Sandbox` serves the Headless dashboard, with its Jobs and Messaging modules, on loopback. The project CLI owns it:
 
 ```sh
 make up                                   # build and start; STORE=postgres adds sandboxes/compose.yaml
@@ -22,20 +21,21 @@ and `down` take the same override.
 
 | Dashboard | URL | Auth |
 | --- | --- | --- |
-| Headless, with the Jobs module | `http://127.0.0.1:5300/headless/` (Jobs at `/headless/jobs`) | Host: sign in at `/sandbox/headless-sign-in` (below) |
-| Messaging | `http://127.0.0.1:5300/messaging/dashboard` | Basic: user `sandbox`, password `Sandbox__MessagingDashboardPassword` in `sandbox.env` under the checkout's `.local/cli/` folder, generated on the first `make up` |
+| Headless, with the Jobs and Messaging modules | `http://127.0.0.1:5300/headless/` (Jobs at `/headless/jobs`, Messaging at `/headless/messaging`) | Host: sign in at `/sandbox/headless-sign-in` (below) |
 
-Messaging uses Basic auth because inbox and scheduled operations refuse an anonymous operator.
+Both modules sit behind the same host sign-in, so inbox and scheduled operations record the signed-in operator's name.
+`GET /sandbox/usable` answers once the Messaging store does, with its published and received counts.
 
 The Headless dashboard always runs in host mode, through a fake host scheme that stands in for an application that
 signs its users in with a bearer token and has no sign-in redirect. Open
-`http://127.0.0.1:5300/sandbox/headless-sign-in` and enter the Messaging password from `sandbox.env` to sign in as
+`http://127.0.0.1:5300/sandbox/headless-sign-in` and enter the secret `Sandbox__MessagingDashboardPassword` from `sandbox.env` under the checkout's `.local/cli/` folder
+(generated on the first `make up`) to sign in as
 `sandbox-operator`, or `viewer-<password>` to sign in as `sandbox-viewer`. The page posts the token as
 `Authorization: Bearer ...` with `X-Requested-With: XMLHttpRequest` to `/headless/api/auth/session`, which sets the
 `__Host-headless-dashboard-headless-dashboards-sandbox` session cookie, then opens `/headless/`. The viewer passes the
 `SandboxViewers` view policy only, so every module shows its actions disabled and the server refuses them with `403`;
-the operator also passes the `SandboxOperators` operate policy. `Sandbox__HostSecret` replaces the password as the
-token secret. `GET /` reports the dashboards' paths and auth modes.
+the operator also passes the `SandboxOperators` operate policy. `Sandbox__HostSecret` replaces that secret as the
+token secret. `GET /` reports the dashboard's path and auth mode.
 
 ```sh
 # Without a browser: exchange the token, then call the Jobs module's API with the session cookie alone.
@@ -60,7 +60,8 @@ short cadences (progress writes every 500 ms, a 30 s lease, a 5 s fallback poll)
 | `cron-no-overlap-failing` | A cron job every 10 s under the skip overlap policy whose occurrences run 15 s, then fail | Skipped and failed occurrences, and Run now refused while one runs |
 | `cron-paused` | A cron job every 5 minutes, paused once created | Resume, and Run now refused while paused |
 | `cancel-stubborn` | A time job that reports progress for 5 minutes and ignores its cancellation token | Cancel on a running job that never stops: the run reads `Cancelling…` until it ends |
-| `messages`, `scheduled-message` | Ten published messages, two failing, and one delayed 10 minutes | The Messaging dashboard's received, failed, and scheduled pages |
+| `messages`, `scheduled-message` | Ten published messages, two failing, and one delayed 10 minutes | The Messaging module's Published, Received, and Scheduled views |
+| `message-failures-by-cause` | Seven received messages that fail with two causes and a different order id in each message | Two Needs you items, one per cause, and an Operation over one group |
 
 The host also defines `sandbox.nightly-report` in code with a daily cron schedule, so the Cron jobs view always lists
 a cron job defined in code, whose schedule stays read-only.

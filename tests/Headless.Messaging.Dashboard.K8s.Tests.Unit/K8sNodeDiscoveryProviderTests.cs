@@ -14,18 +14,16 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
 {
     private readonly K8sNodeDiscoveryProvider _provider;
     private readonly K8sDiscoveryOptions _options;
-    private readonly MessagingDashboardCache _cache = new();
 
     public K8sNodeDiscoveryProviderTests()
     {
         _options = new K8sDiscoveryOptions();
-        _provider = new K8sNodeDiscoveryProvider(LoggerFactory, _cache, _options);
+        _provider = new K8sNodeDiscoveryProvider(LoggerFactory, _options);
     }
 
     protected override ValueTask DisposeAsyncCore()
     {
         _provider.Dispose();
-        _cache.Dispose();
         return base.DisposeAsyncCore();
     }
 
@@ -35,7 +33,7 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
     public async Task should_reuse_one_kubernetes_client_when_called_repeatedly()
     {
         // given: a pre-cancelled token fails each API call before any connection is opened
-        using var provider = new K8sNodeDiscoveryProvider(LoggerFactory, _cache, _NamespacedOptions());
+        using var provider = new K8sNodeDiscoveryProvider(LoggerFactory, _NamespacedOptions());
         using var cancellationSource = new CancellationTokenSource();
         await cancellationSource.CancelAsync();
 
@@ -55,7 +53,7 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
     public async Task should_report_no_nodes_without_reaching_the_api_when_disposed()
     {
         // given
-        using var provider = new K8sNodeDiscoveryProvider(LoggerFactory, _cache, _NamespacedOptions());
+        using var provider = new K8sNodeDiscoveryProvider(LoggerFactory, _NamespacedOptions());
         provider.Dispose();
 
         // when
@@ -65,8 +63,6 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
         // then
         nodes.Should().BeEmpty();
         node.Should().BeNull();
-        _cache.TryGetValue<int>("messaging.nodes.count", out var count).Should().BeTrue();
-        count.Should().Be(0);
         _ReadClient(provider).Should().BeNull();
     }
 
@@ -74,7 +70,7 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
     public async Task should_keep_the_client_when_disposed_without_managed_resources()
     {
         // given
-        using var provider = new FinalizingK8sNodeDiscoveryProvider(LoggerFactory, _cache, _NamespacedOptions());
+        using var provider = new FinalizingK8sNodeDiscoveryProvider(LoggerFactory, _NamespacedOptions());
         using var cancellationSource = new CancellationTokenSource();
         await cancellationSource.CancelAsync();
         var listNodes = () => provider.GetNodesAsync(cancellationToken: cancellationSource.Token);
@@ -110,9 +106,8 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
 
     private sealed class FinalizingK8sNodeDiscoveryProvider(
         Microsoft.Extensions.Logging.ILoggerFactory logger,
-        MessagingDashboardCache cache,
         K8sDiscoveryOptions options
-    ) : K8sNodeDiscoveryProvider(logger, cache, options)
+    ) : K8sNodeDiscoveryProvider(logger, options)
     {
         public void DisposeUnmanagedOnly() => Dispose(disposing: false);
     }
@@ -210,7 +205,7 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
     {
         // given
         _options.ShowOnlyExplicitVisibleNodes = false;
-        using var provider = new K8sNodeDiscoveryProvider(LoggerFactory, _cache, _options);
+        using var provider = new K8sNodeDiscoveryProvider(LoggerFactory, _options);
         var tags = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["headless.messaging.something"] = "value",

@@ -1,10 +1,10 @@
 # Headless.Messaging.Dashboard.Consul
 
-Consul-backed node discovery for the messaging dashboard in multi-node deployments.
+Consul-backed node discovery for the Messaging module of the Headless dashboard in multi-node deployments.
 
 ## Why use this package
 
-Registers each messaging node in Consul and lists its peers in the dashboard, so one dashboard can switch between nodes and proxy requests to them, without the dashboard package itself depending on the Consul client.
+Registers each messaging node in Consul and lists its peers to the Messaging module, so one dashboard can read and act on every node through forwarding, without the module package itself depending on the Consul client.
 
 ## Install
 

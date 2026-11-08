@@ -2,6 +2,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using Demo;
 using Demo.Data;
+using Headless.Dashboard;
 using Headless.Messaging;
 using Headless.Messaging.Dashboard;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -57,8 +58,12 @@ builder.Services.AddHeadlessMessaging(setup =>
     setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
     setup.UseInMemoryStorage();
     setup.UseInMemory();
-    setup.UseDashboard(d => d.WithHostAuthentication(host => host.ViewPolicy = dashboardPolicy));
 });
+
+// The Headless dashboard, with the Messaging module at /headless/messaging, signs operators in through the app's JWT.
+builder.Services.AddHeadlessDashboard(dashboard =>
+    dashboard.WithHostAuthentication(host => host.ViewPolicy = dashboardPolicy).AddMessaging()
+);
 
 builder.Services.AddHostedService<DemoMessagePublisher>();
 
@@ -107,6 +112,6 @@ app.MapPost(
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapHeadlessMessagingDashboard();
+app.MapHeadlessDashboard();
 
 await app.RunAsync();

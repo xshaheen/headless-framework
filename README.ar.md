@@ -59,7 +59,7 @@ builder.Services.AddHeadlessCaching(setup => setup.UseRedis(...)); // production
 
 **الحاجات الصعبة متكتوبة خلاص.** الـ background jobs بتعمل claim للشغل بشكل atomic عن طريق `FOR UPDATE SKIP LOCKED` في PostgreSQL و `UPDLOCK, READPAST, ROWLOCK` في SQL Server. والـ messaging بتكتب في transactional outbox جوه نفس الـ save بتاع EF Core. والـ distributed locks بتستخدم advisory locks في PostgreSQL و application locks في SQL Server، مش `SET NX` مرتجل. والـ node membership بتقرا الـ liveness من ساعة الـ server، مش من ساعة الـ node نفسها. كل نقطة من دول مكان بتضيع فيه messages أو بيتنفّذ فيه job مرتين بسبب implementation شكله سليم وهو مش سليم.
 
-**Dashboards جايين معاه.** `Headless.Dashboard` بيعرض الـ feature modules تحت base path واحد، بـ sign-in واحد وlive updates بتوصل لكل الـ nodes. و `Headless.Jobs.Dashboard` بيضيف له الـ Jobs module، تتابع بيه الـ runs والـ failures متجمعة حسب السبب والـ cron schedules، و `Headless.Messaging.Dashboard` واجهة web للـ messages، بـ node discovery على Kubernetes.
+**Dashboards جايين معاه.** `Headless.Dashboard` بيعرض الـ feature modules تحت base path واحد، بـ sign-in واحد وlive updates بتوصل لكل الـ nodes. و `Headless.Jobs.Dashboard` بيضيف له الـ Jobs module، تتابع بيه الـ runs والـ failures متجمعة حسب السبب والـ cron schedules، و `Headless.Messaging.Dashboard` بيضيف الـ Messaging module، للـ messages من كل outbox والـ failures متجمعة حسب السبب، والـ nodes اللي بتتكشف عن طريق Kubernetes أو Consul.
 
 **توثيق مظبوط لوكلاء الـ AI.** [`docs/llms/`](docs/llms/) فيه docs لكل domain، متكتوبة عشان الـ agents تجيبها وقت الحاجة. شوف [استخدام Headless مع وكلاء الـ AI](#استخدام-headless-مع-وكلاء-الـ-ai).
 
@@ -482,7 +482,7 @@ Message bus موزّع بـ transactional outbox، وretries، وdelayed deliver
 | [Headless.Messaging.Queue.Abstractions](src/Headless.Messaging.Queue.Abstractions/README.md) | الـ contracts بتاعة الـ publisher والـ request client بنمط point-to-point |
 | [Headless.Messaging](src/Headless.Messaging/README.md) | الـ runtime engine: outbox، وretries، وdelayed delivery، وorchestration للـ consumers |
 | [Headless.Messaging.SourceGenerator](src/Headless.Messaging.SourceGenerator/README.md) | تسجيل وtyped dispatch وقت الـ compile للـ classes المعلّمة بـ `[BusConsumer]` و `[QueueConsumer]` |
-| [Headless.Messaging.Dashboard](src/Headless.Messaging.Dashboard/README.md) | Web UI لمتابعة الـ messages والـ failures وحالة النظام |
+| [Headless.Messaging.Dashboard](src/Headless.Messaging.Dashboard/README.md) | الـ Messaging module في الـ dashboard: الـ messages من كل outbox والـ failures والـ commands |
 | [Headless.Messaging.Dashboard.Consul](src/Headless.Messaging.Dashboard.Consul/README.md) | اكتشاف الـ nodes وتسجيلها في Consul |
 | [Headless.Messaging.Dashboard.K8s](src/Headless.Messaging.Dashboard.K8s/README.md) | اكتشاف الـ nodes أوتوماتيك جوه Kubernetes |
 | [Headless.Messaging.Testing](src/Headless.Messaging.Testing/README.md) | Test harness جوه الـ process للتحقق من الـ published والـ consumed والـ faulted messages |
@@ -768,7 +768,7 @@ Base classes وbuilders وfixtures وتكامل Testcontainers لـ integration 
 
 | Package | الوصف |
 |---------|-------|
-| [Headless.Dashboard](src/Headless.Dashboard/README.md) | Dashboard shell للـ feature modules، وauthentication مشتركة مع الـ Messaging dashboard |
+| [Headless.Dashboard](src/Headless.Dashboard/README.md) | Dashboard shell للـ feature modules، وauthentication primitives للـ dashboards اللي الـ host بيكتبها |
 | [Headless.FluentValidation](src/Headless.FluentValidation/README.md) | Extensions لـ FluentValidation |
 | [Headless.Generator.Primitives](src/Headless.Generator.Primitives/README.md) | Source generator للـ primitive types |
 | [Headless.Generator.Primitives.Abstractions](src/Headless.Generator.Primitives.Abstractions/README.md) | الـ abstractions بتاعة الـ generator |

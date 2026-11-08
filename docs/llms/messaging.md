@@ -547,10 +547,10 @@ services.AddHeadlessMessaging(setup =>
   outbox concurrently. An unreachable outbox database backs off alone; the primary and the other outboxes keep
   relaying. The collector expires published rows in every outbox, dead-owner recovery reclaims published rows in
   every outbox, and `IMessageRevoker.RevokeAsync` finds a scheduled row in whichever outbox holds it.
-- **What stays on the primary.** The inbox, received-message retry state, consumer bookkeeping, and the
-  standalone dashboard read only the primary storage, so that dashboard does not list an additional outbox's rows.
-  Each outbox's own `GetMonitoringApi()` reads its published rows, and the unified dashboard's Messaging module
-  (`AddMessaging()`) reads every outbox beside the primary; see [dashboards.md](dashboards.md#messaging-module).
+- **What stays on the primary.** The inbox, received-message retry state, and consumer bookkeeping use only the
+  primary storage. Each outbox's own `GetMonitoringApi()` reads its published rows, and the unified dashboard's
+  Messaging module (`AddMessaging()`) reads every outbox beside the primary; see
+  [dashboards.md](dashboards.md#messaging-module).
 - **Jobs.** Jobs keeps one store. To schedule a job atomically with a unit on an additional outbox's database,
   publish a message through `unit.Outbox` and schedule the job from that message's consumer on the Jobs database.
   The outbox row commits with the unit, and the consumer's inbox and `unit.Jobs` give the job the same guarantee.
@@ -2594,41 +2594,25 @@ Transports that retry a lost broker inside their own receive loop (Azure Service
 
 ## Headless.Messaging.Dashboard
 
-Web-based dashboard for monitoring and managing distributed messaging infrastructure.
+The Messaging module of the unified dashboard: published and received messages of the primary store and every additional outbox, with sidebar counts, Needs you items, Overview figures, id lookup, payloads, live changes, commands, and Operations.
 
-Read [dashboards.md](dashboards.md) for the shared authentication modes and production security boundary.
-
-The package also adds the Messaging module of the unified dashboard: `AddHeadlessDashboard(d => d.AddMessaging())` serves published and received messages of the primary store and every additional outbox at `{base}/messaging`, with sidebar counts, Needs you, Overview, id lookup, payloads, live changes, and operator commands and Operations. [dashboards.md](dashboards.md#messaging-module) covers its options, ids, count keys, commands, and API. The standalone dashboard below keeps working beside it.
-
-The real-time throughput both dashboards read reports `null`, not `0`, for every second the node did not measure, such as the seconds before it started.
+Read [dashboards.md](dashboards.md) for the shell, its authentication modes, and the production security boundary. [dashboards.md](dashboards.md#messaging-module) lists the module's options, object ids, count keys, commands, Operations, forwarding, and API.
 
 ### API and behavior
 
-- **Real-Time Monitoring**: Live message throughput and latency metrics
-- **Message Explorer**: Search, filter, and inspect messages
-- **Hidden from application API documents**: every dashboard endpoint is excluded from API Explorer (`ExcludeFromDescription()`), because the dashboard SPA is their only client.
-- **Failure Management**: View and retry failed messages
-- **Node Discovery**: Multi-instance cluster visibility through async `INodeDiscoveryProvider` operations with optional trailing cancellation tokens; implementations propagate caller-requested cancellation instead of converting it to an empty or not-found result
-- **Provider Capabilities**: The protected metadata endpoint and responsive footer dialog show every registered provider role. Transport cards report delivery lanes and topology, storage cards report delivery lanes and delayed scheduling, and coordination cards report cluster coordination without exposing physical resource names or credentials
-- **Performance Metrics**: Consumer processing stats and bottlenecks
-- **Four authentication modes** (the same modes as the Jobs Dashboard, via `Headless.Dashboard`): none, Basic, API key, and host sessions with separate view and operate policies. The configuration is the dashboard's own, registered under `MessagingDashboardOptionsBuilder.AuthenticationName`, so a Jobs dashboard in the same host can use another mode.
-- **Scheduled-delivery operator actions**: `GET /api/scheduled` lists pending scheduled deliveries (published rows in `Delayed`/`Queued` with no inline attempt, retry, or persisted retry time, presented as one `Pending` state); `POST /api/scheduled/revoke` and `POST /api/scheduled/dispatch-now` are audited, fenced mutations sharing the inbox operator ledger. These are operator actions on an existing schedule, not a way to create, reschedule, or replay one — see the `Headless.Messaging` package section for the storage-side contract.
+- **Embedded front end**: the package embeds the module's views and serves them through the shell at `{shell base}/messaging` (by default `/headless/messaging`), so it needs no separate deployment.
+- **Authentication from the shell**: the module has no authentication of its own. The shell's mode (`WithHostAuthentication`, `WithBasicAuth`, `WithApiKey`, or `WithNoAuth`) covers it, and in host mode `MessagingDashboardOptions.ViewPolicy` and `OperatePolicy` narrow who may read the module and who may run its commands. Empty policies inherit the shell's.
+- **Every store**: the module reads the primary store, named `primary`, and every additional outbox registered with `AddOutbox(name)`, by that name. A read that covers several stores names a store that does not answer within `StoreTimeout` instead of failing.
+- **Other nodes**: with [forwarding](dashboards.md#forwarding-to-other-nodes) and a discovery provider, each read and command can name another node, which serves its own rows. [Headless.Messaging.Dashboard.Consul](#headlessmessagingdashboardconsul) and [Headless.Messaging.Dashboard.K8s](#headlessmessagingdashboardk8s) supply discovery; `AddMessagingStandalone(...)` adds the module to a dashboard-only host with no stores of its own ([Dashboard-only host](dashboards.md#dashboard-only-host)).
+- **Real-time throughput**: the module reports `null`, not `0`, for every second the node did not measure, such as the seconds before it started.
 
 ### Design constraints
 
-The dashboard exposes operational endpoints for inspecting, retrying, re-executing, and deleting message records. Its protected `/api/meta` response also projects sanitized registered-provider descriptors; deployment state remains operator-owned and is never inferred by the dashboard. Treat `WithNoAuth()` as development-only unless the dashboard is isolated behind trusted network controls. Production deployments should use `WithHostAuthentication(...)`, `WithBasicAuth(...)`, or `WithApiKey(...)`. A cross-origin SPA needs an explicit CORS policy and Basic or API key: host mode is same-origin only and fails at startup with `SetCorsOrigins` or `SetCorsPolicy`.
+The module shows every stored payload in full to anyone the view policy admits, which is one reason a payload must never carry a secret; see [Never put a secret in a message payload](#agent-rules). Give the view policy only to users who may see payloads. Treat `WithNoAuth()` as development-only unless the dashboard is isolated behind trusted network controls.
 
-In host mode the eight operator writes (`published/requeue`, `published/delete`, `received/reexecute`, `received/delete`, `inbox/hold`, `inbox/release`, `scheduled/revoke`, `scheduled/dispatch-now`) and `POST /api/ping` also require the operate policy, `OperatePolicy` or the view policy when it is unset. Every read, message bodies included, needs only the view policy, so give `ViewPolicy` only to users who may see payloads. Every state-changing `/api` request must carry an `X-Requested-With` header in every mode, or it gets `400`; the SPA sends it.
+Commands re-send, re-execute, and delete message records, so in host mode they need the operate policy. A command records its operator from the shell's signed-in user, by name, then `NameIdentifier` or `sub` claim.
 
-The dashboard shows every stored payload in full to anyone it authorizes, which is one reason a payload must never carry a secret. See [Never put a secret in a message payload](#agent-rules).
-
-Inbox query and operation JSON uses camelCase properties and named string enum values, such as `"Failed"`, `"Succeeded"`, and `"Queue"`, independently of the host's JSON configuration. Operation requests must send `expectedStatus` as a string; responses use the same format for status, lane, operation type, and outcome, including conflict and not-found results.
-
-Inbox and scheduled-delivery operations share one actor resolver and require an authenticated principal with a stable audit actor. The primary identity's name is used first, then its `NameIdentifier` or `sub` claim. Under Basic or API key authentication the primary identity is the dashboard identity, named by the credential's username, even when the host also signed a user in. In host mode it is the session's copy of the host user, so the action records the host user's name or `sub`. An unauthenticated request returns HTTP 401 and ends the dashboard session. An authenticated principal with no usable name -- the no-auth mode's `anonymous` identity or a host user with no name, `NameIdentifier`, or `sub` claim -- returns HTTP 403 with error code `g:operator_actor_required` and a body naming the remedy (configure Basic or Host authentication with a name or `sub` claim); the dashboard stays signed in. **Behavior change:** the inbox `host-user` case previously returned 401; it now returns 403, and `WithNoAuth()` deployments can no longer perform any operator action (inbox or scheduled-delivery), read-only monitoring is unaffected. The API-key identity (`api-user`) is accepted and attributes actions to the deployment's shared secret identity. Authorization retains the host's claims and role mappings. Operation bodies require a JSON content type; unsupported media types return HTTP 415 and malformed JSON returns HTTP 422.
-
-The legacy `POST /api/published/requeue` and `POST /api/published/delete` bulk endpoints reject any id that matches the pending-scheduled-delivery predicate: each rejected id is reported in the response's `rejected` array alongside a message pointing at the audited `/api/scheduled/revoke` and `/api/scheduled/dispatch-now` actions, and the remaining ids are processed exactly as before. This fencing runs under the host principal, not the operator actor requirement, so it still functions under `WithNoAuth()` for non-pending rows.
-
-`POST /api/published/requeue` sends again only a published message that failed for good (`Failed` with no `NextRetryAt`). It resets each such row in the store through `IDataStorage.RequeuePublishedMessagesAsync`: the retry counters go back to zero, so the row gets a fresh budget under the current `RetryPolicy`, its lease and retention expiry clear, and its `NextRetryAt` becomes the store's clock, so the retry processor sends it on its next poll rather than during the request. A sent (`Succeeded`) row and a row still waiting for a retry are left unchanged and reported in `rejected`, with a message saying only a message that failed for good can be requeued; the response is `204 No Content` only when every id was requeued.
+The module replaces the removed Messaging Vue dashboard; [dashboards.md](dashboards.md#migrate-from-mapheadlessmessagingdashboard) has the migration steps.
 
 ### Install
 
@@ -2638,78 +2622,41 @@ dotnet add package Headless.Messaging.Dashboard
 
 ### Setup and use
 
-Register the dashboard on the `MessagingSetupBuilder` with `UseDashboard(...)`, then mount it on the host's endpoints with `MapHeadlessMessagingDashboard()`. The map call is the only mount: a host that registers the dashboard and never maps it fails to start with `InvalidOperationException`.
+Add the module to the shell beside `AddHeadlessMessaging(...)`; the order of the two calls does not matter. A host that adds `AddMessaging()` without `AddHeadlessMessaging(...)` fails to start with a message naming that call.
 
 ```csharp
-builder.Services.AddHeadlessMessaging(setup =>
-{
-    // ... transport + storage registration ...
-    setup.UseDashboard(dashboard =>
-        dashboard.WithHostAuthentication(host =>
-        {
-            host.ViewPolicy = "MessagingViewers";
-            host.OperatePolicy = "MessagingOperators";
-            host.ChallengeScheme = "oidc"; // omit when the app signs in with a bearer token and uses the session exchange
-        })
-    );
-});
+using Headless.Dashboard;
+using Headless.Messaging.Dashboard;
+
+builder.Services.AddHeadlessMessaging(setup => setup.UsePostgreSql(builder.Configuration.GetConnectionString("Orders")!));
+builder.Services.AddHeadlessDashboard(dashboard => dashboard
+    .WithHostAuthentication(host => { host.ViewPolicy = "MessagingViewers"; host.OperatePolicy = "MessagingOperators"; })
+    .AddMessaging());
 
 var app = builder.Build();
 app.UseAuthentication();
 app.UseAuthorization();
-app.MapHeadlessMessagingDashboard();
+app.MapHeadlessDashboard();
 ```
-
-The host's `UseAuthorization` evaluates the dashboard's rule and never the host's fallback policy, so a browser loads the SPA shell without a credential, and an operator who meets the dashboard policy but not a host-wide requirement (such as a tenant claim) is let in.
-
-| Request | Rule |
-| --- | --- |
-| SPA shell, deep links, static assets | `AllowAnonymous`. The shell carries only the base path, auth mode, whether sign-in is available, and polling interval |
-| `/auth/sign-in`, `/api/auth/info`, `/api/auth/session`, `/api/auth/sign-out`, `/api/auth/validate`, `/api/health` | `AllowAnonymous` |
-| Other `{basePath}/api/*`, `WithHostAuthentication(...)` | The dashboard session cookie, for a user who passes `ViewPolicy` (or the host's default policy); `401` without a session, `403` when the policy refuses |
-| Operator writes and `POST /api/ping`, `WithHostAuthentication(...)` | Also `OperatePolicy`, or `ViewPolicy` when it is unset |
-| Other `{basePath}/api/*`, Basic, API key | The dashboard's own credential, checked by its authentication scheme; an empty `401` otherwise |
-| Other `{basePath}/api/*`, `WithNoAuth()` | `AllowAnonymous` |
-| Unmatched `{basePath}/api/*` | `404`, never the shell |
-
-Requirements and limits:
-
-- The host pipeline must run `UseAuthorization()` (a `WebApplication` adds it when the host does not), and `UseAuthentication()` before it for host authentication. A host that calls `UseAuthentication()` must also call `UseAuthorization()` after it: the `UseAuthorization` a `WebApplication` adds on its own runs ahead of the host's `UseAuthentication`, so host authentication would not have signed the user in yet. It must run `UseCors()` only when `SetCorsOrigins(...)` or `SetCorsPolicy(...)` is configured: the dashboard registers and attaches its CORS policy only then.
-- Host-specific behavior for the dashboard, such as `.RequireHost(...)` or rate limiting, goes on the builder `MapHeadlessMessagingDashboard()` returns.
-- It throws `InvalidOperationException` when `UseDashboard(...)` was not called, or on a second call.
-- It throws `InvalidOperationException` when the base path is the root (`SetBasePath("/")` or an empty path). At the root, the SPA route would answer every unmatched GET in the host with the shell, which hides the host's own 404s. Mount the dashboard under a path such as `/messaging/dashboard`.
-- The gateway proxy forwards a request for another node with its full path, base path included, to the same route on that node. It forwards every header except `Cookie`, so relaying works under Basic and API key. In host mode it does not relay: each node serves its own data, the proxy clears the node-selection cookies, and the SPA hides node switching. [dashboards.md](dashboards.md#host-sessions) covers sign-in, the session exchange, and a multi-instance host's shared Data Protection key ring.
 
 ### Configuration
 
-Configured through `MessagingDashboardOptionsBuilder` inside `UseDashboard(...)`. Authentication must be chosen explicitly — if no `WithXxx` auth method (including `WithNoAuth()`) is called, the host fails to start. No CORS policy is applied by default (same-origin only); use `SetCorsOrigins(...)` for the cross-origin SPA case.
-
-| Method | Default | Description |
-| --- | --- | --- |
-| `WithNoAuth()` | (no default — auth is required) | Explicitly opt out of authentication; development or trusted-network use only. |
-| `WithBasicAuth(username, password)` | — | HTTP Basic authentication. |
-| `WithApiKey(apiKey)` | — | API-key authentication. |
-| `WithHostAuthentication(configure?)` | host default policy | A dashboard session issued from the host's own sign-in; `configure` sets `ViewPolicy`, `OperatePolicy`, `ChallengeScheme`, `SessionCookieName`, `SessionIdleTimeout` (30 minutes), `SessionLifetime` (8 hours), `RevalidationInterval`, and `Revalidate`. See [dashboards.md](dashboards.md#configuration). |
-| `SetBasePath(path)` | `/messaging/dashboard` | Dashboard URL path. |
-| `SetStatsPollingInterval(ms)` | `2000` | How often the overview polls `/stats` and the real-time metrics; a non-positive value falls back to 2000. Each node caches the storage counts behind `/stats` for 5 seconds and shares them across every open tab, so a shorter interval does not refresh those counts faster. |
-| `SetCorsOrigins(origins)` / `SetCorsPolicy(builder)` | none | CORS for a cross-origin SPA; Basic or API key only. |
+`AddMessaging(...)` takes `Action<MessagingDashboardOptions>`, its `IServiceProvider` overload, or an `IConfiguration` section. [dashboards.md](dashboards.md#messaging-module) lists every member: `ViewPolicy`, `OperatePolicy`, `NodeName`, `ChangeOverlapWindow`, `ChangePageSize`, `StoreTimeout`, and `Forwarding`.
 
 ### Runtime behavior
 
-`UseDashboard(...)` registers the dashboard services, and `MapHeadlessMessagingDashboard()` maps the embedded web UI and monitoring API. The dashboard package ships no discovery backend; node discovery comes from [Headless.Messaging.Dashboard.Consul](#headlessmessagingdashboardconsul) or [Headless.Messaging.Dashboard.K8s](#headlessmessagingdashboardk8s).
-
-Node lookups (30s), node counts (60s, 20s on discovery failure) and the metrics history (10m) are memoized in `MessagingDashboardCache`, a dashboard-owned in-process cache registered by `UseDashboard(...)` and injected into `ConsulNodeDiscoveryProvider` / `K8sNodeDiscoveryProvider`. The dashboard deliberately does not call `AddMemoryCache()`: registering the shared `IMemoryCache` from a framework package would put dashboard entries in the host's cache, where they compete for its size limit and are evictable by its compaction, purely as a side effect of adding a diagnostics UI. It is also not a `Headless.Caching` `ICache` — `AddHeadlessCaching` accepts exactly one call per service collection, so a registration here would throw for every consumer that configures caching themselves, or force the caching package on consumers who only wanted the dashboard. These values are per-node discovery results and metrics snapshots that must never leave the process, so a private in-process cache is the correct scope; this is the one sanctioned exception to the "do not use `IMemoryCache` directly" rule in [index.md](index.md).
+The module streams changes over the shell's live stream: each node reads its stores' changed rows on a poll and publishes them, so open views move without reloading. The package ships no discovery backend; node discovery comes from [Headless.Messaging.Dashboard.Consul](#headlessmessagingdashboardconsul) or [Headless.Messaging.Dashboard.K8s](#headlessmessagingdashboardk8s).
 
 ## Headless.Messaging.Dashboard.Consul
 
 ### API and behavior
 
-- Consul-backed node discovery: each node registers itself in Consul, and the dashboard lists every catalog service tagged `messaging` as a peer node.
+- Consul-backed node discovery: each node registers itself in Consul, and the Messaging module lists every catalog service tagged `messaging` as a node it can [forward](dashboards.md#forwarding-to-other-nodes) to.
 - `UseConsulDiscovery(...)` extension on `MessagingSetupBuilder`, in the `Headless.Messaging.Dashboard.Consul` namespace.
 
 ### Design constraints
 
-Consul addresses nodes by service name alone, with no namespace. When a request carries the `messaging.node` cookie, the dashboard resolves the node by name, caches the result for 30 seconds, and never proxies a request whose node name equals this node's `NodeName`. The `/stats` endpoint counts nodes through Consul when no cached count exists.
+Consul addresses nodes by service name alone, with no namespace. Forwarding resolves a node by name through Consul on each call, with no cache, and never forwards to this node's own `NodeName`.
 
 ### Install
 
@@ -2722,7 +2669,7 @@ dotnet add package Headless.Messaging.Dashboard.Consul
 ```csharp
 services.AddHeadlessMessaging(setup =>
 {
-    // ... transport + storage + UseDashboard(...) registration ...
+    // ... transport + storage registration ...
     setup.UseConsulDiscovery(options =>
     {
         options.DiscoveryServerHostName = "consul";
@@ -2739,15 +2686,14 @@ Configure `ConsulDiscoveryOptions` through `UseConsulDiscovery(...)`:
 
 - `DiscoveryServerHostName` / `DiscoveryServerPort` — the Consul agent HTTP API. Defaults: `localhost`, `8500`.
 - `CurrentNodeHostName` / `CurrentNodePort` — the address this node registers. Defaults: `localhost`, `5000`.
-- `NodeName` — the service name this node registers under, and the name the gateway uses to recognize the current node. Set it: Consul rejects a registration without a service name, and the failure is only logged.
+- `NodeName` — the service name this node registers under, and the name forwarding uses to recognize the current node. Set it: Consul rejects a registration without a service name, and the failure is only logged.
 - `NodeId` — optional service ID; Consul uses `NodeName` when it is `null`.
-- `MatchPath` — the dashboard base path used in the health-check URL. Default: `/messaging/dashboard`.
-- `Scheme` — `http` registers an HTTP health check on `{MatchPath}/api/health`; `https` registers a TCP check. It is also the scheme of every discovered node's address, so the unified dashboard calls the node over it; dashboard forwarding refuses an `http` node unless `AllowInsecurePeers` is set ([Forwarding to other nodes](dashboards.md#forwarding-to-other-nodes)). Default: `http`.
+- `Scheme` — the scheme of every discovered node's address, so the Messaging module calls the node over it; dashboard forwarding refuses an `http` node unless `AllowInsecurePeers` is set ([Forwarding to other nodes](dashboards.md#forwarding-to-other-nodes)). Default: `http`.
 - `CustomTags` — extra tags merged with the built-in `Headless`, `Messaging`, `Client`, `Dashboard` tags.
 
 ### Runtime behavior
 
-- Registers a Consul-backed node discovery provider and a processing server that registers this node in Consul at startup, with a 10-second health-check interval and deregistration after 30 seconds critical.
+- Registers a Consul-backed node discovery provider and a processing server that registers this node in Consul at startup, with a TCP health check on `CurrentNodeHostName:CurrentNodePort` every 10 seconds and deregistration after 30 seconds critical.
 - Discovery failures are logged and return no nodes; caller cancellation propagates.
 
 ## Headless.Messaging.Dashboard.K8s
@@ -2777,13 +2723,13 @@ services.AddHeadlessMessaging(setup =>
 
 Configure `K8sDiscoveryOptions` through `UseK8sDiscovery(...)`:
 
-- `K8sClientConfig` — Kubernetes client configuration used to query the cluster. Defaults to `KubernetesClientConfiguration.BuildDefaultConfig()`. Its configured namespace is the only namespace eligible for dashboard discovery and proxy selection; discovery fails closed when no namespace is configured.
-- `ShowOnlyExplicitVisibleNodes` — when `true` (default), only Services labeled `headless.messaging.visibility:show` are listed as visible dashboard nodes. Set to `false` to show all discovered Services.
+- `K8sClientConfig` — Kubernetes client configuration used to query the cluster. Defaults to `KubernetesClientConfiguration.BuildDefaultConfig()`. Its configured namespace is the only namespace eligible for discovery and forwarding; discovery fails closed when no namespace is configured.
+- `ShowOnlyExplicitVisibleNodes` — when `true` (default), only Services labeled `headless.messaging.visibility:show` are listed as nodes. Set to `false` to show all discovered Services.
 - `Scheme` — the scheme (`http` or `https`) of the address each discovered Service is called at. Dashboard forwarding refuses an `http` node unless `AllowInsecurePeers` is set, so a deployment that forwards serves the dashboard over HTTPS inside the cluster and sets `https`. Default: `http`.
 
-A dashboard-only host that shows the Services Kubernetes lists uses `AddHeadlessDashboard(d => d.AddMessagingStandalone(messaging => ..., k8s => ...))`, which replaces the removed `AddMessagingDashboardStandalone(IServiceCollection, ...)`; see [Dashboard-only host](dashboards.md#dashboard-only-host).
+A dashboard-only host that shows the Services Kubernetes lists uses `AddHeadlessDashboard(d => d.AddMessagingStandalone(messaging => ..., k8s => ...))`; see [Dashboard-only host](dashboards.md#dashboard-only-host).
 
-The dashboard stores the selected Service name rather than a client-composed endpoint. The server resolves that name in the configured namespace and reuses the list's visibility and port-label rules before forwarding. Invalid, hidden, cross-namespace, and stale selections are cleared.
+A forwarded call names the Service, never a client-composed endpoint. The server resolves that name in the configured namespace on each call and applies the list's visibility and port-label rules before forwarding, so a hidden, cross-namespace, or missing Service is refused.
 
 ### Runtime behavior
 

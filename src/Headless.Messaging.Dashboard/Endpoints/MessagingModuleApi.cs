@@ -14,7 +14,7 @@ namespace Headless.Messaging.Dashboard;
 
 /// <summary>
 /// The Messaging module's own API at <c>{base}/api/messaging</c>: published and received lists over every store,
-/// message detail, the generations of a received message, scheduled deliveries, consumers and contracts from the host
+/// message detail, the generations of a received message, scheduled deliveries, the operator ledger, consumers and contracts from the host
 /// manifest, circuit breakers, nodes, and this node's real-time throughput. Every call is a read, so a viewer without
 /// a named operator can make it.
 /// </summary>
@@ -53,6 +53,7 @@ internal sealed class MessagingModuleApi(
         routes.MapGet("/messages/{kind}/{id}", _GetMessageAsync);
         routes.MapGet("/received/generations", _ListGenerationsAsync);
         routes.MapGet("/scheduled", _ListScheduledAsync);
+        routes.MapGet("/receipts", _ListReceiptsAsync);
         routes.MapGet("/consumers", _Consumers);
         routes.MapGet("/contracts", _Contracts);
         routes.MapGet("/circuits", _Circuits);
@@ -376,6 +377,86 @@ internal sealed class MessagingModuleApi(
                 _Unsupported(target, exception),
                 MessagingDashboardJsonContext.Default.MessagingScheduledList
             );
+        }
+    }
+
+    private async Task<
+        Results<JsonHttpResult<MessagingReceiptList>, BadRequest<string>, ProblemHttpResult>
+    > _ListReceiptsAsync(
+        HttpContext context,
+        string? actor,
+        string? targetKind,
+        string? operationType,
+        DateTimeOffset? from,
+        DateTimeOffset? before,
+        string? after,
+        int? limit,
+        CancellationToken cancellationToken
+    )
+    {
+        MessagingOperationTargetKind? kind = null;
+        MessagingOperationType? type = null;
+
+        if (!string.IsNullOrEmpty(targetKind))
+        {
+            if (
+                !Enum.TryParse<MessagingOperationTargetKind>(targetKind, ignoreCase: true, out var parsed)
+                || !Enum.IsDefined(parsed)
+            )
+            {
+                return TypedResults.BadRequest($"'{targetKind}' is not an operation target kind.");
+            }
+
+            kind = parsed;
+        }
+
+        if (!string.IsNullOrEmpty(operationType))
+        {
+            if (
+                !Enum.TryParse<MessagingOperationType>(operationType, ignoreCase: true, out var parsed)
+                || !Enum.IsDefined(parsed)
+            )
+            {
+                return TypedResults.BadRequest($"'{operationType}' is not an operation type.");
+            }
+
+            type = parsed;
+        }
+
+        if (!ReceiptListCursor.TryParse(after, out var position))
+        {
+            return TypedResults.BadRequest("after is not a cursor this list returned.");
+        }
+
+        // The ledger lives in the main store alone: an additional outbox's receipts name it in OutboxName.
+        try
+        {
+            var page = await _stores
+                .Primary.Storage.GetInboxOperationsApi()
+                .QueryReceiptsAsync(
+                    new MessagingOperationReceiptQuery
+                    {
+                        Actor = string.IsNullOrEmpty(actor) ? null : actor,
+                        TargetKind = kind,
+                        OperationType = type,
+                        From = from,
+                        Before = before,
+                        After = position,
+                        Limit = Math.Clamp(limit ?? _DefaultListLimit, 1, MessagingOperationReceiptQuery.MaxLimit),
+                    },
+                    new OperatorAuthorizationContext(Reader(context.User)),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            return TypedResults.Json(
+                new MessagingReceiptList(page.Items, page.Next is { } next ? ReceiptListCursor.Format(next) : null),
+                MessagingDashboardJsonContext.Default.MessagingReceiptList
+            );
+        }
+        catch (NotSupportedException exception)
+        {
+            return TypedResults.Problem(exception.Message, statusCode: StatusCodes.Status501NotImplemented);
         }
     }
 

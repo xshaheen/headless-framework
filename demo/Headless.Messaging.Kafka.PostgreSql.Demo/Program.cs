@@ -1,5 +1,6 @@
 using Demo;
 using Demo.Controllers;
+using Headless.Dashboard;
 using Headless.Hosting;
 using Headless.Messaging;
 using Headless.Messaging.Dashboard;
@@ -39,8 +40,10 @@ builder.Services.AddHeadlessMessaging(setup =>
         apache/kafka:3.7.0
     */
     setup.UseKafka("127.0.0.1:9092");
-    setup.UseDashboard(d => d.WithNoAuth());
 });
+
+// The Messaging module of the Headless dashboard, at /headless/messaging. No auth: a local demo only.
+builder.Services.AddHeadlessDashboard(dashboard => dashboard.WithNoAuth().AddMessaging());
 
 builder.Services.ConfigureMessaging(messaging => messaging.Message<KafkaMessage>("sample.kafka.postgrsql"));
 
@@ -71,6 +74,6 @@ await using (var scope = app.Services.CreateAsyncScope())
 app.UseRouting();
 app.MapControllers();
 
-app.MapHeadlessMessagingDashboard();
+app.MapHeadlessDashboard();
 
 await app.RunAsync();

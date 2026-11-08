@@ -4,9 +4,9 @@ namespace Headless.Messaging.Dashboard;
 
 /// <summary>
 /// The name under which this node registers itself with a discovery backend that addresses nodes by name
-/// alone, with no namespace (Consul). A discovery package registers it; its presence tells the gateway to
-/// resolve nodes by name without a namespace cookie and never to proxy a request to the current node, and
-/// tells the stats endpoint it may count nodes through discovery. Kubernetes discovery does not register it.
+/// alone, with no namespace (Consul). A discovery package registers it; forwarding reads it to recognize this node
+/// in the list discovery returns and never call it as a peer. Kubernetes discovery does not register it, because a
+/// Service spreads calls over its pods and names no single node.
 /// </summary>
 /// <param name="name">The current node's registered name, or <see langword="null"/> when the backend assigns one.</param>
 internal sealed class CurrentNodeIdentity(string? name)

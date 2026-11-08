@@ -1,10 +1,10 @@
 # Headless.Messaging.Dashboard
 
-Web-based dashboard for monitoring and managing distributed messaging infrastructure.
+The Messaging module of the Headless dashboard: published and received messages of the primary store and every additional outbox, with failures grouped by cause and live changes from every node.
 
 ## Why use this package
 
-Provides real-time visibility into message processing, failures, retries, and system health through an embedded web UI for operations and troubleshooting.
+Operators see every message in the same dashboard as the rest of the application: failed messages grouped by cause, each message's payload and attempts, scheduled deliveries, and the outboxes the host registers. They can re-send, re-execute, or delete one message or every message a filter matches. The module is embedded in the host and served by `Headless.Dashboard` under its base path and sign-in.
 
 ## Install
 
@@ -16,4 +16,4 @@ dotnet add package Headless.Messaging.Dashboard
 
 - [Headless Framework](https://github.com/xshaheen/headless-framework#readme)
 - [Messaging guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/messaging.md#headlessmessagingdashboard)
-- [Mount on the host's endpoints](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/messaging.md#mount-on-the-hosts-endpoints), so the host's authorization evaluates the dashboard policy instead of its fallback policy
+- [Dashboards guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/dashboards.md#messaging-module)

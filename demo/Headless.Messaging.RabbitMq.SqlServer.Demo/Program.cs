@@ -1,5 +1,6 @@
 using Dapper;
 using Demo;
+using Headless.Dashboard;
 using Headless.Hosting;
 using Headless.Messaging;
 using Headless.Messaging.Dashboard;
@@ -44,7 +45,6 @@ builder.Services.AddHeadlessMessaging(setup =>
     setup.AddModule<Headless.Messaging.RabbitMq.SqlServer.Demo.MessagingModule>();
     setup.UseSqlServerEntityFramework<AppDbContext>();
     setup.UseRabbitMq("127.0.0.1");
-    setup.UseDashboard(d => d.WithNoAuth());
 
     //setup.Options.EnablePublishParallelSend = true;
     // (commit-coordination registration follows AddHeadlessMessaging, below)
@@ -58,6 +58,9 @@ builder.Services.AddHeadlessMessaging(setup =>
     //};
     //setup.Options.JsonSerializerOptions.Encoder = JavaScriptEncoder.Create(UnicodeRanges.All);
 });
+
+// The Messaging module of the Headless dashboard, at /headless/messaging. No auth: a local demo only.
+builder.Services.AddHeadlessDashboard(dashboard => dashboard.WithNoAuth().AddMessaging());
 
 // The EF-storage path (setup.UseSqlServerEntityFramework<AppDbContext>() above) already enlists the transactional outbox
 // through the scoped IUnitOfWorkFactory that AddHeadlessMessaging registers, so the /coordinated/ef,
@@ -78,6 +81,6 @@ var app = builder.Build();
 // Configure middleware pipeline
 app.UseRouting();
 app.MapControllers();
-app.MapHeadlessMessagingDashboard();
+app.MapHeadlessDashboard();
 
 await app.RunAsync();

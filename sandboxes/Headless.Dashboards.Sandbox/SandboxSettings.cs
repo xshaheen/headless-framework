@@ -25,17 +25,14 @@ public sealed class SandboxSettings
     public string? PostgresConnectionString { get; set; }
 
     /// <summary>
-    /// Messaging dashboard Basic-auth user name. Inbox and scheduled operations need a named operator, so the
-    /// messaging dashboard uses Basic auth whenever <see cref="MessagingDashboardPassword"/> is set.
+    /// The secret <c>make up</c> generates into <c>sandbox.env</c>; the host sign-in falls back to it when
+    /// <see cref="HostSecret"/> is empty.
     /// </summary>
-    public string MessagingDashboardUser { get; set; } = "sandbox";
-
-    /// <summary>Messaging dashboard Basic-auth password; when empty, that dashboard runs without auth.</summary>
     public string? MessagingDashboardPassword { get; set; }
 
     /// <summary>
     /// The secret behind the sandbox host sign-in of the Headless dashboard. When empty, it falls back to
-    /// <see cref="MessagingDashboardPassword"/>, so the one generated secret signs in to both.
+    /// <see cref="MessagingDashboardPassword"/>, the secret <c>make up</c> generates.
     /// </summary>
     public string? HostSecret { get; set; }
 

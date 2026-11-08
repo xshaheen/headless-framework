@@ -87,7 +87,7 @@ For a job, a scheduling call's `WithRetries` and `WithRetryIntervals` then overr
 | Cancellation | After the consume token is cancelled (host shutdown), any cancellation writes nothing, whatever token it carries; one raised while the consume token is live, by the handler or the transactional inbox's commit work, is classified and retried like any other failure | After the run's token is cancelled, any cancellation is the executor's, whatever token it carries: durable cancel writes `Cancelled`, host shutdown and lease loss write nothing; one the handler raises while the token is live is classified and retried like any other failure |
 | Terminal state | `Failed`, with no `NextRetryAt` | `Failed` |
 | Terminal callback | `MessagingOptions.RetryPolicy.OnTerminal` | `JobsRetryOptions.OnExhausted` |
-| Operator recovery | Re-execute from the Messaging dashboard | `IJobScheduler.RequeueAsync` / `RequeueOccurrenceAsync`, or the requeue button on the Jobs dashboard |
+| Operator recovery | Re-execute from the Messaging module of the dashboard | `IJobScheduler.RequeueAsync` / `RequeueOccurrenceAsync`, or the requeue button on the Jobs dashboard |
 | Invalid policy type | HM005 build error | HF023 build error |
 | Not allowed on | Every-instance consumers (HM010 at build time, startup error otherwise) | Nothing |
 

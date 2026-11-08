@@ -13,7 +13,7 @@ namespace Headless.Messaging.Dashboard.K8s;
 /// dashboard nodes, applying visibility and port-selection rules derived from
 /// <c>headless.messaging.*</c> labels on each service.
 /// </summary>
-public class K8sNodeDiscoveryProvider(ILoggerFactory logger, MessagingDashboardCache cache, K8sDiscoveryOptions options)
+public class K8sNodeDiscoveryProvider(ILoggerFactory logger, K8sDiscoveryOptions options)
     : INodeDiscoveryProvider,
         IDisposable
 {
@@ -22,7 +22,7 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, MessagingDashboardC
     private readonly Lock _clientLock = new();
 
     // One client for the provider's lifetime: each Kubernetes client owns its own HTTP handler, so a client per call
-    // pays a new connection and TLS handshake on every stats refresh and gateway lookup. Created on first use so a
+    // pays a new connection and TLS handshake on every discovery read. Created on first use so a
     // bad client configuration still fails inside the call that reports it, as before.
     private Kubernetes? _client;
     private bool _disposed;
@@ -102,11 +102,7 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, MessagingDashboardC
                 return [];
             }
 
-            var nodes = await _ListServices(resolvedNamespace, cancellationToken).ConfigureAwait(false);
-
-            cache.Set("messaging.nodes.count", nodes.Count, TimeSpan.FromSeconds(60));
-
-            return nodes;
+            return await _ListServices(resolvedNamespace, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -114,8 +110,6 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, MessagingDashboardC
         }
         catch (Exception ex)
         {
-            cache.Set("messaging.nodes.count", 0, TimeSpan.FromSeconds(20));
-
             _logger.LogGetK8sServicesFailed(ex);
 
             return [];

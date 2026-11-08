@@ -5,18 +5,16 @@ packages: Dashboard
 
 # Dashboards
 
-> One operations shell that serves feature modules under one base path and one sign-in, plus the shared authentication of the Messaging dashboard.
+> One operations shell that serves feature modules under one base path and one sign-in, plus the authentication primitives for a dashboard a host writes.
 
 ## Orientation
 
 `Headless.Dashboard` has two parts:
 
 - **The shell.** `services.AddHeadlessDashboard(...)` registers it and `app.MapHeadlessDashboard()` mounts it, by default at `/headless`. It serves every registered module under that base path with one sign-in, one session cookie, one live stream, and one command pipeline. It stores nothing: each module reads its own store. The package ships no module of its own. `Headless.Jobs.Dashboard` adds the Jobs module (`AddJobs()`), and `Headless.Messaging.Dashboard` adds the Messaging module (`AddMessaging()`); see [Jobs module](#jobs-module) and [Messaging module](#messaging-module).
-- **Shared authentication for the standalone Messaging dashboard.** `Headless.Messaging.Dashboard` also keeps its own Vue dashboard in this release, mounted by `MapHeadlessMessagingDashboard()`, beside the Messaging module. It receives this package transitively and configures its authentication through its own builder; see [Messaging and standalone dashboards](#messaging-and-standalone-dashboards).
+- **Authentication for a dashboard a host writes.** The per-dashboard primitives the shell is built on, `AddDashboardAuthentication(name, ...)` and its endpoint conventions, protect a dashboard the host serves outside the shell; see [Dashboards a host writes](#dashboards-a-host-writes).
 
-A host can run the shell and the Messaging dashboard side by side. Each has its own authentication mode, credentials, and session cookie.
-
-Read [jobs.md](jobs.md) for Headless Jobs and [messaging.md](messaging.md) for the Messaging dashboard.
+Read [jobs.md](jobs.md) for Headless Jobs and [messaging.md](messaging.md) for Headless Messaging.
 
 ## Agent Rules
 
@@ -26,9 +24,9 @@ Read [jobs.md](jobs.md) for Headless Jobs and [messaging.md](messaging.md) for t
 - Call `app.MapHeadlessDashboard()` on the host's endpoints after `UseAuthentication()` and `UseAuthorization()`. A host that registers the shell and never maps it fails to start. The base path cannot be the root.
 - Prefer host authentication when the application already signs its users in. It keeps identity, audit, and revocation in the host's security boundary, and separates viewing from operator actions.
 - Write host view and operate policies from claims only. The dashboard evaluates them against the claims it copied into its own session, not against the host's bearer token or request. A policy that lists authentication schemes passes only for a session issued from one of those schemes.
-- Serve a host-mode dashboard from the host's own origin. The shell is same-origin in every mode, because its session cookie is host-only. Host mode fails at startup with the Messaging dashboard's `SetCorsOrigins` or `SetCorsPolicy`.
+- Serve a host-mode dashboard from the host's own origin. The shell is same-origin in every mode, because its session cookie is host-only.
 - Give every instance of a multi-instance host one shared Data Protection key ring, for example with `Headless.DataProtection.Blobs`. Sessions in every mode, and the shell's Operation tokens, are protected by that key ring. Without it, a session or an Operation token issued by one instance is refused by the next.
-- Call `HttpContext.SignOutHeadlessDashboardAsync()` for the shell, and `SignOutHeadlessDashboardAsync(name)` for the Messaging dashboard, from the host's own sign-out, so dashboard sessions end with the application session.
+- Call `HttpContext.SignOutHeadlessDashboardAsync()` for the shell, and `SignOutHeadlessDashboardAsync(name)` for a dashboard a host writes, from the host's own sign-out, so dashboard sessions end with the application session.
 - The shell's document replaces any `Content-Security-Policy` header already on its response. Add the sources a module or the host needs through `ConfigureContentSecurityPolicy`, never by loosening the policy in host middleware.
 - Never embed production credentials or API keys in source, examples, logs, URLs, or frontend storage.
 - `WithNoAuth()` and `AuthMode.None` make a dashboard public. Use them only in an isolated development environment.
@@ -37,16 +35,16 @@ Read [jobs.md](jobs.md) for Headless Jobs and [messaging.md](messaging.md) for t
 
 | Mode | Shell builder call | Use when | Trade-off |
 | --- | --- | --- | --- |
-| Host | `WithHostAuthentication(...)` | The application already signs users in, with a cookie, OpenID Connect, or a bearer token | Separate view and operate policies per module, server-side session with idle and absolute expiry; same origin only; the Messaging gateway does not relay to other nodes |
+| Host | `WithHostAuthentication(...)` | The application already signs users in, with a cookie, OpenID Connect, or a bearer token | Separate view and operate policies per module, server-side session with idle and absolute expiry; same origin only |
 | Basic | `WithBasicAuth(user, password)` | A small standalone deployment needs simple credentials | One shared credential for viewing and operating every module; the application owns secret storage and rotation |
 | API key | `WithApiKey(key)` | Automation or a controlled operator client needs bearer access | One shared credential for viewing and operating every module; the application owns key distribution and rotation |
 | None | `WithNoAuth()` | Isolated local development only | No access control |
 
-The Messaging dashboard builder takes the same four calls. There is no custom-validator mode. To sign operators in with your own credential check, write an ASP.NET Core authentication handler, register it in the host, and use host mode over it.
+There is no custom-validator mode. To sign operators in with your own credential check, write an ASP.NET Core authentication handler, register it in the host, and use host mode over it.
 
 ## Headless.Dashboard
 
-The dashboard shell, its module contract, and the authentication that the shell and the Messaging dashboard share.
+The dashboard shell, its module contract, and the authentication primitives the shell is built on.
 
 ### Register the shell
 
@@ -147,7 +145,7 @@ builder.Services.Configure<HeadlessDashboardOptions>(options => options.Aggregat
 ### Shell sign-in and sessions
 
 - The shell's session cookie is `__Host-headless-dashboard-` followed by the host's application name, lower-cased with every character that is not an ASCII letter or digit replaced by `-`, so two applications on one host name keep separate sessions. `SessionCookieName` overrides it in host mode. The cookie is `Path=/`, `HttpOnly`, `Secure`, `SameSite=Strict`, and host-only.
-- **Host mode.** A session is issued by `GET {base}/auth/sign-in?returnUrl=`, which challenges `ChallengeScheme` when no host user is signed in, or by `POST {base}/api/auth/session` with the host's own credential. The [Host sessions](#host-sessions) rules apply to the shell as they do to the Messaging dashboard. A user gets a session when they pass the shell's `ViewPolicy` or any module's view policy.
+- **Host mode.** A session is issued by `GET {base}/auth/sign-in?returnUrl=`, which challenges `ChallengeScheme` when no host user is signed in, or by `POST {base}/api/auth/session` with the host's own credential. The [Host sessions](#host-sessions) rules apply to the shell as they do to a dashboard a host writes. A user gets a session when they pass the shell's `ViewPolicy` or any module's view policy.
 - **Basic and API key.** The shell's sign-in page at `{base}/sign-in` posts the credential once to `api/auth/session`; the browser then holds only the session cookie. The cookie carries a fingerprint of the credential, so changing the password or key ends every session issued under the old one at its next request. A script can still send the credential as an `Authorization` header (`Basic`, or `Bearer` for the key) on every request.
 - **Per-module access, host mode.** Each module's options derive from `DashboardModuleOptions`, whose `ViewPolicy` and `OperatePolicy` override the shell's. An empty module `ViewPolicy` uses the shell's view policy. An empty module `OperatePolicy` uses the module's `ViewPolicy` when set, else the shell's operate policy. A user may operate a module only if they may also view it. The page lists only the modules the session may view, and the server refuses the rest. Basic and API key share one credential that views and operates every module.
 - `GET {base}/api/auth/info` is anonymous and reports the mode and the session. `POST {base}/api/auth/sign-out` deletes the cookie. `HttpContext.SignOutHeadlessDashboardAsync()` deletes it from host code.
@@ -513,7 +511,7 @@ app.MapHeadlessDashboard();
 
 ### Messaging module
 
-`AddMessaging()` adds the Messaging module (`Headless.Messaging.Dashboard`) under the id `messaging`. It needs `AddHeadlessMessaging(...)` with a storage in the same host; a host that adds it without `AddHeadlessMessaging` fails to start with a message naming that call. It reads the main store, named `primary`, and every additional outbox registered with `AddOutbox(name)`, by that name. It serves beside the standalone Messaging dashboard (`UseDashboard(...)` and `MapHeadlessMessagingDashboard()`), which keeps working unchanged; the two share only the stores and the real-time throughput listener.
+`AddMessaging()` adds the Messaging module (`Headless.Messaging.Dashboard`) under the id `messaging`. It needs `AddHeadlessMessaging(...)` with a storage in the same host; a host that adds it without `AddHeadlessMessaging` fails to start with a message naming that call. It reads the main store, named `primary`, and every additional outbox registered with `AddOutbox(name)`, by that name. It replaces the removed Messaging Vue dashboard; see [the migration steps](#migrate-from-mapheadlessmessagingdashboard).
 
 ```csharp
 using Headless.Dashboard;
@@ -565,7 +563,7 @@ app.MapHeadlessDashboard();
 | `received.held` | held by an operator |
 | `hosts.unknown-lanes` | rows of every store and table whose lane this host does not recognize |
 
-**Attention and Overview.** One item per failure fingerprint of the failures that ended for good: per consumer for received rows (`2 messages received by billing.charge-consumer failed for good`, pointing at the `consumer`), per store for published rows. Items of one cause share a `GroupKey` across stores, and each carries its list filter `{ store, status, terminalOnly, consumer, fingerprint }`. One warning item per store and table holding rows in an unknown lane. The Overview shows the messages that failed for good, the messages waiting for a retry, and this node's consume rate over the last minute, which is left out while the node measured no second of it.
+**Attention and Overview.** One item per failure fingerprint of the failures that ended for good: per consumer for received rows (`2 messages received by billing.charge-consumer failed for good`, pointing at the `consumer`), per store for published rows. Items of one cause share a `GroupKey` across stores, and each carries its list filter `{ store, status, terminalOnly, consumer, fingerprint }`. An item's id is `failed:{kind}:{fingerprint}:{consumer}:{store}`, and its `GroupKey` is the same without `:{store}`. `kind` is `published` or `received`; the fingerprint is `v{n}:{token}`, so it holds exactly one colon, or is empty, with none, for failures recorded without one; the consumer is empty for a published row and may itself contain colons, so read the store as the last segment, the kind and the fingerprint from the front, and the consumer as what lies between. An item another node answers through forwarding has `{node}:` before its `GroupKey`. One warning item per store and table holding rows in an unknown lane, with the id `unknown-lane:{store}:{kind}`. The Overview shows the messages that failed for good, the messages waiting for a retry, and this node's consume rate over the last minute, which is left out while the node measured no second of it.
 
 **Lookup and payload.** The palette accepts a full object id, a bare storage id, or a message id. A storage id or a message id is looked up in every store, and each match is listed with its store in its title; a message id matches byte for byte, trailing spaces included, on every provider. An id naming another node finds nothing on this node. A payload is the row's stored envelope as JSON.
 
@@ -578,9 +576,10 @@ app.MapHeadlessDashboard();
 | `GET messages/{kind}/{id}` | `{ row, headers, content, exceptionInfo }`, or `404` |
 | `GET received/generations?messageId=&consumer=` | `{ items }`: every received row of the message, oldest first |
 | `GET scheduled?store=&name=&page=&perPage=` | `{ store, supported, items, totalCount, reason }`; a provider without scheduled-delivery operations answers `supported: false` with the reason, not an error |
+| `GET receipts?actor=&targetKind=&operationType=&from=&before=&limit=&after=` | `{ items, nextCursor }`: one keyset page of the operator ledger in the main store, newest first, every audited intervention including a refused one; `actor` matches ordinally, `targetKind` (`Inbox`, `ScheduledDelivery`, `Published`) and `operationType` (such as `Hold`, `Resend`) ignore case, `from` is inclusive and `before` exclusive, `limit` up to 500; `after` takes `nextCursor`, which is absent on the last page |
 | `GET consumers`, `GET contracts` | `{ items }`: the consumers and the message contracts of the host manifest's `messaging` section |
-| `GET circuits` | `{ items: [{ consumer, state, consecutiveFailures, failureThreshold, openedAt, estimatedRemainingOpenDuration }] }` |
-| `GET nodes` | `{ items: [{ name, isLocal, stores }] }`: this node and the stores it reads |
+| `GET circuits` | `{ items: [{ id, consumer, state, consecutiveFailures, failureThreshold, openedAt, estimatedRemainingOpenDuration }] }`; `id` is the circuit's object id, `{node}~{consumer}`, which its commands take |
+| `GET nodes` | `{ items: [{ name, isLocal, stores, state }], discovery }`: this node and the stores it reads, then every node discovery lists, with `stores` empty; a listed node's `state` is what the last forwarded call to it found (`answering`, `not-answering`, `key-rejected`, `policy-denied`, `view-only`, `insecure-peer`), absent before the first call and for this node; `discovery` says what the last discovery read found, absent while forwarding is off. A dashboard-only host leaves itself out. This route is always answered by the serving node |
 | `GET metrics/realtime` | `{ seconds, publishedPerSecond, consumedPerSecond, consumeElapsedMs }`: the last 300 seconds; a second this node did not measure, such as one before it started, is `null`, never `0` |
 
 **Commands.** Every command runs through the shell's command routes at `{base}/api/messaging/commands`, so a viewer sees each one disabled with `Needs operate permission` and a call answers `403`. A call on one object the rules refuse changes nothing and answers `409` with the reason, such as `Release first`. A command that writes a row needs an operator with a stable name, because the store records who acted; a user without one sees `Sign in with a named account`. Re-execute, Purge, Re-send, Delete, Revoke, and Force open ask for a confirmation; no single-row command needs a reason, but a re-send or delete records the reason given on its receipt with the operator's name.
@@ -603,7 +602,7 @@ Circuit and node commands act on the node that serves the call, write no receipt
 
 Re-execute, Purge, Re-send, and Delete run over a filter as Operations, which always need a reason (a confirm without one answers `400` with `errors.reason`). The filter is the list scope `{ store, status, terminalOnly, consumer, name, fingerprint }`. A Re-send or Delete Operation whose `store` names an additional outbox runs over that outbox, with each receipt in the main store; Re-execute and Purge run over the main store only, and a filter naming an outbox or an unknown store answers `400` on `filter`. Confirm freezes the scope on the store's latest change marker, and each chunk writes a row only while its marker is unchanged, so a row another chunk, node, or earlier run already changed is skipped with its reason, never written twice; an Operation stopped part-way and run again on another node changes each row once. A re-execute scope leaves held rows out. One row's failure, such as a main-store receipt that could not be written, is reported as `Failed` on that row while the Operation runs on.
 
-The module embeds its `manifest.json`, which declares its sidebar; its views come with its front end.
+The module's front end is built into `wwwroot/dist/modules/messaging` and embedded in the package, which serves it through `MessagingAssets`; its `manifest.json` there declares the sidebar and its count keys. The package's build runs the npm build, so `wwwroot/dist` is not committed.
 
 #### Forwarding to other nodes
 
@@ -661,86 +660,42 @@ builder.Services.AddHeadlessDashboard(dashboard => dashboard
         k8s => k8s.Scheme = "https")); // Headless.Messaging.Dashboard.K8s
 ```
 
-`AddMessagingStandalone(Action<MessagingDashboardOptions>)`, its `IServiceProvider` and `IConfiguration` overloads, and the Kubernetes overload above replace `AddMessagingDashboardStandalone(IServiceCollection, ...)`, which is removed.
+`AddMessagingStandalone(Action<MessagingDashboardOptions>)`, its `IServiceProvider` and `IConfiguration` overloads, and the Kubernetes overload above take the same options.
 
-### Messaging and standalone dashboards
+#### Migrate from `MapHeadlessMessagingDashboard`
 
-The Messaging Vue dashboard, and a standalone dashboard a host writes itself, authenticate through this package's per-dashboard primitives: the keyed `IAuthService`, the authentication scheme and policy that check a dashboard's own credential, the host-mode session, its view and operate policies, the sign-in endpoints, and the endpoint conventions that apply them. The rules below apply to those dashboards; the shell reuses the host-session rules.
+The Messaging Vue dashboard, its endpoints under `/messaging/dashboard`, and its node switcher are removed. The Messaging module replaces them inside the shell, with live changes over the shell's stream. To migrate a host:
 
-- Configure authentication through the owning dashboard builder (`UseDashboard(...)`), then mount the dashboard on the host's endpoints with `MapHeadlessMessagingDashboard()`. That call is the only mount: a host that registers the dashboard and never maps it fails to start.
-- Mount on the host's endpoints, so the host's `UseAuthorization` evaluates the dashboard's own rule and never the host's fallback policy. A host fallback policy that requires a tenant claim, for example, does not lock out a tenantless operator.
-- Each dashboard owns its authentication. A host that runs the shell and the Messaging dashboard can give them different modes and credentials; neither registration overrides the other.
-
-#### Setup
-
-Install an owning dashboard package and configure its builder. Host mode with separate view and operate policies, and an OpenID Connect sign-in for browsers:
+1. Delete `UseDashboard(...)` from the `AddHeadlessMessaging(...)` delegate, and delete `app.MapHeadlessMessagingDashboard()`.
+2. Add `AddMessaging()` to `AddHeadlessDashboard(...)`, and map the shell with `app.MapHeadlessDashboard()` if the host does not already.
+3. Move authentication to the shell: its `WithHostAuthentication`, `WithBasicAuth`, `WithApiKey`, or `WithNoAuth` call covers every module. For separate Messaging rights in host mode, set `ViewPolicy` and `OperatePolicy` on `MessagingDashboardOptions`.
+4. Point bookmarks and links at `{shell base}/messaging` (by default `/headless/messaging`). Nothing serves `/messaging/dashboard` any more.
+5. Remove the `SetBasePath`, `SetCorsOrigins`, `SetCorsPolicy`, and `SetStatsPollingInterval` settings: the shell is same-origin, serves every module under its own base path, and streams changes instead of polling. Replace `SignOutHeadlessDashboardAsync(MessagingDashboardOptionsBuilder.AuthenticationName)` in the host's sign-out with `SignOutHeadlessDashboardAsync()`, which ends the shell's session.
+6. Replace node switching (the `messaging.node` cookie and the gateway proxy that relayed to the chosen node) with [Forwarding to other nodes](#forwarding-to-other-nodes), and `AddMessagingDashboardStandalone(...)` with `AddMessagingStandalone(...)`. `MessagingDashboardCache`, `ConsulDiscoveryOptions.MatchPath`, and `OperatorActorRequiredProblem` are removed with no replacement: Consul now registers a TCP health check for each node.
 
 ```csharp
-using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Authentication.Cookies;
-using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Headless.Dashboard;
+using Headless.Messaging.Dashboard;
 
-builder.Services
-    .AddAuthentication(options =>
-    {
-        options.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
-        options.DefaultChallengeScheme = OpenIdConnectDefaults.AuthenticationScheme;
-    })
-    .AddCookie()
-    .AddOpenIdConnect(options => builder.Configuration.Bind("Oidc", options));
-
-builder.Services.AddAuthorizationBuilder()
-    .AddPolicy("MessagingViewers", policy => policy.RequireRole("support", "operator"))
-    .AddPolicy("MessagingOperators", policy => policy.RequireRole("operator"));
-
-builder.Services.AddHeadlessMessaging(setup =>
-{
-    // plus exactly one transport and one storage provider; see messaging.md
-    setup.UseDashboard(dashboard =>
-        dashboard.WithHostAuthentication(host =>
-        {
-            host.ViewPolicy = "MessagingViewers";
-            host.OperatePolicy = "MessagingOperators";
-            host.ChallengeScheme = OpenIdConnectDefaults.AuthenticationScheme;
-        })
-    );
-});
+builder.Services.AddHeadlessMessaging(setup => setup.UsePostgreSql(builder.Configuration.GetConnectionString("Orders")!));
+builder.Services.AddHeadlessDashboard(dashboard => dashboard
+    .WithHostAuthentication(host => { host.ViewPolicy = "ops.view"; host.OperatePolicy = "ops.operate"; })
+    .AddMessaging());
 
 var app = builder.Build();
 app.UseAuthentication();
 app.UseAuthorization();
-app.MapHeadlessMessagingDashboard();
-
-// The host's own sign-out also ends the dashboard session.
-app.MapPost("/account/sign-out", async (HttpContext context) =>
-{
-    await context.SignOutHeadlessDashboardAsync(MessagingDashboardOptionsBuilder.AuthenticationName);
-    await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-    return Results.LocalRedirect("/");
-});
+app.MapHeadlessDashboard();
 ```
 
-The dashboard's Sign in link opens `{base path}/auth/sign-in`. A host user who is already signed in gets a dashboard session at once. Otherwise the dashboard challenges `ChallengeScheme` once, and the identity provider returns the user to the dashboard.
+### Dashboards a host writes
 
-An application whose SPA signs in with a bearer token has no cookie for the dashboard to read. It exchanges the token once for the dashboard session, then navigates to the dashboard:
+A dashboard a host writes itself, outside the shell, authenticates through this package's per-dashboard primitives: the keyed `IAuthService`, the authentication scheme and policy that check a dashboard's own credential, the host-mode session, its view and operate policies, the sign-in endpoints, and the endpoint conventions that apply them. The shell reuses the host-session rules below.
 
-```js
-const response = await fetch('/messaging/dashboard/api/auth/session', {
-  method: 'POST',
-  headers: {
-    Authorization: `Bearer ${accessToken}`,
-    'X-Requested-With': 'XMLHttpRequest',
-  },
-});
+- Mount the dashboard on the host's endpoints, so the host's `UseAuthorization` evaluates the dashboard's own rule and never the host's fallback policy. A host fallback policy that requires a tenant claim, for example, does not lock out a tenantless operator.
+- Each dashboard owns its authentication. A host that runs the shell and its own dashboard can give them different modes and credentials; neither registration overrides the other.
 
-if (response.status === 204) {
-  window.location.assign('/messaging/dashboard/');
-}
-```
-
-The exchange answers `204` and sets the session cookie, `401` when no host scheme authenticated the request, and `403` when the user fails the view policy. The token never goes into a URL or browser storage.
-
-For a standalone integration:
+#### Setup
 
 ```bash
 dotnet add package Headless.Dashboard
@@ -749,6 +704,10 @@ dotnet add package Headless.Dashboard
 Register the authentication under a name your dashboard owns, map the sign-in endpoints, and protect the dashboard's endpoints with the same name:
 
 ```csharp
+using Headless.Dashboard;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
+
 builder.Services.AddDashboardAuthentication("Reports.Dashboard", config =>
 {
     config.Mode = AuthMode.Host;
@@ -766,22 +725,48 @@ reports.MapDashboardAuthEndpoints("Reports.Dashboard");
 var api = reports.MapGroup("/api").RequireDashboardAuthentication("Reports.Dashboard");
 api.MapGet("/runs", ReportsEndpoints.GetRuns);
 api.MapPost("/runs/{id}/cancel", ReportsEndpoints.CancelRun).RequireDashboardOperation("Reports.Dashboard");
+
+// The host's own sign-out also ends the dashboard session.
+app.MapPost("/account/sign-out", async (HttpContext context) =>
+{
+    await context.SignOutHeadlessDashboardAsync("Reports.Dashboard");
+    await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+    return Results.LocalRedirect("/");
+});
 ```
 
 `AddDashboardAuthentication(name, IConfiguration)` and `AddDashboardAuthentication(name, Action<AuthConfig, IServiceProvider>)` take the same name. A blank name throws `ArgumentException`. Each registration adds, once per name, an authentication scheme and an authorization policy named `name` for Basic and API key, and the host-mode session scheme `{name}.Session` with the policies `{name}.View` and `{name}.Operate`. `MapDashboardAuthEndpoints`, `RequireDashboardAuthentication`, and `RequireDashboardOperation` throw `InvalidOperationException` for a name no registration added.
+
+`GET {base}/auth/sign-in` gives a host user who is already signed in a dashboard session at once. Otherwise it challenges `ChallengeScheme` once, and the identity provider returns the user to the dashboard. An application whose SPA signs in with a bearer token has no cookie for the dashboard to read. It exchanges the token once for the dashboard session, then navigates to the dashboard:
+
+```js
+const response = await fetch('/reports/api/auth/session', {
+  method: 'POST',
+  headers: {
+    Authorization: `Bearer ${accessToken}`,
+    'X-Requested-With': 'XMLHttpRequest',
+  },
+});
+
+if (response.status === 204) {
+  window.location.assign('/reports/');
+}
+```
+
+The exchange answers `204` and sets the session cookie, `401` when no host scheme authenticated the request, and `403` when the user fails the view policy. The token never goes into a URL or browser storage. The shell's `{base}/api/auth/session` works the same way.
 
 #### Configuration
 
 `AuthConfig` exposes `Mode`, `BasicCredentials`, `ApiKey`, and `Host`. Registration validates each named configuration's selected mode at startup; incomplete credentials or invalid host options fail with `OptionsValidationException`.
 
-The dashboard builders expose `WithNoAuth()`, `WithBasicAuth(username, password)`, `WithApiKey(apiKey)`, and `WithHostAuthentication(Action<DashboardHostAuthenticationOptions>? configure = null)`. `AuthConfig.Host` is a `DashboardHostAuthenticationOptions`, read only in host mode:
+The shell builder exposes `WithNoAuth()`, `WithBasicAuth(username, password)`, `WithApiKey(apiKey)`, and `WithHostAuthentication(Action<DashboardHostAuthenticationOptions>? configure = null)`. `AuthConfig.Host` is a `DashboardHostAuthenticationOptions`, read only in host mode:
 
 | Option | Default | Description |
 | --- | --- | --- |
 | `ViewPolicy` | the host's default policy | Host policy a user must pass to get a session and to read from the dashboard. |
 | `OperatePolicy` | `ViewPolicy` | Host policy a session must also pass for operator actions, the dashboard's state-changing requests. |
 | `ChallengeScheme` | none | Host scheme `auth/sign-in` challenges when no host user is signed in, such as OpenID Connect. Without it the dashboard offers no Sign in link, and users get a session through the exchange. |
-| `SessionCookieName` | `__Host-` and the dashboard name in lower case, such as `__Host-headless-messaging-dashboard` | Set it when two applications on one host name mount the same dashboard. It must be a cookie-name token. |
+| `SessionCookieName` | `__Host-` and the dashboard name in lower case, such as `__Host-reports.dashboard`; the shell's default is in [Shell sign-in and sessions](#shell-sign-in-and-sessions) | Set it when two applications on one host name mount the same dashboard. It must be a cookie-name token. |
 | `SessionIdleTimeout` | 30 minutes | A session with no authenticated dashboard request for this long ends. Must not exceed `SessionLifetime`. |
 | `SessionLifetime` | 8 hours | Absolute lifetime from sign-in, whatever the activity. |
 | `RevalidationInterval` | none | How often `Revalidate` runs for one session. Required when `Revalidate` is set. |
@@ -792,27 +777,23 @@ The dashboard builders expose `WithNoAuth()`, `WithBasicAuth(username, password)
 - Each dashboard keeps its own session cookie: `Path=/`, `HttpOnly`, `Secure`, `SameSite=Strict`, and host-only. In host mode the dashboard API authenticates with that cookie alone. The host's own cookie or bearer token does not open them.
 - A session is issued by `GET {base}/auth/sign-in?returnUrl=` or `POST {base}/api/auth/session`. Both copy the host user's authenticated identities and claims, with their name and role claim types, into the session. A user who fails the view policy, or whom `Revalidate` refuses, gets `403` and no cookie. The host's bearer token is not copied.
 - `auth/sign-in` follows only a local `returnUrl` under the dashboard's base path with no `.` or `..` segment; any other value goes to `{base}/`. It challenges `ChallengeScheme` at most once per sign-in: when the user comes back still not signed in, it answers `401` instead of challenging again.
-- `POST {base}/api/auth/sign-out` deletes the dashboard cookie only. When it fails, the SPA reports the failure and keeps the operator signed in. Otherwise the SPA shows a signed-out page and does not sign in again until the operator chooses Sign in, even while the host session lasts. `HttpContext.SignOutHeadlessDashboardAsync(name)` deletes the same cookie from host code.
+- `POST {base}/api/auth/sign-out` deletes the dashboard cookie only. `HttpContext.SignOutHeadlessDashboardAsync(name)` deletes the same cookie from host code.
 - The host user is found through the host's schemes, never the dashboard's. `auth/sign-in` authenticates the schemes `ViewPolicy` lists, when it lists any; otherwise `ChallengeScheme`, then the default authenticate scheme. The exchange authenticates the `ViewPolicy` schemes, then the default authenticate scheme.
-- A session ends at `SessionLifetime` after sign-in, and after `SessionIdleTimeout` with no authenticated dashboard request. A request made after half the idle window has passed renews the cookie. The SPA's polling counts as activity, so an open Messaging tab stays signed in until the absolute lifetime. A renewal never moves the cookie's expiry past `SessionLifetime`.
+- A session ends at `SessionLifetime` after sign-in, and after `SessionIdleTimeout` with no authenticated dashboard request. A request made after half the idle window has passed renews the cookie. A renewal never moves the cookie's expiry past `SessionLifetime`.
 - A short-lived bearer token exchanged for a session becomes a session that can last up to `SessionLifetime`, after the token itself expires. A host that revokes tokens, disables accounts, or removes roles should set `Revalidate` and `RevalidationInterval`, and should call `SignOutHeadlessDashboardAsync` from its sign-out. Both act on the next dashboard request.
 - Policies evaluate against the copied claims. A requirement that reads the request, a header, or the bearer token fails. A policy that lists `AuthenticationSchemes` fails closed: it passes only when one of those schemes authenticated the user the session was issued for.
 - The session cookie is protected by the host's Data Protection key ring. Every instance serving the dashboard must share that key ring; `Headless.DataProtection.Blobs` persists it to blob storage (see [api.md](api.md#headlessdataprotectionblobs)).
 - With `Path=/`, the browser sends the session cookie on every request to the host, not only dashboard requests. It carries the copied claims, so a principal with very many claims can make request headers too large.
-- `GET {base}/api/auth/info` is anonymous. It reports `mode`, `enabled`, `signInAvailable`, and, in host mode, the current session's `authenticated`, `name`, and `canOperate`. It never exposes credentials. The SPA decides whether to show the sign-in page from this call, because the `SameSite=Strict` cookie can be missing from the first page load after an identity-provider redirect.
-- The SPA hides write actions when `canOperate` is `false`. The server refuses them with `403` either way.
+- `GET {base}/api/auth/info` is anonymous. It reports `mode`, `enabled`, `signInAvailable`, and, in host mode, the current session's `authenticated`, `name`, and `canOperate`. It never exposes credentials. A frontend decides whether to show its sign-in page from this call, because the `SameSite=Strict` cookie can be missing from the first page load after an identity-provider redirect.
 
 #### Design and runtime behavior
 
 - Credential comparisons are constant-time.
-- Authentication is per dashboard. `AddDashboardAuthentication(name, …)` configures the `AuthConfig` options instance named `name` and registers a scoped `IAuthService` keyed by `name`; the dashboard's authentication scheme and the `/api/auth/info` and `/api/auth/validate` endpoints resolve the service by that key. Nothing registers an unkeyed `IAuthService` or a raw `AuthConfig` singleton.
+- Authentication is per dashboard. `AddDashboardAuthentication(name, …)` configures the `AuthConfig` options instance named `name` and registers a scoped `IAuthService` keyed by `name`; the dashboard's authentication scheme and its `api/auth/info` endpoint resolve the service by that key. Nothing registers an unkeyed `IAuthService` or a raw `AuthConfig` singleton. To replace a dashboard's `IAuthService`, register yours with `AddKeyedScoped<IAuthService, TService>(name)` before the dashboard registers; the registration keeps an existing keyed service.
 - `RequireDashboardAuthentication(name)` reads the named `AuthConfig` when the host builds its endpoints. `None` allows anonymous access. `Host` requires `{name}.View`: a dashboard session whose user passes `ViewPolicy`, or the host's default policy when it is empty, answering `401` without a session and `403` when the policy refuses. Basic and API key require a user the dashboard's scheme signed in, and refuse any other request with an empty `401`. The scheme checks a credential only on an endpoint that convention marked with its name, so a host whose only registered scheme is a dashboard's (which ASP.NET Core then makes the default) does not check or log a dashboard credential on its own requests.
 - `RequireDashboardOperation(name)` marks operator actions. In host mode it adds `{name}.Operate`, which requires `OperatePolicy`, or `ViewPolicy` when it is empty. Other modes add nothing: Basic and API key share one credential for viewing and operating.
-- On success in Basic or API key mode, `HttpContext.User` for that request is the dashboard identity: one `Name` claim with the `AuthResult.Username`, authentication type `name`. It replaces a host sign-in on that request, so a Messaging operator action records the dashboard credential's user. In host mode `HttpContext.User` is the session's copy of the host user.
-- The Messaging dashboard's name is `MessagingDashboardOptionsBuilder.AuthenticationName` (`"Headless.Messaging.Dashboard"`). To replace a dashboard's `IAuthService`, register yours with `AddKeyedScoped<IAuthService, TService>(name)` before the dashboard registers; the registration keeps an existing keyed service.
+- On success in Basic or API key mode, `HttpContext.User` for that request is the dashboard identity: one `Name` claim with the `AuthResult.Username`, authentication type `name`. It replaces a host sign-in on that request. In host mode `HttpContext.User` is the session's copy of the host user.
 - In Basic and API-key modes, the `access_token` query parameter counts as a credential only on a request routed to a SignalR hub endpoint (its routing metadata, not its path, decides), because a browser cannot set headers on a WebSocket. Every other request must send the `Authorization` header. Host mode accepts no query credential.
 - Every state-changing request to such a dashboard (`POST`, `PUT`, `PATCH`, `DELETE`) must carry an `X-Requested-With` header, or it gets `400`. That covers its API, `api/auth/session`, and `api/auth/sign-out`, in every mode. A cross-site `<form>` cannot set the header, and a cross-site script that sets it needs a CORS preflight the dashboard refuses.
-- Each dashboard maps a `{base path}` group: its `/api` group carries the dashboard's rule; `/auth/sign-in`, `/api/auth/info`, `/api/auth/session`, `/api/auth/sign-out`, `/api/auth/validate`, Messaging's `/api/health`, the SPA shell, and its assets are anonymous. `auth/sign-in`, `api/auth/session`, and `api/auth/sign-out` answer `404` outside host mode. An unmatched `{base path}/api/...` path is a `404`, never the shell, so no path under `/api/` is exempt because of its extension or a segment such as `/assets/` or `/negotiate`. Any other unmatched `GET` under the base path returns the shell, so client routes deep-link. `MapHeadlessMessagingDashboard()` refuses the root base path, where the shell would answer every unmatched `GET` in the host.
-- The host pipeline must run `UseAuthorization` between routing and endpoints (a `WebApplication` adds it when the host does not), and `UseAuthentication` before it for host authentication. A host that calls `UseAuthentication()` must also call `UseAuthorization()` after it: the `UseAuthorization` a `WebApplication` adds on its own runs ahead of the host's `UseAuthentication`, so host authentication would not have signed the user in yet. The dashboards attach CORS metadata only when `SetCorsOrigins` or `SetCorsPolicy` configured a policy, which only Basic and API key allow; then the host must also run `UseCors()`. Add host-specific behavior, such as rate limiting, to the builder the map method returns.
-- The SPA shell carries only the base path, the mode, whether auth is enabled, whether sign-in is available, and, for Messaging, the polling interval. Host mode stores nothing in the browser beyond the HttpOnly session cookie; Basic and API key keep the entered credential in the SPA's browser storage. The browser does not enforce a session timeout: the server ends sessions.
-- In host mode the Messaging gateway proxy does not relay requests to other nodes: it serves each request from the node that received it, and clears the node-selection cookies. The SPA hides node switching. Basic and API key relay as before, because the proxy forwards the `Authorization` header and never the `Cookie` header.
+- `auth/sign-in`, `api/auth/info`, `api/auth/session`, and `api/auth/sign-out` are anonymous; `auth/sign-in`, `api/auth/session`, and `api/auth/sign-out` answer `404` outside host mode.
+- The host pipeline must run `UseAuthorization` between routing and endpoints (a `WebApplication` adds it when the host does not), and `UseAuthentication` before it for host authentication. A host that calls `UseAuthentication()` must also call `UseAuthorization()` after it: the `UseAuthorization` a `WebApplication` adds on its own runs ahead of the host's `UseAuthentication`, so host authentication would not have signed the user in yet.

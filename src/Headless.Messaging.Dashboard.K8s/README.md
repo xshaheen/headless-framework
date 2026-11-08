@@ -1,10 +1,10 @@
 # Headless.Messaging.Dashboard.K8s
 
-Kubernetes-aware node discovery for the messaging dashboard in clustered environments.
+Kubernetes-aware node discovery for the Messaging module of the Headless dashboard in clustered environments.
 
 ## Why use this package
 
-Enables automatic discovery and monitoring of messaging nodes in Kubernetes clusters by querying Services for multi-instance dashboard visibility.
+Enables automatic discovery and monitoring of messaging nodes in Kubernetes clusters by querying Services, so one dashboard can read and act on every node through forwarding, including from a dashboard-only host.
 
 ## Install
 

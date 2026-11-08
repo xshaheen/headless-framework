@@ -37,7 +37,7 @@ Package READMEs are discovery pages. They explain why a package exists and link 
 | Use ASP.NET Core Identity with the Headless EF pipeline | [Identity](identity.md) |
 | Resolve tenants from claims, host, route, or catalog; enforce tenant reads/writes | [Multi-tenancy](multi-tenancy.md) |
 | Define and evaluate runtime permissions; integrate with ASP.NET Core authorization | [Permissions](permissions.md) |
-| Serve the operations dashboard shell, write a dashboard module, or protect the Jobs or Messaging dashboards | [Dashboards](dashboards.md) |
+| Serve the operations dashboard shell, write a dashboard module, or add the Jobs or Messaging module, or protect a dashboard a host writes | [Dashboards](dashboards.md) |
 | Verify reCAPTCHA or Turnstile tokens | [CAPTCHA](captcha.md) |
 
 ### Data, state, and transactions

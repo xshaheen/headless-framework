@@ -1,10 +1,10 @@
 # Headless.Messaging.Dashboard.Auth.Demo
 
-ASP.NET Core demo for Messaging Dashboard host authentication.
+ASP.NET Core demo for host authentication of the Headless dashboard's Messaging module.
 
 ## Shows
 
-- `UseDashboard(d => d.WithHostAuthentication(...))` with `ViewPolicy` and `ChallengeScheme`, mounted with `app.MapHeadlessMessagingDashboard()`.
+- `AddHeadlessDashboard(d => d.WithHostAuthentication(...).AddMessaging())` with `ViewPolicy` and `ChallengeScheme`, mounted with `MapHeadlessDashboard()`.
 - OpenID Connect plus cookie authentication: the dashboard's Sign in link challenges OpenID Connect once and returns with the dashboard's own session cookie.
 - Host mode over a custom authentication handler that reads an `X-Base-Token` header, exchanged once for a dashboard session.
 - Anonymous dashboard registration as a commented alternative.
@@ -16,12 +16,12 @@ ASP.NET Core demo for Messaging Dashboard host authentication.
 dotnet run --project demo/Headless.Messaging.Dashboard.Auth.Demo
 ```
 
-Open `https://localhost:5001/messaging/dashboard` and choose **Sign in**. The active startup path accepts a user signed in through OpenID Connect or through the custom scheme. Other variants are methods in `Startup`; select one by changing the call in `ConfigureServices`.
+Open `https://localhost:5001/headless/messaging` and choose **Sign in**. The active startup path accepts a user signed in through OpenID Connect or through the custom scheme. Other variants are methods in `Startup`; select one by changing the call in `ConfigureServices`.
 
 To sign in through the custom scheme instead, exchange its header for a session from the browser console on the dashboard's origin, then reload the dashboard:
 
 ```js
-await fetch('/messaging/dashboard/api/auth/session', {
+await fetch('/headless/api/auth/session', {
   method: 'POST',
   headers: { 'X-Base-Token': 'xxx', 'X-Requested-With': 'XMLHttpRequest' },
 });

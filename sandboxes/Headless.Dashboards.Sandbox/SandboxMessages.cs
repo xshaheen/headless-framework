@@ -7,7 +7,8 @@ namespace Headless.Dashboards.Sandbox;
 /// <summary>A message whose consumer succeeds or fails as the publisher asks, so failed rows are deterministic.</summary>
 /// <param name="OrderId">Sequence number, visible in the message content.</param>
 /// <param name="ShouldFail">Whether the consumer throws.</param>
-public sealed record SandboxOrderPlaced(int OrderId, bool ShouldFail);
+/// <param name="Cause">What the failure says, so failures group by cause; <see langword="null"/> uses the default.</param>
+public sealed record SandboxOrderPlaced(int OrderId, bool ShouldFail, string? Cause = null);
 
 /// <summary>Consumes <see cref="SandboxOrderPlaced"/>; throws when the message asks to fail.</summary>
 [BusConsumer("sandbox.orders")]
@@ -20,7 +21,7 @@ public sealed class SandboxOrderPlacedConsumer : IConsume<SandboxOrderPlaced>
             throw new InvalidOperationException(
                 string.Create(
                     CultureInfo.InvariantCulture,
-                    $"Sandbox order {context.Message.OrderId} failed on purpose."
+                    $"Sandbox order {context.Message.OrderId} {context.Message.Cause ?? "failed on purpose"}."
                 )
             );
         }

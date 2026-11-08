@@ -5,7 +5,7 @@ namespace Headless.Messaging.Dashboard;
 /// <summary>
 /// Provides service-discovery operations for the Messaging Dashboard node federation.
 /// Implementations resolve the set of peer messaging nodes (e.g., from Consul or Kubernetes)
-/// so the dashboard can proxy API requests to remote nodes.
+/// so the dashboard module can read and act on each of them through forwarding.
 /// </summary>
 public interface INodeDiscoveryProvider
 {

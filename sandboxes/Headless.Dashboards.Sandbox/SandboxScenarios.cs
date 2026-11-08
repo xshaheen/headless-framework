@@ -35,7 +35,9 @@ public static class SandboxScenarios
         ["cancel-stubborn"] =
             "Time job that reports progress for 5 minutes and ignores its cancellation token: Cancel requests a stop it never honors.",
         ["messages"] = "Ten published messages: eight consumed, two failing in the consumer.",
-        ["scheduled-message"] = "One message published with a 10 minute delay: a row on the Scheduled page.",
+        ["message-failures-by-cause"] =
+            "Seven received messages that fail with two causes and a different order id in each: two Needs you groups.",
+        ["scheduled-message"] = "One message published with a 10 minute delay: a row on the Scheduled view.",
     };
 
     public static async Task<IReadOnlyList<string>> RunAsync(
@@ -90,6 +92,7 @@ public static class SandboxScenarios
             "cron-paused" => [_Id(await _AddPausedCronAsync(jobs, cancellationToken))],
             "cancel-stubborn" => [_Id(await jobs.EnqueueAsync<StubbornJob>(_NoRetries, cancellationToken))],
             "messages" => await _PublishOrdersAsync(bus, cancellationToken),
+            "message-failures-by-cause" => await _PublishFailuresByCauseAsync(bus, cancellationToken),
             "scheduled-message" =>
             [
                 _Id(
@@ -196,6 +199,29 @@ public static class SandboxScenarios
                 cancellationToken
             );
             receipts.Add(_Id(receipt));
+        }
+
+        return receipts;
+    }
+
+    // Four declined payments and three warehouse timeouts: the order id differs in every message, so the fingerprint
+    // folds each cause into one group while the two causes stay apart.
+    private static async Task<IReadOnlyList<string>> _PublishFailuresByCauseAsync(
+        IBus bus,
+        CancellationToken cancellationToken
+    )
+    {
+        var receipts = new List<string>();
+        foreach (var orderId in new[] { 7101, 7102, 7135, 7240 })
+        {
+            var message = new SandboxOrderPlaced(orderId, ShouldFail: true, "payment was declined");
+            receipts.Add(_Id(await bus.PublishAsync(message, cancellationToken)));
+        }
+
+        foreach (var orderId in new[] { 8301, 8317, 8452 })
+        {
+            var message = new SandboxOrderPlaced(orderId, ShouldFail: true, "timed out reserving stock");
+            receipts.Add(_Id(await bus.PublishAsync(message, cancellationToken)));
         }
 
         return receipts;

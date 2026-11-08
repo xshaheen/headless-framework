@@ -41,7 +41,7 @@ public sealed class ConsulDiscoveryOptionsExtensionsTests : TestBase
         // when
         using var provider = services.BuildServiceProvider();
 
-        // then - the dashboard gateway reads this to never proxy a request back to the current node
+        // then - forwarding reads this to recognize the current node and never call it as a peer
         provider.GetRequiredService<CurrentNodeIdentity>().Name.Should().Be("node-a");
     }
 }

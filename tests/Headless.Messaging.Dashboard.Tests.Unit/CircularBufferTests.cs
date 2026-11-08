@@ -10,7 +10,7 @@ public sealed class CircularBufferTests : TestBase
 {
     // CircularBuffer is internal, so we need to use reflection to create and test it
     private static readonly Type _CircularBufferType =
-        typeof(Headless.Messaging.Dashboard.MessagingDashboardOptionsBuilder).Assembly.GetType(
+        typeof(Headless.Messaging.Dashboard.MessagingDashboardOptions).Assembly.GetType(
             "Headless.Messaging.Dashboard.CircularBuffer`1"
         )!;
 

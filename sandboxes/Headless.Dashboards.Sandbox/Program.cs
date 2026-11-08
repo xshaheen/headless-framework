@@ -7,10 +7,11 @@ using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Messaging;
 using Headless.Messaging.Dashboard;
+using Headless.Messaging.Persistence;
 using Microsoft.EntityFrameworkCore;
 
-// A local test host for the Headless dashboard, with its Jobs module, and the Messaging dashboard,
-// started and stopped by the project CLI (`make up`, `make down`). It binds to loopback only and exists so a person or
+// A local test host for the Headless dashboard, with its Jobs and Messaging modules, started and stopped by the
+// project CLI (`make up`, `make down`). It binds to loopback only and exists so a person or
 // an agent can drive every dashboard state on demand; it is not a sample of production wiring. See sandboxes/README.md.
 var builder = WebApplication.CreateBuilder(args);
 var sandbox = builder.Configuration.GetSection("Sandbox").Get<SandboxSettings>() ?? new SandboxSettings();
@@ -40,8 +41,8 @@ builder.Services.AddHeadlessDashboard(dashboard =>
     });
     // The Jobs module reads the store AddHeadlessJobs configures below, and inherits the host policies above.
     dashboard.AddJobs();
-    // The Messaging module reads the stores AddHeadlessMessaging configures below. It serves beside the standalone
-    // Messaging dashboard UseDashboard(...) registers, which stays at /messaging/dashboard.
+    // The Messaging module reads the stores AddHeadlessMessaging configures below, and inherits the host policies
+    // above; its inbox and scheduled operations take the signed-in operator's name for the ledger.
     dashboard.AddMessaging();
 });
 
@@ -83,19 +84,6 @@ builder.Services.AddHeadlessMessaging(setup =>
     }
 
     setup.UseInMemory();
-    // Inbox and scheduled operations refuse an anonymous operator, so Basic auth makes them reachable; without a
-    // password the dashboard stays open for read-only checks.
-    setup.UseDashboard(dashboard =>
-    {
-        if (string.IsNullOrEmpty(sandbox.MessagingDashboardPassword))
-        {
-            dashboard.WithNoAuth();
-        }
-        else
-        {
-            dashboard.WithBasicAuth(sandbox.MessagingDashboardUser, sandbox.MessagingDashboardPassword);
-        }
-    });
 });
 
 // The host start only verifies its tables and queues, so this demo creates them as it starts; a deployed app runs
@@ -116,6 +104,24 @@ if (postgres is not null)
 
 app.MapGet("/healthz", () => Results.Text("ok"));
 
+// What the project CLI reads to call the sandbox usable: a read through the Messaging store, which fails until that
+// storage answers. It is anonymous because the module's own API sits behind the host sign-in session.
+app.MapGet(
+    "/sandbox/usable",
+    async (IDataStorage storage, CancellationToken cancellationToken) =>
+    {
+        var statistics = await storage.GetMonitoringApi().GetStatisticsAsync(cancellationToken);
+        return Results.Json(
+            new
+            {
+                messaging = "ok",
+                statistics.PublishedSucceeded,
+                statistics.ReceivedSucceeded,
+            }
+        );
+    }
+);
+
 app.MapGet(
     "/",
     () =>
@@ -126,9 +132,7 @@ app.MapGet(
                 headlessDashboard = "/headless",
                 jobsModule = "/headless/jobs",
                 messagingModule = "/headless/messaging",
-                messagingDashboard = "/messaging/dashboard",
                 headlessAuth = "host",
-                messagingAuth = string.IsNullOrEmpty(sandbox.MessagingDashboardPassword) ? "none" : "basic",
                 scenarios = SandboxScenarios.Descriptions,
             }
         )
@@ -161,6 +165,5 @@ app.MapPost(
 SandboxHostAuthentication.MapSignInPage(app, "/sandbox/headless-sign-in", "/headless", "Headless dashboard");
 
 app.MapHeadlessDashboard();
-app.MapHeadlessMessagingDashboard();
 
 await app.RunAsync();

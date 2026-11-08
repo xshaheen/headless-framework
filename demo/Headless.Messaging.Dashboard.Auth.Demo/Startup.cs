@@ -1,3 +1,4 @@
+using Headless.Dashboard;
 using Headless.Messaging;
 using Headless.Messaging.Dashboard;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -26,7 +27,7 @@ public class Startup
         app.UseEndpoints(endpoints =>
         {
             endpoints.MapControllers();
-            endpoints.MapHeadlessMessagingDashboard();
+            endpoints.MapHeadlessDashboard();
         });
     }
 
@@ -56,30 +57,26 @@ public class Startup
                 options.Scope.Add("profile");
             });
 
-        services.AddHeadlessMessaging(setup =>
-        {
-            setup.AddModule<Headless.Messaging.Dashboard.Auth.Demo.MessagingModule>();
-            setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
-            setup.UseInMemoryStorage();
-            setup.UseInMemory();
+        _AddMessaging(services);
 
-            // Opening {basePath}/auth/sign-in without a host sign-in challenges OpenID Connect once, then returns to
-            // the dashboard with its session cookie set.
-            setup.UseDashboard(d =>
-                d.WithHostAuthentication(host =>
+        // Opening /headless/auth/sign-in without a host sign-in challenges OpenID Connect once, then returns to the
+        // dashboard with its session cookie set.
+        services.AddHeadlessDashboard(dashboard =>
+            dashboard
+                .WithHostAuthentication(host =>
                 {
                     host.ViewPolicy = dashboardAuthorizationPolicy;
                     host.ChallengeScheme = OpenIdConnectDefaults.AuthenticationScheme;
                 })
-            );
-        });
+                .AddMessaging()
+        );
 
         return services;
     }
 
     // Host mode over the application's own authentication handler, which reads an X-Base-Token header. The browser
     // cannot send that header on a page load, so the operator exchanges it once for a dashboard session:
-    // POST {basePath}/api/auth/session with X-Base-Token and X-Requested-With, then open {basePath}/. The policy lists
+    // POST /headless/api/auth/session with X-Base-Token and X-Requested-With, then open /headless/. The policy lists
     // the scheme, so a session passes it only when that scheme authenticated the user it was issued for.
     public IServiceCollection AddMessagingWithCustomScheme(IServiceCollection services)
     {
@@ -102,17 +99,11 @@ public class Startup
                 configureOptions: null
             );
 
-        services.AddHeadlessMessaging(setup =>
-        {
-            setup.AddModule<Headless.Messaging.Dashboard.Auth.Demo.MessagingModule>();
-            setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
-            setup.UseInMemoryStorage();
-            setup.UseInMemory();
+        _AddMessaging(services);
 
-            setup.UseDashboard(d =>
-                d.WithHostAuthentication(host => host.ViewPolicy = myDashboardAuthenticationPolicy)
-            );
-        });
+        services.AddHeadlessDashboard(dashboard =>
+            dashboard.WithHostAuthentication(host => host.ViewPolicy = myDashboardAuthenticationPolicy).AddMessaging()
+        );
 
         return services;
     }
@@ -157,35 +148,38 @@ public class Startup
                 options.Scope.Add("profile");
             });
 
-        services.AddHeadlessMessaging(setup =>
-        {
-            setup.AddModule<Headless.Messaging.Dashboard.Auth.Demo.MessagingModule>();
-            setup.UseDashboard(d =>
-                d.WithHostAuthentication(host =>
+        _AddMessaging(services);
+
+        services.AddHeadlessDashboard(dashboard =>
+            dashboard
+                .WithHostAuthentication(host =>
                 {
                     host.ViewPolicy = dashboardAuthorizationPolicy;
                     host.ChallengeScheme = OpenIdConnectDefaults.AuthenticationScheme;
                 })
-            );
-            setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
-            setup.UseInMemoryStorage();
-            setup.UseInMemory();
-        });
+                .AddMessaging()
+        );
 
         return services;
     }
 
     public IServiceCollection AddMessagingWithAnonymousAccess(IServiceCollection services)
     {
+        _AddMessaging(services);
+
+        services.AddHeadlessDashboard(dashboard => dashboard.WithNoAuth().AddMessaging());
+
+        return services;
+    }
+
+    private static void _AddMessaging(IServiceCollection services)
+    {
         services.AddHeadlessMessaging(setup =>
         {
             setup.AddModule<Headless.Messaging.Dashboard.Auth.Demo.MessagingModule>();
-            setup.UseDashboard(d => d.WithNoAuth());
             setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
             setup.UseInMemoryStorage();
             setup.UseInMemory();
         });
-
-        return services;
     }
 }

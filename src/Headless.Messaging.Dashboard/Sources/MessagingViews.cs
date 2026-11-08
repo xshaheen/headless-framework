@@ -338,6 +338,9 @@ internal sealed record MessagingScheduledList(
     string? Reason
 );
 
+/// <summary>One page of the operator ledger, newest first, and the cursor of the next page.</summary>
+internal sealed record MessagingReceiptList(IReadOnlyList<MessagingOperationReceiptView> Items, string? NextCursor);
+
 /// <summary>One consumer's circuit breaker, as the circuits view lists it.</summary>
 /// <param name="Id">The circuit's object id, <c>{node}~{circuit key}</c>, which its commands act on.</param>
 internal sealed record MessagingCircuitView(
@@ -417,6 +420,7 @@ internal sealed record MessagingListScope
 [JsonSerializable(typeof(MessagingRowList))]
 [JsonSerializable(typeof(MessagingGenerationList))]
 [JsonSerializable(typeof(MessagingScheduledList))]
+[JsonSerializable(typeof(MessagingReceiptList))]
 [JsonSerializable(typeof(MessagingCircuitList))]
 [JsonSerializable(typeof(MessagingNodeList))]
 [JsonSerializable(typeof(MessagingRealtimeMetrics))]

@@ -2,40 +2,12 @@
 
 using System.Diagnostics.CodeAnalysis;
 using System.Security.Claims;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using Headless.Dashboard;
-using Microsoft.AspNetCore.Http;
 
 namespace Headless.Messaging.Dashboard;
 
 internal static class DashboardOperatorAuthority
 {
-    public const string OperatorActorRequiredCode = "g:operator_actor_required";
-
-    public const string OperatorActorRequiredRemedy =
-        "Operator actions require an authenticated principal with a stable actor name. Configure Basic or Host authentication with a name or sub claim.";
-
-    public const string OperatorActorRequiredMessage =
-        "An authenticated operator actor is required to execute operator actions.";
-
-    internal static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
-    {
-        Converters =
-        {
-            new JsonStringEnumConverter<StatusName>(allowIntegerValues: false),
-            new JsonStringEnumConverter<MessageLane>(allowIntegerValues: false),
-            new JsonStringEnumConverter<MessagingOperationType>(allowIntegerValues: false),
-            new JsonStringEnumConverter<InboxOperationOutcome>(allowIntegerValues: false),
-        },
-    };
-
-    public static readonly OperatorAuthorizationContext HostAuthorizationContext = new(
-        new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "headless-host")], "Host"))
-    );
-
-    public static OperatorAuthorityResult Resolve(HttpContext httpContext) => Resolve(httpContext.User);
-
     /// <summary>
     /// Resolves the operator <paramref name="user"/> is recorded as: the name, else the name-identifier claim, else
     /// <c>sub</c>. A user not signed in, or signed in under a placeholder name such as <c>anonymous</c>, names no
@@ -91,17 +63,6 @@ internal static class DashboardOperatorAuthority
 
         return OperatorAuthorityResult.Success(new OperatorAuthorizationContext(principal));
     }
-
-    public static IResult CreateForbiddenResult() =>
-        Results.Json(
-            new OperatorActorRequiredProblem(
-                OperatorActorRequiredCode,
-                OperatorActorRequiredRemedy,
-                OperatorActorRequiredMessage
-            ),
-            JsonOptions,
-            statusCode: StatusCodes.Status403Forbidden
-        );
 }
 
 internal enum OperatorAuthorityStatus
@@ -128,5 +89,3 @@ internal sealed record OperatorAuthorityResult(
     public static OperatorAuthorityResult PlaceholderActor() =>
         new(OperatorAuthorityStatus.PlaceholderActor, Authorization: null);
 }
-
-public sealed record OperatorActorRequiredProblem(string Code, string Remedy, string Message);
