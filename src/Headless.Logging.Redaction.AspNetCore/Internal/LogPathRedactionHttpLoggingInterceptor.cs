@@ -20,17 +20,15 @@ internal sealed class LogPathRedactionHttpLoggingInterceptor(IEnumerable<ILogPat
             return ValueTask.CompletedTask;
         }
 
-        foreach (var redactor in _redactors)
+        // The middleware logs PathBase and Path together under RequestPath, so both are added back in its shape, as
+        // PathString values.
+        if (
+            ILogPathRedactor.TryRedactAny(_redactors, path, out var redacted)
+            && logContext.TryDisable(HttpLoggingFields.RequestPath)
+        )
         {
-            // The middleware logs PathBase and Path together under RequestPath, so both are added back in its shape,
-            // as PathString values.
-            if (redactor.TryRedact(path, out var redacted) && logContext.TryDisable(HttpLoggingFields.RequestPath))
-            {
-                logContext.AddParameter(nameof(HttpRequest.PathBase), request.PathBase);
-                logContext.AddParameter(nameof(HttpRequest.Path), new PathString(redacted));
-
-                break;
-            }
+            logContext.AddParameter(nameof(HttpRequest.PathBase), request.PathBase);
+            logContext.AddParameter(nameof(HttpRequest.Path), new PathString(redacted));
         }
 
         return ValueTask.CompletedTask;
