@@ -2,6 +2,7 @@
 
 using Testcontainers.LocalStack;
 using Testcontainers.Xunit;
+using Xunit;
 
 namespace Headless.Testing.Testcontainers;
 
@@ -16,5 +17,18 @@ public class HeadlessLocalStackFixture()
     protected override LocalStackBuilder Configure()
     {
         return base.Configure().WithImage(TestImages.LocalStack);
+    }
+
+    /// <inheritdoc />
+    protected override async ValueTask InitializeAsync()
+    {
+        await base.InitializeAsync().ConfigureAwait(false);
+        await ContainerHostPort
+            .EnsureReachableAsync(
+                Container,
+                LocalStackBuilder.LocalStackPort,
+                cancellationToken: TestContext.Current.CancellationToken
+            )
+            .ConfigureAwait(false);
     }
 }

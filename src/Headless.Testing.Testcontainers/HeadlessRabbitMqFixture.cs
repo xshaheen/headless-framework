@@ -2,6 +2,7 @@
 
 using Testcontainers.RabbitMq;
 using Testcontainers.Xunit;
+using Xunit;
 
 namespace Headless.Testing.Testcontainers;
 
@@ -16,5 +17,18 @@ public class HeadlessRabbitMqFixture()
     protected override RabbitMqBuilder Configure()
     {
         return base.Configure().WithImage(TestImages.RabbitMq);
+    }
+
+    /// <inheritdoc />
+    protected override async ValueTask InitializeAsync()
+    {
+        await base.InitializeAsync().ConfigureAwait(false);
+        await ContainerHostPort
+            .EnsureReachableAsync(
+                Container,
+                RabbitMqBuilder.RabbitMqPort,
+                cancellationToken: TestContext.Current.CancellationToken
+            )
+            .ConfigureAwait(false);
     }
 }

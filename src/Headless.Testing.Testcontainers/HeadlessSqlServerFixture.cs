@@ -86,6 +86,7 @@ public class HeadlessSqlServerFixture : IAsyncLifetime
     protected virtual async ValueTask InitializeAsync()
     {
         await _container.StartAsync().ConfigureAwait(false);
+        await ContainerHostPort.EnsureReachableAsync(_container, 1433).ConfigureAwait(false);
         await _WaitUntilLoginSucceedsAsync().ConfigureAwait(false);
     }
 

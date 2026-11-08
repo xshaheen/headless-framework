@@ -2,6 +2,7 @@
 
 using Testcontainers.Azurite;
 using Testcontainers.Xunit;
+using Xunit;
 
 namespace Headless.Testing.Testcontainers;
 
@@ -16,5 +17,18 @@ public class HeadlessAzuriteFixture()
     protected override AzuriteBuilder Configure()
     {
         return base.Configure().WithImage(TestImages.Azurite);
+    }
+
+    /// <inheritdoc />
+    protected override async ValueTask InitializeAsync()
+    {
+        await base.InitializeAsync().ConfigureAwait(false);
+        await ContainerHostPort
+            .EnsureReachableAsync(
+                Container,
+                AzuriteBuilder.BlobPort,
+                cancellationToken: TestContext.Current.CancellationToken
+            )
+            .ConfigureAwait(false);
     }
 }

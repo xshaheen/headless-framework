@@ -2,6 +2,7 @@
 
 using Testcontainers.Minio;
 using Testcontainers.Xunit;
+using Xunit;
 
 namespace Headless.Testing.Testcontainers;
 
@@ -16,5 +17,18 @@ public class HeadlessMinioFixture() : ContainerFixture<MinioBuilder, MinioContai
     protected override MinioBuilder Configure()
     {
         return base.Configure().WithImage(TestImages.Minio);
+    }
+
+    /// <inheritdoc />
+    protected override async ValueTask InitializeAsync()
+    {
+        await base.InitializeAsync().ConfigureAwait(false);
+        await ContainerHostPort
+            .EnsureReachableAsync(
+                Container,
+                MinioBuilder.MinioPort,
+                cancellationToken: TestContext.Current.CancellationToken
+            )
+            .ConfigureAwait(false);
     }
 }
