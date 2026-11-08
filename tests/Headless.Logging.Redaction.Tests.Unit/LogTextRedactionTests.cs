@@ -76,8 +76,10 @@ public sealed partial class LogTextRedactionTests : TestBase
         // given: Serilog renders from the template and the property values, never from the formatter output
         var sink = new CollectingSink();
         using var serilog = new Serilog.LoggerConfiguration().WriteTo.Sink(sink).CreateLogger();
+        // The container does not dispose an instance it was handed, so the test owns the factory.
+        using var serilogFactory = new SerilogLoggerFactory(serilog);
         var services = new ServiceCollection();
-        services.AddSingleton<ILoggerFactory>(new SerilogLoggerFactory(serilog));
+        services.AddSingleton<ILoggerFactory>(serilogFactory);
         services.AddLogTextRedaction(_Pattern());
         services.AddHeadlessLogRedaction();
         using var provider = services.BuildServiceProvider();
