@@ -28,8 +28,12 @@ internal sealed class PeerDirectory(
     ILogger<PeerDirectory> logger
 ) : IDisposable
 {
-    /// <summary>How long one discovery answer is used before discovery is asked again.</summary>
-    internal static readonly TimeSpan DiscoveryLifetime = TimeSpan.FromSeconds(5);
+    /// <summary>
+    /// How long one discovery answer is used before discovery is asked again. A peer that leaves discovery is seen at
+    /// most this long plus one change-reader poll later, and its views must go stale within 5 seconds, so it stays
+    /// well under 4 seconds.
+    /// </summary>
+    internal static readonly TimeSpan DiscoveryLifetime = TimeSpan.FromSeconds(3);
 
     private readonly ConcurrentDictionary<string, PeerStatus> _status = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _refresh = new(1, 1);
