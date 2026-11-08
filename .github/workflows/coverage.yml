@@ -58,9 +58,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            src/Headless.Messaging.Dashboard/wwwroot/package-lock.json
+          cache-dependency-path: package-lock.json
 
       # CI's primary build leg owns the cache writes; this workflow only reads.
       - name: "Restore NuGet cache"

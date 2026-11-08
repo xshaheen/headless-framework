@@ -6,14 +6,14 @@ using Microsoft.Extensions.FileProviders;
 namespace Headless.Messaging.Dashboard;
 
 /// <summary>
-/// The Messaging module's UI build, embedded in this package from <c>ModuleUi</c>. It holds the module's
-/// <c>manifest.json</c>: its product, its sidebar with the count keys <see cref="MessagingCounts"/> answers, and its
-/// object kinds. The module's front end adds its entry and route chunks beside it.
+/// The Messaging module's UI build: its manifest, entry, and view chunks with their precompressed siblings, embedded
+/// in this package from <c>wwwroot/dist/modules/messaging</c>, which the module package's npm build writes. The
+/// manifest's sidebar carries the count keys <see cref="MessagingCounts"/> answers.
 /// </summary>
 internal static class MessagingAssets
 {
-    /// <summary>The manifest-resource prefix the package's build gives the module's UI folder.</summary>
-    public const string EmbeddedNamespace = "Headless.Messaging.Dashboard.ModuleUi";
+    /// <summary>The manifest-resource prefix the package's build gives the module's output folder.</summary>
+    public const string EmbeddedNamespace = "Headless.Messaging.Dashboard.wwwroot.dist.modules.messaging";
 
     public static DashboardModuleAssets Create()
     {

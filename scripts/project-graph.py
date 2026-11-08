@@ -484,10 +484,10 @@ SPA_PROJECTS = (
     "src/Headless.Messaging.Dashboard/Headless.Messaging.Dashboard.csproj",
 )
 # The dashboard projects whose front end is a member of the repository-root npm workspace, and that workspace's files.
-# The Messaging SPA keeps its own lockfile under its wwwroot, which its project directory already covers.
 NPM_WORKSPACE_PROJECTS = (
     "src/Headless.Dashboard/Headless.Dashboard.csproj",
     "src/Headless.Jobs.Dashboard/Headless.Jobs.Dashboard.csproj",
+    "src/Headless.Messaging.Dashboard/Headless.Messaging.Dashboard.csproj",
 )
 NPM_WORKSPACE_FILES = ("package.json", "package-lock.json", ".npmrc")
 

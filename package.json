@@ -10,6 +10,7 @@
     "src/Headless.Dashboard/wwwroot/packages/sdk",
     "src/Headless.Dashboard/wwwroot/packages/vite",
     "src/Headless.Dashboard/wwwroot/apps/shell",
-    "src/Headless.Jobs.Dashboard/wwwroot"
+    "src/Headless.Jobs.Dashboard/wwwroot",
+    "src/Headless.Messaging.Dashboard/wwwroot"
   ]
 }

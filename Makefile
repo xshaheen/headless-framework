@@ -756,8 +756,8 @@ _npm-workspace: _node-check
 	cd "$(NPM_WORKSPACE_DIR)" && $(NPM) ci --no-audit --no-fund
 
 .PHONY: dashboard-messaging
-dashboard-messaging: _node-check ## Rebuild the Messaging dashboard SPA (npm ci + vite build into wwwroot/dist).
-	cd "$(MESSAGING_DASHBOARD_DIR)" && $(NPM) ci --no-audit --no-fund && $(NPM) run $(DASHBOARD_BUILD_SCRIPT)
+dashboard-messaging: _npm-workspace ## Rebuild the Messaging dashboard module (npm ci at the root workspace + its Vite and budget build into wwwroot/dist).
+	cd "$(MESSAGING_DASHBOARD_DIR)" && $(NPM) run $(DASHBOARD_BUILD_SCRIPT)
 
 # The SPA gates CI's dashboard job runs, through each SPA's own package scripts. `type-check` plus `build-only` is
 # what `npm run build` runs in parallel; they run apart here so a failure names its stage. The other scripts stay
@@ -770,6 +770,7 @@ dashboard-messaging: _node-check ## Rebuild the Messaging dashboard SPA (npm ci 
 # cli-exclude: script:headless-dashboard/test:unit:watch -- an interactive watcher; dashboard-shell-test runs the suite once
 # cli-exclude: script:headless-dashboard/lint -- eslint --fix writes files; the gate runs lint:check
 # cli-exclude: script:@headless/dashboard-module-jobs/lint -- eslint --fix writes files; the gate runs lint:check
+# cli-exclude: script:@headless/dashboard-module-messaging/lint -- eslint --fix writes files; the gate runs lint:check
 # dashboard_check <name> <dir>: install from the nearest lockfile at or above <dir> (the root workspace's for the
 # shell, the SPA's own otherwise) only when the node_modules beside it is missing or older than it (the rule
 # eng/DashboardSpa.targets uses), then run every gate script so one failure does not hide the next. Scripts
@@ -798,7 +799,7 @@ dashboard-jobs-test: ## Lint, type-check, unit-test, and build the Jobs dashboar
 	@$(DASHBOARD_CHECK_FN); dashboard_check jobs "$(JOBS_DASHBOARD_DIR)"
 
 .PHONY: dashboard-messaging-test
-dashboard-messaging-test: ## Lint, type-check, unit-test, and build the Messaging dashboard SPA (CI's Messaging dashboard job).
+dashboard-messaging-test: ## Lint, type-check, unit-test, and build the Messaging dashboard module, size budgets included (CI's Messaging dashboard job).
 	@$(DASHBOARD_CHECK_FN); dashboard_check messaging "$(MESSAGING_DASHBOARD_DIR)"
 
 .PHONY: dashboards-test
@@ -811,12 +812,12 @@ dashboards-test: ## Run every dashboard SPA's CI gates (dashboard-shell-test, da
 
 # changed_dashboards prints "<name> <dir>" for each dashboard SPA this side changed vs the merge base with
 # AFFECTED_BASE, committed or not, so a backend-only change pays nothing; with no merge base it prints every one. It
-# diffs the merge base for the same reason FORMAT_CHANGED does. The shell and the Jobs module, both members of the root
-# workspace, also answer for its files.
+# diffs the merge base for the same reason FORMAT_CHANGED does. Every dashboard is a member of the root workspace, so
+# each also answers for its files.
 CHANGED_DASHBOARDS_FN = changed_dashboards() { \
 	local base spa dir file paths; base="$$(git merge-base "$(AFFECTED_BASE)" HEAD 2>/dev/null || true)"; \
 	for spa in "shell $(SHELL_DASHBOARD_DIR)" "jobs $(JOBS_DASHBOARD_DIR)" "messaging $(MESSAGING_DASHBOARD_DIR)"; do dir="$${spa\#* }"; paths=("$$dir"); \
-		if [ "$${spa%% *}" = shell ] || [ "$${spa%% *}" = jobs ]; then for file in $(NPM_WORKSPACE_FILES); do paths+=("$(NPM_WORKSPACE_DIR)/$$file"); done; fi; \
+		for file in $(NPM_WORKSPACE_FILES); do paths+=("$(NPM_WORKSPACE_DIR)/$$file"); done; \
 		if [ -z "$$base" ] || [ -n "$$(git diff --name-only "$$base" -- "$${paths[@]}"; git ls-files --others --exclude-standard -- "$${paths[@]}")" ]; then echo "$$spa"; fi; \
 	done; }
 
@@ -851,12 +852,11 @@ SANDBOX_COMPOSE_PROJECT ?= headless-sandbox-$(shell printf '%s' "$(CURDIR)" | ck
 SANDBOX_PG_PORT ?= 55432
 SANDBOX_PG_DATABASE ?= headless_sandbox
 # What `ready` and `status` read to call the sandbox usable rather than merely answering. Nothing is seeded at startup
-# (scenarios are posted on demand), so there is no seeded record to fetch; the Messaging dashboard's stats read goes
+# (scenarios are posted on demand), so there is no seeded record to fetch; the sandbox's own anonymous read goes
 # through the message storage, the in-memory store or the PostgreSQL tables the host creates as it starts, so it
-# fails until that storage answers. It takes the Messaging dashboard's Basic auth, which sandbox.env sets; the Jobs
-# module's API was not used because it sits behind the Headless dashboard's host sign-in session.
-SANDBOX_USABLE_PATH ?= /messaging/dashboard/api/stats
-SANDBOX_USER ?= sandbox
+# fails until that storage answers. The dashboard modules' APIs were not used because they sit behind the Headless
+# dashboard's host sign-in session.
+SANDBOX_USABLE_PATH ?= /sandbox/usable
 STORE ?= memory
 TIMEOUT ?= 120
 LINES ?= 200
@@ -908,18 +908,15 @@ up: ## Build and start the dashboard sandbox in the background (STORE=memory|pos
 	echo "Sandbox starting (pid $$(cat "$(SANDBOX_PID)"), STORE=$(STORE))."; \
 	echo "  Headless dashboard:  $(SANDBOX_URL)/headless/ (host auth: sign in at $(SANDBOX_URL)/sandbox/headless-sign-in with the password in $(SANDBOX_ENV))"; \
 	echo "  Jobs module:         $(SANDBOX_URL)/headless/jobs (the Headless dashboard's sign-in)"; \
-	if [ -n "$${Sandbox__MessagingDashboardPassword:-}" ]; then \
-	  echo "  Messaging dashboard: $(SANDBOX_URL)/messaging/dashboard (Basic auth: user sandbox, password in $(SANDBOX_ENV))"; \
-	else \
-	  echo "  Messaging dashboard: $(SANDBOX_URL)/messaging/dashboard (no auth: the password in $(SANDBOX_ENV) is empty, so inbox and scheduled operations return 403; delete the file and rerun make up for Basic auth)"; fi; \
-	echo "  Scenarios:           make seed SCENARIO=<name>; list them at $(SANDBOX_URL)/sandbox/scenarios"; \
+	echo "  Messaging module:    $(SANDBOX_URL)/headless/messaging (the Headless dashboard's sign-in)"; \
+	echo "  Scenarios:          make seed SCENARIO=<name>; list them at $(SANDBOX_URL)/sandbox/scenarios"; \
 	echo "Next: make ready $(UP_ENV)"
 
 .PHONY: ready
-ready: ## Wait until the sandbox and its two dashboards answer, then until a read through the Messaging store succeeds (TIMEOUT=120 seconds); names what is not usable.
+ready: ## Wait until the sandbox and the Headless dashboard answer, then until a read through the Messaging store succeeds (TIMEOUT=120 seconds); names what is not usable.
 	@url="$$(sed -n 's/.*url=\([^ ]*\).*/\1/p' "$(SANDBOX_STATE)" 2>/dev/null)"; url="$${url:-$(SANDBOX_URL)}"; \
 	deadline=$$(( $$(date +%s) + $(TIMEOUT) )); \
-	for path in /healthz /headless/ /messaging/dashboard/; do \
+	for path in /healthz /headless/; do \
 	  until curl -fsS -o /dev/null "$$url$$path" 2>/dev/null; do \
 	    if [ -f "$(SANDBOX_PID)" ] && ! kill -0 "$$(cat "$(SANDBOX_PID)")" 2>/dev/null; then \
 	      echo "Sandbox exited before $$path answered. Last log lines:"; tail -n 20 "$(SANDBOX_LOG)" 2>/dev/null || true; exit 1; fi; \
@@ -927,9 +924,7 @@ ready: ## Wait until the sandbox and its two dashboards answer, then until a rea
 	      echo "$$url$$path did not answer within $(TIMEOUT)s. Last log lines:"; tail -n 20 "$(SANDBOX_LOG)" 2>/dev/null || true; exit 1; fi; \
 	    sleep 1; done; \
 	done; \
-	pw="$$(sed -n 's/^Sandbox__MessagingDashboardPassword=//p' "$(SANDBOX_ENV)" 2>/dev/null || true)"; cfg=; \
-	if [ -n "$$pw" ]; then cfg="user = \"$(SANDBOX_USER):$$pw\""; fi; \
-	until [ -n "$$(printf '%s\n' "$$cfg" | curl -fsS -m 5 -K - "$$url$(SANDBOX_USABLE_PATH)" 2>/dev/null)" ]; do \
+	until [ -n "$$(curl -fsS -m 5 "$$url$(SANDBOX_USABLE_PATH)" 2>/dev/null)" ]; do \
 	  if [ -f "$(SANDBOX_PID)" ] && ! kill -0 "$$(cat "$(SANDBOX_PID)")" 2>/dev/null; then \
 	    echo "Sandbox exited before its Messaging store answered $(SANDBOX_USABLE_PATH). Last log lines:"; tail -n 20 "$(SANDBOX_LOG)" 2>/dev/null || true; exit 1; fi; \
 	  if [ $$(date +%s) -ge $$deadline ]; then \
@@ -977,8 +972,8 @@ endef
 # One row per service a drive needs. The sandbox is ours when the pid file `up` wrote names a live process, foreign
 # when its port answers with no live pid file of this checkout's behind it, and none when nothing answers; the URL and
 # port are the ones `up` recorded in the state file, else SANDBOX_URL. `ready` is /healthz answering and `usable` the
-# same Messaging store read `ready` waits for, probed only for our own instance so this checkout's password never goes
-# to another worktree's process. A PostgreSQL row joins when `up` started the compose database (STORE=postgres): ours
+# same Messaging store read `ready` waits for, probed only for our own instance so another worktree's process is never
+# reported as this checkout's. A PostgreSQL row joins when `up` started the compose database (STORE=postgres): ours
 # when this checkout's compose project has the container, ready and usable when its healthcheck reports healthy.
 # Every probe is bounded (curl -m, perl's alarm around docker), and nothing is written.
 .PHONY: status
@@ -991,9 +986,8 @@ status: ## Is this checkout's sandbox running, built from HEAD, and usable? JSON
 	  elif (exec 3<>"/dev/tcp/127.0.0.1/$$port") 2>/dev/null; then owner=foreign; pid=$$(lsof -nP -iTCP:"$$port" -sTCP:LISTEN -t 2>/dev/null | head -n 1 || true); \
 	  else pid=; fi; \
 	  if [ "$$owner" != none ] && curl -fsS -m 2 -o /dev/null "$$url/healthz" 2>/dev/null; then ready=1; \
-	    if [ "$$owner" = ours ]; then pw="$$(sed -n 's/^Sandbox__MessagingDashboardPassword=//p' "$(SANDBOX_ENV)" 2>/dev/null || true)"; cfg=; \
-	      if [ -n "$$pw" ]; then cfg="user = \"$(SANDBOX_USER):$$pw\""; fi; \
-	      [ -z "$$(printf '%s\n' "$$cfg" | curl -fsS -m 5 -K - "$$url$(SANDBOX_USABLE_PATH)" 2>/dev/null)" ] || usable=1; fi; fi; \
+	    if [ "$$owner" = ours ]; then \
+	      [ -z "$$(curl -fsS -m 5 "$$url$(SANDBOX_USABLE_PATH)" 2>/dev/null)" ] || usable=1; fi; fi; \
 	  echo "sandbox|$$owner|$$pid|$$port|$$built|$$ready|$$usable"; \
 	  if { [ -n "$$compose" ] && [ "$$compose" != none ]; } || [ "$(STORE)" = postgres ]; then \
 	    project="$$compose"; if [ -z "$$project" ] || [ "$$project" = none ]; then project="$(SANDBOX_COMPOSE_PROJECT)"; fi; cid=; \

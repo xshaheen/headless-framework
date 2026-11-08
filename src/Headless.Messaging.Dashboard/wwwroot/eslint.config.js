@@ -1,19 +1,26 @@
-import pluginVue from 'eslint-plugin-vue'
-import vueTsEslintConfig from '@vue/eslint-config-typescript'
-import skipFormatting from '@vue/eslint-config-prettier/skip-formatting'
+import tseslint from 'typescript-eslint'
 
-export default [
+export default tseslint.config(
   {
-    name: 'app/files-to-lint',
-    files: ['**/*.{ts,mts,tsx,vue}'],
+    name: 'messaging-dashboard/files-to-ignore',
+    ignores: ['**/dist/**', '**/coverage/**', '**/node_modules/**'],
   },
-
   {
-    name: 'app/files-to-ignore',
-    ignores: ['**/dist/**', '**/dist-ssr/**', '**/coverage/**'],
+    name: 'messaging-dashboard/files-to-lint',
+    files: ['**/*.{ts,tsx,js}'],
+    extends: [tseslint.configs.recommended],
   },
-
-  ...pluginVue.configs['flat/essential'],
-  ...vueTsEslintConfig(),
-  skipFormatting,
-]
+  {
+    // A module view composes SDK components, so the design system stays in one place: it ships no CSS and no
+    // inline style objects.
+    name: 'messaging-dashboard/modules-ship-no-styles',
+    files: ['src/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        { selector: "JSXAttribute[name.name='style']", message: 'A module view ships no style objects; compose SDK components.' },
+      ],
+      'no-restricted-imports': ['error', { patterns: [{ group: ['*.css'], message: 'A module ships no CSS; compose SDK components.' }] }],
+    },
+  },
+)
