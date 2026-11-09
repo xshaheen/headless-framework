@@ -12,7 +12,9 @@ import {
   type ColumnProps,
   type Key,
   type Selection,
+  type SortDescriptor,
 } from 'react-aria-components'
+import type { ListSort } from '../../data/keyset.ts'
 import { below, useBelow } from '../breakpoints.ts'
 import { Button } from '../button.tsx'
 import { Tag } from '../display/tag.tsx'
@@ -37,6 +39,11 @@ export interface DataTableColumn<T> {
   priority?: 1 | 2
   /** The column's starting width: pixels, or a share such as `2fr`. Columns share the width equally by default. */
   width?: ColumnProps['defaultWidth']
+  /**
+   * The key the server sorts this column by, such as `executionTime`. The header becomes a button that asks for that
+   * order, ascending first and descending on the next press, when the table has `onSortChange`.
+   */
+  sortKey?: string
 }
 
 /**
@@ -66,6 +73,9 @@ const isolated = { onPointerDown: isolate, onClick: isolate, onKeyDown: isolate 
 const tableClass =
   'relative max-h-[max(16rem,calc(100dvh-18rem))] w-full overflow-auto [overflow-anchor:none] outline-none [&_[style*=sticky]]:bg-inherit [&_[style*=sticky]]:align-top'
 const headClass = 'flex h-full items-center border-b border-border bg-card px-2.5 type-label whitespace-nowrap text-faint'
+// The sort button fills its header, so the whole header is its target; the sorted column reads in the foreground.
+const sortClass =
+  '-mx-1 inline-flex h-full cursor-pointer items-center gap-1 rounded-sm px-1 text-inherit outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring group-data-sort-direction:text-foreground'
 // A cell's only child, such as a name or a reason, ends in an ellipsis when the column is too narrow for it.
 const cellClass =
   'flex h-full items-center gap-2 overflow-hidden px-2.5 type-small text-ellipsis whitespace-nowrap [&>span:only-child]:min-w-0 [&>span:only-child]:overflow-hidden [&>span:only-child]:text-ellipsis'
@@ -123,6 +133,19 @@ export interface DataTableProps<T extends { id: string }> {
   frame?: PageFrameState
   /** A row's actions, in the last column: shown on hover or focus with a fine pointer, always with a coarse one. */
   rowActions?: (row: T) => ReactNode
+  /** The server order the rows are in; its key is a column's `sortKey`. */
+  sort?: ListSort
+  /** A sortable header was pressed: the list reads its first page again in this order. */
+  onSortChange?: (sort: ListSort) => void
+}
+
+/** The arrow beside a sorted header: up for ascending, down for descending, hidden on a column the list is not sorted by. */
+function SortArrow() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="hidden size-3 fill-none stroke-current stroke-2 group-data-sort-direction:block group-data-[sort-direction=descending]:rotate-180">
+      <path d="M8 13V3M4 7l4-4 4 4" />
+    </svg>
+  )
 }
 
 /** Keys that move the focus in the grid; without `Shift` they never change a multi-selection. */
@@ -157,6 +180,8 @@ export function DataTable<T extends { id: string }>({
   emptyState,
   frame,
   rowActions,
+  sort,
+  onSortChange,
 }: DataTableProps<T>) {
   const [ownSelection, setOwnSelection] = useState<ReadonlySet<string>>(new Set())
   const [density, setDensity] = useDensity(viewId)
@@ -195,6 +220,17 @@ export function DataTable<T extends { id: string }>({
   const shown = columns.filter((column, index) => !narrow || index === headerIndex || (column.priority ?? 1) === 1)
   const rowHeaderId = columns[headerIndex]?.id
   layout.pinned = shown.findIndex((column) => column.id === rowHeaderId) + (checks ? 2 : 1)
+  // React Aria sorts by column id; the server by the column's sort key.
+  const sortedColumn = sort ? columns.find((column) => column.sortKey === sort.key) : undefined
+  const sortDescriptor: SortDescriptor | undefined = sort && sortedColumn ? { column: sortedColumn.id, direction: sort.direction } : undefined
+
+  function changeSort(next: SortDescriptor) {
+    const key = columns.find((column) => column.id === next.column)?.sortKey
+
+    if (key !== undefined) {
+      onSortChange?.({ key, direction: next.direction })
+    }
+  }
 
   // `View` on a bulk result: the refused rows light up and the first scrolls into the list's view.
   useLayoutEffect(() => {
@@ -381,6 +417,8 @@ export function DataTable<T extends { id: string }>({
             onRowAction={frame ? (key) => frame.open(String(key)) : selectOnly}
             // The frame closes the panel, then clears the checked rows, on its own Esc.
             escapeKeyBehavior={frame ? 'none' : 'clearSelection'}
+            sortDescriptor={sortDescriptor}
+            onSortChange={changeSort}
           >
             <TableHeader>
               {checks ? (
@@ -399,18 +437,32 @@ export function DataTable<T extends { id: string }>({
                   />
                 </Column>
               ) : null}
-              {shown.map((column) => (
-                <Column
-                  key={column.id}
-                  id={column.id}
-                  isRowHeader={column.id === rowHeaderId}
-                  defaultWidth={column.width}
-                  minWidth={96}
-                  className={column.align === 'end' ? `${headClass} ${endClass}` : headClass}
-                >
-                  {column.header}
-                </Column>
-              ))}
+              {shown.map((column) => {
+                const sortable = column.sortKey !== undefined && onSortChange !== undefined
+
+                return (
+                  <Column
+                    key={column.id}
+                    id={column.id}
+                    isRowHeader={column.id === rowHeaderId}
+                    defaultWidth={column.width}
+                    minWidth={96}
+                    allowsSorting={sortable}
+                    className={`group ${column.align === 'end' ? `${headClass} ${endClass}` : headClass}`}
+                  >
+                    {/* React Aria's header owns the press and `aria-sort`; the button only names the control for assistive
+                        technology, so it takes no tab stop and no handler of its own. */}
+                    {sortable ? (
+                      <button type="button" tabIndex={-1} className={sortClass}>
+                        {column.header}
+                        <SortArrow />
+                      </button>
+                    ) : (
+                      column.header
+                    )}
+                  </Column>
+                )
+              })}
               {rowActions ? (
                 <Column id="hd-actions" width={96} className={headClass}>
                   <span className="sr-only">Actions</span>

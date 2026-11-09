@@ -10,11 +10,13 @@ import { TextInputField } from '../../src/components/form.tsx'
 import { PageFrame, usePageFrame } from '../../src/components/frame/page-frame.tsx'
 import { ToastRegion } from '../../src/components/live.tsx'
 import { DataTable, type DataTableProps } from '../../src/components/table/data-table.tsx'
+import { DateRangeField } from '../../src/components/table/date-range-field.tsx'
+import { SearchField } from '../../src/components/table/search-field.tsx'
 import { rowHeights } from '../../src/components/table/density.tsx'
 import { DashboardProvider, ModuleScope } from '../../src/context.tsx'
 import type { ApiRequest } from '../../src/data/api.ts'
 import { createDashboardClient } from '../../src/data/client.tsx'
-import { useDashboardKeysetList } from '../../src/data/keyset.ts'
+import { useDashboardKeysetList, type ListPageRequest, type ListRange, type ListSort } from '../../src/data/keyset.ts'
 import type { DashboardListPage } from '../../src/data/patch.ts'
 import { createFakeStream } from '../../src/testing/fake-stream.ts'
 
@@ -564,6 +566,170 @@ describe('virtualized keyset table', () => {
 
     expect(screen.getByRole('button', { name: 'Compact' }).getAttribute('aria-pressed')).toBe('true')
     expect(row(/^r1\b/).parentElement?.style.height).toBe('28px')
+  })
+
+  /** A page that resolves when the test says so, as a slow server answers. */
+  function deferred<T>() {
+    let resolve!: (value: T) => void
+    const promise = new Promise<T>((done) => (resolve = done))
+
+    return { promise, resolve }
+  }
+
+  type FetchPage = (cursor: string | undefined, request: ListPageRequest) => Promise<DashboardListPage<Run>>
+
+  /** A list as a module writes one with server order, text search, and a day range, all fed to the keyset hook. */
+  function ScopedRuns({ fetchPage, searchMode }: { fetchPage: FetchPage; searchMode?: 'debounce' | 'submit' }) {
+    const [sort, setSort] = useState<ListSort>()
+    const [search, setSearch] = useState('')
+    const [range, setRange] = useState<ListRange>()
+    const list = useDashboardKeysetList<Run>({ topic: 'diag.run', params: { status: 'Failed' }, sort, search, range, fetchPage })
+
+    return (
+      <>
+        <SearchField label="Search runs" mode={searchMode} onSearch={setSearch} />
+        <DateRangeField label="Executed" onChange={setRange} />
+        <DataTable
+          label="Runs"
+          rows={list.rows}
+          columns={[{ ...runColumns[0]!, sortKey: 'executionTime' }, runColumns[1]!]}
+          sort={sort}
+          onSortChange={setSort}
+          hasMore={list.hasMore}
+          isLoadingMore={list.isLoadingMore}
+          onLoadMore={list.loadMore}
+          emptyState="No runs yet."
+        />
+      </>
+    )
+  }
+
+  /** What each page request asked for, in order: its cursor and the scope it carried. */
+  function asked(fetchPage: ReturnType<typeof vi.fn<FetchPage>>) {
+    return fetchPage.mock.calls.map(([cursor, { sort, search, range }]) => ({ cursor, sort, search, range }))
+  }
+
+  it('sorts on a header press, ascending then descending, reading page 1 again with no cursor each time', async () => {
+    const user = userEvent.setup()
+    const fetchPage = vi.fn<FetchPage>(async (cursor) =>
+      cursor === undefined ? { items: runs(100), nextCursor: 'cursor-of-r100' } : { items: runs(100, 101), nextCursor: null },
+    )
+    render(withDashboard(<ScopedRuns fetchPage={fetchPage} />))
+    await screen.findByRole('row', { name: /^r1\b/ })
+
+    // A loaded page 2 shows the cursor is dropped, not merely unused, when the order changes.
+    scrollTo(100 * rowHeight - 360)
+    sentinelInView()
+    await waitFor(() => expect(fetchPage).toHaveBeenCalledTimes(2))
+
+    const header = screen.getByRole('columnheader', { name: 'Run' })
+    expect(header.getAttribute('aria-sort')).toBe('none')
+
+    const button = within(header).getByRole('button', { name: 'Run' })
+    // The virtualizer stops pointer events while it scrolls, as a browser shows it; the press comes once it settles.
+    await waitFor(() => expect(button.closest('[style*="pointer-events: none"]')).toBeNull(), { timeout: 2_000 })
+    await user.click(button)
+
+    await waitFor(() => expect(header.getAttribute('aria-sort')).toBe('ascending'))
+    await waitFor(() => expect(fetchPage).toHaveBeenCalledTimes(3))
+    expect(asked(fetchPage)[2]).toEqual({ cursor: undefined, sort: { key: 'executionTime', direction: 'ascending' }, search: undefined, range: undefined })
+
+    act(() => header.focus())
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => expect(header.getAttribute('aria-sort')).toBe('descending'))
+    await waitFor(() => expect(fetchPage).toHaveBeenCalledTimes(4))
+    expect(asked(fetchPage)[3]).toEqual({ cursor: undefined, sort: { key: 'executionTime', direction: 'descending' }, search: undefined, range: undefined })
+    // The header keeps the focus while the new order loads, rather than the grid giving way to the empty state.
+    expect(header.contains(document.activeElement)).toBe(true)
+    // Each press asked once: the button inside the header adds no second press of its own.
+    await new Promise((done) => setTimeout(done, 50))
+    expect(fetchPage).toHaveBeenCalledTimes(4)
+    expect(header.getAttribute('aria-sort')).toBe('descending')
+  })
+
+  it('gives a column without a sort key no button and no aria-sort', async () => {
+    const fetchPage = vi.fn<FetchPage>(async () => ({ items: runs(3), nextCursor: null }))
+    render(withDashboard(<ScopedRuns fetchPage={fetchPage} />))
+    await screen.findByRole('row', { name: /^r1\b/ })
+
+    const header = screen.getByRole('columnheader', { name: 'Status' })
+    expect(header.hasAttribute('aria-sort')).toBe(false)
+    expect(within(header).queryByRole('button')).toBeNull()
+  })
+
+  it('discards page 2 of the old search when the search changes while it loads', async () => {
+    const user = userEvent.setup()
+    const page2 = deferred<DashboardListPage<Run>>()
+    let page2Signal: AbortSignal | undefined
+    const fetchPage = vi.fn<FetchPage>(async (cursor, request) => {
+      if (cursor !== undefined) {
+        page2Signal = request.signal
+
+        return page2.promise
+      }
+
+      return request.search ? { items: runs(2, 900), nextCursor: null } : { items: runs(100), nextCursor: 'cursor-of-r100' }
+    })
+    render(withDashboard(<ScopedRuns fetchPage={fetchPage} searchMode="submit" />))
+    await screen.findByRole('row', { name: /^r1\b/ })
+
+    scrollTo(100 * rowHeight - 360)
+    sentinelInView()
+    await waitFor(() => expect(page2Signal).toBeDefined())
+
+    await user.type(screen.getByRole('searchbox', { name: 'Search runs' }), 'timeout{Enter}')
+    await screen.findByRole('row', { name: /^r900\b/ })
+    page2.resolve({ items: runs(100, 101), nextCursor: null })
+
+    await waitFor(() => expect(page2Signal?.aborted).toBe(true))
+    expect(renderedIds()).toEqual(['r900', 'r901'])
+    expect(asked(fetchPage).at(-1)).toEqual({ cursor: undefined, sort: undefined, search: 'timeout', range: undefined })
+  })
+
+  it('sends nothing while typing in a submit search, and one request with the text on Enter', async () => {
+    const user = userEvent.setup()
+    const fetchPage = vi.fn<FetchPage>(async () => ({ items: runs(3), nextCursor: null }))
+    render(withDashboard(<ScopedRuns fetchPage={fetchPage} searchMode="submit" />))
+    await screen.findByRole('row', { name: /^r1\b/ })
+
+    await user.type(screen.getByRole('searchbox', { name: 'Search runs' }), 'order 42')
+    // A debounced search would have sent by now.
+    await new Promise((done) => setTimeout(done, 400))
+    expect(fetchPage).toHaveBeenCalledTimes(1)
+
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => expect(fetchPage).toHaveBeenCalledTimes(2))
+    expect(asked(fetchPage)[1]).toEqual({ cursor: undefined, sort: undefined, search: 'order 42', range: undefined })
+  })
+
+  it('sends a debounced search once typing pauses, with the whole text', async () => {
+    const user = userEvent.setup()
+    const fetchPage = vi.fn<FetchPage>(async () => ({ items: runs(3), nextCursor: null }))
+    render(withDashboard(<ScopedRuns fetchPage={fetchPage} />))
+    await screen.findByRole('row', { name: /^r1\b/ })
+
+    await user.type(screen.getByRole('searchbox', { name: 'Search runs' }), 'order')
+    expect(fetchPage).toHaveBeenCalledTimes(1)
+
+    await waitFor(() => expect(fetchPage).toHaveBeenCalledTimes(2))
+    expect(asked(fetchPage).map((request) => request.search)).toEqual([undefined, 'order'])
+  })
+
+  it('sends a range ending 10 November 2026 in Cairo as the next midnight there, in UTC', async () => {
+    localStorage.setItem('headless-dashboard:time-zone', 'Africa/Cairo')
+    const user = userEvent.setup()
+    const fetchPage = vi.fn<FetchPage>(async () => ({ items: runs(3), nextCursor: null }))
+    render(withDashboard(<ScopedRuns fetchPage={fetchPage} />))
+    await screen.findByRole('row', { name: /^r1\b/ })
+
+    await user.click(screen.getAllByRole('spinbutton', { name: /month/i })[0]!)
+    await user.keyboard('11012026')
+    await user.keyboard('11102026')
+
+    // Cairo is two hours ahead of UTC in November 2026: midnight on 1 and 11 November there.
+    await waitFor(() => expect(asked(fetchPage).at(-1)?.range).toEqual({ start: '2026-10-31T22:00:00.000Z', end: '2026-11-10T22:00:00.000Z' }))
   })
 })
 
