@@ -2,6 +2,8 @@
 // changed identity could re-trigger), and the shell's assets sit near their size budget.
 'use no memo'
 
+import { SugarHigh, tokenize } from 'sugar-high/core'
+import * as jsonSyntax from 'sugar-high/lang/json'
 import { useFormat } from '../../locale/locale.tsx'
 import { Button } from '../button.tsx'
 
@@ -103,6 +105,45 @@ export function formatJson(text: string): string | null {
   return out
 }
 
+/** The class each JSON token renders with, by sugar-high's token type; written out whole so Tailwind finds each one. */
+const jsonTokenClass: Partial<Record<string, string>> = {
+  property: 'text-syntax-key',
+  string: 'text-syntax-string',
+  // sugar-high's JSON preset reads a number as a `class` token and `true`, `false`, `null` as keywords.
+  class: 'text-syntax-number',
+  keyword: 'text-syntax-literal',
+  sign: 'text-faint',
+}
+
+/**
+ * Formatted JSON as coloured spans, from sugar-high's tokens and never its HTML, whose `style` attributes the
+ * dashboard's CSP refuses. React writes every token as text. A tokenization that does not join back to exactly
+ * `text` renders `text` plain, so colouring can never change what the operator reads.
+ */
+function JsonTokens({ text }: { text: string }) {
+  const tokens = tokenize(text, jsonSyntax).map(([type, value]) => [SugarHigh.TokenTypes[type], value] as const)
+
+  if (tokens.map(([, value]) => value).join('') !== text) {
+    return text
+  }
+
+  return tokens.map(([type, value], index) => {
+    // A minus sign belongs to the number after it.
+    const className =
+      type === 'sign' && value === '-' && tokens[index + 1]?.[0] === 'class'
+        ? jsonTokenClass.class
+        : jsonTokenClass[type ?? '']
+
+    return className ? (
+      <span key={index} className={className}>
+        {value}
+      </span>
+    ) : (
+      value
+    )
+  })
+}
+
 export interface PayloadViewProps {
   /** The payload as the server's formatter returned it: already redacted. */
   content: string
@@ -112,8 +153,9 @@ export interface PayloadViewProps {
 }
 
 /**
- * A payload, shown only on request: formatted JSON with exact large integers, mono, with copy. Never rendered as
- * HTML: React writes it as text.
+ * A payload, shown only on request: formatted JSON with exact large integers and syntax colours, mono, with copy.
+ * Never rendered as HTML: React writes it as text. Copy copies `content` as the server sent it, not the formatted
+ * text.
  */
 export function PayloadView({ content, contentType, unsupportedVersion }: PayloadViewProps) {
   const format = useFormat()
@@ -126,7 +168,8 @@ export function PayloadView({ content, contentType, unsupportedVersion }: Payloa
   const bytes = encoded.length
   const truncated = bytes > payloadDisplayLimit
   const isJson = !truncated && (contentType === undefined || contentType.includes('json'))
-  const shown = truncated ? cutUtf8(encoded, payloadDisplayLimit) : isJson ? (formatJson(content) ?? content) : content
+  const formatted = isJson ? formatJson(content) : null
+  const shown = truncated ? cutUtf8(encoded, payloadDisplayLimit) : (formatted ?? content)
 
   return (
     <figure className="rounded-md bg-deep">
@@ -137,7 +180,7 @@ export function PayloadView({ content, contentType, unsupportedVersion }: Payloa
         </Button>
       </figcaption>
       <pre className="hd-mono max-h-(--payload-max) overflow-auto px-3 pt-2 pb-3 whitespace-pre" dir="ltr">
-        {shown}
+        {formatted === null ? shown : <JsonTokens text={formatted} />}
       </pre>
     </figure>
   )

@@ -1,6 +1,7 @@
 import { render as renderElement, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import type { ReactElement } from 'react'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { formatJson, PayloadView } from '../../src/components/payload/payload-view.tsx'
 import { LocaleProvider } from '../../src/locale/locale.tsx'
 
@@ -14,7 +15,70 @@ function shownText() {
   return document.querySelector('pre')!.textContent ?? ''
 }
 
+function stubClipboard() {
+  const writeText = vi.fn(async () => undefined)
+  vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } })
+  return writeText
+}
+
 describe('payload view', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('colours a large integer as a number and keeps every digit', () => {
+    render(<PayloadView content='{"id":9007199254740993,"ok":true}' contentType="application/json" />)
+
+    expect(shownText()).toBe('{\n  "id": 9007199254740993,\n  "ok": true\n}')
+    const number = screen.getByText('9007199254740993')
+    expect(number.tagName).toBe('SPAN')
+    expect(number.className).toBe('text-syntax-number')
+    expect(screen.getByText('"id"').className).toBe('text-syntax-key')
+    expect(screen.getByText('true').className).toBe('text-syntax-literal')
+  })
+
+  it('copies the payload as the server sent it, not the formatted, coloured text', async () => {
+    const user = userEvent.setup()
+    const writeText = stubClipboard()
+    render(<PayloadView content='{"id":9007199254740993, "name":"a"}' contentType="application/json" />)
+
+    await user.click(screen.getByRole('button', { name: 'Copy' }))
+
+    expect(writeText).toHaveBeenCalledExactlyOnceWith('{"id":9007199254740993, "name":"a"}')
+  })
+
+  it('shows malformed JSON as plain text, and still copies it', async () => {
+    const user = userEvent.setup()
+    const writeText = stubClipboard()
+    const content = '{"id": 7, "name": "unterminated}'
+    render(<PayloadView content={content} contentType="application/json" />)
+
+    expect(shownText()).toBe(content)
+    expect(document.querySelectorAll('pre span')).toHaveLength(0)
+
+    await user.click(screen.getByRole('button', { name: 'Copy' }))
+
+    expect(writeText).toHaveBeenCalledExactlyOnceWith(content)
+  })
+
+  it('shows markup inside a payload as text, never as elements', () => {
+    render(<PayloadView content='{"note":"<script>alert(1)</script><img src=x onerror=alert(2)>"}' contentType="application/json" />)
+
+    const pre = document.querySelector('pre')!
+    expect(pre.querySelector('script, img')).toBeNull()
+    expect(pre.textContent).toContain('"<script>alert(1)</script><img src=x onerror=alert(2)>"')
+    expect(screen.getByText('"<script>alert(1)</script><img src=x onerror=alert(2)>"').className).toBe(
+      'text-syntax-string',
+    )
+  })
+
+  it('shows a non-JSON payload with markup as plain text', () => {
+    render(<PayloadView content="<script>alert(1)</script>" contentType="text/plain" />)
+
+    expect(document.querySelector('pre script')).toBeNull()
+    expect(shownText()).toBe('<script>alert(1)</script>')
+  })
+
   it('formats JSON and keeps a large integer exact', () => {
     expect(formatJson('{"id":9007199254740993,"tags":[],"a":{"b":"x, y"}}')).toBe(
       '{\n  "id": 9007199254740993,\n  "tags": [],\n  "a": {\n    "b": "x, y"\n  }\n}',

@@ -89,18 +89,18 @@ describe('ExceptionBlock', () => {
     vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } })
     render(<ExceptionBlock type="System.TimeoutException" message="The charge timed out." stack={stack} />)
 
-    expect(screen.queryByText(/Jobs\.Host\.Loop/)).toBeNull()
+    const shown = () => document.querySelector('pre')!.textContent
+    expect(shown()).not.toContain('Jobs.Host.Loop')
 
     await user.click(screen.getByRole('button', { name: 'Full stack' }))
 
     expect(screen.getByRole('button', { name: 'Full stack' }).getAttribute('aria-expanded')).toBe('true')
-    expect(screen.getByText(/Jobs\.Host\.Loop/)).toBeTruthy()
+    expect(shown()).toContain('   at Jobs.Host.Loop()')
 
     await user.click(screen.getByRole('button', { name: 'Copy exception' }))
 
-    expect(writeText).toHaveBeenCalledExactlyOnceWith(
-      'System.TimeoutException: The charge timed out.\n   at Billing.Charge()\n   at Billing.Run()\n   at Jobs.Runner.Run()\n   at Jobs.Host.Loop()',
-    )
+    // The stack as stored, not the re-indented lines the block shows.
+    expect(writeText).toHaveBeenCalledExactlyOnceWith(`System.TimeoutException: The charge timed out.\n${stack}`)
     vi.unstubAllGlobals()
   })
 
@@ -128,5 +128,50 @@ describe('ExceptionBlock', () => {
     expect(screen.getByText(/Charge failed/).closest('pre')?.textContent).toBe(
       'System.InvalidOperationException: Charge failed.\n   at Billing.Charge()\nTimeoutException: The gateway did not answer.\n   at Gateway.Send()',
     )
+  })
+
+  it('colours a real nested .NET stack: inner headings as headings, frames by part, and every line kept', async () => {
+    const user = userEvent.setup()
+    const writeText = vi.fn(async () => undefined)
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } })
+    // The shape Exception.ToString() writes, Windows path and all.
+    const stored = [
+      ' ---> System.TimeoutException: The gateway did not answer.',
+      '   at Gateway.Client.SendAsync(Request request) in C:\\src\\Gateway\\Client.cs:line 42',
+      '   --- End of inner exception stack trace ---',
+      '   at Billing.Charge.RunAsync[T](CancellationToken token) in /app/Billing/Charge.cs:line 7',
+      'Parameter name: id',
+    ].join('\n')
+    render(<ExceptionBlock type="System.InvalidOperationException" message="Charge failed." stack={stored} />)
+    await user.click(screen.getByRole('button', { name: 'Full stack' }))
+
+    const pre = document.querySelector('pre')!
+    expect(pre.textContent).toBe(
+      [
+        'System.InvalidOperationException: Charge failed.',
+        '---> System.TimeoutException: The gateway did not answer.',
+        '   at Gateway.Client.SendAsync(Request request) in C:\\src\\Gateway\\Client.cs:line 42',
+        '--- End of inner exception stack trace ---',
+        '   at Billing.Charge.RunAsync[T](CancellationToken token) in /app/Billing/Charge.cs:line 7',
+        'Parameter name: id',
+      ].join('\n'),
+    )
+
+    const heading = screen.getByText('System.TimeoutException:', { exact: false, selector: 'span' })
+    expect(heading.className).toBe('text-destructive')
+    expect(heading.textContent).toBe('System.TimeoutException: ')
+    expect(screen.getByText('Gateway.Client.').className).toBe('text-syntax-key')
+    expect(screen.getByText('SendAsync').className).toBe('text-syntax-method')
+    expect(screen.getByText('C:\\src\\Gateway\\Client.cs').className).toBe('text-muted-foreground')
+    expect(screen.getByText('42').className).toBe('text-syntax-number')
+    expect(screen.getByText('RunAsync[T]').className).toBe('text-syntax-method')
+    expect(screen.getByText('--- End of inner exception stack trace ---').className).toBe('text-faint')
+    // A message line that only looks like `Type: message` is not a heading.
+    expect(screen.getByText('Parameter name: id').className).toBe('text-faint')
+
+    await user.click(screen.getByRole('button', { name: 'Copy exception' }))
+
+    expect(writeText).toHaveBeenCalledExactlyOnceWith(`System.InvalidOperationException: Charge failed.\n${stored}`)
+    vi.unstubAllGlobals()
   })
 })

@@ -54,6 +54,11 @@
   --color-proc: var(--proc);
   --color-ok: var(--ok);
   --color-off: var(--off);
+  --color-syntax-key: var(--syntax-key);
+  --color-syntax-string: var(--syntax-string);
+  --color-syntax-number: var(--syntax-number);
+  --color-syntax-literal: var(--syntax-literal);
+  --color-syntax-method: var(--syntax-method);
 
   --font-sans: var(--sans);
   --font-mono: var(--mono);

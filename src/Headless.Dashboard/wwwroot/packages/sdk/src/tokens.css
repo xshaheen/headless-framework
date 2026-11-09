@@ -50,6 +50,17 @@
   /* The halo a live or failing state's dot carries; light draws none. */
   --glow: 8px;
 
+  /*
+   * Syntax colours for payloads and stack traces: text tones on the role hues, so they never read as a state mark,
+   * and off the accent hue, which stays for what to do next. Each passes 4.5:1 on --deep and --panel in both themes.
+   * Punctuation and file paths reuse the neutral text tones; an exception type stays --fail.
+   */
+  --syntax-key: oklch(0.8 0.07 205);
+  --syntax-string: oklch(0.8 0.1 155);
+  --syntax-number: oklch(0.84 0.1 80);
+  --syntax-literal: oklch(0.78 0.1 245);
+  --syntax-method: oklch(0.84 0.06 245);
+
   color-scheme: dark;
 
   /* Derived once here, so each follows its role into the light theme. */
@@ -178,6 +189,11 @@
   --proc: oklch(0.57 0.14 75);
   --ok: oklch(0.54 0.13 155);
   --fail: oklch(0.54 0.19 25);
+  --syntax-key: oklch(0.48 0.08 205);
+  --syntax-string: oklch(0.48 0.11 155);
+  --syntax-number: oklch(0.5 0.12 65);
+  --syntax-literal: oklch(0.48 0.13 245);
+  --syntax-method: oklch(0.42 0.08 245);
   --glow: 0px;
   color-scheme: light;
 }
