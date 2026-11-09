@@ -23,7 +23,8 @@ internal sealed class LogRedactionStartupValidator(IServiceProvider services, IL
         var hasRules =
             services.GetService<IRedactorProvider>() is not null
             || services.GetServices<ILogPathRedactor>().Any()
-            || services.GetServices<ILogTextRedactor>().Any();
+            || services.GetServices<ILogTextRedactor>().Any()
+            || services.GetServices<LogTextRedactorRegistration>().Any();
 
         if (hasRules && loggerFactory is not RedactingLoggerFactory)
         {
@@ -42,7 +43,7 @@ internal static partial class LogRedactionLog
         EventId = 1,
         EventName = "LogRedactionFactoryReplaced",
         Level = LogLevel.Warning,
-        Message = "Log redaction is registered, but the logger factory in charge ({LoggerFactoryType}) does not apply it: a logger factory registered after AddHeadlessLogRedaction replaced the redacting one. Classified [LoggerMessage] parameters and credential paths in ASP.NET Core's request logs are not redacted. Call AddHeadlessLogRedaction after the logger factory is registered, for example after UseSerilog."
+        Message = "Log redaction is registered, but the logger factory in charge ({LoggerFactoryType}) does not apply it: a logger factory registered after AddHeadlessRedaction replaced the redacting one. Classified [LoggerMessage] parameters, credential paths in ASP.NET Core's request logs, and text patterns are not redacted. Register Serilog with AddHeadlessSerilog, or call AddHeadlessRedaction again after UseSerilog or any other logger factory registration."
     )]
     internal static partial void LogFactoryNotRedacting(this ILogger logger, string loggerFactoryType);
 }

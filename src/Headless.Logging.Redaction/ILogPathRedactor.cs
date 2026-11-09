@@ -12,7 +12,7 @@ namespace Headless.Logging;
 /// </summary>
 /// <remarks>
 /// Register an implementation with <c>services.TryAddEnumerable(ServiceDescriptor.Singleton&lt;ILogPathRedactor, T&gt;())</c>
-/// and call <c>AddHeadlessLogRedaction()</c>. The hosting layer writes these entries before any middleware runs, so
+/// and call <c>AddHeadlessRedaction()</c>. The hosting layer writes these entries before any middleware runs, so
 /// the logger factory is the only place they can be rewritten. HTTP logging and span tags record the path separately:
 /// <c>AddHeadlessRequestLogRedaction</c> and <c>AddHeadlessLogPathRedaction</c> from
 /// <c>Headless.Logging.Redaction.AspNetCore</c> cover them.

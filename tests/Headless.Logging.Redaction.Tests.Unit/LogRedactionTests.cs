@@ -42,8 +42,12 @@ public sealed partial class LogRedactionTests : TestBase
         using var provider = _Build(
             sink,
             services =>
-                services.AddHeadlessRedaction(redaction =>
-                    redaction.SetRedactor<StarRedactor>(new DataClassificationSet(HeadlessDataClassifications.Private))
+                services.AddHeadlessRedaction(setup =>
+                    setup.ConfigureRedaction(redaction =>
+                        redaction.SetRedactor<StarRedactor>(
+                            new DataClassificationSet(HeadlessDataClassifications.Private)
+                        )
+                    )
                 )
         );
         var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("App");
@@ -157,7 +161,7 @@ public sealed partial class LogRedactionTests : TestBase
             services =>
             {
                 services.AddHeadlessRedaction();
-                services.AddHeadlessLogRedaction();
+                services.AddHeadlessRedaction();
             }
         );
         var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("App");
@@ -173,12 +177,11 @@ public sealed partial class LogRedactionTests : TestBase
     [Fact]
     public async Task should_warn_at_startup_when_a_later_logger_factory_replaces_the_redacting_one()
     {
-        // given: the factory is replaced after AddHeadlessLogRedaction, as UseSerilog would
+        // given: the factory is replaced after AddHeadlessRedaction, as a plain UseSerilog would
         using var sink = new CapturingProvider();
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddHeadlessRedaction();
-        services.AddHeadlessLogRedaction();
         services.AddSingleton<ILoggerFactory>(_ => new LoggerFactory([sink]));
         await using var provider = services.BuildServiceProvider();
 
@@ -189,7 +192,7 @@ public sealed partial class LogRedactionTests : TestBase
         sink.Entries.Should()
             .ContainSingle(e => e.EventName == "LogRedactionFactoryReplaced")
             .Which.Text.Should()
-            .Contain("AddHeadlessLogRedaction");
+            .Contain("AddHeadlessSerilog");
     }
 
     [Fact]
@@ -218,7 +221,7 @@ public sealed partial class LogRedactionTests : TestBase
         var services = new ServiceCollection();
         services.AddLogging(logging => logging.ClearProviders().AddProvider(sink));
         configure(services);
-        services.AddHeadlessLogRedaction();
+        services.AddHeadlessRedaction();
 
         return services.BuildServiceProvider();
     }

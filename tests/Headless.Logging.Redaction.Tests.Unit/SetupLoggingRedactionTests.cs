@@ -37,7 +37,9 @@ public sealed class SetupLoggingRedactionTests : TestBase
     public void should_pseudonymize_private_data_and_identifiers_when_an_hmac_key_is_given(string name)
     {
         // given
-        var provider = _BuildProvider(services => services.AddHeadlessRedaction(_ConfigureHmac));
+        var provider = _BuildProvider(services =>
+            services.AddHeadlessRedaction(setup => setup.UseHmac(_ConfigureHmac))
+        );
         var redactor = provider.GetRedactor(new DataClassificationSet(_Classification(name)));
 
         // when
@@ -55,7 +57,9 @@ public sealed class SetupLoggingRedactionTests : TestBase
     public void should_still_erase_secrets_when_an_hmac_key_is_given()
     {
         // given
-        var provider = _BuildProvider(services => services.AddHeadlessRedaction(_ConfigureHmac));
+        var provider = _BuildProvider(services =>
+            services.AddHeadlessRedaction(setup => setup.UseHmac(_ConfigureHmac))
+        );
 
         // when
         var redacted = provider
@@ -80,7 +84,7 @@ public sealed class SetupLoggingRedactionTests : TestBase
             )
             .Build()
             .GetSection("Redaction:Hmac");
-        var provider = _BuildProvider(services => services.AddHeadlessRedaction(section));
+        var provider = _BuildProvider(services => services.AddHeadlessRedaction(setup => setup.UseHmac(section)));
 
         // when
         var redacted = provider
@@ -95,7 +99,9 @@ public sealed class SetupLoggingRedactionTests : TestBase
     public void should_erase_an_unmapped_classification_and_a_combined_set()
     {
         // given
-        var provider = _BuildProvider(services => services.AddHeadlessRedaction(_ConfigureHmac));
+        var provider = _BuildProvider(services =>
+            services.AddHeadlessRedaction(setup => setup.UseHmac(_ConfigureHmac))
+        );
         var combined = new DataClassificationSet([
             HeadlessDataClassifications.Private,
             HeadlessDataClassifications.Identifier,
@@ -115,9 +121,11 @@ public sealed class SetupLoggingRedactionTests : TestBase
     {
         // given
         var provider = _BuildProvider(services =>
-            services.AddHeadlessRedaction(redaction =>
-                redaction.SetRedactor<PrefixMaskRedactor>(
-                    new DataClassificationSet(HeadlessDataClassifications.Identifier)
+            services.AddHeadlessRedaction(setup =>
+                setup.ConfigureRedaction(redaction =>
+                    redaction.SetRedactor<PrefixMaskRedactor>(
+                        new DataClassificationSet(HeadlessDataClassifications.Identifier)
+                    )
                 )
             )
         );
@@ -138,12 +146,48 @@ public sealed class SetupLoggingRedactionTests : TestBase
         var services = new ServiceCollection();
 
         // when
-        var nullSection = () => services.AddHeadlessRedaction(hmacSection: null!);
-        var nullHmac = () => services.AddHeadlessRedaction(configureHmac: null!);
+        var nullSection = () => services.AddHeadlessRedaction(setup => setup.UseHmac(hmacSection: null!));
+        var nullHmac = () => services.AddHeadlessRedaction(setup => setup.UseHmac(configureHmac: null!));
+        var emptyPattern = () => services.AddHeadlessRedaction(setup => setup.MaskText(pattern: ""));
 
         // then
         nullSection.Should().Throw<ArgumentNullException>();
         nullHmac.Should().Throw<ArgumentNullException>();
+        emptyPattern.Should().Throw<ArgumentException>();
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void should_keep_the_app_hmac_key_when_a_library_also_registers_redaction(bool libraryFirst)
+    {
+        // given: a library's bare call before or after the app's keyed call
+        var provider = _BuildProvider(services =>
+        {
+            if (libraryFirst)
+            {
+                services.AddHeadlessRedaction();
+            }
+
+            services.AddHeadlessRedaction(setup => setup.UseHmac(_ConfigureHmac));
+
+            if (!libraryFirst)
+            {
+                services.AddHeadlessRedaction();
+            }
+        });
+
+        // when
+        var privateData = provider
+            .GetRedactor(new DataClassificationSet(HeadlessDataClassifications.Private))
+            .Redact("alice@example.com");
+        var secret = provider
+            .GetRedactor(new DataClassificationSet(HeadlessDataClassifications.Secret))
+            .Redact("hunter2");
+
+        // then: the pseudonym survives in both orders, and secrets stay erased
+        privateData.Should().NotBeNullOrEmpty().And.NotContain("alice");
+        secret.Should().BeEmpty();
     }
 
     [Theory]

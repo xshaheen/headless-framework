@@ -80,8 +80,7 @@ public sealed partial class LogTextRedactionTests : TestBase
         using var serilogFactory = new SerilogLoggerFactory(serilog);
         var services = new ServiceCollection();
         services.AddSingleton<ILoggerFactory>(serilogFactory);
-        services.AddLogTextRedaction(_Pattern());
-        services.AddHeadlessLogRedaction();
+        services.AddHeadlessRedaction(setup => setup.MaskText(_Pattern()));
         using var provider = services.BuildServiceProvider();
         var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("App");
 
@@ -123,44 +122,137 @@ public sealed partial class LogTextRedactionTests : TestBase
     }
 
     [Fact]
-    public void should_leave_text_without_a_match_unchanged()
+    public void should_pass_an_entry_without_a_match_through_unchanged()
     {
         // given
-        var redactor = new RegexLogTextRedactor(_Pattern());
-        const string text = "order 42 shipped";
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+        var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("App");
+
+        // when: nothing in the text or the values matches, and the GUID and timestamp are not formatted to be scanned
+        LogShipment(logger, 42, Guid.Empty, DateTimeOffset.UnixEpoch);
+
+        // then: the provider receives the generator's own state, not a copy
+        var entry = sink.Entries.Should().ContainSingle().Subject;
+        entry.StateType.Should().NotBe("ScrubbedState");
+        entry.Properties.Should().Contain(new KeyValuePair<string, object?>("Order", 42));
+        entry.Properties.Should().Contain(new KeyValuePair<string, object?>("Tracking", Guid.Empty));
+    }
+
+    [Fact]
+    public void should_scan_only_the_categories_and_levels_a_pattern_is_scoped_to()
+    {
+        // given
+        using var sink = new CapturingProvider();
+        using var provider = _Build(
+            sink,
+            static setup =>
+                setup.MaskText(
+                    _Pattern(),
+                    scope: static scope =>
+                    {
+                        scope.MinimumLevel = LogLevel.Information;
+                        scope.Categories.Add("Payments");
+                    }
+                )
+        );
+        var factory = provider.GetRequiredService<ILoggerFactory>();
+        var payments = factory.CreateLogger("payments.Refunds");
+        var other = factory.CreateLogger("Orders");
 
         // when
-        var result = redactor.Redact(text);
+        LogCitizen(payments, _NationalId, 1);
+        LogCitizenDebug(payments, _NationalId);
+        LogCitizen(other, _NationalId, 2);
+
+        // then: the prefix matches regardless of case; a lower level and another category are not scanned
+        sink.Entries.Select(e => e.Text)
+            .Should()
+            .Equal(
+                "Citizen *** has 1 requests",
+                $"Citizen {_NationalId} at debug",
+                $"Citizen {_NationalId} has 2 requests"
+            );
+    }
+
+    [Fact]
+    public void should_mask_with_a_string_pattern_and_a_custom_redactor()
+    {
+        // given
+        using var sink = new CapturingProvider();
+        using var provider = _Build(
+            sink,
+            static setup => setup.MaskText(@"\b\d{14}\b", "[id]").MaskText(new UpperCaseRedactor())
+        );
+        var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("App");
+
+        // when
+        LogRaw(logger, $"lookup failed for {_NationalId}");
+
+        // then: both run, in registration order
+        sink.Entries.Should().ContainSingle().Which.Text.Should().Be("LOOKUP FAILED FOR [ID]");
+    }
+
+    [Fact]
+    public void should_mask_with_a_redactor_registered_directly_in_the_container()
+    {
+        // given: a library that registers its own redactor without the builder
+        using var sink = new CapturingProvider();
+        var services = new ServiceCollection();
+        services.AddLogging(logging => logging.ClearProviders().AddProvider(sink));
+        services.AddSingleton<ILogTextRedactor, UpperCaseRedactor>();
+        services.AddHeadlessRedaction();
+        using var provider = services.BuildServiceProvider();
+        var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("App");
+
+        // when
+        LogRaw(logger, "quiet");
 
         // then
-        result.Should().BeSameAs(text);
+        sink.Entries.Should().ContainSingle().Which.Text.Should().Be("QUIET");
     }
 
     [Fact]
     public void should_replace_the_whole_text_when_the_pattern_times_out()
     {
         // given: a backtracking pattern that cannot finish within its timeout
-        var redactor = new RegexLogTextRedactor(
-            new Regex("(?<run>a+)+$", RegexOptions.None, TimeSpan.FromMilliseconds(1)),
-            replacement: "[masked]"
+        using var sink = new CapturingProvider();
+        using var provider = _Build(
+            sink,
+            static setup =>
+                setup.MaskText(
+                    new Regex("(?<run>a+)+$", RegexOptions.None, TimeSpan.FromMilliseconds(1)),
+                    replacement: "[masked]"
+                )
         );
+        var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("App");
 
         // when
-        var result = redactor.Redact(new string('a', 40_000) + "!");
+        LogRaw(logger, new string('a', 40_000) + "!");
 
         // then: a slow match fails closed instead of letting the text through
-        result.Should().Be("[masked]");
+        sink.Entries.Should().ContainSingle().Which.Text.Should().Be("[masked]");
     }
 
     [Fact]
     public void should_throw_when_arguments_are_null()
     {
-        var nullPattern = () => new RegexLogTextRedactor(null!);
-        var nullReplacement = () => new RegexLogTextRedactor(_Pattern(), null!);
+        var services = new ServiceCollection();
+
+        var nullPattern = () => services.AddHeadlessRedaction(static setup => setup.MaskText((Regex)null!));
+        var nullReplacement = () => services.AddHeadlessRedaction(static setup => setup.MaskText(_Pattern(), null!));
+        var nullRedactor = () => services.AddHeadlessRedaction(static setup => setup.MaskText((ILogTextRedactor)null!));
 
         nullPattern.Should().Throw<ArgumentNullException>();
         nullReplacement.Should().Throw<ArgumentNullException>();
+        nullRedactor.Should().Throw<ArgumentNullException>();
     }
+
+    [LoggerMessage(5, LogLevel.Information, "Order {Order} shipped as {Tracking} at {ShippedAt}")]
+    private static partial void LogShipment(ILogger logger, int order, Guid tracking, DateTimeOffset shippedAt);
+
+    [LoggerMessage(6, LogLevel.Debug, "Citizen {NationalId} at debug")]
+    private static partial void LogCitizenDebug(ILogger logger, string nationalId);
 
     [LoggerMessage(1, LogLevel.Information, "Citizen {NationalId} has {Count} requests")]
     private static partial void LogCitizen(ILogger logger, string nationalId, int count);
@@ -176,14 +268,18 @@ public sealed partial class LogTextRedactionTests : TestBase
 
     private static Regex _Pattern() => new(@"\b\d{14}\b", RegexOptions.None, TimeSpan.FromMilliseconds(100));
 
-    private static ServiceProvider _Build(CapturingProvider sink)
+    private static ServiceProvider _Build(CapturingProvider sink, Action<HeadlessRedactionSetupBuilder>? setup = null)
     {
         var services = new ServiceCollection();
-        services.AddLogging(logging => logging.ClearProviders().AddProvider(sink));
-        services.AddLogTextRedaction(_Pattern());
-        services.AddHeadlessLogRedaction();
+        services.AddLogging(logging => logging.ClearProviders().AddProvider(sink).SetMinimumLevel(LogLevel.Trace));
+        services.AddHeadlessRedaction(setup ?? (static builder => builder.MaskText(_Pattern())));
 
         return services.BuildServiceProvider();
+    }
+
+    private sealed class UpperCaseRedactor : ILogTextRedactor
+    {
+        public string Redact(string text) => text.ToUpperInvariant();
     }
 
     private sealed record Citizen(string Id)
@@ -198,7 +294,7 @@ public sealed partial class LogTextRedactionTests : TestBase
         public void Emit(LogEvent logEvent) => Events.Add(logEvent);
     }
 
-    private sealed record Entry(string Text, IReadOnlyList<KeyValuePair<string, object?>> Properties);
+    private sealed record Entry(string Text, IReadOnlyList<KeyValuePair<string, object?>> Properties, string StateType);
 
     private sealed class CapturingProvider : ILoggerProvider, ISupportExternalScope
     {
@@ -251,7 +347,7 @@ public sealed partial class LogTextRedactionTests : TestBase
                     owner
                 );
 
-                owner.Entries.Add(new Entry(formatter(state, exception), properties));
+                owner.Entries.Add(new Entry(formatter(state, exception), properties, state?.GetType().Name ?? "null"));
             }
         }
     }

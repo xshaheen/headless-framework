@@ -9,7 +9,6 @@ using Microsoft.Net.Http.Headers;
 
 namespace Tests;
 
-#pragma warning disable EXTEXP0013 // The method under test wraps Microsoft's experimental HTTP logging redaction.
 public sealed class HttpLoggingRedactionSetupTests : TestBase
 {
     [Fact]
@@ -23,7 +22,7 @@ public sealed class HttpLoggingRedactionSetupTests : TestBase
 
         // then
         using var provider = services.BuildServiceProvider();
-        var options = provider.GetRequiredService<IOptions<LoggingRedactionOptions>>().Value;
+        var options = _MicrosoftOptions(provider);
         options
             .RequestHeadersDataClasses.Should()
             .Contain(HeaderNames.Authorization, HeadlessDataClassifications.Secret);
@@ -32,26 +31,56 @@ public sealed class HttpLoggingRedactionSetupTests : TestBase
     }
 
     [Fact]
-    public void should_apply_each_callback_and_register_the_middleware_once_when_called_twice()
+    public void should_map_excluded_paths_and_unmatched_routes()
     {
         // given
         var services = new ServiceCollection();
 
         // when
         services.AddHeadlessHttpLoggingRedaction(options =>
-            options.RouteParameterDataClasses["userId"] = HeadlessDataClassifications.Identifier
-        );
-        var countAfterFirst = services.Count;
+        {
+            options.ExcludePathStartsWith.Add("/health");
+            options.IncludeUnmatchedRoutes = true;
+        });
+
+        // then
+        using var provider = services.BuildServiceProvider();
+        var options = _MicrosoftOptions(provider);
+        options.ExcludePathStartsWith.Should().Contain("/health");
+        options.IncludeUnmatchedRoutes.Should().BeTrue();
+    }
+
+    [Fact]
+    public void should_apply_each_callback_and_map_the_options_once_when_called_twice()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
         services.AddHeadlessHttpLoggingRedaction(options =>
-            options.RequestHeadersDataClasses["X-Api-Key"] = HeadlessDataClassifications.Secret
+            options.RouteParameters["userId"] = HeadlessDataClassifications.Identifier
+        );
+        services.AddHeadlessHttpLoggingRedaction(options =>
+            options.RequestHeaders["X-Api-Key"] = HeadlessDataClassifications.Secret
         );
 
-        // then: the second call adds only its callback
-        services.Should().HaveCount(countAfterFirst + 1);
+        // then: both callbacks reach Microsoft's options, mapped once
+        services
+            .Should()
+            .ContainSingle(d =>
+                d.ServiceType.Name == "IConfigureOptions`1"
+                && d.ImplementationType != null
+                && d.ImplementationType.Name == "HttpLoggingRedactionOptionsSetup"
+            );
         using var provider = services.BuildServiceProvider();
-        var options = provider.GetRequiredService<IOptions<LoggingRedactionOptions>>().Value;
+        var options = _MicrosoftOptions(provider);
         options.RouteParameterDataClasses.Should().Contain("userId", HeadlessDataClassifications.Identifier);
         options.RequestHeadersDataClasses.Should().Contain("X-Api-Key", HeadlessDataClassifications.Secret);
     }
-}
+
+    // Only the assertions read Microsoft's experimental type; the calls under test compile without a suppression.
+#pragma warning disable EXTEXP0013 // Reads the mapping's result to check it.
+    private static LoggingRedactionOptions _MicrosoftOptions(IServiceProvider provider) =>
+        provider.GetRequiredService<IOptions<LoggingRedactionOptions>>().Value;
 #pragma warning restore EXTEXP0013
+}

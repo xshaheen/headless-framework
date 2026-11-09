@@ -139,6 +139,10 @@ public static class SetupApi
             );
             builder.Services.AddStartupValidator<HeadlessServiceDefaultsStartupValidator>();
 
+            // Classified values are erased, and declared credential paths replaced, in every log, HTTP logging record,
+            // and request span. A later AddHeadlessRedaction(setup => setup.UseHmac(...)) adds a key without undoing this.
+            builder.Services.AddHeadlessRequestLogRedaction();
+
             // Core API primitives
             builder.Services.AddEndpointsApiExplorer();
             builder.Services.AddHttpContextAccessor();

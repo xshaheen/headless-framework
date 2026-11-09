@@ -230,7 +230,7 @@ public sealed class BlobSignedUrlRedactionTests : TestBase
     [Fact]
     public async Task should_redact_again_when_log_redaction_is_added_after_the_later_logger_factory()
     {
-        // given - the documented fix: call AddHeadlessLogRedaction again after the factory that replaced the wrapper
+        // given - the documented fix: call AddHeadlessRedaction again after the factory that replaced the wrapper
         var captured = new List<(string Message, string? Path, string? ScopePath)>();
         using var stateProvider = new StateProvider(captured);
         var events = new List<string>();
@@ -242,7 +242,7 @@ public sealed class BlobSignedUrlRedactionTests : TestBase
             setup.UseSignedUrlEndpoint(options => options.BaseUrl = new Uri("https://api.example.com"));
         });
         services.AddSingleton<ILoggerFactory>(_ => new LoggerFactory([stateProvider, new EventNameProvider(events)]));
-        services.AddHeadlessLogRedaction();
+        services.AddHeadlessRedaction();
         await using var provider = services.BuildServiceProvider();
 
         // when

@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text.RegularExpressions;
 using Headless.Checks;
 using Headless.Hosting;
 using Headless.Logging.Internal;
@@ -19,107 +18,50 @@ public static class SetupLoggingRedaction
     extension(IServiceCollection services)
     {
         /// <summary>
-        /// Registers Microsoft's redaction with every Headless classification erased: <see cref="SecretDataAttribute"/>,
-        /// <see cref="PrivateDataAttribute"/>, and <see cref="IdentifierDataAttribute"/> members, and any
-        /// classification without a redactor of its own.
-        /// </summary>
-        /// <remarks>
-        /// Erasing keeps the property and its name in the log with an empty value. To keep "same person" or "same id"
-        /// searchable, use an overload that takes an HMAC key, which pseudonymizes private data and identifiers.
-        /// </remarks>
-        /// <param name="configure">Runs after the defaults, so it can map further classifications or replace a default.</param>
-        /// <returns>The same <see cref="IServiceCollection"/> instance.</returns>
-        public IServiceCollection AddHeadlessRedaction(Action<IRedactionBuilder>? configure = null)
-        {
-            Argument.IsNotNull(services);
-
-            return services.AddRedaction(redaction =>
-            {
-                redaction.SetRedactor<ErasingRedactor>(_Pseudonymized);
-                _AddDefaults(redaction, configure);
-            });
-        }
-
-        /// <summary>
-        /// Registers Microsoft's redaction with <see cref="SecretDataAttribute"/> members erased, and
-        /// <see cref="PrivateDataAttribute"/> and <see cref="IdentifierDataAttribute"/> members replaced by an HMAC
-        /// pseudonym keyed from <paramref name="hmacSection"/>.
-        /// </summary>
-        /// <remarks>
-        /// The same value always yields the same pseudonym under one key, so operators can tell that two events concern
-        /// the same person or id; the pseudonym cannot be reversed without the key. Rotating the key breaks that
-        /// correlation across the rotation. The section binds <see cref="HmacRedactorOptions"/>: a Base64 <c>Key</c> of
-        /// at least 44 characters and a <c>KeyId</c> appended to each pseudonym. Keep the key in a secret store.
-        /// </remarks>
-        /// <param name="hmacSection">The configuration section that binds <see cref="HmacRedactorOptions"/>.</param>
-        /// <param name="configure">Runs after the defaults, so it can map further classifications or replace a default.</param>
-        /// <returns>The same <see cref="IServiceCollection"/> instance.</returns>
-        public IServiceCollection AddHeadlessRedaction(
-            IConfigurationSection hmacSection,
-            Action<IRedactionBuilder>? configure = null
-        )
-        {
-            Argument.IsNotNull(services);
-            Argument.IsNotNull(hmacSection);
-
-            return services.AddRedaction(redaction =>
-            {
-                redaction.SetHmacRedactor(hmacSection, _Pseudonymized);
-                _AddDefaults(redaction, configure);
-            });
-        }
-
-        /// <summary>
-        /// Registers Microsoft's redaction with <see cref="SecretDataAttribute"/> members erased, and
-        /// <see cref="PrivateDataAttribute"/> and <see cref="IdentifierDataAttribute"/> members replaced by an HMAC
-        /// pseudonym keyed by <paramref name="configureHmac"/>.
-        /// </summary>
-        /// <remarks>
-        /// The same value always yields the same pseudonym under one key; rotating the key breaks that correlation
-        /// across the rotation. <see cref="HmacRedactorOptions.Key"/> is a Base64 key of at least 44 characters; keep it
-        /// in a secret store.
-        /// </remarks>
-        /// <param name="configureHmac">Sets the HMAC key and key id.</param>
-        /// <param name="configure">Runs after the defaults, so it can map further classifications or replace a default.</param>
-        /// <returns>The same <see cref="IServiceCollection"/> instance.</returns>
-        public IServiceCollection AddHeadlessRedaction(
-            Action<HmacRedactorOptions> configureHmac,
-            Action<IRedactionBuilder>? configure = null
-        )
-        {
-            Argument.IsNotNull(services);
-            Argument.IsNotNull(configureHmac);
-
-            return services.AddRedaction(redaction =>
-            {
-                redaction.SetHmacRedactor(configureHmac, _Pseudonymized);
-                _AddDefaults(redaction, configure);
-            });
-        }
-
-        /// <summary>
-        /// Wraps the registered <see cref="ILoggerFactory"/> so every log entry is redacted before any provider sees it:
-        /// classified <c>[LoggerMessage]</c> parameters through the registered <see cref="IRedactorProvider"/>, and
-        /// credential paths that an <see cref="ILogPathRedactor"/> recognizes in ASP.NET Core's request scope and
-        /// request lines.
+        /// Registers Microsoft's redaction for the Headless taxonomy and applies it to every log entry, whichever logging
+        /// stack owns the <see cref="ILoggerFactory"/>.
         /// </summary>
         /// <remarks>
         /// <para>
-        /// The wrapper works whichever logging stack owns the factory. Under Serilog's <c>UseSerilog</c> it is the only
-        /// thing that redacts a classified <c>[LoggerMessage]</c> parameter: without it the parameter is dropped and the
-        /// text keeps a literal <c>{Name}</c> hole, because Serilog's factory never runs Microsoft's
-        /// <c>EnableRedaction</c>.
+        /// <see cref="SecretDataAttribute"/> values are always erased. <see cref="PrivateDataAttribute"/> and
+        /// <see cref="IdentifierDataAttribute"/> values, and any classification without a redactor of its own, are
+        /// erased too, unless <see cref="HeadlessRedactionSetupBuilder.UseHmac(IConfigurationSection)"/> pseudonymizes them.
+        /// Erasing keeps the property and its name in the log with an empty value.
         /// </para>
         /// <para>
-        /// Call it after every call that registers a logger factory, such as <c>UseSerilog</c>: a factory registered
-        /// later replaces the wrapped one. Calling it again is safe, and wraps the factories registered since; a factory
-        /// is never wrapped twice. When a later registration does replace it, the host logs a warning at startup.
+        /// The registered logger factory is wrapped, so a classified <c>[LoggerMessage]</c> parameter is redacted under
+        /// Serilog's factory too, credential paths an <see cref="ILogPathRedactor"/> recognizes are replaced in ASP.NET
+        /// Core's request scope and request lines, and text patterns from
+        /// <see cref="HeadlessRedactionSetupBuilder.MaskText(string, string, Action{LogTextRedactionScope})"/> are
+        /// masked. A logger factory registered later replaces the wrapped one: <c>AddHeadlessSerilog</c> from
+        /// <c>Headless.Logging.Serilog</c> wraps its own, and after a plain <c>UseSerilog</c> call this method again.
+        /// The host logs a warning at startup when the factory in charge is not wrapped.
+        /// </para>
+        /// <para>
+        /// Safe to call from an app and from libraries, in any order: each call adds only what its own
+        /// <paramref name="setup"/> asks for, and a factory is never wrapped twice.
         /// </para>
         /// </remarks>
+        /// <param name="setup">Adds an HMAC key, text patterns, or mappings of your own.</param>
         /// <returns>The same <see cref="IServiceCollection"/> instance.</returns>
-        public IServiceCollection AddHeadlessLogRedaction()
+        public IServiceCollection AddHeadlessRedaction(Action<HeadlessRedactionSetupBuilder>? setup = null)
         {
             Argument.IsNotNull(services);
+
+            var builder = new HeadlessRedactionSetupBuilder(services);
+            setup?.Invoke(builder);
+
+            services.AddRedaction(redaction =>
+            {
+                // Only the secret mapping is applied on every call. Private data and identifiers stay with the fallback
+                // (erasing) until a UseHmac maps them, so a library's bare call never undoes an app's key.
+                redaction.SetRedactor<ErasingRedactor>(new DataClassificationSet(HeadlessDataClassifications.Secret));
+
+                foreach (var action in builder.RedactionActions)
+                {
+                    action(redaction);
+                }
+            });
 
             // Every ILoggerFactory registration is wrapped, so the last one, the one the container resolves, always is.
             services.TryDecorateWith<ILoggerFactory>(
@@ -130,7 +72,7 @@ public static class SetupLoggingRedaction
                             inner,
                             provider.GetService<IRedactorProvider>(),
                             [.. provider.GetServices<ILogPathRedactor>()],
-                            [.. provider.GetServices<ILogTextRedactor>()]
+                            LogTextRedactorRegistration.All(provider)
                         )
             );
 
@@ -138,43 +80,5 @@ public static class SetupLoggingRedaction
 
             return services;
         }
-
-        /// <summary>
-        /// Masks every match of <paramref name="pattern"/> in the text of every log entry: the rendered message, string
-        /// property values, and string scope values. Opt-in, for value shapes no classification reaches.
-        /// </summary>
-        /// <remarks>
-        /// Applied by the wrapper <c>AddHeadlessLogRedaction()</c> registers, so call that too, after any logger factory
-        /// registration. It scans every string of every entry, so prefer classification where you can, and give the
-        /// pattern a match timeout: a timed-out match replaces the whole text. Exception messages are not rewritten.
-        /// Each call adds one redactor; they run in registration order.
-        /// </remarks>
-        /// <param name="pattern">The shape to mask.</param>
-        /// <param name="replacement">The text that replaces each match. Defaults to <c>***</c>.</param>
-        /// <returns>The same <see cref="IServiceCollection"/> instance.</returns>
-        public IServiceCollection AddLogTextRedaction(Regex pattern, string replacement = "***")
-        {
-            Argument.IsNotNull(services);
-
-            return services.AddSingleton<ILogTextRedactor>(new RegexLogTextRedactor(pattern, replacement));
-        }
-    }
-
-    // Private data and identifiers are what operators correlate on, so they are the classifications an HMAC key
-    // pseudonymizes; a secret is never correlated on, so it is always erased.
-    private static readonly DataClassificationSet[] _Pseudonymized =
-    [
-        new(HeadlessDataClassifications.Private),
-        new(HeadlessDataClassifications.Identifier),
-    ];
-
-    private static void _AddDefaults(IRedactionBuilder redaction, Action<IRedactionBuilder>? configure)
-    {
-        redaction.SetRedactor<ErasingRedactor>(new DataClassificationSet(HeadlessDataClassifications.Secret));
-
-        // A member carrying a classification nobody mapped, or a combination of classifications, fails closed.
-        redaction.SetFallbackRedactor<ErasingRedactor>();
-
-        configure?.Invoke(redaction);
     }
 }

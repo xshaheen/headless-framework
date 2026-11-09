@@ -960,6 +960,7 @@
         "type": "Project",
         "dependencies": {
           "Headless.Extensions": "[1.0.0, )",
+          "Headless.Logging.Redaction": "[1.0.0, )",
           "Microsoft.Extensions.Compliance.Abstractions": "[10.11.0, )",
           "Serilog": "[4.4.0, )",
           "Serilog.Enrichers.Environment": "[3.0.1, )",

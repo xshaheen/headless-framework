@@ -26,7 +26,7 @@ internal sealed class RedactingLoggerFactory(
     ILoggerFactory inner,
     IRedactorProvider? redactorProvider,
     ILogPathRedactor[] pathRedactors,
-    ILogTextRedactor[] textRedactors
+    LogTextRedactorRegistration[] textRedactors
 ) : ILoggerFactory
 {
     /// <summary>The category ASP.NET Core's hosting layer opens the request scope and writes the request lines under.</summary>
@@ -37,9 +37,12 @@ internal sealed class RedactingLoggerFactory(
         var logger = inner.CreateLogger(categoryName);
 
         // Text scrubbing sits beneath the other stages, so it scans their already-redacted copies.
-        if (textRedactors.Length > 0)
+        // Patterns scoped to other categories are dropped here, so a category none applies to pays nothing.
+        LogTextRedactorRegistration[] applicable = [.. textRedactors.Where(r => r.AppliesTo(categoryName))];
+
+        if (applicable.Length > 0)
         {
-            logger = new TextScrubbingLogger(logger, textRedactors);
+            logger = new TextScrubbingLogger(logger, applicable);
         }
 
         var redactsPaths =
@@ -140,16 +143,9 @@ internal sealed class RedactingLoggerFactory(
 
             var message = formatter((TState)(object)state, exception);
 
-            if (inner.IsEnabled(logLevel))
-            {
-                inner.Log(
-                    logLevel,
-                    eventId,
-                    new RedactedState(values, message),
-                    exception,
-                    static (s, _) => s.ToString()
-                );
-            }
+#pragma warning disable CA1873 // False positive: Log checks inner.IsEnabled before calling this method.
+            inner.Log(logLevel, eventId, new RedactedState(values, message), exception, static (s, _) => s.ToString());
+#pragma warning restore CA1873
         }
 
         private bool _TryRedactPath<TState>(TState state, string pathKey, out PathRedactedState redacted)

@@ -3,7 +3,7 @@
 using System.Text.RegularExpressions;
 using Headless.Checks;
 
-namespace Headless.Logging;
+namespace Headless.Logging.Internal;
 
 /// <summary>An <see cref="ILogTextRedactor"/> that replaces every match of a pattern.</summary>
 /// <remarks>
@@ -12,8 +12,7 @@ namespace Headless.Logging;
 /// </remarks>
 /// <param name="pattern">The shape to mask, for example <c>new Regex(@"\b\d{14}\b", RegexOptions.None, TimeSpan.FromMilliseconds(50))</c>.</param>
 /// <param name="replacement">The text that replaces each match. Defaults to <c>***</c>.</param>
-[PublicAPI]
-public sealed class RegexLogTextRedactor(Regex pattern, string replacement = "***") : ILogTextRedactor
+internal sealed class RegexLogTextRedactor(Regex pattern, string replacement = "***") : ILogTextRedactor
 {
     private readonly Regex _pattern = Argument.IsNotNull(pattern);
     private readonly string _replacement = Argument.IsNotNull(replacement);

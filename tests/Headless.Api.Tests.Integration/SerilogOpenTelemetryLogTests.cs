@@ -68,10 +68,12 @@ public sealed partial class SerilogOpenTelemetryLogTests : TestBase
         customer.Should().Contain(StarRedactor.Output).And.Contain("Gold").And.NotContain("Alice");
     }
 
-    [Fact]
-    public async Task should_export_classified_logger_message_parameter_redacted_under_serilog()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task should_export_classified_logger_message_parameter_redacted_under_serilog(bool serilogFirst)
     {
-        // given: the documented order, AddHeadlessLogRedaction after UseSerilog so it wraps Serilog's factory
+        // given: AddHeadlessSerilog wraps its own factory, so it works before or after AddHeadless
         var logs = new ConcurrentQueue<CapturedLog>();
         await using var app = await _CreateAppAsync(
             logs,
@@ -79,7 +81,7 @@ public sealed partial class SerilogOpenTelemetryLogTests : TestBase
                 services.AddRedaction(redaction =>
                     redaction.SetRedactor<StarRedactor>(new DataClassificationSet(_Personal))
                 ),
-            afterSerilog: services => services.AddHeadlessLogRedaction()
+            serilogFirst
         );
         var logger = app.Services.GetRequiredService<ILogger<SerilogOpenTelemetryLogTests>>();
 
@@ -98,7 +100,7 @@ public sealed partial class SerilogOpenTelemetryLogTests : TestBase
     private async Task<WebApplication> _CreateAppAsync(
         ConcurrentQueue<CapturedLog> logs,
         Action<IServiceCollection> configureServices,
-        Action<IServiceCollection>? afterSerilog = null
+        bool serilogFirst = false
     )
     {
         var builder = WebApplication.CreateBuilder(
@@ -107,8 +109,13 @@ public sealed partial class SerilogOpenTelemetryLogTests : TestBase
         builder.WebHost.UseUrls("http://127.0.0.1:0");
 
         // The documented setup: Serilog owns the console, so the default providers go before AddHeadless adds
-        // the OpenTelemetry provider, and writeToProviders hands every event on to that provider.
+        // the OpenTelemetry provider, and AddHeadlessSerilog hands every event on to that provider.
         builder.Logging.ClearProviders();
+
+        if (serilogFirst)
+        {
+            _AddSerilog(builder);
+        }
 
         builder.AddHeadless(configureServices: options =>
         {
@@ -123,25 +130,20 @@ public sealed partial class SerilogOpenTelemetryLogTests : TestBase
 
         configureServices(builder.Services);
 
-        // Files off so the test leaves nothing on disk.
-        builder.Host.UseSerilog(
-            (context, services, configuration) =>
-                configuration.ConfigureReloadableLoggerConfiguration(
-                    services,
-                    context.Configuration,
-                    context.HostingEnvironment,
-                    new SerilogOptions { WriteToFiles = false }
-                ),
-            writeToProviders: true
-        );
-
-        afterSerilog?.Invoke(builder.Services);
+        if (!serilogFirst)
+        {
+            _AddSerilog(builder);
+        }
 
         var app = builder.Build();
         await app.StartAsync(AbortToken);
 
         return app;
     }
+
+    // Files off so the test leaves nothing on disk.
+    private static void _AddSerilog(WebApplicationBuilder builder) =>
+        builder.AddHeadlessSerilog(new SerilogOptions { WriteToFiles = false });
 
     private static async Task<CapturedLog> _WaitForLogAsync(
         ConcurrentQueue<CapturedLog> logs,
