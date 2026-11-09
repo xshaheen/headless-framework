@@ -67,8 +67,8 @@ public sealed class PostgreSqlClockAfterLockTests(PostgreSqlTestFixture fixture)
 
         // then
         acquired.Should().BeTrue();
-        var lockedUntil = await _ReadInstantAsync("locked_until", stored.StorageId);
-        (lockedUntil - lease).Should().BeOnOrAfter(released);
+        var leaseExpiresAt = await _ReadInstantAsync("lease_expires_at", stored.StorageId);
+        (leaseExpiresAt - lease).Should().BeOnOrAfter(released);
     }
 
     [Fact]

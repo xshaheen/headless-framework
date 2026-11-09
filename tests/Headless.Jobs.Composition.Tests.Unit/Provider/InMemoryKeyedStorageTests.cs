@@ -180,13 +180,28 @@ public sealed class InMemoryKeyedStorageTests : TestBase
                         JobId = job.Id,
                         FunctionName = job.Function,
                         Status = JobStatus.InProgress,
-                        ClaimOwner = claimed.OwnerId,
+                        ClaimOwner = claimed.Lease.Holder,
+                        ClaimGeneration = claimed.Lease.Generation,
                     };
                     state.SetProperty(x => x.Status, JobStatus.InProgress);
-                    (await store.UpdateTimeJobsWithUnifiedContextAsync([job.Id], state, AbortToken))
+                    (
+                        await store.UpdateTimeJobsWithUnifiedContextAsync(
+                            [JobsLeaseTables.TimeJob(job.Id, claimed.Lease.Generation)],
+                            state,
+                            AbortToken
+                        )
+                    )
                         .Should()
                         .ContainSingle();
-                    (await store.RenewTimeJobLeaseAsync(job.Id, claimed.OwnerId!, AbortToken)).Should().Be(1);
+                    (
+                        await store.RenewTimeJobLeaseAsync(
+                            JobsLeaseTables.TimeJob(job.Id, claimed.Lease.Generation),
+                            claimed.Lease.Holder!,
+                            AbortToken
+                        )
+                    )
+                        .Should()
+                        .Be(1);
                 },
                 AbortToken
             );

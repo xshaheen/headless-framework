@@ -230,8 +230,8 @@ public sealed class SqlServerPooledIsolationTests(SqlServerTestFixture fixture) 
             new CommandDefinition(
                 """
                 INSERT INTO headless.MessagingPublished
-                    (Id,Version,Name,Content,IntentType,Retries,Added,ExpiresAt,NextRetryAt,LockedUntil,Owner,StatusName,MessageId)
-                VALUES (@Id,'v1','isolation.message',@Content,0,0,SYSUTCDATETIME(),@ExpiresAt,NULL,NULL,NULL,@StatusName,@MessageId);
+                    (Id,Version,Name,Content,IntentType,Retries,Added,ExpiresAt,NextRetryAt,StatusName,MessageId)
+                VALUES (@Id,'v1','isolation.message',@Content,0,0,SYSUTCDATETIME(),@ExpiresAt,NULL,@StatusName,@MessageId);
                 """,
                 new
                 {

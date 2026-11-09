@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Fencing;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
@@ -30,7 +31,13 @@ public sealed class RequestDeadlineTests : TestBase
         var message = host.Request(TimeSpan.FromSeconds(5));
         if (persistedPickup)
         {
-            message.LockedUntil = host.Clock.GetUtcNow().AddMinutes(5);
+            message.Lease = new RowLeaseSnapshot(
+                1,
+                RowLeaseState.Active,
+                host.Clock.GetUtcNow().AddMinutes(5),
+                null,
+                0
+            );
         }
 
         host.Clock.Advance(TimeSpan.FromSeconds(6));

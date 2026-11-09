@@ -1,0 +1,22 @@
+<Project Sdk="Headless.NET.Sdk.Test">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Tests</RootNamespace>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <PackageReference Include="xunit.v3.mtp-v2" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Headless.Fencing.EntityFramework\Headless.Fencing.EntityFramework.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Sql.PostgreSql\Headless.Sql.PostgreSql.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Sql.Sqlite\Headless.Sql.Sqlite.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Sql.SqlServer\Headless.Sql.SqlServer.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Testing.Testcontainers\Headless.Testing.Testcontainers.csproj" />
+    <ProjectReference Include="..\Headless.Sql.Tests.Harness\Headless.Sql.Tests.Harness.csproj" />
+  </ItemGroup>
+</Project>

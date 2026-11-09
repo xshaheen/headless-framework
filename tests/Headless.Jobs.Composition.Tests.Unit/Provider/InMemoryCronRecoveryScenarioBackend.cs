@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Fencing;
 using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Jobs.Provider;
@@ -96,7 +97,8 @@ public sealed class InMemoryCronRecoveryScenarioBackend : ICronRecoveryScenarioB
                 Status = row.RawStatus is null ? row.Status : (JobStatus)999,
                 Disposition = row.Disposition,
                 SkippedReason = row.SkippedReason,
-                OwnerId = row.OwnerId,
+                // The shared scenarios seed only an owner; a row they call claimed holds a live lease.
+                Lease = TestLeases.Held(row.OwnerId, row.OwnerId is null ? null : _Now.AddMinutes(5)),
                 OnNodeDeath = NodeDeathPolicy.Retry,
                 CreatedAt = _Now.AddHours(-1).AddSeconds(row.CreatedAtRank),
                 UpdatedAt = _Now.AddHours(-1).AddSeconds(row.CreatedAtRank),
@@ -124,7 +126,7 @@ public sealed class InMemoryCronRecoveryScenarioBackend : ICronRecoveryScenarioB
                     coalesced.Id,
                     coalesced.ExecutionTime,
                     coalesced.RecoveredFromUtc,
-                    coalesced.OwnerId
+                    _LiveHolder(coalesced.Lease)
                 )
                 : null;
 
@@ -151,7 +153,7 @@ public sealed class InMemoryCronRecoveryScenarioBackend : ICronRecoveryScenarioB
                     x.ExecutionTime,
                     x.Status.ToString(),
                     x.Disposition.ToString(),
-                    x.OwnerId,
+                    _LiveHolder(x.Lease),
                     x.RecoveredFromUtc
                 ))
                 .ToArray();
@@ -165,4 +167,11 @@ public sealed class InMemoryCronRecoveryScenarioBackend : ICronRecoveryScenarioB
             return new CronSchedulePosition(stored!.ReconciledThroughUtc, stored.NextDueUtc);
         }
     }
+
+    /// <summary>
+    /// The scenarios' owner column means "holds the row now". An ended lease keeps the holder that last held it, so
+    /// only an active lease reports one.
+    /// </summary>
+    private static string? _LiveHolder(RowLeaseSnapshot lease) =>
+        lease.State == RowLeaseState.Active ? lease.Holder : null;
 }

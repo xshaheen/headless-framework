@@ -20,6 +20,10 @@ public sealed record InboxKey(
 public sealed record InboxGeneration(long Number, Guid IncarnationId);
 
 /// <summary>The complete persisted generation fence required for a lifecycle mutation.</summary>
+/// <remarks>
+/// <paramref name="LeaseGeneration" /> is the row lease the attempt holds; a write fenced on it is refused once the lease
+/// expired, ended, or passed to another attempt, by the database clock.
+/// </remarks>
 [PublicAPI]
 public sealed record InboxAttemptFence(
     Guid StorageId,
@@ -27,8 +31,7 @@ public sealed record InboxAttemptFence(
     long Generation,
     Guid GenerationIncarnationId,
     Guid AttemptId,
-    string? Owner,
-    DateTimeOffset LockedUntil
+    long LeaseGeneration
 );
 
 /// <summary>The durable outcome of converging one transport delivery on an inbox generation.</summary>

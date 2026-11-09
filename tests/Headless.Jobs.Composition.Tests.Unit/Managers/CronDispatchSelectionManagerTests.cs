@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless;
+using Headless.Fencing;
 using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Jobs.Managers;
@@ -443,8 +444,7 @@ public sealed class CronDispatchSelectionManagerTests : TestBase
             .ContainSingle()
             .Subject;
         persisted.Status.Should().Be(JobStatus.Idle);
-        persisted.OwnerId.Should().BeNull();
-        persisted.LockedUntil.Should().BeNull();
+        persisted.Lease.State.Should().NotBe(RowLeaseState.Active);
     }
 
     [Fact]
@@ -474,7 +474,7 @@ public sealed class CronDispatchSelectionManagerTests : TestBase
             .ContainSingle()
             .Subject;
         persisted.Status.Should().Be(JobStatus.Idle);
-        persisted.OwnerId.Should().BeNull();
+        persisted.Lease.State.Should().NotBe(RowLeaseState.Active);
     }
 
     [Fact]

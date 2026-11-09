@@ -29,6 +29,7 @@ public class JobsDbContext<TTimeJob, TCronJob> : DbContext
         );
         base.OnModelCreating(modelBuilder);
         JobsKeyedModelConfiguration.Configure<TTimeJob>(modelBuilder, this);
+        JobsLeaseModelConfiguration.Configure(modelBuilder, this);
     }
 }
 

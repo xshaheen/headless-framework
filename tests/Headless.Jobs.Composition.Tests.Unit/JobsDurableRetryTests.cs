@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Fencing;
 using Headless.Jobs;
 using Headless.Jobs.Instrumentation;
 using Headless.Jobs.JobsThreadPool;
@@ -137,10 +138,9 @@ public sealed class JobsDurableRetryTests : TestBase
             // when the first attempt fails
             var waiting = await _WaitForAsync(store, id, row => row.RetryCount == 1);
 
-            // then the row waits in the store, by none of the node-death policies, with no owner or lease
+            // then the row waits in the store, by none of the node-death policies, with its attempt's lease released
             waiting.Status.Should().Be(JobStatus.Idle);
-            waiting.OwnerId.Should().BeNull();
-            waiting.LockedUntil.Should().BeNull();
+            waiting.Lease.State.Should().NotBe(RowLeaseState.Active);
             waiting.ExecutionTime.Should().BeOnOrAfter(beforeEnqueue.AddSeconds(5));
 
             // and the only worker runs other work meanwhile

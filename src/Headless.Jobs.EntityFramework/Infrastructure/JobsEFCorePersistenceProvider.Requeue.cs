@@ -111,8 +111,6 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                                     .SetProperty(x => x.RetryCount, 0)
                                     .SetProperty(x => x.ExceptionMessage, _ => null)
                                     .SetProperty(x => x.SkippedReason, _ => null)
-                                    .SetProperty(x => x.OwnerId, _ => null)
-                                    .SetProperty(x => x.LockedUntil, _ => null)
                                     .SetProperty(x => x.ExecutedAt, _ => null)
                                     .SetProperty(x => x.ElapsedTime, 0L)
                                     // A requeue is a new run, so the old run's progress would misreport it.

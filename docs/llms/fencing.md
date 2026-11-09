@@ -1,6 +1,6 @@
 ---
 domain: Fencing
-packages: Fencing.Abstractions, Fencing, Fencing.Sql, Fencing.InMemory, Fencing.PostgreSql, Fencing.SqlServer, Fencing.Sqlite
+packages: Fencing.Abstractions, Fencing, Fencing.Sql, Fencing.InMemory, Fencing.PostgreSql, Fencing.SqlServer, Fencing.Sqlite, Fencing.EntityFramework
 ---
 
 # Fencing
@@ -88,7 +88,7 @@ A lock's fencing token and a fenced lease's generation come from separate sequen
 
 ### Work that already has a row
 
-Jobs and Messaging need none of these for their own rows. Each work row carries its lease in its own columns (Jobs: `OwnerId` and `LockedUntil`; Messaging: `Owner` and `LockedUntil`), claimed and renewed by guarded updates on the database clock. That is correct because the row is the work: the claim, the renewal, and the result update the same row, so there is no second table and no lock order. Follow that pattern when your work already has a row you own. Use a fenced lease when it does not, or when an external executor needs a generation to carry.
+Jobs and Messaging need none of these for their own rows. Each work row carries its lease in its own columns (the fenced-row lease columns that [Lease on your own row](#lease-on-your-own-row) describes), claimed and renewed by guarded updates on the database clock. That is correct because the row is the work: the claim, the renewal, and the result update the same row, so there is no second table and no lock order. Idempotency's record rows follow it through `FencedRows` itself, with a store-wide generation sequence because a purged key is admitted again (see [idempotency.md](idempotency.md)). Follow that pattern when your work already has a row you own; [Lease on your own row](#lease-on-your-own-row) gives it a generation, a fence, and the lease table's answers without writing the SQL yourself. Use a fenced lease when the work has no row, or when the lease must outlive the row.
 
 Jobs keyed scheduling guards its own rows the same way, with its own generation column: `ReplaceKeyedAsync(key, observedGeneration, ...)` advances only while the row is pending and unclaimed, and reports `StaleGeneration` when a lost-response replay names a generation Jobs already moved past (see [jobs.md](jobs.md)). That check protects exactly one table, Jobs' own. A fenced lease is the same generation guard extracted into a reusable primitive: it fences any caller-owned write, on any table, for any resource a caller names.
 
@@ -238,6 +238,71 @@ Enlisted calls (`unit.Leases.*`) follow the same rules as `unit.Sequences` (see 
 
 With `Headless.UnitOfWork.Analyzers` referenced, [HF2004](unit-of-work.md#hf2004) reports an `IFencedLeases` grant, renew, settle, or release made while a unit of work is in scope, and its code fix moves the call onto `unit.Leases`. `SweepExpiredAsync`, `GetStatusAsync`, `GetCurrentAsync`, `RevokeAsync`, and `PurgeAsync` are not reported; `RevokeAsync` has no enlisted form. `unit.Leases.ClaimExpiredAsync` is a write: it marks an observed-mode unit non-retryable like the other enlisted writes.
 
+## Lease on your own row
+
+`FencedRows` (in `Headless.Fencing.Sql`) runs the lease store's transitions on five columns of a table you own, so the work's own final write and the lease's end are one fenced statement on one row. It needs no registration: every call takes the table descriptor, your `DbConnection`, and optionally your open `DbTransaction`.
+
+| Use | When |
+| --- | --- |
+| The lease table (`IFencedLeases`) | The work has no row of its own, the lease must outlive or precede the row, you need progress, purge, or the sweep handoff, or the lease must join a unit on the configured provider's database |
+| A lease on your own row (`FencedRows`) | The work is a row you already write (a job, an import, an order step), and you want its claim, renewals, and final status update fenced by one generation with no second table and no lock order |
+
+**Columns.** Add five columns to the table: `lease_generation` (bigint, default 0), `lease_state` (smallint, default 0, holding `RowLeaseState`: `Idle` 0, `Active`, `Settled`, `Released`, `Abandoned`, `Revoked`), `lease_expires_at` (nullable instant), `lease_holder` (nullable text, at most 200 characters unless the table sets its own limit), and `lease_takeover_count` (int, default 0). `FencedRowColumns` renames any of them. Your own migrations own the DDL; the helper never creates or inserts rows.
+
+```csharp
+var table = FencedRowTable<Guid>.Create(
+    PostgreSqlDialect.Instance, "public", "work_items",
+    FencedRowKey<Guid>.Scalar("id", SqlColumnType.Guid),
+    generationSequence: "work_item_generations"); // optional; see the key-reuse rule
+
+var grant = await FencedRows.GrantAsync(table, connection, null, itemId, TimeSpan.FromMinutes(5),
+    new LeaseGrantOptions { Holder = "cluster/node-1@3" }, ct);
+if (grant is not { IsAcquired: true }) return;          // null: no row has the key
+
+// ...do the work, renewing with FencedRows.RenewAsync(table, connection, null, grant.Row, duration, ct)...
+
+var settled = await FencedRows.SettleAsync(table, connection, null, grant.Row,
+    new FencedRowWrite(Set: "status = @Done",
+        Bind: cmd => PostgreSqlDialect.Instance.AddParameter(cmd, "Done", SqlColumnType.Text(32), "done")), ct);
+// Settled: the status and the settlement committed together. Stale or Expired: neither was written.
+```
+
+**API.** Build a `FencedRowTable<TKey>` once (`Create(dialect, schema, table, key, columns = null, generationSequence = null, holderMaxLength = null, commandTimeoutSeconds = null)`; a `null` schema names the table, and its sequence, unqualified, so the database resolves them as it resolves any unqualified name, and the descriptor's `Name` is the table name alone; a blank schema throws; `commandTimeoutSeconds` bounds each statement, the wait on a row another transaction holds included, and `null` keeps the provider's default). `holderMaxLength` is the width of your holder column, `FencingFieldLimits.HolderMaxLength` (200) by default and at most 850, so a SQL Server index on an `nvarchar` holder stays under the 1700-byte key limit; a value outside 1 to 850 throws `ArgumentOutOfRangeException`. Every grant, claim, `GrantScope.Bind`, and `RevokeHeldByAsync` checks a holder against the table's `HolderMaxLength` and binds it at that width, with `FencedRowKey<TKey>.Scalar(column, type)` or `Composite(parts, read)`. A token is `FencedRow<TKey>(Table, Key, Generation)`, a plain record safe to hand to another process; every call checks that its `Table` names this descriptor and throws `ArgumentException` otherwise.
+
+- `GrantAsync(table, connection, transaction, key, duration, options, ct)` → `FencedRowGrantResult<TKey>?` with the lease table's grant answers (`Granted`, `Held`, `Takeover`, `Expired`, the same-holder rule, `AfterSweep`), or `null` when no row has the key.
+- `ClaimAsync(table, connection, transaction, FencedRowClaim(filter, orderBy, batchSize, duration, holder, takeover, bind), ct)` grants up to `batchSize` rows your filter selects that no live attempt holds, each under its own next generation, and returns their tokens.
+- `RenewAsync`, `SettleAsync`, `ReleaseAsync`, `GetStatusAsync`, and `AbandonExpiredAsync(batchSize)` (the count abandoned) answer as the lease table's verbs do; `RevokeAsync(key)` returns the revoked token, or `null` when no attempt was active, idempotency and refusal reasons included. `SettleAsync` and `ReleaseAsync` take an optional `FencedRowWrite` whose `Set` commits with the settlement. `ReleaseAsync(table, connection, transaction, rows, write, ct)` releases a batch in one transaction, in key order, each token judged on its own by its own statement (one round trip per row), and returns the statuses in input order; its optional `FencedRowWrite` (`Set` and `Bind` only) lands on each row its release ends. `RevokeAsync(key, write)` and its batch form `RevokeAsync(table, connection, transaction, keys, write, ct)` (key order, one transaction, the revoked tokens or `null` in input order), and `AbandonExpiredAsync(batchSize, write)`, take an optional `FencedRowWrite` too, so an out-of-band end of an attempt (an operator's cancel, a dead-node or stalled sweep) writes the row's own status in the statement that ends the lease, and the ended attempt's later write is refused. Revoke takes `Set` only; the sweep takes `Set` and a `Condition` that narrows which expired rows it abandons. `RevokeHeldByAsync(table, connection, transaction, holders, batchSize, write, ct)` revokes, in one locked statement that skips rows another transaction holds, up to `batchSize` active attempts (live or expired) whose stored holder is in `holders`, and returns the count; its `FencedRowWrite` takes `Set` and a narrowing `Condition`. Call it in a loop until it returns fewer than `batchSize` to reclaim a dead node's rows at once. An empty `holders` returns 0 without a round trip; a row whose attempt already ended keeps its holder and is not touched.
+- `WriteAsync(table, connection, transaction, row, FencedRowWrite(Set, Condition, Returning, Bind), readReturning, ct)` → `SqlFenced<LockedRowLease, TAccepted>`: your write applies only while the generation is current and your `Condition` holds, and keeps the lease active. `Before` is `null` for a missing row; otherwise `Before.Status` is `Current` when the lease was live (so a refusal there means your condition failed) or the reason the lease refused (`Expired`, `Stale`, a terminal state).
+- `WriteAndRenewAsync(table, connection, transaction, row, write, duration, readReturning, ct)` is `WriteAsync` that also extends the lease to `duration` from the database clock in the same statement, so the write and the renewal land together or not at all, and `write.Returning` reads the renewed expiry. Use it when an attempt records progress that must not outlive its lease, such as reserving the next attempt of a row a batch claim leased: there is no state where the write landed and the renewal was refused.
+- `FenceAsync(table, connection, transaction, row, ct)` locks the row inside your transaction and returns `LeaseFenceStatus`; the lock holds the answer until your transaction ends.
+- `SettleAsync` and `ReleaseAsync(table, connection, transaction, row, write, readReturning, ct)` → `SqlFenced<LockedRowLease, TAccepted>` end the attempt the way `WriteAsync` writes: `write.Condition` narrows the fence, `write.Returning` reads columns back, `write.Set` is optional, and `Before.Status` classifies a refusal as `WriteAsync` does (`Current` means your condition failed; `Settled` after a settlement lets a retry tell its first attempt landed). The overloads without `readReturning` reject a `Condition` or `Returning`.
+- `GrantScope(table, prefix)` renders grant assignments for a statement you write, such as claiming a job and its subtree: `Assignments(deadlineExpression)` (pass the root's stored expiry so children expire with it), `Bind(command, duration, holder)` (`{prefix}Duration`, `{prefix}Holder`), and `Returning` (key columns, generation, expiry). Each child gets its own generation, so one child's token never fences a sibling. The assignments carry no lease fence: they grant every row your statement selects, a live attempt's included, so your filter must exclude rows a live attempt holds unless the caller already holds them. `RenderClaim(filter, orderBy, set, returning, batchSizeParameter, takeover, deadlineExpression)` renders a whole claim instead, for a consumer that claims rows with columns of its own: the lease's fence (no live attempt, or no active one with `LeaseTakeover.AfterSweep`), the engine's skip-locked locking, the grant plus your `set`, and `Returning` followed by your `returning` columns. Bind it with `Bind` plus your batch size and fragment parameters.
+
+Every transition is the lease store's shape: a locking read, then one conditional `UPDATE` in the same batch, the database clock read after the lock, the refusal classified from the locked row, and the holder compared ordinally. With a `null` transaction a writing call opens a READ COMMITTED transaction (and the connection, if closed) and commits it; with your transaction it enlists and never commits. Nothing retries. Your fragments (`Set`, `Condition`, `Filter`, `OrderBy`) are trusted SQL over unqualified columns: never build them from input. Parameter names starting with `Lease`, and `now` and `applied` (SQL Server declares them inside the statement), are reserved, and a `Bind` that adds one throws `ArgumentException` before any statement runs. `Duration` must be positive; `FencingOptions` bounds do not apply, because nothing here reads options. `RowLeaseRules` holds the same decisions as pure functions over a `RowLeaseSnapshot` and an explicit `now`, for a provider that decides in C#.
+
+**Key reuse.** Without a sequence, each row counts its own generations from the value it stores, so a stale token is refused only while its row lives. Delete a row and insert another under the same key and the new row counts from 0 again: a worker still holding generation 3 of the old row is accepted once the new row reaches generation 3. Never reuse a key while a token for it can still be in flight, or pass `generationSequence`, whose values only grow across the whole table (or every table that shares it). A sequence lives in the table's schema (unqualified when the schema is `null`), under the name you pass unquoted.
+
+**Entity Framework Core.** `Headless.Fencing.EntityFramework` maps the five columns as a `RowLeaseSnapshot` complex property and builds the descriptor from the model, so the table, schema, key, and column names follow whatever naming your context uses. The transitions stay `FencedRows` calls on the context's own connection and transaction, so a settlement commits or rolls back with the context's `SaveChangesAsync` writes:
+
+```csharp
+// OnModelCreating
+modelBuilder.Entity<WorkItem>().HasRowLease(w => w.Lease);          // RowLeaseSnapshot Lease { get; set; }
+modelBuilder.UseFencingDatabaseClock(PostgreSqlDialect.Instance);    // for WhereLeaseLive / WhereLeaseGrantable
+
+// a unit of work
+var table = db.FencedRowTable<WorkItem, Guid>(w => w.Lease, PostgreSqlDialect.Instance); // cached per model
+await using var tx = await db.Database.BeginTransactionAsync(ct);
+item.Status = "done";
+await db.SaveChangesAsync(ct);                                       // never writes the lease columns
+var settled = await FencedRows.SettleAsync(table, db.Database.GetDbConnection(),
+    db.Database.CurrentTransaction!.GetDbTransaction(), row, cancellationToken: ct);
+if (settled == LeaseSettlementStatus.Settled) await tx.CommitAsync(ct); // Stale or Expired: roll back
+```
+
+`WhereLeaseLive(w => w.Lease)` and `WhereLeaseGrantable(w => w.Lease)` select candidates by the database clock; they decide nothing, and the transition run on a candidate re-checks the lease after its row lock. See [Headless.Fencing.EntityFramework](#headlessfencingentityframework).
+
+**SQLite.** SQLite has no row locks: every write, a claim included, takes the database write lock, so concurrent claimers run one after another instead of skipping each other's rows. It has no sequence objects either: the sequence is a one-row table (`id` 1, `value`) that triggers on the generation column raise, and one statement reads it once, so every row a single claim or grant scope grants shares one generation (each still above that row's earlier ones, which is all the fence needs).
+
 ## Choosing a Provider
 
 | Provider | Use when | Avoid when | Trade-off |
@@ -271,6 +336,7 @@ Reference it from code that grants, renews, or fences leases. Registration lives
 - `LeaseSnapshot(Lease, Status, ExpiresAt, Holder, TakeoverCount)` adds `IsLive`. See [Holder](#holder) and [Current attempt and revoke](#current-attempt-and-revoke).
 - `unit.Leases` (namespace `Headless.UnitOfWork`) returns a `UnitOfWorkLeases` bound to the unit; repeated reads on one unit return the same instance. It mirrors `IFencedLeases` (grant with no options, a `LeaseTakeover`, or `LeaseGrantOptions`; renew, settle, release) plus `FenceAsync(lease, ct)`, which throws `StaleLeaseException` rather than returning a status, and `ClaimExpiredAsync(kind, after = null, ct)` → `ExpiredLease?`, one sweep claim inside the unit.
 - `unit.Leases` throws `InvalidOperationException` naming `AddHeadlessFencing` when no provider registered the feature.
+- Leases on a consumer's own row: `FencedRow<TKey>`, `FencedRowGrantResult<TKey>`, `RowLeaseState`, `RowLeaseSnapshot`, `RowLeaseTransition<TStatus>`, and the pure `RowLeaseRules` (`Grant`, `Renew`, `Settle`, `Release`, `Revoke`, `Judge`, `AbandonIfExpired`; every decision that depends on expiry takes an explicit `now`). See [Lease on your own row](#lease-on-your-own-row).
 
 ---
 
@@ -319,6 +385,7 @@ Each relational provider package references it, so applications install the prov
 - The one relational lease store, written against the SQL dialect kit (`ISqlDialect`, see [sql.md § Store statement kit](sql.md#store-statement-kit-for-provider-authors)); the PostgreSQL, SQL Server, and SQLite packages supply only their dialect, options, and DDL. Renew, settle, release, and the fence are each one fenced transition: a locking read (`FOR NO KEY UPDATE` / `UPDLOCK, HOLDLOCK, ROWLOCK`) waits out any other holder, then a single conditional `UPDATE` whose `WHERE` is "this generation, active, unexpired by the database clock" decides and writes, so the check and the write cannot disagree; a refusal is classified from the row the locking read found. A grant is the same transition with the opposite fence ("no live holder"), drawing its generation from the store-wide sequence in the `UPDATE`'s own assignment, so a generation is drawn only for a grant that applies and only after the row is locked. An absent row is inserted by a statement that cannot raise a duplicate-key error inside a caller's transaction.
 - The database clock is read once per deciding statement, after its locks are held: a `clock_timestamp()` captured in a `MATERIALIZED` CTE on PostgreSQL (never `now()`, which is frozen at transaction start), `SYSUTCDATETIME()` captured into a variable on SQL Server (which evaluates it when a statement starts, before any lock wait).
 - Each provider contributes its table, indexes, and sequence as one schema step, in its own SQL, to the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts); the store only reads and writes rows.
+- `FencedRows`, `FencedRowTable<TKey>`, `FencedRowKey<TKey>`, `FencedRowColumns`, `FencedRowWrite`, `FencedRowClaim`, `LockedRowLease`, and `FencedRowGrantScope<TKey>` run the same transitions on a consumer's own table; see [Lease on your own row](#lease-on-your-own-row).
 - `RelationalFencingOptions`, the options base every relational provider's options derive from (`PostgreSqlFencingOptions`, `SqlServerFencingOptions`, `SqliteFencingOptions`): `ConnectionString` and `CommandTimeout` (positive, at most 1 hour; default 30 seconds).
 
 ---
@@ -461,3 +528,35 @@ Use a database file: the store and the schema runner open their own connections.
 - `SQLITE_BUSY` before the commit is retried in a fresh transaction, like a lock timeout on the other providers. The wait holds a thread-pool thread; see [sql.md § SQLite in the kit](sql.md#sqlite-in-the-kit).
 - The sequence table, lease table, indexes, and triggers are one schema step (`Fencing/1`) that `resources provision` applies through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts).
 
+## Headless.Fencing.EntityFramework
+
+Entity Framework Core mapping for a lease on your own row: the lease columns as a complex property, the `FencedRowTable<TKey>` descriptor built from the model, and LINQ candidate filters on the database clock.
+
+### Setup
+
+```bash
+dotnet add package Headless.Fencing.EntityFramework
+```
+
+```csharp
+protected override void OnModelCreating(ModelBuilder modelBuilder)
+{
+    modelBuilder.Entity<WorkItem>(item =>
+    {
+        item.ToTable("work_items");
+        item.HasRowLease(w => w.Lease); // or HasRowLease(w => w.Lease, new FencedRowColumns { State = "LeaseState", ... })
+    });
+    modelBuilder.UseFencingDatabaseClock(PostgreSqlDialect.Instance);
+}
+```
+
+No service registration: the package adds model-builder, `DbContext`, and `IQueryable` extensions, and the transitions are the static `FencedRows` methods of [Headless.Fencing.Sql](#headlessfencingsql). Your migrations create the columns, from the mapping like any other property.
+
+### Design and runtime behavior
+
+- **Mapping.** `HasRowLease(lease, columns = null)` maps `RowLeaseSnapshot` as a complex property onto `lease_generation` (default 0), `lease_state` (smallint, default `Idle`), `lease_expires_at`, `lease_holder` (at most 200 characters), and `lease_takeover_count` (default 0), or the names `FencedRowColumns` gives. EF Core never writes the five columns on update, so `SaveChangesAsync` on a tracked entity cannot overwrite a lease a transition changed after the entity was read; an insert writes them, and a new entity's default `RowLeaseSnapshot` is an idle lease.
+- **Descriptor.** `context.FencedRowTable<TEntity, TKey>(lease, dialect, key = null, generationSequence = null)` reads the table, schema, key column, and lease column names from the relational model, and caches the descriptor per model when `key` is `null`. It throws `ArgumentException` when `dialect` does not run on the context's connection type, and `InvalidOperationException` when the lease was not mapped with `HasRowLease`, the entity maps to more than one table (entity splitting, table-per-type), the primary key has several columns and no `key` is given (pass `FencedRowKey<TKey>.Composite`), or `TKey` is not the primary key's CLR type. A single-column key binds in the type its value converter stores (`Guid`, `long`, `int`, `short`, `string`, or a byte array; anything else throws `NotSupportedException`), so a strongly typed id works as `TKey`.
+- **Addressing.** The table's schema is the one EF Core maps it to: its own (`ToTable(name, schema)`), else the model's `HasDefaultSchema`. With neither, the descriptor names the table without a schema and never guesses one, so PostgreSQL resolves it through `search_path` and SQL Server through the user's default schema, as EF Core's own SQL does. On SQLite, which has no schemas, the table is always unqualified. `generationSequence` follows the table's schema, so on SQLite it names a plain sequence table.
+- **Transitions.** Pass `context.Database.GetDbConnection()` and `context.Database.CurrentTransaction?.GetDbTransaction()`. With a transaction the call enlists and the context's commit or rollback decides both; with none it runs in its own transaction, so open the connection first (`OpenConnectionAsync`) when you want it to stay open across calls.
+- **Candidate queries.** `WhereLeaseLive` keeps rows that are `Active` and expire after the database clock; `WhereLeaseGrantable` keeps every other row (idle, ended, or expired). The clock is the one `UseFencingDatabaseClock(dialect)` maps (`clock_timestamp()`, `SYSUTCDATETIME()`, or SQLite's `'now'` in the dialect's text format); without it the query fails to translate, and outside a query the clock throws `InvalidOperationException`. A candidate can be granted or expire between the read and the transition, so use these to select work and the transition's answer to decide it.
+- **Not provided.** A fenced `ExecuteUpdate`: a write fenced by the generation is `FencedRows.WriteAsync` or the `FencedRowWrite` of a settlement.

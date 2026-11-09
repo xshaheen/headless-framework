@@ -4,6 +4,8 @@ using System.Data;
 using System.Data.Common;
 using Headless.Fencing;
 using Headless.Hosting;
+using Headless.Sql;
+using Headless.Sql.SqlServer;
 using Headless.Testing.Testcontainers;
 using Headless.UnitOfWork;
 using Microsoft.Data.SqlClient;
@@ -36,9 +38,14 @@ public sealed class SqlServerRcsiFencingFixture
     public override bool ReadCommittedSnapshot => true;
 }
 
-public abstract class SqlServerFencingFixtureBase : HeadlessSqlServerFixture, ILeasesFixture
+public abstract class SqlServerFencingFixtureBase : HeadlessSqlServerFixture, ILeasesFixture, IFencedRowsFixture
 {
     private const string _HandoffTable = "[dbo].[FencingHandoffs]";
+
+    public ISqlDialect Dialect => SqlServerDialect.Instance;
+
+    // Not the storage schema, which the lease tests may drop and recreate.
+    public string Schema => "dbo";
 
     /// <summary>Whether the lease database runs read committed snapshot isolation.</summary>
     public abstract bool ReadCommittedSnapshot { get; }
@@ -74,6 +81,24 @@ public abstract class SqlServerFencingFixtureBase : HeadlessSqlServerFixture, IL
                 [Resource] nvarchar(256) NOT NULL,
                 [Generation] bigint NOT NULL
             );
+            """,
+            CancellationToken.None
+        );
+
+        await ExecuteAsync(
+            """
+            CREATE TABLE [dbo].[work_items] (
+                [id] uniqueidentifier NOT NULL PRIMARY KEY,
+                [status] nvarchar(200) NOT NULL,
+                [parent_id] uniqueidentifier NULL,
+                [lease_generation] bigint NOT NULL DEFAULT 0,
+                [lease_state] smallint NOT NULL DEFAULT 0,
+                [lease_expires_at] datetimeoffset(7) NULL,
+                [lease_holder] nvarchar(405) NULL,
+                [lease_takeover_count] int NOT NULL DEFAULT 0
+            );
+
+            CREATE SEQUENCE [dbo].[work_item_generations] AS bigint START WITH 1 INCREMENT BY 1 NO CYCLE;
             """,
             CancellationToken.None
         );

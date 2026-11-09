@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Text;
+using Headless.Fencing;
 using Headless.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -55,6 +56,24 @@ internal static class JobsStorageNaming
     /// </remarks>
     internal static string QuotedColumn(StorageNamingStyle style, string pascalColumn) =>
         "\"" + HeadlessStorageNaming.Apply(style, pascalColumn) + "\"";
+
+    /// <summary>
+    /// The lease columns of a Jobs table in <paramref name="style"/>: <c>lease_generation</c> and its siblings on
+    /// PostgreSQL, <c>LeaseGeneration</c> and its siblings elsewhere.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="ApplyJobsColumnNaming"/> renames scalar properties only, so the lease, a complex property, takes its
+    /// names here.
+    /// </remarks>
+    internal static FencedRowColumns LeaseColumns(StorageNamingStyle style) =>
+        new()
+        {
+            Generation = HeadlessStorageNaming.Apply(style, "LeaseGeneration"),
+            State = HeadlessStorageNaming.Apply(style, "LeaseState"),
+            ExpiresAt = HeadlessStorageNaming.Apply(style, "LeaseExpiresAt"),
+            Holder = HeadlessStorageNaming.Apply(style, "LeaseHolder"),
+            TakeoverCount = HeadlessStorageNaming.Apply(style, "LeaseTakeoverCount"),
+        };
 
     extension(EntityTypeBuilder builder)
     {

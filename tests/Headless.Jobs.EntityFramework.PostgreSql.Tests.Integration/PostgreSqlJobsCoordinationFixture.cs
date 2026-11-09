@@ -44,6 +44,8 @@ public class PostgreSqlJobsCoordinationFixture
     // Npgsql translates a bare DateTime.UtcNow inside an expression tree to the server's now().
     public string EfTranslatedDatabaseClockSql => "now()";
 
+    public string LeaseDatabaseClockSql => "clock_timestamp()";
+
     public string ResetSql =>
         // Jobs, Messaging, and Coordination share this schema, so one drop resets all three.
         "DROP SCHEMA IF EXISTS headless CASCADE;"

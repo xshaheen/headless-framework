@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
+using Headless.Fencing;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
@@ -224,7 +225,7 @@ public sealed class MessageDelayedProcessorTests : TestBase
             {
                 var farFuture = _CreateDelayedMessage();
                 farFuture.ExpiresAt = DateTimeOffset.UtcNow.AddDays(7);
-                farFuture.LockedUntil = null;
+                farFuture.Lease = default;
                 buffer.Add(unitOfWork, farFuture);
             }
 
@@ -392,7 +393,7 @@ public sealed class MessageDelayedProcessorTests : TestBase
             Content = "{}",
             Lane = MessageLane.Bus,
             ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(30),
-            LockedUntil = DateTimeOffset.UtcNow.AddMinutes(5),
+            Lease = new RowLeaseSnapshot(1, RowLeaseState.Active, DateTimeOffset.UtcNow.AddMinutes(5), null, 0),
         };
     }
 }

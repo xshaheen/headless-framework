@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Fencing;
 using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Jobs.Provider;
@@ -97,7 +98,7 @@ public sealed class CronRecoveryPolicyProviderTests : TestBase
             await provider.GetAllCronJobOccurrencesAsync(x => x.CronJobId == definition.Id, AbortToken)
         ).Single();
         stored.Status.Should().Be(JobStatus.Skipped, "an unowned row in the missed window must not run under skip");
-        stored.OwnerId.Should().BeNull();
+        stored.Lease.State.Should().NotBe(RowLeaseState.Active);
     }
 
     /// <summary>A queued occurrence repurposed by coalesce has its ownership revoked and carries the stamp.</summary>
@@ -119,12 +120,12 @@ public sealed class CronRecoveryPolicyProviderTests : TestBase
             await provider.GetAllCronJobOccurrencesAsync(x => x.CronJobId == definition.Id, AbortToken)
         ).Single();
         stored
-            .OwnerId.Should()
-            .BeNull(
-                "revoking ownership is the whole mechanism — the claim path's in-progress transition requires "
-                    + "OwnerId == owner, so the prior owner fails that predicate and drops the row"
+            .Lease.State.Should()
+            .NotBe(
+                RowLeaseState.Active,
+                "ending the lease is the whole mechanism — the claim path's in-progress transition requires an "
+                    + "active lease of the claimed generation, so the prior owner fails that fence and drops the row"
             );
-        stored.LockedUntil.Should().BeNull();
         stored.RecoveredFromUtc.Should().Be(_EarliestMissed);
         stored.Status.Should().Be(JobStatus.Idle, "released for re-claim rather than left queued to its old owner");
     }
@@ -146,7 +147,7 @@ public sealed class CronRecoveryPolicyProviderTests : TestBase
         var occurrences = await provider.GetAllCronJobOccurrencesAsync(x => x.CronJobId == definition.Id, AbortToken);
         var stored = occurrences.Should().ContainSingle().Subject;
         stored.Status.Should().Be(JobStatus.InProgress, "running work is never disturbed by recovery");
-        stored.OwnerId.Should().Be("node-b@1", "its owner keeps it");
+        stored.Lease.Holder.Should().Be("node-b@1", "its owner keeps it");
 
         (await provider.GetCronJobByIdAsync(definition.Id, AbortToken))!
             .ReconciledThroughUtc.Should()
@@ -465,8 +466,7 @@ public sealed class CronRecoveryPolicyProviderTests : TestBase
             Id = Guid.NewGuid(),
             CronJobId = definitionId,
             Status = status,
-            OwnerId = owner,
-            LockedUntil = owner is null ? null : _Now.UtcDateTime.AddMinutes(5),
+            Lease = TestLeases.Held(owner, owner is null ? null : _Now.AddMinutes(5)),
             ExecutionTime = executionTime,
             CreatedAt = _Now.AddHours(-3),
             UpdatedAt = _Now.AddHours(-3),

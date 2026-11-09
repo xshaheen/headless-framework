@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Fencing;
 using Headless.Jobs;
 using Headless.Jobs.JobsThreadPool;
 using Headless.Testing.Tests;
@@ -42,8 +43,7 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
         var released = await store.GetTimeJobByIdAsync(id, AbortToken);
         released!.Status.Should().Be(JobStatus.Idle);
         released.RetryCount.Should().Be(0, "a graceful stop is not an attempt the job used up");
-        released.OwnerId.Should().BeNull();
-        released.LockedUntil.Should().BeNull();
+        released.Lease.State.Should().NotBe(RowLeaseState.Active);
         probe.Invocations.Should().Be(1);
 
         // and the next host runs it once to completion
@@ -86,7 +86,7 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
         var stored = await _Store(host).GetTimeJobByIdAsync(id, AbortToken);
         stored!.Status.Should().Be(expected);
         stored.RetryCount.Should().Be(0);
-        stored.LockedUntil.Should().BeNull();
+        stored.Lease.State.Should().NotBe(RowLeaseState.Active);
         (expected == JobStatus.Failed ? stored.ExceptionMessage : stored.SkippedReason).Should().Be(_ShutdownReason);
     }
 
@@ -113,7 +113,7 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
             var stored = await store.GetTimeJobByIdAsync(id, AbortToken);
             stored!.Status.Should().Be(JobStatus.Idle);
             stored.RetryCount.Should().Be(0);
-            stored.OwnerId.Should().BeNull();
+            stored.Lease.State.Should().NotBe(RowLeaseState.Active);
         }
     }
 
@@ -149,8 +149,7 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
         var stored = await _Store(host).GetTimeJobByIdAsync(id, AbortToken);
         stored!.Status.Should().Be(JobStatus.Idle);
         stored.RetryCount.Should().Be(0);
-        stored.OwnerId.Should().BeNull();
-        stored.LockedUntil.Should().BeNull();
+        stored.Lease.State.Should().NotBe(RowLeaseState.Active);
     }
 
     [Fact]
@@ -198,8 +197,7 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
         var stored = await _Store(host).GetTimeJobByIdAsync(id, AbortToken);
         stored!.Status.Should().Be(JobStatus.Idle);
         stored.RetryCount.Should().Be(0);
-        stored.OwnerId.Should().BeNull();
-        stored.LockedUntil.Should().BeNull();
+        stored.Lease.State.Should().NotBe(RowLeaseState.Active);
     }
 
     [Fact]
@@ -295,8 +293,7 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
         var stored = await store.GetTimeJobByIdAsync(waiting, AbortToken);
         stored!.Status.Should().Be(JobStatus.Idle);
         stored.RetryCount.Should().Be(0, "a graceful stop is not an attempt the job used up");
-        stored.OwnerId.Should().BeNull();
-        stored.LockedUntil.Should().BeNull();
+        stored.Lease.State.Should().NotBe(RowLeaseState.Active);
     }
 
     [Fact]
@@ -331,8 +328,7 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
         var stored = await store.GetTimeJobByIdAsync(enqueued, AbortToken);
         stored!.Status.Should().Be(JobStatus.Idle);
         stored.RetryCount.Should().Be(0);
-        stored.OwnerId.Should().BeNull();
-        stored.LockedUntil.Should().BeNull();
+        stored.Lease.State.Should().NotBe(RowLeaseState.Active);
         stored.ExecutionTime.Should().BeOnOrBefore(DateTime.UtcNow, "the next owner claims it as soon as it polls");
     }
 

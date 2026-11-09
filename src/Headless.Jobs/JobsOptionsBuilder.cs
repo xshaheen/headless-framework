@@ -741,10 +741,10 @@ public sealed class SchedulerOptionsBuilder
     public CronOverlapPolicy DefaultOverlapPolicy { get; set; } = CronOverlapPolicy.Allow;
 
     /// <summary>
-    /// How long a per-row pickup lease is held before it expires and the row becomes re-claimable. Stamped as
-    /// <c>LockedUntil = now + LeaseDuration</c> on every claim. In-memory storage uses the injected
-    /// <see cref="TimeProvider"/>; relational storage translates the claim expression to the database UTC clock so
-    /// stamping and lease-expiry comparison share one authority without a separate clock query.
+    /// How long a per-row pickup lease is held before it expires and the row becomes re-claimable. Every claim
+    /// grants the row a new lease generation that expires <c>LeaseDuration</c> after the claim. In-memory storage
+    /// uses the injected <see cref="TimeProvider"/>; relational storage stamps and judges the expiry on the database
+    /// clock, so the two share one authority without a separate clock query.
     /// <para>
     /// Running jobs slide this lease forward on the <see cref="LeaseRenewalInterval"/> cadence (#316), so
     /// <c>LeaseDuration</c> no longer needs to exceed the longest job runtime — a healthy long job keeps renewing.
@@ -757,7 +757,7 @@ public sealed class SchedulerOptionsBuilder
     public TimeSpan LeaseDuration { get; set; } = TimeSpan.FromMinutes(5);
 
     /// <summary>
-    /// How often a running job's lease is renewed (slides <c>LockedUntil</c> forward) while it executes, so a
+    /// How often a running job's lease is renewed (slides the lease's expiry forward) while it executes, so a
     /// healthy long-running job is never falsely reclaimed (#316). The owning worker's execution loop extends the
     /// lease on this cadence; a job that stops renewing (crashed or wedged) has its lease lapse and is reclaimed
     /// per its <c>OnNodeDeath</c> policy. <see langword="null"/> (the default) derives ≈ <see cref="LeaseDuration"/> / 3 so a

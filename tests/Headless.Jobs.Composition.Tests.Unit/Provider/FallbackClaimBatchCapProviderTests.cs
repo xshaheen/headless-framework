@@ -52,8 +52,6 @@ public sealed class FallbackClaimBatchCapProviderTests : TestBase
             Id = Guid.NewGuid(),
             Function = "fn",
             Status = JobStatus.Idle,
-            OwnerId = null,
-            LockedUntil = null,
             OnNodeDeath = NodeDeathPolicy.Retry,
             ExecutionTime = executionTime,
         };
@@ -66,8 +64,6 @@ public sealed class FallbackClaimBatchCapProviderTests : TestBase
         {
             Id = Guid.NewGuid(),
             Status = JobStatus.Idle,
-            OwnerId = null,
-            LockedUntil = null,
             OnNodeDeath = NodeDeathPolicy.Retry,
             ExecutionTime = executionTime,
             CronJobId = Guid.NewGuid(),

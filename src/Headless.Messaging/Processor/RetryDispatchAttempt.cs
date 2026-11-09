@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Fencing;
 using Headless.Messaging.Persistence;
 
 namespace Headless.Messaging.Processor;
@@ -9,7 +10,6 @@ internal sealed class RetryDispatchAttempt
     private readonly IGracefulLeaseReleaseStorage _storage;
     private readonly MessageType _direction;
     private readonly MediumMessage _message;
-    private readonly DateTimeOffset _claimedLockedUntil;
     private readonly Action? _onAbandonedBeforeExecution;
     private int _state = (int)AttemptState.Claimed;
 
@@ -17,29 +17,21 @@ internal sealed class RetryDispatchAttempt
         IGracefulLeaseReleaseStorage storage,
         MessageType direction,
         MediumMessage message,
-        DateTimeOffset claimedLockedUntil,
         Action? onAbandonedBeforeExecution
     )
     {
         _storage = storage;
         _direction = direction;
         _message = message;
-        _claimedLockedUntil = claimedLockedUntil;
         _onAbandonedBeforeExecution = onAbandonedBeforeExecution;
     }
 
     /// <summary>
-    /// The lease generation a release matches: the message's current one, because the attempt's reservation and its
-    /// renewals re-stamp the lease the claim took. A release only follows the attempt, so nothing moves it meanwhile.
+    /// The lease generation a release matches: the one the claim granted. Renewals and the attempt's reservation
+    /// extend that lease without moving its generation, so only a re-lease by another holder fences the release out.
     /// </summary>
     public MessageLeaseIdentity Identity =>
-        new(
-            _message.StorageId,
-            _message.Owner,
-            _message.LockedUntil ?? _claimedLockedUntil,
-            _message.Lane,
-            _message.InboxAttemptFence
-        );
+        new(_message.StorageId, _message.Lease.Generation, _message.Lane, _message.InboxAttemptFence);
 
     /// <summary>Creates a durable attempt for a claimed retry, or <see langword="null"/> when the store cannot release exact leases.</summary>
     /// <param name="storage">The storage that owns the claimed lease.</param>
@@ -56,12 +48,12 @@ internal sealed class RetryDispatchAttempt
         Action? onAbandonedBeforeExecution = null
     )
     {
-        if (storage is not IGracefulLeaseReleaseStorage releaser || message.LockedUntil is not { } lockedUntil)
+        if (storage is not IGracefulLeaseReleaseStorage releaser || message.Lease.State is not RowLeaseState.Active)
         {
             return null;
         }
 
-        return new RetryDispatchAttempt(releaser, direction, message, lockedUntil, onAbandonedBeforeExecution);
+        return new RetryDispatchAttempt(releaser, direction, message, onAbandonedBeforeExecution);
     }
 
     public static async ValueTask ReleaseClaimedBatchAsync(
@@ -76,11 +68,10 @@ internal sealed class RetryDispatchAttempt
         }
 
         var identities = messages
-            .Where(message => message.LockedUntil.HasValue)
+            .Where(message => message.Lease.State is RowLeaseState.Active)
             .Select(message => new MessageLeaseIdentity(
                 message.StorageId,
-                message.Owner,
-                message.LockedUntil!.Value,
+                message.Lease.Generation,
                 message.Lane,
                 message.InboxAttemptFence
             ))

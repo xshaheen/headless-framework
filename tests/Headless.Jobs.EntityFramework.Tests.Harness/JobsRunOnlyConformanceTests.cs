@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Fencing;
 using Headless.Jobs;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -57,7 +58,7 @@ public abstract class JobsRunOnlyConformanceTests<TFixture>(TFixture fixture) : 
 
             var untouched = (await filtered.GetTimeJobByIdAsync(overdueFiltered.Id, ct))!;
             untouched.Status.Should().Be(JobStatus.Idle);
-            untouched.OwnerId.Should().BeNull();
+            untouched.Lease.State.Should().NotBe(RowLeaseState.Active);
 
             var workerSwept = await _Store(workerHost).QueueTimedOutTimeJobsAsync(ct).ToArrayAsync(ct);
             workerSwept.Select(x => x.Id).Should().Equal(overdueFiltered.Id);
@@ -143,7 +144,7 @@ public abstract class JobsRunOnlyConformanceTests<TFixture>(TFixture fixture) : 
 
             var stored = (await store.GetAllCronJobOccurrencesAsync(x => x.Id == filteredOccurrence.Id, ct)).Single();
             stored.Status.Should().Be(JobStatus.Idle);
-            stored.OwnerId.Should().BeNull();
+            stored.Lease.State.Should().NotBe(RowLeaseState.Active);
         }
         finally
         {

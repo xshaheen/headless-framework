@@ -170,8 +170,8 @@ public abstract class JobsPeekConformanceTests<TFixture>(TFixture fixture) : Tes
             var lapsedId = Guid.NewGuid();
             await fixture.SeedTimeJobAsync(heldId, "peek-owner", (int)JobStatus.Queued, owner, ct);
             await fixture.SeedTimeJobAsync(lapsedId, "peek-owner", (int)JobStatus.Idle, "foreign@1", ct);
-            await _SetLockedUntilOnStoreClockAsync(heldId, offsetSeconds: 300, ct);
-            await _SetLockedUntilOnStoreClockAsync(lapsedId, offsetSeconds: -60, ct);
+            await _SetLeaseExpiryOnStoreClockAsync(heldId, offsetSeconds: 300, ct);
+            await _SetLeaseExpiryOnStoreClockAsync(lapsedId, offsetSeconds: -60, ct);
 
             // One statement, so both rows share one execution instant and fall in the same peek window.
             await _SetExecutionTimeOnStoreClockAsync([heldId, lapsedId], offsetSeconds: 2, ct);
@@ -269,10 +269,10 @@ public abstract class JobsPeekConformanceTests<TFixture>(TFixture fixture) : Tes
         );
     }
 
-    private Task _SetLockedUntilOnStoreClockAsync(Guid id, int offsetSeconds, CancellationToken ct)
+    private Task _SetLeaseExpiryOnStoreClockAsync(Guid id, int offsetSeconds, CancellationToken ct)
     {
         return _ExecuteSqlAsync(
-            $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"LockedUntil\" = {fixture.UtcNowOffsetSqlExpression(offsetSeconds)} WHERE \"Id\" = @id;",
+            $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"LeaseExpiresAt\" = {fixture.UtcNowOffsetSqlExpression(offsetSeconds)} WHERE \"Id\" = @id;",
             ct,
             ("@id", id)
         );

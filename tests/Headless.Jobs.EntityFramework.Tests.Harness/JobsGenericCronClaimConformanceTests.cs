@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Coordination;
+using Headless.Fencing;
 using Headless.Jobs;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
@@ -47,16 +48,26 @@ public abstract class JobsGenericCronClaimConformanceTests<TFixture>(TFixture fi
             var factory = host.Services.GetRequiredService<IDbContextFactory<JobsDbContext>>();
             await using var db = await factory.CreateDbContextAsync(ct);
             var previousStatus = reclaimExpiredOwner ? JobStatus.Queued : JobStatus.Idle;
-            var previousOwner = reclaimExpiredOwner ? "expired-owner@1" : null;
-            var previousLease = reclaimExpiredOwner ? DateTime.UtcNow.AddHours(-1) : (DateTime?)null;
+            // An expired owner's claim is an active lease that lapsed; otherwise the row was never leased.
+            var previousLease = reclaimExpiredOwner
+                ? new RowLeaseSnapshot(
+                    1,
+                    RowLeaseState.Active,
+                    DateTimeOffset.UtcNow.AddHours(-1),
+                    "expired-owner@1",
+                    0
+                )
+                : default;
             await db.Set<CronJobOccurrenceEntity<CronJobEntity>>()
                 .Where(x => x.Id == occurrence.Id)
                 .ExecuteUpdateAsync(
                     setters =>
                         setters
                             .SetProperty(x => x.Status, previousStatus)
-                            .SetProperty(x => x.OwnerId, previousOwner)
-                            .SetProperty(x => x.LockedUntil, previousLease)
+                            .SetProperty(x => x.Lease.Generation, previousLease.Generation)
+                            .SetProperty(x => x.Lease.State, previousLease.State)
+                            .SetProperty(x => x.Lease.ExpiresAt, previousLease.ExpiresAt)
+                            .SetProperty(x => x.Lease.Holder, previousLease.Holder)
                             .SetProperty(x => x.RetryCount, 3),
                     ct
                 );
@@ -85,11 +96,13 @@ public abstract class JobsGenericCronClaimConformanceTests<TFixture>(TFixture fi
                 .AsNoTracking()
                 .SingleAsync(x => x.Id == occurrence.Id, ct);
             stored.Status.Should().Be(JobStatus.Queued);
-            stored.OwnerId.Should().Contain("/generic-cron-claim@");
+            stored.Lease.State.Should().Be(RowLeaseState.Active);
+            stored.Lease.Holder.Should().Contain("/generic-cron-claim@");
             claimed.Id.Should().Be(stored.Id);
             claimed.Status.Should().Be(stored.Status);
-            claimed.OwnerId.Should().Be(stored.OwnerId);
-            claimed.LockedUntil.Should().NotBeNull().And.Be(stored.LockedUntil);
+            claimed.Lease.Holder.Should().Be(stored.Lease.Holder);
+            claimed.Lease.ExpiresAt.Should().NotBeNull().And.Be(stored.Lease.ExpiresAt);
+            claimed.Lease.Should().Be(stored.Lease);
             claimed.UpdatedAt.Should().Be(stored.UpdatedAt);
             claimed.Function.Should().Be("snapshot.original").And.Be(stored.Function);
             claimed.ContractVersion.Should().Be("1").And.Be(stored.ContractVersion);

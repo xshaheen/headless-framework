@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Fencing;
 using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Jobs.BackgroundServices;
@@ -39,7 +40,7 @@ public sealed class JobsRunOnlyTests : TestBase
         swept.Select(x => x.Id).Should().Equal(ordersId);
         var billing = await store.GetTimeJobByIdAsync(billingId, AbortToken);
         billing!.Status.Should().Be(JobStatus.Idle);
-        billing.OwnerId.Should().BeNull();
+        billing.Lease.State.Should().NotBe(RowLeaseState.Active);
     }
 
     [Fact]
@@ -178,8 +179,7 @@ public sealed class JobsRunOnlyTests : TestBase
             await store.GetAllCronJobOccurrencesAsync(x => x.Id == filteredOccurrence.Id, AbortToken)
         ).Single();
         stored.Status.Should().Be(JobStatus.Idle);
-        stored.OwnerId.Should().BeNull();
-        stored.LockedUntil.Should().BeNull();
+        stored.Lease.State.Should().NotBe(RowLeaseState.Active);
     }
 
     [Fact]
@@ -214,8 +214,7 @@ public sealed class JobsRunOnlyTests : TestBase
             await store.GetAllCronJobOccurrencesAsync(x => x.Id == filteredOccurrence.Id, AbortToken)
         ).Single();
         stored.Status.Should().Be(JobStatus.Idle);
-        stored.OwnerId.Should().BeNull();
-        stored.LockedUntil.Should().BeNull();
+        stored.Lease.State.Should().NotBe(RowLeaseState.Active);
     }
 
     [Fact]

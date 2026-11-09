@@ -144,15 +144,17 @@ internal static class JobsClusterClaim
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
         where TCronJob : CronJobEntity, new()
     {
-        // DateTime.UtcNow translates to the database clock. On PostgreSQL that is the transaction's start, which is no
+        // The live test reads the database clock. On PostgreSQL that is the transaction's start, which is no
         // later than now, so a lease that lapsed during the transaction still counts: the error only ever under-claims.
         var timeCounts = await context
             .Set<TTimeJob>()
             .AsNoTracking()
-            .Where(x =>
-                functions.Contains(x.Function)
-                && (x.Status == JobStatus.Queued || x.Status == JobStatus.InProgress)
-                && x.LockedUntil > DateTime.UtcNow
+            .Where(
+                JobsLeaseExpressions.Expand<TTimeJob>(x =>
+                    functions.Contains(x.Function)
+                    && (x.Status == JobStatus.Queued || x.Status == JobStatus.InProgress)
+                    && JobsLeaseExpressions.IsLive(x.Lease)
+                )
             )
             .GroupBy(x => x.Function)
             .Select(x => new { Function = x.Key, Count = x.Count() })
@@ -161,10 +163,12 @@ internal static class JobsClusterClaim
         var occurrenceCounts = await context
             .Set<CronJobOccurrenceEntity<TCronJob>>()
             .AsNoTracking()
-            .Where(x =>
-                functions.Contains(x.Function)
-                && (x.Status == JobStatus.Queued || x.Status == JobStatus.InProgress)
-                && x.LockedUntil > DateTime.UtcNow
+            .Where(
+                JobsLeaseExpressions.Expand<CronJobOccurrenceEntity<TCronJob>>(x =>
+                    functions.Contains(x.Function)
+                    && (x.Status == JobStatus.Queued || x.Status == JobStatus.InProgress)
+                    && JobsLeaseExpressions.IsLive(x.Lease)
+                )
             )
             .GroupBy(x => x.Function)
             .Select(x => new { Function = x.Key, Count = x.Count() })

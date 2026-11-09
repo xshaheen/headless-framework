@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Fencing;
 using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Jobs.Provider;
@@ -21,6 +22,10 @@ public sealed class JobProgressProviderTests : TestBase
     private static readonly DateTimeOffset _Now = new(2026, 10, 6, 12, 0, 0, TimeSpan.Zero);
     private static readonly TimeSpan _Lease = TimeSpan.FromMinutes(5);
 
+    // The generation this node's claim drew. A row another node holds was granted to it under a later generation, so
+    // this node's writes are stale for it.
+    private const long _ClaimGeneration = 1;
+
     [Fact]
     public async Task should_store_progress_on_an_owned_running_time_job_stamped_with_the_provider_clock()
     {
@@ -30,8 +35,7 @@ public sealed class JobProgressProviderTests : TestBase
         fixture.Time.Advance(TimeSpan.FromSeconds(30));
 
         var written = await fixture.Provider.UpdateTimeJobProgressAsync(
-            job.Id,
-            _NodeA,
+            _Claimed(job),
             new(42.5, "halfway"),
             AbortToken
         );
@@ -49,9 +53,9 @@ public sealed class JobProgressProviderTests : TestBase
         using var fixture = new Fixture();
         var job = _TimeJob(JobStatus.InProgress, _NodeA);
         await fixture.Provider.AddTimeJobsAsync([job], AbortToken);
-        await fixture.Provider.UpdateTimeJobProgressAsync(job.Id, _NodeA, new(10, "warming up"), AbortToken);
+        await fixture.Provider.UpdateTimeJobProgressAsync(_Claimed(job), new(10, "warming up"), AbortToken);
 
-        await fixture.Provider.UpdateTimeJobProgressAsync(job.Id, _NodeA, new(20), AbortToken);
+        await fixture.Provider.UpdateTimeJobProgressAsync(_Claimed(job), new(20), AbortToken);
 
         var stored = (await fixture.Provider.GetTimeJobByIdAsync(job.Id, AbortToken))!;
         stored.ProgressPercent.Should().Be(20);
@@ -69,7 +73,7 @@ public sealed class JobProgressProviderTests : TestBase
         var job = _TimeJob(status, owner);
         await fixture.Provider.AddTimeJobsAsync([job], AbortToken);
 
-        var written = await fixture.Provider.UpdateTimeJobProgressAsync(job.Id, _NodeA, new(50), AbortToken);
+        var written = await fixture.Provider.UpdateTimeJobProgressAsync(_Claimed(job), new(50), AbortToken);
 
         written.Should().BeFalse();
         (await fixture.Provider.GetTimeJobByIdAsync(job.Id, AbortToken))!.ProgressPercent.Should().BeNull();
@@ -80,7 +84,13 @@ public sealed class JobProgressProviderTests : TestBase
     {
         using var fixture = new Fixture();
 
-        (await fixture.Provider.UpdateTimeJobProgressAsync(Guid.NewGuid(), _NodeA, new(50), AbortToken))
+        (
+            await fixture.Provider.UpdateTimeJobProgressAsync(
+                JobsLeaseTables.TimeJob(Guid.NewGuid(), _ClaimGeneration),
+                new(50),
+                AbortToken
+            )
+        )
             .Should()
             .BeFalse();
     }
@@ -95,10 +105,10 @@ public sealed class JobProgressProviderTests : TestBase
         var foreign = fixture.Occurrence(definition, JobStatus.InProgress, _NodeB, _Now.UtcDateTime.AddMinutes(1));
         await fixture.Provider.InsertCronJobOccurrencesAsync([owned, foreign], AbortToken);
 
-        (await fixture.Provider.UpdateCronJobOccurrenceProgressAsync(owned.Id, _NodeA, new(75, "nearly"), AbortToken))
+        (await fixture.Provider.UpdateCronJobOccurrenceProgressAsync(_Claimed(owned), new(75, "nearly"), AbortToken))
             .Should()
             .BeTrue();
-        (await fixture.Provider.UpdateCronJobOccurrenceProgressAsync(foreign.Id, _NodeA, new(75), AbortToken))
+        (await fixture.Provider.UpdateCronJobOccurrenceProgressAsync(_Claimed(foreign), new(75), AbortToken))
             .Should()
             .BeFalse();
 
@@ -116,7 +126,7 @@ public sealed class JobProgressProviderTests : TestBase
         using var fixture = new Fixture();
         var job = _TimeJob(JobStatus.InProgress, _NodeA);
         await fixture.Provider.AddTimeJobsAsync([job], AbortToken);
-        await fixture.Provider.UpdateTimeJobProgressAsync(job.Id, _NodeA, new(60, "throttled away"), AbortToken);
+        await fixture.Provider.UpdateTimeJobProgressAsync(_Claimed(job), new(60, "throttled away"), AbortToken);
         fixture.Time.Advance(TimeSpan.FromSeconds(5));
         var state = _State(job.Id, JobType.TimeJob)
             .SetProperty(x => x.Status, JobStatus.Succeeded)
@@ -137,7 +147,7 @@ public sealed class JobProgressProviderTests : TestBase
         using var fixture = new Fixture();
         var job = _TimeJob(JobStatus.InProgress, _NodeA);
         await fixture.Provider.AddTimeJobsAsync([job], AbortToken);
-        await fixture.Provider.UpdateTimeJobProgressAsync(job.Id, _NodeA, new(35, "stuck here"), AbortToken);
+        await fixture.Provider.UpdateTimeJobProgressAsync(_Claimed(job), new(35, "stuck here"), AbortToken);
         var state = _State(job.Id, JobType.TimeJob).SetProperty(x => x.Status, JobStatus.Failed);
 
         await fixture.Provider.UpdateTimeJobAsync(state, AbortToken);
@@ -201,7 +211,7 @@ public sealed class JobProgressProviderTests : TestBase
         using var fixture = new Fixture();
         var job = _TimeJob(JobStatus.InProgress, _NodeA);
         await fixture.Provider.AddTimeJobsAsync([job], AbortToken);
-        await fixture.Provider.UpdateTimeJobProgressAsync(job.Id, _NodeA, new(80, "before the crash"), AbortToken);
+        await fixture.Provider.UpdateTimeJobProgressAsync(_Claimed(job), new(80, "before the crash"), AbortToken);
         fixture.Time.Advance(_Lease + TimeSpan.FromMinutes(1));
 
         (await fixture.Provider.ReclaimStalledTimeJobsAsync(AbortToken)).Should().Be(1);
@@ -219,7 +229,7 @@ public sealed class JobProgressProviderTests : TestBase
         using var fixture = new Fixture();
         var job = _TimeJob(JobStatus.InProgress, _NodeA);
         await fixture.Provider.AddTimeJobsAsync([job], AbortToken);
-        await fixture.Provider.UpdateTimeJobProgressAsync(job.Id, _NodeA, new(40, "failed here"), AbortToken);
+        await fixture.Provider.UpdateTimeJobProgressAsync(_Claimed(job), new(40, "failed here"), AbortToken);
         await fixture.Provider.UpdateTimeJobAsync(
             _State(job.Id, JobType.TimeJob).SetProperty(x => x.Status, JobStatus.Failed),
             AbortToken
@@ -243,7 +253,7 @@ public sealed class JobProgressProviderTests : TestBase
         await fixture.Provider.InsertCronJobsAsync([definition], AbortToken);
         var occurrence = fixture.Occurrence(definition, JobStatus.InProgress, _NodeA, _Now.UtcDateTime);
         await fixture.Provider.InsertCronJobOccurrencesAsync([occurrence], AbortToken);
-        await fixture.Provider.UpdateCronJobOccurrenceProgressAsync(occurrence.Id, _NodeA, new(40), AbortToken);
+        await fixture.Provider.UpdateCronJobOccurrenceProgressAsync(_Claimed(occurrence), new(40), AbortToken);
         await fixture.Provider.UpdateCronJobOccurrenceAsync(
             _State(occurrence.Id, JobType.CronJobOccurrence).SetProperty(x => x.Status, JobStatus.Failed),
             AbortToken
@@ -271,13 +281,13 @@ public sealed class JobProgressProviderTests : TestBase
         var renewals = Enumerable
             .Range(0, 200)
             .Select(_ =>
-                Task.Run(() => fixture.Provider.RenewTimeJobLeaseAsync(job.Id, _NodeA, AbortToken), AbortToken)
+                Task.Run(() => fixture.Provider.RenewTimeJobLeaseAsync(_Claimed(job), _NodeA, AbortToken), AbortToken)
             );
         var progress = Enumerable
             .Range(0, 200)
             .Select(i =>
                 Task.Run(
-                    () => fixture.Provider.UpdateTimeJobProgressAsync(job.Id, _NodeA, new(i % 101), AbortToken),
+                    () => fixture.Provider.UpdateTimeJobProgressAsync(_Claimed(job), new(i % 101), AbortToken),
                     AbortToken
                 )
             );
@@ -293,8 +303,7 @@ public sealed class JobProgressProviderTests : TestBase
             Id = Guid.NewGuid(),
             Function = "fn",
             Status = status,
-            OwnerId = owner,
-            LockedUntil = owner is null ? null : _Now.UtcDateTime.AddMinutes(1),
+            Lease = TestLeases.Held(owner, owner is null ? null : _Now.AddMinutes(1), _GenerationHeldBy(owner)),
             ExecutionTime = _Now.UtcDateTime.AddMinutes(-2),
         };
     }
@@ -307,8 +316,17 @@ public sealed class JobProgressProviderTests : TestBase
             FunctionName = "fn",
             Type = type,
             ClaimOwner = _NodeA,
+            ClaimGeneration = _ClaimGeneration,
         };
     }
+
+    private static long _GenerationHeldBy(string? owner) =>
+        string.Equals(owner, _NodeB, StringComparison.Ordinal) ? _ClaimGeneration + 1 : _ClaimGeneration;
+
+    private static FencedRow<Guid> _Claimed(TimeJobEntity job) => JobsLeaseTables.TimeJob(job.Id, _ClaimGeneration);
+
+    private static FencedRow<Guid> _Claimed(CronJobOccurrenceEntity<CronJobEntity> occurrence) =>
+        JobsLeaseTables.CronOccurrence(occurrence.Id, _ClaimGeneration);
 
     private sealed class Fixture : IDisposable
     {
@@ -349,8 +367,7 @@ public sealed class JobProgressProviderTests : TestBase
                 CronJob = cron,
                 ExecutionTime = executionTime,
                 Status = status,
-                OwnerId = ownerId,
-                LockedUntil = _Now.UtcDateTime.AddMinutes(1),
+                Lease = TestLeases.Held(ownerId, _Now.AddMinutes(1), _GenerationHeldBy(ownerId)),
             };
 
         public void Dispose() => _services.Dispose();

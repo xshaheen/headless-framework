@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Fencing;
 using Headless.Jobs;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
@@ -25,7 +26,7 @@ public sealed class PostgreSqlJobsModelNamingTests : TestBase
 
         entity.GetTableName().Should().Be("time_jobs");
         entity.ColumnName(nameof(TimeJobEntity.ExecutionTime)).Should().Be("execution_time");
-        entity.ColumnName(nameof(TimeJobEntity.LockedUntil)).Should().Be("locked_until");
+        entity.LeaseColumnName(nameof(RowLeaseSnapshot.ExpiresAt)).Should().Be("lease_expires_at");
         entity.ColumnName(nameof(TimeJobEntity.IsCurrentGeneration)).Should().Be("is_current_generation");
         entity.FindPrimaryKey()!.GetName().Should().Be("pk_time_jobs");
         entity.GetForeignKeys().Single().GetConstraintName().Should().Be("fk_time_jobs_time_jobs_parent_id");

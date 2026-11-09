@@ -103,6 +103,16 @@ internal static class ConformanceCaseAllowList
         ),
         new(
             "CacheIdempotencyConformanceTests",
+            "should_refuse_a_store_write_whose_lease_expired_as_a_stale_admission",
+            "Writes the store inside a caller's unit, and the cache provider refuses enlistment."
+        ),
+        new(
+            "CacheIdempotencyConformanceTests",
+            "should_answer_stale_to_an_older_attempt_renewing_after_a_newer_one_released",
+            "The cache entry keeps no lease state per generation: once a newer attempt released the key, an older attempt's renewal finds a released entry and answers Released, not the relational and in-memory providers' Stale."
+        ),
+        new(
+            "CacheIdempotencyConformanceTests",
             "should_refuse_a_recovery_point_from_an_attempt_that_lost_the_key_and_write_nothing",
             "Ends with an enlisted recovery point; the cache provider refuses enlistment. The provider's own tests cover the autonomous refusals."
         ),
@@ -280,6 +290,11 @@ internal static class ConformanceCaseAllowList
             "SqliteDialectConformanceTests",
             "should_surface_the_deadlock_after_the_attempt_cap_and_apply_nothing",
             "SQLite begins every write transaction IMMEDIATE and admits one writer per database file, so no deadlock can be forced on any attempt; busy waits are covered by the SQLite dialect's own tests."
+        ),
+        new(
+            "SqliteFencedRowsConformanceTests",
+            "should_skip_a_row_another_transaction_claimed_without_waiting_for_it",
+            "SQLite has no row locks: a claim takes the database write lock, so a second claimer waits for the first to commit instead of skipping its rows; should_claim_only_what_an_open_claim_left_once_it_commits covers that serialization."
         ),
         new(
             "SqliteLeasesConformanceTests",

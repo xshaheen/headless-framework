@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Coordination;
+using Headless.Fencing;
 using Headless.Jobs;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -52,7 +53,12 @@ public abstract class JobsClusterConcurrencyConformanceTests<TFixture>(TFixture 
             // node's owner frees the row exactly once.
             foreach (var host in hosts)
             {
-                await _Store(host).ReleaseAcquiredTimeJobsAsync([held.Id], _Owner(host), ct);
+                await _Store(host)
+                    .ReleaseAcquiredTimeJobsAsync(
+                        [JobsLeaseTables.TimeJob(held.Id, held.Lease.Generation)],
+                        _Owner(host),
+                        ct
+                    );
             }
 
             (await _LiveLeasesAsync(store, _Limited, ct)).Should().Be(_Limit - 1);
@@ -180,7 +186,7 @@ public abstract class JobsClusterConcurrencyConformanceTests<TFixture>(TFixture 
             occurrences
                 .Where(x => x.Id != leased[0].Id)
                 .Should()
-                .OnlyContain(x => x.Status == JobStatus.Idle && x.OwnerId == null && x.LockedUntil == null);
+                .OnlyContain(x => x.Status == JobStatus.Idle && x.Lease.State != RowLeaseState.Active);
             (await _LiveLeasesAsync(store, _Limited, ct)).Should().Be(_Limit);
         }
         finally
@@ -351,16 +357,18 @@ public abstract class JobsClusterConcurrencyConformanceTests<TFixture>(TFixture 
         CancellationToken cancellationToken
     )
     {
-        var now = DateTime.UtcNow;
+        var now = DateTimeOffset.UtcNow;
         var timeJobs = await store.GetTimeJobsAsync(x => x.Function == function, cancellationToken);
         var occurrences = await store.GetAllCronJobOccurrencesAsync(x => x.Function == function, cancellationToken);
 
-        return timeJobs.Count(x => _HoldsSlot(x.Status, x.LockedUntil, now))
-            + occurrences.Count(x => _HoldsSlot(x.Status, x.LockedUntil, now));
+        return timeJobs.Count(x => _HoldsSlot(x.Status, x.Lease, now))
+            + occurrences.Count(x => _HoldsSlot(x.Status, x.Lease, now));
     }
 
-    private static bool _HoldsSlot(JobStatus status, DateTime? lockedUntil, DateTime now) =>
-        status is JobStatus.Queued or JobStatus.InProgress && lockedUntil > now;
+    private static bool _HoldsSlot(JobStatus status, RowLeaseSnapshot lease, DateTimeOffset now) =>
+        status is JobStatus.Queued or JobStatus.InProgress
+        && lease.State == RowLeaseState.Active
+        && lease.ExpiresAt > now;
 
     private async Task _ExpireLeasesAsync(string ownerId, CancellationToken cancellationToken)
     {
@@ -368,9 +376,9 @@ public abstract class JobsClusterConcurrencyConformanceTests<TFixture>(TFixture 
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = fixture.Sql(
-            $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"LockedUntil\" = @past WHERE \"OwnerId\" = @owner;"
+            $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"LeaseExpiresAt\" = @past WHERE \"LeaseHolder\" = @owner;"
         );
-        JobsCoordinationFixtureExtensions.AddParameter(command, "@past", DateTime.UtcNow.AddMinutes(-1));
+        JobsCoordinationFixtureExtensions.AddParameter(command, "@past", DateTimeOffset.UtcNow.AddMinutes(-1));
         JobsCoordinationFixtureExtensions.AddParameter(command, "@owner", ownerId);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }

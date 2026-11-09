@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Fencing;
 using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Jobs.Provider;
@@ -51,30 +52,29 @@ public sealed class DurableCancellationProviderTests : TestBase
         cancelledIdle.CancelRequested.Should().BeTrue();
         cancelledIdle.ExecutedAt.Should().Be(_Now);
         cancelledIdle.UpdatedAt.Should().Be(_Now);
-        cancelledIdle.OwnerId.Should().BeNull();
-        cancelledIdle.LockedUntil.Should().BeNull();
+        cancelledIdle.Lease.State.Should().NotBe(RowLeaseState.Active);
 
         var requestedQueued = await provider.GetTimeJobByIdAsync(queued.Id, AbortToken);
         requestedQueued!.Status.Should().Be(JobStatus.Queued);
         requestedQueued.CancelRequested.Should().BeTrue();
         requestedQueued.ExecutedAt.Should().BeNull();
-        requestedQueued.OwnerId.Should().Be(_Owner);
-        requestedQueued.LockedUntil.Should().Be(lockedUntil);
+        requestedQueued.Lease.Holder.Should().Be(_Owner);
+        requestedQueued.Lease.ExpiresAt.Should().Be(new DateTimeOffset(lockedUntil));
 
         var requestedInProgress = await provider.GetTimeJobByIdAsync(inProgress.Id, AbortToken);
         requestedInProgress!.Status.Should().Be(JobStatus.InProgress);
         requestedInProgress.CancelRequested.Should().BeTrue();
         requestedInProgress.ExecutedAt.Should().BeNull();
-        requestedInProgress.OwnerId.Should().Be(_Owner);
-        requestedInProgress.LockedUntil.Should().Be(lockedUntil);
+        requestedInProgress.Lease.Holder.Should().Be(_Owner);
+        requestedInProgress.Lease.ExpiresAt.Should().Be(new DateTimeOffset(lockedUntil));
 
         var rejectedTerminal = await provider.GetTimeJobByIdAsync(terminal.Id, AbortToken);
         rejectedTerminal!.Status.Should().Be(JobStatus.Succeeded);
         rejectedTerminal.CancelRequested.Should().BeFalse();
         rejectedTerminal.ExecutedAt.Should().Be(_Now.AddMinutes(-1));
         rejectedTerminal.UpdatedAt.Should().Be(terminalUpdatedAt);
-        rejectedTerminal.OwnerId.Should().Be(_Owner);
-        rejectedTerminal.LockedUntil.Should().Be(lockedUntil);
+        rejectedTerminal.Lease.Holder.Should().Be(_Owner);
+        rejectedTerminal.Lease.ExpiresAt.Should().Be(new DateTimeOffset(lockedUntil));
     }
 
     [Fact]
@@ -163,8 +163,7 @@ public sealed class DurableCancellationProviderTests : TestBase
             Id = Guid.NewGuid(),
             Function = "durable-cancellation",
             Status = status,
-            OwnerId = owner,
-            LockedUntil = lockedUntil,
+            Lease = TestLeases.Held(owner, lockedUntil),
             ExecutionTime = executionTime ?? _Now.UtcDateTime.AddMinutes(1),
             CreatedAt = _Now.AddMinutes(-5),
             UpdatedAt = _Now.AddMinutes(-2),
