@@ -4,6 +4,7 @@
 
 import type { ReactNode } from 'react'
 import { Dialog as AriaDialog, Heading, Modal, ModalOverlay } from 'react-aria-components'
+import { floatingSurface } from './cn.ts'
 
 export interface OverlayProps {
   isOpen: boolean
@@ -19,8 +20,7 @@ export interface OverlayProps {
 export const dialogScrim = 'fixed inset-0 z-(--z-dialog) grid items-start justify-items-center bg-scrim px-4 pt-[12vh] pb-4'
 
 /** shadcn's dialog surface, with no entrance motion: the dashboard opens and closes overlays at once. */
-export const dialogSurface =
-  'flex max-h-[76vh] w-full max-w-(--dialog-width) flex-col overflow-auto rounded-lg border border-border bg-popover text-popover-foreground shadow-lg'
+export const dialogSurface = `flex max-h-[76vh] w-full max-w-(--dialog-width) flex-col overflow-auto rounded-lg ${floatingSurface}`
 
 /**
  * A modal: only the command palette and action confirmations use one. Focus moves into it on open and returns to the

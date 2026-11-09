@@ -1,16 +1,16 @@
-// The React Compiler's memo caches cost the SDK more bytes than these renders save (the file runs no effect that a
-// changed identity could re-trigger), and the shell's assets sit near their size budget.
 'use no memo'
 
-// The icons are their own entry, so lucide's code loads with the first view or SDK chart that draws one, not with the
-// shell. Each is re-exported by name: the shell's import-map entry keeps every export, so `export *` from lucide would
-// ship all of its icons.
+// The icons are their own entry, and the shell loads them with its first page, since its toasts and search fields draw
+// the close icon. Each is re-exported by name: the shell's import-map entry keeps every export, so `export *` from
+// lucide would ship all of its icons.
 
 import type { LucideIcon } from 'lucide-react'
 import {
   Ban,
   Calendar,
   CalendarClock,
+  ChevronLeft,
+  ChevronRight,
   ChartLine,
   Copy,
   CopyPlus,
@@ -62,11 +62,11 @@ function curate(glyph: LucideIcon): IconComponent {
       'aria-hidden': true,
       focusable: false,
       strokeWidth: 1.5,
-      className: cn('size-(--icon) shrink-0 text-muted-foreground', className),
+      // A caller's own text colour replaces the muted tone rather than racing it in the stylesheet's order.
+      className: cn('size-(--icon) shrink-0', !className?.includes('text-') && 'text-muted-foreground', className),
     })
 }
 
-// Pages and their summaries.
 export const DashboardIcon = curate(LayoutDashboard)
 export const RunsIcon = curate(Rows3)
 export const RecurringIcon = curate(Repeat)
@@ -79,7 +79,6 @@ export const ConsumerIcon = curate(Users)
 export const OperatorLogIcon = curate(ScrollText)
 export const AttentionIcon = curate(TriangleAlert)
 
-// Actions.
 export const SearchIcon = curate(Search)
 export const FilterIcon = curate(Funnel)
 export const CalendarIcon = curate(Calendar)
@@ -93,6 +92,10 @@ export const EditIcon = curate(Pencil)
 export const DuplicateIcon = curate(CopyPlus)
 export const CancelIcon = curate(Ban)
 export const CloseIcon = curate(X)
+/** Back one step, such as the previous month; a right-to-left page mirrors it with `rtl:rotate-180`. */
+export const PreviousIcon = curate(ChevronLeft)
+/** Forward one step, such as the next month; a right-to-left page mirrors it with `rtl:rotate-180`. */
+export const NextIcon = curate(ChevronRight)
 export const DeleteIcon = curate(Trash2)
 /** Retry a run, or requeue a message. */
 export const RetryIcon = curate(RotateCcw)
@@ -100,6 +103,5 @@ export const HoldIcon = curate(Lock)
 export const ReleaseIcon = curate(LockOpen)
 export const PingIcon = curate(Radio)
 
-// A chart's toggle between the drawing and the list of the same data.
 export const ChartIcon = curate(ChartLine)
 export const ListIcon = curate(List)

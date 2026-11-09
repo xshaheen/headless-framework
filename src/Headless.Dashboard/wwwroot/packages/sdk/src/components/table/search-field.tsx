@@ -1,5 +1,8 @@
+'use no memo'
+
 import { useEffect, useRef, useState } from 'react'
 import { Input, Label, SearchField as AriaSearchField, Button as AriaButton } from 'react-aria-components'
+import { CloseIcon } from '../../icons/index.ts'
 import { Button } from '../button.tsx'
 import { inputClass } from '../form.tsx'
 
@@ -58,7 +61,6 @@ export function SearchField({ label, onSearch, mode = 'debounce', delay = defaul
     }
   }
 
-  // A pending search must not fire after the field leaves the page.
   useEffect(() => cancel, [])
 
   // The `Search` button sits outside React Aria's field: inside it, the field's button slot would make it a clear button.
@@ -69,7 +71,7 @@ export function SearchField({ label, onSearch, mode = 'debounce', delay = defaul
         <Input className={`${inputClass} pe-7 [&::-webkit-search-cancel-button]:hidden`} placeholder={placeholder} />
         {text !== '' ? (
           <AriaButton className="absolute end-1 grid size-6 cursor-pointer place-content-center rounded-sm text-muted-foreground outline-none hover:text-foreground data-focus-visible:ring-2 data-focus-visible:ring-ring">
-            <span aria-hidden="true">×</span>
+            <CloseIcon className="text-current" />
           </AriaButton>
         ) : null}
       </AriaSearchField>

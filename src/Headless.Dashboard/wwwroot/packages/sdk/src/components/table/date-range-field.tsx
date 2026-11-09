@@ -1,3 +1,5 @@
+'use no memo'
+
 import {
   Button as AriaButton,
   CalendarCell,
@@ -14,7 +16,9 @@ import {
   type DateRange,
 } from 'react-aria-components'
 import type { ListRange } from '../../data/keyset.ts'
+import { CalendarIcon, NextIcon, PreviousIcon } from '../../icons/index.ts'
 import { useLocale } from '../../locale/locale.tsx'
+import { cn, floatingSurface } from '../cn.ts'
 
 export interface DateRangeFieldProps {
   /** Names the field, such as `Executed`. */
@@ -26,14 +30,12 @@ export interface DateRangeFieldProps {
   onChange: (range: ListRange | undefined) => void
 }
 
-// The segments sit in one field-height box; a focused segment takes the accent, as a focused input does.
 const groupClass =
   'flex h-(--field-height) min-w-0 items-center gap-1 rounded-md border border-input bg-deep ps-2 pe-1 text-foreground transition-fast focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30'
 const segmentClass =
   'rounded-sm px-px tabular-nums outline-none data-placeholder:text-faint data-[type=literal]:text-faint data-focused:bg-primary data-focused:text-primary-foreground'
 const navClass =
-  'grid size-7 cursor-pointer place-content-center rounded-md text-muted-foreground outline-none hover:bg-accent hover:text-foreground data-focus-visible:ring-2 data-focus-visible:ring-ring'
-// The range reads as a soft band, its two ends in the accent; outside days and unavailable ones fade.
+  'grid cursor-pointer place-content-center rounded-md text-muted-foreground outline-none hover:bg-accent hover:text-foreground data-focus-visible:ring-2 data-focus-visible:ring-ring'
 const cellClass =
   'grid size-8 cursor-pointer place-content-center rounded-md type-small tabular-nums outline-none data-hovered:bg-accent data-outside-month:text-faint data-selected:rounded-none data-selected:bg-primary-soft data-selection-start:rounded-s-md data-selection-start:bg-primary data-selection-start:text-primary-foreground data-selection-end:rounded-e-md data-selection-end:bg-primary data-selection-end:text-primary-foreground data-focus-visible:ring-2 data-focus-visible:ring-ring data-disabled:opacity-50'
 
@@ -72,27 +74,20 @@ export function DateRangeField({ label, onChange }: DateRangeFieldProps) {
         <DateInput slot="end" className="flex">
           {(segment) => <DateSegment segment={segment} className={segmentClass} />}
         </DateInput>
-        <AriaButton className={`${navClass} ms-auto size-6`}>
-          <svg viewBox="0 0 16 16" aria-hidden="true" className="size-3.5 fill-none stroke-current stroke-[1.5]">
-            <rect x="2.5" y="3.5" width="11" height="10" rx="1.5" />
-            <path d="M2.5 6.5h11M5.5 2v3M10.5 2v3" />
-          </svg>
+        <AriaButton className={`${navClass} ms-auto size-7`}>
+          <CalendarIcon className="text-current" />
         </AriaButton>
       </Group>
-      <Popover className="z-(--z-popover) rounded-lg border border-border bg-popover p-2.5 text-popover-foreground shadow-lg">
+      <Popover className={cn('z-(--z-popover) rounded-lg p-2.5', floatingSurface)}>
         <Dialog className="outline-none">
           <RangeCalendar className="flex flex-col gap-2">
             <header className="flex items-center justify-between gap-2">
-              <AriaButton slot="previous" className={navClass}>
-                <span aria-hidden="true" className="rtl:rotate-180">
-                  ‹
-                </span>
+              <AriaButton slot="previous" className={`${navClass} size-7`}>
+                <PreviousIcon className="text-current rtl:rotate-180" />
               </AriaButton>
               <Heading className="type-small font-medium" />
-              <AriaButton slot="next" className={navClass}>
-                <span aria-hidden="true" className="rtl:rotate-180">
-                  ›
-                </span>
+              <AriaButton slot="next" className={`${navClass} size-7`}>
+                <NextIcon className="text-current rtl:rotate-180" />
               </AriaButton>
             </header>
             <CalendarGrid className="border-separate border-spacing-y-0.5">{(date) => <CalendarCell date={date} className={cellClass} />}</CalendarGrid>

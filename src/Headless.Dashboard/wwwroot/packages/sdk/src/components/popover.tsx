@@ -1,10 +1,9 @@
-// The React Compiler's memo caches cost the SDK more bytes than these renders save (the file runs no effect that a
-// changed identity could re-trigger), and the shell's assets sit near their size budget.
 'use no memo'
 
 import type { ReactNode } from 'react'
 import { Dialog as AriaDialog, DialogTrigger, Popover as AriaPopover } from 'react-aria-components'
 import { Button, type ButtonVariant } from './button.tsx'
+import { cn, floatingSurface } from './cn.ts'
 
 export interface PopoverProps {
   /** Names the popover's dialog for assistive technology, such as `More actions`. */
@@ -24,7 +23,7 @@ export function Popover({ label, trigger, variant, children }: PopoverProps) {
   return (
     <DialogTrigger>
       <Button variant={variant}>{trigger}</Button>
-      <AriaPopover className="z-(--z-popover) w-(--popover-width) rounded-lg border border-border bg-popover text-popover-foreground shadow-lg">
+      <AriaPopover className={cn('z-(--z-popover) w-(--popover-width) rounded-lg', floatingSurface)}>
         <AriaDialog aria-label={label} className="flex flex-col gap-2.5 p-2.5 outline-none">
           {children}
         </AriaDialog>

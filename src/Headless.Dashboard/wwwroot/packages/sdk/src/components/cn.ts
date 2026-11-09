@@ -1,7 +1,4 @@
-import { clsx, type ClassValue } from 'clsx'
-import { twMerge } from 'tailwind-merge'
+export { clsx as cn } from 'clsx'
 
-/** Joins class names, letting a later utility replace an earlier one of the same kind, as shadcn's components do. */
-export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs))
-}
+/** The look of every floating surface: a popover, a dialog, a tooltip. Each adds its own radius and padding. */
+export const floatingSurface = 'border border-border bg-popover text-popover-foreground shadow-lg'

@@ -3,6 +3,7 @@ import { ProgressBar as AriaProgressBar } from 'react-aria-components'
 import { useDashboard } from '../context.tsx'
 import { useNewRows } from '../data/hooks.ts'
 import { useStreamStatus } from '../stream/hooks.ts'
+import { CloseIcon } from '../icons/index.ts'
 import { Button } from './button.tsx'
 
 /** A visually hidden polite live region: what it holds is announced, never shown. */
@@ -120,9 +121,7 @@ export function ToastRegion() {
               {toast.action.label}
             </Button>
           ) : null}
-          <Button variant="ghost" className="hd-icon opacity-60" aria-label="Dismiss" onPress={() => toasts.dismiss(toast.id)}>
-            ×
-          </Button>
+          <Button variant="ghost" icon={CloseIcon} className="opacity-60" aria-label="Dismiss" onPress={() => toasts.dismiss(toast.id)} />
         </div>
       ))}
     </section>

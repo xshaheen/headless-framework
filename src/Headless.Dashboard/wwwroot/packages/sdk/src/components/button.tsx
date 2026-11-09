@@ -2,7 +2,6 @@
 // changed identity could re-trigger), and the shell's assets sit near their size budget.
 'use no memo'
 
-import { cva } from 'class-variance-authority'
 import { useId, type Ref } from 'react'
 import { Button as AriaButton, composeRenderProps, type ButtonProps as AriaButtonProps } from 'react-aria-components'
 import type { IconComponent } from '../icons/index.ts'
@@ -28,17 +27,18 @@ export interface ButtonProps extends AriaButtonProps {
 }
 
 // The variants are classes in sdk.css rather than utilities here, so the shell can put the same look on a plain link.
-const buttonVariants = cva('hd-btn', {
-  variants: {
-    variant: { secondary: '', primary: 'hd-btn-primary', danger: 'hd-btn-danger', ghost: 'hd-btn-ghost' },
-  },
-})
+const variantClasses: Record<ButtonVariant, string> = {
+  secondary: 'hd-btn',
+  primary: 'hd-btn hd-btn-primary',
+  danger: 'hd-btn hd-btn-danger',
+  ghost: 'hd-btn hd-btn-ghost',
+}
 
 /** The dashboard's button: shadcn's, on React Aria's, so press, focus, and keyboard behave the same in every module. */
 export function Button({ variant = 'secondary', disabledReason, className, onPress, icon: Icon, children, ...props }: ButtonProps) {
   const reasonId = useId()
   const square = Icon != null && children == null
-  const classes = composeRenderProps(className, (extra) => cn(buttonVariants({ variant }), square && 'hd-icon', extra))
+  const classes = composeRenderProps(className, (extra) => cn(variantClasses[variant], square && 'hd-icon', extra))
   // The icon takes the button's own text colour, so it reads as part of the label in every variant and state.
   const content = Icon
     ? composeRenderProps(children, (label) => (
