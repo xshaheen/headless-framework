@@ -12,9 +12,15 @@ namespace Headless.Testing.Testcontainers;
 [PublicAPI]
 public class HeadlessRedisFixture() : ContainerFixture<RedisBuilder, RedisContainer>(TestContextMessageSink.Instance)
 {
+    /// <summary>
+    /// Gets the image the fixture runs, <see cref="TestImages.Redis"/> unless overridden. Override it to run another
+    /// version or a variant of the same server.
+    /// </summary>
+    protected virtual string Image => TestImages.Redis;
+
     protected override RedisBuilder Configure()
     {
-        return base.Configure().WithImage(TestImages.Redis).WithHostPingWaitStrategy();
+        return base.Configure().WithImage(Image).WithHostPingWaitStrategy();
     }
 
     /// <summary>Deletes every key in every database of the shared container.</summary>

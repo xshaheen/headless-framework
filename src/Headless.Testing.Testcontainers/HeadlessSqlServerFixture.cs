@@ -54,7 +54,7 @@ public class HeadlessSqlServerFixture : IAsyncLifetime
     public const string ImageOverrideVariable = "HEADLESS_SQLSERVER_IMAGE";
 
     // Use Azure SQL Edge for ARM64 (e.g., Apple Silicon), SQL Server 2022 for x86_64
-    private static readonly string _Image =
+    private static readonly string _DefaultImage =
         Environment.GetEnvironmentVariable(ImageOverrideVariable) is { Length: > 0 } image ? image
         : RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? TestImages.AzureSqlEdge
         : TestImages.MsSqlServer;
@@ -69,6 +69,15 @@ public class HeadlessSqlServerFixture : IAsyncLifetime
     /// read server-wide state another run would disturb.
     /// </summary>
     protected virtual bool ShareContainer => true;
+
+    /// <summary>
+    /// Gets the image the fixture runs. By default it is the image <see cref="ImageOverrideVariable"/> names, else
+    /// <see cref="TestImages.AzureSqlEdge"/> on ARM64 and <see cref="TestImages.MsSqlServer"/> on x86_64. Override it
+    /// to pin a fixture to one engine build. The image is part of the shared container's name, so fixtures on
+    /// different images share separate servers and never attach to each other's.
+    /// </summary>
+    /// <remarks>The image must log "SQL Server is now ready" and accept the <c>sa</c> password the fixture sets.</remarks>
+    protected virtual string Image => _DefaultImage;
 
     /// <summary>Gets the name of the database this fixture owns.</summary>
     public string DatabaseName => Ownership.OwnerId;
@@ -170,7 +179,8 @@ public class HeadlessSqlServerFixture : IAsyncLifetime
 
     private IContainer _Build()
     {
-        var builder = new ContainerBuilder(_Image)
+        var image = Image;
+        var builder = new ContainerBuilder(image)
             .WithPortBinding(1433, assignRandomHostPort: true)
             .WithEnvironment("ACCEPT_EULA", "Y")
             .WithEnvironment("MSSQL_SA_PASSWORD", _Password)
@@ -180,7 +190,7 @@ public class HeadlessSqlServerFixture : IAsyncLifetime
         {
             builder = SharedTestContainers.AsShared<ContainerBuilder, IContainer>(
                 builder,
-                SharedTestContainers.ContainerName("sqlserver", _Image, "sa")
+                SharedTestContainers.ContainerName("sqlserver", image, "sa")
             );
         }
 

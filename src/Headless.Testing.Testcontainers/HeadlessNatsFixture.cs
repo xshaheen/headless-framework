@@ -14,10 +14,16 @@ namespace Headless.Testing.Testcontainers;
 [PublicAPI]
 public class HeadlessNatsFixture() : ContainerFixture<NatsBuilder, NatsContainer>(TestContextMessageSink.Instance)
 {
+    /// <summary>
+    /// Gets the image the fixture runs, <see cref="TestImages.Nats"/> unless overridden. Override it to run another
+    /// version or a variant of the same server.
+    /// </summary>
+    protected virtual string Image => TestImages.Nats;
+
     protected override NatsBuilder Configure()
     {
         return base.Configure()
-            .WithImage(TestImages.Nats)
+            .WithImage(Image)
             .WithWaitStrategy(Wait.ForUnixContainer().UntilMessageIsLogged("Server is ready"));
     }
 
