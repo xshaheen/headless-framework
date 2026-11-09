@@ -1,5 +1,5 @@
 import { useDashboard } from '@headless/dashboard-sdk'
-import { Button, Mono, PageFrame, PageHeader, SelectField, StatusMark, usePageFrame } from '@headless/dashboard-sdk/components'
+import { Banner, Button, Mono, PageFrame, PageHeader, SelectField, StatusMark, usePageFrame } from '@headless/dashboard-sdk/components'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQuery } from '@headless/dashboard-sdk/query'
 import { Link, useSearchParams } from '@headless/dashboard-sdk/router'
@@ -165,7 +165,7 @@ export default function ScheduledView() {
                 ]}
               />
               {pages > 1 ? (
-                <nav aria-label="Pages" className="hd-banner">
+                <Banner as="nav" aria-label="Pages">
                   <Button variant="ghost" disabledReason={page > 1 ? null : 'This is the first page'} onPress={() => goTo(page - 1)}>
                     Previous
                   </Button>
@@ -173,13 +173,13 @@ export default function ScheduledView() {
                   <Button variant="ghost" disabledReason={page < pages ? null : 'This is the last page'} onPress={() => goTo(page + 1)}>
                     Next
                   </Button>
-                </nav>
+                </Banner>
               ) : null}
             </>
           ) : (
-            <div className="hd-banner" role="status">
+            <Banner role="status">
               {`The ${data.store} store cannot list its scheduled deliveries${data.reason ? `: ${data.reason}` : '.'}`}
-            </div>
+            </Banner>
           )
         }
       </QueryState>

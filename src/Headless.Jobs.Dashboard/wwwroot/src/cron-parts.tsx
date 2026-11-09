@@ -1,6 +1,18 @@
 import { useDashboard, useModule } from '@headless/dashboard-sdk'
 import { CommandAction, createCommandsApi, useAllowedActions } from '@headless/dashboard-sdk/commands'
-import { BarChart, Button, DetailPanel, FieldGrid, GridField, HistoryList, Mono, type BarColumn } from '@headless/dashboard-sdk/components'
+import {
+  BarChart,
+  Button,
+  DetailPanel,
+  FieldGrid,
+  Fields,
+  GridField,
+  HistoryList,
+  Mono,
+  Skeleton,
+  Text,
+  type BarColumn,
+} from '@headless/dashboard-sdk/components'
 import { useDashboardKeysetList, useDashboardObject } from '@headless/dashboard-sdk/data'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQuery } from '@headless/dashboard-sdk/query'
@@ -8,7 +20,7 @@ import { Link } from '@headless/dashboard-sdk/router'
 import { useStreamEvent } from '@headless/dashboard-sdk/stream'
 import { useEffect, useState } from 'react'
 import { cronJobsTopic, cronStatusMark, fetchCronJob, fetchPreview, type CronJob } from './cron.ts'
-import { firstLine, LoadError, Skeleton, Time } from './parts.tsx'
+import { firstLine, LoadError, Time } from './parts.tsx'
 import { fetchRuns, runStatusMark, runsTopic, statusLabel, useJobsCommands, viewOnlyReason, type Run, type RunStatus } from './runs.ts'
 
 const hour = 3_600_000
@@ -65,12 +77,12 @@ export function NextFires({ fires, zone, paused }: { fires: readonly string[] | 
   }
 
   return (
-    <section aria-label="Next fires" className="hd-fields">
-      <h3 className="hd-label">{label}</h3>
+    <Fields label="Next fires">
+      <Text as="h3" tone="label">{label}</Text>
       {paused || !fires?.length ? (
-        <p className="hd-hint" role="status">
+        <Text as="p" tone="hint" role="status">
           {paused ? 'No fires scheduled. Resume the cron job to schedule its next fires.' : 'No fires scheduled.'}
-        </p>
+        </Text>
       ) : (
         <ol aria-label={label}>
           {fires.map((fire) => (
@@ -80,7 +92,7 @@ export function NextFires({ fires, zone, paused }: { fires: readonly string[] | 
           ))}
         </ol>
       )}
-    </section>
+    </Fields>
   )
 }
 
@@ -152,7 +164,7 @@ export function CronFields({ cronJob }: { cronJob: CronJob }) {
       <GridField label="Description">{cronJob.description || 'None'}</GridField>
       {locked ? (
         <>
-          <GridField label="Expression" action={<span className="hd-hint">{locked}</span>}>
+          <GridField label="Expression" action={<Text tone="hint">{locked}</Text>}>
             <Mono>{cronJob.expression}</Mono>
           </GridField>
           <GridField label="Time zone">{cronJob.timeZoneId || `${zone ?? 'Scheduler zone'} (scheduler zone)`}</GridField>
@@ -285,8 +297,8 @@ function CronOccurrences({ cronJob }: { cronJob: CronJob }) {
         <p>No occurrences in the last 24 hours. One appears each time the cron job fires.</p>
       ) : (
         <>
-          <section aria-label="Outcomes per hour, last 24 h" className="hd-fields">
-            <h3 className="hd-label">Outcomes per hour, last 24 h</h3>
+          <Fields label="Outcomes per hour, last 24 h">
+            <Text as="h3" tone="label">Outcomes per hour, last 24 h</Text>
             <BarChart
               label="Occurrence outcomes per hour"
               series={outcomeSeries}
@@ -294,9 +306,9 @@ function CronOccurrences({ cronJob }: { cronJob: CronJob }) {
               unit="occurrences"
             />
             {occurrences.hasMore && total ? (
-              <p className="hd-footnote">{`The bars count the ${format.number(rows.length)} latest of ${format.count(total)} occurrences.`}</p>
+              <Text as="p" tone="footnote">{`The bars count the ${format.number(rows.length)} latest of ${format.count(total)} occurrences.`}</Text>
             ) : null}
-          </section>
+          </Fields>
           <HistoryList
             label="Occurrences"
             items={rows.map((run) => ({

@@ -1,17 +1,21 @@
 import { useDashboard, useModule, type DashboardStateRole } from '@headless/dashboard-sdk'
 import { CommandAction, useAllowedActions, type CommandDefinition } from '@headless/dashboard-sdk/commands'
 import {
+  Banner,
   Button,
   DetailPanel,
   ExceptionBlock,
   FieldGrid,
+  Fields,
   GridField,
   HistoryList,
   Mono,
   PayloadView,
   ProgressBar,
+  Skeleton,
   StatCard,
   StatStrip,
+  Text,
   Timeline,
   useDelayed,
   useViewKeys,
@@ -53,7 +57,7 @@ export function Time({ value, zone, short, missing = 'Not yet' }: { value: strin
   const format = useFormat()
 
   if (!value) {
-    return <span className="hd-hint">{missing}</span>
+    return <Text tone="hint">{missing}</Text>
   }
 
   return (
@@ -71,26 +75,15 @@ export function CellText({ title, children }: { title?: string; children: ReactN
   return <span title={title}>{children}</span>
 }
 
-/** The skeleton of a list or page, shown only once its load has taken 150 ms. */
-export function Skeleton({ label, rows = 3 }: { label: string; rows?: number }) {
-  return (
-    <div role="status" aria-busy="true" aria-label={label} className="hd-fields">
-      {Array.from({ length: rows }, (_, index) => (
-        <div key={index} className="hd-skeleton" />
-      ))}
-    </div>
-  )
-}
-
 /** A failed load: the error and Retry, never an empty view. */
 export function LoadError({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
-    <div className="hd-banner">
-      <span role="alert" className="hd-error">
+    <Banner>
+      <Text tone="error" role="alert">
         {message}
-      </span>
+      </Text>
       <Button onPress={onRetry}>Retry</Button>
-    </div>
+    </Banner>
   )
 }
 
@@ -140,12 +133,12 @@ export function StaleNotice({ what, onRefresh }: { what: string; onRefresh: () =
   }
 
   return (
-    <div className="hd-banner" role="status">
+    <Banner role="status">
       <span>{`Stale. Live updates stopped, so ${what} may be out of date.`}</span>
       <Button variant="ghost" onPress={onRefresh}>
         Refresh
       </Button>
-    </div>
+    </Banner>
   )
 }
 
@@ -493,18 +486,18 @@ export function AttemptTimeline({ run }: { run: Pick<Run, 'id' | 'version' | 'cr
   const attempts = useAttempts(run)
 
   return (
-    <section aria-label="Timeline" className="hd-fields">
-      <h3 className="hd-title">Timeline</h3>
+    <Fields label="Timeline">
+      <Text as="h3" tone="title">Timeline</Text>
       {attempts.data ? (
         <Timeline label="Run timeline" events={attemptEvents(run, attempts.data)} />
       ) : attempts.isError ? (
         <LoadError message={attempts.error.message} onRetry={() => void attempts.refetch()} />
       ) : (
-        <p className="hd-hint" role="status">
+        <Text as="p" tone="hint" role="status">
           Loading the attempts…
-        </p>
+        </Text>
       )}
-    </section>
+    </Fields>
   )
 }
 

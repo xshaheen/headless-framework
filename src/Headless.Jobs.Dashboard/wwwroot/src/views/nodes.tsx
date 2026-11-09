@@ -1,5 +1,16 @@
 import { useDashboard } from '@headless/dashboard-sdk'
-import { DetailPanel, FieldGrid, GridField, Mono, PageFrame, PageHeader, StatusMark, Tag, usePageFrame } from '@headless/dashboard-sdk/components'
+import {
+  DetailPanel,
+  FieldGrid,
+  GridField,
+  Mono,
+  PageFrame,
+  PageHeader,
+  StatusMark,
+  Tag,
+  Text,
+  usePageFrame,
+} from '@headless/dashboard-sdk/components'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQuery } from '@headless/dashboard-sdk/query'
 import { Link } from '@headless/dashboard-sdk/router'
@@ -82,11 +93,11 @@ export default function NodesView() {
 /** The functions the node's run filter claims, each a tag; a node that published no filter says so. */
 function Claims({ node, links }: { node: JobNode; links?: boolean }) {
   if (!node.claimedFunctions) {
-    return <span className="hd-faint">No run filter published</span>
+    return <Text tone="faint">No run filter published</Text>
   }
 
   if (node.claimedFunctions.length === 0) {
-    return <span className="hd-faint">None</span>
+    return <Text tone="faint">None</Text>
   }
 
   return (
@@ -119,7 +130,7 @@ function NodePanel({ node }: { node: JobNode }) {
                 </FieldGrid>
               </div>
               <section aria-label="Functions this server runs">
-                <h3 className="hd-label">Functions this server runs</h3>
+                <Text as="h3" tone="label">Functions this server runs</Text>
                 <div>
                   <Claims node={node} links />
                 </div>

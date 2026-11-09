@@ -1,6 +1,7 @@
 import { useDashboard, useModule, type DashboardStateRole } from '@headless/dashboard-sdk'
 import { CommandAction, useAllowedActions, type CommandDefinition } from '@headless/dashboard-sdk/commands'
 import {
+  Banner,
   Button,
   DetailPanel,
   ExceptionBlock,
@@ -11,8 +12,10 @@ import {
   NodeChip,
   PayloadView,
   SelectField,
+  Skeleton,
   StatCard,
   StatStrip,
+  Text,
   useDelayed,
   type HistoryItem,
 } from '@headless/dashboard-sdk/components'
@@ -47,7 +50,7 @@ export function Time({ value, short, missing = 'Not yet' }: { value: string | un
   const format = useFormat()
 
   if (!value) {
-    return <span className="hd-hint">{missing}</span>
+    return <Text tone="hint">{missing}</Text>
   }
 
   return (
@@ -65,26 +68,15 @@ export function CellText({ title, children }: { title?: string; children: ReactN
   return <span title={title}>{children}</span>
 }
 
-/** The skeleton of a list or page, shown only once its load has taken 150 ms. */
-export function Skeleton({ label, rows = 3 }: { label: string; rows?: number }) {
-  return (
-    <div role="status" aria-busy="true" aria-label={label} className="hd-fields">
-      {Array.from({ length: rows }, (_, index) => (
-        <div key={index} className="hd-skeleton" />
-      ))}
-    </div>
-  )
-}
-
 /** A failed load: the error and Retry, never an empty view. */
 export function LoadError({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
-    <div className="hd-banner">
-      <span role="alert" className="hd-error">
+    <Banner>
+      <Text tone="error" role="alert">
         {message}
-      </span>
+      </Text>
       <Button onPress={onRetry}>Retry</Button>
-    </div>
+    </Banner>
   )
 }
 
@@ -127,12 +119,12 @@ export function StaleNotice({ what, onRefresh }: { what: string; onRefresh: () =
   }
 
   return (
-    <div className="hd-banner" role="status">
+    <Banner role="status">
       <span>{`Stale. Live updates stopped, so ${what} may be out of date.`}</span>
       <Button variant="ghost" onPress={onRefresh}>
         Refresh
       </Button>
-    </div>
+    </Banner>
   )
 }
 
@@ -268,9 +260,9 @@ export function NodeSwitch() {
 
   if (needsPeer && !first) {
     return (
-      <span role="alert" className="hd-error">
+      <Text tone="error" role="alert">
         No Messaging node reachable
-      </span>
+      </Text>
     )
   }
 
@@ -433,12 +425,12 @@ export function AttentionGaps({ stale, unavailable, onRetry }: { stale: boolean;
 
   if (unavailable.length > 0) {
     return (
-      <div className="hd-banner" role="status">
+      <Banner role="status">
         <span>{`Not answering: ${unavailable.join(', ')}. Items from these may be missing.`}</span>
         <Button variant="ghost" onPress={onRetry}>
           Retry
         </Button>
-      </div>
+      </Banner>
     )
   }
 
@@ -610,7 +602,7 @@ function MessageHeaders({ kind, node, row }: { kind: MessageKind; node: string; 
             <FieldGrid columns={2}>
               {headers.map(([name, value]) => (
                 <GridField key={name} label={name} span={2}>
-                  {value === null ? <span className="hd-faint">No value</span> : <Mono>{value}</Mono>}
+                  {value === null ? <Text tone="faint">No value</Text> : <Mono>{value}</Mono>}
                 </GridField>
               ))}
             </FieldGrid>

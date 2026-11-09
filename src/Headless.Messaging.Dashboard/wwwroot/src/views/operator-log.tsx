@@ -1,12 +1,12 @@
 import { useDashboard } from '@headless/dashboard-sdk'
-import { Mono, PageFrame, PageHeader, SelectField, StatusMark, usePageFrame } from '@headless/dashboard-sdk/components'
+import { Banner, Mono, PageFrame, PageHeader, SelectField, Skeleton, StatusMark, usePageFrame } from '@headless/dashboard-sdk/components'
 import { DashboardApiError } from '@headless/dashboard-sdk/data'
 import { useInfiniteQuery } from '@headless/dashboard-sdk/query'
 import { useSearchParams } from '@headless/dashboard-sdk/router'
 import { DataTable } from '@headless/dashboard-sdk/table'
 import type { DashboardStateRole } from '@headless/dashboard-sdk'
 import { nodeQuery } from '../messages.ts'
-import { CellText, LoadError, NodeSwitch, Skeleton, Time, useNode } from '../parts.tsx'
+import { CellText, LoadError, NodeSwitch, Time, useNode } from '../parts.tsx'
 
 export interface OperatorReceipt {
   operationId: string
@@ -101,9 +101,9 @@ export default function OperatorLogView() {
       }
     >
       {noLedger ? (
-        <div className="hd-banner" role="status">
+        <Banner role="status">
           This store keeps no operator ledger, so no intervention is recorded.
-        </div>
+        </Banner>
       ) : receipts.isError ? (
         <LoadError message={receipts.error.message} onRetry={() => void receipts.refetch()} />
       ) : receipts.isPending ? (

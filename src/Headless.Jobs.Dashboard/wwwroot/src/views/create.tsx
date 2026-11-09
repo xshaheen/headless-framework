@@ -1,5 +1,14 @@
 import { useDashboard } from '@headless/dashboard-sdk'
-import { Button, DetailPanel, FieldGroup, SegmentedControl, SelectField, TextInputField } from '@headless/dashboard-sdk/components'
+import {
+  Actions,
+  Button,
+  DetailPanel,
+  FieldGroup,
+  SegmentedControl,
+  SelectField,
+  Text,
+  TextInputField,
+} from '@headless/dashboard-sdk/components'
 import { DashboardApiError } from '@headless/dashboard-sdk/data'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQuery } from '@headless/dashboard-sdk/query'
@@ -212,17 +221,17 @@ export function TimeJobForm({ chain, onChainChange, onCreated, onCancel }: Creat
         <TextInputField label="Time zone" description="An IANA zone. Blank uses the scheduler's zone." value={timeZoneId} onChange={setTimeZoneId} />
         <TextInputField label="Retries" inputMode="numeric" value={retries} onChange={setRetries} />
         {error ? (
-          <p role="alert" className="hd-error">
+          <Text as="p" tone="error" role="alert">
             {error}
-          </p>
+          </Text>
         ) : null}
       </form>
       {chain ? (
         <section aria-label="Steps after the first">
-          <h3 className="hd-label">Runs after it</h3>
+          <Text as="h3" tone="label">Runs after it</Text>
           {stepsAfter(root).map(({ step, parent }) => (
             <FieldGroup key={step.key}>
-              <p className="hd-faint">{`After ${parent === root ? 'the first step' : parent.function || 'the step above'}`}</p>
+              <Text as="p" tone="faint">{`After ${parent === root ? 'the first step' : parent.function || 'the step above'}`}</Text>
               {stepFields(step)}
               <SelectField
                 label="Runs"
@@ -231,12 +240,12 @@ export function TimeJobForm({ chain, onChainChange, onCreated, onCancel }: Creat
                 onChange={(value) => update(step.key, (current) => ({ ...current, runCondition: value }))}
                 options={runConditions}
               />
-              <span className="hd-actions">
+              <Actions>
                 <Button onPress={() => update(step.key, (current) => ({ ...current, children: [...current.children, newStep()] }))}>Add step after this</Button>
                 <Button variant="ghost" onPress={() => remove(step.key)}>
                   Remove step
                 </Button>
-              </span>
+              </Actions>
             </FieldGroup>
           ))}
           <span>
@@ -340,13 +349,13 @@ export function CronJobForm({ onCreated, onCancel }: CreateFormProps) {
           error={fieldErrors.request}
         />
         {error ? (
-          <p role="alert" className="hd-error">
+          <Text as="p" tone="error" role="alert">
             {error}
-          </p>
+          </Text>
         ) : null}
       </form>
       <section aria-label="Schedule preview">
-        <h3 className="hd-label">{answer && !answer.validationMessage ? `Next fires, ${answer.timeZoneId}` : 'Schedule preview'}</h3>
+        <Text as="h3" tone="label">{answer && !answer.validationMessage ? `Next fires, ${answer.timeZoneId}` : 'Schedule preview'}</Text>
         {answer && !answer.validationMessage ? (
           <>
             <p>{answer.reading}</p>
@@ -357,7 +366,7 @@ export function CronJobForm({ onCreated, onCancel }: CreateFormProps) {
             </ol>
           </>
         ) : (
-          <p className="hd-hint">Type an expression to see how the server reads it and when it fires next.</p>
+          <Text as="p" tone="hint">Type an expression to see how the server reads it and when it fires next.</Text>
         )}
       </section>
     </DetailPanel>

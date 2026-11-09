@@ -1,6 +1,7 @@
 import { useDashboard, useModule } from '@headless/dashboard-sdk'
 import { CommandAction, useAllowedActions, useOperations, type CommandDefinition } from '@headless/dashboard-sdk/commands'
 import {
+  Banner,
   Button,
   DetailPanel,
   FilterChip,
@@ -9,6 +10,7 @@ import {
   PageFrame,
   PageHeader,
   SelectField,
+  Skeleton,
   StatusMark,
   usePageFrame,
 } from '@headless/dashboard-sdk/components'
@@ -24,7 +26,6 @@ import {
   MessagingStats,
   NodeSwitch,
   QueryState,
-  Skeleton,
   StaleNotice,
   Time,
   offers,
@@ -255,9 +256,9 @@ export function MessagesView({ kind }: { kind: MessageKind }) {
     >
       <StaleNotice what={`these ${kind} messages`} onRefresh={() => void list.refetch()} />
       {unavailable.length > 0 ? (
-        <div className="hd-banner" role="status">
+        <Banner role="status">
           {`Some stores did not answer, so their messages are missing: ${unavailable.join(', ')}.`}
-        </div>
+        </Banner>
       ) : null}
       <QueryState query={list} label={`Loading ${kind} messages`} rows={6}>
         {() => (

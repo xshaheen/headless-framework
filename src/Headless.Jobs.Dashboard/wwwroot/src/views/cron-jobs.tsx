@@ -1,5 +1,5 @@
 import { useDashboard, useModule } from '@headless/dashboard-sdk'
-import { Button, DetailPanel, Mono, PageFrame, PageHeader, Tag, usePageFrame } from '@headless/dashboard-sdk/components'
+import { Button, DetailPanel, Mono, PageFrame, PageHeader, Skeleton, Tag, Text, usePageFrame } from '@headless/dashboard-sdk/components'
 import { DashboardApiError, listKey, useDashboardList } from '@headless/dashboard-sdk/data'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQueryClient } from '@headless/dashboard-sdk/query'
@@ -7,7 +7,7 @@ import { useSearchParams } from '@headless/dashboard-sdk/router'
 import { DataTable } from '@headless/dashboard-sdk/table'
 import { CronPanel, useCronJob } from '../cron-parts.tsx'
 import { cronJobsTopic, fetchCronJobs, type CronJob } from '../cron.ts'
-import { CellText, JobsStats, LoadError, QueryState, Skeleton, StaleNotice, Time } from '../parts.tsx'
+import { CellText, JobsStats, LoadError, QueryState, StaleNotice, Time } from '../parts.tsx'
 import { viewOnlyReason } from '../runs.ts'
 import { CronJobForm } from './create.tsx'
 
@@ -103,7 +103,7 @@ export default function CronJobsView() {
                 header: 'Schedule',
                 cell: (row) => (
                   <CellText title={row.reading ?? row.validationMessage}>
-                    <Mono>{row.expression}</Mono> <span className="hd-faint">{row.reading ?? row.validationMessage}</span>
+                    <Mono>{row.expression}</Mono> <Text tone="faint">{row.reading ?? row.validationMessage}</Text>
                   </CellText>
                 ),
                 width: '2fr',

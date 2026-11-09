@@ -9,6 +9,7 @@ import {
   PageFrame,
   PageHeader,
   SelectField,
+  Skeleton,
   StatusMark,
   usePageFrame,
 } from '@headless/dashboard-sdk/components'
@@ -25,7 +26,6 @@ import {
   LoadError,
   QueryState,
   RunPanel,
-  Skeleton,
   StaleNotice,
   Time,
   useFunctions,

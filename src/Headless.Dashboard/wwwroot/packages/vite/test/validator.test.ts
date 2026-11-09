@@ -91,6 +91,12 @@ describe('manifest validator', () => {
     ])
   })
 
+  it('fails a module that ships a stylesheet, naming the file', () => {
+    const errors = validateManifest(manifest({ css: ['assets/index.css'] }), new Set([...files, 'assets/index.css']))
+
+    expect(errors).toEqual([expect.stringMatching(/ships the stylesheet 'assets\/index\.css'; a module ships no CSS/)])
+  })
+
   it('fails an entry missing from the output', () => {
     expect(validateManifest(manifest({ entry: 'main.js' }), files)).toEqual([
       expect.stringMatching(/entry 'main\.js' is not in the build output/),

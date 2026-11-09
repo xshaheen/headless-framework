@@ -3,12 +3,15 @@ import {
   Button,
   DetailPanel,
   FieldGrid,
+  Fields,
   GridField,
   HistoryList,
   Mono,
   PageFrame,
   PageHeader,
+  Skeleton,
   Tag,
+  Text,
   usePageFrame,
 } from '@headless/dashboard-sdk/components'
 import { useDashboardKeysetList, useDashboardList } from '@headless/dashboard-sdk/data'
@@ -16,7 +19,7 @@ import { useFormat } from '@headless/dashboard-sdk/locale'
 import { Link, useNavigate } from '@headless/dashboard-sdk/router'
 import { DataTable } from '@headless/dashboard-sdk/table'
 import { cronJobsTopic, cronStatusMark, fetchCronJobs, type CronJob, type JobFunction } from '../cron.ts'
-import { CellText, JobsStats, LoadError, QueryState, Skeleton, StaleNotice, Time, useFunctions } from '../parts.tsx'
+import { CellText, JobsStats, LoadError, QueryState, StaleNotice, Time, useFunctions } from '../parts.tsx'
 import { fetchRuns, runStatusMark, runsTopic, statusLabel, viewOnlyReason, type Run } from '../runs.ts'
 
 /** A function declared with a cron expression is fired by its schedule; any other is added as a time job. */
@@ -179,8 +182,8 @@ function WhereItRuns({ item }: { item: JobFunction }) {
 
   return (
     <div>
-      <section aria-label="Where it runs" className="hd-fields">
-        <h3 className="hd-label">Where it runs</h3>
+      <Fields label="Where it runs">
+        <Text as="h3" tone="label">Where it runs</Text>
         {item.claimedBy.length > 0 ? (
           <div>
             {item.claimedBy.map((node) => (
@@ -194,14 +197,14 @@ function WhereItRuns({ item }: { item: JobFunction }) {
             <Tag tone="fail">no node runs it</Tag> No live node's run filter claims it, so its runs wait until one does.
           </p>
         )}
-      </section>
+      </Fields>
       {cronJobs.isError ? (
         <LoadError message={cronJobs.error.message} onRetry={() => void cronJobs.refetch()} />
       ) : cronJobs.data && listed.length === 0 ? (
-        <section aria-label="Recurring jobs using it" className="hd-fields">
-          <h3 className="hd-label">Recurring jobs using it</h3>
-          <span className="hd-hint">None. Add one to run this function on a schedule.</span>
-        </section>
+        <Fields label="Recurring jobs using it">
+          <Text as="h3" tone="label">Recurring jobs using it</Text>
+          <Text tone="hint">None. Add one to run this function on a schedule.</Text>
+        </Fields>
       ) : (
         <HistoryList
           label="Recurring jobs using it"

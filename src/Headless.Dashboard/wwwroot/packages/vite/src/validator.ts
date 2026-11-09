@@ -33,7 +33,7 @@ const semver = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.+-]+)?$/
 
 /**
  * Checks a module's manifest against its build output: unique ids, routes that resolve to built chunks, an entry
- * that exists, and a readable built-against SDK version. Returns one message per problem; empty means valid.
+ * that exists, no stylesheet, and a readable built-against SDK version. Returns one message per problem; empty means valid.
  */
 export function validateManifest(manifest: ModuleManifest, files: ReadonlySet<string>): string[] {
   const errors: string[] = []
@@ -50,10 +50,10 @@ export function validateManifest(manifest: ModuleManifest, files: ReadonlySet<st
     errors.push(`The entry '${manifest.entry}' is not in the build output.`)
   }
 
+  // A module composes SDK components and ships no stylesheet, so the design system has one source; a module
+  // stylesheet is usually a stray CSS import that would restyle the shell for every module.
   for (const css of manifest.css) {
-    if (!files.has(css)) {
-      errors.push(`The stylesheet '${css}' is not in the build output.`)
-    }
+    errors.push(`The module ships the stylesheet '${css}'; a module ships no CSS, so compose SDK components instead.`)
   }
 
   if (!(dashboardProducts as readonly string[]).includes(manifest.product)) {

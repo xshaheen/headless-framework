@@ -1,6 +1,17 @@
 import { useDashboard, useModule } from '@headless/dashboard-sdk'
 import { CommandAction, useAllowedActions } from '@headless/dashboard-sdk/commands'
-import { DetailPanel, FieldGrid, GridField, Mono, PageFrame, PageHeader, StatusMark, Tag, usePageFrame } from '@headless/dashboard-sdk/components'
+import {
+  DetailPanel,
+  FieldGrid,
+  GridField,
+  Mono,
+  PageFrame,
+  PageHeader,
+  StatusMark,
+  Tag,
+  Text,
+  usePageFrame,
+} from '@headless/dashboard-sdk/components'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQuery, useQueryClient } from '@headless/dashboard-sdk/query'
 import { DataTable } from '@headless/dashboard-sdk/table'
@@ -120,7 +131,7 @@ export default function ConsumersView() {
         )}
       </QueryState>
       <section aria-label="Circuit breakers">
-        <h2 className="hd-title">Circuit breakers</h2>
+        <Text as="h2" tone="title">Circuit breakers</Text>
         <QueryState query={circuits} label="Loading circuit breakers" rows={2}>
           {(items) => <CircuitsTable circuits={items} nodeName={nodeName} />}
         </QueryState>
@@ -280,7 +291,7 @@ function ConsumerPanel({ consumer, circuit, nodeName }: { consumer: MessagingCon
                 </FieldGrid>
               </div>
               <section aria-label="Messages it consumes">
-                <h3 className="hd-label">Messages it consumes</h3>
+                <Text as="h3" tone="label">Messages it consumes</Text>
                 <div>
                   {consumer.messages.map((message) => (
                     <Tag key={message.name} variant="square">
@@ -293,7 +304,7 @@ function ConsumerPanel({ consumer, circuit, nodeName }: { consumer: MessagingCon
               </section>
               {consumer.middleware && consumer.middleware.length > 0 ? (
                 <section aria-label="Middleware">
-                  <h3 className="hd-label">Middleware</h3>
+                  <Text as="h3" tone="label">Middleware</Text>
                   <div>
                     {consumer.middleware.map((name) => (
                       <Tag key={name} variant="square">

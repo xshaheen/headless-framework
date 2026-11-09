@@ -1,5 +1,5 @@
 import { useDashboard } from '@headless/dashboard-sdk'
-import { Button, Card, CardRow, Cards, Mono, PageFrame, PageHeader, usePageFrame } from '@headless/dashboard-sdk/components'
+import { Button, Card, CardRow, Cards, Mono, PageFrame, PageHeader, Skeleton, usePageFrame } from '@headless/dashboard-sdk/components'
 import { listKey, useDashboardKeysetList } from '@headless/dashboard-sdk/data'
 import { useQueryClient } from '@headless/dashboard-sdk/query'
 import { Link } from '@headless/dashboard-sdk/router'
@@ -9,7 +9,6 @@ import {
   LoadError,
   MessagingStats,
   NodeSwitch,
-  Skeleton,
   StaleNotice,
   Time,
   useMessagingAttention,
