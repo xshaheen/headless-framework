@@ -60,6 +60,26 @@ function isolate(event: SyntheticEvent) {
 
 const isolated = { onPointerDown: isolate, onClick: isolate, onKeyDown: isolate }
 
+// shadcn's table, laid on React Aria's virtualized grid. A cell fills its row's height, so its text centres on the row
+// and the row header's lines up with the rest; a pinned cell paints its row's fill, so the cells that scroll sideways
+// under it stay hidden, and the virtualizer's inline block aligns to the top so it stays on its row.
+const tableClass =
+  'relative max-h-[max(16rem,calc(100dvh-18rem))] w-full overflow-auto [overflow-anchor:none] outline-none [&_[style*=sticky]]:bg-inherit [&_[style*=sticky]]:align-top'
+const headClass = 'flex h-full items-center border-b border-border bg-card px-2.5 type-label whitespace-nowrap text-faint'
+// A cell's only child, such as a name or a reason, ends in an ellipsis when the column is too narrow for it.
+const cellClass =
+  'flex h-full items-center gap-2 overflow-hidden px-2.5 type-small text-ellipsis whitespace-nowrap [&>span:only-child]:min-w-0 [&>span:only-child]:overflow-hidden [&>span:only-child]:text-ellipsis'
+const endClass = 'justify-end text-end tabular-nums'
+// Checked state lives on the checkbox alone, never on the row's fill; the margin makes a 24 px target.
+const checkClass = 'flex h-full items-center ps-4 [&_input]:m-1 [&_input]:size-4 [&_input]:accent-primary'
+// The selected row and a refused row carry an edge on the inline-start side, the hover and open fills from the tokens.
+const rowClass =
+  'group/row cursor-pointer border-b border-border bg-card outline-none transition-fast data-hovered:bg-accent data-selected:bg-primary-soft data-selected:shadow-[inset_2px_0_0_var(--accent)] rtl:data-selected:shadow-[inset_-2px_0_0_var(--accent)] data-focus-visible:shadow-[inset_0_0_0_2px_var(--accent)] data-highlighted:bg-destructive-soft data-highlighted:shadow-[inset_2px_0_0_var(--fail)] rtl:data-highlighted:shadow-[inset_-2px_0_0_var(--fail)] data-no-longer-matches:text-muted-foreground'
+// Opacity, not visibility, hides the row actions, so they stay in the tab order; a coarse pointer has no hover, so
+// it always sees them.
+const actionsClass =
+  'flex h-full items-center px-2.5 *:flex *:gap-1 *:opacity-0 group-focus-within/row:*:opacity-100 group-data-hovered/row:*:opacity-100 pointer-coarse:*:opacity-100'
+
 /** The arrived rows a live list does not hold yet, and the call that loads them, as `useNewRows` reads them. */
 export interface DataTableNewRows {
   count: number
@@ -108,7 +128,7 @@ export interface DataTableProps<T extends { id: string }> {
 /** Keys that move the focus in the grid; without `Shift` they never change a multi-selection. */
 const moveKeys = new Set(['ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'])
 
-/** The header row's height in px, as `components.css` sets it. */
+/** The header row's height in px; the virtualizer lays the header out by it, and its cells fill that height. */
 const headingHeight = 32
 
 /**
@@ -318,16 +338,16 @@ export function DataTable<T extends { id: string }>({
   return (
     <div
       ref={wrap}
-      className="hd-table-wrap"
+      className="flex flex-col gap-2 border-t border-border"
       data-density={density}
       onFocusCapture={() => (moving.current = true)}
       onFocus={onFocus}
       onKeyDownCapture={(event: KeyboardEvent) => (moving.current = !event.shiftKey && moveKeys.has(event.key))}
       onKeyDown={() => (moving.current = false)}
     >
-      <div className="hd-table-bar">
+      <div className="flex flex-wrap items-center justify-between gap-2 pt-2 [&>[role=group]]:ms-auto">
         {arrived > 0 ? (
-          <Button variant="ghost" className="hd-new-rows" onPress={showArrived}>
+          <Button variant="ghost" className="self-center text-primary" onPress={showArrived}>
             {`${arrived} new`}
           </Button>
         ) : null}
@@ -347,13 +367,13 @@ export function DataTable<T extends { id: string }>({
       {/* The empty state sits outside the grid: inside it the virtualizer gives it no height, so its next step
           (`Clear filters`) could not be seen or clicked. */}
       {listed.length === 0 && !hasMore ? (
-        <div className="hd-empty">{emptyState}</div>
+        <div className="mx-auto max-w-[46ch] py-5 text-center text-muted-foreground">{emptyState}</div>
       ) : (
         <Virtualizer layout={layout} layoutOptions={{ rowHeight, headingHeight, loaderHeight: rowHeight }}>
           <Table
             ref={scroller}
             aria-label={label}
-            className="hd-table"
+            className={tableClass}
             selectionMode={frame ? 'single' : selectionMode}
             selectionBehavior="replace"
             selectedKeys={selected as Set<Key>}
@@ -364,7 +384,7 @@ export function DataTable<T extends { id: string }>({
           >
             <TableHeader>
               {checks ? (
-                <Column id="hd-check" width={44} className="hd-check">
+                <Column id="hd-check" width={44} className={`${headClass} ${checkClass}`}>
                   <input
                     type="checkbox"
                     aria-label="Select all loaded"
@@ -386,14 +406,14 @@ export function DataTable<T extends { id: string }>({
                   isRowHeader={column.id === rowHeaderId}
                   defaultWidth={column.width}
                   minWidth={96}
-                  className={column.align === 'end' ? 'hd-end' : undefined}
+                  className={column.align === 'end' ? `${headClass} ${endClass}` : headClass}
                 >
                   {column.header}
                 </Column>
               ))}
               {rowActions ? (
-                <Column id="hd-actions" width={96}>
-                  <span className="hd-visually-hidden">Actions</span>
+                <Column id="hd-actions" width={96} className={headClass}>
+                  <span className="sr-only">Actions</span>
                 </Column>
               ) : null}
             </TableHeader>
@@ -406,13 +426,13 @@ export function DataTable<T extends { id: string }>({
                   <Row
                     key={row.id}
                     id={row.id}
-                    className="hd-row"
+                    className={rowClass}
                     data-row-id={row.id}
                     data-no-longer-matches={stale || undefined}
                     data-highlighted={(revealed > 0 && refusal !== undefined) || undefined}
                   >
                     {checks ? (
-                      <Cell className="hd-check">
+                      <Cell className={checkClass}>
                         <input
                           type="checkbox"
                           aria-label={`Select ${row.id}`}
@@ -433,13 +453,15 @@ export function DataTable<T extends { id: string }>({
                       </Cell>
                     ) : null}
                     {shown.map((column) => (
-                      <Cell key={column.id} className={column.align === 'end' ? 'hd-end' : undefined}>
+                      <Cell key={column.id} className={column.align === 'end' ? `${cellClass} ${endClass}` : cellClass}>
                         {column.cell(row)}
                         {/* The space keeps the row's accessible name `r2 No longer matches`, not `r2No longer…`. */}
                         {stale && column.id === rowHeaderId ? (
                           <>
                             {' '}
-                            <span className="hd-chip hd-no-match">No longer matches</span>
+                            <span className="inline-flex h-(--chip-height) flex-none items-center rounded-md bg-muted px-1.5 type-label text-muted-foreground">
+                              No longer matches
+                            </span>
                           </>
                         ) : null}
                         {refusal !== undefined && column.id === rowHeaderId ? (
@@ -451,7 +473,7 @@ export function DataTable<T extends { id: string }>({
                       </Cell>
                     ))}
                     {rowActions ? (
-                      <Cell className="hd-row-actions">
+                      <Cell className={actionsClass}>
                         <span {...isolated}>{rowActions(row)}</span>
                       </Cell>
                     ) : null}
@@ -459,7 +481,7 @@ export function DataTable<T extends { id: string }>({
                 )
               })}
               {hasMore && onLoadMore ? (
-                <TableLoadMoreItem className="hd-load-more" isLoading={isLoadingMore} onLoadMore={loadMore}>
+                <TableLoadMoreItem className="flex items-center px-2.5" isLoading={isLoadingMore} onLoadMore={loadMore}>
                   <span className="hd-hint">Loading more…</span>
                 </TableLoadMoreItem>
               ) : null}

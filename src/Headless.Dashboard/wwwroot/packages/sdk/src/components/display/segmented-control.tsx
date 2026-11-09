@@ -19,9 +19,15 @@ export interface SegmentedControlProps<T extends string> {
  */
 export function SegmentedControl<T extends string>({ label, options, value, onChange, size }: SegmentedControlProps<T>) {
   return (
-    <div role="group" aria-label={label} className={`hd-seg${size ? ' hd-seg-form' : ''}`}>
+    <div role="group" aria-label={label} className="inline-flex rounded-md border border-border bg-deep p-0.5">
       {options.map((option) => (
-        <button key={option.value} type="button" aria-pressed={option.value === value} onClick={() => onChange(option.value)}>
+        <button
+          key={option.value}
+          type="button"
+          className={`cursor-pointer rounded-sm text-faint transition-fast hover:text-foreground aria-pressed:bg-muted aria-pressed:font-medium aria-pressed:text-foreground ${size ? 'h-(--seg-form-height) px-2.5 type-small' : 'h-(--chip-height) px-2 type-label font-normal'}`}
+          aria-pressed={option.value === value}
+          onClick={() => onChange(option.value)}
+        >
           {option.label}
         </button>
       ))}

@@ -3,6 +3,7 @@
 'use no memo'
 
 import { useId, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { inputClass } from '../form.tsx'
 
 /** An editable field's value, how it commits, and what it shows while the operator types. */
 export interface FieldEdit {
@@ -60,7 +61,7 @@ export function EditableValue({ id, edit }: { id: string; edit: FieldEdit }) {
 
   const common = {
     id,
-    className: 'hd-input',
+    className: inputClass,
     value: draft,
     'aria-invalid': error ? true : undefined,
     'aria-describedby': error ? `${id}-error` : undefined,
@@ -123,7 +124,10 @@ export interface FieldGridProps {
 export function FieldGrid({ columns = 4, footnote, children }: FieldGridProps) {
   return (
     <>
-      <dl className="hd-grid" style={{ '--cols': columns } as CSSProperties}>
+      <dl
+        className="m-0 grid grid-cols-[repeat(var(--cols),minmax(0,1fr))] gap-3 type-mono wrap-anywhere max-md:grid-cols-2"
+        style={{ '--cols': columns } as CSSProperties}
+      >
         {children}
       </dl>
       {footnote ? <p className="hd-footnote">{footnote}</p> : null}
@@ -149,7 +153,7 @@ export function GridField({ label, children, edit, span, action }: GridFieldProp
   return (
     <div className={span === 2 ? 'hd-span-2' : undefined}>
       <dt className="hd-label">{edit ? <label htmlFor={id}>{label}</label> : label}</dt>
-      <dd>
+      <dd className="mt-0.5 flex flex-wrap items-center gap-2 tabular-nums">
         {edit ? <EditableValue id={id} edit={edit} /> : children}
         {action}
       </dd>

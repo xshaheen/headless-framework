@@ -98,21 +98,22 @@ export function DetailPanel({ label, name, id, status, tabs, children, actions, 
   return (
     <div
       ref={ref}
-      className="hd-panel"
+      // `hd-panel` names the panel for the shell's canvas, which drops its padding around one.
+      className="hd-panel flex min-w-0 flex-1 flex-col bg-card text-card-foreground focus:outline-none"
       aria-label={label}
       role={modal ? 'dialog' : 'region'}
       aria-modal={modal || undefined}
       tabIndex={modal ? -1 : undefined}
       onKeyDown={onKeyDown}
     >
-      <div className="hd-panel-title">
+      <div className="flex flex-wrap items-center gap-2.5 ps-4 pe-3 pt-2">
         {status ? (
-          <span className={`hd-tone-${status.tone} hd-status`}>
+          <span className={`hd-tone-${status.tone} inline-flex items-center`}>
             <span className="hd-mark" aria-hidden="true" />
-            <span className="hd-visually-hidden">{status.label}</span>
+            <span className="sr-only">{status.label}</span>
           </span>
         ) : null}
-        <h2 className={form ? undefined : 'hd-mono'}>{name}</h2>
+        <h2 className={form ? 'type-detail' : 'type-detail font-mono'}>{name}</h2>
         {id ? (
           <>
             <bdi className="hd-mono hd-faint" dir="ltr">
@@ -129,12 +130,14 @@ export function DetailPanel({ label, name, id, status, tabs, children, actions, 
           </>
         ) : null}
         {tabs ? (
-          <div role="tablist" aria-label={label} onKeyDown={onTabKey}>
+          <div role="tablist" aria-label={label} className="ms-3 flex" onKeyDown={onTabKey}>
             {tabs.map((item, at) => (
               <button
                 key={item.id}
                 type="button"
                 role="tab"
+                // shadcn's line tabs: the selected tab reads by its text tone and an accent underline.
+                className="h-(--row-height) cursor-pointer border-b-2 border-transparent px-3 type-tab text-faint transition-fast hover:text-foreground aria-selected:border-primary aria-selected:text-foreground"
                 id={`${base}${at}`}
                 aria-selected={at === index}
                 aria-controls={`${base}p`}
@@ -146,7 +149,7 @@ export function DetailPanel({ label, name, id, status, tabs, children, actions, 
             ))}
           </div>
         ) : null}
-        <span className="hd-panel-actions">{actions}</span>
+        <span className="ms-auto flex flex-wrap gap-2">{actions}</span>
         {detachTo !== undefined ? (
           <Link to={detachTo} className="hd-btn hd-btn-ghost hd-icon" aria-label="Open in its own page" title="Open in its own page">
             <Glyph d="M9 3h4v4M13 3L7.5 8.5M12 9.5V13H3V4h3.5" />
@@ -168,9 +171,10 @@ export function DetailPanel({ label, name, id, status, tabs, children, actions, 
           </Button>
         ) : null}
       </div>
-      {stale ? <p className="hd-panel-note">No longer matches the filter</p> : null}
+      {stale ? <p className="mx-4 mt-2 type-small text-muted-foreground">No longer matches the filter</p> : null}
       <div
-        className="hd-panel-body"
+        // Two columns that each scroll; on a phone one column that scrolls as a whole.
+        className="mt-2 grid min-h-0 flex-1 grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] border-t border-border *:flex *:flex-col *:gap-3.5 *:overflow-auto *:px-4 *:py-3.5 *:only:col-span-full [&>:first-child:not(:only-child)]:border-e max-md:grid-cols-1 max-md:overflow-auto max-md:*:overflow-visible max-md:[&>:first-child:not(:only-child)]:border-e-0 max-md:[&>:first-child:not(:only-child)]:border-b"
         id={tab ? `${base}p` : undefined}
         role={tab ? 'tabpanel' : undefined}
         aria-labelledby={tab ? `${base}${index}` : undefined}

@@ -1,0 +1,378 @@
+/*
+ * The SDK's one stylesheet. Tailwind compiles it from the SDK's own sources and nothing else, so a module ships no
+ * CSS and two builds never emit two preflights. Every colour, size, radius, and duration comes from tokens.css; the
+ * theme below only names those tokens for the utility classes shadcn's components are written in.
+ */
+@import 'tailwindcss' source(none);
+@import '../tokens.css';
+
+@source '../';
+
+/*
+ * Dark is the default, because a browser that stored no choice renders dark whatever its system setting, so a
+ * `dark:` class applies everywhere except under the light theme the account menu sets.
+ */
+@custom-variant dark (&:not(:where([data-theme='light'], [data-theme='light'] *)));
+
+/*
+ * `inline` makes each utility read the token itself, so a theme switch that redefines a token repaints every class
+ * that uses it. The default palette, radii, and shadows are cleared, so no class can paint a value tokens.css lacks.
+ * shadcn's `muted` and `accent` are fills, not the text tone and the brand colour the tokens of the same name are:
+ * the brand colour is `primary` here, `muted-foreground` is the muted text, and `accent` is the hover fill.
+ */
+@theme inline {
+  --color-*: initial;
+  --color-background: var(--ground);
+  --color-foreground: var(--text);
+  --color-card: var(--panel);
+  --color-card-foreground: var(--text);
+  --color-popover: var(--panel);
+  --color-popover-foreground: var(--text);
+  --color-primary: var(--accent);
+  --color-primary-foreground: var(--on-accent);
+  --color-primary-soft: var(--accent-soft);
+  --color-secondary: var(--panel);
+  --color-secondary-foreground: var(--text);
+  --color-muted: var(--raised);
+  --color-muted-foreground: var(--muted);
+  --color-faint: var(--faint);
+  --color-accent: var(--hover);
+  --color-accent-foreground: var(--text);
+  --color-destructive: var(--fail);
+  --color-destructive-edge: var(--fail-edge);
+  --color-destructive-soft: var(--fail-soft);
+  --color-border: var(--line);
+  --color-edge: var(--edge);
+  --color-input: var(--field-edge);
+  --color-ring: var(--accent);
+  --color-deep: var(--deep);
+  --color-raised: var(--raised);
+  --color-scrim: var(--scrim);
+  --color-role: var(--role);
+  --color-sched: var(--sched);
+  --color-enq: var(--enq);
+  --color-proc: var(--proc);
+  --color-ok: var(--ok);
+  --color-off: var(--off);
+
+  --font-sans: var(--sans);
+  --font-mono: var(--mono);
+
+  /* The spacing steps are 4 px multiples, so `p-3` is --sp-5 (12 px) and `gap-1.5` is --sp-2 (6 px). */
+  --spacing: var(--sp-1);
+
+  --radius-*: initial;
+  --radius-xs: var(--radius-bar);
+  --radius-sm: var(--radius-tag);
+  --radius-md: var(--radius-control);
+  --radius-lg: var(--radius-panel);
+  --radius-xl: var(--radius-float);
+  --radius-2xl: var(--radius-card);
+
+  --shadow-*: initial;
+  --shadow-lg: var(--shadow-float);
+  --shadow-2xl: var(--shadow-card);
+}
+
+/* The type tokens are `font` shorthands, so each is one utility; never pair one with a `text-` size or `leading-`. */
+@utility type-body {
+  font: var(--text-body);
+}
+
+@utility type-mono {
+  font: var(--text-mono);
+}
+
+@utility type-label {
+  font: var(--text-label);
+}
+
+@utility type-title {
+  font: var(--text-title);
+}
+
+@utility type-detail {
+  font: var(--text-detail);
+}
+
+@utility type-small {
+  font: var(--text-small);
+}
+
+@utility type-stat {
+  font: var(--text-stat);
+}
+
+@utility type-tag {
+  font: var(--text-tag);
+}
+
+/* Key caps and a progress caption: the tag size in mono. */
+@utility type-tag-mono {
+  font: var(--text-tag);
+  font-family: var(--mono);
+}
+
+/* A filter chip's count: the label size in mono. */
+@utility type-label-mono {
+  font: var(--text-label);
+  font-family: var(--mono);
+}
+
+@utility type-axis {
+  font: var(--text-axis);
+}
+
+@utility type-mono-small {
+  font: var(--text-mono-small);
+}
+
+@utility type-nav {
+  font: var(--text-nav);
+}
+
+@utility type-tab {
+  font: var(--text-tab);
+}
+
+@utility type-code {
+  font: var(--text-code);
+}
+
+/* Hover, press, and focus change background, colour, and border in one fast step; nothing else animates. */
+@utility transition-fast {
+  transition:
+    background-color var(--ease-fast),
+    color var(--ease-fast),
+    border-color var(--ease-fast);
+}
+
+/* The Live dot's breath; reduced motion stops it with every other animation. */
+@keyframes hd-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@layer base {
+  *,
+  ::before,
+  ::after {
+    border-color: var(--line);
+  }
+
+  html,
+  body {
+    block-size: 100%;
+  }
+
+  body {
+    background: var(--ground);
+    color: var(--text);
+    font: var(--text-body);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: var(--accent-soft);
+    color: var(--text);
+  }
+
+  * {
+    scrollbar-color: var(--edge) transparent;
+  }
+
+  /* A link in text or a row is accent and gains its underline on hover; a link styled as a tab or button keeps its own. */
+  a:not([class]) {
+    color: var(--accent);
+    text-decoration: none;
+  }
+
+  a:not([class]):hover {
+    text-decoration: underline;
+  }
+
+  [hidden] {
+    display: none !important;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation: none !important;
+      transition: none !important;
+    }
+  }
+}
+
+/*
+ * The SDK's vocabulary classes. A module view and the shell still put these on their own elements, and the shell's
+ * stylesheet selects some of them, so each keeps its name; SDK components use the same classes where they draw the
+ * same thing.
+ */
+@layer components {
+  .hd-mono {
+    @apply type-mono;
+    direction: ltr;
+    unicode-bidi: isolate;
+  }
+
+  .hd-hint {
+    @apply type-small text-muted-foreground;
+  }
+
+  .hd-faint {
+    @apply text-faint;
+  }
+
+  .hd-label {
+    @apply type-label text-faint;
+  }
+
+  .hd-title {
+    @apply type-detail m-0 text-balance;
+  }
+
+  .hd-error {
+    @apply type-small text-destructive;
+  }
+
+  .hd-footnote {
+    @apply type-mono-small m-0 text-faint;
+  }
+
+  .hd-visually-hidden {
+    @apply sr-only;
+  }
+
+  /* Fields and timeline events hold operator text, such as a 500-character note with no spaces, that must wrap in place. */
+  .hd-fields {
+    @apply flex flex-col gap-3 wrap-anywhere;
+  }
+
+  .hd-field {
+    @apply flex min-w-0 flex-col gap-1;
+  }
+
+  .hd-actions {
+    @apply flex flex-wrap gap-2;
+  }
+
+  .hd-banner {
+    @apply flex flex-wrap items-center gap-2.5 rounded-md bg-primary-soft px-3 py-2;
+  }
+
+  .hd-skeleton {
+    @apply h-(--row-height) rounded-md bg-muted;
+  }
+
+  .hd-span-2 {
+    grid-column: span 2;
+  }
+
+  .hd-kv {
+    @apply m-0 grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1.5;
+  }
+
+  .hd-kv dt {
+    @apply type-label text-faint;
+  }
+
+  .hd-kv dd {
+    @apply m-0 min-w-0 wrap-anywhere;
+  }
+
+  /*
+   * A state role sets --role on the element that carries it; the dot, a strip tick, or a bar paints with it. The label
+   * beside a dot keeps its text tone, because the light roles other than fail are under 4.5:1 as text.
+   */
+  .hd-tone-sched {
+    --role: var(--sched);
+  }
+
+  .hd-tone-enq {
+    --role: var(--enq);
+  }
+
+  .hd-tone-proc {
+    --role: var(--proc);
+  }
+
+  .hd-tone-ok {
+    --role: var(--ok);
+  }
+
+  .hd-tone-fail {
+    --role: var(--fail);
+  }
+
+  .hd-tone-off {
+    --role: var(--off);
+  }
+
+  .hd-mark {
+    @apply size-2 flex-none rounded-full bg-role;
+  }
+
+  /* Running and failed states need the eye now, so their dot carries the halo; a resting state has none. */
+  :is(.hd-tone-proc, .hd-tone-fail) .hd-mark {
+    box-shadow: 0 0 var(--glow) var(--role);
+  }
+
+  /*
+   * shadcn's button. A class, not utilities on the element, because the shell puts the same look on a plain link
+   * (`hd-btn hd-btn-primary`) and adds its own modifiers (`hd-icon`, `hd-quiet`) that must win over the base.
+   */
+  .hd-btn {
+    @apply inline-flex h-(--control-height) shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md border border-edge bg-secondary px-3 font-medium whitespace-nowrap text-secondary-foreground transition-fast select-none;
+  }
+
+  .hd-btn[data-hovered]:not([data-disabled], [data-soft-disabled]),
+  a.hd-btn:hover {
+    @apply bg-accent;
+  }
+
+  .hd-btn[data-pressed]:not([data-disabled], [data-soft-disabled]) {
+    @apply translate-y-px;
+  }
+
+  .hd-btn-primary {
+    @apply border-primary bg-primary text-primary-foreground;
+  }
+
+  .hd-btn-primary[data-hovered]:not([data-disabled], [data-soft-disabled]),
+  a.hd-btn-primary:hover {
+    @apply bg-primary/90;
+  }
+
+  .hd-btn-danger {
+    @apply border-destructive-edge text-destructive;
+  }
+
+  .hd-btn-danger[data-hovered]:not([data-disabled], [data-soft-disabled]) {
+    @apply bg-destructive-soft;
+  }
+
+  .hd-btn-ghost {
+    @apply border-transparent bg-transparent;
+  }
+
+  .hd-btn:is([data-disabled], [data-soft-disabled]) {
+    @apply cursor-not-allowed border-border bg-deep text-muted-foreground;
+  }
+
+  /* An icon-only button; its accessible name comes from aria-label. */
+  .hd-btn.hd-icon {
+    @apply w-(--control-height) p-0 text-faint;
+  }
+
+  .hd-btn.hd-icon svg {
+    @apply size-(--icon-sm) fill-none stroke-current stroke-[1.5];
+  }
+}

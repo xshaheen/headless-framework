@@ -19,6 +19,8 @@ export interface StatCardProps {
   to?: To
 }
 
+const stat = 'flex flex-col gap-0.5 border-e border-border px-4 pt-2.5 pb-1.5 text-foreground no-underline'
+
 /**
  * One served value with its label and state dot. It draws no sparkline and no empty chart frame: a trend appears
  * only once the server serves its series.
@@ -26,29 +28,32 @@ export interface StatCardProps {
 export function StatCard({ label, value, tone, caption, to }: StatCardProps) {
   const body = (
     <>
-      <span className={tone ? `hd-stat-label hd-tone-${tone}` : 'hd-stat-label'}>
+      <span className={`flex items-center gap-2 type-small text-muted-foreground ${tone ? `hd-tone-${tone}` : ''}`}>
         {tone ? <i className="hd-mark" aria-hidden="true" /> : null}
         {label}
       </span>
       {/* The spaces keep the link's name `Failed 23`, not `Failed23`; the flex column drops them from the layout. */}{' '}
-      <span className="hd-stat-value">{value}</span>
+      <span className="type-stat tabular-nums">{value}</span>
       {caption ? <> <span className="hd-label">{caption}</span></> : null}
     </>
   )
 
   return to ? (
-    <Link to={to} className="hd-stat">
+    <Link to={to} className={`${stat} transition-fast hover:bg-accent`}>
       {body}
     </Link>
   ) : (
-    <div className="hd-stat">{body}</div>
+    <div className={stat}>{body}</div>
   )
 }
 
 /** The row of stat cards above a page, named for what it summarizes: `Runs by state`. Up to six cards. */
 export function StatStrip({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <section aria-label={label} className="hd-stats">
+    <section
+      aria-label={label}
+      className="grid auto-cols-[minmax(0,1fr)] grid-flow-col border-b border-border bg-card max-md:grid-flow-row max-md:grid-cols-2"
+    >
       {children}
     </section>
   )

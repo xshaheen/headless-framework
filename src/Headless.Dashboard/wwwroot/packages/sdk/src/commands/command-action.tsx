@@ -9,7 +9,7 @@ import { Announcer } from '../components/live.tsx'
 import { Mono } from '../components/marks.tsx'
 import { useDashboard } from '../context.tsx'
 import { DashboardApiError } from '../data/api.ts'
-import { ActionConfirm, type ConfirmedAction } from './action-confirm.tsx'
+import { ActionConfirm, problemsClass, type ConfirmedAction } from './action-confirm.tsx'
 import { createCommandsApi, effectiveConfirmation, type CommandDefinition, type RowResult } from './api.ts'
 
 export interface CommandActionProps {
@@ -74,13 +74,13 @@ function RowOutcomes({ outcome }: { outcome: RunOutcome }) {
   }
 
   return (
-    <div role="alert" className="hd-outcomes">
+    <div role="alert" className="grid basis-full gap-1 wrap-anywhere">
       {outcome.error ? <p className="hd-error">{outcome.error}</p> : null}
       {refused.length > 0 ? (
         <>
           <p className="hd-hint">{outcome.label}: not changed</p>
           {/* The same list the Operation panel shows, so a run over ids and an Operation report refusals alike. */}
-          <ul className="hd-operation-problems" aria-label="Rows not changed">
+          <ul className={problemsClass} aria-label="Rows not changed">
             {refused.map((row) => (
               <li key={row.id}>
                 <Mono>{row.id}</Mono>

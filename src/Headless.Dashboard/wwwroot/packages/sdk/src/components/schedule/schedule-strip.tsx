@@ -51,6 +51,9 @@ const maxSpan = 7 * 24 * hour
  */
 const slots = 24
 
+// One track: its label, then the time axis it plots on.
+const trackRow = 'grid grid-cols-[minmax(6rem,12rem)_1fr] items-center gap-2 border-b border-border'
+
 /**
  * The schedule strip: one track per function or lane over a time axis with a now line, past runs filled in their
  * tone and future fires hollow. It is a grid: the arrow keys move between ticks and tracks, `Enter` selects the object
@@ -122,15 +125,22 @@ export function ScheduleStrip({ label, tracks, span, onSpanChange, timeZone, onS
   }
 
   return (
-    <div className="hd-strip">
+    <div>
       <div role="grid" aria-label={label} onKeyDown={onKeyDown}>
       {tracks.map((track, trackIndex) => (
-        <div role="row" key={track.id} className="hd-strip-track">
+        <div role="row" key={track.id} className={trackRow}>
           <span role="rowheader" className="hd-label">
             {track.label}
           </span>
-          <svg role="presentation" width="100%" height="24">
-            <line className="hd-strip-now" x1="50%" x2="50%" y1="0" y2="24" />
+          {/* A past tick fills with its role, a future one is hollow; on a phone a slot is a few pixels wide, too
+              narrow for its count, and the mark's accessible name still states it. */}
+          <svg
+            role="presentation"
+            width="100%"
+            height="24"
+            className="block overflow-visible [&_g]:cursor-default [&_g:focus-visible]:outline-2 [&_g:focus-visible]:outline-ring [&_rect]:fill-role [&_rect]:stroke-role [&_text]:fill-foreground [&_text]:type-label max-md:[&_text]:hidden [&_.hd-strip-future_rect]:fill-card"
+          >
+            <line className="stroke-primary" x1="50%" x2="50%" y1="0" y2="24" />
             {rows[trackIndex]!.map((mark, markIndex) => {
               const first = mark.ticks[0]!
               const count = mark.ticks.length
@@ -164,9 +174,9 @@ export function ScheduleStrip({ label, tracks, span, onSpanChange, timeZone, onS
         </div>
       ))}
       </div>
-      <div className="hd-strip-track hd-hint">
+      <div className={`${trackRow} hd-hint`}>
         <span />
-        <span className="hd-strip-axis">
+        <span className="flex justify-between">
           <span>{format.relativeTime(start, { now })}</span>
           <span>now</span>
           <span>{format.relativeTime(now + shown, { now })}</span>

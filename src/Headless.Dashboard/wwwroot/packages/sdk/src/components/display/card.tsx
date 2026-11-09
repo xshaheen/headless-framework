@@ -23,16 +23,19 @@ export function Card({ title, caption, action, empty, children }: CardProps) {
   const rows = Array.isArray(children) ? children.length > 0 : children != null && children !== false
 
   return (
-    <section className="hd-dcard" aria-label={title}>
-      <header>
-        <h2>{title}</h2>
+    <section className="min-w-0 rounded-lg border border-border bg-card text-card-foreground" aria-label={title}>
+      <header className={`${row} [&>:not(h2,.hd-faint)]:ms-auto`}>
+        <h2 className="type-nav font-semibold">{title}</h2>
         {caption != null ? <span className="hd-faint">{caption}</span> : null}
         {action}
       </header>
-      {rows ? <ul>{children}</ul> : <p className="hd-hint">{empty}</p>}
+      {rows ? <ul className="[&>li:last-child]:border-0">{children}</ul> : <p className="hd-hint p-3.5">{empty}</p>}
     </section>
   )
 }
+
+// A heading or link row of a card: one hairline under each, the mono face, the dot inset from the edge.
+const row = 'flex min-h-(--card-row-height) flex-wrap items-center gap-x-2.5 gap-y-1 border-b border-border py-1.5 ps-3.5 pe-3 type-mono'
 
 export interface CardRowProps {
   /** The state role whose dot leads the row. */
@@ -55,20 +58,21 @@ export interface CardRowProps {
  */
 export function CardRow({ tone, name, meta, value, actions, children }: CardRowProps) {
   return (
-    <li className={tone ? `hd-tone-${tone}` : undefined}>
-      <div>
+    <li className={tone ? `hd-tone-${tone} ${row}` : row}>
+      {/* The first line never wraps: only the name gives way, in an ellipsis, so a value or Cancel stays beside it. */}
+      <div className="flex min-w-0 basis-full items-center gap-2.5 whitespace-nowrap [&>b+*]:ms-auto">
         {tone ? <i className="hd-mark" aria-hidden="true" /> : null}
-        <b>{name}</b>
+        <b className="min-w-0 overflow-hidden font-medium text-ellipsis">{name}</b>
         {meta != null ? <span className="hd-faint">{meta}</span> : null}
         {value}
         {actions}
       </div>
-      {children != null ? <div>{children}</div> : null}
+      {children != null ? <div className="basis-full">{children}</div> : null}
     </li>
   )
 }
 
 /** The dashboard's cards in columns that wrap to one at narrow widths. */
 export function Cards({ children }: { children: ReactNode }) {
-  return <div className="hd-dcards">{children}</div>
+  return <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,22rem),1fr))] items-start gap-3 px-4 py-3.5">{children}</div>
 }

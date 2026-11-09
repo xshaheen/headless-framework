@@ -11,7 +11,7 @@ import type { DashboardStateRole } from '../define-module.ts'
  */
 export function StatusMark({ tone, label }: { tone: DashboardStateRole; label: string }) {
   return (
-    <span className={`hd-status hd-tone-${tone}`}>
+    <span className={`hd-tone-${tone} inline-flex items-center gap-2 whitespace-nowrap`}>
       <span className="hd-mark" aria-hidden="true" />
       {label}
     </span>
@@ -21,9 +21,9 @@ export function StatusMark({ tone, label }: { tone: DashboardStateRole; label: s
 /** A small fact on an object, such as its tenant or node. Identifiers inside render mono and LTR. */
 export function Chip({ label, value, mono }: { label?: string; value: ReactNode; mono?: boolean }) {
   return (
-    <span className="hd-chip">
+    <span className="inline-flex h-(--chip-height) items-center gap-1 rounded-md bg-muted px-1.5 type-label whitespace-nowrap text-muted-foreground">
       {label ? <span>{label}</span> : null}
-      <b className={mono ? 'hd-mono' : undefined}>{value}</b>
+      <b className={mono ? 'hd-mono font-medium text-foreground' : 'font-medium text-foreground'}>{value}</b>
     </span>
   )
 }
@@ -38,7 +38,7 @@ export function NodeChip({ node }: { node: string }) {
 
 /** A key cap in a shortcut hint: `⌘K`. */
 export function Kbd({ children }: { children: ReactNode }) {
-  return <kbd className="hd-kbd">{children}</kbd>
+  return <kbd className="rounded-sm border border-b-2 border-border bg-card px-1 type-tag-mono text-faint">{children}</kbd>
 }
 
 /** An identifier: mono, left-to-right, bidi-isolated. */

@@ -14,6 +14,7 @@ import {
   Text,
   useFilter,
 } from 'react-aria-components'
+import { dialogScrim, dialogSurface } from '../dialog.tsx'
 import { Kbd, Mono } from '../marks.tsx'
 
 export interface PaletteItem {
@@ -40,17 +41,19 @@ export function CommandPalette({ isOpen, onOpenChange, items, defaultQuery }: Co
   const { contains } = useFilter({ sensitivity: 'base' })
 
   return (
-    <ModalOverlay className="hd-scrim" isOpen={isOpen} onOpenChange={onOpenChange} isDismissable>
-      <Modal className="hd-dialog hd-palette">
-        <AriaDialog aria-label="Command palette" className="hd-palette-body">
+    <ModalOverlay className={dialogScrim} isOpen={isOpen} onOpenChange={onOpenChange} isDismissable>
+      <Modal className={dialogSurface}>
+        <AriaDialog aria-label="Command palette" className="flex flex-col outline-none">
           <Autocomplete filter={contains} defaultInputValue={defaultQuery}>
             <SearchField aria-label="Search commands, views, and objects" autoFocus>
-              <Input className="hd-palette-input" placeholder="Search commands, views, and objects" />
+              <Input
+                className="h-(--palette-input-height) w-full border-b border-border bg-transparent px-4 outline-none placeholder:text-faint"
+                placeholder="Search commands, views, and objects" />
             </SearchField>
             <Menu
-              className="hd-palette-list"
+              className="overflow-auto p-1.5 outline-none"
               items={items}
-              renderEmptyState={() => <p className="hd-empty">No match. Paste an id to open it.</p>}
+              renderEmptyState={() => <p className="mx-auto max-w-[46ch] py-5 text-center text-muted-foreground">No match. Paste an id to open it.</p>}
               onAction={(key) => {
                 const item = items.find((candidate) => candidate.id === key)
                 onOpenChange(false)
@@ -58,7 +61,8 @@ export function CommandPalette({ isOpen, onOpenChange, items, defaultQuery }: Co
               }}
             >
               {(item) => (
-                <MenuItem id={item.id} textValue={item.objectId ? `${item.label} ${item.objectId}` : item.label} className="hd-palette-item">
+                <MenuItem id={item.id} textValue={item.objectId ? `${item.label} ${item.objectId}` : item.label} className="flex cursor-pointer items-center justify-between gap-3 rounded-md px-3 py-2 outline-none data-focused:bg-primary-soft"
+                >
                   <Text slot="label">
                     {item.label}
                     {item.objectId ? (
@@ -68,7 +72,7 @@ export function CommandPalette({ isOpen, onOpenChange, items, defaultQuery }: Co
                       </>
                     ) : null}
                   </Text>
-                  <span className="hd-palette-meta">
+                  <span className="inline-flex items-center gap-2">
                     {item.kind ? <span className="hd-hint">{item.kind}</span> : null}
                     {item.shortcut ? <Kbd>{item.shortcut}</Kbd> : null}
                   </span>

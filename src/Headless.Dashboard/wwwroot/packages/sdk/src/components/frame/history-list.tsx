@@ -28,12 +28,16 @@ export interface HistoryListProps {
 /** An object's events in order, each row a time, a state dot, the state, and a faint note. */
 export function HistoryList({ label, items }: HistoryListProps) {
   return (
-    <section className="hd-history" aria-label={label}>
+    <section aria-label={label}>
       <h3 className="hd-label">{label}</h3>
-      <ol>
+      {/* The rows share one grid, so the time column is as wide as the longest time and every dot lines up. */}
+      <ol className="mt-2 grid grid-cols-[max-content_var(--sp-5)_minmax(0,1fr)_auto] gap-x-2.5">
         {items.map((item, index) => (
-          <li key={item.key ?? index} className={`hd-tone-${item.tone}`}>
-            <span className="hd-history-time">{item.time}</span>
+          <li
+            key={item.key ?? index}
+            className={`hd-tone-${item.tone} col-span-full grid min-h-(--row-height-compact) grid-cols-subgrid items-center type-mono-small`}
+          >
+            <span className="whitespace-nowrap text-faint tabular-nums">{item.time}</span>
             <span className="hd-mark" aria-hidden="true" />
             <span>
               {item.state}

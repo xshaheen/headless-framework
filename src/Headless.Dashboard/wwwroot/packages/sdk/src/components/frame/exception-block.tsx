@@ -25,15 +25,15 @@ export function ExceptionBlock({ type, message, stack }: ExceptionBlockProps) {
   const lines = stackLines(stack)
 
   return (
-    <div className="hd-exception">
-      <pre className="hd-mono">
-        {type ? <b>{type}: </b> : null}
+    <div className="hd-exception overflow-hidden rounded-lg border border-border bg-deep">
+      <pre className="hd-mono m-0 px-3 py-2.5 type-code wrap-anywhere whitespace-pre-wrap">
+        {type ? <b className="text-destructive">{type}: </b> : null}
         {message}
         {(full ? lines : lines.slice(0, shownLines)).map((line, index) => (
-          <span key={index}>{`\n${line}`}</span>
+          <span key={index} className="text-faint">{`\n${line}`}</span>
         ))}
       </pre>
-      <div>
+      <div className="flex gap-0.5 border-t border-border px-1.5 py-0.5">
         {lines.length > shownLines ? (
           <Button variant="ghost" aria-expanded={full} onPress={() => setFull(!full)}>
             Full stack

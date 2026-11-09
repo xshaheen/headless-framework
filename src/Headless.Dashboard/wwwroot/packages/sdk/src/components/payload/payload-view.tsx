@@ -119,7 +119,7 @@ export function PayloadView({ content, contentType, unsupportedVersion }: Payloa
   const format = useFormat()
 
   if (unsupportedVersion !== undefined) {
-    return <p className="hd-payload-note">{`Unsupported contract version ${unsupportedVersion}`}</p>
+    return <p className="text-muted-foreground">{`Unsupported contract version ${unsupportedVersion}`}</p>
   }
 
   const encoded = new TextEncoder().encode(content)
@@ -129,14 +129,14 @@ export function PayloadView({ content, contentType, unsupportedVersion }: Payloa
   const shown = truncated ? cutUtf8(encoded, payloadDisplayLimit) : isJson ? (formatJson(content) ?? content) : content
 
   return (
-    <figure className="hd-payload">
-      <figcaption className="hd-payload-bar">
+    <figure className="rounded-md bg-deep">
+      <figcaption className="flex items-center justify-between gap-2 ps-3 pe-1 pt-1">
         <span className="hd-hint">{truncated ? `${format.size(bytes)}, first 64 KB shown` : format.size(bytes)}</span>
         <Button variant="ghost" onPress={() => void navigator.clipboard?.writeText(content)}>
           {truncated ? 'Copy all' : 'Copy'}
         </Button>
       </figcaption>
-      <pre className="hd-mono" dir="ltr">
+      <pre className="hd-mono max-h-(--payload-max) overflow-auto px-3 pt-2 pb-3 whitespace-pre" dir="ltr">
         {shown}
       </pre>
     </figure>

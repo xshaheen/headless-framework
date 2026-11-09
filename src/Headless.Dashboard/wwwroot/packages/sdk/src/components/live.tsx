@@ -8,7 +8,7 @@ import { Button } from './button.tsx'
 /** A visually hidden polite live region: what it holds is announced, never shown. */
 export function Announcer({ message }: { message: string }) {
   return (
-    <div role="status" aria-live="polite" className="hd-visually-hidden">
+    <div role="status" aria-live="polite" className="sr-only">
       {message}
     </div>
   )
@@ -45,9 +45,14 @@ export function LiveIndicator({ paused }: { paused?: number | null }) {
   const announcement = stale ? 'Live updates stopped. What you see may be out of date.' : held != null ? 'Live updates paused in this tab.' : ''
 
   return (
-    <span className={`hd-live${stale ? ' hd-live-stale' : held != null ? ' hd-live-paused' : ''}`}>
-      <span className="hd-live-label">
-        <i aria-hidden="true" />
+    <span className="inline-flex items-center gap-2 text-muted-foreground">
+      <span className="inline-flex items-center gap-1.5 tabular-nums">
+        {/* The dot carries the state; the clock beside it stays a text tone, since light --ok and --proc fail 4.5:1. A
+            live stream's dot breathes, so a frozen page reads apart from a quiet one. */}
+        <i
+          aria-hidden="true"
+          className={`size-2 rounded-full ${stale ? 'bg-proc' : held != null ? 'bg-off' : 'animate-[hd-pulse_2s_ease-in-out_infinite] bg-ok'}`}
+        />
         {stale
           ? `Stale — ${seconds} s`
           : held != null
@@ -76,7 +81,7 @@ export function NewRowsNotice({ topic }: { topic: string }) {
   return (
     <>
       {count > 0 ? (
-        <Button variant="ghost" className="hd-new-rows" onPress={() => void show()}>
+        <Button variant="ghost" className="self-center text-primary" onPress={() => void show()}>
           {`${count} new`}
         </Button>
       ) : null}
@@ -91,9 +96,18 @@ export function ToastRegion() {
   const items = useSyncExternalStore(toasts.subscribe, toasts.getToasts)
 
   return (
-    <section className="hd-toasts" aria-label="Notifications">
+    // The page frame sets the lift while the panel is docked below, so a toast never covers the panel; the newest toast
+    // sits above the older ones.
+    <section
+      className="pointer-events-none fixed inset-x-4 bottom-[calc(var(--toast-lift,0px)+var(--sp-7))] z-(--z-toast) flex flex-col-reverse items-end gap-2"
+      aria-label="Notifications"
+    >
       {items.map((toast) => (
-        <div key={toast.id} role="status" className="hd-toast">
+        <div
+          key={toast.id}
+          role="status"
+          className="pointer-events-auto flex max-w-full items-center gap-2.5 rounded-xl bg-foreground py-1.5 ps-3 pe-1.5 text-background shadow-lg [&_.hd-btn]:h-auto [&_.hd-btn]:px-1 [&_.hd-btn]:font-semibold [&_.hd-btn]:text-inherit"
+        >
           <span>{toast.message}</span>
           {toast.action ? (
             <Button
@@ -106,7 +120,7 @@ export function ToastRegion() {
               {toast.action.label}
             </Button>
           ) : null}
-          <Button variant="ghost" className="hd-icon" aria-label="Dismiss" onPress={() => toasts.dismiss(toast.id)}>
+          <Button variant="ghost" className="hd-icon opacity-60" aria-label="Dismiss" onPress={() => toasts.dismiss(toast.id)}>
             ×
           </Button>
         </div>
@@ -120,10 +134,10 @@ export function ProgressBar({ label, value, max, valueText }: { label: string; v
   const percent = max > 0 ? Math.min(100, (value / max) * 100) : 0
 
   return (
-    <AriaProgressBar className="hd-progress" aria-label={label} value={value} maxValue={Math.max(max, 1)} valueLabel={valueText}>
-      <span className="hd-progress-text">{valueText}</span>
-      <span className="hd-bar" aria-hidden="true">
-        <i style={{ inlineSize: `${percent}%` }} />
+    <AriaProgressBar className="flex flex-col gap-1" aria-label={label} value={value} maxValue={Math.max(max, 1)} valueLabel={valueText}>
+      <span className="order-1 type-tag-mono text-faint tabular-nums">{valueText}</span>
+      <span className="block h-1 max-w-(--bar-max) overflow-hidden rounded-xs bg-muted" aria-hidden="true">
+        <i className="block h-full rounded-xs bg-proc" style={{ inlineSize: `${percent}%` }} />
       </span>
     </AriaProgressBar>
   )

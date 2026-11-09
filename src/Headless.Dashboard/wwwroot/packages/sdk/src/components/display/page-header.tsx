@@ -23,15 +23,15 @@ export interface PageHeaderProps {
 /** The row above a list: title and count, a description, the filters, and the actions at the end. */
 export function PageHeader({ title, tone, count, description, children, actions }: PageHeaderProps) {
   return (
-    <header className="hd-page-header">
-      <h1 className={tone ? `hd-tone-${tone}` : undefined}>
+    <header className="flex flex-none flex-wrap items-center gap-2 border-b border-border px-4 py-2.5">
+      <h1 className={`flex items-center gap-2 type-title ${tone ? `hd-tone-${tone}` : ''}`}>
         {tone ? <i className="hd-mark" aria-hidden="true" /> : null}
         {title}
       </h1>
-      {count != null ? <span className="hd-page-count">{count}</span> : null}
+      {count != null ? <span className="type-mono text-faint tabular-nums">{count}</span> : null}
       {description ? <p className="hd-hint">{description}</p> : null}
       {children}
-      {actions ? <div className="hd-page-actions">{actions}</div> : null}
+      {actions ? <div className="ms-auto flex flex-wrap items-center gap-2">{actions}</div> : null}
     </header>
   )
 }

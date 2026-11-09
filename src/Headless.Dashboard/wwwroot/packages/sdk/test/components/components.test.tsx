@@ -123,6 +123,8 @@ describe('toasts and buttons', () => {
 
     await user.tab()
     expect(document.activeElement).toBe(button)
+    expect(button.getAttribute('aria-disabled')).toBe('true')
+    expect(button.hasAttribute('disabled')).toBe(false)
     expect(screen.getByText('Running - cancel instead').id).toBe(button.getAttribute('aria-describedby'))
 
     await user.click(button)

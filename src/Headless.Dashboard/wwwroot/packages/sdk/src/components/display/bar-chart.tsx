@@ -43,15 +43,18 @@ export function BarChart({ label, series, columns, unit, mini }: BarChartProps) 
   const sentence = `${label}: ${names}, from ${columns[0]?.label ?? ''} to ${columns.at(-1)?.label ?? ''}; the tallest bar is ${count(top)} ${unit}.`
 
   return (
-    <div className={mini ? 'hd-bars hd-bars-mini' : 'hd-bars'}>
+    <div className={mini ? 'block' : 'grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 type-axis text-faint tabular-nums'}>
       {mini ? null : (
-        <span className="hd-bars-y" aria-hidden="true">
+        <span className="flex flex-col justify-between text-end" aria-hidden="true">
           <span>{count(top)}</span>
           <span>{count(Math.round(top / 2))}</span>
           <span>0</span>
         </span>
       )}
-      <svg role="img" aria-label={sentence} viewBox={`0 0 ${columns.length * 10} 100`} preserveAspectRatio="none">
+      <svg
+        role="img"
+        aria-label={sentence}
+        className={`w-full border-b border-border [&_rect]:fill-role ${mini ? 'h-(--chart-mini-height)' : 'h-(--chart-height)'}`} viewBox={`0 0 ${columns.length * 10} 100`} preserveAspectRatio="none">
         {columns.map((column, index) => {
           let base = 100
 
@@ -69,7 +72,7 @@ export function BarChart({ label, series, columns, unit, mini }: BarChartProps) 
         })}
       </svg>
       {mini ? null : (
-        <span className="hd-bars-x" aria-hidden="true">
+        <span className="col-start-2 flex justify-around" aria-hidden="true">
           {columns.map((column) => (
             <span key={column.label}>{column.label}</span>
           ))}

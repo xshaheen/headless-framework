@@ -357,13 +357,16 @@ export function PageFrame({ frame, stats, header, children, panel, form }: PageF
 
   return (
     <Frame.Provider value={context}>
-      <div className="hd-frame" data-side={(open && beside) || undefined}>
-        <div className="hd-frame-main">
+      {/* The list and the panel share the height under the header: below, the panel takes the height the handle set
+          and the list the rest; beside, the panel runs the content column's full height. The `hd-frame` names are
+          the shell's and the layout's hooks. */}
+      <div className="hd-frame group/frame flex h-full min-h-0 min-w-0 flex-col data-side:flex-row" data-side={(open && beside) || undefined}>
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           {stats}
           {header}
           <div
             ref={list}
-            className="hd-frame-list"
+            className="hd-frame-list min-h-0 flex-1 overflow-auto"
             onKeyDown={onListKeyDown}
             onFocus={(event) => {
               const id = (event.target as HTMLElement).closest<HTMLElement>('[data-row-id]')?.dataset.rowId
@@ -385,7 +388,7 @@ export function PageFrame({ frame, stats, header, children, panel, form }: PageF
             aria-valuemin={minPanel}
             aria-valuemax={max}
             tabIndex={0}
-            className="hd-frame-handle"
+            className="flex h-(--resize-handle) flex-none cursor-row-resize touch-none items-center justify-center border-y border-border bg-deep before:h-(--grip-height) before:w-(--grip-width) before:rounded-xs before:bg-edge before:content-['']"
             onKeyDown={onKeyDown}
             onDoubleClick={() => resize(initial)}
             onPointerDown={(event) => {
@@ -397,7 +400,11 @@ export function PageFrame({ frame, stats, header, children, panel, form }: PageF
           />
         ) : null}
         {open ? (
-          <div ref={box} className="hd-frame-panel" style={beside || width === 2 ? undefined : { blockSize: value }}>
+          <div
+            ref={box}
+            className="hd-frame-panel flex min-h-0 flex-none group-data-side/frame:w-(--panel-side-width) group-data-side/frame:border-s group-data-side/frame:border-border max-md:fixed max-md:inset-0 max-md:z-(--z-dialog)"
+            style={beside || width === 2 ? undefined : { blockSize: value }}
+          >
             {panel}
           </div>
         ) : null}

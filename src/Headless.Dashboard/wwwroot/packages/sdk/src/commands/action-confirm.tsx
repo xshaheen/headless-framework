@@ -5,6 +5,9 @@ import { TextInputField } from '../components/form.tsx'
 import type { ArgumentSchema, Confirmation, ObjectSummary } from './api.ts'
 import { checkArguments, SchemaFields, type ArgumentValues } from './schema-form.tsx'
 
+/** The rows an action left unchanged, each with its id and the server's reason, as a confirm or an Operation lists them. */
+export const problemsClass = 'm-0 flex list-none flex-col p-0 type-small *:flex *:gap-3 *:py-1'
+
 export interface ConfirmedAction {
   reason?: string
   typedCount?: number
@@ -101,7 +104,10 @@ function ActionConfirmDialog({
       >
         {reach ? <div className="hd-hint">{reach}</div> : null}
         {sample && sample.length > 0 ? (
-          <ul className="hd-sample" aria-label="Sample of the rows in scope">
+          <ul
+            className="flex flex-col rounded-md border border-border *:flex *:justify-between *:gap-3 *:px-2.5 *:py-1.5 *:type-small [&>li+li]:border-t [&>li+li]:border-border"
+            aria-label="Sample of the rows in scope"
+          >
             {sample.map((row) => (
               <li key={`${row.target.kind}:${row.target.id}`}>
                 <span>{row.title}</span>
@@ -143,7 +149,7 @@ function ActionConfirmDialog({
             {error}
           </p>
         ) : null}
-        <div className="hd-dialog-actions">
+        <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-3">
           <Button onPress={onCancel} isDisabled={isBusy}>
             {cancelLabel}
           </Button>

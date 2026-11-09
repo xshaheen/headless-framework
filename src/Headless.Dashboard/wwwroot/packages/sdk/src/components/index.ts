@@ -1,5 +1,3 @@
-import './components.css'
-
 export { below } from './breakpoints.ts'
 export { Button, type ButtonProps, type ButtonVariant } from './button.tsx'
 export { Dialog, type OverlayProps } from './dialog.tsx'
@@ -46,6 +44,7 @@ export {
   type ViewKeyHandlers,
 } from './keymap.tsx'
 export { CommandPalette, type CommandPaletteProps, type PaletteItem } from './palette/command-palette.tsx'
+export { Popover, type PopoverProps } from './popover.tsx'
 export { formatJson, payloadDisplayLimit, PayloadView, type PayloadViewProps } from './payload/payload-view.tsx'
 // The timeline and the strip ride in this entry: as entries of their own they cost the shell's total budget more
 // than their code, in import preambles that compress apart from the rest.

@@ -1,12 +1,13 @@
 import { act, cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
-import { Dialog, DialogTrigger, Popover, Button as AriaButton } from 'react-aria-components'
 import { createMemoryRouter, RouterProvider, useLocation } from 'react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { Button } from '../../src/components/button.tsx'
 import { DetailPanel } from '../../src/components/frame/detail-panel.tsx'
 import { PageFrame, usePageFrame } from '../../src/components/frame/page-frame.tsx'
 import { KeymapProvider } from '../../src/components/keymap.tsx'
+import { Popover } from '../../src/components/popover.tsx'
 
 interface Run {
   id: string
@@ -43,14 +44,9 @@ function FailedRuns({ rows }: { rows: readonly Run[] }) {
             status={{ tone: 'fail', label: open.status }}
             detachTo={`/runs/${open.id}`}
             actions={
-              <DialogTrigger>
-                <AriaButton>More</AriaButton>
-                <Popover>
-                  <Dialog aria-label="More actions">
-                    <AriaButton>Duplicate</AriaButton>
-                  </Dialog>
-                </Popover>
-              </DialogTrigger>
+              <Popover label="More actions" trigger="More">
+                <Button>Duplicate</Button>
+              </Popover>
             }
           >
             <p>{`Showing ${open.name}`}</p>

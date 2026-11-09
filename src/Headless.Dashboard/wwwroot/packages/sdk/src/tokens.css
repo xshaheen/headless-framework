@@ -1,8 +1,9 @@
 /*
- * The dashboard's design tokens. Every module reads these; a raw colour, font, size, or duration in a component is a
- * defect. Dark values sit on :root, so a browser that stored no choice renders dark whatever its system setting;
- * light values apply only under [data-theme="light"], which the account menu sets. The contrast ratios in DESIGN.md
- * were computed for these exact values; re-check any value you change.
+ * The dashboard's design tokens, the only place a raw value lives: styles/sdk.css names them for the SDK's utility
+ * classes and holds the element rules, and a raw colour, font, size, or duration anywhere else is a defect. Dark
+ * values sit on :root, so a browser that stored no choice renders dark whatever its system setting; light values
+ * apply only under [data-theme="light"], which the account menu sets. The contrast ratios in DESIGN.md were computed
+ * for these exact values; re-check any value you change.
  */
 @font-face {
   font-family: Geist;
@@ -137,8 +138,8 @@
   --field-height: 30px;
 
   /*
-   * Breakpoints, named here for reference only: a media condition cannot read a custom property, so components.css
-   * writes each as a literal max-width one pixel below it and the SDK's breakpoints module mirrors them for script.
+   * Breakpoints, named here for reference only: a media condition cannot read a custom property, so the SDK's classes
+   * use Tailwind's matching `md` breakpoint (48rem) and the SDK's breakpoints module mirrors them for script.
    */
   --bp-wide: 1280px;
   --bp-medium: 1024px;
@@ -179,59 +180,4 @@
   --fail: oklch(0.54 0.19 25);
   --glow: 0px;
   color-scheme: light;
-}
-
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-}
-
-html,
-body {
-  margin: 0;
-  height: 100%;
-}
-
-body {
-  background: var(--ground);
-  color: var(--text);
-  font: var(--text-body);
-  -webkit-font-smoothing: antialiased;
-}
-
-button,
-input,
-select,
-textarea {
-  font: inherit;
-  color: inherit;
-}
-
-:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-/* A link in text or a row is accent and gains its underline on hover; a link styled as a tab or button keeps its own. */
-a:not([class]) {
-  color: var(--accent);
-  text-decoration: none;
-}
-
-a:not([class]):hover {
-  text-decoration: underline;
-}
-
-[hidden] {
-  display: none !important;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation: none !important;
-    transition: none !important;
-  }
 }

@@ -66,11 +66,12 @@ export function Timeline({ label, events, selectedId, onSelect }: TimelineProps)
   }
 
   return (
-    <ol role="grid" aria-label={label} className="hd-timeline" onKeyDown={onKeyDown}>
+    <ol role="grid" aria-label={label} className="flex flex-col wrap-anywhere" onKeyDown={onKeyDown}>
       {events.map((item, index) => (
         <li
           key={item.id}
           role="row"
+          className="cursor-default border-b border-border p-2 focus-visible:-outline-offset-2 aria-selected:bg-primary-soft"
           tabIndex={index === current ? 0 : -1}
           aria-selected={onSelect ? item.id === selectedId : undefined}
           onFocus={() => setFocused(index)}
@@ -85,7 +86,7 @@ export function Timeline({ label, events, selectedId, onSelect }: TimelineProps)
             {item.text ? (
               <>
                 {' '}
-                <span className="hd-hint hd-timeline-text">{item.text}</span>
+                <span className="hd-hint block">{item.text}</span>
               </>
             ) : null}
           </span>

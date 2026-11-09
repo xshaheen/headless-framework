@@ -3,7 +3,7 @@ import { Button } from '../components/button.tsx'
 import { ProgressBar } from '../components/live.tsx'
 import { useDashboard } from '../context.tsx'
 import { DashboardApiError } from '../data/api.ts'
-import { ActionConfirm, type ConfirmedAction } from './action-confirm.tsx'
+import { ActionConfirm, problemsClass, type ConfirmedAction } from './action-confirm.tsx'
 import { createCommandsApi, type CommandDefinition, type OperationScope } from './api.ts'
 import { startOperation, type OperationRun, type OperationState } from './operation-runner.ts'
 
@@ -176,7 +176,11 @@ export function OperationPanel({ label, run, onDismiss, onRunAgain }: OperationP
   const counts = `${processed} of ${state.total} rows · ${state.done} done · ${state.skipped} skipped · ${state.failed} failed`
 
   return (
-    <div className="hd-operation" role="group" aria-label={label}>
+    <div
+      className="grid grid-cols-[1fr_auto] items-center gap-x-5 gap-y-2 border-b border-border py-3.5 max-md:grid-cols-1"
+      role="group"
+      aria-label={label}
+    >
       <div className="hd-fields">
         <strong>{state.status === 'running' ? label : `${label}: ${endText[state.status]}`}</strong>
         <ProgressBar label={`${label} progress`} value={processed} max={state.total} valueText={counts} />
@@ -201,7 +205,7 @@ export function OperationPanel({ label, run, onDismiss, onRunAgain }: OperationP
         )}
       </div>
       {state.problems.length > 0 && state.status !== 'running' ? (
-        <ul className="hd-operation-problems" aria-label="Rows not changed">
+        <ul className={`col-span-full ${problemsClass}`} aria-label="Rows not changed">
           {state.problems.map((row) => (
             <li key={row.id}>
               <bdi className="hd-mono">{row.id}</bdi>
