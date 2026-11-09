@@ -57,62 +57,44 @@ public abstract partial class DataStorageTestsBase
         reclaimed.Should().Contain(early.StorageId).And.NotContain(late.StorageId);
     }
 
-    /// <summary>
-    /// The SQL that expires the lease of the row at <c>@Id</c> in the published or received table, run inside a
-    /// reservation's own transaction; <see langword="null"/> for a store with no such seam.
-    /// </summary>
-    protected virtual string? ExpireLeaseSql(bool published) => null;
-
-    public virtual async Task should_leave_the_attempt_counter_unchanged_when_the_reservation_cannot_renew_the_lease(
+    public virtual async Task should_leave_the_counter_and_the_lease_unchanged_when_a_reservation_is_refused(
         bool published
     )
     {
-        // given: a claimed row, and a lease that runs out between the reservation's counter write and its renewal
-        if (ExpireLeaseSql(published) is not { } expireLease || GetStorage() is not RelationalDataStorage storage)
+        // given: a claimed row whose lease is a minute long, so a renewal would move its expiry
+        if (!TrySetDispatchTimeout(TimeSpan.FromMinutes(1)))
         {
-            Assert.Skip("Storage has no seam between the reservation's write and its renewal");
-            return;
+            Assert.Skip("Storage does not expose a mutable dispatch timeout");
         }
 
-        NodeMembership.SetIdentity($"reserve-lapse-{published}");
-        var stored = await _StoreRetryDueAsync(storage, published, "reserve-lapse");
+        var storage = GetStorage();
+        NodeMembership.SetIdentity($"reserve-refused-{published}");
+        var stored = await _StoreRetryDueAsync(storage, published, "reserve-refused");
         var claimed = (await _PickUpRetriesAsync(storage, published)).Single(m => m.StorageId == stored.StorageId);
-        storage.BeforeReserveRenewal = async (connection, transaction, storageId, ct) =>
-        {
-            await using var command = connection.CreateCommand();
-            command.Transaction = transaction;
-#pragma warning disable CA2100 // The provider's own test SQL; the row id is a parameter.
-            command.CommandText = expireLease;
-#pragma warning restore CA2100
-            var id = command.CreateParameter();
-            id.ParameterName = "@Id";
-            id.Value = storageId;
-            command.Parameters.Add(id);
-            await command.ExecuteNonQueryAsync(ct);
-        };
+        var claimedLease = claimed.Lease;
+        var persistedBefore = await GetPersistedLeaseIdentityAsync(published, claimed.StorageId, AbortToken);
 
-        try
-        {
-            // when: the row reserves its next attempt
-            claimed.InlineAttempts++;
-            var reserved = published
-                ? await storage.ReservePublishAttemptAsync(claimed, originalInlineAttempts: 0, AbortToken)
-                : await storage.ReserveReceiveAttemptAsync(claimed, originalInlineAttempts: 0, AbortToken);
+        // when: the reservation names a counter the row does not hold
+        claimed.InlineAttempts++;
+        var refused = published
+            ? await storage.ReservePublishAttemptAsync(claimed, originalInlineAttempts: 5, AbortToken)
+            : await storage.ReserveReceiveAttemptAsync(claimed, originalInlineAttempts: 5, AbortToken);
 
-            // then: the reservation is refused
-            reserved.Should().BeFalse();
-        }
-        finally
+        // then: it is refused, and neither the counter nor the lease moved
+        refused.Should().BeFalse();
+        claimed.Lease.Should().Be(claimedLease);
+        if (persistedBefore is not null)
         {
-            storage.BeforeReserveRenewal = null;
+            (await GetPersistedLeaseIdentityAsync(published, claimed.StorageId, AbortToken))
+                .Should()
+                .Be(persistedBefore, "a refused reservation renews nothing");
         }
 
-        // and: the refused reservation wrote nothing, so the same attempt reserves against the counter it read. The
-        // expiry ran inside the refused transaction and rolled back with it, so the lease is the claim's again.
-        var retried = published
+        // and: the reservation against the counter the row does hold succeeds
+        var reserved = published
             ? await storage.ReservePublishAttemptAsync(claimed, originalInlineAttempts: 0, AbortToken)
             : await storage.ReserveReceiveAttemptAsync(claimed, originalInlineAttempts: 0, AbortToken);
-        retried.Should().BeTrue();
+        reserved.Should().BeTrue();
     }
 
     [Guarantee("MSG-LEASE-02")]

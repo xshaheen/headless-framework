@@ -1080,18 +1080,12 @@ public partial class SqlServerStorageTests(SqlServerTestFixture fixture) : DataS
         return base.should_restamp_the_lease_when_an_attempt_is_reserved_late_in_a_claimed_batch(published);
     }
 
-    /// <inheritdoc />
-    protected override string ExpireLeaseSql(bool published) =>
-        $"UPDATE headless.{(published ? "MessagingPublished" : "MessagingReceived")} SET LeaseExpiresAt=DATEADD(minute,-1,SYSUTCDATETIME()) WHERE Id=@Id;";
-
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public override Task should_leave_the_attempt_counter_unchanged_when_the_reservation_cannot_renew_the_lease(
-        bool published
-    )
+    public override Task should_leave_the_counter_and_the_lease_unchanged_when_a_reservation_is_refused(bool published)
     {
-        return base.should_leave_the_attempt_counter_unchanged_when_the_reservation_cannot_renew_the_lease(published);
+        return base.should_leave_the_counter_and_the_lease_unchanged_when_a_reservation_is_refused(published);
     }
 
     [Theory]

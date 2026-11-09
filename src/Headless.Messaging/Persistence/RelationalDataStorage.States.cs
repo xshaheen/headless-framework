@@ -543,15 +543,6 @@ internal sealed partial class RelationalDataStorage
             : _terminalGuardWithRetries;
     }
 
-    private const string _ReserveAttemptSavepoint = "reserve_attempt";
-
-    /// <summary>
-    /// Runs between an attempt reservation's counter write and its lease renewal, on the reservation's connection and
-    /// transaction, with the row's storage id. Tests set it to expire the lease there, which no other session can do
-    /// while the reservation holds the row lock.
-    /// </summary>
-    internal Func<DbConnection, DbTransaction, Guid, CancellationToken, Task>? BeforeReserveRenewal { get; set; }
-
     private async ValueTask<bool> _ReserveAttemptAsync(
         string operation,
         string table,
@@ -563,9 +554,8 @@ internal sealed partial class RelationalDataStorage
         // Durable attempt reservation: the counter is a compare-and-set on the attempt the caller read, and only the
         // current lease generation may move it. The claim leased a whole batch at once and its rows run one after
         // another, so the reservation also renews the lease from the database clock: a row reserved late in the batch
-        // starts its attempt with a full lease instead of whatever the batch lease has left. Both statements run in one
-        // transaction under the row lock, the reservation first, so a refused reservation leaves the lease untouched,
-        // and a refused renewal rolls the counter write back, so the row never records an attempt that did not run.
+        // starts its attempt with a full lease instead of whatever the batch lease has left. The counter write and the
+        // renewal are one fenced statement, so a refused reservation leaves both the counter and the lease untouched.
         if (message.Lease.State != RowLeaseState.Active)
         {
             return false;
@@ -592,57 +582,32 @@ internal sealed partial class RelationalDataStorage
         );
         var dispatchTimeout = Options.RetryPolicy.DispatchTimeout;
 
-        var lease = await _RunAsync<RowLeaseSnapshot?>(
+        var written = await _RunAsync(
                 operation,
                 transaction: null,
                 async (connection, tx, ct) =>
-                {
-                    // The transaction commits whatever the body returns, so a refused renewal must undo the counter
-                    // write itself; the savepoint does that without failing the call.
-                    await tx.SaveAsync(_ReserveAttemptSavepoint, ct).ConfigureAwait(false);
-
-                    var written = await FencedRows
-                        .WriteAsync(leaseTable, connection, tx, row, write, _ReadReturnedLease, ct)
-                        .ConfigureAwait(false);
-                    if (
-                        written.Match(static (stored, _) => (RowLeaseSnapshot?)stored, static _ => null) is not { } held
-                    )
-                    {
-                        return null;
-                    }
-
-                    if (BeforeReserveRenewal is { } beforeRenewal)
-                    {
-                        await beforeRenewal(connection, tx, message.StorageId, ct).ConfigureAwait(false);
-                    }
-
-                    // The row lock is held, so only the lease running out between the two statements refuses the
-                    // renewal; the attempt then holds no lease to run under.
-                    var renewed = await FencedRows
-                        .RenewAsync(leaseTable, connection, tx, row, dispatchTimeout, ct)
-                        .ConfigureAwait(false);
-
-                    if (renewed.Status != LeaseRenewalStatus.Renewed)
-                    {
-                        await tx.RollbackAsync(_ReserveAttemptSavepoint, ct).ConfigureAwait(false);
-                        return null;
-                    }
-
-                    return held with
-                    {
-                        ExpiresAt = renewed.ExpiresAt,
-                    };
-                },
+                    await FencedRows
+                        .WriteAndRenewAsync(
+                            leaseTable,
+                            connection,
+                            tx,
+                            row,
+                            write,
+                            dispatchTimeout,
+                            _ReadReturnedLease,
+                            ct
+                        )
+                        .ConfigureAwait(false),
                 cancellationToken
             )
             .ConfigureAwait(false);
 
-        if (lease is not { } stored)
+        if (written.Match(static (stored, _) => (RowLeaseSnapshot?)stored, static _ => null) is not { } lease)
         {
             return false;
         }
 
-        message.Lease = stored;
+        message.Lease = lease;
         return true;
     }
 

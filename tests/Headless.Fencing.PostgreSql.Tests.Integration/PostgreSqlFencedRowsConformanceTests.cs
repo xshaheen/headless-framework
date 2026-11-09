@@ -182,6 +182,12 @@ public sealed class PostgreSqlFencedRowsConformanceTests(PostgreSqlFencingFixtur
     }
 
     [Fact]
+    public override Task should_renew_the_lease_with_a_write_that_applies_and_leave_it_when_the_write_is_refused()
+    {
+        return base.should_renew_the_lease_with_a_write_that_applies_and_leave_it_when_the_write_is_refused();
+    }
+
+    [Fact]
     public override Task should_end_under_a_condition_read_columns_back_and_tell_a_refused_condition_from_a_lost_lease()
     {
         return base.should_end_under_a_condition_read_columns_back_and_tell_a_refused_condition_from_a_lost_lease();

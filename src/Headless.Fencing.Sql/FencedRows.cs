@@ -528,6 +528,61 @@ public static class FencedRows
                 row,
                 write,
                 write.Set,
+                renewFor: null,
+                readReturning,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Runs the consumer's write on the row only while <paramref name="row" />'s generation is current and, in the same
+    /// statement, extends the lease to <paramref name="duration" /> from the database clock: the write and the renewal
+    /// land together or not at all, so an attempt never records progress it holds no lease to make.
+    /// </summary>
+    /// <param name="table">The row's table.</param>
+    /// <param name="connection">The caller's connection.</param>
+    /// <param name="transaction">The caller's transaction, or <see langword="null" /> to run in one of the helper's own.</param>
+    /// <param name="row">The token.</param>
+    /// <param name="write">
+    /// The write: <see cref="FencedRowWrite.Set" /> is required; <see cref="FencedRowWrite.Condition" /> narrows the fence;
+    /// <see cref="FencedRowWrite.Returning" /> names the columns to read back (the generation when omitted), read as the
+    /// row holds them after the renewal.
+    /// </param>
+    /// <param name="duration">How long the lease runs from the database clock once the write applies.</param>
+    /// <param name="readReturning">Reads the returned columns, the first at ordinal 1.</param>
+    /// <param name="cancellationToken">Token used to cancel the operation.</param>
+    /// <returns>
+    /// Whether the write applied, classified as <see cref="WriteAsync{TKey,TAccepted}" /> classifies a write. A refused
+    /// write leaves the lease as it was.
+    /// </returns>
+    public static async ValueTask<SqlFenced<LockedRowLease, TAccepted>> WriteAndRenewAsync<TKey, TAccepted>(
+        FencedRowTable<TKey> table,
+        DbConnection connection,
+        DbTransaction? transaction,
+        FencedRow<TKey> row,
+        FencedRowWrite write,
+        TimeSpan duration,
+        Func<DbDataReader, CancellationToken, ValueTask<TAccepted>> readReturning,
+        CancellationToken cancellationToken = default
+    )
+        where TKey : notnull
+    {
+        Argument.IsNotNull(table);
+        _RequireTable(table, row);
+        Argument.IsNotNull(write);
+        Argument.IsNotNullOrWhiteSpace(write.Set, paramName: nameof(write));
+        Argument.IsPositive(duration);
+        Argument.IsNotNull(readReturning);
+
+        return await _WriteAsync(
+                table,
+                connection,
+                transaction,
+                row,
+                write,
+                write.Set,
+                duration,
                 readReturning,
                 cancellationToken
             )
@@ -643,7 +698,17 @@ public static class FencedRows
 
         var set = write.Set is null ? table.EndAssignments(state) : table.EndAssignments(state) + ", " + write.Set;
 
-        return await _WriteAsync(table, connection, transaction, row, write, set, readReturning, cancellationToken)
+        return await _WriteAsync(
+                table,
+                connection,
+                transaction,
+                row,
+                write,
+                set,
+                renewFor: null,
+                readReturning,
+                cancellationToken
+            )
             .ConfigureAwait(false);
     }
 
@@ -659,6 +724,7 @@ public static class FencedRows
         FencedRow<TKey> row,
         FencedRowWrite write,
         string set,
+        TimeSpan? renewFor,
         Func<DbDataReader, CancellationToken, ValueTask<TAccepted>> readReturning,
         CancellationToken cancellationToken
     )
@@ -667,6 +733,11 @@ public static class FencedRows
         if (write.Condition is not null)
         {
             Argument.IsNotNullOrWhiteSpace(write.Condition, paramName: nameof(write));
+        }
+
+        if (renewFor is not null)
+        {
+            set = set + ", " + table.RenewAssignment;
         }
 
         var fence = write.Condition is null ? table.Current : $"{table.Current} AND ({write.Condition})";
@@ -684,6 +755,12 @@ public static class FencedRows
                     {
                         _AddGeneration(table, command, row.Generation);
                         _BindConsumer(command, write.Bind, nameof(write));
+
+                        if (renewFor is { } duration)
+                        {
+                            table.Dialect.AddDuration(command, FencedRowTable<TKey>.DurationParameter, duration);
+                        }
+
                         written = await _ExecuteAsync(command, readReturning, ct).ConfigureAwait(false);
                     }
 

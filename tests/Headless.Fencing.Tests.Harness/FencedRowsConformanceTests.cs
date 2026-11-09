@@ -606,6 +606,82 @@ public abstract class FencedRowsConformanceTests<TFixture>(TFixture fixture) : T
         stored.Lease.State.Should().Be(RowLeaseState.Active, "a fenced write keeps the lease active");
     }
 
+    public virtual async Task should_renew_the_lease_with_a_write_that_applies_and_leave_it_when_the_write_is_refused()
+    {
+        var id = await InsertAsync("pending");
+        await using var connection = Fixture.CreateConnection();
+        var granted = (await FencedRows.GrantAsync(_table, connection, null, id, LongDuration, new(), AbortToken))!;
+        var row = granted.Row!;
+        var write = new FencedRowWrite(
+            Set: "status = @Next",
+            Condition: "status = @Expected",
+            Returning: ["status"],
+            Bind: command =>
+            {
+                Dialect.AddParameter(command, "Next", _Status, "progress");
+                Dialect.AddParameter(command, "Expected", _Status, "pending");
+            }
+        );
+
+        var applied = await FencedRows.WriteAndRenewAsync(
+            _table,
+            connection,
+            null,
+            row,
+            write,
+            LongDuration * 2,
+            _ReadStatusAsync,
+            AbortToken
+        );
+
+        applied.IsAccepted.Should().BeTrue();
+        applied.Before!.Status.Should().Be(LeaseFenceStatus.Current);
+        var renewed = await ReadAsync(id);
+        renewed.Status.Should().Be("progress");
+        renewed.Lease.State.Should().Be(RowLeaseState.Active);
+        renewed.Lease.Generation.Should().Be(row.Generation, "a renewal keeps the generation");
+        renewed
+            .Lease.ExpiresAt.Should()
+            .BeAfter(granted.ExpiresAt.AddMinutes(4), "the write moved the expiry to twice the grant's duration");
+
+        // The condition now fails: nothing is written, the renewal included.
+        var refused = await FencedRows.WriteAndRenewAsync(
+            _table,
+            connection,
+            null,
+            row,
+            write,
+            LongDuration * 3,
+            _ReadStatusAsync,
+            AbortToken
+        );
+
+        refused.IsAccepted.Should().BeFalse();
+        refused.Before!.Status.Should().Be(LeaseFenceStatus.Current, "the lease is live; the condition failed");
+        (await ReadAsync(id)).Lease.ExpiresAt.Should().Be(renewed.Lease.ExpiresAt);
+
+        // An expired lease is not revived by a write that would renew it.
+        await ExpireAsync(id);
+        var expiredAt = (await ReadAsync(id)).Lease.ExpiresAt;
+        var expired = await FencedRows.WriteAndRenewAsync(
+            _table,
+            connection,
+            null,
+            row,
+            write with
+            {
+                Condition = null,
+            },
+            LongDuration,
+            _ReadStatusAsync,
+            AbortToken
+        );
+
+        expired.IsAccepted.Should().BeFalse();
+        expired.Before!.Status.Should().Be(LeaseFenceStatus.Expired);
+        (await ReadAsync(id)).Lease.ExpiresAt.Should().Be(expiredAt);
+    }
+
     public virtual async Task should_end_under_a_condition_read_columns_back_and_tell_a_refused_condition_from_a_lost_lease()
     {
         var settled = await InsertAsync("pending");

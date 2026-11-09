@@ -98,11 +98,10 @@ public sealed class FencedRowTable<TKey>
             LockedRead + dialect.Render(new SqlFencedTransition(Table, KeyParameters, GrantableFence, grant, granted));
         GrantAfterSweepSql =
             LockedRead + dialect.Render(new SqlFencedTransition(Table, KeyParameters, AfterSweepFence, grant, granted));
+        RenewAssignment = $"{ExpiresAt} = {deadline}";
         RenewSql =
             LockedRead
-            + dialect.Render(
-                new SqlFencedTransition(Table, KeyParameters, Current, $"{ExpiresAt} = {deadline}", [ExpiresAt])
-            );
+            + dialect.Render(new SqlFencedTransition(Table, KeyParameters, Current, RenewAssignment, [ExpiresAt]));
         SettleSql = LockedRead + _Transition(Current, EndAssignments(RowLeaseState.Settled));
         ReleaseSql = LockedRead + _Transition(Current, EndAssignments(RowLeaseState.Released));
         // Revoke ends whatever attempt is active, live or expired, by key alone: the caller never held its generation.
@@ -184,6 +183,9 @@ public sealed class FencedRowTable<TKey>
     internal string GrantAfterSweepSql { get; }
 
     internal string RenewSql { get; }
+
+    /// <summary>Moves the expiry to the bound duration from the database clock, as a renewal does.</summary>
+    internal string RenewAssignment { get; }
 
     internal string SettleSql { get; }
 
