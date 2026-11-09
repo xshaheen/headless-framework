@@ -19,7 +19,7 @@ internal static class SqliteFencingSchemaContribution
         var schema = storageOptions.Schema;
         var t = new FencingTable(dialect, schema);
         var active = FencingTable.StateLiteral(FencingTable.Active);
-        var abandoned = FencingTable.StateLiteral(FencingTable.Abandoned);
+        var revoked = FencingTable.StateLiteral(FencingTable.Revoked);
 
         string name(string pascal) => dialect.Quote(dialect.Name(pascal));
 
@@ -52,9 +52,10 @@ internal static class SqliteFencingSchemaContribution
                 {t.TakeoverCount} INTEGER NOT NULL DEFAULT 0,
                 {t.Progress} BLOB NULL,
                 {t.ProgressContract} TEXT NULL,
+                {t.Holder} TEXT NULL,
                 CONSTRAINT {name("PK_FencingLeases")} PRIMARY KEY ({t.TenantId}, {t.Kind}, {t.Resource}),
                 CONSTRAINT {name("CK_FencingLeases_Generation")} CHECK ({t.Generation} > 0),
-                CONSTRAINT {name("CK_FencingLeases_State")} CHECK ({t.State} BETWEEN {active} AND {abandoned}),
+                CONSTRAINT {name("CK_FencingLeases_State")} CHECK ({t.State} BETWEEN {active} AND {revoked}),
                 CONSTRAINT {name("CK_FencingLeases_EndedAt")} CHECK (({t.State} = {active}) = ({t.EndedAt} IS NULL)),
                 CONSTRAINT {name("CK_FencingLeases_TakeoverCount")} CHECK ({t.TakeoverCount} >= 0),
                 CONSTRAINT {name("CK_FencingLeases_Progress")} CHECK (

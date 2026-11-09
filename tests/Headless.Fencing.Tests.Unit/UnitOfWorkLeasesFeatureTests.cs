@@ -21,7 +21,13 @@ public sealed class UnitOfWorkLeasesFeatureTests : TestBase
         var (unit, _) = FencingTestContext.ActiveUnit();
         var expected = LeaseGrantResult.Granted(_Lease, DateTimeOffset.UnixEpoch);
         context
-            .Store.GrantEnlistedAsync(unit, _Key, FencingTestContext.Duration, LeaseTakeover.Allowed, AbortToken)
+            .Store.GrantEnlistedAsync(
+                unit,
+                _Key,
+                FencingTestContext.Duration,
+                FencingTestContext.TakeoverOnly(LeaseTakeover.Allowed),
+                AbortToken
+            )
             .Returns(expected);
 
         // when
@@ -30,13 +36,13 @@ public sealed class UnitOfWorkLeasesFeatureTests : TestBase
             "job",
             "order-1",
             FencingTestContext.Duration,
-            LeaseTakeover.Allowed,
+            new LeaseGrantOptions(),
             AbortToken
         );
 
         // then
         result.Should().BeSameAs(expected);
-        await context.Store.DidNotReceiveWithAnyArgs().GrantAsync(default, default, default, AbortToken);
+        await context.Store.DidNotReceiveWithAnyArgs().GrantAsync(default, default, default!, AbortToken);
     }
 
     [Fact]
@@ -127,7 +133,7 @@ public sealed class UnitOfWorkLeasesFeatureTests : TestBase
             "job",
             "order-1",
             FencingTestContext.Duration,
-            LeaseTakeover.Allowed,
+            new LeaseGrantOptions(),
             AbortToken
         );
         await context.Feature.SettleAsync(unit, _Lease, AbortToken);
@@ -156,7 +162,7 @@ public sealed class UnitOfWorkLeasesFeatureTests : TestBase
                     "job",
                     "order-1",
                     FencingTestContext.Duration,
-                    LeaseTakeover.Allowed,
+                    new LeaseGrantOptions(),
                     AbortToken
                 ),
             async () => await context.Feature.RenewAsync(unit, _Lease, FencingTestContext.Duration, null, AbortToken),
@@ -196,7 +202,7 @@ public sealed class UnitOfWorkLeasesFeatureTests : TestBase
                 "job",
                 "order-1",
                 FencingTestContext.Duration,
-                LeaseTakeover.Allowed,
+                new LeaseGrantOptions(),
                 AbortToken
             );
 
@@ -221,7 +227,7 @@ public sealed class UnitOfWorkLeasesFeatureTests : TestBase
                 " job",
                 "order-1",
                 FencingTestContext.Duration,
-                LeaseTakeover.Allowed,
+                new LeaseGrantOptions(),
                 AbortToken
             );
 
@@ -244,7 +250,7 @@ public sealed class UnitOfWorkLeasesFeatureTests : TestBase
                 "job",
                 "order-1",
                 TimeSpan.FromMilliseconds(10),
-                LeaseTakeover.Allowed,
+                new LeaseGrantOptions(),
                 AbortToken
             );
         var tooLong = async () =>
@@ -285,7 +291,7 @@ public sealed class UnitOfWorkLeasesFeatureTests : TestBase
                 "job",
                 "order-1",
                 FencingTestContext.Duration,
-                LeaseTakeover.Allowed,
+                new LeaseGrantOptions(),
                 AbortToken
             );
 
@@ -294,7 +300,7 @@ public sealed class UnitOfWorkLeasesFeatureTests : TestBase
         unit.DidNotReceive().PreventRetry();
         await context
             .Store.DidNotReceiveWithAnyArgs()
-            .GrantEnlistedAsync(default!, default, default, default, AbortToken);
+            .GrantEnlistedAsync(default!, default, default, default!, AbortToken);
     }
 
     [Fact]
@@ -310,7 +316,7 @@ public sealed class UnitOfWorkLeasesFeatureTests : TestBase
             "job",
             "order-1",
             FencingTestContext.Duration,
-            LeaseTakeover.Allowed,
+            new LeaseGrantOptions(),
             AbortToken
         );
 
@@ -324,7 +330,7 @@ public sealed class UnitOfWorkLeasesFeatureTests : TestBase
                 unit,
                 Arg.Any<LeaseKey>(),
                 Arg.Any<TimeSpan>(),
-                Arg.Any<LeaseTakeover>(),
+                Arg.Any<LeaseGrantOptions>(),
                 Arg.Any<CancellationToken>()
             );
         });
@@ -359,7 +365,7 @@ public sealed class UnitOfWorkLeasesFeatureTests : TestBase
             "job",
             "order-1",
             FencingTestContext.Duration,
-            LeaseTakeover.Allowed,
+            new LeaseGrantOptions(),
             AbortToken
         );
         await context.Feature.SettleAsync(unit, _Lease, AbortToken);
@@ -480,12 +486,51 @@ public sealed class UnitOfWorkLeasesFeatureTests : TestBase
                 "job",
                 "order-1",
                 FencingTestContext.Duration,
-                (LeaseTakeover)7,
+                new LeaseGrantOptions { Takeover = (LeaseTakeover)7 },
                 AbortToken
             );
 
         // then
         await grant.Should().ThrowAsync<InvalidEnumArgumentException>();
         context.Store.DidNotReceiveWithAnyArgs().ValidateEnlistment(default!);
+    }
+
+    [Fact]
+    public async Task should_hand_the_store_the_grant_options_as_passed_and_validate_them_before_the_unit()
+    {
+        // given
+        var context = new FencingTestContext();
+        context.Tenant.Id = "t1";
+        var (unit, _) = FencingTestContext.ActiveUnit();
+        var options = new LeaseGrantOptions { Holder = "cluster/node-1@3" };
+        var expected = LeaseGrantResult.Held(3, DateTimeOffset.UnixEpoch);
+        context
+            .Store.GrantEnlistedAsync(unit, _Key, FencingTestContext.Duration, options, AbortToken)
+            .Returns(expected);
+        var oversized = new LeaseGrantOptions { Holder = new string('h', FencingFieldLimits.HolderMaxLength + 1) };
+
+        // when
+        var result = await context.Feature.GrantAsync(
+            unit,
+            "job",
+            "order-1",
+            FencingTestContext.Duration,
+            options,
+            AbortToken
+        );
+        var refused = async () =>
+            await context.Feature.GrantAsync(
+                unit,
+                "job",
+                "order-1",
+                FencingTestContext.Duration,
+                oversized,
+                AbortToken
+            );
+
+        // then
+        result.Should().BeSameAs(expected);
+        await refused.Should().ThrowAsync<ArgumentException>().WithParameterName("options");
+        context.Store.Received(1).ValidateEnlistment(unit);
     }
 }

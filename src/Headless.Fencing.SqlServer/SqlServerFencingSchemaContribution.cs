@@ -47,6 +47,7 @@ internal static class SqlServerFencingSchemaContribution
                     {SqlServerFencingSchema.TakeoverCount} int NOT NULL CONSTRAINT [DF_{t}_TakeoverCount] DEFAULT 0,
                     {SqlServerFencingSchema.Progress} varbinary(max) NULL,
                     {SqlServerFencingSchema.ProgressContract} nvarchar({FencingFieldLimits.ProgressContractMaxLength}) NULL,
+                    {SqlServerFencingSchema.Holder} nvarchar({FencingFieldLimits.HolderMaxLength}) NULL,
                     CONSTRAINT [PK_{t}] PRIMARY KEY CLUSTERED (
                         {SqlServerFencingSchema.TenantId} ASC,
                         {SqlServerFencingSchema.Kind} ASC,
@@ -54,7 +55,7 @@ internal static class SqlServerFencingSchemaContribution
                     ),
                     CONSTRAINT [CK_{t}_Generation] CHECK ({SqlServerFencingSchema.Generation} > 0),
                     CONSTRAINT [CK_{t}_State] CHECK (
-                        {SqlServerFencingSchema.State} BETWEEN {SqlServerFencingSchema.Active} AND {SqlServerFencingSchema.Abandoned}
+                        {SqlServerFencingSchema.State} BETWEEN {SqlServerFencingSchema.Active} AND {SqlServerFencingSchema.Revoked}
                     ),
                     CONSTRAINT [CK_{t}_EndedAt] CHECK (
                         ({SqlServerFencingSchema.State} = {SqlServerFencingSchema.Active} AND {SqlServerFencingSchema.EndedAt} IS NULL)

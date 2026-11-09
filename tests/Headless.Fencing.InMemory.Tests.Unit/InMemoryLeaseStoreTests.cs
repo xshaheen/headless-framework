@@ -146,7 +146,7 @@ public sealed class InMemoryLeaseStoreTests : TestBase
 
         // when
         var act = async () =>
-            await enlisted.GrantAsync(unit, "job", "order-1", _Duration, LeaseTakeover.Allowed, AbortToken);
+            await enlisted.GrantAsync(unit, "job", "order-1", _Duration, new LeaseGrantOptions(), AbortToken);
 
         // then — lease state in this process cannot commit or roll back with a database transaction
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*database transaction*InMemory*");

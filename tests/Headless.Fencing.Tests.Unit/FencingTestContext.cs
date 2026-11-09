@@ -41,6 +41,15 @@ internal sealed class FencingTestContext
 
     public FencedLeases Leases { get; }
 
+    /// <summary>
+    /// Matches the grant options a takeover-only overload builds: the takeover choice and no holder.
+    /// Call it only inside a substitute's call specification.
+    /// </summary>
+    public static LeaseGrantOptions TakeoverOnly(LeaseTakeover takeover)
+    {
+        return Arg.Is<LeaseGrantOptions>(options => options.Takeover == takeover && options.Holder == null);
+    }
+
     /// <summary>An active unit over a live relational resource: every refusal gate passes.</summary>
     public static (IUnitOfWork Unit, IRelationalUnitOfWorkResource Resource) ActiveUnit(bool isOwned = true)
     {

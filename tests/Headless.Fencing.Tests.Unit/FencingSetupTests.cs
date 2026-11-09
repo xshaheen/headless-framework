@@ -95,7 +95,7 @@ public sealed class FencingSetupTests : TestBase
             .GrantAsync(
                 new LeaseKey("t1", "job", "order-1"),
                 TimeSpan.FromSeconds(5),
-                LeaseTakeover.Allowed,
+                FencingTestContext.TakeoverOnly(LeaseTakeover.Allowed),
                 AbortToken
             );
     }

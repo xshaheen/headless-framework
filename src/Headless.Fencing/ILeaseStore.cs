@@ -12,16 +12,24 @@ namespace Headless.Fencing;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Lease state is active, settled, released, or abandoned; "expired" is never stored. It means active with an expiry
-/// at or before the database's clock, read inside the statement that decides. A generation is drawn from one
+/// Lease state is active, settled, released, abandoned, or revoked; "expired" is never stored. It means active with an
+/// expiry at or before the database's clock, read inside the statement that decides. A generation is drawn from one
 /// store-wide sequence only after the grant holds the lease row's lock, so every grant's generation is above every
 /// earlier one for that key, including after the row was purged.
 /// </para>
 /// <para>
 /// Each row also carries the last progress a successful renewal recorded and a takeover count. A takeover grant and a
 /// sweep's abandonment each add one to the count and keep the progress; a grant over an abandoned row keeps both
-/// without adding; a settlement or release clears both. A grant that acquires the lease returns the row's count and,
-/// unless the row was settled or released, its progress; a held grant returns the holder's count and no progress.
+/// without adding; a settlement, release, or revocation clears both. A grant that acquires the lease returns the row's
+/// count and, unless the row was settled, released, or revoked, its progress; a held grant returns the holder's count
+/// and no progress.
+/// </para>
+/// <para>
+/// A row also carries the holder of the grant that issued its generation. Every grant that acquires the lease writes it
+/// from its options, or clears it when the options carry none; settlement, release, abandonment, and revocation keep
+/// it. A grant whose holder equals (ordinally) the stored holder of an active row the database clock still sees as
+/// unexpired returns that row's lease as granted, with its expiry, count, and progress, and writes nothing; the
+/// decision is made while the grant holds the row's lock.
 /// </para>
 /// <para>
 /// Autonomous verbs commit before returning; a relational provider opens its own connection at READ COMMITTED and
@@ -56,13 +64,16 @@ public interface ILeaseStore
     /// <summary>Grants the lease on the provider's own connection and commits before returning.</summary>
     /// <param name="key">The lease key.</param>
     /// <param name="duration">The lease's time to live from the database's clock.</param>
-    /// <param name="takeover">Whether an expired active lease is taken over or reported as expired.</param>
+    /// <param name="options">
+    /// Whether an expired active lease is taken over or reported as expired, and the holder to store; already
+    /// validated.
+    /// </param>
     /// <param name="cancellationToken">Token used to cancel the database call.</param>
     /// <returns>The grant's result.</returns>
     ValueTask<LeaseGrantResult> GrantAsync(
         LeaseKey key,
         TimeSpan duration,
-        LeaseTakeover takeover,
+        LeaseGrantOptions options,
         CancellationToken cancellationToken = default
     );
 
@@ -73,14 +84,17 @@ public interface ILeaseStore
     /// <param name="unitOfWork">The unit of work, already accepted by <see cref="ValidateEnlistment" />.</param>
     /// <param name="key">The lease key.</param>
     /// <param name="duration">The lease's time to live from the database's clock.</param>
-    /// <param name="takeover">Whether an expired active lease is taken over or reported as expired.</param>
+    /// <param name="options">
+    /// Whether an expired active lease is taken over or reported as expired, and the holder to store; already
+    /// validated.
+    /// </param>
     /// <param name="cancellationToken">Token used to cancel the database command.</param>
     /// <returns>The grant's result.</returns>
     ValueTask<LeaseGrantResult> GrantEnlistedAsync(
         IUnitOfWork unitOfWork,
         LeaseKey key,
         TimeSpan duration,
-        LeaseTakeover takeover,
+        LeaseGrantOptions options,
         CancellationToken cancellationToken = default
     );
 
@@ -228,6 +242,45 @@ public interface ILeaseStore
     );
 
     /// <summary>
+    /// Reads, on the provider's own connection and without a row lock, the attempt the row of <paramref name="key" />
+    /// holds: its generation, its state by the database clock, its expiry, takeover count, and holder.
+    /// </summary>
+    /// <param name="key">The lease key.</param>
+    /// <param name="cancellationToken">Token used to cancel the database call.</param>
+    /// <returns>The row's attempt, or <see langword="null" /> when the key has no row.</returns>
+    ValueTask<LeaseSnapshot?> GetCurrentAsync(LeaseKey key, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reads the same answer as <see cref="GetCurrentAsync(LeaseKey, CancellationToken)" /> as one statement on the
+    /// caller's <paramref name="connection" />, opening it for the read when it is closed. It never retries, and a
+    /// provider without a database ignores the connection and the transaction.
+    /// </summary>
+    /// <param name="key">The lease key.</param>
+    /// <param name="connection">The caller's connection to the lease database.</param>
+    /// <param name="transaction">The connection's open transaction, or <see langword="null" />.</param>
+    /// <param name="cancellationToken">Token used to cancel the database call.</param>
+    /// <returns>The row's attempt, or <see langword="null" /> when the key has no row.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// The connection is not the provider's type or reaches another database, or the transaction is not bound to it.
+    /// </exception>
+    ValueTask<LeaseSnapshot?> GetCurrentAsync(
+        LeaseKey key,
+        DbConnection connection,
+        DbTransaction? transaction,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Ends the active attempt of <paramref name="key" />, live or expired, as revoked on the provider's own
+    /// connection and commits before returning. It is one transition fenced on the row being active; like a release
+    /// it clears the progress and takeover count, and it keeps the holder.
+    /// </summary>
+    /// <param name="key">The lease key.</param>
+    /// <param name="cancellationToken">Token used to cancel the database call.</param>
+    /// <returns>The attempt it ended, or <see langword="null" /> when the row is absent or not active.</returns>
+    ValueTask<FencedLease?> RevokeAsync(LeaseKey key, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Claims one expired, active lease of <paramref name="kind" /> inside <paramref name="unitOfWork" />,
     /// skipping rows another transaction has locked, and marks it abandoned in the same statement. Leases are visited
     /// in <c>(expires_at, tenant_id, resource)</c> order, strictly after <paramref name="after" />.
@@ -254,8 +307,8 @@ public interface ILeaseStore
     );
 
     /// <summary>
-    /// Deletes, in bounded batches on the provider's own connection, the settled, released, and abandoned leases of
-    /// <paramref name="kind" /> that ended at least <paramref name="olderThan" /> before the database's clock.
+    /// Deletes, in bounded batches on the provider's own connection, the settled, released, abandoned, and revoked
+    /// leases of <paramref name="kind" /> that ended at least <paramref name="olderThan" /> before the database's clock.
     /// </summary>
     /// <param name="kind">The lease kind to purge.</param>
     /// <param name="olderThan">How long a lease must have been over before it is deleted.</param>

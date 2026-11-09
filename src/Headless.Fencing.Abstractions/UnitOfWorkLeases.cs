@@ -46,7 +46,7 @@ public sealed class UnitOfWorkLeases
         CancellationToken cancellationToken = default
     )
     {
-        return _leases.GrantAsync(_unitOfWork, kind, resource, duration, LeaseTakeover.Allowed, cancellationToken);
+        return _leases.GrantAsync(_unitOfWork, kind, resource, duration, new LeaseGrantOptions(), cancellationToken);
     }
 
     /// <summary>
@@ -80,7 +80,50 @@ public sealed class UnitOfWorkLeases
         CancellationToken cancellationToken = default
     )
     {
-        return _leases.GrantAsync(_unitOfWork, kind, resource, duration, takeover, cancellationToken);
+        return _leases.GrantAsync(
+            _unitOfWork,
+            kind,
+            resource,
+            duration,
+            new LeaseGrantOptions { Takeover = takeover },
+            cancellationToken
+        );
+    }
+
+    /// <summary>
+    /// Grants the lease inside the bound unit's transaction with <paramref name="options" />: the takeover choice, and
+    /// the holder the grant stores.
+    /// </summary>
+    /// <remarks>
+    /// The lease row stays locked until the unit ends, and every other grant, renewal, settlement, or sweep of the
+    /// lease waits for it; a grant the unit rolls back never happened. A grant whose holder equals the live attempt's
+    /// stored holder returns that attempt as granted and writes nothing.
+    /// </remarks>
+    /// <param name="kind">The lease kind.</param>
+    /// <param name="resource">The leased resource within the kind.</param>
+    /// <param name="duration">How long the lease lives unless renewed; bounded by the configured limits.</param>
+    /// <param name="options">The takeover choice, and the holder the grant stores.</param>
+    /// <param name="cancellationToken">Token used to cancel the database command.</param>
+    /// <returns>The grant's result.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="options" /> is <see langword="null" />.</exception>
+    /// <exception cref="ArgumentException">
+    /// The kind, resource, or current tenant id is invalid, or the options' holder is whitespace, exceeds its limit, or is not
+    /// portable key text.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="duration" /> is outside the configured bounds.</exception>
+    /// <exception cref="System.ComponentModel.InvalidEnumArgumentException">
+    /// The options' takeover is not a defined value.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">The bound unit is no longer active or cannot host the write.</exception>
+    public ValueTask<LeaseGrantResult> GrantAsync(
+        string kind,
+        string resource,
+        TimeSpan duration,
+        LeaseGrantOptions options,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return _leases.GrantAsync(_unitOfWork, kind, resource, duration, options, cancellationToken);
     }
 
     /// <summary>Renews the lease inside the bound unit's transaction, keeping any progress recorded before.</summary>

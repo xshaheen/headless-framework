@@ -6,7 +6,9 @@ namespace Headless.Fencing;
 /// <remarks>
 /// Settling is the attempt's final write and reports <see cref="Settled" /> on success; releasing gives the lease up
 /// without a result and reports <see cref="Released" /> on success. Both are idempotent for the same generation, so a
-/// retried call that already succeeded reports success again. Every other value is a refusal: nothing was written.
+/// retried call that already succeeded reports success again. Every other value is a refusal: nothing was written. A
+/// revoked generation reports <see cref="Revoked" /> to both verbs, never success, because the attempt that held it
+/// did not end it.
 /// </remarks>
 [PublicAPI]
 public enum LeaseSettlementStatus
@@ -28,4 +30,7 @@ public enum LeaseSettlementStatus
 
     /// <summary>A sweep abandoned this generation's expired attempt.</summary>
     Abandoned = 4,
+
+    /// <summary>Code that did not hold the lease revoked this generation's attempt.</summary>
+    Revoked = 5,
 }

@@ -40,6 +40,7 @@ internal static class PostgreSqlFencingSchemaContribution
                 {PostgreSqlFencingSchema.TakeoverCount} integer NOT NULL DEFAULT 0,
                 {PostgreSqlFencingSchema.Progress} bytea NULL,
                 {PostgreSqlFencingSchema.ProgressContract} varchar({FencingFieldLimits.ProgressContractMaxLength}) NULL,
+                {PostgreSqlFencingSchema.Holder} varchar({FencingFieldLimits.HolderMaxLength}) COLLATE "C" NULL,
                 CONSTRAINT "pk_{t}" PRIMARY KEY (
                     {PostgreSqlFencingSchema.TenantId},
                     {PostgreSqlFencingSchema.Kind},
@@ -47,7 +48,7 @@ internal static class PostgreSqlFencingSchemaContribution
                 ),
                 CONSTRAINT "ck_{t}_generation" CHECK ({PostgreSqlFencingSchema.Generation} > 0),
                 CONSTRAINT "ck_{t}_state" CHECK (
-                    {PostgreSqlFencingSchema.State} BETWEEN {PostgreSqlFencingSchema.Active} AND {PostgreSqlFencingSchema.Abandoned}
+                    {PostgreSqlFencingSchema.State} BETWEEN {PostgreSqlFencingSchema.Active} AND {PostgreSqlFencingSchema.Revoked}
                 ),
                 CONSTRAINT "ck_{t}_ended_at" CHECK (
                     ({PostgreSqlFencingSchema.State} = {PostgreSqlFencingSchema.Active}) = ({PostgreSqlFencingSchema.EndedAt} IS NULL)

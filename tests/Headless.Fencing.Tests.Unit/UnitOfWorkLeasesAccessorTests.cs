@@ -56,13 +56,31 @@ public sealed class UnitOfWorkLeasesAccessorTests : TestBase
 
         // then
         second.Should().BeSameAs(first);
-        await feature.Received(1).GrantAsync(unit, "job", "order-1", duration, LeaseTakeover.Allowed, AbortToken);
+        await feature
+            .Received(1)
+            .GrantAsync(
+                unit,
+                "job",
+                "order-1",
+                duration,
+                FencingTestContext.TakeoverOnly(LeaseTakeover.Allowed),
+                AbortToken
+            );
         await feature.Received(1).RenewAsync(unit, lease, duration, null, AbortToken);
         await feature.Received(1).RenewAsync(unit, lease, duration, progress, AbortToken);
         await feature.Received(1).SettleAsync(unit, lease, AbortToken);
         await feature.Received(1).ReleaseAsync(unit, lease, AbortToken);
         await feature.Received(1).FenceAsync(unit, lease, AbortToken);
-        await feature.Received(1).GrantAsync(unit, "job", "order-2", duration, LeaseTakeover.AfterSweep, AbortToken);
+        await feature
+            .Received(1)
+            .GrantAsync(
+                unit,
+                "job",
+                "order-2",
+                duration,
+                FencingTestContext.TakeoverOnly(LeaseTakeover.AfterSweep),
+                AbortToken
+            );
         await feature.Received(1).ClaimExpiredAsync(unit, "job", null, AbortToken);
         await feature.Received(1).ClaimExpiredAsync(unit, "job", expired, AbortToken);
     }
