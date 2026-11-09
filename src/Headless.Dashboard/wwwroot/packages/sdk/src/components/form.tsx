@@ -4,6 +4,7 @@
 
 import { useId, type ReactNode } from 'react'
 import { Checkbox, FieldError, Input, Label, Text, TextArea, TextField } from 'react-aria-components'
+import { Text as ToneText } from './display/text.tsx'
 
 /**
  * shadcn's input: 30 px on the field edge, which reaches 3:1 on its surface. Focus swaps the border to the accent and
@@ -126,7 +127,7 @@ export function CheckboxField({ label, value, onChange, error }: CheckboxFieldPr
         </span>
         {label}
       </Checkbox>
-      {error ? <span className="hd-error">{error}</span> : null}
+      {error ? <ToneText tone="error">{error}</ToneText> : null}
     </div>
   )
 }

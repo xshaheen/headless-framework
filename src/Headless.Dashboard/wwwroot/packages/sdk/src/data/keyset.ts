@@ -69,7 +69,7 @@ export function useDashboardKeysetList<T extends ListItem>(options: DashboardKey
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
     // A new order or search of the same filter keeps the old rows until the first page of the new one arrives; a new
-    // filter starts empty, as it always has.
+    // filter starts empty.
     placeholderData: (previous, previousQuery) =>
       previousQuery !== undefined && sameFilter(previousQuery.queryKey, queryKey) ? previous : undefined,
   })
@@ -97,7 +97,6 @@ export function useDashboardKeysetList<T extends ListItem>(options: DashboardKey
   }
 }
 
-// Both keys are `['list', topic, filter?, scope?]`; the filter is the same when the third parts serialize alike.
 function sameFilter(previous: readonly unknown[], next: readonly unknown[]) {
   return previous[1] === next[1] && JSON.stringify(previous[2] ?? null) === JSON.stringify(next[2] ?? null)
 }

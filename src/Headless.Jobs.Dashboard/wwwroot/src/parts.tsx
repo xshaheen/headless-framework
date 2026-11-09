@@ -1,7 +1,6 @@
 import { useDashboard, useModule, type DashboardStateRole } from '@headless/dashboard-sdk'
 import { CommandAction, useAllowedActions, type CommandDefinition } from '@headless/dashboard-sdk/commands'
 import {
-  Banner,
   Button,
   DetailPanel,
   ExceptionBlock,
@@ -9,10 +8,12 @@ import {
   Fields,
   GridField,
   HistoryList,
+  LoadError,
   Mono,
   PayloadView,
   ProgressBar,
   Skeleton,
+  StaleNotice as SdkStaleNotice,
   StatCard,
   StatStrip,
   Text,
@@ -75,18 +76,6 @@ export function CellText({ title, children }: { title?: string; children: ReactN
   return <span title={title}>{children}</span>
 }
 
-/** A failed load: the error and Retry, never an empty view. */
-export function LoadError({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return (
-    <Banner>
-      <Text tone="error" role="alert">
-        {message}
-      </Text>
-      <Button onPress={onRetry}>Retry</Button>
-    </Banner>
-  )
-}
-
 type LoadState<T> =
   | { isPending: true; isError: false }
   | { isPending: false; isError: true; error: Error; refetch: () => Promise<unknown> }
@@ -126,20 +115,7 @@ export function useFunctions() {
 
 /** `Stale` while the stream is down or the server reports the Jobs changes stopped; the data on screen is kept. */
 export function StaleNotice({ what, onRefresh }: { what: string; onRefresh: () => void }) {
-  const stale = useStale()
-
-  if (!stale) {
-    return null
-  }
-
-  return (
-    <Banner role="status">
-      <span>{`Stale. Live updates stopped, so ${what} may be out of date.`}</span>
-      <Button variant="ghost" onPress={onRefresh}>
-        Refresh
-      </Button>
-    </Banner>
-  )
+  return <SdkStaleNotice stale={useStale()} what={what} onRefresh={onRefresh} />
 }
 
 /** Whether what the view shows may be out of date: the stream is down, or this module's changes stopped. */

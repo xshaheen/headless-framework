@@ -51,7 +51,6 @@ const maxSpan = 7 * 24 * hour
  */
 const slots = 24
 
-// One track: its label, then the time axis it plots on.
 const trackRow = 'grid grid-cols-[minmax(6rem,12rem)_1fr] items-center gap-2 border-b border-border'
 
 /**

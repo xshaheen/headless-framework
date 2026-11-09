@@ -1,7 +1,14 @@
 export { below } from './breakpoints.ts'
 export { Button, type ButtonProps, type ButtonVariant } from './button.tsx'
 export { Dialog, type OverlayProps } from './dialog.tsx'
-export { Banner, type BannerProps } from './display/banner.tsx'
+export {
+  Banner,
+  LoadError,
+  StaleNotice,
+  type BannerProps,
+  type LoadErrorProps,
+  type StaleNoticeProps,
+} from './display/banner.tsx'
 export { BarChart, type BarChartProps, type BarColumn, type BarSeries } from './display/bar-chart.tsx'
 export { Card, CardRow, Cards, type CardProps, type CardRowProps } from './display/card.tsx'
 export { Actions, Fields, type FieldsProps } from './display/fields.tsx'

@@ -17,7 +17,6 @@ export interface TagProps {
   title?: string
 }
 
-// shadcn's badge at the dashboard's two tag heights: outline pills for states, filled and square tags for kinds and names.
 const base = 'inline-flex flex-none items-center gap-1 border px-1.5 type-tag whitespace-nowrap text-muted-foreground'
 const variants: Record<TagVariant, string> = {
   small: `${base} h-(--tag-height) rounded-full border-border`,

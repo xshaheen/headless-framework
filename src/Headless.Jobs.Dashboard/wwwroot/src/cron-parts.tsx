@@ -8,6 +8,7 @@ import {
   Fields,
   GridField,
   HistoryList,
+  LoadError,
   Mono,
   Skeleton,
   Text,
@@ -20,7 +21,7 @@ import { Link } from '@headless/dashboard-sdk/router'
 import { useStreamEvent } from '@headless/dashboard-sdk/stream'
 import { useEffect, useState } from 'react'
 import { cronJobsTopic, cronStatusMark, fetchCronJob, fetchPreview, type CronJob } from './cron.ts'
-import { firstLine, LoadError, Time } from './parts.tsx'
+import { firstLine, Time } from './parts.tsx'
 import { fetchRuns, runStatusMark, runsTopic, statusLabel, useJobsCommands, viewOnlyReason, type Run, type RunStatus } from './runs.ts'
 
 const hour = 3_600_000

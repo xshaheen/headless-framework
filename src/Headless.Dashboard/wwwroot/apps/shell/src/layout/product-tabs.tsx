@@ -35,7 +35,7 @@ export function ProductTabs({ current, attention }: ProductTabsProps) {
           >
             <span className="hd-mark" aria-hidden="true" />
             <span aria-hidden="true">{product.label}</span>
-            <span className="hd-visually-hidden">{text}</span>
+            <span className="sr-only">{text}</span>
           </Link>
         )
       })}

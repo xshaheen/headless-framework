@@ -94,7 +94,7 @@ export function ProductSidebar({ product, onNavigate }: { product: BootstrapProd
                     count?.unavailable ? (
                       <span className="hd-side-count">
                         <span aria-hidden="true">{format.count(count)}</span>
-                        <span className="hd-visually-hidden">{`${format.count(count)} · ${count.unavailable.join(', ')} unavailable`}</span>
+                        <span className="sr-only">{`${format.count(count)} · ${count.unavailable.join(', ')} unavailable`}</span>
                       </span>
                     ) : (
                       <span className="hd-side-count">{count ? format.count(count) : '–'}</span>

@@ -54,7 +54,7 @@ function Item({ item, onOpen }: { item: AttentionItem; onOpen: () => void }) {
   return (
     <li className={`hd-attn-item hd-tone-${item.severity === 'critical' ? 'fail' : 'proc'}`}>
       <span className="hd-mark" />
-      <span className="hd-visually-hidden">{item.severity === 'critical' ? 'Critical: ' : 'Warning: '}</span>
+      <span className="sr-only">{item.severity === 'critical' ? 'Critical: ' : 'Warning: '}</span>
       <span className="hd-attn-text">
         {target ? (
           <a

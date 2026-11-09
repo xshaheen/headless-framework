@@ -1,12 +1,12 @@
 import { useDashboard } from '@headless/dashboard-sdk'
-import { Banner, Mono, PageFrame, PageHeader, SelectField, Skeleton, StatusMark, usePageFrame } from '@headless/dashboard-sdk/components'
+import { Banner, LoadError, Mono, PageFrame, PageHeader, SelectField, Skeleton, StatusMark, usePageFrame } from '@headless/dashboard-sdk/components'
 import { DashboardApiError } from '@headless/dashboard-sdk/data'
 import { useInfiniteQuery } from '@headless/dashboard-sdk/query'
 import { useSearchParams } from '@headless/dashboard-sdk/router'
 import { DataTable } from '@headless/dashboard-sdk/table'
 import type { DashboardStateRole } from '@headless/dashboard-sdk'
 import { nodeQuery } from '../messages.ts'
-import { CellText, LoadError, NodeSwitch, Time, useNode } from '../parts.tsx'
+import { CellText, NodeSwitch, Time, useNode } from '../parts.tsx'
 
 export interface OperatorReceipt {
   operationId: string

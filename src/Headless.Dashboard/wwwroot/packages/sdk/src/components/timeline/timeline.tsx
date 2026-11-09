@@ -5,6 +5,7 @@
 import { useState, type KeyboardEvent } from 'react'
 import { useFormat } from '../../locale/locale.tsx'
 import type { DashboardStateRole } from '../../define-module.ts'
+import { Text } from '../display/text.tsx'
 import { StatusMark } from '../marks.tsx'
 
 /** One stored event that changed an object: what happened, when, and who did it where that is recorded. */
@@ -82,7 +83,7 @@ export function Timeline({ label, events, selectedId, onSelect }: TimelineProps)
             <time dateTime={item.at} title={format.exactTime(item.at)}>
               {format.relativeTime(item.at)}
             </time>
-            {item.actor ? <span className="hd-hint">{` by ${item.actor}`}</span> : null}
+            {item.actor ? <Text tone="hint">{` by ${item.actor}`}</Text> : null}
             {item.text ? (
               <>
                 {' '}

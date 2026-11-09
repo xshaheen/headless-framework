@@ -60,7 +60,7 @@ function GoTo({ input, onMany }: { input: RefObject<HTMLInputElement | null>; on
     <div className="hd-goto">
       <label className="hd-goto-field">
         <Glyph d={searchGlyph} />
-        <span className="hd-visually-hidden">Go to id</span>
+        <span className="sr-only">Go to id</span>
         <input
           ref={input}
           value={query}

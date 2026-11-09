@@ -6,6 +6,7 @@ import {
   Fields,
   GridField,
   HistoryList,
+  LoadError,
   Mono,
   PageFrame,
   PageHeader,
@@ -19,7 +20,7 @@ import { useFormat } from '@headless/dashboard-sdk/locale'
 import { Link, useNavigate } from '@headless/dashboard-sdk/router'
 import { DataTable } from '@headless/dashboard-sdk/table'
 import { cronJobsTopic, cronStatusMark, fetchCronJobs, type CronJob, type JobFunction } from '../cron.ts'
-import { CellText, JobsStats, LoadError, QueryState, StaleNotice, Time, useFunctions } from '../parts.tsx'
+import { CellText, JobsStats, QueryState, StaleNotice, Time, useFunctions } from '../parts.tsx'
 import { fetchRuns, runStatusMark, runsTopic, statusLabel, viewOnlyReason, type Run } from '../runs.ts'
 
 /** A function declared with a cron expression is fired by its schedule; any other is added as a time job. */

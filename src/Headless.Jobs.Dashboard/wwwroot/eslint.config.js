@@ -19,14 +19,15 @@ export default tseslint.config(
       'no-restricted-syntax': [
         'error',
         { selector: "JSXAttribute[name.name='style']", message: 'A module view ships no style objects; compose SDK components.' },
-        // The SDK's hd-* classes are its internals; a module that names one couples to markup the SDK may change.
         {
           selector: "JSXAttribute[name.name='className'] Literal[value=/hd-/]",
-          message: 'A module view names no SDK class; compose SDK components such as Banner, Text, Fields, or Skeleton.',
+          message:
+            'A module view names no SDK class: the hd-* classes are SDK internals, so naming one couples the view to markup the SDK may change. Compose SDK components such as Banner, Text, Fields, or Skeleton.',
         },
         {
           selector: "JSXAttribute[name.name='className'] TemplateElement[value.raw=/hd-/]",
-          message: 'A module view names no SDK class; compose SDK components such as Banner, Text, Fields, or Skeleton.',
+          message:
+            'A module view names no SDK class: the hd-* classes are SDK internals, so naming one couples the view to markup the SDK may change. Compose SDK components such as Banner, Text, Fields, or Skeleton.',
         },
       ],
       'no-restricted-imports': ['error', { patterns: [{ group: ['*.css'], message: 'A module ships no CSS; compose SDK components.' }] }],

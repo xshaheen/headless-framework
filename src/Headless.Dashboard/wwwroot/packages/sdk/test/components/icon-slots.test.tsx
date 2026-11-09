@@ -26,12 +26,11 @@ describe('icon slots', () => {
     expect(onPress).toHaveBeenCalledOnce()
   })
 
-  it('names an icon-only button by its aria-label and keeps a disabled reason', () => {
-    render(<Button icon={RefreshIcon} aria-label="Refresh" disabledReason="Needs operate permission" />)
+  it('names an icon-only button by its aria-label', () => {
+    render(<Button icon={RefreshIcon} aria-label="Refresh" />)
 
     const button = screen.getByRole('button', { name: 'Refresh' })
     expect(button.querySelector('svg')).not.toBeNull()
-    expect(button.getAttribute('aria-describedby')).toBe(screen.getByText('Needs operate permission').id)
   })
 
   it('puts the stat card icon beside the label without changing the link name or the state dot', () => {

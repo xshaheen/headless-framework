@@ -1,7 +1,7 @@
-import { Mono, PageFrame, PageHeader, Skeleton, usePageFrame } from '@headless/dashboard-sdk/components'
+import { LoadError, Mono, PageFrame, PageHeader, Skeleton, usePageFrame } from '@headless/dashboard-sdk/components'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { DataTable } from '@headless/dashboard-sdk/table'
-import { AttentionGaps, CellText, LoadError, MessagingStats, Time, useMessagingAttention } from '../parts.tsx'
+import { AttentionGaps, CellText, MessagingStats, Time, useMessagingAttention } from '../parts.tsx'
 
 /** `[{node}:]unknown-lane:{store}:{kind}`; the store and kind are read from the end, as a node name may hold a colon. */
 export function parseUnknownLane(id: string) {

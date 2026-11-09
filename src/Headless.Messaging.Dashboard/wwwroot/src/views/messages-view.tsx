@@ -6,6 +6,7 @@ import {
   DetailPanel,
   FilterChip,
   FilterChips,
+  LoadError,
   Mono,
   PageFrame,
   PageHeader,
@@ -21,7 +22,6 @@ import { DataTable, type DataTableColumn } from '@headless/dashboard-sdk/table'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   CellText,
-  LoadError,
   MessagePanel,
   MessagingStats,
   NodeSwitch,

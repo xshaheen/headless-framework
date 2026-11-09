@@ -17,7 +17,9 @@ import {
 import type { ListSort } from '../../data/keyset.ts'
 import { below, useBelow } from '../breakpoints.ts'
 import { Button } from '../button.tsx'
+import { Banner } from '../display/banner.tsx'
 import { Tag } from '../display/tag.tsx'
+import { Text } from '../display/text.tsx'
 import type { PageFrameState } from '../frame/page-frame.tsx'
 import { useViewKeys } from '../keymap.tsx'
 import { Announcer } from '../live.tsx'
@@ -67,22 +69,21 @@ function isolate(event: SyntheticEvent) {
 
 const isolated = { onPointerDown: isolate, onClick: isolate, onKeyDown: isolate }
 
-// shadcn's table, laid on React Aria's virtualized grid. A cell fills its row's height, so its text centres on the row
-// and the row header's lines up with the rest; a pinned cell paints its row's fill, so the cells that scroll sideways
-// under it stay hidden, and the virtualizer's inline block aligns to the top so it stays on its row.
+// A cell fills its row's height, so its text centres on the row and the row header's lines up with the rest. The
+// virtualizer wraps each cell and the header in an inline block, sticky for the header and the pinned columns, which
+// the table marks `data-pinned`: a sticky wrapper paints its row's fill, so the cells that scroll sideways under it
+// stay hidden, and aligns to the top so it stays on its row.
 const tableClass =
-  'relative max-h-[max(16rem,calc(100dvh-18rem))] w-full overflow-auto [overflow-anchor:none] outline-none [&_[style*=sticky]]:bg-inherit [&_[style*=sticky]]:align-top'
+  'relative max-h-[max(16rem,calc(100dvh-18rem))] w-full overflow-auto [overflow-anchor:none] outline-none [&_:has(>[data-pinned])]:bg-inherit [&_:has(>[data-pinned])]:align-top'
 const headClass = 'flex h-full items-center border-b border-border bg-card px-2.5 type-label whitespace-nowrap text-faint'
 // The sort button fills its header, so the whole header is its target; the sorted column reads in the foreground.
 const sortClass =
   '-mx-1 inline-flex h-full cursor-pointer items-center gap-1 rounded-sm px-1 text-inherit outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring group-data-sort-direction:text-foreground'
-// A cell's only child, such as a name or a reason, ends in an ellipsis when the column is too narrow for it.
 const cellClass =
   'flex h-full items-center gap-2 overflow-hidden px-2.5 type-small text-ellipsis whitespace-nowrap [&>span:only-child]:min-w-0 [&>span:only-child]:overflow-hidden [&>span:only-child]:text-ellipsis'
 const endClass = 'justify-end text-end tabular-nums'
 // Checked state lives on the checkbox alone, never on the row's fill; the margin makes a 24 px target.
 const checkClass = 'flex h-full items-center ps-4 [&_input]:m-1 [&_input]:size-4 [&_input]:accent-primary'
-// The selected row and a refused row carry an edge on the inline-start side, the hover and open fills from the tokens.
 const rowClass =
   'group/row cursor-pointer border-b border-border bg-card outline-none transition-fast data-hovered:bg-accent data-selected:bg-primary-soft data-selected:shadow-[inset_2px_0_0_var(--accent)] rtl:data-selected:shadow-[inset_-2px_0_0_var(--accent)] data-focus-visible:shadow-[inset_0_0_0_2px_var(--accent)] data-highlighted:bg-destructive-soft data-highlighted:shadow-[inset_2px_0_0_var(--fail)] rtl:data-highlighted:shadow-[inset_-2px_0_0_var(--fail)] data-no-longer-matches:text-muted-foreground'
 // Opacity, not visibility, hides the row actions, so they stay in the tab order; a coarse pointer has no hover, so
@@ -219,7 +220,8 @@ export function DataTable<T extends { id: string }>({
   )
   const shown = columns.filter((column, index) => !narrow || index === headerIndex || (column.priority ?? 1) === 1)
   const rowHeaderId = columns[headerIndex]?.id
-  layout.pinned = shown.findIndex((column) => column.id === rowHeaderId) + (checks ? 2 : 1)
+  const lastPinned = shown.findIndex((column) => column.id === rowHeaderId)
+  layout.pinned = lastPinned + (checks ? 2 : 1)
   // React Aria sorts by column id; the server by the column's sort key.
   const sortedColumn = sort ? columns.find((column) => column.sortKey === sort.key) : undefined
   const sortDescriptor: SortDescriptor | undefined = sort && sortedColumn ? { column: sortedColumn.id, direction: sort.direction } : undefined
@@ -391,14 +393,14 @@ export function DataTable<T extends { id: string }>({
         <DensityToggle value={density} onChange={setDensity} />
       </div>
       {selectionMode === 'multiple' && allLoaded && (checks || more) ? (
-        <div className="hd-banner">
+        <Banner>
           <span>{checks ? `All ${listed.length} loaded rows are checked.` : `All ${listed.length} rows on this page are selected.`}</span>
           {more ? (
             <Button variant="ghost" onPress={onSelectAllMatching}>
               {`Select all ${matchingCount} matching`}
             </Button>
           ) : null}
-        </div>
+        </Banner>
       ) : null}
       {/* The empty state sits outside the grid: inside it the virtualizer gives it no height, so its next step
           (`Clear filters`) could not be seen or clicked. */}
@@ -420,9 +422,9 @@ export function DataTable<T extends { id: string }>({
             sortDescriptor={sortDescriptor}
             onSortChange={changeSort}
           >
-            <TableHeader>
+            <TableHeader data-pinned>
               {checks ? (
-                <Column id="hd-check" width={44} className={`${headClass} ${checkClass}`}>
+                <Column id="hd-check" width={44} className={`${headClass} ${checkClass}`} data-pinned>
                   <input
                     type="checkbox"
                     aria-label="Select all loaded"
@@ -437,7 +439,7 @@ export function DataTable<T extends { id: string }>({
                   />
                 </Column>
               ) : null}
-              {shown.map((column) => {
+              {shown.map((column, at) => {
                 const sortable = column.sortKey !== undefined && onSortChange !== undefined
 
                 return (
@@ -447,6 +449,7 @@ export function DataTable<T extends { id: string }>({
                     isRowHeader={column.id === rowHeaderId}
                     defaultWidth={column.width}
                     minWidth={96}
+                    data-pinned={at <= lastPinned || undefined}
                     allowsSorting={sortable}
                     className={`group ${column.align === 'end' ? `${headClass} ${endClass}` : headClass}`}
                   >
@@ -484,7 +487,7 @@ export function DataTable<T extends { id: string }>({
                     data-highlighted={(revealed > 0 && refusal !== undefined) || undefined}
                   >
                     {checks ? (
-                      <Cell className={checkClass}>
+                      <Cell className={checkClass} data-pinned>
                         <input
                           type="checkbox"
                           aria-label={`Select ${row.id}`}
@@ -504,8 +507,12 @@ export function DataTable<T extends { id: string }>({
                         />
                       </Cell>
                     ) : null}
-                    {shown.map((column) => (
-                      <Cell key={column.id} className={column.align === 'end' ? `${cellClass} ${endClass}` : cellClass}>
+                    {shown.map((column, at) => (
+                      <Cell
+                        key={column.id}
+                        className={column.align === 'end' ? `${cellClass} ${endClass}` : cellClass}
+                        data-pinned={at <= lastPinned || undefined}
+                      >
                         {column.cell(row)}
                         {/* The space keeps the row's accessible name `r2 No longer matches`, not `r2No longer…`. */}
                         {stale && column.id === rowHeaderId ? (
@@ -534,7 +541,7 @@ export function DataTable<T extends { id: string }>({
               })}
               {hasMore && onLoadMore ? (
                 <TableLoadMoreItem className="flex items-center px-2.5" isLoading={isLoadingMore} onLoadMore={loadMore}>
-                  <span className="hd-hint">Loading more…</span>
+                  <Text tone="hint">Loading more…</Text>
                 </TableLoadMoreItem>
               ) : null}
             </TableBody>

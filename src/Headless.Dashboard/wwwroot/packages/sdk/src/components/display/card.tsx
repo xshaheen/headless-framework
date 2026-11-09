@@ -43,7 +43,6 @@ export function Card({ title, caption, action, icon: Icon, empty, emptyIcon, chi
   )
 }
 
-// A heading or link row of a card: one hairline under each, the mono face, the dot inset from the edge.
 const row = 'flex min-h-(--card-row-height) flex-wrap items-center gap-x-2.5 gap-y-1 border-b border-border py-1.5 ps-3.5 pe-3 type-mono'
 
 export interface CardRowProps {

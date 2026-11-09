@@ -8,11 +8,13 @@ import {
   FieldGrid,
   GridField,
   HistoryList,
+  LoadError,
   Mono,
   NodeChip,
   PayloadView,
   SelectField,
   Skeleton,
+  StaleNotice as SdkStaleNotice,
   StatCard,
   StatStrip,
   Text,
@@ -68,18 +70,6 @@ export function CellText({ title, children }: { title?: string; children: ReactN
   return <span title={title}>{children}</span>
 }
 
-/** A failed load: the error and Retry, never an empty view. */
-export function LoadError({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return (
-    <Banner>
-      <Text tone="error" role="alert">
-        {message}
-      </Text>
-      <Button onPress={onRetry}>Retry</Button>
-    </Banner>
-  )
-}
-
 type LoadState<T> =
   | { isPending: true; isError: false }
   | { isPending: false; isError: true; error: Error; refetch: () => Promise<unknown> }
@@ -112,20 +102,7 @@ export function QueryState<T>({
 
 /** `Stale` while the stream is down, or the server reports this node's Messaging changes stopped; the data is kept. */
 export function StaleNotice({ what, onRefresh }: { what: string; onRefresh: () => void }) {
-  const stale = useStale()
-
-  if (!stale) {
-    return null
-  }
-
-  return (
-    <Banner role="status">
-      <span>{`Stale. Live updates stopped, so ${what} may be out of date.`}</span>
-      <Button variant="ghost" onPress={onRefresh}>
-        Refresh
-      </Button>
-    </Banner>
-  )
+  return <SdkStaleNotice stale={useStale()} what={what} onRefresh={onRefresh} />
 }
 
 /**

@@ -136,7 +136,6 @@ export function DetailPanel({ label, name, id, status, tabs, children, actions, 
                 key={item.id}
                 type="button"
                 role="tab"
-                // shadcn's line tabs: the selected tab reads by its text tone and an accent underline.
                 className="h-(--row-height) cursor-pointer border-b-2 border-transparent px-3 type-tab text-faint transition-fast hover:text-foreground aria-selected:border-primary aria-selected:text-foreground"
                 id={`${base}${at}`}
                 aria-selected={at === index}
@@ -173,7 +172,6 @@ export function DetailPanel({ label, name, id, status, tabs, children, actions, 
       </div>
       {stale ? <p className="mx-4 mt-2 type-small text-muted-foreground">No longer matches the filter</p> : null}
       <div
-        // Two columns that each scroll; on a phone one column that scrolls as a whole.
         className="mt-2 grid min-h-0 flex-1 grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] border-t border-border *:flex *:flex-col *:gap-3.5 *:overflow-auto *:px-4 *:py-3.5 *:only:col-span-full [&>:first-child:not(:only-child)]:border-e max-md:grid-cols-1 max-md:overflow-auto max-md:*:overflow-visible max-md:[&>:first-child:not(:only-child)]:border-e-0 max-md:[&>:first-child:not(:only-child)]:border-b"
         id={tab ? `${base}p` : undefined}
         role={tab ? 'tabpanel' : undefined}

@@ -144,7 +144,6 @@
   font: var(--text-code);
 }
 
-/* Hover, press, and focus change background, colour, and border in one fast step; nothing else animates. */
 @utility transition-fast {
   transition:
     background-color var(--ease-fast),
@@ -152,7 +151,6 @@
     border-color var(--ease-fast);
 }
 
-/* The Live dot's breath; reduced motion stops it with every other animation. */
 @keyframes hd-pulse {
   50% {
     opacity: 0.35;
@@ -250,10 +248,6 @@
 
   .hd-footnote {
     @apply type-mono-small m-0 text-faint;
-  }
-
-  .hd-visually-hidden {
-    @apply sr-only;
   }
 
   /* Fields and timeline events hold operator text, such as a 500-character note with no spaces, that must wrap in place. */
@@ -372,7 +366,6 @@
     @apply cursor-not-allowed border-border bg-deep text-muted-foreground;
   }
 
-  /* An icon-only button; its accessible name comes from aria-label. */
   .hd-btn.hd-icon {
     @apply w-(--control-height) p-0 text-faint;
   }

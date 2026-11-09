@@ -1,6 +1,6 @@
 import { useDashboard, useModule } from '@headless/dashboard-sdk'
 import { CommandAction, useAllowedActions } from '@headless/dashboard-sdk/commands'
-import { Button, Card, CardRow, Cards, Mono, PageFrame, PageHeader, Skeleton, usePageFrame } from '@headless/dashboard-sdk/components'
+import { Button, Card, CardRow, Cards, LoadError, Mono, PageFrame, PageHeader, Skeleton, usePageFrame } from '@headless/dashboard-sdk/components'
 import { listKey, useDashboardKeysetList, useDashboardList, useNewRows } from '@headless/dashboard-sdk/data'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQueryClient } from '@headless/dashboard-sdk/query'
@@ -8,7 +8,7 @@ import { Link, useNavigate } from '@headless/dashboard-sdk/router'
 import { useStreamEvent } from '@headless/dashboard-sdk/stream'
 import { useEffect, useRef } from 'react'
 import { cronJobsTopic, fetchCronJobs, type CronJob } from '../cron.ts'
-import { JobsStats, LoadError, RunProgress, StaleNotice, Time, useJobsAttention, type AttentionItem } from '../parts.tsx'
+import { JobsStats, RunProgress, StaleNotice, Time, useJobsAttention, type AttentionItem } from '../parts.tsx'
 import { fetchRuns, markDone, readFilter, runsTopic, useJobsCommands, usePending, viewOnlyReason, type Run } from '../runs.ts'
 
 const cardRows = 6

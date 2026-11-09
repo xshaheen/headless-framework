@@ -4,6 +4,7 @@
 
 import { useRef, useState } from 'react'
 import { Button } from '../components/button.tsx'
+import { Text } from '../components/display/text.tsx'
 import { useSelectionCommand, useViewKeys } from '../components/keymap.tsx'
 import { Announcer } from '../components/live.tsx'
 import { Mono } from '../components/marks.tsx'
@@ -75,17 +76,21 @@ function RowOutcomes({ outcome }: { outcome: RunOutcome }) {
 
   return (
     <div role="alert" className="grid basis-full gap-1 wrap-anywhere">
-      {outcome.error ? <p className="hd-error">{outcome.error}</p> : null}
+      {outcome.error ? (
+        <Text as="p" tone="error">
+          {outcome.error}
+        </Text>
+      ) : null}
       {refused.length > 0 ? (
         <>
-          <p className="hd-hint">{outcome.label}: not changed</p>
+          <Text as="p" tone="hint">{`${outcome.label}: not changed`}</Text>
           {/* The same list the Operation panel shows, so a run over ids and an Operation report refusals alike. */}
           <ul className={problemsClass} aria-label="Rows not changed">
             {refused.map((row) => (
               <li key={row.id}>
                 <Mono>{row.id}</Mono>
                 <span>{row.outcome === 'failed' ? 'Failed' : 'Refused'}</span>
-                <span className="hd-hint">{row.reason ?? ''}</span>
+                <Text tone="hint">{row.reason ?? ''}</Text>
               </li>
             ))}
           </ul>
@@ -258,9 +263,9 @@ export function CommandAction({
       </Button>
       {recovery ? <Announcer message={announced} /> : null}
       {error && !pressed ? (
-        <span role="alert" className="hd-error">
+        <Text tone="error" role="alert">
           {error}
-        </span>
+        </Text>
       ) : null}
       {shownOutcome && !pressed ? <RowOutcomes outcome={shownOutcome} /> : null}
       <ActionConfirm
