@@ -1,6 +1,6 @@
 'use no memo'
 
-// The icons are their own entry, and the shell loads them with its first page, since its toasts and search fields draw
+// The icons are their own entry, and the shell loads them with its first page, since its toasts and filter chips draw
 // the close icon. Each is re-exported by name: the shell's import-map entry keeps every export, so `export *` from
 // lucide would ship all of its icons.
 
