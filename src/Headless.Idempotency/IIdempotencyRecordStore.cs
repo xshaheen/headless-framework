@@ -12,9 +12,10 @@ namespace Headless.Idempotency;
 /// <remarks>
 /// <para>
 /// A record is one row per <see cref="IdempotencyRecordKey" /> holding the fingerprint and its algorithm tag, the
-/// state (<see cref="IdempotencyRecordStatus" />), the admitted attempt's generation and lease expiry, the result bytes
-/// and contract, the last recovery point (its name, state bytes, and contract, all present or all absent), and
-/// <c>retention_until</c>. Generations come from one store-wide sequence the provider's initializer
+/// attempt's lease (<see cref="Headless.Fencing.RowLeaseSnapshot" />: generation, state, expiry; a settled lease is
+/// <see cref="IdempotencyRecordStatus.Completed" />, any other <see cref="IdempotencyRecordStatus.Pending" />), the
+/// result bytes and contract, the last recovery point (its name, state bytes, and contract, all present or all
+/// absent), and <c>retention_until</c>. Generations come from one store-wide sequence the provider's schema step
 /// creates, drawn only after the record's row lock is held, so they grow per key even across a purge of the row. Every
 /// time comparison uses the database clock read after the row lock is held, never the application clock.
 /// </para>
@@ -119,7 +120,8 @@ public interface IIdempotencyRecordStore
     /// <summary>
     /// Stores the result on the record this transaction already locked and found held by
     /// <paramref name="generation" />: state <see cref="IdempotencyRecordStatus.Completed" />, the result bytes and
-    /// contract, no lease expiry (the generation is kept), no recovery point, and retention extended.
+    /// contract, no lease expiry (the generation is kept), no recovery point, and retention extended. A record this
+    /// generation already completed is left as it is, so a repeat writes nothing; the caller refuses it from its own read.
     /// </summary>
     /// <param name="unitOfWork">The unit of work, already accepted by <see cref="ValidateEnlistment" />.</param>
     /// <param name="key">The record key.</param>
@@ -142,7 +144,8 @@ public interface IIdempotencyRecordStore
     /// <summary>
     /// Frees the record this transaction already locked and found held by <paramref name="generation" /> for the next
     /// admission: state <see cref="IdempotencyRecordStatus.Pending" /> with no generation or lease, the recovery point
-    /// kept, and retention extended.
+    /// kept, and retention extended. A record this generation already released is left as it is, so a repeat writes
+    /// nothing.
     /// </summary>
     /// <param name="unitOfWork">The unit of work, already accepted by <see cref="ValidateEnlistment" />.</param>
     /// <param name="key">The record key.</param>

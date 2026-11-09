@@ -167,9 +167,18 @@ internal sealed class UnitOfWorkIdempotencyFeature(IdempotencyRequestResolver re
             return status;
         }
 
-        await store
-            .ReleaseAsync(unitOfWork, recordKey, generation, admission.Retention!.Value, cancellationToken)
-            .ConfigureAwait(false);
+        try
+        {
+            await store
+                .ReleaseAsync(unitOfWork, recordKey, generation, admission.Retention!.Value, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (StaleAdmissionException refused)
+        {
+            // The lease ran out between the lock read above and the store's write, which refused it and wrote nothing;
+            // a release answers that with a status, as it does when the lock read already saw the lease expired.
+            return refused.Reason;
+        }
 
         return IdempotentLeaseStatus.Released;
     }

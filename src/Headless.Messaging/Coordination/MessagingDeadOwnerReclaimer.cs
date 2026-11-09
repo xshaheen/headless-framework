@@ -12,8 +12,8 @@ namespace Headless.Messaging.Coordination;
 /// <summary>
 /// Messaging reclaim sink for the shared dead-owner recovery bridge. Accelerates
 /// retry visibility for the outbox (published) and inbox (received) rows still leased by a dead node
-/// identity by fast-forwarding their <c>LockedUntil</c>; the conditional, owner-scoped storage UPDATE keeps
-/// a repeated reclaim idempotent.
+/// identity by revoking their active row lease, which also fences the dead holder's generation out of any later
+/// state write; the conditional, holder-scoped storage UPDATE keeps a repeated reclaim idempotent.
 /// </summary>
 internal sealed class MessagingDeadOwnerReclaimer(
     IDataStorage storage,

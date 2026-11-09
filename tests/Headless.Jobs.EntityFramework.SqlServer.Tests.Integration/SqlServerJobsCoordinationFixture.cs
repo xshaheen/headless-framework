@@ -46,6 +46,8 @@ public class SqlServerJobsCoordinationFixture
     // PostgreSQL's now() it is evaluated per statement, so it carries no transaction-anchoring hazard.
     public string EfTranslatedDatabaseClockSql => "GETUTCDATE()";
 
+    public string LeaseDatabaseClockSql => "SYSUTCDATETIME()";
+
     // SQL Server has no DROP SCHEMA CASCADE. Drop child tables before parents (CronJobOccurrences -> CronJobs).
     // The shared headless schema itself stays, and the schema runner creates it when missing anyway. DROP TABLE IF EXISTS is a no-op when the table is absent.
     public string ResetSql =>

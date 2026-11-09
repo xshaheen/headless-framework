@@ -15,9 +15,6 @@ namespace Headless.Messaging.Storage.SqlServer;
 [PublicAPI]
 public sealed class SqlServerOptions
 {
-    /// <summary>Gets or sets the maximum length for the Owner column.</summary>
-    public int OwnerColumnMaxLength { get; set; } = DataStorageConstants.OwnerColumnMaxLength;
-
     /// <summary>
     /// Gets or sets the database's connection string that will be used to store database entities.
     /// </summary>
@@ -36,6 +33,14 @@ public sealed class SqlServerOptions
     /// </remarks>
     public bool EnableTransactionalInbox { get; set; } = true;
 
+    /// <summary>
+    /// Gets or sets the width of the lease holder column, in characters: the longest node owner tag a row lease
+    /// records. Defaults to <see cref="DataStorageConstants.LeaseHolderMaxLength" /> (512). It must be at least
+    /// <see cref="DataStorageConstants.MinimumLeaseHolderMaxLength" /> (405), the longest tag coordination issues, and at
+    /// most 850, the widest holder a fenced-row table accepts.
+    /// </summary>
+    public int LeaseHolderMaxLength { get; set; } = DataStorageConstants.LeaseHolderMaxLength;
+
     internal string Version { get; set; } = null!;
 
     /// <summary>Creates an unopened connection to the configured database.</summary>
@@ -48,7 +53,7 @@ public sealed class SqlServerOptions
             SqlServerDialect.Instance,
             "SqlServer",
             CreateConnection,
-            OwnerColumnMaxLength
+            LeaseHolderMaxLength
         );
     }
 }
@@ -64,6 +69,6 @@ internal sealed class SqlServerOptionsValidator : AbstractValidator<SqlServerOpt
                     + "Configure via UseSqlServer(connectionString) or UseSqlServer(options => options.ConnectionString = ...)"
             );
 
-        RuleFor(x => x.OwnerColumnMaxLength).GreaterThanOrEqualTo(DataStorageConstants.MinimumOwnerColumnMaxLength);
+        RuleFor(x => x.LeaseHolderMaxLength).GreaterThanOrEqualTo(DataStorageConstants.MinimumLeaseHolderMaxLength);
     }
 }

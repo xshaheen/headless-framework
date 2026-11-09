@@ -808,7 +808,7 @@ internal static partial class LoggerExtensions
         EventId = 88,
         EventName = "MessagingRecoveryUsingLockedUntilFloorOnly",
         Level = LogLevel.Information,
-        Message = "Messaging Coordination membership is not registered. Dead-incarnation retry recovery falls back to the per-row LockedUntil floor; register a Coordination provider to accelerate orphaned retry rows."
+        Message = "Messaging Coordination membership is not registered. Dead-incarnation retry recovery falls back to the per-row lease expiry; register a Coordination provider to accelerate orphaned retry rows."
     )]
     internal static partial void MessagingRecoveryUsingLockedUntilFloorOnly(this ILogger logger);
 
@@ -853,7 +853,7 @@ internal static partial class LoggerExtensions
         EventId = 79,
         EventName = "RetryLockLeaseLost",
         Level = LogLevel.Warning,
-        Message = "{RetryKind} retry lock lease {LeaseId} for resource {Resource} was observed lost. No new retry pickup starts under this lease; in-flight dispatch remains guarded by per-row LockedUntil."
+        Message = "{RetryKind} retry lock lease {LeaseId} for resource {Resource} was observed lost. No new retry pickup starts under this lease; in-flight dispatch remains guarded by the per-row lease."
     )]
     internal static partial void RetryLockLeaseLost(
         this ILogger logger,

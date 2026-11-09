@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Fencing;
 using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Jobs.Provider;
@@ -10,9 +11,10 @@ using Microsoft.Extensions.Time.Testing;
 namespace Tests.Provider;
 
 /// <summary>
-/// The in-memory stalled-lease reclaim decides from a scan of the store, so a write that lands between the scan and
-/// the reclaim's swap must win: the execution's terminal write on a job whose lease lapsed while it was finishing
-/// leaves it finished, not reset to Idle and run again.
+/// The in-memory stalled-lease reclaim decides from a scan of the store, and a terminal write can arrive between the
+/// scan and the reclaim's swap. A settlement needs a live lease, so a run whose lease lapsed while it was finishing
+/// has already lost the row: its late terminal write is refused rather than racing the reclaim, and the reclaim
+/// hands the job back for another attempt instead of leaving it to whichever write lands first.
 /// </summary>
 public sealed class StalledReclaimRaceProviderTests : TestBase
 {
@@ -20,7 +22,7 @@ public sealed class StalledReclaimRaceProviderTests : TestBase
     private static readonly DateTimeOffset _Now = new(2026, 06, 17, 12, 00, 00, TimeSpan.Zero);
 
     [Fact]
-    public async Task stalled_reclaim_leaves_a_job_whose_terminal_write_landed_after_the_scan()
+    public async Task stalled_reclaim_refuses_a_lapsed_run_terminal_write_that_arrives_after_the_scan()
     {
         var provider = _Create();
         var first = _StalledJob();
@@ -47,13 +49,14 @@ public sealed class StalledReclaimRaceProviderTests : TestBase
             HookedTimeJob.OnConstructed = null;
         }
 
-        (await Task.WhenAll(completions)).Should().Equal(1, 1);
-        reclaimed.Should().Be(0);
+        (await Task.WhenAll(completions)).Should().Equal([0, 0], "a lapsed lease can no longer settle the run");
+        reclaimed.Should().Be(2);
         foreach (var job in new[] { first, second })
         {
             var stored = await provider.GetTimeJobByIdAsync(job.Id, AbortToken);
-            stored!.Status.Should().Be(JobStatus.Succeeded, "the terminal write landed before the reclaim's swap");
-            stored.RetryCount.Should().Be(0, "a finished run is not charged a retry");
+            stored!.Status.Should().Be(JobStatus.Idle, "the reclaim hands the lost attempt back for a retry");
+            stored.RetryCount.Should().Be(1, "the lost attempt is charged one retry");
+            stored.Lease.State.Should().Be(RowLeaseState.Abandoned);
         }
     }
 
@@ -73,8 +76,7 @@ public sealed class StalledReclaimRaceProviderTests : TestBase
             Id = Guid.NewGuid(),
             Function = "fn",
             Status = JobStatus.InProgress,
-            OwnerId = _NodeA,
-            LockedUntil = _Now.UtcDateTime.AddMinutes(-1),
+            Lease = TestLeases.Held(_NodeA, _Now.AddMinutes(-1)),
             OnNodeDeath = NodeDeathPolicy.Retry,
             ExecutionTime = _Now.UtcDateTime.AddMinutes(-2),
         };
@@ -88,6 +90,7 @@ public sealed class StalledReclaimRaceProviderTests : TestBase
             FunctionName = job.Function,
             Type = JobType.TimeJob,
             ClaimOwner = _NodeA,
+            ClaimGeneration = job.Lease.Generation,
         }
             .SetProperty(x => x.Status, JobStatus.Succeeded)
             .SetProperty(x => x.ExecutedAt, _Now)

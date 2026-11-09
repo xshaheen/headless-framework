@@ -114,7 +114,11 @@ public abstract class SqlServerIdempotencyFixtureBase : HeadlessSqlServerFixture
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(
             $"""
-            SELECT [Status], [FingerprintAlgorithm], [Fingerprint], [Generation], [LeaseExpiresAt], [Result],
+            -- The logical record the store reads: a settled lease is a completed record, only an active or settled lease
+            -- names a generation, and only an active one has an expiry.
+            SELECT CAST(CASE WHEN [LeaseState] = 2 THEN 1 ELSE 0 END AS smallint), [FingerprintAlgorithm], [Fingerprint],
+                CASE WHEN [LeaseState] IN (1, 2) THEN [LeaseGeneration] END,
+                CASE WHEN [LeaseState] = 1 THEN [LeaseExpiresAt] END, [Result],
                 [ResultContract], [RetentionUntil], [RecoveryPoint], [RecoveryState], [RecoveryContract]
             FROM {_Records}
             WHERE [TenantId] = @tenant AND [IdempotencyKey] = @recordKey
@@ -185,7 +189,7 @@ public abstract class SqlServerIdempotencyFixtureBase : HeadlessSqlServerFixture
             $"""
             UPDATE {_Records}
             SET [LeaseExpiresAt] = {_Shifted("[LeaseExpiresAt]")}
-            WHERE [TenantId] = @tenant AND [IdempotencyKey] = @recordKey AND [LeaseExpiresAt] IS NOT NULL
+            WHERE [TenantId] = @tenant AND [IdempotencyKey] = @recordKey AND [LeaseState] = 1
             """,
             connection
         );

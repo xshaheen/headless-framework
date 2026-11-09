@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Fencing;
 using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Jobs.Provider;
@@ -45,16 +46,15 @@ public sealed class ReleaseAcquiredResourcesProviderTests : TestBase
 
         var released = await provider.GetTimeJobByIdAsync(mineQueued.Id, AbortToken);
         released!.Status.Should().Be(JobStatus.Idle);
-        released.OwnerId.Should().BeNull();
-        released.LockedUntil.Should().BeNull();
+        released.Lease.State.Should().NotBe(RowLeaseState.Active);
 
         (await provider.GetTimeJobByIdAsync(mineInProgress.Id, AbortToken))!
             .Status.Should()
             .Be(JobStatus.InProgress, "running work is never released");
         var descendant = await provider.GetTimeJobByIdAsync(mineIdleDescendant.Id, AbortToken);
-        descendant!.OwnerId.Should().Be(_NodeA, "Idle owned rows are a running chain's claimed descendants");
+        descendant!.Lease.Holder.Should().Be(_NodeA, "Idle owned rows are a running chain's claimed descendants");
         var foreign = await provider.GetTimeJobByIdAsync(foreignQueued.Id, AbortToken);
-        foreign!.OwnerId.Should().Be(_NodeB, "a release must never touch another node's claim");
+        foreign!.Lease.Holder.Should().Be(_NodeB, "a release must never touch another node's claim");
         foreign.Status.Should().Be(JobStatus.Queued);
         var unownedAfter = await provider.GetTimeJobByIdAsync(unownedIdle.Id, AbortToken);
         unownedAfter!
@@ -71,13 +71,20 @@ public sealed class ReleaseAcquiredResourcesProviderTests : TestBase
         var listedForeign = _TimeJob(JobStatus.Queued, _NodeB, _Now.UtcDateTime.Add(_Lease));
         await provider.AddTimeJobsAsync([listedMine, unlistedMine, listedForeign], AbortToken);
 
-        await provider.ReleaseAcquiredTimeJobsAsync([listedMine.Id, listedForeign.Id], _NodeA, AbortToken);
+        await provider.ReleaseAcquiredTimeJobsAsync(
+            [
+                JobsLeaseTables.TimeJob(listedMine.Id, listedMine.Lease.Generation),
+                JobsLeaseTables.TimeJob(listedForeign.Id, listedForeign.Lease.Generation),
+            ],
+            _NodeA,
+            AbortToken
+        );
 
         (await provider.GetTimeJobByIdAsync(listedMine.Id, AbortToken))!.Status.Should().Be(JobStatus.Idle);
         (await provider.GetTimeJobByIdAsync(unlistedMine.Id, AbortToken))!.Status.Should().Be(JobStatus.Queued);
         var foreign = await provider.GetTimeJobByIdAsync(listedForeign.Id, AbortToken);
         foreign!.Status.Should().Be(JobStatus.Queued);
-        foreign.OwnerId.Should().Be(_NodeB);
+        foreign.Lease.Holder.Should().Be(_NodeB);
     }
 
     [Fact]
@@ -105,10 +112,10 @@ public sealed class ReleaseAcquiredResourcesProviderTests : TestBase
         var all = await provider.GetAllCronJobOccurrencesAsync(predicate: null, AbortToken);
         var released = all.Single(x => x.Id == mineQueued.Id);
         released.Status.Should().Be(JobStatus.Idle);
-        released.OwnerId.Should().BeNull();
+        released.Lease.State.Should().NotBe(RowLeaseState.Active);
         all.Single(x => x.Id == mineInProgress.Id).Status.Should().Be(JobStatus.InProgress);
         var foreign = all.Single(x => x.Id == foreignQueued.Id);
-        foreign.OwnerId.Should().Be(_NodeB);
+        foreign.Lease.Holder.Should().Be(_NodeB);
         foreign.Status.Should().Be(JobStatus.Queued);
     }
 
@@ -120,6 +127,11 @@ public sealed class ReleaseAcquiredResourcesProviderTests : TestBase
         var mineInProgress = _TimeJob(JobStatus.InProgress, _NodeA, _Now.UtcDateTime.AddMinutes(5));
         var otherIdle = _TimeJob(JobStatus.Idle, _NodeB, _Now.UtcDateTime.AddMinutes(5));
         var terminalOwned = _TimeJob(JobStatus.Failed, "gone@1", lockedUntil: null);
+        // A finished run settles its lease, which keeps the holder it ended under.
+        terminalOwned.Lease = terminalOwned.Lease with
+        {
+            State = RowLeaseState.Settled,
+        };
         var unowned = _TimeJob(JobStatus.Idle, owner: null, lockedUntil: null);
         await provider.AddTimeJobsAsync([mineQueued, mineInProgress, otherIdle, terminalOwned, unowned], AbortToken);
         var cronOwned = _Occurrence(JobStatus.InProgress, "cron-owner@9");
@@ -188,8 +200,7 @@ public sealed class ReleaseAcquiredResourcesProviderTests : TestBase
             Id = Guid.NewGuid(),
             Function = "fn",
             Status = status,
-            OwnerId = owner,
-            LockedUntil = lockedUntil,
+            Lease = TestLeases.Held(owner, lockedUntil),
             OnNodeDeath = NodeDeathPolicy.Retry,
             ExecutionTime = _Now.UtcDateTime.AddMinutes(-2),
         };
@@ -201,8 +212,7 @@ public sealed class ReleaseAcquiredResourcesProviderTests : TestBase
         {
             Id = Guid.NewGuid(),
             Status = status,
-            OwnerId = owner,
-            LockedUntil = _Now.UtcDateTime.Add(_Lease),
+            Lease = TestLeases.Held(owner, _Now.Add(_Lease)),
             OnNodeDeath = NodeDeathPolicy.Retry,
             ExecutionTime = _Now.UtcDateTime.AddMinutes(-1),
             CronJobId = Guid.NewGuid(),

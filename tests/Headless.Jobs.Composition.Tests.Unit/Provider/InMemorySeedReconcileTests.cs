@@ -48,7 +48,10 @@ public sealed class InMemorySeedReconcileTests : TestBase
                         CronJobId = declared.Id,
                         ExecutionTime = _Now.UtcDateTime.AddMinutes(index),
                         Status = status,
-                        OwnerId = status == JobStatus.InProgress ? "node-a@incarnation" : null,
+                        Lease =
+                            status == JobStatus.InProgress
+                                ? TestLeases.Held("node-a@incarnation", _Now.AddMinutes(5))
+                                : default,
                         CreatedAt = _Now,
                         UpdatedAt = _Now,
                     }
@@ -87,7 +90,7 @@ public sealed class InMemorySeedReconcileTests : TestBase
                     CronJobId = declared.Id,
                     ExecutionTime = _Now.UtcDateTime,
                     Status = JobStatus.InProgress,
-                    OwnerId = "node-a@incarnation",
+                    Lease = TestLeases.Held("node-a@incarnation", _Now.AddMinutes(5)),
                     CreatedAt = _Now,
                     UpdatedAt = _Now,
                 },
@@ -100,6 +103,7 @@ public sealed class InMemorySeedReconcileTests : TestBase
             JobId = occurrenceId,
             FunctionName = declared.Function,
             ClaimOwner = "node-a@incarnation",
+            ClaimGeneration = 1,
         };
         completed.SetProperty(x => x.Status, JobStatus.Succeeded);
         (await provider.UpdateCronJobOccurrenceAsync(completed, AbortToken))
@@ -126,7 +130,7 @@ public sealed class InMemorySeedReconcileTests : TestBase
                     CronJobId = declared.Id,
                     ExecutionTime = _Now.UtcDateTime,
                     Status = JobStatus.InProgress,
-                    OwnerId = "node-a@incarnation",
+                    Lease = TestLeases.Held("node-a@incarnation", _Now.AddMinutes(5)),
                     CreatedAt = _Now,
                     UpdatedAt = _Now,
                 },

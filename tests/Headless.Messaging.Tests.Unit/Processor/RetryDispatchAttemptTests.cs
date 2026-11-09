@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Fencing;
 using Headless.Messaging;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Processor;
@@ -169,11 +170,11 @@ public sealed class RetryDispatchAttemptTests : TestBase
     {
         var (storage, _) = _CreateCountingReleaseStorage();
         var message = _CreateLeasedMessage();
-        message.LockedUntil = null;
+        message.Lease = default;
 
         var attempt = RetryDispatchAttempt.TryCreate(storage, MessageType.Subscribe, message);
 
-        attempt.Should().BeNull("a message without LockedUntil has no lease generation to release");
+        attempt.Should().BeNull("a message without an active lease has no lease generation to release");
     }
 
     [Fact]
@@ -187,7 +188,7 @@ public sealed class RetryDispatchAttemptTests : TestBase
         attempt.Should().NotBeNull();
         attempt!
             .Identity.Should()
-            .Be(new MessageLeaseIdentity(message.StorageId, message.Owner, message.LockedUntil!.Value, message.Lane));
+            .Be(new MessageLeaseIdentity(message.StorageId, message.Lease.Generation, message.Lane));
     }
 
     private static RetryDispatchAttempt _CreateAttempt(IDataStorage storage)
@@ -214,8 +215,7 @@ public sealed class RetryDispatchAttemptTests : TestBase
             Origin = message,
             Content = JsonSerializer.Serialize(message),
             Lane = MessageLane.Bus,
-            Owner = "node-a",
-            LockedUntil = DateTimeOffset.UtcNow.AddMinutes(5),
+            Lease = new RowLeaseSnapshot(1, RowLeaseState.Active, DateTimeOffset.UtcNow.AddMinutes(5), "node-a", 0),
             Retries = 1,
         };
     }

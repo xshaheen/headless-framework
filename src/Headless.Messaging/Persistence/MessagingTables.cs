@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Fencing;
 using Headless.Sql;
 using Microsoft.Extensions.Options;
 
@@ -13,13 +14,41 @@ namespace Headless.Messaging.Persistence;
 /// </summary>
 internal sealed class MessagingTables
 {
-    public MessagingTables(ISqlDialect dialect, string schema)
+    public MessagingTables(ISqlDialect dialect, string schema, int leaseHolderMaxLength)
     {
         Argument.IsNotNull(dialect);
         Argument.IsNotNullOrWhiteSpace(schema);
 
         Published = dialect.Qualify(schema, dialect.Name("MessagingPublished"));
         Received = dialect.Qualify(schema, dialect.Name("MessagingReceived"));
+
+        // The lease columns follow the dialect's naming, so PostgreSQL gets fencing's own lease_* names and SQL Server
+        // the PascalCase it uses for every other messaging column.
+        var leaseColumns = new FencedRowColumns
+        {
+            Generation = dialect.Name("LeaseGeneration"),
+            State = dialect.Name("LeaseState"),
+            ExpiresAt = dialect.Name("LeaseExpiresAt"),
+            Holder = dialect.Name("LeaseHolder"),
+            TakeoverCount = dialect.Name("LeaseTakeoverCount"),
+        };
+        var leaseKey = FencedRowKey<Guid>.Scalar(dialect.Name("Id"), SqlColumnType.Guid);
+        PublishedLease = FencedRowTable<Guid>.Create(
+            dialect,
+            schema,
+            dialect.Name("MessagingPublished"),
+            leaseKey,
+            leaseColumns,
+            holderMaxLength: leaseHolderMaxLength
+        );
+        ReceivedLease = FencedRowTable<Guid>.Create(
+            dialect,
+            schema,
+            dialect.Name("MessagingReceived"),
+            leaseKey,
+            leaseColumns,
+            holderMaxLength: leaseHolderMaxLength
+        );
         Receipts = dialect.Qualify(schema, dialect.Name("MessagingInboxOperationReceipts"));
         Audit = dialect.Qualify(schema, dialect.Name("MessagingInboxAudit"));
         True = dialect.BooleanLiteral(value: true);
@@ -37,8 +66,22 @@ internal sealed class MessagingTables
         Added = column("Added");
         ExpiresAt = column("ExpiresAt");
         NextRetryAt = column("NextRetryAt");
-        LockedUntil = column("LockedUntil");
-        Owner = column("Owner");
+        LeaseGeneration = column("LeaseGeneration");
+        LeaseState = column("LeaseState");
+        LeaseExpiresAt = column("LeaseExpiresAt");
+        LeaseHolder = column("LeaseHolder");
+        LeaseTakeoverCount = column("LeaseTakeoverCount");
+        LeaseColumnNames =
+        [
+            leaseColumns.Generation,
+            leaseColumns.State,
+            leaseColumns.ExpiresAt,
+            leaseColumns.Holder,
+            leaseColumns.TakeoverCount,
+        ];
+        LeaseColumns = [LeaseGeneration, LeaseState, LeaseExpiresAt, LeaseHolder, LeaseTakeoverCount];
+        ActiveLease = ((short)RowLeaseState.Active).ToString(CultureInfo.InvariantCulture);
+        LeaseLive = $"({LeaseState} = {ActiveLease} AND {LeaseExpiresAt} > {SqlDialectTokens.Now})";
         StatusName = column("StatusName");
         MessageId = column("MessageId");
         ExceptionInfo = column("ExceptionInfo");
@@ -85,15 +128,28 @@ internal sealed class MessagingTables
         AuditId = column("AuditId");
     }
 
-    /// <summary>Creates the names for the schema the feature's storage options configure.</summary>
-    public static MessagingTables For(ISqlDialect dialect, IOptions<MessagingStorageOptions> storageOptions)
+    /// <summary>
+    /// Creates the names for the schema the feature's storage options configure, with lease tables that accept a holder
+    /// of up to <paramref name="leaseHolderMaxLength" /> characters, the width the provider's schema gives the column.
+    /// </summary>
+    public static MessagingTables For(
+        ISqlDialect dialect,
+        IOptions<MessagingStorageOptions> storageOptions,
+        int leaseHolderMaxLength
+    )
     {
-        return new MessagingTables(dialect, Argument.IsNotNull(storageOptions).Value.Schema);
+        return new MessagingTables(dialect, Argument.IsNotNull(storageOptions).Value.Schema, leaseHolderMaxLength);
     }
 
     public string Published { get; }
 
     public string Received { get; }
+
+    /// <summary>The published table as a fenced-row table, whose row lease every dispatch attempt holds.</summary>
+    public FencedRowTable<Guid> PublishedLease { get; }
+
+    /// <summary>The received table as a fenced-row table, whose row lease every consume attempt holds.</summary>
+    public FencedRowTable<Guid> ReceivedLease { get; }
 
     public string Receipts { get; }
 
@@ -125,9 +181,30 @@ internal sealed class MessagingTables
 
     public string NextRetryAt { get; }
 
-    public string LockedUntil { get; }
+    public string LeaseGeneration { get; }
 
-    public string Owner { get; }
+    public string LeaseState { get; }
+
+    public string LeaseExpiresAt { get; }
+
+    public string LeaseHolder { get; }
+
+    public string LeaseTakeoverCount { get; }
+
+    /// <summary>The five lease columns, unquoted, in the order <see cref="RowLeaseReader" /> reads them.</summary>
+    public IReadOnlyList<string> LeaseColumnNames { get; }
+
+    /// <summary>The five lease columns, quoted, in the order <see cref="RowLeaseReader" /> reads them.</summary>
+    public IReadOnlyList<string> LeaseColumns { get; }
+
+    /// <summary>The literal of <see cref="RowLeaseState.Active" /> as the lease state column stores it.</summary>
+    public string ActiveLease { get; }
+
+    /// <summary>
+    /// Whether a live attempt holds the row by the database clock (<see cref="SqlDialectTokens.Now" />): the predicate
+    /// every operator and pickup path negates to leave a leased row to its holder.
+    /// </summary>
+    public string LeaseLive { get; }
 
     public string StatusName { get; }
 

@@ -2,6 +2,7 @@
 
 using System.Diagnostics;
 using Headless.Checks;
+using Headless.Fencing;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.RequestReply;
 using Headless.Messaging.Retry;
@@ -179,7 +180,10 @@ internal sealed class SubscribeExecutor(
                 // The consumer this row belongs to is no longer registered, so no attempt can ever succeed: the row is
                 // a terminal failure. The terminal write is CAS-guarded and needs an active lease, which a row handed
                 // over without one does not hold yet; a lost lease means another node owns the row, so stop.
-                if (message.LockedUntil is null && !await _LeaseAsync(message, cancellationToken).ConfigureAwait(false))
+                if (
+                    message.Lease.State is not RowLeaseState.Active
+                    && !await _LeaseAsync(message, cancellationToken).ConfigureAwait(false)
+                )
                 {
                     return OperateResult.Failed(exception);
                 }
@@ -294,7 +298,7 @@ internal sealed class SubscribeExecutor(
         // A storage-returned lease is already acquired under the provider's authoritative clock.
         // Core must not reinterpret its expiry through the application clock; reservation and
         // state-write predicates validate the stored lease identity and activity.
-        var needsLease = message.LockedUntil is null;
+        var needsLease = message.Lease.State is not RowLeaseState.Active;
 
         // A crashed dispatch that already reserved its final attempt must not run another; a row already past its
         // consumer's budget (the policy shrank since it was scheduled) must not run at all. Both end through the
@@ -468,7 +472,7 @@ internal sealed class SubscribeExecutor(
                             leaseRenewal.AttemptToken
                         )
                         .ConfigureAwait(false);
-                    executionState?.RecordLeaseTransition(affected: true, lockedUntil: null);
+                    executionState?.RecordLeaseTransition(affected: true, keepLease: false);
                     await _ReportSuccessfulStateAsync(message).ConfigureAwait(false);
                 }
                 else
@@ -660,7 +664,7 @@ internal sealed class SubscribeExecutor(
         // the row is already terminal (typically Failed/NULL after a prior exhausted attempt),
         // surface the asymmetry for operators. Use CancellationToken.None so the must-complete
         // success-write semantics align with the publish-path's MessageSender._SetSuccessfulState.
-        DateTimeOffset? lockedUntil = null;
+        const bool keepLease = false;
         var updated = await dataStorage
             .ChangeReceiveRetryStateAsync(
                 message,
@@ -672,13 +676,13 @@ internal sealed class SubscribeExecutor(
                     ? MessageContentWrite.Refresh
                     : MessageContentWrite.Preserve,
                 retryDelay: null,
-                lockedUntil,
+                keepLease,
                 originalRetries: message.Retries,
                 originalInlineAttempts: message.InlineAttempts,
                 cancellationToken: CancellationToken.None
             )
             .ConfigureAwait(false);
-        executionState?.RecordLeaseTransition(updated, lockedUntil);
+        executionState?.RecordLeaseTransition(updated, keepLease);
 
         if (!updated)
         {
@@ -956,12 +960,11 @@ internal sealed class SubscribeExecutor(
         // publish path (IMessageSender._SetFailedState) which makes the same choice for the same
         // reason.
         //
-        // #14 — Preserve the active pickup lease on inline-in-flight transitions. Without an
-        // explicit `lockedUntil`, the storage default of NULL would clear the row's lease mid-burst,
-        // making the row eligible for pickup by the retry processor while the inline retry burst is
-        // still mid-sleep. Persisted-retry transitions DO clear the lease (lockedUntil: null) so the
-        // row can be re-picked.
-        var lockedUntil = state.IsInlineRetryInFlight ? message.LockedUntil : null;
+        // #14 — Preserve the active pickup lease on inline-in-flight transitions. Without keepLease,
+        // the write would end the row's lease mid-burst, making the row eligible for pickup by the
+        // retry processor while the inline retry burst is still mid-sleep. Persisted-retry transitions
+        // DO end the lease so the row can be re-picked.
+        var keepLease = state.IsInlineRetryInFlight && message.Lease.State is RowLeaseState.Active;
         var affected = await dataStorage
             .ChangeReceiveRetryStateAsync(
                 message,
@@ -970,13 +973,13 @@ internal sealed class SubscribeExecutor(
                 // until this write refreshes it.
                 MessageContentWrite.Refresh,
                 state.NextRetry,
-                lockedUntil,
+                keepLease,
                 originalRetries,
                 originalInlineAttempts,
                 CancellationToken.None
             )
             .ConfigureAwait(false);
-        executionState?.RecordLeaseTransition(affected, lockedUntil);
+        executionState?.RecordLeaseTransition(affected, keepLease);
 
         // The terminal write took effect, so this attempt owns the request's outcome and answers it, before the
         // terminal callback runs so the caller is not held up by it. An expired request's caller is gone.

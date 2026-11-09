@@ -6,11 +6,11 @@ internal sealed class RetryExecutionState
 {
     public bool LeaseClearedByTransition { get; private set; }
 
-    public void RecordLeaseTransition(bool affected, DateTimeOffset? lockedUntil)
+    public void RecordLeaseTransition(bool affected, bool keepLease)
     {
         if (affected)
         {
-            LeaseClearedByTransition = lockedUntil is null;
+            LeaseClearedByTransition = !keepLease;
         }
     }
 }

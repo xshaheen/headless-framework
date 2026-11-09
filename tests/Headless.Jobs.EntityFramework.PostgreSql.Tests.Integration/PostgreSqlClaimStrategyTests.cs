@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Fencing;
 using Headless.Jobs;
 using Headless.Jobs.Infrastructure;
 using Headless.Sql;
@@ -87,7 +88,7 @@ public sealed class PostgreSqlClaimStrategyTests(PostgreSqlJobsCoordinationFixtu
             var claimed = await persistence.QueueTimedOutTimeJobsAsync(ct).ToArrayAsync(ct);
 
             claimed.Should().ContainSingle().Which.Id.Should().Be(job.Id);
-            claimed[0].OwnerId.Should().NotBeNullOrWhiteSpace();
+            claimed[0].Lease.Holder.Should().NotBeNullOrWhiteSpace();
 
             var cronId = Guid.NewGuid();
             var fallbackOccurrenceId = Guid.NewGuid();
@@ -184,7 +185,7 @@ public sealed class PostgreSqlClaimStrategyTests(PostgreSqlJobsCoordinationFixtu
                 await using var command = connection.CreateCommand();
                 command.CommandText =
                     "CREATE OR REPLACE FUNCTION headless.fail_descendant_claim() RETURNS trigger LANGUAGE plpgsql AS $$ "
-                    + "BEGIN IF NEW.function = 'fail-child' AND NEW.owner_id IS NOT NULL THEN "
+                    + "BEGIN IF NEW.function = 'fail-child' AND NEW.lease_holder IS NOT NULL THEN "
                     + "RAISE EXCEPTION 'forced descendant failure'; END IF; RETURN NEW; END $$; "
                     + $"CREATE TRIGGER fail_descendant_claim BEFORE UPDATE ON {fixture.QualifiedTimeJobsTable} "
                     + "FOR EACH ROW EXECUTE FUNCTION headless.fail_descendant_claim();";
@@ -196,10 +197,10 @@ public sealed class PostgreSqlClaimStrategyTests(PostgreSqlJobsCoordinationFixtu
 
             foreach (var job in new[] { root, child })
             {
-                var (status, ownerId, lockedUntil, _, _) = await fixture.ReadTimeJobDetailAsync(job.Id, ct);
+                // The claim rolled back, so neither row was ever leased.
+                var (status, lease, _, _) = await fixture.ReadTimeJobDetailAsync(job.Id, ct);
                 status.Should().Be((int)JobStatus.Idle);
-                ownerId.Should().BeNull();
-                lockedUntil.Should().BeNull();
+                lease.Should().Be(default(RowLeaseSnapshot));
             }
         }
         finally
@@ -236,7 +237,7 @@ public sealed class PostgreSqlClaimStrategyTests(PostgreSqlJobsCoordinationFixtu
                 await using var command = claimTransaction.DbContext.Database.GetDbConnection().CreateCommand();
                 command.Transaction = claimTransaction.Transaction.GetDbTransaction();
                 command.CommandText =
-                    $"UPDATE {fixture.QualifiedTimeJobsTable} SET owner_id = 'partial' WHERE id = @id;";
+                    $"UPDATE {fixture.QualifiedTimeJobsTable} SET lease_holder = 'partial' WHERE id = @id;";
                 var parameter = command.CreateParameter();
                 parameter.ParameterName = "@id";
                 parameter.Value = job.Id;
@@ -248,7 +249,7 @@ public sealed class PostgreSqlClaimStrategyTests(PostgreSqlJobsCoordinationFixtu
                 await commit.Should().ThrowAsync<OperationCanceledException>();
             }
 
-            (await fixture.ReadTimeJobDetailAsync(job.Id, ct)).OwnerId.Should().BeNull();
+            (await fixture.ReadTimeJobDetailAsync(job.Id, ct)).Lease.Holder.Should().BeNull();
         }
         finally
         {
@@ -268,8 +269,8 @@ internal sealed class PostgreSqlMappedJobsDbContext(DbContextOptions<PostgreSqlM
             entity.ToTable("native_time_jobs", "mapped_jobs");
             entity.Property(x => x.Id).HasColumnName("job_id");
             entity.Property(x => x.Status).HasColumnName("job_status");
-            entity.Property(x => x.OwnerId).HasColumnName("owner_key");
-            entity.Property(x => x.LockedUntil).HasColumnName("lease_until");
+            entity.ComplexProperty(x => x.Lease).Property(x => x.Holder).HasColumnName("owner_key");
+            entity.ComplexProperty(x => x.Lease).Property(x => x.ExpiresAt).HasColumnName("lease_until");
             entity.Property(x => x.OnNodeDeath).HasColumnName("death_policy");
             entity.Property(x => x.UpdatedAt).HasColumnName("updated_on");
             entity.Property(x => x.ExecutionTime).HasColumnName("run_on");
@@ -285,10 +286,10 @@ internal sealed class PostgreSqlMappedJobsDbContext(DbContextOptions<PostgreSqlM
             entity.Property(x => x.CorrelationId).HasColumnName("correlation_key");
             entity.Property(x => x.CausationId).HasColumnName("causation_key");
             entity.Property(x => x.Status).HasColumnName("occurrence_status");
-            entity.Property(x => x.OwnerId).HasColumnName("occurrence_owner");
+            entity.ComplexProperty(x => x.Lease).Property(x => x.Holder).HasColumnName("occurrence_owner");
             entity.Property(x => x.ExecutionTime).HasColumnName("occurrence_time");
             entity.Property(x => x.CronJobId).HasColumnName("cron_key");
-            entity.Property(x => x.LockedUntil).HasColumnName("occurrence_lease");
+            entity.ComplexProperty(x => x.Lease).Property(x => x.ExpiresAt).HasColumnName("occurrence_lease");
             entity.Property(x => x.OnNodeDeath).HasColumnName("occurrence_policy");
             entity.Property(x => x.ElapsedTime).HasColumnName("elapsed_ms");
             entity.Property(x => x.RetryCount).HasColumnName("retry_count");

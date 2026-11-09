@@ -40,6 +40,14 @@ public class HeadlessRabbitMqFixture : IAsyncLifetime
     /// </summary>
     protected virtual bool ShareContainer => true;
 
+    /// <summary>
+    /// Gets the image the fixture runs, <see cref="TestImages.RabbitMq"/> unless overridden. Override it to run another
+    /// version or a variant of the same server. The image is part of the shared container's name, so fixtures on
+    /// different images share separate brokers and never attach to each other's.
+    /// </summary>
+    /// <remarks>The image must keep the official <c>rabbitmq</c> entrypoint and <c>rabbitmqctl</c>, which the fixture uses.</remarks>
+    protected virtual string Image => TestImages.RabbitMq;
+
     /// <summary>Gets the started container, for its host, mapped port, or command execution.</summary>
     public RabbitMqContainer Container =>
         _container ?? throw new InvalidOperationException("The RabbitMQ fixture has not been initialized.");
@@ -186,12 +194,13 @@ public class HeadlessRabbitMqFixture : IAsyncLifetime
 
     private RabbitMqContainer _Build()
     {
-        var builder = new RabbitMqBuilder(TestImages.RabbitMq);
+        var image = Image;
+        var builder = new RabbitMqBuilder(image);
 
         builder = _shared
             ? SharedTestContainers.AsShared<RabbitMqBuilder, RabbitMqContainer>(
                 builder,
-                SharedTestContainers.ContainerName("rabbitmq", TestImages.RabbitMq, RabbitMqBuilder.DefaultUsername)
+                SharedTestContainers.ContainerName("rabbitmq", image, RabbitMqBuilder.DefaultUsername)
             )
             : ConfigureContainer(builder);
 

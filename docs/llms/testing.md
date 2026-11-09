@@ -433,7 +433,7 @@ Testcontainers fixtures for integration testing.
 
 - `TestImages` — single source of truth for all container image tags (pinned, no `:latest`)
 - Fixtures for every backing service used in the framework:
-  - `HeadlessPostgreSqlFixture` (a database of its own per fixture, see [Logical isolation](#logical-isolation))
+  - `HeadlessPostgreSqlFixture` (a database of its own per fixture, see [Logical isolation](#logical-isolation); override `Image` for a server with extensions such as PostGIS)
   - `HeadlessRedisFixture`
   - `HeadlessRabbitMqFixture` (a virtual host of its own per fixture)
   - `HeadlessNatsFixture`
@@ -449,7 +449,7 @@ Testcontainers fixtures for integration testing.
 - `TestContextMessageSink` — xUnit v3 diagnostic-message forwarder
 - `HeadlessResourceReaperFixture` — xUnit v3 assembly fixture that starts Testcontainers' resource reaper (Ryuk) before any test runs and retries the start once, so a slow Ryuk handshake does not fail a whole module (see [Resource reaper start](#resource-reaper-start)). In this repository `tests/Directory.Build.targets` adds it to every `*.Tests.Integration` and `*.Tests.Chaos` project that references this package; another assembly opts in with `[assembly: AssemblyFixture(typeof(HeadlessResourceReaperFixture))]`
 - Automatic container lifecycle management via `Testcontainers.Xunit`
-- Every fixture has the same subclassing surface: xUnit calls `IAsyncLifetime` explicitly, and a subclass overrides `protected virtual ValueTask InitializeAsync()` (call `base.InitializeAsync()` first, then seed its database) and `protected virtual ValueTask DisposeAsyncCore()`. The Redis, NATS, Kafka, Azurite, LocalStack, and MinIO fixtures also take `protected override TBuilder Configure()`. The SQL Server, PostgreSQL, and RabbitMQ fixtures fix their server configuration so one server can serve every fixture: they expose `ConnectionString` for the fixture's own database or virtual host, and the PostgreSQL and RabbitMQ fixtures take `ConfigureContainer(builder)` only together with `ShareContainer => false`.
+- Every fixture has the same subclassing surface: xUnit calls `IAsyncLifetime` explicitly, and a subclass overrides `protected virtual ValueTask InitializeAsync()` (call `base.InitializeAsync()` first, then seed its database) and `protected virtual ValueTask DisposeAsyncCore()`. The Redis, NATS, Kafka, Azurite, LocalStack, and MinIO fixtures also take `protected override TBuilder Configure()`. The SQL Server, PostgreSQL, and RabbitMQ fixtures fix their server configuration so one server can serve every fixture: they expose `ConnectionString` for the fixture's own database or virtual host, and the PostgreSQL and RabbitMQ fixtures take `ConfigureContainer(builder)` only together with `ShareContainer => false`. Every fixture also takes `protected override string Image`, defaulting to its `TestImages` pin (SQL Server: `HEADLESS_SQLSERVER_IMAGE`, else the architecture's image). For the SQL Server, PostgreSQL, and RabbitMQ fixtures the image is part of the shared container's name, so fixtures on another image share a server of their own. The image must keep the official entrypoint the fixture drives: for PostgreSQL, `-c` settings and `POSTGRES_USER`/`POSTGRES_PASSWORD`, as `postgis/postgis` does; for RabbitMQ, `rabbitmqctl`; for SQL Server, the "SQL Server is now ready" log line and the `sa` password.
 
 ### Design constraints
 

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Fencing;
 using Headless.Messaging.Persistence;
 
 namespace Headless.Messaging;
@@ -43,16 +44,11 @@ public class MediumMessage
     public DateTimeOffset? NextRetryAt { get; set; }
 
     /// <summary>
-    /// Gets or sets the UTC timestamp until which this row is leased by an active dispatch attempt.
-    /// <see langword="null"/> means no active lease.
+    /// Gets or sets the row's lease as storage last read or wrote it: the generation an attempt holds, its state, and its
+    /// expiry by the database clock. A row that holds a lease is <see cref="RowLeaseState.Active" />; the
+    /// <see langword="default" /> is a row never leased.
     /// </summary>
-    public DateTimeOffset? LockedUntil { get; set; }
-
-    /// <summary>
-    /// Gets or sets the node-incarnation owner that currently holds this row's active lease.
-    /// <see langword="null"/> means no Coordination-backed owner was stamped.
-    /// </summary>
-    public string? Owner { get; set; }
+    public RowLeaseSnapshot Lease { get; set; }
 
     public int Retries { get; set; }
 

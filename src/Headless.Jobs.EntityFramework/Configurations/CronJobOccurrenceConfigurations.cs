@@ -58,10 +58,10 @@ public class CronJobOccurrenceConfigurations<TCronJob>(
 
         builder.Property(e => e.Id).ValueGeneratedNever();
 
-        builder.Property(x => x.OwnerId).IsRequired(false);
+        // The lease is a fenced row; see TimeJobConfigurations.
+        builder.HasRowLease(x => x.Lease, JobsStorageNaming.LeaseColumns(style));
 
         builder.Property(x => x.ExecutionTime).HasConversion(utcDateTimeConverter);
-        builder.Property(x => x.LockedUntil).HasConversion(nullableUtcDateTimeConverter);
 
         builder.Property(x => x.RecoveredFromUtc).HasConversion(nullableUtcDateTimeConverter);
 
@@ -85,16 +85,6 @@ public class CronJobOccurrenceConfigurations<TCronJob>(
         builder
             .HasIndex("Status", "ExecutionTime")
             .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, "Status", "ExecutionTime"));
-
-        // Sweep/reclaim queries filter on lease deadline (Status + LockedUntil) and on ownership
-        // (OwnerId + non-terminal Status) — see TimeJobConfigurations.
-        builder
-            .HasIndex("Status", "LockedUntil")
-            .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, "Status", "LockedUntil"));
-
-        builder
-            .HasIndex("OwnerId", "Status")
-            .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, "OwnerId", "Status"));
 
         builder
             .HasOne(x => x.CronJob)

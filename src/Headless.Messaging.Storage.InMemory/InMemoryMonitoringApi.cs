@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Fencing;
 using Headless.Messaging.Internal;
 using Headless.Primitives;
 
@@ -285,7 +286,7 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
                         Retries = x.Retries,
                         StatusName = x.StatusName,
                         NextRetryAt = x.NextRetryAt,
-                        LockedUntil = x.LockedUntil,
+                        LockedUntil = x.Lease.State == RowLeaseState.Active ? x.Lease.ExpiresAt : null,
                     };
                 })
                 .ToList();
@@ -352,7 +353,7 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
                         Retries = x.Retries,
                         StatusName = x.StatusName,
                         NextRetryAt = x.NextRetryAt,
-                        LockedUntil = x.LockedUntil,
+                        LockedUntil = x.Lease.State == RowLeaseState.Active ? x.Lease.ExpiresAt : null,
                     };
                 })
                 .ToList();
@@ -399,7 +400,7 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
                 StatusName = message.StatusName,
                 Added = message.Added,
                 NextRetryAt = message.NextRetryAt,
-                LockedUntil = message.LockedUntil,
+                LockedUntil = message.Lease.State == RowLeaseState.Active ? message.Lease.ExpiresAt : null,
             })
             .ToList();
 

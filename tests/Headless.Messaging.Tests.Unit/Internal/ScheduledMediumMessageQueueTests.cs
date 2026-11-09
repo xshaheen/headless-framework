@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Fencing;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.Testing.Tests;
@@ -61,11 +62,21 @@ public sealed class ScheduledMediumMessageQueueTests : TestBase
         var sendTime = timeProvider.GetUtcNow().AddMinutes(5).Ticks;
         var handOff = _CreateMediumMessage(1);
         var firstClaim = _CreateMediumMessage(1);
-        firstClaim.Owner = "node-a";
-        firstClaim.LockedUntil = timeProvider.GetUtcNow().AddMinutes(10);
+        firstClaim.Lease = new RowLeaseSnapshot(
+            1,
+            RowLeaseState.Active,
+            timeProvider.GetUtcNow().AddMinutes(10),
+            "node-a",
+            0
+        );
         var secondClaim = _CreateMediumMessage(1);
-        secondClaim.Owner = "node-a";
-        secondClaim.LockedUntil = timeProvider.GetUtcNow().AddMinutes(20);
+        secondClaim.Lease = new RowLeaseSnapshot(
+            2,
+            RowLeaseState.Active,
+            timeProvider.GetUtcNow().AddMinutes(20),
+            "node-a",
+            0
+        );
 
         // when
         queue.TryEnqueue(handOff, sendTime).Should().BeTrue();
@@ -84,11 +95,21 @@ public sealed class ScheduledMediumMessageQueueTests : TestBase
         using var queue = new ScheduledMediumMessageQueue(timeProvider);
         var sendTime = timeProvider.GetUtcNow().AddMinutes(5).Ticks;
         var claimed = _CreateMediumMessage(1);
-        claimed.Owner = "node-a";
-        claimed.LockedUntil = timeProvider.GetUtcNow().AddMinutes(20);
+        claimed.Lease = new RowLeaseSnapshot(
+            2,
+            RowLeaseState.Active,
+            timeProvider.GetUtcNow().AddMinutes(20),
+            "node-a",
+            0
+        );
         var olderClaim = _CreateMediumMessage(1);
-        olderClaim.Owner = "node-a";
-        olderClaim.LockedUntil = timeProvider.GetUtcNow().AddMinutes(10);
+        olderClaim.Lease = new RowLeaseSnapshot(
+            1,
+            RowLeaseState.Active,
+            timeProvider.GetUtcNow().AddMinutes(10),
+            "node-a",
+            0
+        );
         var handOff = _CreateMediumMessage(1);
 
         // when

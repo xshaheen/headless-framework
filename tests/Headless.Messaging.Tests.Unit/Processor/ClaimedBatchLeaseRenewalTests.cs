@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Threading.Channels;
+using Headless.Fencing;
 using Headless.Messaging;
 using Headless.Messaging.Processor;
 using Headless.Testing.Tests;
@@ -135,8 +136,7 @@ public sealed class ClaimedBatchLeaseRenewalTests : TestBase
             Origin = new Message(new Dictionary<string, string?>(StringComparer.Ordinal), null),
             Content = "{}",
             Lane = MessageLane.Bus,
-            Owner = "node-a",
-            LockedUntil = DateTimeOffset.UtcNow.AddSeconds(30),
+            Lease = new RowLeaseSnapshot(1, RowLeaseState.Active, DateTimeOffset.UtcNow.AddSeconds(30), "node-a", 0),
         };
     }
 }

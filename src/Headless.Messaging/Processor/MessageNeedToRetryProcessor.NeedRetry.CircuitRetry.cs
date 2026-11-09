@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Fencing;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Transport;
@@ -183,15 +184,14 @@ internal sealed partial class MessageNeedToRetryProcessor
             return CircuitDeferralOutcome.Unsupported;
         }
 
-        if (message.LockedUntil is not { } lockedUntil)
+        if (message.Lease.State is not RowLeaseState.Active)
         {
             return CircuitDeferralOutcome.NoLiveLease;
         }
 
         var identity = new MessageLeaseIdentity(
             message.StorageId,
-            message.Owner,
-            lockedUntil,
+            message.Lease.Generation,
             message.Lane,
             message.InboxAttemptFence
         );

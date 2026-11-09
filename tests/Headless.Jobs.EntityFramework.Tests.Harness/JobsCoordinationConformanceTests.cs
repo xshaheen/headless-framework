@@ -3,6 +3,7 @@
 using System.Data.Common;
 using System.Diagnostics;
 using Headless.Coordination;
+using Headless.Fencing;
 using Headless.Jobs;
 using Headless.Jobs.Internal;
 using Headless.Testing.Tests;
@@ -101,28 +102,29 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
             idle!.Status.Should().Be(JobStatus.Cancelled);
             idle.CancelRequested.Should().BeTrue();
             idle.ExecutedAt.Should().NotBeNull();
-            idle.OwnerId.Should().BeNull();
-            idle.LockedUntil.Should().BeNull();
+            // Cancelling an idle row ends any lease it carried, so no holder can still write to it.
+            idle.Lease.State.Should().Be(RowLeaseState.Revoked);
 
             var queued = await persistence.GetTimeJobByIdAsync(queuedId, ct);
             queued!.Status.Should().Be(JobStatus.Queued);
             queued.CancelRequested.Should().BeTrue();
             queued.ExecutedAt.Should().BeNull();
-            queued.OwnerId.Should().Be(owner);
-            queued.LockedUntil.Should().NotBeNull();
+            queued.Lease.State.Should().Be(RowLeaseState.Active);
+            queued.Lease.Holder.Should().Be(owner);
+            queued.Lease.ExpiresAt.Should().NotBeNull();
 
             var inProgress = await persistence.GetTimeJobByIdAsync(inProgressId, ct);
             inProgress!.Status.Should().Be(JobStatus.InProgress);
             inProgress.CancelRequested.Should().BeTrue();
             inProgress.ExecutedAt.Should().BeNull();
-            inProgress.OwnerId.Should().Be(owner);
-            inProgress.LockedUntil.Should().NotBeNull();
+            inProgress.Lease.State.Should().Be(RowLeaseState.Active);
+            inProgress.Lease.Holder.Should().Be(owner);
+            inProgress.Lease.ExpiresAt.Should().NotBeNull();
 
             var terminalAfter = await persistence.GetTimeJobByIdAsync(terminalId, ct);
             terminalAfter!.Status.Should().Be(JobStatus.Succeeded);
             terminalAfter.CancelRequested.Should().BeFalse();
-            terminalAfter.OwnerId.Should().Be(terminalBefore!.OwnerId);
-            terminalAfter.LockedUntil.Should().Be(terminalBefore.LockedUntil);
+            terminalAfter.Lease.Should().Be(terminalBefore!.Lease);
             terminalAfter.UpdatedAt.Should().Be(terminalBefore.UpdatedAt);
         }
         finally
@@ -255,10 +257,10 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
 
             (await persistence.QueueTimeJobsAsync(idle, ct).ToListAsync(ct)).Should().ContainSingle();
 
-            var lockedUntil = (await fixture.ReadTimeJobDetailAsync(id, ct)).LockedUntil;
+            var lockedUntil = (await fixture.ReadTimeJobDetailAsync(id, ct)).Lease.ExpiresAt;
             lockedUntil.Should().NotBeNull();
-            lockedUntil!.Value.Should().BeAfter(DateTime.UtcNow.AddMinutes(4));
-            lockedUntil.Value.Should().BeBefore(DateTime.UtcNow.AddMinutes(6));
+            lockedUntil!.Value.Should().BeAfter(DateTimeOffset.UtcNow.AddMinutes(4));
+            lockedUntil.Value.Should().BeBefore(DateTimeOffset.UtcNow.AddMinutes(6));
         }
         finally
         {
@@ -305,7 +307,7 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
                 directTimeJobId,
                 ct
             );
-            directTimeClaim.LockedUntil.Should().Be(directLockedUntil);
+            directTimeClaim.Lease.ExpiresAt.Should().Be(directLockedUntil);
             directTimeClaim.UpdatedAt.Should().Be(directUpdatedAt);
             directUpdatedAt.Offset.Should().Be(TimeSpan.Zero);
 
@@ -324,7 +326,7 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
                 fallbackTimeJob.Id,
                 ct
             );
-            fallbackTimeClaim.LockedUntil.Should().Be(fallbackLockedUntil);
+            fallbackTimeClaim.Lease.ExpiresAt.Should().Be(fallbackLockedUntil);
             fallbackTimeClaim.UpdatedAt.Should().Be(fallbackUpdatedAt);
             fallbackUpdatedAt.Offset.Should().Be(TimeSpan.Zero);
 
@@ -374,7 +376,7 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
             foreach (var claim in directCronClaims)
             {
                 var (lockedUntil, updatedAt) = await fixture.ReadCronOccurrenceClaimTimestampsAsync(claim.Id, ct);
-                claim.LockedUntil.Should().Be(lockedUntil);
+                claim.Lease.ExpiresAt.Should().Be(lockedUntil);
                 claim.UpdatedAt.Should().Be(updatedAt);
                 updatedAt.Offset.Should().Be(TimeSpan.Zero);
             }
@@ -407,12 +409,12 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
                 fallbackOccurrenceId,
                 ct
             );
-            fallbackCronClaim.LockedUntil.Should().Be(fallbackCronLockedUntil);
+            fallbackCronClaim.Lease.ExpiresAt.Should().Be(fallbackCronLockedUntil);
             fallbackCronClaim.UpdatedAt.Should().Be(fallbackCronUpdatedAt);
             fallbackCronUpdatedAt.Offset.Should().Be(TimeSpan.Zero);
 
             directTimeClaim.UpdatedAt.Should().BeAfter(DateTimeOffset.UtcNow.AddMinutes(-1));
-            directTimeClaim.LockedUntil.Should().BeAfter(DateTime.UtcNow.AddMinutes(4));
+            directTimeClaim.Lease.ExpiresAt.Should().BeAfter(DateTimeOffset.UtcNow.AddMinutes(4));
         }
         finally
         {
@@ -475,8 +477,8 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
                 .Should()
                 .BeEmpty();
 
-            (await fixture.ReadTimeJobAsync(timeJobId, ct)).OwnerId.Should().Be("foreign@1");
-            (await fixture.ReadCronOccurrenceAsync(occurrenceId, ct)).OwnerId.Should().Be("foreign@2");
+            (await fixture.ReadTimeJobAsync(timeJobId, ct)).ActiveHolder.Should().Be("foreign@1");
+            (await fixture.ReadCronOccurrenceAsync(occurrenceId, ct)).ActiveHolder.Should().Be("foreign@2");
         }
         finally
         {
@@ -526,7 +528,11 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
 
             (await fixture.ReadTimeJobAsync(reclaimedId, ct)).Should().Be(((int)JobStatus.Idle, null));
             (await fixture.ReadTimeJobAsync(retryInFlightId, ct)).Should().Be(((int)JobStatus.Idle, null));
-            (await fixture.ReadTimeJobAsync(terminalId, ct)).Should().Be(((int)JobStatus.Succeeded, dead));
+            // The settled row keeps the lease its run ended: same state, same holder.
+            var (terminalStatus, terminalLease, _, _) = await fixture.ReadTimeJobDetailAsync(terminalId, ct);
+            terminalStatus.Should().Be((int)JobStatus.Succeeded);
+            terminalLease.State.Should().Be(RowLeaseState.Settled);
+            terminalLease.Holder.Should().Be(dead);
             (await fixture.ReadTimeJobAsync(unownedId, ct)).Should().Be(((int)JobStatus.Idle, null));
             (await fixture.ReadTimeJobAsync(otherIncarnationId, ct)).Should().Be(((int)JobStatus.Queued, "node-a@6"));
         }
@@ -565,10 +571,10 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
             // MarkFailed in-flight row becomes terminal Failed (never retried), owner retained for audit,
             // lease cleared (#4) and a node-death ExceptionMessage set so it's distinguishable from a run failure (#8).
             affected.Should().Be(1);
-            var (status, ownerId, lockedUntil, exceptionMessage, _) = await fixture.ReadTimeJobDetailAsync(id, ct);
+            var (status, lease, exceptionMessage, _) = await fixture.ReadTimeJobDetailAsync(id, ct);
             status.Should().Be((int)JobStatus.Failed);
-            ownerId.Should().Be(dead);
-            lockedUntil.Should().BeNull();
+            lease.Holder.Should().Be(dead);
+            lease.State.Should().NotBe(RowLeaseState.Active);
             exceptionMessage.Should().Be("Node is not alive!");
         }
         finally
@@ -606,10 +612,10 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
             // Skip in-flight row becomes terminal Skipped (idempotency-critical: never re-run), owner retained,
             // lease cleared (#4) and SkippedReason set.
             affected.Should().Be(1);
-            var (status, ownerId, lockedUntil, _, skippedReason) = await fixture.ReadTimeJobDetailAsync(id, ct);
+            var (status, lease, _, skippedReason) = await fixture.ReadTimeJobDetailAsync(id, ct);
             status.Should().Be((int)JobStatus.Skipped);
-            ownerId.Should().Be(dead);
-            lockedUntil.Should().BeNull();
+            lease.Holder.Should().Be(dead);
+            lease.State.Should().NotBe(RowLeaseState.Active);
             skippedReason.Should().Be("Node is not alive!");
         }
         finally
@@ -636,26 +642,44 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
         {
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
-            // (a) Non-terminal row owned by a different owner — a late completion from the writer must not win.
+            // (a) Non-terminal row a different owner took over at the next generation — a late completion from the
+            // writer, still on the earlier generation, must not win.
             var foreignId = Guid.NewGuid();
             await fixture.SeedTimeJobAsync(foreignId, "foreign", (int)JobStatus.InProgress, "other-node@9", ct);
+            await fixture.OverwriteLeaseAsync(
+                fixture.QualifiedTimeJobsTable,
+                foreignId,
+                new RowLeaseSnapshot(2, RowLeaseState.Active, DateTimeOffset.UtcNow.AddMinutes(5), "other-node@9", 1),
+                ct
+            );
 
             // (b) Already-terminal row (e.g. swept to Failed) — a late completion must not resurrect/overwrite it.
             var terminalId = Guid.NewGuid();
             await fixture.SeedTimeJobAsync(terminalId, "terminal", (int)JobStatus.Failed, "node-a@5", ct);
+            // A sweep revokes the lease it ends. A settled lease would not do here: a retried settlement of the same
+            // generation reports success, so only a lease something else ended refuses the late completion.
+            await fixture.OverwriteLeaseAsync(
+                fixture.QualifiedTimeJobsTable,
+                terminalId,
+                new RowLeaseSnapshot(1, RowLeaseState.Revoked, DateTimeOffset.UtcNow.AddMinutes(-1), "node-a@5", 0),
+                ct
+            );
 
-            // Both completions claim as "node-a@5": the foreign row fails the owner arm, the terminal row the status arm.
+            // Both completions claim as "node-a@5" at generation 1: the foreign row fails the generation arm, the
+            // terminal row the lease-state arm (the sweep ended its lease).
             var foreignCompletion = new JobExecutionState
             {
                 FunctionName = "foreign",
                 JobId = foreignId,
                 ClaimOwner = "node-a@5",
+                ClaimGeneration = 1,
             }.SetProperty(x => x.Status, JobStatus.Succeeded);
             var terminalCompletion = new JobExecutionState
             {
                 FunctionName = "terminal",
                 JobId = terminalId,
                 ClaimOwner = "node-a@5",
+                ClaimGeneration = 1,
             }.SetProperty(x => x.Status, JobStatus.Succeeded);
 
             (await persistence.UpdateTimeJobAsync(foreignCompletion, ct)).Should().Be(0);
@@ -665,7 +689,9 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
             (await fixture.ReadTimeJobAsync(foreignId, ct))
                 .Should()
                 .Be(((int)JobStatus.InProgress, "other-node@9"));
-            (await fixture.ReadTimeJobAsync(terminalId, ct)).Should().Be(((int)JobStatus.Failed, "node-a@5"));
+            var (terminalStatus, terminalLease, _, _) = await fixture.ReadTimeJobDetailAsync(terminalId, ct);
+            terminalStatus.Should().Be((int)JobStatus.Failed);
+            terminalLease.Holder.Should().Be("node-a@5");
         }
         finally
         {
@@ -842,21 +868,34 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
                 ct,
                 lockedUntil: seededLease
             );
+            // The fence is the generation, so the other node holds the row at a later one than this run's claim.
+            await fixture.OverwriteLeaseAsync(
+                fixture.QualifiedTimeJobsTable,
+                foreignId,
+                new RowLeaseSnapshot(
+                    2,
+                    RowLeaseState.Active,
+                    new DateTimeOffset(seededLease, TimeSpan.Zero),
+                    "other-node@9",
+                    1
+                ),
+                ct
+            );
 
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
-            (await persistence.RenewTimeJobLeaseAsync(ownedId, owner, ct)).Should().Be(1);
-            (await persistence.RenewTimeJobLeaseAsync(foreignId, owner, ct)).Should().Be(0); // lease lost -> cancel-on-loss
+            (await persistence.RenewTimeJobLeaseAsync(JobsLeaseTables.TimeJob(ownedId, 1), owner, ct)).Should().Be(1);
+            (await persistence.RenewTimeJobLeaseAsync(JobsLeaseTables.TimeJob(foreignId, 1), owner, ct)).Should().Be(0); // lease lost -> cancel-on-loss
 
-            var (ownedStatus, _, ownedLockedUntil, _, _) = await fixture.ReadTimeJobDetailAsync(ownedId, ct);
+            var (ownedStatus, ownedLease, _, _) = await fixture.ReadTimeJobDetailAsync(ownedId, ct);
             ownedStatus.Should().Be((int)JobStatus.InProgress);
-            ownedLockedUntil.Should().NotBeNull();
-            ownedLockedUntil!.Value.Should().BeAfter(seededLease); // lease slid forward
+            ownedLease.ExpiresAt.Should().NotBeNull();
+            ownedLease.ExpiresAt!.Value.Should().BeAfter(new DateTimeOffset(seededLease, TimeSpan.Zero)); // lease slid forward
 
             // The foreign row was not renewed: its lease is unchanged.
             (await fixture.ReadTimeJobDetailAsync(foreignId, ct))
-                .LockedUntil.Should()
-                .BeCloseTo(seededLease, TimeSpan.FromSeconds(5));
+                .Lease.ExpiresAt.Should()
+                .BeCloseTo(new DateTimeOffset(seededLease, TimeSpan.Zero), TimeSpan.FromSeconds(5));
         }
         finally
         {
@@ -899,17 +938,27 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
 
         var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
-        (await persistence.RenewTimeJobLeaseAsync(timeJobId, claimOwner, ct)).Should().Be(0);
-        (await persistence.RenewCronJobOccurrenceLeaseAsync(occurrenceId, claimOwner, ct)).Should().Be(0);
+        (await persistence.RenewTimeJobLeaseAsync(JobsLeaseTables.TimeJob(timeJobId, 1), claimOwner, ct))
+            .Should()
+            .Be(0);
+        (
+            await persistence.RenewCronJobOccurrenceLeaseAsync(
+                JobsLeaseTables.CronOccurrence(occurrenceId, 1),
+                claimOwner,
+                ct
+            )
+        )
+            .Should()
+            .Be(0);
 
-        var (status, ownerId, lockedUntil, _, _) = await fixture.ReadTimeJobDetailAsync(timeJobId, ct);
+        var (status, timeJobLease, _, _) = await fixture.ReadTimeJobDetailAsync(timeJobId, ct);
         status.Should().Be((int)JobStatus.InProgress);
-        ownerId.Should().Be(claimOwner);
-        lockedUntil.Should().BeCloseTo(lease, TimeSpan.FromSeconds(5));
+        timeJobLease.Holder.Should().Be(claimOwner);
+        timeJobLease.ExpiresAt.Should().BeCloseTo(new DateTimeOffset(lease, TimeSpan.Zero), TimeSpan.FromSeconds(5));
 
-        var (occurrenceOwnerId, occurrenceLockedUntil) = await fixture.ReadCronOccurrenceClaimAsync(occurrenceId, ct);
-        occurrenceOwnerId.Should().Be(claimOwner);
-        occurrenceLockedUntil.Should().BeCloseTo(lease, TimeSpan.FromSeconds(5));
+        var occurrenceLease = await fixture.ReadCronOccurrenceClaimAsync(occurrenceId, ct);
+        occurrenceLease.Holder.Should().Be(claimOwner);
+        occurrenceLease.ExpiresAt.Should().BeCloseTo(new DateTimeOffset(lease, TimeSpan.Zero), TimeSpan.FromSeconds(5));
     }
 
     /// <summary>
@@ -937,12 +986,12 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
             var lease = DateTime.UtcNow.AddMinutes(5);
             await fixture.SeedTimeJobAsync(id, "Job", (int)JobStatus.InProgress, staleOwner, ct, lockedUntil: lease);
 
-            (await persistence.RenewTimeJobLeaseAsync(id, staleOwner, ct)).Should().Be(0);
+            (await persistence.RenewTimeJobLeaseAsync(JobsLeaseTables.TimeJob(id, 1), staleOwner, ct)).Should().Be(0);
 
-            var (status, ownerId, lockedUntil, _, _) = await fixture.ReadTimeJobDetailAsync(id, ct);
+            var (status, rowLease, _, _) = await fixture.ReadTimeJobDetailAsync(id, ct);
             status.Should().Be((int)JobStatus.InProgress);
-            ownerId.Should().Be(staleOwner);
-            lockedUntil.Should().BeCloseTo(lease, TimeSpan.FromSeconds(5));
+            rowLease.Holder.Should().Be(staleOwner);
+            rowLease.ExpiresAt.Should().BeCloseTo(new DateTimeOffset(lease, TimeSpan.Zero), TimeSpan.FromSeconds(5));
         }
         finally
         {
@@ -1043,6 +1092,7 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
             FunctionName = "Job",
             JobId = timeJobId,
             ClaimOwner = claimOwner,
+            ClaimGeneration = 1,
         }.SetProperty(x => x.Status, JobStatus.Succeeded);
         var cronCompletion = new JobExecutionState
         {
@@ -1050,6 +1100,7 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
             JobId = occurrenceId,
             Type = JobType.CronJobOccurrence,
             ClaimOwner = claimOwner,
+            ClaimGeneration = 1,
         }.SetProperty(x => x.Status, JobStatus.Succeeded);
 
         (await persistence.UpdateTimeJobAsync(timeCompletion, ct)).Should().Be(1);
@@ -1078,6 +1129,13 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
         var reclaimedId = Guid.NewGuid();
         await fixture.SeedTimeJobAsync(releasedId, "Released", (int)JobStatus.Idle, ownerId: null, ct);
         await fixture.SeedTimeJobAsync(reclaimedId, "Reclaimed", (int)JobStatus.InProgress, "node-b@1", ct);
+        // The peer's reclaim drew the next generation; the former owner's attempt held generation 1.
+        await fixture.OverwriteLeaseAsync(
+            fixture.QualifiedTimeJobsTable,
+            reclaimedId,
+            new RowLeaseSnapshot(2, RowLeaseState.Active, DateTimeOffset.UtcNow.AddMinutes(5), "node-b@1", 1),
+            ct
+        );
 
         foreach (var id in new[] { releasedId, reclaimedId })
         {
@@ -1086,6 +1144,7 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
                 FunctionName = "Job",
                 JobId = id,
                 ClaimOwner = claimOwner,
+                ClaimGeneration = 1,
             }.SetProperty(x => x.Status, JobStatus.Succeeded);
 
             (await persistence.UpdateTimeJobAsync(completion, ct)).Should().Be(0);
@@ -1112,7 +1171,15 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
         var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
         var timeJobId = Guid.NewGuid();
-        await fixture.SeedTimeJobAsync(timeJobId, "Job", (int)JobStatus.Queued, claimOwner, ct);
+        // A live lease, so the identity check alone is what refuses the admission.
+        await fixture.SeedTimeJobAsync(
+            timeJobId,
+            "Job",
+            (int)JobStatus.Queued,
+            claimOwner,
+            ct,
+            lockedUntil: DateTime.UtcNow.AddMinutes(5)
+        );
 
         var cronId = Guid.NewGuid();
         var occurrenceId = Guid.NewGuid();
@@ -1133,8 +1200,16 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
             JobStatus.InProgress
         );
 
-        (await persistence.UpdateTimeJobsWithUnifiedContextAsync([timeJobId], start, ct)).Should().BeEmpty();
-        (await persistence.UpdateCronJobOccurrencesWithUnifiedContextAsync([occurrenceId], start, ct))
+        (await persistence.UpdateTimeJobsWithUnifiedContextAsync([JobsLeaseTables.TimeJob(timeJobId, 1)], start, ct))
+            .Should()
+            .BeEmpty();
+        (
+            await persistence.UpdateCronJobOccurrencesWithUnifiedContextAsync(
+                [JobsLeaseTables.CronOccurrence(occurrenceId, 1)],
+                start,
+                ct
+            )
+        )
             .Should()
             .BeEmpty();
 
@@ -1215,19 +1290,15 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
                 .Should()
                 .Be(1, "a started attempt lost to a lapsed lease consumes one retry-budget unit");
 
-            var (failStatus, failOwnerId, failLockedUntil, failExceptionMessage, _) =
-                await fixture.ReadTimeJobDetailAsync(failId, ct);
+            var (failStatus, failLease, failExceptionMessage, _) = await fixture.ReadTimeJobDetailAsync(failId, ct);
             failStatus.Should().Be((int)JobStatus.Failed);
-            failOwnerId.Should().Be(owner);
-            failLockedUntil.Should().BeNull();
+            failLease.Holder.Should().Be(owner);
+            failLease.State.Should().NotBe(RowLeaseState.Active);
             failExceptionMessage.Should().Be("Lease lapsed while running!");
 
-            var (skipStatus, _, skipLockedUntil, _, skipSkippedReason) = await fixture.ReadTimeJobDetailAsync(
-                skipId,
-                ct
-            );
+            var (skipStatus, skipLease, _, skipSkippedReason) = await fixture.ReadTimeJobDetailAsync(skipId, ct);
             skipStatus.Should().Be((int)JobStatus.Skipped);
-            skipLockedUntil.Should().BeNull();
+            skipLease.State.Should().NotBe(RowLeaseState.Active);
             skipSkippedReason.Should().Be("Lease lapsed while running!");
 
             // Healthy renewing job (future lease) is untouched.
@@ -1444,12 +1515,43 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
                 baseTime.AddSeconds(2),
                 ct
             );
+            // The fence is the generation, so the other node holds the occurrence at a later one than this claim.
+            await fixture.OverwriteLeaseAsync(
+                fixture.QualifiedCronJobOccurrencesTable,
+                foreignId,
+                new RowLeaseSnapshot(
+                    2,
+                    RowLeaseState.Active,
+                    new DateTimeOffset(lease, TimeSpan.Zero),
+                    "other-node@9",
+                    1
+                ),
+                ct
+            );
 
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
-            (await persistence.RenewCronJobOccurrenceLeaseAsync(runningId, owner, ct)).Should().Be(1);
-            (await persistence.RenewCronJobOccurrenceLeaseAsync(queuedId, owner, ct)).Should().Be(0); // not running -> InProgress fence
-            (await persistence.RenewCronJobOccurrenceLeaseAsync(foreignId, owner, ct)).Should().Be(0); // not ours -> cancel-on-loss
+            (
+                await persistence.RenewCronJobOccurrenceLeaseAsync(
+                    JobsLeaseTables.CronOccurrence(runningId, 1),
+                    owner,
+                    ct
+                )
+            )
+                .Should()
+                .Be(1);
+            (await persistence.RenewCronJobOccurrenceLeaseAsync(JobsLeaseTables.CronOccurrence(queuedId, 1), owner, ct))
+                .Should()
+                .Be(0); // not running -> InProgress fence
+            (
+                await persistence.RenewCronJobOccurrenceLeaseAsync(
+                    JobsLeaseTables.CronOccurrence(foreignId, 1),
+                    owner,
+                    ct
+                )
+            )
+                .Should()
+                .Be(0); // not ours -> cancel-on-loss
         }
         finally
         {
@@ -1488,7 +1590,7 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
                 (int)JobStatus.InProgress,
                 owner,
                 NodeDeathPolicy.Retry,
-                null,
+                DateTime.UtcNow.AddMinutes(5),
                 baseTime,
                 ct
             );
@@ -1502,6 +1604,13 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
                 baseTime.AddSeconds(1),
                 ct
             );
+            // The other owner holds the occurrence at a later generation than the completions below carry.
+            await fixture.OverwriteLeaseAsync(
+                fixture.QualifiedCronJobOccurrencesTable,
+                foreignId,
+                new RowLeaseSnapshot(2, RowLeaseState.Active, DateTimeOffset.UtcNow.AddMinutes(5), "other-node@9", 1),
+                ct
+            );
             await fixture.SeedCronOccurrenceAsync(
                 terminalId,
                 cronId,
@@ -1512,24 +1621,37 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
                 baseTime.AddSeconds(2),
                 ct
             );
+            // Swept to Failed: the sweep revoked the lease. A settled one would accept a retried settlement.
+            await fixture.OverwriteLeaseAsync(
+                fixture.QualifiedCronJobOccurrencesTable,
+                terminalId,
+                new RowLeaseSnapshot(1, RowLeaseState.Revoked, DateTimeOffset.UtcNow.AddMinutes(-1), "node-a@5", 0),
+                ct
+            );
 
             var owned = new JobExecutionState
             {
                 FunctionName = "Cron",
                 JobId = ownedId,
+                Type = JobType.CronJobOccurrence,
                 ClaimOwner = owner,
+                ClaimGeneration = 1,
             }.SetProperty(x => x.Status, JobStatus.Succeeded);
             var foreign = new JobExecutionState
             {
                 FunctionName = "Cron",
                 JobId = foreignId,
+                Type = JobType.CronJobOccurrence,
                 ClaimOwner = owner,
+                ClaimGeneration = 1,
             }.SetProperty(x => x.Status, JobStatus.Succeeded);
             var terminal = new JobExecutionState
             {
                 FunctionName = "Cron",
                 JobId = terminalId,
+                Type = JobType.CronJobOccurrence,
                 ClaimOwner = "node-a@5",
+                ClaimGeneration = 1,
             }.SetProperty(x => x.Status, JobStatus.Succeeded);
 
             (await persistence.UpdateCronJobOccurrenceAsync(owned, ct)).Should().Be(1);
@@ -1540,7 +1662,8 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
             (await fixture.ReadCronOccurrenceAsync(foreignId, ct))
                 .Should()
                 .Be(((int)JobStatus.InProgress, "other-node@9"));
-            (await fixture.ReadCronOccurrenceAsync(terminalId, ct)).Should().Be(((int)JobStatus.Failed, "node-a@5"));
+            (await fixture.ReadCronOccurrenceAsync(terminalId, ct)).Status.Should().Be((int)JobStatus.Failed);
+            (await fixture.ReadCronOccurrenceClaimAsync(terminalId, ct)).Holder.Should().Be("node-a@5");
         }
         finally
         {
@@ -1630,8 +1753,8 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
             claimed[0].Status.Should().Be(JobStatus.Queued);
             claimed[0].Children.Should().ContainSingle();
             claimed[0].Children.Single().Children.Should().ContainSingle();
-            (await fixture.ReadTimeJobDetailAsync(child.Id, ct)).OwnerId.Should().Be(owner);
-            (await fixture.ReadTimeJobDetailAsync(grandChild.Id, ct)).OwnerId.Should().Be(owner);
+            (await fixture.ReadTimeJobAsync(child.Id, ct)).ActiveHolder.Should().Be(owner);
+            (await fixture.ReadTimeJobAsync(grandChild.Id, ct)).ActiveHolder.Should().Be(owner);
         }
         finally
         {
@@ -1679,8 +1802,8 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
             claimed.Should().ContainSingle();
             claimed[0].Children.Should().ContainSingle();
             claimed[0].Children.Single().Children.Should().ContainSingle();
-            (await fixture.ReadTimeJobDetailAsync(child.Id, ct)).OwnerId.Should().Be(owner);
-            (await fixture.ReadTimeJobDetailAsync(grandChild.Id, ct)).OwnerId.Should().Be(owner);
+            (await fixture.ReadTimeJobAsync(child.Id, ct)).ActiveHolder.Should().Be(owner);
+            (await fixture.ReadTimeJobAsync(grandChild.Id, ct)).ActiveHolder.Should().Be(owner);
         }
         finally
         {
@@ -1736,7 +1859,7 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
             reread.ExecutionTime.Should().Be(executionTime);
             reread.ExecutionTime!.Value.Kind.Should().Be(DateTimeKind.Utc);
 
-            // The lease is stamped by a claim, so claim the row to read back a stored LockedUntil. A claim takes only a
+            // The lease is stamped by a claim, so claim the row to read back a stored lease expiry. A claim takes only a
             // due row, so the row is moved due first.
             reread.ExecutionTime = DateTime.UtcNow;
             (await manager.UpdateAsync(reread, ct)).IsSucceeded.Should().BeTrue();
@@ -1744,8 +1867,8 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
             var claimed = await persistence.QueueTimeJobsAsync([due!], ct).ToArrayAsync(ct);
             claimed.Should().ContainSingle();
             var leased = await persistence.GetTimeJobByIdAsync(added.Id, ct);
-            leased!.LockedUntil.Should().NotBeNull();
-            leased.LockedUntil!.Value.Kind.Should().Be(DateTimeKind.Utc);
+            leased!.Lease.ExpiresAt.Should().NotBeNull();
+            leased.Lease.ExpiresAt!.Value.Offset.Should().Be(TimeSpan.Zero);
         }
         finally
         {
@@ -1774,7 +1897,14 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
             var id = Guid.NewGuid();
-            await fixture.SeedTimeJobAsync(id, "unified-start", (int)JobStatus.Queued, owner, ct);
+            await fixture.SeedTimeJobAsync(
+                id,
+                "unified-start",
+                (int)JobStatus.Queued,
+                owner,
+                ct,
+                lockedUntil: DateTime.UtcNow.AddMinutes(5)
+            );
 
             var start = new JobExecutionState { FunctionName = "unified-start", ClaimOwner = owner }.SetProperty(
                 x => x.Status,
@@ -1782,12 +1912,12 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
             );
 
             // First stamp promotes the Queued row to InProgress.
-            (await persistence.UpdateTimeJobsWithUnifiedContextAsync([id], start, ct))
+            (await persistence.UpdateTimeJobsWithUnifiedContextAsync([JobsLeaseTables.TimeJob(id, 1)], start, ct))
                 .Should()
                 .Equal(id);
 
             // Second stamp is a no-op: the row is InProgress, not Queued, so the strict fence excludes it.
-            (await persistence.UpdateTimeJobsWithUnifiedContextAsync([id], start, ct))
+            (await persistence.UpdateTimeJobsWithUnifiedContextAsync([JobsLeaseTables.TimeJob(id, 1)], start, ct))
                 .Should()
                 .BeEmpty();
 
@@ -1828,7 +1958,7 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
                 (int)JobStatus.Queued,
                 owner,
                 NodeDeathPolicy.Retry,
-                null,
+                DateTime.UtcNow.AddMinutes(5),
                 DateTime.UtcNow.AddHours(-1),
                 ct
             );
@@ -1839,12 +1969,24 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
             );
 
             // First stamp promotes the Queued occurrence to InProgress.
-            (await persistence.UpdateCronJobOccurrencesWithUnifiedContextAsync([occurrenceId], start, ct))
+            (
+                await persistence.UpdateCronJobOccurrencesWithUnifiedContextAsync(
+                    [JobsLeaseTables.CronOccurrence(occurrenceId, 1)],
+                    start,
+                    ct
+                )
+            )
                 .Should()
                 .Equal(occurrenceId);
 
             // Second stamp is a no-op: the occurrence is InProgress, not Queued, so the strict fence excludes it.
-            (await persistence.UpdateCronJobOccurrencesWithUnifiedContextAsync([occurrenceId], start, ct))
+            (
+                await persistence.UpdateCronJobOccurrencesWithUnifiedContextAsync(
+                    [JobsLeaseTables.CronOccurrence(occurrenceId, 1)],
+                    start,
+                    ct
+                )
+            )
                 .Should()
                 .BeEmpty();
 
@@ -1873,8 +2015,13 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
             var idle = _CronOccurrence(definition.Id, JobStatus.Idle, operationTime.UtcDateTime.AddMinutes(1));
             var queued = _CronOccurrence(definition.Id, JobStatus.Queued, operationTime.UtcDateTime.AddMinutes(2));
             var running = _CronOccurrence(definition.Id, JobStatus.InProgress, operationTime.UtcDateTime.AddMinutes(3));
-            running.OwnerId = "worker-a@incarnation";
-            running.LockedUntil = operationTime.UtcDateTime.AddMinutes(10);
+            running.Lease = new RowLeaseSnapshot(
+                1,
+                RowLeaseState.Active,
+                operationTime.AddMinutes(10),
+                "worker-a@incarnation",
+                0
+            );
 
             (await persistence.InsertCronJobsAsync([definition], ct)).Should().Be(1);
             (await persistence.InsertCronJobOccurrencesAsync([idle, queued, running], ct)).Should().Be(3);
@@ -1894,16 +2041,14 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
                 // Persisted at the storage clock's granularity (PostgreSQL truncates to microseconds).
                 pending.ExecutedAt.Should().BeCloseTo(operationTime, TimeSpan.FromMicroseconds(1));
                 pending.SkippedReason.Should().Be("Cron definition paused");
-                pending.OwnerId.Should().BeNull();
-                pending.LockedUntil.Should().BeNull();
+                pending.Lease.State.Should().NotBe(RowLeaseState.Active);
             }
 
             var preserved = occurrences.Single(x => x.Id == running.Id);
             preserved.Status.Should().Be(JobStatus.InProgress);
-            preserved.OwnerId.Should().Be("worker-a@incarnation");
-            preserved
-                .LockedUntil.Should()
-                .BeCloseTo(operationTime.UtcDateTime.AddMinutes(10), TimeSpan.FromMicroseconds(1));
+            preserved.Lease.State.Should().Be(RowLeaseState.Active);
+            preserved.Lease.Holder.Should().Be("worker-a@incarnation");
+            preserved.Lease.ExpiresAt.Should().BeCloseTo(operationTime.AddMinutes(10), TimeSpan.FromMicroseconds(1));
 
             var staleProjection = _CronDispatch(definition, revision: 3);
             var staleResults = await persistence

@@ -3,6 +3,8 @@
 using System.Collections.Concurrent;
 using System.Security.Claims;
 using System.Text.Json;
+using Headless.Coordination;
+using Headless.Fencing;
 using Headless.Messaging;
 using Headless.Messaging.Persistence;
 using Headless.Testing.Tests;
@@ -16,6 +18,12 @@ namespace Tests;
 [PublicAPI]
 public abstract partial class DataStorageTestsBase : TestBase
 {
+    /// <summary>
+    /// The lease a test grants when it needs one that has already expired: a grant rejects a duration that is not
+    /// positive, so the test grants this one and then waits several times its length.
+    /// </summary>
+    private static readonly TimeSpan _ShortLease = TimeSpan.FromMilliseconds(20);
+
     /// <summary>Gets the data storage instance for testing.</summary>
     protected abstract IDataStorage GetStorage();
 
@@ -110,8 +118,16 @@ public abstract partial class DataStorageTestsBase : TestBase
         return Task.FromResult<PersistedLeaseIdentity?>(null);
     }
 
-    /// <summary>Persisted ownership generation returned by provider-specific test queries.</summary>
-    protected readonly record struct PersistedLeaseIdentity(DateTimeOffset LockedUntil, string? Owner);
+    /// <summary>
+    /// Persisted lease columns returned by provider-specific test queries. <paramref name="LeaseState" /> is the raw
+    /// <see cref="RowLeaseState" /> value, as the column stores it.
+    /// </summary>
+    protected readonly record struct PersistedLeaseIdentity(
+        long LeaseGeneration,
+        short LeaseState,
+        DateTimeOffset? LeaseExpiresAt,
+        string? LeaseHolder
+    );
 
     /// <summary>
     /// Seeds one eligible retry row with an unsupported raw lane value through the provider's
@@ -145,8 +161,10 @@ public abstract partial class DataStorageTestsBase : TestBase
         string StatusName,
         DateTimeOffset? ExpiresAt,
         DateTimeOffset? NextRetryAt,
-        DateTimeOffset? LockedUntil,
-        string? Owner,
+        long LeaseGeneration,
+        short LeaseState,
+        DateTimeOffset? LeaseExpiresAt,
+        string? LeaseHolder,
         string? ExceptionInfo
     );
 
@@ -171,8 +189,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         DateTimeOffset? EffectiveExpiresAt,
         Guid? AttemptId,
         DateTimeOffset? NextRetryAt,
-        DateTimeOffset? LockedUntil,
-        string? Owner,
+        short LeaseState,
         string Content
     );
 
@@ -298,13 +315,12 @@ public abstract partial class DataStorageTestsBase : TestBase
         (await storage.ConfirmReceivedInboxRoutableAsync(first.Message, AbortToken))
             .Should()
             .BeTrue("confirming an already routable generation under its live fence is idempotent");
-        first.Message.LockedUntil.Should().NotBeNull("confirmation keeps the execution claim");
+        first.Message.Lease.State.Should().Be(RowLeaseState.Active, "confirmation keeps the execution claim");
 
         var releaseStorage = storage.Should().BeAssignableTo<IGracefulLeaseReleaseStorage>().Subject;
         var exactIdentity = new MessageLeaseIdentity(
             first.Message.StorageId,
-            first.Message.Owner,
-            first.Message.LockedUntil!.Value,
+            first.Message.Lease.Generation,
             first.Message.Lane,
             first.Message.InboxAttemptFence
         );
@@ -338,8 +354,7 @@ public abstract partial class DataStorageTestsBase : TestBase
             .BeTrue();
         var deferredIdentity = new MessageLeaseIdentity(
             first.Message.StorageId,
-            first.Message.Owner,
-            first.Message.LockedUntil!.Value,
+            first.Message.Lease.Generation,
             first.Message.Lane,
             first.Message.InboxAttemptFence
         );
@@ -583,7 +598,7 @@ public abstract partial class DataStorageTestsBase : TestBase
                 StatusName.Failed,
                 MessageContentWrite.Preserve,
                 retryDelay: null,
-                lockedUntil: null,
+                keepLease: false,
                 originalRetries: 0,
                 originalInlineAttempts: 1,
                 AbortToken
@@ -618,7 +633,7 @@ public abstract partial class DataStorageTestsBase : TestBase
                 StatusName.Failed,
                 MessageContentWrite.Preserve,
                 null,
-                null,
+                keepLease: false,
                 0,
                 1,
                 AbortToken
@@ -718,8 +733,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         terminal.EffectiveExpiresAt.Should().Be(terminal.TerminalAt.Value.Add(retention));
         terminal.AttemptId.Should().BeNull();
         terminal.NextRetryAt.Should().BeNull();
-        terminal.LockedUntil.Should().BeNull();
-        terminal.Owner.Should().BeNull();
+        terminal.LeaseState.Should().NotBe((short)RowLeaseState.Active);
         terminal.Content.Should().Be("not-json");
 
         var duplicate = await _AdmitInboxAsync(storage, origin, lane: lane);
@@ -864,7 +878,7 @@ public abstract partial class DataStorageTestsBase : TestBase
                 StatusName.Failed,
                 MessageContentWrite.Preserve,
                 null,
-                null,
+                keepLease: false,
                 0,
                 1,
                 AbortToken
@@ -1896,7 +1910,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         var claimed = await claimStorage.ClaimDelayedMessagesAsync(AbortToken);
 
         claimed.Select(message => message.StorageId).Should().Equal(earlier.StorageId, later.StorageId);
-        claimed.Should().AllSatisfy(message => message.LockedUntil.Should().NotBeNull());
+        claimed.Should().AllSatisfy(message => message.Lease.State.Should().Be(RowLeaseState.Active));
         (await claimStorage.ClaimDelayedMessagesAsync(AbortToken))
             .Should()
             .BeEmpty("the live claim lease must fence an immediate re-poll");
@@ -1940,10 +1954,12 @@ public abstract partial class DataStorageTestsBase : TestBase
 
         var winner = claimed.Should().ContainSingle().Subject;
         winner.StorageId.Should().Be(stored.StorageId);
-        winner.LockedUntil.Should().NotBeNull();
-        // LockedUntil is persisted at the storage clock's granularity (PostgreSQL truncates to microseconds),
+        winner.Lease.State.Should().Be(RowLeaseState.Active);
+        // The lease expiry is persisted at the storage clock's granularity (PostgreSQL truncates to microseconds),
         // so allow up to 1 microsecond of downward truncation from the tick-precision expected value.
-        winner.LockedUntil!.Value.Should().BeOnOrAfter(expiresAt.Add(dispatchTimeout) - TimeSpan.FromMicroseconds(1));
+        winner
+            .Lease.ExpiresAt!.Value.Should()
+            .BeOnOrAfter(expiresAt.Add(dispatchTimeout) - TimeSpan.FromMicroseconds(1));
     }
 
     public virtual async Task should_clear_claim_lease_when_flushing_delayed_state()
@@ -2247,8 +2263,8 @@ public abstract partial class DataStorageTestsBase : TestBase
     public virtual async Task should_not_return_leased_published_message_until_lease_expires()
     {
         // Verifies the lease/pickup contract:
-        //   1. An active lease (LockedUntil in the future) excludes the row from retry pickup.
-        //   2. After the lease window elapses (LockedUntil <= now), the row is eligible again.
+        //   1. A live lease excludes the row from retry pickup.
+        //   2. After the lease window elapses, the row is eligible again.
         //
         // The lease-contention guard from PR #254 review #15 rejects an attempt to overwrite an
         // active lease with a past timestamp — so the old "negative-timestamp trick" no longer
@@ -2386,7 +2402,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         acquired.Should().BeTrue();
         databaseTimeAfter.Should().NotBeNull();
         persisted.Should().NotBeNull();
-        var persistedLockedUntil = persisted!.Value.LockedUntil;
+        var persistedLease = persisted!.Value;
         var databaseTimeBeforeUtc = new DateTimeOffset(
             DateTime.SpecifyKind(databaseTimeBefore.Value, DateTimeKind.Utc),
             TimeSpan.Zero
@@ -2395,10 +2411,13 @@ public abstract partial class DataStorageTestsBase : TestBase
             DateTime.SpecifyKind(databaseTimeAfter!.Value, DateTimeKind.Utc),
             TimeSpan.Zero
         );
-        message.LockedUntil.Should().Be(persistedLockedUntil);
-        message.Owner.Should().Be(persisted.Value.Owner).And.Be(NodeMembership.OwnerTag(originalOwner));
+        message.Lease.Generation.Should().Be(persistedLease.LeaseGeneration);
+        message.Lease.State.Should().Be(RowLeaseState.Active);
+        persistedLease.LeaseState.Should().Be((short)RowLeaseState.Active);
+        message.Lease.ExpiresAt.Should().Be(persistedLease.LeaseExpiresAt);
+        message.Lease.Holder.Should().Be(persistedLease.LeaseHolder).And.Be(NodeMembership.OwnerTag(originalOwner));
         message
-            .LockedUntil.Should()
+            .Lease.ExpiresAt.Should()
             .BeOnOrAfter(databaseTimeBeforeUtc.Add(leaseDuration))
             .And.BeOnOrBefore(databaseTimeAfterUtc.Add(leaseDuration));
 
@@ -2482,7 +2501,10 @@ public abstract partial class DataStorageTestsBase : TestBase
             .ContainSingle(m => m.StorageId == storedMessage.StorageId)
             .Subject;
 
-        claimed.LockedUntil.Should().BeAfter(DateTimeOffset.UtcNow).And.BeBefore(DateTimeOffset.UtcNow.AddMinutes(10));
+        claimed
+            .Lease.ExpiresAt.Should()
+            .BeAfter(DateTimeOffset.UtcNow)
+            .And.BeBefore(DateTimeOffset.UtcNow.AddMinutes(10));
     }
 
     [Guarantee("MSG-LEASE-03")]
@@ -2627,7 +2649,7 @@ public abstract partial class DataStorageTestsBase : TestBase
                 state.NextStatus,
                 MessageContentWrite.Preserve,
                 state.NextRetry,
-                lockedUntil: null,
+                keepLease: false,
                 originalRetries,
                 originalInlineAttempts: message.InlineAttempts,
                 AbortToken
@@ -2637,7 +2659,7 @@ public abstract partial class DataStorageTestsBase : TestBase
                 state.NextStatus,
                 MessageContentWrite.Preserve,
                 state.NextRetry,
-                lockedUntil: null,
+                keepLease: false,
                 originalRetries,
                 originalInlineAttempts: message.InlineAttempts,
                 AbortToken
@@ -2709,15 +2731,13 @@ public abstract partial class DataStorageTestsBase : TestBase
                 state.NextStatus,
                 MessageContentWrite.Preserve,
                 state.NextRetry,
-                lockedUntil: null,
+                keepLease: false,
                 originalRetries,
                 originalInlineAttempts: message.InlineAttempts,
                 AbortToken
             );
             var after = await _StorageNowAsync();
             changed.Should().BeTrue();
-            message.LockedUntil = null;
-            message.Owner = null;
 
             var persisted = await monitoring.GetReceivedMessageAsync(message.StorageId, AbortToken);
             persisted!.Retries.Should().Be(n);
@@ -2869,8 +2889,7 @@ public abstract partial class DataStorageTestsBase : TestBase
 
         leased.Should().BeTrue();
         redelivery.StorageId.Should().NotBe(storedMessage.StorageId);
-        redelivery.LockedUntil.Should().BeNull();
-        redelivery.Owner.Should().BeNull();
+        redelivery.Lease.State.Should().NotBe(RowLeaseState.Active);
         (await storage.LeaseReceiveAsync(redelivery, TimeSpan.FromMinutes(5), AbortToken))
             .Should()
             .BeFalse("the guard-blocked upsert returned an unpersisted candidate");
@@ -2882,8 +2901,7 @@ public abstract partial class DataStorageTestsBase : TestBase
                 .GetReceivedMessageAsync(storedMessage.StorageId, AbortToken);
             afterRedelivery.Should().NotBeNull();
             afterRedelivery!.Content.Should().Be(beforeRedelivery.Content);
-            afterRedelivery.LockedUntil.Should().Be(beforeRedelivery.LockedUntil);
-            afterRedelivery.Owner.Should().Be(beforeRedelivery.Owner);
+            afterRedelivery.Lease.Should().Be(beforeRedelivery.Lease);
             afterRedelivery.Retries.Should().Be(beforeRedelivery.Retries);
             afterRedelivery.ExceptionInfo.Should().Be(beforeRedelivery.ExceptionInfo);
         }
@@ -2975,8 +2993,8 @@ public abstract partial class DataStorageTestsBase : TestBase
             .ContainSingle(m => m.StorageId == published.StorageId)
             .Subject;
 
-        claimedPublished.Owner.Should().Be(expectedOwner);
-        claimedPublished.LockedUntil.Should().NotBeNull();
+        claimedPublished.Lease.Holder.Should().Be(expectedOwner);
+        claimedPublished.Lease.State.Should().Be(RowLeaseState.Active);
 
         var received = await _StoreFailedReceivedMessageAsync("claim-owner-received", "claim-group");
         var claimedReceived = (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, null, AbortToken))
@@ -2984,8 +3002,8 @@ public abstract partial class DataStorageTestsBase : TestBase
             .ContainSingle(m => m.StorageId == received.StorageId)
             .Subject;
 
-        claimedReceived.Owner.Should().Be(expectedOwner);
-        claimedReceived.LockedUntil.Should().NotBeNull();
+        claimedReceived.Lease.Holder.Should().Be(expectedOwner);
+        claimedReceived.Lease.State.Should().Be(RowLeaseState.Active);
     }
 
     [Guarantee("MSG-SHUT-01")]
@@ -2999,21 +3017,24 @@ public abstract partial class DataStorageTestsBase : TestBase
             .Should()
             .ContainSingle(message => message.StorageId == stored.StorageId)
             .Subject;
-        var identity = new MessageLeaseIdentity(
-            claimed.StorageId,
-            claimed.Owner,
-            claimed.LockedUntil!.Value,
-            claimed.Lane
-        );
+        var identity = new MessageLeaseIdentity(claimed.StorageId, claimed.Lease.Generation, claimed.Lane);
 
-        (await releaseStorage.ReleasePublishedLeaseAsync(identity with { Owner = "another-owner" }, AbortToken))
+        (
+            await releaseStorage.ReleasePublishedLeaseAsync(
+                identity with
+                {
+                    Generation = identity.Generation - 1,
+                },
+                AbortToken
+            )
+        )
             .Should()
             .BeFalse();
         (
             await releaseStorage.ReleasePublishedLeaseAsync(
                 identity with
                 {
-                    LockedUntil = identity.LockedUntil.AddMilliseconds(1),
+                    Generation = identity.Generation + 1,
                 },
                 AbortToken
             )
@@ -3056,8 +3077,9 @@ public abstract partial class DataStorageTestsBase : TestBase
         var persisted = await GetPersistedLeaseIdentityAsync(published: true, claimed.StorageId, AbortToken);
         if (persisted is { } lease)
         {
-            lease.Owner.Should().Be(claimed.Owner);
-            lease.LockedUntil.Should().Be(claimed.LockedUntil!.Value);
+            lease.LeaseState.Should().Be((short)RowLeaseState.Active);
+            lease.LeaseGeneration.Should().Be(claimed.Lease.Generation);
+            lease.LeaseHolder.Should().Be(claimed.Lease.Holder);
         }
 
         NodeMembership.SetIdentity("flush-claim-owner");
@@ -3067,7 +3089,7 @@ public abstract partial class DataStorageTestsBase : TestBase
                 StatusName.Succeeded,
                 MessageContentWrite.Preserve,
                 retryDelay: null,
-                lockedUntil: null,
+                keepLease: false,
                 originalRetries: claimed.Retries,
                 originalInlineAttempts: claimed.InlineAttempts,
                 AbortToken
@@ -3124,21 +3146,24 @@ public abstract partial class DataStorageTestsBase : TestBase
             .Should()
             .ContainSingle(message => message.StorageId == stored.StorageId)
             .Subject;
-        var identity = new MessageLeaseIdentity(
-            claimed.StorageId,
-            claimed.Owner,
-            claimed.LockedUntil!.Value,
-            claimed.Lane
-        );
+        var identity = new MessageLeaseIdentity(claimed.StorageId, claimed.Lease.Generation, claimed.Lane);
 
-        (await releaseStorage.ReleaseReceivedLeaseAsync(identity with { Owner = "another-owner" }, AbortToken))
+        (
+            await releaseStorage.ReleaseReceivedLeaseAsync(
+                identity with
+                {
+                    Generation = identity.Generation - 1,
+                },
+                AbortToken
+            )
+        )
             .Should()
             .BeFalse();
         (
             await releaseStorage.ReleaseReceivedLeaseAsync(
                 identity with
                 {
-                    LockedUntil = identity.LockedUntil.AddMilliseconds(1),
+                    Generation = identity.Generation + 1,
                 },
                 AbortToken
             )
@@ -3166,12 +3191,7 @@ public abstract partial class DataStorageTestsBase : TestBase
             .Should()
             .ContainSingle(message => message.StorageId == stored.StorageId)
             .Subject;
-        var identity = new MessageLeaseIdentity(
-            claimed.StorageId,
-            claimed.Owner,
-            claimed.LockedUntil!.Value,
-            claimed.Lane
-        );
+        var identity = new MessageLeaseIdentity(claimed.StorageId, claimed.Lease.Generation, claimed.Lane);
         var deferDelay = TimeSpan.FromMinutes(5);
         var before = await storage.GetMonitoringApi().GetReceivedMessageAsync(claimed.StorageId, AbortToken);
         before.Should().NotBeNull();
@@ -3186,7 +3206,7 @@ public abstract partial class DataStorageTestsBase : TestBase
             .BeFalse();
         (
             await deferralStorage.DeferReceivedRetryAsync(
-                new CircuitRetryDeferral(identity with { Owner = "stale-owner" }, deferDelay),
+                new CircuitRetryDeferral(identity with { Generation = identity.Generation - 1 }, deferDelay),
                 AbortToken
             )
         )
@@ -3194,13 +3214,7 @@ public abstract partial class DataStorageTestsBase : TestBase
             .BeFalse();
         (
             await deferralStorage.DeferReceivedRetryAsync(
-                new CircuitRetryDeferral(
-                    identity with
-                    {
-                        LockedUntil = identity.LockedUntil.AddMilliseconds(1),
-                    },
-                    deferDelay
-                ),
+                new CircuitRetryDeferral(identity with { Generation = identity.Generation + 1 }, deferDelay),
                 AbortToken
             )
         )
@@ -3234,16 +3248,14 @@ public abstract partial class DataStorageTestsBase : TestBase
                 options =>
                     options
                         .Excluding(message => message.NextRetryAt)
-                        .Excluding(message => message.Owner)
-                        .Excluding(message => message.LockedUntil)
+                        .Excluding(message => message.Lease)
                         .Excluding(message => message.Origin)
             );
         after.Content.Should().Be(before!.Content);
         after
             .NextRetryAt.Should()
             .BeCloseTo(_Now().Add(deferDelay), TimeSpan.FromSeconds(1), "the store adds the delay to its own clock");
-        after.Owner.Should().BeNull();
-        after.LockedUntil.Should().BeNull();
+        after.Lease.State.Should().NotBe(RowLeaseState.Active);
         (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, null, AbortToken))
             .Should()
             .NotContain(message => message.StorageId == stored.StorageId);
@@ -3258,13 +3270,7 @@ public abstract partial class DataStorageTestsBase : TestBase
             .Should()
             .ContainSingle(message => message.StorageId == stored.StorageId)
             .Subject;
-        claimed.Owner.Should().BeNull();
-        var identity = new MessageLeaseIdentity(
-            claimed.StorageId,
-            claimed.Owner,
-            claimed.LockedUntil!.Value,
-            claimed.Lane
-        );
+        var identity = new MessageLeaseIdentity(claimed.StorageId, claimed.Lease.Generation, claimed.Lane);
 
         (
             await deferralStorage.DeferReceivedRetryAsync(
@@ -3283,8 +3289,9 @@ public abstract partial class DataStorageTestsBase : TestBase
         var deferralStorage = storage.Should().BeAssignableTo<ICircuitRetryDeferralStorage>().Subject;
         NodeMembership.SetIdentity("circuit-deferral-expired-owner");
         var stored = await _StoreFailedReceivedMessageAsync("circuit-deferral-expired", "expired-group");
-        (await storage.LeaseReceiveAsync(stored, TimeSpan.FromSeconds(-1), AbortToken)).Should().BeTrue();
-        var identity = new MessageLeaseIdentity(stored.StorageId, stored.Owner, stored.LockedUntil!.Value, stored.Lane);
+        (await storage.LeaseReceiveAsync(stored, _ShortLease, AbortToken)).Should().BeTrue();
+        await _ElapseAsync(_ShortLease * 5);
+        var identity = new MessageLeaseIdentity(stored.StorageId, stored.Lease.Generation, stored.Lane);
 
         (
             await deferralStorage.DeferReceivedRetryAsync(
@@ -3307,18 +3314,13 @@ public abstract partial class DataStorageTestsBase : TestBase
             .Should()
             .ContainSingle(message => message.StorageId == stored.StorageId)
             .Subject;
-        var identity = new MessageLeaseIdentity(
-            claimed.StorageId,
-            claimed.Owner,
-            claimed.LockedUntil!.Value,
-            claimed.Lane
-        );
+        var identity = new MessageLeaseIdentity(claimed.StorageId, claimed.Lease.Generation, claimed.Lane);
         (
             await storage.ChangeReceiveStateAsync(
                 claimed,
                 StatusName.Succeeded,
                 retryDelay: null,
-                lockedUntil: identity.LockedUntil,
+                keepLease: true,
                 cancellationToken: AbortToken
             )
         )
@@ -3425,12 +3427,7 @@ public abstract partial class DataStorageTestsBase : TestBase
 
         foreach (var claimed in firstClaim)
         {
-            var identity = new MessageLeaseIdentity(
-                claimed.StorageId,
-                claimed.Owner,
-                claimed.LockedUntil!.Value,
-                claimed.Lane
-            );
+            var identity = new MessageLeaseIdentity(claimed.StorageId, claimed.Lease.Generation, claimed.Lane);
             (
                 await deferralStorage.DeferReceivedRetryAsync(
                     new CircuitRetryDeferral(identity, TimeSpan.FromMinutes(10)),
@@ -3461,8 +3458,7 @@ public abstract partial class DataStorageTestsBase : TestBase
             .Subject;
         var publishedIdentity = new MessageLeaseIdentity(
             claimedPublished.StorageId,
-            claimedPublished.Owner,
-            claimedPublished.LockedUntil!.Value,
+            claimedPublished.Lease.Generation,
             claimedPublished.Lane
         );
         (
@@ -3471,7 +3467,7 @@ public abstract partial class DataStorageTestsBase : TestBase
                 StatusName.Succeeded,
                 MessageContentWrite.Preserve,
                 retryDelay: null,
-                lockedUntil: null,
+                keepLease: false,
                 originalRetries: claimedPublished.Retries,
                 originalInlineAttempts: claimedPublished.InlineAttempts,
                 cancellationToken: AbortToken
@@ -3486,7 +3482,9 @@ public abstract partial class DataStorageTestsBase : TestBase
                 .GetMonitoringApi()
                 .GetPublishedMessageAsync(claimedPublished.StorageId, AbortToken);
             roundTripped.Should().NotBeNull();
-            roundTripped!.LockedUntil.Should().BeNull("the successful retry transition must clear its lease");
+            roundTripped!
+                .Lease.State.Should()
+                .NotBe(RowLeaseState.Active, "the successful retry transition must clear its lease");
         }
 
         (await releaseStorage.ReleasePublishedLeaseAsync(publishedIdentity, AbortToken))
@@ -3503,8 +3501,7 @@ public abstract partial class DataStorageTestsBase : TestBase
             .Subject;
         var receivedIdentity = new MessageLeaseIdentity(
             claimedReceived.StorageId,
-            claimedReceived.Owner,
-            claimedReceived.LockedUntil!.Value,
+            claimedReceived.Lease.Generation,
             claimedReceived.Lane
         );
         (
@@ -3513,7 +3510,7 @@ public abstract partial class DataStorageTestsBase : TestBase
                 StatusName.Succeeded,
                 MessageContentWrite.Preserve,
                 retryDelay: null,
-                lockedUntil: null,
+                keepLease: false,
                 originalRetries: claimedReceived.Retries,
                 originalInlineAttempts: claimedReceived.InlineAttempts,
                 cancellationToken: AbortToken
@@ -3528,7 +3525,9 @@ public abstract partial class DataStorageTestsBase : TestBase
                 .GetMonitoringApi()
                 .GetReceivedMessageAsync(claimedReceived.StorageId, AbortToken);
             roundTripped.Should().NotBeNull();
-            roundTripped!.LockedUntil.Should().BeNull("the successful retry transition must clear its lease");
+            roundTripped!
+                .Lease.State.Should()
+                .NotBe(RowLeaseState.Active, "the successful retry transition must clear its lease");
         }
 
         (await releaseStorage.ReleaseReceivedLeaseAsync(receivedIdentity, AbortToken))
@@ -3542,8 +3541,7 @@ public abstract partial class DataStorageTestsBase : TestBase
             .Subject;
         var terminalIdentity = new MessageLeaseIdentity(
             claimedTerminal.StorageId,
-            claimedTerminal.Owner,
-            claimedTerminal.LockedUntil!.Value,
+            claimedTerminal.Lease.Generation,
             claimedTerminal.Lane
         );
         (
@@ -3551,7 +3549,7 @@ public abstract partial class DataStorageTestsBase : TestBase
                 claimedTerminal,
                 StatusName.Succeeded,
                 retryDelay: null,
-                lockedUntil: claimedTerminal.LockedUntil,
+                keepLease: true,
                 cancellationToken: AbortToken
             )
         )
@@ -3575,16 +3573,11 @@ public abstract partial class DataStorageTestsBase : TestBase
             .ToArray();
         claimed.Should().HaveCount(2);
         var identities = claimed
-            .Select(message => new MessageLeaseIdentity(
-                message.StorageId,
-                message.Owner,
-                message.LockedUntil!.Value,
-                message.Lane
-            ))
+            .Select(message => new MessageLeaseIdentity(message.StorageId, message.Lease.Generation, message.Lane))
             .ToArray();
 
         var released = await releaseStorage.ReleasePublishedLeasesAsync(
-            [identities[0] with { Owner = "stale-owner" }, .. identities],
+            [identities[0] with { Generation = identities[0].Generation - 1 }, .. identities],
             AbortToken
         );
 
@@ -3645,7 +3638,7 @@ public abstract partial class DataStorageTestsBase : TestBase
                 published,
                 StatusName.Failed,
                 retryDelay: null,
-                lockedUntil: _FutureLeaseUntil(),
+                keepLease: true,
                 cancellationToken: AbortToken
             )
         )
@@ -3659,7 +3652,7 @@ public abstract partial class DataStorageTestsBase : TestBase
                 received,
                 StatusName.Failed,
                 retryDelay: null,
-                lockedUntil: _FutureLeaseUntil(),
+                keepLease: true,
                 cancellationToken: AbortToken
             )
         )
@@ -3750,30 +3743,49 @@ public abstract partial class DataStorageTestsBase : TestBase
             .Contain(m => m.StorageId == received.StorageId);
     }
 
-    public virtual async Task should_not_reclaim_dead_owner_rows_with_expired_lease()
+    public virtual async Task should_revoke_dead_owner_rows_with_expired_lease()
     {
-        // The LockedUntil floor — a dead owner's row whose lease has already expired is left
-        // untouched by reclaim (the `LockedUntil > now` clause excludes it); normal lease-expiry
-        // pickup recovers it. Reclaim only fast-forwards leases still in the future.
+        // Reclaim revokes every active generation a dead holder still records, expired or not, so the dead holder's
+        // generation is fenced off even when the lease ran out before the reclaim reached it.
         var storage = GetStorage();
         var deadOwner = NodeMembership.SetIdentity("expired-lease-dead-owner");
         var published = await _StoreFailedPublishedMessageAsync("expired-lease-published");
-        (await storage.LeasePublishAsync(published, TimeSpan.FromSeconds(-1), AbortToken)).Should().BeTrue();
+        (await storage.LeasePublishAsync(published, _ShortLease, AbortToken)).Should().BeTrue();
         var received = await _StoreFailedReceivedMessageAsync("expired-lease-received", "expired-lease-group");
-        (await storage.LeaseReceiveAsync(received, TimeSpan.FromSeconds(-1), AbortToken)).Should().BeTrue();
+        (await storage.LeaseReceiveAsync(received, _ShortLease, AbortToken)).Should().BeTrue();
+        await _ElapseAsync(_ShortLease * 5);
 
         var deadOwners = new[] { NodeMembership.OwnerTag(deadOwner) };
 
-        (await storage.ReclaimDeadPublishedOwnersAsync(deadOwners, AbortToken)).Should().Be(0);
-        (await storage.ReclaimDeadReceivedOwnersAsync(deadOwners, AbortToken)).Should().Be(0);
+        (await storage.ReclaimDeadPublishedOwnersAsync(deadOwners, AbortToken)).Should().Be(1);
+        (await storage.ReclaimDeadReceivedOwnersAsync(deadOwners, AbortToken)).Should().Be(1);
 
-        // The floor still recovers them: an expired lease is already retriable via normal pickup.
+        // Either way the rows stay retriable through normal pickup.
         (await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
             .Should()
             .Contain(m => m.StorageId == published.StorageId);
         (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, null, AbortToken))
             .Should()
             .Contain(m => m.StorageId == received.StorageId);
+    }
+
+    public virtual async Task should_lease_and_reclaim_rows_under_the_longest_owner_tag()
+    {
+        // The holder column must store the longest tag coordination issues as it is: a shortened or mapped holder
+        // would hide which node holds the row and could stop the dead-owner reclaim from matching it.
+        var storage = GetStorage();
+        NodeMembership.ClusterName = new string('c', CoordinationOptions.ClusterNameMaxLength);
+        var deadOwner = NodeMembership.SetIdentity(new string('n', NodeId.MaxLength), long.MaxValue);
+        var deadOwners = new[] { NodeMembership.OwnerTag(deadOwner) };
+        deadOwners[0].Should().HaveLength(NodeOwnerTag.MaxLength);
+        var published = await _StoreFailedPublishedMessageAsync("longest-tag-published");
+        var received = await _StoreFailedReceivedMessageAsync("longest-tag-received", "longest-tag-group");
+
+        (await storage.LeasePublishAsync(published, _ShortLease, AbortToken)).Should().BeTrue();
+        (await storage.LeaseReceiveAsync(received, _ShortLease, AbortToken)).Should().BeTrue();
+
+        (await storage.ReclaimDeadPublishedOwnersAsync(deadOwners, AbortToken)).Should().Be(1);
+        (await storage.ReclaimDeadReceivedOwnersAsync(deadOwners, AbortToken)).Should().Be(1);
     }
 
     [Guarantee("MSG-STORE-02")]
@@ -3880,7 +3892,9 @@ public abstract partial class DataStorageTestsBase : TestBase
         );
 
         reserved.Should().BeTrue();
-        message.LockedUntil.Should().NotBeNull("a successful combined write must mirror the lease to the caller");
+        message
+            .Lease.State.Should()
+            .Be(RowLeaseState.Active, "a successful combined write must mirror the lease to the caller");
 
         // The row is now actively leased: a second combined write must be rejected even with the
         // correct counter token, while the standalone mid-burst reservation under the held lease
@@ -3909,16 +3923,17 @@ public abstract partial class DataStorageTestsBase : TestBase
             AbortToken
         );
 
-        // First combined write with an already-expired lease leaves the row unleased but advances
-        // the durable InlineAttempts counter to 1.
+        // First combined write takes a short lease that then expires, leaving the row claimable but with the
+        // durable InlineAttempts counter at 1.
         message.InlineAttempts = 1;
         var first = await storage.LeaseReceiveAndReserveAttemptAsync(
             message,
-            TimeSpan.FromSeconds(-1),
+            _ShortLease,
             originalInlineAttempts: 0,
             AbortToken
         );
         first.Should().BeTrue();
+        await _ElapseAsync(_ShortLease * 5);
 
         // A contender holding a stale counter view (0) must fail the CAS; the current token (1)
         // must succeed.
@@ -4759,9 +4774,10 @@ public abstract partial class DataStorageTestsBase : TestBase
 
         NodeMembership.SetIdentity("stale-generation-owner-a");
         var leaseA = received
-            ? await storage.LeaseReceiveAsync(stale, TimeSpan.FromSeconds(-1), AbortToken)
-            : await storage.LeasePublishAsync(stale, TimeSpan.FromSeconds(-1), AbortToken);
+            ? await storage.LeaseReceiveAsync(stale, _ShortLease, AbortToken)
+            : await storage.LeasePublishAsync(stale, _ShortLease, AbortToken);
         leaseA.Should().BeTrue();
+        await _ElapseAsync(_ShortLease * 5);
 
         var successor = _CopyMessage(stale);
         NodeMembership.SetIdentity("stale-generation-owner-b");
@@ -4769,7 +4785,7 @@ public abstract partial class DataStorageTestsBase : TestBase
             ? await storage.LeaseReceiveAsync(successor, TimeSpan.FromMinutes(5), AbortToken)
             : await storage.LeasePublishAsync(successor, TimeSpan.FromMinutes(5), AbortToken);
         leaseB.Should().BeTrue();
-        successor.Owner.Should().NotBe(stale.Owner);
+        successor.Lease.Generation.Should().BeGreaterThan(stale.Lease.Generation);
 
         stale.InlineAttempts = 1;
         var reserved = received
@@ -4794,7 +4810,7 @@ public abstract partial class DataStorageTestsBase : TestBase
                     state,
                     MessageContentWrite.Refresh,
                     retryDelay,
-                    lockedUntil: null,
+                    keepLease: false,
                     originalRetries: 0,
                     originalInlineAttempts: 0,
                     AbortToken
@@ -4804,7 +4820,7 @@ public abstract partial class DataStorageTestsBase : TestBase
                     state,
                     MessageContentWrite.Refresh,
                     retryDelay,
-                    lockedUntil: null,
+                    keepLease: false,
                     originalRetries: 0,
                     originalInlineAttempts: 0,
                     AbortToken
@@ -4849,7 +4865,7 @@ public abstract partial class DataStorageTestsBase : TestBase
                 StatusName.Failed,
                 MessageContentWrite.Refresh,
                 retryDelay: RetryDelay.Exactly(TimeSpan.FromMinutes(1)),
-                lockedUntil: null,
+                keepLease: false,
                 originalRetries: 0,
                 originalInlineAttempts: 1,
                 AbortToken
@@ -4859,7 +4875,7 @@ public abstract partial class DataStorageTestsBase : TestBase
                 StatusName.Failed,
                 MessageContentWrite.Refresh,
                 retryDelay: RetryDelay.Exactly(TimeSpan.FromMinutes(1)),
-                lockedUntil: null,
+                keepLease: false,
                 originalRetries: 0,
                 originalInlineAttempts: 1,
                 AbortToken
@@ -4878,8 +4894,7 @@ public abstract partial class DataStorageTestsBase : TestBase
             Added = message.Added,
             ExpiresAt = message.ExpiresAt,
             NextRetryAt = message.NextRetryAt,
-            LockedUntil = message.LockedUntil,
-            Owner = message.Owner,
+            Lease = message.Lease,
             Retries = message.Retries,
             InlineAttempts = message.InlineAttempts,
             ExceptionInfo = message.ExceptionInfo,

@@ -160,9 +160,13 @@ public sealed class JobsClaimStrategyWiringTests : TestBase
     private static void _ConfigureJobsModel<TTimeJob>(ModelBuilder modelBuilder)
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
     {
+        // The lease is a complex value EF cannot map by convention, so even a minimal model maps it the way the Jobs
+        // configurations do.
         modelBuilder.Entity<TTimeJob>().HasKey(x => x.Id);
+        modelBuilder.Entity<TTimeJob>().HasRowLease(x => x.Lease);
         modelBuilder.Entity<CronJobEntity>().HasKey(x => x.Id);
         modelBuilder.Entity<CronJobOccurrenceEntity<CronJobEntity>>().HasKey(x => x.Id);
+        modelBuilder.Entity<CronJobOccurrenceEntity<CronJobEntity>>().HasRowLease(x => x.Lease);
     }
 
     private sealed class FilteredTimeJob : TimeJobEntity<FilteredTimeJob>;

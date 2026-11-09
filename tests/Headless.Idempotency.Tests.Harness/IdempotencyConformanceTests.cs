@@ -4,6 +4,7 @@ using System.Text;
 using Headless.Idempotency;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace Tests;
@@ -652,6 +653,73 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
     }
 
     /// <summary>
+    /// Only the generation that ended a record can learn how it ended: an older attempt renewing after a newer one
+    /// released the key is told it is stale, not that its own attempt was released.
+    /// </summary>
+    public virtual async Task should_answer_stale_to_an_older_attempt_renewing_after_a_newer_one_released()
+    {
+        var key = CreateKey();
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+
+        var older = await AdmitAsync(host, key);
+        await Fixture.ShiftLeaseIntoPastAsync(HostKey(key), LongLease + TimeSpan.FromMinutes(1), AbortToken);
+        var newer = await AdmitAsync(host, key);
+        newer.IsTakeover.Should().BeTrue();
+        (await host.Operations.ReleaseAsync(newer, AbortToken)).Should().Be(IdempotentLeaseStatus.Released);
+
+        (await host.Operations.RenewAsync(older, LongLease, AbortToken))
+            .Should()
+            .Be(new IdempotentLeaseRenewal(IdempotentLeaseStatus.Stale, ExpiresAt: null));
+        (await host.Operations.RenewAsync(newer, LongLease, AbortToken))
+            .Status.Should()
+            .Be(IdempotentLeaseStatus.Released, "the generation that released the key still sees its own release");
+    }
+
+    /// <summary>
+    /// An attempt ends once: after a release it can no longer complete, after a completion a release reports the
+    /// completion and keeps the result, and a repeated release reports the release again, all without writing.
+    /// </summary>
+    public virtual async Task should_end_an_attempt_once_whichever_verb_comes_second()
+    {
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+
+        // Released, then completed: refused, and the record stays released.
+        var releasedKey = CreateKey();
+        var released = await AdmitAsync(host, releasedKey);
+        await host.Operations.ReleaseAsync(released, AbortToken);
+        var releasedBefore = await Fixture.ReadRecordAsync(HostKey(releasedKey), AbortToken);
+
+        var complete = async () =>
+            await host.Operations.CompleteAsync(released, Payload("late"), Contract, cancellationToken: AbortToken);
+
+        (await complete.Should().ThrowAsync<StaleAdmissionException>())
+            .Which.Reason.Should()
+            .Be(IdempotentLeaseStatus.Released);
+        (await Fixture.ReadRecordAsync(HostKey(releasedKey), AbortToken))
+            .Should()
+            .BeEquivalentTo(releasedBefore, "a refused completion writes nothing");
+
+        // Released twice: the second release reports success and writes nothing.
+        (await host.Operations.ReleaseAsync(released, AbortToken))
+            .Should()
+            .Be(IdempotentLeaseStatus.Released);
+        (await Fixture.ReadRecordAsync(HostKey(releasedKey), AbortToken))
+            .Should()
+            .BeEquivalentTo(releasedBefore, "a repeated release writes nothing");
+
+        // Completed, then released: the completion stands.
+        var completedKey = CreateKey();
+        var completed = await AdmitAsync(host, completedKey);
+        await host.Operations.CompleteAsync(completed, Payload("done"), Contract, cancellationToken: AbortToken);
+        var completedBefore = await Fixture.ReadRecordAsync(HostKey(completedKey), AbortToken);
+
+        (await host.Operations.ReleaseAsync(completed, AbortToken)).Should().Be(IdempotentLeaseStatus.Completed);
+        var completedAfter = await Fixture.ReadRecordAsync(HostKey(completedKey), AbortToken);
+        completedAfter.Should().BeEquivalentTo(completedBefore, "a release after a completion writes nothing");
+        Text(completedAfter!.Result!).Should().Be("done");
+    }
+
+    /// <summary>
     /// A fence inside a unit that began while the lease was live must still refuse once the lease expired: every
     /// decision reads the database clock after the row lock, never a clock frozen at transaction start.
     /// </summary>
@@ -678,6 +746,54 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
         (await fence.Should().ThrowAsync<StaleAdmissionException>())
             .Which.Reason.Should()
             .Be(IdempotentLeaseStatus.Expired);
+    }
+
+    /// <summary>
+    /// The store's own fence refuses a write whose lease ran out after the caller's lock check judged it current, and
+    /// says so with the same typed refusal: completion, the recovery point, and release all throw
+    /// <see cref="StaleAdmissionException" /> with reason <see cref="IdempotentLeaseStatus.Expired" />.
+    /// </summary>
+    public virtual async Task should_refuse_a_store_write_whose_lease_expired_as_a_stale_admission()
+    {
+        var key = CreateKey();
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+        var store = host.Services.GetRequiredService<IIdempotencyRecordStore>();
+        var lease = TimeSpan.FromSeconds(1);
+
+        var admitted = await host.Operations.AdmitAsync(
+            key,
+            Fingerprint,
+            leaseDuration: lease,
+            retention: Retention,
+            cancellationToken: AbortToken
+        );
+        var recordKey = new IdempotencyRecordKey(admitted.Key.TenantId ?? string.Empty, admitted.Key.Key);
+        var result = Encoding.UTF8.GetBytes("done");
+        var generation = admitted.Generation!.Value;
+
+        await using var unit = await Fixture.BeginUnitAsync(host, AbortToken);
+        await Task.Delay(lease + TimeSpan.FromMilliseconds(500), AbortToken);
+
+        var complete = async () =>
+            await store.CompleteAsync(unit.Unit, recordKey, generation, result, Contract, Retention, AbortToken);
+        var recoveryPoint = async () =>
+            await store.SetRecoveryPointAsync(
+                unit.Unit,
+                recordKey,
+                generation,
+                "step",
+                result,
+                RecoveryContract,
+                AbortToken
+            );
+        var release = async () => await store.ReleaseAsync(unit.Unit, recordKey, generation, Retention, AbortToken);
+
+        foreach (var write in new[] { complete, recoveryPoint, release })
+        {
+            var refused = (await write.Should().ThrowAsync<StaleAdmissionException>()).Which;
+            refused.Reason.Should().Be(IdempotentLeaseStatus.Expired);
+            refused.Generation.Should().Be(generation);
+        }
     }
 
     #endregion

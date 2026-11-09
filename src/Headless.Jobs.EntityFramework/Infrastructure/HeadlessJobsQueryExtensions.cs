@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Fencing;
 using Headless.Jobs;
+using Headless.Jobs.Infrastructure;
 
 namespace Microsoft.EntityFrameworkCore;
 
@@ -62,142 +64,107 @@ public static class HeadlessJobsQueryExtensions
     }
 
     /// <summary>
-    /// Selects acquirable non-terminal rows using the caller-supplied clock. EF runtime claim paths use the internal
-    /// database-clock variant; this overload remains available for deterministic query composition.
+    /// Selects the rows a claim by <paramref name="ownerId"/> may take: non-terminal, not yet running, and either
+    /// already leased to that owner (a crashed node re-picking its own rows) or with no live lease, judged by the
+    /// database clock inside the statement.
     /// </summary>
-    public static IQueryable<TTimeJob> WhereCanAcquire<TTimeJob>(
-        this IQueryable<TTimeJob> q,
-        string ownerId,
-        DateTime now
-    )
-        where TTimeJob : TimeJobEntity<TTimeJob>
-    {
-        return q.Where(e =>
-            (e.Status == JobStatus.Idle || e.Status == JobStatus.Queued)
-            && (e.OwnerId == ownerId || e.LockedUntil == null || e.LockedUntil <= now)
-        );
-    }
-
-    public static IQueryable<CronJobOccurrenceEntity<TCronJob>> WhereCanAcquire<TCronJob>(
-        this IQueryable<CronJobOccurrenceEntity<TCronJob>> q,
-        string ownerId,
-        DateTime now
-    )
-        where TCronJob : CronJobEntity
-    {
-        return q.Where(e =>
-            (e.Status == JobStatus.Idle || e.Status == JobStatus.Queued)
-            && (e.OwnerId == ownerId || e.LockedUntil == null || e.LockedUntil <= now)
-        );
-    }
-
-    /// <summary>Relational runtime variant whose clock expression is translated inside the claim statement.</summary>
+    /// <remarks>
+    /// The no-live-lease arm holds for every <c>OnNodeDeath</c> policy: an <c>Idle</c> or <c>Queued</c> row never
+    /// invoked user code (a run starts only after its fenced admission to <c>InProgress</c>), so reclaiming it starts
+    /// the job's first run, and the previous attempt's admission then fails its generation fence.
+    /// </remarks>
     internal static IQueryable<TTimeJob> WhereCanAcquireUsingDatabaseClock<TTimeJob>(
         this IQueryable<TTimeJob> q,
         string ownerId
     )
         where TTimeJob : TimeJobEntity<TTimeJob>
     {
-        // A non-terminal row is claimable if it is already mine (crash re-pickup), never leased, or its lease
-        // deadline has passed (lease-expiry self-heal). DateTime.UtcNow is provider-translated to the database clock,
-        // so comparison and stamping share one authority without a separate scalar query.
-        // The lease-expiry arm holds for every OnNodeDeath policy: an Idle/Queued row never invoked user code (a run
-        // starts only after its owner-fenced admission to InProgress), so reclaiming it starts the job's first run,
-        // and the previous owner's admission then matches no row. The policy governs only a started attempt.
-        return q.Where(e =>
-            (e.Status == JobStatus.Idle || e.Status == JobStatus.Queued)
-            && (e.OwnerId == ownerId || e.LockedUntil == null || e.LockedUntil <= DateTime.UtcNow)
+        return q.Where(
+            JobsLeaseExpressions.Expand<TTimeJob>(e =>
+                (e.Status == JobStatus.Idle || e.Status == JobStatus.Queued)
+                && (
+                    (e.Lease.State == RowLeaseState.Active && e.Lease.Holder == ownerId)
+                    || !JobsLeaseExpressions.IsLive(e.Lease)
+                )
+            )
         );
     }
 
-    /// <summary>
-    /// The time-job peek's predicate: the acquire predicate without its owner arm, on the database clock. A row this
-    /// node already holds was dispatched by an earlier wake, so peeking it again would admit it to the pool twice; the
-    /// claim keeps the owner arm so a crashed node still re-claims its own rows. Unlike the fallback predicate, an
-    /// <c>Idle</c> row with a live foreign lease stays out, because no claim could take it.
-    /// </summary>
-    internal static IQueryable<TTimeJob> WhereCanPeekUsingDatabaseClock<TTimeJob>(this IQueryable<TTimeJob> q)
-        where TTimeJob : TimeJobEntity<TTimeJob>
-    {
-        return q.Where(e =>
-            (e.Status == JobStatus.Idle || e.Status == JobStatus.Queued)
-            && (e.LockedUntil == null || e.LockedUntil <= DateTime.UtcNow)
-        );
-    }
-
+    /// <inheritdoc cref="WhereCanAcquireUsingDatabaseClock{TTimeJob}(IQueryable{TTimeJob},string)"/>
     internal static IQueryable<CronJobOccurrenceEntity<TCronJob>> WhereCanAcquireUsingDatabaseClock<TCronJob>(
         this IQueryable<CronJobOccurrenceEntity<TCronJob>> q,
         string ownerId
     )
         where TCronJob : CronJobEntity
     {
-        return q.Where(e =>
-            (e.Status == JobStatus.Idle || e.Status == JobStatus.Queued)
-            && (e.OwnerId == ownerId || e.LockedUntil == null || e.LockedUntil <= DateTime.UtcNow)
+        return q.Where(
+            JobsLeaseExpressions.Expand<CronJobOccurrenceEntity<TCronJob>>(e =>
+                (e.Status == JobStatus.Idle || e.Status == JobStatus.Queued)
+                && (
+                    (e.Lease.State == RowLeaseState.Active && e.Lease.Holder == ownerId)
+                    || !JobsLeaseExpressions.IsLive(e.Lease)
+                )
+            )
         );
     }
 
     /// <summary>
-    /// The stored cron-occurrence peek's predicate: the acquire predicate without its owner arm, on the database clock.
-    /// An occurrence this node already holds was dispatched by an earlier wake and is waiting for a worker or a
-    /// concurrency slot, so peeking it again would re-claim it and admit it to the pool once per scheduler poll. The
-    /// claim keeps the owner arm so a node still re-claims its own rows.
+    /// The time-job peek's predicate: the acquire predicate without its owner arm. A row this node already holds was
+    /// dispatched by an earlier wake, so peeking it again would admit it to the pool twice; the claim keeps the owner
+    /// arm so a crashed node still re-claims its own rows. Unlike the fallback predicate, an <c>Idle</c> row with a
+    /// live foreign lease stays out, because no claim could take it.
+    /// </summary>
+    internal static IQueryable<TTimeJob> WhereCanPeekUsingDatabaseClock<TTimeJob>(this IQueryable<TTimeJob> q)
+        where TTimeJob : TimeJobEntity<TTimeJob>
+    {
+        return q.Where(
+            JobsLeaseExpressions.Expand<TTimeJob>(e =>
+                (e.Status == JobStatus.Idle || e.Status == JobStatus.Queued) && !JobsLeaseExpressions.IsLive(e.Lease)
+            )
+        );
+    }
+
+    /// <summary>
+    /// The stored cron-occurrence peek's predicate: the acquire predicate without its owner arm. An occurrence this
+    /// node already holds was dispatched by an earlier wake and is waiting for a worker or a concurrency slot, so
+    /// peeking it again would re-claim it and admit it to the pool once per scheduler poll.
     /// </summary>
     internal static IQueryable<CronJobOccurrenceEntity<TCronJob>> WhereCanPeekUsingDatabaseClock<TCronJob>(
         this IQueryable<CronJobOccurrenceEntity<TCronJob>> q
     )
         where TCronJob : CronJobEntity
     {
-        return q.Where(e =>
-            (e.Status == JobStatus.Idle || e.Status == JobStatus.Queued)
-            && (e.LockedUntil == null || e.LockedUntil <= DateTime.UtcNow)
+        return q.Where(
+            JobsLeaseExpressions.Expand<CronJobOccurrenceEntity<TCronJob>>(e =>
+                (e.Status == JobStatus.Idle || e.Status == JobStatus.Queued) && !JobsLeaseExpressions.IsLive(e.Lease)
+            )
         );
     }
 
     /// <summary>
-    /// Selects the rows the fallback sweep may claim: <c>Idle</c>, or <c>Queued</c> with a lapsed or absent lease
-    /// (<c>LockedUntil == null || LockedUntil &lt;= now</c>). Unlike <c>WhereCanAcquire</c> this is the owner-agnostic
-    /// fallback predicate — <paramref name="now"/> is supplied by the caller.
+    /// Selects the rows the fallback sweep may claim: <c>Idle</c>, or <c>Queued</c> with no live lease. Unlike the
+    /// acquire predicate it is owner-agnostic.
     /// </summary>
-    public static IQueryable<TTimeJob> WhereCanFallbackClaim<TTimeJob>(this IQueryable<TTimeJob> q, DateTime now)
-        where TTimeJob : TimeJobEntity<TTimeJob>
-    {
-        return q.Where(e =>
-            e.Status == JobStatus.Idle
-            || (e.Status == JobStatus.Queued && (e.LockedUntil == null || e.LockedUntil <= now))
-        );
-    }
-
-    /// <inheritdoc cref="WhereCanFallbackClaim{TTimeJob}(System.Linq.IQueryable{TTimeJob},System.DateTime)"/>
-    public static IQueryable<CronJobOccurrenceEntity<TCronJob>> WhereCanFallbackClaim<TCronJob>(
-        this IQueryable<CronJobOccurrenceEntity<TCronJob>> q,
-        DateTime now
-    )
-        where TCronJob : CronJobEntity
-    {
-        return q.Where(e =>
-            e.Status == JobStatus.Idle
-            || (e.Status == JobStatus.Queued && (e.LockedUntil == null || e.LockedUntil <= now))
-        );
-    }
-
     internal static IQueryable<TTimeJob> WhereCanFallbackClaimUsingDatabaseClock<TTimeJob>(this IQueryable<TTimeJob> q)
         where TTimeJob : TimeJobEntity<TTimeJob>
     {
-        return q.Where(e =>
-            e.Status == JobStatus.Idle
-            || (e.Status == JobStatus.Queued && (e.LockedUntil == null || e.LockedUntil <= DateTime.UtcNow))
+        return q.Where(
+            JobsLeaseExpressions.Expand<TTimeJob>(e =>
+                e.Status == JobStatus.Idle || (e.Status == JobStatus.Queued && !JobsLeaseExpressions.IsLive(e.Lease))
+            )
         );
     }
 
+    /// <inheritdoc cref="WhereCanFallbackClaimUsingDatabaseClock{TTimeJob}(IQueryable{TTimeJob})"/>
     internal static IQueryable<CronJobOccurrenceEntity<TCronJob>> WhereCanFallbackClaimUsingDatabaseClock<TCronJob>(
         this IQueryable<CronJobOccurrenceEntity<TCronJob>> q
     )
         where TCronJob : CronJobEntity
     {
-        return q.Where(e =>
-            e.Status == JobStatus.Idle
-            || (e.Status == JobStatus.Queued && (e.LockedUntil == null || e.LockedUntil <= DateTime.UtcNow))
+        return q.Where(
+            JobsLeaseExpressions.Expand<CronJobOccurrenceEntity<TCronJob>>(e =>
+                e.Status == JobStatus.Idle || (e.Status == JobStatus.Queued && !JobsLeaseExpressions.IsLive(e.Lease))
+            )
         );
     }
 
@@ -377,17 +344,18 @@ public static class HeadlessJobsQueryExtensions
     }
 
     /// <summary>
-    /// Selects the non-terminal rows owned by <paramref name="owner"/> for dead-node reclaim. Unlike
-    /// <c>WhereCanAcquire</c> this drops the loose unowned/lease-expired arms: a survivor reacting
-    /// to a dead incarnation reclaims only that incarnation's rows — never unowned-but-idle rows nor a
-    /// fast-restart's freshly-stamped rows. The terminal-state guard is preserved (terminal rows excluded).
+    /// Selects the non-terminal rows whose active lease <paramref name="owner"/> holds, for dead-node reclaim and the
+    /// owner's own settling writes. Unlike the acquire predicate it drops the no-live-lease arm: a survivor reacting to
+    /// a dead incarnation reclaims only that incarnation's rows, never idle rows nobody holds nor a fast restart's
+    /// freshly granted rows. Terminal rows are excluded.
     /// </summary>
     public static IQueryable<TTimeJob> WhereOwnedBy<TTimeJob>(this IQueryable<TTimeJob> q, string owner)
         where TTimeJob : TimeJobEntity<TTimeJob>
     {
         return q.Where(e =>
             (e.Status == JobStatus.Idle || e.Status == JobStatus.Queued || e.Status == JobStatus.InProgress)
-            && e.OwnerId == owner
+            && e.Lease.State == RowLeaseState.Active
+            && e.Lease.Holder == owner
         );
     }
 
@@ -400,18 +368,21 @@ public static class HeadlessJobsQueryExtensions
     {
         return q.Where(e =>
             (e.Status == JobStatus.Idle || e.Status == JobStatus.Queued || e.Status == JobStatus.InProgress)
-            && e.OwnerId == owner
+            && e.Lease.State == RowLeaseState.Active
+            && e.Lease.Holder == owner
         );
     }
 
     /// <summary>
-    /// Selects the rows <paramref name="owner"/> is running: <c>InProgress</c> and still stamped with that claim owner.
+    /// Selects the rows <paramref name="owner"/> is running: <c>InProgress</c> under an active lease that owner holds.
     /// A row a sweep already reclaimed, terminalized, or handed to another owner matches nothing.
     /// </summary>
     internal static IQueryable<TTimeJob> WhereRunningBy<TTimeJob>(this IQueryable<TTimeJob> q, string owner)
         where TTimeJob : TimeJobEntity<TTimeJob>
     {
-        return q.Where(e => e.Status == JobStatus.InProgress && e.OwnerId == owner);
+        return q.Where(e =>
+            e.Status == JobStatus.InProgress && e.Lease.State == RowLeaseState.Active && e.Lease.Holder == owner
+        );
     }
 
     /// <inheritdoc cref="WhereRunningBy{TTimeJob}(System.Linq.IQueryable{TTimeJob},string)"/>
@@ -421,20 +392,52 @@ public static class HeadlessJobsQueryExtensions
     )
         where TCronJob : CronJobEntity
     {
-        return q.Where(e => e.Status == JobStatus.InProgress && e.OwnerId == owner);
+        return q.Where(e =>
+            e.Status == JobStatus.InProgress && e.Lease.State == RowLeaseState.Active && e.Lease.Holder == owner
+        );
     }
 
     /// <summary>
-    /// Selects the rows a release may return to <c>Idle</c>: <c>Queued</c> rows this owner claimed but has not
-    /// started. Never matches <c>InProgress</c> work, foreign or unowned rows, or <c>Idle</c> rows — chain
-    /// descendants sit <c>Idle</c> with the root's owner while the root runs, so a release (including the
-    /// release-everything empty-id form) stripping their owner would break the running chain's continuations.
-    /// A released root's still-stamped descendants self-heal: the next root claim re-stamps every idle descendant.
+    /// Selects the rows whose attempt is still active but whose lease lapsed by the database clock: the attempts a
+    /// sweep may end.
+    /// </summary>
+    internal static IQueryable<TTimeJob> WhereLeaseExpiredUsingDatabaseClock<TTimeJob>(this IQueryable<TTimeJob> q)
+        where TTimeJob : TimeJobEntity<TTimeJob>
+    {
+        return q.Where(
+            JobsLeaseExpressions.Expand<TTimeJob>(e =>
+                e.Lease.State == RowLeaseState.Active && !JobsLeaseExpressions.IsLive(e.Lease)
+            )
+        );
+    }
+
+    /// <inheritdoc cref="WhereLeaseExpiredUsingDatabaseClock{TTimeJob}(IQueryable{TTimeJob})"/>
+    internal static IQueryable<CronJobOccurrenceEntity<TCronJob>> WhereLeaseExpiredUsingDatabaseClock<TCronJob>(
+        this IQueryable<CronJobOccurrenceEntity<TCronJob>> q
+    )
+        where TCronJob : CronJobEntity
+    {
+        return q.Where(
+            JobsLeaseExpressions.Expand<CronJobOccurrenceEntity<TCronJob>>(e =>
+                e.Lease.State == RowLeaseState.Active && !JobsLeaseExpressions.IsLive(e.Lease)
+            )
+        );
+    }
+
+    /// <summary>
+    /// Selects the rows a release may return to <c>Idle</c>: <c>Queued</c> rows whose active lease this owner holds,
+    /// claimed but not started. Never matches <c>InProgress</c> work, foreign or unheld rows, or <c>Idle</c> rows:
+    /// chain descendants sit <c>Idle</c> under leases the root's owner holds while the root runs, so a release
+    /// (including the release-everything empty form) ending those leases would break the running chain's
+    /// continuations. A released root's still-leased descendants self-heal: the next root claim grants every idle
+    /// descendant again.
     /// </summary>
     public static IQueryable<TTimeJob> WhereReleasableBy<TTimeJob>(this IQueryable<TTimeJob> q, string owner)
         where TTimeJob : TimeJobEntity<TTimeJob>
     {
-        return q.Where(e => e.Status == JobStatus.Queued && e.OwnerId == owner);
+        return q.Where(e =>
+            e.Status == JobStatus.Queued && e.Lease.State == RowLeaseState.Active && e.Lease.Holder == owner
+        );
     }
 
     /// <inheritdoc cref="WhereReleasableBy{TTimeJob}(System.Linq.IQueryable{TTimeJob},string)"/>
@@ -444,6 +447,8 @@ public static class HeadlessJobsQueryExtensions
     )
         where TCronJob : CronJobEntity
     {
-        return q.Where(e => e.Status == JobStatus.Queued && e.OwnerId == owner);
+        return q.Where(e =>
+            e.Status == JobStatus.Queued && e.Lease.State == RowLeaseState.Active && e.Lease.Holder == owner
+        );
     }
 }

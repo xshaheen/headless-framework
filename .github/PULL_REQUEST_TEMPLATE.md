@@ -70,44 +70,37 @@ follow a signature change, generated code, lockfiles. Delete if nothing. -->
 
 </details>
 
-<details><summary><h2>Verification</h2></summary>
+## Verification
 
-<!-- Every line here describes the head commit. Run both gates on it, against the same base: a result from an
-     earlier commit is not a result, and a gate whose inputs did not change reuses its earlier pass in seconds. How
-     the branch got there goes in the collapsed Branch history block, never in these lines. -->
+<!-- Keep this section visible. Every result describes the head commit against the same base. An earlier commit does
+     not prove the head, and an unchanged gate reuses its earlier pass in seconds. -->
 
-| Check | Result on `<head commit>` against `<base: origin/main, or the parent branch of a stack>` |
-| --- | --- |
-| `make verify-affected` | <!-- PASS or FAIL: N passed, N failed, N skipped; N analyzer findings; changed lines N% line, N% branch --> |
-| `make test-affected-integration` | <!-- the same shape, naming the databases or brokers it ran on; or why it did not run (CI runs none) --> |
+`<head commit>` against `<base: origin/main, or the parent branch of a stack>`.
 
-<!-- A FAIL row stays FAIL: add a `make test-failed` row under it with the rerun's result. When a skipped count
-     falls in a suite this PR changes, say why in the row. -->
+<!-- Paste each artifacts/proof/<run>/summary.md here as it is. Its collapsed summary line already reports the
+     command, verdict, test counts, findings, and coverage result. Do not repeat those results in another table, and
+     do not wrap the generated block in another <details>. -->
 
-- **Regression:** <!-- one sentence: the behavior the new tests hold that fails or does not compile on the base. For
-  new behavior with no base to fail, the one behavior that matters most. Not a list of tests: the diff has them. -->
-- **Also checked:** <!-- evidence no gate shows, one line each, at most three: a parity corpus, an EXPLAIN plan, a
-  run against a real service. Delete if none. -->
-- **Not verified:** <!-- each claim in Solution or Contract changes that no check exercised (a database version the
-  test image lacks, a provider that needs credentials, a race no test forces), and what would show it. Delete if
-  none. -->
-- **Coverage below floor:** <!-- only the warnings the proof's coverage gate prints; delete if it printed none, and
-  don't explain uncovered lines that are above the floor. One sub-bullet per warning: the package, the files and
-  lines, the figure against the floor, the reason in bold (**Glue code**, **Integration-only behavior**,
-  **Unreachable branch**, **Cost above risk**; see AGENTS.md), and one sentence why. For integration-only behavior,
-  name the integration test that covers it. For a whole-assembly unit warning on code this PR does not change,
-  give this PR's changed-line figure and say the shortfall predates it. -->
+- **Regression proof:** <!-- one sentence: the behavior the new tests hold that fails or does not compile on the base.
+  For new behavior with no base to fail, state the one behavior that matters most. Name behavior, not test files. -->
+- **Integration environment:** <!-- the databases, brokers, or services used by test-affected-integration. Explain why
+  it did not run when applicable. CI runs no integration suites. Delete if the change has no integration project. -->
+- **Also checked:** <!-- evidence no gate shows, at most three items: a parity corpus, an EXPLAIN plan, a benchmark, or
+  a run against a real service. Delete if none. -->
+- **Not verified:** <!-- each claim in Solution or Contract changes that no check exercised, and what would prove it.
+  Delete if none. -->
+- **Coverage below floor:** <!-- only warnings from the proof's coverage gate. Delete if none. For each warning, give
+  the package, files and lines, figure against the floor, accepted reason from AGENTS.md, and one-sentence rationale.
+  For integration-only behavior, name the integration test. For a whole-assembly warning on unchanged code, give this
+  PR's changed-line figure and say the shortfall predates it. -->
 - **Unrelated failures:** <!-- one sub-bullet per failed test: its first error line, why this PR cannot reach it, and
-  the issue that tracks it as a flake (open one if none exists). A rerun that passes shows the test is flaky, not
-  that this PR is innocent. Delete if none. -->
+  the issue tracking the flake. A passing rerun establishes a flake, not that this PR is innocent. Delete if none. -->
 
-<!-- Paste each proof's artifacts/proof/<run>/summary.md here as it is. Each one is already its own collapsed
-     <details> block with the verdict in its summary line, so do not wrap it again. -->
+<!-- A failed proof stays failed. Under it, record `make test-failed` on `<head commit>` as PASS, naming the
+     modules it reran. Then paste the summary from the final full-gate run. -->
 
 <details><summary>Branch history</summary>
 
 <!-- Delete if the branch has one commit worth describing. What each later commit added, and the checks run on it. -->
-
-</details>
 
 </details>

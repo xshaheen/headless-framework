@@ -366,8 +366,7 @@ public sealed class JobsMetricsTests : TestBase
             CronJobId = definitionId,
             ExecutionTime = _Due.AddHours(-1),
             Status = JobStatus.InProgress,
-            OwnerId = "node-b@1",
-            LockedUntil = _Now.UtcDateTime.AddMinutes(5),
+            Lease = TestLeases.Held("node-b@1", _Now.AddMinutes(5)),
             CreatedAt = _Now.AddHours(-1),
             UpdatedAt = _Now.AddHours(-1),
         };

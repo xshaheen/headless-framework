@@ -189,6 +189,30 @@ public sealed class UnitOfWorkIdempotencySettlementTests : TestBase
     }
 
     [Fact]
+    public async Task should_answer_expired_when_the_lease_runs_out_between_the_lock_and_the_release()
+    {
+        // given: the lock read still sees a live lease, but the store's own clock read finds it expired
+        var context = new IdempotencyTestContext();
+        var (unit, _) = ActiveUnit();
+        context
+            .Store.LockAsync(unit, RecordKey, AbortToken)
+            .Returns(Pending(generation: Generation, isLeaseLive: true));
+        context
+            .Store.ReleaseAsync(unit, RecordKey, Generation, TimeSpan.FromDays(7), AbortToken)
+            .Returns(
+                ValueTask.FromException(
+                    new StaleAdmissionException(Admitted().Key, Generation, IdempotentLeaseStatus.Expired)
+                )
+            );
+
+        // when
+        var status = await context.Feature.ReleaseAsync(unit, Admitted(), AbortToken);
+
+        // then: the same answer as when the lock read already saw the lease expired
+        status.Should().Be(IdempotentLeaseStatus.Expired);
+    }
+
+    [Fact]
     public async Task should_fence_by_locking_the_record_without_preventing_retry()
     {
         // given

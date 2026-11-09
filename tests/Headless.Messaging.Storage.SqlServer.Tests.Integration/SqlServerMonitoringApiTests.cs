@@ -749,9 +749,9 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
         return connection.ExecuteAsync(
             $"""
             INSERT INTO headless.{tableName}
-                (Id, Version, Name, Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, LockedUntil, Owner, StatusName, MessageId{receivedColumns})
+                (Id, Version, Name, Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, StatusName, MessageId{receivedColumns})
             VALUES
-                (@Id, 'v1', @Name, @Content, @IntentType, 0, @Added, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId{receivedValues});
+                (@Id, 'v1', @Name, @Content, @IntentType, 0, @Added, NULL, @NextRetryAt, 'Failed', @MessageId{receivedValues});
             """,
             new
             {

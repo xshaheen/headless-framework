@@ -75,6 +75,12 @@ public sealed class CacheIdempotencyConformanceTests(CacheIdempotencyFixture fix
     }
 
     [Fact]
+    public override Task should_end_an_attempt_once_whichever_verb_comes_second()
+    {
+        return base.should_end_an_attempt_once_whichever_verb_comes_second();
+    }
+
+    [Fact]
     public override Task should_peek_absent_pending_released_completed_and_respect_retention_and_tenant_scope()
     {
         return base.should_peek_absent_pending_released_completed_and_respect_retention_and_tenant_scope();

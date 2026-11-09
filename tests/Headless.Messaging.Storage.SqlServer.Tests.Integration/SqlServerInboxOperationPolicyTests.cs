@@ -268,7 +268,7 @@ public sealed class SqlServerInboxOperationPolicyTests(SqlServerTestFixture fixt
         await connection.OpenAsync(AbortToken);
         var table = tableNames.GetReceivedTableName();
         await using var expire = new SqlCommand(
-            $"UPDATE {table} SET [LockedUntil]=DATEADD(second,-1,SYSUTCDATETIME()),[NextRetryAt]=DATEADD(second,-1,SYSUTCDATETIME()) WHERE [Id]=@Id;",
+            $"UPDATE {table} SET [LeaseExpiresAt]=DATEADD(second,-1,SYSUTCDATETIME()),[NextRetryAt]=DATEADD(second,-1,SYSUTCDATETIME()) WHERE [Id]=@Id;",
             connection
         );
         expire.Parameters.AddWithValue("@Id", message.StorageId);

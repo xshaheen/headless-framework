@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Linq.Expressions;
+using Headless.Fencing;
 
 namespace Headless.Jobs;
 
@@ -18,8 +19,7 @@ internal static class TimeJobEditGuard
     internal static readonly string[] RuntimeProperties =
     [
         nameof(TimeJobEntity.Status),
-        nameof(TimeJobEntity.OwnerId),
-        nameof(TimeJobEntity.LockedUntil),
+        nameof(TimeJobEntity.Lease),
         nameof(TimeJobEntity.RetryCount),
         nameof(TimeJobEntity.UpdatedAt),
         nameof(TimeJobEntity.CreatedAt),
@@ -34,9 +34,10 @@ internal static class TimeJobEditGuard
     ];
 
     /// <summary>
-    /// Whether a row passed to the edit may be written. An idle unclaimed row is free. A queued row is accepted because
-    /// the scheduler claims the next-due job up to a day early, and rescheduling that job must keep working; the edit
-    /// releases the claim in the same write, so the claiming node drops it at admission. An idle row that carries an
+    /// Whether a row passed to the edit may be written. An idle row with no active lease is free. A queued row is
+    /// accepted because the scheduler claims the next-due job up to a day early, and rescheduling that job must keep
+    /// working; the edit revokes the lease in the same write, so the claiming node's generation is refused at
+    /// admission and on every later write. An idle row that carries an
     /// owner is a descendant inside a claimed tree, and anything running or finished belongs to its run.
     /// </summary>
     /// <remarks>The relational store filters with this expression; the in-memory store runs it compiled.</remarks>
@@ -49,8 +50,8 @@ internal static class TimeJobEditGuard
 
     /// <summary>
     /// Whether an existing descendant carried in an edited root's graph may be written, given the root's owner before
-    /// the edit. Reading a pre-claimed root loads its children, which the claim stamped idle with the root's owner;
-    /// the edit releases them with the root. A descendant owned by anyone else, or no longer idle, belongs to other
+    /// the edit. Reading a pre-claimed root loads its children, which the claim stamped idle under an active lease held
+    /// by the root's owner; the edit revokes them with the root. A descendant owned by anyone else, or no longer idle, belongs to other
     /// work.
     /// </summary>
     /// <remarks>The relational store filters with this expression; the in-memory store runs it compiled.</remarks>
@@ -74,12 +75,14 @@ internal static class TimeJobEditGuard
     {
         // String equality in the tree is ordinal when compiled and the column comparison when translated.
         public static readonly Expression<Func<TTimeJob, bool>> Editable = row =>
-            (row.Status == JobStatus.Idle && row.OwnerId == null) || row.Status == JobStatus.Queued;
+            (row.Status == JobStatus.Idle && row.Lease.State != RowLeaseState.Active) || row.Status == JobStatus.Queued;
 
         public static readonly Expression<Func<TTimeJob, string?, bool>> CarriedDescendantEditable = (
             row,
             rootOwnerBeforeEdit
-        ) => row.Status == JobStatus.Idle && (row.OwnerId == null || row.OwnerId == rootOwnerBeforeEdit);
+        ) =>
+            row.Status == JobStatus.Idle
+            && (row.Lease.State != RowLeaseState.Active || row.Lease.Holder == rootOwnerBeforeEdit);
 
         public static readonly Func<TTimeJob, bool> IsEditable = Editable.Compile();
 

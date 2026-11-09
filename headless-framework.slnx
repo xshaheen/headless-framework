@@ -250,6 +250,7 @@
         <Project Path="src\Headless.Fencing.PostgreSql\Headless.Fencing.PostgreSql.csproj" />
         <Project Path="src\Headless.Fencing.SqlServer\Headless.Fencing.SqlServer.csproj" />
         <Project Path="src\Headless.Fencing.Sqlite\Headless.Fencing.Sqlite.csproj" />
+        <Project Path="src\Headless.Fencing.EntityFramework\Headless.Fencing.EntityFramework.csproj" />
     </Folder>
     <Folder Name="/Fencing/Tests/">
         <Project Path="tests\Headless.Fencing.Tests.Unit\Headless.Fencing.Tests.Unit.csproj" />
@@ -258,6 +259,8 @@
         <Project Path="tests\Headless.Fencing.SqlServer.Tests.Integration\Headless.Fencing.SqlServer.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Fencing.Sqlite.Tests.Integration\Headless.Fencing.Sqlite.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Fencing.Tests.Harness\Headless.Fencing.Tests.Harness.csproj" />
+        <Project Path="tests\Headless.Fencing.EntityFramework.Tests.Unit\Headless.Fencing.EntityFramework.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Fencing.EntityFramework.Tests.Integration\Headless.Fencing.EntityFramework.Tests.Integration.csproj" />
     </Folder>
     <Folder Name="/Generators/">
         <Project Path="src\Headless.Generator.Primitives.Abstractions\Headless.Generator.Primitives.Abstractions.csproj" />

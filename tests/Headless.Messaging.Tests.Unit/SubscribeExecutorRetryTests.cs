@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
+using Headless.Fencing;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
@@ -84,7 +85,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<RetryDelay?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -142,7 +143,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 StatusName.Succeeded,
                 MessageContentWrite.Preserve,
                 Arg.Any<RetryDelay?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -174,7 +175,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 StatusName.Succeeded,
                 MessageContentWrite.Refresh,
                 Arg.Any<RetryDelay?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -216,7 +217,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 StatusName.Succeeded,
                 MessageContentWrite.Refresh,
                 Arg.Any<RetryDelay?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -552,7 +553,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 StatusName.Succeeded,
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<RetryDelay?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -770,7 +771,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .Should()
             .ContainSingle()
             .Which.Should()
-            .Match<StateWrite>(write => _IsTerminal(write) && write.LockedUntil == null);
+            .Match<StateWrite>(write => _IsTerminal(write) && !write.KeepLease);
         exhausted.Should().ContainSingle();
         exhausted[0].Exception!.GetBaseException().Should().BeOfType<MessageDeserializationException>();
     }
@@ -1309,7 +1310,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .Match<StateWrite>(write =>
                 write.Status == StatusName.Failed
                 && write.Delay != null
-                && write.LockedUntil == null
+                && !write.KeepLease
                 && write.OriginalRetries == 0
                 && write.OriginalInlineAttempts == 3
             );
@@ -1408,8 +1409,13 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         var message = _CreateMediumMessage();
         // Storage already acquired this lease. Its absolute expiry is deliberately behind the
         // application clock: core must reserve under the returned identity without reacquiring.
-        message.LockedUntil = DateTimeOffset.UnixEpoch.AddMinutes(1);
-        message.Owner = "store-owner";
+        message.Lease = new RowLeaseSnapshot(
+            1,
+            RowLeaseState.Active,
+            DateTimeOffset.UnixEpoch.AddMinutes(1),
+            "store-owner",
+            0
+        );
 
         var result = await executor.ExecuteAsync(message, _EmptyScope, _CreateDescriptor(), CancellationToken.None);
 
@@ -1418,7 +1424,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         await invoker.DidNotReceiveWithAnyArgs().InvokeAsync(null!, AbortToken);
         await storage
             .DidNotReceiveWithAnyArgs()
-            .ChangeReceiveRetryStateAsync(null!, default, default, null, null, 0, 0, AbortToken);
+            .ChangeReceiveRetryStateAsync(null!, default, default, null, false, 0, 0, AbortToken);
         await storage.DidNotReceiveWithAnyArgs().LeaseReceiveAsync(null!, TimeSpan.Zero, AbortToken);
         await storage
             .DidNotReceiveWithAnyArgs()
@@ -1491,7 +1497,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
     private sealed record StateWrite(
         StatusName Status,
         RetryDelay? Delay,
-        DateTimeOffset? LockedUntil,
+        bool KeepLease,
         int OriginalRetries,
         int OriginalInlineAttempts
     );
@@ -1587,7 +1593,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<RetryDelay?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -1597,7 +1603,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 var write = new StateWrite(
                     call.ArgAt<StatusName>(1),
                     call.ArgAt<RetryDelay?>(3),
-                    call.ArgAt<DateTimeOffset?>(4),
+                    call.ArgAt<bool>(4),
                     call.ArgAt<int>(5),
                     call.ArgAt<int>(6)
                 );

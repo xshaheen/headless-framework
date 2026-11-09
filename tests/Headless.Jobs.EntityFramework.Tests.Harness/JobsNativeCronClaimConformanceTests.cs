@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using System.Data.Common;
 using Headless.Coordination;
+using Headless.Fencing;
 using Headless.Jobs;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
@@ -98,16 +99,26 @@ public abstract class JobsNativeCronClaimConformanceTests<TFixture>(TFixture fix
                 );
 
             var previousStatus = reclaimExpiredOwner ? JobStatus.Queued : JobStatus.Idle;
-            var previousOwner = reclaimExpiredOwner ? "expired-owner@1" : null;
-            var previousLease = reclaimExpiredOwner ? DateTime.UtcNow.AddHours(-1) : (DateTime?)null;
+            // An expired owner's claim is an active lease that lapsed; otherwise the row was never leased.
+            var previousLease = reclaimExpiredOwner
+                ? new RowLeaseSnapshot(
+                    1,
+                    RowLeaseState.Active,
+                    DateTimeOffset.UtcNow.AddHours(-1),
+                    "expired-owner@1",
+                    0
+                )
+                : default;
             await db.Set<CronJobOccurrenceEntity<CronJobEntity>>()
                 .Where(x => existingIds.Contains(x.Id))
                 .ExecuteUpdateAsync(
                     setters =>
                         setters
                             .SetProperty(x => x.Status, previousStatus)
-                            .SetProperty(x => x.OwnerId, previousOwner)
-                            .SetProperty(x => x.LockedUntil, previousLease)
+                            .SetProperty(x => x.Lease.Generation, previousLease.Generation)
+                            .SetProperty(x => x.Lease.State, previousLease.State)
+                            .SetProperty(x => x.Lease.ExpiresAt, previousLease.ExpiresAt)
+                            .SetProperty(x => x.Lease.Holder, previousLease.Holder)
                             .SetProperty(x => x.RetryCount, 3),
                     ct
                 );
@@ -138,8 +149,9 @@ public abstract class JobsNativeCronClaimConformanceTests<TFixture>(TFixture fix
                 var existing = existingIds.Contains(claim.Id);
                 claim.Should().BeEquivalentTo(stored[claim.Id], options => options.Excluding(x => x.CronJob));
                 claim.Status.Should().Be(JobStatus.Queued);
-                claim.OwnerId.Should().Contain("/native-cron-batch@");
-                claim.LockedUntil.Should().Be(claim.UpdatedAt.UtcDateTime.Add(leaseDuration));
+                claim.Lease.State.Should().Be(RowLeaseState.Active);
+                claim.Lease.Holder.Should().Contain("/native-cron-batch@");
+                claim.Lease.ExpiresAt.Should().Be(claim.UpdatedAt.Add(leaseDuration));
                 claim.UpdatedAt.Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromSeconds(15));
                 claim.RetryCount.Should().Be(existing ? 3 : 0);
                 claim.Function.Should().Be(existing ? "snapshot.original" : "snapshot.updated");

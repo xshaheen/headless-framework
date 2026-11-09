@@ -387,7 +387,6 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
         {
             Id = _guidGenerator.Create(),
             Status = JobStatus.Idle,
-            LockedUntil = null,
             CronJobId = id,
             TraceParent = JobTraceParent.Capture(scheduleActivity),
             CreatedAt = now,
@@ -426,7 +425,8 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
                 Retries = occurrence.CronJob.Retries,
                 RetryIntervals = occurrence.CronJob.RetryIntervals,
                 ExecutionTime = occurrence.ExecutionTime,
-                ClaimOwner = occurrence.OwnerId,
+                ClaimOwner = occurrence.Lease.Holder,
+                ClaimGeneration = occurrence.Lease.Generation,
             };
 
             // Canonical hydration: also stamps CachedMaxConcurrency, so an on-demand run acquires the same

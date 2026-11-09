@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using Headless;
+using Headless.Fencing;
 using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Jobs.Instrumentation;
@@ -159,7 +160,8 @@ public sealed class JobExecutionTaskHandlerTests : TestBase
                 Status = claimed.Status,
                 RetryCount = claimed.RetryCount,
                 Retries = claimed.Retries,
-                ClaimOwner = claimed.OwnerId,
+                ClaimOwner = claimed.Lease.Holder,
+                ClaimGeneration = claimed.Lease.Generation,
             };
             var registry = JobFunctionRegistryBuilder.Build(
                 [
@@ -210,8 +212,7 @@ public sealed class JobExecutionTaskHandlerTests : TestBase
             await executeOnVersion(incompatibleVersion);
             var pending = (await store.GetTimeJobByIdAsync(job.Id, AbortToken))!;
             pending.Status.Should().Be(JobStatus.Idle);
-            pending.OwnerId.Should().BeNull();
-            pending.LockedUntil.Should().BeNull();
+            pending.Lease.State.Should().NotBe(RowLeaseState.Active);
             pending.ContractVersion.Should().Be(storedVersion);
             pending.Request.Should().Equal(job.Request!);
             pending.RetryCount.Should().Be(0);

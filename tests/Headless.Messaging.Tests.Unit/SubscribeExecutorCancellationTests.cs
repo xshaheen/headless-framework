@@ -82,7 +82,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<RetryDelay?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -131,7 +131,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<RetryDelay?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             )
@@ -161,7 +161,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
                 StatusName.Failed,
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<RetryDelay?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -236,7 +236,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<RetryDelay?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             );
@@ -371,7 +371,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
                 StatusName.Failed,
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<RetryDelay?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -414,7 +414,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<RetryDelay?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -467,7 +467,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<RetryDelay?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             );
@@ -527,7 +527,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<RetryDelay?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
