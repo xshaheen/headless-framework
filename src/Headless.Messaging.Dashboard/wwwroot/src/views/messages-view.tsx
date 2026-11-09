@@ -340,7 +340,11 @@ function ListFilters({ kind, filter, onPick }: { kind: MessageKind; filter: Mess
         emptyLabel="Any message"
         value={filter.name}
         onChange={(value) => onPick({ name: value })}
-        options={optionsOf((contracts.data ?? []).map((contract) => contract.name), filter.name)}
+        // Contracts list only the messages the node declares to publish, so a consume-only message name comes from its consumer.
+        options={optionsOf(
+          [...(contracts.data ?? []).map((contract) => contract.name), ...(consumers.data ?? []).flatMap((consumer) => consumer.messages.map((message) => message.name))],
+          filter.name,
+        )}
       />
     </>
   )
