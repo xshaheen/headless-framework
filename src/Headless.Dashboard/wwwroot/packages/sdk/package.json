@@ -7,6 +7,8 @@
     ".": "./src/index.ts",
     "./components": "./src/components/index.ts",
     "./table": "./src/components/table/index.ts",
+    "./charts": "./src/charts/index.ts",
+    "./icons": "./src/icons/index.ts",
     "./data": "./src/data/index.ts",
     "./locale": "./src/locale/index.ts",
     "./stream": "./src/stream/index.ts",

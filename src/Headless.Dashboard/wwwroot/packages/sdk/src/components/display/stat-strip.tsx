@@ -5,6 +5,7 @@
 import type { ReactNode } from 'react'
 import { Link, type To } from 'react-router'
 import type { DashboardStateRole } from '../../define-module.ts'
+import type { IconComponent } from '../../icons/index.ts'
 
 export interface StatCardProps {
   /** What the value counts: `Failed`. */
@@ -17,6 +18,8 @@ export interface StatCardProps {
   caption?: ReactNode
   /** The list the value counts, filtered to it; the whole card links there. */
   to?: To
+  /** What the value is about, from `@headless/dashboard-sdk/icons`, at the label's inline end; never its state. */
+  icon?: IconComponent
 }
 
 const stat = 'flex flex-col gap-0.5 border-e border-border px-4 pt-2.5 pb-1.5 text-foreground no-underline'
@@ -25,12 +28,13 @@ const stat = 'flex flex-col gap-0.5 border-e border-border px-4 pt-2.5 pb-1.5 te
  * One served value with its label and state dot. It draws no sparkline and no empty chart frame: a trend appears
  * only once the server serves its series.
  */
-export function StatCard({ label, value, tone, caption, to }: StatCardProps) {
+export function StatCard({ label, value, tone, caption, to, icon: Icon }: StatCardProps) {
   const body = (
     <>
       <span className={`flex items-center gap-2 type-small text-muted-foreground ${tone ? `hd-tone-${tone}` : ''}`}>
         {tone ? <i className="hd-mark" aria-hidden="true" /> : null}
         {label}
+        {Icon ? <Icon className="ms-auto" /> : null}
       </span>
       {/* The spaces keep the link's name `Failed 23`, not `Failed23`; the flex column drops them from the layout. */}{' '}
       <span className="type-stat tabular-nums">{value}</span>

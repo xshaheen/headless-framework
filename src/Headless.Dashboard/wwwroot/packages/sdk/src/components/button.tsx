@@ -5,6 +5,7 @@
 import { cva } from 'class-variance-authority'
 import { useId, type Ref } from 'react'
 import { Button as AriaButton, composeRenderProps, type ButtonProps as AriaButtonProps } from 'react-aria-components'
+import type { IconComponent } from '../icons/index.ts'
 import { cn } from './cn.ts'
 
 export type ButtonVariant = 'secondary' | 'primary' | 'danger' | 'ghost'
@@ -19,6 +20,11 @@ export interface ButtonProps extends AriaButtonProps {
    * the reason beside it, so the operator learns why on hover and focus; pressing it does nothing.
    */
   disabledReason?: string | null
+  /**
+   * An icon before the label, from `@headless/dashboard-sdk/icons`. With no label the button is a square icon button,
+   * and `aria-label` names it, since the icon is hidden from assistive technology.
+   */
+  icon?: IconComponent
 }
 
 // The variants are classes in sdk.css rather than utilities here, so the shell can put the same look on a plain link.
@@ -29,12 +35,26 @@ const buttonVariants = cva('hd-btn', {
 })
 
 /** The dashboard's button: shadcn's, on React Aria's, so press, focus, and keyboard behave the same in every module. */
-export function Button({ variant = 'secondary', disabledReason, className, onPress, ...props }: ButtonProps) {
+export function Button({ variant = 'secondary', disabledReason, className, onPress, icon: Icon, children, ...props }: ButtonProps) {
   const reasonId = useId()
-  const classes = composeRenderProps(className, (extra) => cn(buttonVariants({ variant }), extra))
+  const square = Icon != null && children == null
+  const classes = composeRenderProps(className, (extra) => cn(buttonVariants({ variant }), square && 'hd-icon', extra))
+  // The icon takes the button's own text colour, so it reads as part of the label in every variant and state.
+  const content = Icon
+    ? composeRenderProps(children, (label) => (
+        <>
+          <Icon className="text-current" />
+          {label}
+        </>
+      ))
+    : children
 
   if (!disabledReason) {
-    return <AriaButton {...props} onPress={onPress} className={classes} />
+    return (
+      <AriaButton {...props} onPress={onPress} className={classes}>
+        {content}
+      </AriaButton>
+    )
   }
 
   // The reason is the button's description, so a screen reader reads it with the button. It stays in the page
@@ -42,7 +62,9 @@ export function Button({ variant = 'secondary', disabledReason, className, onPre
   // hover and focus, under the button, so it never widens or wraps the row the button sits in.
   return (
     <span className="group/why relative inline-flex">
-      <AriaButton {...props} className={classes} aria-disabled="true" aria-describedby={reasonId} data-soft-disabled="" />
+      <AriaButton {...props} className={classes} aria-disabled="true" aria-describedby={reasonId} data-soft-disabled="">
+        {content}
+      </AriaButton>
       <span
         id={reasonId}
         className="type-small pointer-events-none absolute end-0 top-[calc(100%+var(--sp-1))] z-(--z-popover) w-max max-w-[32ch] rounded-md bg-foreground px-2 py-1 whitespace-normal text-background opacity-0 group-focus-within/why:opacity-100 group-hover/why:opacity-100"

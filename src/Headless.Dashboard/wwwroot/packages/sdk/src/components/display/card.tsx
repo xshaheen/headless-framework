@@ -4,6 +4,8 @@
 
 import type { ReactNode } from 'react'
 import type { DashboardStateRole } from '../../define-module.ts'
+import type { IconComponent } from '../../icons/index.ts'
+import { EmptyState } from './empty-state.tsx'
 
 export interface CardProps {
   /** The card's heading, which also names its region: `Processing now`. */
@@ -12,24 +14,31 @@ export interface CardProps {
   caption?: ReactNode
   /** One trailing control at the inline end: a link such as `All 9`, or the card's action. */
   action?: ReactNode
+  /** What the card is about, from `@headless/dashboard-sdk/icons`, before the heading. */
+  icon?: IconComponent
   /** What the card says, and how to fill it, when it holds no row. */
   empty?: ReactNode
+  /** The icon beside `empty`. */
+  emptyIcon?: IconComponent
   /** `CardRow`s; with none, the card shows `empty`. */
   children?: ReactNode
 }
 
 /** A dashboard card: a heading row with a caption and one trailing control, over rows or its empty state. */
-export function Card({ title, caption, action, empty, children }: CardProps) {
+export function Card({ title, caption, action, icon: Icon, empty, emptyIcon, children }: CardProps) {
   const rows = Array.isArray(children) ? children.length > 0 : children != null && children !== false
 
   return (
     <section className="min-w-0 rounded-lg border border-border bg-card text-card-foreground" aria-label={title}>
       <header className={`${row} [&>:not(h2,.hd-faint)]:ms-auto`}>
-        <h2 className="type-nav font-semibold">{title}</h2>
+        <h2 className="flex items-center gap-2 type-nav font-semibold">
+          {Icon ? <Icon /> : null}
+          {title}
+        </h2>
         {caption != null ? <span className="hd-faint">{caption}</span> : null}
         {action}
       </header>
-      {rows ? <ul className="[&>li:last-child]:border-0">{children}</ul> : <p className="hd-hint p-3.5">{empty}</p>}
+      {rows ? <ul className="[&>li:last-child]:border-0">{children}</ul> : <EmptyState icon={emptyIcon}>{empty}</EmptyState>}
     </section>
   )
 }

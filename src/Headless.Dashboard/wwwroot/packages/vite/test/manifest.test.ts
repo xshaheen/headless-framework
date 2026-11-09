@@ -59,6 +59,18 @@ describe('module manifest', () => {
     expect(entry + view).not.toContain('process.env.NODE_ENV')
   })
 
+  it('leaves the icons and charts entries to the import map, so a view bundles no lucide or Recharts code', async () => {
+    const outDir = await buildFixture('lazy-entries')
+    const manifest = JSON.parse(readFileSync(join(outDir, 'manifest.json'), 'utf8'))
+    const view = readFileSync(join(outDir, manifest.routes[0].chunk), 'utf8')
+
+    expect(view).toMatch(/from\s*"@headless\/dashboard-sdk\/icons"/)
+    expect(view).toMatch(/from\s*"@headless\/dashboard-sdk\/charts"/)
+    // Each library's own markers: lucide's class on every icon, and Recharts' class on every chart.
+    expect(view).not.toMatch(/lucide/)
+    expect(view).not.toMatch(/recharts/)
+  })
+
   const entry = (fields: string) => `{ id: 'm', product: 'jobs', sidebar: [{ entries: [${fields}] }] }`
 
   it.each([
