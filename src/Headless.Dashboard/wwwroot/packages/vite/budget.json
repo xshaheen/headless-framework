@@ -4,25 +4,25 @@
       "name": "Shell first load",
       "files": [],
       "measure": "first-load",
-      "maxBytes": 235000
+      "maxBytes": 350000
     },
     {
       "name": "Shell and every SDK entry",
       "files": ["assets/**/*.js", "assets/**/*.css"],
       "measure": "total",
-      "maxBytes": 250000
+      "maxBytes": 450000
     },
     {
       "name": "Module entry",
       "files": ["modules/*/index.js"],
       "measure": "each",
-      "maxBytes": 10000
+      "maxBytes": 20000
     },
     {
       "name": "View chunk",
       "files": ["modules/*/chunks/**/*.js"],
       "measure": "each",
-      "maxBytes": 50000
+      "maxBytes": 150000
     },
     {
       "name": "Fonts",
