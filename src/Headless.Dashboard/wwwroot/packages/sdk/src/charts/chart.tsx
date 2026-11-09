@@ -258,14 +258,14 @@ function DonutDrawing({ rows, props }: { rows: readonly PartRow[]; props: DonutC
         <Tooltip
           isAnimationActive={false}
           content={({ active, payload }) => {
-            const at = typeof payload?.[0]?.payload?.index === 'number' ? (payload[0].payload.index as number) : -1
-            const row = rows[at]
+            // Recharts names the hovered sector by the part's name, which `nameKey` sets.
+            const row = rows.find((candidate) => candidate.name === payload?.[0]?.name)
 
             return active && row ? <TooltipBody title={props.label} entries={[[row.name, `${row.count}, ${row.share}`]]} /> : null
           }}
         />
         <Pie
-          data={props.parts.map((part, index) => ({ index, name: part.name, value: part.count.value }))}
+          data={props.parts.map((part) => ({ name: part.name, value: part.count.value }))}
           dataKey="value"
           nameKey="name"
           innerRadius={size * 0.32}

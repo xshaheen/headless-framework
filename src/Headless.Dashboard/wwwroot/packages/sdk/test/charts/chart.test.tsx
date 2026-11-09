@@ -47,20 +47,27 @@ function cells(table: HTMLElement) {
 }
 
 describe('Chart', () => {
-  it('draws unmeasured buckets as a gap in the line, not as a drop to zero', () => {
-    const { container } = renderChart(rate)
-    const line = container.querySelector('.recharts-line-curve')!
-    const parts = segments(line.getAttribute('d')!)
+  it.each([
+    ['line', ['.recharts-line-curve']],
+    ['area', ['.recharts-area-curve', '.recharts-area-area']],
+  ] as const)('draws unmeasured buckets as a gap in the %s, not as a drop to zero', (kind, selectors) => {
+    const { container } = renderChart({ ...rate, kind })
 
-    // Twelve measured buckets, the gap, then four more: two runs of the pen, and no point for the two nulls.
-    expect(parts.map((part) => part.length)).toEqual([12, 4])
+    for (const selector of selectors) {
+      const parts = segments(container.querySelector(selector)!.getAttribute('d')!)
 
-    // Where zero would sit, from the drawn heights of the served 4 and 6: no point lands there.
-    const points = parts.flat()
-    const y4 = points[0]![1]!
-    const y6 = points[2]![1]!
-    const zero = y4 + (y4 - y6) * 2
-    expect(points.every(([, y]) => Math.abs(y! - zero) > 1)).toBe(true)
+      // Twelve measured buckets, the gap, then four more: two runs of the pen, and no point for the two nulls. An area's
+      // fill path walks each run's top and then its baseline, so it counts each run twice.
+      const fill = selector === '.recharts-area-area'
+      expect(parts.map((part) => part.length)).toEqual(fill ? [24, 8] : [12, 4])
+
+      // Where zero would sit, from the drawn heights of the served 4 and 6: no top point lands there.
+      const tops = parts.flatMap((part) => (fill ? part.slice(0, part.length / 2) : part))
+      const y4 = tops[0]![1]!
+      const y6 = tops[2]![1]!
+      const zero = y4 + (y4 - y6) * 2
+      expect(tops.every(([, y]) => Math.abs(y! - zero) > 1)).toBe(true)
+    }
   })
 
   it('names the series, the range, and the zone in the image label', () => {
@@ -124,6 +131,16 @@ describe('Chart', () => {
     expect(screen.getByRole('img').getAttribute('aria-label')).toBe(
       'Runs by outcome: Succeeded 300 runs, 75%; Failed 100 runs, 25%, from Nov 9, 12:00 to Nov 10, 12:00 UTC; as of Nov 10, 2026, 12:00:04 UTC.',
     )
+  })
+
+  it('shows the hovered part with its exact count and share in the tooltip', async () => {
+    const { container } = renderChart(outcomes)
+
+    fireEvent.mouseEnter(container.querySelectorAll('.recharts-pie-sector')[1]!)
+
+    const tooltip = container.querySelector<HTMLElement>('.recharts-tooltip-wrapper')!
+    await waitFor(() => expect(within(tooltip).getByText('Failed')).toBeTruthy())
+    expect(within(tooltip).getByText('Failed').nextElementSibling?.textContent).toBe('100 runs, 25%')
   })
 
   it('replaces an incomplete donut with the list of counts and no shares', () => {
