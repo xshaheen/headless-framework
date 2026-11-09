@@ -35,6 +35,12 @@ internal static class JobsLeaseGrant
     // Not "Lease…": FencedRows reserves that prefix for its own parameters.
     private const string _Prefix = "JobsGrant";
 
+    /// <summary>
+    /// The most rows one grant statement checks a version token for. A token binds two parameters per row, so 500 rows
+    /// stay well under SQL Server's 2100 parameters per request with the scope's and the assignments' own.
+    /// </summary>
+    public const int MaxVersionTokensPerStatement = 500;
+
     private static readonly string _ActiveLiteral = ((short)RowLeaseState.Active).ToString(
         CultureInfo.InvariantCulture
     );
@@ -81,7 +87,7 @@ internal static class JobsLeaseGrant
 
         var columns = Columns<TEntity>(context);
         var scope = Scope(table);
-        var idList = string.Join(", ", ids.Select(id => set.Parameter(nameof(TimeJobEntity.Id), id)));
+        var inIds = set.InIds(nameof(TimeJobEntity.Id), ids);
         var extra = set.ToWrite();
         // The scope returns key, generation and expiry; the takeover count the grant wrote rides along so the claimed
         // entity matches the stored lease.
@@ -97,8 +103,7 @@ internal static class JobsLeaseGrant
         var fence = reclaimOwn
             ? $"({notLive} OR ({columns.State} = {_ActiveLiteral} AND {columns.Holder} = @{scope.Prefix}Holder))"
             : notLive;
-        var where =
-            $"{columns.Id} IN ({idList}) AND {fence}" + (condition is null ? string.Empty : $" AND ({condition})");
+        var where = $"{inIds} AND {fence}" + (condition is null ? string.Empty : $" AND ({condition})");
 
         var dialect = table.Dialect;
         var sql =

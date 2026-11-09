@@ -393,6 +393,12 @@ public abstract class PostgreSqlClaimConformanceTestsBase<TFixture>(TFixture fix
     }
 
     [Fact]
+    public override Task immediate_acquire_takes_a_batch_larger_than_one_statement_can_bind()
+    {
+        return base.immediate_acquire_takes_a_batch_larger_than_one_statement_can_bind();
+    }
+
+    [Fact]
     public override Task synchronized_workers_claim_disjoint_fallback_cron_occurrences()
     {
         return base.synchronized_workers_claim_disjoint_fallback_cron_occurrences();

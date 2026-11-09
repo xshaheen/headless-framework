@@ -1831,34 +1831,42 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             return [];
         }
 
-        // LEASE-DEADLINE WRITE — autocommit, so the expiry is the statement's database clock.
-        var set = JobsRowSet.For<CronJobOccurrenceEntity<TCronJob>>(dbContext);
-        var idColumn = set.Column(nameof(CronJobOccurrenceEntity<>.Id));
-        var updatedColumn = set.Column(nameof(CronJobOccurrenceEntity<>.UpdatedAt));
-        var tokens = string.Join(
-            " OR ",
-            candidates.Select(c =>
-                $"({idColumn} = {set.Parameter(nameof(CronJobOccurrenceEntity<>.Id), c.Id)} AND {updatedColumn} = {set.Parameter(nameof(CronJobOccurrenceEntity<>.UpdatedAt), c.UpdatedAt)})"
-            )
-        );
-        set.Value(nameof(CronJobOccurrenceEntity<>.Status), JobStatus.InProgress)
-            .DatabaseNow(nameof(CronJobOccurrenceEntity<>.UpdatedAt));
+        // LEASE-DEADLINE WRITE — autocommit, so the expiry is the statement's database clock. Each candidate binds its
+        // id and version token, so the grant runs in chunks that stay under SQL Server's 2100 parameters per request.
+        var granted = new List<JobsGrantedRow>(candidates.Length);
 
-        var granted = await JobsLeaseGrant
-            .GrantAsync<CronJobOccurrenceEntity<TCronJob>>(
-                JobsLeaseRows.CronOccurrences<TCronJob>(dbContext),
-                dbContext,
-                set,
-                candidates.Select(c => c.Id).ToArray(),
-                tokens,
-                deadline: null,
-                LeaseDuration,
-                owner,
-                // Mirrors the acquire predicate's owner arm; the new generation fences off the earlier dispatch.
-                reclaimOwn: true,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
+        foreach (var chunk in candidates.Chunk(JobsLeaseGrant.MaxVersionTokensPerStatement))
+        {
+            var set = JobsRowSet.For<CronJobOccurrenceEntity<TCronJob>>(dbContext);
+            var idColumn = set.Column(nameof(CronJobOccurrenceEntity<>.Id));
+            var updatedColumn = set.Column(nameof(CronJobOccurrenceEntity<>.UpdatedAt));
+            var tokens = string.Join(
+                " OR ",
+                chunk.Select(c =>
+                    $"({idColumn} = {set.Parameter(nameof(CronJobOccurrenceEntity<>.Id), c.Id)} AND {updatedColumn} = {set.Parameter(nameof(CronJobOccurrenceEntity<>.UpdatedAt), c.UpdatedAt)})"
+                )
+            );
+            set.Value(nameof(CronJobOccurrenceEntity<>.Status), JobStatus.InProgress)
+                .DatabaseNow(nameof(CronJobOccurrenceEntity<>.UpdatedAt));
+
+            granted.AddRange(
+                await JobsLeaseGrant
+                    .GrantAsync<CronJobOccurrenceEntity<TCronJob>>(
+                        JobsLeaseRows.CronOccurrences<TCronJob>(dbContext),
+                        dbContext,
+                        set,
+                        chunk.Select(c => c.Id).ToArray(),
+                        tokens,
+                        deadline: null,
+                        LeaseDuration,
+                        owner,
+                        // Mirrors the acquire predicate's owner arm; the new generation fences off the earlier dispatch.
+                        reclaimOwn: true,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false)
+            );
+        }
 
         if (granted.Count == 0)
         {

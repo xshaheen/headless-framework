@@ -117,11 +117,6 @@ internal static class JobsSubtreeLeaseWalk
                 // the root, so a stale walk never splits a tree between two claims.
                 var set = JobsRowSet.For<TTimeJob>(context);
                 var status = set.Column(nameof(TimeJobEntity.Status));
-                var parent = set.Column(nameof(TimeJobEntity.ParentId));
-                var parentList = string.Join(
-                    ", ",
-                    parentIdsByRoot[rootId].Select(id => set.Parameter(nameof(TimeJobEntity.ParentId), id))
-                );
                 var rootParameter = set.Parameter(nameof(TimeJobEntity.Id), rootId);
                 var generationParameter = set.LeaseParameter(
                     nameof(Headless.Fencing.RowLeaseSnapshot.Generation),
@@ -130,7 +125,7 @@ internal static class JobsSubtreeLeaseWalk
                 var condition =
                     $"{status} = {set.Parameter(nameof(TimeJobEntity.Status), JobStatus.Idle)}"
                     + $" AND {set.Column(nameof(TimeJobEntity.ExecutionTime))} IS NULL"
-                    + $" AND {parent} IN ({parentList})"
+                    + $" AND {set.InIds(nameof(TimeJobEntity.ParentId), parentIdsByRoot[rootId])}"
                     + $" AND {JobsLeaseGrant.CurrentFence(columns, "jobs_root", rootParameter, generationParameter)}";
                 set.DatabaseNow(nameof(TimeJobEntity.UpdatedAt));
 

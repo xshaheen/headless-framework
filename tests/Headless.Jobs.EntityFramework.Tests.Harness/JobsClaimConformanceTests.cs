@@ -602,6 +602,66 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
         }
     }
 
+    /// <summary>
+    /// An immediate acquire takes every due row it is given in one call, however many: a batch add hands it all its
+    /// due-now jobs, and each candidate binds its id and version token, so a single grant statement for 1100 rows would
+    /// exceed SQL Server's 2100 parameters per request and fail after the batch was committed.
+    /// </summary>
+    public virtual async Task immediate_acquire_takes_a_batch_larger_than_one_statement_can_bind()
+    {
+        const int batchSize = 1100;
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("immediate-batch");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+            var timeJobs = Enumerable
+                .Range(0, batchSize)
+                .Select(_ => new TimeJobEntity { Id = Guid.NewGuid(), Function = "immediate-batch" })
+                .ToArray();
+            await persistence.AddTimeJobsAsync(timeJobs, ct);
+
+            var acquiredTimeJobs = await persistence.AcquireImmediateTimeJobsAsync([.. timeJobs.Select(x => x.Id)], ct);
+
+            acquiredTimeJobs.Select(x => x.Id).Should().BeEquivalentTo(timeJobs.Select(x => x.Id));
+            acquiredTimeJobs.Should().OnlyContain(x => x.Lease.State == RowLeaseState.Active);
+
+            var cronId = Guid.NewGuid();
+            await fixture.SeedCronJobAsync(cronId, "immediate-batch", "* * * * *", NodeDeathPolicy.Retry, ct);
+            var executionTime = DateTime.UtcNow.AddMinutes(-2);
+            var occurrenceIds = new Guid[batchSize];
+
+            for (var index = 0; index < batchSize; index++)
+            {
+                occurrenceIds[index] = Guid.NewGuid();
+                await fixture.SeedCronOccurrenceAsync(
+                    occurrenceIds[index],
+                    cronId,
+                    (int)JobStatus.Idle,
+                    null,
+                    NodeDeathPolicy.Retry,
+                    null,
+                    executionTime.AddMilliseconds(index),
+                    ct
+                );
+            }
+
+            var acquiredOccurrences = await persistence.AcquireImmediateCronOccurrencesAsync(occurrenceIds, ct);
+
+            acquiredOccurrences.Select(x => x.Id).Should().BeEquivalentTo(occurrenceIds);
+            acquiredOccurrences.Should().OnlyContain(x => x.Lease.State == RowLeaseState.Active);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
     public virtual async Task synchronized_workers_claim_disjoint_fallback_cron_occurrences()
     {
         var ct = AbortToken;

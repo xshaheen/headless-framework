@@ -30,6 +30,7 @@ internal sealed class JobsRowSet
     private readonly ISqlDialect _dialect;
     private readonly List<string> _assignments = [];
     private readonly List<(RelationalTypeMapping Mapping, string Name, object? Value)> _parameters = [];
+    private readonly List<(string Name, IReadOnlyCollection<Guid> Values)> _lists = [];
 
     private JobsRowSet(DbContext context, Type entityType)
     {
@@ -64,6 +65,22 @@ internal sealed class JobsRowSet
         _parameters.Add((_Property(propertyName).Mapping, name, value));
 
         return "@" + name;
+    }
+
+    /// <summary>
+    /// A predicate that <paramref name="propertyName"/> equals one of <paramref name="ids"/>, bound as a single list
+    /// parameter.
+    /// </summary>
+    /// <remarks>
+    /// One parameter per id would put a large batch over SQL Server's limit of 2100 parameters per request; a list
+    /// parameter keeps the count fixed whatever the batch size, as EF Core's own <c>Contains</c> translation does.
+    /// </remarks>
+    public string InIds(string propertyName, IReadOnlyCollection<Guid> ids)
+    {
+        var name = _ParameterPrefix + "List" + _lists.Count.ToString(CultureInfo.InvariantCulture);
+        _lists.Add((name, ids));
+
+        return _dialect.InList(Column(propertyName), name, SqlColumnType.Guid);
     }
 
     /// <summary>Binds <paramref name="value"/> as a parameter typed like the lease's <paramref name="propertyName"/>, and returns its placeholder.</summary>
@@ -152,17 +169,24 @@ internal sealed class JobsRowSet
     public FencedRowWrite ToWrite(string? condition = null)
     {
         var parameters = _parameters.ToArray();
+        var lists = _lists.ToArray();
+        var dialect = _dialect;
 
         return new FencedRowWrite(
             Set: _assignments.Count == 0 ? null : string.Join(", ", _assignments),
             Condition: condition,
-            Bind: parameters.Length == 0
+            Bind: parameters.Length == 0 && lists.Length == 0
                 ? null
                 : command =>
                 {
                     foreach (var (mapping, name, value) in parameters)
                     {
                         command.Parameters.Add(mapping.CreateParameter(command, name, value));
+                    }
+
+                    foreach (var (name, values) in lists)
+                    {
+                        dialect.AddListParameter(command, name, SqlColumnType.Guid, values);
                     }
                 }
         );

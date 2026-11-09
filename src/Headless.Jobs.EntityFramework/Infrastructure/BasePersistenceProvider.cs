@@ -1307,34 +1307,42 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         }
 
         // LEASE-DEADLINE WRITE — stays AUTOCOMMIT, so the database clock that stamps the expiry is the statement's,
-        // not a surrounding transaction's start.
-        var set = JobsRowSet.For<TTimeJob>(dbContext);
-        var idColumn = set.Column(nameof(TimeJobEntity.Id));
-        var updatedColumn = set.Column(nameof(TimeJobEntity.UpdatedAt));
-        var tokens = string.Join(
-            " OR ",
-            candidates.Select(c =>
-                $"({idColumn} = {set.Parameter(nameof(TimeJobEntity.Id), c.Id)} AND {updatedColumn} = {set.Parameter(nameof(TimeJobEntity.UpdatedAt), c.UpdatedAt)})"
-            )
-        );
-        set.Value(nameof(TimeJobEntity.Status), JobStatus.InProgress).DatabaseNow(nameof(TimeJobEntity.UpdatedAt));
+        // not a surrounding transaction's start. Each candidate binds its id and version token, so the grant runs in
+        // chunks that stay under SQL Server's 2100 parameters per request; each chunk is its own autocommit grant.
+        var granted = new List<JobsGrantedRow>(candidates.Length);
 
-        var granted = await JobsLeaseGrant
-            .GrantAsync<TTimeJob>(
-                JobsLeaseRows.TimeJobs<TTimeJob>(dbContext),
-                dbContext,
-                set,
-                candidates.Select(c => c.Id).ToArray(),
-                tokens,
-                deadline: null,
-                LeaseDuration,
-                owner,
-                // Mirrors the acquire predicate's owner arm: a node re-picking a row it claimed but has not started
-                // takes a new generation, which fences off the earlier dispatch.
-                reclaimOwn: true,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
+        foreach (var chunk in candidates.Chunk(JobsLeaseGrant.MaxVersionTokensPerStatement))
+        {
+            var set = JobsRowSet.For<TTimeJob>(dbContext);
+            var idColumn = set.Column(nameof(TimeJobEntity.Id));
+            var updatedColumn = set.Column(nameof(TimeJobEntity.UpdatedAt));
+            var tokens = string.Join(
+                " OR ",
+                chunk.Select(c =>
+                    $"({idColumn} = {set.Parameter(nameof(TimeJobEntity.Id), c.Id)} AND {updatedColumn} = {set.Parameter(nameof(TimeJobEntity.UpdatedAt), c.UpdatedAt)})"
+                )
+            );
+            set.Value(nameof(TimeJobEntity.Status), JobStatus.InProgress).DatabaseNow(nameof(TimeJobEntity.UpdatedAt));
+
+            granted.AddRange(
+                await JobsLeaseGrant
+                    .GrantAsync<TTimeJob>(
+                        JobsLeaseRows.TimeJobs<TTimeJob>(dbContext),
+                        dbContext,
+                        set,
+                        chunk.Select(c => c.Id).ToArray(),
+                        tokens,
+                        deadline: null,
+                        LeaseDuration,
+                        owner,
+                        // Mirrors the acquire predicate's owner arm: a node re-picking a row it claimed but has not
+                        // started takes a new generation, which fences off the earlier dispatch.
+                        reclaimOwn: true,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false)
+            );
+        }
 
         if (granted.Count == 0)
         {
