@@ -451,7 +451,7 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
             )
             .ConfigureAwait(false);
 
-        _RequireEnded(status, LeaseSettlementStatus.Settled, key, "complete");
+        _RequireEnded(status, LeaseSettlementStatus.Settled, key, generation, "complete");
     }
 
     public async ValueTask ReleaseAsync(
@@ -475,7 +475,7 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
             )
             .ConfigureAwait(false);
 
-        _RequireEnded(status, LeaseSettlementStatus.Released, key, "release");
+        _RequireEnded(status, LeaseSettlementStatus.Released, key, generation, "release");
     }
 
     public async ValueTask SetRecoveryPointAsync(
@@ -530,7 +530,9 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
         _ = written.Match(
             accepted: static (_, _) => true,
             rejected: before =>
-                throw _NotOwned(key, "set the recovery point of", before?.Status.ToString() ?? "missing")
+                before?.Status == LeaseFenceStatus.Expired
+                    ? throw _Expired(key, generation)
+                    : throw _NotOwned(key, "set the recovery point of", before?.Status.ToString() ?? "missing")
         );
     }
 
@@ -543,13 +545,28 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
         LeaseSettlementStatus status,
         LeaseSettlementStatus expected,
         IdempotencyRecordKey key,
+        long generation,
         string verb
     )
     {
+        if (status == LeaseSettlementStatus.Expired)
+        {
+            throw _Expired(key, generation);
+        }
+
         if (status != expected)
         {
             throw _NotOwned(key, verb, status.ToString());
         }
+    }
+
+    /// <summary>
+    /// The attempt's lease ran out after the caller's lock read judged it current; it no longer owns the key, the same
+    /// answer that read would have given a moment later.
+    /// </summary>
+    private static StaleAdmissionException _Expired(IdempotencyRecordKey key, long generation)
+    {
+        return new StaleAdmissionException(key.ToKey(), generation, IdempotentLeaseStatus.Expired);
     }
 
     private static InvalidOperationException _NotOwned(IdempotencyRecordKey key, string verb, string found)

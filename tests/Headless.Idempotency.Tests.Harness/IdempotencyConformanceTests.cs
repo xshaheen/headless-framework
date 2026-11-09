@@ -4,6 +4,7 @@ using System.Text;
 using Headless.Idempotency;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace Tests;
@@ -745,6 +746,54 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
         (await fence.Should().ThrowAsync<StaleAdmissionException>())
             .Which.Reason.Should()
             .Be(IdempotentLeaseStatus.Expired);
+    }
+
+    /// <summary>
+    /// The store's own fence refuses a write whose lease ran out after the caller's lock check judged it current, and
+    /// says so with the same typed refusal: completion, the recovery point, and release all throw
+    /// <see cref="StaleAdmissionException" /> with reason <see cref="IdempotentLeaseStatus.Expired" />.
+    /// </summary>
+    public virtual async Task should_refuse_a_store_write_whose_lease_expired_as_a_stale_admission()
+    {
+        var key = CreateKey();
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+        var store = host.Services.GetRequiredService<IIdempotencyRecordStore>();
+        var lease = TimeSpan.FromSeconds(1);
+
+        var admitted = await host.Operations.AdmitAsync(
+            key,
+            Fingerprint,
+            leaseDuration: lease,
+            retention: Retention,
+            cancellationToken: AbortToken
+        );
+        var recordKey = new IdempotencyRecordKey(admitted.Key.TenantId ?? string.Empty, admitted.Key.Key);
+        var result = Encoding.UTF8.GetBytes("done");
+        var generation = admitted.Generation!.Value;
+
+        await using var unit = await Fixture.BeginUnitAsync(host, AbortToken);
+        await Task.Delay(lease + TimeSpan.FromMilliseconds(500), AbortToken);
+
+        var complete = async () =>
+            await store.CompleteAsync(unit.Unit, recordKey, generation, result, Contract, Retention, AbortToken);
+        var recoveryPoint = async () =>
+            await store.SetRecoveryPointAsync(
+                unit.Unit,
+                recordKey,
+                generation,
+                "step",
+                result,
+                RecoveryContract,
+                AbortToken
+            );
+        var release = async () => await store.ReleaseAsync(unit.Unit, recordKey, generation, Retention, AbortToken);
+
+        foreach (var write in new[] { complete, recoveryPoint, release })
+        {
+            var refused = (await write.Should().ThrowAsync<StaleAdmissionException>()).Which;
+            refused.Reason.Should().Be(IdempotentLeaseStatus.Expired);
+            refused.Generation.Should().Be(generation);
+        }
     }
 
     #endregion

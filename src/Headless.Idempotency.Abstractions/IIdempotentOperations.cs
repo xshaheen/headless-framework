@@ -120,6 +120,12 @@ public interface IIdempotentOperations
     /// <param name="duration">The lease's new time to live.</param>
     /// <param name="cancellationToken">Token used to cancel the database call.</param>
     /// <returns>The renewal's result; anything but renewed means the attempt no longer owns the key.</returns>
+    /// <remarks>
+    /// The status describes this attempt: one that a newer attempt replaced answers
+    /// <see cref="IdempotentLeaseStatus.Stale" /> even after that newer attempt released the key. The cache provider
+    /// answers <see cref="IdempotentLeaseStatus.Released" /> there instead, because a released cache entry no longer
+    /// records which generation released it.
+    /// </remarks>
     /// <exception cref="ArgumentException">The admission is not admitted.</exception>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <paramref name="duration" /> is outside the configured lease-duration bounds.

@@ -103,6 +103,11 @@ internal static class ConformanceCaseAllowList
         ),
         new(
             "CacheIdempotencyConformanceTests",
+            "should_refuse_a_store_write_whose_lease_expired_as_a_stale_admission",
+            "Writes the store inside a caller's unit, and the cache provider refuses enlistment."
+        ),
+        new(
+            "CacheIdempotencyConformanceTests",
             "should_answer_stale_to_an_older_attempt_renewing_after_a_newer_one_released",
             "The cache entry keeps no lease state per generation: once a newer attempt released the key, an older attempt's renewal finds a released entry and answers Released, not the relational and in-memory providers' Stale."
         ),

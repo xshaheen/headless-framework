@@ -151,6 +151,12 @@ public sealed class PostgreSqlIdempotencyConformanceTests(PostgreSqlIdempotencyF
     }
 
     [Fact]
+    public override Task should_refuse_a_store_write_whose_lease_expired_as_a_stale_admission()
+    {
+        return base.should_refuse_a_store_write_whose_lease_expired_as_a_stale_admission();
+    }
+
+    [Fact]
     public override Task should_refuse_a_fence_in_a_long_enlisted_unit_once_the_lease_expired()
     {
         return base.should_refuse_a_fence_in_a_long_enlisted_unit_once_the_lease_expired();

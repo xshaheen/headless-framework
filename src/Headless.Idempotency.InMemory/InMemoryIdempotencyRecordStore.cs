@@ -164,7 +164,7 @@ internal sealed class InMemoryIdempotencyRecordStore(
         var record = _Require(transaction.Read(key), key, "complete");
         var now = transaction.Now(timeProvider);
         var settled = RowLeaseRules.Settle(record.Lease, generation, now);
-        _RequireEnded(settled.Status, LeaseSettlementStatus.Settled, key, "complete");
+        _RequireEnded(settled.Status, LeaseSettlementStatus.Settled, key, generation, "complete");
 
         // A repeat by the generation that already settled writes nothing, so the stored result is never overwritten.
         if (!settled.Wrote)
@@ -199,6 +199,11 @@ internal sealed class InMemoryIdempotencyRecordStore(
         var record = _Require(transaction.Read(key), key, "set the recovery point of");
         var status = RowLeaseRules.Judge(record.Lease, generation, transaction.Now(timeProvider));
 
+        if (status == LeaseFenceStatus.Expired)
+        {
+            throw _Expired(key, generation);
+        }
+
         if (status != LeaseFenceStatus.Current)
         {
             throw _NotOwned(key, "set the recovery point of", status.ToString());
@@ -227,7 +232,7 @@ internal sealed class InMemoryIdempotencyRecordStore(
         var record = _Require(transaction.Read(key), key, "release");
         var now = transaction.Now(timeProvider);
         var released = RowLeaseRules.Release(record.Lease, generation, now);
-        _RequireEnded(released.Status, LeaseSettlementStatus.Released, key, "release");
+        _RequireEnded(released.Status, LeaseSettlementStatus.Released, key, generation, "release");
 
         if (!released.Wrote)
         {
@@ -439,13 +444,28 @@ internal sealed class InMemoryIdempotencyRecordStore(
         LeaseSettlementStatus status,
         LeaseSettlementStatus expected,
         IdempotencyRecordKey key,
+        long generation,
         string verb
     )
     {
+        if (status == LeaseSettlementStatus.Expired)
+        {
+            throw _Expired(key, generation);
+        }
+
         if (status != expected)
         {
             throw _NotOwned(key, verb, status.ToString());
         }
+    }
+
+    /// <summary>
+    /// The attempt's lease ran out after the caller's lock read judged it current; it no longer owns the key, the same
+    /// answer that read would have given a moment later.
+    /// </summary>
+    private static StaleAdmissionException _Expired(IdempotencyRecordKey key, long generation)
+    {
+        return new StaleAdmissionException(key.ToKey(), generation, IdempotentLeaseStatus.Expired);
     }
 
     private static InvalidOperationException _NotOwned(IdempotencyRecordKey key, string verb, string found)
