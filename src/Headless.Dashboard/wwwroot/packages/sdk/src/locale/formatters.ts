@@ -39,7 +39,8 @@ const steps: readonly [Intl.RelativeTimeFormatUnit, number][] = [
   ['month', 12],
 ]
 
-function toEpoch(at: TimeInput) {
+/** Epoch milliseconds of `at`, or `NaN` when a string does not parse. */
+export function toEpoch(at: TimeInput) {
   return at instanceof Date ? at.getTime() : typeof at === 'number' ? at : Date.parse(at)
 }
 

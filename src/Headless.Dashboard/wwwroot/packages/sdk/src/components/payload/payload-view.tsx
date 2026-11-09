@@ -4,8 +4,10 @@
 
 import { SugarHigh, tokenize } from 'sugar-high/core'
 import * as jsonSyntax from 'sugar-high/lang/json'
+import { useMemo } from 'react'
 import { useFormat } from '../../locale/locale.tsx'
 import { Button } from '../button.tsx'
+import { Text } from '../display/text.tsx'
 
 /** The most of a payload the view renders, in UTF-8 bytes; the rest is one `Copy all` away. */
 export const payloadDisplayLimit = 64 * 1024
@@ -120,28 +122,49 @@ const jsonTokenClass: Partial<Record<string, string>> = {
  * dashboard's CSP refuses. React writes every token as text. A tokenization that does not join back to exactly
  * `text` renders `text` plain, so colouring can never change what the operator reads.
  */
-function JsonTokens({ text }: { text: string }) {
+function jsonRuns(text: string): readonly (readonly [string | undefined, string])[] | null {
   const tokens = tokenize(text, jsonSyntax).map(([type, value]) => [SugarHigh.TokenTypes[type], value] as const)
 
   if (tokens.map(([, value]) => value).join('') !== text) {
-    return text
+    return null
   }
 
-  return tokens.map(([type, value], index) => {
-    // A minus sign belongs to the number after it.
+  // Adjacent tokens of one colour render as one span, so a long payload costs a span per coloured run, not per token.
+  const runs: [string | undefined, string][] = []
+
+  tokens.forEach(([type, value], index) => {
     const className =
       type === 'sign' && value === '-' && tokens[index + 1]?.[0] === 'class'
         ? jsonTokenClass.class
         : jsonTokenClass[type ?? '']
+    const last = runs.at(-1)
 
-    return className ? (
+    if (last && last[0] === className) {
+      last[1] += value
+    } else {
+      runs.push([className, value])
+    }
+  })
+
+  return runs
+}
+
+function JsonTokens({ text }: { text: string }) {
+  const runs = useMemo(() => jsonRuns(text), [text])
+
+  if (runs === null) {
+    return text
+  }
+
+  return runs.map(([className, value], index) =>
+    className ? (
       <span key={index} className={className}>
         {value}
       </span>
     ) : (
       value
-    )
-  })
+    ),
+  )
 }
 
 export interface PayloadViewProps {
@@ -159,22 +182,28 @@ export interface PayloadViewProps {
  */
 export function PayloadView({ content, contentType, unsupportedVersion }: PayloadViewProps) {
   const format = useFormat()
+  const isJsonType = contentType === undefined || contentType.includes('json')
+  const { bytes, truncated, formatted, shown } = useMemo(() => {
+    const encoded = new TextEncoder().encode(content)
+    const truncated = encoded.length > payloadDisplayLimit
+    const formatted = !truncated && isJsonType ? formatJson(content) : null
+
+    return {
+      bytes: encoded.length,
+      truncated,
+      formatted,
+      shown: truncated ? cutUtf8(encoded, payloadDisplayLimit) : (formatted ?? content),
+    }
+  }, [content, isJsonType])
 
   if (unsupportedVersion !== undefined) {
     return <p className="text-muted-foreground">{`Unsupported contract version ${unsupportedVersion}`}</p>
   }
 
-  const encoded = new TextEncoder().encode(content)
-  const bytes = encoded.length
-  const truncated = bytes > payloadDisplayLimit
-  const isJson = !truncated && (contentType === undefined || contentType.includes('json'))
-  const formatted = isJson ? formatJson(content) : null
-  const shown = truncated ? cutUtf8(encoded, payloadDisplayLimit) : (formatted ?? content)
-
   return (
     <figure className="rounded-md bg-deep">
       <figcaption className="flex items-center justify-between gap-2 ps-3 pe-1 pt-1">
-        <span className="hd-hint">{truncated ? `${format.size(bytes)}, first 64 KB shown` : format.size(bytes)}</span>
+        <Text tone="hint">{truncated ? `${format.size(bytes)}, first 64 KB shown` : format.size(bytes)}</Text>
         <Button variant="ghost" onPress={() => void navigator.clipboard?.writeText(content)}>
           {truncated ? 'Copy all' : 'Copy'}
         </Button>

@@ -1,6 +1,6 @@
 import type { CappedCount } from '../data/counts.ts'
 import type { DashboardStateRole } from '../define-module.ts'
-import type { Formatters, TimeInput } from '../locale/formatters.ts'
+import { toEpoch, type Formatters, type TimeInput } from '../locale/formatters.ts'
 
 /** A series colour: one of the six state roles, the brand accent, or the muted text tone. */
 export type ChartTone = DashboardStateRole | 'accent' | 'muted'
@@ -68,8 +68,20 @@ export function seriesVariables(tones: readonly ChartTone[]) {
   return Object.fromEntries(tones.map((tone, index) => [`--series-${index}`, `var(--${tone})`]))
 }
 
-function epoch(at: TimeInput) {
-  return at instanceof Date ? at.getTime() : typeof at === 'number' ? at : Date.parse(at)
+const dateFormats = new Map<string, Intl.DateTimeFormat>()
+const numberFormats = new Map<string, Intl.NumberFormat>()
+const listFormats = new Map<string, Intl.ListFormat>()
+
+function cached<T>(cache: Map<string, T>, locale: string, options: object, create: () => T) {
+  const key = `${locale}|${JSON.stringify(options)}`
+  let format = cache.get(key)
+
+  if (!format) {
+    format = create()
+    cache.set(key, format)
+  }
+
+  return format
 }
 
 /**
@@ -77,7 +89,7 @@ function epoch(at: TimeInput) {
  * date once the chart spans more than a day.
  */
 export function bucketFormat(locale: string, zone: string, intervalSeconds: number, spanSeconds: number) {
-  const format = new Intl.DateTimeFormat(locale, {
+  const options: Intl.DateTimeFormatOptions = {
     month: spanSeconds >= 86_400 ? 'short' : undefined,
     day: spanSeconds >= 86_400 ? 'numeric' : undefined,
     hour: intervalSeconds < 86_400 ? '2-digit' : undefined,
@@ -85,7 +97,8 @@ export function bucketFormat(locale: string, zone: string, intervalSeconds: numb
     second: intervalSeconds < 60 ? '2-digit' : undefined,
     hourCycle: 'h23',
     timeZone: zone,
-  })
+  }
+  const format = cached(dateFormats, locale, options, () => new Intl.DateTimeFormat(locale, options))
 
   return (at: number) => format.format(at)
 }
@@ -97,7 +110,9 @@ function intervalPhrase(locale: string, seconds: number) {
     : seconds % 60 === 0 ? (['minute', 60] as const)
     : (['second', 1] as const)
 
-  return new Intl.NumberFormat(locale, { style: 'unit', unit, unitDisplay: 'long' }).format(seconds / size)
+  const options: Intl.NumberFormatOptions = { style: 'unit', unit, unitDisplay: 'long' }
+
+  return cached(numberFormats, locale, options, () => new Intl.NumberFormat(locale, options)).format(seconds / size)
 }
 
 export interface BucketRow {
@@ -115,7 +130,7 @@ export function valueText(format: Formatters, value: number | null, unit: string
 /** One row per bucket, which both the tooltip and the list render. */
 export function bucketRows(props: TimeSeriesChartProps, format: Formatters): BucketRow[] {
   const count = Math.max(0, ...props.series.map((item) => item.points.length))
-  const start = epoch(props.start)
+  const start = toEpoch(props.start)
   const label = bucketFormat(format.locale, props.zone, props.intervalSeconds, count * props.intervalSeconds)
 
   return Array.from({ length: count }, (_, index) => ({
@@ -124,8 +139,10 @@ export function bucketRows(props: TimeSeriesChartProps, format: Formatters): Buc
   }))
 }
 
-function names(items: readonly { name: string }[]) {
-  return new Intl.ListFormat('en', { type: 'conjunction' }).format(items.map((item) => item.name))
+function names(locale: string, items: readonly { name: string }[]) {
+  const options: Intl.ListFormatOptions = { type: 'conjunction' }
+
+  return cached(listFormats, locale, options, () => new Intl.ListFormat(locale, options)).format(items.map((item) => item.name))
 }
 
 /** The image's spoken sentence: what it shows, which series, the buckets' range and zone, and when it was read. */
@@ -135,7 +152,7 @@ export function timeSeriesSentence(props: TimeSeriesChartProps, rows: readonly B
     ? '; unmeasured buckets are gaps'
     : ''
 
-  return `${props.label}: ${names(props.series)} in ${props.unit}, every ${intervalPhrase(format.locale, props.intervalSeconds)}, ${range}${gaps}; as of ${format.zonedTime(props.asOf, props.zone)}.`
+  return `${props.label}: ${names(format.locale, props.series)} in ${props.unit}, every ${intervalPhrase(format.locale, props.intervalSeconds)}, ${range}${gaps}; as of ${format.zonedTime(props.asOf, props.zone)}.`
 }
 
 export interface PartRow {
@@ -158,8 +175,8 @@ export function partRows(props: DonutChartProps, format: Formatters): PartRow[] 
 }
 
 export function donutRange(props: DonutChartProps, format: Formatters) {
-  const start = epoch(props.start)
-  const end = epoch(props.end)
+  const start = toEpoch(props.start)
+  const end = toEpoch(props.end)
   const label = bucketFormat(format.locale, props.zone, 60, (end - start) / 1_000)
 
   return `from ${label(start)} to ${label(end)} ${props.zone}`

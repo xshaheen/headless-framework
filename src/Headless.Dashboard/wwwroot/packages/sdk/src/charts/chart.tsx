@@ -1,8 +1,6 @@
-// The React Compiler's memo caches cost the SDK more bytes than these renders save (the file runs no effect that a
-// changed identity could re-trigger), and the shell's assets sit near their size budget.
 'use no memo'
 
-import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import {
   Area,
   AreaChart,
@@ -19,6 +17,9 @@ import {
   YAxis,
 } from 'recharts'
 import { Button } from '../components/button.tsx'
+import { floatingSurface } from '../components/cn.ts'
+import { EmptyState } from '../components/display/empty-state.tsx'
+import { Text } from '../components/display/text.tsx'
 import type { Formatters } from '../locale/formatters.ts'
 import { useFormat } from '../locale/locale.tsx'
 import { ChartIcon, ListIcon } from '../icons/index.ts'
@@ -68,7 +69,7 @@ function DonutChart(props: DonutChartProps) {
   const tones = props.parts.map((part) => part.tone)
 
   if (props.parts.every((part) => part.count.value === 0)) {
-    return <p className="type-small text-muted-foreground">{props.empty ?? `No ${props.unit} in this range`}</p>
+    return <EmptyState>{props.empty ?? `No ${props.unit} in this range`}</EmptyState>
   }
 
   // Without exact, complete counts a slice's size would claim a share nobody measured, so the counts stand alone.
@@ -76,7 +77,9 @@ function DonutChart(props: DonutChartProps) {
     return (
       <figure className="flex min-w-0 flex-col gap-2" style={seriesVariables(tones) as CSSProperties}>
         <PartList label={props.label} rows={rows} />
-        <figcaption className="type-small text-faint">These counts are partial, so no shares are shown.</figcaption>
+        <figcaption className="type-small">
+          <Text tone="faint">These counts are partial, so no shares are shown.</Text>
+        </figcaption>
       </figure>
     )
   }
@@ -110,7 +113,7 @@ function ChartFrame({ legend, tones, sentence, drawing, list }: ChartFrameProps)
         <ul className="flex flex-wrap gap-x-3 gap-y-1 type-small text-muted-foreground">
           {legend.map((name, index) => (
             <li key={name} className="flex items-center gap-1.5">
-              <i className="size-2 rounded-xs" style={{ background: seriesColour(index) }} aria-hidden="true" />
+              <Swatch index={index} />
               {name}
             </li>
           ))}
@@ -124,13 +127,24 @@ function ChartFrame({ legend, tones, sentence, drawing, list }: ChartFrameProps)
   )
 }
 
+/** A series' colour beside its name, in the legend and in the list. */
+function Swatch({ index }: { index: number }) {
+  return <i className="size-2 rounded-xs" style={{ background: seriesColour(index) }} aria-hidden="true" />
+}
+
+const fallbackBox = { width: 480, height: 140 }
+
 /**
- * The drawing's size: measured from its box, which `--chart-height` sets, so Recharts draws to the pixel. A box that
- * measures nothing, before layout or outside a browser, falls back to a default width.
+ * The drawing's size: measured from its box, which `--chart-height` sets, so Recharts draws to the pixel. Until the
+ * first measurement the box is `null` and nothing is drawn, so the chart is not drawn once at a guessed size and again
+ * at its own. A box that measures nothing, and every box without `ResizeObserver`, outside a browser, takes a default
+ * size.
  */
 function useBox() {
   const ref = useRef<HTMLDivElement>(null)
-  const [box, setBox] = useState({ width: 480, height: 140 })
+  const [box, setBox] = useState<{ width: number; height: number } | null>(() =>
+    typeof ResizeObserver === 'undefined' ? fallbackBox : null,
+  )
 
   useLayoutEffect(() => {
     const node = ref.current
@@ -142,9 +156,12 @@ function useBox() {
     const measure = () => {
       const rect = node.getBoundingClientRect()
 
-      if (rect.width > 0 && rect.height > 0) {
+      if (rect.width === 0 || rect.height === 0) {
+        // A box that measures nothing, such as one inside a hidden tab, draws at the default size until it has one.
+        setBox((last) => last ?? fallbackBox)
+      } else {
         setBox((last) =>
-          last.width === Math.round(rect.width) && last.height === Math.round(rect.height)
+          last && last.width === Math.round(rect.width) && last.height === Math.round(rect.height)
             ? last
             : { width: Math.round(rect.width), height: Math.round(rect.height) },
         )
@@ -168,23 +185,32 @@ function useBox() {
 
 function TimeSeriesDrawing({ props, rows, format }: { props: TimeSeriesChartProps; rows: readonly BucketRow[]; format: Formatters }) {
   const [ref, box] = useBox()
-  const data = rows.map((_, index) =>
-    Object.fromEntries([['bucket', index], ...props.series.map((item, at) => [`s${at}`, item.points[index] ?? null])]),
+  const { series, kind } = props
+  const length = rows.length
+  const data = useMemo(
+    () =>
+      Array.from({ length }, (_, index) =>
+        Object.fromEntries([['bucket', index], ...series.map((item, at) => [`s${at}`, item.points[index] ?? null])]),
+      ),
+    [series, length],
   )
-  const top = Math.max(
-    0,
-    ...rows.map((_, index) => {
-      const values = props.series.map((item) => item.points[index] ?? 0)
+  const top = useMemo(
+    () =>
+      Math.max(
+        0,
+        ...Array.from({ length }, (_, index) => {
+          const values = series.map((item) => item.points[index] ?? 0)
 
-      return props.kind === 'stacked-bar' ? values.reduce((sum, value) => sum + value, 0) : Math.max(0, ...values)
-    }),
+          return kind === 'stacked-bar' ? values.reduce((sum, value) => sum + value, 0) : Math.max(0, ...values)
+        }),
+      ),
+    [series, kind, length],
   )
-  const count = (value: number) => format.number(value)
   // Recharts draws no axis: its axes measure text through a node it adds to the page. The labels are text beside the
   // drawing, as the SDK's other charts draw them, and the image's sentence already says the range.
   const shared = {
-    width: box.width,
-    height: box.height,
+    width: box?.width ?? 0,
+    height: box?.height ?? 0,
     data,
     margin: { top: 4, right: 0, bottom: 0, left: 0 },
     accessibilityLayer: false,
@@ -197,11 +223,11 @@ function TimeSeriesDrawing({ props, rows, format }: { props: TimeSeriesChartProp
       <Tooltip
         isAnimationActive={false}
         cursor={{ stroke: 'var(--line)', fill: 'var(--hover)' }}
-        content={({ active, label }) =>
-          active && typeof label === 'number' && rows[label] ? (
-            <TooltipBody title={rows[label].label} entries={props.series.map((item, at) => [item.name, rows[label]!.values[at]!])} />
-          ) : null
-        }
+        content={({ active, label }) => {
+          const row = active && typeof label === 'number' ? rows[label] : undefined
+
+          return row ? <TooltipBody title={row.label} entries={props.series.map((item, at) => [item.name, row.values[at]!])} /> : null
+        }}
       />
     </>
   )
@@ -233,12 +259,12 @@ function TimeSeriesDrawing({ props, rows, format }: { props: TimeSeriesChartProp
   return (
     <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-1 type-axis text-faint tabular-nums">
       <span className="flex flex-col justify-between text-end" aria-hidden="true">
-        <span>{count(top)}</span>
-        <span>{count(top / 2)}</span>
+        <span>{format.number(top)}</span>
+        <span>{format.number(top / 2)}</span>
         <span>0</span>
       </span>
       <div ref={ref} className="h-(--chart-height) min-w-0">
-        {chart}
+        {box ? chart : null}
       </div>
       <span className="col-start-2 flex justify-between" aria-hidden="true">
         <span>{rows[0]?.label}</span>
@@ -250,6 +276,11 @@ function TimeSeriesDrawing({ props, rows, format }: { props: TimeSeriesChartProp
 
 function DonutDrawing({ rows, props }: { rows: readonly PartRow[]; props: DonutChartProps }) {
   const [ref, box] = useBox()
+
+  if (!box) {
+    return <div ref={ref} className="h-(--chart-height) min-w-0" />
+  }
+
   const size = Math.min(box.width, box.height)
 
   return (
@@ -258,7 +289,6 @@ function DonutDrawing({ rows, props }: { rows: readonly PartRow[]; props: DonutC
         <Tooltip
           isAnimationActive={false}
           content={({ active, payload }) => {
-            // Recharts names the hovered sector by the part's name, which `nameKey` sets.
             const row = rows.find((candidate) => candidate.name === payload?.[0]?.name)
 
             return active && row ? <TooltipBody title={props.label} entries={[[row.name, `${row.count}, ${row.share}`]]} /> : null
@@ -284,7 +314,7 @@ function DonutDrawing({ rows, props }: { rows: readonly PartRow[]; props: DonutC
 
 function TooltipBody({ title, entries }: { title: string; entries: readonly (readonly [string, string])[] }) {
   return (
-    <div className="rounded-md border border-border bg-popover px-2 py-1.5 type-small text-popover-foreground shadow-lg">
+    <div className={`rounded-md px-2 py-1.5 type-small ${floatingSurface}`}>
       <p className="font-medium">{title}</p>
       <dl className="grid grid-cols-[auto_auto] gap-x-3 tabular-nums">
         {entries.map(([name, value]) => (
@@ -344,7 +374,7 @@ function PartList({ label, rows }: { label: string; rows: readonly PartRow[] }) 
           <tr key={row.name}>
             <td>
               <span className="flex items-center gap-1.5">
-                <i className="size-2 rounded-xs" style={{ background: seriesColour(index) }} aria-hidden="true" />
+                <Swatch index={index} />
                 {row.name}
               </span>
             </td>

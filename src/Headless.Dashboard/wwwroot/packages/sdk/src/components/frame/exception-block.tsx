@@ -2,9 +2,9 @@
 // near their size budget.
 'use no memo'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Button } from '../button.tsx'
-import { stackTokenClass, tokenizeStackLine } from '../payload/stack-tokens.ts'
+import { stackTokenClass, tokenizeStackLine, type StackToken } from '../payload/stack-tokens.ts'
 
 export interface ExceptionBlockProps {
   /** The exception's type, such as `System.TimeoutException`; left out when the server does not serve it. */
@@ -26,7 +26,7 @@ const shownLines = 3
  */
 export function ExceptionBlock({ type, message, stack }: ExceptionBlockProps) {
   const [full, setFull] = useState(false)
-  const lines = stackLines(stack)
+  const lines = useMemo(() => stackLines(stack).map(tokenizeStackLine), [stack])
 
   return (
     <div className="hd-exception overflow-hidden rounded-lg border border-border bg-deep">
@@ -39,10 +39,10 @@ export function ExceptionBlock({ type, message, stack }: ExceptionBlockProps) {
         ) : (
           <Heading message={message} />
         )}
-        {(full ? lines : lines.slice(0, shownLines)).map((line, index) => (
+        {(full ? lines : lines.slice(0, shownLines)).map((tokens, index) => (
           <span key={index}>
             {'\n'}
-            <StackLine line={line} />
+            <StackLine tokens={tokens} />
           </span>
         ))}
       </pre>
@@ -90,12 +90,10 @@ function Heading({ message }: { message: string }) {
   )
 }
 
-/** One stack line as coloured tokens; a line the tokenizer does not recognise reads faint, as a frame used to. */
-function StackLine({ line }: { line: string }) {
-  const tokens = tokenizeStackLine(line)
-
+/** One stack line as coloured tokens; a line the tokenizer does not recognise reads faint. */
+function StackLine({ tokens }: { tokens: readonly StackToken[] }) {
   if (tokens.length === 1 && tokens[0]!.kind === 'plain') {
-    return <span className="text-faint">{line}</span>
+    return <span className="text-faint">{tokens[0]!.text}</span>
   }
 
   return tokens.map((token, index) => {
