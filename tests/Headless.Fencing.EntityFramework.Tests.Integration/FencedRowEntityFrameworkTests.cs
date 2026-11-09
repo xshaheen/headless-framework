@@ -66,6 +66,41 @@ public abstract class FencedRowEntityFrameworkTests(IWorkDatabase database) : Te
     }
 
     [Fact]
+    public async Task should_keep_the_stored_lease_when_an_entity_loaded_before_the_grant_is_saved()
+    {
+        var id = Guid.NewGuid();
+        await _InsertAsync(id);
+
+        await using var context = database.CreateContext();
+
+        // The entity is tracked with the idle lease it had before the grant. EF Core writes a property only when it
+        // differs from that loaded snapshot, so the entity's lease is changed too: a save that wrote the lease
+        // columns would put this made-up lease over the grant.
+        var item = await context.WorkItems.SingleAsync(w => w.Id == id, AbortToken);
+        item.Lease.State.Should().Be(RowLeaseState.Idle);
+
+        var table = context.FencedRowTable<WorkItem, Guid>(w => w.Lease, context.Dialect);
+        await context.Database.OpenConnectionAsync(AbortToken);
+        var granted = await _GrantAsync(table, context.Database.GetDbConnection(), id);
+
+        item.Status = "running";
+        item.Lease = item.Lease with
+        {
+            Generation = granted.Generation + 7,
+            State = RowLeaseState.Released,
+            Holder = "stale-entity",
+        };
+        await context.SaveChangesAsync(AbortToken);
+
+        await using var verify = database.CreateContext();
+        var stored = await verify.WorkItems.AsNoTracking().SingleAsync(w => w.Id == id, AbortToken);
+        stored.Status.Should().Be("running");
+        stored.Lease.State.Should().Be(RowLeaseState.Active, "saving the entity never overwrites the lease columns");
+        stored.Lease.Generation.Should().Be(granted.Generation);
+        stored.Lease.Holder.Should().Be("worker");
+    }
+
+    [Fact]
     public async Task should_select_live_and_grantable_rows_by_the_database_clock()
     {
         var idle = Guid.NewGuid();
