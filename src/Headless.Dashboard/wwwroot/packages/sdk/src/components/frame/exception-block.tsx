@@ -31,8 +31,14 @@ export function ExceptionBlock({ type, message, stack }: ExceptionBlockProps) {
   return (
     <div className="hd-exception overflow-hidden rounded-lg border border-border bg-deep">
       <pre className="hd-mono m-0 px-3 py-2.5 type-code wrap-anywhere whitespace-pre-wrap">
-        {type ? <b className="text-destructive">{type}: </b> : null}
-        {message}
+        {type ? (
+          <>
+            <b className="text-destructive">{type}: </b>
+            {message}
+          </>
+        ) : (
+          <Heading message={message} />
+        )}
         {(full ? lines : lines.slice(0, shownLines)).map((line, index) => (
           <span key={index}>
             {'\n'}
@@ -65,6 +71,23 @@ function stackLines(stack: string | undefined) {
     .map((line) => line.trim())
     .filter(Boolean)
     .map((line) => (line.startsWith('at ') ? `   ${line}` : line))
+}
+
+/**
+ * A message served without a type, such as a store's text that starts `TimeoutException: …`: its leading type reads
+ * in the danger tone, as a served type does. Any other message reads as it is.
+ */
+function Heading({ message }: { message: string }) {
+  const [first, ...rest] = tokenizeStackLine(message)
+
+  return first?.kind === 'heading' && rest.every((token) => token.kind === 'message') ? (
+    <>
+      <b className="text-destructive">{first.text}</b>
+      {rest.map((token) => token.text).join('')}
+    </>
+  ) : (
+    message
+  )
 }
 
 /** One stack line as coloured tokens; a line the tokenizer does not recognise reads faint, as a frame used to. */

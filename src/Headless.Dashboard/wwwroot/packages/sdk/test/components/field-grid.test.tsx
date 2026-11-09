@@ -130,6 +130,23 @@ describe('ExceptionBlock', () => {
     )
   })
 
+  it('colours the type a typeless message starts with, as a served type', () => {
+    render(<ExceptionBlock message="TimeoutException: The gateway did not answer." stack="at Gateway.Send()" />)
+
+    const type = screen.getByText('TimeoutException:', { exact: false, selector: 'b' })
+    expect(type.className).toBe('text-destructive')
+    expect(type.closest('pre')?.textContent).toBe(
+      'TimeoutException: The gateway did not answer.\n   at Gateway.Send()',
+    )
+  })
+
+  it('leaves a typeless message that names no type as it is', () => {
+    render(<ExceptionBlock message="Lease expired: the node stopped." />)
+
+    expect(document.querySelector('pre b')).toBeNull()
+    expect(document.querySelector('pre')?.textContent).toBe('Lease expired: the node stopped.')
+  })
+
   it('colours a real nested .NET stack: inner headings as headings, frames by part, and every line kept', async () => {
     const user = userEvent.setup()
     const writeText = vi.fn(async () => undefined)
