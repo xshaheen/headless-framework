@@ -1158,6 +1158,20 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
         return base.should_restamp_the_lease_when_an_attempt_is_reserved_late_in_a_claimed_batch(published);
     }
 
+    /// <inheritdoc />
+    protected override string ExpireLeaseSql(bool published) =>
+        $"""UPDATE headless.{(published ? "messaging_published" : "messaging_received")} SET "lease_expires_at"=statement_timestamp()-INTERVAL '1 minute' WHERE "id"=@Id;""";
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public override Task should_leave_the_attempt_counter_unchanged_when_the_reservation_cannot_renew_the_lease(
+        bool published
+    )
+    {
+        return base.should_leave_the_attempt_counter_unchanged_when_the_reservation_cannot_renew_the_lease(published);
+    }
+
     [Theory]
     [InlineData(true)]
     [InlineData(false)]

@@ -1448,6 +1448,16 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
+    public override Task should_leave_the_attempt_counter_unchanged_when_the_reservation_cannot_renew_the_lease(
+        bool published
+    )
+    {
+        return base.should_leave_the_attempt_counter_unchanged_when_the_reservation_cannot_renew_the_lease(published);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
     public override Task should_renew_only_the_live_lease_generation_the_caller_holds(bool published)
     {
         return base.should_renew_only_the_live_lease_generation_the_caller_holds(published);

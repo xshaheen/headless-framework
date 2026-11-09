@@ -543,6 +543,15 @@ internal sealed partial class RelationalDataStorage
             : _terminalGuardWithRetries;
     }
 
+    private const string _ReserveAttemptSavepoint = "reserve_attempt";
+
+    /// <summary>
+    /// Runs between an attempt reservation's counter write and its lease renewal, on the reservation's connection and
+    /// transaction, with the row's storage id. Tests set it to expire the lease there, which no other session can do
+    /// while the reservation holds the row lock.
+    /// </summary>
+    internal Func<DbConnection, DbTransaction, Guid, CancellationToken, Task>? BeforeReserveRenewal { get; set; }
+
     private async ValueTask<bool> _ReserveAttemptAsync(
         string operation,
         string table,
@@ -555,7 +564,8 @@ internal sealed partial class RelationalDataStorage
         // current lease generation may move it. The claim leased a whole batch at once and its rows run one after
         // another, so the reservation also renews the lease from the database clock: a row reserved late in the batch
         // starts its attempt with a full lease instead of whatever the batch lease has left. Both statements run in one
-        // transaction under the row lock, the reservation first, so a refused reservation leaves the lease untouched.
+        // transaction under the row lock, the reservation first, so a refused reservation leaves the lease untouched,
+        // and a refused renewal rolls the counter write back, so the row never records an attempt that did not run.
         if (message.Lease.State != RowLeaseState.Active)
         {
             return false;
@@ -587,6 +597,10 @@ internal sealed partial class RelationalDataStorage
                 transaction: null,
                 async (connection, tx, ct) =>
                 {
+                    // The transaction commits whatever the body returns, so a refused renewal must undo the counter
+                    // write itself; the savepoint does that without failing the call.
+                    await tx.SaveAsync(_ReserveAttemptSavepoint, ct).ConfigureAwait(false);
+
                     var written = await FencedRows
                         .WriteAsync(leaseTable, connection, tx, row, write, _ReadReturnedLease, ct)
                         .ConfigureAwait(false);
@@ -597,18 +611,27 @@ internal sealed partial class RelationalDataStorage
                         return null;
                     }
 
+                    if (BeforeReserveRenewal is { } beforeRenewal)
+                    {
+                        await beforeRenewal(connection, tx, message.StorageId, ct).ConfigureAwait(false);
+                    }
+
                     // The row lock is held, so only the lease running out between the two statements refuses the
                     // renewal; the attempt then holds no lease to run under.
                     var renewed = await FencedRows
                         .RenewAsync(leaseTable, connection, tx, row, dispatchTimeout, ct)
                         .ConfigureAwait(false);
 
-                    return renewed.Status == LeaseRenewalStatus.Renewed
-                        ? held with
-                        {
-                            ExpiresAt = renewed.ExpiresAt,
-                        }
-                        : null;
+                    if (renewed.Status != LeaseRenewalStatus.Renewed)
+                    {
+                        await tx.RollbackAsync(_ReserveAttemptSavepoint, ct).ConfigureAwait(false);
+                        return null;
+                    }
+
+                    return held with
+                    {
+                        ExpiresAt = renewed.ExpiresAt,
+                    };
                 },
                 cancellationToken
             )
