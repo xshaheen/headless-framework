@@ -642,10 +642,12 @@ describe('virtualized keyset table', () => {
     expect(asked(fetchPage)[3]).toEqual({ cursor: undefined, sort: { key: 'executionTime', direction: 'descending' }, search: undefined, range: undefined })
     // The header keeps the focus while the new order loads, rather than the grid giving way to the empty state.
     expect(header.contains(document.activeElement)).toBe(true)
-    // Each press asked once: the button inside the header adds no second press of its own.
+    // Each press flips the order once: the button inside the header adds no second press of its own, which would
+    // flip it back. Space returns to the ascending order already read, so it may come from the cache.
+    await user.keyboard(' ')
     await new Promise((done) => setTimeout(done, 50))
-    expect(fetchPage).toHaveBeenCalledTimes(4)
-    expect(header.getAttribute('aria-sort')).toBe('descending')
+    expect(header.getAttribute('aria-sort')).toBe('ascending')
+    expect(asked(fetchPage).every((request) => request.cursor === undefined || request.sort === undefined)).toBe(true)
   })
 
   it('gives a column without a sort key no button and no aria-sort', async () => {
@@ -661,6 +663,7 @@ describe('virtualized keyset table', () => {
   it('discards page 2 of the old search when the search changes while it loads', async () => {
     const user = userEvent.setup()
     const page2 = deferred<DashboardListPage<Run>>()
+    const searched = deferred<DashboardListPage<Run>>()
     let page2Signal: AbortSignal | undefined
     const fetchPage = vi.fn<FetchPage>(async (cursor, request) => {
       if (cursor !== undefined) {
@@ -669,7 +672,7 @@ describe('virtualized keyset table', () => {
         return page2.promise
       }
 
-      return request.search ? { items: runs(2, 900), nextCursor: null } : { items: runs(100), nextCursor: 'cursor-of-r100' }
+      return request.search ? searched.promise : { items: runs(100), nextCursor: 'cursor-of-r100' }
     })
     render(withDashboard(<ScopedRuns fetchPage={fetchPage} searchMode="submit" />))
     await screen.findByRole('row', { name: /^r1\b/ })
@@ -679,12 +682,18 @@ describe('virtualized keyset table', () => {
     await waitFor(() => expect(page2Signal).toBeDefined())
 
     await user.type(screen.getByRole('searchbox', { name: 'Search runs' }), 'timeout{Enter}')
-    await screen.findByRole('row', { name: /^r900\b/ })
-    page2.resolve({ items: runs(100, 101), nextCursor: null })
+    await waitFor(() => expect(asked(fetchPage).at(-1)).toEqual({ cursor: undefined, sort: undefined, search: 'timeout', range: undefined }))
 
-    await waitFor(() => expect(page2Signal?.aborted).toBe(true))
+    // The old page answers while the old rows still stand in for the new search: it must not join them.
+    page2.resolve({ items: runs(100, 101), nextCursor: null })
+    await act(async () => {})
+    expect(page2Signal?.aborted).toBe(true)
+    expect(screen.queryByRole('row', { name: /^r101\b/ })).toBeNull()
+    expect(renderedIds()).not.toContain('r101')
+
+    searched.resolve({ items: runs(2, 900), nextCursor: null })
+    await screen.findByRole('row', { name: /^r900\b/ })
     expect(renderedIds()).toEqual(['r900', 'r901'])
-    expect(asked(fetchPage).at(-1)).toEqual({ cursor: undefined, sort: undefined, search: 'timeout', range: undefined })
   })
 
   it('sends nothing while typing in a submit search, and one request with the text on Enter', async () => {
@@ -728,8 +737,10 @@ describe('virtualized keyset table', () => {
     await user.keyboard('11012026')
     await user.keyboard('11102026')
 
-    // Cairo is two hours ahead of UTC in November 2026: midnight on 1 and 11 November there.
+    // Cairo is two hours ahead of UTC in November 2026: midnight on 1 and 11 November there. Only the whole range
+    // is sent, never one whose end year is still being typed.
     await waitFor(() => expect(asked(fetchPage).at(-1)?.range).toEqual({ start: '2026-10-31T22:00:00.000Z', end: '2026-11-10T22:00:00.000Z' }))
+    expect(asked(fetchPage).filter((request) => request.range !== undefined)).toHaveLength(1)
   })
 })
 

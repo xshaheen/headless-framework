@@ -45,6 +45,12 @@ export function DateRangeField({ label, onChange }: DateRangeFieldProps) {
   const { timeZone } = useLocale()
 
   function change(value: DateRange | null) {
+    // The picker commits on every digit, so while the end year is typed (2, 20, 202) the end falls before the start;
+    // such a range is never sent, and the list keeps the last whole one.
+    if (value && value.end.compare(value.start) < 0) {
+      return
+    }
+
     // The picker reads whole days, so the end is the next day's midnight and the server compares it exclusively.
     onChange(
       value
