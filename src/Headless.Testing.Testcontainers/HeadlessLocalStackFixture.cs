@@ -14,9 +14,15 @@ namespace Headless.Testing.Testcontainers;
 public class HeadlessLocalStackFixture()
     : ContainerFixture<LocalStackBuilder, LocalStackContainer>(TestContextMessageSink.Instance)
 {
+    /// <summary>
+    /// Gets the image the fixture runs, <see cref="TestImages.LocalStack"/> unless overridden. Override it to run
+    /// another version or a variant of the same server.
+    /// </summary>
+    protected virtual string Image => TestImages.LocalStack;
+
     protected override LocalStackBuilder Configure()
     {
-        return base.Configure().WithImage(TestImages.LocalStack);
+        return base.Configure().WithImage(Image);
     }
 
     /// <inheritdoc />
