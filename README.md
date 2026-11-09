@@ -14,7 +14,7 @@
 
 [اللغة: العربية](README.ar.md)
 
-217 packages &bull; One setup grammar &bull; Swap any provider in one line
+219 packages &bull; One setup grammar &bull; Swap any provider in one line
 
 [Why Headless](#why-headless) &bull; [60-second start](#60-second-start) &bull; [One grammar, every domain](#one-grammar-every-domain) &bull; [What is in the box](#what-is-in-the-box) &bull; [Package catalog](#package-catalog)
 
@@ -254,7 +254,7 @@ Provider packages are ordinary NuGet packages. To add a custom backend, implemen
 ## Package catalog
 
 <details>
-<summary><strong>All 217 packages, grouped by domain</strong> — expand to browse</summary>
+<summary><strong>All 219 packages, grouped by domain</strong> — expand to browse</summary>
 
 ### API & Web
 
@@ -421,6 +421,8 @@ Structured logging utilities and enrichers built on Serilog.
 
 | Package | Description |
 |---------|-------------|
+| [Headless.Logging.Redaction](src/Headless.Logging.Redaction/README.md) | Data-classification taxonomy and redactors for logs |
+| [Headless.Logging.Redaction.AspNetCore](src/Headless.Logging.Redaction.AspNetCore/README.md) | Credential-path redaction for HTTP logging and OpenTelemetry spans |
 | [Headless.Logging.Serilog](src/Headless.Logging.Serilog/README.md) | Serilog logging utilities |
 
 ### Media

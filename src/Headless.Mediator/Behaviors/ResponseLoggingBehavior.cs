@@ -13,12 +13,14 @@ namespace Headless.Mediator.Behaviors;
 /// </summary>
 internal sealed class ResponseLoggingBehavior<TMessage, TResponse>(
     ICurrentUser currentUser,
-    ILogger<ResponseLoggingBehavior<TMessage, TResponse>> logger
+    ILogger<ResponseLoggingBehavior<TMessage, TResponse>> logger,
+    MediatorPayloadLogging payloadLogging
 ) : MessagePostProcessor<TMessage, TResponse>
     where TMessage : IRequest<TResponse>
 {
     private readonly ICurrentUser _currentUser = Argument.IsNotNull(currentUser);
     private readonly ILogger<ResponseLoggingBehavior<TMessage, TResponse>> _logger = Argument.IsNotNull(logger);
+    private readonly bool _logPayloads = Argument.IsNotNull(payloadLogging).Enabled;
 
     /// <summary>
     /// Emits a debug-level log entry for the message and its response after the handler executes.
@@ -36,38 +38,42 @@ internal sealed class ResponseLoggingBehavior<TMessage, TResponse>(
             return ValueTask.CompletedTask;
         }
 
-        _LogMediatorResponse(
-            _logger,
-            userId: _currentUser.UserId?.ToString(),
-            messageName: typeof(TMessage).Name,
-            message: message,
-            responseName: typeof(TResponse).Name,
-            response: response
-        );
+        var userId = _currentUser.UserId?.ToString();
+
+        if (_logPayloads)
+        {
+            _LogWithPayload(
+                _logger,
+                userId,
+                typeof(TMessage).Name,
+                message,
+                typeof(TResponse).Name,
+                response,
+                arg7: null
+            );
+        }
+        else
+        {
+            _Log(_logger, userId, typeof(TMessage).Name, typeof(TResponse).Name, arg5: null);
+        }
 
         return ValueTask.CompletedTask;
     }
 
     #region Logs
 
-    private static readonly Action<ILogger, string?, string, object, string, object?, Exception?> _Log =
+    private static readonly Action<ILogger, string?, string, string, Exception?> _Log = LoggerMessage.Define<
+        string?,
+        string,
+        string
+    >(LogLevel.Debug, new EventId(2, "Mediator:Response"), "[Mediator:Response] {UserId} {MessageName} {ResponseName}");
+
+    private static readonly Action<ILogger, string?, string, object, string, object?, Exception?> _LogWithPayload =
         LoggerMessage.Define<string?, string, object, string, object?>(
             LogLevel.Debug,
             new EventId(2, "Mediator:Response"),
             "[Mediator:Response] {UserId} {MessageName} {@Message} {ResponseName} {@Response}"
         );
-
-    private static void _LogMediatorResponse(
-        ILogger logger,
-        string? userId,
-        string messageName,
-        object message,
-        string responseName,
-        object? response
-    )
-    {
-        _Log(logger, userId, messageName, message, responseName, response, arg7: null);
-    }
 
     #endregion
 }

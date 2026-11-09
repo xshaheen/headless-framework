@@ -13,12 +13,14 @@ namespace Headless.Mediator.Behaviors;
 /// </summary>
 internal sealed class RequestLoggingBehavior<TMessage, TResponse>(
     ICurrentUser currentUser,
-    ILogger<RequestLoggingBehavior<TMessage, TResponse>> logger
+    ILogger<RequestLoggingBehavior<TMessage, TResponse>> logger,
+    MediatorPayloadLogging payloadLogging
 ) : MessagePreProcessor<TMessage, TResponse>
     where TMessage : IMessage
 {
     private readonly ICurrentUser _currentUser = Argument.IsNotNull(currentUser);
     private readonly ILogger<RequestLoggingBehavior<TMessage, TResponse>> _logger = Argument.IsNotNull(logger);
+    private readonly bool _logPayloads = Argument.IsNotNull(payloadLogging).Enabled;
 
     /// <summary>
     /// Emits a debug-level log entry for the incoming message before the handler executes.
@@ -35,28 +37,33 @@ internal sealed class RequestLoggingBehavior<TMessage, TResponse>(
             return ValueTask.CompletedTask;
         }
 
-        _LogMediatorMessage(
-            _logger,
-            userId: _currentUser.UserId?.ToString(),
-            messageName: typeof(TMessage).Name,
-            message: message
-        );
+        var userId = _currentUser.UserId?.ToString();
+
+        if (_logPayloads)
+        {
+            _LogWithPayload(_logger, userId, typeof(TMessage).Name, message, arg5: null);
+        }
+        else
+        {
+            _Log(_logger, userId, typeof(TMessage).Name, arg4: null);
+        }
 
         return ValueTask.CompletedTask;
     }
 
     #region Logs
 
-    private static readonly Action<ILogger, string?, string, object, Exception?> _Log = LoggerMessage.Define<
+    private static readonly Action<ILogger, string?, string, Exception?> _Log = LoggerMessage.Define<string?, string>(
+        LogLevel.Debug,
+        new EventId(1, "Mediator:Message"),
+        "[Mediator:Message] {UserId} {MessageName}"
+    );
+
+    private static readonly Action<ILogger, string?, string, object, Exception?> _LogWithPayload = LoggerMessage.Define<
         string?,
         string,
         object
     >(LogLevel.Debug, new EventId(1, "Mediator:Message"), "[Mediator:Message] {UserId} {MessageName} {@Message}");
-
-    private static void _LogMediatorMessage(ILogger logger, string? userId, string messageName, object message)
-    {
-        _Log(logger, userId, messageName, message, arg5: null);
-    }
 
     #endregion
 }

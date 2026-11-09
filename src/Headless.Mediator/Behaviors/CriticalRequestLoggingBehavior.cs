@@ -14,7 +14,8 @@ namespace Headless.Mediator.Behaviors;
 /// </summary>
 internal sealed class CriticalRequestLoggingBehavior<TMessage, TResponse>(
     ICurrentUser currentUser,
-    ILogger<CriticalRequestLoggingBehavior<TMessage, TResponse>> logger
+    ILogger<CriticalRequestLoggingBehavior<TMessage, TResponse>> logger,
+    MediatorPayloadLogging payloadLogging
 ) : IPipelineBehavior<TMessage, TResponse>
     where TMessage : IRequest<TResponse>
 {
@@ -22,6 +23,7 @@ internal sealed class CriticalRequestLoggingBehavior<TMessage, TResponse>(
 
     private readonly ICurrentUser _currentUser = Argument.IsNotNull(currentUser);
     private readonly ILogger<CriticalRequestLoggingBehavior<TMessage, TResponse>> _logger = Argument.IsNotNull(logger);
+    private readonly bool _logPayloads = Argument.IsNotNull(payloadLogging).Enabled;
 
     /// <summary>
     /// Executes the next handler in the pipeline and emits a warning-level log entry when the
@@ -54,13 +56,16 @@ internal sealed class CriticalRequestLoggingBehavior<TMessage, TResponse>(
                 responseName: typeof(TResponse).Name
             );
 
-            _LogMediatorSlowResponsePayload(
-                _logger,
-                messageName: typeof(TMessage).Name,
-                message: message,
-                responseName: typeof(TResponse).Name,
-                response: response
-            );
+            if (_logPayloads)
+            {
+                _LogMediatorSlowResponsePayload(
+                    _logger,
+                    messageName: typeof(TMessage).Name,
+                    message: message,
+                    responseName: typeof(TResponse).Name,
+                    response: response
+                );
+            }
         }
 
         return response;

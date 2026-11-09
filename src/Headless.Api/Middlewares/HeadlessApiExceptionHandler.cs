@@ -2,10 +2,12 @@
 
 using System.Data.Common;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using FluentValidation;
 using Headless.Api.Resources;
 using Headless.Http;
+using Headless.Logging;
 using Headless.MultiTenancy;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http;
@@ -42,9 +44,13 @@ internal sealed partial class HeadlessApiExceptionHandler(
     IProblemDetailsService problemDetailsService,
     IProblemDetailsCreator problemDetailsCreator,
     IOptions<HeadlessProblemDetailsOptions> problemMappings,
-    ILogger<HeadlessApiExceptionHandler> logger
+    ILogger<HeadlessApiExceptionHandler> logger,
+    IEnumerable<ILogPathRedactor> pathRedactors
 ) : IExceptionHandler
 {
+    // A path that carries a credential, such as a signed URL's token, is logged with the credential replaced.
+    private readonly ILogPathRedactor[] _pathRedactors = [.. pathRedactors];
+
     private const string _DbUpdateConcurrencyExceptionFullName =
         "Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException";
 
@@ -132,11 +138,11 @@ internal sealed partial class HeadlessApiExceptionHandler(
                         logger,
                         missingTenant,
                         missingTenant.GetType().Name,
-                        httpContext.Request.Path
+                        _LoggablePath(httpContext)
                     );
                     if (httpContext.Features.Get<HeadlessTenancyResolutionApplied>() is null)
                     {
-                        _LogTenantResolutionMiddlewareMissing(logger, httpContext.Request.Path);
+                        _LogTenantResolutionMiddlewareMissing(logger, _LoggablePath(httpContext));
                     }
 
                     var tenantRequired = GeneralMessageDescriber.TenantRequired();
@@ -221,10 +227,11 @@ internal sealed partial class HeadlessApiExceptionHandler(
 
                 // EF Core's DbUpdateException is matched by full type name for the same reason as the
                 // concurrency case above. A unique-constraint violation is a conflict with existing data
-                // (typically two requests racing past an existence check), not a server fault. The
-                // constraint name stays in the logs: it describes the schema, not the request.
-                case not null when _IsUniqueConstraintViolation(exception):
-                    _LogUniqueConstraintViolation(logger, exception);
+                // (typically two requests racing past an existence check), not a server fault. Only the
+                // provider exception type and SQLSTATE are logged: SQL Server's message carries the duplicate
+                // value itself ("The duplicate key value is (...)"), which is often an email or phone number.
+                case not null when _IsUniqueConstraintViolation(exception, out var dbException):
+                    _LogUniqueConstraintViolation(logger, dbException.GetType().Name, dbException.SqlState);
                     problemDetails = problemDetailsCreator.Conflict([GeneralMessageDescriber.UniqueViolation()]);
                     statusCode = StatusCodes.Status409Conflict;
                     break;
@@ -416,8 +423,15 @@ internal sealed partial class HeadlessApiExceptionHandler(
         return _DbUpdateConcurrencyTypeCache.GetValue(ex.GetType(), _DbUpdateConcurrencyFactory).Value;
     }
 
-    private static bool _IsUniqueConstraintViolation(Exception ex)
+    private string _LoggablePath(HttpContext httpContext)
     {
+        return ILogPathRedactor.RedactAny(_pathRedactors, httpContext.Request.Path.Value ?? string.Empty);
+    }
+
+    private static bool _IsUniqueConstraintViolation(Exception ex, [NotNullWhen(true)] out DbException? dbException)
+    {
+        dbException = null;
+
         if (!_DbUpdateTypeCache.GetValue(ex.GetType(), _DbUpdateFactory).Value)
         {
             return false;
@@ -427,8 +441,10 @@ internal sealed partial class HeadlessApiExceptionHandler(
 
         for (var depth = 0; inner is not null && depth < _MaxProviderExceptionDepth; depth++)
         {
-            if (inner is DbException dbException && RelationalFaults.IsUniqueViolation(dbException))
+            if (inner is DbException candidate && RelationalFaults.IsUniqueViolation(candidate))
             {
+                dbException = candidate;
+
                 return true;
             }
 
@@ -526,10 +542,14 @@ internal sealed partial class HeadlessApiExceptionHandler(
         EventId = 5013,
         EventName = "UniqueConstraintViolation",
         Level = LogLevel.Warning,
-        Message = "Database unique constraint violation occurred",
+        Message = "Database unique constraint violation occurred ({ProviderException}, SQLSTATE {SqlState})",
         SkipEnabledCheck = true
     )]
-    private static partial void _LogUniqueConstraintViolation(ILogger logger, Exception exception);
+    private static partial void _LogUniqueConstraintViolation(
+        ILogger logger,
+        string providerException,
+        string? sqlState
+    );
 
     [LoggerMessage(
         EventId = 5010,

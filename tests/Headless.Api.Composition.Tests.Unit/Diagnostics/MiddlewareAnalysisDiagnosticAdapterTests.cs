@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
 using Headless.Api;
+using Headless.Logging;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 
@@ -29,6 +31,37 @@ public sealed class MiddlewareAnalysisDiagnosticAdapterTests
         logger.Entries[0].Message.Should().Contain("OrdersMiddleware").And.Contain("/orders/42").And.Contain("123");
         logger.Entries[1].EventId.Should().Be(new EventId(101, "MiddlewareFinished"));
         logger.Entries[1].Message.Should().Contain("OrdersMiddleware").And.Contain("17").And.Contain("202");
+    }
+
+    [Fact]
+    public void should_log_the_request_path_with_a_declared_credential_replaced()
+    {
+        // given
+        var logger = new CapturingLogger();
+        var sut = new MiddlewareAnalysisDiagnosticAdapter(logger, [new BlobsPathRedactor()]);
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/blobs/live-token";
+
+        // when
+        sut.OnMiddlewareStarting(context, "AuthMiddleware", 1);
+
+        // then
+        logger
+            .Entries.Should()
+            .ContainSingle()
+            .Which.Message.Should()
+            .Contain("/blobs/***")
+            .And.NotContain("live-token");
+    }
+
+    private sealed class BlobsPathRedactor : ILogPathRedactor
+    {
+        public bool TryRedact(string path, [NotNullWhen(true)] out string? redacted)
+        {
+            redacted = path.StartsWith("/blobs/", StringComparison.Ordinal) ? "/blobs/***" : null;
+
+            return redacted is not null;
+        }
     }
 
     [Fact]

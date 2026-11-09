@@ -1807,16 +1807,38 @@ internal sealed partial class ConsumerRegister(
 
 internal static partial class ConsumerRegisterLog
 {
+    // Logs the message's identity, never its body or headers: the body is the caller's payload, and TransportMessage has
+    // no ToString, so passing it whole logged only its type name. The headers are read without the throwing Id and
+    // Name accessors because a message that failed processing may be the one missing them.
+    internal static void LogProcessReceivedMessageFailed(
+        this ILogger logger,
+        Exception exception,
+        TransportMessage message
+    )
+    {
+        message.Headers.TryGetValue(Headers.MessageId, out var messageId);
+        message.Headers.TryGetValue(Headers.MessageName, out var messageName);
+
+        // Broker-supplied header values are untrusted, so strip line breaks and control characters before they reach
+        // a log line.
+        logger.LogProcessReceivedMessageFailed(
+            exception,
+            LogSanitizer.Sanitize(messageId),
+            LogSanitizer.Sanitize(messageName)
+        );
+    }
+
     [LoggerMessage(
         EventId = 126,
         EventName = "ProcessReceivedMessageFailed",
         Level = LogLevel.Error,
-        Message = "An exception occurred when process received message. Message:'{Message}'."
+        Message = "An exception occurred when processing received message {MessageId} ({MessageName})."
     )]
-    internal static partial void LogProcessReceivedMessageFailed(
+    private static partial void LogProcessReceivedMessageFailed(
         this ILogger logger,
         Exception exception,
-        TransportMessage message
+        string? messageId,
+        string? messageName
     );
 
     [LoggerMessage(

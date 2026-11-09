@@ -32,7 +32,9 @@ public class JobsNotificationHub(
             return;
         }
 
-        logger.ConnectionEstablished(connectionId, authResult.Username);
+        // The user name is often an email; the connection id correlates the entries, and the host's own sign-in logs
+        // name the user.
+        logger.ConnectionEstablished(connectionId);
 
         // Store user info in connection
         Context.Items["username"] = authResult.Username;
@@ -43,10 +45,7 @@ public class JobsNotificationHub(
 
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
-        var connectionId = Context.ConnectionId;
-        var username = Context.Items["username"]?.ToString() ?? "unknown";
-
-        logger.ConnectionDisconnected(connectionId, username);
+        logger.ConnectionDisconnected(Context.ConnectionId);
 
         await base.OnDisconnectedAsync(exception).ConfigureAwait(false);
     }
@@ -60,9 +59,7 @@ public class JobsNotificationHub(
         }
 
         await Groups.AddToGroupAsync(Context.ConnectionId, groupName).ConfigureAwait(false);
-        var username = Context.Items["username"]?.ToString();
-
-        logger.UserJoinedGroup(username, groupName);
+        logger.UserJoinedGroup(Context.ConnectionId, groupName);
         await Clients.Caller.SendAsync("GroupJoined", groupName).ConfigureAwait(false);
     }
 
@@ -75,9 +72,7 @@ public class JobsNotificationHub(
         }
 
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, groupName).ConfigureAwait(false);
-        var username = Context.Items["username"]?.ToString();
-
-        logger.UserLeftGroup(username, groupName);
+        logger.UserLeftGroup(Context.ConnectionId, groupName);
         await Clients.Caller.SendAsync("GroupLeft", groupName).ConfigureAwait(false);
     }
 
@@ -115,20 +110,28 @@ internal static partial class JobsNotificationHubLog
     [LoggerMessage(
         EventId = 2002,
         Level = LogLevel.Information,
-        Message = "SignalR connection established: {ConnectionId} - User: {Username}"
+        Message = "SignalR connection established: {ConnectionId}"
     )]
-    internal static partial void ConnectionEstablished(this ILogger logger, string connectionId, string? username);
+    internal static partial void ConnectionEstablished(this ILogger logger, string connectionId);
 
     [LoggerMessage(
         EventId = 2003,
         Level = LogLevel.Information,
-        Message = "SignalR connection disconnected: {ConnectionId} - User: {Username}"
+        Message = "SignalR connection disconnected: {ConnectionId}"
     )]
-    internal static partial void ConnectionDisconnected(this ILogger logger, string connectionId, string username);
+    internal static partial void ConnectionDisconnected(this ILogger logger, string connectionId);
 
-    [LoggerMessage(EventId = 2004, Level = LogLevel.Debug, Message = "User {Username} joined group {GroupName}")]
-    internal static partial void UserJoinedGroup(this ILogger logger, string? username, string groupName);
+    [LoggerMessage(
+        EventId = 2004,
+        Level = LogLevel.Debug,
+        Message = "Connection {ConnectionId} joined group {GroupName}"
+    )]
+    internal static partial void UserJoinedGroup(this ILogger logger, string connectionId, string groupName);
 
-    [LoggerMessage(EventId = 2005, Level = LogLevel.Debug, Message = "User {Username} left group {GroupName}")]
-    internal static partial void UserLeftGroup(this ILogger logger, string? username, string groupName);
+    [LoggerMessage(
+        EventId = 2005,
+        Level = LogLevel.Debug,
+        Message = "Connection {ConnectionId} left group {GroupName}"
+    )]
+    internal static partial void UserLeftGroup(this ILogger logger, string connectionId, string groupName);
 }

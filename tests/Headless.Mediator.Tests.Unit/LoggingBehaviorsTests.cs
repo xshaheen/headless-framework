@@ -10,6 +10,9 @@ namespace Tests;
 
 public sealed class LoggingBehaviorsTests
 {
+    private static readonly MediatorPayloadLogging _PayloadsOff = new(Enabled: false);
+    private static readonly MediatorPayloadLogging _PayloadsOn = new(Enabled: true);
+
     [Fact]
     public async Task should_invoke_next_from_request_logging_behavior()
     {
@@ -17,7 +20,8 @@ public sealed class LoggingBehaviorsTests
         var response = new TestResponse();
         var behavior = new RequestLoggingBehavior<TestRequest, TestResponse>(
             new NullCurrentUser(),
-            NullLogger<RequestLoggingBehavior<TestRequest, TestResponse>>.Instance
+            NullLogger<RequestLoggingBehavior<TestRequest, TestResponse>>.Instance,
+            _PayloadsOff
         );
         var callCount = 0;
 
@@ -40,7 +44,8 @@ public sealed class LoggingBehaviorsTests
         var response = new TestResponse();
         var behavior = new ResponseLoggingBehavior<TestRequest, TestResponse>(
             new NullCurrentUser(),
-            NullLogger<ResponseLoggingBehavior<TestRequest, TestResponse>>.Instance
+            NullLogger<ResponseLoggingBehavior<TestRequest, TestResponse>>.Instance,
+            _PayloadsOff
         );
         var callCount = 0;
 
@@ -63,7 +68,8 @@ public sealed class LoggingBehaviorsTests
         var response = new TestResponse();
         var behavior = new CriticalRequestLoggingBehavior<TestRequest, TestResponse>(
             new NullCurrentUser(),
-            NullLogger<CriticalRequestLoggingBehavior<TestRequest, TestResponse>>.Instance
+            NullLogger<CriticalRequestLoggingBehavior<TestRequest, TestResponse>>.Instance,
+            _PayloadsOff
         );
         var callCount = 0;
 
@@ -89,10 +95,11 @@ public sealed class LoggingBehaviorsTests
         var currentUserAction = () =>
             new RequestLoggingBehavior<TestRequest, TestResponse>(
                 currentUser!,
-                NullLogger<RequestLoggingBehavior<TestRequest, TestResponse>>.Instance
+                NullLogger<RequestLoggingBehavior<TestRequest, TestResponse>>.Instance,
+                _PayloadsOff
             );
         var loggerAction = () =>
-            new RequestLoggingBehavior<TestRequest, TestResponse>(new NullCurrentUser(), logger: null!);
+            new RequestLoggingBehavior<TestRequest, TestResponse>(new NullCurrentUser(), logger: null!, _PayloadsOff);
 
         // then
         currentUserAction.Should().ThrowExactly<ArgumentNullException>().WithParameterName(nameof(currentUser));
@@ -106,7 +113,8 @@ public sealed class LoggingBehaviorsTests
         var logger = new CapturingLogger<CriticalRequestLoggingBehavior<SensitiveRequest, TestResponse>>();
         var behavior = new CriticalRequestLoggingBehavior<SensitiveRequest, TestResponse>(
             new NullCurrentUser(),
-            logger
+            logger,
+            _PayloadsOn
         );
         var response = new TestResponse();
 
@@ -130,6 +138,92 @@ public sealed class LoggingBehaviorsTests
 
         var debug = logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Debug).Subject;
         debug.Message.Should().Contain("hunter2");
+    }
+
+    [Fact]
+    public async Task should_log_no_payload_from_slow_request_behavior_when_payloads_are_off()
+    {
+        // given
+        var logger = new CapturingLogger<CriticalRequestLoggingBehavior<SensitiveRequest, TestResponse>>();
+        var behavior = new CriticalRequestLoggingBehavior<SensitiveRequest, TestResponse>(
+            new NullCurrentUser(),
+            logger,
+            _PayloadsOff
+        );
+
+        // when
+        await behavior.Handle(
+            new SensitiveRequest(Password: "hunter2"),
+            async (_, cancellationToken) =>
+            {
+                await Task.Delay(TimeSpan.FromSeconds(1.1), cancellationToken);
+
+                return new TestResponse();
+            },
+            CancellationToken.None
+        );
+
+        // then: the Warning alert still fires, and no entry carries the payload
+        logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning);
+        logger.Entries.Should().NotContain(e => e.Message.Contains("hunter2", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task should_log_request_payload_only_when_payloads_are_on(bool logPayloads)
+    {
+        // given
+        var logger = new CapturingLogger<RequestLoggingBehavior<SensitiveRequest, TestResponse>>();
+        var behavior = new RequestLoggingBehavior<SensitiveRequest, TestResponse>(
+            new NullCurrentUser(),
+            logger,
+            new MediatorPayloadLogging(logPayloads)
+        );
+
+        // when
+        await behavior.Handle(
+            new SensitiveRequest(Password: "hunter2"),
+            _CreateNext<SensitiveRequest>(),
+            CancellationToken.None
+        );
+
+        // then: the entry always names the message, and carries its content only when asked
+        var entry = logger.Entries.Should().ContainSingle(e => e.EventId.Id == 1).Subject;
+        entry.Message.Should().Contain(nameof(SensitiveRequest));
+        entry.Message.Contains("hunter2", StringComparison.Ordinal).Should().Be(logPayloads);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task should_log_response_payload_only_when_payloads_are_on(bool logPayloads)
+    {
+        // given
+        var logger = new CapturingLogger<ResponseLoggingBehavior<SensitiveRequest, TestResponse>>();
+        var behavior = new ResponseLoggingBehavior<SensitiveRequest, TestResponse>(
+            new NullCurrentUser(),
+            logger,
+            new MediatorPayloadLogging(logPayloads)
+        );
+
+        // when
+        await behavior.Handle(
+            new SensitiveRequest(Password: "hunter2"),
+            _CreateNext<SensitiveRequest>(),
+            CancellationToken.None
+        );
+
+        // then
+        var entry = logger.Entries.Should().ContainSingle(e => e.EventId.Id == 2).Subject;
+        entry.Message.Should().Contain(nameof(SensitiveRequest)).And.Contain(nameof(TestResponse));
+        entry.Message.Contains("hunter2", StringComparison.Ordinal).Should().Be(logPayloads);
+    }
+
+    private static MessageHandlerDelegate<TRequest, TestResponse> _CreateNext<TRequest>()
+        where TRequest : IRequest<TestResponse>
+    {
+        return (_, _) => new ValueTask<TestResponse>(new TestResponse());
     }
 
     private static MessageHandlerDelegate<TestRequest, TestResponse> _CreateNext(TestResponse response, Action onInvoke)

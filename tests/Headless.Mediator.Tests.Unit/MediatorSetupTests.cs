@@ -5,6 +5,8 @@ using Headless.Mediator;
 using Headless.Mediator.Behaviors;
 using Mediator;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Hosting.Internal;
 
 namespace Tests;
 
@@ -58,6 +60,31 @@ public sealed class MediatorSetupTests
             .ContainSingle()
             .Subject.Lifetime.Should()
             .Be(ServiceLifetime.Scoped);
+    }
+
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData("Production", false)]
+    [InlineData("Staging", false)]
+    [InlineData("Development", true)]
+    public void should_log_payloads_only_in_the_development_environment(string? environment, bool expected)
+    {
+        // given: no environment registered counts as Production
+        var services = new ServiceCollection();
+
+        if (environment is not null)
+        {
+            services.AddSingleton<IHostEnvironment>(new HostingEnvironment { EnvironmentName = environment });
+        }
+
+        // when: several registrations share one setting
+        services.AddMediatorLoggingBehaviors();
+        services.AddMediatorValidationRequestBehavior();
+
+        // then
+        services.Where(d => d.ServiceType == typeof(MediatorPayloadLogging)).Should().ContainSingle();
+        using var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<MediatorPayloadLogging>().Enabled.Should().Be(expected);
     }
 
     [Fact]

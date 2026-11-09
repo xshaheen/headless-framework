@@ -1,8 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using System.Net;
 using Headless.Captcha;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
@@ -53,6 +58,81 @@ public abstract class CaptchaVerifierConformanceTests<TFixture>(TFixture fixture
         var act = async () => await verifier.VerifyAsync(new CaptchaVerifyRequest { Response = "token" }, AbortToken);
 
         await act.Should().ThrowAsync<HttpRequestException>();
+    }
+
+    [Theory]
+    [InlineData("Development", true)]
+    [InlineData("Production", false)]
+    [InlineData(null, false)]
+    public async Task http_failure_logs_the_response_body_only_in_development(string? environment, bool logsBody)
+    {
+        // given: a provider error body that must not reach production logs
+        const string body = "provider-detail-8f3a";
+        using var stubSiteVerifyHandler = new StubSiteVerifyHandler();
+        var stub = stubSiteVerifyHandler.EnqueueJson(HttpStatusCode.BadRequest, body);
+        using var logs = new CapturingLoggerProvider();
+        var verifier = fixture.CreateVerifierWithServices(
+            stub,
+            services =>
+            {
+                services.AddLogging(logging => logging.AddProvider(logs));
+
+                if (environment is not null)
+                {
+                    services.AddSingleton<IHostEnvironment>(new StubHostEnvironment(environment));
+                }
+            }
+        );
+
+        // when
+        var act = async () => await verifier.VerifyAsync(new CaptchaVerifyRequest { Response = "token" }, AbortToken);
+
+        // then: the failure is logged either way; the body only in Development
+        await act.Should().ThrowAsync<HttpRequestException>();
+        var entry = logs.Messages.Should().ContainSingle().Subject;
+        entry.Contains(body, StringComparison.Ordinal).Should().Be(logsBody);
+    }
+
+    private sealed class StubHostEnvironment(string environmentName) : IHostEnvironment
+    {
+        public string EnvironmentName { get; set; } = environmentName;
+
+        public string ApplicationName { get; set; } = "Tests";
+
+        public string ContentRootPath { get; set; } = AppContext.BaseDirectory;
+
+        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
+    }
+
+    private sealed class CapturingLoggerProvider : ILoggerProvider
+    {
+        private readonly ConcurrentQueue<string> _messages = new();
+
+        public IReadOnlyCollection<string> Messages => _messages;
+
+        // Only the verifier's own entries: the HTTP client logs the same status under System.Net.Http.
+        public ILogger CreateLogger(string categoryName) =>
+            categoryName.StartsWith("Headless.Captcha", StringComparison.Ordinal)
+                ? new Logger(_messages)
+                : Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
+
+        public void Dispose() { }
+
+        private sealed class Logger(ConcurrentQueue<string> messages) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter
+            ) => messages.Enqueue(formatter(state, exception));
+        }
     }
 
     [Fact]

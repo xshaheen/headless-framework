@@ -10,6 +10,8 @@ namespace Headless.Captcha;
 /// </summary>
 internal static class ReCaptchaSiteVerifyClient
 {
+    private const string _BodyOmitted = "(omitted outside Development)";
+
     private static readonly Uri _SiteVerifyUri = new("recaptcha/api/siteverify", UriKind.Relative);
 
     public static async Task<TResponse> SendAsync<TResponse>(
@@ -18,6 +20,7 @@ internal static class ReCaptchaSiteVerifyClient
         CaptchaVerifyRequest request,
         JsonTypeInfo<TResponse> responseTypeInfo,
         ILogger? logger,
+        bool logResponseBody,
         CancellationToken cancellationToken
     )
         where TResponse : class
@@ -39,9 +42,10 @@ internal static class ReCaptchaSiteVerifyClient
         {
             if (logger?.IsEnabled(LogLevel.Warning) is true)
             {
-                var responseBody = await httpResponseMessage
-                    .Content.ReadAsStringAsync(cancellationToken)
-                    .ConfigureAwait(false);
+                // A provider error body can echo request detail, so it is read and logged only in Development.
+                var responseBody = logResponseBody
+                    ? await httpResponseMessage.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false)
+                    : _BodyOmitted;
 
                 logger.LogReCaptchaHttpFailure(httpResponseMessage.StatusCode, responseBody);
             }
