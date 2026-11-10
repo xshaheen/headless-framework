@@ -73,7 +73,7 @@ export function ShellApp({ state, router, client, api, stream, loader, signOut }
         traceLinkTemplate: state.traceLinkTemplate,
       }}
     >
-      <StaleFeed />
+      <StaleFeed stream={stream} />
       <ShellProvider value={{ state, loader, signOut, live }}>
         <RouterProvider router={router} />
       </ShellProvider>

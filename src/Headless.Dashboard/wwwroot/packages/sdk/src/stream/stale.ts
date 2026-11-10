@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { create } from 'zustand'
 import { useDashboard } from '../context.tsx'
+import type { DashboardStream } from './types.ts'
 
 /** What the server last said about one module's reads: out of date, and the sources they could not reach. */
 export interface ModuleStale {
@@ -26,16 +27,30 @@ const fresh: ModuleStale = Object.freeze({ isStale: false, unavailable: Object.f
  */
 const useStaleStore = create<StaleState>(() => initial)
 
+export interface StaleFeedProps {
+  /**
+   * The stream to read, when the page's stream holds events back: the shell passes the connection under its Pause,
+   * because a held `subscribed` released after the reports that follow it would clear them.
+   */
+  stream?: DashboardStream
+}
+
 /**
  * Feeds the stale state from the stream for the whole page. Mount it once, inside `<DashboardProvider>`: the shell
- * does, and so does `renderModule`. Only `stale: false` clears a report; `reset` and `node.reset` make views refetch
- * and say nothing about whether the module or node is still out of date.
+ * does, and so does `renderModule`. A report clears on `stale: false`, or on `subscribed`: every connection opens with
+ * `subscribed` and then replays what is out of date now, while a node or reader the server forgot, or one that
+ * recovered without a word, sends no `stale: false`. `reset` and `node.reset` make views refetch and say nothing
+ * about whether the module or node is still out of date.
  */
-export function StaleFeed() {
-  const { stream } = useDashboard()
+export function StaleFeed({ stream: own }: StaleFeedProps) {
+  const { stream: page } = useDashboard()
+  const stream = own ?? page
 
   useEffect(() => {
     const stops = [
+      stream.on('subscribed', () => {
+        useStaleStore.setState(initial, true)
+      }),
       stream.on('module.stale', ({ module, stale, unavailable }) => {
         useStaleStore.setState((state) => ({
           modules: { ...state.modules, [module]: { isStale: stale, unavailable: unavailable ?? [] } },

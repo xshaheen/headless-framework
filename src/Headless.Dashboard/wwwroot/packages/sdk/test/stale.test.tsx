@@ -76,6 +76,28 @@ describe('stale state', () => {
     expect(screen.queryByText(nodeNotice('node-b'))).toBeNull()
   })
 
+  it('clears a node report on a new connection that no longer replays it', async () => {
+    const view = renderModule(diagnostics, { path: 'health' })
+    await screen.findByRole('main')
+
+    view.stream.push('node.stale', { module: 'diag', node: 'node-b', stale: true })
+    expect(screen.getByText(nodeNotice('node-b'))).toBeTruthy()
+
+    view.stream.push('subscribed', { topics: ['diag.run'], added: [] })
+    expect(screen.queryByText(nodeNotice('node-b'))).toBeNull()
+  })
+
+  it('keeps a module report the new connection replays after subscribed', async () => {
+    const view = renderModule(diagnostics, { path: 'health' })
+    await screen.findByRole('main')
+
+    view.stream.push('module.stale', { module: 'diag', stale: true })
+    view.stream.push('subscribed', { topics: ['diag.run'], added: [] })
+    view.stream.push('module.stale', { module: 'diag', stale: true })
+
+    expect(screen.getByText(moduleNotice)).toBeTruthy()
+  })
+
   it('starts the next page from no reports', async () => {
     const first = renderModule(diagnostics, { path: 'health' })
     await screen.findByRole('main')
