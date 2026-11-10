@@ -497,6 +497,35 @@ public sealed class JobsModuleTimeJobCommandsTests : TestBase
     }
 
     [Fact]
+    public async Task should_keep_the_stored_retries_when_an_edit_sends_retries_as_null()
+    {
+        // given
+        await using var node = JobsModuleNode.Create(_time);
+        var job = JobsModuleNode.IdleJob(_time.GetUtcNow());
+        job.ExecutionTime = _time.GetUtcNow().UtcDateTime.AddHours(1);
+        job.Retries = 2;
+        await node.Store.AddTimeJobsAsync([job], AbortToken);
+        using var retries = JsonDocument.Parse("null");
+
+        // when
+        var result = await node.Module.ExecuteAsync(
+            _Request(
+                "jobs.edit",
+                job.Id,
+                new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+                {
+                    ["retries"] = retries.RootElement.Clone(),
+                }
+            ),
+            AbortToken
+        );
+
+        // then
+        result.Refusal.Should().BeNull();
+        (await node.Store.GetTimeJobByIdAsync(job.Id, AbortToken))!.Retries.Should().Be(2);
+    }
+
+    [Fact]
     public async Task should_show_a_viewer_all_four_actions_disabled_with_needs_operate_permission()
     {
         // given

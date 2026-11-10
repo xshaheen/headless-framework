@@ -980,7 +980,9 @@ internal sealed class JobsCommands(
             // The shell's whole-number check accepts 5.0 and bounds the value, but GetInt32 refuses any token with a
             // fraction part, so the value is read as a decimal.
             Retries =
-                arguments.TryGetValue(RetriesArgument, out var retries) && retries.TryGetDecimal(out var count)
+                arguments.TryGetValue(RetriesArgument, out var retries)
+                && retries.ValueKind == JsonValueKind.Number
+                && retries.TryGetDecimal(out var count)
                     ? (int)count
                     : null,
             RetryIntervals = intervals,
