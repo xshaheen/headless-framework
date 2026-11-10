@@ -20,14 +20,9 @@ export default tseslint.config(
         'error',
         { selector: "JSXAttribute[name.name='style']", message: 'A module view ships no style objects; compose SDK components.' },
         {
-          selector: "JSXAttribute[name.name='className'] Literal[value=/hd-/]",
+          selector: "JSXAttribute[name.name='className']",
           message:
-            'A module view names no SDK class: the hd-* classes are SDK internals, so naming one couples the view to markup the SDK may change. Compose SDK components such as Banner, Text, Fields, or Skeleton.',
-        },
-        {
-          selector: "JSXAttribute[name.name='className'] TemplateElement[value.raw=/hd-/]",
-          message:
-            'A module view names no SDK class: the hd-* classes are SDK internals, so naming one couples the view to markup the SDK may change. Compose SDK components such as Banner, Text, Fields, or Skeleton.',
+            'A module view sets no className: Tailwind compiles only SDK sources, so a class here has no CSS, and the hd-* classes are SDK internals. Compose SDK components such as Banner, Text, Fields, or Skeleton.',
         },
       ],
       'no-restricted-imports': ['error', { patterns: [{ group: ['*.css'], message: 'A module ships no CSS; compose SDK components.' }] }],

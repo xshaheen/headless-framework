@@ -84,8 +84,10 @@ const cellClass =
 const endClass = 'justify-end text-end tabular-nums'
 // Checked state lives on the checkbox alone, never on the row's fill; the margin makes a 24 px target.
 const checkClass = 'flex h-full items-center ps-4 [&_input]:m-1 [&_input]:size-4 [&_input]:accent-primary'
+// Tailwind orders same-specificity variants by name, not by this list, so each row state owns a property no other
+// state sets: the focus ring is an outline, and hover and selection yield to the highlighted failure tone.
 const rowClass =
-  'group/row cursor-pointer border-b border-border bg-card outline-none transition-fast data-hovered:bg-accent data-selected:bg-primary-soft data-selected:shadow-[inset_2px_0_0_var(--accent)] rtl:data-selected:shadow-[inset_-2px_0_0_var(--accent)] data-focus-visible:shadow-[inset_0_0_0_2px_var(--accent)] data-highlighted:bg-destructive-soft data-highlighted:shadow-[inset_2px_0_0_var(--fail)] rtl:data-highlighted:shadow-[inset_-2px_0_0_var(--fail)] data-no-longer-matches:text-muted-foreground'
+  'group/row cursor-pointer border-b border-border bg-card outline-none transition-fast data-hovered:not-data-highlighted:bg-accent data-selected:not-data-highlighted:bg-primary-soft data-selected:not-data-highlighted:shadow-[inset_2px_0_0_var(--accent)] rtl:data-selected:not-data-highlighted:shadow-[inset_-2px_0_0_var(--accent)] data-focus-visible:outline-solid data-focus-visible:outline-2 data-focus-visible:-outline-offset-2 data-focus-visible:outline-ring data-highlighted:bg-destructive-soft data-highlighted:shadow-[inset_2px_0_0_var(--fail)] rtl:data-highlighted:shadow-[inset_-2px_0_0_var(--fail)] data-no-longer-matches:text-muted-foreground'
 // Opacity, not visibility, hides the row actions, so they stay in the tab order; a coarse pointer has no hover, so
 // it always sees them.
 const actionsClass =
