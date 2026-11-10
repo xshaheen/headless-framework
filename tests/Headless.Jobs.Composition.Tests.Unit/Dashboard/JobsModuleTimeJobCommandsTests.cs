@@ -91,7 +91,7 @@ public sealed class JobsModuleTimeJobCommandsTests : TestBase
                         if (
                             string.Equals(
                                 method,
-                                nameof(IJobsDashboardBackend.ForceDeleteTimeJobAsync),
+                                nameof(IJobsDashboardWriter.ForceDeleteTimeJobAsync),
                                 StringComparison.Ordinal
                             )
                         )
@@ -177,7 +177,7 @@ public sealed class JobsModuleTimeJobCommandsTests : TestBase
                         if (
                             string.Equals(
                                 method,
-                                nameof(IJobsDashboardBackend.DeleteCronJobAsync),
+                                nameof(IJobsDashboardWriter.DeleteCronJobAsync),
                                 StringComparison.Ordinal
                             )
                         )

@@ -11,11 +11,11 @@ using Microsoft.AspNetCore.Http.HttpResults;
 namespace Headless.Jobs;
 
 /// <summary>
-/// The Jobs module's own API at <c>{base}/api/jobs</c>: runs, attempts, cron jobs with their next fires, a draft
-/// schedule preview, functions, nodes, runs per day, and the two create calls, which need the operate policy.
+/// The Jobs module's own read API at <c>{base}/api/jobs</c>: runs, attempts, cron jobs with their next fires, a draft
+/// schedule preview, functions, nodes, and runs per day. <see cref="JobsCreateEndpoints"/> maps the create calls.
 /// </summary>
 internal sealed class JobsModuleApi(
-    IJobsDashboardBackend backend,
+    IJobsDashboardReader reader,
     JobsDashboardEventNotifier notifier,
     TimeProvider timeProvider
 )
@@ -35,7 +35,7 @@ internal sealed class JobsModuleApi(
     private const int _DefaultListLimit = 50;
     private const int _DefaultFires = 5;
 
-    private readonly IJobsDashboardBackend _backend = Argument.IsNotNull(backend);
+    private readonly IJobsDashboardReader _reader = Argument.IsNotNull(reader);
     private readonly TimeProvider _timeProvider = Argument.IsNotNull(timeProvider);
     private readonly JobsDashboardEventNotifier _notifier = Argument.IsNotNull(notifier);
 
@@ -52,8 +52,6 @@ internal sealed class JobsModuleApi(
         routes.MapGet("/functions", _ListFunctionsAsync);
         routes.MapGet("/nodes", _ListNodesAsync);
         routes.MapGet("/series/daily", _DailySeriesAsync);
-        endpoints.RequireOperate(routes.MapPost("/time-jobs", _AddTimeJobAsync));
-        endpoints.RequireOperate(routes.MapPost("/cron-jobs", _AddCronJobAsync));
     }
 
     private async Task<Results<JsonHttpResult<JobsRunList>, BadRequest<string>>> _ListRunsAsync(
@@ -157,8 +155,8 @@ internal sealed class JobsModuleApi(
         }
 
         var take = Math.Clamp(limit ?? _DefaultListLimit, 1, MaxListLimit);
-        var page = await _backend.ListRunsAsync(query, cursor, take, cancellationToken).ConfigureAwait(false);
-        var count = await _backend.CountRunsAsync(query, cancellationToken).ConfigureAwait(false);
+        var page = await _reader.ListRunsAsync(query, cursor, take, cancellationToken).ConfigureAwait(false);
+        var count = await _reader.CountRunsAsync(query, cancellationToken).ConfigureAwait(false);
 
         return TypedResults.Json(
             new JobsRunList([.. page.Runs.Select(JobsRunView.From)], count.Count, count.Capped, page.Next?.ToString()),
@@ -173,7 +171,7 @@ internal sealed class JobsModuleApi(
     {
         if (
             !Guid.TryParse(runId, out var id)
-            || await _backend.GetRunAsync(id, cancellationToken).ConfigureAwait(false) is not { } run
+            || await _reader.GetRunAsync(id, cancellationToken).ConfigureAwait(false) is not { } run
         )
         {
             return TypedResults.NotFound();
@@ -181,7 +179,7 @@ internal sealed class JobsModuleApi(
 
         var children =
             run.Kind == JobRunKind.TimeJob
-                ? await _backend.GetChildIdsAsync(run.Id, cancellationToken).ConfigureAwait(false)
+                ? await _reader.GetChildIdsAsync(run.Id, cancellationToken).ConfigureAwait(false)
                 : [];
 
         return TypedResults.Json(
@@ -197,13 +195,13 @@ internal sealed class JobsModuleApi(
     {
         if (
             !Guid.TryParse(runId, out var id)
-            || await _backend.GetRunAsync(id, cancellationToken).ConfigureAwait(false) is not { } run
+            || await _reader.GetRunAsync(id, cancellationToken).ConfigureAwait(false) is not { } run
         )
         {
             return TypedResults.NotFound();
         }
 
-        var attempts = await _backend.GetAttemptsAsync(run.Kind, run.Id, cancellationToken).ConfigureAwait(false);
+        var attempts = await _reader.GetAttemptsAsync(run.Kind, run.Id, cancellationToken).ConfigureAwait(false);
 
         return TypedResults.Json(
             new JobsAttemptList([.. attempts.OrderBy(static a => a.Number).Select(JobsAttemptView.From)]),
@@ -219,7 +217,7 @@ internal sealed class JobsModuleApi(
     {
         // Computing next fires costs a cron parse per job, so a list caller gets them only when it asks for them.
         var count = fires is null ? 1 : Math.Clamp(fires.Value, 1, MaxFires);
-        var cronJobs = await _backend.GetCronJobsAsync(cancellationToken).ConfigureAwait(false);
+        var cronJobs = await _reader.GetCronJobsAsync(cancellationToken).ConfigureAwait(false);
         var now = _Now();
 
         return TypedResults.Json(
@@ -232,7 +230,7 @@ internal sealed class JobsModuleApi(
                     .ThenBy(static cronJob => cronJob.Id)
                     .Select(cronJob =>
                     {
-                        var preview = _backend.Preview(cronJob.Expression, cronJob.TimeZoneId, now, count);
+                        var preview = _reader.Preview(cronJob.Expression, cronJob.TimeZoneId, now, count);
 
                         return JobsCronJobView.From(
                             cronJob,
@@ -253,14 +251,14 @@ internal sealed class JobsModuleApi(
     {
         if (
             !Guid.TryParse(cronJobId, out var id)
-            || await _backend.GetCronJobAsync(id, cancellationToken).ConfigureAwait(false) is not { } cronJob
+            || await _reader.GetCronJobAsync(id, cancellationToken).ConfigureAwait(false) is not { } cronJob
         )
         {
             return TypedResults.NotFound();
         }
 
         // A paused cron job fires nothing until it is resumed, so it lists no next fires.
-        var preview = _backend.Preview(
+        var preview = _reader.Preview(
             cronJob.Expression,
             cronJob.TimeZoneId,
             _Now(),
@@ -285,11 +283,11 @@ internal sealed class JobsModuleApi(
         }
 
         var zone = string.IsNullOrWhiteSpace(timeZoneId) ? null : timeZoneId;
-        var preview = _backend.Preview(expression, zone, _Now(), Math.Clamp(count ?? _DefaultFires, 1, MaxFires));
+        var preview = _reader.Preview(expression, zone, _Now(), Math.Clamp(count ?? _DefaultFires, 1, MaxFires));
 
         return TypedResults.Json(
             new JobsSchedulePreview(
-                zone ?? _backend.SchedulerTimeZone.Id,
+                zone ?? _reader.SchedulerTimeZone.Id,
                 preview.Reading,
                 preview.NextFiresUtc,
                 preview.ValidationMessage
@@ -301,16 +299,16 @@ internal sealed class JobsModuleApi(
     private async Task<JsonHttpResult<JobsFunctionList>> _ListFunctionsAsync(CancellationToken cancellationToken)
     {
         var since = _timeProvider.GetUtcNow() - JobOverviewFigures.Window;
-        var stats = (await _backend.GetFunctionStatsAsync(since, cancellationToken).ConfigureAwait(false)).ToDictionary(
+        var stats = (await _reader.GetFunctionStatsAsync(since, cancellationToken).ConfigureAwait(false)).ToDictionary(
             static row => row.Function,
             StringComparer.Ordinal
         );
-        var nodes = await _backend.GetNodesAsync(cancellationToken).ConfigureAwait(false);
-        var cronJobs = await _backend.GetCronJobsAsync(cancellationToken).ConfigureAwait(false);
+        var nodes = await _reader.GetNodesAsync(cancellationToken).ConfigureAwait(false);
+        var cronJobs = await _reader.GetCronJobsAsync(cancellationToken).ConfigureAwait(false);
 
         return TypedResults.Json(
             new JobsFunctionList([
-                .. _backend.Functions.Select(function =>
+                .. _reader.Functions.Select(function =>
                 {
                     var row = stats.GetValueOrDefault(function.Name);
 
@@ -347,8 +345,8 @@ internal sealed class JobsModuleApi(
 
     private async Task<JsonHttpResult<JobsNodeList>> _ListNodesAsync(CancellationToken cancellationToken)
     {
-        var nodes = await _backend.GetNodesAsync(cancellationToken).ConfigureAwait(false);
-        var running = await _backend.CountRunningByOwnerAsync(cancellationToken).ConfigureAwait(false);
+        var nodes = await _reader.GetNodesAsync(cancellationToken).ConfigureAwait(false);
+        var running = await _reader.CountRunningByOwnerAsync(cancellationToken).ConfigureAwait(false);
         var hostException = _notifier.LastHostException;
 
         return TypedResults.Json(
@@ -376,170 +374,6 @@ internal sealed class JobsModuleApi(
             ]),
             JobsDashboardJsonContext.Default.JobsNodeList
         );
-    }
-
-    private async Task<Results<JsonHttpResult<JobsCreated>, ProblemHttpResult>> _AddTimeJobAsync(
-        HttpContext context,
-        CancellationToken cancellationToken
-    )
-    {
-        var body = await _ReadAsync(context, JobsDashboardJsonContext.Default.JobsTimeJobBody, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (body is null)
-        {
-            return _Invalid("The body must be a time job: { function, executionTime, timeZoneId, request, children }.");
-        }
-
-        TimeZoneInfo? zone = null;
-
-        if (
-            !string.IsNullOrWhiteSpace(body.TimeZoneId)
-            && !TimeZoneInfo.TryFindSystemTimeZoneById(body.TimeZoneId, out zone)
-        )
-        {
-            return _Invalid($"Unknown time zone '{body.TimeZoneId}'.");
-        }
-
-        try
-        {
-            var id = await _backend
-                .AddTimeJobAsync(_Draft(body, zone ?? _backend.SchedulerTimeZone), cancellationToken)
-                .ConfigureAwait(false);
-
-            return TypedResults.Json(
-                new JobsCreated(id),
-                JobsDashboardJsonContext.Default.JobsCreated,
-                statusCode: StatusCodes.Status201Created
-            );
-        }
-        catch (ArgumentException exception)
-        {
-            return _Invalid(_Reason(exception));
-        }
-    }
-
-    private async Task<Results<JsonHttpResult<JobsCreated>, ProblemHttpResult>> _AddCronJobAsync(
-        HttpContext context,
-        CancellationToken cancellationToken
-    )
-    {
-        var body = await _ReadAsync(context, JobsDashboardJsonContext.Default.JobsCronJobBody, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (body is null || string.IsNullOrWhiteSpace(body.Function) || string.IsNullOrWhiteSpace(body.Expression))
-        {
-            return _Invalid("The body must be a cron job: { function, expression, timeZoneId, request }.");
-        }
-
-        var zone = string.IsNullOrWhiteSpace(body.TimeZoneId) ? null : body.TimeZoneId;
-        var preview = _backend.Preview(body.Expression, zone, _Now(), count: 1);
-
-        if (!preview.IsValid)
-        {
-            return _Invalid(preview.ValidationMessage!);
-        }
-
-        try
-        {
-            var id = await _backend
-                .AddCronJobAsync(
-                    new JobsDashboardCronJobDraft
-                    {
-                        Function = body.Function,
-                        Expression = body.Expression,
-                        TimeZoneId = zone,
-                        RequestJson = _Json(body.Request),
-                        Description = body.Description,
-                        Retries = body.Retries,
-                        RetryIntervals = body.RetryIntervals,
-                    },
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-
-            return TypedResults.Json(
-                new JobsCreated(id),
-                JobsDashboardJsonContext.Default.JobsCreated,
-                statusCode: StatusCodes.Status201Created
-            );
-        }
-        catch (ArgumentException exception)
-        {
-            return _Invalid(_Reason(exception));
-        }
-    }
-
-    /// <summary>Turns a create body into a draft, converting wall-clock times in <paramref name="zone"/> to UTC.</summary>
-    /// <exception cref="ArgumentException">A step names no function.</exception>
-    private static JobsDashboardTimeJobDraft _Draft(JobsTimeJobBody body, TimeZoneInfo zone)
-    {
-        if (string.IsNullOrWhiteSpace(body.Function))
-        {
-            throw new ArgumentException("Every time job and chain step needs a function.", nameof(body));
-        }
-
-        return new JobsDashboardTimeJobDraft
-        {
-            Function = body.Function,
-            ExecutionTime = body.ExecutionTime is { } at ? _ToUtc(at, zone) : null,
-            RequestJson = _Json(body.Request),
-            Description = body.Description,
-            Retries = body.Retries,
-            RetryIntervals = body.RetryIntervals,
-            RunCondition = body.RunCondition,
-            Children = [.. (body.Children ?? []).Select(child => _Draft(child, zone))],
-        };
-    }
-
-    // A time without an offset is a wall-clock time in the zone the form names; one with Z or an offset is an instant.
-    private static DateTime _ToUtc(DateTime value, TimeZoneInfo zone) =>
-        value.Kind switch
-        {
-            DateTimeKind.Unspecified => DateTime.SpecifyKind(
-                TimeZoneInfo.ConvertTimeToUtc(value, zone),
-                DateTimeKind.Utc
-            ),
-            DateTimeKind.Local => value.ToUniversalTime(),
-            _ => value,
-        };
-
-    private static string? _Json(JsonElement? request) =>
-        request is { ValueKind: not (JsonValueKind.Null or JsonValueKind.Undefined) } value ? value.GetRawText() : null;
-
-    private static async Task<T?> _ReadAsync<T>(
-        HttpContext context,
-        System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> typeInfo,
-        CancellationToken cancellationToken
-    )
-        where T : class
-    {
-        try
-        {
-            return await JsonSerializer
-                .DeserializeAsync(context.Request.Body, typeInfo, cancellationToken)
-                .ConfigureAwait(false);
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
-    }
-
-    private static ProblemHttpResult _Invalid(string detail) =>
-        TypedResults.Problem(detail: detail, statusCode: StatusCodes.Status400BadRequest);
-
-    /// <summary>
-    /// The reason an argument was refused, without the <c> (Parameter 'json')</c> suffix .NET adds for a developer:
-    /// the form shows it to an operator, who never named that parameter.
-    /// </summary>
-    private static string _Reason(ArgumentException exception)
-    {
-        var suffix = $" (Parameter '{exception.ParamName}')";
-
-        return exception.ParamName is not null && exception.Message.EndsWith(suffix, StringComparison.Ordinal)
-            ? exception.Message[..^suffix.Length]
-            : exception.Message;
     }
 
     private DateTime _Now() => _timeProvider.GetUtcNow().UtcDateTime;
@@ -592,7 +426,7 @@ internal sealed class JobsModuleApi(
             return TypedResults.BadRequest($"A series covers at most {MaxSeriesDays} days.");
         }
 
-        var timeZone = _backend.SchedulerTimeZone;
+        var timeZone = _reader.SchedulerTimeZone;
 
         if (!string.IsNullOrWhiteSpace(zone) && !TimeZoneInfo.TryFindSystemTimeZoneById(zone, out timeZone))
         {
@@ -606,7 +440,7 @@ internal sealed class JobsModuleApi(
             _DayStartUtc(last.AddDays(1), timeZone),
         ];
         var asOf = _timeProvider.GetUtcNow();
-        var buckets = await _backend
+        var buckets = await _reader
             .CountRunsByBucketAsync(new JobRunQuery { Kind = runKind, CronJobId = cronJobId }, edges, cancellationToken)
             .ConfigureAwait(false);
         var statuses = Enum.GetValues<JobStatus>();

@@ -21,7 +21,7 @@ internal sealed class JobsChangePublisher : IAsyncDisposable
 {
     private const int _QueueCapacity = 10_000;
 
-    private readonly IJobsDashboardBackend _backend;
+    private readonly IJobsDashboardReader _backend;
     private readonly IDashboardEventPublisher _publisher;
     private readonly ILogger<JobsChangePublisher> _logger;
     private readonly TimeProvider _timeProvider;
@@ -31,7 +31,7 @@ internal sealed class JobsChangePublisher : IAsyncDisposable
     private Task? _reader;
 
     public JobsChangePublisher(
-        IJobsDashboardBackend backend,
+        IJobsDashboardReader backend,
         IDashboardEventPublisher publisher,
         TimeProvider timeProvider,
         ILogger<JobsChangePublisher> logger

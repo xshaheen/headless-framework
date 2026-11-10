@@ -15,7 +15,7 @@ namespace Headless.Jobs;
 /// <c>node</c>, so its stream topics are <c>jobs.run</c> and <c>jobs.cron-job</c>. Its commands are
 /// <c>jobs.requeue</c>, <c>jobs.cancel</c>, and <c>jobs.delete</c> on a run, which also run over a filter as
 /// Operations, and <c>jobs.run-now</c>, <c>jobs.pause</c>, <c>jobs.resume</c>, and <c>jobs.edit-cron</c> on a cron job.
-/// Its own API is mapped by <see cref="JobsModuleApi"/>.
+/// Its own API is mapped by <see cref="JobsModuleApi"/> (reads) and <see cref="JobsCreateEndpoints"/> (creates).
 /// </remarks>
 internal sealed class JobsModule
     : IDashboardModule,
@@ -34,26 +34,30 @@ internal sealed class JobsModule
     private readonly JobsChangeSource _changes;
     private readonly JobsCommands _commands;
     private readonly JobsModuleApi _api;
+    private readonly JobsCreateEndpoints _create;
 
     public JobsModule(
-        IJobsDashboardBackend backend,
+        IJobsDashboardReader reader,
+        IJobsDashboardWriter writer,
         JobsChangePublisher publisher,
         JobsDashboardEventNotifier notifier,
         TimeProvider timeProvider,
         JobsDashboardOptions options
     )
     {
-        Argument.IsNotNull(backend);
+        Argument.IsNotNull(reader);
+        Argument.IsNotNull(writer);
         Argument.IsNotNull(publisher);
         Argument.IsNotNull(notifier);
         Argument.IsNotNull(timeProvider);
         Argument.IsNotNull(options);
 
-        _sources = new JobsSources(Id, backend, timeProvider);
-        _counts = new JobsCounts(backend);
-        _changes = new JobsChangeSource(Id, backend, timeProvider, options.ChangePageSize, options.ChangeOverlapWindow);
-        _commands = new JobsCommands(Id, backend, publisher, timeProvider);
-        _api = new JobsModuleApi(backend, notifier, timeProvider);
+        _sources = new JobsSources(Id, reader, timeProvider);
+        _counts = new JobsCounts(reader);
+        _changes = new JobsChangeSource(Id, reader, timeProvider, options.ChangePageSize, options.ChangeOverlapWindow);
+        _commands = new JobsCommands(Id, reader, writer, publisher, timeProvider);
+        _api = new JobsModuleApi(reader, notifier, timeProvider);
+        _create = new JobsCreateEndpoints(reader, writer, timeProvider);
         GroupIds = [_sources.SameCorrelationGroupId, _sources.ChainGroupId, _sources.CronJobGroupId];
     }
 
@@ -72,6 +76,7 @@ internal sealed class JobsModule
         Argument.IsNotNull(endpoints);
 
         _api.Map(endpoints);
+        _create.Map(endpoints);
     }
 
     public Task<IReadOnlyList<DashboardAttentionItem>> GetAttentionAsync(

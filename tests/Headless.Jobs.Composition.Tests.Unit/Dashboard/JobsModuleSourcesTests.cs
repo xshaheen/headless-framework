@@ -311,7 +311,7 @@ public sealed class JobsModuleSourcesTests : TestBase
                         if (
                             !string.Equals(
                                 method,
-                                nameof(IJobsDashboardBackend.CountRunsAsync),
+                                nameof(IJobsDashboardReader.CountRunsAsync),
                                 StringComparison.Ordinal
                             ) || args[0] is not JobRunQuery query
                         )

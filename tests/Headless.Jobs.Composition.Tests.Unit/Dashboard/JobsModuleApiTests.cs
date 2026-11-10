@@ -580,24 +580,21 @@ public sealed class JobsModuleApiTests : TestBase
             _log,
             AbortToken,
             configure: services =>
-            {
-                var factory = services.Last(x => x.ServiceType == typeof(IJobsDashboardBackend)).ImplementationFactory!;
-                services.Replace(
-                    ServiceDescriptor.Singleton(provider =>
+                InterceptedJobsDashboardBackend.Replace(
+                    services,
+                    inner =>
                         InterceptedJobsDashboardBackend.Wrap(
-                            (IJobsDashboardBackend)factory(provider),
+                            inner,
                             (method, _, proceed) =>
                                 string.Equals(
                                     method,
-                                    nameof(IJobsDashboardBackend.CountRunsByBucketAsync),
+                                    nameof(IJobsDashboardReader.CountRunsByBucketAsync),
                                     StringComparison.Ordinal
                                 )
                                     ? _WithFirstBucketUnread((Task<IReadOnlyList<JobRunBucket>>)proceed()!)
                                     : proceed()
                         )
-                    )
-                );
-            }
+                )
         );
         using var client = JobsDashboardHttpHost.Client(app);
         var cookie = await JobsDashboardHttpHost.SignInAsync(client, "viewer", AbortToken);

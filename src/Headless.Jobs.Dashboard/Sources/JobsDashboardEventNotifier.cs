@@ -15,12 +15,12 @@ namespace Headless.Jobs;
 /// module shows, so they are dropped.
 /// </remarks>
 internal sealed class JobsDashboardEventNotifier(
-    IJobsDashboardBackend backend,
+    IJobsDashboardReader reader,
     JobsChangePublisher publisher,
     TimeProvider timeProvider
 ) : IJobsNotificationHubSender
 {
-    private readonly IJobsDashboardBackend _backend = Argument.IsNotNull(backend);
+    private readonly IJobsDashboardReader _reader = Argument.IsNotNull(reader);
     private readonly JobsChangePublisher _publisher = Argument.IsNotNull(publisher);
     private readonly TimeProvider _timeProvider = Argument.IsNotNull(timeProvider);
     private JobsHostException? _lastHostException;
@@ -109,7 +109,7 @@ internal sealed class JobsDashboardEventNotifier(
 
     private Task _Row(JobChangeKind kind, object row, bool affectsAttention)
     {
-        return _backend.RowIdOf(row) is { } id ? _Id(kind, id, affectsAttention) : Task.CompletedTask;
+        return _reader.RowIdOf(row) is { } id ? _Id(kind, id, affectsAttention) : Task.CompletedTask;
     }
 
     private Task _Id(JobChangeKind kind, Guid id, bool affectsAttention)

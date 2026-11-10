@@ -16,19 +16,19 @@ namespace Headless.Jobs;
 /// </remarks>
 internal sealed class JobsChangeSource(
     string moduleId,
-    IJobsDashboardBackend backend,
+    IJobsDashboardReader reader,
     TimeProvider timeProvider,
     int pageSize,
     TimeSpan overlapWindow
 )
 {
     private readonly string _moduleId = Argument.IsNotNullOrWhiteSpace(moduleId);
-    private readonly IJobsDashboardBackend _backend = Argument.IsNotNull(backend);
+    private readonly IJobsDashboardReader _reader = Argument.IsNotNull(reader);
     private readonly TimeProvider _timeProvider = Argument.IsNotNull(timeProvider);
 
     public async Task<string> GetStartCursorAsync(CancellationToken cancellationToken)
     {
-        return (await _backend.GetChangeStartCursorAsync(cancellationToken).ConfigureAwait(false)).ToString();
+        return (await _reader.GetChangeStartCursorAsync(cancellationToken).ConfigureAwait(false)).ToString();
     }
 
     /// <summary>Reads the changes after <paramref name="cursor"/>, each read back for its projection.</summary>
@@ -40,7 +40,7 @@ internal sealed class JobsChangeSource(
             throw new ArgumentException($"'{cursor}' is not a Jobs change cursor.", nameof(cursor));
         }
 
-        var page = await _backend
+        var page = await _reader
             .ReadChangesAsync(parsed, pageSize, overlapWindow, cancellationToken)
             .ConfigureAwait(false);
         var changes = new List<DashboardChange>(page.Changes.Count);
@@ -58,7 +58,7 @@ internal sealed class JobsChangeSource(
     {
         var readBack = await JobsViews
             .ReadBackAsync(
-                _backend,
+                _reader,
                 _timeProvider,
                 _moduleId,
                 change.Kind,

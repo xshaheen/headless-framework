@@ -84,13 +84,13 @@ public static class SetupJobsDashboard
 
         // The module reaches Jobs through the seam AddHeadlessJobs registers; without it nothing could serve a request,
         // so the host fails at start rather than on the first dashboard call.
-        services.RequireRegisteredService<IJobsDashboardBackend>(
+        services.RequireRegisteredService<IJobsDashboardReader>(
             "the Jobs dashboard module (AddJobs)",
             "Call services.AddHeadlessJobs(...) to register Headless Jobs."
         );
 
         services.TryAddSingleton(provider => new JobsChangePublisher(
-            _Backend(provider),
+            _Reader(provider),
             provider.GetRequiredService<IDashboardEventPublisher>(),
             provider.GetRequiredService<TimeProvider>(),
             provider.GetRequiredService<ILogger<JobsChangePublisher>>()
@@ -107,7 +107,8 @@ public static class SetupJobsDashboard
         );
 
         services.TryAddSingleton(provider => new JobsModule(
-            _Backend(provider),
+            _Reader(provider),
+            _Writer(provider),
             provider.GetRequiredService<JobsChangePublisher>(),
             provider.GetRequiredService<JobsDashboardEventNotifier>(),
             provider.GetRequiredService<TimeProvider>(),
@@ -122,6 +123,9 @@ public static class SetupJobsDashboard
 
     // The shell may build the module while it maps endpoints, before startup validation reports the missing call, so
     // the module names it too.
-    private static IJobsDashboardBackend _Backend(IServiceProvider provider) =>
-        provider.GetService<IJobsDashboardBackend>() ?? throw new InvalidOperationException(_MissingJobs);
+    private static IJobsDashboardReader _Reader(IServiceProvider provider) =>
+        provider.GetService<IJobsDashboardReader>() ?? throw new InvalidOperationException(_MissingJobs);
+
+    private static IJobsDashboardWriter _Writer(IServiceProvider provider) =>
+        provider.GetService<IJobsDashboardWriter>() ?? throw new InvalidOperationException(_MissingJobs);
 }
