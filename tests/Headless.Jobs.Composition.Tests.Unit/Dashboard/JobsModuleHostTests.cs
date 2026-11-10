@@ -291,6 +291,45 @@ public sealed class JobsModuleHostTests : TestBase
             .Equal(new Dictionary<string, string>(StringComparer.Ordinal) { ["children[0].function"] = "enum" });
     }
 
+    [Fact]
+    public async Task should_refuse_a_chain_step_time_a_daylight_saving_gap_skips_naming_that_step()
+    {
+        // given: New York's clocks jump from 02:00 to 03:00 on 10 March 2030, so 02:30 never happens there
+        await using var app = await JobsDashboardHttpHost.StartAsync(_time, _log, AbortToken);
+        using var client = JobsDashboardHttpHost.Client(app);
+        var cookie = await JobsDashboardHttpHost.SignInAsync(client, "ops", AbortToken);
+
+        // when
+        using var refused = await JobsDashboardHttpHost.PostAsync(
+            client,
+            JobsDashboardHttpHost.Api + "/time-jobs",
+            new
+            {
+                function = JobsModuleNode.Charge,
+                executionTime = "2030-03-10T01:30:00",
+                timeZoneId = "America/New_York",
+                children = new[] { new { function = JobsModuleNode.Charge, executionTime = "2030-03-10T02:30:00" } },
+            },
+            cookie,
+            AbortToken
+        );
+
+        // then: the refusal names the skipped time, not the request the conversion would otherwise have blamed
+        refused.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await JobsDashboardHttpHost.RulesAsync(refused, AbortToken))
+            .Should()
+            .Equal(
+                new Dictionary<string, string>(StringComparer.Ordinal) { ["children[0].executionTime"] = "invalid" }
+            );
+        (await JobsDashboardHttpHost.ReadAsync(refused, AbortToken))
+            .GetProperty("detail")
+            .GetString()
+            .Should()
+            .Be(
+                "2030-03-10 02:30 does not exist in America/New_York: the clocks skip it for daylight saving. Choose a time outside the gap."
+            );
+    }
+
     [Theory]
     [InlineData("/time-jobs")]
     [InlineData("/cron-jobs")]

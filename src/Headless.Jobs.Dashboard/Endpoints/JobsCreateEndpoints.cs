@@ -82,11 +82,18 @@ internal sealed class JobsCreateEndpoints(
             );
         }
 
+        zone ??= _reader.SchedulerTimeZone;
+        var skipped = new List<ValidationFailure>();
+        _CollectSkippedTimes(body, path: "", zone, skipped);
+
+        if (skipped.Count != 0)
+        {
+            return DashboardValidation.Problem(new ValidationResult(skipped));
+        }
+
         try
         {
-            var id = await _writer
-                .AddTimeJobAsync(_Draft(body, zone ?? _reader.SchedulerTimeZone), cancellationToken)
-                .ConfigureAwait(false);
+            var id = await _writer.AddTimeJobAsync(_Draft(body, zone), cancellationToken).ConfigureAwait(false);
 
             return _Created(id);
         }
@@ -190,6 +197,44 @@ internal sealed class JobsCreateEndpoints(
             _CollectUnregistered(
                 children[index],
                 string.Create(CultureInfo.InvariantCulture, $"{path}children[{index}]."),
+                failures
+            );
+        }
+    }
+
+    // Converting a wall-clock time a daylight-saving gap skips throws, which would refuse the step's request instead of
+    // the time the operator picked; so each step's time is checked first and the refusal names that step's field.
+    private static void _CollectSkippedTimes(
+        JobsTimeJobBody body,
+        string path,
+        TimeZoneInfo zone,
+        List<ValidationFailure> failures
+    )
+    {
+        if (body.ExecutionTime is { Kind: DateTimeKind.Unspecified } at && zone.IsInvalidTime(at))
+        {
+            failures.Add(
+                new ValidationFailure(
+                    path + "executionTime",
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"{at:yyyy-MM-dd HH:mm} does not exist in {zone.Id}: the clocks skip it for daylight saving. Choose a time outside the gap."
+                    )
+                )
+                {
+                    ErrorCode = DashboardValidation.InvalidRule,
+                }
+            );
+        }
+
+        var children = body.Children ?? [];
+
+        for (var index = 0; index < children.Count; index++)
+        {
+            _CollectSkippedTimes(
+                children[index],
+                string.Create(CultureInfo.InvariantCulture, $"{path}children[{index}]."),
+                zone,
                 failures
             );
         }
