@@ -26,6 +26,10 @@ namespace Headless.Messaging.Dashboard;
 /// </remarks>
 internal static class PeerEndpoints
 {
+    // The shell names a body that is not JSON the same way, so a peer refusal reads like a local one.
+    private const string _BodyField = "body";
+    private const string _BodyRule = "json";
+
     public static void Map(RouteGroupBuilder peer, MessagingModule module)
     {
         peer.MapGet(
@@ -121,9 +125,10 @@ internal static class PeerEndpoints
 
         if (string.IsNullOrEmpty(kind) || string.IsNullOrEmpty(id))
         {
-            return Results.Problem(
-                detail: "Send the kind and the id of the message.",
-                statusCode: StatusCodes.Status400BadRequest
+            return DashboardValidation.Problem(
+                string.IsNullOrEmpty(kind) ? "kind" : "id",
+                DashboardValidation.RequiredRule,
+                "Send the kind and the id of the message."
             );
         }
 
@@ -148,9 +153,10 @@ internal static class PeerEndpoints
 
         if (string.IsNullOrEmpty(kind) || id is not { Length: > 0 })
         {
-            return Results.Problem(
-                detail: "Send the kind and at least one id.",
-                statusCode: StatusCodes.Status400BadRequest
+            return DashboardValidation.Problem(
+                string.IsNullOrEmpty(kind) ? "kind" : "id",
+                DashboardValidation.RequiredRule,
+                "Send the kind and at least one id."
             );
         }
 
@@ -178,7 +184,7 @@ internal static class PeerEndpoints
 
         if (string.IsNullOrEmpty(cursor))
         {
-            return Results.Problem(detail: "Send the change cursor.", statusCode: StatusCodes.Status400BadRequest);
+            return DashboardValidation.Problem("cursor", DashboardValidation.RequiredRule, "Send the change cursor.");
         }
 
         try
@@ -212,7 +218,7 @@ internal static class PeerEndpoints
 
         if (body is null)
         {
-            return Results.Problem(detail: "Send the Operation's filter.", statusCode: StatusCodes.Status400BadRequest);
+            return DashboardValidation.Problem(_BodyField, _BodyRule, "Send the Operation's filter.");
         }
 
         try
@@ -235,7 +241,7 @@ internal static class PeerEndpoints
         }
         catch (ArgumentException exception)
         {
-            return Results.Problem(detail: _Message(exception), statusCode: StatusCodes.Status400BadRequest);
+            return _Invalid(exception);
         }
     }
 
@@ -264,7 +270,7 @@ internal static class PeerEndpoints
 
         if (body is null)
         {
-            return Results.Problem(detail: "Send the Operation's chunk.", statusCode: StatusCodes.Status400BadRequest);
+            return DashboardValidation.Problem(_BodyField, _BodyRule, "Send the Operation's chunk.");
         }
 
         var entry = new OperatorLogEntry
@@ -305,7 +311,7 @@ internal static class PeerEndpoints
         catch (ArgumentException exception)
         {
             // Checked before any row changes, so, like every refused call, it writes no log entry.
-            return Results.Problem(detail: _Message(exception), statusCode: StatusCodes.Status400BadRequest);
+            return _Invalid(exception);
         }
         catch
         {
@@ -362,6 +368,21 @@ internal static class PeerEndpoints
             return null;
         }
     }
+
+    // The module throws ArgumentException for a filter, mark, or cursor it did not return. Its message stays the
+    // problem's detail, which the calling node shows; the parameter it names says which part of the body was refused.
+    private static IResult _Invalid(ArgumentException exception) =>
+        DashboardValidation.Problem(
+            exception.ParamName switch
+            {
+                "mark" => "highWaterMark",
+                "request" => "cursor",
+                "commandId" => "commandId",
+                _ => "filter",
+            },
+            DashboardValidation.InvalidRule,
+            _Message(exception)
+        );
 
     private static string _Message(ArgumentException exception)
     {
