@@ -6,7 +6,7 @@ import { DashboardProvider, type DashboardEnvironment } from '@headless/dashboar
 import { DashboardApiError, type DashboardApi } from '@headless/dashboard-sdk/data'
 import type { QueryClient } from '@headless/dashboard-sdk/query'
 import { RouterProvider, type createBrowserRouter } from '@headless/dashboard-sdk/router'
-import type { DashboardStream } from '@headless/dashboard-sdk/stream'
+import { StaleFeed, type DashboardStream } from '@headless/dashboard-sdk/stream'
 import { useState } from 'react'
 import type { BootstrapState } from './bootstrap.ts'
 import type { ModuleLoader } from './module-loader.ts'
@@ -73,6 +73,7 @@ export function ShellApp({ state, router, client, api, stream, loader, signOut }
         traceLinkTemplate: state.traceLinkTemplate,
       }}
     >
+      <StaleFeed />
       <ShellProvider value={{ state, loader, signOut, live }}>
         <RouterProvider router={router} />
       </ShellProvider>

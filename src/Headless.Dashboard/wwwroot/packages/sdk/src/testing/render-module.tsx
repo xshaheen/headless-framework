@@ -8,6 +8,7 @@ import { DashboardProvider, ModuleScope, type DashboardSession, type ModulePermi
 import { DashboardApiError, type ApiRequest, type DashboardApi } from '../data/api.ts'
 import { createDashboardClient, setObject } from '../data/client.tsx'
 import type { ModuleDefinition } from '../define-module.ts'
+import { StaleFeed } from '../stream/stale.ts'
 import { createFakeStream, type FakeStream } from './fake-stream.ts'
 
 /**
@@ -90,6 +91,7 @@ export function renderModule(definition: ModuleDefinition, options: RenderModule
         api,
       }}
     >
+      <StaleFeed />
       <OperationHost chunkDelayMs={options.chunkDelayMs ?? 0}>
         <ModuleScope id={definition.id}>
           <RouterProvider router={router} />
