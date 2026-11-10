@@ -18,6 +18,8 @@ interface ChartBase {
   label: string
   /** What one value counts, plural: `runs`, `messages/s`. */
   unit: string
+  /** The unit for a value of exactly one, `run`; without it a value of one reads with the plural. */
+  unitOne?: string
   /** When the server read the data. */
   asOf: TimeInput
   /** The IANA zone the server cut the buckets in, so `09:00` means the server's 09:00. */
@@ -139,8 +141,13 @@ export function bucketName(row: Pick<BucketRow, 'label' | 'mark'>) {
 }
 
 /** The text of one served value, shared by the tooltip and the list so the two can never disagree. */
-export function valueText(format: Formatters, value: number | null, unit: string) {
-  return value === null ? 'not measured' : `${format.number(value)} ${unit}`
+export function valueText(format: Formatters, value: number | null, unit: Pick<ChartBase, 'unit' | 'unitOne'>) {
+  return value === null ? 'not measured' : `${format.number(value)} ${unitFor(value, unit)}`
+}
+
+/** The unit word for `value`: the singular for exactly one when the chart names one, else the plural. */
+export function unitFor(value: number, unit: Pick<ChartBase, 'unit' | 'unitOne'>) {
+  return value === 1 && unit.unitOne ? unit.unitOne : unit.unit
 }
 
 /** One row per bucket, which both the tooltip and the list render. */
@@ -155,7 +162,7 @@ export function bucketRows(props: TimeSeriesChartProps, format: Formatters): Buc
     label: label(start + index * props.intervalSeconds * 1_000),
     mark: present?.index === index ? present.label : present && index > present.index ? 'scheduled' : undefined,
     future: present !== undefined && index > present.index,
-    values: props.series.map((item) => valueText(format, item.points[index] ?? null, props.unit)),
+    values: props.series.map((item) => valueText(format, item.points[index] ?? null, props)),
   }))
 }
 
@@ -192,7 +199,7 @@ export function partRows(props: DonutChartProps, format: Formatters): PartRow[] 
 
   return props.parts.map((part) => ({
     name: part.name,
-    count: `${format.count(part.count)} ${props.unit}`,
+    count: `${format.count(part.count)} ${part.count.capped ? props.unit : unitFor(part.count.value, props)}`,
     share: shares ? format.number(part.count.value / total, { style: 'percent', maximumFractionDigits: 1 }) : null,
   }))
 }

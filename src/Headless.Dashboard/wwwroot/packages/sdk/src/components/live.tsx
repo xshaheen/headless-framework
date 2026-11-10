@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { ProgressBar as AriaProgressBar } from 'react-aria-components'
 import { useDashboard } from '../context.tsx'
 import { useNewRows } from '../data/hooks.ts'
@@ -128,9 +128,50 @@ export function ToastRegion() {
   )
 }
 
-/** A progress bar with its label and value text, such as an Operation's `1,200 of 5,000 rows`. */
-export function ProgressBar({ label, value, max, valueText }: { label: string; value: number; max: number; valueText: string }) {
+/**
+ * A progress bar with its label and value text, such as an Operation's `1,200 of 5,000 rows`. `inline` draws the bar,
+ * `shortText` in place of the value text, and an optional `detail` (such as when the value was reported) on one line
+ * that ends in an ellipsis, for a table cell or a row note that must not grow taller than its row. Assistive technology
+ * still reads the full `valueText`.
+ */
+export function ProgressBar({
+  label,
+  value,
+  max,
+  valueText,
+  inline = false,
+  shortText,
+  detail,
+}: {
+  label: string
+  value: number
+  max: number
+  valueText: string
+  inline?: boolean
+  shortText?: string
+  detail?: ReactNode
+}) {
   const percent = max > 0 ? Math.min(100, (value / max) * 100) : 0
+
+  if (inline) {
+    return (
+      <AriaProgressBar
+        className="inline-flex max-w-full min-w-0 items-center gap-2 align-middle"
+        aria-label={label}
+        value={value}
+        maxValue={Math.max(max, 1)}
+        valueLabel={valueText}
+      >
+        <span className="block h-1 w-12 shrink-0 overflow-hidden rounded-xs bg-muted" aria-hidden="true">
+          <i className="block h-full rounded-xs bg-proc" style={{ inlineSize: `${percent}%` }} />
+        </span>
+        <span className="min-w-0 truncate type-tag-mono text-faint tabular-nums">
+          {shortText ?? valueText}
+          {detail ? <> · {detail}</> : null}
+        </span>
+      </AriaProgressBar>
+    )
+  }
 
   return (
     <AriaProgressBar className="flex flex-col gap-1" aria-label={label} value={value} maxValue={Math.max(max, 1)} valueLabel={valueText}>
