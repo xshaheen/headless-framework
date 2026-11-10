@@ -19,7 +19,9 @@ export interface SegmentedControlProps<T extends string> {
  */
 export function SegmentedControl<T extends string>({ label, options, value, onChange, size }: SegmentedControlProps<T>) {
   return (
-    <div role="group" aria-label={label} className="inline-flex rounded-md border border-border bg-deep p-0.5">
+    // Its own width in any container: in a column of fields it would otherwise stretch into a bar unlike the same
+    // control in a card's heading.
+    <div role="group" aria-label={label} className="inline-flex w-fit rounded-md border border-border bg-deep p-0.5">
       {options.map((option) => (
         <button
           key={option.value}
