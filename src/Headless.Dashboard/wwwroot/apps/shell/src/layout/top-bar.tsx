@@ -154,6 +154,7 @@ export function TopBar({ product, goTo, attention, onMany, menu }: TopBarProps) 
   const format = useFormat()
   const narrow = useBelow('wide')
   const medium = useBelow('medium')
+  const phone = useBelow('phone')
   const account = useFlyout()
   const zone = useFlyout()
   const items = useAttention()
@@ -197,7 +198,11 @@ export function TopBar({ product, goTo, attention, onMany, menu }: TopBarProps) 
         onPress={attention.toggle}
       >
         <span className="hd-mark" aria-hidden="true" />
-        {total.value > 0 ? `Attention ${format.count(total)}` : 'Attention'}
+        {/* On a phone the word folds away and the count stays, so the product tabs keep room to read; the name is
+            still read out. */}
+        <span className={phone ? 'sr-only' : undefined}>Attention</span>
+        {/* The space keeps the button's name `Attention 23`, not `Attention23`; the flex gap lays the parts out. */}
+        {total.value > 0 ? <> {format.count(total)}</> : null}
       </Button>
       <AttentionPopover
         sections={items.data}

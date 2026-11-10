@@ -101,7 +101,9 @@ export function CardRow({ tone, name, prose = false, meta, value, actions, child
         <div className="flex min-w-0 basis-full items-center gap-2.5 type-mono whitespace-nowrap [&>b+*]:ms-auto">
           {tone ? <i className="hd-mark" aria-hidden="true" /> : null}
           <b className={prose ? proseName : monoName}>{name}</b>
-          {meta != null ? <span className="hd-faint">{meta}</span> : null}
+          {/* A long fact gives way three times faster than the name, so a short identifier beside a served sentence
+              keeps its letters and the sentence ends in the ellipsis. */}
+          {meta != null ? <span className="hd-faint min-w-0 shrink-[3] overflow-hidden text-ellipsis">{meta}</span> : null}
           {value}
           {actions}
         </div>

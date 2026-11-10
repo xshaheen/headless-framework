@@ -117,8 +117,9 @@ export function DetailPanel({ label, name, id, status, tabs, children, actions, 
         ) : null}
         <h2 className={form ? 'type-detail' : 'type-detail-mono'}>{name}</h2>
         {id ? (
-          <>
-            <bdi className="hd-mono hd-faint" dir="ltr">
+          // One group, so the copy button never wraps onto a line of its own away from the id it copies.
+          <span className="inline-flex min-w-0 items-center gap-1">
+            <bdi className="hd-mono hd-faint truncate" dir="ltr">
               {id}
             </bdi>
             <Button
@@ -129,7 +130,7 @@ export function DetailPanel({ label, name, id, status, tabs, children, actions, 
             >
               <Glyph d="M5.5 5.5h8v8h-8zM2.5 10.5v-8h8" />
             </Button>
-          </>
+          </span>
         ) : null}
         {tabs ? (
           <div role="tablist" aria-label={label} className="ms-3 flex" onKeyDown={onTabKey}>

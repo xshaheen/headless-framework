@@ -74,8 +74,10 @@ const isolated = { onPointerDown: isolate, onClick: isolate, onKeyDown: isolate 
 // virtualizer wraps each cell and the header in an inline block, sticky for the header and the pinned columns, which
 // the table marks `data-pinned`: a sticky wrapper paints its row's fill, so the cells that scroll sideways under it
 // stay hidden, and aligns to the top so it stays on its row.
+// A row's first cell pads to the page gutter (16 px), so the first column's text lines up with the page title and the
+// header's controls above it; the rest keep the 10 px cell inset.
 const tableClass =
-  'relative max-h-[max(16rem,calc(100dvh-18rem))] w-full overflow-auto [overflow-anchor:none] outline-none [&_:has(>[data-pinned])]:bg-inherit [&_:has(>[data-pinned])]:align-top'
+  'relative max-h-[max(16rem,calc(100dvh-18rem))] w-full overflow-auto [overflow-anchor:none] outline-none [&_:has(>[data-pinned])]:bg-inherit [&_:has(>[data-pinned])]:align-top [&_[role=row]>:first-child>*]:ps-4'
 const headClass = 'flex h-full items-center border-b border-border bg-card px-2.5 type-label whitespace-nowrap text-faint'
 // The sort button fills its header, so the whole header is its target; the sorted column reads in the foreground.
 const sortClass =
@@ -414,7 +416,7 @@ export function DataTable<T extends { id: string }>({
           (`Clear filters`) could not be seen or clicked. */}
       {listed.length === 0 && !hasMore ? (
         // On the table's own gutter, start-aligned as a list's empty state is; only an empty page centres one.
-        <div className="px-1.5">
+        <div className="px-0.5">
           <EmptyState>{emptyState}</EmptyState>
         </div>
       ) : (
