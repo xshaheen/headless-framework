@@ -178,9 +178,10 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
         taskScheduler.ExecutionCancellationToken.IsCancellationRequested.Should().BeTrue();
         await stop.Bounded();
 
-        // and its uncharged release had committed when the stop returned
-        var stored = await _Store(host).GetTimeJobByIdAsync(id, AbortToken);
-        stored!.Status.Should().Be(JobStatus.Idle);
+        // and the cancelled job's uncharged release lands. With the budget already spent the scheduler's stop returns
+        // without waiting for that write, so the row is awaited here instead of read the moment the stop returns.
+        var stored = await _WaitForAsync(_Store(host), id, row => row.Status is not JobStatus.InProgress);
+        stored.Status.Should().Be(JobStatus.Idle);
         stored.RetryCount.Should().Be(0);
         stored.Lease.State.Should().NotBe(RowLeaseState.Active);
     }
