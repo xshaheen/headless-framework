@@ -138,26 +138,9 @@ internal static class CommandEndpoints
         return string.IsNullOrWhiteSpace(body.Reason) ? null : body.Reason;
     }
 
-    /// <summary>Answers <c>400</c> naming each refused field and the rule it broke.</summary>
-    internal static ValidationProblem Invalid(IReadOnlyCollection<CommandFieldError> errors, string? detail = null)
-    {
-        var messages = errors
-            .GroupBy(static error => error.Field, StringComparer.Ordinal)
-            .ToDictionary(
-                static group => group.Key,
-                static group => group.Select(static error => error.Message).ToArray(),
-                StringComparer.Ordinal
-            );
-        var rules = errors
-            .GroupBy(static error => error.Field, StringComparer.Ordinal)
-            .ToDictionary(static group => group.Key, static group => group.First().Rule, StringComparer.Ordinal);
-
-        return TypedResults.ValidationProblem(
-            messages,
-            detail: detail,
-            extensions: new Dictionary<string, object?>(StringComparer.Ordinal) { ["rules"] = rules }
-        );
-    }
+    /// <summary>Answers <c>400</c> naming each refused field and the rule it broke, in the shape every endpoint shares.</summary>
+    internal static ValidationProblem Invalid(IReadOnlyCollection<CommandFieldError> errors, string? detail = null) =>
+        DashboardValidation.Problem(errors, detail);
 
     internal static ValidationProblem Invalid(CommandFieldError error) => Invalid([error], error.Message);
 
