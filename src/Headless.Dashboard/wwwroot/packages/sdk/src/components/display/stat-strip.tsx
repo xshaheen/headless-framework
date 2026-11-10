@@ -22,7 +22,10 @@ export interface StatCardProps {
   icon?: IconComponent
 }
 
-const stat = 'flex min-h-(--statstrip-height) flex-col gap-0.5 border-e border-border px-4 pt-2.5 pb-2 text-foreground no-underline'
+// The cell's height is fixed, not a minimum: the label row (18), the value (26), the two caption lines (32), the gaps,
+// and the padding add up to the token, so a cell with a served sentence stands as tall as one without, and the strip
+// never grows or breaks its rows into uneven heights.
+const stat = 'flex h-(--statstrip-height) flex-col gap-0.5 overflow-hidden border-e border-border px-4 py-2 text-foreground no-underline'
 
 /**
  * One served value with its label and state dot. It draws no sparkline and no empty chart frame: a trend appears

@@ -115,7 +115,8 @@
 
   --topbar-height: 48px;
   --sidebar-width: 208px;
-  --statstrip-height: 85px;
+  /* A stat cell with its label, value, and a two-line caption; every cell stands this tall, so the strip is one height. */
+  --statstrip-height: 96px;
   --row-height: 34px;
   --row-height-compact: 28px;
   --card-row-height: 40px;
