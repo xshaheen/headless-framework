@@ -149,6 +149,36 @@ public sealed class MessagingModuleStreamTests : TestBase
         }
     }
 
+    [Fact]
+    public async Task should_report_more_changes_waiting_only_while_a_store_returns_a_full_page()
+    {
+        // given: three changed rows and a page of two
+        var store = new LateCommitStore();
+        var at = new DateTimeOffset(2026, 11, 8, 12, 0, 0, TimeSpan.Zero);
+        var stores = new MessagingStores(
+            "node-a",
+            [new("primary", store.Storage, HoldsReceived: true)],
+            TimeSpan.FromSeconds(5)
+        );
+        var source = new MessagingChangeSource(stores, pageSize: 2, TimeSpan.Zero);
+        var cursor = await source.GetStartCursorAsync(AbortToken);
+
+        for (var i = 1; i <= 3; i++)
+        {
+            store.Write(Guid.NewGuid(), at.AddSeconds(i), visible: true);
+        }
+
+        // when
+        var full = await source.ReadChangesAsync(cursor, AbortToken);
+        var rest = await source.ReadChangesAsync(full.Cursor, AbortToken);
+
+        // then
+        full.Changes.Should().HaveCount(2);
+        full.HasMore.Should().BeTrue();
+        rest.Changes.Should().ContainSingle();
+        rest.HasMore.Should().BeFalse();
+    }
+
     private async Task<string> _ReadAsync(MessagingChangeSource source, string cursor, List<DashboardChange> changes)
     {
         var batch = await source.ReadChangesAsync(cursor, AbortToken);

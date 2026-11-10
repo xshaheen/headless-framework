@@ -5,6 +5,7 @@ using Headless.Dashboard;
 using Headless.Jobs;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 
 namespace Tests.Dashboard;
@@ -294,6 +295,31 @@ public sealed class JobsModuleSourcesTests : TestBase
             change.Target.Kind.Should().Be("run");
             change.Version.Should().Be(stored!.ChangedAt.Ticks.ToString(CultureInfo.InvariantCulture));
         }
+    }
+
+    [Fact]
+    public async Task should_report_more_changes_waiting_only_while_a_read_returns_a_full_page()
+    {
+        // given: more changed rows than one page holds
+        await using var node = JobsModuleNode.Create(_time);
+        var options = node.Services.GetRequiredService<IOptions<JobsDashboardOptions>>().Value;
+        var cursor = await node.Module.GetStartCursorAsync(AbortToken);
+        var jobs = Enumerable
+            .Range(0, options.ChangePageSize + 1)
+            .Select(_ => JobsModuleNode.IdleJob(_time.GetUtcNow()))
+            .ToList();
+        jobs.ForEach(job => job.ExecutionTime = _time.GetUtcNow().UtcDateTime.AddHours(1));
+        await node.Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>().AddBatchAsync(jobs, AbortToken);
+
+        // when
+        var full = await node.Module.ReadChangesAsync(cursor, AbortToken);
+        var rest = await node.Module.ReadChangesAsync(full.Cursor, AbortToken);
+
+        // then
+        full.Changes.Should().HaveCount(options.ChangePageSize);
+        full.HasMore.Should().BeTrue();
+        rest.Changes.Count.Should().BeLessThan(options.ChangePageSize);
+        rest.HasMore.Should().BeFalse();
     }
 
     [Fact]

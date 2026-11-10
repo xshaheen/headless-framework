@@ -50,7 +50,14 @@ internal sealed class JobsChangeSource(
             changes.Add(await _ReadBackAsync(change, cancellationToken).ConfigureAwait(false));
         }
 
-        return new DashboardChangeBatch { Changes = changes, Cursor = page.Cursor.ToString() };
+        return new DashboardChangeBatch
+        {
+            Changes = changes,
+            Cursor = page.Cursor.ToString(),
+            // A pass reads up to a page from each table, so a full page from any of them lifts the total to a page or
+            // more; a total that reached it without one costs one extra read that comes back short.
+            HasMore = page.Changes.Count >= pageSize,
+        };
     }
 
     // A change read cannot tell whether a row entered or left a Needs-you state, so every read change refreshes it.
