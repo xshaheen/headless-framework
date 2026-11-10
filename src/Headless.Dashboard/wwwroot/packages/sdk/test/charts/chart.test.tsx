@@ -281,9 +281,24 @@ describe('Chart', () => {
   it('labels an empty range on the scale its grid is drawn at, not zero on every line', () => {
     renderChart({ ...days, series: days.series.map((item) => ({ ...item, points: item.points.map(() => 0) })) })
 
+    expect(screen.getByText('2')).toBeTruthy()
     expect(screen.getByText('1')).toBeTruthy()
-    expect(screen.getByText('0.5')).toBeTruthy()
     expect(screen.getAllByText('0')).toHaveLength(1)
+  })
+
+  it('keeps every axis label a whole count when the series holds counts', () => {
+    renderChart({ ...days, series: days.series.map((item, index) => ({ ...item, points: item.points.map(() => (index === 0 ? 31 : 0)) })) })
+
+    expect(screen.getByText('32')).toBeTruthy()
+    expect(screen.getByText('16')).toBeTruthy()
+    expect(screen.queryByText('15.5')).toBeNull()
+  })
+
+  it('keeps a fractional scale for a rate', () => {
+    renderChart({ ...days, series: days.series.map((item, index) => ({ ...item, points: item.points.map(() => (index === 0 ? 2.5 : 0)) })) })
+
+    expect(screen.getByText('2.5')).toBeTruthy()
+    expect(screen.getByText('1.25')).toBeTruthy()
   })
 
   it('drops the end date the present mark would run into when the range ends today', () => {

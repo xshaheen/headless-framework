@@ -206,18 +206,20 @@ function TimeSeriesDrawing({ props, rows, format }: { props: TimeSeriesChartProp
     [series, length],
   )
   // An empty range still draws its grid from zero to one, so the labels read that scale instead of zero on every line.
-  const top = useMemo(
-    () =>
-      Math.max(
-        0,
-        ...Array.from({ length }, (_, index) => {
-          const values = series.map((item) => item.points[index] ?? 0)
+  // A series of whole counts rounds its top up to an even number, so the middle label is a count too, never "15.5 runs".
+  const top = useMemo(() => {
+    const highest = Math.max(
+      0,
+      ...Array.from({ length }, (_, index) => {
+        const values = series.map((item) => item.points[index] ?? 0)
 
-          return kind === 'stacked-bar' ? values.reduce((sum, value) => sum + value, 0) : Math.max(0, ...values)
-        }),
-      ) || 1,
-    [series, kind, length],
-  )
+        return kind === 'stacked-bar' ? values.reduce((sum, value) => sum + value, 0) : Math.max(0, ...values)
+      }),
+    )
+    const isCounts = series.every((item) => item.points.every((point) => point === null || Number.isInteger(point)))
+
+    return isCounts ? Math.max(2, Math.ceil(highest / 2) * 2) : highest || 1
+  }, [series, kind, length])
   // Recharts draws no axis: its axes measure text through a node it adds to the page. The labels are text beside the
   // drawing, as the SDK's other charts draw them, and the image's sentence already says the range.
   const shared = {
