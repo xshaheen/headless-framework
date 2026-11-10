@@ -623,7 +623,8 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         return descending ? rows.OrderByDescending(key).ThenByDescending(id) : rows.OrderBy(key).ThenBy(id);
     }
 
-    // Strings have no > operator in an expression tree; string.Compare translates to the store's comparison.
+    // Strings have no > operator in an expression tree. string.Compare against zero translates to a plain column
+    // comparison in the store's collation, so the function keyset seeks the (Function, Id) index.
     private static BinaryExpression _Past(Expression key, Expression value, bool descending)
     {
         return key.Type == typeof(string) ? _PastZero(Expression.Call(_StringCompare, key, value), descending)
