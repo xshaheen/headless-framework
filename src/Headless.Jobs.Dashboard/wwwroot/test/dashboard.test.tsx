@@ -461,6 +461,25 @@ describe('jobs dashboard runs per day', () => {
     expect(rows.find((row) => row.textContent?.startsWith('Nov 12'))?.textContent).toContain('Nov 12 · scheduled')
   })
 
+  it('reads the days again once a burst of run changes ends', async () => {
+    const view = open({ daily: () => ({ Succeeded: 3 }) })
+    const reads = () => view.requests.filter((request) => request.path === 'jobs/series/daily').length
+
+    const card = await screen.findByRole('region', { name: 'Runs per day' })
+    await within(card).findByRole('img', { name: /^Runs per day by status/ })
+    const before = reads()
+
+    const finished = run('Succeeded', { version: '2' })
+    act(() => {
+      view.stream.push('change', change(finished))
+      view.stream.push('change', change({ ...finished, version: '3' }))
+    })
+    expect(reads()).toBe(before)
+
+    await act(() => vi.advanceTimersByTimeAsync(1000))
+    await waitFor(() => expect(reads()).toBe(before + 1))
+  })
+
   it('asks for the chosen preset’s days', async () => {
     const actor = user()
     const view = open({})

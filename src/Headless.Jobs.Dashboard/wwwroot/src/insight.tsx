@@ -4,10 +4,11 @@ import { LoadError, SegmentedControl, Skeleton, Text } from '@headless/dashboard
 import type { CappedCount, DashboardApi } from '@headless/dashboard-sdk/data'
 import { DateRangeField } from '@headless/dashboard-sdk/date-range'
 import { useFormat } from '@headless/dashboard-sdk/locale'
-import { useQuery } from '@headless/dashboard-sdk/query'
+import { useQuery, useQueryClient } from '@headless/dashboard-sdk/query'
+import { useStreamEvent, useTopics } from '@headless/dashboard-sdk/stream'
 import type { ListRange } from '@headless/dashboard-sdk/table'
-import { useState, type ReactNode } from 'react'
-import { statusLabel, type RunStatus } from './runs.ts'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { runsTopic, statusLabel, type RunStatus } from './runs.ts'
 
 /** One local day of the series; `counts` is `null` when the store could not read that day. */
 export interface DailyBucket {
@@ -62,6 +63,9 @@ export function addDays(date: string, days: number) {
 }
 
 type Preset = 'around' | 'last-30' | 'last-90' | 'custom'
+
+// A finishing chain or a bulk requeue sends many run changes at once; one read after they settle covers them all.
+const SERIES_REREAD_DELAY_MS = 1000
 
 const presets: readonly { value: Preset; label: string }[] = [
   { value: 'around', label: 'Last 7 and next 7 days' },
@@ -137,6 +141,22 @@ export function useRunsPerDay({ cronJobId, unit }: { cronJobId?: string; unit: s
     queryFn: () => fetchDailySeries(api, range!, zone, cronJobId),
     enabled: range !== undefined,
   })
+  const client = useQueryClient()
+  const reread = useRef<ReturnType<typeof setTimeout>>(undefined)
+
+  // A run change can move any day's counts, and the change carries no day to patch, so the series is read again once
+  // a burst of changes settles rather than once per change.
+  useTopics([runsTopic])
+  useStreamEvent('change', (change) => {
+    if (change.topic === runsTopic) {
+      clearTimeout(reread.current)
+      reread.current = setTimeout(
+        () => void client.invalidateQueries({ queryKey: ['jobs', 'series', 'daily'] }),
+        SERIES_REREAD_DELAY_MS,
+      )
+    }
+  })
+  useEffect(() => () => clearTimeout(reread.current), [])
 
   const control = <SegmentedControl label="Days shown" options={presets} value={preset} onChange={setPreset} />
   const picker =
