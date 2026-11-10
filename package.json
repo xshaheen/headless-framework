@@ -19,5 +19,16 @@
   },
   "devDependencies": {
     "prettier": "3.9.10"
+  },
+  "overrides": {
+    "@eslint/config-array": {
+      "minimatch": "11.0.4"
+    },
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "11.0.4"
+    },
+    "eslint": {
+      "minimatch": "11.0.4"
+    }
   }
 }
