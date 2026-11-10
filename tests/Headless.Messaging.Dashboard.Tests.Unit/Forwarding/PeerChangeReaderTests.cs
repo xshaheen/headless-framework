@@ -1,10 +1,14 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Globalization;
 using System.Net;
+using System.Net.Http.Json;
+using Headless.Dashboard;
 using Headless.Messaging.Dashboard;
 using Headless.Messaging.Persistence;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Time.Testing;
 using Tests.Module;
@@ -18,6 +22,9 @@ namespace Tests.Forwarding;
 public sealed class PeerChangeReaderTests : TestBase
 {
     private static readonly TimeSpan _Step = TimeSpan.FromMilliseconds(50);
+
+    // The local change reader's cap on pages per interval, which the peer reader shares.
+    private const int _MaxReadsPerInterval = 10;
 
     private readonly FakeTimeProvider _time = new(new DateTimeOffset(2026, 11, 8, 12, 0, 0, TimeSpan.Zero));
     private readonly PeerNetwork _network = new();
@@ -156,6 +163,56 @@ public sealed class PeerChangeReaderTests : TestBase
     }
 
     [Fact]
+    public async Task should_read_node_b_pages_in_the_same_interval_while_node_b_has_more()
+    {
+        // given: node B's feed holds three pages, the first two full
+        await using var nodeB = await _StartPeerAsync("node-b");
+        await using var nodeA = await _StartAAsync();
+        _network.Answer("node-b", request => _Page(request, page => page < 3));
+        using var reader = _Reader(nodeA);
+        var firstRead = _network.NextCallAsync(_IsChangesRead);
+        var thirdChange = _publisher.NextAsync(e =>
+            string.Equals(e.Change?.Target.Id, "run-3", StringComparison.Ordinal)
+        );
+        reader.Watch("node-b");
+        await _AdvanceUntilAsync(firstRead);
+
+        // when: the clock stops, so no later interval can read the next pages
+        await thirdChange.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+
+        // then
+        _publisher
+            .Events.Where(e => string.Equals(e.Kind, "change", StringComparison.Ordinal))
+            .Select(e => e.Change!.Target.Id)
+            .Should()
+            .Equal("run-1", "run-2", "run-3");
+        _network.Calls.Count(_IsChangesRead).Should().Be(3);
+    }
+
+    [Fact]
+    public async Task should_read_at_most_10_node_b_pages_in_one_interval()
+    {
+        // given: node B's feed always has more
+        await using var nodeB = await _StartPeerAsync("node-b");
+        await using var nodeA = await _StartAAsync();
+        _network.Answer("node-b", request => _Page(request, _ => true));
+        using var reader = _Reader(nodeA);
+        var firstRead = _network.NextCallAsync(_IsChangesRead);
+        var lastAllowed = _publisher.NextAsync(e =>
+            string.Equals(e.Change?.Target.Id, $"run-{_MaxReadsPerInterval}", StringComparison.Ordinal)
+        );
+        reader.Watch("node-b");
+        await _AdvanceUntilAsync(firstRead);
+
+        // when: the clock stops after the interval's first read
+        await lastAllowed.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+        await Task.Delay(TimeSpan.FromMilliseconds(200), AbortToken);
+
+        // then
+        _network.Calls.Count(_IsChangesRead).Should().Be(_MaxReadsPerInterval);
+    }
+
+    [Fact]
     public async Task should_stop_reading_node_b_when_its_last_watcher_leaves()
     {
         // given
@@ -177,6 +234,48 @@ public sealed class PeerChangeReaderTests : TestBase
 
     private PeerChangeReader _Reader(WebApplication node) =>
         ActivatorUtilities.CreateInstance<PeerChangeReader>(node.Services, _publisher);
+
+    private static bool _IsChangesRead(PeerNetwork.SentCall call) =>
+        string.Equals(call.Uri.Host, "node-b", StringComparison.Ordinal)
+        && call.Uri.AbsolutePath.EndsWith("/peer/changes", StringComparison.Ordinal);
+
+    // Answers node B's change reads from a feed of one change per page: the start cursor reads page 1, and page N's
+    // cursor reads page N + 1.
+    private static HttpResponseMessage? _Page(HttpRequestMessage request, Func<int, bool> hasMore)
+    {
+        if (!request.RequestUri!.AbsolutePath.EndsWith("/peer/changes", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var cursor = QueryHelpers.ParseQuery(request.RequestUri.Query)["cursor"].ToString();
+        var page = cursor.StartsWith("page-", StringComparison.Ordinal)
+            ? int.Parse(cursor["page-".Length..], CultureInfo.InvariantCulture) + 1
+            : 1;
+        var batch = new DashboardChangeBatch
+        {
+            Changes =
+            [
+                new DashboardChange
+                {
+                    Target = new ObjectRef
+                    {
+                        Module = MessagingDashboardOptions.ModuleId,
+                        Kind = "received",
+                        Id = $"run-{page}",
+                    },
+                    Version = page.ToString(CultureInfo.InvariantCulture),
+                },
+            ],
+            Cursor = $"page-{page}",
+            HasMore = hasMore(page),
+        };
+
+        return new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(batch, options: MessagingForwarding.JsonOptions),
+        };
+    }
 
     private static bool _IsStart(PeerNetwork.SentCall call, string host) =>
         string.Equals(call.Uri.Host, host, StringComparison.Ordinal)

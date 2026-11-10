@@ -213,44 +213,68 @@ internal sealed class PeerChangeReader(
             return (started?.Cursor, started is not null, false);
         }
 
-        var response = await forwarding
-            .Client.SendAsync(
-                peer,
-                HttpMethod.Get,
-                "/peer/changes?cursor=" + Uri.EscapeDataString(cursor),
-                user: null,
-                operate: false,
-                json: null,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        if (response.Answered && response.Status == (int)HttpStatusCode.Gone)
+        // One page per interval falls further behind on every interval once the node's writes outpace a page, so a
+        // full page is followed by the next one at once, up to the cap the local reader uses. Each published page
+        // moves the cursor, so a read that fails later in the interval keeps the pages already relayed.
+        for (var read = 1; ; read++)
         {
-            logger.PeerCursorUnknown(node);
+            var response = await forwarding
+                .Client.SendAsync(
+                    peer,
+                    HttpMethod.Get,
+                    "/peer/changes?cursor=" + Uri.EscapeDataString(cursor),
+                    user: null,
+                    operate: false,
+                    json: null,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
 
-            return (null, true, true);
+            if (response.Answered && response.Status == (int)HttpStatusCode.Gone)
+            {
+                logger.PeerCursorUnknown(node);
+
+                return (null, true, true);
+            }
+
+            if (!response.IsSuccess)
+            {
+                return (cursor, false, false);
+            }
+
+            DashboardChangeBatch? batch;
+
+            try
+            {
+                batch = JsonSerializer.Deserialize<DashboardChangeBatch>(
+                    response.Body,
+                    MessagingForwarding.JsonOptions
+                );
+            }
+            catch (JsonException)
+            {
+                // A body this node cannot read counts as a failed read; the node is shown stale, not dropped.
+                batch = null;
+            }
+
+            if (batch is null)
+            {
+                return (cursor, false, false);
+            }
+
+            foreach (var change in batch.Changes)
+            {
+                // The node's own changes name no node; the topic a stream watches here does.
+                publisher.Publish(change with { Target = change.Target with { Node = node } });
+            }
+
+            cursor = batch.Cursor;
+
+            if (!batch.HasMore || read >= ChangeReader.MaxReadsPerTick)
+            {
+                return (cursor, true, false);
+            }
         }
-
-        if (!response.IsSuccess)
-        {
-            return (cursor, false, false);
-        }
-
-        var batch = JsonSerializer.Deserialize<DashboardChangeBatch>(response.Body, MessagingForwarding.JsonOptions);
-
-        if (batch is null)
-        {
-            return (cursor, false, false);
-        }
-
-        foreach (var change in batch.Changes)
-        {
-            // The node's own changes name no node; the topic a stream watches here does.
-            publisher.Publish(change with { Target = change.Target with { Node = node } });
-        }
-
-        return (batch.Cursor, true, false);
     }
 
     private sealed class PeerWatch
