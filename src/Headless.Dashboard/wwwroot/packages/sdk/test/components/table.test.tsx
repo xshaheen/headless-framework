@@ -477,19 +477,20 @@ describe('virtualized keyset table', () => {
 
   it('holds the rows in view when three rows arrive above them, and shows 3 new', async () => {
     const user = userEvent.setup()
-    const view = render(withDashboard(<SelectableRuns rows={runs(5_000, 4)} />))
+    // Enough rows to scroll well past the window the table renders; 5,000 made the test slow without proving more.
+    const view = render(withDashboard(<SelectableRuns rows={runs(400, 4)} />))
 
-    scrollTo(1_000 * rowHeight)
+    scrollTo(200 * rowHeight)
     const before = renderedIds()
-    expect(before).toContain('r1004')
+    expect(before).toContain('r204')
 
-    view.rerender(withDashboard(<SelectableRuns rows={[...runs(3, 1), ...runs(5_000, 4)]} />))
+    view.rerender(withDashboard(<SelectableRuns rows={[...runs(3, 1), ...runs(400, 4)]} />))
     // The browser follows the table's own scroll correction with a scroll event.
     act(() => {
       fireEvent.scroll(grid())
     })
 
-    expect(grid().scrollTop).toBe(1_003 * rowHeight)
+    expect(grid().scrollTop).toBe(203 * rowHeight)
     expect(renderedIds()).toEqual(before)
     expect(screen.queryByRole('row', { name: /^r1\b/ })).toBeNull()
 
