@@ -70,7 +70,7 @@ public abstract class AbstractDataStorage : IDataStorage
         MessageContentWrite contentWrite = MessageContentWrite.Preserve,
         DbTransaction? transaction = null,
         RetryDelay? retryDelay = null,
-        DateTimeOffset? lockedUntil = null,
+        bool keepLease = false,
         int? originalRetries = null,
         CancellationToken cancellationToken = default
     );
@@ -80,7 +80,7 @@ public abstract class AbstractDataStorage : IDataStorage
         StatusName state,
         MessageContentWrite contentWrite,
         RetryDelay? retryDelay,
-        DateTimeOffset? lockedUntil,
+        bool keepLease,
         int originalRetries,
         int originalInlineAttempts,
         CancellationToken cancellationToken = default
@@ -110,7 +110,7 @@ public abstract class AbstractDataStorage : IDataStorage
         StatusName state,
         MessageContentWrite contentWrite = MessageContentWrite.Preserve,
         RetryDelay? retryDelay = null,
-        DateTimeOffset? lockedUntil = null,
+        bool keepLease = false,
         int? originalRetries = null,
         CancellationToken cancellationToken = default
     );
@@ -120,7 +120,7 @@ public abstract class AbstractDataStorage : IDataStorage
         StatusName state,
         MessageContentWrite contentWrite,
         RetryDelay? retryDelay,
-        DateTimeOffset? lockedUntil,
+        bool keepLease,
         int originalRetries,
         int originalInlineAttempts,
         CancellationToken cancellationToken = default

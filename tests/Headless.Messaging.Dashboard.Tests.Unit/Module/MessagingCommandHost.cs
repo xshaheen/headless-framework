@@ -194,7 +194,7 @@ internal static class MessagingCommandHost
                 StatusName.Failed,
                 MessageContentWrite.Preserve,
                 retryDelay: null,
-                lockedUntil: null,
+                keepLease: false,
                 originalRetries: 0,
                 originalInlineAttempts: 1,
                 cancellationToken
