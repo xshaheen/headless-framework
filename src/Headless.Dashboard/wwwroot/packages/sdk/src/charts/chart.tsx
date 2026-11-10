@@ -188,10 +188,16 @@ function useBox() {
   return [ref, box] as const
 }
 
+// The end date labels are not measured, so the present's mark claims the outer fifth of the axis at either end: a date
+// label there would run into it, and the range's ends are already in the image's sentence.
+const presentEdgeShare = 0.2
+
 function TimeSeriesDrawing({ props, rows, format }: { props: TimeSeriesChartProps; rows: readonly BucketRow[]; format: Formatters }) {
   const [ref, box] = useBox()
   const { series, kind, present } = props
   const length = rows.length
+  // The present's centre as a share of the axis; a range that ends today puts it on the last bucket.
+  const presentAt = present && length > 0 ? (present.index + 0.5) / length : undefined
   const data = useMemo(
     () =>
       Array.from({ length }, (_, index) =>
@@ -286,14 +292,18 @@ function TimeSeriesDrawing({ props, rows, format }: { props: TimeSeriesChartProp
         {box ? chart : null}
       </div>
       <span className="relative col-start-2 flex justify-between" aria-hidden="true">
-        <span>{rows[0]?.label}</span>
-        {/* The present's mark sits under its bucket's centre, where the drawing's dashed line stands. */}
-        {present && length > 0 ? (
-          <span className="absolute top-0 -translate-x-1/2 font-medium text-muted-foreground" style={{ left: `${((present.index + 0.5) / length) * 100}%` }}>
-            {present.label}
+        <span>{presentAt !== undefined && presentAt < presentEdgeShare ? null : rows[0]?.label}</span>
+        {/* The present's mark sits under its bucket's centre, where the drawing's dashed line stands. It is pulled back by
+            the same share of its own width, so it reaches the figure's edge at the first or last bucket and never past it. */}
+        {presentAt !== undefined ? (
+          <span
+            className="absolute top-0 font-medium text-muted-foreground"
+            style={{ left: `${presentAt * 100}%`, transform: `translateX(${-presentAt * 100}%)` }}
+          >
+            {present?.label}
           </span>
         ) : null}
-        <span>{rows.at(-1)?.label}</span>
+        <span>{presentAt !== undefined && presentAt > 1 - presentEdgeShare ? null : rows.at(-1)?.label}</span>
       </span>
     </div>
   )

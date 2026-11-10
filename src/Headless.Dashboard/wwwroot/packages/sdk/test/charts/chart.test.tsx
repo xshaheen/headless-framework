@@ -227,6 +227,21 @@ describe('Chart', () => {
     )
   })
 
+  it('drops the end date the present mark would run into when the range ends today', () => {
+    renderChart({ ...days, present: { index: 3, label: 'Today' } })
+
+    expect(screen.getByText('Today')).toBeTruthy()
+    expect(screen.getByText('Nov 9')).toBeTruthy()
+    expect(screen.queryByText('Nov 12')).toBeNull()
+  })
+
+  it('keeps both end dates when the present sits inside the range', () => {
+    renderChart(days)
+
+    expect(screen.getByText('Nov 9')).toBeTruthy()
+    expect(screen.getByText('Nov 12')).toBeTruthy()
+  })
+
   it('marks the present and the scheduled buckets in the list', async () => {
     const user = userEvent.setup()
     renderChart(days)
