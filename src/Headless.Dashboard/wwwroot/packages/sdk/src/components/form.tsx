@@ -27,11 +27,13 @@ export interface TextInputFieldProps extends FieldBase {
   inputMode?: 'text' | 'numeric' | 'decimal'
   maxLength?: number
   multiline?: boolean
+  /** Code typed as text, such as JSON: monospace, left to right, and never spell-checked. Applies to `multiline` only. */
+  code?: boolean
   name?: string
 }
 
 /** A labelled text field with its hint and inline error. */
-export function TextInputField({ label, description, error, isRequired, value, onChange, inputMode, maxLength, multiline, name }: TextInputFieldProps) {
+export function TextInputField({ label, description, error, isRequired, value, onChange, inputMode, maxLength, multiline, code, name }: TextInputFieldProps) {
   return (
     <TextField
       className="hd-field"
@@ -44,7 +46,11 @@ export function TextInputField({ label, description, error, isRequired, value, o
     >
       <Label className="hd-label">{label}</Label>
       {multiline ? (
-        <TextArea className={`${inputClass} h-auto min-h-(--textarea-min) resize-y py-2`} maxLength={maxLength} />
+        <TextArea
+          className={`${inputClass} h-auto min-h-(--textarea-min) resize-y py-2${code ? ' hd-mono' : ''}`}
+          maxLength={maxLength}
+          spellCheck={code ? false : undefined}
+        />
       ) : (
         <Input className={inputClass} inputMode={inputMode} maxLength={maxLength} />
       )}

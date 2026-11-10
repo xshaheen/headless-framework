@@ -4,7 +4,10 @@ import { CheckboxField, FieldGroup, SelectField, TextInputField } from '../compo
 import { formatJson, PayloadView } from '../components/payload/payload-view.tsx'
 import type { ArgumentProperty, ArgumentSchema } from './api.ts'
 
-/** A form's raw values: text for text, number, and JSON fields, a UTC ISO instant for date-times, `true`/`false` for toggles. */
+/**
+ * A form's raw values: text for text, number, and JSON fields, `true`/`false` for toggles, and for date-times a UTC ISO
+ * instant, `''` when untouched, or a non-date marker when only partly typed, which the check refuses as incomplete.
+ */
 export type ArgumentValues = Readonly<Record<string, string | boolean>>
 
 export type ArgumentCheck =
@@ -197,6 +200,7 @@ function JsonField({ property, required, error, text, onChange }: JsonFieldProps
         description={text.trim() === '' || parses ? 'JSON' : 'Not valid JSON yet'}
         maxLength={property.maxLength}
         multiline
+        code
         onChange={onChange}
       />
       {parses ? <PayloadView content={text} contentType="application/json" /> : null}

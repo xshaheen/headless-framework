@@ -36,6 +36,28 @@ describe('date-time and JSON arguments', () => {
     expect(onSubmit).toHaveBeenCalledWith({ runAt: '2026-12-15T08:00:00.000Z' })
   })
 
+  it.each([
+    ['an optional', []],
+    ['a required', ['runAt']],
+  ])('refuses %s date-time typed without its time instead of treating it as not given', async (_, required) => {
+    localStorage.setItem('headless-dashboard:time-zone', 'UTC')
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    render(
+      <LocaleProvider>
+        <SchemaForm schema={{ ...duplicate, required }} submitLabel="Duplicate run" onSubmit={onSubmit} />
+      </LocaleProvider>,
+    )
+
+    await user.click(await screen.findByRole('spinbutton', { name: /month/i }))
+    await user.keyboard('12152026')
+    await user.click(screen.getByRole('button', { name: 'Duplicate run' }))
+
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(screen.getByText('Run at must be a complete date and time.')).toBeTruthy()
+    expect(screen.queryByText('Run at is required.')).toBeNull()
+  })
+
   it('blocks JSON that does not parse and colours JSON that does', async () => {
     localStorage.setItem('headless-dashboard:time-zone', 'UTC')
     const user = userEvent.setup()
@@ -46,6 +68,10 @@ describe('date-time and JSON arguments', () => {
       </LocaleProvider>,
     )
     const request = screen.getByRole('textbox', { name: /Request/ })
+
+    // JSON is code: monospace and never spell-checked.
+    expect(request.getAttribute('spellcheck')).toBe('false')
+    expect(request.className).toContain('hd-mono')
 
     await user.type(request, '{{"id":')
     await user.click(screen.getByRole('button', { name: 'Duplicate run' }))
