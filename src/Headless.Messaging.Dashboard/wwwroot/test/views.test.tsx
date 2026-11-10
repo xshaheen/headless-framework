@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import { DashboardApiError } from '@headless/dashboard-sdk/data'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import messaging from '../src/module.ts'
@@ -172,6 +172,32 @@ describe('messaging consumers', () => {
 
     await actor.click(within(table).getByRole('button', { name: 'Force open' }))
     expect(await screen.findByRole('dialog', { name: 'Force open' })).toBeTruthy()
+  })
+})
+
+describe('messaging stale views', () => {
+  it('shows Stale at once on a view opened after the module went stale', async () => {
+    const view = open({ circuits: [circuit()] }, { path: 'contracts' })
+    await screen.findByRole('heading', { name: 'Contracts' })
+
+    view.stream.push('module.stale', { module: 'messaging', stale: true })
+    await act(() => view.navigate('consumers'))
+
+    expect(await screen.findByText('Stale. Live updates stopped, so these consumers may be out of date.')).toBeTruthy()
+  })
+
+  it('shows Stale at once on a view of a node that went stale before it opened, and not on the local node', async () => {
+    const view = open({ nodes: twoNodes }, { path: 'nodes' })
+    await screen.findByRole('row', { name: /node-b/ })
+
+    view.stream.push('node.stale', { module: 'messaging', node: 'node-b', stale: true })
+    await act(() => view.navigate('scheduled?node=node-b'))
+
+    expect(await screen.findByText('Stale. Live updates stopped, so these deliveries may be out of date.')).toBeTruthy()
+
+    await act(() => view.navigate('scheduled?node=node-a'))
+    await waitFor(() => expect(view.location().search).toBe('?node=node-a'))
+    expect(screen.queryByText('Stale. Live updates stopped, so these deliveries may be out of date.')).toBeNull()
   })
 })
 
