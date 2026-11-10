@@ -43,7 +43,7 @@ public sealed class MessagingListValidationTests : TestBase
 
         // then
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(AbortToken));
         var problem = document.RootElement;
         problem.GetProperty("errors").GetProperty(field).GetArrayLength().Should().BePositive();

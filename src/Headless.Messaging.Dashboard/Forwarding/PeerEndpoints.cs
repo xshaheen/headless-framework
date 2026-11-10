@@ -4,6 +4,7 @@ using System.Text.Json;
 using Headless.Dashboard;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -371,7 +372,7 @@ internal static class PeerEndpoints
 
     // The module throws ArgumentException for a filter, mark, or cursor it did not return. Its message stays the
     // problem's detail, which the calling node shows; the parameter it names says which part of the body was refused.
-    private static IResult _Invalid(ArgumentException exception) =>
+    private static ValidationProblem _Invalid(ArgumentException exception) =>
         DashboardValidation.Problem(
             exception.ParamName switch
             {
