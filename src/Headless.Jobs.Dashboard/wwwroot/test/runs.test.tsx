@@ -687,6 +687,16 @@ describe('jobs runs list', () => {
 
     expect((await screen.findByRole('alert')).textContent).toBe('This run no longer exists.')
   })
+
+  it('shows Stale at once on a list opened after the module went stale', async () => {
+    const view = open({ runs: [run('Failed')] }, { path: '' })
+    await screen.findByRole('region', { name: 'Processing now' })
+
+    view.stream.push('module.stale', { module: 'jobs', stale: true })
+    await act(() => view.navigate('runs'))
+
+    expect(await screen.findByText('Stale. Live updates stopped, so these runs may be out of date.')).toBeTruthy()
+  })
 })
 
 describe('jobs failed list', () => {
