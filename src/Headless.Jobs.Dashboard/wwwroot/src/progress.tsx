@@ -1,25 +1,6 @@
 import { ProgressBar, Text } from '@headless/dashboard-sdk/components'
-import { useFormat } from '@headless/dashboard-sdk/locale'
-import { useEffect, useState } from 'react'
+import { useFormat, useNow } from '@headless/dashboard-sdk/locale'
 import { isFinished, type Run } from './runs.ts'
-
-/** The current time, read again every second while `active`, so an age on screen keeps counting between changes. */
-function useNow(active: boolean) {
-  const [now, setNow] = useState(() => Date.now())
-
-  useEffect(() => {
-    if (!active) {
-      return undefined
-    }
-
-    setNow(Date.now())
-    const timer = setInterval(() => setNow(Date.now()), 1_000)
-
-    return () => clearInterval(timer)
-  }, [active])
-
-  return now
-}
 
 export type ProgressRun = Pick<Run, 'function' | 'status' | 'progressPercent' | 'progressMessage' | 'progressUpdatedAt'>
 
@@ -34,7 +15,8 @@ export function RunProgress({ run, compact = false }: { run: ProgressRun; compac
   const format = useFormat()
   const finished = isFinished(run.status)
   const updatedAt = run.progressUpdatedAt
-  const now = useNow(updatedAt !== undefined && !finished)
+  // The age counts up every second, so a value the stream stopped refreshing reads as old.
+  const now = useNow(updatedAt !== undefined && !finished ? 1_000 : null)
   const percent = run.progressPercent ?? 0
   const percentText = `${format.number(percent, { maximumFractionDigits: 1 })} %`
   const valueText = progressText(run, percentText)

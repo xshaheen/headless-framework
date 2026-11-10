@@ -37,7 +37,7 @@ import {
   ScheduledIcon,
   type IconComponent,
 } from '@headless/dashboard-sdk/icons'
-import { useFormat } from '@headless/dashboard-sdk/locale'
+import { relativeTickOf, useFormat, useNow } from '@headless/dashboard-sdk/locale'
 import { useQuery } from '@headless/dashboard-sdk/query'
 import { Link, useSearchParams } from '@headless/dashboard-sdk/router'
 import { useModuleStale, useStreamStatus } from '@headless/dashboard-sdk/stream'
@@ -84,16 +84,19 @@ export function Time({
   missing?: string
 }) {
   const format = useFormat()
+  const at = value ? Date.parse(value) : Number.NaN
+  // The text moves on as time passes, so a next fire reads `in 3 sec.`, then `due 2 sec. ago`, with no new data.
+  const now = useNow(Number.isNaN(at) ? null : relativeTickOf(at))
 
   if (!value) {
     return <Text tone="hint">{missing}</Text>
   }
 
-  const relative = format.relativeTime(value, { style: 'short' })
+  const relative = format.relativeTime(value, { style: 'short', now })
 
   return (
     <time dateTime={value} title={zone ? format.zonedTime(value, zone) : format.exactTime(value)}>
-      {scheduled && Date.parse(value) <= Date.now() ? `due ${relative}` : relative}
+      {scheduled && at <= now ? `due ${relative}` : relative}
     </time>
   )
 }
