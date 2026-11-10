@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
+using Headless.Dashboard;
 
 namespace Headless.Messaging.Dashboard;
 
@@ -22,16 +23,7 @@ internal sealed record MessagingListRequest(
     bool? Held,
     int? Limit,
     string? After
-)
-{
-    /// <summary>The status <paramref name="value"/> names, or <see langword="null"/> when it is empty or names none.</summary>
-    public static StatusName? ParseStatus(string? value) =>
-        !string.IsNullOrEmpty(value)
-        && Enum.TryParse<StatusName>(value, ignoreCase: true, out var parsed)
-        && Enum.IsDefined(parsed)
-            ? parsed
-            : null;
-}
+);
 
 /// <summary>Refuses a list query whose filters contradict each other or name a status or cursor the list does not know.</summary>
 internal sealed class MessagingListRequestValidator : AbstractValidator<MessagingListRequest>
@@ -49,7 +41,9 @@ internal sealed class MessagingListRequestValidator : AbstractValidator<Messagin
             .WithMessage("retrying selects failed rows with a retry pending; it takes no status or terminal.");
 
         RuleFor(static request => request.Status)
-            .Must(static status => string.IsNullOrEmpty(status) || MessagingListRequest.ParseStatus(status) is not null)
+            .Must(static status =>
+                string.IsNullOrEmpty(status) || DashboardValidation.ParseEnum<StatusName>(status) is not null
+            )
             .WithMessage(static request => $"'{request.Status}' is not a message status.");
 
         RuleFor(static request => request.After)

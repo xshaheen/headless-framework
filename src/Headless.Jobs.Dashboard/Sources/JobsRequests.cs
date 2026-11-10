@@ -3,6 +3,7 @@
 using System.ComponentModel;
 using FluentValidation;
 using FluentValidation.Results;
+using Headless.Dashboard;
 
 namespace Headless.Jobs;
 
@@ -105,21 +106,22 @@ internal sealed record JobsRunListQuery(
 )
 {
     /// <summary>The run kind asked for, or <see langword="null"/> for every kind. Read after validation.</summary>
-    public JobRunKind? ReadKind() => JobsRequestRules.EnumOf<JobRunKind>(Kind);
+    public JobRunKind? ReadKind() => DashboardValidation.ParseEnum<JobRunKind>(Kind);
 
     /// <summary>The statuses asked for. Read after validation.</summary>
     public IReadOnlyList<JobStatus> ReadStatuses() =>
-        [.. (Status ?? []).Select(static value => JobsRequestRules.EnumOf<JobStatus>(value)!.Value)];
+        [.. (Status ?? []).Select(static value => DashboardValidation.ParseEnum<JobStatus>(value)!.Value)];
 
     /// <summary>The sort key, the execution time unless asked otherwise. Read after validation.</summary>
-    public JobRunSortKey ReadSort() => JobsRequestRules.EnumOf<JobRunSortKey>(Sort) ?? JobRunSortKey.ExecutionTime;
+    public JobRunSortKey ReadSort() =>
+        DashboardValidation.ParseEnum<JobRunSortKey>(Sort) ?? JobRunSortKey.ExecutionTime;
 
     /// <summary>
     /// The direction. The list opens on the latest runs, so the execution time reads descending unless asked otherwise;
     /// a text sort key reads A to Z. Read after validation.
     /// </summary>
     public ListSortDirection ReadDirection() =>
-        JobsRequestRules.EnumOf<ListSortDirection>(Direction)
+        DashboardValidation.ParseEnum<ListSortDirection>(Direction)
         ?? (ReadSort() == JobRunSortKey.ExecutionTime ? ListSortDirection.Descending : ListSortDirection.Ascending);
 
     /// <summary>The cursor of the page before, or <see langword="null"/> for the first page. Read after validation.</summary>
@@ -142,7 +144,7 @@ internal sealed class JobsRunListQueryValidator : AbstractValidator<JobsRunListQ
                 {
                     foreach (var value in statuses ?? [])
                     {
-                        if (JobsRequestRules.EnumOf<JobStatus>(value) is null)
+                        if (DashboardValidation.ParseEnum<JobStatus>(value) is null)
                         {
                             context.AddFailure(
                                 new ValidationFailure(context.PropertyPath, $"'{value}' is not a run status.")
@@ -240,16 +242,8 @@ internal static class JobsRequestRules
     public const string BodyField = "body";
 
     public static bool IsEnumOrEmpty<TEnum>(string? value)
-        where TEnum : struct, Enum => string.IsNullOrEmpty(value) || EnumOf<TEnum>(value) is not null;
-
-    /// <summary>The named member, case-insensitive, or <see langword="null"/> for none or an undefined name.</summary>
-    public static TEnum? EnumOf<TEnum>(string? value)
         where TEnum : struct, Enum =>
-        !string.IsNullOrEmpty(value)
-        && Enum.TryParse<TEnum>(value, ignoreCase: true, out var parsed)
-        && Enum.IsDefined(parsed)
-            ? parsed
-            : null;
+        string.IsNullOrEmpty(value) || DashboardValidation.ParseEnum<TEnum>(value) is not null;
 
     public static IRuleBuilderOptions<T, int> JobsRetries<T>(this IRuleBuilder<T, int> rule) =>
         rule.GreaterThanOrEqualTo(0)

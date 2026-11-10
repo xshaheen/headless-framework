@@ -57,6 +57,19 @@ public static class DashboardValidation
         return Problem([new CommandFieldError(field, rule, message)], message);
     }
 
+    /// <summary>
+    /// The member of <typeparamref name="TEnum"/> that <paramref name="value"/> names, case-insensitive, or
+    /// <see langword="null"/> when it is empty or names none. A number counts only when the enum declares it, so a query
+    /// never reaches a value no member names.
+    /// </summary>
+    internal static TEnum? ParseEnum<TEnum>(string? value)
+        where TEnum : struct, Enum =>
+        !string.IsNullOrEmpty(value)
+        && Enum.TryParse<TEnum>(value, ignoreCase: true, out var parsed)
+        && Enum.IsDefined(parsed)
+            ? parsed
+            : null;
+
     internal static ValidationProblem Problem(IReadOnlyCollection<CommandFieldError> errors, string? detail)
     {
         var messages = errors

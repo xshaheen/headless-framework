@@ -402,7 +402,7 @@ internal sealed class JobsModuleApi(
         var asOf = _timeProvider.GetUtcNow();
         var buckets = await _reader
             .CountRunsByBucketAsync(
-                new JobRunQuery { Kind = JobsRequestRules.EnumOf<JobRunKind>(kind), CronJobId = cronJobId },
+                new JobRunQuery { Kind = DashboardValidation.ParseEnum<JobRunKind>(kind), CronJobId = cronJobId },
                 edges,
                 cancellationToken
             )

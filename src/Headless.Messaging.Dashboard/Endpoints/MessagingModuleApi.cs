@@ -105,7 +105,7 @@ internal sealed class MessagingModuleApi(
             return DashboardValidation.Problem(validation);
         }
 
-        var status = MessagingListRequest.ParseStatus(filter.Status);
+        var status = DashboardValidation.ParseEnum<StatusName>(filter.Status);
         var retrying = filter.Retrying == true;
         IReadOnlyList<MessagingStore> targets;
 
@@ -378,12 +378,8 @@ internal sealed class MessagingModuleApi(
                     new MessagingOperationReceiptQuery
                     {
                         Actor = string.IsNullOrEmpty(request.Actor) ? null : request.Actor,
-                        TargetKind = MessagingReceiptListRequest.Parse<MessagingOperationTargetKind>(
-                            request.TargetKind
-                        ),
-                        OperationType = MessagingReceiptListRequest.Parse<MessagingOperationType>(
-                            request.OperationType
-                        ),
+                        TargetKind = DashboardValidation.ParseEnum<MessagingOperationTargetKind>(request.TargetKind),
+                        OperationType = DashboardValidation.ParseEnum<MessagingOperationType>(request.OperationType),
                         From = request.From,
                         Before = request.Before,
                         After = position,

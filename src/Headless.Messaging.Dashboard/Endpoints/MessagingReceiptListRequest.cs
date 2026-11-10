@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
+using Headless.Dashboard;
 
 namespace Headless.Messaging.Dashboard;
 
@@ -16,17 +17,7 @@ internal sealed record MessagingReceiptListRequest(
     DateTimeOffset? Before,
     string? After,
     int? Limit
-)
-{
-    /// <summary>The member of <typeparamref name="TEnum"/> <paramref name="value"/> names, or <see langword="null"/> when it is empty or names none.</summary>
-    public static TEnum? Parse<TEnum>(string? value)
-        where TEnum : struct, Enum =>
-        !string.IsNullOrEmpty(value)
-        && Enum.TryParse<TEnum>(value, ignoreCase: true, out var parsed)
-        && Enum.IsDefined(parsed)
-            ? parsed
-            : null;
-}
+);
 
 /// <summary>Refuses a ledger query that names a target kind, an operation type, or a cursor the ledger does not know.</summary>
 internal sealed class MessagingReceiptListRequestValidator : AbstractValidator<MessagingReceiptListRequest>
@@ -39,14 +30,13 @@ internal sealed class MessagingReceiptListRequestValidator : AbstractValidator<M
         RuleFor(static request => request.TargetKind)
             .Must(static kind =>
                 string.IsNullOrEmpty(kind)
-                || MessagingReceiptListRequest.Parse<MessagingOperationTargetKind>(kind) is not null
+                || DashboardValidation.ParseEnum<MessagingOperationTargetKind>(kind) is not null
             )
             .WithMessage(static request => $"'{request.TargetKind}' is not an operation target kind.");
 
         RuleFor(static request => request.OperationType)
             .Must(static type =>
-                string.IsNullOrEmpty(type)
-                || MessagingReceiptListRequest.Parse<MessagingOperationType>(type) is not null
+                string.IsNullOrEmpty(type) || DashboardValidation.ParseEnum<MessagingOperationType>(type) is not null
             )
             .WithMessage(static request => $"'{request.OperationType}' is not an operation type.");
 

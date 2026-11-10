@@ -54,6 +54,20 @@ public sealed class DashboardValidationTests : TestBase
         problem.Detail.Should().Be("The expression needs six fields.");
     }
 
+    [Theory]
+    [InlineData("Friday", DayOfWeek.Friday)]
+    [InlineData("friday", DayOfWeek.Friday)]
+    [InlineData("FRIDAY", DayOfWeek.Friday)]
+    [InlineData("5", DayOfWeek.Friday)]
+    [InlineData("7", null)]
+    [InlineData("Fri", null)]
+    [InlineData("", null)]
+    [InlineData(null, null)]
+    public void should_read_a_declared_member_ignoring_case_and_nothing_else(string? value, DayOfWeek? expected)
+    {
+        DashboardValidation.ParseEnum<DayOfWeek>(value).Should().Be(expected);
+    }
+
     private sealed record Step(string Function, int Retries, IReadOnlyList<Step> Children);
 
     private sealed class StepValidator : AbstractValidator<Step>
