@@ -554,7 +554,7 @@ function RunsTable({
               ''
             ),
           priority: 2,
-          width: 160,
+          width: 200,
         },
         { id: 'kind', header: 'Kind', cell: (run) => kindLabel(run.kind), priority: 2, width: 110 },
         {

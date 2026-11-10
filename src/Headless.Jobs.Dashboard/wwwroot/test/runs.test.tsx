@@ -855,11 +855,11 @@ describe('jobs runs list reads', () => {
 
     // The cell keeps one line: the bar, the percentage, and the age; the handler's message stays in the bar's value text.
     expect(within(row()).getByRole('progressbar').getAttribute('aria-valuetext')).toBe('62.5 % · step 25 of 40')
-    expect(within(row()).getByText('updated 5 sec. ago')).toBeTruthy()
+    expect(within(row()).getByText('5 sec. ago')).toBeTruthy()
     expect(screen.getByText('Stale. Live updates stopped, so these runs may be out of date.')).toBeTruthy()
 
     await act(() => vi.advanceTimersByTimeAsync(10_000))
-    expect(within(row()).getByText('updated 15 sec. ago')).toBeTruthy()
+    expect(within(row()).getByText('15 sec. ago')).toBeTruthy()
   })
 
   it('keeps a finished run’s last progress as text, with no bar and no age', async () => {
