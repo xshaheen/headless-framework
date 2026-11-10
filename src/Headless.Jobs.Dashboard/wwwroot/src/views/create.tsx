@@ -260,18 +260,21 @@ export function TimeJobForm({
         <TextInputField
           label={`Runs at, ${timeZoneId || 'scheduler zone'}`}
           description="A wall-clock time such as 2026-11-06T14:30. Blank runs it now."
+          width="medium"
           value={executionTime}
           onChange={setExecutionTime}
         />
         <TextInputField
           label="Time zone"
           description="An IANA zone. Blank uses the scheduler's zone."
+          width="medium"
           value={timeZoneId}
           onChange={setTimeZoneId}
         />
-        <TextInputField label="Retries" inputMode="numeric" value={retries} onChange={setRetries} />
+        <TextInputField label="Retries" inputMode="numeric" width="short" value={retries} onChange={setRetries} />
         <TextInputField
           label="Retry intervals (seconds)"
+          width="medium"
           description="The wait before each retry, such as 30, 60, 300; the last repeats. Blank uses the function's retry policy."
           value={retryIntervals}
           onChange={setRetryIntervals}
@@ -434,6 +437,7 @@ export function CronJobForm({ onCreated, onCancel }: CreateFormProps) {
         <TextInputField
           label="Expression"
           isRequired
+          width="medium"
           value={expression}
           onChange={setExpression}
           error={answer?.validationMessage}
@@ -441,6 +445,7 @@ export function CronJobForm({ onCreated, onCancel }: CreateFormProps) {
         <TextInputField
           label="Time zone"
           description="An IANA zone. Blank uses the scheduler's zone."
+          width="medium"
           value={timeZoneId}
           onChange={setTimeZoneId}
         />
@@ -452,10 +457,11 @@ export function CronJobForm({ onCreated, onCancel }: CreateFormProps) {
           onChange={setRequest}
           error={fieldErrors.request}
         />
-        <TextInputField label="Retries" inputMode="numeric" value={retries} onChange={setRetries} />
+        <TextInputField label="Retries" inputMode="numeric" width="short" value={retries} onChange={setRetries} />
         <TextInputField
           label="Retry intervals (seconds)"
           description="The wait before each retry, such as 30, 60, 300; the last repeats. Blank uses the function's retry policy."
+          width="medium"
           value={retryIntervals}
           onChange={setRetryIntervals}
           error={intervalsError}

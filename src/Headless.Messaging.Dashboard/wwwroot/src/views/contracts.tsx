@@ -1,4 +1,4 @@
-import { Mono, PageFrame, PageHeader, Tag, usePageFrame } from '@headless/dashboard-sdk/components'
+import { FilterToolbar, Mono, PageFrame, PageHeader, Tag, usePageFrame } from '@headless/dashboard-sdk/components'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { DataTable } from '@headless/dashboard-sdk/table'
 import { CellText, MessagingStats, NodeLink, NodeSwitch, QueryState, StaleNotice, useContracts } from '../parts.tsx'
@@ -21,13 +21,16 @@ export default function ContractsView() {
           title="Contracts"
           count={contracts.data ? format.number(rows.length) : undefined}
           description="The message contracts the node registers, with the lanes each one travels on."
-        >
-          <NodeSwitch />
-        </PageHeader>
+          toolbar={
+            <FilterToolbar>
+              <NodeSwitch />
+            </FilterToolbar>
+          }
+        />
       }
     >
       <StaleNotice what="these contracts" onRefresh={() => void contracts.refetch()} />
-      <QueryState query={contracts} label="Loading contracts" rows={4}>
+      <QueryState query={contracts} label="Loading contracts" rows={4} shape="table">
         {() => (
           <DataTable
             label="Contracts"
@@ -47,9 +50,10 @@ export default function ContractsView() {
                   </CellText>
                 ),
                 isRowHeader: true,
+                kind: 'id',
                 width: '2fr',
               },
-              { id: 'version', header: 'Version', cell: (row) => <Mono>{row.contractVersion}</Mono>, width: 90 },
+              { id: 'version', header: 'Version', cell: (row) => row.contractVersion, kind: 'id', width: 90 },
               {
                 id: 'lanes',
                 header: 'Lanes',

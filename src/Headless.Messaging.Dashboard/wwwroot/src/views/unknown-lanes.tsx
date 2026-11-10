@@ -54,7 +54,7 @@ export default function UnknownLanesView() {
       {answer.isError ? (
         <LoadError message={answer.error.message} onRetry={() => void answer.refetch()} />
       ) : answer.isPending ? (
-        <Skeleton label="Loading unknown lanes" rows={2} />
+        <Skeleton label="Loading unknown lanes" rows={2} shape="table" />
       ) : stale ? (
         <AttentionGaps stale unavailable={unavailable} onRetry={() => void answer.refetch()} />
       ) : (
@@ -79,19 +79,27 @@ export default function UnknownLanesView() {
                 isRowHeader: true,
                 width: '2fr',
               },
-              { id: 'store', header: 'Store', cell: (row) => <Mono>{row.store}</Mono>, width: 120 },
-              { id: 'node', header: 'Node', cell: (row) => <Mono>{row.node}</Mono>, priority: 2, width: 120 },
+              { id: 'store', header: 'Store', cell: (row) => <Mono>{row.store}</Mono>, kind: 'id', width: 120 },
+              {
+                id: 'node',
+                header: 'Node',
+                cell: (row) => <Mono>{row.node}</Mono>,
+                kind: 'id',
+                priority: 2,
+                width: 120,
+              },
               {
                 id: 'count',
                 header: 'Rows',
                 cell: (row) => format.count({ value: row.count, capped: row.capped }),
-                align: 'end',
+                kind: 'number',
                 width: 90,
               },
               {
                 id: 'seen',
                 header: 'Last seen',
                 cell: (row) => (row.lastSeenAt ? <RelativeTime value={row.lastSeenAt} /> : ''),
+                kind: 'time',
                 priority: 2,
                 width: 110,
               },

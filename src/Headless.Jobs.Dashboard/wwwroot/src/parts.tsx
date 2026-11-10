@@ -6,7 +6,6 @@ import {
   type RowResult,
 } from '@headless/dashboard-sdk/commands'
 import {
-  Button,
   DetailPanel,
   EmptyState,
   ExceptionBlock,
@@ -26,6 +25,7 @@ import {
   useDelayed,
   useViewKeys,
   type HistoryItem,
+  type SkeletonShape,
   type TimelineEvent,
   RelativeTime,
 } from '@headless/dashboard-sdk/components'
@@ -81,22 +81,27 @@ type LoadState<T> =
   | { isPending: false; isError: true; error: Error; refetch: () => Promise<unknown> }
   | { isPending: false; isError: false; data: T }
 
-/** A load's skeleton, once it has taken 150 ms, or its error and Retry, else what `children` draws from its data. */
+/**
+ * A load's skeleton, once it has taken 150 ms, or its error and Retry, else what `children` draws from its data. The
+ * skeleton takes the `shape` of what loads: `table` for a list region, `rows` by default.
+ */
 export function QueryState<T>({
   query,
   label,
   rows,
+  shape,
   children,
 }: {
   query: LoadState<T>
   label: string
   rows: number
+  shape?: SkeletonShape
   children: (data: T) => ReactNode
 }) {
   const showLoading = useDelayed(query.isPending)
 
   if (query.isPending) {
-    return showLoading ? <Skeleton label={label} rows={rows} /> : null
+    return showLoading ? <Skeleton label={label} rows={rows} shape={shape} /> : null
   }
 
   if (query.isError) {
@@ -343,7 +348,6 @@ export function useTraceKey(run: Pick<Run, 'correlationId'> | undefined) {
 
 export function RunFields({ run }: { run: Run }) {
   const format = useFormat()
-  const open = useModuleNavigate()
   // The store stamps `executedAt` when a run ends, so a running run has none yet; it reads as running, not as unrun.
   const running = run.status === 'InProgress' ? 'Running' : undefined
   const correlationId = run.correlationId
@@ -384,9 +388,7 @@ export function RunFields({ run }: { run: Run }) {
             correlationId ? (
               <>
                 <Mono>{correlationId}</Mono>
-                <Button variant="ghost" onPress={() => open(tracePath(correlationId))}>
-                  Trace
-                </Button>
+                <Link to={`/jobs/${tracePath(correlationId)}`}>Open trace</Link>
                 {run.traceId ? <TraceLink traceId={run.traceId} /> : null}
               </>
             ) : undefined
@@ -491,7 +493,7 @@ export function AttemptTimeline({ run }: { run: Pick<Run, 'id' | 'version' | 'cr
 
   return (
     <Fields label="Timeline">
-      <Text as="h3" tone="title">
+      <Text as="h3" tone="label">
         Timeline
       </Text>
       {attempts.data ? (
@@ -499,9 +501,7 @@ export function AttemptTimeline({ run }: { run: Pick<Run, 'id' | 'version' | 'cr
       ) : attempts.isError ? (
         <LoadError message={attempts.error.message} onRetry={() => void attempts.refetch()} />
       ) : (
-        <Text as="p" tone="hint" role="status">
-          Loading the attempts…
-        </Text>
+        <Skeleton label="Loading the attempts" shape="lines" rows={3} />
       )}
     </Fields>
   )
@@ -528,7 +528,7 @@ export function RunHistory({ run }: { run: Pick<Run, 'id' | 'version' | 'created
         {attempts.isError ? (
           <LoadError message={attempts.error.message} onRetry={() => void attempts.refetch()} />
         ) : (
-          <Skeleton label="Loading the history" shape="rows" />
+          <Skeleton label="Loading the history" shape="lines" rows={4} />
         )}
       </section>
     )

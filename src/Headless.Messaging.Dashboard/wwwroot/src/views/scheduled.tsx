@@ -2,10 +2,11 @@ import { useDashboard } from '@headless/dashboard-sdk'
 import {
   Banner,
   Button,
+  FilterSelect,
+  FilterToolbar,
   Mono,
   PageFrame,
   PageHeader,
-  SelectField,
   StatusMark,
   usePageFrame,
   RelativeTime,
@@ -95,31 +96,33 @@ export default function ScheduledView() {
           title="Scheduled deliveries"
           count={scheduled.data?.supported ? format.number(total) : undefined}
           description="Messages the store holds for a later delivery, soonest first."
-        >
-          <NodeSwitch />
-          <SelectField
-            label="Store"
-            emptyLabel="Main store"
-            compact
-            value={store}
-            onChange={(value) =>
-              update((next) => {
-                next.delete('page')
+          toolbar={
+            <FilterToolbar active={store ? 1 : 0}>
+              <NodeSwitch />
+              <FilterSelect
+                label="Store"
+                emptyLabel="Main store"
+                value={store}
+                onChange={(value) =>
+                  update((next) => {
+                    next.delete('page')
 
-                if (value) {
-                  next.set('store', value)
-                } else {
-                  next.delete('store')
+                    if (value) {
+                      next.set('store', value)
+                    } else {
+                      next.delete('store')
+                    }
+                  })
                 }
-              })
-            }
-            options={storeOptions}
-          />
-        </PageHeader>
+                options={storeOptions}
+              />
+            </FilterToolbar>
+          }
+        />
       }
     >
       <StaleNotice what="these deliveries" onRefresh={() => void scheduled.refetch()} />
-      <QueryState query={scheduled} label="Loading scheduled deliveries" rows={6}>
+      <QueryState query={scheduled} label="Loading scheduled deliveries" rows={6} shape="table">
         {(data) =>
           data.supported ? (
             <>
@@ -143,6 +146,7 @@ export default function ScheduledView() {
                       </CellText>
                     ),
                     isRowHeader: true,
+                    kind: 'id',
                     width: '2fr',
                   },
                   {
@@ -156,6 +160,7 @@ export default function ScheduledView() {
                         />
                       </CellText>
                     ),
+                    kind: 'status',
                     width: 130,
                   },
                   { id: 'lane', header: 'Lane', cell: (row) => row.lane, priority: 2, width: 100 },
@@ -167,6 +172,7 @@ export default function ScheduledView() {
                         <Mono>{row.owner ?? ''}</Mono>
                       </CellText>
                     ),
+                    kind: 'id',
                     priority: 2,
                     width: '1fr',
                   },
@@ -174,7 +180,7 @@ export default function ScheduledView() {
                     id: 'attempts',
                     header: 'Attempts',
                     cell: (row) => format.number(row.inlineAttempts),
-                    align: 'end',
+                    kind: 'number',
                     priority: 2,
                     width: 90,
                   },
@@ -183,9 +189,10 @@ export default function ScheduledView() {
                     header: 'Due',
                     cell: (row) => (
                       <CellText>
-                        <RelativeTime value={row.expectedDueAt} />
+                        <RelativeTime value={row.expectedDueAt} scheduled />
                       </CellText>
                     ),
+                    kind: 'time',
                     width: 110,
                   },
                 ]}

@@ -3,6 +3,7 @@ import { CommandAction, useAllowedActions } from '@headless/dashboard-sdk/comman
 import {
   DetailPanel,
   FieldGrid,
+  FilterToolbar,
   GridField,
   Mono,
   PageFrame,
@@ -91,9 +92,12 @@ export default function ConsumersView() {
           title="Consumers"
           count={consumers.data ? format.number(rows.length) : undefined}
           description="Every consumer the node registers, with how it runs and its circuit breaker."
-        >
-          <NodeSwitch />
-        </PageHeader>
+          toolbar={
+            <FilterToolbar>
+              <NodeSwitch />
+            </FilterToolbar>
+          }
+        />
       }
       panel={
         open ? (
@@ -106,7 +110,7 @@ export default function ConsumersView() {
       }
     >
       <StaleNotice what="these consumers" onRefresh={() => void consumers.refetch()} />
-      <QueryState query={consumers} label="Loading consumers" rows={4}>
+      <QueryState query={consumers} label="Loading consumers" rows={4} shape="table">
         {() => (
           <DataTable
             label="Consumers"
@@ -124,6 +128,7 @@ export default function ConsumersView() {
                   </CellText>
                 ),
                 isRowHeader: true,
+                kind: 'id',
                 width: '2fr',
               },
               {
@@ -150,13 +155,14 @@ export default function ConsumersView() {
                     />
                   </CellText>
                 ),
+                kind: 'status',
                 width: 120,
               },
               {
                 id: 'concurrency',
                 header: 'Concurrency',
                 cell: (row) => format.number(row.concurrency),
-                align: 'end',
+                kind: 'number',
                 priority: 2,
                 width: 110,
               },
@@ -165,7 +171,7 @@ export default function ConsumersView() {
         )}
       </QueryState>
       <Section label="Circuit breakers">
-        <QueryState query={circuits} label="Loading circuit breakers" rows={2}>
+        <QueryState query={circuits} label="Loading circuit breakers" rows={2} shape="table">
           {(items) => <CircuitsTable circuits={items} nodeName={nodeName} />}
         </QueryState>
       </Section>
@@ -198,6 +204,7 @@ function CircuitsTable({ circuits, nodeName }: { circuits: readonly MessagingCir
             </CellText>
           ),
           isRowHeader: true,
+          kind: 'id',
           width: '2fr',
         },
         {
@@ -208,13 +215,14 @@ function CircuitsTable({ circuits, nodeName }: { circuits: readonly MessagingCir
               <StatusMark tone={circuitTones[row.state]} label={circuitLabels[row.state]} />
             </CellText>
           ),
+          kind: 'status',
           width: 120,
         },
         {
           id: 'failures',
           header: 'Failures',
           cell: (row) => `${format.number(row.consecutiveFailures)} of ${format.number(row.failureThreshold)}`,
-          align: 'end',
+          kind: 'number',
           priority: 2,
           width: 100,
         },
@@ -222,6 +230,7 @@ function CircuitsTable({ circuits, nodeName }: { circuits: readonly MessagingCir
           id: 'opened',
           header: 'Opened',
           cell: (row) => (row.openedAt ? <RelativeTime value={row.openedAt} /> : ''),
+          kind: 'time',
           priority: 2,
           width: 110,
         },
@@ -235,7 +244,7 @@ function CircuitsTable({ circuits, nodeName }: { circuits: readonly MessagingCir
 
             return seconds === undefined ? '' : formatSeconds(Math.round(seconds), format.number)
           },
-          align: 'end',
+          kind: 'duration',
           priority: 2,
           width: 100,
         },

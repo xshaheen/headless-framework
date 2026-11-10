@@ -13,7 +13,7 @@ import {
   Mono,
   NodeChip,
   PayloadView,
-  SelectField,
+  FilterSelect,
   Skeleton,
   StaleNotice as SdkStaleNotice,
   StatCard,
@@ -21,6 +21,7 @@ import {
   Text,
   useDelayed,
   type HistoryItem,
+  type SkeletonShape,
   RelativeTime,
 } from '@headless/dashboard-sdk/components'
 import { DashboardApiError, refetchTopics, type CappedCount } from '@headless/dashboard-sdk/data'
@@ -66,22 +67,27 @@ type LoadState<T> =
   | { isPending: false; isError: true; error: Error; refetch: () => Promise<unknown> }
   | { isPending: false; isError: false; data: T }
 
-/** A load's skeleton, once it has taken 150 ms, or its error and Retry, else what `children` draws from its data. */
+/**
+ * A load's skeleton, once it has taken 150 ms, or its error and Retry, else what `children` draws from its data. The
+ * skeleton takes the `shape` of what loads: `table` for a list region, `rows` by default.
+ */
 export function QueryState<T>({
   query,
   label,
   rows,
+  shape,
   children,
 }: {
   query: LoadState<T>
   label: string
   rows: number
+  shape?: SkeletonShape
   children: (data: T) => ReactNode
 }) {
   const showLoading = useDelayed(query.isPending)
 
   if (query.isPending) {
-    return showLoading ? <Skeleton label={label} rows={rows} /> : null
+    return showLoading ? <Skeleton label={label} rows={rows} shape={shape} /> : null
   }
 
   if (query.isError) {
@@ -240,14 +246,7 @@ export function NodeSwitch() {
   }
 
   return (
-    <SelectField
-      label="Node"
-      isRequired
-      compact
-      value={node || (local?.name ?? '')}
-      onChange={choose}
-      options={options}
-    />
+    <FilterSelect label="Node" isRequired value={node || (local?.name ?? '')} onChange={choose} options={options} />
   )
 }
 
@@ -696,7 +695,7 @@ function MessageGenerations({ node, row }: { node: string; row: MessageRow }) {
         {generations.isError ? (
           <LoadError message={generations.error.message} onRetry={() => void generations.refetch()} />
         ) : (
-          <Skeleton label="Loading the generations" shape="rows" />
+          <Skeleton label="Loading the generations" shape="lines" rows={4} />
         )}
       </section>
     )

@@ -224,7 +224,7 @@ describe('messaging lists', () => {
   it('offers a consume-only message in the Message filter when the node declares no contracts', async () => {
     list({ contracts: [], received: [message('received', 'Succeeded')] }, 'received')
 
-    const select = await screen.findByRole('combobox', { name: 'Message' })
-    await waitFor(() => expect(within(select).getByRole('option', { name: 'OrderPlaced' })).toBeTruthy())
+    await user().click(await screen.findByRole('button', { name: /Message/ }))
+    await waitFor(() => expect(screen.getByRole('option', { name: 'OrderPlaced' })).toBeTruthy())
   })
 })

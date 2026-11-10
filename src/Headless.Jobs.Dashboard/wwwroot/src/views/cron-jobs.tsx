@@ -94,7 +94,7 @@ export default function CronJobsView() {
       panel={panel}
     >
       <StaleNotice what="these recurring jobs" onRefresh={() => void list.refetch()} />
-      <QueryState query={list} label="Loading recurring jobs" rows={4}>
+      <QueryState query={list} label="Loading recurring jobs" rows={4} shape="table">
         {() => (
           <DataTable
             label="Recurring jobs"
@@ -112,6 +112,7 @@ export default function CronJobsView() {
                   </CellText>
                 ),
                 isRowHeader: true,
+                kind: 'id',
                 width: '1.5fr',
               },
               {
@@ -144,6 +145,7 @@ export default function CronJobsView() {
                       <RelativeTime value={row.nextDueUtc} scheduled />
                     </CellText>
                   ),
+                kind: 'time',
                 align: 'end',
                 width: 120,
               },

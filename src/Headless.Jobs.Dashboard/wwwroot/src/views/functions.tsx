@@ -88,7 +88,7 @@ export default function FunctionsView() {
       panel={open ? <FunctionPanel item={open} /> : undefined}
     >
       <StaleNotice what="these functions" onRefresh={() => void functions.refetch()} />
-      <QueryState query={functions} label="Loading functions" rows={4}>
+      <QueryState query={functions} label="Loading functions" rows={4} shape="table">
         {() => (
           <DataTable
             label="Functions"
@@ -106,6 +106,7 @@ export default function FunctionsView() {
                   </CellText>
                 ),
                 isRowHeader: true,
+                kind: 'id',
                 width: '1.6fr',
               },
               {
@@ -126,15 +127,22 @@ export default function FunctionsView() {
                     <Mono>{row.requestType ?? '–'}</Mono>
                   </CellText>
                 ),
+                kind: 'id',
                 priority: 2,
                 width: '1.4fr',
               },
-              { id: 'priority', header: 'Priority', cell: (row) => row.priority, priority: 2, width: 100 },
+              {
+                id: 'priority',
+                header: 'Priority',
+                cell: (row) => row.priority,
+                priority: 2,
+                width: 100,
+              },
               {
                 id: 'limit',
                 header: 'Running / limit',
                 cell: (row) => limit(row),
-                align: 'end',
+                kind: 'number',
                 priority: 2,
                 width: 120,
               },
@@ -152,7 +160,7 @@ export default function FunctionsView() {
                 id: 'succeeded',
                 header: 'Succeeded, 24 h',
                 cell: (row) => format.number(row.succeeded),
-                align: 'end',
+                kind: 'number',
                 priority: 2,
                 width: 120,
               },
@@ -160,7 +168,7 @@ export default function FunctionsView() {
                 id: 'failed',
                 header: 'Failed, 24 h',
                 cell: (row) => format.number(row.failed),
-                align: 'end',
+                kind: 'number',
                 width: 100,
               },
             ]}

@@ -1,11 +1,12 @@
 import { useDashboard } from '@headless/dashboard-sdk'
 import {
   Banner,
+  FilterSelect,
+  FilterToolbar,
   LoadError,
   Mono,
   PageFrame,
   PageHeader,
-  SelectField,
   Skeleton,
   StatusMark,
   usePageFrame,
@@ -97,32 +98,34 @@ export default function OperatorLogView() {
         <PageHeader
           title="Operator log"
           description="Every intervention an operator made on a stored message, newest first, a refused one included."
-        >
-          <NodeSwitch />
-          <SelectField
-            label="Target"
-            emptyLabel="All targets"
-            compact
-            value={targetKind}
-            onChange={(value) =>
-              setParams(
-                (current) => {
-                  const next = new URLSearchParams(current)
+          toolbar={
+            <FilterToolbar active={targetKind ? 1 : 0}>
+              <NodeSwitch />
+              <FilterSelect
+                label="Target"
+                emptyLabel="All targets"
+                value={targetKind}
+                onChange={(value) =>
+                  setParams(
+                    (current) => {
+                      const next = new URLSearchParams(current)
 
-                  if (value) {
-                    next.set('targetKind', value)
-                  } else {
-                    next.delete('targetKind')
-                  }
+                      if (value) {
+                        next.set('targetKind', value)
+                      } else {
+                        next.delete('targetKind')
+                      }
 
-                  return next
-                },
-                { replace: true },
-              )
-            }
-            options={targetKinds.map((value) => ({ value, label: targetLabels[value] ?? value }))}
-          />
-        </PageHeader>
+                      return next
+                    },
+                    { replace: true },
+                  )
+                }
+                options={targetKinds.map((value) => ({ value, label: targetLabels[value] ?? value }))}
+              />
+            </FilterToolbar>
+          }
+        />
       }
     >
       {noLedger ? (
@@ -130,7 +133,7 @@ export default function OperatorLogView() {
       ) : receipts.isError ? (
         <LoadError message={receipts.error.message} onRetry={() => void receipts.refetch()} />
       ) : receipts.isPending ? (
-        <Skeleton label="Loading the operator log" rows={6} />
+        <Skeleton label="Loading the operator log" rows={6} shape="table" />
       ) : (
         <DataTable
           label="Operator log"
@@ -161,6 +164,7 @@ export default function OperatorLogView() {
                   <StatusMark tone={outcomeTone(row.outcome)} label={row.outcome} />
                 </CellText>
               ),
+              kind: 'status',
               width: 110,
             },
             {
@@ -178,6 +182,7 @@ export default function OperatorLogView() {
                   </Mono>
                 </CellText>
               ),
+              kind: 'id',
               priority: 2,
               width: '2fr',
             },
@@ -194,7 +199,7 @@ export default function OperatorLogView() {
               priority: 2,
               width: '2fr',
             },
-            { id: 'at', header: 'At', cell: (row) => <RelativeTime value={row.createdAt} />, width: 110 },
+            { id: 'at', header: 'At', cell: (row) => <RelativeTime value={row.createdAt} />, kind: 'time', width: 110 },
           ]}
         />
       )}

@@ -48,7 +48,7 @@ export default function NodesView() {
     >
       <StaleNotice what="these servers" onRefresh={() => void nodes.refetch()} />
       {serving ? <HostExceptionAlert node={serving} /> : null}
-      <QueryState query={nodes} label="Loading servers" rows={3}>
+      <QueryState query={nodes} label="Loading servers" rows={3} shape="table">
         {() => (
           <DataTable
             label="Servers"
@@ -67,6 +67,7 @@ export default function NodesView() {
                   </CellText>
                 ),
                 isRowHeader: true,
+                kind: 'id',
                 width: '1.5fr',
               },
               {
@@ -84,6 +85,7 @@ export default function NodesView() {
                     <StatusMark {...nodeStatusMark(row)} />
                   </CellText>
                 ),
+                kind: 'status',
                 width: 120,
               },
               {
@@ -98,6 +100,7 @@ export default function NodesView() {
                     )}
                   </CellText>
                 ),
+                kind: 'number',
                 priority: 2,
                 width: 130,
               },
@@ -105,6 +108,7 @@ export default function NodesView() {
                 id: 'running',
                 header: 'Running',
                 cell: (row) => <CellText>{format.count({ value: row.running, capped: row.runningCapped })}</CellText>,
+                kind: 'number',
                 width: 90,
               },
               {
@@ -115,6 +119,7 @@ export default function NodesView() {
                     <RelativeTime value={row.lastHeartbeatAt ?? undefined} missing="Not tracked" />
                   </CellText>
                 ),
+                kind: 'time',
                 priority: 2,
                 width: 110,
               },

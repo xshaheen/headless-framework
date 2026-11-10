@@ -12,11 +12,12 @@ import {
   EmptyState,
   FilterChip,
   FilterChips,
+  FilterSelect,
+  FilterToolbar,
   LoadError,
   Mono,
   PageFrame,
   PageHeader,
-  SelectField,
   Skeleton,
   StatusMark,
   usePageFrame,
@@ -262,6 +263,41 @@ export function MessagesView({ kind }: { kind: MessageKind }) {
           }
           count={count ? format.count(count) : undefined}
           description={state.description}
+          toolbar={
+            <FilterToolbar
+              active={(['store', 'consumer', 'name'] as const).filter((name) => filter[name]).length}
+              chips={
+                <>
+                  {failed ? (
+                    <FailureChips
+                      kind={kind}
+                      node={node}
+                      filter={filter}
+                      count={count ? format.count(count) : undefined}
+                      onPick={setFilter}
+                    />
+                  ) : null}
+                  {setFilters.length > 0 ? (
+                    <FilterChips label="Set filters">
+                      {setFilters.map(({ name, label }) => (
+                        <FilterChip
+                          key={name}
+                          label={label}
+                          value={filter[name]}
+                          onClear={() => setFilter({ [name]: '' })}
+                        />
+                      ))}
+                    </FilterChips>
+                  ) : null}
+                </>
+              }
+            >
+              <NodeSwitch />
+              {/* A state list keeps only the node, as the sidebar already chose the state: its other filters arrive
+                  by link and show as chips to clear. The All list offers every filter. */}
+              {all ? <ListFilters kind={kind} filter={filter} onPick={setFilter} /> : null}
+            </FilterToolbar>
+          }
           actions={
             allMatching && count ? (
               <MatchingActions kind={kind} filter={filter} node={node} count={format.count(count)} />
@@ -278,28 +314,7 @@ export function MessagesView({ kind }: { kind: MessageKind }) {
               />
             ) : null
           }
-        >
-          <NodeSwitch />
-          {failed ? (
-            <FailureChips
-              kind={kind}
-              node={node}
-              filter={filter}
-              count={count ? format.count(count) : undefined}
-              onPick={setFilter}
-            />
-          ) : null}
-          {/* A state list keeps its header to one row, as the sidebar already chose the state: its other filters
-              arrive by link and show as chips to clear. The All list offers every filter. */}
-          {all ? <ListFilters kind={kind} filter={filter} onPick={setFilter} /> : null}
-          {setFilters.length > 0 ? (
-            <FilterChips label="Set filters">
-              {setFilters.map(({ name, label }) => (
-                <FilterChip key={name} label={label} value={filter[name]} onClear={() => setFilter({ [name]: '' })} />
-              ))}
-            </FilterChips>
-          ) : null}
-        </PageHeader>
+        />
       }
       panel={panel}
     >
@@ -309,7 +324,7 @@ export function MessagesView({ kind }: { kind: MessageKind }) {
           {`Some stores did not answer, so their messages are missing: ${unavailable.join(', ')}.`}
         </Banner>
       ) : null}
-      <QueryState query={list} label={`Loading ${kind} messages`} rows={6}>
+      <QueryState query={list} label={`Loading ${kind} messages`} rows={6} shape="table">
         {() => (
           <MessagesTable
             // A new filter is a new list: the held rows and the scroll start again.
@@ -379,19 +394,17 @@ function ListFilters({
   return (
     <>
       {kind === 'published' ? (
-        <SelectField
+        <FilterSelect
           label="Store"
           emptyLabel="Any store"
-          compact
           value={filter.store}
           onChange={(value) => onPick({ store: value })}
           options={optionsOf(served?.stores ?? [], filter.store)}
         />
       ) : (
-        <SelectField
+        <FilterSelect
           label="Consumer"
           emptyLabel="Any consumer"
-          compact
           value={filter.consumer}
           onChange={(value) => onPick({ consumer: value })}
           options={optionsOf(
@@ -400,10 +413,9 @@ function ListFilters({
           )}
         />
       )}
-      <SelectField
+      <FilterSelect
         label="Message"
         emptyLabel="Any message"
-        compact
         value={filter.name}
         onChange={(value) => onPick({ name: value })}
         // Contracts list only the messages the node declares to publish, so a consume-only message name comes from its consumer.
@@ -454,6 +466,7 @@ function MessagesTable({
         <Mono>{row.failureFingerprint ?? ''}</Mono>
       </CellText>
     ),
+    kind: 'id',
     priority: 2,
     width: '1.5fr',
   }
@@ -465,6 +478,7 @@ function MessagesTable({
         <Mono>{row.consumer ?? ''}</Mono>
       </CellText>
     ),
+    kind: 'id',
     priority: 2,
     width: '2fr',
   }
@@ -501,6 +515,7 @@ function MessagesTable({
             </CellText>
           ),
           isRowHeader: true,
+          kind: 'id',
           width: '2fr',
         },
         {
@@ -511,6 +526,7 @@ function MessagesTable({
               <StatusMark {...rowMark(row, pending.labelOf(row))} />
             </CellText>
           ),
+          kind: 'status',
           width: 130,
         },
         ...(kind === 'received' ? [consumerColumn] : [storeColumn]),
@@ -519,7 +535,7 @@ function MessagesTable({
           id: 'retries',
           header: 'Retries',
           cell: (row) => format.number(row.retries),
-          align: 'end',
+          kind: 'number',
           priority: 2,
           width: 80,
         },
@@ -531,6 +547,7 @@ function MessagesTable({
               <RelativeTime value={failed ? (row.changedAt ?? row.added) : row.added} />
             </CellText>
           ),
+          kind: 'time',
           width: 110,
         },
       ]}

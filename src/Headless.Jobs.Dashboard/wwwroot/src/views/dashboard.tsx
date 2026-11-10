@@ -17,6 +17,7 @@ import {
 import { listKey, useDashboardKeysetList, useDashboardList, useNewRows } from '@headless/dashboard-sdk/data'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQuery, useQueryClient } from '@headless/dashboard-sdk/query'
+import { AttentionIcon, PlayIcon, RecurringIcon } from '@headless/dashboard-sdk/icons'
 import { Link, useNavigate } from '@headless/dashboard-sdk/router'
 import { useStreamEvent } from '@headless/dashboard-sdk/stream'
 import { useEffect, useRef } from 'react'
@@ -149,6 +150,8 @@ function ProcessingNow() {
   return (
     <Card
       title="Processing now"
+      icon={PlayIcon}
+      emptyIcon={PlayIcon}
       // The served count answers for the last fetch; while every running run is loaded, the shown rows are newer.
       caption={
         running.length > 0
@@ -172,6 +175,7 @@ function ProcessingNow() {
           tone="proc"
           name={<Link to={`/jobs/runs?status=InProgress&open=${encodeURIComponent(run.id)}`}>{run.function}</Link>}
           meta={run.node ? <Mono>{run.node}</Mono> : undefined}
+          title={run.node ? `${run.function} ${run.node}` : run.function}
           actions={
             cancel ? (
               <CommandAction
@@ -322,6 +326,8 @@ function NextRecurringRuns({ list, total, next }: ReturnType<typeof useNextRecur
   return (
     <Card
       title="Next recurring runs"
+      icon={RecurringIcon}
+      emptyIcon={RecurringIcon}
       caption={next.length > 0 ? `${next.length} scheduled` : undefined}
       action={total > 0 ? <Link to="/jobs/cron-jobs">All</Link> : undefined}
       empty={
@@ -350,6 +356,7 @@ function NextRecurringRuns({ list, total, next }: ReturnType<typeof useNextRecur
           tone="sched"
           name={<Link to={`/jobs/cron-jobs/${encodeURIComponent(cronJob.id)}`}>{cronJob.function}</Link>}
           meta={cronJob.expression}
+          title={`${cronJob.function} ${cronJob.expression}`}
           value={<RelativeTime value={cronJob.nextDueUtc} scheduled />}
         />
       ))}
@@ -379,6 +386,8 @@ function JobsAttention() {
   return (
     <Card
       title="Needs attention"
+      icon={AttentionIcon}
+      emptyIcon={AttentionIcon}
       caption={items.length > 0 ? `${items.length} ${items.length === 1 ? 'item' : 'items'}` : undefined}
       action={items.length > 0 ? <Link to="/jobs/runs?status=Failed">All</Link> : undefined}
       empty={
@@ -407,6 +416,7 @@ function JobsAttention() {
               </Link>
             }
             meta={parts ? parts[1] : undefined}
+            title={item.title}
             value={item.lastSeenAt ? <RelativeTime value={item.lastSeenAt} /> : undefined}
           />
         )
