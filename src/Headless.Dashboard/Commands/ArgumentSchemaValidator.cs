@@ -1,12 +1,14 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Text.RegularExpressions;
+
 namespace Headless.Dashboard;
 
 /// <summary>
 /// Validates a command call's arguments against the command's declared schema on the server, so a module receives only
 /// arguments of the declared kind, within the declared bounds, with every required one present and no undeclared one.
 /// </summary>
-internal static class ArgumentSchemaValidator
+internal static partial class ArgumentSchemaValidator
 {
     /// <summary>The field prefix every argument error carries, so <c>count</c> reports as <c>arguments.count</c>.</summary>
     public const string FieldPrefix = "arguments.";
@@ -18,12 +20,14 @@ internal static class ArgumentSchemaValidator
     /// <param name="arguments">The call's arguments object, or <see langword="null"/> when the call sent none.</param>
     /// <returns>
     /// The validated values, cloned so they outlive the request body, or one error per invalid field naming the rule
-    /// it broke: <c>"type"</c>, <c>"required"</c>, <c>"enum"</c>, <c>"minimum"</c>, <c>"maximum"</c>, <c>"maxLength"</c>, or
-    /// <c>"additionalProperties"</c>.
+    /// it broke: <c>"type"</c>, <c>"required"</c>, <c>"enum"</c>, <c>"minimum"</c>, <c>"maximum"</c>, <c>"maxLength"</c>,
+    /// <c>"format"</c>, or <c>"additionalProperties"</c>.
     /// </returns>
+    /// <param name="now">The moment a <see cref="DashboardCommandArgument.NotBeforeNow"/> instant is checked against.</param>
     public static ArgumentValidationResult Validate(
         IReadOnlyList<DashboardCommandArgument> schema,
-        JsonElement? arguments
+        JsonElement? arguments,
+        DateTimeOffset now
     )
     {
         var values = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
@@ -74,7 +78,7 @@ internal static class ArgumentSchemaValidator
                 continue;
             }
 
-            if (_Check(argument, value) is { } error)
+            if (_Check(argument, value, now) is { } error)
             {
                 errors.Add(error);
             }
@@ -88,7 +92,7 @@ internal static class ArgumentSchemaValidator
         return new ArgumentValidationResult(values, errors);
     }
 
-    private static CommandFieldError? _Check(DashboardCommandArgument argument, JsonElement value)
+    private static CommandFieldError? _Check(DashboardCommandArgument argument, JsonElement value, DateTimeOffset now)
     {
         var field = FieldPrefix + argument.Name;
 
@@ -136,9 +140,28 @@ internal static class ArgumentSchemaValidator
             }
         }
 
+        if (argument.Kind == DashboardArgumentKind.DateTime)
+        {
+            // The client always sends an offset; text without one would be read in the server's own zone, which is
+            // the wrong instant for every operator not sitting in it.
+            if (!value.TryGetDateTimeOffset(out var instant) || !_OffsetPattern.IsMatch(value.GetString()!))
+            {
+                return new CommandFieldError(
+                    field,
+                    "format",
+                    $"'{argument.Name}' must be an ISO 8601 date and time with an offset, such as 2026-12-15T08:00:00Z."
+                );
+            }
+
+            if (argument.NotBeforeNow && instant < now)
+            {
+                return new CommandFieldError(field, "minimum", $"'{argument.Name}' must not be in the past.");
+            }
+        }
+
         // JSON Schema counts characters, not UTF-16 units, so an emoji counts once.
         if (
-            argument is { Kind: DashboardArgumentKind.Text, MaxLength: { } maxLength }
+            argument is { Kind: DashboardArgumentKind.Text or DashboardArgumentKind.Json, MaxLength: { } maxLength }
             && value.GetString()!.EnumerateRunes().Take(maxLength + 1).Count() > maxLength
         )
         {
@@ -149,7 +172,32 @@ internal static class ArgumentSchemaValidator
             );
         }
 
+        // A form can be bypassed, so the text is parsed here even though the client checked it.
+        if (argument.Kind == DashboardArgumentKind.Json && !_IsJson(value.GetString()!))
+        {
+            return new CommandFieldError(field, "format", $"'{argument.Name}' must be valid JSON.");
+        }
+
         return null;
+    }
+
+    // `TryGetDateTimeOffset` reads text without an offset as server-local time instead of refusing it, so this asks
+    // whether the text, already proved ISO 8601, ends in an offset after its time.
+    [GeneratedRegex(@"T.*(?:[Zz]|[+-]\d{2}:\d{2})$", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 100)]
+    private static partial Regex _OffsetPattern { get; }
+
+    private static bool _IsJson(string text)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(text);
+
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 
     private static bool _HasKind(DashboardArgumentKind kind, JsonElement value)
@@ -162,6 +210,7 @@ internal static class ArgumentSchemaValidator
                 && decimal.Truncate(whole) == whole,
             DashboardArgumentKind.Number => value.ValueKind == JsonValueKind.Number,
             DashboardArgumentKind.Toggle => value.ValueKind is JsonValueKind.True or JsonValueKind.False,
+            DashboardArgumentKind.DateTime or DashboardArgumentKind.Json => value.ValueKind == JsonValueKind.String,
             _ => false,
         };
     }
@@ -170,7 +219,11 @@ internal static class ArgumentSchemaValidator
     {
         return kind switch
         {
-            DashboardArgumentKind.Text => string.Equals(value.GetString(), candidate, StringComparison.Ordinal),
+            DashboardArgumentKind.Text or DashboardArgumentKind.DateTime or DashboardArgumentKind.Json => string.Equals(
+                value.GetString(),
+                candidate,
+                StringComparison.Ordinal
+            ),
             DashboardArgumentKind.Toggle => bool.TryParse(candidate, out var toggle)
                 && toggle == (value.ValueKind == JsonValueKind.True),
             _ => value.TryGetDecimal(out var number)

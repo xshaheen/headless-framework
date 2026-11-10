@@ -11,6 +11,7 @@ export {
   type CommandsApi,
   type Confirmation,
   type ObjectAvailability,
+  type ObjectRef,
   type ObjectSummary,
   type OperationChunk,
   type OperationChunkCall,

@@ -7,6 +7,26 @@ namespace Tests.Commands;
 
 public sealed class ArgumentSchemaValidatorTests : TestBase
 {
+    private static readonly DateTimeOffset _Now = new(2026, 12, 15, 8, 0, 0, TimeSpan.Zero);
+
+    private static readonly DashboardCommandArgument[] _TimeAndBody =
+    [
+        new()
+        {
+            Name = "runAt",
+            Label = "Run at",
+            Kind = DashboardArgumentKind.DateTime,
+            NotBeforeNow = true,
+        },
+        new()
+        {
+            Name = "request",
+            Label = "Request",
+            Kind = DashboardArgumentKind.Json,
+            MaxLength = 20,
+        },
+    ];
+
     private static readonly DashboardCommandArgument[] _Schema =
     [
         new()
@@ -90,7 +110,7 @@ public sealed class ArgumentSchemaValidatorTests : TestBase
     [Fact]
     public void should_report_the_required_argument_when_no_arguments_are_sent()
     {
-        var result = ArgumentSchemaValidator.Validate(_Schema, arguments: null);
+        var result = ArgumentSchemaValidator.Validate(_Schema, arguments: null, _Now);
 
         result.Errors.Should().ContainSingle().Which.Rule.Should().Be("required");
     }
@@ -98,7 +118,7 @@ public sealed class ArgumentSchemaValidatorTests : TestBase
     [Fact]
     public void should_accept_no_arguments_when_the_command_declares_none()
     {
-        ArgumentSchemaValidator.Validate([], arguments: null).IsValid.Should().BeTrue();
+        ArgumentSchemaValidator.Validate([], arguments: null, _Now).IsValid.Should().BeTrue();
     }
 
     [Fact]
@@ -115,10 +135,93 @@ public sealed class ArgumentSchemaValidatorTests : TestBase
         schema.Properties["force"].Type.Should().Be("boolean");
     }
 
+    [Theory]
+    [InlineData("2026-12-15T08:00:00Z")]
+    [InlineData("2026-12-15T10:00:00+02:00")]
+    [InlineData("2026-12-15T10:00:00.0000000+02:00")]
+    [InlineData("2026-12-15T03:00-05:00")]
+    public void should_accept_an_instant_with_an_offset_that_is_not_in_the_past(string runAt)
+    {
+        var result = _ValidateTimeAndBody($$"""{"runAt":"{{runAt}}"}""");
+
+        result.IsValid.Should().BeTrue();
+        result.Values["runAt"].GetDateTimeOffset().Should().Be(_Now);
+    }
+
+    [Theory]
+    [InlineData("2026-12-15T08:00:00")]
+    [InlineData("2026-12-15")]
+    [InlineData("2026-12-15T10:00:00+0200")]
+    [InlineData("15/12/2026 08:00 +00:00")]
+    [InlineData("tomorrow")]
+    public void should_refuse_a_date_time_without_an_offset_naming_the_argument(string runAt)
+    {
+        var result = _ValidateTimeAndBody($$"""{"runAt":"{{runAt}}"}""");
+
+        var error = result.Errors.Should().ContainSingle().Which;
+        error.Field.Should().Be("arguments.runAt");
+        error.Rule.Should().Be("format");
+        error.Message.Should().Contain("'runAt'");
+    }
+
+    [Fact]
+    public void should_refuse_an_instant_before_now_when_the_argument_asks_for_one_not_in_the_past()
+    {
+        var result = _ValidateTimeAndBody("""{"runAt":"2026-12-15T07:59:59Z"}""");
+
+        var error = result.Errors.Should().ContainSingle().Which;
+        error.Field.Should().Be("arguments.runAt");
+        error.Rule.Should().Be("minimum");
+    }
+
+    [Fact]
+    public void should_accept_valid_json_text_within_its_max_length()
+    {
+        var result = _ValidateTimeAndBody("""{"request":"{\"id\":1}"}""");
+
+        result.IsValid.Should().BeTrue();
+        result.Values["request"].GetString().Should().Be("""{"id":1}""");
+    }
+
+    [Theory]
+    [InlineData("""{"request":"{\"id\":"}""", "format")]
+    [InlineData("""{"request":"not json"}""", "format")]
+    [InlineData("""{"request":"[1,2,3,4,5,6,7,8,9,10,11]"}""", "maxLength")]
+    [InlineData("""{"request":{"id":1}}""", "type")]
+    public void should_refuse_json_text_that_does_not_parse_or_is_too_long(string arguments, string rule)
+    {
+        var result = _ValidateTimeAndBody(arguments);
+
+        var error = result.Errors.Should().ContainSingle().Which;
+        error.Field.Should().Be("arguments.request");
+        error.Rule.Should().Be(rule);
+    }
+
+    [Fact]
+    public void should_describe_date_time_and_json_arguments_as_formatted_strings_in_the_schema()
+    {
+        var schema = ArgumentSchema.Create(_TimeAndBody);
+
+        schema.Properties["runAt"].Type.Should().Be("string");
+        schema.Properties["runAt"].Format.Should().Be("date-time");
+        schema.Properties["runAt"].NotBeforeNow.Should().BeTrue();
+        schema.Properties["request"].Type.Should().Be("string");
+        schema.Properties["request"].ContentMediaType.Should().Be("application/json");
+        schema.Properties["request"].MaxLength.Should().Be(20);
+        schema.Properties["request"].NotBeforeNow.Should().BeNull();
+    }
+
+    private static ArgumentValidationResult _ValidateTimeAndBody(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+
+        return ArgumentSchemaValidator.Validate(_TimeAndBody, document.RootElement, _Now);
+    }
+
     private static ArgumentValidationResult _Validate(string json)
     {
         using var document = JsonDocument.Parse(json);
 
-        return ArgumentSchemaValidator.Validate(_Schema, document.RootElement);
+        return ArgumentSchemaValidator.Validate(_Schema, document.RootElement, _Now);
     }
 }

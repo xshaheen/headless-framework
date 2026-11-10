@@ -4,7 +4,8 @@ namespace Headless.Dashboard;
 
 /// <summary>
 /// A command's arguments as the JSON-Schema subset the shell renders as a form: an object whose properties carry
-/// <c>"type"</c>, <c>"enum"</c>, <c>"minimum"</c>, <c>"maximum"</c>, and <c>"maxLength"</c>, with the <c>"required"</c> list.
+/// <c>"type"</c>, <c>"enum"</c>, <c>"minimum"</c>, <c>"maximum"</c>, <c>"maxLength"</c>, <c>"format"</c>, and
+/// <c>"contentMediaType"</c>, with the <c>"required"</c> list.
 /// </summary>
 internal sealed record ArgumentSchema
 {
@@ -31,7 +32,12 @@ internal sealed record ArgumentSchema
                 Enum = argument.AllowedValues?.Select(value => _EnumValue(argument.Kind, value)).ToArray(),
                 Minimum = _IsNumber(argument.Kind) ? argument.Minimum : null,
                 Maximum = _IsNumber(argument.Kind) ? argument.Maximum : null,
-                MaxLength = argument.Kind == DashboardArgumentKind.Text ? argument.MaxLength : null,
+                MaxLength = argument.Kind is DashboardArgumentKind.Text or DashboardArgumentKind.Json
+                    ? argument.MaxLength
+                    : null,
+                Format = argument.Kind == DashboardArgumentKind.DateTime ? "date-time" : null,
+                ContentMediaType = argument.Kind == DashboardArgumentKind.Json ? "application/json" : null,
+                NotBeforeNow = argument is { Kind: DashboardArgumentKind.DateTime, NotBeforeNow: true } ? true : null,
             };
         }
 
@@ -95,6 +101,18 @@ internal sealed record ArgumentPropertySchema
     public double? Maximum { get; init; }
 
     public int? MaxLength { get; init; }
+
+    /// <summary><c>"date-time"</c> for a <see cref="DashboardArgumentKind.DateTime"/> argument.</summary>
+    public string? Format { get; init; }
+
+    /// <summary><c>"application/json"</c> for a <see cref="DashboardArgumentKind.Json"/> argument.</summary>
+    public string? ContentMediaType { get; init; }
+
+    /// <summary>
+    /// <see langword="true"/> when the instant must not be in the past; JSON Schema has no keyword for "now", so this
+    /// one is the shell's own.
+    /// </summary>
+    public bool? NotBeforeNow { get; init; }
 }
 
 [JsonSerializable(typeof(decimal))]

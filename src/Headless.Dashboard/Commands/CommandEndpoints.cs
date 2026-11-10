@@ -104,6 +104,7 @@ internal static class CommandEndpoints
     /// <summary>Checks the reason and the arguments of a call to <paramref name="command"/>.</summary>
     /// <returns>The validated arguments, and every error found.</returns>
     internal static (IReadOnlyDictionary<string, JsonElement> Arguments, List<CommandFieldError> Errors) Validate(
+        HttpContext context,
         DashboardCommand command,
         CommandCallBody body
     )
@@ -125,7 +126,7 @@ internal static class CommandEndpoints
             );
         }
 
-        var arguments = ArgumentSchemaValidator.Validate(command.Arguments, body.Arguments);
+        var arguments = ArgumentSchemaValidator.Validate(command.Arguments, body.Arguments, Now(context));
         errors.AddRange(arguments.Errors);
 
         return (arguments.Values, errors);
@@ -402,7 +403,7 @@ internal static class CommandEndpoints
             );
         }
 
-        var (arguments, errors) = Validate(command!, body);
+        var (arguments, errors) = Validate(context, command!, body);
 
         if (CommandRules.CheckConfirmation(command!, ids.Count, body.Confirmed, body.TypedCount) is { } unconfirmed)
         {

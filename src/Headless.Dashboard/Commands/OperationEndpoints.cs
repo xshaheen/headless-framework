@@ -72,7 +72,7 @@ internal static class OperationEndpoints
             return CommandEndpoints.Invalid(bodyErrors);
         }
 
-        var (arguments, errors) = CommandEndpoints.Validate(command!, body);
+        var (arguments, errors) = CommandEndpoints.Validate(context, command!, body);
 
         // An Operation changes many rows at once, so it always records why, even for a command one row runs without one.
         if (!command!.RequiresReason && string.IsNullOrWhiteSpace(body.Reason))

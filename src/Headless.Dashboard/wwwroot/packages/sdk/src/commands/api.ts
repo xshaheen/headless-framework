@@ -10,7 +10,14 @@ export interface ArgumentProperty {
   enum?: readonly (string | number | boolean)[]
   minimum?: number
   maximum?: number
+  /** Counted in UTF-16 units by the form; applies to text and to JSON text. */
   maxLength?: number
+  /** `date-time`: an instant the form reads in the display time zone and sends as UTC ISO 8601. */
+  format?: 'date-time'
+  /** `application/json`: text that must parse as JSON, edited with the payload colours. */
+  contentMediaType?: 'application/json'
+  /** The instant must not be in the past; the server checks it again against its own clock. */
+  notBeforeNow?: boolean
 }
 
 /** A command's arguments: the JSON-Schema subset the server validates and the shell renders as a form. */
@@ -43,14 +50,25 @@ export interface CommandDefinition {
 
 export type RowOutcome = 'done' | 'skipped' | 'failed'
 
+/** An object a module owns: what the shell links and opens by. */
+export interface ObjectRef {
+  module: string
+  kind: string
+  id: string
+  /** The node whose own store holds the object, when the module's store is not shared. */
+  node?: string
+}
+
 export interface RowResult {
   id: string
   outcome: RowOutcome
   reason?: string
+  /** The object the command created for this row, such as the run a duplicate made; absent when it made none. */
+  created?: ObjectRef
 }
 
 export interface ObjectSummary {
-  target: { module: string; kind: string; id: string }
+  target: ObjectRef
   title: string
   status?: string
   traceId?: string

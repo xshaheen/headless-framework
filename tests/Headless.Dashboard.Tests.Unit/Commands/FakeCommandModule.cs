@@ -25,6 +25,7 @@ internal sealed class FakeCommandModule(FakeRunStore store)
     public const string Purge = "diag.purge";
     public const string Pause = "diag.pause";
     public const string Resume = "diag.resume";
+    public const string Duplicate = "diag.duplicate";
 
     public string Id => "diag";
 
@@ -109,6 +110,29 @@ internal sealed class FakeCommandModule(FakeRunStore store)
             Label = "Resume",
             ObjectKind = "run",
         },
+        new()
+        {
+            Id = Duplicate,
+            Label = "Duplicate",
+            ObjectKind = "run",
+            Arguments =
+            [
+                new()
+                {
+                    Name = "runAt",
+                    Label = "Run at",
+                    Kind = DashboardArgumentKind.DateTime,
+                    Required = true,
+                },
+                new()
+                {
+                    Name = "request",
+                    Label = "Request",
+                    Kind = DashboardArgumentKind.Json,
+                    MaxLength = 100,
+                },
+            ],
+        },
     ];
 
     /// <summary>Every command request the module ran, in order.</summary>
@@ -182,8 +206,23 @@ internal sealed class FakeCommandModule(FakeRunStore store)
             Executed.Add(request);
         }
 
-        IReadOnlyList<DashboardRowResult> rows = string.Equals(request.CommandId, Requeue, StringComparison.Ordinal)
-            ? [.. request.Ids.Select(store.Requeue)]
+        IReadOnlyList<DashboardRowResult> rows =
+            string.Equals(request.CommandId, Requeue, StringComparison.Ordinal) ? [.. request.Ids.Select(store.Requeue)]
+            : string.Equals(request.CommandId, Duplicate, StringComparison.Ordinal)
+                ?
+                [
+                    .. request.Ids.Select(static id => new DashboardRowResult
+                    {
+                        Id = id,
+                        Outcome = DashboardRowOutcome.Done,
+                        Created = new ObjectRef
+                        {
+                            Module = "diag",
+                            Kind = "run",
+                            Id = id + "-copy",
+                        },
+                    }),
+                ]
             :
             [
                 .. request.Ids.Select(static id => new DashboardRowResult

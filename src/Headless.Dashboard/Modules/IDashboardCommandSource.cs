@@ -176,8 +176,17 @@ public sealed record DashboardCommandArgument
     /// <summary>Gets the largest number accepted, or <see langword="null"/>. Applies to number kinds.</summary>
     public double? Maximum { get; init; }
 
-    /// <summary>Gets the longest text accepted, or <see langword="null"/>. Applies to <see cref="DashboardArgumentKind.Text"/>.</summary>
+    /// <summary>
+    /// Gets the longest text accepted, in characters, or <see langword="null"/>. Applies to
+    /// <see cref="DashboardArgumentKind.Text"/> and to the text of <see cref="DashboardArgumentKind.Json"/>.
+    /// </summary>
     public int? MaxLength { get; init; }
+
+    /// <summary>
+    /// Gets a value indicating whether the instant must not be earlier than the moment the shell checks the call, by
+    /// the registered <see cref="TimeProvider"/>. Applies to <see cref="DashboardArgumentKind.DateTime"/>.
+    /// </summary>
+    public bool NotBeforeNow { get; init; }
 }
 
 /// <summary>The value kind of a command argument, after JSON Schema's <c>type</c>.</summary>
@@ -195,6 +204,19 @@ public enum DashboardArgumentKind
 
     /// <summary>A boolean.</summary>
     Toggle = 3,
+
+    /// <summary>
+    /// An instant as ISO 8601 text with an offset, such as <c>2026-12-15T08:00:00Z</c> or
+    /// <c>2026-12-15T10:00:00+02:00</c>. Text without an offset is refused, because the shell cannot tell which zone it
+    /// meant. The form reads it in the dashboard's display time zone and sends the UTC instant.
+    /// </summary>
+    DateTime = 4,
+
+    /// <summary>
+    /// JSON text, such as a job's request body. The shell refuses text that does not parse as JSON, so a module reads it
+    /// with <see cref="JsonDocument.Parse(string, JsonDocumentOptions)"/> without a second check.
+    /// </summary>
+    Json = 5,
 }
 
 /// <summary>A request for the commands allowed now on some objects.</summary>
@@ -284,6 +306,13 @@ public sealed record DashboardRowResult
     /// may carry a note the operator needs beside the change, such as a part of it that did not complete.
     /// </summary>
     public string? Reason { get; init; }
+
+    /// <summary>
+    /// Gets the object the command created for this row, such as the new run a duplicate made, or
+    /// <see langword="null"/> when it created none. The shell returns it with the row, so the UI can open the new
+    /// object.
+    /// </summary>
+    public ObjectRef? Created { get; init; }
 }
 
 /// <summary>What a command did to one row.</summary>

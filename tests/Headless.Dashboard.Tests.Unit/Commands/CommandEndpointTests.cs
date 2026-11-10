@@ -186,6 +186,70 @@ public sealed class CommandEndpointTests : TestBase
         request.Channel.Should().Be(DashboardChannels.Ui);
     }
 
+    [Theory]
+    [InlineData("""{"runAt":"2026-12-15T10:00:00"}""", "arguments.runAt", "format")]
+    [InlineData("""{"runAt":"2026-12-15T10:00:00Z","request":"{\"id\":"}""", "arguments.request", "format")]
+    public async Task should_answer_400_and_run_nothing_when_a_call_sends_a_date_time_without_an_offset_or_invalid_json(
+        string arguments,
+        string field,
+        string rule
+    )
+    {
+        await using var app = await _StartAsync();
+        using var client = ShellTestHost.Client(app);
+        var cookie = await ShellTestHost.SignInAsync(client, _Operator, AbortToken);
+        using var document = JsonDocument.Parse(arguments);
+
+        using var response = await PostAsync(
+            client,
+            $"{Base}/{FakeCommandModule.Duplicate}",
+            new { ids = new[] { "run-000001" }, arguments = document.RootElement },
+            cookie,
+            AbortToken
+        );
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var problem = await ReadAsync(response, AbortToken);
+        problem.GetProperty("rules").GetProperty(field).GetString().Should().Be(rule);
+        Module(app).Executed.Should().BeEmpty();
+        _log.Entries.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_return_the_created_object_with_its_row_and_leave_it_out_of_a_row_without_one()
+    {
+        await using var app = await _StartAsync();
+        using var client = ShellTestHost.Client(app);
+        var cookie = await ShellTestHost.SignInAsync(client, _Operator, AbortToken);
+        using var document = JsonDocument.Parse("""{"runAt":"2026-12-15T10:00:00+02:00","request":"{\"id\":1}"}""");
+
+        using var duplicated = await PostAsync(
+            client,
+            $"{Base}/{FakeCommandModule.Duplicate}",
+            new { ids = new[] { "run-000001" }, arguments = document.RootElement },
+            cookie,
+            AbortToken
+        );
+        using var requeued = await _RequeueAsync(client, cookie, ["run-000002"]);
+
+        duplicated.StatusCode.Should().Be(HttpStatusCode.OK);
+        var created = (await ReadAsync(duplicated, AbortToken)).GetProperty("rows")[0].GetProperty("created");
+        created.GetProperty("module").GetString().Should().Be("diag");
+        created.GetProperty("kind").GetString().Should().Be("run");
+        created.GetProperty("id").GetString().Should().Be("run-000001-copy");
+        (await ReadAsync(requeued, AbortToken))
+            .GetProperty("rows")[0]
+            .TryGetProperty("created", out _)
+            .Should()
+            .BeFalse();
+        Module(app)
+            .Executed[0]
+            .Arguments["runAt"]
+            .GetDateTimeOffset()
+            .Should()
+            .Be(new DateTimeOffset(2026, 12, 15, 8, 0, 0, TimeSpan.Zero));
+    }
+
     [Fact]
     public async Task should_answer_404_when_a_ui_only_command_is_called_without_the_ui_channel_header()
     {

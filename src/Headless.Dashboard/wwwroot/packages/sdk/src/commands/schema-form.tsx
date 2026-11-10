@@ -1,14 +1,19 @@
-import { useId, useState } from 'react'
+import { lazy, Suspense, useId, useState } from 'react'
 import { Button } from '../components/button.tsx'
 import { CheckboxField, FieldGroup, SelectField, TextInputField } from '../components/form.tsx'
+import { formatJson, PayloadView } from '../components/payload/payload-view.tsx'
 import type { ArgumentProperty, ArgumentSchema } from './api.ts'
 
-/** A form's raw values: text for text and number fields, `true`/`false` for toggles. */
+/** A form's raw values: text for text, number, and JSON fields, a UTC ISO instant for date-times, `true`/`false` for toggles. */
 export type ArgumentValues = Readonly<Record<string, string | boolean>>
 
 export type ArgumentCheck =
   | { ok: true; arguments: Record<string, string | number | boolean> }
   | { ok: false; errors: Record<string, string> }
+
+// React Aria's date code would otherwise join the shell's first load, which every view pays for; it loads with the first
+// form that asks for a date-time, from the chunk the date-range entry shares.
+const DateTimeField = lazy(async () => ({ default: (await import('../components/date-time-field.tsx')).DateTimeField }))
 
 function checkOne(property: ArgumentProperty, raw: string | boolean | undefined, required: boolean) {
   if (property.type === 'boolean') {
@@ -45,8 +50,27 @@ function checkOne(property: ArgumentProperty, raw: string | boolean | undefined,
     return { value }
   }
 
+  if (property.format === 'date-time') {
+    const instant = Date.parse(text)
+
+    if (Number.isNaN(instant)) {
+      return { error: `${property.title} must be a complete date and time.` }
+    }
+
+    // The server checks again with its own clock, so a moment that passes while the form is open is still refused.
+    if (property.notBeforeNow && instant < Date.now()) {
+      return { error: `${property.title} must not be in the past.` }
+    }
+
+    return { value: text }
+  }
+
   if (property.maxLength !== undefined && text.length > property.maxLength) {
     return { error: `${property.title} must be at most ${property.maxLength} characters.` }
+  }
+
+  if (property.contentMediaType === 'application/json' && formatJson(text) === null) {
+    return { error: `${property.title} must be valid JSON.` }
   }
 
   return { value: text }
@@ -54,7 +78,7 @@ function checkOne(property: ArgumentProperty, raw: string | boolean | undefined,
 
 /**
  * Checks form values against the schema the server will apply, so a call it would refuse is never sent: required,
- * type, enum, minimum, maximum, and maxLength.
+ * type, enum, minimum, maximum, maxLength, a whole date-time not in the past, and JSON that parses.
  */
 export function checkArguments(schema: ArgumentSchema, values: ArgumentValues): ArgumentCheck {
   const errors: Record<string, string> = {}
@@ -109,6 +133,24 @@ export function SchemaFields({ schema, values, onChange, errors = {} }: SchemaFi
           )
         }
 
+        if (property.format === 'date-time') {
+          return (
+            <Suspense key={name} fallback={null}>
+              <DateTimeField
+                label={property.title}
+                isRequired={required}
+                error={error}
+                description={property.notBeforeNow ? 'Not in the past.' : undefined}
+                onChange={(value) => onChange(name, value)}
+              />
+            </Suspense>
+          )
+        }
+
+        if (property.contentMediaType === 'application/json') {
+          return <JsonField key={name} property={property} required={required} error={error} text={text} onChange={(value) => onChange(name, value)} />
+        }
+
         const numeric = property.type === 'integer' || property.type === 'number'
         const range =
           numeric && (property.minimum !== undefined || property.maximum !== undefined)
@@ -130,6 +172,35 @@ export function SchemaFields({ schema, values, onChange, errors = {} }: SchemaFi
         )
       })}
     </FieldGroup>
+  )
+}
+
+interface JsonFieldProps {
+  property: ArgumentProperty
+  required: boolean
+  error: string | undefined
+  text: string
+  onChange: (value: string) => void
+}
+
+/** JSON typed as text, with the payload view's colours shown under it once the text parses. */
+function JsonField({ property, required, error, text, onChange }: JsonFieldProps) {
+  const parses = text.trim() !== '' && formatJson(text) !== null
+
+  return (
+    <div className="flex flex-col gap-2">
+      <TextInputField
+        label={property.title}
+        value={text}
+        isRequired={required}
+        error={error}
+        description={text.trim() === '' || parses ? 'JSON' : 'Not valid JSON yet'}
+        maxLength={property.maxLength}
+        multiline
+        onChange={onChange}
+      />
+      {parses ? <PayloadView content={text} contentType="application/json" /> : null}
+    </div>
   )
 }
 
