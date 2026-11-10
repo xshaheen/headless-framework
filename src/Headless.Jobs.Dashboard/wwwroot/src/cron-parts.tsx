@@ -224,7 +224,7 @@ export function CronFields({ cronJob }: { cronJob: CronJob }) {
       <GridField label="Overlap">{cronJob.onOverlap === 'Skip' ? 'Skip while running' : 'Allow'}</GridField>
       <GridField label="Retries">{format.number(cronJob.retries)}</GridField>
       <GridField label="Next due" span={2}>
-        {cronJob.isPaused ? 'Paused' : <Time value={cronJob.nextDueUtc} zone={zone} />}
+        {cronJob.isPaused ? 'Paused' : <Time value={cronJob.nextDueUtc} zone={zone} scheduled />}
       </GridField>
     </FieldGrid>
   )
@@ -397,7 +397,7 @@ function CronOccurrences({ cronJob }: { cronJob: CronJob }) {
             label="Occurrences"
             items={rows.map((run) => ({
               key: run.id,
-              time: <Time value={run.executionTime ?? run.createdAt} short />,
+              time: <Time value={run.executionTime ?? run.createdAt} />,
               tone: runStatusMark(run).tone,
               state: statusLabel(run.status),
               // Progress joins the note rather than replacing it, so the node, a skip reason, or a failure's first

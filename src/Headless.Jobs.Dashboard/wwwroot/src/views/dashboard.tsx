@@ -10,6 +10,7 @@ import {
   PageFrame,
   PageHeader,
   Skeleton,
+  Text,
   usePageFrame,
 } from '@headless/dashboard-sdk/components'
 import { listKey, useDashboardKeysetList, useDashboardList, useNewRows } from '@headless/dashboard-sdk/data'
@@ -73,7 +74,7 @@ export default function JobsDashboard() {
           description={
             next ? (
               <>
-                Next execution <Time value={next.at} /> · <Mono>{next.function}</Mono>
+                Next execution <Mono>{next.function}</Mono>, <Time value={next.at} scheduled />
               </>
             ) : undefined
           }
@@ -282,7 +283,8 @@ function RunsByStatus() {
       }
     >
       {counts.data ? (
-        <CardRow name="All stored runs">
+        <CardRow>
+          <Text tone="hint">All stored runs</Text>
           <StatusDistribution
             counts={counts.data.counts}
             stale={counts.data.stale.length > 0}
@@ -300,8 +302,11 @@ function RunsPerDay() {
   const { control, body } = useRunsPerDay({ unit: 'runs', unitOne: 'run' })
 
   return (
-    <Card title="Runs per day" action={control}>
-      <CardRow name={`By execution day, ${format.timeZone}`}>{body}</CardRow>
+    <Card title="Runs per day" action={control} wide>
+      <CardRow>
+        <Text tone="hint">{`By execution day, ${format.timeZone}`}</Text>
+        {body}
+      </CardRow>
     </Card>
   )
 }
@@ -351,7 +356,7 @@ function NextRecurringRuns({ list, total, next }: ReturnType<typeof useNextRecur
           tone="sched"
           name={<Link to={`/jobs/cron-jobs/${encodeURIComponent(cronJob.id)}`}>{cronJob.function}</Link>}
           meta={cronJob.expression}
-          value={<Time value={cronJob.nextDueUtc} short />}
+          value={<Time value={cronJob.nextDueUtc} scheduled />}
         />
       ))}
     </Card>
@@ -393,7 +398,7 @@ function JobsAttention() {
           key={item.id}
           tone={item.severity === 'critical' ? 'fail' : 'proc'}
           name={<Link to={attentionPath(item)}>{item.title}</Link>}
-          value={item.lastSeenAt ? <Time value={item.lastSeenAt} short /> : undefined}
+          value={item.lastSeenAt ? <Time value={item.lastSeenAt} /> : undefined}
         />
       ))}
     </Card>

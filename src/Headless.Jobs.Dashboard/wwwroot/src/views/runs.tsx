@@ -578,10 +578,7 @@ function RunsTable({
           header: failed ? 'Failed at' : 'Due',
           cell: (run) => (
             <CellText>
-              <Time
-                value={failed ? (run.executedAt ?? run.executionTime) : (run.executionTime ?? run.createdAt)}
-                short
-              />
+              <Time value={failed ? (run.executedAt ?? run.executionTime) : (run.executionTime ?? run.createdAt)} />
             </CellText>
           ),
           width: 110,

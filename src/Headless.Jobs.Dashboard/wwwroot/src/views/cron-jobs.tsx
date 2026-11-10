@@ -139,7 +139,7 @@ export default function CronJobsView() {
                     </Tag>
                   ) : (
                     <CellText>
-                      <Time value={row.nextDueUtc} short />
+                      <Time value={row.nextDueUtc} scheduled />
                     </CellText>
                   ),
                 align: 'end',

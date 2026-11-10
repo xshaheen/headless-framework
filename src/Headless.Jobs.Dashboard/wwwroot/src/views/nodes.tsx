@@ -111,7 +111,7 @@ export default function NodesView() {
                 header: 'Last beat',
                 cell: (row) => (
                   <CellText>
-                    <Time value={row.lastHeartbeatAt ?? undefined} short missing="Not tracked" />
+                    <Time value={row.lastHeartbeatAt ?? undefined} missing="Not tracked" />
                   </CellText>
                 ),
                 priority: 2,

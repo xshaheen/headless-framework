@@ -277,7 +277,7 @@ function FunctionRuns({ name }: { name: string }) {
           label="Latest runs"
           items={runs.rows.map((run) => ({
             key: run.id,
-            time: <Time value={run.executionTime ?? run.createdAt} short />,
+            time: <Time value={run.executionTime ?? run.createdAt} />,
             tone: runStatusMark(run).tone,
             state: statusLabel(run.status),
             note: run.node,

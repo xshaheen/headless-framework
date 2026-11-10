@@ -67,18 +67,20 @@ import {
 export { RunProgress }
 
 /**
- * A timestamp as relative time, with the exact time, zone, and offset on hover; in `zone` when one is named. `short`
- * reads `4 min. ago`, so a list column stays narrow enough for a phone.
+ * A timestamp as relative time, with the exact time, zone, and offset on hover; in `zone` when one is named. Every
+ * time in the module reads in the short style, `4 min. ago`, so one page never mixes `in 2 hours` with `in 7 hr.`, and
+ * a list column stays narrow enough for a phone. A `scheduled` time, such as a next fire, that has already passed reads
+ * `due 42 sec. ago`, because it has not run yet: a bare `42 sec. ago` would say it did.
  */
 export function Time({
   value,
   zone,
-  short,
+  scheduled = false,
   missing = 'Not yet',
 }: {
   value: string | undefined
   zone?: string
-  short?: boolean
+  scheduled?: boolean
   missing?: string
 }) {
   const format = useFormat()
@@ -87,9 +89,11 @@ export function Time({
     return <Text tone="hint">{missing}</Text>
   }
 
+  const relative = format.relativeTime(value, { style: 'short' })
+
   return (
     <time dateTime={value} title={zone ? format.zonedTime(value, zone) : format.exactTime(value)}>
-      {format.relativeTime(value, short ? { style: 'short' } : undefined)}
+      {scheduled && Date.parse(value) <= Date.now() ? `due ${relative}` : relative}
     </time>
   )
 }
@@ -562,7 +566,7 @@ export function RunHistory({ run }: { run: Pick<Run, 'id' | 'version' | 'created
 
   const items: HistoryItem[] = [...attempts.data].reverse().map((attempt) => ({
     key: String(attempt.number),
-    time: <Time value={attempt.endedAt ?? attempt.startedAt} short />,
+    time: <Time value={attempt.endedAt ?? attempt.startedAt} />,
     tone: attempt.outcome ? attemptTones[attempt.outcome] : 'proc',
     state: attempt.outcome ?? 'Running',
     note: attemptNote(attempt),
@@ -571,10 +575,7 @@ export function RunHistory({ run }: { run: Pick<Run, 'id' | 'version' | 'created
   return (
     <HistoryList
       label="History"
-      items={[
-        ...items,
-        { key: 'created', time: <Time value={run.createdAt} short />, tone: 'sched', state: 'Created' },
-      ]}
+      items={[...items, { key: 'created', time: <Time value={run.createdAt} />, tone: 'sched', state: 'Created' }]}
     />
   )
 }
