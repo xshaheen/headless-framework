@@ -132,7 +132,7 @@
   font: var(--text-tag);
 }
 
-/* Key caps and a progress caption: the tag size in mono. */
+/* Key caps: the tag size in mono. */
 @utility type-tag-mono {
   font: var(--text-tag);
   font-family: var(--mono);
@@ -355,7 +355,17 @@
    * (`hd-btn hd-btn-primary`) and adds its own modifiers (`hd-icon`, `hd-quiet`) that must win over the base.
    */
   .hd-btn {
-    @apply inline-flex h-(--control-height) shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md border border-edge bg-secondary px-3 font-medium whitespace-nowrap text-secondary-foreground transition-fast select-none;
+    @apply inline-flex h-(--control-height) shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md border border-edge bg-secondary px-3 whitespace-nowrap text-secondary-foreground transition-fast select-none;
+    /* A button's label is a verb in the body face wherever it sits, so one inside a mono row or a small caption
+       reads the same as every other button rather than taking its container's font. */
+    font: var(--text-body);
+    font-weight: 500;
+  }
+
+  /* React Aria marks keyboard focus with `data-focus-visible`; a press that leaves the browser matching
+     `:focus-visible` anyway, such as focus restored after the button's content swapped, draws no ring. */
+  .hd-btn[data-rac]:focus-visible:not([data-focus-visible]) {
+    outline: none;
   }
 
   .hd-btn[data-hovered]:not([data-disabled], [data-soft-disabled]),

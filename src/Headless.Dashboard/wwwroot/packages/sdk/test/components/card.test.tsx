@@ -23,6 +23,18 @@ describe('Card', () => {
     expect(row.textContent).toBe('sandbox.progressnode-a24 s48 %')
   })
 
+  it('renders a row with no name as its second line alone', () => {
+    render(
+      <Card title="Runs by status">
+        <CardRow>All stored runs</CardRow>
+      </Card>,
+    )
+
+    const row = screen.getByRole('listitem')
+    expect(row.textContent).toBe('All stored runs')
+    expect(row.children).toHaveLength(1)
+  })
+
   it('shows its empty text when it holds no row', () => {
     render(<Card title="Next recurring runs" empty="No recurring jobs yet.">{[]}</Card>)
 
