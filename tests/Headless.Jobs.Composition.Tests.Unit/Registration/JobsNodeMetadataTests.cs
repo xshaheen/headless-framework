@@ -55,6 +55,31 @@ public sealed class JobsNodeMetadataTests : TestBase
         JobsNodeMetadata.TryReadClaimedFunctions(malformed, out _).Should().BeFalse();
     }
 
+    [Fact]
+    public void should_publish_the_host_max_concurrency()
+    {
+        var metadata = _Metadata(jobs => jobs.ConfigureScheduler(scheduler => scheduler.MaxConcurrency = 7));
+
+        metadata[JobsNodeMetadata.MaxConcurrencyKey].Should().Be("7");
+        JobsNodeMetadata.ReadMaxConcurrency(metadata).Should().Be(7);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("seven")]
+    [InlineData("-1")]
+    public void should_read_a_missing_or_malformed_max_concurrency_as_unpublished(string? value)
+    {
+        var metadata = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        if (value is not null)
+        {
+            metadata[JobsNodeMetadata.MaxConcurrencyKey] = value;
+        }
+
+        JobsNodeMetadata.ReadMaxConcurrency(metadata).Should().BeNull();
+    }
+
     private static IReadOnlyDictionary<string, string> _Metadata(
         Action<JobsOptionsBuilder<TimeJobEntity, CronJobEntity>> configure
     )
