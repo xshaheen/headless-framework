@@ -1,7 +1,6 @@
 import { useDashboard, useModule } from '@headless/dashboard-sdk'
 import { CommandAction, createCommandsApi, useAllowedActions } from '@headless/dashboard-sdk/commands'
 import {
-  BarChart,
   Button,
   DetailPanel,
   FieldGrid,
@@ -12,7 +11,6 @@ import {
   Mono,
   Skeleton,
   Text,
-  type BarColumn,
 } from '@headless/dashboard-sdk/components'
 import { useDashboardKeysetList, useDashboardObject } from '@headless/dashboard-sdk/data'
 import { useFormat } from '@headless/dashboard-sdk/locale'
@@ -21,17 +19,9 @@ import { Link } from '@headless/dashboard-sdk/router'
 import { useStreamEvent } from '@headless/dashboard-sdk/stream'
 import { useEffect, useState } from 'react'
 import { cronJobsTopic, cronStatusMark, fetchCronJob, fetchPreview, type CronJob } from './cron.ts'
-import { firstLine, Time } from './parts.tsx'
-import {
-  fetchRuns,
-  runStatusMark,
-  runsTopic,
-  statusLabel,
-  useJobsCommands,
-  viewOnlyReason,
-  type Run,
-  type RunStatus,
-} from './runs.ts'
+import { useRunsPerDay } from './insight.tsx'
+import { firstLine, RunProgress, Time } from './parts.tsx'
+import { fetchRuns, runStatusMark, runsTopic, statusLabel, useJobsCommands, viewOnlyReason, type Run } from './runs.ts'
 
 const hour = 3_600_000
 
@@ -231,16 +221,45 @@ export function CronFields({ cronJob }: { cronJob: CronJob }) {
   )
 }
 
+/** How many occurrences the store holds for a cron job, which a delete removes with it: one row read for its count. */
+function useStoredOccurrences(cronJobId: string, enabled: boolean) {
+  const { api } = useDashboard()
+  const answer = useQuery({
+    queryKey: ['jobs', 'stored-occurrences', cronJobId],
+    queryFn: async () => {
+      const page = await api.request<{ count: number; countCapped: boolean }>({
+        method: 'GET',
+        path: 'jobs/runs',
+        query: { cronJobId, limit: '1' },
+      })
+
+      return { value: page.count, capped: page.countCapped }
+    },
+    enabled,
+  })
+
+  return answer.data
+}
+
 /**
- * The actions the server allows now on a cron job: `Run now`, which returns the new occurrence, and `Pause` or
- * `Resume`, each the other's Undo. A refused one renders disabled with the server's reason.
+ * The actions the server allows now on a cron job: `Run now`, which returns the new occurrence, `Pause` or `Resume`,
+ * each the other's Undo, and `Delete`. A refused one renders disabled with the server's reason.
  */
 export function CronActions({ cronJob }: { cronJob: CronJob }) {
   const module = useModule()
+  const format = useFormat()
   const commands = useJobsCommands()
   const refusal = useAllowedActions('cron-job', [cronJob])
   const [newRun, setNewRun] = useState<string>()
+  const [deleted, setDeleted] = useState<string>()
   const toggle = cronJob.isPaused ? commands.resume : commands.pause
+  const listed = commands.all.find((command) => command.id === `${module.id}.delete-cron`)
+  // A viewer sees Delete disabled with the reason, as every other Jobs action reads for them.
+  const remove =
+    listed && !module.canOperate
+      ? { ...listed, canRun: false, disabledReason: listed.disabledReason ?? viewOnlyReason }
+      : listed
+  const stored = useStoredOccurrences(cronJob.id, remove !== undefined)
 
   return (
     <>
@@ -267,54 +286,55 @@ export function CronActions({ cronJob }: { cronJob: CronJob }) {
           disabledReason={refusal(toggle.id)}
         />
       ) : null}
+      {remove ? (
+        <CommandAction
+          module={module.id}
+          command={remove}
+          ids={[cronJob.id]}
+          noun="cron job"
+          variant="danger"
+          commands={commands.all}
+          disabledReason={refusal(remove.id)}
+          reach={
+            stored
+              ? `${format.count(stored)} stored ${stored.value === 1 && !stored.capped ? 'occurrence goes' : 'occurrences go'} with it`
+              : undefined
+          }
+          // The server says how many stored occurrences went with it; the cron job itself leaves the list on its change.
+          onDone={(rows) => setDeleted(rows.find((row) => row.outcome === 'done')?.reason ?? undefined)}
+        />
+      ) : null}
+      {deleted ? <Text role="status" tone="hint">{`Deleted: ${deleted}`}</Text> : null}
     </>
   )
-}
-
-const outcomeSeries = [
-  { name: 'Succeeded', tone: 'ok', statuses: ['Succeeded', 'DueDone'] },
-  { name: 'Failed', tone: 'fail', statuses: ['Failed'] },
-  { name: 'Cancelled or skipped', tone: 'off', statuses: ['Cancelled', 'Skipped'] },
-] as const satisfies readonly { name: string; tone: string; statuses: readonly RunStatus[] }[]
-
-/**
- * One column per hour from `start`, a whole hour, to the current one, oldest first, counting the finished occurrences
- * due in it by outcome.
- */
-function hourlyOutcomes(runs: readonly Run[], start: number, locale: string, timeZone: string): BarColumn[] {
-  const label = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone })
-  const columns = Array.from({ length: 24 }, (_, index) => ({
-    label: label.format(start + index * hour),
-    values: outcomeSeries.map(() => 0),
-  }))
-
-  for (const run of runs) {
-    const at = Date.parse(run.executionTime ?? run.createdAt)
-    const column = columns[Math.floor((at - start) / hour)]
-    const series = outcomeSeries.findIndex((item) => (item.statuses as readonly RunStatus[]).includes(run.status))
-
-    if (column && series !== -1) {
-      column.values[series]! += 1
-    }
-  }
-
-  return columns
 }
 
 function occurrenceNote(run: Run) {
   return run.skippedReason ?? firstLine(run.exceptionMessage) ?? run.node
 }
 
+/** The cron job's occurrences per day by status over a chosen range, as the server counts them. */
+function CronRunsPerDay({ cronJob }: { cronJob: CronJob }) {
+  const { control, body } = useRunsPerDay({ cronJobId: cronJob.id, unit: 'occurrences' })
+
+  return (
+    <Fields label="Occurrences per day">
+      <Text as="h3" tone="label">
+        Occurrences per day
+      </Text>
+      {control}
+      {body}
+    </Fields>
+  )
+}
+
 /**
- * The cron job's occurrences due in the last 24 hours: their outcomes per hour, then each one newest first with a
- * link to its run. The bars count the occurrences loaded; while more are left to load, the footnote says so.
+ * The cron job's occurrences due in the last 24 hours, newest first, each with its progress while it runs and a link to
+ * its run.
  */
 function CronOccurrences({ cronJob }: { cronJob: CronJob }) {
   const { api } = useDashboard()
-  const format = useFormat()
-  // The first bar's hour: the list loads from there, so the bars count every occurrence it shows, none from the part of
-  // an hour before the first bar.
-  const [stableWindowStart] = useState(() => (Math.floor(Date.now() / hour) - 23) * hour)
+  const [stableWindowStart] = useState(() => Date.now() - 24 * hour)
   const filter = { cronJobId: cronJob.id, from: new Date(stableWindowStart).toISOString() }
   const occurrences = useDashboardKeysetList<Run>({
     topic: runsTopic,
@@ -331,31 +351,12 @@ function CronOccurrences({ cronJob }: { cronJob: CronJob }) {
     return <Skeleton label="Loading the occurrences" rows={3} />
   }
 
-  const total = occurrences.count
-
   return (
     <div>
       {rows.length === 0 ? (
         <p>No occurrences in the last 24 hours. One appears each time the cron job fires.</p>
       ) : (
         <>
-          <Fields label="Outcomes per hour, last 24 h">
-            <Text as="h3" tone="label">
-              Outcomes per hour, last 24 h
-            </Text>
-            <BarChart
-              label="Occurrence outcomes per hour"
-              series={outcomeSeries}
-              columns={hourlyOutcomes(rows, stableWindowStart, format.locale, format.timeZone)}
-              unit="occurrences"
-            />
-            {occurrences.hasMore && total ? (
-              <Text
-                as="p"
-                tone="footnote"
-              >{`The bars count the ${format.number(rows.length)} latest of ${format.count(total)} occurrences.`}</Text>
-            ) : null}
-          </Fields>
           <HistoryList
             label="Occurrences"
             items={rows.map((run) => ({
@@ -363,7 +364,7 @@ function CronOccurrences({ cronJob }: { cronJob: CronJob }) {
               time: <Time value={run.executionTime ?? run.createdAt} short />,
               tone: runStatusMark(run).tone,
               state: statusLabel(run.status),
-              note: occurrenceNote(run),
+              note: run.progressPercent !== undefined ? <RunProgress run={run} /> : occurrenceNote(run),
               actions: <Link to={`/jobs/runs/${encodeURIComponent(run.id)}`}>Open run</Link>,
             }))}
           />
@@ -413,7 +414,20 @@ export function CronPanel({
             </>
           ),
         },
-        { id: 'occurrences', label: 'Occurrences', content: <CronOccurrences cronJob={cronJob} /> },
+        {
+          id: 'occurrences',
+          label: 'Occurrences',
+          content: (
+            <>
+              <div>
+                <CronRunsPerDay cronJob={cronJob} />
+              </div>
+              <div>
+                <CronOccurrences cronJob={cronJob} />
+              </div>
+            </>
+          ),
+        },
       ]}
     />
   )

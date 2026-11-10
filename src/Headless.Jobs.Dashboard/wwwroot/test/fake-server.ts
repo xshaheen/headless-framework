@@ -4,6 +4,7 @@ import { renderModule, type RenderModuleOptions } from '@headless/dashboard-sdk/
 import userEvent from '@testing-library/user-event'
 import { vi } from 'vitest'
 import type { CronJob, JobFunction, JobNode } from '../src/cron.ts'
+import { addDays, type DailyBucket } from '../src/insight.tsx'
 import jobs from '../src/module.ts'
 import type { Attempt, Run } from '../src/runs.ts'
 
@@ -46,6 +47,22 @@ export function cronJob(overrides: Partial<CronJob> = {}): CronJob {
     nextDueUtc: '2026-11-06T01:00:00Z',
     nextFires: [],
     version: '1',
+    ...overrides,
+  }
+}
+
+export function node(overrides: Partial<JobNode> = {}): JobNode {
+  return {
+    identity: 'node-a',
+    state: 'Alive',
+    claimedFunctions: [],
+    isLocal: false,
+    maxConcurrency: 8,
+    running: 0,
+    runningCapped: false,
+    lastHeartbeatAt: '2026-11-05T09:59:50Z',
+    lastHostException: null,
+    lastHostExceptionAt: null,
     ...overrides,
   }
 }
@@ -208,11 +225,28 @@ export const commands: CommandDefinition[] = [
     requiresReason: true,
     supportsFilter: false,
   },
+  {
+    ...base,
+    id: 'jobs.delete-cron',
+    label: 'Delete',
+    objectKind: 'cron-job',
+    confirmation: 'confirm',
+    requiresReason: true,
+    supportsFilter: false,
+  },
 ]
 
 /** Why the fake server refuses `commandId` on `row` now, as the module's rules would. */
-function refusal(row: Run | CronJob, commandId: string): string | undefined {
+function refusal(row: Run | CronJob, commandId: string, runs: readonly Run[] = []): string | undefined {
   if ('isPaused' in row) {
+    if (commandId === 'jobs.delete-cron') {
+      return row.definedInCode
+        ? 'Defined in code'
+        : runs.some((item) => item.cronJobId === row.id && item.status === 'InProgress')
+          ? 'Running — wait or cancel the occurrence'
+          : undefined
+    }
+
     if (commandId === 'jobs.run-now' && row.isPaused) {
       return 'Paused — resume first'
     }
@@ -268,6 +302,8 @@ export interface FakeServer {
   /** The registered functions; the two billing functions, both claimed by node-a, by default. */
   functions?: JobFunction[]
   nodes?: JobNode[]
+  /** The counts of one day for `GET jobs/series/daily`, `null` for a day the store could not read; zeros by default. */
+  daily?: (date: string) => Partial<NonNullable<DailyBucket['counts']>> | null
   extra?: (request: ApiRequest) => unknown
 }
 
@@ -281,6 +317,7 @@ export function server({
   attention = [],
   functions: registered = functions,
   nodes = [],
+  daily,
   extra,
 }: FakeServer) {
   return (request: ApiRequest) => {
@@ -346,6 +383,41 @@ export function server({
       return { items: nodes }
     }
 
+    if (request.method === 'GET' && request.path === 'jobs/series/daily') {
+      const from = String(query.from)
+      const days: DailyBucket[] = []
+
+      for (let date = from; date <= String(query.to); date = addDays(date, 1)) {
+        const zero = {
+          Idle: 0,
+          Queued: 0,
+          InProgress: 0,
+          Succeeded: 0,
+          DueDone: 0,
+          Failed: 0,
+          Cancelled: 0,
+          Skipped: 0,
+        }
+        const counts = daily ? daily(date) : zero
+
+        days.push({
+          date,
+          start: `${date}T00:00:00Z`,
+          end: `${addDays(date, 1)}T00:00:00Z`,
+          counts: counts && { ...zero, ...counts },
+        })
+      }
+
+      return {
+        zone: query.zone ?? 'UTC',
+        from,
+        to: query.to,
+        asOf: now.toISOString(),
+        exact: days.every((day) => day.counts),
+        days,
+      }
+    }
+
     if (request.method === 'GET' && request.path === 'jobs/cron-jobs') {
       // As the server does, the list carries next fires only when asked for them.
       return { items: cronJobs.map((item) => (query.fires ? item : { ...item, nextFires: [] })) }
@@ -388,7 +460,7 @@ export function server({
             kind: query.kind,
             id,
             commands: commands.map((command) => {
-              const reason = refusal(row, command.id)
+              const reason = refusal(row, command.id, runs)
 
               return { id: command.id, allowed: !reason, disabledReason: reason }
             }),

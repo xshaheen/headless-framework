@@ -28,6 +28,15 @@ import {
   type TimelineEvent,
 } from '@headless/dashboard-sdk/components'
 import { DashboardApiError, useDashboardObject, type CappedCount } from '@headless/dashboard-sdk/data'
+import {
+  AttentionIcon,
+  CalendarIcon,
+  ChartIcon,
+  ListIcon,
+  PlayIcon,
+  ScheduledIcon,
+  type IconComponent,
+} from '@headless/dashboard-sdk/icons'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQuery } from '@headless/dashboard-sdk/query'
 import { Link, useSearchParams } from '@headless/dashboard-sdk/router'
@@ -258,6 +267,15 @@ export function JobsStats() {
   const format = useFormat()
   const counts = useJobsCounts()
   const figures = useJobsFigures()
+  // What each card is about; its state stays the dot and the label.
+  const icons: Readonly<Record<string, IconComponent>> = {
+    Idle: CalendarIcon,
+    Queued: ListIcon,
+    InProgress: PlayIcon,
+    'jobs.overview.succeeded-share': ChartIcon,
+    'jobs.overview.failed': AttentionIcon,
+    'jobs.overview.late': ScheduledIcon,
+  }
 
   function figureValue(figure: Figure) {
     const value = format.number(figure.value, { maximumFractionDigits: 1 })
@@ -296,6 +314,7 @@ export function JobsStats() {
             tone={tone}
             value={count ? format.count(count) : '–'}
             to={`/jobs/runs?status=${status}`}
+            icon={icons[status]}
           />
         )
       })}
@@ -306,6 +325,7 @@ export function JobsStats() {
           tone={figureMeta[figure.id]?.tone}
           value={figureValue(figure)}
           caption={caption(figure)}
+          icon={icons[figure.id]}
         />
       ))}
     </StatStrip>

@@ -57,7 +57,10 @@ describe('jobs dashboard', () => {
     )
     expect(within(strip).getByRole('link', { name: 'Idle 37' }).getAttribute('href')).toBe('/jobs/runs?status=Idle')
     expect(screen.queryByText(/Throughput|History|Workers busy|Queue lag/)).toBeNull()
-    expect(screen.queryByRole('img')).toBeNull()
+    // The only chart is the served runs-per-day series.
+    expect(screen.getAllByRole('img').map((image) => image.getAttribute('aria-label'))).toEqual([
+      expect.stringMatching(/^Runs per day by status/),
+    ])
   })
 
   it('reads a count it has not got as an en dash, never 0', async () => {
@@ -305,5 +308,153 @@ describe('jobs dashboard', () => {
 
     expect(await screen.findByRole('region', { name: 'Add time job' })).toBeTruthy()
     expect(view.location().pathname).toBe('/jobs/runs')
+  })
+
+  it('shows the scheduled time job as the next execution when it is due before the next cron fire', async () => {
+    const view = open({
+      cronJobs: [cronJob({ function: 'reports.nightly', nextDueUtc: '2026-11-06T01:00:00Z' })],
+      extra: (request) =>
+        request.path === 'jobs/runs' && request.query?.kind === 'TimeJob'
+          ? {
+              items: [run('Idle', { function: 'export.ledger', executionTime: '2026-11-05T12:00:00Z' })],
+              count: 1,
+              countCapped: false,
+            }
+          : undefined,
+    })
+
+    const header = (await screen.findByRole('heading', { level: 1, name: 'Dashboard' })).closest('header')!
+    await waitFor(() => expect(header.textContent).toContain('Next execution in 2 hours · export.ledger'))
+    expect(view.requests.find((request) => request.query?.kind === 'TimeJob')?.query).toMatchObject({
+      status: ['Idle', 'Queued'],
+      from: expect.stringMatching(/^2026-11-05T10:00:/),
+      sort: 'executionTime',
+      direction: 'ascending',
+      limit: '1',
+    })
+  })
+
+  it('keeps the next cron fire as the next execution when no time job is due before it', async () => {
+    open({
+      cronJobs: [cronJob({ function: 'reports.nightly', nextDueUtc: '2026-11-05T11:00:00Z' })],
+      extra: (request) =>
+        request.path === 'jobs/runs' && request.query?.kind === 'TimeJob'
+          ? {
+              items: [run('Idle', { function: 'export.ledger', executionTime: '2026-11-05T12:00:00Z' })],
+              count: 1,
+              countCapped: false,
+            }
+          : undefined,
+    })
+
+    const header = (await screen.findByRole('heading', { level: 1, name: 'Dashboard' })).closest('header')!
+    await waitFor(() => expect(header.textContent).toContain('Next execution in 60 minutes · reports.nightly'))
+  })
+})
+
+const everyStatus = {
+  Idle: 37,
+  Queued: 12,
+  InProgress: 4,
+  Succeeded: 4_210,
+  DueDone: 0,
+  Failed: 23,
+  Cancelled: 1,
+  Skipped: 0,
+}
+
+/** The sidebar counts as the server answers them, with the named statuses capped. */
+function counted(counts: Readonly<Record<string, number>>, capped: readonly string[] = []) {
+  return (request: { path: string }) =>
+    request.path === 'counts'
+      ? {
+          counts: Object.fromEntries(
+            Object.entries(counts).map(([key, count]) => [key, { count, capped: capped.includes(key) }]),
+          ),
+          stale: [],
+        }
+      : undefined
+}
+
+describe('jobs dashboard status distribution', () => {
+  it('shows capped counts alone, with no shares and no donut', async () => {
+    open({ extra: counted({ ...everyStatus, Failed: 10_000 }, ['Failed']) })
+
+    const card = await screen.findByRole('region', { name: 'Runs by status' })
+    const table = await within(card).findByRole('table', { name: 'Runs by status' })
+    const rows = within(table)
+      .getAllByRole('row')
+      .map((row) => row.textContent)
+    expect(rows).toContain('Failed10,000+ runs')
+    expect(rows).toContain('Succeeded4,210 runs')
+    expect(table.textContent).not.toContain('%')
+    expect(within(table).queryByRole('columnheader', { name: 'Share' })).toBeNull()
+    expect(within(card).queryByRole('img')).toBeNull()
+    expect(within(card).queryByRole('button', { name: 'Show chart' })).toBeNull()
+    expect(within(card).getByText('Counts of all runs. These counts are partial, so no shares are shown.')).toBeTruthy()
+  })
+
+  it('shows exact counts as a donut with shares, switchable to the list', async () => {
+    const actor = user()
+    open({ extra: counted(everyStatus) })
+
+    const card = await screen.findByRole('region', { name: 'Runs by status' })
+    const donut = await within(card).findByRole('img', { name: /^Runs by status:/ })
+    expect(donut.getAttribute('aria-label')).toContain('Failed 23 runs, 0.5%')
+
+    await actor.click(within(card).getByRole('button', { name: 'Show list' }))
+    const table = within(card).getByRole('table', { name: 'Runs by status' })
+    expect(
+      within(table)
+        .getAllByRole('row')
+        .map((row) => row.textContent),
+    ).toContain('Succeeded4,210 runs98.2%')
+    expect(within(card).queryByRole('img')).toBeNull()
+  })
+})
+
+describe('jobs dashboard runs per day', () => {
+  it('asks for the last 7 days and the next 7 in the display zone, and draws an unread day as a gap', async () => {
+    const actor = user()
+    localStorage.setItem('headless-dashboard:time-zone', 'Africa/Cairo')
+    const view = open({ daily: (date) => (date === '2026-11-03' ? null : { Succeeded: 3 }) })
+
+    const card = await screen.findByRole('region', { name: 'Runs per day' })
+    const chart = await within(card).findByRole('img', { name: /^Runs per day by status/ })
+    expect(view.requests.find((request) => request.path === 'jobs/series/daily')?.query).toEqual({
+      from: '2026-10-30',
+      to: '2026-11-12',
+      zone: 'Africa/Cairo',
+    })
+    expect(chart.getAttribute('aria-label')).toContain(
+      'unmeasured buckets are gaps; Today is Nov 5, later buckets are scheduled and drawn outlined',
+    )
+
+    await actor.click(within(card).getByRole('button', { name: 'Show list' }))
+    const rows = within(within(card).getByRole('table', { name: 'Runs per day by status' })).getAllByRole('row')
+    const unread = rows.find((row) => row.textContent?.startsWith('Nov 3'))!
+    expect(unread.textContent).toContain('not measured')
+    expect(unread.textContent).not.toContain('0 runs')
+    expect(rows.find((row) => row.textContent?.startsWith('Nov 4'))?.textContent).toContain('3 runs')
+    // Today is Nov 5 in Cairo; the days after it count scheduled runs.
+    expect(rows.find((row) => row.textContent?.startsWith('Nov 5'))?.textContent).toContain('Nov 5 · Today')
+    expect(rows.find((row) => row.textContent?.startsWith('Nov 12'))?.textContent).toContain('Nov 12 · scheduled')
+  })
+
+  it('asks for the chosen preset’s days', async () => {
+    const actor = user()
+    const view = open({})
+
+    const card = await screen.findByRole('region', { name: 'Runs per day' })
+    await within(card).findByRole('img', { name: /^Runs per day by status/ })
+    await actor.click(within(card).getByRole('button', { name: 'Last 30 days' }))
+
+    await waitFor(() =>
+      expect(view.requests.filter((request) => request.path === 'jobs/series/daily').at(-1)?.query).toEqual({
+        from: '2026-10-07',
+        to: '2026-11-05',
+        zone: 'UTC',
+      }),
+    )
   })
 })

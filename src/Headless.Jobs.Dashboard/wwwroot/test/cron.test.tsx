@@ -190,11 +190,17 @@ describe('jobs recurring jobs list', () => {
     expect(within(panel).getByRole('button', { name: 'Resume' })).toBeTruthy()
   })
 
-  it('draws the last 24 hours of occurrences as outcome bars over the occurrence list', async () => {
+  it('draws the cron job’s occurrences per day over the occurrence list, each running one with its progress', async () => {
     const actor = user()
     const job = cronJob()
     const occurrences = [
-      run('Succeeded', { kind: 'CronJobOccurrence', cronJobId: job.id, executionTime: '2026-11-05T09:30:00Z' }),
+      run('InProgress', {
+        kind: 'CronJobOccurrence',
+        cronJobId: job.id,
+        executionTime: '2026-11-05T09:30:00Z',
+        progressPercent: 62.5,
+        progressMessage: 'step 25 of 40',
+      }),
       run('Failed', { kind: 'CronJobOccurrence', cronJobId: job.id, executionTime: '2026-11-05T08:30:00Z' }),
     ]
     const view = open({ cronJobs: [job], runs: occurrences }, { path: `cron-jobs?open=${job.id}` })
@@ -202,56 +208,77 @@ describe('jobs recurring jobs list', () => {
     await actor.click(await screen.findByRole('tab', { name: 'Occurrences' }))
     const panel = screen.getByRole('region', { name: `Cron job ${job.id}` })
 
-    const chart = await within(panel).findByRole('img', { name: /^Occurrence outcomes per hour/ })
-    expect(chart.getAttribute('aria-label')).toContain('the tallest bar is 1 occurrences')
+    expect(await within(panel).findByRole('img', { name: /^Occurrences per day by status/ })).toBeTruthy()
+    expect(view.requests.find((request) => request.path === 'jobs/series/daily')?.query).toEqual({
+      from: '2026-10-30',
+      to: '2026-11-12',
+      zone: 'UTC',
+      cronJobId: job.id,
+    })
     const list = within(panel).getByRole('region', { name: 'Occurrences' })
     expect(
       within(list)
         .getAllByRole('listitem')
         .map((item) => item.textContent),
-    ).toEqual([expect.stringContaining('Succeeded'), expect.stringContaining('Failed')])
-    const read = view.requests.find((request) => request.path === 'jobs/runs')
-    expect(read?.query).toMatchObject({ cronJobId: job.id, from: expect.stringMatching(/^2026-11-04T11:00:/) })
+    ).toEqual([expect.stringContaining('In progress'), expect.stringContaining('Failed')])
+    expect(
+      within(list).getByRole('progressbar', { name: 'Progress of billing.charge' }).getAttribute('aria-valuetext'),
+    ).toBe('62.5 % · step 25 of 40')
+    const read = view.requests.find((request) => request.path === 'jobs/runs' && request.query?.from)
+    expect(read?.query).toMatchObject({ cronJobId: job.id, from: expect.stringMatching(/^2026-11-04T10:00:/) })
   })
 
-  it('loads the occurrences from the first bar’s hour, so the bars count every occurrence listed', async () => {
-    // Off the hour, the 24-hour window starts part way through an hour that has no bar.
-    vi.setSystemTime(new Date('2026-11-05T10:37:00Z'))
-    const actor = user()
+  it('disables Delete while an occurrence runs, with the server’s reason', async () => {
     const job = cronJob()
-    const occurrences = [
-      run('Succeeded', { kind: 'CronJobOccurrence', cronJobId: job.id, executionTime: '2026-11-05T10:20:00Z' }),
-      run('Failed', { kind: 'CronJobOccurrence', cronJobId: job.id, executionTime: '2026-11-04T11:10:00Z' }),
-      run('Succeeded', { kind: 'CronJobOccurrence', cronJobId: job.id, executionTime: '2026-11-04T10:45:00Z' }),
-    ]
     open(
-      {
-        cronJobs: [job],
-        extra: (request) => {
-          if (request.path !== 'jobs/runs') {
-            return undefined
-          }
-
-          // As the server does, the list holds only the occurrences due from `from` on.
-          const from = Date.parse(String(request.query?.from))
-          const items = occurrences.filter((item) => Date.parse(item.executionTime!) >= from)
-
-          return { items, count: items.length, countCapped: false }
-        },
-      },
-      { path: `cron-jobs?open=${job.id}` },
+      { cronJobs: [job], runs: [run('InProgress', { kind: 'CronJobOccurrence', cronJobId: job.id })] },
+      { path: `cron-jobs/${job.id}` },
     )
 
-    await actor.click(await screen.findByRole('tab', { name: 'Occurrences' }))
-    const panel = screen.getByRole('region', { name: `Cron job ${job.id}` })
-    const chart = await within(panel).findByRole('img', { name: /^Occurrence outcomes per hour/ })
-    const listed = within(within(panel).getByRole('region', { name: 'Occurrences' })).getAllByRole('listitem').length
-    const counted = [...chart.querySelectorAll('title')]
-      .flatMap((title) => [...(title.textContent ?? '').matchAll(/(\d+) [A-Z]/g)])
-      .reduce((sum, match) => sum + Number(match[1]), 0)
+    const remove = await screen.findByRole('button', { name: 'Delete' })
+    await waitFor(() => expect(described(remove)).toBe('Running — wait or cancel the occurrence'))
+    expect(remove.getAttribute('aria-disabled')).toBe('true')
+  })
 
-    expect(listed).toBe(2)
-    expect(counted).toBe(listed)
+  it('disables Delete for a viewer with the permission it needs', async () => {
+    const job = cronJob()
+    open({ cronJobs: [job] }, { path: `cron-jobs/${job.id}`, permissions: { canOperate: false } })
+
+    const remove = await screen.findByRole('button', { name: 'Delete' })
+    await waitFor(() => expect(described(remove)).toBe('Needs operate permission'))
+  })
+
+  it('confirms a delete with the stored occurrence count, and shows how many went with it', async () => {
+    const actor = user()
+    const job = cronJob()
+    const view = open(
+      {
+        cronJobs: [job],
+        runs: [
+          run('Succeeded', { kind: 'CronJobOccurrence', cronJobId: job.id }),
+          run('Idle', { kind: 'CronJobOccurrence', cronJobId: job.id }),
+        ],
+        extra: (request) =>
+          request.method === 'POST' && request.path === 'jobs/commands/jobs.delete-cron'
+            ? { rows: [{ id: job.id, outcome: 'done', reason: '12 stored occurrences removed' }] }
+            : undefined,
+      },
+      { path: `cron-jobs/${job.id}` },
+    )
+
+    const remove = await screen.findByRole('button', { name: 'Delete' })
+    await waitFor(() => expect(remove.getAttribute('aria-disabled')).toBeNull())
+    await actor.click(remove)
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('2 stored occurrences go with it')).toBeTruthy()
+    await actor.type(within(dialog).getByRole('textbox', { name: /Reason/ }), 'Replaced by a new schedule')
+    await actor.click(within(dialog).getByRole('button', { name: 'Delete cron job' }))
+
+    expect(await screen.findByText('Deleted: 12 stored occurrences removed')).toBeTruthy()
+    expect(view.requests.find((request) => request.path === 'jobs/commands/jobs.delete-cron')?.body).toMatchObject({
+      ids: [job.id],
+      reason: 'Replaced by a new schedule',
+    })
   })
 
   it('does not carry an expression typed for one job into the next one opened', async () => {
