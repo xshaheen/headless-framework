@@ -92,8 +92,14 @@ function isNewer(change: StreamChange, held: string | undefined) {
   return held === undefined || compareVersions(change.version, held) > 0
 }
 
-/** Per topic, each arrived object's projection by id; `null` when its change carried none. */
-const newRows = new WeakMap<QueryClient, Map<string, Map<string, Record<string, unknown> | null>>>()
+/** An object that changed while no loaded view held it: its change's version and projection. */
+interface ArrivedRow {
+  version: string
+  projection: Record<string, unknown> | null
+}
+
+/** Per topic, each arrived object by id. */
+const newRows = new WeakMap<QueryClient, Map<string, Map<string, ArrivedRow>>>()
 const newRowListeners = new WeakMap<QueryClient, Set<() => void>>()
 
 function notifyNewRows(client: QueryClient) {
@@ -104,7 +110,9 @@ function notifyNewRows(client: QueryClient) {
 
 /** The objects that changed on `topic` while no loaded list held them: each one's projection by id. */
 export function getNewRows(client: QueryClient, topic: string): ReadonlyMap<string, Record<string, unknown> | null> {
-  return newRows.get(client)?.get(topic) ?? new Map()
+  const arrived = newRows.get(client)?.get(topic)
+
+  return new Map(arrived ? [...arrived].map(([id, row]) => [id, row.projection]) : [])
 }
 
 export function onNewRowsChange(client: QueryClient, listener: () => void) {
@@ -149,9 +157,20 @@ export function applyChange(client: QueryClient, change: StreamChange): ChangeOu
       newRows.set(client, topicRows)
     }
 
-    // A later change of the same object replaces its projection, so a list's filter reads where the row is now.
-    topicRows.set(change.topic, new Map(topicRows.get(change.topic)).set(change.id, change.projection ?? null))
-    notifyNewRows(client)
+    const arrived = topicRows.get(change.topic)?.get(change.id)
+
+    // A later change of the same object replaces its projection, so a list's filter reads where the row is now; an
+    // older one arriving late does not.
+    if (!arrived || isNewer(change, arrived.version)) {
+      topicRows.set(
+        change.topic,
+        new Map(topicRows.get(change.topic)).set(change.id, {
+          version: change.version,
+          projection: change.projection ?? null,
+        }),
+      )
+      notifyNewRows(client)
+    }
 
     return 'new'
   }
@@ -192,6 +211,70 @@ export function applyChange(client: QueryClient, change: StreamChange): ChangeOu
   }
 
   return 'patched'
+}
+
+/** The newer of a cached row and a fetched one; the fetched one on a tie or when either has no version. */
+function newerRow<T>(fetched: T, cached: unknown): T {
+  const fetchedVersion = versionOf(fetched)
+  const cachedVersion = versionOf(cached)
+
+  return fetchedVersion !== undefined && cachedVersion !== undefined && compareVersions(cachedVersion, fetchedVersion) > 0
+    ? (cached as T)
+    : fetched
+}
+
+/** The fetched row with an arrived change applied, when the change is newer than the row. */
+function withArrived<T>(fetched: T, arrived: ArrivedRow | undefined): T {
+  if (!arrived?.projection || typeof fetched !== 'object' || fetched === null) {
+    return fetched
+  }
+
+  const version = versionOf(fetched)
+
+  return version !== undefined && compareVersions(arrived.version, version) > 0
+    ? { ...fetched, ...arrived.projection, version: arrived.version }
+    : fetched
+}
+
+/**
+ * Settles a fetched object against what the cache learned while the request was in flight. A stream change can patch
+ * the cached object after the server read it, so a fetch that lands later must not put the older version back; and a
+ * change that arrived before the object's first fetch resolved still applies to it.
+ */
+export function mergeFetchedObject<T>(client: QueryClient, topic: string, id: string, fetched: T): T {
+  return withArrived(newerRow(fetched, client.getQueryData(objectKey(topic, id))), newRows.get(client)?.get(topic)?.get(id))
+}
+
+/**
+ * Settles a fetched list page against what the cache learned while the request was in flight: each row keeps the
+ * newest version any list of its topic holds, so a fetch that lands after a newer stream patch never puts the older
+ * row back. A row that changed before the list first loaded takes that change, and leaves the new rows notice
+ * because the list now shows it.
+ */
+export function mergeFetchedPage<T extends ListItem>(
+  client: QueryClient,
+  topic: string,
+  page: DashboardListPage<T>,
+): DashboardListPage<T> {
+  const held = new Map<string, ListItem>()
+
+  for (const [, data] of client.getQueriesData({ queryKey: listKey(topic) })) {
+    for (const row of rowsOf(data)) {
+      held.set(row.id, newerRow(row, held.get(row.id)))
+    }
+  }
+
+  const arrived = newRows.get(client)?.get(topic)
+  const items = page.items.map((item) => withArrived(newerRow(item, held.get(item.id)), arrived?.get(item.id)))
+
+  if (arrived && page.items.some((item) => arrived.has(item.id))) {
+    const remaining = new Map(arrived)
+    page.items.forEach((item) => remaining.delete(item.id))
+    newRows.get(client)?.set(topic, remaining)
+    notifyNewRows(client)
+  }
+
+  return items.every((item, index) => item === page.items[index]) ? page : { ...page, items }
 }
 
 /** Refetches every active query of `topics`, or of every topic when `topics` is omitted. */
