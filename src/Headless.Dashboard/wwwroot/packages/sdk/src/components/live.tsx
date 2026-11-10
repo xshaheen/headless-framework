@@ -131,8 +131,9 @@ export function ToastRegion() {
 /**
  * A progress bar with its label and value text, such as an Operation's `1,200 of 5,000 rows`. `inline` draws the bar,
  * `shortText` in place of the value text, and an optional `detail` (such as when the value was reported) on one line
- * that ends in an ellipsis, for a table cell or a row note that must not grow taller than its row. Assistive technology
- * still reads the full `valueText`.
+ * that ends in an ellipsis, for a table cell or a row note that must not grow taller than its row. The bar gives up
+ * width before the text does, since the value and its detail are what an operator reads. Assistive technology still
+ * reads the full `valueText`.
  */
 export function ProgressBar({
   label,
@@ -162,7 +163,7 @@ export function ProgressBar({
         maxValue={Math.max(max, 1)}
         valueLabel={valueText}
       >
-        <span className="block h-1 w-12 shrink-0 overflow-hidden rounded-xs bg-muted" aria-hidden="true">
+        <span className="block h-1 w-12 min-w-6 shrink overflow-hidden rounded-xs bg-muted" aria-hidden="true">
           <i className="block h-full rounded-xs bg-proc" style={{ inlineSize: `${percent}%` }} />
         </span>
         <span className="min-w-0 truncate type-tag-mono text-faint tabular-nums">
