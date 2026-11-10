@@ -75,7 +75,8 @@ public sealed class CronFleetAgreementTests : TestBase
             _Identity("messaging", 1),
             NodeLivenessState.Alive,
             Role: null,
-            new Dictionary<string, string>(StringComparer.Ordinal)
+            new Dictionary<string, string>(StringComparer.Ordinal),
+            DateTimeOffset.UnixEpoch
         );
         var apiOnly = new NodeLivenessSnapshot(
             _Identity("api", 1),
@@ -85,7 +86,8 @@ public sealed class CronFleetAgreementTests : TestBase
             {
                 [CronRulesDigest.DigestMetadataKey] = "digest-old",
                 [CronRulesDigest.FingerprintSweepMetadataKey] = "false",
-            }
+            },
+            DateTimeOffset.UnixEpoch
         );
         var agreement = _Create([messagingOnly, apiOnly, _Sweeping(_Identity("worker", 1), _LocalDigest)]);
 
@@ -343,7 +345,8 @@ public sealed class CronFleetAgreementTests : TestBase
             {
                 [CronRulesDigest.DigestMetadataKey] = digest,
                 [CronRulesDigest.FingerprintSweepMetadataKey] = "true",
-            }
+            },
+            DateTimeOffset.UnixEpoch
         );
     }
 

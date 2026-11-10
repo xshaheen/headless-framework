@@ -58,7 +58,13 @@ public sealed class ControlledNodeMembership : INodeMembership
     /// <summary>Builds a snapshot entry for <paramref name="identity"/> in the given <paramref name="state"/>.</summary>
     public static NodeLivenessSnapshot Snapshot(NodeIdentity identity, NodeLivenessState state)
     {
-        return new(identity, state, Role: null, Metadata: new Dictionary<string, string>(StringComparer.Ordinal));
+        return new(
+            identity,
+            state,
+            Role: null,
+            Metadata: new Dictionary<string, string>(StringComparer.Ordinal),
+            LastHeartbeatAt: DateTimeOffset.UnixEpoch
+        );
     }
 
     /// <summary>Pushes a <see cref="NodeLeft"/> event onto the watch stream (best-effort acceleration path).</summary>

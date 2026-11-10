@@ -749,7 +749,8 @@ public sealed class CronFingerprintSweepTests : TestBase
             {
                 [CronRulesDigest.DigestMetadataKey] = digest,
                 [CronRulesDigest.FingerprintSweepMetadataKey] = "true",
-            }
+            },
+            DateTimeOffset.UnixEpoch
         );
 
     /// <summary>A membership whose snapshot a test can change between passes, as peers restart.</summary>

@@ -40,6 +40,12 @@ public sealed class RedisMembershipConformanceTests(RedisMembershipFixture fixtu
     }
 
     [Fact]
+    public override Task should_report_the_last_heartbeat_in_the_snapshot()
+    {
+        return base.should_report_the_last_heartbeat_in_the_snapshot();
+    }
+
+    [Fact]
     public override Task should_keep_node_alive_after_heartbeat()
     {
         return base.should_keep_node_alive_after_heartbeat();

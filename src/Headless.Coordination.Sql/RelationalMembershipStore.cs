@@ -203,7 +203,7 @@ internal sealed class RelationalMembershipStore : IMembershipStore
         _readLivenessSql = dialect.Render(
             new SqlClockedStatement(
                 $"""
-                SELECT l.{t.NodeId}, l.{t.Incarnation}, d.{t.Role}, d.{t.Metadata}, {state}
+                SELECT l.{t.NodeId}, l.{t.Incarnation}, d.{t.Role}, d.{t.Metadata}, {state}, l.{t.LastBeat}
                 FROM {t.Liveness} l
                 {currentGeneration}
                 LEFT JOIN {t.Descriptor} d
@@ -607,7 +607,9 @@ internal sealed class RelationalMembershipStore : IMembershipStore
             ? new Dictionary<string, string>(StringComparer.Ordinal)
             : _Deserialize(reader.GetString(3));
 
-        return new NodeLivenessSnapshot(identity, _State(reader.GetValue(4)), role, metadata);
+        var lastBeat = await reader.GetFieldValueAsync<DateTimeOffset>(5, cancellationToken).ConfigureAwait(false);
+
+        return new NodeLivenessSnapshot(identity, _State(reader.GetValue(4)), role, metadata, lastBeat);
     }
 
     private string _Serialize(IReadOnlyDictionary<string, string> value)

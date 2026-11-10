@@ -22,7 +22,8 @@ public sealed class DeadOwnerRecoveryBridgeTests : TestBase
             _Identity(node, incarnation),
             NodeLivenessState.Dead,
             Role: null,
-            Metadata: new Dictionary<string, string>(StringComparer.Ordinal)
+            Metadata: new Dictionary<string, string>(StringComparer.Ordinal),
+            LastHeartbeatAt: DateTimeOffset.UnixEpoch
         );
     }
 
@@ -104,13 +105,15 @@ public sealed class DeadOwnerRecoveryBridgeTests : TestBase
                 _Identity("node-alive", 7),
                 NodeLivenessState.Alive,
                 Role: null,
-                Metadata: new Dictionary<string, string>(StringComparer.Ordinal)
+                Metadata: new Dictionary<string, string>(StringComparer.Ordinal),
+                LastHeartbeatAt: DateTimeOffset.UnixEpoch
             ),
             new NodeLivenessSnapshot(
                 _Identity("node-suspect", 9),
                 NodeLivenessState.Suspected,
                 Role: null,
-                Metadata: new Dictionary<string, string>(StringComparer.Ordinal)
+                Metadata: new Dictionary<string, string>(StringComparer.Ordinal),
+                LastHeartbeatAt: DateTimeOffset.UnixEpoch
             ),
         ];
 

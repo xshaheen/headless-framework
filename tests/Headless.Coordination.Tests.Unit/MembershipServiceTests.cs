@@ -52,19 +52,22 @@ public sealed class MembershipServiceTests : TestBase
                 nodeB,
                 NodeLivenessState.Alive,
                 null,
-                new Dictionary<string, string>(StringComparer.Ordinal)
+                new Dictionary<string, string>(StringComparer.Ordinal),
+                DateTimeOffset.UnixEpoch
             ),
             new NodeLivenessSnapshot(
                 nodeA,
                 NodeLivenessState.Alive,
                 null,
-                new Dictionary<string, string>(StringComparer.Ordinal)
+                new Dictionary<string, string>(StringComparer.Ordinal),
+                DateTimeOffset.UnixEpoch
             ),
             new NodeLivenessSnapshot(
                 new NodeIdentity(new NodeId("node-c"), new NodeIncarnation(1)),
                 NodeLivenessState.Suspected,
                 null,
-                new Dictionary<string, string>(StringComparer.Ordinal)
+                new Dictionary<string, string>(StringComparer.Ordinal),
+                DateTimeOffset.UnixEpoch
             )
         );
 
@@ -77,6 +80,32 @@ public sealed class MembershipServiceTests : TestBase
         liveNodes.Should().Equal(nodeA, nodeB);
         store.ReadLiveNodesCalls.Should().Be(1);
         store.ReadLivenessCalls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_return_each_node_last_heartbeat_from_the_store_snapshot()
+    {
+        // given
+        var store = new FakeMembershipStore();
+        var node = new NodeIdentity(new NodeId("node-a"), new NodeIncarnation(1));
+        var lastBeat = new DateTimeOffset(2026, 11, 10, 9, 30, 15, 250, TimeSpan.Zero);
+        store.EnqueueSnapshot(
+            new NodeLivenessSnapshot(
+                node,
+                NodeLivenessState.Alive,
+                null,
+                new Dictionary<string, string>(StringComparer.Ordinal),
+                lastBeat
+            )
+        );
+
+        using var sut = _CreateService(store);
+
+        // when
+        var snapshot = await sut.GetLivenessSnapshotAsync(AbortToken);
+
+        // then
+        snapshot.Should().ContainSingle().Which.LastHeartbeatAt.Should().Be(lastBeat);
     }
 
     [Fact]

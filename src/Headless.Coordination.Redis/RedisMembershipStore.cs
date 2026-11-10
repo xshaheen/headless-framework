@@ -280,14 +280,14 @@ internal sealed partial class RedisMembershipStore(
         {
             var fields = (RedisResult[]?)item;
 
-            if (fields is null || fields.Length < 4)
+            if (fields is null || fields.Length < 5)
             {
                 // Local contract violation on the script's return shape, not an error raised by the Redis
                 // server, so InvalidOperationException (matching _ClusterKey below) is the precise type.
                 throw new InvalidOperationException(
                     string.Create(
                         CultureInfo.InvariantCulture,
-                        $"Unexpected coordination membership read script result shape (length={fields?.Length ?? 0}, expected >= 4)."
+                        $"Unexpected coordination membership read script result shape (length={fields?.Length ?? 0}, expected >= 5)."
                     )
                 );
             }
@@ -296,13 +296,15 @@ internal sealed partial class RedisMembershipStore(
             var state = Enum.Parse<NodeLivenessState>((string)fields[1]!);
             var role = (string)fields[2]!;
             var metadataJson = (string)fields[3]!;
+            var lastBeat = DateTimeOffset.FromUnixTimeMilliseconds((long)fields[4]);
 
             snapshots.Add(
                 new NodeLivenessSnapshot(
                     identity,
                     state,
                     string.IsNullOrEmpty(role) ? null : role,
-                    _DeserializeDictionary(metadataJson)
+                    _DeserializeDictionary(metadataJson),
+                    lastBeat
                 )
             );
         }

@@ -73,7 +73,7 @@ internal sealed class RedisMembershipReadScriptDefinition : RedisScriptDefinitio
                         state = @suspectedState
                       end
 
-                      table.insert(result, { member, state, payload['role'] or '', payload['metadata'] or '{}' })
+                      table.insert(result, { member, state, payload['role'] or '', payload['metadata'] or '{}', lastBeatMs })
                     end
                   end
                 end

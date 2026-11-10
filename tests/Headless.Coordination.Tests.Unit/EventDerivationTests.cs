@@ -35,6 +35,30 @@ public sealed class EventDerivationTests : TestBase
     }
 
     [Fact]
+    public async Task should_not_emit_an_event_when_only_the_last_heartbeat_moves()
+    {
+        // given: every beat moves the timestamp, so events must follow the state alone or a healthy node churns.
+        var node = _Identity("node-a", 1);
+        var beat = new DateTimeOffset(2026, 11, 10, 9, 0, 0, TimeSpan.Zero);
+        var store = new FakeMembershipStore();
+        store.EnqueueSnapshot(_Snapshot(node, NodeLivenessState.Alive, beat));
+        store.EnqueueSnapshot(_Snapshot(node, NodeLivenessState.Alive, beat.AddSeconds(5)));
+        var source = new MembershipEventSource(NullLogger<MembershipEventSource>.Instance);
+        var sut = _CreateHeartbeatService(store, source);
+        using var watcherCts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        await using var watcher = source.WatchAsync(watcherCts.Token).GetAsyncEnumerator(watcherCts.Token);
+
+        // when
+        await sut.RunOnceAsync(AbortToken);
+        var first = await _ReadNextAsync(watcher);
+        await sut.RunOnceAsync(AbortToken);
+
+        // then
+        first.Should().BeOfType<NodeJoined>().Which.Identity.Should().Be(node);
+        await _ShouldHaveNoImmediateEventAsync(watcher, watcherCts);
+    }
+
+    [Fact]
     public async Task should_emit_suspected_recovered_and_left_transitions()
     {
         // given
@@ -168,9 +192,19 @@ public sealed class EventDerivationTests : TestBase
         return new NodeIdentity(new NodeId(nodeId), new NodeIncarnation(incarnation));
     }
 
-    private static NodeLivenessSnapshot _Snapshot(NodeIdentity identity, NodeLivenessState state)
+    private static NodeLivenessSnapshot _Snapshot(
+        NodeIdentity identity,
+        NodeLivenessState state,
+        DateTimeOffset? lastHeartbeatAt = null
+    )
     {
-        return new NodeLivenessSnapshot(identity, state, null, new Dictionary<string, string>(StringComparer.Ordinal));
+        return new NodeLivenessSnapshot(
+            identity,
+            state,
+            null,
+            new Dictionary<string, string>(StringComparer.Ordinal),
+            lastHeartbeatAt ?? DateTimeOffset.UnixEpoch
+        );
     }
 
     private static async Task<NodeMembershipEvent> _ReadNextAsync(IAsyncEnumerator<NodeMembershipEvent> watcher)

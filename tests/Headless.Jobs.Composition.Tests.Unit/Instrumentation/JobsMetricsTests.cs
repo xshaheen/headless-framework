@@ -513,7 +513,8 @@ public sealed class JobsMetricsTests : TestBase
                         {
                             ["headless.jobs.cron-rules-digest"] = "other-rules",
                             ["headless.jobs.fingerprint-sweep"] = "true",
-                        }
+                        },
+                        DateTimeOffset.UnixEpoch
                     ),
                 ])
             );

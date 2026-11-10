@@ -64,7 +64,8 @@ public sealed class MembershipHeartbeatBackgroundServiceTests : TestBase
                 remote,
                 NodeLivenessState.Alive,
                 null,
-                new Dictionary<string, string>(StringComparer.Ordinal)
+                new Dictionary<string, string>(StringComparer.Ordinal),
+                DateTimeOffset.UnixEpoch
             )
         );
 
