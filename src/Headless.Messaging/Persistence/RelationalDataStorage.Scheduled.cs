@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
+using Headless.Checks;
 using Headless.Fencing;
 using Headless.Messaging.Internal;
 using Headless.Primitives;
@@ -77,70 +78,11 @@ internal sealed partial class RelationalDataStorage
         CancellationToken cancellationToken = default
     )
     {
-        authorization.Validate();
+        authorization.ValidateRead();
         query.Validate();
         var page = Math.Max(query.CurrentPage, 0);
         var pageSize = Math.Clamp(query.PageSize, 1, 200);
-        var where = ScheduledPending;
-
-        if (!string.IsNullOrWhiteSpace(query.MessageName))
-        {
-            where += $" AND {_t.Name}=@Name";
-        }
-
-        if (query.Lane is not null)
-        {
-            where += $" AND {_t.IntentType}=@IntentType";
-        }
-
-        if (query.DueFrom is not null)
-        {
-            where += $" AND {_t.ExpiresAt}>=@DueFrom";
-        }
-
-        if (query.DueTo is not null)
-        {
-            where += $" AND {_t.ExpiresAt}<=@DueTo";
-        }
-
-        if (query.StorageIds is { Count: > 0 })
-        {
-            where += $" AND {_dialect.InList(_t.Id, "StorageIds", SqlColumnType.Guid)}";
-        }
-
-        void bind(DbCommand command)
-        {
-            _BindVersion(command);
-            if (!string.IsNullOrWhiteSpace(query.MessageName))
-            {
-                _dialect.AddParameter(command, "Name", _NameType, query.MessageName);
-            }
-
-            if (query.Lane is { } lane)
-            {
-                _dialect.AddParameter(command, "IntentType", SqlColumnType.Int16, (short)lane);
-            }
-
-            if (query.DueFrom is { } dueFrom)
-            {
-                _dialect.AddParameter(command, "DueFrom", SqlColumnType.Timestamp, dueFrom);
-            }
-
-            if (query.DueTo is { } dueTo)
-            {
-                _dialect.AddParameter(command, "DueTo", SqlColumnType.Timestamp, dueTo);
-            }
-
-            if (query.StorageIds is { Count: > 0 } storageIds)
-            {
-                _dialect.AddListParameter(
-                    command,
-                    "StorageIds",
-                    SqlColumnType.Guid,
-                    storageIds as Guid[] ?? [.. storageIds]
-                );
-            }
-        }
+        var (where, bind) = _ScheduledFilter(query);
 
         await using var connection = _CreateConnection();
         var total = Convert.ToInt64(
@@ -209,6 +151,101 @@ internal sealed partial class RelationalDataStorage
         return new IndexPage<ScheduledDeliveryView>(items, page, pageSize, checked((int)total));
     }
 
+    public async ValueTask<MessageCount> CountAsync(
+        ScheduledDeliveryQuery query,
+        OperatorAuthorizationContext authorization,
+        int cap = MessageCount.DefaultCap,
+        CancellationToken cancellationToken = default
+    )
+    {
+        authorization.ValidateRead();
+        query.Validate();
+        Argument.IsPositive(cap);
+
+        var (where, bind) = _ScheduledFilter(query);
+        await using var connection = _CreateConnection();
+        var matched = await RelationalMonitoringApi
+            .CountCappedAsync(
+                _dialect,
+                connection,
+                _publishedTable,
+                where,
+                bind,
+                cap,
+                CommandTimeoutSeconds,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return MessageCount.Of(matched, cap);
+    }
+
+    private (string Where, Action<DbCommand> Bind) _ScheduledFilter(ScheduledDeliveryQuery query)
+    {
+        var where = ScheduledPending;
+
+        if (!string.IsNullOrWhiteSpace(query.MessageName))
+        {
+            where += $" AND {_t.Name}=@Name";
+        }
+
+        if (query.Lane is not null)
+        {
+            where += $" AND {_t.IntentType}=@IntentType";
+        }
+
+        if (query.DueFrom is not null)
+        {
+            where += $" AND {_t.ExpiresAt}>=@DueFrom";
+        }
+
+        if (query.DueTo is not null)
+        {
+            where += $" AND {_t.ExpiresAt}<=@DueTo";
+        }
+
+        if (query.StorageIds is { Count: > 0 })
+        {
+            where += $" AND {_dialect.InList(_t.Id, "StorageIds", SqlColumnType.Guid)}";
+        }
+
+        void bind(DbCommand command)
+        {
+            _BindVersion(command);
+            if (!string.IsNullOrWhiteSpace(query.MessageName))
+            {
+                _dialect.AddParameter(command, "Name", _NameType, query.MessageName);
+            }
+
+            if (query.Lane is { } lane)
+            {
+                _dialect.AddParameter(command, "IntentType", SqlColumnType.Int16, (short)lane);
+            }
+
+            if (query.DueFrom is { } dueFrom)
+            {
+                _dialect.AddParameter(command, "DueFrom", SqlColumnType.Timestamp, dueFrom);
+            }
+
+            if (query.DueTo is { } dueTo)
+            {
+                _dialect.AddParameter(command, "DueTo", SqlColumnType.Timestamp, dueTo);
+            }
+
+            if (query.StorageIds is { Count: > 0 } storageIds)
+            {
+                _dialect.AddListParameter(
+                    command,
+                    "StorageIds",
+                    SqlColumnType.Guid,
+                    storageIds as Guid[] ?? [.. storageIds]
+                );
+            }
+        }
+
+        return (where, bind);
+    }
+
     public ValueTask<ScheduledDeliveryOperationResult> RevokeAsync(
         ScheduledDeliveryOperationRequest request,
         CancellationToken cancellationToken = default
@@ -252,29 +289,25 @@ internal sealed partial class RelationalDataStorage
                 {
                     await _LockOperationAsync(connection, transaction, request.OperationId, ct).ConfigureAwait(false);
 
-                    var prior = await _ReadScheduledReceiptAsync(connection, transaction, request.OperationId, ct)
+                    var attempt = new RowOperationReceipt(
+                        request.OperationId,
+                        _ScheduledTargetKind,
+                        operationType,
+                        default,
+                        request.StorageId,
+                        request.ExpectedDueAt,
+                        MessageName: null,
+                        MessageId: null,
+                        Lane: null,
+                        request.Actor,
+                        request.StoredReason,
+                        default
+                    );
+                    var replay = await _ReplayRowOperationAsync(connection, transaction, attempt, ct)
                         .ConfigureAwait(false);
-                    if (prior is not null)
+                    if (replay is not null)
                     {
-                        var replay = _ReplayOrConflict(prior, operationType, request);
-                        if (replay.Outcome is InboxOperationOutcome.OperationConflict)
-                        {
-                            await _WriteConflictAuditAsync(
-                                    connection,
-                                    transaction,
-                                    _ScheduledTargetKind,
-                                    replay.OperationId,
-                                    incarnationId: null,
-                                    replay.OperationType,
-                                    replay.Actor,
-                                    replay.Reason,
-                                    replay.Outcome,
-                                    ct
-                                )
-                                .ConfigureAwait(false);
-                        }
-
-                        return (replay, (ScheduledOperationRow?)null);
+                        return (_ToScheduledResult(replay, isReplay: true), (ScheduledOperationRow?)null);
                     }
 
                     // The row is locked before the clock is read, so whether a dispatch lease is live and the new due
@@ -304,7 +337,11 @@ internal sealed partial class RelationalDataStorage
                                     ? $"DELETE FROM {_publishedTable} WHERE {_t.Id}=@StorageId AND {_t.Version}=@Version AND {_t.ExpiresAt}=@ExpectedDueAt AND {ScheduledEligibility};"
                                     // Due now: the delayed claim picks the row up on its next pass. A live lease
                                     // means a dispatch already started, so the row is left to it.
-                                    : $"UPDATE {_publishedTable} SET {_t.StatusName}='{nameof(StatusName.Delayed)}',{_t.ExpiresAt}=@Instant,{_RevokeAnyLeaseAssignments()} WHERE {_t.Id}=@StorageId AND {_t.Version}=@Version AND {_t.ExpiresAt}=@ExpectedDueAt AND ({_t.LeaseState} <> {_t.ActiveLease} OR {_t.LeaseExpiresAt} <= @Instant) AND {ScheduledEligibility};",
+                                    : _dialect.Render(
+                                        new SqlClockedStatement(
+                                            $"UPDATE {_publishedTable} SET {_t.StatusName}='{nameof(StatusName.Delayed)}',{_t.ExpiresAt}=@Instant,{_RevokeAnyLeaseAssignments()},{_t.StampChange} WHERE {_t.Id}=@StorageId AND {_t.Version}=@Version AND {_t.ExpiresAt}=@ExpectedDueAt AND ({_t.LeaseState} <> {_t.ActiveLease} OR {_t.LeaseExpiresAt} <= @Instant) AND {ScheduledEligibility};"
+                                        )
+                                    ),
                                 CommandTimeoutSeconds,
                                 command =>
                                 {
@@ -323,23 +360,18 @@ internal sealed partial class RelationalDataStorage
                             .ConfigureAwait(false);
                     }
 
-                    var applied = new ScheduledDeliveryOperationResult(
-                        request.OperationId,
-                        operationType,
-                        outcome,
-                        request.StorageId,
-                        request.ExpectedDueAt,
-                        row?.MessageName,
-                        row?.MessageId,
-                        row?.Lane,
-                        request.Actor,
-                        request.Reason,
-                        now
-                    );
-                    await _WriteScheduledReceiptAndAuditAsync(connection, transaction, applied, ct)
+                    var receipt = attempt with
+                    {
+                        Outcome = outcome,
+                        MessageName = row?.MessageName,
+                        MessageId = row?.MessageId,
+                        Lane = row?.Lane,
+                        CreatedAt = now,
+                    };
+                    await _WriteRowOperationReceiptAndAuditAsync(connection, transaction, receipt, ct)
                         .ConfigureAwait(false);
 
-                    return (applied, row);
+                    return (_ToScheduledResult(receipt, isReplay: false), row);
                 },
                 _timeProvider,
                 cancellationToken
@@ -354,99 +386,21 @@ internal sealed partial class RelationalDataStorage
         return result;
     }
 
-    private async Task<ScheduledDeliveryOperationResult?> _ReadScheduledReceiptAsync(
-        DbConnection connection,
-        DbTransaction transaction,
-        Guid operationId,
-        CancellationToken cancellationToken
-    )
-    {
-        var sql = _dialect.Render(
-            new SqlLockedRead(
-                _t.Receipts,
-                [new SqlKeyColumn(_t.OperationId, "OperationId")],
-                [
-                    _t.TargetKind,
-                    _t.OperationType,
-                    _t.Outcome,
-                    _t.StorageId,
-                    _t.ExpectedDueAt,
-                    _t.MessageName,
-                    _t.MessageId,
-                    _t.Lane,
-                    _t.Actor,
-                    _t.Reason,
-                    _t.CreatedAt,
-                ]
-            )
+    private static ScheduledDeliveryOperationResult _ToScheduledResult(RowOperationReceipt receipt, bool isReplay) =>
+        new(
+            receipt.OperationId,
+            receipt.OperationType,
+            receipt.Outcome,
+            receipt.StorageId,
+            receipt.ExpectedDueAt ?? DateTimeOffset.MinValue,
+            receipt.MessageName,
+            receipt.MessageId,
+            receipt.Lane,
+            receipt.Actor,
+            receipt.Reason,
+            receipt.CreatedAt,
+            isReplay
         );
-
-        return await RelationalCommand
-            .ExecuteReaderAsync(
-                connection,
-                transaction,
-                sql,
-                CommandTimeoutSeconds,
-                command => _dialect.AddParameter(command, "OperationId", SqlColumnType.Guid, operationId),
-                async (reader, ct) =>
-                {
-                    if (!await reader.ReadAsync(ct).ConfigureAwait(false))
-                    {
-                        return null;
-                    }
-
-                    return new ScheduledDeliveryOperationResult(
-                        operationId,
-                        Enum.Parse<MessagingOperationType>(reader.GetString(1)),
-                        Enum.Parse<InboxOperationOutcome>(reader.GetString(2)),
-                        reader.IsDBNull(3) ? Guid.Empty : reader.GetGuid(3),
-                        reader.IsDBNull(4) ? DateTimeOffset.MinValue : reader.GetFieldValue<DateTimeOffset>(4),
-                        reader.IsDBNull(5) ? null : reader.GetString(5),
-                        reader.IsDBNull(6) ? null : reader.GetString(6),
-                        reader.IsDBNull(7) ? null : Enum.Parse<MessageLane>(reader.GetString(7)),
-                        reader.GetString(8),
-                        reader.GetString(9),
-                        reader.GetFieldValue<DateTimeOffset>(10)
-                    );
-                },
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-    }
-
-    private static ScheduledDeliveryOperationResult _ReplayOrConflict(
-        ScheduledDeliveryOperationResult prior,
-        MessagingOperationType operationType,
-        ScheduledDeliveryOperationRequest request
-    )
-    {
-        var matches =
-            prior.OperationType == operationType
-            && prior.StorageId == request.StorageId
-            && prior.ExpectedDueAt == request.ExpectedDueAt
-            && string.Equals(prior.Actor, request.Actor, StringComparison.Ordinal)
-            && string.Equals(prior.Reason, request.Reason, StringComparison.Ordinal);
-
-        return matches
-            ? prior with
-            {
-                IsReplay = true,
-            }
-            : new ScheduledDeliveryOperationResult(
-                request.OperationId,
-                operationType,
-                InboxOperationOutcome.OperationConflict,
-                request.StorageId,
-                request.ExpectedDueAt,
-                prior.MessageName,
-                prior.MessageId,
-                prior.Lane,
-                request.Actor,
-                request.Reason,
-                prior.CreatedAt,
-                IsReplay: true
-            );
-    }
 
     /// <summary>
     /// A scheduled publish as an operator operation reads it, locked for the operation's transaction. Whether a dispatch
@@ -526,46 +480,6 @@ internal sealed partial class RelationalDataStorage
                         MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(9)),
                         lockedUntil
                     );
-                },
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-    }
-
-    private async Task _WriteScheduledReceiptAndAuditAsync(
-        DbConnection connection,
-        DbTransaction transaction,
-        ScheduledDeliveryOperationResult result,
-        CancellationToken cancellationToken
-    )
-    {
-        var sql = $"""
-            INSERT INTO {_t.Receipts}({_t.OperationId},{_t.TargetKind},{_t.OperationType},{_t.Outcome},{_t.Actor},{_t.Reason},{_t.ExpectedDueAt},{_t.StorageId},{_t.MessageName},{_t.MessageId},{_t.Lane},{_t.CreatedAt})
-            VALUES (@OperationId,'{_ScheduledTargetKind}',@OperationType,@Outcome,@Actor,@Reason,@ExpectedDueAt,@StorageId,@MessageName,@MessageId,@Lane,@CreatedAt);
-            INSERT INTO {_t.Audit}({_t.AuditId},{_t.OperationId},{_t.TargetKind},{_t.OperationType},{_t.Actor},{_t.Reason},{_t.Outcome},{_t.CreatedAt})
-            VALUES (@AuditId,@OperationId,'{_ScheduledTargetKind}',@OperationType,@Actor,@Reason,@Outcome,@CreatedAt);
-            """;
-
-        await RelationalCommand
-            .ExecuteNonQueryAsync(
-                connection,
-                transaction,
-                sql,
-                CommandTimeoutSeconds,
-                command =>
-                {
-                    _dialect.AddParameter(command, "AuditId", SqlColumnType.Guid, _guidGenerator.Create());
-                    _dialect.AddParameter(command, "OperationId", SqlColumnType.Guid, result.OperationId);
-                    _dialect.AddParameter(command, "OperationType", _StatusType, result.OperationType.ToString());
-                    _dialect.AddParameter(command, "Outcome", _StatusType, result.Outcome.ToString());
-                    _dialect.AddParameter(command, "Actor", SqlColumnType.KeyText(_ActorMaxLength), result.Actor);
-                    _dialect.AddParameter(command, "Reason", SqlColumnType.Text(_ReasonMaxLength), result.Reason);
-                    _dialect.AddParameter(command, "ExpectedDueAt", SqlColumnType.Timestamp, result.ExpectedDueAt);
-                    _dialect.AddParameter(command, "StorageId", SqlColumnType.Guid, result.StorageId);
-                    _dialect.AddParameter(command, "MessageName", _NameType, result.MessageName);
-                    _dialect.AddParameter(command, "MessageId", _MessageIdType, result.MessageId);
-                    _dialect.AddParameter(command, "Lane", _StatusType, result.Lane?.ToString());
-                    _dialect.AddParameter(command, "CreatedAt", SqlColumnType.Timestamp, result.CreatedAt);
                 },
                 cancellationToken
             )

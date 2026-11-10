@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using Headless.Fencing;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
@@ -152,6 +153,26 @@ public sealed class MessageSenderTests : TestBase
     }
 
     [Fact]
+    public async Task should_tell_state_observers_about_a_sent_row_once_its_success_write_landed()
+    {
+        // given
+        var storage = Substitute.For<IDataStorage>();
+        var serializer = Substitute.For<IMessageSerializer>();
+        await using var transport = new CapturingTransport();
+        var observer = Substitute.For<IMessageStateObserver>();
+        var sender = _CreateSender(storage, serializer, transport, new MessagingOptions(), stateObserver: observer);
+        var message = _CreateMediumMessage();
+        message.PreparedTransport = (message.Origin, new TransportMessage(message.Origin.Headers, "{}"u8.ToArray()));
+
+        // when
+        var result = await sender.SendAsync(message);
+
+        // then
+        result.Succeeded.Should().BeTrue();
+        observer.Received(1).OnStateWritten(MessageType.Publish, message);
+    }
+
+    [Fact]
     public async Task should_serialize_again_when_the_prepared_transport_no_longer_matches_the_origin()
     {
         // given a prepared transport built for an envelope the message no longer carries
@@ -203,7 +224,8 @@ public sealed class MessageSenderTests : TestBase
         TransportConnectivity? connectivity = null,
         TimeProvider? timeProvider = null,
         ILoggerProvider? loggerProvider = null,
-        TimeProvider? backoffClock = null
+        TimeProvider? backoffClock = null,
+        IMessageStateObserver? stateObserver = null
     )
     {
         storage
@@ -271,6 +293,11 @@ public sealed class MessageSenderTests : TestBase
         }
 
         services.AddSingleton(connectivity ?? new TransportConnectivity());
+
+        if (stateObserver is not null)
+        {
+            services.AddSingleton(stateObserver);
+        }
 
         var provider = services.BuildServiceProvider();
         return new MessageSender(provider.GetRequiredService<ILogger<MessageSender>>(), provider);
@@ -762,6 +789,96 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
             );
+    }
+
+    [Fact]
+    public async Task should_store_the_exception_text_and_a_fingerprint_with_a_terminal_publish_failure()
+    {
+        // given — two broker failures of different causes, thrown for real so each carries the stack the fingerprint
+        // hashes
+        var failures = new Queue<Exception>([_CatchBrokerRefusal("orders-7731"), _CatchBrokerTimeout()]);
+        var storage = Substitute.For<IDataStorage>();
+        var transportMessage = _CreateTransportMessage();
+        var serializer = Substitute.For<IMessageSerializer>();
+        serializer
+            .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(transportMessage));
+        var transport = Substitute.For<ITransport>();
+        transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
+        transport
+            .SendAsync(transportMessage, Arg.Any<CancellationToken>())
+            .Returns(_ => OperateResult.Failed(failures.Dequeue()));
+        var sender = _CreateSender(
+            storage,
+            serializer,
+            transport,
+            new MessagingOptions
+            {
+                RetryPolicy = { RetryStrategy = TestRetryStrategies.ZeroDelay(0), MaxPersistedRetries = 0 },
+            }
+        );
+        var written = new List<(StatusName Status, string? ExceptionInfo, string? FailureFingerprint)>();
+        storage
+            .When(x =>
+                x.ChangePublishRetryStateAsync(
+                    Arg.Any<MediumMessage>(),
+                    Arg.Any<StatusName>(),
+                    Arg.Any<MessageContentWrite>(),
+                    Arg.Any<RetryDelay?>(),
+                    Arg.Any<bool>(),
+                    Arg.Any<int>(),
+                    Arg.Any<int>(),
+                    Arg.Any<CancellationToken>()
+                )
+            )
+            .Do(call =>
+            {
+                var message = call.ArgAt<MediumMessage>(0);
+                written.Add((call.ArgAt<StatusName>(1), message.ExceptionInfo, message.FailureFingerprint));
+            });
+
+        // when
+        var refused = await sender.SendAsync(_CreateMediumMessage());
+        var timedOut = await sender.SendAsync(_CreateMediumMessage());
+
+        // then — each terminal write carries its failure's text and the versioned fingerprint of its own cause
+        refused.Succeeded.Should().BeFalse();
+        timedOut.Succeeded.Should().BeFalse();
+        written.Should().HaveCount(2).And.OnlyContain(write => write.Status == StatusName.Failed);
+        written[0].ExceptionInfo.Should().Contain("orders-7731");
+        written[0].FailureFingerprint.Should().MatchRegex("^v1:[0-9a-f]{16}$");
+        written[1].FailureFingerprint.Should().MatchRegex("^v1:[0-9a-f]{16}$");
+        written[1].FailureFingerprint.Should().NotBe(written[0].FailureFingerprint);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static Exception _CatchBrokerTimeout()
+    {
+        try
+        {
+            throw new TimeoutException("The broker did not acknowledge the publish within 30 s.");
+        }
+        catch (TimeoutException ex)
+        {
+#pragma warning disable ERP022 // False positive: the caught exception is the helper's return value, which the test asserts on.
+            return ex;
+#pragma warning restore ERP022
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static Exception _CatchBrokerRefusal(string topic)
+    {
+        try
+        {
+            throw new InvalidOperationException($"The broker refused the publish to {topic}.");
+        }
+        catch (InvalidOperationException ex)
+        {
+#pragma warning disable ERP022 // False positive: the caught exception is the helper's return value, which the test asserts on.
+            return ex;
+#pragma warning restore ERP022
+        }
     }
 
     [Fact]
@@ -2282,6 +2399,7 @@ public sealed class MessageSenderTests : TestBase
             );
         message.Origin.Headers[Headers.Exception].Should().Be(nameof(MessageDeliverByExceededException));
         message.ExceptionInfo.Should().Contain("deliver_by_exceeded");
+        message.FailureFingerprint.Should().Be("v1:expired");
         message.ExpiresAt.Should().BeAfter(DateTimeOffset.UtcNow);
         reason.Should().Be(MessageTerminalReason.DeliveryDeadlineExpired);
         expired.Should().Contain("queue");

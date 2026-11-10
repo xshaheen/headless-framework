@@ -89,6 +89,7 @@ internal sealed partial class RelationalDataStorage
                     _t.NextRetryAt,
                     _t.StatusName,
                     _t.MessageId,
+                    _t.ChangedAt,
                 ],
                 [
                     "@Id",
@@ -103,6 +104,7 @@ internal sealed partial class RelationalDataStorage
                     $"CASE WHEN @ExpiresAt IS NULL THEN {_dialect.ShiftByDuration(SqlDialectTokens.Now, "Grace")} END",
                     $"CASE WHEN @ExpiresAt IS NULL THEN '{nameof(StatusName.Scheduled)}' WHEN @ExpiresAt <= {_dialect.ShiftByDuration(SqlDialectTokens.Now, "QueueWindow")} THEN '{nameof(StatusName.Queued)}' ELSE '{nameof(StatusName.Delayed)}' END",
                     "@MessageId",
+                    SqlDialectTokens.Now,
                 ],
                 [_t.Added, _t.NextRetryAt]
             )
@@ -237,6 +239,7 @@ internal sealed partial class RelationalDataStorage
             message.InlineAttempts,
             StatusName.Failed,
             exceptionInfo,
+            message.FailureFingerprint ?? MessagingFailureFingerprints.Poison,
             ExpiresAfter: TimeSpan.FromSeconds(Options.FailedMessageExpiredAfter),
             DueAfter: null
         );
@@ -287,6 +290,7 @@ internal sealed partial class RelationalDataStorage
             InlineAttempts: 0,
             StatusName.Scheduled,
             ExceptionInfo: null,
+            FailureFingerprint: null,
             ExpiresAfter: null,
             DueAfter: Options.RetryPolicy.InitialDispatchGrace
         );
@@ -347,6 +351,7 @@ internal sealed partial class RelationalDataStorage
         int InlineAttempts,
         StatusName Status,
         string? ExceptionInfo,
+        string? FailureFingerprint,
         TimeSpan? ExpiresAfter,
         TimeSpan? DueAfter
     );
@@ -381,6 +386,9 @@ internal sealed partial class RelationalDataStorage
                     _t.NextRetryAt,
                     _t.StatusName,
                     _t.ExceptionInfo,
+                    _t.FailureFingerprint,
+                    _t.ConsumerKeyHash,
+                    _t.ChangedAt,
                 ],
                 [
                     "@Version",
@@ -397,6 +405,9 @@ internal sealed partial class RelationalDataStorage
                     nextRetryAt,
                     "@StatusName",
                     "@ExceptionInfo",
+                    "@FailureFingerprint",
+                    "@ConsumerKeyHash",
+                    SqlDialectTokens.Now,
                 ],
                 [_t.Id, _t.Added, _t.NextRetryAt],
                 nonInbox
@@ -408,7 +419,7 @@ internal sealed partial class RelationalDataStorage
                 _receivedTable,
                 [new SqlKeyColumn(_t.Id, "Id")],
                 $"{nonInbox} AND {_terminalGuard} AND ({_t.LeaseState} <> {_t.ActiveLease} OR {_t.LeaseExpiresAt} <= {SqlDialectTokens.Now})",
-                $"{_t.StatusName}=@StatusName, {_t.ExpiresAt}={expiresAt}, {_t.NextRetryAt}={nextRetryAt}, {_t.Content}=@Content, {_t.ExceptionInfo}=@ExceptionInfo, {_RevokeAnyLeaseAssignments()}",
+                $"{_t.StatusName}=@StatusName, {_t.ExpiresAt}={expiresAt}, {_t.NextRetryAt}={nextRetryAt}, {_t.Content}=@Content, {_t.ExceptionInfo}=@ExceptionInfo, {_t.FailureFingerprint}=@FailureFingerprint, {_RevokeAnyLeaseAssignments()}, {_t.StampChange}",
                 [_t.Id, _t.Added, _t.NextRetryAt]
             )
         );
@@ -464,6 +475,7 @@ internal sealed partial class RelationalDataStorage
             _dialect.AddParameter(command, "Content", _ContentType, row.Content);
             _dialect.AddParameter(command, "StatusName", _StatusType, row.Status.ToString("G"));
             _dialect.AddParameter(command, "ExceptionInfo", _ContentType, row.ExceptionInfo);
+            _dialect.AddParameter(command, "FailureFingerprint", _FingerprintType, row.FailureFingerprint);
 
             if (row.ExpiresAfter is { } expiresAfter)
             {
@@ -493,6 +505,7 @@ internal sealed partial class RelationalDataStorage
                             bindIdentityHash(command);
                             bindIdentityColumns(command);
                             bindValues(command);
+                            _BindConsumerKeyHash(command, row.ConsumerIdentity);
                             _dialect.AddParameter(command, "Id", SqlColumnType.Guid, row.Id);
                             _dialect.AddParameter(command, "Name", _NameType, row.Name);
                             _dialect.AddParameter(command, "Retries", SqlColumnType.Int32, row.Retries);
@@ -641,7 +654,7 @@ internal sealed partial class RelationalDataStorage
                     transaction: null,
                     _publishedTable,
                     $"{_t.StatusName}='{nameof(StatusName.Failed)}' AND {_t.NextRetryAt} IS NULL",
-                    $"{_t.NextRetryAt}={SqlDialectTokens.Now}, {_t.Retries}=0, {_t.InlineAttempts}=0, {_t.ExpiresAt}=NULL, {_RevokeAnyLeaseAssignments()}",
+                    $"{_t.NextRetryAt}={SqlDialectTokens.Now}, {_t.Retries}=0, {_t.InlineAttempts}=0, {_t.ExpiresAt}=NULL, {_RevokeAnyLeaseAssignments()}, {_t.StampChange}",
                     [_t.Id],
                     command => _dialect.AddParameter(command, "Id", SqlColumnType.Guid, id),
                     _ReadAppliedAsync,

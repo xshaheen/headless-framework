@@ -12,6 +12,12 @@ public static class JobContract
     /// <summary>Maximum schema-version length in UTF-16 code units.</summary>
     public const int VersionMaxLength = 100;
 
+    /// <summary>
+    /// Maximum correlation-id length in UTF-16 code units: the relational store indexes the column so the dashboard can
+    /// list every run of one correlation id.
+    /// </summary>
+    public const int CorrelationIdMaxLength = 200;
+
     /// <summary>The initial payload schema version used when a contract does not declare another version.</summary>
     public const string InitialVersion = "1";
 

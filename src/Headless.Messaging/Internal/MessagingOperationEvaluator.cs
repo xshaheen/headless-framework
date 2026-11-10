@@ -90,6 +90,39 @@ internal static class MessagingOperationEvaluator
             _ => InboxOperationOutcome.StateConflict,
         };
     }
+
+    /// <summary>
+    /// Decides a published-row re-send or delete: a stale marker is a conflict, a row still waiting for a send or a
+    /// retry is active, and only a failure can be re-sent.
+    /// </summary>
+    public static InboxOperationOutcome EvaluatePublished(
+        MessagingOperationType operationType,
+        DateTimeOffset? expectedChangedAt,
+        PublishedOperationState? state
+    )
+    {
+        if (state is not { } row)
+        {
+            return InboxOperationOutcome.NotFound;
+        }
+
+        if (expectedChangedAt is { } expected && expected != row.ChangedAt)
+        {
+            return InboxOperationOutcome.StateConflict;
+        }
+
+        if (row.HasLiveLease || row.HasNextRetry || row.Status is not (StatusName.Succeeded or StatusName.Failed))
+        {
+            return InboxOperationOutcome.Active;
+        }
+
+        return operationType switch
+        {
+            MessagingOperationType.Resend when row.Status != StatusName.Failed => InboxOperationOutcome.StateConflict,
+            MessagingOperationType.Resend or MessagingOperationType.Purge => InboxOperationOutcome.Applied,
+            _ => InboxOperationOutcome.StateConflict,
+        };
+    }
 }
 
 internal readonly record struct InboxOperationState(
@@ -111,4 +144,11 @@ internal readonly record struct ScheduledDeliveryOperationState(
     string ConfiguredVersion,
     string MessageVersion,
     DateTimeOffset? DueAt
+);
+
+internal readonly record struct PublishedOperationState(
+    StatusName Status,
+    bool HasNextRetry,
+    bool HasLiveLease,
+    DateTimeOffset ChangedAt
 );

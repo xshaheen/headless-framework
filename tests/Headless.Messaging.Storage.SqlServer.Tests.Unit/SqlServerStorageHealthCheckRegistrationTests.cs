@@ -49,8 +49,10 @@ public sealed class SqlServerStorageHealthCheckRegistrationTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.UseSqlServer("Server=localhost;Database=orders");
-            setup.AddOutbox().UseSqlServer("Server=localhost;Database=billing");
-            setup.AddOutbox().UseSqlServer(options => options.ConnectionString = "Server=localhost;Database=audit");
+            setup.AddOutbox("billing").UseSqlServer("Server=localhost;Database=billing");
+            setup
+                .AddOutbox("audit")
+                .UseSqlServer(options => options.ConnectionString = "Server=localhost;Database=audit");
         });
 
         // then
@@ -60,8 +62,8 @@ public sealed class SqlServerStorageHealthCheckRegistrationTests : TestBase
             .Should()
             .BeEquivalentTo(
                 "messaging-storage-sqlserver-default",
-                "messaging-storage-sqlserver-outbox-1",
-                "messaging-storage-sqlserver-outbox-2"
+                "messaging-storage-sqlserver-outbox-billing",
+                "messaging-storage-sqlserver-outbox-audit"
             );
     }
 

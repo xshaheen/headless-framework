@@ -17,6 +17,7 @@ public sealed class DocExamplesCompileTests : TestBase
     {
         ["docs/llms/messaging.md"] = ["Common.cs", "Messaging.cs"],
         ["docs/llms/jobs.md"] = ["Common.cs", "Jobs.cs"],
+        ["docs/llms/dashboards.md"] = ["Common.cs", "Dashboards.cs"],
     };
 
     private static readonly Lazy<IReadOnlyDictionary<string, DocExample>> _Examples = new(() =>

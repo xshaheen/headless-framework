@@ -25,7 +25,7 @@ public sealed class PostgreSqlEntityFrameworkStorageHealthCheckRegistrationTests
         {
             setup.UseInMemory();
             setup.UsePostgreSqlEntityFramework<OrdersDbContext>();
-            setup.AddOutbox().UsePostgreSqlEntityFramework<BillingDbContext>();
+            setup.AddOutbox("billing").UsePostgreSqlEntityFramework<BillingDbContext>();
         });
 
         // then
@@ -35,7 +35,7 @@ public sealed class PostgreSqlEntityFrameworkStorageHealthCheckRegistrationTests
             .Value.Registrations.Select(registration => registration.Name)
             .Where(name => name.StartsWith("messaging-storage-", StringComparison.Ordinal))
             .Should()
-            .BeEquivalentTo("messaging-storage-postgresql-default", "messaging-storage-postgresql-outbox-1");
+            .BeEquivalentTo("messaging-storage-postgresql-default", "messaging-storage-postgresql-outbox-billing");
     }
 
     private sealed class OrdersDbContext(DbContextOptions<OrdersDbContext> options) : DbContext(options);

@@ -56,7 +56,8 @@ public sealed class FaultInjectingDataStorage(IDataStorage inner, FaultScript fa
         ICircuitRetryDeferralStorage,
         IDeliveryCoordinationResolver,
         ICoordinatedMessageStore,
-        IMessageRevocationStorage
+        IMessageRevocationStorage,
+        IAdditionalOutboxOperations
 {
     // Initialized in declaration order: the null checks run before any capability is read from the wrapped store.
     private readonly FaultScript _faults = Argument.IsNotNull(faults);
@@ -67,6 +68,7 @@ public sealed class FaultInjectingDataStorage(IDataStorage inner, FaultScript fa
     private readonly IDeliveryCoordinationResolver _coordination = _Require<IDeliveryCoordinationResolver>(inner);
     private readonly ICoordinatedMessageStore _coordinatedStore = _Require<ICoordinatedMessageStore>(inner);
     private readonly IMessageRevocationStorage _revocation = _Require<IMessageRevocationStorage>(inner);
+    private readonly IAdditionalOutboxOperations _outboxOperations = _Require<IAdditionalOutboxOperations>(inner);
     private readonly ConcurrentQueue<AppliedStoreFault> _applied = new();
     private readonly ConcurrentQueue<Guid> _lostLeases = new();
     private readonly Lock _callGate = new();
@@ -139,10 +141,38 @@ public sealed class FaultInjectingDataStorage(IDataStorage inner, FaultScript fa
 
     public IMonitoringApi GetMonitoringApi() => Inner.GetMonitoringApi();
 
+    // Change reads serve the dashboard like the monitoring API, so they pass through without faults.
+    public ValueTask<DateTimeOffset?> GetLatestMessageChangeMarkerAsync(
+        CancellationToken cancellationToken = default
+    ) => Inner.GetLatestMessageChangeMarkerAsync(cancellationToken);
+
+    public ValueTask<IReadOnlyList<MessageChange>> ReadChangedMessagesAsync(
+        MessageChangeKind kind,
+        DateTimeOffset after,
+        DateTimeOffset through,
+        MessageChangePosition? resumeAfter,
+        int maxCount,
+        CancellationToken cancellationToken = default
+    ) => Inner.ReadChangedMessagesAsync(kind, after, through, resumeAfter, maxCount, cancellationToken);
+
     public IInboxOperationsApi GetInboxOperationsApi() => Inner.GetInboxOperationsApi();
 
     public IScheduledDeliveryOperationsApi GetScheduledDeliveryOperationsApi() =>
         Inner.GetScheduledDeliveryOperationsApi();
+
+    public IPublishedOperationsApi GetPublishedOperationsApi() => Inner.GetPublishedOperationsApi();
+
+    ValueTask<PublishedOperationResult> IAdditionalOutboxOperations.ApplyPublishedWithoutReceiptAsync(
+        MessagingOperationType operationType,
+        PublishedOperationRequest request,
+        CancellationToken cancellationToken
+    ) => _outboxOperations.ApplyPublishedWithoutReceiptAsync(operationType, request, cancellationToken);
+
+    ValueTask<PublishedOperationResult> IAdditionalOutboxOperations.RecordOutboxReceiptAsync(
+        string outbox,
+        PublishedOperationResult applied,
+        CancellationToken cancellationToken
+    ) => _outboxOperations.RecordOutboxReceiptAsync(outbox, applied, cancellationToken);
 
     public ValueTask<InboxHistoryRetentionCutoffs> GetInboxHistoryRetentionCutoffsAsync(
         CancellationToken cancellationToken = default

@@ -301,20 +301,22 @@ internal sealed partial class RelationalDataStorage
 
         // Expiry is decided against the database clock by the purge, so the database clock also stamps it.
         var received = _IsReceived(table);
+        // Each poison row records its own failure text. Its fingerprint is the fixed poison cause: the exception says
+        // why this claim could not read the row, not what failed the message.
+        var exceptions = string.Join(
+            ' ',
+            poisonMessages.Select(
+                (_, index) =>
+                    string.Create(CultureInfo.InvariantCulture, $"WHEN @Poison{index} THEN @PoisonInfo{index}")
+            )
+        );
         var set =
-            $"{_t.StatusName}=@StatusName, {_t.NextRetryAt}=NULL, {_RevokeAnyLeaseAssignments(ending: RowLeaseState.Settled)}, {_t.ExpiresAt}={_dialect.ShiftByDuration(SqlDialectTokens.Now, "ExpiresAfter")}";
+            $"{_t.StatusName}=@StatusName, {_t.NextRetryAt}=NULL, {_RevokeAnyLeaseAssignments(ending: RowLeaseState.Settled)}, {_t.ExpiresAt}={_dialect.ShiftByDuration(SqlDialectTokens.Now, "ExpiresAfter")}, {_t.ExceptionInfo}=CASE {_t.Id} {exceptions} END, {_t.FailureFingerprint}=@PoisonFingerprint, {_t.StampChange}";
         if (received)
         {
-            // Each poison row records its own failure; the inbox generation ends, and its retention starts.
-            var exceptions = string.Join(
-                ' ',
-                poisonMessages.Select(
-                    (_, index) =>
-                        string.Create(CultureInfo.InvariantCulture, $"WHEN @Poison{index} THEN @PoisonInfo{index}")
-                )
-            );
+            // The inbox generation ends, and its retention starts.
             set +=
-                $", {_t.ExceptionInfo}=CASE {_t.Id} {exceptions} END, {_t.AttemptId}=CASE WHEN {_t.IsInboxRecord} = {_t.True} THEN NULL ELSE {_t.AttemptId} END, {_t.TerminalAt}=CASE WHEN {_t.IsInboxRecord} = {_t.True} THEN {SqlDialectTokens.Now} ELSE {_t.TerminalAt} END, {_t.EffectiveExpiresAt}=CASE WHEN {_t.IsInboxRecord} = {_t.True} THEN {_dialect.ShiftBySeconds(SqlDialectTokens.Now, _t.InboxRetentionSeconds)} ELSE {_t.EffectiveExpiresAt} END";
+                $", {_t.AttemptId}=CASE WHEN {_t.IsInboxRecord} = {_t.True} THEN NULL ELSE {_t.AttemptId} END, {_t.TerminalAt}=CASE WHEN {_t.IsInboxRecord} = {_t.True} THEN {SqlDialectTokens.Now} ELSE {_t.TerminalAt} END, {_t.EffectiveExpiresAt}=CASE WHEN {_t.IsInboxRecord} = {_t.True} THEN {_dialect.ShiftBySeconds(SqlDialectTokens.Now, _t.InboxRetentionSeconds)} ELSE {_t.EffectiveExpiresAt} END";
         }
 
         var sql = _dialect.Render(
@@ -348,11 +350,12 @@ internal sealed partial class RelationalDataStorage
                             "ExpiresAfter",
                             TimeSpan.FromSeconds(Options.FailedMessageExpiredAfter)
                         );
-
-                        if (!received)
-                        {
-                            return;
-                        }
+                        _dialect.AddParameter(
+                            command,
+                            "PoisonFingerprint",
+                            _FingerprintType,
+                            MessagingFailureFingerprints.Poison
+                        );
 
                         for (var index = 0; index < poisonMessages.Count; index++)
                         {
@@ -959,7 +962,8 @@ internal sealed partial class RelationalDataStorage
             AND {_terminalGuard}
             """,
             [_t.ExpiresAt, _t.Id],
-            $"{_t.StatusName}=@QueuedStatusName",
+            // A stale Queued row claimed again only changes its lease, so only a Delayed row's marker moves.
+            $"{_t.StatusName}=@QueuedStatusName, {_t.ChangedAt}=CASE WHEN {_t.StatusName} = @QueuedStatusName THEN {_t.ChangedAt} ELSE {_dialect.NextChangeMarker(_t.ChangedAt)} END",
             [_t.Content, _t.IntentType, _t.Retries, _t.InlineAttempts, _t.Added, _t.ExpiresAt, _t.LeaseTakeoverCount],
             "BatchSize",
             deadlineExpression: _dialect.ShiftByDuration(

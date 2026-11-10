@@ -48,13 +48,15 @@ public sealed class JobsOrphanedOwnerSweepTests : TestBase
                         aliveIdentity,
                         NodeLivenessState.Alive,
                         Role: null,
-                        new Dictionary<string, string>(StringComparer.Ordinal)
+                        new Dictionary<string, string>(StringComparer.Ordinal),
+                        DateTimeOffset.UnixEpoch
                     ),
                     new NodeLivenessSnapshot(
                         suspectedIdentity,
                         NodeLivenessState.Suspected,
                         Role: null,
-                        new Dictionary<string, string>(StringComparer.Ordinal)
+                        new Dictionary<string, string>(StringComparer.Ordinal),
+                        DateTimeOffset.UnixEpoch
                     ),
                 ])
             );
@@ -123,13 +125,15 @@ public sealed class JobsOrphanedOwnerSweepTests : TestBase
                         deadIdentity,
                         NodeLivenessState.Dead,
                         Role: null,
-                        new Dictionary<string, string>(StringComparer.Ordinal)
+                        new Dictionary<string, string>(StringComparer.Ordinal),
+                        DateTimeOffset.UnixEpoch
                     ),
                     new NodeLivenessSnapshot(
                         suspectedIdentity,
                         NodeLivenessState.Suspected,
                         Role: null,
-                        new Dictionary<string, string>(StringComparer.Ordinal)
+                        new Dictionary<string, string>(StringComparer.Ordinal),
+                        DateTimeOffset.UnixEpoch
                     ),
                 ])
             );
@@ -198,7 +202,8 @@ public sealed class JobsOrphanedOwnerSweepTests : TestBase
                             identity,
                             NodeLivenessState.Alive,
                             Role: null,
-                            new Dictionary<string, string>(StringComparer.Ordinal)
+                            new Dictionary<string, string>(StringComparer.Ordinal),
+                            DateTimeOffset.UnixEpoch
                         ),
                     ]
                     : [];
@@ -307,7 +312,8 @@ public sealed class JobsOrphanedOwnerSweepTests : TestBase
                             interleavedIdentity,
                             NodeLivenessState.Alive,
                             Role: null,
-                            new Dictionary<string, string>(StringComparer.Ordinal)
+                            new Dictionary<string, string>(StringComparer.Ordinal),
+                            DateTimeOffset.UnixEpoch
                         ),
                     ]
                     : [];
@@ -405,7 +411,8 @@ public sealed class JobsOrphanedOwnerSweepTests : TestBase
                         self,
                         NodeLivenessState.Alive,
                         Role: null,
-                        new Dictionary<string, string>(StringComparer.Ordinal)
+                        new Dictionary<string, string>(StringComparer.Ordinal),
+                        DateTimeOffset.UnixEpoch
                     ),
                 ])
             );

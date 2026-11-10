@@ -11,9 +11,10 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Headless.Messaging.Internal;
 
 /// <summary>
-/// Every outbox storage of the host: the primary storage, which also owns the inbox, retry state, and the
-/// dashboard, plus the additional outboxes registered through <c>AddOutbox()</c>. A unit of work's publish goes to
-/// the one outbox whose database matches the unit.
+/// Every outbox storage of the host: the primary storage (named <see cref="MessagingSetupBuilder.PrimaryOutboxName"/>),
+/// which also owns the inbox, retry state, and the dashboard, plus the additional outboxes registered through
+/// <c>AddOutbox(name)</c>, each known by its chosen name. A unit of work's publish goes to the one outbox whose
+/// database matches the unit.
 /// </summary>
 /// <remarks>
 /// A published row from an additional outbox carries its storage in <c>MediumMessage.OutboxStorage</c> from the
@@ -21,7 +22,7 @@ namespace Headless.Messaging.Internal;
 /// </remarks>
 internal sealed class MessagingOutboxes : IDeliveryCoordinationResolver
 {
-    private const string _PrimaryName = "the primary storage";
+    private const string _PrimaryName = MessagingSetupBuilder.PrimaryOutboxName;
 
     private readonly IDeliveryCoordinationResolver? _primaryCoordination;
 
@@ -143,8 +144,8 @@ internal sealed class MessagingOutboxes : IDeliveryCoordinationResolver
         {
             throw new MessagingConfigurationException(
                 primary is null
-                    ? "AddOutbox() requires a primary messaging storage. Configure one with UsePostgreSqlEntityFramework<TContext>(), UseSqlServerEntityFramework<TContext>(), UsePostgreSql(...), or UseSqlServer(...)."
-                    : $"AddOutbox() requires a relational primary messaging storage, but the primary storage is '{primary.GetType().Name}'."
+                    ? "AddOutbox(name) requires a primary messaging storage. Configure one with UsePostgreSqlEntityFramework<TContext>(), UseSqlServerEntityFramework<TContext>(), UsePostgreSql(...), or UseSqlServer(...)."
+                    : $"AddOutbox(name) requires a relational primary messaging storage, but the primary storage is '{primary.GetType().Name}'."
             );
         }
 
@@ -193,7 +194,7 @@ internal interface IRelationalOutboxStorage
 }
 
 /// <summary>
-/// One additional outbox registered through <c>AddOutbox().Use…()</c>. The provider package supplies the factory;
+/// One additional outbox registered through <c>AddOutbox(name).Use…()</c>. The provider package supplies the factory;
 /// the storage it builds serves only the published rows of its own database.
 /// </summary>
 internal sealed class OutboxStorageRegistration(string name, Func<IServiceProvider, MessagingOutbox> factory)

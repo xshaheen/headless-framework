@@ -482,7 +482,7 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
             ) AS "ConstraintCount", (
                 SELECT COUNT(*) FROM information_schema.columns
                 WHERE table_schema='headless' AND table_name='messaging_inbox_operation_receipts'
-                  AND column_name IN ('expected_status','outcome','child_incarnation_id','target_kind','expected_due_at','message_name','message_id','lane')
+                  AND column_name IN ('expected_status','outcome','child_incarnation_id','target_kind','expected_due_at','message_name','message_id','lane','outbox_name')
             ) AS "ReceiptColumnCount";
             """
         );
@@ -493,7 +493,7 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
 
         indexCount.Should().Be(2);
         constraintCount.Should().Be(2);
-        receiptColumnCount.Should().Be(8);
+        receiptColumnCount.Should().Be(9);
         steps.Should().Equal("1", "2", "3");
     }
 
@@ -1512,7 +1512,8 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
     [InlineData("messaging_received")]
     public async Task should_create_status_name_added_composite_index(string table)
     {
-        // #508 — the initializer creates the final ("status_name","added") dashboard index directly.
+        // #508 — the initializer creates the final ("status_name","added","id") dashboard index directly; the id
+        // key column serves the status-filtered keyset list.
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
 
@@ -1521,7 +1522,7 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
             new { IndexName = $"idx_{table}_status_name_added" }
         );
 
-        indexDef.Should().NotBeNull().And.Contain("(status_name, added)");
+        indexDef.Should().NotBeNull().And.Contain("(status_name, added, id)");
         // The dashboard counts filter on intent_type too; carrying it lets them read the index alone.
         indexDef.Should().Contain("INCLUDE (intent_type)");
     }

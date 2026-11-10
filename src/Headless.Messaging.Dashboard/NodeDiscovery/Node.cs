@@ -4,7 +4,7 @@ namespace Headless.Messaging.Dashboard;
 
 /// <summary>
 /// Represents a discovered messaging node in the dashboard federation.
-/// Each node exposes its own dashboard API and can be selected in the UI to proxy requests to its data.
+/// Each node serves its own Messaging module, which the dashboard reaches through forwarding when the node is picked.
 /// </summary>
 [PublicAPI]
 public class Node

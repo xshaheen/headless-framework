@@ -14,9 +14,25 @@
     <InternalsVisibleTo Include="Headless.Messaging.Dashboard.Tests.Unit" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Headless.Dashboard.Authentication\Headless.Dashboard.Authentication.csproj" />
+    <ProjectReference Include="..\Headless.Dashboard\Headless.Dashboard.csproj" />
     <ProjectReference Include="..\Headless.Messaging\Headless.Messaging.csproj" />
   </ItemGroup>
-  <!-- Builds wwwroot SPA and embeds wwwroot/dist/** at build time (dist is gitignored, not committed). -->
+  <!--
+    The front end is the Messaging dashboard module, a member of the repository-root npm workspace. Its build writes
+    wwwroot/dist/modules/messaging, which embeds as Headless.Messaging.Dashboard.wwwroot.dist.modules.messaging.*
+    (MessagingAssets), then holds the module to its size budgets and writes .build-complete last, so a build whose
+    budget step failed is not up to date. The stamp itself is not embedded.
+  -->
+  <ItemGroup>
+    <DashboardSpaInput Include="$(MSBuildProjectDirectory)/wwwroot/budget.json" />
+  </ItemGroup>
+  <PropertyGroup>
+    <DashboardSpaBuildStamp>$(MSBuildProjectDirectory)/wwwroot/dist/.build-complete</DashboardSpaBuildStamp>
+  </PropertyGroup>
+  <Target Name="_ExcludeDashboardSpaBuildStamp" AfterTargets="_EmbedDashboardSpa">
+    <ItemGroup>
+      <EmbeddedResource Remove="wwwroot/dist/.build-complete" />
+    </ItemGroup>
+  </Target>
   <Import Project="$(MSBuildThisFileDirectory)..\..\eng\DashboardSpa.targets" />
 </Project>

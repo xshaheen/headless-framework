@@ -1,4 +1,5 @@
 using Headless.Coordination;
+using Headless.Dashboard;
 using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Jobs.Api.Demo;
@@ -26,9 +27,10 @@ builder.Services.AddHeadlessJobs(options =>
             dbOptions.UseNpgsql(connectionString, npgsql => npgsql.MigrationsAssembly("Headless.Jobs.Api.Demo"))
         );
     });
-
-    options.AddDashboard(dashboard => dashboard.WithNoAuth());
 });
+
+// The Jobs module of the Headless dashboard, at /headless/jobs. No auth: a local demo only.
+builder.Services.AddHeadlessDashboard(dashboard => dashboard.WithNoAuth().AddJobs());
 
 // The host start only verifies its tables and queues, so this demo creates them as it starts; a deployed app runs
 // `dotnet <app>.dll resources provision` instead.
@@ -66,6 +68,6 @@ app.MapPost(
         }
     }
 );
-app.MapHeadlessJobsDashboard();
+app.MapHeadlessDashboard();
 
 await app.RunAsync();

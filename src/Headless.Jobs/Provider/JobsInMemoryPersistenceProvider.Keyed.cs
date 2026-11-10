@@ -103,6 +103,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 historical.Status = JobStatus.Skipped;
                 historical.SkippedReason = "Superseded by a newer keyed generation.";
                 historical.ExecutedAt = historical.UpdatedAt = row.CreatedAt;
+                historical.ChangedAt = _NextChangeMarker();
                 // Claims use the same exact-instance CAS. A winning claim prevents replacement.
                 if (!_TryUpdateTimeJob(current.Id, historical, current))
                 {
@@ -116,6 +117,8 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 }
             }
 
+            // The published row replaces the barrier readers could already see, so it carries its own marker.
+            row.ChangedAt = _NextChangeMarker();
             if (!_TryUpdateTimeJob(row.Id, row, barrier))
             {
                 throw new InvalidOperationException(
@@ -170,6 +173,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 var updated = _CloneTicker(current);
                 updated.CancelRequested = true;
                 updated.UpdatedAt = _timeProvider.GetUtcNow();
+                updated.ChangedAt = _NextChangeMarker();
                 // An idle row under an active lease is a claimed chain descendant, so only the running chain may end it.
                 var pending = current.Status == JobStatus.Idle && current.Lease.State != RowLeaseState.Active;
                 if (pending)

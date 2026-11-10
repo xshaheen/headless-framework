@@ -178,7 +178,7 @@ public sealed class MessagingHealthCheckTests : TestBase
             .Initializer.InitializeAsync(Arg.Any<CancellationToken>())
             .Returns(_ => Task.FromException(new TimeoutException("shipping is down")));
         await using var provider = _BuildProvider(
-            setup => setup.AddOutbox().UseStorage("AddOutbox().UseShipping()", _ => shipping),
+            setup => setup.AddOutbox("shipping").UseStorage(_ => shipping),
             services =>
             {
                 services.RemoveAll<MessagingOutboxes>();
@@ -213,7 +213,7 @@ public sealed class MessagingHealthCheckTests : TestBase
         // given
         var billing = AdditionalOutboxDoubles.CreateOutbox("billing", initialized: false);
         await using var provider = _BuildProvider(
-            setup => setup.AddOutbox().UseStorage("AddOutbox().UseBilling()", _ => billing),
+            setup => setup.AddOutbox("billing").UseStorage(_ => billing),
             services =>
             {
                 services.RemoveAll<MessagingOutboxes>();
@@ -275,7 +275,7 @@ public sealed class MessagingHealthCheckTests : TestBase
     {
         // given
         await using var provider = _BuildProvider(setup =>
-            setup.AddOutbox().UseStorage("AddOutbox().UseBilling()", _ => AdditionalOutboxDoubles.CreateOutbox("b"))
+            setup.AddOutbox("b").UseStorage(_ => AdditionalOutboxDoubles.CreateOutbox("b"))
         );
 
         // when
@@ -311,10 +311,7 @@ public sealed class MessagingHealthCheckTests : TestBase
     {
         // given
         await using var provider = _BuildProvider(
-            setup =>
-                setup
-                    .AddOutbox()
-                    .UseStorage("AddOutbox().UseBilling()", _ => AdditionalOutboxDoubles.CreateOutbox("b")),
+            setup => setup.AddOutbox("b").UseStorage(_ => AdditionalOutboxDoubles.CreateOutbox("b")),
             before: services =>
                 services.RemoveHealthChecks(registration =>
                     registration.Name.StartsWith("messaging", StringComparison.Ordinal)

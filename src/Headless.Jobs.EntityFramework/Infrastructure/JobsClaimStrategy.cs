@@ -615,7 +615,9 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                             await context.AddAsync(itemToAdd, cancellationToken).ConfigureAwait(false);
                             try
                             {
-                                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                                await dbContext
+                                    .SaveChangesAndStampAsync<TTimeJob, TCronJob>(cancellationToken)
+                                    .ConfigureAwait(false);
                             }
                             catch (DbUpdateException)
                             {

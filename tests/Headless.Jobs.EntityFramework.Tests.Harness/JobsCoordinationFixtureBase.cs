@@ -1544,11 +1544,6 @@ internal sealed class JobsSideEffectsProbe : IJobsHostScheduler, IJobsNotificati
 
     void IJobsNotificationHubSender.UpdateHostException(object exceptionMessage) { }
 
-    Task IJobsNotificationHubSender.UpdateNodesAsync(object nodes)
-    {
-        return Task.CompletedTask;
-    }
-
     Task IJobsNotificationHubSender.AddCronOccurrenceAsync(Guid groupId, object occurrence)
     {
         return Task.CompletedTask;

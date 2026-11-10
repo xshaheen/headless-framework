@@ -2,7 +2,6 @@
 
 using Headless.Checks;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Headless.Messaging.Dashboard.K8s;
 
@@ -53,9 +52,6 @@ internal sealed class K8sDiscoveryOptionsExtension(Action<K8sDiscoveryOptions>? 
         option?.Invoke(k8sOptions);
         services.AddSingleton(k8sOptions);
 
-        services.AddHttpClient();
-        services.TryAddSingleton<IRequestMapper, RequestMapper>();
-        services.TryAddSingleton<GatewayProxyAgent>();
         services.AddSingleton<INodeDiscoveryProvider, K8sNodeDiscoveryProvider>();
     }
 }

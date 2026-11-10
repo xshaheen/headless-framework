@@ -12,7 +12,7 @@ packages: Jobs.Abstractions, Jobs, Jobs.Dashboard, Jobs.SourceGenerator, Jobs.En
 Required packages: `Jobs` + `Jobs.EntityFramework` (persistence) + `Jobs.SourceGenerator` (compile-time job registration). Add the PostgreSQL or SQL Server Jobs EF provider package for native atomic claims; otherwise the EF package uses its portable optimistic-CAS fallback.
 
 Optional add-ons:
-- `Jobs.Dashboard` — monitoring UI with authentication (basic, API key, host auth) plus live-cluster node view
+- `Jobs.Dashboard` — the Jobs module of the unified dashboard (`AddHeadlessDashboard(d => d.AddJobs())`): runs, cron jobs, functions, and live nodes, with commands and Operations
 - OpenTelemetry tracing and metrics ship inside `Jobs` (see [OpenTelemetry Instrumentation](#opentelemetry-instrumentation)); there is no separate instrumentation package
 - Readiness checks and the `jobs` section of the host manifest register with Jobs itself (see [Readiness and host manifest](#readiness-and-host-manifest))
 - `Jobs.Abstractions` — interfaces only; pulled in transitively by `Jobs`; install directly only when building a library on top
@@ -81,7 +81,7 @@ Declare a job as a class that implements `IJob` (no arguments) or `IJob<TArgs>` 
 - A job class is built for every run from that run's DI scope with `ActivatorUtilities.CreateInstance`, so constructor parameters resolve like scoped services. When a class has several public constructors, mark the one to use with `[ActivatorUtilitiesConstructor]`.
 - Use `IJobScheduler` for routine immediate, delayed, and recurring scheduling. A job with arguments is addressed by its argument value: `EnqueueAsync(new CloseDayArgs(day), ct)`, because each argument type belongs to exactly one job. A job without arguments is addressed by its class: `EnqueueAsync<CloseDayJob>(ct)`, constrained to `IJob`. There is no descriptor-based overload.
 - A job retries by its failure policy: declare it with `[Job(id, FailurePolicy = typeof(TPolicy))]`, replace it on a host with `Tune(id, j => j.FailurePolicy<TPolicy>())`, adjust its numbers under `Headless:Jobs:Jobs:{id}:FailurePolicy`, and set the host default with `options.DefaultFailurePolicy<TPolicy>()`. Without any of these a job does not retry. `ConfigureDefaults`, `ConfigureJob<TRequest>`, and `Tune(...).Options(...)` reject `Retries` and `RetryIntervals`; only a scheduling call's `WithRetries` / `WithRetryIntervals` override the stored count for one run. See [Failure policy](#failure-policy).
-- Requeue a `Failed` standalone time job with `scheduler.RequeueAsync(id, ct)` and a `Failed` cron occurrence with `scheduler.RequeueOccurrenceAsync(id, ct)`. Both return a `JobRequeueOutcome` instead of throwing for a refused row. See [Requeue a failed job](#requeue-a-failed-job).
+- Requeue a `Failed`, `Cancelled`, or `Skipped` standalone time job with `scheduler.RequeueAsync(id, ct)` and such a cron occurrence with `scheduler.RequeueOccurrenceAsync(id, ct)`. Both return a `JobRequeueOutcome` instead of throwing for a refused row. See [Requeue a failed job](#requeue-a-failed-job).
 - `JobOptions` / `RecurringJobOptions` support description, durable retry count/intervals, and node-death policy; recurring options additionally accept nullable IANA `TimeZoneId`. Execution time and cron expression are method arguments. Do not add priority to scheduling options; priority comes from `[Job(Priority = ...)]`, and a host changes it with `Tune`.
 - Author static conditional continuation trees with the typed `JobChain` model (it replaces the removed fluent chain builder): `JobChain.Start(args)` or `JobChain.Start<TJob>()`, extend node handles with `Then` (on-success) / `Catch` (on-failure), then `await scheduler.EnqueueAsync(chain.Build(), ct)`. Each node allows one `Then` and one `Catch`; chains are capped at `SchedulerOptionsBuilder.MaxChainDepth` nodes deep (default 10); `Catch` is on-failure sugar and never recovers the parent. The tree is written atomically either way: through `unit.Jobs` with the unit, through the injected scheduler in the store's own transaction. See [Typed Job Chains](#typed-job-chains).
 - Import `Headless.Jobs` for ordinary scheduling callbacks with the singular `JobOptionsBuilder`; the plural generic `JobsOptionsBuilder<TTimeJob, TCronJob>` configures Core. Callbacks must finish synchronously. Builders support sequential reuse with copied retry arrays; `Build()` alone does not validate or accept work. Nullable setters restore inheritance, and an unset atomic assertion cannot weaken an inherited requirement. `WithIdempotencyKey` / `WithIdempotencyTtl` author the enqueue idempotency window per call; startup policy callbacks reject them — the window is never inherited from host or function policy.
@@ -286,11 +286,13 @@ public static async Task<bool> TryRequeueOccurrenceAsync(IJobScheduler scheduler
     await scheduler.RequeueOccurrenceAsync(occurrenceId, ct) == JobRequeueOutcome.Requeued;
 ```
 
-- **`RequeueAsync(timeJobId)`** moves a `Failed` standalone time job to `Idle`: `RetryCount` returns to 0, the stored exception, owner, and lease are cleared, and `ExecutionTime` moves to the store's current instant, so the next claim runs it. The stored `Retries` and `RetryIntervals` are kept, so the row gets its full budget again.
-- **`RequeueOccurrenceAsync(occurrenceId)`** moves a `Failed` cron occurrence to `Idle` with the same reset. It keeps its `ExecutionTime`, which identifies the scheduled instant it stands for, so the fallback check (`FallbackIntervalChecker`) claims it rather than the main peek. An occurrence of a paused definition can be requeued and waits until the definition resumes.
-- **Refusals** leave the row unchanged and return the reason: `NotFound`; `NotFailed` (a repeated or concurrent requeue lands here, so requeue is safe to repeat); `ChainMember` (a time job with a parent or a child); `SupersededGeneration` (a keyed time job that is no longer its key's current generation); `Overlap` (the occurrence's definition forbids overlapping runs and another occurrence is unfinished, checked under the definition lock that occurrence creation takes); `Conflict` (the row changed during the request, or another live occurrence holds the instant).
+- **`RequeueAsync(timeJobId)`** moves a `Failed`, `Cancelled`, or `Skipped` standalone time job to `Idle`: `RetryCount` returns to 0, the stored exception, skip reason, cancel request, owner, and lease are cleared, and `ExecutionTime` moves to the store's current instant, so the next claim runs it. The stored `Retries` and `RetryIntervals` are kept, so the row gets its full budget again.
+- **`RequeueOccurrenceAsync(occurrenceId)`** moves a `Failed`, `Cancelled`, or `Skipped` cron occurrence to `Idle` with the same reset. It keeps its `ExecutionTime`, which identifies the scheduled instant it stands for, so the fallback check (`FallbackIntervalChecker`) claims it rather than the main peek. An occurrence of a paused definition can be requeued and waits until the definition resumes.
+- **Refusals** leave the row unchanged and return the reason: `NotFound`; `NotFailed` (the row is not failed, cancelled, or skipped; a repeated or concurrent requeue lands here, so requeue is safe to repeat); `ChainMember` (a time job with a parent or a child); `SupersededGeneration` (a keyed time job that is no longer its key's current generation); `Overlap` (the occurrence's definition forbids overlapping runs and another occurrence is unfinished, checked under the definition lock that occurrence creation takes); `Conflict` (the row changed during the request, or another live occurrence holds the instant).
 
-The Jobs dashboard shows a requeue button on `Failed` time jobs and occurrences. It calls `POST /api/job/requeue` and `POST /api/cron-job-occurrence/requeue` with the row id as the `id` query parameter; a refusal returns HTTP 400 with the outcome name as the body. A custom `IJobPersistenceProvider` implements `RequeueTimeJobAsync` and `RequeueCronJobOccurrenceAsync`.
+The Jobs dashboard module offers Requeue (`jobs.requeue`) on a failed, cancelled, or skipped run, and over every run a filter matches as an Operation; a refusal on one run answers `409` with the reason. A custom `IJobPersistenceProvider` implements `RequeueTimeJobAsync` and `RequeueCronJobOccurrenceAsync`.
+
+The eligibility rule is public as `JobRequeueRules`, so every provider refuses the same rows and the dashboard counts only failures a requeue accepts: `RefuseTimeJob` and `RefuseCronJobOccurrence` return the refusal for a row's state, `IsRequeueableStatus` names the three statuses a requeue accepts, `RequeueableTimeJob(timeJobs)`, `RequeueableCronJobOccurrence()`, `ActionableTimeJobFailure(timeJobs)`, and `ActionableCronJobOccurrenceFailure(occurrences)` return the same rules as query predicates a LINQ provider translates, `IsActionableTimeJobFailure` and `IsActionableCronJobOccurrenceFailure` are the in-memory forms, and `IsSuccess` treats `DueDone` as a success. Only a `Failed` run is an actionable failure: a cancelled or skipped run is requeueable, but it was stopped on purpose, so it never enters Needs you or a failure group. A failed time job stays actionable until it is requeued or deleted; a failed cron occurrence stops being actionable once a later occurrence of the same cron job succeeds.
 
 ### Typed Job Chains
 
@@ -384,6 +386,58 @@ Claims decide whether a row is due on the store's clock, so the store also sets 
 - **Immediate dispatch needs no node-clock comparison**: a run-now job takes the immediate acquire at any skew, including an enlisted job whose commit lands long after its write. A delayed job takes it only when the node's monotonic time since the write already covers the delay when the write, or the unit's commit, returns; otherwise the scheduler claims it when it falls due. The acquire's store-clock test still refuses a row that is not yet due.
 - **Audit stamps stay on the node clock**: `CreatedAt` and the initial `UpdatedAt` come from the enqueuing node's `TimeProvider`. A run-now job's `ExecutionTime` can therefore differ from its `CreatedAt` by that node's skew, as a requeued job's already does.
 - **Lateness shows skew**: `JobContext.Lateness` and `headless.jobs.queue.lag` compare the store-stamped due time with the executing node's clock. A node ahead of the database reports its skew as lag on a run-now job, as it already did for scheduled jobs.
+
+### Change marker and change reads
+
+Every time job, cron definition, and cron occurrence carries `ChangedAt`, a change marker the store stamps on each write an operator sees: insert, claim, progress, retry, completion, failure, cancel, requeue, edit, pause, resume, schedule advance, and the parent of a deleted chain member. A reader on any node asks the store which rows changed since its cursor, so a write made through one node reaches views open on every node without a broker.
+
+- **The store stamps it**: each write sets `ChangedAt` to the later of the store's statement clock and the row's previous `ChangedAt` plus one tick of the column's precision (PostgreSQL one microsecond, SQL Server 100 ns). Two writes inside one clock tick, or a write after the database clock steps back, still raise it. PostgreSQL stamps `clock_timestamp()` and SQL Server `SYSUTCDATETIME()` in the statement that writes the row; an insert takes the column default. The in-memory store stamps one counter under its lock, so its markers are unique across tables. A row's version is `ChangedAt.Ticks` (`JobChange.Version`).
+- **The caller cannot set it**: the EF model never writes `ChangedAt` from an entity, on insert or update. The setter is public only so a third-party persistence provider can stamp it.
+- **Lease renewals do not stamp it**: a renewal moves only `LockedUntil`, which no view shows, so a running job does not re-enter every change read on each heartbeat.
+- **Reads run in passes**: `IJobPersistenceProvider.ReadChangesAsync(cursor, pageSize, overlapWindow)` returns at most `pageSize` rows across the three tables, ordered by `(ChangedAt, Id)` within each table, and the next `JobChangeCursor`. A pass covers markers after `PassAfter` through `PassThrough`, the store's latest marker when the pass started, and pages forward until it reaches `PassThrough`; the next pass starts `overlapWindow` before that bound. A transaction that stamped an earlier marker but committed after a later one is therefore read on the next pass, and a burst larger than one page delays newer rows by some reads but never hides them. Rows in the overlap window are read again on every pass; drop repeats by `(Id, Version)`.
+- **Start and resume**: `GetChangeStartCursorAsync()` returns a cursor at the store's latest marker. `JobChangeCursor.ToString()` and `JobChangeCursor.TryParse` round-trip it, so another node can resume it.
+- **Enlisted writes are re-stamped after commit**: a row written through `unit.Jobs`, `unit.TimeJobs<T>()`, or `unit.CronJobs<T>()` is stamped inside the caller's transaction, which may commit long after. The unit's after-commit Jobs work re-stamps those rows in one statement per table, so the overlap window needs to cover only the store's own short writes, not the caller's transaction. A process that stops between the commit and the re-stamp, or a post-commit queue that drops the signal, leaves the row visible to a refetch but not to a change read. A keyed write through a unit re-stamps the run it reports; a generation it superseded in the same unit is not re-stamped.
+- **Indexed**: each table has an index on `(ChangedAt, Id)`, so a read is a range seek.
+- **Providers**: a provider implements the two reads `ReadChangesAsync` is built on, `GetLatestChangeMarkerAsync` and `ReadChangedRowsAsync`, and inherits the pass logic. Their defaults throw `NotSupportedException`, because a store that does not stamp the marker cannot report changes. EF backends other than PostgreSQL and SQL Server stamp `CURRENT_TIMESTAMP`, a clock the database defines and that may be per transaction, with no per-row ordering guarantee beyond it; treat their cross-node change reads as best effort.
+
+### Failure fingerprint
+
+A failed time job or cron occurrence stores `FailureFingerprint`, a versioned key that groups failures by cause. Grouping by the first exception line splits one cause into many groups whenever the message carries an id or a value; the fingerprint ignores the message.
+
+- **Computed from the live exception**: when a handler throws, the executor takes the innermost exception, after unwrapping `AggregateException` (its first inner exception) and `TargetInvocationException`, and the top three stack frames whose declaring type is outside `System.*` and `Microsoft.*`. Each frame is the method's full name (`Namespace.Type.Method`) with no line number or IL offset; a lambda, local function, or async state-machine frame reduces to the method that declares it. The fingerprint is `v1:` followed by the first 16 hex characters of the SHA-256 of the exception type's full name and those frame names, one per line. An exception the handler wraps itself (a domain exception around an I/O fault) is fingerprinted as the wrapper. The executor computes it with `FailureFingerprint.Compute` from `Headless.Extensions` (see [extensions.md](extensions.md)), the algorithm other features share, so fingerprints compare across features.
+- **Written with the failure**: the executor carries the fingerprint on `JobExecutionState.FailureFingerprint` and the store writes it in the same update as the failure: on the terminal `Failed` write, and on each in-process retry's `RetryCount` write. The stored row therefore keeps the cause of its most recent failed attempt, also after a later attempt succeeds. A requeue clears it. The stored exception text is JSON with the outer exception's type and message, then its frames and every inner exception as a `Type: message` line with its own frames (up to five inner exceptions); a store still cannot compute the fingerprint from it later, because the fingerprint needs the live exception's frames as method names.
+- **Fixed per cause when the store fails a run**: a failure written without an exception stores a constant from `JobFailureFingerprints`: `v1:node-not-alive` (dead-node sweep, `MarkFailed`), `v1:lease-lapsed` (stalled-lease sweep, `MarkFailed`), `v1:interrupted-by-shutdown` (the running node stopped and settled a `MarkFailed` run), and `v1:retry-budget-exhausted-by-recovery` (the executor refused a run whose retry budget reclaims had spent). Each constant equals `FailureFingerprint.ForCause` of its cause name. Each is written in the same conditional update that ends the run, so when the executor and a sweep race to end one run, only the winning write stores a fingerprint.
+- **Versioned**: a change to the algorithm is a new version prefix. Rows written under an older version keep their groups until they age out.
+- **Indexed**: each run table has an index on `(Function, FailureFingerprint, Status)`, so counting and listing a function's failures by cause is an index range read. The column holds at most `JobFailureFingerprints.MaxLength` (64) characters.
+- **Providers**: a third-party persistence provider writes `FailureFingerprint` when `JobExecutionState.PropertiesToUpdate` names it, writes the `JobFailureFingerprints` constants for its own sweep failures, and clears the value on requeue. The entity setters are public for that purpose.
+
+### Attempt history
+
+Every execution of a time job or cron occurrence is stored as an attempt, so a run's timeline shows each retry with its node, times, outcome, exception, and failure fingerprint. The run row keeps only the latest exception and a retry count; the attempts keep the rest.
+
+- **Two tables**: `TimeJobAttempts` (`TimeJobAttemptEntity`) and `CronJobOccurrenceAttempts` (`CronJobOccurrenceAttemptEntity`), keyed by `(RunId, Number)`, each with a cascading foreign key to its run table. Deleting a run deletes its attempts in the same statement, including a chain delete (every member's attempts), a cron definition delete (its occurrences' attempts), and a retired seed. A chain delete still retries the same parent-child conflicts as before; the attempt key cascades and adds none.
+- **One attempt per handler invocation**: the executor opens an attempt each time it invokes the handler, so an in-process retry is a new attempt. `Number` counts from 1 within the run and keeps counting after a requeue. The open is its own short write, never part of the claim, and is best effort: a failed open is logged and the run continues.
+- **Closed by the write that ends the execution**: the retry write (`RetryCount`), the terminal write, and every store write that moves the run out of `InProgress` close the open attempt atomically with that write. Only the write that wins the run's conditional update closes it, so an attempt never closes twice when the executor and a sweep, or two sweeps, race on one run. When no open attempt exists because its open was lost, the close inserts one closed attempt with the owner and times the writer knows; a store-written close does not know the start, so `StartedAt` stays `null`.
+- **Outcomes** (`JobAttemptOutcome`): `Succeeded` (including `DueDone`); `Failed` with the exception text and fingerprint, for a handler failure (each in-process retry and the final failure), a run the executor refused because recovery spent its retry budget (no start), and a `MarkFailed` run the store failed after node death, a lapsed lease, or a graceful stop; `Cancelled` for durable cancellation; `Lost` when a dead-node or stalled-lease sweep hands a `Retry` run back to `Idle`; `Skipped` for a handler skip or a `Skip` reclaim; `Released` when a stopping node hands the run back. A graceful stop that releases a run whose handler never started closes an open attempt but inserts none. A store-written close stores its reason (`Node is not alive!`, `Lease lapsed while running!`, the stop reason) in `ExceptionMessage`.
+- **Times**: `StartedAt` and `EndedAt` are UTC instants from the injected `TimeProvider`, like `ExecutedAt`: the executor's clock for opens and executor closes, the store's for store-written closes.
+- **Reads**: `IJobPersistenceProvider.GetTimeJobAttemptsAsync(id)` and `GetCronJobOccurrenceAttemptsAsync(id)` return a run's attempts in number order, the open one last.
+- **EF model**: the built-in model customizer and `JobsDbContext` map both tables. A consumer-managed model maps them through `FinalizeJobsModel<TTimeJob>(this)`, which reads the cron occurrence type from the model. A model without them keeps working with no attempt history, and every write stays the single statement it was. Opening an attempt stamps the run's change marker, which also locks the run row, so an open that loses to a write ending the run inserts nothing.
+- **Providers**: the open (`OpenTimeJobAttemptAsync`, `OpenCronJobOccurrenceAttemptAsync`) and the reads are default interface members that do nothing, so a third-party provider without history keeps working. A provider that keeps history opens an attempt only while the run is `InProgress` and the claimed row's generation (`JobExecutionState.ClaimedRow`) still holds an active lease under the claim owner, closes it with `JobExecutionState.AttemptEnd` when `PropertiesToUpdate` names it and the write applied, and closes it in each of its own sweep writes. The entity setters are public for that purpose.
+
+### Dashboard reads
+
+`IJobPersistenceProvider` answers the reads a dashboard needs as default interface members. A provider implements the per-table members (names ending in `Rows`, `RowsByOwner`, or `Targets`, plus `CountJobRunWindowAsync`); the members that span time jobs and cron occurrences merge them. Every default throws `NotSupportedException`, so a provider without them keeps compiling. The in-memory and EF providers implement them all.
+
+- **Run list**: `ListJobRunsAsync(JobRunQuery, JobRunCursor?, pageSize)` returns time jobs and cron occurrences together as `JobRunSummary` rows, ordered by `JobRunQuery.SortBy` and then id, both in `SortDirection` (a `System.ComponentModel.ListSortDirection`; ascending by default). `JobRunSortKey` is `ExecutionTime` (the default), `Function`, or `Status`. Functions sort in the store's column collation, ordinal in memory. Statuses sort in `JobStatus` value order (idle, queued, in progress, then the terminal states), not by name. Each table pages on its own (sort key, id) keyset. A page takes a prefix of each table, so no run repeats or goes missing at a page boundary. Runs of both kinds with one sort key list time jobs first. A chain member without an execution time sorts at `JobRunPosition.Unscheduled`, after every scheduled run. `JobRunCursor` round-trips through `ToString` and `TryParse`, and carries the sort, the direction, and a digest of the filters it was read with. Before you resume a list, check `cursor.Fits(query)`. `ListJobRunsAsync` throws `ArgumentException` for a cursor read under another sort, direction, filter, or search, so a changed list starts again from the first page instead of resuming at a position that means nothing in it. `JobRunQuery` filters by kind, functions, statuses, execution-time range, correlation id, cron job, failure fingerprint, `ActionableFailuresOnly`, and `Text`. `Text` is a literal, case-insensitive substring of the function, the id, the business key, or the description: `%` and `_` match themselves. A cron occurrence has no business key or description, so only its function and id match. Request payloads are never searched. The EF model indexes (`Function`, `Id`) on both run tables, so a function sort seeks each page. The search and the status order scan the filtered rows, because no index serves a substring or a computed rank (status is stored by name and sorts in lifecycle order), so keep a run list narrowed by its other filters on a large store. Each `JobRunSummary` also carries `ProgressUpdatedAt`, which is `null` until the run reports progress, and `Retries` and `RetryIntervals`. A cron occurrence reads `Retries` and `RetryIntervals` from its cron job.
+- **Trace**: a `CorrelationId` filter lists every run of one correlation id; the EF model indexes `CorrelationId` on both run tables and bounds it at `JobContract.CorrelationIdMaxLength` (200) characters. `GetJobRunAsync(id)` resolves a run of either kind by id, and `GetCronJobOccurrenceByIdAsync(id)` returns a stored occurrence.
+- **Capped counts**: `CountJobRunsAsync(query, cap)` stops counting at the cap (`JobRunCount.DefaultCap`, 10,000) and reports `Capped`; the store reads at most one row past the cap.
+- **Failure groups**: `GetJobFailureGroupsAsync(recentSince, function?)` groups actionable failures (the `JobRequeueRules` predicates, applied in the query) by function and failure fingerprint, with the count, first and last failure time (`ExecutedAt`), and how many failed at or after `recentSince`, latest failure first.
+- **Operation scopes**: an Operation over a filter freezes its scope at confirm as a `JobOperationScope` (command, query, `HighWaterMark` from `GetLatestChangeMarkerAsync`, `ConfirmedAt`). `CountJobOperationScopeAsync` gives the reach, and `ReadJobOperationScopeAsync(scope, cursor, chunkSize)` returns chunks of `JobOperationTarget` (kind, id, change marker), time jobs first, in id order. Requeue covers runs a requeue accepts whose marker is at or before the high-water mark; delete covers runs that are not running and not keyed with that marker bound; cancel covers time jobs created at or before `ConfirmedAt` that are idle, queued, or running without a cancel request, because a running job keeps advancing its marker as it reports progress. Requeue and delete apply per row with a compare-and-set on the marker: `RequeueTimeJobIfUnchangedAsync`, `RequeueCronJobOccurrenceIfUnchangedAsync` (`Conflict` when the row changed), `RemoveTimeJobIfUnchangedAsync`, and `RemoveCronJobOccurrenceIfUnchangedAsync` (`false` when the row changed or is running). A run requeued by one chunk that fails again carries a later marker, so the Operation does not touch it again, and a chunk sent twice changes nothing. Cancel goes through `RequestTimeJobCancellationAsync`, which already refuses a repeated request.
+- **Force delete and cron delete**: `RemoveCancelRequestedTimeJobAsync(jobId)` deletes a time job only while it is `InProgress` with `CancelRequested` set and is a standalone, unkeyed, childless root; it returns `false` for any other row, so a chain is never removed in part. `RemoveIdleCronJobAsync(cronJobId)` deletes a cron job and every stored occurrence only while none of them is `InProgress`, and returns the number of occurrences removed, or `null` when the job is gone or an occurrence runs. Each must check and delete in one commit, so a job that finishes or an occurrence that starts after the caller read it keeps its rows. Both are default interface members that throw `NotSupportedException`, so a provider without them makes the dashboard's `jobs.force-delete` and `jobs.delete-cron` commands throw when an operator confirms them.
+- **Overview figures**: `GetJobOverviewFiguresAsync(now, lateAfter)` returns `JobOverviewFigures`: the 24 hours before `now` and the 24 hours before those, each as `JobRunWindowFigures` with runs that succeeded and failed (by `ExecutedAt`), `SucceededShare`, and runs whose first attempt started more than `lateAfter` after their execution time. Late runs come from attempt history, so a model without the attempt tables reports none.
+- **Per-function stats**: `GetJobFunctionStatsAsync(since)` returns, per function with stored runs, the runs that succeeded and failed since `since`, the runs running and waiting now, and the latest `ExecutedAt`.
+- **Runs per bucket**: `CountJobRunsByBucketAsync(query, boundaries)` counts per status the runs `query` matches between each pair of adjacent UTC edges, as `JobRunBucket` (start, end, `Counts`). It places a run by its execution time, not by when it ended, so a future bucket counts the time jobs and occurrences scheduled in it, and a run without an execution time is in no bucket. This differs from the Overview figures, which count by `ExecutedAt`, so the two can place one run on different days. A status with no run has no entry, and an empty bucket has empty `Counts`. `Counts` is `null` only for a bucket a store could not measure; a bucket one table could not measure is `null` as a whole, because a partial sum would read as a smaller count. The in-memory and EF providers always measure every bucket. The edges must be at least two and strictly ascending, else `ArgumentException`. The EF provider counts each table in one grouped query, whatever the number of buckets.
+- **Running per owner**: `CountInProgressJobRunsByOwnerAsync(cap)` counts the `InProgress` runs of both kinds per claim owner tag, each a capped `JobRunCount`, in one grouped read per table.
 
 ### Distributed Coordination and Node Identity
 
@@ -1039,10 +1093,13 @@ Contracts, entity types, manager interfaces, and execution primitives for the Jo
 - **Generated execution delegate**: `JobFunctionDelegate(IServiceProvider, JobContext, CancellationToken)` keeps the cancellation token last. The generator emits one per job; it builds the job class from the run's scope and calls `ExecuteAsync`.
 - **Declaration attribute**: `JobAttribute` (`[Job("owner.name")]`) declares a job class with its identity and intrinsic defaults (cron, time zone, priority, concurrency, contract version, failure policy, missed-run and overlap policies). `FailurePolicy` takes a `typeof` a `Headless.Reliability.FailurePolicy` type; see [Failure policy](#failure-policy).
 - **Requeue**: `IJobScheduler.RequeueAsync(timeJobId, ct)` and `RequeueOccurrenceAsync(occurrenceId, ct)` return `JobRequeueOutcome` (`Requeued`, `NotFound`, `NotFailed`, `ChainMember`, `SupersededGeneration`, `Overlap`, `Conflict`). The persistence SPI adds `IJobPersistenceProvider.RequeueTimeJobAsync` and `RequeueCronJobOccurrenceAsync`. See [Requeue a failed job](#requeue-a-failed-job).
+- **Failure fingerprint**: `TimeJobEntity.FailureFingerprint` and `CronJobOccurrenceEntity.FailureFingerprint` hold the cause key of the run's most recent failed attempt; `JobExecutionState.FailureFingerprint` carries the executor's value to the store, and `JobFailureFingerprints` holds the version prefix, the column bound, and the fixed per-cause values a store writes for its own sweep failures. See [Failure fingerprint](#failure-fingerprint).
+- **Attempt history**: `TimeJobAttemptEntity` and `CronJobOccurrenceAttemptEntity` (base `JobAttemptEntity`: `RunId`, `Number`, `OwnerId`, `StartedAt`, `EndedAt`, `Outcome`, `ExceptionMessage`, `FailureFingerprint`) store each execution of a run; `JobAttemptOutcome` names how it ended, `JobExecutionState.AttemptEnd` (`JobAttemptEnd`) carries the executor's close to the store, and `IJobPersistenceProvider` adds the default members `OpenTimeJobAttemptAsync`, `OpenCronJobOccurrenceAttemptAsync`, `GetTimeJobAttemptsAsync`, and `GetCronJobOccurrenceAttemptsAsync`. See [Attempt history](#attempt-history).
+- **Dashboard reads**: `IJobPersistenceProvider` adds default members for a keyset run list over both kinds (`ListJobRunsAsync`, `JobRunQuery`, `JobRunSummary`, `JobRunCursor`), capped counts (`CountJobRunsAsync`, `JobRunCount`), run and occurrence reads by id, failure groups (`GetJobFailureGroupsAsync`, `JobFailureGroup`), Operation scopes and their compare-and-set writes (`JobOperationScope`, `ReadJobOperationScopeAsync`, `CountJobOperationScopeAsync`, the `...IfUnchangedAsync` members), Overview figures (`GetJobOverviewFiguresAsync`), per-function stats (`GetJobFunctionStatsAsync`), runs per status per time bucket (`CountJobRunsByBucketAsync`, `JobRunBucket`), and running runs per owner (`CountInProgressJobRunsByOwnerAsync`). `JobRequeueRules` is the public eligibility rule they share. See [Dashboard reads](#dashboard-reads).
 - **Retry primitives**: `TimeJobEntity.Retries`, `RetryIntervals`, `RetryCount`; `CronJobEntity.Retries`, `RetryIntervals`.
 - **Node-death policy**: `NodeDeathPolicy` enum (`Retry` / `MarkFailed` / `Skip`) on both entity types; propagated from `CronJobEntity` to every generated occurrence.
 - **Claim-owner SPI**: `JobExecutionState.ClaimOwner` is the transient `cluster/node@incarnation` owner tag captured from the claimed root and shared by its chain descendants; it is never persisted from the caller's copy. `IJobPersistenceProvider`'s renew members and its release of claimed but unstarted rows take it as a `claimOwner` parameter (null or empty throws `ArgumentException`). Every other write by the attempt (start, progress, retry count, completion, failure, release) fences on the claim's `FencedRow<Guid>` generation instead, so it matches only a row whose live lease is still that generation; see [Lease Model and Sliding Renewal](#lease-model-and-sliding-renewal). Renewal and the `InProgress` admission stamp additionally require the node's live identity to equal it, and renewal returns only `1` (renewed) or `0` (lost); there is no negative membership-unknown result.
-- **Retry-reschedule SPI**: custom providers must implement `RescheduleTimeJobRetryAsync(row, retryCount, retryAfter)`, where `row` is the claim's `FencedRow<Guid>`. It moves an `InProgress` time job whose live lease is still that generation to `Idle`, releasing the lease, sets `RetryCount` to `retryCount`, and sets `ExecutionTime` to the store's own clock plus `retryAfter`, whatever the row's `OnNodeDeath`. It returns `1` when it wrote and `0` when the fence excluded the row, commits even when the host stop token has fired, and matches no row when repeated. A store with no clock of its own adds `retryAfter` to its `TimeProvider`.
+- **Retry-reschedule SPI**: custom providers must implement `RescheduleTimeJobRetryAsync(row, retryCount, retryAfter)`, where `row` is the claim's `FencedRow<Guid>`. It moves an `InProgress` time job whose live lease is still that generation to `Idle`, releasing the lease, sets `RetryCount` to `retryCount`, and sets `ExecutionTime` to the store's own clock plus `retryAfter`, whatever the row's `OnNodeDeath`. The overload that also takes a `JobAttemptEnd failedAttempt` records the failed attempt in the same write: it sets the row's `FailureFingerprint` and closes the open attempt with that end, because a retry deferred to the store skips the executor's in-process retry write; its default ignores the attempt. It returns `1` when it wrote and `0` when the fence excluded the row, commits even when the host stop token has fired, and matches no row when repeated. A store with no clock of its own adds `retryAfter` to its `TimeProvider`.
 - **Graceful-stop SPI**: custom providers must implement `ReleaseInProgressTimeJobAsync`, `ReleaseInProgressCronJobOccurrenceAsync`, `SettleInterruptedTimeJobAsync`, and `SettleInterruptedCronJobOccurrenceAsync`. Release hands an `InProgress` row whose live lease is still the claim's generation back to `Idle`, releasing the lease, with `RetryCount` and execution time unchanged. Settle applies the row's `OnNodeDeath` policy to an interrupted run without charging the budget: `Retry` to `Idle` (the time-job form takes `retryAfter`, the part of the retry wait a run stopped between retries still owed, and the store adds it to its own clock, so the job resumes after the remaining wait whatever the settling node's clock says), `MarkFailed` to `Failed`, `Skip` to `Skipped`, the terminal two recording the supplied reason. Each returns `1` when it wrote and `0` when the fence excluded the row, commits even when the host stop token has fired, and matches no row when repeated.
 - **Atomic cron materialization SPI**: `MaterializeCronScheduleOccurrenceAsync` fences the expected revision and watermark, commits a new unclaimed `Idle` occurrence or recognizes an existing occurrence, and advances the schedule position in the same provider transaction. `CronScheduleMaterializationOutcome` distinguishes a lost fence, a future projection, a new row, an existing live row, and an already-terminal row.
 - **Destructive time-job claim SPI**: `IJobPersistenceProvider.QueueTimeJobsAsync` yields the caller's own candidate instances — on each won row it stamps owner, lease, `Queued` status, and the refreshed concurrency token onto the passed-in entity and prunes its child tree to the descendants the claim actually leased. A candidate batch therefore belongs to exactly one claim: never share one across concurrent claimants and never reuse one, or the later claimant presents the winner's refreshed token and can re-acquire a row that node already owns. Peek again through `GetEarliestTimeJobsAsync` instead. The claim refuses a row whose `ExecutionTime` is more than one second past the store's own statement clock (a row with no `ExecutionTime` is due at once), so a job starts at most one second before its scheduled instant and never holds a lease or a cluster slot before that; a custom provider must apply the same test on its own clock. `AcquireImmediateTimeJobsAsync`, which enqueue calls for every run-now root, for a delayed root whose delay the node's monotonic time since the write already covers, and for an absolute root due on the node's clock, applies the same store-clock test and leaves a row that is not yet due `Idle` for the scheduler.
@@ -1255,7 +1312,7 @@ Deleting a time job deletes its whole descendant chain. The parent/child foreign
 
 A job's stored argument is read immediately before its `ExecuteAsync` runs. A read or deserialization failure fails that attempt and is classified by the normal retry pipeline; the handler is never invoked with a default payload, and cancellation stays cancellation. `JobsRequestProvider.GetRequestAsync` therefore returns `default` only when the job genuinely stored no request.
 
-Dashboard SignalR notifications are best-effort on the whole scheduling path: a hub failure is logged and never aborts a claim enumeration, so a dashboard or backplane outage cannot delay job dispatch. If a claim enumeration does abort for another reason, the rows already claimed in that batch are released back to `Idle` instead of waiting out their lease.
+Dashboard change notifications are best-effort on the whole scheduling path: a failed publish is logged and never aborts a claim enumeration, so a dashboard outage cannot delay job dispatch. If a claim enumeration does abort for another reason, the rows already claimed in that batch are released back to `Idle` instead of waiting out their lease.
 
 Time-job cancellation is durable and job-ID-only through `IJobScheduler.CancelAsync(jobId)` or `context.RequestCancellationAsync()`. Idle jobs become `Cancelled` atomically; queued and in-progress jobs retain their status and set `CancelRequested`. The owning execution observes the flag before user code and then on a bounded `TimeProvider` cadence. Once durable observation cancels that execution's token, a cooperative exit with any `OperationCanceledException` writes terminal `Cancelled`, whatever token the exception carries, so a handler that links its own `CancelAfter` source to the job token still ends `Cancelled`. Host shutdown and lease loss are distinct causes and write no terminal status, whatever token the exception carries; an uncooperative handler keeps its natural result and leaves `CancelRequested` as audit data. An `OperationCanceledException` that ends the run while the execution's token is live remains a failure, which the failure policy classifies and retries.
 
@@ -1378,6 +1435,8 @@ Configuration tunes the same settings without a redeploy and applies after every
 
 `Tune` also sets `FailurePolicy(...)`, `Options(...)` (the node-death override), and per-job middleware, but never the identity, argument type, or cron schedule. The host's registry build fails startup when a `Tune` call or configuration entry names an unknown identity or carries an invalid value, and when a `RunOnly` entry matches no registered job. A job outside the `RunOnly` filter stays registered: this host still schedules it, seeds its cron definition, and shows it in the Dashboard, while a host without the filter claims and runs it.
 
+On the durable store each node also publishes what it claims in its coordination metadata ([coordination.md](coordination.md#node-metadata)), under `headless.jobs.claimed-functions`: a JSON array of the registered functions its `RunOnly` filter admits, every registered function when it has no filter, and none when it runs no background services. The run filter is fixed for the node's lifetime, as registration metadata is, so a dashboard reading live nodes can name a function no node claims. It also publishes `headless.jobs.max-concurrency`, its host `MaxConcurrency` as an invariant integer, so a dashboard served by another node shows each node's limit.
+
 ### Middleware
 
 Jobs middleware uses stage-specific generic attributes. Assembly placement is global; class placement on a `[Job]` class targets that job without repeating its durable identity. A host can also attach middleware to one job with `Tune(identity, job => job.UseExecuteMiddleware<T>())` or `UseScheduleMiddleware<T>()`. `Schedule` middleware runs in the manager exactly once per submitted entity, before validation, persistence, or coordinated post-commit work; `Execute` middleware runs inside every retry attempt. Middleware is resolved from a bounded DI scope and must invoke `next` to accept the operation.
@@ -1492,60 +1551,31 @@ builder.Services.AddHeadlessJobs(options =>
   ```
 
 - Use a store other than `Headless.Jobs.EntityFramework`. The EF package and its PostgreSQL and SQL Server providers do not declare `IsAotCompatible`: EF Core generates query code at runtime, and the generic time and cron entity types flow into EF model APIs that are not annotated for trimming.
-- Leave `Headless.Jobs.Dashboard` out. Its minimal-API endpoints, request-example generator, and JSON converters rely on reflection, so it does not declare `IsAotCompatible` either.
+- Leave `Headless.Jobs.Dashboard` out. Its minimal-API endpoints and JSON payload handling rely on reflection, so it does not declare `IsAotCompatible` either.
 
 ---
 
 ## Headless.Jobs.Dashboard
 
-Embedded web monitoring UI for `Headless.Jobs` with pluggable authentication and real-time cluster updates.
+The Jobs module of the unified dashboard: runs, cron jobs, functions, and live nodes of the host's Jobs store, with Needs you items, Overview figures, live changes from every node, commands, and Operations.
 
-Read [dashboards.md](dashboards.md) for the shared authentication modes and production security boundary.
+Read [dashboards.md](dashboards.md) for the shell, its authentication modes, and the production security boundary. [dashboards.md](dashboards.md#jobs-module) lists the module's commands, Needs-you items, Overview figures, stream topics, API, and views.
+
+### Jobs module for the unified dashboard
+
+`AddHeadlessDashboard(d => d.AddJobs())` adds a module with the id `jobs` to the unified dashboard. It takes no entity type arguments: `AddHeadlessJobs<TTimeJob, TCronJob>` registers the seam the module reads, closed over the host's entity types, so the call order of the two registrations does not matter. A host that adds `AddJobs()` without `AddHeadlessJobs` fails to start with a message naming `AddHeadlessJobs`.
+
+- **Live changes on every node**: a write the job managers make on this node is read back by id after it returns and published with its change marker (`ChangedAt` in ticks) as the version. Writes from other nodes, and a batch add, which names no row, reach every node through the change reader over `ReadChangesAsync`, within one `ChangePollInterval`.
+- **One rule set**: Requeue is allowed on a `Failed`, `Cancelled`, or `Skipped` run that `JobRequeueRules` accepts; Cancel on a queued or running time job with no cancel requested yet (a requested cancel keeps the run `InProgress` until it stops, and a second cancel is refused with `Cancel requested — waiting for the job to stop`); Delete on a run that is not running and not keyed; Run now on a cron job that is not paused, and not running when its overlap policy forbids overlap; Pause on an active cron job; Resume on a paused one that was not removed from code; Edit schedule on a cron job not defined in code (`Defined in code`). The same rules decide the allowed-actions answer, the Needs-you counts, and Operation scopes.
 
 ### API and behavior
 
-- **Contract and lineage visibility**: function descriptors expose `ContractVersion`; time-job, cron-definition, and occurrence views show version, correlation, causation, and tenant fields. Occurrences show their own snapshotted function. Add/update forms submit the selected descriptor version, and request inspection reports an unsupported stored version before attempting deserialization. Live occurrence updates retain the same metadata.
-- **Embedded SPA**: served from the host process, no separate deployment.
-- **Hidden from application API documents**: every dashboard endpoint is excluded from API Explorer (`ExcludeFromDescription()`), because the dashboard SPA is their only client.
-- **Authentication options**: `WithBasicAuth(username, password)`, `WithApiKey(apiKey)`, `WithHostAuthentication(host => ...)` (a dashboard session issued from the host's own sign-in, with separate view and operate policies), or explicit no-auth mode for isolated development dashboards.
-- **Host sessions**: in host mode the SPA asks `GET /api/auth/info` whether a session exists. Without one it shows a Sign in link to `/auth/sign-in` when `ChallengeScheme` is set; an application that signs in with a bearer token posts it to `/api/auth/session` first. No token goes into a URL or browser storage, and write actions are hidden when the session may not operate. See [Host sessions](dashboards.md#host-sessions).
-- **Predictable timestamp display**: explicit ISO UTC offsets are preserved, zone-less values are treated as UTC, and invalid values render empty instead of `NaN`.
-- **Responsive operational layout**: content cards shrink within mobile viewports while wide data tables retain their own overflow boundary.
-- **Live cluster view**: `GET /api/nodes` returns live node projections from `Headless.Coordination` membership; `NodeJoined` / `NodeLeft` / `NodeSuspected` push updates over SignalR — no polling required. A push the hub fails to send is logged and dropped; later membership changes still push.
-- **Error monitoring**: surfaces failed, cancelled, and skipped jobs; retry counts; execution timings; exception messages.
-- **Job progress**: a running time job or cron occurrence that [reports progress](#progress-reporting) shows a progress
-  bar with its percent and message; the tooltip shows how long ago it was written. Each stored write also pushes a
-  `JobProgressNotification` over SignalR that moves the bar in place without reloading the page. A finished row keeps
-  its last progress, greyed out, so a failed job shows how far it got.
-- **Chain and add time zones**: `POST /api/time-job/add?timeZoneId=…` reads every execution time sent without an offset, on the root and on every chain step, as a wall-clock time in `timeZoneId`; a time sent with `Z` or an offset is kept as that instant. Without `timeZoneId`, times are taken as sent. A `timeZoneId` the host cannot resolve returns `400` on add and on `PUT /api/time-job/update`. The Add and Chain Jobs dialogs send the scheduler's time zone.
-- **Accessible actions**: every icon-only row and toolbar action has an accessible name (for example "Requeue job", "Delete cron job", "View occurrences"), so assistive technology and browser automation reach them by name.
-- **Cron "Run now"**: the on-demand occurrence is stamped with the store's clock when it is written (`IJobPersistenceProvider.InsertRunNowCronJobOccurrenceAsync`), not the dashboard host's, so when its immediate acquire loses (a saturated cluster limit, or another node) the scheduler can still claim it at once, whatever the dashboard host's clock skew.
-- **Requeue**: `Failed` time jobs and cron occurrences show a requeue button. `POST /api/job/requeue?id=…` and `POST /api/cron-job-occurrence/requeue?id=…` call `IJobScheduler.RequeueAsync` and `RequeueOccurrenceAsync`; HTTP 200 means the row was requeued, and HTTP 400 carries the refusal's `JobRequeueOutcome` name. See [Requeue a failed job](#requeue-a-failed-job).
-- **Storage-reduced cron graphs**: bundled providers select distinct UTC dates and aggregate status counts in storage;
-  the dashboard does not load a cron job's lifetime occurrence entities to render its bounded history graph.
-- **Fluent builder**: `SetBasePath(path)`, `SetBackendDomain(domain)`, `SetCorsOrigins(origins)`, `SetCorsPolicy(policy)`. The last three serve a cross-origin SPA and work only with Basic or API key: host mode fails at startup with any of them.
-- **Pair with OpenTelemetry**: Dashboard for operational triage; the built-in OpenTelemetry instrumentation for trace-level diagnostics.
-
-### Design constraints
-
-The dashboard exposes operational endpoints that can create, update, delete, run, cancel, requeue, start, stop, and restart jobs. Authentication must be chosen explicitly — if no auth method (including `WithNoAuth()`) is called, the host fails to start, so the dashboard never ships publicly by omission. Treat `WithNoAuth()` as development-only unless the dashboard is isolated behind trusted network controls; production deployments should use `WithHostAuthentication(...)`, `WithBasicAuth(...)`, or `WithApiKey(...)`. No CORS policy is applied by default (same-origin only); use `SetCorsOrigins(...)` when the SPA is served cross-origin under Basic or API key. Host mode is same-origin only.
-
-In host mode every state-changing `/api` endpoint (create, update, delete, run, cancel, requeue, start, stop, restart) also requires the operate policy, `OperatePolicy` or the view policy when it is unset. Reads, including a job's request payload, need only the view policy.
-
-Cron-occurrence graph selection remains history-derived: it first chooses the same inclusive UTC date window from
-distinct occurrence dates, then zero-fills gaps. `IJobPersistenceProvider.GetCronOccurrenceGraphStatusCountsAsync`,
-`GetTimeJobStatusCountsAsync`, `GetTimeJobDailyStatusCountsAsync`, `GetTimeJobLockedOwnerCountsAsync`,
-`GetCronOccurrenceStatusCountsAsync`, both `GetCronOccurrenceDailyStatusCountsAsync` overloads (all definitions, and
-one definition by `cronJobId` for its per-definition graph), and `GetCronOccurrenceLockedOwnerCountsAsync` are additive and have default interface implementations for third-party
-providers. A custom durable provider should override them so status counts, owner counts, and date/status
-aggregations happen in storage; otherwise the default implementations preserve behavior by projecting through the
-existing list APIs.
-
-Dashboard API inputs are bounded: paginated queries accept page sizes from 1 through 100, JSON request bodies are limited to 1 MiB, and batch deletion accepts at most 500 IDs. Collection endpoints use the paginated routes. Time-job pages are ordered by execution time and cron-definition pages by creation time, newest first, then by `Id`, so rows that share a time (one batch enqueue, one seed) keep one order across pages and each row appears on exactly one page.
-
-Every state-changing `/api` request (`POST`, `PUT`, `PATCH`, `DELETE`) must carry an `X-Requested-With` header, and a request body must be sent as `application/json`. A request without the header gets `400`; a body with another content type gets `415`. The SPA sends both. They keep a cross-site page from driving the dashboard with the browser's dashboard session cookie: a cross-site `<form>` can set neither, and a cross-site script that sets the header needs a CORS preflight the dashboard policy refuses. A custom `SetCorsPolicy` for a cross-origin SPA must allow the header; `SetCorsOrigins` allows any header.
-
-The function list's request example is serialized, and a stored request is checked against its request type (request inspection's match result), with the host's request JSON options (`ConfigureRequestJsonOptions`), the options a job deserializes its payload with. A naming policy or a request-type converter therefore shapes the example the same way, and an operator who submits the example unchanged creates a job whose payload binds. A request JSON body the dashboard receives is stored as written, so an edited payload must use the same names.
+- **Embedded front end**: the package embeds the module's views and serves them through the shell, so it needs no separate deployment. The rail shows Jobs with the Runs, Cron jobs, Functions, and Nodes views at `{shell base}/jobs`.
+- **Authentication from the shell**: the module has no authentication of its own. The shell's mode (`WithHostAuthentication`, `WithBasicAuth`, `WithApiKey`, or `WithNoAuth`) covers it, and in host mode `JobsDashboardOptions.ViewPolicy` and `OperatePolicy` narrow who may read the module and who may run its commands. Empty policies inherit the shell's.
+- **Live cluster view**: the Nodes view lists each live node from `Headless.Coordination` membership and the functions its run filter claims; without node membership it shows this host. A function no live node claims becomes a Needs you item.
+- **Cron "Run now"**: the on-demand occurrence is stamped with the store's clock when it is written (`IJobPersistenceProvider.InsertRunNowCronJobOccurrenceAsync`), not the dashboard host's, so when its immediate acquire loses (a saturated cluster limit, or another node) the scheduler can still claim it at once, whatever the dashboard host's clock skew. The run links to the request's trace.
+- **Job progress**: a running time job or cron occurrence that [reports progress](#progress-reporting) shows its percent and message; each stored write advances the row's change marker, so open views move the bar without reloading.
+- **Pair with OpenTelemetry**: the dashboard for operational triage; the built-in OpenTelemetry instrumentation for trace-level diagnostics. A run with a stored W3C trace parent offers `Open trace`.
 
 ### Install
 
@@ -1556,89 +1586,42 @@ dotnet add package Headless.Jobs.Dashboard
 ### Setup and use
 
 ```csharp
+using Headless.Dashboard;
 using Headless.Jobs;
 
-builder.Services.AddHeadlessJobs(options =>
-    options.AddDashboard(dashboard =>
-    {
-        dashboard.SetBasePath("/jobs-dashboard");
-        dashboard.WithHostAuthentication(host =>
-        {
-            host.ViewPolicy = "JobsViewers";
-            host.OperatePolicy = "JobsOperators";
-        }); // or WithBasicAuth / WithApiKey
-    })
-);
+builder.Services.AddHeadlessJobs(jobs => jobs.AddModule<MyApp.JobsModule>());
+builder.Services.AddHeadlessDashboard(dashboard => dashboard
+    .WithHostAuthentication(host => { host.ViewPolicy = "JobsViewers"; host.OperatePolicy = "JobsOperators"; })
+    .AddJobs());
 
 var app = builder.Build();
 app.UseAuthentication();
 app.UseAuthorization();
-app.MapHeadlessJobsDashboard();
+app.MapHeadlessDashboard();
 app.Run();
 ```
 
-`MapHeadlessJobsDashboard()` is the only mount: a host that registers the dashboard with `AddDashboard(...)` and never maps it fails to start with `InvalidOperationException`. It maps a `{basePath}` group on the host's endpoint routing, so the host's `UseAuthorization` evaluates the dashboard's rule and never the host's fallback policy:
-
-| Request | Rule |
-| --- | --- |
-| SPA shell, deep links, static assets | `AllowAnonymous` |
-| `/auth/sign-in`, `/api/auth/info`, `/api/auth/session`, `/api/auth/sign-out`, `/api/auth/validate` | `AllowAnonymous` |
-| Other `{basePath}/api/*` and the `{basePath}/job-notification-hub` hub, `WithHostAuthentication(...)` | The dashboard session cookie, for a user who passes `ViewPolicy` (or the host's default policy); `401` without a session, `403` when the policy refuses |
-| Non-`GET` `{basePath}/api/*`, `WithHostAuthentication(...)` | Also `OperatePolicy`, or `ViewPolicy` when it is unset; `403` when it refuses |
-| Other `{basePath}/api/*` and the hub, Basic, API key | The dashboard's own credential, checked by its authentication scheme; an empty `401` otherwise, before SignalR opens a hub connection |
-| The same, `WithNoAuth()` | `AllowAnonymous` |
-| Unmatched `{basePath}/api/*` | `404`, never the shell |
-
-- The host pipeline must run `UseAuthorization()` (a `WebApplication` adds it when the host does not), and `UseAuthentication()` before it for host authentication. A host that calls `UseAuthentication()` must also call `UseAuthorization()` after it: the `UseAuthorization` a `WebApplication` adds on its own runs ahead of the host's `UseAuthentication`, so host authentication would not have signed the user in yet. It must run `UseCors()` only when `SetCorsOrigins(...)` or `SetCorsPolicy(...)` is configured: the dashboard registers and attaches its CORS policy only then.
-- Host-specific behavior for the dashboard, such as rate limiting, goes on the builder `MapHeadlessJobsDashboard()` returns.
-- It throws `InvalidOperationException` when `AddDashboard(...)` was not called, on a second call, or when the base path is the root, where the SPA route would answer every unmatched GET in the host.
-
 ### Configuration
 
-```csharp
-builder.Services.AddHeadlessJobs(options =>
-    options.AddDashboard(dashboard =>
-    {
-        dashboard.SetBasePath("/jobs");
+| `JobsDashboardOptions` member | Default | Description |
+| --- | --- | --- |
+| `ViewPolicy`, `OperatePolicy` | the shell's | Host policies a user must pass to read the module and to run its commands, in host mode. |
+| `ChangeOverlapWindow` | 5 s | How far back each change read reads again, so a write that committed after a later one is still seen. Make it longer than the Jobs store's slowest single write. |
+| `ChangePageSize` | 200 | The most changed rows one change read returns, 1 to 1000; a larger burst is read over several polls. |
 
-        // Authentication — required, pick one. Host mode: a dashboard session from the host's own sign-in.
-        dashboard.WithHostAuthentication(host =>
-        {
-            host.ViewPolicy = "JobsViewers"; // read the dashboard; null uses the host's default policy
-            host.OperatePolicy = "JobsOperators"; // run write actions; null uses ViewPolicy
-            host.ChallengeScheme = "oidc"; // where the Sign in link sends a user who is not signed in
-            host.SessionIdleTimeout = TimeSpan.FromMinutes(30);
-            host.SessionLifetime = TimeSpan.FromHours(8);
-        });
-        // Or dashboard.WithBasicAuth("admin", "secret") or dashboard.WithApiKey("my-api-key").
-        // Or opt out explicitly with dashboard.WithNoAuth() — isolated development environments only.
-    })
-);
-```
+`AddJobs(Action<JobsDashboardOptions>)`, `AddJobs(Action<JobsDashboardOptions, IServiceProvider>)`, and `AddJobs(IConfiguration)` set them; `JobsDashboardOptionsValidator` validates them.
 
-A Basic or API-key dashboard whose SPA is served from another origin adds the cross-origin settings, which host mode refuses:
+### Migrating from `MapHeadlessJobsDashboard`
 
-```csharp
-builder.Services.AddHeadlessJobs(options =>
-    options.AddDashboard(dashboard =>
-    {
-        dashboard.SetBackendDomain("https://api.example.com");
-        dashboard.SetCorsOrigins("https://admin.example.com");
-        dashboard.WithApiKey(builder.Configuration["JobsDashboard:ApiKey"]!);
-    })
-);
-```
-
-The SPA follows the mode: `WithNoAuth()` opens without sign-in; Basic shows a username and password form; API key asks for the key; host mode signs in through the host and shows a signed-out page after sign-out. [dashboards.md](dashboards.md#configuration) lists every host option.
+The Jobs Vue dashboard, its SignalR live-update hub, its `/jobs/dashboard` endpoints, `JobsOptionsBuilder.AddDashboard(...)`, `DashboardOptionsBuilder`, and `MapHeadlessJobsDashboard()` are removed. Delete the `AddDashboard(...)` call and the `MapHeadlessJobsDashboard()` mount, add `AddJobs()` to `AddHeadlessDashboard(...)`, and configure authentication on the shell. [dashboards.md](dashboards.md#migrate-from-mapheadlessjobsdashboard) lists every step.
 
 ### Runtime behavior
 
-- `MapHeadlessJobsDashboard()` maps the dashboard HTTP API, the SignalR hub, and the SPA under the `SetBasePath` path.
-- Authenticates with its own configuration, registered under `DashboardOptionsBuilder.AuthenticationName`, so a Messaging dashboard in the same host can use another mode. The live-update hub authenticates the same credential as the API: the session cookie in host mode, closed when the session expires, and the `access_token` query parameter under Basic or API key; see [Jobs live-update hub](dashboards.md#jobs-live-update-hub).
-- Subscribes to `Headless.Coordination` membership events for live-node push updates.
-- A committed time-job or cron-job delete, single or batch, pushes `RemoveTimeJobNotification` or `RemoveCronJobNotification` for each requested id, so every open dashboard drops the rows; the dashboard that issued the delete also reloads its list itself. A failed notification is logged (event 3239) and never fails the delete.
-- Serves embedded frontend SPA assets; requires Node 22 on `PATH` when building from source (build target `make dashboards`).
-- Exposes mutating operational endpoints; configure authentication and CORS before exposing the dashboard outside an isolated development environment.
+- Registers a singleton change publisher and replaces the job managers' notification seam, so each write a manager makes on this node reaches the shell's stream after it returns.
+- Reads changes from the store on the shell's change poll, so writes from other nodes reach open views within one `ChangePollInterval`.
+- Requeue, Cancel, and Delete over a filter run as Operations in chunks: Requeue and Delete write a row only while its change marker is unchanged since confirm, so a row is never written twice.
+- Serves the embedded module assets; building from source needs Node 22 on `PATH` (build target `make dashboard-jobs`).
+- Exposes operational commands; configure the shell's authentication before exposing it outside an isolated development environment.
 
 ---
 

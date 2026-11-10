@@ -427,6 +427,7 @@ internal sealed partial class ConsumerRegister
                             Origin = message,
                             Content = content,
                             Lane = lane,
+                            FailureFingerprint = MessagingFailureFingerprints.OfArrival(dispatchBypassException),
                         },
                         exceptionInfo,
                         hostShutdownToken

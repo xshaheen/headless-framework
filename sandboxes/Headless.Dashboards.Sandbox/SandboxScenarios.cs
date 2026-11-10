@@ -25,13 +25,25 @@ public static class SandboxScenarios
         ["quiet"] = "Time job that runs 2 s without reporting progress.",
         ["failing"] = "Time job that fails at once without progress, with no retries: a row to requeue.",
         ["cron-progress"] = "Cron definition every 30 s whose occurrences report progress for about 10 s.",
+        ["failures-by-id"] =
+            "Five time jobs that fail with the same cause and a different order id in each message: one Needs you item.",
+        ["chain-failed-middle"] =
+            "Three-step chain whose second step fails: the first succeeds and the third never runs.",
+        ["cron-no-overlap-failing"] =
+            "Cron definition every 10 s under the skip overlap policy whose occurrences run 15 s, then fail: skipped and failed occurrences.",
+        ["cron-paused"] = "Cron definition every 5 minutes, paused as soon as it is created.",
+        ["cancel-stubborn"] =
+            "Time job that reports progress for 5 minutes and ignores its cancellation token: Cancel requests a stop it never honors.",
         ["messages"] = "Ten published messages: eight consumed, two failing in the consumer.",
-        ["scheduled-message"] = "One message published with a 10 minute delay: a row on the Scheduled page.",
+        ["message-failures-by-cause"] =
+            "Seven received messages that fail with two causes and a different order id in each: two Needs you groups.",
+        ["scheduled-message"] = "One message published with a 10 minute delay: a row on the Scheduled view.",
     };
 
     public static async Task<IReadOnlyList<string>> RunAsync(
         string name,
         IJobScheduler jobs,
+        ICronJobManager<CronJobEntity> cronJobs,
         IBus bus,
         CancellationToken cancellationToken
     )
@@ -74,7 +86,13 @@ public static class SandboxScenarios
                     )
                 ),
             ],
+            "failures-by-id" => await _EnqueueOrderSyncFailuresAsync(jobs, cancellationToken),
+            "chain-failed-middle" => [_Id(await jobs.EnqueueAsync(_FailedMiddleChain(), cancellationToken))],
+            "cron-no-overlap-failing" => [_Id(await _AddNoOverlapFailingCronAsync(cronJobs, cancellationToken))],
+            "cron-paused" => [_Id(await _AddPausedCronAsync(jobs, cancellationToken))],
+            "cancel-stubborn" => [_Id(await jobs.EnqueueAsync<StubbornJob>(_NoRetries, cancellationToken))],
             "messages" => await _PublishOrdersAsync(bus, cancellationToken),
+            "message-failures-by-cause" => await _PublishFailuresByCauseAsync(bus, cancellationToken),
             "scheduled-message" =>
             [
                 _Id(
@@ -85,7 +103,7 @@ public static class SandboxScenarios
                     )
                 ),
             ],
-            "all" => await _RunAllAsync(jobs, bus, cancellationToken),
+            "all" => await _RunAllAsync(jobs, cronJobs, bus, cancellationToken),
             _ => throw new KeyNotFoundException(
                 $"Unknown scenario '{name}'. Known: all, {string.Join(", ", Descriptions.Keys)}."
             ),
@@ -94,6 +112,7 @@ public static class SandboxScenarios
 
     private static async Task<IReadOnlyList<string>> _RunAllAsync(
         IJobScheduler jobs,
+        ICronJobManager<CronJobEntity> cronJobs,
         IBus bus,
         CancellationToken cancellationToken
     )
@@ -101,10 +120,64 @@ public static class SandboxScenarios
         var created = new List<string>();
         foreach (var scenario in Descriptions.Keys)
         {
-            created.AddRange(await RunAsync(scenario, jobs, bus, cancellationToken));
+            created.AddRange(await RunAsync(scenario, jobs, cronJobs, bus, cancellationToken));
         }
 
         return created;
+    }
+
+    private static async Task<IReadOnlyList<string>> _EnqueueOrderSyncFailuresAsync(
+        IJobScheduler jobs,
+        CancellationToken cancellationToken
+    )
+    {
+        var ids = new List<string>();
+        foreach (var orderId in new[] { 4711, 4712, 4719, 4802, 5120 })
+        {
+            ids.Add(_Id(await jobs.EnqueueAsync(new OrderSyncArgs(orderId), _NoRetries, cancellationToken)));
+        }
+
+        return ids;
+    }
+
+    private static JobChain _FailedMiddleChain()
+    {
+        var chain = JobChain.Start(new ChainStepArgs("reserve stock", Fails: false), _NoRetries);
+        chain
+            .Root.Then(new ChainStepArgs("charge card", Fails: true), _NoRetries)
+            .Then(new ChainStepArgs("ship order", Fails: false), _NoRetries);
+
+        return chain.Build();
+    }
+
+    // The scheduler's recurring API takes no overlap policy, so the definition goes through the cron job manager, which
+    // stores the one the entity carries.
+    private static async Task<Guid> _AddNoOverlapFailingCronAsync(
+        ICronJobManager<CronJobEntity> cronJobs,
+        CancellationToken cancellationToken
+    )
+    {
+        var definition = await cronJobs.AddAsync(
+            new CronJobEntity
+            {
+                Function = SandboxJobIds.OverlapFails,
+                Expression = "*/10 * * * * *",
+                OnOverlap = CronOverlapPolicy.Skip,
+                Retries = 0,
+                Description = "Ledger export: runs longer than its interval and fails.",
+            },
+            cancellationToken
+        );
+
+        return definition.Id;
+    }
+
+    private static async Task<Guid> _AddPausedCronAsync(IJobScheduler jobs, CancellationToken cancellationToken)
+    {
+        var id = await jobs.ScheduleRecurringAsync<QuietJob>("0 */5 * * * *", cancellationToken);
+        await jobs.PauseCronAsync(id, cancellationToken);
+
+        return id;
     }
 
     private static async Task<string> _EnqueueProgressAsync(
@@ -126,6 +199,29 @@ public static class SandboxScenarios
                 cancellationToken
             );
             receipts.Add(_Id(receipt));
+        }
+
+        return receipts;
+    }
+
+    // Four declined payments and three warehouse timeouts: the order id differs in every message, so the fingerprint
+    // folds each cause into one group while the two causes stay apart.
+    private static async Task<IReadOnlyList<string>> _PublishFailuresByCauseAsync(
+        IBus bus,
+        CancellationToken cancellationToken
+    )
+    {
+        var receipts = new List<string>();
+        foreach (var orderId in new[] { 7101, 7102, 7135, 7240 })
+        {
+            var message = new SandboxOrderPlaced(orderId, ShouldFail: true, "payment was declined");
+            receipts.Add(_Id(await bus.PublishAsync(message, cancellationToken)));
+        }
+
+        foreach (var orderId in new[] { 8301, 8317, 8452 })
+        {
+            var message = new SandboxOrderPlaced(orderId, ShouldFail: true, SandboxOrderPlaced.StockTimeoutCause);
+            receipts.Add(_Id(await bus.PublishAsync(message, cancellationToken)));
         }
 
         return receipts;

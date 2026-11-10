@@ -1,4 +1,5 @@
 using Demo.Controllers;
+using Headless.Dashboard;
 using Headless.Hosting;
 using Headless.Messaging;
 using Headless.Messaging.Dashboard;
@@ -24,9 +25,10 @@ builder.Services.AddHeadlessMessaging(setup =>
     });
 
     setup.UseSqlServer("Server=db;Database=master;User=sa;Password=P@ssw0rd;Encrypt=False");
-
-    setup.UseDashboard(d => d.WithNoAuth());
 });
+
+// The Messaging module of the Headless dashboard, at /headless/messaging. No auth: a local demo only.
+builder.Services.AddHeadlessDashboard(dashboard => dashboard.WithNoAuth().AddMessaging());
 
 // The host start only verifies its tables and queues, so this demo creates them as it starts; a deployed app runs
 // `dotnet <app>.dll resources provision` instead.
@@ -46,6 +48,6 @@ app.UseAuthorization();
 
 app.MapControllers();
 
-app.MapHeadlessMessagingDashboard();
+app.MapHeadlessDashboard();
 
 await app.RunAsync();

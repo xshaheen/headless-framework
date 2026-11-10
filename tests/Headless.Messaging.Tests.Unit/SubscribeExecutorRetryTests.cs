@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using Headless.Fencing;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
@@ -62,7 +63,8 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         IDataStorage storage,
         MessagingOptions options,
         ICircuitBreakerStateManager? circuitBreaker = null,
-        TimeProvider? timeProvider = null
+        TimeProvider? timeProvider = null,
+        IMessageStateObserver? stateObserver = null
     )
     {
         storage
@@ -103,6 +105,11 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             setup.UseInMemory();
             setup.UseProcessLocalInMemoryStorage();
         });
+
+        if (stateObserver is not null)
+        {
+            services.AddSingleton(stateObserver);
+        }
 
         var provider = services.BuildServiceProvider();
         var logger = provider.GetRequiredService<ILogger<SubscribeExecutor>>();
@@ -148,6 +155,58 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
             );
+    }
+
+    [Fact]
+    public async Task should_tell_state_observers_about_a_success_write_that_landed()
+    {
+        // given
+        var storage = Substitute.For<IDataStorage>();
+        var invoker = Substitute.For<ISubscribeInvoker>();
+        invoker
+            .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new ConsumerExecutedResult(null, null, "id", null, null)));
+        var observer = Substitute.For<IMessageStateObserver>();
+        var executor = _CreateExecutor(invoker, storage, new MessagingOptions(), stateObserver: observer);
+        var message = _CreateMediumMessage();
+
+        // when
+        await executor.ExecuteAsync(message, _EmptyScope, _CreateDescriptor(), AbortToken);
+
+        // then
+        observer.Received(1).OnStateWritten(MessageType.Subscribe, message);
+    }
+
+    [Fact]
+    public async Task should_not_tell_state_observers_about_a_success_write_the_store_refused()
+    {
+        // given: the row is already terminal, so the fenced write changes nothing
+        var storage = Substitute.For<IDataStorage>();
+        var invoker = Substitute.For<ISubscribeInvoker>();
+        invoker
+            .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new ConsumerExecutedResult(null, null, "id", null, null)));
+        var observer = Substitute.For<IMessageStateObserver>();
+        var executor = _CreateExecutor(invoker, storage, new MessagingOptions(), stateObserver: observer);
+        storage
+            .ChangeReceiveRetryStateAsync(
+                Arg.Any<MediumMessage>(),
+                StatusName.Succeeded,
+                Arg.Any<MessageContentWrite>(),
+                Arg.Any<RetryDelay?>(),
+                Arg.Any<bool>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(false));
+        var message = _CreateMediumMessage();
+
+        // when
+        await executor.ExecuteAsync(message, _EmptyScope, _CreateDescriptor(), AbortToken);
+
+        // then
+        observer.DidNotReceiveWithAnyArgs().OnStateWritten(default, default!);
     }
 
     [Fact]
@@ -772,6 +831,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .ContainSingle()
             .Which.Should()
             .Match<StateWrite>(write => _IsTerminal(write) && !write.KeepLease);
+        writes[0].FailureFingerprint.Should().Be("v1:deserialization");
         exhausted.Should().ContainSingle();
         exhausted[0].Exception!.GetBaseException().Should().BeOfType<MessageDeserializationException>();
     }
@@ -1492,6 +1552,70 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         message.Retries.Should().Be(0, "immediate retries do not count as delayed retries");
     }
 
+    [Fact]
+    public async Task should_store_one_fingerprint_for_two_consume_failures_that_differ_only_by_an_id_in_the_message()
+    {
+        // given — two messages whose handler fails at the same place, each naming its own order in the message
+        var storage = Substitute.For<IDataStorage>();
+        var orders = new Queue<string>(["order-1001", "order-2002"]);
+        var invoker = Substitute.For<ISubscribeInvoker>();
+        invoker
+            .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromException<ConsumerExecutedResult>(_Catch(() => _ThrowOutOfStock(orders.Dequeue()))));
+        var executor = _CreateExecutor(invoker, storage, new MessagingOptions());
+        var writes = _CaptureWrites(storage);
+
+        // when
+        await executor.ExecuteAsync(
+            _CreateMediumMessage(),
+            _EmptyScope,
+            _CreateDescriptor(FailurePolicyDefinition.None),
+            AbortToken
+        );
+        await executor.ExecuteAsync(
+            _CreateMediumMessage(),
+            _EmptyScope,
+            _CreateDescriptor(FailurePolicyDefinition.None),
+            AbortToken
+        );
+
+        // then — each terminal write carries its own text and the same versioned fingerprint
+        writes.Should().HaveCount(2).And.OnlyContain(write => _IsTerminal(write));
+        writes[0].ExceptionInfo.Should().Contain("order-1001");
+        writes[1].ExceptionInfo.Should().Contain("order-2002");
+        writes[0].FailureFingerprint.Should().MatchRegex("^v1:[0-9a-f]{16}$");
+        writes[1].FailureFingerprint.Should().Be(writes[0].FailureFingerprint);
+    }
+
+    [Fact]
+    public async Task should_store_a_fingerprint_on_the_retry_write_and_a_different_one_when_the_cause_changes()
+    {
+        // given — the first attempt fails one way and its immediate retry fails another
+        var storage = Substitute.For<IDataStorage>();
+        var attempt = 0;
+        var invoker = Substitute.For<ISubscribeInvoker>();
+        invoker
+            .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+                Task.FromException<ConsumerExecutedResult>(
+                    attempt++ == 0 ? _Catch(() => _ThrowOutOfStock("order-1")) : _Catch(_ThrowTimedOut)
+                )
+            );
+        var executor = _CreateExecutor(invoker, storage, new MessagingOptions());
+        var writes = _CaptureWrites(storage);
+
+        // when
+        await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(_Policy(1, 0)), AbortToken);
+
+        // then — the retry write and the terminal write each carry the fingerprint of their own failure
+        writes.Should().HaveCount(2);
+        _IsTerminal(writes[0]).Should().BeFalse();
+        writes[0].FailureFingerprint.Should().MatchRegex("^v1:[0-9a-f]{16}$");
+        _IsTerminal(writes[1]).Should().BeTrue();
+        writes[1].FailureFingerprint.Should().MatchRegex("^v1:[0-9a-f]{16}$");
+        writes[1].FailureFingerprint.Should().NotBe(writes[0].FailureFingerprint);
+    }
+
     // ─── Helpers ────────────────────────────────────────────────────────────────────────────────────
 
     private sealed record StateWrite(
@@ -1499,7 +1623,9 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         RetryDelay? Delay,
         bool KeepLease,
         int OriginalRetries,
-        int OriginalInlineAttempts
+        int OriginalInlineAttempts,
+        string? ExceptionInfo = null,
+        string? FailureFingerprint = null
     );
 
     private static bool _IsTerminal(StateWrite write) => write.Status == StatusName.Failed && write.Delay is null;
@@ -1530,6 +1656,31 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         );
         return (lower - TimeSpan.FromMilliseconds(1), upper + TimeSpan.FromMilliseconds(1));
     }
+
+    // Thrown for real so each exception carries the stack the fingerprint hashes.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static Exception _Catch(Action action)
+    {
+        try
+        {
+            action();
+        }
+        catch (Exception ex)
+        {
+#pragma warning disable ERP022 // False positive: the caught exception is the helper's return value, which the tests assert on.
+            return ex;
+#pragma warning restore ERP022
+        }
+
+        throw new InvalidOperationException("The action did not throw.");
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void _ThrowOutOfStock(string orderId) =>
+        throw new InvalidOperationException($"Order {orderId} has an item out of stock.");
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void _ThrowTimedOut() => throw new TimeoutException("The stock service timed out after 30 s.");
 
     private static ISubscribeInvoker _Succeeding(out Func<int> invocations)
     {
@@ -1600,12 +1751,16 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             )
             .Returns(call =>
             {
+                // The failure record is read when the write runs, as storage reads it, not after the attempt ends.
+                var written = call.ArgAt<MediumMessage>(0);
                 var write = new StateWrite(
                     call.ArgAt<StatusName>(1),
                     call.ArgAt<RetryDelay?>(3),
                     call.ArgAt<bool>(4),
                     call.ArgAt<int>(5),
-                    call.ArgAt<int>(6)
+                    call.ArgAt<int>(6),
+                    written.ExceptionInfo,
+                    written.FailureFingerprint
                 );
                 lock (writes)
                 {

@@ -52,8 +52,10 @@ public sealed class PostgreSqlStorageHealthCheckRegistrationTests : TestBase
         {
             setup.UseInMemory();
             setup.UsePostgreSql("Host=localhost;Database=orders");
-            setup.AddOutbox().UsePostgreSql("Host=localhost;Database=billing");
-            setup.AddOutbox().UsePostgreSql(options => options.ConnectionString = "Host=localhost;Database=audit");
+            setup.AddOutbox("billing").UsePostgreSql("Host=localhost;Database=billing");
+            setup
+                .AddOutbox("audit")
+                .UsePostgreSql(options => options.ConnectionString = "Host=localhost;Database=audit");
         });
 
         // then
@@ -63,8 +65,8 @@ public sealed class PostgreSqlStorageHealthCheckRegistrationTests : TestBase
             .Should()
             .BeEquivalentTo(
                 "messaging-storage-postgresql-default",
-                "messaging-storage-postgresql-outbox-1",
-                "messaging-storage-postgresql-outbox-2"
+                "messaging-storage-postgresql-outbox-billing",
+                "messaging-storage-postgresql-outbox-audit"
             );
     }
 
@@ -81,7 +83,7 @@ public sealed class PostgreSqlStorageHealthCheckRegistrationTests : TestBase
         {
             setup.UseInMemory();
             setup.UsePostgreSql("Host=db1;Port=5432;Database=app;Username=messaging;Password=other");
-            setup.AddOutbox().UsePostgreSql("Host=db1;Port=5432;Database=billing");
+            setup.AddOutbox("billing").UsePostgreSql("Host=db1;Port=5432;Database=billing");
         });
 
         // then - one probe for the shared database, which carries Messaging's tag; the other database keeps its own
@@ -91,7 +93,7 @@ public sealed class PostgreSqlStorageHealthCheckRegistrationTests : TestBase
             .Where(static x => x.Tags.Contains(HeadlessHealthCheckTags.Database))
             .Select(static x => x.Name)
             .Should()
-            .BeEquivalentTo("sql-postgresql", "messaging-storage-postgresql-outbox-1");
+            .BeEquivalentTo("sql-postgresql", "messaging-storage-postgresql-outbox-billing");
         registrations
             .Single(static x => string.Equals(x.Name, "sql-postgresql", StringComparison.Ordinal))
             .Tags.Should()

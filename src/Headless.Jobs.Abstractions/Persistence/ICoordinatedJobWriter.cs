@@ -101,4 +101,11 @@ internal interface ICoordinatedJobWriter<in TTimeJob, in TCronJob>
     /// invalidation, and the durable store remains authoritative if the cache layer is unavailable.
     /// </summary>
     Task InvalidateCronExpressionsCacheAsync();
+
+    /// <summary>
+    /// Re-stamps the change marker of rows a coordinated write wrote, after the caller's transaction committed, so a
+    /// change read that already passed their original stamp still sees them. Runs autonomously, one statement per
+    /// table.
+    /// </summary>
+    Task RestampChangesAsync(JobChangeKind kind, Guid[] ids, CancellationToken cancellationToken);
 }

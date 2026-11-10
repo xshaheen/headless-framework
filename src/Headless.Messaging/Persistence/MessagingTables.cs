@@ -85,6 +85,7 @@ internal sealed class MessagingTables
         StatusName = column("StatusName");
         MessageId = column("MessageId");
         ExceptionInfo = column("ExceptionInfo");
+        FailureFingerprint = column("FailureFingerprint");
         IsInboxRecord = column("IsInboxRecord");
         TenantPresent = column("TenantPresent");
         TenantId = column("TenantId");
@@ -109,6 +110,9 @@ internal sealed class MessagingTables
         InboxRetentionSeconds = column("InboxRetentionSeconds");
         InboxKeyHash = column("InboxKeyHash");
         ConsumerIdentityHash = column("ConsumerIdentityHash");
+        ConsumerKeyHash = column("ConsumerKeyHash");
+        ChangedAt = column("ChangedAt");
+        StampChange = $"{ChangedAt}={dialect.NextChangeMarker(ChangedAt)}";
 
         OperationId = column("OperationId");
         TargetKind = column("TargetKind");
@@ -119,6 +123,7 @@ internal sealed class MessagingTables
         Reason = column("Reason");
         Outcome = column("Outcome");
         StorageId = column("StorageId");
+        OutboxName = column("OutboxName");
         MessageName = column("MessageName");
         Lane = column("Lane");
         ChildStorageId = column("ChildStorageId");
@@ -212,6 +217,8 @@ internal sealed class MessagingTables
 
     public string ExceptionInfo { get; }
 
+    public string FailureFingerprint { get; }
+
     public string IsInboxRecord { get; }
 
     public string TenantPresent { get; }
@@ -265,6 +272,24 @@ internal sealed class MessagingTables
     /// </summary>
     public string ConsumerIdentityHash { get; }
 
+    /// <summary>
+    /// The SHA-256 of a received row's consumer identity alone. Failure groups key on it rather than on the text, which
+    /// SQL Server compares with trailing spaces padded away.
+    /// </summary>
+    public string ConsumerKeyHash { get; }
+
+    /// <summary>
+    /// The change marker of a published or received row: the database clock when a write last changed the row's
+    /// visible state, kept strictly increasing per row. Change reads order and page by it.
+    /// </summary>
+    public string ChangedAt { get; }
+
+    /// <summary>
+    /// The assignment that moves a row's change marker forward, for the <c>SET</c> list of every statement that changes
+    /// a row's visible state. It reads the database clock as <see cref="SqlDialectTokens.Now" />.
+    /// </summary>
+    public string StampChange { get; }
+
     public string OperationId { get; }
 
     public string TargetKind { get; }
@@ -282,6 +307,8 @@ internal sealed class MessagingTables
     public string Outcome { get; }
 
     public string StorageId { get; }
+
+    public string OutboxName { get; }
 
     public string MessageName { get; }
 

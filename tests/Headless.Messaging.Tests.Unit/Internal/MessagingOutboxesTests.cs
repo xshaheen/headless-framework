@@ -123,11 +123,8 @@ public sealed class MessagingOutboxesTests : TestBase
     {
         // given
         var primary = AdditionalOutboxDoubles.CreateRelationalStorage("orders");
-        var billing = AdditionalOutboxDoubles.CreateOutbox(
-            "billing",
-            name: "AddOutbox().UsePostgreSqlEntityFramework<BillingDb>()"
-        );
-        var duplicate = AdditionalOutboxDoubles.CreateOutbox("billing", name: "AddOutbox().UsePostgreSql(...)");
+        var billing = AdditionalOutboxDoubles.CreateOutbox("billing", name: "billing");
+        var duplicate = AdditionalOutboxDoubles.CreateOutbox("billing", name: "invoices");
 
         // when
         var act = () => new MessagingOutboxes(primary, (IDeliveryCoordinationResolver)primary, [billing, duplicate]);
@@ -135,9 +132,7 @@ public sealed class MessagingOutboxesTests : TestBase
         // then
         act.Should()
             .Throw<MessagingConfigurationException>()
-            .WithMessage(
-                "*'AddOutbox().UsePostgreSqlEntityFramework<BillingDb>()' and 'AddOutbox().UsePostgreSql(...)' both resolve to database 'billing'*"
-            );
+            .WithMessage("*'billing' and 'invoices' both resolve to database 'billing'*");
     }
 
     [Fact]
@@ -145,19 +140,13 @@ public sealed class MessagingOutboxesTests : TestBase
     {
         // given — the loopback spelling differs, the database is the same
         var primary = AdditionalOutboxDoubles.CreateRelationalStorage("orders", dataSource: "localhost:5432");
-        var orders = AdditionalOutboxDoubles.CreateOutbox(
-            "orders",
-            dataSource: "127.0.0.1:5432",
-            name: "AddOutbox().UsePostgreSql(...)"
-        );
+        var orders = AdditionalOutboxDoubles.CreateOutbox("orders", dataSource: "127.0.0.1:5432", name: "orders");
 
         // when
         var act = () => new MessagingOutboxes(primary, (IDeliveryCoordinationResolver)primary, [orders]);
 
         // then
-        act.Should()
-            .Throw<MessagingConfigurationException>()
-            .WithMessage("*'the primary storage' and 'AddOutbox().UsePostgreSql(...)'*");
+        act.Should().Throw<MessagingConfigurationException>().WithMessage("*'primary' and 'orders'*");
     }
 
     [Fact]
@@ -170,7 +159,7 @@ public sealed class MessagingOutboxesTests : TestBase
                 [AdditionalOutboxDoubles.CreateOutbox("billing")]
             );
 
-        act.Should().Throw<MessagingConfigurationException>().WithMessage("AddOutbox() requires a primary*");
+        act.Should().Throw<MessagingConfigurationException>().WithMessage("AddOutbox(name) requires a primary*");
     }
 
     [Fact]
@@ -195,13 +184,9 @@ public sealed class MessagingOutboxesTests : TestBase
     public void should_refuse_an_outbox_storage_that_cannot_join_a_unit_of_work()
     {
         var act = () =>
-            new MessagingOutbox(
-                "AddOutbox().UseX()",
-                Substitute.For<IDataStorage>(),
-                Substitute.For<IOutboxStorageInitializer>()
-            );
+            new MessagingOutbox("billing", Substitute.For<IDataStorage>(), Substitute.For<IOutboxStorageInitializer>());
 
-        act.Should().Throw<MessagingConfigurationException>().WithMessage("*'AddOutbox().UseX()'*relational*");
+        act.Should().Throw<MessagingConfigurationException>().WithMessage("*'billing'*relational*");
     }
 
     [Fact]
@@ -220,9 +205,11 @@ public sealed class MessagingOutboxesTests : TestBase
     {
         var services = new ServiceCollection();
 
-        var act = () => services.AddHeadlessMessaging(setup => setup.AddOutbox());
+        var act = () => services.AddHeadlessMessaging(setup => setup.AddOutbox("billing"));
 
-        act.Should().Throw<InvalidOperationException>().WithMessage("AddOutbox() was called without a storage*");
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("AddOutbox(\"billing\") was called without a storage*");
     }
 
     [Fact]
@@ -233,12 +220,12 @@ public sealed class MessagingOutboxesTests : TestBase
         var act = () =>
             services.AddHeadlessMessaging(setup =>
             {
-                var outbox = setup.AddOutbox();
-                outbox.UseStorage("first", _ => AdditionalOutboxDoubles.CreateOutbox("billing"));
-                outbox.UseStorage("second", _ => AdditionalOutboxDoubles.CreateOutbox("billing"));
+                var outbox = setup.AddOutbox("billing");
+                outbox.UseStorage(_ => AdditionalOutboxDoubles.CreateOutbox("billing"));
+                outbox.UseStorage(_ => AdditionalOutboxDoubles.CreateOutbox("billing"));
             });
 
-        act.Should().Throw<InvalidOperationException>().WithMessage("This outbox already has a storage*");
+        act.Should().Throw<InvalidOperationException>().WithMessage("Outbox 'billing' already has a storage*");
     }
 
     [Fact]
@@ -250,10 +237,10 @@ public sealed class MessagingOutboxesTests : TestBase
 
         services.AddHeadlessMessaging(setup =>
         {
-            first = setup.AddOutbox();
-            first.UseStorage("first", _ => AdditionalOutboxDoubles.CreateOutbox("billing"));
-            second = setup.AddOutbox();
-            second.UseStorage("second", _ => AdditionalOutboxDoubles.CreateOutbox("shipping"));
+            first = setup.AddOutbox("billing");
+            first.UseStorage(_ => AdditionalOutboxDoubles.CreateOutbox("billing"));
+            second = setup.AddOutbox("shipping");
+            second.UseStorage(_ => AdditionalOutboxDoubles.CreateOutbox("shipping"));
         });
 
         first!.OptionsName.Should().NotBe(second!.OptionsName);

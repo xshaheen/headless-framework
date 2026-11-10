@@ -116,6 +116,12 @@ public sealed class SqlServerDialectConformanceTests(SqlServerTestFixture fixtur
     }
 
     [Fact]
+    public override Task should_step_a_change_marker_past_a_previous_marker_the_clock_has_not_passed()
+    {
+        return base.should_step_a_change_marker_past_a_previous_marker_the_clock_has_not_passed();
+    }
+
+    [Fact]
     public override Task should_read_without_waiting_on_a_row_another_transaction_holds()
     {
         return base.should_read_without_waiting_on_a_row_another_transaction_holds();

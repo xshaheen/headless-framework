@@ -163,9 +163,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: |
-            src/Headless.Jobs.Dashboard/wwwroot/package-lock.json
-            src/Headless.Messaging.Dashboard/wwwroot/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: "Restore NuGet cache"
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
@@ -219,13 +217,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # Every dashboard is a member of the repository-root npm workspace, so its lockfile is the root one.
         include:
+          - name: Shell
+            target: dashboard-shell-test
+            lockfile: package-lock.json
           - name: Jobs
             target: dashboard-jobs-test
-            path: src/Headless.Jobs.Dashboard/wwwroot
+            lockfile: package-lock.json
           - name: Messaging
             target: dashboard-messaging-test
-            path: src/Headless.Messaging.Dashboard/wwwroot
+            lockfile: package-lock.json
     steps:
       - name: "Check out repository"
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -238,7 +240,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: ${{ matrix.path }}/package-lock.json
+          cache-dependency-path: ${{ matrix.lockfile }}
 
       # The same target a local run uses: npm ci from the lockfile, then lint, type-check, unit tests, and the
       # Vite build, each run even when an earlier one fails.
@@ -321,9 +323,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: |
-            src/Headless.Jobs.Dashboard/wwwroot/package-lock.json
-            src/Headless.Messaging.Dashboard/wwwroot/package-lock.json
+          cache-dependency-path: package-lock.json
 
       # Restore and save are split so there is no post-job cache step (the combined action spent ~15s there
       # even on a primary-key hit) and only the primary leg writes. The cache lives outside the workspace and
@@ -421,9 +421,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: |
-            src/Headless.Jobs.Dashboard/wwwroot/package-lock.json
-            src/Headless.Messaging.Dashboard/wwwroot/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: "Restore NuGet cache"
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5

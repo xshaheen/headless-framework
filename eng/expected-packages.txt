@@ -47,7 +47,7 @@ Headless.Coordination.Sql
 Headless.Coordination.SqlServer
 Headless.Coordination.Sqlite
 Headless.Couchbase
-Headless.Dashboard.Authentication
+Headless.Dashboard
 Headless.DataProtection.Blobs
 Headless.DistributedLocks
 Headless.DistributedLocks.Abstractions

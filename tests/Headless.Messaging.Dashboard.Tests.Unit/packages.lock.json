@@ -76,6 +76,12 @@
         "resolved": "5.0.0-1.25277.114",
         "contentHash": "tgmnwUv1iqiQFVp1hVRDR9mUy9/i6BS75l9FkFD/T76aAlU1XEjVYsS0Jkz/nbQg+vVvyxgglDhiOXwAvoIvMg=="
       },
+      "Microsoft.Extensions.TimeProvider.Testing": {
+        "type": "Direct",
+        "requested": "[10.11.0, )",
+        "resolved": "10.11.0",
+        "contentHash": "DTivKZ2Du0dJideTTa6vPj/eXKNRu+RxtjBX7NOOUXHBtHx1ehbE+lM+j3/5M3wU6BqzcZqEEyR4+FnPKs2rTA=="
+      },
       "Microsoft.Sbom.Targets": {
         "type": "Direct",
         "requested": "[4.1.13, 4.1.13]",
@@ -424,7 +430,7 @@
           "Headless.Checks": "[1.0.0, )"
         }
       },
-      "headless.dashboard.authentication": {
+      "headless.dashboard": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
@@ -531,7 +537,7 @@
         "type": "Project",
         "dependencies": {
           "Headless.Coordination.Abstractions": "[1.0.0, )",
-          "Headless.Dashboard.Authentication": "[1.0.0, )",
+          "Headless.Dashboard": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
           "Headless.Jobs": "[1.0.0, )",
           "Headless.Jobs.Abstractions": "[1.0.0, )"
@@ -574,7 +580,7 @@
       "headless.messaging.dashboard": {
         "type": "Project",
         "dependencies": {
-          "Headless.Dashboard.Authentication": "[1.0.0, )",
+          "Headless.Dashboard": "[1.0.0, )",
           "Headless.Messaging": "[1.0.0, )"
         }
       },
@@ -685,12 +691,6 @@
         "dependencies": {
           "xunit.v3.extensibility.core": "4.0.1"
         }
-      },
-      "Microsoft.Extensions.TimeProvider.Testing": {
-        "type": "CentralTransitive",
-        "requested": "[10.11.0, )",
-        "resolved": "10.11.0",
-        "contentHash": "DTivKZ2Du0dJideTTa6vPj/eXKNRu+RxtjBX7NOOUXHBtHx1ehbE+lM+j3/5M3wU6BqzcZqEEyR4+FnPKs2rTA=="
       },
       "NCrontab.Signed": {
         "type": "CentralTransitive",

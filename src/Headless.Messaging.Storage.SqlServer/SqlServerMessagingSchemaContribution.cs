@@ -119,6 +119,8 @@ internal static class SqlServerMessagingSchemaContribution
                     [StatusName] [nvarchar](50) NOT NULL,
                     [MessageId] [nvarchar](200) COLLATE Latin1_General_100_BIN2 NOT NULL,
                     [ExceptionInfo] [nvarchar](max) NULL,
+                    -- The versioned fingerprint that groups failures by cause, written with the failure's text.
+                    [FailureFingerprint] [nvarchar](64) NULL,
                     [IsInboxRecord] [bit] NOT NULL CONSTRAINT [DF_{receivedPrefix}_IsInboxRecord] DEFAULT 0,
                     [TenantPresent] [bit] NOT NULL CONSTRAINT [DF_{receivedPrefix}_TenantPresent] DEFAULT 0,
                     [TenantId] [nvarchar](200) COLLATE Latin1_General_100_BIN2 NOT NULL CONSTRAINT [DF_{receivedPrefix}_TenantId] DEFAULT N'',
@@ -148,6 +150,12 @@ internal static class SqlServerMessagingSchemaContribution
                     -- trailing spaces under every collation, so a key on the text columns would merge two ids
                     -- that differ only by trailing spaces; the hash compares bytes.
                     [ConsumerIdentityHash] [binary](32) NULL,
+                    -- SHA-256 of the consumer identity alone. Failure groups key on it, because = and GROUP BY pad
+                    -- trailing spaces and would merge two consumers.
+                    [ConsumerKeyHash] [binary](32) NULL,
+                    -- The change marker every state-changing statement stamps from the statement clock; the
+                    -- default covers a row written outside the storage.
+                    [ChangedAt] [datetimeoffset](7) NOT NULL CONSTRAINT [DF_{receivedPrefix}_ChangedAt] DEFAULT TODATETIMEOFFSET(SYSUTCDATETIME(), 0),
                     CONSTRAINT [PK_{receivedPrefix}] PRIMARY KEY CLUSTERED ([Id] ASC)
                 );
             END;
@@ -217,7 +225,22 @@ internal static class SqlServerMessagingSchemaContribution
             -- alone instead of a key lookup per row. The step creates the final schema directly; it does not
             -- carry migration DDL for superseded indexes.
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_StatusName_Added' AND object_id = OBJECT_ID(N'{received}'))
-                CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_StatusName_Added] ON {received} ([StatusName] ASC, [Added] ASC) INCLUDE ([IntentType]);
+                CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_StatusName_Added] ON {received} ([StatusName] ASC, [Added] ASC, [Id] ASC) INCLUDE ([IntentType]);
+
+            -- The dashboard's unfiltered list reads newest first by (Added, Id); the StatusName-led index above cannot
+            -- serve that order without a status filter, so this one does, scanned backward.
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_Added_Id' AND object_id = OBJECT_ID(N'{received}'))
+                CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_Added_Id] ON {received} ([Added] ASC, [Id] ASC) INCLUDE ([IntentType]);
+
+            -- The failure groups read only failures that ended for good and are still current, grouped by cause and
+            -- consumer, so the filtered index holds exactly those rows in group order.
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_FailureGroups' AND object_id = OBJECT_ID(N'{received}'))
+                EXEC(N'CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_FailureGroups] ON {received} ([FailureFingerprint],[ConsumerKeyHash])
+                    INCLUDE ([ChangedAt],[IntentType],[ConsumerIdentity]) WHERE [StatusName]=N''Failed'' AND [NextRetryAt] IS NULL AND [IsCurrentGeneration]=1');
+
+            -- The dashboard's change read pages by (ChangedAt, Id) on every poll of every node.
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_ChangedAt_Id' AND object_id = OBJECT_ID(N'{received}'))
+                CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_ChangedAt_Id] ON {received} ([ChangedAt] ASC, [Id] ASC) INCLUDE ([StatusName]);
 
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_Version_NextRetryAt' AND object_id = OBJECT_ID(N'{received}'))
                 CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_Version_NextRetryAt] ON {received} ([Version] ASC,[IntentType] ASC,[NextRetryAt] ASC) INCLUDE ([Retries],[LeaseState],[LeaseExpiresAt]) WHERE [NextRetryAt] IS NOT NULL;
@@ -235,9 +258,12 @@ internal static class SqlServerMessagingSchemaContribution
                     [ExpectedStatus] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NULL,
                     [ExpectedDueAt] [datetimeoffset](7) NULL,
                     [Actor] [nvarchar](200) COLLATE Latin1_General_100_BIN2 NOT NULL,
-                    [Reason] [nvarchar](1000) NOT NULL,
+                    -- NULL when a single-row intervention gave no reason.
+                    [Reason] [nvarchar](1000) NULL,
                     [Outcome] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NOT NULL,
                     [StorageId] [uniqueidentifier] NULL,
+                    -- The additional outbox that holds the row, or NULL when the primary storage holds it.
+                    [OutboxName] [nvarchar](200) COLLATE Latin1_General_100_BIN2 NULL,
                     [MessageName] [nvarchar](200) NULL,
                     [MessageId] [nvarchar](200) COLLATE Latin1_General_100_BIN2 NULL,
                     [Lane] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NULL,
@@ -258,7 +284,7 @@ internal static class SqlServerMessagingSchemaContribution
                     [GenerationIncarnationId] [uniqueidentifier] NULL,
                     [OperationType] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NOT NULL,
                     [Actor] [nvarchar](200) COLLATE Latin1_General_100_BIN2 NOT NULL,
-                    [Reason] [nvarchar](1000) NOT NULL,
+                    [Reason] [nvarchar](1000) NULL,
                     [Outcome] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NOT NULL,
                     [CreatedAt] [datetimeoffset](7) NOT NULL,
                     CONSTRAINT [PK_MessagingInboxAudit] PRIMARY KEY CLUSTERED ([AuditId]),
@@ -283,6 +309,7 @@ internal static class SqlServerMessagingSchemaContribution
                OR COL_LENGTH(N'{schema}.{_ReceiptsTable}',N'Outcome') IS NULL
                OR COL_LENGTH(N'{schema}.{_ReceiptsTable}',N'TargetKind') IS NULL
                OR COL_LENGTH(N'{schema}.{_ReceiptsTable}',N'ExpectedDueAt') IS NULL
+               OR COL_LENGTH(N'{schema}.{_ReceiptsTable}',N'OutboxName') IS NULL
                OR COL_LENGTH(N'{schema}.{_AuditTable}',N'TargetKind') IS NULL
                 THROW 50004, N'Headless.Messaging inbox schema is incomplete: the lifecycle, retention or operation receipt contract is missing.', 1;
             """
@@ -331,6 +358,11 @@ internal static class SqlServerMessagingSchemaContribution
                     [LeaseTakeoverCount] [int] NOT NULL CONSTRAINT [DF_{publishedPrefix}_LeaseTakeoverCount] DEFAULT 0,
                     [StatusName] [nvarchar](50) NOT NULL,
                     [MessageId] [nvarchar](200) NOT NULL,
+                    [ExceptionInfo] [nvarchar](max) NULL,
+                    -- See the received table's failure fingerprint.
+                    [FailureFingerprint] [nvarchar](64) NULL,
+                    -- See the received table's change marker.
+                    [ChangedAt] [datetimeoffset](7) NOT NULL CONSTRAINT [DF_{publishedPrefix}_ChangedAt] DEFAULT TODATETIMEOFFSET(SYSUTCDATETIME(), 0),
                     CONSTRAINT [PK_{publishedPrefix}] PRIMARY KEY CLUSTERED ([Id] ASC)
                 );
             END;
@@ -343,7 +375,17 @@ internal static class SqlServerMessagingSchemaContribution
 
             -- #508 — see the received-table note above; create the final dashboard timeline/statistics index.
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{publishedPrefix}_StatusName_Added' AND object_id = OBJECT_ID(N'{published}'))
-                CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_StatusName_Added] ON {published} ([StatusName] ASC, [Added] ASC) INCLUDE ([IntentType]);
+                CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_StatusName_Added] ON {published} ([StatusName] ASC, [Added] ASC, [Id] ASC) INCLUDE ([IntentType]);
+
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{publishedPrefix}_Added_Id' AND object_id = OBJECT_ID(N'{published}'))
+                CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_Added_Id] ON {published} ([Added] ASC, [Id] ASC) INCLUDE ([IntentType]);
+
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{publishedPrefix}_FailureGroups' AND object_id = OBJECT_ID(N'{published}'))
+                EXEC(N'CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_FailureGroups] ON {published} ([FailureFingerprint])
+                    INCLUDE ([ChangedAt],[IntentType]) WHERE [StatusName]=N''Failed'' AND [NextRetryAt] IS NULL');
+
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{publishedPrefix}_ChangedAt_Id' AND object_id = OBJECT_ID(N'{published}'))
+                CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_ChangedAt_Id] ON {published} ([ChangedAt] ASC, [Id] ASC) INCLUDE ([StatusName]);
 
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{publishedPrefix}_Version_NextRetryAt' AND object_id = OBJECT_ID(N'{published}'))
                 CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_Version_NextRetryAt] ON {published} ([Version] ASC,[IntentType] ASC,[NextRetryAt] ASC) INCLUDE ([Retries],[LeaseState],[LeaseExpiresAt]) WHERE [NextRetryAt] IS NOT NULL;
@@ -363,6 +405,10 @@ internal static class SqlServerMessagingSchemaContribution
         return $"""
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'IX_MessagingInboxOperationReceipts_Type_CreatedAt' AND object_id=OBJECT_ID(N'{schema}.{_ReceiptsTable}'))
                 CREATE NONCLUSTERED INDEX [IX_MessagingInboxOperationReceipts_Type_CreatedAt] ON [{schema}].[{_ReceiptsTable}] ([OperationType],[CreatedAt]);
+
+            -- The operator ledger reads receipts newest first by (CreatedAt, OperationId).
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'IX_MessagingInboxOperationReceipts_CreatedAt' AND object_id=OBJECT_ID(N'{schema}.{_ReceiptsTable}'))
+                CREATE NONCLUSTERED INDEX [IX_MessagingInboxOperationReceipts_CreatedAt] ON [{schema}].[{_ReceiptsTable}] ([CreatedAt],[OperationId]);
 
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'IX_MessagingInboxAudit_Type_CreatedAt' AND object_id=OBJECT_ID(N'{schema}.{_AuditTable}'))
                 CREATE NONCLUSTERED INDEX [IX_MessagingInboxAudit_Type_CreatedAt] ON [{schema}].[{_AuditTable}] ([OperationType],[CreatedAt]);

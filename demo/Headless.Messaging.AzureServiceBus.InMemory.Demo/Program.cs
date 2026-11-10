@@ -1,6 +1,7 @@
 using Demo;
 using Demo.Contracts.DomainEvents;
 using Demo.Contracts.IntegrationEvents;
+using Headless.Dashboard;
 using Headless.Messaging;
 using Headless.Messaging.Dashboard;
 
@@ -36,9 +37,10 @@ builder.Services.AddHeadlessMessaging(setup =>
             cfg.UseTopic("entity-deleted").WithSubscription()
         );
     });
-
-    setup.UseDashboard(d => d.WithNoAuth());
 });
+
+// The Messaging module of the Headless dashboard, at /headless/messaging. No auth: a local demo only.
+builder.Services.AddHeadlessDashboard(dashboard => dashboard.WithNoAuth().AddMessaging());
 
 var app = builder.Build();
 
@@ -98,6 +100,6 @@ app.MapGet(
     }
 );
 
-app.MapHeadlessMessagingDashboard();
+app.MapHeadlessDashboard();
 
 await app.RunAsync();

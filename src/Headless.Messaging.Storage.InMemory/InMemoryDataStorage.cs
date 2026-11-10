@@ -102,6 +102,8 @@ internal sealed partial class InMemoryDataStorage(
         {
             foreach (var row in Drain())
             {
+                // Stamped when the unit completes, so the marker is never earlier than the row becomes visible.
+                _storage._StampChange(row);
                 _storage.PublishedMessages[row.StorageId] = row;
             }
 
@@ -172,6 +174,7 @@ internal sealed partial class InMemoryDataStorage(
                 }
 
                 message.StatusName = StatusName.Delayed;
+                _StampChange(message);
             }
         }
 
@@ -345,7 +348,10 @@ internal sealed partial class InMemoryDataStorage(
             _ApplyLease(current, message, lease, fenced: originalInlineAttempts.HasValue);
             current.Retries = message.Retries;
             current.InlineAttempts = message.InlineAttempts;
+            current.ExceptionInfo = message.ExceptionInfo;
+            current.FailureFingerprint = message.FailureFingerprint;
             _WriteContent(current, message, contentWrite);
+            _StampChange(current);
             updated = true;
         }
 
@@ -531,6 +537,8 @@ internal sealed partial class InMemoryDataStorage(
 
                 _WriteContent(current, message, contentWrite);
                 current.ExceptionInfo = message.ExceptionInfo;
+                current.FailureFingerprint = message.FailureFingerprint;
+                _StampChange(current);
                 updated = true;
             }
 
@@ -650,6 +658,7 @@ internal sealed partial class InMemoryDataStorage(
                 LifecycleId = incarnationId,
                 InboxRetention = retention,
             };
+            _StampChange(stored);
 
             ReceivedMessages[stored.StorageId] = stored;
             _inboxIdentityIndex[key] = stored.StorageId;
@@ -729,6 +738,11 @@ internal sealed partial class InMemoryDataStorage(
                     return ValueTask.FromResult(false);
                 }
 
+                if (current.IsInboxOrphaned != orphaned)
+                {
+                    _StampChange(current);
+                }
+
                 current.IsInboxOrphaned = orphaned;
                 message.IsInboxOrphaned = orphaned;
                 if (orphaned)
@@ -777,6 +791,7 @@ internal sealed partial class InMemoryDataStorage(
         cancellationToken.ThrowIfCancellationRequested();
 
         var (stored, row) = _CreateRow(name, message, publishAt);
+        _StampChange(row);
         PublishedMessages[stored.StorageId] = row;
 
         return ValueTask.FromResult(stored);
@@ -891,6 +906,7 @@ internal sealed partial class InMemoryDataStorage(
         // A poisoned row is terminal through NextRetryAt = null, not through its retry count; no consume attempt ran.
         const int retries = 0;
         var indexKey = (version, messageId, consumerIdentity, message.Lane);
+        var failureFingerprint = message.FailureFingerprint ?? MessagingFailureFingerprints.Poison;
 
         // Upsert on (Version, MessageId, ConsumerIdentity) — mirrors the SQL providers' MERGE / ON CONFLICT
         // semantics so broker redelivery doesn't accumulate duplicate rows. The terminal-row guard
@@ -940,12 +956,14 @@ internal sealed partial class InMemoryDataStorage(
                 existing.Lease = RowLeaseRules.Revoke(existing.Lease).Next;
                 existing.Content = content;
                 existing.ExceptionInfo = exceptionInfo;
+                existing.FailureFingerprint = failureFingerprint;
+                _StampChange(existing);
 
                 return ValueTask.FromResult(true);
             }
 
             var id = guidGenerator.Create();
-            ReceivedMessages[id] = new MemoryMessage
+            var row = new MemoryMessage
             {
                 StorageId = id,
                 ConsumerIdentity = consumerIdentity,
@@ -959,8 +977,11 @@ internal sealed partial class InMemoryDataStorage(
                 NextRetryAt = null,
                 StatusName = StatusName.Failed,
                 ExceptionInfo = exceptionInfo,
+                FailureFingerprint = failureFingerprint,
                 Version = version,
             };
+            _StampChange(row);
+            ReceivedMessages[id] = row;
             _receivedIdentityIndex[indexKey] = id;
 
             return ValueTask.FromResult(true);
@@ -1079,6 +1100,8 @@ internal sealed partial class InMemoryDataStorage(
                 existing.Lease = RowLeaseRules.Revoke(existing.Lease).Next;
                 existing.StatusName = StatusName.Scheduled;
                 existing.ExceptionInfo = null;
+                existing.FailureFingerprint = null;
+                _StampChange(existing);
 
                 return ValueTask.FromResult(_ToSnapshot(existing));
             }
@@ -1152,7 +1175,7 @@ internal sealed partial class InMemoryDataStorage(
     {
         var mdMessage = _CreateUnstoredReceivedMessage(message, serialized, added, initialNextRetryAt);
 
-        ReceivedMessages[mdMessage.StorageId] = new MemoryMessage
+        var row = new MemoryMessage
         {
             StorageId = mdMessage.StorageId,
             Origin = _CloneOrigin(mdMessage.Origin),
@@ -1168,6 +1191,8 @@ internal sealed partial class InMemoryDataStorage(
             StatusName = StatusName.Scheduled,
             Version = version,
         };
+        _StampChange(row);
+        ReceivedMessages[mdMessage.StorageId] = row;
 
         return mdMessage;
     }
@@ -1383,6 +1408,7 @@ internal sealed partial class InMemoryDataStorage(
                 }
 
                 current.NextRetryAt = now.Add(deferral.Delay);
+                _StampChange(current);
                 return ValueTask.FromResult(true);
             }
         }
@@ -1698,6 +1724,7 @@ internal sealed partial class InMemoryDataStorage(
             InboxAttemptFence = m.InboxAttemptFence,
             IsInboxOrphaned = m.IsInboxOrphaned,
             ExceptionInfo = m.ExceptionInfo,
+            FailureFingerprint = m.FailureFingerprint,
             Lane = m.Lane,
         };
     }

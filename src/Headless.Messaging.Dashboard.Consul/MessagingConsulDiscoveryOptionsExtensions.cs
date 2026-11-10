@@ -2,7 +2,6 @@
 
 using Headless.Checks;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Headless.Messaging.Dashboard.Consul;
 
@@ -47,13 +46,10 @@ internal sealed class ConsulDiscoveryOptionsExtension(Action<ConsulDiscoveryOpti
 
         option?.Invoke(discoveryOptions);
         services.AddSingleton(discoveryOptions);
-        // Consul addresses nodes by name with no namespace; the dashboard's gateway and stats endpoint read
-        // this to take the name-addressed path and to skip proxying a request to the current node.
+        // Consul addresses nodes by name with no namespace; forwarding reads this to recognize the current node in
+        // the list discovery returns and never call it as a peer.
         services.AddSingleton(new CurrentNodeIdentity(discoveryOptions.NodeName));
 
-        services.AddHttpClient();
-        services.TryAddSingleton<IRequestMapper, RequestMapper>();
-        services.TryAddSingleton<GatewayProxyAgent>();
         services.AddSingleton<IProcessingServer, ConsulProcessingNodeServer>();
         services.AddSingleton<INodeDiscoveryProvider, ConsulNodeDiscoveryProvider>();
     }

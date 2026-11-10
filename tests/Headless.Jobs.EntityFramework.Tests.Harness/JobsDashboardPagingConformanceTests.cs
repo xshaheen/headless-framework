@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.ComponentModel;
 using Headless.Jobs;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -84,6 +85,98 @@ public abstract class JobsDashboardPagingConformanceTests<TFixture>(TFixture fix
 
         single.Items.Should().HaveCount(_RowCount);
         paged.Should().Equal(single.Items.Select(x => x.Id));
+    }
+
+    public virtual async Task run_list_pages_sorted_by_function_or_status_visit_every_tied_run_once_in_one_order()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("paging-reader");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        var store = _Store(host);
+        var cronJobId = Guid.NewGuid();
+        await fixture.SeedCronJobAsync(cronJobId, "beta.job", "0 0 * * * *", NodeDeathPolicy.Retry, ct);
+        var at = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        // Lower-case ASCII names sort alike in every collation, so the order can be checked ordinally. Statuses are
+        // terminal so no scheduler claims a row while the pages are read.
+        string[] functions = ["alpha.job", "beta.job", "gamma.job"];
+        JobStatus[] statuses = [JobStatus.Succeeded, JobStatus.Failed, JobStatus.Cancelled, JobStatus.Skipped];
+        var jobs = Enumerable
+            .Range(0, 12)
+            .Select(index => new TimeJobEntity
+            {
+                Id = Guid.NewGuid(),
+                Function = functions[index % functions.Length],
+                Status = statuses[index % statuses.Length],
+                ExecutionTime = at.AddMinutes(index),
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
+            })
+            .ToArray();
+        await store.AddTimeJobsAsync(jobs, ct);
+        var occurrences = Enumerable
+            .Range(0, 6)
+            .Select(index => new CronJobOccurrenceEntity<CronJobEntity>
+            {
+                Id = Guid.NewGuid(),
+                CronJobId = cronJobId,
+                Status = statuses[index % 2],
+                ExecutionTime = at.AddHours(index + 1),
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
+            })
+            .ToArray();
+        await store.InsertCronJobOccurrencesAsync(occurrences, ct);
+
+        foreach (var sortBy in new[] { JobRunSortKey.Function, JobRunSortKey.Status })
+        {
+            foreach (var direction in new[] { ListSortDirection.Ascending, ListSortDirection.Descending })
+            {
+                var query = new JobRunQuery { SortBy = sortBy, SortDirection = direction };
+                var single = await store.ListJobRunsAsync(query, after: null, pageSize: 100, ct);
+                // A page of 4 splits every group of tied runs, in both tables.
+                var paged = await _ReadAllPagesAsync(store, query, pageSize: 4, ct);
+
+                single.Runs.Should().HaveCount(18);
+                paged
+                    .Should()
+                    .Equal(single.Runs, static (actual, expected) => actual.Id == expected.Id, $"{sortBy} {direction}");
+                string[] keys =
+                    sortBy == JobRunSortKey.Function
+                        ? [.. paged.Select(x => x.Function)]
+                        : [.. paged.Select(x => ((int)x.Status).ToString("D2", CultureInfo.InvariantCulture))];
+
+                if (direction == ListSortDirection.Ascending)
+                {
+                    keys.Should().BeInAscendingOrder(StringComparer.Ordinal);
+                }
+                else
+                {
+                    keys.Should().BeInDescendingOrder(StringComparer.Ordinal);
+                }
+            }
+        }
+    }
+
+    private static async Task<List<JobRunSummary>> _ReadAllPagesAsync(
+        IJobPersistenceProvider<TimeJobEntity, CronJobEntity> store,
+        JobRunQuery query,
+        int pageSize,
+        CancellationToken cancellationToken
+    )
+    {
+        var runs = new List<JobRunSummary>();
+        JobRunCursor? cursor = null;
+
+        do
+        {
+            var page = await store.ListJobRunsAsync(query, cursor, pageSize, cancellationToken);
+            runs.AddRange(page.Runs);
+            // The cursor crosses HTTP as text between pages.
+            cursor = page.Next is { } next && JobRunCursor.TryParse(next.ToString(), out var parsed) ? parsed : null;
+        } while (cursor is not null);
+
+        return runs;
     }
 
     private static IJobPersistenceProvider<TimeJobEntity, CronJobEntity> _Store(IHost host) =>

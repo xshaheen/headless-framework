@@ -297,6 +297,7 @@ internal sealed partial class InMemoryDataStorage
                 row.InlineAttempts = 0;
                 row.ExpiresAt = null;
                 row.Lease = RowLeaseRules.Revoke(row.Lease).Next;
+                _StampChange(row);
             }
 
             requeued.Add(id);
@@ -394,6 +395,12 @@ internal sealed partial class InMemoryDataStorage
                 if (!_TryGrantLease(candidate, now, leaseDuration, holder))
                 {
                     continue;
+                }
+
+                // A stale Queued row claimed again only changes its lease.
+                if (candidate.StatusName != StatusName.Queued)
+                {
+                    _StampChange(candidate);
                 }
 
                 candidate.StatusName = StatusName.Queued;

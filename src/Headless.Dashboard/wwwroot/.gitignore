@@ -1,0 +1,8 @@
+node_modules
+coverage
+*.local
+.DS_Store
+# The build output is generated and embedded at .NET build time (see eng/DashboardSpa.targets).
+/dist
+# The repository ignores NuGet restore folders named packages/; this one holds the workspace's npm packages.
+!/packages/*

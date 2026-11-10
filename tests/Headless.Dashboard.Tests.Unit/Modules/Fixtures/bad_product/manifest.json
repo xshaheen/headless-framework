@@ -1,0 +1,8 @@
+{
+  "id": "diag",
+  "sdkVersion": "1.0.0",
+  "entry": "entry.js",
+  "product": "billing",
+  "sidebar": [{ "entries": [{ "id": "diag.nav.runs", "label": "Runs", "route": "runs", "icon": "list" }] }],
+  "routes": [{ "path": "runs", "chunk": "runs.js" }]
+}

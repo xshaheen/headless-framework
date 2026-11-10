@@ -2,41 +2,20 @@
 
 using System.Diagnostics.CodeAnalysis;
 using System.Security.Claims;
-using System.Text.Json;
-using System.Text.Json.Serialization;
-using Headless.Dashboard.Authentication;
-using Microsoft.AspNetCore.Http;
+using Headless.Dashboard;
 
 namespace Headless.Messaging.Dashboard;
 
 internal static class DashboardOperatorAuthority
 {
-    public const string OperatorActorRequiredCode = "g:operator_actor_required";
-
-    public const string OperatorActorRequiredRemedy =
-        "Operator actions require an authenticated principal with a stable actor name. Configure Basic or Host authentication with a name or sub claim.";
-
-    public const string OperatorActorRequiredMessage =
-        "An authenticated operator actor is required to execute operator actions.";
-
-    internal static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
+    /// <summary>
+    /// Resolves the operator <paramref name="user"/> is recorded as: the name, else the name-identifier claim, else
+    /// <c>sub</c>. A user not signed in, or signed in under a placeholder name such as <c>anonymous</c>, names no
+    /// operator, so a write that must be audited is refused.
+    /// </summary>
+    public static OperatorAuthorityResult Resolve(ClaimsPrincipal user)
     {
-        Converters =
-        {
-            new JsonStringEnumConverter<StatusName>(allowIntegerValues: false),
-            new JsonStringEnumConverter<MessageLane>(allowIntegerValues: false),
-            new JsonStringEnumConverter<MessagingOperationType>(allowIntegerValues: false),
-            new JsonStringEnumConverter<InboxOperationOutcome>(allowIntegerValues: false),
-        },
-    };
-
-    public static readonly OperatorAuthorizationContext HostAuthorizationContext = new(
-        new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "headless-host")], "Host"))
-    );
-
-    public static OperatorAuthorityResult Resolve(HttpContext httpContext)
-    {
-        if (httpContext.User.Identity is not { IsAuthenticated: true } identity)
+        if (user.Identity is not { IsAuthenticated: true } identity)
         {
             return OperatorAuthorityResult.Unauthenticated();
         }
@@ -73,7 +52,7 @@ internal static class DashboardOperatorAuthority
             return OperatorAuthorityResult.PlaceholderActor();
         }
 
-        var principal = new ClaimsPrincipal(httpContext.User.Identities.Select(static id => id.Clone()));
+        var principal = new ClaimsPrincipal(user.Identities.Select(static id => id.Clone()));
         var auditIdentity = (ClaimsIdentity)principal.Identity!;
         foreach (var claim in auditIdentity.FindAll(auditIdentity.NameClaimType).ToArray())
         {
@@ -84,17 +63,6 @@ internal static class DashboardOperatorAuthority
 
         return OperatorAuthorityResult.Success(new OperatorAuthorizationContext(principal));
     }
-
-    public static IResult CreateForbiddenResult() =>
-        Results.Json(
-            new OperatorActorRequiredProblem(
-                OperatorActorRequiredCode,
-                OperatorActorRequiredRemedy,
-                OperatorActorRequiredMessage
-            ),
-            JsonOptions,
-            statusCode: StatusCodes.Status403Forbidden
-        );
 }
 
 internal enum OperatorAuthorityStatus
@@ -121,5 +89,3 @@ internal sealed record OperatorAuthorityResult(
     public static OperatorAuthorityResult PlaceholderActor() =>
         new(OperatorAuthorityStatus.PlaceholderActor, Authorization: null);
 }
-
-public sealed record OperatorActorRequiredProblem(string Code, string Remedy, string Message);

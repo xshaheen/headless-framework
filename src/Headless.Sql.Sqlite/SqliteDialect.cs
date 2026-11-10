@@ -135,6 +135,12 @@ public sealed class SqliteDialect : ISqlDialect
         return _ShiftMicros(instant, $"+ ({seconds}) * 1000000");
     }
 
+    public string NextChangeMarker(string previous)
+    {
+        // Instants are fixed-shape UTC text, so text comparison is instant comparison.
+        return $"CASE WHEN {SqlDialectTokens.Now} > {previous} THEN {SqlDialectTokens.Now} ELSE {_ShiftMicros(previous, "+ 1")} END";
+    }
+
     public string Limit(string limitParameter, string? offsetParameter = null)
     {
         return offsetParameter is null

@@ -2,8 +2,9 @@
 
 namespace Headless.Jobs.Provider;
 
-// Operator requeue for the in-memory provider: a Failed time job or cron occurrence returns to Idle under the same
-// locks that keyed scheduling and cron materialization hold, so the refusal checks stay true until the write lands.
+// Operator requeue for the in-memory provider: a Failed, Cancelled, or Skipped time job or cron occurrence returns to
+// Idle under the same locks that keyed scheduling and cron materialization hold, so the refusal checks stay true until
+// the write lands.
 internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
@@ -12,6 +13,17 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         Guid jobId,
         string? traceParent,
         CancellationToken cancellationToken = default
+    )
+    {
+        return _RequeueTimeJobAsync(jobId, expectedChangedAt: null, traceParent, cancellationToken);
+    }
+
+    // An Operation passes the marker its scope read returned, so a row changed since then is not requeued again.
+    private Task<JobRequeueOutcome> _RequeueTimeJobAsync(
+        Guid jobId,
+        DateTime? expectedChangedAt,
+        string? traceParent,
+        CancellationToken cancellationToken
     )
     {
         // The keyed-operations lock is what keyed scheduling holds while it reads and supersedes a generation, so the
@@ -36,11 +48,17 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 return Task.FromResult(refused);
             }
 
+            if (expectedChangedAt is { } expected && job.ChangedAt != expected)
+            {
+                return Task.FromResult(JobRequeueOutcome.Conflict);
+            }
+
             var now = _timeProvider.GetUtcNow();
             var updated = _CloneTicker(job);
             updated.Status = JobStatus.Idle;
             updated.RetryCount = 0;
             updated.ExceptionMessage = null;
+            updated.FailureFingerprint = null;
             updated.SkippedReason = null;
             updated.Lease = _Revoked(updated.Lease);
             updated.ExecutedAt = null;
@@ -53,6 +71,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             updated.ExecutionTime = now.UtcDateTime;
             updated.TraceParent = traceParent;
             updated.UpdatedAt = now;
+            updated.ChangedAt = _NextChangeMarker();
 
             if (!_TryUpdateTimeJob(jobId, updated, job))
             {
@@ -70,6 +89,16 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         CancellationToken cancellationToken = default
     )
     {
+        return _RequeueCronJobOccurrenceAsync(occurrenceId, expectedChangedAt: null, traceParent, cancellationToken);
+    }
+
+    private Task<JobRequeueOutcome> _RequeueCronJobOccurrenceAsync(
+        Guid occurrenceId,
+        DateTime? expectedChangedAt,
+        string? traceParent,
+        CancellationToken cancellationToken
+    )
+    {
         cancellationToken.ThrowIfCancellationRequested();
 
         if (!_cronOccurrences.TryGetValue(occurrenceId, out var observed))
@@ -77,9 +106,9 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             return Task.FromResult(JobRequeueOutcome.NotFound);
         }
 
-        if (observed.Status != JobStatus.Failed)
+        if (JobRequeueRules.RefuseCronJobOccurrence(observed.Status) is { } refused)
         {
-            return Task.FromResult(JobRequeueOutcome.NotFailed);
+            return Task.FromResult(refused);
         }
 
         // The per-definition lock is the materialization mutex: every new occurrence of the definition is created
@@ -91,7 +120,12 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 return Task.FromResult(JobRequeueOutcome.NotFound);
             }
 
-            if (current.Status != JobStatus.Failed)
+            if (JobRequeueRules.RefuseCronJobOccurrence(current.Status) is not null)
+            {
+                return Task.FromResult(JobRequeueOutcome.Conflict);
+            }
+
+            if (expectedChangedAt is { } expected && current.ChangedAt != expected)
             {
                 return Task.FromResult(JobRequeueOutcome.Conflict);
             }
@@ -133,6 +167,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             updated.Status = JobStatus.Idle;
             updated.RetryCount = 0;
             updated.ExceptionMessage = null;
+            updated.FailureFingerprint = null;
             updated.SkippedReason = null;
             updated.Lease = _Revoked(updated.Lease);
             updated.ExecutedAt = null;
@@ -143,6 +178,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             updated.ProgressUpdatedAt = null;
             updated.TraceParent = traceParent;
             updated.UpdatedAt = now;
+            updated.ChangedAt = _NextChangeMarker();
 
             return Task.FromResult(
                 _cronOccurrences.TryUpdate(occurrenceId, updated, current)

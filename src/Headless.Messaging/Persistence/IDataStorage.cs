@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
+using Headless.Checks;
 
 namespace Headless.Messaging.Persistence;
 
@@ -17,6 +18,12 @@ public interface IDataStorage
     IScheduledDeliveryOperationsApi GetScheduledDeliveryOperationsApi() =>
         throw new NotSupportedException(
             $"Messaging storage provider '{GetType().FullName}' does not support scheduled-delivery operations."
+        );
+
+    /// <summary>Returns the audited, provider-neutral published-row administration API: re-send and delete.</summary>
+    IPublishedOperationsApi GetPublishedOperationsApi() =>
+        throw new NotSupportedException(
+            $"Messaging storage provider '{GetType().FullName}' does not support published-message operations."
         );
 
     /// <summary>Reads one provider-clock snapshot with the current history retention settings.</summary>
@@ -133,11 +140,12 @@ public interface IDataStorage
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>ExceptionInfo asymmetry:</b> <see cref="MediumMessage.ExceptionInfo"/> is intentionally
-    /// not persisted on the publish path; only the receive path (<see cref="ChangeReceiveStateAsync"/>)
-    /// persists exception info because the <c>Published</c> table schema has no <c>ExceptionInfo</c>
-    /// column. A 4th-provider implementation should mirror this asymmetry — never persist
-    /// <c>ExceptionInfo</c> from this method.
+    /// <b>Failure record:</b> the write also stores the message's <see cref="MediumMessage.ExceptionInfo"/> and
+    /// <see cref="MediumMessage.FailureFingerprint"/>, as they are on the message, in the same guarded statement as
+    /// the state, exactly as <see cref="ChangeReceiveStateAsync"/> does for a received row. A write the terminal guard
+    /// refuses stores neither. The send path sets both on every failure write, the retry writes included; a
+    /// third-party provider must persist both on this method, on <see cref="ChangePublishRetryStateAsync"/>, and on
+    /// the received counterparts, and never derive the fingerprint itself.
     /// </para>
     /// </remarks>
     /// <param name="message">The message whose state is changing.</param>
@@ -183,6 +191,10 @@ public interface IDataStorage
     );
 
     /// <summary>Updates published retry state with optimistic checks for both durable retry counters.</summary>
+    /// <remarks>
+    /// Stores <see cref="MediumMessage.ExceptionInfo"/> and <see cref="MediumMessage.FailureFingerprint"/> with the
+    /// state, as <see cref="ChangePublishStateAsync"/> does.
+    /// </remarks>
     /// <param name="contentWrite">
     /// Whether the transition also rewrites the persisted envelope. See <see cref="MessageContentWrite"/>.
     /// </param>
@@ -494,6 +506,11 @@ public interface IDataStorage
     /// Stores a failed received message envelope in the received table so operators can inspect
     /// and replay messages that caused unhandled exceptions.
     /// </summary>
+    /// <remarks>
+    /// The row stores <see cref="MediumMessage.FailureFingerprint"/> beside <paramref name="exceptionInfo"/>, or
+    /// <see cref="MessagingFailureFingerprints.Poison"/> when the message carries none: a row stored here failed before
+    /// any consumer ran.
+    /// </remarks>
     /// <param name="name">The message name (topic or queue name) as received from the broker.</param>
     /// <param name="consumerIdentity">The identity of the consumer the message was delivered to; received rows are unique per message ID and consumer identity.</param>
     /// <param name="message">The failed received message envelope, including serialized content and delivery intent.</param>
@@ -510,6 +527,7 @@ public interface IDataStorage
 
     /// <summary>
     /// Stores a failed received message using raw serialized content when no <c>MediumMessage</c> envelope is available.
+    /// The row stores the <see cref="MessagingFailureFingerprints.Poison"/> fingerprint.
     /// </summary>
     /// <param name="name">The message name (topic or queue name) as received from the broker.</param>
     /// <param name="consumerIdentity">The identity of the consumer the message was delivered to; received rows are unique per message ID and consumer identity.</param>
@@ -745,6 +763,172 @@ public interface IDataStorage
         IReadOnlyList<Guid> ids,
         CancellationToken cancellationToken = default
     );
+
+    #region Change reads
+
+    /// <summary>Returns the latest change marker across the published and received rows.</summary>
+    /// <param name="cancellationToken">Token that aborts the query.</param>
+    /// <returns>The latest marker, or <see langword="null"/> when the store holds no row.</returns>
+    /// <remarks>
+    /// One of the two reads <see cref="GetMessageChangesAsync"/> is built on. Every write that changes a row's visible
+    /// state stamps its marker from the store's clock in the same statement; lease and lock writes that change only
+    /// ownership or lock time leave it alone.
+    /// </remarks>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    ValueTask<DateTimeOffset?> GetLatestMessageChangeMarkerAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns at most <paramref name="maxCount"/> rows of one table whose change marker lies after
+    /// <paramref name="after"/> and at or before <paramref name="through"/>, ordered by marker and then identifier,
+    /// starting after <paramref name="resumeAfter"/>.
+    /// </summary>
+    /// <param name="kind">The table to read.</param>
+    /// <param name="after">Exclusive lower bound of the marker.</param>
+    /// <param name="through">Inclusive upper bound of the marker.</param>
+    /// <param name="resumeAfter">
+    /// The keyset position of the last row an earlier call returned, exclusive, or <see langword="null"/> to start at
+    /// <paramref name="after"/>.
+    /// </param>
+    /// <param name="maxCount">The most rows to return.</param>
+    /// <param name="cancellationToken">Token that aborts the query.</param>
+    /// <returns>The rows, in <c>(ChangedAt, Id)</c> order as the store orders identifiers.</returns>
+    /// <remarks>
+    /// One of the two reads <see cref="GetMessageChangesAsync"/> is built on, backed by an index on
+    /// <c>(ChangedAt, Id)</c>. The read never waits on a row another transaction is writing.
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="maxCount"/> is not positive.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    ValueTask<IReadOnlyList<MessageChange>> ReadChangedMessagesAsync(
+        MessageChangeKind kind,
+        DateTimeOffset after,
+        DateTimeOffset through,
+        MessageChangePosition? resumeAfter,
+        int maxCount,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Returns a cursor at the store's latest change marker, so reads from it return the rows changed from now on.
+    /// </summary>
+    /// <param name="cancellationToken">Token that aborts the query.</param>
+    /// <returns>The cursor to pass to the first <see cref="GetMessageChangesAsync"/>.</returns>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    async ValueTask<MessageChangeCursor> GetMessageChangeStartCursorAsync(CancellationToken cancellationToken = default)
+    {
+        return MessageChangeCursor.StartAt(
+            await GetLatestMessageChangeMarkerAsync(cancellationToken).ConfigureAwait(false)
+        );
+    }
+
+    /// <summary>
+    /// Returns at most <paramref name="pageSize"/> published and received rows changed since <paramref name="cursor"/>,
+    /// and the cursor to read from next.
+    /// </summary>
+    /// <param name="cursor">A cursor <see cref="GetMessageChangeStartCursorAsync"/> or an earlier read returned.</param>
+    /// <param name="overlapWindow">
+    /// How far before the end of one pass the next pass starts. Make it longer than the longest time between stamping a
+    /// row and committing it: for an outbox write enlisted in an application transaction, the longest such transaction.
+    /// <see cref="MessageChangeCursor.DefaultOverlapWindow"/> is the usual value.
+    /// </param>
+    /// <param name="pageSize">The most rows to return.</param>
+    /// <param name="cancellationToken">Token that aborts the query.</param>
+    /// <returns>The changed rows and the next cursor.</returns>
+    /// <remarks>
+    /// <para>
+    /// Reads run in passes (see <see cref="MessageChangeCursor"/>). A read pages forward through the current pass; when
+    /// the pass is exhausted it starts the next one at the store's latest marker, and when the exhausted pass returned
+    /// nothing it reads the first page of the next pass in the same call. A row can be returned by more than one read,
+    /// once per state change and again while its marker lies inside an overlap window;
+    /// <see cref="MessageChange.Version"/> tells the repeats apart.
+    /// </para>
+    /// <para>
+    /// A row whose transaction commits later than the overlap window after its marker was stamped is not returned by a
+    /// change read; it shows on the next read of the row itself.
+    /// </para>
+    /// <para>
+    /// Default interface method built on <see cref="GetLatestMessageChangeMarkerAsync"/> and
+    /// <see cref="ReadChangedMessagesAsync"/>.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="cursor"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="pageSize"/> is not positive, or <paramref name="overlapWindow"/> is negative.
+    /// </exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    async ValueTask<MessageChangePage> GetMessageChangesAsync(
+        MessageChangeCursor cursor,
+        TimeSpan overlapWindow,
+        int pageSize,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(cursor);
+        Argument.IsPositive(pageSize);
+        Argument.IsPositiveOrZero(overlapWindow);
+
+        var (changes, next, passComplete) = await _ReadChangePassPageAsync(cursor, pageSize, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!passComplete)
+        {
+            return new MessageChangePage { Changes = changes, Cursor = next };
+        }
+
+        var latest = await GetLatestMessageChangeMarkerAsync(cancellationToken).ConfigureAwait(false);
+        var nextPass = cursor.NextPass(latest, overlapWindow);
+
+        if (changes.Count != 0)
+        {
+            return new MessageChangePage { Changes = changes, Cursor = nextPass };
+        }
+
+        (changes, next, _) = await _ReadChangePassPageAsync(nextPass, pageSize, cancellationToken)
+            .ConfigureAwait(false);
+
+        return new MessageChangePage { Changes = changes, Cursor = next };
+    }
+
+    private async ValueTask<(
+        IReadOnlyList<MessageChange> Changes,
+        MessageChangeCursor Next,
+        bool PassComplete
+    )> _ReadChangePassPageAsync(MessageChangeCursor cursor, int pageSize, CancellationToken cancellationToken)
+    {
+        var read = new List<MessageChange>();
+        var exhausted = true;
+
+        MessageChangeKind[] kinds = [MessageChangeKind.Published, MessageChangeKind.Received];
+
+        foreach (var kind in kinds)
+        {
+            var rows = await ReadChangedMessagesAsync(
+                    kind,
+                    cursor.PassAfter,
+                    cursor.PassThrough,
+                    cursor.PositionOf(kind),
+                    pageSize,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            exhausted &= rows.Count < pageSize;
+            read.AddRange(rows);
+        }
+
+        // OrderBy is stable, so each table's rows keep the store's (ChangedAt, Id) order and the page takes a prefix
+        // of each table: the table's position can move to the last row taken from it.
+        var page = read.OrderBy(static change => change.ChangedAt).Take(pageSize).ToArray();
+        var next = cursor;
+
+        foreach (var change in page)
+        {
+            next = next.WithPosition(change.Kind, new MessageChangePosition(change.ChangedAt, change.Id));
+        }
+
+        return (page, next, exhausted && read.Count <= pageSize);
+    }
+
+    #endregion
 }
 
 /// <summary>

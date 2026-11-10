@@ -122,7 +122,12 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
         {
             if (coordinated is { } context)
             {
-                _SignalOnCommit(context.UnitOfWork, new ScheduleChangedSignal(this, result.RunId.ToString()!));
+                _SignalOnCommit(
+                    context,
+                    new ScheduleChangedSignal(this, result.RunId.ToString()!),
+                    JobChangeKind.TimeJob,
+                    result.RunId is { } runId ? [runId] : []
+                );
             }
             else
             {

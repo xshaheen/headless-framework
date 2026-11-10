@@ -71,7 +71,7 @@ This is the production default: `Headless.Messaging.RabbitMq` for transport and 
 ## Agent Rules
 
 - **App install pattern**: install `Messaging` + exactly one transport + exactly one storage. Bootstrap fails when zero or multiple storage providers are configured. Core brings shared/bus/queue abstractions transitively for applications.
-- **One outbox per database, not one storage per database**: when units of work run on several databases, keep one primary storage and add `setup.AddOutbox().UsePostgreSqlEntityFramework<TContext>()` or `UseSqlServerEntityFramework<TContext>()` (or `UsePostgreSql(...)` / `UseSqlServer(...)`) for each other database. See [Additional outboxes](#additional-outboxes).
+- **One outbox per database, not one storage per database**: when units of work run on several databases, keep one primary storage and add `setup.AddOutbox(name).UsePostgreSqlEntityFramework<TContext>()` or `UseSqlServerEntityFramework<TContext>()` (or `UsePostgreSql(...)` / `UseSqlServer(...)`) for each other database. See [Additional outboxes](#additional-outboxes).
 - **Library contract pattern**: install `Messaging.Abstractions`, `Messaging.Bus.Abstractions`, or `Messaging.Queue.Abstractions` directly when a library exposes envelopes or publisher interfaces, declares message contracts, or contributes consumers without bootstrapping Core. `ConfigureMessaging`, `Message<T>`, `AddModule<T>`, and `IMessagingModule` all live in `Messaging.Abstractions`; only `Tune` needs `Messaging`. A library that declares consumers still needs the Messaging source generator at build time (the `Messaging` package carries it; in this repository it is a `ProjectReference` with `OutputItemType="Analyzer"`), and the generated module ships compiled into the library. A library never calls `AddHeadlessMessaging`.
 - **Use `InMemory` + `InMemoryStorage` only for dev/testing**, never in production. Data is lost on restart.
 - **OpenTelemetry is native to `Messaging`** (no satellite package). Subscribe traces/metrics with `AddMessagingInstrumentation()` on the `TracerProviderBuilder`/`MeterProviderBuilder`, and configure enrichers/suppression via `setup.Instrumentation` inside `AddHeadlessMessaging(...)`.
@@ -239,7 +239,7 @@ Where the deadline is enforced, and what each drop leaves behind:
 | A stored inbox row starts an attempt: first dispatch, an immediate or delayed retry, or a crash-recovered attempt | Consumer runs | Consumer does not run. The row becomes terminal `Failed` with the expiry reason in `ExceptionInfo`; `OnTerminal` fires with `DeliveryDeadlineExpired`; no circuit-breaker report (a held half-open probe is released). Counted on `headless.messaging.inbox.terminal` with outcome `FailedExpired`; logged (EventId 4127) |
 | An operator force-reprocesses (replays) a received message | Consumer runs | The replayed generation drops `headless-deliver-by` and runs: the operator is working past the publisher's deadline on purpose. The delivered generation keeps its deadline |
 
-- **Dropped rows are stored as `Failed` with a reason, not as a separate status.** The dashboard and monitoring API show them among failed messages: the stored envelope's `headless-exception` header names `MessageDeliverByExceededException`, and a received row's `ExceptionInfo` carries the `deliver_by_exceeded` reason. Requeuing a dropped published row does not deliver it, because the stored deadline still applies at the relay; to run a dropped received message anyway, force-reprocess it (the replay row above).
+- **Dropped rows are stored as `Failed` with a reason, not as a separate status.** The dashboard and monitoring API show them among failed messages: the stored envelope's `headless-exception` header names `MessageDeliverByExceededException`, the row's `ExceptionInfo` carries the `deliver_by_exceeded` reason, and its `FailureFingerprint` is `v1:expired`. Requeuing a dropped published row does not deliver it, because the stored deadline still applies at the relay; to run a dropped received message anyway, force-reprocess it (the replay row above).
 - **Native broker TTL.** RabbitMQ (`BasicProperties.Expiration`) and Azure Service Bus (`ServiceBusMessage.TimeToLive`) receive the remaining time at send, so a message nobody consumes in time expires inside the broker instead of waiting in a queue. The framework never sees a broker expiry, so it is not logged and not counted on `send.expired` or `receive.outcomes`; use the broker's own metrics for it. With RabbitMQ dead-lettering enabled (`QueueArguments.EnableDeadLettering`), or a Service Bus entity that dead-letters on message expiration, an expired message goes to the dead-letter queue like any other broker expiry rather than disappearing. RabbitMQ expires a per-message TTL only when the message reaches the head of its queue, so behind a backlog the consumer check is what drops it. Kafka, Redis Streams, NATS JetStream, Amazon SQS, and the in-memory transport have no per-message TTL the framework sets; the relay and consumer checks above still apply on them, so a late message is dropped by the consumer instead of by the broker.
 - **Requests use their own deadline.** `RequestOptions` has no `DeliverWithin`: a request's timeout already travels as `headless-request-deadline` and is enforced as described in [Deadlines, timeouts, and clock skew](#deadlines-timeouts-and-clock-skew). A `DeliverWithin` that publish middleware sets on a request is ignored, so a request is never dropped before it is sent while its caller waits for a reply.
 
@@ -498,16 +498,23 @@ module, register an additional outbox for each of those databases so a unit on i
 services.AddHeadlessMessaging(setup =>
 {
     setup.UsePostgreSqlEntityFramework<OrdersDb>(); // primary: outbox, inbox, retry state, dashboard
-    setup.AddOutbox().UsePostgreSqlEntityFramework<BillingDb>(); // additional: outbox rows and their relay only
-    setup.AddOutbox().UsePostgreSql(builder.Configuration.GetConnectionString("Shipping")!);
+    setup.AddOutbox("billing").UsePostgreSqlEntityFramework<BillingDb>(); // additional: outbox rows and their relay only
+    setup.AddOutbox("shipping").UsePostgreSql(builder.Configuration.GetConnectionString("Shipping")!);
 });
 ```
 
-- **Registration.** `AddOutbox()` returns an `OutboxStorageBuilder` that accepts only a storage:
+- **Name.** `AddOutbox(name)` takes the store's name: letters, digits, `-`, and `_`, unique within the host compared
+  case-insensitively. The primary storage is always named `primary` (`MessagingSetupBuilder.PrimaryOutboxName`),
+  so `AddOutbox("primary")` throws, as do a duplicate name and a name with any other character (an
+  `ArgumentException` naming the problem). The name identifies the store in logs, configuration errors, health
+  checks, and the host manifest, and the dashboard keys message ids, change cursors, operation scopes, and command
+  routing on it. Choose it once and keep it: unlike a position, it does not shift when a registration is added or
+  reordered, so it stays bound to its database across redeploys.
+- **Registration.** `AddOutbox(name)` returns an `OutboxStorageBuilder` that accepts only a storage:
   `UsePostgreSqlEntityFramework<TContext>()` and `UseSqlServerEntityFramework<TContext>()` from the EF storage packages, and `UsePostgreSql(...)` / `UseSqlServer(...)`
   with the same connection-string, `IConfiguration`, and delegate overloads as the primary storage. Each outbox
-  keeps its own named provider options, validated on start. `AddOutbox()` without a storage, or a second storage
-  on one `AddOutbox()`, throws during `AddHeadlessMessaging`.
+  keeps its own named provider options, validated on start. `AddOutbox(name)` without a storage, or a second storage
+  on one `AddOutbox(name)`, throws during `AddHeadlessMessaging`.
 - **Selection.** `unit.Outbox.PublishAsync` / `EnqueueAsync` writes to the primary storage when the unit's
   database is the primary's, and otherwise to the additional outbox whose database matches, decided by the same
   `RelationalDatabaseIdentity` check a single storage runs. A unit that matches no outbox is refused with the
@@ -515,7 +522,7 @@ services.AddHeadlessMessaging(setup =>
 - **Startup validation.** The primary storage must be relational (PostgreSQL or SQL Server): an in-memory primary
   joins every unit and would take the additional outboxes' publishes. Two outboxes, the primary included, that
   resolve to the same database fail host startup with a `MessagingConfigurationException` naming both
-  registrations. Mixing providers is allowed, for example a SQL Server primary with a PostgreSQL outbox.
+  stores (`'primary' and 'billing'`). Mixing providers is allowed, for example a SQL Server primary with a PostgreSQL outbox.
 - **Schema.** Each additional outbox contributes only the published table and its indexes, in the same `MessagingStorageOptions.Schema` as the primary, as its own `MessagingOutbox` feature in that
   database's `headless_schema_history`. It has no received table or inbox history. Its steps are verified by a schema
   runner of its own, lazily and without failing the start: the host's runner fails startup on an unreachable
@@ -540,9 +547,10 @@ services.AddHeadlessMessaging(setup =>
   outbox concurrently. An unreachable outbox database backs off alone; the primary and the other outboxes keep
   relaying. The collector expires published rows in every outbox, dead-owner recovery reclaims published rows in
   every outbox, and `IMessageRevoker.RevokeAsync` finds a scheduled row in whichever outbox holds it.
-- **What stays on the primary.** The inbox, received-message retry state, consumer bookkeeping, the monitoring
-  API, and the dashboard read only the primary storage, so the dashboard does not list an additional outbox's
-  rows.
+- **What stays on the primary.** The inbox, received-message retry state, and consumer bookkeeping use only the
+  primary storage. Each outbox's own `GetMonitoringApi()` reads its published rows, and the unified dashboard's
+  Messaging module (`AddMessaging()`) reads every outbox beside the primary; see
+  [dashboards.md](dashboards.md#messaging-module).
 - **Jobs.** Jobs keeps one store. To schedule a job atomically with a unit on an additional outbox's database,
   publish a message through `unit.Outbox` and schedule the job from that message's consumer on the Jobs database.
   The outbox row commits with the unit, and the consumer's inbox and `unit.Jobs` give the job the same guarantee.
@@ -1633,6 +1641,10 @@ Every supported provider removes its reply objects when the caller stops or dies
 - Storage-backed retry/outbox and cleanup processors.
 - Singleton `IMessageRevoker` delegates to optional `IMessageRevocationStorage`. Unsupported providers throw `NotSupportedException` naming the provider.
 - `IDataStorage.GetScheduledDeliveryOperationsApi()` (`IScheduledDeliveryOperationsApi`) is the audited, provider-neutral operator surface for pending scheduled deliveries: `QueryAsync` lists them (system-scoped, no tenant filter, up to 200 rows a page), `RevokeAsync` deletes one using the same eligibility predicate and fence as `IMessageRevoker`, and `DispatchNowAsync` advances a pending row's due instant to the provider clock unless a dispatch lease is live. Every mutation carries a client-minted operation id, the storage id, and the caller's expected due instant; a request whose due instant no longer matches the row is rejected as `StateConflict`, and a repeated operation id with a different request is `OperationConflict`. `Applied`, `NotFound`, `StateConflict`, `Active` (an attempt was reserved or the row is leased), and `OperationConflict` reuse the inbox outcome vocabulary. Providers without the capability throw a provider-naming `NotSupportedException`, matching `IMessageRevoker`.
+- Dashboard reads on `IMonitoringApi`: `ListMessagesAsync(MessageListQuery, MessageListPosition?, pageSize)` pages one table newest first on the keyset (added, id), which no write changes, so a row that changes state between pages is never repeated or skipped (rows carry no content; at most `MessageListPage.MaxPageSize`, 500, a page). `MessageListQuery` filters by status, `TerminalOnly`, consumer identity, message name, lane, tenant (received inbox rows), message id, failure fingerprint, and `IsHeld`; text compares ordinally on every provider, trailing spaces included. `CountMessagesAsync(query, cap)` reads at most one row past the cap and returns a `MessageCount` with `Capped` set when more rows matched (default cap 10,000); the dashboard's Scheduled, Queued, terminal Failed, and Held counts are this call. `GetFailureGroupsAsync(messageType, consumerIdentity?)` groups failures that ended for good (and, for inbox generations, are still current) by failure fingerprint and, for received rows, by the SHA-256 of the consumer identity, so identities that differ only by trailing spaces stay apart on SQL Server.
+- Operations over a filter on `IInboxOperationsApi`: a `MessageOperationScope` (`ReExecute` or `Delete`, a received `MessageListQuery`, and the `HighWaterMark` read from `IDataStorage.GetLatestMessageChangeMarkerAsync` at confirm) freezes the reach. `CountOperationScopeAsync` gives the capped count for the confirm step, and `ReadOperationScopeAsync(scope, afterId, chunkSize)` (at most `MessageOperationChunk.MaxChunkSize`, 500, a chunk) returns chunks in storage-id order of terminal inbox generations stamped at or before the mark: re-execute also needs the current generation, delete needs it unheld. Apply each target through `ForceReprocessAsync` or `PurgeAsync` with its incarnation and status; any outcome but `Applied` is a refusal (another node or an earlier run already changed the row), not a failure. Re-executing retires the generation and starts a child stamped after the mark, so running the Operation again, or serving one chunk on two nodes, re-executes no message twice.
+- `IDataStorage.GetPublishedOperationsApi()` (`IPublishedOperationsApi`) is the audited operator surface for published rows. `ResendAsync` sends a row that failed for good (`Failed` with no `NextRetryAt`) again with a fresh retry budget, as `RequeuePublishedMessagesAsync` does, and `PurgeAsync` deletes a terminal row (`Succeeded`, or `Failed` with no retry pending). Each `PublishedOperationRequest` carries a client-minted operation id, the storage id, an optional `ExpectedChangedAt`, an optional reason (empty is stored as null), and the operator's authorization; each call writes a receipt with target kind `Published` (operation type `Resend` or `Purge`) and an audit row in the transaction that changes the row, refused calls included. A missing row is `NotFound`, a row still waiting for a send or a retry is `Active`, and a re-send of a succeeded row or a row whose change marker no longer equals `ExpectedChangedAt` is `StateConflict`; a repeated operation id replays its receipt, or is `OperationConflict` when the type, row, actor, or reason differs. An Operation over a filter uses the same `MessageOperationScope` with a published `MessageListQuery` and kind `Resend` or `Delete`: `CountOperationScopeAsync` and `ReadOperationScopeAsync` return terminal rows stamped at or before the mark (re-send also needs `Failed`), each target carrying its `ChangedAt` and `IncarnationId` `Guid.Empty`. Pass the target's `ChangedAt` as `ExpectedChangedAt`: a row re-sent and failed again after the read carries a later marker, so the stale write is refused and the next read leaves it out, and running the Operation again, or serving one chunk on two nodes, re-sends no row twice. The ledger lives only in the primary store: an additional outbox serves the scope reads, and its writes throw `NotSupportedException`. The Messaging dashboard module still re-sends and deletes an outbox row: it changes the row on the outbox, then records the receipt, naming the outbox, in the primary, as two writes that are not atomic (see [dashboards.md](dashboards.md)). The unaudited `RequeuePublishedMessagesAsync` and `DeletePublishedMessagesAsync` remain for callers that need no receipt.
+- `IInboxOperationsApi.CountAsync` and `IScheduledDeliveryOperationsApi.CountAsync` give capped counts of their query; `QueryReceiptsAsync(MessagingOperationReceiptQuery, authorization)` reads the operator ledger newest first, filtered by actor, operation type, target kind, and a time range, paged on (created at, operation id). Each `MessagingOperationReceiptView` carries `OutboxName`: the additional outbox whose row the operation changed, or `null` for a row in the primary store. Reads (`QueryAsync`, `CountAsync`, `QueryReceiptsAsync`) need only an authenticated principal (`OperatorAuthorizationContext.ValidateRead`), so a viewer without a named operator can read; every write still requires a named actor and throws `UnauthorizedAccessException` without one.
 - Optional `IDelayedMessageClaimStorage` SPI for providers that can atomically claim, lease, and transition a bounded delayed-message batch before Core enqueues committed winners.
 - Optional `IGracefulLeaseReleaseStorage` SPI for providers that can exact-release completed or pre-execution-abandoned retry leases during bounded shutdown.
 - Internal `ICircuitRetryDeferralStorage` capability lets built-in storage atomically move circuit-open received retries to the circuit's next eligible probe time, passed as the time remaining and added to the store's clock, while releasing only the exact claimed lease generation; providers without it retain the claim until normal expiry.
@@ -1731,6 +1743,8 @@ Known orphans are excluded from ordinary retry pickup. Each lane has an independ
 Orphans have no automatic expiry or terminalization. An orphan with no live execution claim permits `Hold`, `ReleaseHold`, and, when unheld, `Purge`, subject to the normal expected-status and incarnation checks. A live claim blocks these operator exceptions. `ForceReprocess` remains terminal-only. Holds block purge and terminal retention cleanup but do not pause execution: a held orphan can recover and keeps its hold after completion. Recovery claims and purge serialize against the same generation; only the winner can proceed.
 
 One generalized ledger backs both inbox and scheduled-delivery operator actions: the receipt and audit tables carry a `TargetKind` discriminator (`Inbox`, default; `ScheduledDelivery`), a nullable incarnation/expected-status pair, and nullable published-row snapshot columns (message name, message id, lane, expected due instant). The schema ships fresh with the generalized ledger shape (greenfield — no prior schema versions exist). The `MessagingOperationType` enum gained `Revoke` and `DispatchNow`, enrolling scheduled-delivery operations under the same retention cutoffs below without a new collector category.
+
+A single-row inbox or scheduled-delivery request's reason is optional: an empty or whitespace reason is stored as `NULL` in the row's hold reason, the receipt, and the audit, and a replay of the request matches on that stored value. A caller running an Operation over a filter should require one. Every outcome writes a receipt, refused ones included, so the ledger read shows an operator's `StateConflict` beside the `Applied` it repeated. The receipts table carries a `(created_at, operation_id)` index for that read.
 
 Revoking a scheduled row is the same fenced delete `IMessageRevoker.RevokeAsync` performs, plus a receipt and audit written in the same transaction; the row stays deleted either way, and revocation is never a visible status -- the ledger is the only trace once the row is gone. Dispatch-now moves a pending row's due instant to the provider clock; some node's delayed processor claims it on its next pass, typically within about a minute, so a dashboard-only host with no dispatcher cannot promise that latency. Neither action creates, reschedules, or replays a delivery -- see the `Headless.Messaging` package section for the `IScheduledDeliveryOperationsApi` request/outcome contract, and use Jobs for a keyed, replaceable, or transactional deadline instead.
 
@@ -1937,6 +1951,28 @@ Inline inbox reservations verify the complete active attempt fence before advanc
 For circuit-open received retries, built-in storage providers atomically advance `NextRetryAt` to the circuit's authoritative next eligible probe time while releasing only the exact live `(row, lane, Generation)` lease. A stale generation is a no-op. Providers without the internal capability retain the claim for ordinary lease-expiry recovery instead of clearing the lease without advancing the schedule.
 
 During graceful shutdown, retry pickup is frozen before draining. A claimed lease is released early only when its exact `(row, lane, Generation)` lease is locally known to have completed or to have been abandoned before execution. A handler still running at the shutdown deadline keeps its lease, and a crash performs no graceful release; both remain governed by normal lease expiry. This makes rolling restarts reclaim safe abandoned work promptly without turning lease release into an exactly-once claim. When `DispatchTimeout - InitialDispatchGrace` is greater than two minutes, startup emits EventId 97 so operators can measure valid handler duration and explicitly align the settings instead of blindly shortening the global lease.
+
+### Change marker and change reads
+
+Every published and received row carries a change marker, `changed_at` on PostgreSQL and `ChangedAt` on SQL Server (`timestamptz` / `datetimeoffset(7)`, indexed on `(changed_at, id)` in both tables and in an additional outbox's published table). Every write that changes what an operator sees of a row stamps it in the same statement from the database clock, never the application clock, so a reader on any node sees changes made by every other node in store order. That covers an insert, a state or retry write, a terminal write, a circuit deferral, an orphan flag, a requeue, a hold or release, a forced replay, a poison mark, and the delayed claim's move from `Delayed` to `Queued`. Lease and lock writes leave it alone: a lease take, a renewal, an attempt reservation, a lease release, a retry-pickup claim, dead-owner reclaim, and confirming a row that was already routable. A deleted row has no marker left, so a change read does not report deletions. The marker is strictly increasing per row: when the clock has not passed the row's previous marker, the write stamps the previous marker plus the store's precision (1 µs on PostgreSQL, 100 ns on SQL Server). InMemoryStorage stamps the same rule from its injected `TimeProvider` under the row's lock, and stamps a row written inside a unit of work when the unit completes.
+
+`IDataStorage` reads the markers through `GetLatestMessageChangeMarkerAsync` and `ReadChangedMessagesAsync(kind, after, through, resumeAfter, maxCount)`, a keyset page of one table in `(ChangedAt, Id)` order that never waits on a row another transaction is writing. `GetMessageChangeStartCursorAsync` and `GetMessageChangesAsync(cursor, overlapWindow, pageSize)` build the reader on them: each `MessageChange` carries the row's `Id`, `ChangedAt`, `Status`, and `Version` (the marker in ticks), and the `MessageChangeCursor` round-trips through `ToString` / `TryParse` so another node can resume it. An additional outbox's storage reads its own published table and reports no received rows.
+
+**The overlap window must exceed the longest transaction that enlists an outbox write.** A marker is stamped when its statement runs, not when its transaction commits, so a row written by a long application transaction can commit after a reader has moved past its marker. Each read pass therefore starts `overlapWindow` before the previous pass ended (`MessageChangeCursor.DefaultOverlapWindow`, 5 seconds) and returns the rows in that window again; a repeat carries the same `Version`, so a reader drops it. A row that commits later than the window after it was stamped is not returned by a change read, and shows on the next read of the row itself.
+
+### Failure text and fingerprint
+
+Every published and received row stores the failure that last ended or delayed it: `exception_info` / `ExceptionInfo` (`text` / `nvarchar(max)`) holds the exception text, and `failure_fingerprint` / `FailureFingerprint` (`varchar(64)` / `nvarchar(64)`) holds a versioned fingerprint that groups failures by cause, so a dashboard can show one item per cause instead of one per first exception line, which often carries ids. Both are written in the same guarded statement as the state, on the retry writes as well as the terminal one, so a write the terminal guard refuses, such as a redelivery reaching a terminal row, records nothing. `MediumMessage.ExceptionInfo` and `MediumMessage.FailureFingerprint` carry them, and the monitoring API returns both for both tables.
+
+The core computes the fingerprint where the exception is live, from the handler or transport failure inside the framework's `SubscriberExecutionFailedException` / `PublisherSentFailedException` wrapper, with `Headless.FailureFingerprint.Compute` (the algorithm every Headless feature shares: the innermost exception type and the top three non-framework stack frames, never the message), so two failures that differ only by an id in the message store one fingerprint. Failures whose cause is the delivery rather than the code store a fixed value from `MessagingFailureFingerprints`, each equal to `FailureFingerprint.ForCause` of its name:
+
+| Value | Stored for |
+| --- | --- |
+| `v1:expired` (`Expired`) | A publish or consume whose `DeliverWithin` deadline, or a request's response deadline, passed before it ran |
+| `v1:deserialization` (`Deserialization`) | A received payload that could not be deserialized, on arrival or at the attempt |
+| `v1:poison` (`Poison`) | A message rejected on arrival (no subscriber, contract version mismatch, receive-middleware reject), any row `StoreReceivedExceptionMessageAsync` stores without a fingerprint, and a stored row a retry claim cannot deserialize |
+
+Group by the fingerprint plus a consumer-identity hash, never by the raw identity or exception text: SQL Server compares text with trailing spaces padded, so two identities that differ only by a trailing space would merge. A third-party `IDataStorage` stores both values from the message on every state write and writes `Poison` itself for the two storage-side cases; it never derives a fingerprint from stored text.
 
 ### Terminal callback (`OnTerminal`)
 
@@ -2474,9 +2510,9 @@ Messaging contributes readiness checks automatically; there is no `AddMessagingH
 | --- | --- | --- | --- |
 | `messaging` | `AddHeadlessMessaging` | `Unhealthy` | The host has not started, host shutdown has begun, or the broker is unreachable (see [Broker reachability](#broker-reachability)). Applies to consuming and publish-only hosts on every transport |
 | `messaging-consumers` | `AddHeadlessMessaging` | `Degraded` | Any consumer circuit is `Open`, whether it tripped or an operator called `ICircuitBreakerMonitor.ForceOpenAsync`. `HalfOpen` reports healthy: it is already resuming, and reporting it would make alerts flap |
-| `messaging-outboxes` | `AddHeadlessMessaging` with at least one `AddOutbox()` | `Degraded` | An [additional outbox](#additional-outboxes) is not initialized yet. Its initialization keeps retrying and only units of work on that database are refused, so the host stays ready |
+| `messaging-outboxes` | `AddHeadlessMessaging` with at least one `AddOutbox(name)` | `Degraded` | An [additional outbox](#additional-outboxes) is not initialized yet. Its initialization keeps retrying and only units of work on that database are refused, so the host stays ready |
 | `messaging-storage-postgresql-default`, `messaging-storage-sqlserver-default` | The primary PostgreSQL or SQL Server storage, raw or EF; also tagged `database` | `Unhealthy` | A connection from the storage's options cannot open, or `SELECT 1` on it fails |
-| `messaging-storage-postgresql-outbox-{n}`, `messaging-storage-sqlserver-outbox-{n}` | Each additional PostgreSQL or SQL Server outbox; also tagged `database` | `Unhealthy` | The same probe against that outbox's database. `{n}` is the outbox's position, from 1, in `AddOutbox()` call order |
+| `messaging-storage-postgresql-outbox-{name}`, `messaging-storage-sqlserver-outbox-{name}` | Each additional PostgreSQL or SQL Server outbox; also tagged `database` | `Unhealthy` | The same probe against that outbox's database. `{name}` is the name passed to `AddOutbox(name)`, so the check keeps its name when registrations are added or reordered |
 | `messaging-nats` | `UseNats` | `Unhealthy` | A NATS `PING` fails (see [Headless.Messaging.Nats](#headlessmessagingnats)) |
 
 `messaging`, `messaging-consumers`, and `messaging-outboxes` read the running host's state, so they also carry `host-state` (`HeadlessHealthCheckTags.HostState`), and the [`check` command](utilities.md#health-check-command) skips them before the host starts; the storage and NATS checks probe their dependency and run there.
@@ -2531,7 +2567,7 @@ Transports that retry a lost broker inside their own receive loop (Azure Service
   ],
   "outboxes": [
     { "name": "primary", "storage": "PostgreSQL" },
-    { "name": "outbox-1", "storage": "SQL Server" }
+    { "name": "billing", "storage": "SQL Server" }
   ],
   "transports": { "bus": "RabbitMQ", "queue": "RabbitMQ" }
 }
@@ -2542,7 +2578,7 @@ Transports that retry a lost broker inside their own receive loop (Azure Service
 - **`consumeOnly`** appears only on a competing consumer of a host that calls `ConsumeOnly`: `listed` or `not-listed`.
 - **Tuning.** `concurrency` is always written. `inboxRetentionSeconds` appears on competing consumers only, because an every-instance subscription stores no inbox rows. `failurePolicy` appears when the consumer has one, with the same fields as Jobs: the delay fields only when `delayedRetries` is above zero, `failOn` and `failWhenRules` only when set. `rateLimit` carries `algorithm` plus `tokenLimit`, `tokensPerPeriod`, and `replenishmentPeriodSeconds` for `token-bucket`, or `permitLimit` and `windowSeconds` otherwise. `circuitBreaker` lists only the overrides the consumer sets (`enabled`, `failureThreshold`, `openDurationSeconds`, and `customTransientPredicate: true` for a custom predicate); unset values fall back to the host-wide options. `middleware` lists per-consumer middleware type names.
 - **`messages`** is the publish side: one entry per `Message<T>(name, version)` contract, ordered by name, with each lane it declares. A lane shows `deliveryMode` only when the contract pins one (`durable` or `direct`; otherwise publishes use the host default), and `routingAffinity` and `rawPayload` only when set.
-- **`outboxes`** lists the primary storage as `primary`, then each `AddOutbox()` outbox as `outbox-{n}` in call order, matching its `messaging-storage-…-outbox-{n}` health check. `storage` is the database provider (`PostgreSQL`, `SQL Server`) for relational storage and the storage type name otherwise. A host without storage has none.
+- **`outboxes`** lists the primary storage as `primary`, then each additional outbox, in registration order, under the name passed to `AddOutbox(name)`, which its `messaging-storage-…-outbox-{name}` health check also carries. `storage` is the database provider (`PostgreSQL`, `SQL Server`) for relational storage and the storage type name otherwise. A host without storage has none.
 - **`transports`** names the broker of each lane's transport, from `BrokerAddress.Name`; a lane with no transport is absent. The endpoint half of the broker address is never written.
 - **Not described:** runtime subscriptions (they attach after startup and are not in the registry), provider-specific consumer configuration, broker addresses, connection strings, and credentials.
 
@@ -2558,37 +2594,25 @@ Transports that retry a lost broker inside their own receive loop (Azure Service
 
 ## Headless.Messaging.Dashboard
 
-Web-based dashboard for monitoring and managing distributed messaging infrastructure.
+The Messaging module of the unified dashboard: published and received messages of the primary store and every additional outbox, with sidebar counts, Needs you items, Overview figures, id lookup, payloads, live changes, commands, and Operations.
 
-Read [dashboards.md](dashboards.md) for the shared authentication modes and production security boundary.
+Read [dashboards.md](dashboards.md) for the shell, its authentication modes, and the production security boundary. [dashboards.md](dashboards.md#messaging-module) lists the module's options, object ids, count keys, commands, Operations, forwarding, and API.
 
 ### API and behavior
 
-- **Real-Time Monitoring**: Live message throughput and latency metrics
-- **Message Explorer**: Search, filter, and inspect messages
-- **Hidden from application API documents**: every dashboard endpoint is excluded from API Explorer (`ExcludeFromDescription()`), because the dashboard SPA is their only client.
-- **Failure Management**: View and retry failed messages
-- **Node Discovery**: Multi-instance cluster visibility through async `INodeDiscoveryProvider` operations with optional trailing cancellation tokens; implementations propagate caller-requested cancellation instead of converting it to an empty or not-found result
-- **Provider Capabilities**: The protected metadata endpoint and responsive footer dialog show every registered provider role. Transport cards report delivery lanes and topology, storage cards report delivery lanes and delayed scheduling, and coordination cards report cluster coordination without exposing physical resource names or credentials
-- **Performance Metrics**: Consumer processing stats and bottlenecks
-- **Four authentication modes** (the same modes as the Jobs Dashboard, via `Headless.Dashboard.Authentication`): none, Basic, API key, and host sessions with separate view and operate policies. The configuration is the dashboard's own, registered under `MessagingDashboardOptionsBuilder.AuthenticationName`, so a Jobs dashboard in the same host can use another mode.
-- **Scheduled-delivery operator actions**: `GET /api/scheduled` lists pending scheduled deliveries (published rows in `Delayed`/`Queued` with no inline attempt, retry, or persisted retry time, presented as one `Pending` state); `POST /api/scheduled/revoke` and `POST /api/scheduled/dispatch-now` are audited, fenced mutations sharing the inbox operator ledger. These are operator actions on an existing schedule, not a way to create, reschedule, or replay one — see the `Headless.Messaging` package section for the storage-side contract.
+- **Embedded front end**: the package embeds the module's views and serves them through the shell at `{shell base}/messaging` (by default `/headless/messaging`), so it needs no separate deployment.
+- **Authentication from the shell**: the module has no authentication of its own. The shell's mode (`WithHostAuthentication`, `WithBasicAuth`, `WithApiKey`, or `WithNoAuth`) covers it, and in host mode `MessagingDashboardOptions.ViewPolicy` and `OperatePolicy` narrow who may read the module and who may run its commands. Empty policies inherit the shell's.
+- **Every store**: the module reads the primary store, named `primary`, and every additional outbox registered with `AddOutbox(name)`, by that name. A read that covers several stores names a store that does not answer within `StoreTimeout` instead of failing.
+- **Other nodes**: with [forwarding](dashboards.md#forwarding-to-other-nodes) and a discovery provider, each read and command can name another node, which serves its own rows. [Headless.Messaging.Dashboard.Consul](#headlessmessagingdashboardconsul) and [Headless.Messaging.Dashboard.K8s](#headlessmessagingdashboardk8s) supply discovery; `AddMessagingStandalone(...)` adds the module to a dashboard-only host with no stores of its own ([Dashboard-only host](dashboards.md#dashboard-only-host)).
+- **Real-time throughput**: the module reports `null`, not `0`, for every second the node did not measure, such as the seconds before it started.
 
 ### Design constraints
 
-The dashboard exposes operational endpoints for inspecting, retrying, re-executing, and deleting message records. Its protected `/api/meta` response also projects sanitized registered-provider descriptors; deployment state remains operator-owned and is never inferred by the dashboard. Treat `WithNoAuth()` as development-only unless the dashboard is isolated behind trusted network controls. Production deployments should use `WithHostAuthentication(...)`, `WithBasicAuth(...)`, or `WithApiKey(...)`. A cross-origin SPA needs an explicit CORS policy and Basic or API key: host mode is same-origin only and fails at startup with `SetCorsOrigins` or `SetCorsPolicy`.
+The module shows every stored payload in full to anyone the view policy admits, which is one reason a payload must never carry a secret; see [Never put a secret in a message payload](#agent-rules). Give the view policy only to users who may see payloads. Treat `WithNoAuth()` as development-only unless the dashboard is isolated behind trusted network controls.
 
-In host mode the eight operator writes (`published/requeue`, `published/delete`, `received/reexecute`, `received/delete`, `inbox/hold`, `inbox/release`, `scheduled/revoke`, `scheduled/dispatch-now`) and `POST /api/ping` also require the operate policy, `OperatePolicy` or the view policy when it is unset. Every read, message bodies included, needs only the view policy, so give `ViewPolicy` only to users who may see payloads. Every state-changing `/api` request must carry an `X-Requested-With` header in every mode, or it gets `400`; the SPA sends it.
+Commands re-send, re-execute, and delete message records, so in host mode they need the operate policy. A command records its operator from the shell's signed-in user, by name, then `NameIdentifier` or `sub` claim.
 
-The dashboard shows every stored payload in full to anyone it authorizes, which is one reason a payload must never carry a secret. See [Never put a secret in a message payload](#agent-rules).
-
-Inbox query and operation JSON uses camelCase properties and named string enum values, such as `"Failed"`, `"Succeeded"`, and `"Queue"`, independently of the host's JSON configuration. Operation requests must send `expectedStatus` as a string; responses use the same format for status, lane, operation type, and outcome, including conflict and not-found results.
-
-Inbox and scheduled-delivery operations share one actor resolver and require an authenticated principal with a stable audit actor. The primary identity's name is used first, then its `NameIdentifier` or `sub` claim. Under Basic or API key authentication the primary identity is the dashboard identity, named by the credential's username, even when the host also signed a user in. In host mode it is the session's copy of the host user, so the action records the host user's name or `sub`. An unauthenticated request returns HTTP 401 and ends the dashboard session. An authenticated principal with no usable name -- the no-auth mode's `anonymous` identity or a host user with no name, `NameIdentifier`, or `sub` claim -- returns HTTP 403 with error code `g:operator_actor_required` and a body naming the remedy (configure Basic or Host authentication with a name or `sub` claim); the dashboard stays signed in. **Behavior change:** the inbox `host-user` case previously returned 401; it now returns 403, and `WithNoAuth()` deployments can no longer perform any operator action (inbox or scheduled-delivery), read-only monitoring is unaffected. The API-key identity (`api-user`) is accepted and attributes actions to the deployment's shared secret identity. Authorization retains the host's claims and role mappings. Operation bodies require a JSON content type; unsupported media types return HTTP 415 and malformed JSON returns HTTP 422.
-
-The legacy `POST /api/published/requeue` and `POST /api/published/delete` bulk endpoints reject any id that matches the pending-scheduled-delivery predicate: each rejected id is reported in the response's `rejected` array alongside a message pointing at the audited `/api/scheduled/revoke` and `/api/scheduled/dispatch-now` actions, and the remaining ids are processed exactly as before. This fencing runs under the host principal, not the operator actor requirement, so it still functions under `WithNoAuth()` for non-pending rows.
-
-`POST /api/published/requeue` sends again only a published message that failed for good (`Failed` with no `NextRetryAt`). It resets each such row in the store through `IDataStorage.RequeuePublishedMessagesAsync`: the retry counters go back to zero, so the row gets a fresh budget under the current `RetryPolicy`, its lease and retention expiry clear, and its `NextRetryAt` becomes the store's clock, so the retry processor sends it on its next poll rather than during the request. A sent (`Succeeded`) row and a row still waiting for a retry are left unchanged and reported in `rejected`, with a message saying only a message that failed for good can be requeued; the response is `204 No Content` only when every id was requeued.
+The module replaces the removed Messaging Vue dashboard; [dashboards.md](dashboards.md#migrate-from-mapheadlessmessagingdashboard) has the migration steps.
 
 ### Install
 
@@ -2598,78 +2622,41 @@ dotnet add package Headless.Messaging.Dashboard
 
 ### Setup and use
 
-Register the dashboard on the `MessagingSetupBuilder` with `UseDashboard(...)`, then mount it on the host's endpoints with `MapHeadlessMessagingDashboard()`. The map call is the only mount: a host that registers the dashboard and never maps it fails to start with `InvalidOperationException`.
+Add the module to the shell beside `AddHeadlessMessaging(...)`; the order of the two calls does not matter. A host that adds `AddMessaging()` without `AddHeadlessMessaging(...)` fails to start with a message naming that call.
 
 ```csharp
-builder.Services.AddHeadlessMessaging(setup =>
-{
-    // ... transport + storage registration ...
-    setup.UseDashboard(dashboard =>
-        dashboard.WithHostAuthentication(host =>
-        {
-            host.ViewPolicy = "MessagingViewers";
-            host.OperatePolicy = "MessagingOperators";
-            host.ChallengeScheme = "oidc"; // omit when the app signs in with a bearer token and uses the session exchange
-        })
-    );
-});
+using Headless.Dashboard;
+using Headless.Messaging.Dashboard;
+
+builder.Services.AddHeadlessMessaging(setup => setup.UsePostgreSql(builder.Configuration.GetConnectionString("Orders")!));
+builder.Services.AddHeadlessDashboard(dashboard => dashboard
+    .WithHostAuthentication(host => { host.ViewPolicy = "MessagingViewers"; host.OperatePolicy = "MessagingOperators"; })
+    .AddMessaging());
 
 var app = builder.Build();
 app.UseAuthentication();
 app.UseAuthorization();
-app.MapHeadlessMessagingDashboard();
+app.MapHeadlessDashboard();
 ```
-
-The host's `UseAuthorization` evaluates the dashboard's rule and never the host's fallback policy, so a browser loads the SPA shell without a credential, and an operator who meets the dashboard policy but not a host-wide requirement (such as a tenant claim) is let in.
-
-| Request | Rule |
-| --- | --- |
-| SPA shell, deep links, static assets | `AllowAnonymous`. The shell carries only the base path, auth mode, whether sign-in is available, and polling interval |
-| `/auth/sign-in`, `/api/auth/info`, `/api/auth/session`, `/api/auth/sign-out`, `/api/auth/validate`, `/api/health` | `AllowAnonymous` |
-| Other `{basePath}/api/*`, `WithHostAuthentication(...)` | The dashboard session cookie, for a user who passes `ViewPolicy` (or the host's default policy); `401` without a session, `403` when the policy refuses |
-| Operator writes and `POST /api/ping`, `WithHostAuthentication(...)` | Also `OperatePolicy`, or `ViewPolicy` when it is unset |
-| Other `{basePath}/api/*`, Basic, API key | The dashboard's own credential, checked by its authentication scheme; an empty `401` otherwise |
-| Other `{basePath}/api/*`, `WithNoAuth()` | `AllowAnonymous` |
-| Unmatched `{basePath}/api/*` | `404`, never the shell |
-
-Requirements and limits:
-
-- The host pipeline must run `UseAuthorization()` (a `WebApplication` adds it when the host does not), and `UseAuthentication()` before it for host authentication. A host that calls `UseAuthentication()` must also call `UseAuthorization()` after it: the `UseAuthorization` a `WebApplication` adds on its own runs ahead of the host's `UseAuthentication`, so host authentication would not have signed the user in yet. It must run `UseCors()` only when `SetCorsOrigins(...)` or `SetCorsPolicy(...)` is configured: the dashboard registers and attaches its CORS policy only then.
-- Host-specific behavior for the dashboard, such as `.RequireHost(...)` or rate limiting, goes on the builder `MapHeadlessMessagingDashboard()` returns.
-- It throws `InvalidOperationException` when `UseDashboard(...)` was not called, or on a second call.
-- It throws `InvalidOperationException` when the base path is the root (`SetBasePath("/")` or an empty path). At the root, the SPA route would answer every unmatched GET in the host with the shell, which hides the host's own 404s. Mount the dashboard under a path such as `/messaging/dashboard`.
-- The gateway proxy forwards a request for another node with its full path, base path included, to the same route on that node. It forwards every header except `Cookie`, so relaying works under Basic and API key. In host mode it does not relay: each node serves its own data, the proxy clears the node-selection cookies, and the SPA hides node switching. [dashboards.md](dashboards.md#host-sessions) covers sign-in, the session exchange, and a multi-instance host's shared Data Protection key ring.
 
 ### Configuration
 
-Configured through `MessagingDashboardOptionsBuilder` inside `UseDashboard(...)`. Authentication must be chosen explicitly — if no `WithXxx` auth method (including `WithNoAuth()`) is called, the host fails to start. No CORS policy is applied by default (same-origin only); use `SetCorsOrigins(...)` for the cross-origin SPA case.
-
-| Method | Default | Description |
-| --- | --- | --- |
-| `WithNoAuth()` | (no default — auth is required) | Explicitly opt out of authentication; development or trusted-network use only. |
-| `WithBasicAuth(username, password)` | — | HTTP Basic authentication. |
-| `WithApiKey(apiKey)` | — | API-key authentication. |
-| `WithHostAuthentication(configure?)` | host default policy | A dashboard session issued from the host's own sign-in; `configure` sets `ViewPolicy`, `OperatePolicy`, `ChallengeScheme`, `SessionCookieName`, `SessionIdleTimeout` (30 minutes), `SessionLifetime` (8 hours), `RevalidationInterval`, and `Revalidate`. See [dashboards.md](dashboards.md#configuration). |
-| `SetBasePath(path)` | `/messaging/dashboard` | Dashboard URL path. |
-| `SetStatsPollingInterval(ms)` | `2000` | How often the overview polls `/stats` and the real-time metrics; a non-positive value falls back to 2000. Each node caches the storage counts behind `/stats` for 5 seconds and shares them across every open tab, so a shorter interval does not refresh those counts faster. |
-| `SetCorsOrigins(origins)` / `SetCorsPolicy(builder)` | none | CORS for a cross-origin SPA; Basic or API key only. |
+`AddMessaging(...)` takes `Action<MessagingDashboardOptions>`, its `IServiceProvider` overload, or an `IConfiguration` section. [dashboards.md](dashboards.md#messaging-module) lists every member: `ViewPolicy`, `OperatePolicy`, `NodeName`, `ChangeOverlapWindow`, `ChangePageSize`, `StoreTimeout`, and `Forwarding`.
 
 ### Runtime behavior
 
-`UseDashboard(...)` registers the dashboard services, and `MapHeadlessMessagingDashboard()` maps the embedded web UI and monitoring API. The dashboard package ships no discovery backend; node discovery comes from [Headless.Messaging.Dashboard.Consul](#headlessmessagingdashboardconsul) or [Headless.Messaging.Dashboard.K8s](#headlessmessagingdashboardk8s).
-
-Node lookups (30s), node counts (60s, 20s on discovery failure) and the metrics history (10m) are memoized in `MessagingDashboardCache`, a dashboard-owned in-process cache registered by `UseDashboard(...)` and injected into `ConsulNodeDiscoveryProvider` / `K8sNodeDiscoveryProvider`. The dashboard deliberately does not call `AddMemoryCache()`: registering the shared `IMemoryCache` from a framework package would put dashboard entries in the host's cache, where they compete for its size limit and are evictable by its compaction, purely as a side effect of adding a diagnostics UI. It is also not a `Headless.Caching` `ICache` — `AddHeadlessCaching` accepts exactly one call per service collection, so a registration here would throw for every consumer that configures caching themselves, or force the caching package on consumers who only wanted the dashboard. These values are per-node discovery results and metrics snapshots that must never leave the process, so a private in-process cache is the correct scope; this is the one sanctioned exception to the "do not use `IMemoryCache` directly" rule in [index.md](index.md).
+The module streams changes over the shell's live stream: each node reads its stores' changed rows on a poll and publishes them, so open views move without reloading. The package ships no discovery backend; node discovery comes from [Headless.Messaging.Dashboard.Consul](#headlessmessagingdashboardconsul) or [Headless.Messaging.Dashboard.K8s](#headlessmessagingdashboardk8s).
 
 ## Headless.Messaging.Dashboard.Consul
 
 ### API and behavior
 
-- Consul-backed node discovery: each node registers itself in Consul, and the dashboard lists every catalog service tagged `messaging` as a peer node.
+- Consul-backed node discovery: each node registers itself in Consul, and the Messaging module lists every catalog service tagged `messaging` as a node it can [forward](dashboards.md#forwarding-to-other-nodes) to.
 - `UseConsulDiscovery(...)` extension on `MessagingSetupBuilder`, in the `Headless.Messaging.Dashboard.Consul` namespace.
 
 ### Design constraints
 
-Consul addresses nodes by service name alone, with no namespace. When a request carries the `messaging.node` cookie, the dashboard resolves the node by name, caches the result for 30 seconds, and never proxies a request whose node name equals this node's `NodeName`. The `/stats` endpoint counts nodes through Consul when no cached count exists.
+Consul addresses nodes by service name alone, with no namespace. Forwarding resolves a node by name through Consul on each call, with no cache, and never forwards to this node's own `NodeName`.
 
 ### Install
 
@@ -2682,7 +2669,7 @@ dotnet add package Headless.Messaging.Dashboard.Consul
 ```csharp
 services.AddHeadlessMessaging(setup =>
 {
-    // ... transport + storage + UseDashboard(...) registration ...
+    // ... transport + storage registration ...
     setup.UseConsulDiscovery(options =>
     {
         options.DiscoveryServerHostName = "consul";
@@ -2699,15 +2686,14 @@ Configure `ConsulDiscoveryOptions` through `UseConsulDiscovery(...)`:
 
 - `DiscoveryServerHostName` / `DiscoveryServerPort` — the Consul agent HTTP API. Defaults: `localhost`, `8500`.
 - `CurrentNodeHostName` / `CurrentNodePort` — the address this node registers. Defaults: `localhost`, `5000`.
-- `NodeName` — the service name this node registers under, and the name the gateway uses to recognize the current node. Set it: Consul rejects a registration without a service name, and the failure is only logged.
+- `NodeName` — the service name this node registers under, and the name forwarding uses to recognize the current node. Set it: Consul rejects a registration without a service name, and the failure is only logged.
 - `NodeId` — optional service ID; Consul uses `NodeName` when it is `null`.
-- `MatchPath` — the dashboard base path used in the health-check URL. Default: `/messaging/dashboard`.
-- `Scheme` — `http` registers an HTTP health check on `{MatchPath}/api/health`; `https` registers a TCP check. Default: `http`.
+- `Scheme` — the scheme of every discovered node's address, so the Messaging module calls the node over it; dashboard forwarding refuses an `http` node unless `AllowInsecurePeers` is set ([Forwarding to other nodes](dashboards.md#forwarding-to-other-nodes)). Default: `http`.
 - `CustomTags` — extra tags merged with the built-in `Headless`, `Messaging`, `Client`, `Dashboard` tags.
 
 ### Runtime behavior
 
-- Registers a Consul-backed node discovery provider and a processing server that registers this node in Consul at startup, with a 10-second health-check interval and deregistration after 30 seconds critical.
+- Registers a Consul-backed node discovery provider and a processing server that registers this node in Consul at startup, with a TCP health check on `CurrentNodeHostName:CurrentNodePort` every 10 seconds and deregistration after 30 seconds critical.
 - Discovery failures are logged and return no nodes; caller cancellation propagates.
 
 ## Headless.Messaging.Dashboard.K8s
@@ -2737,10 +2723,13 @@ services.AddHeadlessMessaging(setup =>
 
 Configure `K8sDiscoveryOptions` through `UseK8sDiscovery(...)`:
 
-- `K8sClientConfig` — Kubernetes client configuration used to query the cluster. Defaults to `KubernetesClientConfiguration.BuildDefaultConfig()`. Its configured namespace is the only namespace eligible for dashboard discovery and proxy selection; discovery fails closed when no namespace is configured.
-- `ShowOnlyExplicitVisibleNodes` — when `true` (default), only Services labeled `headless.messaging.visibility:show` are listed as visible dashboard nodes. Set to `false` to show all discovered Services.
+- `K8sClientConfig` — Kubernetes client configuration used to query the cluster. Defaults to `KubernetesClientConfiguration.BuildDefaultConfig()`. Its configured namespace is the only namespace eligible for discovery and forwarding; discovery fails closed when no namespace is configured.
+- `ShowOnlyExplicitVisibleNodes` — when `true` (default), only Services labeled `headless.messaging.visibility:show` are listed as nodes. Set to `false` to show all discovered Services.
+- `Scheme` — the scheme (`http` or `https`) of the address each discovered Service is called at. Dashboard forwarding refuses an `http` node unless `AllowInsecurePeers` is set, so a deployment that forwards serves the dashboard over HTTPS inside the cluster and sets `https`. Default: `http`.
 
-The dashboard stores the selected Service name rather than a client-composed endpoint. The server resolves that name in the configured namespace and reuses the list's visibility and port-label rules before forwarding. Invalid, hidden, cross-namespace, and stale selections are cleared.
+A dashboard-only host that shows the Services Kubernetes lists uses `AddHeadlessDashboard(d => d.AddMessagingStandalone(messaging => ..., k8s => ...))`; see [Dashboard-only host](dashboards.md#dashboard-only-host).
+
+A forwarded call names the Service, never a client-composed endpoint. The server resolves that name in the configured namespace on each call and applies the list's visibility and port-label rules before forwarding, so a hidden, cross-namespace, or missing Service is refused.
 
 ### Runtime behavior
 
@@ -3572,12 +3561,12 @@ History retention uses the shared `MessagingOptions` defaults: cleanup receipts/
 
 - **Schema steps**: `Messaging/1` creates the tables, constraints, and key indexes and asserts that a pre-existing table has the expected shape; `Messaging/2` creates the retry-pickup, owner, and history indexes; `Messaging/3` installs `pg_trgm` and the trigram indexes. The [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts) applies them under its one lock per database. Indexes are built with plain `CREATE INDEX`, not `CONCURRENTLY`, so a build on a large existing table blocks writes to it until it finishes; `SchemaRunnerOptions.CommandTimeout` (default 10 minutes) bounds each statement.
 - **`pg_trgm` on managed PostgreSQL**: dashboard content (ILIKE) search uses GIN trigram indexes that need the `pg_trgm` extension. Step `Messaging/3` tries `CREATE EXTENSION IF NOT EXISTS pg_trgm` inside a guarded block. On managed PostgreSQL (AWS RDS, Azure, Neon, Supabase) the app role usually lacks `CREATE EXTENSION`; the step raises a warning, **skips the trigram content indexes**, and still records itself — write/retry paths are unaffected, only dashboard content search is disabled. Because the step is recorded, installing `pg_trgm` later does not add the indexes on the next start: have the DBA install the extension **before** the first start, or create the two trigram indexes by hand afterwards.
-- **Bootstrap indexes**: fresh schemas directly create `(status_name, added)` indexes for dashboard timelines/statistics and a partial `(version, expires_at) WHERE status_name = 'Queued'` index for delayed-message scheduling. The steps create the final schema shape; a future shape change is a new step.
+- **Bootstrap indexes**: fresh schemas directly create `(status_name, added, id)` indexes for dashboard timelines, statistics, and status-filtered keyset lists, partial failure-group indexes on `(failure_fingerprint, consumer_key_hash)` (received) and `(failure_fingerprint)` (published), and a partial `(version, expires_at) WHERE status_name = 'Queued'` index for delayed-message scheduling. The steps create the final schema shape; a future shape change is a new step.
 - **Non-inbox identity hash**: non-inbox received rows (poison and other received-exception rows) are unique on `consumer_identity_hash`, a SHA-256 of the length-prefixed version, message id, lane, and consumer identity, so the PostgreSQL and SQL Server schemas share one key even though SQL Server pads trailing spaces when it compares strings. `Messaging/1` was changed in place to add it before 1.0; recreate a database created by an earlier build (and its `headless_schema_history` rows), because the runner does not re-apply a recorded step.
 
 ### Runtime behavior
 
-Registers PostgreSQL storage, the monitoring API, table-name resolution, the messaging schema contribution, and the `messaging-storage-postgresql-default` readiness check (`messaging-storage-postgresql-outbox-{n}` for an additional outbox; see [Health checks](#health-checks)). It does not register EF Core or `Headless.UnitOfWork`.
+Registers PostgreSQL storage, the monitoring API, table-name resolution, the messaging schema contribution, and the `messaging-storage-postgresql-default` readiness check (`messaging-storage-postgresql-outbox-{name}` for an additional outbox; see [Health checks](#health-checks)). It does not register EF Core or `Headless.UnitOfWork`.
 
 ## Headless.Messaging.Storage.PostgreSql.EntityFramework
 
@@ -3634,7 +3623,7 @@ Fresh schemas directly create `([StatusName],[Added])` indexes for dashboard tim
 
 ### Runtime behavior
 
-Registers SQL Server storage, the monitoring API, table-name resolution, the messaging schema contribution, and the `messaging-storage-sqlserver-default` readiness check (`messaging-storage-sqlserver-outbox-{n}` for an additional outbox; see [Health checks](#health-checks)). It does not register EF Core or `Headless.UnitOfWork`.
+Registers SQL Server storage, the monitoring API, table-name resolution, the messaging schema contribution, and the `messaging-storage-sqlserver-default` readiness check (`messaging-storage-sqlserver-outbox-{name}` for an additional outbox; see [Health checks](#health-checks)). It does not register EF Core or `Headless.UnitOfWork`.
 
 - **Monitoring skips locked rows**: dashboard counts, pages, and timelines read with `READPAST`, so a row another transaction holds locked (a claim, an admission, a state change in flight) is left out of that read instead of blocking it. PostgreSQL's monitoring reads instead see the row's last committed version. Counts can therefore dip briefly under load on SQL Server.
 - **Inbox operation lock**: concurrent requests of one inbox operation (hold, release, purge, force-reprocess) that share an operation id serialize on a transaction-scoped `sp_getapplock` named `headless.messaging.inbox.operation.{operationId}`, so one applies and the others replay its receipt. The lock has no timeout of its own, so the wait is bounded by `MessagingOptions.CommandTimeout`, and a timed-out request can be retried with the same operation id.

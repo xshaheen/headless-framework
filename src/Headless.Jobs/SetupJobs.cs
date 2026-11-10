@@ -219,7 +219,12 @@ public static class SetupJobs
             IJobPersistenceProvider<TTimeJob, TCronJob>,
             JobsInMemoryPersistenceProvider<TTimeJob, TCronJob>
         >();
-        services.AddSingleton<IJobsNotificationHubSender, NoOpJobsNotificationHubSender>();
+        // TryAdd, so a dashboard registered before AddHeadlessJobs keeps its own sender.
+        services.TryAddSingleton<IJobsNotificationHubSender, NoOpJobsNotificationHubSender>();
+        // The dashboard module takes no entity type arguments; this seam carries the host's types to it.
+        services.TryAddSingleton<IJobsDashboardBackend>(provider => new JobsDashboardBackend<TTimeJob, TCronJob>(
+            provider
+        ));
         services.TryAddSingleton(TimeProvider.System);
 
         // Per-host tenancy DI (see _AddTenancyServices).
@@ -343,7 +348,6 @@ public static class SetupJobs
         );
 
         optionInstance.ExternalProviderConfigServiceAction?.Invoke(services);
-        optionInstance.DashboardServiceAction?.Invoke(services, requestSerializationOptions);
 
         // The durable operational store opts into coordinated membership; wire it after the provider's own
         // services are registered so the require-provider check sees the coordination registration.
@@ -521,6 +525,29 @@ public static class SetupJobs
                 ? CronRulesDigest.SweepEnabled
                 : CronRulesDigest.SweepDisabled;
         });
+
+        // Each node publishes the functions it claims, so a dashboard can name a function no live node runs. The run
+        // filter is fixed for the node's lifetime, as registration metadata is; the catalog is built when options are
+        // first read, so contributions recorded after this call still count.
+        services
+            .AddOptions<CoordinationOptions>()
+            .Configure<JobFunctionRegistry>(
+                (options, registry) =>
+                    options.Metadata[JobsNodeMetadata.ClaimedFunctionsKey] = JobsNodeMetadata.FormatClaimedFunctions(
+                        claimsWork ? registry.RunFilter.ClaimedFunctions(registry.Functions.Keys) : []
+                    )
+            );
+
+        // Each node publishes its host max concurrency, so the dashboard's nodes view shows it on every node's row and
+        // not only on the node that serves the page.
+        services
+            .AddOptions<CoordinationOptions>()
+            .Configure<SchedulerOptionsBuilder>(
+                (options, scheduler) =>
+                    options.Metadata[JobsNodeMetadata.MaxConcurrencyKey] = scheduler.MaxConcurrency.ToString(
+                        CultureInfo.InvariantCulture
+                    )
+            );
 
         // Only nodes sharing a durable store have a fleet whose cron rules must agree before a rebase.
         services.AddSingleton<CronFleetAgreement>();

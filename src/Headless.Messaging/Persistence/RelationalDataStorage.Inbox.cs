@@ -59,6 +59,7 @@ internal sealed partial class RelationalDataStorage
                             command =>
                             {
                                 _BindInboxRootKey(command, key, keyHash);
+                                _BindConsumerKeyHash(command, key.ConsumerIdentity);
                                 _dialect.AddParameter(command, "Id", SqlColumnType.Guid, storageId);
                                 _BindVersion(command);
                                 _dialect.AddParameter(command, "Name", _NameType, name);
@@ -152,6 +153,8 @@ internal sealed partial class RelationalDataStorage
                     _t.IsCurrentGeneration,
                     _t.IsInboxRecord,
                     _t.InboxRetentionSeconds,
+                    _t.ConsumerKeyHash,
+                    _t.ChangedAt,
                 ],
                 [
                     "@Id",
@@ -180,6 +183,8 @@ internal sealed partial class RelationalDataStorage
                     _t.True,
                     _t.True,
                     "@InboxRetentionSeconds",
+                    "@ConsumerKeyHash",
+                    SqlDialectTokens.Now,
                 ],
                 [_t.Id],
                 InboxRootPredicate
@@ -293,6 +298,25 @@ internal sealed partial class RelationalDataStorage
         );
         _dialect.AddParameter(command, "ConsumerIdentity", _IdentityType, key.ConsumerIdentity);
         _dialect.AddParameter(command, "Generation", SqlColumnType.Int64, key.Generation);
+    }
+
+    private void _BindConsumerKeyHash(DbCommand command, string consumerIdentity)
+    {
+        _dialect.AddParameter(
+            command,
+            "ConsumerKeyHash",
+            SqlColumnType.FixedBinary(_Sha256HashLength),
+            CreateConsumerKeyHash(consumerIdentity)
+        );
+    }
+
+    /// <summary>
+    /// The SHA-256 of a consumer identity alone, which failure groups key on: SQL Server compares the identity text
+    /// with trailing spaces padded away, so a group keyed on the text would merge two consumers.
+    /// </summary>
+    internal static byte[] CreateConsumerKeyHash(string consumerIdentity)
+    {
+        return SHA256.HashData(Encoding.UTF8.GetBytes(consumerIdentity));
     }
 
     /// <summary>

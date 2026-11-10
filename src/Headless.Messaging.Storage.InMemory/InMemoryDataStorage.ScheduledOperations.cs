@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Headless.Fencing;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
@@ -17,6 +18,13 @@ internal sealed partial class InMemoryDataStorage
             OperatorAuthorizationContext authorization,
             CancellationToken cancellationToken = default
         ) => storage._QueryScheduledAsync(query, authorization, cancellationToken);
+
+        public ValueTask<MessageCount> CountAsync(
+            ScheduledDeliveryQuery query,
+            OperatorAuthorizationContext authorization,
+            int cap = MessageCount.DefaultCap,
+            CancellationToken cancellationToken = default
+        ) => storage._CountScheduledAsync(query, authorization, cap, cancellationToken);
 
         public ValueTask<ScheduledDeliveryOperationResult> RevokeAsync(
             ScheduledDeliveryOperationRequest request,
@@ -39,7 +47,7 @@ internal sealed partial class InMemoryDataStorage
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
-        authorization.Validate();
+        authorization.ValidateRead();
         query.Validate();
 
         var page = Math.Max(query.CurrentPage, 0);
@@ -48,41 +56,7 @@ internal sealed partial class InMemoryDataStorage
         lock (_receivedUpsertLock)
         {
             var now = timeProvider.GetUtcNow();
-            var rows = PublishedMessages.Values.Where(message =>
-                string.Equals(message.Version, messagingOptions.Value.Version, StringComparison.Ordinal)
-                && message.StatusName is StatusName.Delayed or StatusName.Queued
-                && message.InlineAttempts == 0
-                && message.Retries == 0
-                && message.NextRetryAt is null
-                && message.ExpiresAt is not null
-                && message.Lane is MessageLane.Bus or MessageLane.Queue
-            );
-
-            if (!string.IsNullOrWhiteSpace(query.MessageName))
-            {
-                rows = rows.Where(message => string.Equals(message.Name, query.MessageName, StringComparison.Ordinal));
-            }
-
-            if (query.Lane is { } lane)
-            {
-                rows = rows.Where(message => message.Lane == lane);
-            }
-
-            if (query.DueFrom is { } dueFrom)
-            {
-                rows = rows.Where(message => message.ExpiresAt >= dueFrom);
-            }
-
-            if (query.DueTo is { } dueTo)
-            {
-                rows = rows.Where(message => message.ExpiresAt <= dueTo);
-            }
-
-            if (query.StorageIds is { Count: > 0 } ids)
-            {
-                var idSet = ids as HashSet<Guid> ?? [.. ids];
-                rows = rows.Where(message => idSet.Contains(message.StorageId));
-            }
+            var rows = _ScheduledRows(query);
 
             var materialized = rows.OrderBy(message => message.ExpiresAt).ThenBy(message => message.StorageId).ToList();
 
@@ -91,9 +65,7 @@ internal sealed partial class InMemoryDataStorage
                 .Take(pageSize)
                 .Select(message => new ScheduledDeliveryView(
                     message.StorageId,
-                    message.Origin?.Headers.TryGetValue(Headers.MessageId, out var msgId) == true
-                        ? msgId ?? string.Empty
-                        : string.Empty,
+                    _ReadMessageId(message) ?? string.Empty,
                     message.Name,
                     message.Lane,
                     message.ExpiresAt ?? DateTimeOffset.MinValue,
@@ -111,6 +83,66 @@ internal sealed partial class InMemoryDataStorage
         }
     }
 
+    /// <summary>The pending scheduled deliveries <paramref name="query"/> matches; the caller holds the store lock.</summary>
+    private IEnumerable<MemoryMessage> _ScheduledRows(ScheduledDeliveryQuery query)
+    {
+        var rows = PublishedMessages.Values.Where(message =>
+            string.Equals(message.Version, messagingOptions.Value.Version, StringComparison.Ordinal)
+            && message.StatusName is StatusName.Delayed or StatusName.Queued
+            && message.InlineAttempts == 0
+            && message.Retries == 0
+            && message.NextRetryAt is null
+            && message.ExpiresAt is not null
+            && message.Lane is MessageLane.Bus or MessageLane.Queue
+        );
+
+        if (!string.IsNullOrWhiteSpace(query.MessageName))
+        {
+            rows = rows.Where(message => string.Equals(message.Name, query.MessageName, StringComparison.Ordinal));
+        }
+
+        if (query.Lane is { } lane)
+        {
+            rows = rows.Where(message => message.Lane == lane);
+        }
+
+        if (query.DueFrom is { } dueFrom)
+        {
+            rows = rows.Where(message => message.ExpiresAt >= dueFrom);
+        }
+
+        if (query.DueTo is { } dueTo)
+        {
+            rows = rows.Where(message => message.ExpiresAt <= dueTo);
+        }
+
+        if (query.StorageIds is { Count: > 0 } ids)
+        {
+            var idSet = ids as HashSet<Guid> ?? [.. ids];
+            rows = rows.Where(message => idSet.Contains(message.StorageId));
+        }
+
+        return rows;
+    }
+
+    private ValueTask<MessageCount> _CountScheduledAsync(
+        ScheduledDeliveryQuery query,
+        OperatorAuthorizationContext authorization,
+        int cap,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        authorization.ValidateRead();
+        query.Validate();
+        Argument.IsPositive(cap);
+
+        lock (_receivedUpsertLock)
+        {
+            return ValueTask.FromResult(MessageCount.Of(_ScheduledRows(query).Take(cap + 1).Count(), cap));
+        }
+    }
+
     private ValueTask<ScheduledDeliveryOperationResult> _MutateScheduledAsync(
         MessagingOperationType operationType,
         ScheduledDeliveryOperationRequest request,
@@ -122,66 +154,21 @@ internal sealed partial class InMemoryDataStorage
 
         lock (_receivedUpsertLock)
         {
+            var attempt = new InMemoryOperationReceipt(
+                request.OperationId,
+                MessagingOperationTargetKind.ScheduledDelivery,
+                operationType,
+                default,
+                request.Actor,
+                request.StoredReason,
+                default,
+                ExpectedDueAt: request.ExpectedDueAt,
+                StorageId: request.StorageId
+            );
             if (_inboxOperationReceipts.TryGetValue(request.OperationId, out var prior))
             {
-                var matches =
-                    prior.TargetKind == MessagingOperationTargetKind.ScheduledDelivery
-                    && prior.OperationType == operationType
-                    && prior.StorageId == request.StorageId
-                    && prior.ExpectedDueAt == request.ExpectedDueAt
-                    && string.Equals(prior.Actor, request.Actor, StringComparison.Ordinal)
-                    && string.Equals(prior.Reason, request.Reason, StringComparison.Ordinal);
-
-                if (matches)
-                {
-                    return ValueTask.FromResult(
-                        new ScheduledDeliveryOperationResult(
-                            prior.OperationId,
-                            prior.OperationType,
-                            prior.Outcome,
-                            request.StorageId,
-                            request.ExpectedDueAt,
-                            prior.MessageName,
-                            prior.MessageId,
-                            prior.Lane is { } lane ? Enum.Parse<MessageLane>(lane) : null,
-                            prior.Actor,
-                            prior.Reason,
-                            prior.CreatedAt,
-                            IsReplay: true
-                        )
-                    );
-                }
-
-                var conflictNow = timeProvider.GetUtcNow();
-                _inboxAudit.Add(
-                    new InMemoryInboxAudit(
-                        guidGenerator.Create(),
-                        request.OperationId,
-                        MessagingOperationTargetKind.ScheduledDelivery,
-                        IncarnationId: null,
-                        operationType,
-                        request.Actor,
-                        request.Reason,
-                        InboxOperationOutcome.OperationConflict,
-                        conflictNow
-                    )
-                );
-
                 return ValueTask.FromResult(
-                    new ScheduledDeliveryOperationResult(
-                        request.OperationId,
-                        operationType,
-                        InboxOperationOutcome.OperationConflict,
-                        request.StorageId,
-                        request.ExpectedDueAt,
-                        prior.MessageName,
-                        prior.MessageId,
-                        prior.Lane is { } conflictLane ? Enum.Parse<MessageLane>(conflictLane) : null,
-                        request.Actor,
-                        request.Reason,
-                        conflictNow,
-                        IsReplay: true
-                    )
+                    _ToScheduledResult(_ReplayOrConflictRowOperation(prior, attempt), request, isReplay: true)
                 );
             }
 
@@ -225,6 +212,7 @@ internal sealed partial class InMemoryDataStorage
                                 row.StatusName = StatusName.Delayed;
                                 row.ExpiresAt = now;
                                 row.Lease = RowLeaseRules.Revoke(row.Lease).Next;
+                                _StampChange(row);
                             }
                         }
                     }
@@ -235,63 +223,54 @@ internal sealed partial class InMemoryDataStorage
                 outcome ?? MessagingOperationEvaluator.Evaluate(operationType, request.ExpectedDueAt, state);
 
             var messageName = row?.Name;
-            var messageId =
-                row?.Origin?.Headers.TryGetValue(Headers.MessageId, out var msgId) == true
-                    ? msgId ?? string.Empty
-                    : null;
+            var messageId = row is null ? null : _ReadMessageId(row);
             var messageLane = row?.Lane;
 
-            var receipt = new InMemoryOperationReceipt(
-                request.OperationId,
-                MessagingOperationTargetKind.ScheduledDelivery,
-                operationType,
-                finalOutcome,
-                request.Actor,
-                request.Reason,
-                now,
-                ExpectedDueAt: request.ExpectedDueAt,
-                StorageId: request.StorageId,
-                MessageName: messageName,
-                MessageId: messageId,
-                Lane: messageLane?.ToString()
-            );
-            _inboxOperationReceipts.Add(request.OperationId, receipt);
-
-            _inboxAudit.Add(
-                new InMemoryInboxAudit(
-                    guidGenerator.Create(),
-                    request.OperationId,
-                    MessagingOperationTargetKind.ScheduledDelivery,
-                    IncarnationId: null,
-                    operationType,
-                    request.Actor,
-                    request.Reason,
-                    finalOutcome,
-                    now
-                )
-            );
+            var receipt = attempt with
+            {
+                Outcome = finalOutcome,
+                CreatedAt = now,
+                MessageName = messageName,
+                MessageId = messageId,
+                Lane = messageLane?.ToString(),
+            };
+            _RecordRowOperation(receipt);
 
             if (finalOutcome == InboxOperationOutcome.Applied && messageLane is { } appliedLane)
             {
                 MessagingMetrics.RecordScheduledOperation(operationType, appliedLane, finalOutcome, "InMemory");
             }
 
-            return ValueTask.FromResult(
-                new ScheduledDeliveryOperationResult(
-                    request.OperationId,
-                    operationType,
-                    finalOutcome,
-                    request.StorageId,
-                    request.ExpectedDueAt,
-                    messageName,
-                    messageId,
-                    messageLane,
-                    request.Actor,
-                    request.Reason,
-                    now,
-                    IsReplay: false
-                )
-            );
+            return ValueTask.FromResult(_ToScheduledResult(receipt, request, isReplay: false));
         }
     }
+
+    private static ScheduledDeliveryOperationResult _ToScheduledResult(
+        InMemoryOperationReceipt receipt,
+        ScheduledDeliveryOperationRequest request,
+        bool isReplay
+    ) =>
+        new(
+            receipt.OperationId,
+            receipt.OperationType,
+            receipt.Outcome,
+            request.StorageId,
+            request.ExpectedDueAt,
+            receipt.MessageName,
+            receipt.MessageId,
+            receipt.Lane is { } lane ? Enum.Parse<MessageLane>(lane) : null,
+            receipt.Actor,
+            receipt.Reason,
+            receipt.CreatedAt,
+            isReplay
+        );
+
+    /// <summary>
+    /// The row's message id header: <see langword="null"/> when the row carries none, and <see cref="string.Empty"/>
+    /// when the header holds no value.
+    /// </summary>
+    private static string? _ReadMessageId(MemoryMessage message) =>
+        message.Origin?.Headers.TryGetValue(Headers.MessageId, out var messageId) == true
+            ? messageId ?? string.Empty
+            : null;
 }

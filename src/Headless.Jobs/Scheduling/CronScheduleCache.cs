@@ -106,6 +106,61 @@ internal sealed partial class CronScheduleCache(TimeZoneInfo timeZoneInfo)
         return _NextAcrossTransitions(parsed, expression, timeZone, cursor);
     }
 
+    /// <summary>
+    /// Previews a stored or draft schedule: the next <paramref name="count"/> fire instants strictly after
+    /// <paramref name="fromUtc"/> in the zone <paramref name="timeZoneId"/> resolves to, with a plain reading, or a
+    /// validation message and no fires when the expression does not parse, the zone does not resolve on this host, or
+    /// the expression never fires again.
+    /// </summary>
+    /// <remarks>
+    /// The fires come from <see cref="GetNextOccurrenceOrDefault(string, DateTime, string?)"/>, so a preview shows the
+    /// instants the scheduler will dispatch, across daylight-saving changes included.
+    /// </remarks>
+    public CronSchedulePreview Preview(string expression, string? timeZoneId, DateTime fromUtc, int count)
+    {
+        Argument.IsNotNull(expression);
+        Argument.IsPositive(count);
+
+        var normalized = _Normalize(expression);
+        string? parseError = null;
+        var parsed = CrontabSchedule.TryParse<CrontabSchedule?>(
+            normalized,
+            _Opts,
+            static schedule => schedule,
+            provider =>
+            {
+                parseError = provider().Message;
+
+                return null;
+            }
+        );
+
+        if (parsed is null)
+        {
+            return CronSchedulePreview.Invalid(parseError ?? $"'{normalized}' is not a valid cron expression.");
+        }
+
+        var reading = CronExpressionReading.Describe(normalized);
+
+        if (!CronTimeZoneResolver.TryResolve(timeZoneId, TimeZoneInfo, out _))
+        {
+            return CronSchedulePreview.Invalid($"The time zone '{timeZoneId}' is not known on this host.", reading);
+        }
+
+        var fires = new List<DateTime>(count);
+        var cursor = fromUtc;
+
+        while (fires.Count < count && GetNextOccurrenceOrDefault(normalized, cursor, timeZoneId) is { } next)
+        {
+            fires.Add(next);
+            cursor = next;
+        }
+
+        return fires.Count == 0
+            ? CronSchedulePreview.Invalid("The expression never fires again.", reading)
+            : new CronSchedulePreview(fires, reading, ValidationMessage: null);
+    }
+
     private static bool _OffsetUnchangedAround(TimeZoneInfo timeZone, DateTime utc, TimeSpan offset)
     {
         var radius = CronZoneTransition.SearchRadius;

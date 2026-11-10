@@ -55,6 +55,7 @@ internal sealed class MessageSender : IMessageSender
     private readonly MessagingPublishRetryPipeline _retryPipeline;
     private readonly CancellationToken _shutdownToken;
     private readonly TransportConnectivity _connectivity;
+    private readonly MessageStateObservers _stateObservers;
 
     public MessageSender(ILogger<MessageSender> logger, IServiceProvider serviceProvider)
     {
@@ -72,6 +73,7 @@ internal sealed class MessageSender : IMessageSender
         _retryPolicy = opts.RetryPolicy;
         _retryPipeline = new MessagingPublishRetryPipeline(_retryPolicy, _timeProvider, logger);
         _connectivity = serviceProvider.GetRequiredService<TransportConnectivity>();
+        _stateObservers = new MessageStateObservers(serviceProvider);
 
         // IHostApplicationLifetime is optional so MessageSender remains usable in test contexts
         // (and non-hosted scenarios). When absent, shutdown cancellation cannot be observed and
@@ -474,6 +476,8 @@ internal sealed class MessageSender : IMessageSender
     )
     {
         var originalInlineAttempts = message.InlineAttempts;
+        message.ExceptionInfo = ex.ExpandMessage();
+        message.FailureFingerprint = MessagingFailureFingerprints.Of(ex);
         message.ExpiresAt = _timeProvider.GetUtcNow().AddSeconds(_options.FailedMessageExpiredAfter);
         message.NextRetryAt = null;
         const bool keepLease = false;
@@ -493,6 +497,11 @@ internal sealed class MessageSender : IMessageSender
             )
             .ConfigureAwait(false);
         executionState?.RecordLeaseTransition(affected, keepLease);
+
+        if (affected)
+        {
+            _stateObservers.Notify(MessageType.Publish, message);
+        }
 
         _logger.StoredMessageMissingLaneTransport(ex, message.StorageId, message.Lane.ToString("D"));
 
@@ -528,6 +537,7 @@ internal sealed class MessageSender : IMessageSender
         var originalInlineAttempts = message.InlineAttempts;
         message.Origin.AddOrUpdateException(expired);
         message.ExceptionInfo = expired.ExpandMessage();
+        message.FailureFingerprint = MessagingFailureFingerprints.Expired;
         message.ExpiresAt = _timeProvider.GetUtcNow().AddSeconds(_options.FailedMessageExpiredAfter);
         message.NextRetryAt = null;
         const bool keepLease = false;
@@ -546,6 +556,11 @@ internal sealed class MessageSender : IMessageSender
             )
             .ConfigureAwait(false);
         executionState?.RecordLeaseTransition(affected, keepLease);
+
+        if (affected)
+        {
+            _stateObservers.Notify(MessageType.Publish, message);
+        }
 
         // A write the storage guard refused means another worker already settled the row, so this drop is not ours to
         // count; the attempt still ends without sending.
@@ -597,7 +612,11 @@ internal sealed class MessageSender : IMessageSender
             .ConfigureAwait(false);
         executionState?.RecordLeaseTransition(updated, keepLease);
 
-        if (!updated)
+        if (updated)
+        {
+            _stateObservers.Notify(MessageType.Publish, message);
+        }
+        else
         {
             // The broker DID accept the publish, so the consumer will observe the message; at-least-once delivery
             // means duplicates are the user's responsibility to dedupe on the receive side. The fenced write cannot
@@ -720,6 +739,9 @@ internal sealed class MessageSender : IMessageSender
         var originalInlineAttempts = message.InlineAttempts;
 
         message.Origin.AddOrUpdateException(ex);
+        // The fingerprint comes from the live exception: the stored text keeps too little of it to derive one later.
+        message.ExceptionInfo = ex.ExpandMessage();
+        message.FailureFingerprint = MessagingFailureFingerprints.Of(ex);
         message.ExpiresAt = _timeProvider.GetUtcNow().AddSeconds(_options.FailedMessageExpiredAfter);
 
         // Inline-retry budget still available: persist as Scheduled/NULL so a crash mid-delay
@@ -797,6 +819,11 @@ internal sealed class MessageSender : IMessageSender
             )
             .ConfigureAwait(false);
         executionState?.RecordLeaseTransition(affected, keepLease);
+
+        if (affected)
+        {
+            _stateObservers.Notify(MessageType.Publish, message);
+        }
 
         // Stop and Exhausted both end the row; counting only a write that landed counts each message once, whichever
         // replica's terminal write won.

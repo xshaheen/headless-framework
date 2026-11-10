@@ -48,18 +48,25 @@ public sealed record ScheduledDeliveryView(
 );
 
 /// <summary>Audited mutation request fenced to one immutable storage row and expected due instant.</summary>
+/// <remarks>
+/// <see cref="Reason"/> is optional for a single-row request: an empty or whitespace reason is stored as
+/// <see langword="null"/>.
+/// </remarks>
 [PublicAPI]
 public sealed record ScheduledDeliveryOperationRequest(
     Guid OperationId,
     Guid StorageId,
     DateTimeOffset ExpectedDueAt,
-    string Reason,
+    string? Reason,
     OperatorAuthorizationContext Authorization
 )
 {
     internal const int ReasonMaxLength = 1000;
 
     public string Actor => Authorization?.Actor ?? string.Empty;
+
+    /// <summary>Gets the reason as it is stored: <see langword="null"/> when empty or whitespace.</summary>
+    public string? StoredReason => OperatorReason.Normalize(Reason);
 
     public void Validate()
     {
@@ -80,10 +87,10 @@ public sealed record ScheduledDeliveryOperationRequest(
             throw new InvalidOperationException("Storage identity cannot be empty.");
         }
 
-        if (string.IsNullOrWhiteSpace(Reason) || Reason.Length > ReasonMaxLength)
+        if (Reason?.Length > ReasonMaxLength)
         {
             throw new InvalidOperationException(
-                $"Scheduled delivery operation reason must be between 1 and {ReasonMaxLength} characters."
+                $"Scheduled delivery operation reason cannot exceed {ReasonMaxLength} characters."
             );
         }
     }
@@ -101,7 +108,7 @@ public sealed record ScheduledDeliveryOperationResult(
     string? MessageId,
     MessageLane? Lane,
     string Actor,
-    string Reason,
+    string? Reason,
     DateTimeOffset CreatedAt,
     bool IsReplay = false
 );

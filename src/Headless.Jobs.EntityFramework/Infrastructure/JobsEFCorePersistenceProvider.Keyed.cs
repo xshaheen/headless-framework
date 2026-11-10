@@ -116,6 +116,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                 .ExecuteUpdateAsync(
                     setter =>
                         setter
+                            .SetChangedAt()
                             .SetProperty(row => row.IsCurrentGeneration, valueExpression: false)
                             .SetProperty(row => row.Status, JobStatus.Skipped)
                             .SetProperty(row => row.SkippedReason, "Superseded by a newer keyed generation.")
@@ -141,7 +142,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         job.Status = JobStatus.Idle;
         job.CreatedAt = job.UpdatedAt = now;
         await context.Set<TTimeJob>().AddAsync(job, cancellationToken).ConfigureAwait(false);
-        await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        await context.SaveChangesAndStampAsync<TTimeJob, TCronJob>(cancellationToken).ConfigureAwait(false);
         return JobIntentFingerprint.Result(
             job,
             current is null ? JobScheduleDisposition.Created : JobScheduleDisposition.Replaced
@@ -215,6 +216,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             .ExecuteUpdateAsync(
                 setter =>
                     setter
+                        .SetChangedAt()
                         .SetProperty(row => row.CancelRequested, valueExpression: true)
                         .SetProperty(row => row.Status, JobStatus.Cancelled)
                         .SetProperty(row => row.ExecutedAt, now)
@@ -237,6 +239,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                 .ExecuteUpdateAsync(
                     setter =>
                         setter
+                            .SetChangedAt()
                             .SetProperty(row => row.CancelRequested, valueExpression: true)
                             .SetProperty(row => row.UpdatedAt, now),
                     cancellationToken

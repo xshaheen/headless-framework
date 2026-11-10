@@ -124,7 +124,9 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                 cancellationToken
             )
             .ConfigureAwait(false);
-        var affected = await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        var affected = await dbContext
+            .SaveChangesAndStampAsync<TTimeJob, TCronJob>(cancellationToken)
+            .ConfigureAwait(false);
 
         return new TimeJobDueTimeSeedResult { StoreUtcNow = storeUtcNow, AffectedRows = affected };
     }
@@ -150,7 +152,9 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         var earliestNextDueUtc = _ApplySchedulePositionSeed(jobs, seeder, storeUtcNow);
 
         await dbContext.Set<TCronJob>().AddRangeAsync(jobs, cancellationToken).ConfigureAwait(false);
-        var affected = await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        var affected = await dbContext
+            .SaveChangesAndStampAsync<TTimeJob, TCronJob>(cancellationToken)
+            .ConfigureAwait(false);
 
         return new CronSchedulePositionSeedResult
         {
@@ -385,7 +389,9 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         {
             return new TimeJobDueTimeSeedResult
             {
-                AffectedRows = await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false),
+                AffectedRows = await dbContext
+                    .SaveChangesAndStampAsync<TTimeJob, TCronJob>(cancellationToken)
+                    .ConfigureAwait(false),
             };
         }
 
@@ -407,7 +413,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                             StoreUtcNow = storeUtcNow,
                             // A failed save must leave the graph Added so the configured strategy can retry it.
                             AffectedRows = await dbContext
-                                .SaveChangesAsync(acceptAllChangesOnSuccess: false, ct)
+                                .SaveChangesAndStampAsync<TTimeJob, TCronJob>(ct, acceptAllChangesOnSuccess: false)
                                 .ConfigureAwait(false),
                         };
                     }
@@ -423,7 +429,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                         .ConfigureAwait(false);
                     // A failed commit must leave the graph Added so the configured strategy can retry after rollback.
                     var affected = await dbContext
-                        .SaveChangesAsync(acceptAllChangesOnSuccess: false, ct)
+                        .SaveChangesAndStampAsync<TTimeJob, TCronJob>(ct, acceptAllChangesOnSuccess: false)
                         .ConfigureAwait(false);
                     await transaction.CommitAsync(ct).ConfigureAwait(false);
                     return new TimeJobDueTimeSeedResult { StoreUtcNow = storeUtcNow, AffectedRows = affected };
@@ -529,7 +535,10 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                         }
                     }
 
-                    return (await context.SaveChangesAsync(ct).ConfigureAwait(false), candidates);
+                    return (
+                        await context.SaveChangesAndStampAsync<TTimeJob, TCronJob>(ct).ConfigureAwait(false),
+                        candidates
+                    );
                 },
                 cancellationToken
             )
@@ -572,6 +581,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             .ExecuteUpdateAsync(
                 setter =>
                     setter
+                        .SetChangedAt()
                         .SetProperty(row => row.Status, JobStatus.Idle)
                         .SetProperty(row => row.UpdatedAt, storeNow)
                         // The edit ends any claim's lease in the same statement, so the claimed attempt is refused at
@@ -608,7 +618,11 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             var cleared = await jobs.Where(row => ids.Contains(row.Id))
                 .Where(_CarriedDescendantEditable(group.Key))
                 .ExecuteUpdateAsync(
-                    setter => setter.SetProperty(row => row.UpdatedAt, storeNow).EndLease(RowLeaseState.Revoked),
+                    setter =>
+                        setter
+                            .SetChangedAt()
+                            .SetProperty(row => row.UpdatedAt, storeNow)
+                            .EndLease(RowLeaseState.Revoked),
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -697,7 +711,68 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         }
     }
 
-    public async Task<int> RemoveTimeJobsAsync(Guid[] timeJobIds, CancellationToken cancellationToken = default)
+    public Task<int> RemoveTimeJobsAsync(Guid[] timeJobIds, CancellationToken cancellationToken = default)
+    {
+        return _RemoveTimeJobsAsync(timeJobIds, rootGuard: null, cancellationToken);
+    }
+
+    public async Task<bool> RemoveTimeJobIfUnchangedAsync(
+        Guid jobId,
+        DateTime expectedChangedAt,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var marker = DateTime.SpecifyKind(expectedChangedAt, DateTimeKind.Utc);
+
+        return await _RemoveTimeJobsAsync(
+                    [jobId],
+                    x => x.Id == jobId && x.ChangedAt == marker && x.Status != JobStatus.InProgress,
+                    cancellationToken
+                )
+                .ConfigureAwait(false) > 0;
+    }
+
+    public async Task<bool> RemoveCancelRequestedTimeJobAsync(Guid jobId, CancellationToken cancellationToken = default)
+    {
+        // A chain member or a keyed row fails the guard here, so the keyed retention check below never throws for it,
+        // and the guard's row lock and its child check commit with the delete.
+        return await _RemoveTimeJobsAsync(
+                    [jobId],
+                    x =>
+                        x.Id == jobId
+                        && x.Status == JobStatus.InProgress
+                        && x.CancelRequested
+                        && x.BusinessKey == null
+                        && x.ParentId == null
+                        && !x.Children.Any(),
+                    cancellationToken
+                )
+                .ConfigureAwait(false) > 0;
+    }
+
+    public async Task<bool> RemoveCronJobOccurrenceIfUnchangedAsync(
+        Guid occurrenceId,
+        DateTime expectedChangedAt,
+        CancellationToken cancellationToken = default
+    )
+    {
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var marker = DateTime.SpecifyKind(expectedChangedAt, DateTimeKind.Utc);
+
+        return await dbContext
+                .Set<CronJobOccurrenceEntity<TCronJob>>()
+                .Where(x => x.Id == occurrenceId && x.ChangedAt == marker && x.Status != JobStatus.InProgress)
+                .ExecuteDeleteAsync(cancellationToken)
+                .ConfigureAwait(false) > 0;
+    }
+
+    private async Task<int> _RemoveTimeJobsAsync(
+        Guid[] timeJobIds,
+        Expression<Func<TTimeJob, bool>>? rootGuard,
+        CancellationToken cancellationToken
+    )
     {
         if (timeJobIds.Length == 0)
         {
@@ -712,9 +787,11 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             return await _treeDeleteRetryPipeline
                 .ExecuteAsync(
                     static async (context, state) =>
-                        await state.Provider._RemoveTimeJobsAttemptAsync(state.Ids, context).ConfigureAwait(false),
+                        await state
+                            .Provider._RemoveTimeJobsAttemptAsync(state.Ids, state.Guard, context)
+                            .ConfigureAwait(false),
                     resilienceContext,
-                    (Provider: this, Ids: timeJobIds)
+                    (Provider: this, Ids: timeJobIds, Guard: rootGuard)
                 )
                 .ConfigureAwait(false);
         }
@@ -724,7 +801,14 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         }
     }
 
-    private async ValueTask<int> _RemoveTimeJobsAttemptAsync(Guid[] timeJobIds, ResilienceContext resilienceContext)
+    // With a root guard, the call deletes one root only while the guard still matches it: an Operation's
+    // compare-and-set on the change marker, or a force delete's "still running with cancel requested", checked under
+    // the row lock the delete then holds through commit.
+    private async ValueTask<int> _RemoveTimeJobsAttemptAsync(
+        Guid[] timeJobIds,
+        Expression<Func<TTimeJob, bool>>? rootGuard,
+        ResilienceContext resilienceContext
+    )
     {
         resilienceContext.Properties.Set(_TreeDeleteCommitStartedKey, value: false);
         var cancellationToken = resilienceContext.CancellationToken;
@@ -756,6 +840,25 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                     // rather than with a recursive CTE so a single query shape serves every relational provider; the
                     // visited set also terminates a corrupted cycle. The foreign key is the atomicity fence: a
                     // conflicting write rolls this scope back and fresh discovery runs.
+                    if (rootGuard is not null)
+                    {
+                        // A no-op write takes the root's row lock, so no claim, requeue, or completion can move the
+                        // row between this check and the delete.
+                        var held = await dbContext
+                            .Set<TTimeJob>()
+                            .Where(rootGuard)
+                            .ExecuteUpdateAsync(
+                                setter => setter.SetProperty(x => x.Status, x => x.Status),
+                                cancellationToken
+                            )
+                            .ConfigureAwait(false);
+
+                        if (held == 0)
+                        {
+                            return 0;
+                        }
+                    }
+
                     var levels = new List<Guid[]> { timeJobIds };
                     var visited = new HashSet<Guid>(timeJobIds);
                     var frontier = timeJobIds;
@@ -802,6 +905,21 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                     }
 
                     var deleted = 0;
+                    // A deleted row leaves no marker behind, so a surviving parent carries the change: its chain lost
+                    // a member. Read before the delete, which removes the rows that name the parent.
+                    var survivingParentIds = (
+                        await dbContext
+                            .Set<TTimeJob>()
+                            .AsNoTracking()
+                            .Where(x => ((IEnumerable<Guid>)timeJobIds).Contains(x.Id) && x.ParentId != null)
+                            .Select(x => x.ParentId!.Value)
+                            .ToArrayAsync(cancellationToken)
+                            .ConfigureAwait(false)
+                    )
+                        .Where(parentId => !visited.Contains(parentId))
+                        .Distinct()
+                        .ToArray();
+
                     for (var level = levels.Count - 1; level >= 0; level--)
                     {
                         var ids = levels[level];
@@ -810,6 +928,15 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                             .Set<TTimeJob>()
                             .Where(x => ((IEnumerable<Guid>)ids).Contains(x.Id))
                             .ExecuteDeleteAsync(cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+
+                    if (survivingParentIds.Length > 0)
+                    {
+                        await dbContext
+                            .Set<TTimeJob>()
+                            .Where(x => ((IEnumerable<Guid>)survivingParentIds).Contains(x.Id))
+                            .ExecuteUpdateAsync(setters => setters.SetChangedAt(), cancellationToken)
                             .ConfigureAwait(false);
                     }
 
@@ -896,6 +1023,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                         .ExecuteUpdateAsync(
                             setter =>
                                 setter
+                                    .SetChangedAt()
                                     .SetProperty(x => x.IsPaused, valueExpression: true)
                                     .SetProperty(x => x.ScheduleRevision, x => x.ScheduleRevision + 1)
                                     .SetProperty(x => x.UpdatedAt, operationTimeUtc),
@@ -916,6 +1044,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                         .ExecuteUpdateAsync(
                             setter =>
                                 setter
+                                    .SetChangedAt()
                                     .SetProperty(x => x.Status, JobStatus.Skipped)
                                     .SetProperty(x => x.ExecutedAt, operationTimeUtc)
                                     .SetProperty(x => x.UpdatedAt, operationTimeUtc)
@@ -970,6 +1099,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                         .ExecuteUpdateAsync(
                             setter =>
                                 setter
+                                    .SetChangedAt()
                                     .SetProperty(x => x.IsPaused, valueExpression: false)
                                     .SetProperty(x => x.ScheduleRevision, x => x.ScheduleRevision + 1)
                                     .SetProperty(x => x.ReconciledThroughUtc, _ => DateTime.UtcNow)
@@ -1005,6 +1135,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                         .ExecuteUpdateAsync(
                             setter =>
                                 setter
+                                    .SetChangedAt()
                                     .SetProperty(x => x.NextDueUtc, resumeProjection)
                                     .SetProperty(x => x.EvaluationFingerprint, evaluationFingerprint)
                                     .SetProperty(x => x.FingerprintFailureCount, 0)
@@ -1033,7 +1164,9 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                         await dbContext
                             .Set<CronJobOccurrenceEntity<TCronJob>>()
                             .AddAsync(nextOccurrence, cancellationToken);
-                        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                        await dbContext
+                            .SaveChangesAndStampAsync<TTimeJob, TCronJob>(cancellationToken)
+                            .ConfigureAwait(false);
                     }
 
                     var result = await dbContext
@@ -1145,6 +1278,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                             .ExecuteUpdateAsync(
                                 setter =>
                                     setter
+                                        .SetChangedAt()
                                         .SetProperty(x => x.Function, update.Definition.Function)
                                         .SetProperty(x => x.ContractVersion, update.Definition.ContractVersion)
                                         .SetProperty(x => x.Description, update.Definition.Description)
@@ -1223,7 +1357,8 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                                 .Set<TCronJob>()
                                 .Where(x => x.Id == current.Id)
                                 .ExecuteUpdateAsync(
-                                    setter => setter.SetProperty(x => x.NextDueUtc, replacement.ExecutionTime),
+                                    setter =>
+                                        setter.SetProperty(x => x.NextDueUtc, replacement.ExecutionTime).SetChangedAt(),
                                     cancellationToken
                                 )
                                 .ConfigureAwait(false);
@@ -1240,6 +1375,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                                 .ExecuteUpdateAsync(
                                     setter =>
                                         setter
+                                            .SetChangedAt()
                                             .SetProperty(x => x.Status, JobStatus.Skipped)
                                             .SetProperty(x => x.ExecutedAt, operationTimeUtc)
                                             .SetProperty(x => x.UpdatedAt, operationTimeUtc)
@@ -1300,7 +1436,9 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                         results[inputIndex] = result;
                     }
 
-                    await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    await dbContext
+                        .SaveChangesAndStampAsync<TTimeJob, TCronJob>(cancellationToken)
+                        .ConfigureAwait(false);
 
                     // Read the committed schedule position back onto each result, the same way the pause and resume
                     // paths already re-read their definition. The watermark is stamped by the DATABASE clock inside the
@@ -1393,7 +1531,9 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
 
         await dbContext.Set<TCronJob>().AddRangeAsync(jobs, cancellationToken).ConfigureAwait(false);
 
-        var result = await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        var result = await dbContext
+            .SaveChangesAndStampAsync<TTimeJob, TCronJob>(cancellationToken)
+            .ConfigureAwait(false);
 
         // Direct (non-coordinated) cron enqueue owns its cache invalidation here, post-SaveChanges. The coordinated
         // enqueue path is a pure row write (WriteCronJobsAsync) and invalidates from the manager post-commit instead
@@ -1436,7 +1576,9 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                     var earliestNextDueUtc = _ApplySchedulePositionSeed(jobs, seeder, storeUtcNow);
 
                     await dbContext.Set<TCronJob>().AddRangeAsync(jobs, cancellationToken).ConfigureAwait(false);
-                    var affected = await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    var affected = await dbContext
+                        .SaveChangesAndStampAsync<TTimeJob, TCronJob>(cancellationToken)
+                        .ConfigureAwait(false);
                     await attempt.CommitAsync(cancellationToken).ConfigureAwait(false);
 
                     await InvalidateCronExpressionsCacheAsync().ConfigureAwait(false);
@@ -1471,7 +1613,9 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             entry.Property(nameof(BaseJobEntity.InitIdentifier)).IsModified = false;
         }
 
-        var result = await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        var result = await dbContext
+            .SaveChangesAndStampAsync<TTimeJob, TCronJob>(cancellationToken)
+            .ConfigureAwait(false);
 
         await InvalidateCronExpressionsCacheAsync().ConfigureAwait(false);
 
@@ -1492,6 +1636,67 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         await InvalidateCronExpressionsCacheAsync().ConfigureAwait(false);
 
         return result;
+    }
+
+    public async Task<int?> RemoveIdleCronJobAsync(Guid cronJobId, CancellationToken cancellationToken = default)
+    {
+        var removed = await JobsStoreTransaction
+            .ExecuteAsync<TDbContext, int?>(
+                DbContextFactory,
+                async (attempt, ct) =>
+                {
+                    var dbContext = attempt.DbContext;
+
+                    // The same no-op write every occurrence insert takes first, so no occurrence is added to this
+                    // definition until the delete commits or rolls back.
+                    var held = await dbContext
+                        .Set<TCronJob>()
+                        .Where(x => x.Id == cronJobId)
+                        .ExecuteUpdateAsync(
+                            setter => setter.SetProperty(x => x.ScheduleRevision, x => x.ScheduleRevision),
+                            ct
+                        )
+                        .ConfigureAwait(false);
+
+                    if (held == 0)
+                    {
+                        return null;
+                    }
+
+                    // Locking every stored occurrence makes a start that has not committed wait for this delete, and
+                    // the check below sees every start that committed first. The locked count is the cascade's reach.
+                    var occurrences = dbContext
+                        .Set<CronJobOccurrenceEntity<TCronJob>>()
+                        .Where(x => x.CronJobId == cronJobId);
+                    var stored = await occurrences
+                        .ExecuteUpdateAsync(setter => setter.SetProperty(x => x.Status, x => x.Status), ct)
+                        .ConfigureAwait(false);
+
+                    if (await occurrences.AnyAsync(x => x.Status == JobStatus.InProgress, ct).ConfigureAwait(false))
+                    {
+                        return null;
+                    }
+
+                    // The occurrence and attempt keys cascade, so the definition's delete removes its whole history.
+                    await dbContext
+                        .Set<TCronJob>()
+                        .Where(x => x.Id == cronJobId)
+                        .ExecuteDeleteAsync(ct)
+                        .ConfigureAwait(false);
+                    await attempt.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+
+                    return stored;
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (removed is not null)
+        {
+            await InvalidateCronExpressionsCacheAsync().ConfigureAwait(false);
+        }
+
+        return removed;
     }
 
     #endregion
@@ -1770,7 +1975,10 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                         .Set<CronJobOccurrenceEntity<TCronJob>>()
                         .AddRangeAsync(candidates, ct)
                         .ConfigureAwait(false);
-                    return (await context.SaveChangesAsync(ct).ConfigureAwait(false), candidates);
+                    return (
+                        await context.SaveChangesAndStampAsync<TTimeJob, TCronJob>(ct).ConfigureAwait(false),
+                        candidates
+                    );
                 },
                 cancellationToken
             )

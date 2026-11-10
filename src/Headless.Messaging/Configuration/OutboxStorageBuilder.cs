@@ -18,36 +18,44 @@ namespace Headless.Messaging;
 [PublicAPI]
 public sealed class OutboxStorageBuilder
 {
-    internal OutboxStorageBuilder(MessagingSetupBuilder setup, int ordinal)
+    internal OutboxStorageBuilder(MessagingSetupBuilder setup, string name, int ordinal)
     {
         Setup = Argument.IsNotNull(setup);
+        Name = Argument.IsNotNullOrWhiteSpace(name);
         OptionsName = string.Create(CultureInfo.InvariantCulture, $"Headless.Messaging.Outbox.{ordinal}");
     }
 
+    /// <summary>
+    /// The outbox's name, as passed to <see cref="MessagingSetupBuilder.AddOutbox"/>: unique within the host and
+    /// stable across redeploys and reordered registrations.
+    /// </summary>
+    public string Name { get; }
+
     internal MessagingSetupBuilder Setup { get; }
 
-    /// <summary>The named-options instance that holds this outbox's provider options, unique within the host.</summary>
+    /// <summary>
+    /// The named-options instance that holds this outbox's provider options, unique within the host. It is keyed on
+    /// the registration's position and never leaves the process, so it is not the outbox's identity.
+    /// </summary>
     internal string OptionsName { get; }
 
     internal bool IsConfigured { get; private set; }
 
     /// <summary>Registers the storage of this outbox. Called once by a storage package's <c>Use…</c> member.</summary>
-    /// <param name="name">How the registration reads in configuration errors, such as <c>AddOutbox().UsePostgreSql(…)</c>.</param>
     /// <param name="factory">Builds the outbox from the application's service provider.</param>
-    internal MessagingSetupBuilder UseStorage(string name, Func<IServiceProvider, MessagingOutbox> factory)
+    internal MessagingSetupBuilder UseStorage(Func<IServiceProvider, MessagingOutbox> factory)
     {
-        Argument.IsNotNullOrWhiteSpace(name);
         Argument.IsNotNull(factory);
 
         if (IsConfigured)
         {
             throw new InvalidOperationException(
-                "This outbox already has a storage. Call AddOutbox() again to register an outbox for another database."
+                $"Outbox '{Name}' already has a storage. Call AddOutbox(name) again to register an outbox for another database."
             );
         }
 
         IsConfigured = true;
-        Setup.Services.AddSingleton(new OutboxStorageRegistration(name, factory));
+        Setup.Services.AddSingleton(new OutboxStorageRegistration(Name, factory));
 
         return Setup;
     }

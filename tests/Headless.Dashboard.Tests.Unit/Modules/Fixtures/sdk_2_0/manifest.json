@@ -1,0 +1,30 @@
+{
+  "id": "diag",
+  "sdkVersion": "2.0",
+  "entry": "entry.js",
+  "product": "platform",
+  "sidebar": [
+    {
+      "entries": [
+        {
+          "id": "diag.nav.runs",
+          "label": "Runs",
+          "route": "runs",
+          "icon": "list"
+        }
+      ]
+    }
+  ],
+  "routes": [
+    {
+      "path": "runs",
+      "chunk": "runs.js"
+    }
+  ],
+  "commands": [
+    {
+      "id": "diag.open-runs",
+      "label": "Open runs"
+    }
+  ]
+}

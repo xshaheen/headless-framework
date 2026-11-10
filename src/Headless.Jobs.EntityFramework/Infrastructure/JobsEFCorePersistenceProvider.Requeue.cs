@@ -5,19 +5,45 @@ using Microsoft.EntityFrameworkCore;
 #pragma warning disable MA0133 // EF must keep DateTime.UtcNow in expression trees so providers translate the database clock before the DateTimeOffset assignment.
 namespace Headless.Jobs.Infrastructure;
 
-// Operator requeue of a Failed cron occurrence for the relational provider. It holds the definition row lock every
-// occurrence producer takes first, so the overlap and instant checks stay true until the write commits.
+// Operator requeue of a Failed, Cancelled, or Skipped cron occurrence for the relational provider. It holds the
+// definition row lock every occurrence producer takes first, so the overlap and instant checks stay true until the
+// write commits.
 internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>
     where TDbContext : DbContext
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {
-    public async Task<JobRequeueOutcome> RequeueCronJobOccurrenceAsync(
+    public Task<JobRequeueOutcome> RequeueCronJobOccurrenceAsync(
         Guid occurrenceId,
         string? traceParent,
         CancellationToken cancellationToken = default
     )
     {
+        return _RequeueCronJobOccurrenceAsync(occurrenceId, expectedChangedAt: null, traceParent, cancellationToken);
+    }
+
+    public Task<JobRequeueOutcome> RequeueCronJobOccurrenceIfUnchangedAsync(
+        Guid occurrenceId,
+        DateTime expectedChangedAt,
+        string? traceParent,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return _RequeueCronJobOccurrenceAsync(occurrenceId, expectedChangedAt, traceParent, cancellationToken);
+    }
+
+    // An Operation passes the marker its scope read returned; the final conditional write carries it, so a row written
+    // since then is not requeued again.
+    private async Task<JobRequeueOutcome> _RequeueCronJobOccurrenceAsync(
+        Guid occurrenceId,
+        DateTime? expectedChangedAt,
+        string? traceParent,
+        CancellationToken cancellationToken
+    )
+    {
+        var marker = expectedChangedAt is { } expected ? DateTime.SpecifyKind(expected, DateTimeKind.Utc) : default;
+        var compareMarker = expectedChangedAt is not null;
+
         await using var readContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -31,6 +57,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                 x.Status,
                 x.CronJobId,
                 x.ExecutionTime,
+                x.ChangedAt,
             })
             .SingleOrDefaultAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -40,9 +67,14 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             return JobRequeueOutcome.NotFound;
         }
 
-        if (observed.Status != JobStatus.Failed)
+        if (JobRequeueRules.RefuseCronJobOccurrence(observed.Status) is { } refused)
         {
-            return JobRequeueOutcome.NotFailed;
+            return refused;
+        }
+
+        if (compareMarker && observed.ChangedAt != marker)
+        {
+            return JobRequeueOutcome.Conflict;
         }
 
         return await JobsStoreTransaction
@@ -103,13 +135,16 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                     }
 
                     var affected = await occurrences
-                        .Where(x => x.Id == occurrenceId && x.Status == JobStatus.Failed)
+                        .Where(x => x.Id == occurrenceId && (!compareMarker || x.ChangedAt == marker))
+                        .Where(JobRequeueRules.RequeueableCronJobOccurrence<TCronJob>())
                         .ExecuteUpdateAsync(
                             setter =>
                                 setter
+                                    .SetChangedAt()
                                     .SetProperty(x => x.Status, JobStatus.Idle)
                                     .SetProperty(x => x.RetryCount, 0)
                                     .SetProperty(x => x.ExceptionMessage, _ => null)
+                                    .SetProperty(x => x.FailureFingerprint, _ => null)
                                     .SetProperty(x => x.SkippedReason, _ => null)
                                     .SetProperty(x => x.ExecutedAt, _ => null)
                                     .SetProperty(x => x.ElapsedTime, 0L)

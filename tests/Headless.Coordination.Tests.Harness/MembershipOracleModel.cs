@@ -205,7 +205,10 @@ public sealed class MembershipOracleModel(MembershipOracleScope scope) : IMember
                         _Identity(entry.Key),
                         _State(entry.Value),
                         descriptor?.Role,
-                        descriptor?.Metadata ?? new Dictionary<string, string>(StringComparer.Ordinal)
+                        descriptor?.Metadata ?? new Dictionary<string, string>(StringComparer.Ordinal),
+                        // The model's clock is virtual and the real stores' is the server's, so the beat instant is
+                        // never compared across them: Describe leaves it out.
+                        DateTimeOffset.UnixEpoch
                     );
                 })
                 .OrderBy(static s => s.Identity.ToString(), StringComparer.Ordinal),

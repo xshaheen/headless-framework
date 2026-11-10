@@ -13,11 +13,11 @@ public enum JobRequeueOutcome
     /// <summary>No row has the requested identifier.</summary>
     NotFound = 0,
 
-    /// <summary>The row moved from <c>Failed</c> back to <c>Idle</c> and will run again.</summary>
+    /// <summary>The row moved from <c>Failed</c>, <c>Cancelled</c>, or <c>Skipped</c> back to <c>Idle</c> and will run again.</summary>
     Requeued = 1,
 
     /// <summary>
-    /// The row is not <c>Failed</c>. A repeated request for a row that was already requeued lands here, so requeue is
+    /// The row is not <c>Failed</c>, <c>Cancelled</c>, or <c>Skipped</c>. A repeated request for a row that was already requeued lands here, so requeue is
     /// safe to repeat.
     /// </summary>
     NotFailed = 2,

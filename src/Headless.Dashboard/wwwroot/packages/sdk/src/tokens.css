@@ -1,0 +1,199 @@
+/*
+ * The dashboard's design tokens, the only place a raw value lives: styles/sdk.css names them for the SDK's utility
+ * classes and holds the element rules, and a raw colour, font, size, or duration anywhere else is a defect. Dark
+ * values sit on :root, so a browser that stored no choice renders dark whatever its system setting; light values
+ * apply only under [data-theme="light"], which the account menu sets. The contrast ratios in DESIGN.md were computed
+ * for these exact values; re-check any value you change.
+ */
+@font-face {
+  font-family: Geist;
+  src: url('./fonts/geist-latin.woff2') format('woff2');
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Geist Mono';
+  src: url('./fonts/geist-mono-latin.woff2') format('woff2');
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+:root {
+  /* Surfaces, darkest to lightest: neutrals on hue 275, the accent on 278. */
+  --ground: oklch(0.155 0.006 275);
+  --deep: oklch(0.135 0.006 275);
+  --panel: oklch(0.185 0.007 275);
+  --raised: oklch(0.215 0.008 275);
+  --hover: oklch(0.235 0.009 275);
+  --line: oklch(0.265 0.009 275);
+  --edge: oklch(0.36 0.01 275);
+  /* A field's boundary must reach 3:1 on its surface; --line and --edge do not. */
+  --field-edge: oklch(0.52 0.012 275);
+  --text: oklch(0.965 0.004 275);
+  --muted: oklch(0.74 0.012 275);
+  /* Lighter than the boards' value so faint text still passes 4.5:1 inside the open row's --accent-soft fill. */
+  --faint: oklch(0.67 0.012 275);
+  --accent: oklch(0.7 0.15 278);
+  --accent-soft: oklch(0.29 0.07 278);
+  --on-accent: oklch(0.15 0.01 278);
+  --fail-edge: oklch(0.45 0.1 25);
+  --scrim: oklch(0 0 0 / 0.5);
+
+  /* The six state roles. They paint dots, bars, and tags; only --fail may also colour danger text. */
+  --sched: oklch(0.77 0.09 205);
+  --enq: oklch(0.73 0.12 245);
+  --proc: oklch(0.83 0.13 80);
+  --ok: oklch(0.76 0.14 155);
+  --fail: oklch(0.72 0.16 25);
+  --off: oklch(0.62 0.01 275);
+  /* The halo a live or failing state's dot carries; light draws none. */
+  --glow: 8px;
+
+  /*
+   * Syntax colours for payloads and stack traces: text tones on the role hues, so they never read as a state mark,
+   * and off the accent hue, which stays for what to do next. Each passes 4.5:1 on --deep and --panel in both themes.
+   * Punctuation and file paths reuse the neutral text tones; an exception type stays --fail.
+   */
+  --syntax-key: oklch(0.8 0.07 205);
+  --syntax-string: oklch(0.8 0.1 155);
+  --syntax-number: oklch(0.84 0.1 80);
+  --syntax-literal: oklch(0.78 0.1 245);
+  --syntax-method: oklch(0.84 0.06 245);
+
+  color-scheme: dark;
+
+  /* Derived once here, so each follows its role into the light theme. */
+  --sched-soft: color-mix(in oklch, var(--sched) 16%, transparent);
+  --enq-soft: color-mix(in oklch, var(--enq) 16%, transparent);
+  --proc-soft: color-mix(in oklch, var(--proc) 16%, transparent);
+  --ok-soft: color-mix(in oklch, var(--ok) 16%, transparent);
+  --fail-soft: color-mix(in oklch, var(--fail) 16%, transparent);
+  --on-proc: oklch(0.2 0.02 80);
+  --avatar: oklch(0.45 0.08 200);
+  --on-avatar: oklch(0.98 0 0);
+  --shadow-float: 0 10px 30px oklch(0 0 0 / 0.3);
+  --shadow-card: 0 24px 60px oklch(0 0 0 / 0.28);
+
+  --sans: Geist, ui-sans-serif, system-ui, sans-serif;
+  --mono: 'Geist Mono', ui-monospace, monospace;
+
+  --text-body: 400 13.5px/20px var(--sans);
+  --text-mono: 400 12.5px/20px var(--mono);
+  --text-label: 500 11.5px/16px var(--sans);
+  --text-title: 600 15px/20px var(--sans);
+  --text-detail: 600 14px/20px var(--sans);
+  --text-small: 400 12px/18px var(--sans);
+  --text-stat: 600 20px/26px var(--mono);
+  --text-tag: 400 11px/16px var(--sans);
+  --text-axis: 400 10.5px/14px var(--mono);
+  --text-hero: 600 22px/28px var(--sans);
+  --text-mono-small: 400 12px/18px var(--mono);
+  --text-nav: 400 13px/20px var(--sans);
+  --text-tab: 500 12.5px/20px var(--sans);
+  --text-code: 400 12px/19px var(--mono);
+  --text-count: 400 11.5px/16px var(--mono);
+  --text-brand: 700 16px/20px var(--sans);
+
+  --sp-0: 2px;
+  --sp-1: 4px;
+  --sp-2: 6px;
+  --sp-3: 8px;
+  --sp-4: 10px;
+  --sp-5: 12px;
+  --sp-6: 14px;
+  --sp-7: 16px;
+  --sp-8: 20px;
+  --sp-9: 28px;
+
+  --radius-bar: 3px;
+  --radius-tag: 4px;
+  --radius-control: 5px;
+  --radius-panel: 6px;
+  --radius-float: 7px;
+  --radius-card: 12px;
+
+  --topbar-height: 48px;
+  --sidebar-width: 208px;
+  --statstrip-height: 85px;
+  --row-height: 34px;
+  --row-height-compact: 28px;
+  --card-row-height: 40px;
+  --chip-height: 22px;
+  --fchip-height: 26px;
+  --seg-form-height: 24px;
+  --tag-height: 18px;
+  --tag-pill-height: 20px;
+  --icon: 15px;
+  --icon-sm: 13px;
+  --grip-width: 36px;
+  --grip-height: 3px;
+  --bar-max: 520px;
+  --chart-height: 140px;
+  --chart-mini-height: 36px;
+  --textarea-min: 72px;
+  --payload-max: 480px;
+  --palette-input-height: 52px;
+  --dialog-width: 560px;
+  --goto-width: 200px;
+  --popover-width: 280px;
+  --flyout-width: 360px;
+  --sidebar-phone-width: 260px;
+  --sign-in-width: 400px;
+  --sign-in-field-height: 42px;
+  --sign-in-grid: 22px;
+  --panel-height: 340px;
+  --panel-side-width: 380px;
+  --resize-handle: 9px;
+  --control-height: 28px;
+  --field-height: 30px;
+
+  /*
+   * Breakpoints, named here for reference only: a media condition cannot read a custom property, so the SDK's classes
+   * use Tailwind's matching `md` breakpoint (48rem) and the SDK's breakpoints module mirrors them for script.
+   */
+  --bp-wide: 1280px;
+  --bp-medium: 1024px;
+  --bp-phone: 768px;
+
+  --z-sticky: 1;
+  --z-panel: 2;
+  --z-popover: 10;
+  --z-toast: 20;
+  --z-dialog: 30;
+  --z-palette: 40;
+
+  --ease-fast: 100ms cubic-bezier(0.2, 0, 0.38, 0.9);
+}
+
+:root[data-theme='light'] {
+  --ground: oklch(0.975 0.003 275);
+  --deep: oklch(0.952 0.004 275);
+  --panel: oklch(1 0 0);
+  --raised: oklch(0.962 0.004 275);
+  --hover: oklch(0.94 0.005 275);
+  --line: oklch(0.905 0.006 275);
+  --edge: oklch(0.78 0.01 275);
+  --field-edge: oklch(0.6 0.012 275);
+  --text: oklch(0.22 0.012 275);
+  --muted: oklch(0.43 0.014 275);
+  --faint: oklch(0.5 0.014 275);
+  --accent: oklch(0.52 0.18 278);
+  --accent-soft: oklch(0.94 0.035 278);
+  --on-accent: oklch(1 0 0);
+  --fail-edge: oklch(0.8 0.08 25);
+  --scrim: oklch(0.2 0.012 275 / 0.38);
+  --sched: oklch(0.57 0.09 205);
+  --enq: oklch(0.54 0.13 245);
+  /* Darker than the boards' value so an In-progress dot reaches 3:1 on every light surface. */
+  --proc: oklch(0.57 0.14 75);
+  --ok: oklch(0.54 0.13 155);
+  --fail: oklch(0.54 0.19 25);
+  --syntax-key: oklch(0.48 0.08 205);
+  --syntax-string: oklch(0.48 0.11 155);
+  --syntax-number: oklch(0.5 0.12 65);
+  --syntax-literal: oklch(0.48 0.13 245);
+  --syntax-method: oklch(0.42 0.08 245);
+  --glow: 0px;
+  color-scheme: light;
+}

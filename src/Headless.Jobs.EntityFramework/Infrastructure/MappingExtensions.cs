@@ -263,7 +263,9 @@ internal static class MappingExtensions
         var nextDueUtc = advance.NextDueUtc;
         setters
             .SetProperty(x => x.ReconciledThroughUtc, reconciledThroughUtc)
-            .SetProperty(x => x.NextDueUtc, nextDueUtc);
+            .SetProperty(x => x.NextDueUtc, nextDueUtc)
+            // The next due time is what a schedule list shows, so moving it is a change.
+            .SetChangedAt();
 
         // Null leaves the persisted fingerprint alone.
         if (advance.EvaluationFingerprint is { } fingerprint)
@@ -406,6 +408,11 @@ internal static class MappingExtensions
         )
         {
             set.Value(nameof(TimeJobEntity.ExceptionMessage), functionContext.ExceptionDetails);
+        }
+
+        if (propsToUpdate.Contains(nameof(JobExecutionState.FailureFingerprint)))
+        {
+            set.Value(nameof(TimeJobEntity.FailureFingerprint), functionContext.FailureFingerprint);
         }
 
         if (propsToUpdate.Contains(nameof(JobExecutionState.ElapsedTime)))

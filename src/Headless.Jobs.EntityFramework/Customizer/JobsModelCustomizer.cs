@@ -28,6 +28,13 @@ internal sealed class JobsModelCustomizer<TTimeJob, TCronJob>(ModelCustomizerDep
         base.Customize(builder, context);
         // Consumer OnModelCreating may rename any column. Build owned SQL only after those mappings have settled.
         JobsKeyedModelConfiguration.Configure<TTimeJob>(builder, context);
+        JobsAttemptModelConfiguration.Configure(
+            builder,
+            typeof(TTimeJob),
+            typeof(CronJobOccurrenceEntity<TCronJob>),
+            schema,
+            style
+        );
         JobsLeaseModelConfiguration.Configure(builder, context);
     }
 }

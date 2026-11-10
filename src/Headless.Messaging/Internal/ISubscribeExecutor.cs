@@ -74,6 +74,8 @@ internal sealed class SubscribeExecutor(
 
     private readonly MessagingOptions _options = options.Value;
 
+    private readonly MessageStateObservers _stateObservers = new(provider);
+
     // The lease-renewal timeout waits out a store that stopped answering, so it runs apart from the app clock.
     private readonly TimeProvider _backoffClock = BackoffClock.Resolve(provider);
 
@@ -684,7 +686,11 @@ internal sealed class SubscribeExecutor(
             .ConfigureAwait(false);
         executionState?.RecordLeaseTransition(updated, keepLease);
 
-        if (!updated)
+        if (updated)
+        {
+            _stateObservers.Notify(MessageType.Subscribe, message);
+        }
+        else
         {
             logger.SkippingSuccessfulAlreadyTerminal(message.StorageId);
         }
@@ -875,6 +881,11 @@ internal sealed class SubscribeExecutor(
         message.Origin.AddOrUpdateException(ex);
         message.HasUnpersistedOriginChanges = true;
         message.ExceptionInfo = ex.ExpandMessage();
+        // The fingerprint comes from the live exception: the stored text keeps too little of it to derive one later.
+        // An expired deadline is not the consumer's failure, so it groups under the fixed expiry cause.
+        message.FailureFingerprint = decision.IsSilentExpiry
+            ? MessagingFailureFingerprints.Expired
+            : MessagingFailureFingerprints.Of(ex);
         message.ExpiresAt = timeProvider.GetUtcNow().AddSeconds(_options.FailedMessageExpiredAfter);
 
         // Inline-retry budget still available: persist as Scheduled/NULL so a crash mid-delay
@@ -980,6 +991,11 @@ internal sealed class SubscribeExecutor(
             )
             .ConfigureAwait(false);
         executionState?.RecordLeaseTransition(affected, keepLease);
+
+        if (affected)
+        {
+            _stateObservers.Notify(MessageType.Subscribe, message);
+        }
 
         // The terminal write took effect, so this attempt owns the request's outcome and answers it, before the
         // terminal callback runs so the caller is not held up by it. An expired request's caller is gone.

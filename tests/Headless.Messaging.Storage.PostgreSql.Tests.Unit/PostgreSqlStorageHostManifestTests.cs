@@ -36,7 +36,7 @@ public sealed class PostgreSqlStorageHostManifestTests : TestBase
                 {
                     setup.UseInMemory();
                     setup.UsePostgreSql(_UnreachableDatabase);
-                    setup.AddOutbox().UsePostgreSql(_UnreachableBillingDatabase);
+                    setup.AddOutbox("billing").UsePostgreSql(_UnreachableBillingDatabase);
                 })
             )
             .Build();
@@ -52,7 +52,7 @@ public sealed class PostgreSqlStorageHostManifestTests : TestBase
             .EnumerateArray()
             .Select(x => (x.GetProperty("name").GetString(), x.GetProperty("storage").GetString()))
             .Should()
-            .Equal(("primary", "PostgreSQL"), ("outbox-1", "PostgreSQL"));
+            .Equal(("primary", "PostgreSQL"), ("billing", "PostgreSQL"));
     }
 
     private static async Task<(int ExitCode, string StandardOutput)> _DescribeAsync(IHost host)

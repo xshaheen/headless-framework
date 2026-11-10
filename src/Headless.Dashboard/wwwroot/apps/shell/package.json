@@ -1,0 +1,14 @@
+{
+  "name": "@headless/dashboard-shell",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@headless/dashboard-sdk": "1.0.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@headless/dashboard-vite": "1.0.0"
+  }
+}

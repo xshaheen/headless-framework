@@ -57,6 +57,33 @@ public abstract class MembershipConformanceTests<TFixture>(TFixture fixture) : T
         live.Should().Equal([identity]);
     }
 
+    public virtual async Task should_report_the_last_heartbeat_in_the_snapshot()
+    {
+        // The beat is stamped by the store's clock, not the test's, so it is bracketed by host reads taken around the
+        // call and widened by a tolerance for the skew between the host and a containerized store.
+        var skewTolerance = TimeSpan.FromSeconds(2);
+        var cluster = _Cluster();
+        await using var node = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var identity = await node.Membership.RegisterAsync(AbortToken);
+
+        await TimeProvider.System.Delay(CoordinationFixtureExtensions.HeartbeatInterval, AbortToken);
+        var before = TimeProvider.System.GetUtcNow();
+        var firstAccepted = await node.Membership.HeartbeatAsync(AbortToken);
+        var after = TimeProvider.System.GetUtcNow();
+        var first = await node.Membership.GetLivenessSnapshotAsync(AbortToken);
+
+        // Stay below the suspicion threshold so the second beat is accepted.
+        await TimeProvider.System.Delay(CoordinationFixtureExtensions.HeartbeatInterval, AbortToken);
+        var secondAccepted = await node.Membership.HeartbeatAsync(AbortToken);
+        var second = await node.Membership.GetLivenessSnapshotAsync(AbortToken);
+
+        firstAccepted.Should().BeTrue();
+        secondAccepted.Should().BeTrue();
+        var firstBeat = first.Should().ContainSingle(x => x.Identity == identity).Which.LastHeartbeatAt;
+        firstBeat.Should().BeOnOrAfter(before - skewTolerance).And.BeOnOrBefore(after + skewTolerance);
+        second.Should().ContainSingle(x => x.Identity == identity).Which.LastHeartbeatAt.Should().BeAfter(firstBeat);
+    }
+
     public virtual async Task should_return_dead_snapshot_before_retention_prune()
     {
         var cluster = _Cluster();

@@ -166,14 +166,20 @@ internal sealed class JobsRowSet
 
     /// <summary>The assignments as the write a transition composes into its statement.</summary>
     /// <param name="condition">An extra predicate over the row, for <c>WriteAsync</c> only.</param>
+    /// <remarks>
+    /// Every write also stamps the row's change marker, unless the caller assigned it, so a change read on any node
+    /// sees each fenced transition (claim, settle, release, revoke) exactly as it sees an EF Core update.
+    /// </remarks>
     public FencedRowWrite ToWrite(string? condition = null)
     {
         var parameters = _parameters.ToArray();
         var lists = _lists.ToArray();
         var dialect = _dialect;
+        // Computed per render rather than added to the assignments, so a set rendered twice stamps the marker once.
+        var assignments = _ChangeMarkerAssignment() is { } marker ? [.. _assignments, marker] : _assignments;
 
         return new FencedRowWrite(
-            Set: _assignments.Count == 0 ? null : string.Join(", ", _assignments),
+            Set: assignments.Count == 0 ? null : string.Join(", ", assignments),
             Condition: condition,
             Bind: parameters.Length == 0 && lists.Length == 0
                 ? null
@@ -190,6 +196,45 @@ internal sealed class JobsRowSet
                     }
                 }
         );
+    }
+
+    /// <summary>
+    /// The change-marker assignment: the later of the database statement clock and the row's previous marker plus one
+    /// tick of the column's precision, the same value <c>JobsChangeMarker.Next</c> translates to for an EF Core update.
+    /// <see langword="null"/> when the entity has no marker or the caller already assigned it.
+    /// </summary>
+    private string? _ChangeMarkerAssignment()
+    {
+        if (_entity.FindProperty(nameof(BaseJobEntity.ChangedAt)) is null)
+        {
+            return null;
+        }
+
+        var column = Column(nameof(BaseJobEntity.ChangedAt));
+
+        if (_assignments.Exists(assignment => assignment.StartsWith(column + " = ", StringComparison.Ordinal)))
+        {
+            return null;
+        }
+
+        var now = DatabaseNowSql(nameof(BaseJobEntity.ChangedAt));
+
+        if (_dialect is PostgreSqlDialect)
+        {
+            // PostgreSQL timestamps count microseconds, its smallest step.
+            return $"{column} = GREATEST({now}, {column} + INTERVAL '1 microsecond')";
+        }
+
+        if (JobsSqlDialects.IsSqlite(_dialect))
+        {
+            // SQLite stores the marker as text and has no tick arithmetic on it, so the clock alone stamps it, as the
+            // EF Core translation does there.
+            return $"{column} = {now}";
+        }
+
+        // datetime2 counts 100-nanosecond ticks. A CASE rather than GREATEST, which needs SQL Server 2022.
+        return $"{column} = CASE WHEN DATEADD(nanosecond, 100, {column}) > CAST({now} AS datetime2(7)) "
+            + $"THEN DATEADD(nanosecond, 100, {column}) ELSE CAST({now} AS datetime2(7)) END";
     }
 
     private RelationalTypeMapping _LeaseProperty(string propertyName)

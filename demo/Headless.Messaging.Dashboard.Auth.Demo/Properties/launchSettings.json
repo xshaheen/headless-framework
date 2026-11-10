@@ -3,7 +3,7 @@
     "Sample.Dashboard.Auth": {
       "commandName": "Project",
       "launchBrowser": true,
-      "launchUrl": "messaging/dashboard",
+      "launchUrl": "headless/messaging",
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development"
       },

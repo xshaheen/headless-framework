@@ -1127,6 +1127,26 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         return affected;
     }
 
+    public async Task<bool> OpenAttemptAsync(
+        JobExecutionState context,
+        DateTime startedAt,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (context.ClaimedRow is not { } row || context.ClaimOwner is not { Length: > 0 } claimOwner)
+        {
+            return false;
+        }
+
+        return context.Type == JobType.CronJobOccurrence
+            ? await persistenceProvider
+                .OpenCronJobOccurrenceAttemptAsync(row, claimOwner, startedAt, cancellationToken)
+                .ConfigureAwait(false)
+            : await persistenceProvider
+                .OpenTimeJobAttemptAsync(row, claimOwner, startedAt, cancellationToken)
+                .ConfigureAwait(false);
+    }
+
     public async Task<int> ReleaseInProgressAsync(
         JobExecutionState context,
         CancellationToken cancellationToken = default
@@ -1164,6 +1184,12 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
                 .ConfigureAwait(false);
     }
 
+    // The failed attempt the executor recorded on the state for a deferred retry, or null when it recorded none.
+    private static JobAttemptEnd? _FailedAttempt(JobExecutionState context)
+    {
+        return context.PropertiesToUpdate.Contains(nameof(JobExecutionState.AttemptEnd)) ? context.AttemptEnd : null;
+    }
+
     public async Task<int> RescheduleRetryAsync(
         JobExecutionState context,
         int retryCount,
@@ -1177,7 +1203,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         }
 
         var affected = await persistenceProvider
-            .RescheduleTimeJobRetryAsync(row, retryCount, retryAfter, cancellationToken)
+            .RescheduleTimeJobRetryAsync(row, retryCount, retryAfter, _FailedAttempt(context), cancellationToken)
             .ConfigureAwait(false);
 
         if (affected > 0)

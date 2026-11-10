@@ -57,7 +57,14 @@ public sealed partial class SqlServerSharedSchemaTests(SqlServerSharedSchemaFixt
         };
 
     protected override string[] ExpectedJobsTables { get; } =
-    ["CronJobOccurrences", "CronJobs", "TimeJobIdempotencyReservations", "TimeJobs"];
+    [
+        "CronJobOccurrenceAttempts",
+        "CronJobOccurrences",
+        "CronJobs",
+        "TimeJobAttempts",
+        "TimeJobIdempotencyReservations",
+        "TimeJobs",
+    ];
 
     // The lock fence sequence carries the default key prefix, so locks with different prefixes stay independent.
     protected override IReadOnlyDictionary<string, string[]> ExpectedRawSequences { get; } =

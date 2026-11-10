@@ -2199,7 +2199,10 @@ public sealed class ConsumerRegisterTests : TestBase
         );
 
         run.Client.CommitCount.Should().Be(1);
-        run.Storage.ReceivedExceptionRows.Should().ContainSingle("reject stores the received-exception row");
+        run.Storage.ReceivedExceptionRows.Should()
+            .ContainSingle("reject stores the received-exception row")
+            .Which.FailureFingerprint.Should()
+            .Be("v1:poison", "a message rejected on arrival groups under the poison cause");
         exhausted.Should().NotBeNull();
         exhausted!.Exception.Should().BeSameAs(cause, "OnTerminal receives the reject cause");
         exhausted.Reason.Should().Be(MessageTerminalReason.PermanentFailure);
@@ -2383,6 +2386,7 @@ public sealed class ConsumerRegisterTests : TestBase
         run.Client.CommitCount.Should().Be(1);
         var row = run.Storage.ReceivedExceptionRows.Should().ContainSingle().Subject;
         row.Origin.Headers[Headers.Exception].Should().Be(nameof(MessageDeserializationException));
+        row.FailureFingerprint.Should().Be("v1:deserialization");
     }
 
     [Fact]

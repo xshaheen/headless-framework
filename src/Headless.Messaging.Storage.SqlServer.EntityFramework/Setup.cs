@@ -70,7 +70,6 @@ public static class SetupMessagingSqlServerEntityFramework
         {
             var setup = SetupMessagingSqlServer.AddSqlServerOutboxCore(
                 outbox,
-                $"AddOutbox().UseSqlServerEntityFramework<{typeof(TContext).Name}>()",
                 options =>
                     options.Configure<IServiceScopeFactory>(
                         (storageOptions, scopeFactory) =>

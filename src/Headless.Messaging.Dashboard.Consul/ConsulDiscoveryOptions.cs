@@ -21,10 +21,7 @@ public sealed class ConsulDiscoveryOptions
     /// <summary>Default port used when registering this node (<c>5000</c>).</summary>
     public const int DefaultCurrentNodePort = 5000;
 
-    /// <summary>Default dashboard base path used for the Consul health-check URL (<c>/messaging/dashboard</c>).</summary>
-    public const string DefaultMatchPath = "/messaging/dashboard";
-
-    /// <summary>Default scheme for the health-check endpoint URL (<c>http</c>).</summary>
+    /// <summary>Default scheme of every discovered node's address (<c>http</c>).</summary>
     public const string DefaultScheme = "http";
 
     /// <summary>Host name or IP of the Consul agent API endpoint. Default: <c>localhost</c>.</summary>
@@ -49,10 +46,14 @@ public sealed class ConsulDiscoveryOptions
     /// </summary>
     public string? NodeName { get; set; }
 
-    /// <summary>Dashboard path segment appended to the health-check URL. Default: <c>/messaging/dashboard</c>.</summary>
-    public string MatchPath { get; set; } = DefaultMatchPath;
-
-    /// <summary>URL scheme for the Consul health-check endpoint (<c>http</c> or <c>https</c>). Default: <c>http</c>.</summary>
+    /// <summary>
+    /// URL scheme (<c>http</c> or <c>https</c>) of the address the dashboard calls every discovered node at.
+    /// Default: <c>http</c>.
+    /// </summary>
+    /// <remarks>
+    /// Dashboard forwarding refuses an <c>http</c> node unless its <c>AllowInsecurePeers</c> is set, so a deployment
+    /// that forwards sets <c>https</c> on every node.
+    /// </remarks>
     public string Scheme { get; set; } = DefaultScheme;
 
     /// <summary>Additional tags merged with the built-in Headless tags when registering with Consul.</summary>

@@ -4,7 +4,6 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using Headless;
 using Headless.Jobs;
-using Headless.Jobs.Infrastructure.Dashboard;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Time.Testing;
@@ -13,7 +12,7 @@ namespace Tests.Instrumentation;
 
 /// <summary>
 /// A job's execution is its own trace, linked back to the span that scheduled it, through the real scheduler, managers,
-/// in-memory store, dashboard repository, and execution handler.
+/// in-memory store, dashboard backend, and execution handler.
 /// </summary>
 [Collection<JobsInstrumentationCollection>]
 public sealed class JobsTraceLinkTests : TestBase
@@ -226,12 +225,12 @@ public sealed class JobsTraceLinkTests : TestBase
         await using var harness = Harness.Create();
         var definitionId = await harness.Scheduler.ScheduleRecurringAsync<TraceJob>("0 0 0 1 1 *", AbortToken);
         var dispatched = new List<JobExecutionState>();
-        var repository = harness.DashboardRepository(dispatched);
+        var dashboard = harness.DashboardBackend(dispatched);
 
         // when
         using (_Requests.StartActivity("dashboard"))
         {
-            await repository.AddOnDemandCronJobOccurrenceAsync(definitionId, AbortToken);
+            await dashboard.RunCronJobNowAsync(definitionId, AbortToken);
         }
 
         await harness.ExecuteAsync(dispatched);
@@ -417,9 +416,7 @@ public sealed class JobsTraceLinkTests : TestBase
         public async Task<CronJobOccurrenceEntity<CronJobEntity>[]> OccurrencesAsync() =>
             await _Store.GetAllCronJobOccurrencesAsync(predicate: null, AbortToken);
 
-        public JobsDashboardRepository<TimeJobEntity, CronJobEntity> DashboardRepository(
-            List<JobExecutionState> dispatched
-        )
+        public IJobsDashboardBackend DashboardBackend(List<JobExecutionState> dispatched)
         {
             var dispatcher = Substitute.For<IJobsDispatcher>();
             dispatcher
@@ -427,21 +424,22 @@ public sealed class JobsTraceLinkTests : TestBase
                 .Returns(Task.CompletedTask)
                 .AndDoes(call => dispatched.AddRange(call.Arg<JobExecutionState[]>()));
 
-            return new JobsDashboardRepository<TimeJobEntity, CronJobEntity>(
-                new JobsExecutionContext(),
-                _Store,
-                Substitute.For<IJobsHostScheduler>(),
-                Substitute.For<IJobsNotificationHubSender>(),
-                dispatcher,
-                _provider.GetRequiredService<JobFunctionRegistry>(),
-                _time,
-                _provider.GetRequiredService<IGuidGenerator>(),
-                _provider,
-                JobsRequestSerializationOptions.Default
+            return new JobsDashboardBackend<TimeJobEntity, CronJobEntity>(
+                new DispatcherOverride(_provider, dispatcher)
             );
         }
 
         public ValueTask DisposeAsync() => _provider.DisposeAsync();
+    }
+
+    /// <summary>
+    /// The host's services with the dispatcher swapped for one that records, so the test runs the dispatched claim
+    /// itself instead of the disabled background worker.
+    /// </summary>
+    private sealed class DispatcherOverride(IServiceProvider inner, IJobsDispatcher dispatcher) : IServiceProvider
+    {
+        public object? GetService(Type serviceType) =>
+            serviceType == typeof(IJobsDispatcher) ? dispatcher : inner.GetService(serviceType);
     }
 
     private sealed class SpanRecorder : IDisposable

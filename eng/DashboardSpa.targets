@@ -20,7 +20,21 @@
   <PropertyGroup>
     <DashboardSpaRoot>$(MSBuildProjectDirectory)/wwwroot</DashboardSpaRoot>
     <DashboardSpaDist>$(DashboardSpaRoot)/dist</DashboardSpaDist>
+    <!--
+      The file _BuildDashboardSpa treats as its output. A SPA whose build writes index.html before a later step that
+      can fail sets this to a file its last step writes, so a failed build leaves the target out of date.
+    -->
+    <DashboardSpaBuildStamp Condition="'$(DashboardSpaBuildStamp)' == ''"
+      >$(DashboardSpaDist)/index.html</DashboardSpaBuildStamp>
     <DashboardSpaInputManifest>$(BaseIntermediateOutputPath)dashboard-spa-inputs.txt</DashboardSpaInputManifest>
+    <!--
+      The folder holding the lockfile npm ci installs from: the SPA's own folder when it has a package-lock.json, else
+      the nearest folder above it that has one, which for a member of the repository-root npm workspace is the root.
+      Each project's dist output and build stamp stay under its own wwwroot either way.
+    -->
+    <DashboardSpaNpmRoot Condition="'$(DashboardSpaNpmRoot)' == ''"
+      >$([MSBuild]::GetDirectoryNameOfFileAbove('$(DashboardSpaRoot)', 'package-lock.json'))</DashboardSpaNpmRoot>
+    <DashboardSpaNpmRoot Condition="'$(DashboardSpaNpmRoot)' == ''">$(DashboardSpaRoot)</DashboardSpaNpmRoot>
     <BuildDashboardSpa Condition="'$(BuildDashboardSpa)' == ''">true</BuildDashboardSpa>
     <NpmTool Condition="'$(NpmTool)' == ''">npm</NpmTool>
   </PropertyGroup>
@@ -31,7 +45,12 @@
     <DashboardSpaInput Include="$(DashboardSpaRoot)/public/**/*" />
     <DashboardSpaInput Include="$(DashboardSpaRoot)/index.html" />
     <DashboardSpaInput Include="$(DashboardSpaRoot)/package.json" />
-    <DashboardSpaInput Include="$(DashboardSpaRoot)/package-lock.json" />
+    <DashboardSpaInput
+      Include="$(DashboardSpaNpmRoot)/package.json"
+      Condition="'$(DashboardSpaNpmRoot)' != '$(DashboardSpaRoot)'"
+    />
+    <DashboardSpaInput Include="$(DashboardSpaNpmRoot)/package-lock.json" />
+    <DashboardSpaInput Include="$(DashboardSpaNpmRoot)/.npmrc" Condition="Exists('$(DashboardSpaNpmRoot)/.npmrc')" />
     <DashboardSpaInput Include="$(DashboardSpaRoot)/vite.config.*" />
     <DashboardSpaInput Include="$(DashboardSpaRoot)/postcss.config.*" />
     <DashboardSpaInput Include="$(DashboardSpaRoot)/tailwind.config.*" />
@@ -62,20 +81,23 @@
   <Target
     Name="_RestoreDashboardSpa"
     Condition="'$(BuildDashboardSpa)' == 'true'"
-    Inputs="$(DashboardSpaRoot)/package-lock.json"
-    Outputs="$(DashboardSpaRoot)/node_modules/.package-lock.json"
+    Inputs="$(DashboardSpaNpmRoot)/package-lock.json"
+    Outputs="$(DashboardSpaNpmRoot)/node_modules/.package-lock.json"
   >
-    <Message Importance="high" Text="[$(MSBuildProjectName)] Installing SPA dependencies ($(NpmTool) ci)..." />
-    <Exec Command="$(NpmTool) ci" WorkingDirectory="$(DashboardSpaRoot)" />
+    <Message
+      Importance="high"
+      Text="[$(MSBuildProjectName)] Installing SPA dependencies ($(NpmTool) ci in $(DashboardSpaNpmRoot))..."
+    />
+    <Exec Command="$(NpmTool) ci" WorkingDirectory="$(DashboardSpaNpmRoot)" />
   </Target>
 
-  <!-- Build the SPA; re-runs only when inputs change or dist/index.html is missing. -->
+  <!-- Build the SPA; re-runs only when inputs change or the build stamp is missing. -->
   <Target
     Name="_BuildDashboardSpa"
     DependsOnTargets="_ComputeDashboardSpaInputs;_RestoreDashboardSpa"
     Condition="'$(BuildDashboardSpa)' == 'true'"
     Inputs="$(MSBuildThisFileFullPath);$(DashboardSpaInputManifest);@(DashboardSpaInput)"
-    Outputs="$(DashboardSpaDist)/index.html"
+    Outputs="$(DashboardSpaBuildStamp)"
   >
     <Message Importance="high" Text="[$(MSBuildProjectName)] Building SPA ($(NpmTool) run build)..." />
     <Exec Command="$(NpmTool) run build" WorkingDirectory="$(DashboardSpaRoot)" />
@@ -86,8 +108,9 @@
     every build, even when _BuildDashboardSpa is skipped as up-to-date.
   -->
   <Target Name="_EmbedDashboardSpa" BeforeTargets="AssignTargetPaths" DependsOnTargets="_BuildDashboardSpa">
+    <!-- The build stamp, not index.html: a dashboard module's build writes no shell document. -->
     <Error
-      Condition="!Exists('$(DashboardSpaDist)/index.html')"
+      Condition="!Exists('$(DashboardSpaBuildStamp)')"
       Text="SPA build output not found at '$(DashboardSpaDist)'. Run '$(NpmTool) run build' in '$(DashboardSpaRoot)', or build with BuildDashboardSpa=true."
     />
     <ItemGroup>

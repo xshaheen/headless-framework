@@ -1,4 +1,5 @@
 using Amazon;
+using Headless.Dashboard;
 using Headless.Messaging;
 using Headless.Messaging.Dashboard;
 
@@ -10,8 +11,10 @@ builder.Services.AddHeadlessMessaging(setup =>
     setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
     setup.UseInMemoryStorage();
     setup.UseAws(RegionEndpoint.CNNorthWest1);
-    setup.UseDashboard(d => d.WithNoAuth());
 });
+
+// The Messaging module of the Headless dashboard, at /headless/messaging. No auth: a local demo only.
+builder.Services.AddHeadlessDashboard(dashboard => dashboard.WithNoAuth().AddMessaging());
 
 builder.Services.AddControllers();
 
@@ -19,6 +22,6 @@ var app = builder.Build();
 
 app.UseRouting();
 app.MapControllers();
-app.MapHeadlessMessagingDashboard();
+app.MapHeadlessDashboard();
 
 await app.RunAsync();

@@ -46,7 +46,7 @@ git mv src/Core/* docs/moved.md
 git commit -qam 'Move code into docs'
 assert_checks 'rename out of source' pull_request "$before" HEAD true false false
 before=$(git rev-parse HEAD)
-add_path src/Headless.Jobs.Dashboard/wwwroot/src/App.vue
+add_path src/Headless.Jobs.Dashboard/wwwroot/src/module.ts
 assert_checks 'dashboard' pull_request "$before" HEAD true true false
 before=$(git rev-parse HEAD)
 add_path demo/Headless.Tus.Demo/frontend/src/App.tsx

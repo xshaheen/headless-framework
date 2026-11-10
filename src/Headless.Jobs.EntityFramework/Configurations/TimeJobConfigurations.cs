@@ -102,6 +102,25 @@ public class TimeJobConfigurations<TTimeJob>(string schema, StorageNamingStyle s
             .HasIndex("TenantId", "Status", "ExecutionTime")
             .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, "TenantId", "Status", "ExecutionTime"));
 
+        // Failures group by cause per function: the dashboard counts and lists failed runs by this key.
+        builder.Property(x => x.FailureFingerprint).HasMaxLength(JobFailureFingerprints.MaxLength);
+        builder
+            .HasIndex("Function", "FailureFingerprint", "Status")
+            .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, "Function", "FailureFingerprint", "Status"));
+
+        // The dashboard's run list sorted by function pages on (Function, Id), so each page seeks instead of sorting.
+        builder
+            .HasIndex("Function", "Id")
+            .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, "Function", "Id"));
+
+        // The dashboard's Trace view lists every run of one correlation id.
+        builder.Property(x => x.CorrelationId).HasMaxLength(JobContract.CorrelationIdMaxLength);
+        builder
+            .HasIndex("CorrelationId")
+            .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, "CorrelationId"));
+
+        JobsChangeMarkerModelConfiguration.ConfigureColumn(builder, style, table);
+
         builder.ToTable(table, schema);
         builder.ApplyJobsColumnNaming(style);
     }

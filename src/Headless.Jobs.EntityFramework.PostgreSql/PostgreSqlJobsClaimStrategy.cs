@@ -496,6 +496,11 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         }
     }
 
+    // The change marker a claim stamps: the statement clock, or one microsecond (PostgreSQL's precision) past the
+    // row's previous marker when the clock has not moved past it.
+    private static string _NextChangedAt(string column, string now = SqlDialectTokens.Now) =>
+        $"GREATEST({now}, {column} + INTERVAL '1 microsecond')";
+
     // Grants every occurrence the wave claimed in one statement, after the inserts and token claims, so each row takes
     // its own generation and the database clock stamps its expiry. The wave holds every row's lock until commit, so
     // the fence matches each one; the hydrate reads only the rows this owner holds, so a row it did not match is
@@ -663,6 +668,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                 [mapping.Id],
                 $"""
                 {mapping.UpdatedAt} = {SqlDialectTokens.Now},
+                    {mapping.ChangedAt} = {_NextChangedAt(mapping.ChangedAt)},
                     {mapping.Status} = @queued,
                     {mapping.OnNodeDeath} = @onNodeDeath
                 """,
@@ -717,6 +723,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                 $"""
                 {scope.Assignments()},
                     {mapping.UpdatedAt} = {SqlDialectTokens.Now},
+                    {mapping.ChangedAt} = {_NextChangedAt(mapping.ChangedAt)},
                     {mapping.Status} = @queued
                 """,
                 [mapping.Id],
@@ -865,6 +872,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                 $"""
                 {scope.Assignments()},
                     {mapping.UpdatedAt} = {SqlDialectTokens.Now},
+                    {mapping.ChangedAt} = {_NextChangedAt(mapping.ChangedAt)},
                     {mapping.Status} = @queuedStatus
                 """,
                 [.. scope.Returning, mapping.UpdatedAt],
@@ -945,7 +953,8 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             )
             UPDATE {mapping.Table} AS job
             SET {scope.Assignments(rootDeadline)},
-                {mapping.UpdatedAt} = (SELECT root.{mapping.UpdatedAt} FROM {mapping.Table} AS root WHERE root.{mapping.Id} = descendants.root_id)
+                {mapping.UpdatedAt} = (SELECT root.{mapping.UpdatedAt} FROM {mapping.Table} AS root WHERE root.{mapping.Id} = descendants.root_id),
+                {mapping.ChangedAt} = {_NextChangedAt("job." + mapping.ChangedAt, "clock_timestamp()")}
             FROM descendants
             WHERE job.{mapping.Id} = descendants.node_id AND job.{mapping.Status} = @idle
             RETURNING job.{mapping.Id}, job.{mapping.Lease.Generation};

@@ -140,7 +140,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         }
 
         await context.Set<TTimeJob>().AddAsync(job, cancellationToken).ConfigureAwait(false);
-        await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        await context.SaveChangesAndStampAsync<TTimeJob, TCronJob>(cancellationToken).ConfigureAwait(false);
         return new JobIdempotencyEnqueueResult(job.Id, Created: true) { StoreUtcNow = seeder is null ? null : now };
     }
 }

@@ -70,7 +70,7 @@ internal sealed partial class RelationalDataStorage
                                 transaction,
                                 _LeaseRow(leaseTable, message),
                                 _Write(
-                                    set: $"{_t.StatusName}=@StatusName",
+                                    set: $"{_t.StatusName}=@StatusName, {_t.StampChange}",
                                     condition: _releaseLeaseCondition[0],
                                     bind: command =>
                                     {
@@ -118,8 +118,11 @@ internal sealed partial class RelationalDataStorage
                 $"({_t.Id}=@Id{suffix} AND {_t.IntentType}=@IntentType{suffix} AND {_t.LeaseGeneration}=@Generation{suffix})";
         }
 
-        var sql =
-            $"UPDATE {_publishedTable} SET {_t.StatusName}=@StatusName WHERE {_t.LeaseState} <> {_t.ActiveLease} AND {_terminalGuard} AND ({string.Join(" OR ", predicates)});";
+        var sql = _dialect.Render(
+            new SqlClockedStatement(
+                $"UPDATE {_publishedTable} SET {_t.StatusName}=@StatusName, {_t.StampChange} WHERE {_t.LeaseState} <> {_t.ActiveLease} AND {_terminalGuard} AND ({string.Join(" OR ", predicates)});"
+            )
+        );
 
         return RelationalCommand.ExecuteNonQueryAsync(
             connection,
@@ -153,7 +156,8 @@ internal sealed partial class RelationalDataStorage
     }
 
     /// <summary>
-    /// Updates the status of a published message. Respects the terminal-row guard — rows already
+    /// Updates the status of a published message, including writing <c>ExceptionInfo</c> and
+    /// <c>FailureFingerprint</c> when the send faulted. Respects the terminal-row guard — rows already
     /// in a permanent <c>Succeeded</c> or <c>Failed</c> state with no pending retry are not mutated.
     /// </summary>
     /// <returns><see langword="true"/> if a row was updated; <see langword="false"/> if the guard blocked it.</returns>
@@ -210,8 +214,8 @@ internal sealed partial class RelationalDataStorage
     }
 
     /// <summary>
-    /// Updates the status of a received message, including writing <c>ExceptionInfo</c> when the
-    /// message faulted. Respects the terminal-row guard — permanently completed rows are not mutated.
+    /// Updates the status of a received message, including writing <c>ExceptionInfo</c> and
+    /// <c>FailureFingerprint</c> when the message faulted. Respects the terminal-row guard — permanently completed rows are not mutated.
     /// </summary>
     /// <returns><see langword="true"/> if a row was updated; <see langword="false"/> if the guard blocked it.</returns>
     public ValueTask<bool> ChangeReceiveStateAsync(
@@ -371,14 +375,19 @@ internal sealed partial class RelationalDataStorage
         set.Add($"{_t.ExpiresAt}=@ExpiresAt");
         set.Add($"{_t.NextRetryAt}={_nextRetryAtAssignment}");
         set.Add($"{_t.StatusName}=@StatusName");
+        set.Add(_t.StampChange);
+
+        // Both tables record the failure the caller carries, its text and its fingerprint, in the guarded statement
+        // that writes the state, so a write the guard refuses records nothing.
+        set.Add($"{_t.ExceptionInfo}=@ExceptionInfo");
+        set.Add($"{_t.FailureFingerprint}=@FailureFingerprint");
 
         var condition = _terminalGuardWithRetries;
 
         if (received)
         {
-            // The received table also records the failure, ends the inbox attempt with the lease, and stamps an inbox
-            // generation's terminal time and the retention it starts.
-            set.Add($"{_t.ExceptionInfo}=@ExceptionInfo");
+            // The received table also ends the inbox attempt with the lease, and stamps an inbox generation's terminal
+            // time and the retention it starts.
             set.Add($"{_t.AttemptId}=CASE WHEN @KeepLease = {_t.True} THEN {_t.AttemptId} ELSE NULL END");
             set.Add(
                 $"{_t.TerminalAt}=CASE WHEN {_t.IsInboxRecord} = {_t.True} AND @IsTerminal = {_t.True} THEN {SqlDialectTokens.Now} ELSE {_t.TerminalAt} END"
@@ -438,10 +447,11 @@ internal sealed partial class RelationalDataStorage
             _dialect.AddParameter(command, "OriginalRetries", SqlColumnType.Int32, originalRetries);
             _dialect.AddParameter(command, "OriginalInlineAttempts", SqlColumnType.Int32, originalInlineAttempts);
             _dialect.AddParameter(command, "StatusName", _StatusType, state.ToString("G"));
+            _dialect.AddParameter(command, "ExceptionInfo", _ContentType, message.ExceptionInfo);
+            _dialect.AddParameter(command, "FailureFingerprint", _FingerprintType, message.FailureFingerprint);
 
             if (received)
             {
-                _dialect.AddParameter(command, "ExceptionInfo", _ContentType, message.ExceptionInfo);
                 _dialect.AddParameter(command, "IsTerminal", SqlColumnType.Boolean, isTerminal);
                 _BindInboxAttempt(command, message.InboxAttemptFence, matchStorageId: false);
             }
@@ -1169,8 +1179,10 @@ internal sealed partial class RelationalDataStorage
     private string _RenderInboxRoutabilitySet(bool orphaned)
     {
         // The next orphan probe falls due on the database clock, the clock the retry pickup compares it against.
+        // Confirming a routable row runs before every inbox dispatch, so it moves the marker only when it clears an
+        // orphan flag an operator could see.
         return orphaned
-            ? $"{_t.IsInboxOrphaned}={_t.True}, {_t.NextRetryAt}={_dialect.ShiftByDuration(SqlDialectTokens.Now, "ProbeInterval")}"
-            : $"{_t.IsInboxOrphaned}={_t.False}";
+            ? $"{_t.IsInboxOrphaned}={_t.True}, {_t.NextRetryAt}={_dialect.ShiftByDuration(SqlDialectTokens.Now, "ProbeInterval")}, {_t.StampChange}"
+            : $"{_t.IsInboxOrphaned}={_t.False}, {_t.ChangedAt}=CASE WHEN {_t.IsInboxOrphaned} = {_t.True} THEN {_dialect.NextChangeMarker(_t.ChangedAt)} ELSE {_t.ChangedAt} END";
     }
 }

@@ -25,7 +25,7 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
     // Exchange the app's bearer token for the dashboard's own session cookie, then open the dashboard.
     // The token never goes into a URL or browser storage; the cookie is HttpOnly and lasts until the
     // dashboard session's idle timeout or absolute lifetime ends.
-    const session = await fetch('/jobs/dashboard/api/auth/session', {
+    const session = await fetch('/headless/api/auth/session', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -39,7 +39,7 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
       return;
     }
 
-    window.location.assign('/jobs/dashboard/');
+    window.location.assign('/headless/jobs');
   } catch {
     error.textContent = 'Request failed';
     error.style.display = 'block';

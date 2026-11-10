@@ -506,15 +506,23 @@ internal sealed class MessagingTelemetry(
     /// </summary>
     internal static string ErrorTypeOf(Exception exception)
     {
-        var failure = exception switch
+        var type = FailureOf(exception).GetType();
+
+        return type.FullName ?? type.Name;
+    }
+
+    /// <summary>
+    /// The transport or handler failure inside the framework's own wrapper, which every failure of its phase shares;
+    /// any other exception as it is.
+    /// </summary>
+    internal static Exception FailureOf(Exception exception)
+    {
+        return exception switch
         {
             SubscriberExecutionFailedException { InnerException: { } inner } => inner,
             PublisherSentFailedException { InnerException: { } inner } => inner,
             _ => exception,
         };
-        var type = failure.GetType();
-
-        return type.FullName ?? type.Name;
     }
 
     private static void _SetOperationTags(

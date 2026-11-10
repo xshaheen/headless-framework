@@ -323,6 +323,51 @@ public abstract class SqlDialectConformanceTests : TestBase
         await waiting;
     }
 
+    public virtual async Task should_step_a_change_marker_past_a_previous_marker_the_clock_has_not_passed()
+    {
+        // given: one marker a day ahead of the database clock and one long behind it
+        var table = await _CreateTableAsync();
+        var ahead = DateTimeOffset.UtcNow.AddDays(1);
+        var behind = new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        await _ExecuteAsync(
+            $"INSERT INTO {table} ({_Column("Key")}, {_Column("Value")}, {_Column("Stamp")}) VALUES ('ahead', 1, @a), ('behind', 2, @b)",
+            command =>
+            {
+                Dialect.AddParameter(command, "a", SqlColumnType.Timestamp, ahead);
+                Dialect.AddParameter(command, "b", SqlColumnType.Timestamp, behind);
+            }
+        );
+
+        // when
+        async Task<DateTimeOffset> nextMarker(string key)
+        {
+            await using var connection = await _OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = Dialect.Render(
+                new SqlClockedStatement(
+                    $"SELECT {Dialect.NextChangeMarker(_Column("Stamp"))} FROM {table} WHERE {_Column("Key")} = '{key}';"
+                )
+            );
+
+            return _Instant((await command.ExecuteScalarAsync(AbortToken))!);
+        }
+
+        var stepped = await nextMarker("ahead");
+        var clocked = await nextMarker("behind");
+
+        // then: a marker the clock has not passed moves by exactly the dialect's precision; a passed one takes the clock
+        var stored = _Instant(
+            (
+                await _ScalarObjectAsync(
+                    $"SELECT {_Column("Stamp")} FROM {table} WHERE {_Column("Key")} = 'ahead'",
+                    _ => { }
+                )
+            )!
+        );
+        stepped.Should().Be(stored + Dialect.TimestampPrecision);
+        clocked.Should().BeAfter(DateTimeOffset.UtcNow.AddHours(-1)).And.BeBefore(ahead);
+    }
+
     public virtual async Task should_render_portable_expressions()
     {
         var table = await _CreateTableAsync();
