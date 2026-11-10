@@ -6,6 +6,7 @@ import {
   sessionMatches,
   settleSession,
   stateElementId,
+  streamScope,
   type AuthInfo,
 } from '../src/bootstrap.ts'
 import { moduleManifest, shellState } from './fixtures/modules.tsx'
@@ -97,5 +98,21 @@ describe('bootstrap', () => {
     expect(safeReturnUrl('/headless', '//evil.example')).toBe('/headless/')
     expect(safeReturnUrl('/headless', '/headless/../admin')).toBe('/headless/')
     expect(safeReturnUrl('/headless', '/admin')).toBe('/headless/')
+  })
+
+  it('scopes the shared stream to the signed-in user and what they may see, without naming the user', async () => {
+    const mona = shellState([moduleManifest('diag', { canOperate: true })])
+    const sami = shellState([moduleManifest('diag', { canOperate: true })], {
+      session: { authenticated: true, name: 'Sami Nasser' },
+    })
+    const monaViewOnly = shellState([moduleManifest('diag', { canOperate: false })])
+
+    const scope = await streamScope(mona)
+
+    expect(await streamScope(shellState([moduleManifest('diag', { canOperate: true })]))).toBe(scope)
+    expect(await streamScope(sami)).not.toBe(scope)
+    expect(await streamScope(monaViewOnly)).not.toBe(scope)
+    expect(scope).toMatch(/^headless-dashboard:\/headless:[0-9a-f]{24}$/)
+    expect(scope).not.toContain('Mona')
   })
 })

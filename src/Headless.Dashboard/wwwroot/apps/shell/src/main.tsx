@@ -11,6 +11,7 @@ import {
   safeReturnUrl,
   settleSession,
   signInUrl,
+  streamScope,
   type BootstrapState,
 } from './bootstrap.ts'
 import { applyTheme, readTheme } from './layout/theme.tsx'
@@ -53,7 +54,7 @@ async function renderSignIn(state: BootstrapState, root: HTMLElement) {
   )
 }
 
-function renderShell(state: BootstrapState, root: HTMLElement) {
+async function renderShell(state: BootstrapState, root: HTMLElement) {
   if (isSignInPath(state)) {
     // Signed in already: the sign-in page has nothing to do, so go where it would have returned.
     const returnUrl = new URLSearchParams(location.search).get('returnUrl')
@@ -71,7 +72,7 @@ function renderShell(state: BootstrapState, root: HTMLElement) {
   const api = withSessionEnd(createDashboardApi({ apiBase: state.apiBase }), () => toSignIn('session-ended'))
   const stream = createStreamClient({
     url: state.streamUrl,
-    scope: `headless-dashboard:${state.basePath}`,
+    scope: await streamScope(state),
     // Another tab signed out: this one follows, to the same page.
     onSignedOut: () => toSignIn('signed-out'),
   })
@@ -131,7 +132,7 @@ async function start() {
 
   if (isSignedIn(state)) {
     // Signed in: draw at once from the inlined state; a changed permission still reloads once when the answer lands.
-    renderShell(state, root)
+    await renderShell(state, root)
     await settle
     return
   }

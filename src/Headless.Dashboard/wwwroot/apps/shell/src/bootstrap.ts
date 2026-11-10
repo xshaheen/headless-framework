@@ -252,6 +252,26 @@ export function moduleSidebarEntries(state: BootstrapState, moduleId: string): B
   )
 }
 
+/**
+ * The scope of the tabs that may share one live stream: the base path plus a fingerprint of the signed-in user and
+ * what they may see. A user who signs out through the host app sends this dashboard no sign-out, so a new user's tab
+ * opened in the same browser must not follow a tab still holding the previous user's stream and receive events
+ * formatted for that user's permissions. The fingerprint is a truncated SHA-256, because lock and channel names are
+ * readable by any script on the origin and must not carry the user's name.
+ */
+export async function streamScope(state: BootstrapState, digest: SubtleCrypto = crypto.subtle) {
+  const identity = JSON.stringify([
+    state.authMode,
+    state.session.authenticated,
+    state.session.name ?? null,
+    state.modules.map((module) => [module.id, module.canOperate]).sort(),
+  ])
+  const hash = new Uint8Array(await digest.digest('SHA-256', new TextEncoder().encode(identity)))
+  const fingerprint = [...hash.slice(0, 12)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+
+  return `headless-dashboard:${state.basePath}:${fingerprint}`
+}
+
 /** Whether the page needs a signed-in session; a dashboard without sign-in is open to everyone. */
 export function isSignedIn(state: BootstrapState) {
   return state.authMode === 'none' || state.session.authenticated

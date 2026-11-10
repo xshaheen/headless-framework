@@ -50,4 +50,8 @@ describe('page lifecycle', () => {
 
     expect(stream.close).toHaveBeenCalledTimes(1)
   })
+
+  it('shares the stream only with tabs of the same user, under a scope that names no user', () => {
+    expect(stream.scope).toMatch(/^headless-dashboard:\/headless:[0-9a-f]{24}$/)
+  })
 })
