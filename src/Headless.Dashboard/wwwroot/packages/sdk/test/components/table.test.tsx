@@ -272,7 +272,7 @@ function runs(count: number, from = 1): Run[] {
 
 const runColumns = [
   { id: 'id', header: 'Run', cell: (run: Run) => run.id, isRowHeader: true },
-  { id: 'status', header: 'Status', cell: (run: Run) => run.status },
+  { id: 'status', header: 'Status', cell: (run: Run) => run.status, width: 130 },
   { id: 'note', header: 'Note', cell: () => 'note', priority: 2 as const },
 ]
 
@@ -557,23 +557,35 @@ describe('virtualized keyset table', () => {
     expect(fetchPage).toHaveBeenCalledTimes(1)
   })
 
-  it('drops a low-priority column at 400 px and keeps the row selectable', async () => {
+  it('drops a low-priority column at 400 px, keeps the name column readable, and keeps the row selectable', async () => {
     const user = userEvent.setup()
-    // A 400 px screen: a max-width query matches when its width is at least 400 px.
+    // A 400 px screen: a max-width query matches when its width is at least 400 px, and the table is 300 px wide
+    // beside the page gutter and the checkbox column.
     vi.stubGlobal('matchMedia', (query: string) => {
       const width = /max-width: (\d+)px/.exec(query)?.[1]
 
       return { matches: width !== undefined && Number(width) >= 400, media: query }
     })
-    render(withDashboard(<SelectableRuns rows={runs(5)} />))
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => 300 })
 
-    expect(screen.queryByRole('columnheader', { name: 'Note' })).toBeNull()
-    expect(screen.getByRole('columnheader', { name: 'Run' })).toBeTruthy()
-    expect(screen.getByRole('columnheader', { name: 'Status' })).toBeTruthy()
+    try {
+      render(withDashboard(<SelectableRuns rows={runs(5)} />))
 
-    await user.click(row(/^r3\b/))
+      expect(screen.queryByRole('columnheader', { name: 'Note' })).toBeNull()
+      expect(screen.getByRole('columnheader', { name: 'Run' })).toBeTruthy()
+      expect(screen.getByRole('columnheader', { name: 'Status' })).toBeTruthy()
+      // The name column is the one a phone must keep whole: rather than squeeze it into the 170 px left beside the
+      // status, the table keeps it readable and lets the status scroll sideways under it.
+      const widthOf = (name: string) => parseFloat(screen.getByRole('columnheader', { name }).parentElement?.style.width ?? '0')
+      expect(widthOf('Status')).toBe(130)
+      expect(widthOf('Run') + widthOf('Status')).toBeGreaterThan(300)
 
-    expect(row(/^r3\b/).getAttribute('aria-selected')).toBe('true')
+      await user.click(row(/^r3\b/))
+
+      expect(row(/^r3\b/).getAttribute('aria-selected')).toBe('true')
+    } finally {
+      Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => 1000 })
+    }
   })
 
   it('remembers compact density for the view across a reload', async () => {

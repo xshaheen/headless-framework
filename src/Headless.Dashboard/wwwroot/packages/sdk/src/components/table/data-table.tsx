@@ -185,6 +185,16 @@ const moveKeys = new Set(['ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'Page
 /** The header row's height in px; the virtualizer lays the header out by it, and its cells fill that height. */
 const headingHeight = 32
 
+/** A column's narrowest width in px, past which the table scrolls sideways rather than squeeze it further. */
+const columnMinWidth = 96
+
+/**
+ * The row header column's narrowest width in px: a pinned name such as `sandbox.overlap-fails` (about 24 mono
+ * characters with the gutter) stays whole on a phone, where the other columns share the 96 px floor and scroll under
+ * it, so the identifying column is never the one that ends in an ellipsis.
+ */
+const rowHeaderMinWidth = 192
+
 /**
  * The dashboard's list of one object kind, as a virtualized WAI-ARIA grid: only the rows in view are in the page,
  * and the next keyset page loads as the scroll or the focus nears the end. One tab stop; arrow keys, `Home`/`End`,
@@ -486,7 +496,7 @@ export function DataTable<T extends { id: string }>({
                     id={column.id}
                     isRowHeader={column.id === rowHeaderId}
                     defaultWidth={column.width}
-                    minWidth={96}
+                    minWidth={column.id === rowHeaderId ? rowHeaderMinWidth : columnMinWidth}
                     data-pinned={at <= lastPinned || undefined}
                     allowsSorting={sortable}
                     className={`group ${ends(column) ? `${headClass} ${endClass}` : headClass}`}
