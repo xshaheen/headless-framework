@@ -2,11 +2,12 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { stateElementId } from '../src/bootstrap.ts'
 import { moduleManifest, shellState } from './fixtures/modules.tsx'
 
-const stream = vi.hoisted(() => ({ close: vi.fn(), signOut: vi.fn(), scope: '' }))
+const stream = vi.hoisted(() => ({ close: vi.fn(), signOut: vi.fn(), scope: '', sessionChannel: '' }))
 
 vi.mock('@headless/dashboard-sdk/stream', () => ({
-  createStreamClient: (options: { scope: string }) => {
+  createStreamClient: (options: { scope: string; sessionChannel: string }) => {
     stream.scope = options.scope
+    stream.sessionChannel = options.sessionChannel
     return stream
   },
 }))
@@ -53,5 +54,9 @@ describe('page lifecycle', () => {
 
   it('shares the stream only with tabs of the same user, under a scope that names no user', () => {
     expect(stream.scope).toMatch(/^headless-dashboard:\/headless:[0-9a-f]{24}$/)
+  })
+
+  it('signs out on a channel every tab at the base path hears, whatever its user or permissions', () => {
+    expect(stream.sessionChannel).toBe('headless-dashboard:/headless:session')
   })
 })

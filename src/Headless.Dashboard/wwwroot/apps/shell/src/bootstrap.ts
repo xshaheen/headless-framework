@@ -272,6 +272,15 @@ export async function streamScope(state: BootstrapState, digest: SubtleCrypto = 
   return `headless-dashboard:${state.basePath}:${fingerprint}`
 }
 
+/**
+ * The channel sign-out travels on: the base path alone, with no fingerprint. Every tab at the base path shares the
+ * browser's session cookie, so a sign-out ends the session for all of them, even a tab whose stream scope differs
+ * because it loaded under other permissions or another display name.
+ */
+export function sessionChannel(state: BootstrapState) {
+  return `headless-dashboard:${state.basePath}:session`
+}
+
 /** Whether the page needs a signed-in session; a dashboard without sign-in is open to everyone. */
 export function isSignedIn(state: BootstrapState) {
   return state.authMode === 'none' || state.session.authenticated

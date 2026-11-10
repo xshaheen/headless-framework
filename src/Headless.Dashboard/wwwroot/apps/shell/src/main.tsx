@@ -9,6 +9,7 @@ import {
   isSignedIn,
   readBootstrapState,
   safeReturnUrl,
+  sessionChannel,
   settleSession,
   signInUrl,
   streamScope,
@@ -73,6 +74,7 @@ async function renderShell(state: BootstrapState, root: HTMLElement) {
   const stream = createStreamClient({
     url: state.streamUrl,
     scope: await streamScope(state),
+    sessionChannel: sessionChannel(state),
     // Another tab signed out: this one follows, to the same page.
     onSignedOut: () => toSignIn('signed-out'),
   })

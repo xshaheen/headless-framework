@@ -8,10 +8,11 @@ describe('stream client', () => {
   let sources: FakeSources
   const tabs: StreamClient[] = []
 
-  function openTab(onSignedOut?: () => void) {
+  function openTab(onSignedOut?: () => void, scope = 'headless-dashboard:/headless:mona') {
     const tab = createStreamClient({
       url: '/headless/api/stream',
-      scope: '/headless:app',
+      scope,
+      sessionChannel: 'headless-dashboard:/headless:session',
       locks,
       createChannel: channels.create,
       createSource: sources.create,
@@ -177,6 +178,23 @@ describe('stream client', () => {
     expect(sources.open).toHaveLength(0)
     expect(leader.isLeader()).toBe(false)
     expect(second.isLeader()).toBe(false)
+  })
+
+  it('signs out a tab that holds its own stream under another scope of the same session', async () => {
+    const routes: string[] = []
+    const mona = openTab(() => routes.push('mona'))
+    const monaViewOnly = openTab(() => routes.push('mona view-only'), 'headless-dashboard:/headless:mona-view-only')
+    await vi.advanceTimersByTimeAsync(300)
+    expect(mona.isLeader()).toBe(true)
+    expect(monaViewOnly.isLeader()).toBe(true)
+    expect(sources.open).toHaveLength(2)
+
+    mona.signOut()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(routes.sort()).toEqual(['mona', 'mona view-only'])
+    expect(sources.open).toHaveLength(0)
+    expect(monaViewOnly.isLeader()).toBe(false)
   })
 
   it('reopens after a refused connection, with back-off', async () => {

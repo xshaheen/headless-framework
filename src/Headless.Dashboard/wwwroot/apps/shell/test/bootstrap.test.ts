@@ -3,6 +3,7 @@ import {
   moduleSidebarEntries,
   readBootstrapState,
   safeReturnUrl,
+  sessionChannel,
   sessionMatches,
   settleSession,
   stateElementId,
@@ -114,5 +115,15 @@ describe('bootstrap', () => {
     expect(await streamScope(monaViewOnly)).not.toBe(scope)
     expect(scope).toMatch(/^headless-dashboard:\/headless:[0-9a-f]{24}$/)
     expect(scope).not.toContain('Mona')
+  })
+
+  it('signs every tab at the base path out on one channel, whoever loaded it', () => {
+    const mona = shellState([moduleManifest('diag', { canOperate: true })])
+    const sami = shellState([moduleManifest('diag', { canOperate: false })], {
+      session: { authenticated: true, name: 'Sami Nasser' },
+    })
+
+    expect(sessionChannel(mona)).toBe('headless-dashboard:/headless:session')
+    expect(sessionChannel(sami)).toBe(sessionChannel(mona))
   })
 })
