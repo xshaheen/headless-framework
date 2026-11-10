@@ -33,8 +33,8 @@ internal static class SqlServerMessagingSchemaContribution
                 new SchemaStep(
                     TablesStepVersion,
                     "Create the published, received, inbox receipt, and inbox audit tables with their constraints and indexes.",
-                    _InboxTablesSql(schema, options.OwnerColumnMaxLength)
-                        + _PublishedTableSql(schema, options.OwnerColumnMaxLength)
+                    _InboxTablesSql(schema, options.LeaseHolderMaxLength)
+                        + _PublishedTableSql(schema, options.LeaseHolderMaxLength)
                 ),
                 new SchemaStep(
                     HistoryIndexesStepVersion,
@@ -78,7 +78,7 @@ internal static class SqlServerMessagingSchemaContribution
                 new SchemaStep(
                     TablesStepVersion,
                     "Create the published table with its indexes.",
-                    _PublishedTableSql(schema, options.OwnerColumnMaxLength)
+                    _PublishedTableSql(schema, options.LeaseHolderMaxLength)
                 ),
             ],
             exportOnly: exportOnly,
@@ -86,7 +86,7 @@ internal static class SqlServerMessagingSchemaContribution
         );
     }
 
-    private static string _InboxTablesSql(string schema, int ownerColumnMaxLength)
+    private static string _InboxTablesSql(string schema, int leaseHolderMaxLength)
     {
         // Constraint names are unique per schema, so the table name alone keeps them distinct; every
         // existence probe below is scoped to its table because the same name exists in every schema.
@@ -111,8 +111,11 @@ internal static class SqlServerMessagingSchemaContribution
                     [Added] [datetimeoffset](7) NOT NULL,
                     [ExpiresAt] [datetimeoffset](7) NULL,
                     [NextRetryAt] [datetimeoffset](7) NULL,
-                    [LockedUntil] [datetimeoffset](7) NULL,
-                    [Owner] [nvarchar]({ownerColumnMaxLength}) NULL,
+                    [LeaseGeneration] [bigint] NOT NULL CONSTRAINT [DF_{receivedPrefix}_LeaseGeneration] DEFAULT 0,
+                    [LeaseState] [smallint] NOT NULL CONSTRAINT [DF_{receivedPrefix}_LeaseState] DEFAULT 0,
+                    [LeaseExpiresAt] [datetimeoffset](7) NULL,
+                    [LeaseHolder] [nvarchar]({leaseHolderMaxLength}) NULL,
+                    [LeaseTakeoverCount] [int] NOT NULL CONSTRAINT [DF_{receivedPrefix}_LeaseTakeoverCount] DEFAULT 0,
                     [StatusName] [nvarchar](50) NOT NULL,
                     [MessageId] [nvarchar](200) COLLATE Latin1_General_100_BIN2 NOT NULL,
                     [ExceptionInfo] [nvarchar](max) NULL,
@@ -240,10 +243,10 @@ internal static class SqlServerMessagingSchemaContribution
                 CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_ChangedAt_Id] ON {received} ([ChangedAt] ASC, [Id] ASC) INCLUDE ([StatusName]);
 
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_Version_NextRetryAt' AND object_id = OBJECT_ID(N'{received}'))
-                CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_Version_NextRetryAt] ON {received} ([Version] ASC,[IntentType] ASC,[NextRetryAt] ASC) INCLUDE ([Retries],[LockedUntil]) WHERE [NextRetryAt] IS NOT NULL;
+                CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_Version_NextRetryAt] ON {received} ([Version] ASC,[IntentType] ASC,[NextRetryAt] ASC) INCLUDE ([Retries],[LeaseState],[LeaseExpiresAt]) WHERE [NextRetryAt] IS NOT NULL;
 
-            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_Owner_NotNull' AND object_id = OBJECT_ID(N'{received}'))
-                CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_Owner_NotNull] ON {received} ([Owner] ASC) WHERE [Owner] IS NOT NULL;
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_LeaseHolder_Active' AND object_id = OBJECT_ID(N'{received}'))
+                CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_LeaseHolder_Active] ON {received} ([LeaseHolder] ASC) WHERE [LeaseState] = 1;
 
             IF OBJECT_ID(N'{schema}.{_ReceiptsTable}',N'U') IS NULL
             BEGIN
@@ -327,7 +330,7 @@ internal static class SqlServerMessagingSchemaContribution
         return SqlServerDialect.Instance.Name(pascalName);
     }
 
-    private static string _PublishedTableSql(string schema, int ownerColumnMaxLength)
+    private static string _PublishedTableSql(string schema, int leaseHolderMaxLength)
     {
         const string publishedPrefix = "MessagingPublished";
         var published = _Table(schema, "MessagingPublished");
@@ -348,8 +351,11 @@ internal static class SqlServerMessagingSchemaContribution
                     [Added] [datetimeoffset](7) NOT NULL,
                     [ExpiresAt] [datetimeoffset](7) NULL,
                     [NextRetryAt] [datetimeoffset](7) NULL,
-                    [LockedUntil] [datetimeoffset](7) NULL,
-                    [Owner] [nvarchar]({ownerColumnMaxLength}) NULL,
+                    [LeaseGeneration] [bigint] NOT NULL CONSTRAINT [DF_{publishedPrefix}_LeaseGeneration] DEFAULT 0,
+                    [LeaseState] [smallint] NOT NULL CONSTRAINT [DF_{publishedPrefix}_LeaseState] DEFAULT 0,
+                    [LeaseExpiresAt] [datetimeoffset](7) NULL,
+                    [LeaseHolder] [nvarchar]({leaseHolderMaxLength}) NULL,
+                    [LeaseTakeoverCount] [int] NOT NULL CONSTRAINT [DF_{publishedPrefix}_LeaseTakeoverCount] DEFAULT 0,
                     [StatusName] [nvarchar](50) NOT NULL,
                     [MessageId] [nvarchar](200) NOT NULL,
                     [ExceptionInfo] [nvarchar](max) NULL,
@@ -382,10 +388,10 @@ internal static class SqlServerMessagingSchemaContribution
                 CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_ChangedAt_Id] ON {published} ([ChangedAt] ASC, [Id] ASC) INCLUDE ([StatusName]);
 
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{publishedPrefix}_Version_NextRetryAt' AND object_id = OBJECT_ID(N'{published}'))
-                CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_Version_NextRetryAt] ON {published} ([Version] ASC,[IntentType] ASC,[NextRetryAt] ASC) INCLUDE ([Retries],[LockedUntil]) WHERE [NextRetryAt] IS NOT NULL;
+                CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_Version_NextRetryAt] ON {published} ([Version] ASC,[IntentType] ASC,[NextRetryAt] ASC) INCLUDE ([Retries],[LeaseState],[LeaseExpiresAt]) WHERE [NextRetryAt] IS NOT NULL;
 
-            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{publishedPrefix}_Owner_NotNull' AND object_id = OBJECT_ID(N'{published}'))
-                CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_Owner_NotNull] ON {published} ([Owner] ASC) WHERE [Owner] IS NOT NULL;
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{publishedPrefix}_LeaseHolder_Active' AND object_id = OBJECT_ID(N'{published}'))
+                CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_LeaseHolder_Active] ON {published} ([LeaseHolder] ASC) WHERE [LeaseState] = 1;
 
             """
         );

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Captcha;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
@@ -13,6 +14,15 @@ public interface ICaptchaVerifierFixture
 {
     /// <summary>Builds a verifier whose HTTP traffic is routed through <paramref name="handler"/>.</summary>
     ICaptchaVerifier CreateVerifier(StubSiteVerifyHandler handler);
+
+    /// <summary>
+    /// Builds a verifier like <see cref="CreateVerifier(StubSiteVerifyHandler)"/>, after <paramref name="configureServices"/>
+    /// adds services such as a logger provider or a host environment.
+    /// </summary>
+    ICaptchaVerifier CreateVerifierWithServices(
+        StubSiteVerifyHandler handler,
+        Action<IServiceCollection> configureServices
+    );
 
     /// <summary>A vendor-shaped siteverify success body (must include hostname and challenge timestamp).</summary>
     string SuccessResponseBody { get; }

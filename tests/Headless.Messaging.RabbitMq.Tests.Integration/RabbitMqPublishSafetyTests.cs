@@ -342,6 +342,7 @@ public sealed class RabbitMqPublishSafetyTests(RabbitMqFixture fixture) : TestBa
         return new RabbitMqMessagingOptions
         {
             HostName = fixture.HostName,
+            VirtualHost = fixture.VirtualHost,
             Port = fixture.Port,
             UserName = fixture.UserName,
             Password = fixture.Password,

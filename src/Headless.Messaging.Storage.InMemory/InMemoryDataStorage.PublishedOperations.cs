@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Fencing;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
 
@@ -145,7 +146,7 @@ internal sealed partial class InMemoryDataStorage : IAdditionalOutboxOperations
                             new PublishedOperationState(
                                 current.StatusName,
                                 current.NextRetryAt is not null,
-                                current.LockedUntil is not null && current.LockedUntil > now,
+                                _HasLiveLease(current, now),
                                 current.ChangedAt
                             )
                         );
@@ -158,8 +159,7 @@ internal sealed partial class InMemoryDataStorage : IAdditionalOutboxOperations
                                 current.Retries = 0;
                                 current.InlineAttempts = 0;
                                 current.ExpiresAt = null;
-                                current.LockedUntil = null;
-                                current.Owner = null;
+                                current.Lease = RowLeaseRules.Revoke(current.Lease).Next;
                                 _StampChange(current);
                             }
                             else if (

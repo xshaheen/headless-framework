@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Microsoft.EntityFrameworkCore;
-using Testcontainers.PostgreSql;
 
 namespace Tests;
 
@@ -16,8 +15,6 @@ public sealed class PostgreSqlRetryingStrategyFixture
     : PostgreSqlJobsCoordinationFixture,
         ICollectionFixture<PostgreSqlRetryingStrategyFixture>
 {
-    protected override PostgreSqlBuilder Configure() => base.Configure().WithDatabase("jobs_retrying_strategy_test");
-
     public override void ConfigureStore(DbContextOptionsBuilder db) => ConfigureRetryingStore(db);
 }
 

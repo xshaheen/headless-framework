@@ -148,6 +148,12 @@ public sealed record JobRunSummary
     /// <summary>Gets the node that holds or last held the run.</summary>
     public string? OwnerId { get; init; }
 
+    /// <summary>
+    /// Gets whether an attempt still holds the run's lease: the run is claimed or running. <see cref="OwnerId"/> outlives
+    /// the lease, so only this says the run is held now.
+    /// </summary>
+    public bool IsLeased { get; init; }
+
     /// <summary>Gets the stored exception of the last failure.</summary>
     public string? ExceptionMessage { get; init; }
 

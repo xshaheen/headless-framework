@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Fencing;
 using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Jobs.Provider;
@@ -55,10 +56,10 @@ public sealed class JobsInMemoryDashboardDeletesTests : TestBase
     {
         // given
         IJobPersistenceProvider<TimeJobEntity, CronJobEntity> store = _Create();
-        var (job, owner) = await _StartAsync(store, cancel: true);
+        var (job, lease) = await _StartAsync(store, cancel: true);
         var read = await store.GetJobRunAsync(job, AbortToken);
         read!.CancelRequested.Should().BeTrue();
-        await _CompleteAsync(store, job, owner);
+        await _CompleteAsync(store, job, lease);
 
         // when
         var deleted = await store.RemoveCancelRequestedTimeJobAsync(job, AbortToken);
@@ -118,7 +119,7 @@ public sealed class JobsInMemoryDashboardDeletesTests : TestBase
         (await store.RemoveIdleCronJobAsync(Guid.NewGuid(), AbortToken)).Should().BeNull();
     }
 
-    private static async Task<(Guid Job, string Owner)> _StartAsync(
+    private static async Task<(Guid Job, RowLeaseSnapshot Lease)> _StartAsync(
         IJobPersistenceProvider<TimeJobEntity, CronJobEntity> store,
         bool cancel
     )
@@ -143,20 +144,21 @@ public sealed class JobsInMemoryDashboardDeletesTests : TestBase
             (await store.RequestTimeJobCancellationAsync(job.Id, AbortToken)).Should().BeTrue();
         }
 
-        return (job.Id, claimed.OwnerId!);
+        return (job.Id, claimed.Lease);
     }
 
     private static async Task _CompleteAsync(
         IJobPersistenceProvider<TimeJobEntity, CronJobEntity> store,
         Guid job,
-        string owner
+        RowLeaseSnapshot lease
     )
     {
         var completion = new JobExecutionState
         {
             FunctionName = _Function,
             JobId = job,
-            ClaimOwner = owner,
+            ClaimOwner = lease.Holder,
+            ClaimGeneration = lease.Generation,
         }.SetProperty(x => x.Status, JobStatus.Succeeded);
 
         (await store.UpdateTimeJobAsync(completion, AbortToken)).Should().Be(1);

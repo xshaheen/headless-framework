@@ -18,7 +18,7 @@ public sealed class PostgreSqlHealthCheckTests(NpgsqlTestFixture fixture) : Test
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddPostgreSqlSql(fixture.Container.GetConnectionString());
+        services.AddPostgreSqlSql(fixture.ConnectionString);
         await using var provider = services.BuildServiceProvider();
 
         // when
@@ -54,7 +54,7 @@ public sealed class PostgreSqlHealthCheckTests(NpgsqlTestFixture fixture) : Test
         // given - a query against a table that does not exist proves the probe runs the command, not SELECT 1
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddPostgreSqlSql(fixture.Container.GetConnectionString());
+        services.AddPostgreSqlSql(fixture.ConnectionString);
         services.ConfigureHeadlessHealthCheck(
             "sql-postgresql",
             options =>
@@ -81,7 +81,7 @@ public sealed class PostgreSqlHealthCheckTests(NpgsqlTestFixture fixture) : Test
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddPostgreSqlSql(fixture.Container.GetConnectionString());
+        services.AddPostgreSqlSql(fixture.ConnectionString);
         services.ConfigureHeadlessHealthCheck("sql-postgresql", options => options.TestCommand = "SELECT version()");
         await using var provider = services.BuildServiceProvider();
 

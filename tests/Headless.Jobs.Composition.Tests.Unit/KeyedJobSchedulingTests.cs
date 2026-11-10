@@ -158,7 +158,7 @@ public sealed class KeyedJobSchedulingTests : TestBase
         current.IntentFingerprint = "9661891edb0607a98e98e31b8ad90bb9336f16558f2655e016f3359d63010f8d";
         JobIntentFingerprint.Compute(current, JobIntentFingerprint.Algorithm).Should().Be(current.IntentFingerprint);
         current.Status = status;
-        current.OwnerId = "node@incarnation";
+        current.Lease = TestLeases.Held("node@incarnation", expiresAt: null);
         current.RetryCount = 2;
         current.ExecutionTime = current.ExecutionTime!.Value.AddHours(1);
         current.Request = [9];

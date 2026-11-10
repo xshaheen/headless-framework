@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
+using Headless.Fencing;
 using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Jobs.Provider;
@@ -115,6 +116,13 @@ public sealed class TimeJobEditRuntimePropertiesTests : TestBase
             _ when target == typeof(bool) => current is not true,
             _ when target == typeof(DateTime) => new DateTime(2030, 1, 1, 0, 0, 0, DateTimeKind.Utc),
             _ when target == typeof(DateTimeOffset) => new DateTimeOffset(2030, 1, 1, 0, 0, 0, TimeSpan.Zero),
+            _ when target == typeof(RowLeaseSnapshot) => new RowLeaseSnapshot(
+                Generation: 7,
+                RowLeaseState.Active,
+                new DateTimeOffset(2030, 1, 1, 0, 0, 0, TimeSpan.Zero),
+                Holder: "changed",
+                TakeoverCount: 3
+            ),
             _ when target.IsEnum => Enum.GetValues(target).Cast<object>().First(value => !value.Equals(current)),
             _ => throw new InvalidOperationException($"Add a changed value for {type} to this test."),
         };

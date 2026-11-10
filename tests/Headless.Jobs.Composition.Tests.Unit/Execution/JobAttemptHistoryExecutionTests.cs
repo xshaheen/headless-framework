@@ -63,7 +63,8 @@ public sealed class JobAttemptHistoryExecutionTests : TestBase
             RetryCount = claimed.RetryCount,
             Retries = claimed.Retries,
             RetryIntervals = claimed.RetryIntervals,
-            ClaimOwner = claimed.OwnerId,
+            ClaimOwner = claimed.Lease.Holder,
+            ClaimGeneration = claimed.Lease.Generation,
         };
         var registry = JobFunctionRegistryBuilder.Build(
             [
@@ -115,7 +116,7 @@ public sealed class JobAttemptHistoryExecutionTests : TestBase
             .Should()
             .AllSatisfy(attempt =>
             {
-                attempt.OwnerId.Should().Be(claimed.OwnerId);
+                attempt.OwnerId.Should().Be(claimed.Lease.Holder);
                 attempt.StartedAt.Should().NotBeNull();
                 attempt.EndedAt.Should().NotBeNull();
             });

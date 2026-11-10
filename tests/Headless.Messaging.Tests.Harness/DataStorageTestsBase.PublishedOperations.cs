@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Fencing;
 using Headless.Messaging;
 using Headless.Messaging.Persistence;
 
@@ -584,8 +585,7 @@ public abstract partial class DataStorageTestsBase
             row.Retries,
             row.InlineAttempts,
             row.ExpiresAt,
-            row.LockedUntil,
-            row.Owner
+            row.Lease
         );
     }
 
@@ -608,8 +608,7 @@ public abstract partial class DataStorageTestsBase
         int Retries,
         int InlineAttempts,
         DateTimeOffset? ExpiresAt,
-        DateTimeOffset? LockedUntil,
-        string? Owner
+        RowLeaseSnapshot Lease
     );
 
     /// <summary>

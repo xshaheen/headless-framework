@@ -24,8 +24,7 @@ internal static class JobIntentFingerprint
 
         if (
             job.Status != JobStatus.Idle
-            || job.OwnerId is not null
-            || job.LockedUntil is not null
+            || job.Lease != default
             || job.CancelRequested
             || job.ExecutedAt is not null
             || job.RetryCount != 0

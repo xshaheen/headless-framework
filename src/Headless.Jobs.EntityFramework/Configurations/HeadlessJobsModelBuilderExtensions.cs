@@ -11,9 +11,9 @@ public static class HeadlessJobsModelBuilderExtensions
 {
     /// <summary>
     /// Builds keyed Jobs indexes and check constraints from the final table and column mappings, and maps the
-    /// idempotency reservation table and the attempt history tables. Names follow the <paramref name="context"/>'s
-    /// database provider: snake_case on PostgreSQL, PascalCase elsewhere, matching the style passed to the Jobs entity
-    /// configurations.
+    /// idempotency reservation table and the attempt history tables, and registers the database clock that judges job
+    /// leases. Names follow the <paramref name="context"/>'s database provider: snake_case on PostgreSQL, PascalCase
+    /// elsewhere, matching the style passed to the Jobs entity configurations.
     /// </summary>
     /// <remarks>
     /// Call at the end of OnModelCreating after applying Jobs configurations and all consumer mappings when
@@ -22,6 +22,9 @@ public static class HeadlessJobsModelBuilderExtensions
     /// each attempt cascades from its run.
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="builder"/> or <paramref name="context"/> is null.</exception>
+    /// <exception cref="NotSupportedException">
+    /// The context's provider is not PostgreSQL, SQL Server, or SQLite, the databases whose lease SQL Jobs renders.
+    /// </exception>
     public static ModelBuilder FinalizeJobsModel<TTimeJob>(this ModelBuilder builder, DbContext context)
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
     {
@@ -32,6 +35,7 @@ public static class HeadlessJobsModelBuilderExtensions
         var style = JobsStorageNaming.StyleOf(context);
 
         JobsKeyedModelConfiguration.Configure<TTimeJob>(builder, context);
+        JobsLeaseModelConfiguration.Configure(builder, context);
         // The reservation table is not generic, so this is the one place a consumer-managed model maps it. It takes
         // its schema from the same option as every other Jobs table so an override cannot strand it in the default
         // schema.

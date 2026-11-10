@@ -3,7 +3,6 @@
 using Headless.MultiTenancy;
 using Headless.Testing.Testcontainers;
 using Microsoft.EntityFrameworkCore;
-using Testcontainers.PostgreSql;
 
 namespace Tests;
 
@@ -16,19 +15,11 @@ public sealed class PostgreSqlTenantCatalogFixture
 {
     private TenantCatalogEfFixtureCore _Core =>
         field ??= new TenantCatalogEfFixtureCore(
-            () => Container.GetConnectionString(),
+            () => ConnectionString,
             static (builder, connectionString) => builder.UseNpgsql(connectionString)
         );
 
     public DbContextOptions<TenantCatalogDbContext> DbOptions => _Core.DbOptions;
-
-    protected override PostgreSqlBuilder Configure()
-    {
-        return base.Configure()
-            .WithDatabase("multitenancy_catalog_test")
-            .WithUsername("postgres")
-            .WithPassword("postgres");
-    }
 
     public void ConfigureProvider(DbContextOptionsBuilder builder) => _Core.ConfigureProvider(builder);
 

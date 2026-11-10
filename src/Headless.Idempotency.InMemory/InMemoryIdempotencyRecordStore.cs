@@ -2,6 +2,7 @@
 
 using System.Globalization;
 using Headless.Checks;
+using Headless.Fencing;
 using Headless.UnitOfWork;
 using Headless.UnitOfWork.Internal;
 
@@ -9,7 +10,8 @@ namespace Headless.Idempotency.InMemory;
 
 /// <summary>
 /// The in-memory record store: one process-local table of records, one exclusive lock per record key, and one
-/// store-wide generation counter. Every verb that decides takes its key's lock and only then reads the injected
+/// store-wide generation counter. Each record's lease moves through <see cref="RowLeaseRules" />, the same transitions
+/// the relational providers run in SQL, so both answer a verb the same way. Every verb that decides takes its key's lock and only then reads the injected
 /// <see cref="TimeProvider" />, so a decision is never made on a clock read from before a lock wait. Inside one unit
 /// the reading never runs backwards, so the instants one admission writes across its insert and its grant agree even
 /// when the wall clock steps back between them.
@@ -33,6 +35,9 @@ internal sealed class InMemoryIdempotencyRecordStore(
     TimeProvider timeProvider
 ) : IIdempotencyRecordStore
 {
+    // No holder: an admission is granted only to a record no live attempt holds, so no retried grant needs matching.
+    private static readonly LeaseGrantOptions _AdmitOptions = new();
+
     private InMemoryRowTable<IdempotencyRecordKey, InMemoryIdempotencyRecord> Table => storage.Table;
 
     #region Owned units and enlistment
@@ -78,14 +83,7 @@ internal sealed class InMemoryIdempotencyRecordStore(
             return _State(existing, now, inserted: false);
         }
 
-        var inserted = new InMemoryIdempotencyRecord(
-            IdempotencyRecordStatus.Pending,
-            fingerprint,
-            Generation: null,
-            LeaseExpiresAt: null,
-            Result: null,
-            _Add(now, retention)
-        );
+        var inserted = new InMemoryIdempotencyRecord(Lease: default, fingerprint, Result: null, _Add(now, retention));
         transaction.Stage(key, inserted);
 
         return _State(inserted, now, inserted: true);
@@ -124,25 +122,31 @@ internal sealed class InMemoryIdempotencyRecordStore(
         var now = transaction.Now(timeProvider);
 
         // Drawn only now, under the record's lock: a generation drawn before the lock could be lower than one a
-        // still-open admission already holds. Also the in-place reset of a record past its retention: every outcome
-        // field is overwritten.
-        var generation = storage.NextGeneration();
-        var leaseExpiresAt = _Add(now, leaseDuration);
+        // still-open admission already holds. Drawn from the store-wide counter rather than the record's own count,
+        // because a purged key comes back and an old token must never match the new record's generations.
+        var grant = RowLeaseRules.Grant(record.Lease, now, leaseDuration, _AdmitOptions, storage.NextGeneration());
 
+        if (!grant.Wrote)
+        {
+            throw new InvalidOperationException(
+                $"Could not admit an attempt on the idempotency record '{key.Key}': it was held by a live attempt "
+                    + "inside the unit that locked it and found it free."
+            );
+        }
+
+        // Also the in-place reset of a record past its retention: every outcome field is overwritten.
         transaction.Stage(
             key,
             new InMemoryIdempotencyRecord(
-                IdempotencyRecordStatus.Pending,
+                grant.Next,
                 fingerprint,
-                generation,
-                leaseExpiresAt,
                 Result: null,
                 _Extend(record.RetentionUntil, now, retention),
                 keepRecoveryPoint ? record.RecoveryPoint : null
             )
         );
 
-        return new IdempotencyRecordGrant(generation, leaseExpiresAt);
+        return new IdempotencyRecordGrant(grant.Next.Generation, grant.Next.ExpiresAt!.Value);
     }
 
     public async ValueTask CompleteAsync(
@@ -157,17 +161,23 @@ internal sealed class InMemoryIdempotencyRecordStore(
     {
         Argument.IsNotNull(contract);
         var transaction = await _LockAsync(unitOfWork, key, cancellationToken).ConfigureAwait(false);
-        var record = _RequireGeneration(transaction.Read(key), key, generation, "complete");
+        var record = _Require(transaction.Read(key), key, "complete");
         var now = transaction.Now(timeProvider);
+        var settled = RowLeaseRules.Settle(record.Lease, generation, now);
+        _RequireEnded(settled.Status, LeaseSettlementStatus.Settled, key, generation, "complete");
 
-        // The completing generation is kept, so a second completion by the same attempt finds its own completed
-        // record and is refused instead of overwriting the stored result. The result copies the caller's bytes.
+        // A repeat by the generation that already settled writes nothing, so the stored result is never overwritten.
+        if (!settled.Wrote)
+        {
+            return;
+        }
+
+        // The result copies the caller's bytes.
         transaction.Stage(
             key,
             record with
             {
-                Status = IdempotencyRecordStatus.Completed,
-                LeaseExpiresAt = null,
+                Lease = settled.Next,
                 Result = new IdempotentResult(result.Span, contract),
                 RetentionUntil = _Extend(record.RetentionUntil, now, retention),
                 RecoveryPoint = null,
@@ -186,7 +196,18 @@ internal sealed class InMemoryIdempotencyRecordStore(
     )
     {
         var transaction = await _LockAsync(unitOfWork, key, cancellationToken).ConfigureAwait(false);
-        var record = _RequireGeneration(transaction.Read(key), key, generation, "set the recovery point of");
+        var record = _Require(transaction.Read(key), key, "set the recovery point of");
+        var status = RowLeaseRules.Judge(record.Lease, generation, transaction.Now(timeProvider));
+
+        if (status == LeaseFenceStatus.Expired)
+        {
+            throw _Expired(key, generation);
+        }
+
+        if (status != LeaseFenceStatus.Current)
+        {
+            throw _NotOwned(key, "set the recovery point of", status.ToString());
+        }
 
         // Staged like every other write, so the point reaches the table only when the unit completes and a rollback
         // drops it with the step's own work. The point copies the caller's bytes.
@@ -208,17 +229,21 @@ internal sealed class InMemoryIdempotencyRecordStore(
     )
     {
         var transaction = await _LockAsync(unitOfWork, key, cancellationToken).ConfigureAwait(false);
-        var record = _RequireGeneration(transaction.Read(key), key, generation, "release");
+        var record = _Require(transaction.Read(key), key, "release");
         var now = transaction.Now(timeProvider);
+        var released = RowLeaseRules.Release(record.Lease, generation, now);
+        _RequireEnded(released.Status, LeaseSettlementStatus.Released, key, generation, "release");
+
+        if (!released.Wrote)
+        {
+            return;
+        }
 
         transaction.Stage(
             key,
             record with
             {
-                Status = IdempotencyRecordStatus.Pending,
-                Generation = null,
-                LeaseExpiresAt = null,
-                Result = null,
+                Lease = released.Next,
                 RetentionUntil = _Extend(record.RetentionUntil, now, retention),
             }
         );
@@ -242,24 +267,23 @@ internal sealed class InMemoryIdempotencyRecordStore(
             return new IdempotentLeaseRenewal(IdempotentLeaseStatus.Stale, ExpiresAt: null);
         }
 
-        var now = timeProvider.GetUtcNow();
-        var isLive = record.LeaseExpiresAt > now;
-        var status = IdempotencyLeaseClassifier.Classify(record.Status, record.Generation, isLive, generation);
+        var renewed = RowLeaseRules.Renew(record.Lease, generation, timeProvider.GetUtcNow(), leaseDuration);
 
-        switch (status)
+        if (renewed.Wrote)
         {
-            case IdempotentLeaseStatus.Current:
-            {
-                var renewedUntil = _Add(now, leaseDuration);
-                Table.Write(key, record with { LeaseExpiresAt = renewedUntil });
-
-                return new IdempotentLeaseRenewal(IdempotentLeaseStatus.Current, renewedUntil);
-            }
-            case IdempotentLeaseStatus.Expired:
-                return new IdempotentLeaseRenewal(status, record.LeaseExpiresAt);
-            default:
-                return new IdempotentLeaseRenewal(status, ExpiresAt: null);
+            Table.Write(key, record with { Lease = renewed.Next });
         }
+
+        // The relational store maps the same statuses: an older generation is stale even when a newer attempt has
+        // since released the record, because only the generation that ended it can see how it ended.
+        return renewed.Status switch
+        {
+            LeaseRenewalStatus.Renewed => new(IdempotentLeaseStatus.Current, renewed.Next.ExpiresAt),
+            LeaseRenewalStatus.Expired => new(IdempotentLeaseStatus.Expired, renewed.Next.ExpiresAt),
+            LeaseRenewalStatus.Settled => new(IdempotentLeaseStatus.Completed, ExpiresAt: null),
+            LeaseRenewalStatus.Released => new(IdempotentLeaseStatus.Released, ExpiresAt: null),
+            _ => new(IdempotentLeaseStatus.Stale, ExpiresAt: null),
+        };
     }
 
     public ValueTask<IdempotencyPeekStatus> PeekAsync(
@@ -278,15 +302,13 @@ internal sealed class InMemoryIdempotencyRecordStore(
             return ValueTask.FromResult(IdempotencyPeekStatus.Absent);
         }
 
-        if (record.Status == IdempotencyRecordStatus.Completed)
+        if (record.Lease.State == RowLeaseState.Settled)
         {
             return ValueTask.FromResult(IdempotencyPeekStatus.Completed);
         }
 
         return ValueTask.FromResult(
-            record.Generation is not null && record.LeaseExpiresAt > now
-                ? IdempotencyPeekStatus.Pending
-                : IdempotencyPeekStatus.Released
+            _IsLive(record.Lease, now) ? IdempotencyPeekStatus.Pending : IdempotencyPeekStatus.Released
         );
     }
 
@@ -299,7 +321,7 @@ internal sealed class InMemoryIdempotencyRecordStore(
 
         // The same lock-free committed snapshot PeekAsync reads.
         var result =
-            Table.Read(key) is { Status: IdempotencyRecordStatus.Completed } record
+            Table.Read(key) is { Lease.State: RowLeaseState.Settled } record
             && record.RetentionUntil > timeProvider.GetUtcNow()
                 ? record.Result
                 : null;
@@ -361,7 +383,7 @@ internal sealed class InMemoryIdempotencyRecordStore(
     private static bool _IsPurgeable(InMemoryIdempotencyRecord record, DateTimeOffset cutoff, DateTimeOffset now)
     {
         // A live lease keeps its record even past retention, because its attempt may still complete.
-        return record.RetentionUntil <= cutoff && (record.LeaseExpiresAt is null || record.LeaseExpiresAt <= now);
+        return record.RetentionUntil <= cutoff && !_IsLive(record.Lease, now);
     }
 
     #endregion
@@ -384,37 +406,84 @@ internal sealed class InMemoryIdempotencyRecordStore(
 
     private static IdempotencyRecordState _State(InMemoryIdempotencyRecord record, DateTimeOffset now, bool inserted)
     {
+        // The same mapping the relational store reads: an active or settled lease names the generation that holds or
+        // completed the record, and only an active one has an expiry the feature may judge.
+        var lease = record.Lease;
+        var holdsGeneration = lease.State is RowLeaseState.Active or RowLeaseState.Settled;
+        var leaseExpiresAt = lease.State == RowLeaseState.Active ? lease.ExpiresAt : null;
+
         return new IdempotencyRecordState(
             inserted,
-            record.Status,
+            lease.State == RowLeaseState.Settled ? IdempotencyRecordStatus.Completed : IdempotencyRecordStatus.Pending,
             record.Fingerprint,
-            record.Generation,
-            record.LeaseExpiresAt,
+            holdsGeneration ? lease.Generation : null,
+            leaseExpiresAt,
             record.Result,
             record.RetentionUntil,
             IsRetentionElapsed: record.RetentionUntil <= now,
-            IsLeaseLive: record.LeaseExpiresAt > now,
+            IsLeaseLive: leaseExpiresAt > now,
             record.RecoveryPoint
         );
     }
 
-    private static InMemoryIdempotencyRecord _RequireGeneration(
+    private static bool _IsLive(RowLeaseSnapshot lease, DateTimeOffset now)
+    {
+        return lease.State == RowLeaseState.Active && lease.ExpiresAt > now;
+    }
+
+    private static InMemoryIdempotencyRecord _Require(
         InMemoryIdempotencyRecord? record,
+        IdempotencyRecordKey key,
+        string verb
+    )
+    {
+        return record ?? throw _NotWritten(key, verb);
+    }
+
+    private static void _RequireEnded(
+        LeaseSettlementStatus status,
+        LeaseSettlementStatus expected,
         IdempotencyRecordKey key,
         long generation,
         string verb
     )
     {
-        return record is not null && record.Generation == generation ? record : throw _NotWritten(key, verb);
+        if (status == LeaseSettlementStatus.Expired)
+        {
+            throw _Expired(key, generation);
+        }
+
+        if (status != expected)
+        {
+            throw _NotOwned(key, verb, status.ToString());
+        }
+    }
+
+    /// <summary>
+    /// The attempt's lease ran out after the caller's lock read judged it current; it no longer owns the key, the same
+    /// answer that read would have given a moment later.
+    /// </summary>
+    private static StaleAdmissionException _Expired(IdempotencyRecordKey key, long generation)
+    {
+        return new StaleAdmissionException(key.ToKey(), generation, IdempotentLeaseStatus.Expired);
+    }
+
+    private static InvalidOperationException _NotOwned(IdempotencyRecordKey key, string verb, string found)
+    {
+        // The caller locked the record and judged its lease in this unit, so the lease cannot have moved since;
+        // reaching here means the caller skipped the lock, or ended the attempt one way and then tried the other.
+        return new InvalidOperationException(
+            $"Could not {verb} the idempotency record '{key.Key}': its lease was not current at the expected "
+                + $"generation inside the unit that locked it (found: {found})."
+        );
     }
 
     private static InvalidOperationException _NotWritten(IdempotencyRecordKey key, string verb)
     {
-        // The caller locked the record and checked its generation in this unit, so the record cannot have changed
-        // since; reaching here means the caller skipped the lock.
+        // The caller locked or inserted the record in this unit, so it cannot have gone since; reaching here means the
+        // caller skipped the lock.
         return new InvalidOperationException(
-            $"Could not {verb} the idempotency record '{key.Key}': it was not found at the expected generation "
-                + "inside the unit that locked it."
+            $"Could not {verb} the idempotency record '{key.Key}': it was not found inside the unit that locked it."
         );
     }
 

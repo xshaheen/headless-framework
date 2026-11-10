@@ -9,7 +9,7 @@ public sealed class NpgsqlConnectionFactoryTests(NpgsqlTestFixture fixture) : Sq
 {
     public override string GetConnection()
     {
-        return fixture.Container.GetConnectionString();
+        return fixture.ConnectionString;
     }
 
     public override ISqlConnectionFactory GetFactory()

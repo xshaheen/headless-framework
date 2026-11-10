@@ -3,6 +3,7 @@
 using System.Globalization;
 using System.Security.Claims;
 using Headless;
+using Headless.Fencing;
 using Headless.Messaging;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Storage.InMemory;
@@ -137,8 +138,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
             Added = TimeProvider.GetUtcNow(),
             ExpiresAt = null,
             NextRetryAt = nextRetryAt,
-            LockedUntil = nextRetryAt,
-            Owner = "stale-unsupported-lane-owner",
+            Lease = new RowLeaseSnapshot(1, RowLeaseState.Active, nextRetryAt, "stale-unsupported-lane-owner", 0),
             Retries = 0,
             InlineAttempts = 0,
             ExceptionInfo = null,
@@ -180,8 +180,10 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
                 message.StatusName.ToString("G"),
                 message.ExpiresAt,
                 message.NextRetryAt,
-                message.LockedUntil,
-                message.Owner,
+                message.Lease.Generation,
+                (short)message.Lease.State,
+                message.Lease.ExpiresAt,
+                message.Lease.Holder,
                 message.ExceptionInfo
             )
         );
@@ -413,15 +415,13 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
         published.StatusName = StatusName.Failed;
         published.ExpiresAt = now.AddHours(-1);
         published.NextRetryAt = null;
-        published.LockedUntil = null;
-        published.Owner = "unknown-published-owner";
+        published.Lease = new RowLeaseSnapshot(1, RowLeaseState.Released, null, "unknown-published-owner", 0);
 
         var received = _AddUnknownRow(storage.ReceivedMessages, 98, now.AddHours(-2), Guid.NewGuid());
         received.StatusName = StatusName.Failed;
         received.ExpiresAt = now.AddHours(-1);
         received.NextRetryAt = null;
-        received.LockedUntil = null;
-        received.Owner = "unknown-received-owner";
+        received.Lease = new RowLeaseSnapshot(1, RowLeaseState.Released, null, "unknown-received-owner", 0);
 
         (await storage.DeleteExpiresAsync(nameof(storage.PublishedMessages), now, cancellationToken: AbortToken))
             .Should()
@@ -433,27 +433,27 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
         storage.ReceivedMessages.Should().ContainKey(received.StorageId);
 
         published.NextRetryAt = now.AddMinutes(-1);
-        published.LockedUntil = now.AddMinutes(5);
+        published.Lease = new RowLeaseSnapshot(
+            2,
+            RowLeaseState.Active,
+            now.AddMinutes(5),
+            "unknown-published-owner",
+            0
+        );
         received.NextRetryAt = now.AddMinutes(-1);
-        received.LockedUntil = now.AddMinutes(5);
+        received.Lease = new RowLeaseSnapshot(2, RowLeaseState.Active, now.AddMinutes(5), "unknown-received-owner", 0);
         (await storage.ReclaimDeadPublishedOwnersAsync(["unknown-published-owner"], AbortToken)).Should().Be(0);
         (await storage.ReclaimDeadReceivedOwnersAsync(["unknown-received-owner"], AbortToken)).Should().Be(0);
-        published.LockedUntil.Should().Be(now.AddMinutes(5));
-        received.LockedUntil.Should().Be(now.AddMinutes(5));
+        published.Lease.State.Should().Be(RowLeaseState.Active);
+        received.Lease.State.Should().Be(RowLeaseState.Active);
 
         published.StatusName = StatusName.Delayed;
         published.ExpiresAt = now.AddMinutes(-1);
-        var stateBeforeClaim = (
-            published.StatusName,
-            published.ExpiresAt,
-            published.NextRetryAt,
-            published.LockedUntil,
-            published.Owner
-        );
+        var stateBeforeClaim = (published.StatusName, published.ExpiresAt, published.NextRetryAt, published.Lease);
 
         await storage.ChangePublishStateToDelayedAsync([published], AbortToken);
         (await storage.ClaimDelayedMessagesAsync(AbortToken)).Should().BeEmpty();
-        (published.StatusName, published.ExpiresAt, published.NextRetryAt, published.LockedUntil, published.Owner)
+        (published.StatusName, published.ExpiresAt, published.NextRetryAt, published.Lease)
             .Should()
             .Be(stateBeforeClaim);
 
@@ -486,8 +486,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
             Added = added,
             ExpiresAt = null,
             NextRetryAt = added.AddMinutes(-1),
-            LockedUntil = added.AddMinutes(-1),
-            Owner = "unknown-lane-owner",
+            Lease = new RowLeaseSnapshot(1, RowLeaseState.Active, added.AddMinutes(-1), "unknown-lane-owner", 0),
             Retries = 0,
             InlineAttempts = 0,
             Name = $"unknown-lane-{rawLane}",
@@ -911,7 +910,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
 
         (await storage.LeasePublishAsync(message, leaseDuration, AbortToken)).Should().BeTrue();
 
-        message.LockedUntil.Should().Be(now.Add(leaseDuration));
+        message.Lease.ExpiresAt.Should().Be(now.Add(leaseDuration));
     }
 
     [Fact]
@@ -925,7 +924,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
 
         (await storage.LeaseReceiveAsync(message, leaseDuration, AbortToken)).Should().BeTrue();
 
-        message.LockedUntil.Should().Be(now.Add(leaseDuration));
+        message.Lease.ExpiresAt.Should().Be(now.Add(leaseDuration));
     }
 
     [Fact]
@@ -944,7 +943,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
 
         (await storage.LeasePublishAndReserveAttemptAsync(message, leaseDuration, 0, AbortToken)).Should().BeTrue();
 
-        message.LockedUntil.Should().Be(now.Add(leaseDuration));
+        message.Lease.ExpiresAt.Should().Be(now.Add(leaseDuration));
     }
 
     [Fact]
@@ -964,7 +963,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
 
         (await storage.LeaseReceiveAndReserveAttemptAsync(message, leaseDuration, 0, AbortToken)).Should().BeTrue();
 
-        message.LockedUntil.Should().Be(now.Add(leaseDuration));
+        message.Lease.ExpiresAt.Should().Be(now.Add(leaseDuration));
     }
 
     [Fact]
@@ -1051,7 +1050,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
             StatusName.Failed,
             MessageContentWrite.Refresh,
             retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
-            lockedUntil: null,
+            keepLease: false,
             originalRetries: 0,
             originalInlineAttempts: 0,
             cancellationToken: AbortToken
@@ -1081,7 +1080,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
             StatusName.Failed,
             MessageContentWrite.Refresh,
             retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
-            lockedUntil: null,
+            keepLease: false,
             originalRetries: 0,
             originalInlineAttempts: 0,
             cancellationToken: AbortToken
@@ -1194,15 +1193,13 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
         (await storage.LeasePublishAsync(message, lease, AbortToken)).Should().BeTrue();
         message.InlineAttempts = 1;
         (await storage.ReservePublishAttemptAsync(message, originalInlineAttempts: 0, AbortToken)).Should().BeTrue();
-        var staleLockedUntil = message.LockedUntil;
-        var staleOwner = message.Owner;
+        var staleLease = message.Lease;
 
-        // The reservation re-stamped the lease, so the replacement waits out the reserved lease, not the first one.
-        _fakeTimeProvider!.Advance(staleLockedUntil!.Value - _fakeTimeProvider.GetUtcNow());
+        // The reservation renewed the lease, so the replacement waits out the renewed lease, not the first one.
+        _fakeTimeProvider!.Advance(staleLease.ExpiresAt!.Value - _fakeTimeProvider.GetUtcNow());
         NodeMembership.SetIdentity("owner-b");
         (await storage.LeasePublishAsync(message, lease, AbortToken)).Should().BeTrue();
-        message.LockedUntil = staleLockedUntil;
-        message.Owner = staleOwner;
+        message.Lease = staleLease;
 
         (
             await storage.ChangePublishRetryStateAsync(
@@ -1210,7 +1207,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
                 StatusName.Succeeded,
                 MessageContentWrite.Preserve,
                 null,
-                null,
+                keepLease: false,
                 message.Retries,
                 message.InlineAttempts,
                 AbortToken
@@ -1231,15 +1228,13 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
         (await storage.LeaseReceiveAsync(message, lease, AbortToken)).Should().BeTrue();
         message.InlineAttempts = 1;
         (await storage.ReserveReceiveAttemptAsync(message, originalInlineAttempts: 0, AbortToken)).Should().BeTrue();
-        var staleLockedUntil = message.LockedUntil;
-        var staleOwner = message.Owner;
+        var staleLease = message.Lease;
 
-        // The reservation re-stamped the lease, so the replacement waits out the reserved lease, not the first one.
-        _fakeTimeProvider!.Advance(staleLockedUntil!.Value - _fakeTimeProvider.GetUtcNow());
+        // The reservation renewed the lease, so the replacement waits out the renewed lease, not the first one.
+        _fakeTimeProvider!.Advance(staleLease.ExpiresAt!.Value - _fakeTimeProvider.GetUtcNow());
         NodeMembership.SetIdentity("owner-b");
         (await storage.LeaseReceiveAsync(message, lease, AbortToken)).Should().BeTrue();
-        message.LockedUntil = staleLockedUntil;
-        message.Owner = staleOwner;
+        message.Lease = staleLease;
 
         (
             await storage.ChangeReceiveRetryStateAsync(
@@ -1247,7 +1242,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
                 StatusName.Succeeded,
                 MessageContentWrite.Refresh,
                 null,
-                null,
+                keepLease: false,
                 message.Retries,
                 message.InlineAttempts,
                 AbortToken
@@ -1275,7 +1270,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
                 StatusName.Failed,
                 MessageContentWrite.Refresh,
                 RetryDelay.Exactly(TimeSpan.Zero),
-                null,
+                keepLease: false,
                 originalRetries: 0,
                 originalInlineAttempts: 1,
                 cancellationToken: AbortToken
@@ -1453,9 +1448,25 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
+    public override Task should_leave_the_counter_and_the_lease_unchanged_when_a_reservation_is_refused(bool published)
+    {
+        return base.should_leave_the_counter_and_the_lease_unchanged_when_a_reservation_is_refused(published);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
     public override Task should_renew_only_the_live_lease_generation_the_caller_holds(bool published)
     {
         return base.should_renew_only_the_live_lease_generation_the_caller_holds(published);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public override Task should_refuse_every_write_from_a_holder_whose_lease_was_granted_again(bool published)
+    {
+        return base.should_refuse_every_write_from_a_holder_whose_lease_was_granted_again(published);
     }
 
     [Theory]
@@ -1563,9 +1574,15 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
     }
 
     [Fact]
-    public override Task should_not_reclaim_dead_owner_rows_with_expired_lease()
+    public override Task should_revoke_dead_owner_rows_with_expired_lease()
     {
-        return base.should_not_reclaim_dead_owner_rows_with_expired_lease();
+        return base.should_revoke_dead_owner_rows_with_expired_lease();
+    }
+
+    [Fact]
+    public override Task should_lease_and_reclaim_rows_under_the_longest_owner_tag()
+    {
+        return base.should_lease_and_reclaim_rows_under_the_longest_owner_tag();
     }
 
     [Fact]
@@ -1684,7 +1701,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
                 StatusName.Succeeded,
                 MessageContentWrite.Preserve,
                 retryDelay: null,
-                lockedUntil: null,
+                keepLease: false,
                 originalRetries: 0,
                 originalInlineAttempts: 1,
                 AbortToken
@@ -1754,7 +1771,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
                 StatusName.Succeeded,
                 MessageContentWrite.Preserve,
                 retryDelay: null,
-                lockedUntil: null,
+                keepLease: false,
                 originalRetries: 0,
                 originalInlineAttempts: 1,
                 AbortToken
@@ -1769,7 +1786,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
                 StatusName.Failed,
                 MessageContentWrite.Preserve,
                 retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
-                lockedUntil: null,
+                keepLease: false,
                 originalRetries: 0,
                 originalInlineAttempts: 1,
                 AbortToken
@@ -1865,7 +1882,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
                 StatusName.Failed,
                 MessageContentWrite.Preserve,
                 retryDelay: null,
-                lockedUntil: null,
+                keepLease: false,
                 originalRetries: 0,
                 originalInlineAttempts: 1,
                 AbortToken
@@ -1902,7 +1919,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
                 StatusName.Failed,
                 MessageContentWrite.Preserve,
                 retryDelay: null,
-                lockedUntil: null,
+                keepLease: false,
                 originalRetries: 0,
                 originalInlineAttempts: 1,
                 AbortToken
@@ -1963,7 +1980,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
                 StatusName.Failed,
                 MessageContentWrite.Preserve,
                 null,
-                null,
+                keepLease: false,
                 0,
                 1,
                 AbortToken

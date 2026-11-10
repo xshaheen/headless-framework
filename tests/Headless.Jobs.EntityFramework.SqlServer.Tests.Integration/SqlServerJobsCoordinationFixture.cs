@@ -16,7 +16,7 @@ namespace Tests;
 
 /// <summary>
 /// One Testcontainers SQL Server instance shared by every test, backing the Jobs operational store, the Coordination
-/// SQL Server provider, and Messaging storage, all in the shared <c>headless</c> schema in <c>master</c>.
+/// SQL Server provider, and Messaging storage, all in the shared <c>headless</c> schema of the fixture's own database.
 /// Serialized at the collection level because tests reset the whole database between runs.
 /// </summary>
 [UsedImplicitly]
@@ -45,6 +45,8 @@ public class SqlServerJobsCoordinationFixture
     // SYSUTCDATETIME(). Its datetime precision (~3.33 ms) is immaterial against minute-scale leases, and unlike
     // PostgreSQL's now() it is evaluated per statement, so it carries no transaction-anchoring hazard.
     public string EfTranslatedDatabaseClockSql => "GETUTCDATE()";
+
+    public string LeaseDatabaseClockSql => "SYSUTCDATETIME()";
 
     // SQL Server has no DROP SCHEMA CASCADE. Drop child tables before parents (CronJobOccurrences -> CronJobs).
     // The shared headless schema itself stays, and the schema runner creates it when missing anyway. DROP TABLE IF EXISTS is a no-op when the table is absent.

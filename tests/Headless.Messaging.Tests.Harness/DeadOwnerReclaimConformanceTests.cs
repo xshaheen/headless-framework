@@ -178,7 +178,7 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
 
     public virtual async Task should_recover_aged_out_owner_via_lease_floor()
     {
-        // A dead owner that aged out of the snapshot before reclaim still recovers via LockedUntil expiry.
+        // A dead owner that aged out of the snapshot before reclaim still recovers once its lease expires.
         var (_, storage) = await _StartPrimaryStackAsync();
         // Lease already expired and the owner is absent from the snapshot — the bridge cannot act, only the floor.
         var aged = await _SeedOwnedRowsAsync(storage, "aged-out-node", incarnation: 5, _ExpiredLease());
@@ -495,10 +495,13 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
         return TimeSpan.FromHours(1);
     }
 
-    /// <summary>A negative lease: the DB stamps a deadline already in its own past, so the row seeds as expired.</summary>
+    /// <summary>
+    /// A lease short enough to expire before the bridge looks at the row; a grant rejects a duration that is not
+    /// positive, and the polling probe waits past this one.
+    /// </summary>
     private static TimeSpan _ExpiredLease()
     {
-        return TimeSpan.FromSeconds(-1);
+        return TimeSpan.FromMilliseconds(20);
     }
 
     private static long _NextId()

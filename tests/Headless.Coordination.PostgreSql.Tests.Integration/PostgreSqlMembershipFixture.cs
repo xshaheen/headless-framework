@@ -6,7 +6,6 @@ using Headless.Testing.Testcontainers;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using NpgsqlTypes;
-using Testcontainers.PostgreSql;
 
 namespace Tests;
 
@@ -18,13 +17,6 @@ public sealed class PostgreSqlMembershipFixture
         ICoordinationOracleFixture
 {
     private const string _Schema = HeadlessStorageDefaults.Schema;
-
-    public string ConnectionString => Container.GetConnectionString();
-
-    protected override PostgreSqlBuilder Configure()
-    {
-        return base.Configure().WithDatabase("coordination_test").WithUsername("postgres").WithPassword("postgres");
-    }
 
     protected override async ValueTask InitializeAsync()
     {

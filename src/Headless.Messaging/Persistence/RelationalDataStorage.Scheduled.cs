@@ -2,6 +2,7 @@
 
 using System.Data.Common;
 using Headless.Checks;
+using Headless.Fencing;
 using Headless.Messaging.Internal;
 using Headless.Primitives;
 using Headless.Sql;
@@ -105,7 +106,7 @@ internal sealed partial class RelationalDataStorage
                 _dialect.Render(
                     new SqlClockedStatement(
                         $"""
-                        SELECT {_t.Id},{_t.MessageId},{_t.Name},{_t.IntentType},{_t.ExpiresAt},{_t.LockedUntil},{_t.Owner},{_t.InlineAttempts},CASE WHEN {_t.LockedUntil} > {SqlDialectTokens.Now} THEN 1 ELSE 0 END
+                        SELECT {_t.Id},{_t.MessageId},{_t.Name},{_t.IntentType},{_t.ExpiresAt},CASE WHEN {_t.LeaseState} = {_t.ActiveLease} THEN {_t.LeaseExpiresAt} END,CASE WHEN {_t.LeaseState} = {_t.ActiveLease} THEN {_t.LeaseHolder} END,{_t.InlineAttempts},CASE WHEN {_t.LeaseLive} THEN 1 ELSE 0 END
                         FROM {_publishedTable}
                         WHERE {where}
                         ORDER BY {_t.ExpiresAt} ASC,{_t.Id} ASC
@@ -338,7 +339,7 @@ internal sealed partial class RelationalDataStorage
                                     // means a dispatch already started, so the row is left to it.
                                     : _dialect.Render(
                                         new SqlClockedStatement(
-                                            $"UPDATE {_publishedTable} SET {_t.StatusName}='{nameof(StatusName.Delayed)}',{_t.ExpiresAt}=@Instant,{_t.LockedUntil}=NULL,{_t.Owner}=NULL,{_t.StampChange} WHERE {_t.Id}=@StorageId AND {_t.Version}=@Version AND {_t.ExpiresAt}=@ExpectedDueAt AND ({_t.LockedUntil} IS NULL OR {_t.LockedUntil} <= @Instant) AND {ScheduledEligibility};"
+                                            $"UPDATE {_publishedTable} SET {_t.StatusName}='{nameof(StatusName.Delayed)}',{_t.ExpiresAt}=@Instant,{_RevokeAnyLeaseAssignments()},{_t.StampChange} WHERE {_t.Id}=@StorageId AND {_t.Version}=@Version AND {_t.ExpiresAt}=@ExpectedDueAt AND ({_t.LeaseState} <> {_t.ActiveLease} OR {_t.LeaseExpiresAt} <= @Instant) AND {ScheduledEligibility};"
                                         )
                                     ),
                                 CommandTimeoutSeconds,
@@ -430,11 +431,12 @@ internal sealed partial class RelationalDataStorage
                     _t.InlineAttempts,
                     _t.Retries,
                     _t.NextRetryAt,
-                    _t.LockedUntil,
+                    _t.LeaseExpiresAt,
                     _t.ExpiresAt,
                     _t.Name,
                     _t.MessageId,
                     _t.IntentType,
+                    _t.LeaseState,
                 ]
             )
         );
@@ -453,9 +455,14 @@ internal sealed partial class RelationalDataStorage
                         return null;
                     }
 
-                    var lockedUntil = reader.IsDBNull(5)
-                        ? (DateTimeOffset?)null
-                        : reader.GetFieldValue<DateTimeOffset>(5);
+                    // Only an active lease can still be live; an ended one keeps its last expiry as a record.
+                    var leaseActive =
+                        Convert.ToInt16(reader.GetValue(10), CultureInfo.InvariantCulture)
+                        == (short)RowLeaseState.Active;
+                    var lockedUntil =
+                        !leaseActive || reader.IsDBNull(5)
+                            ? (DateTimeOffset?)null
+                            : reader.GetFieldValue<DateTimeOffset>(5);
 
                     return new ScheduledOperationRow(
                         new ScheduledDeliveryOperationState(

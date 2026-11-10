@@ -36,6 +36,7 @@ public class JobsDbContext<TTimeJob, TCronJob> : DbContext
             schema,
             style
         );
+        JobsLeaseModelConfiguration.Configure(modelBuilder, this);
     }
 }
 

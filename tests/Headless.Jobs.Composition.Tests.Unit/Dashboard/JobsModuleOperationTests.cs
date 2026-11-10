@@ -89,7 +89,8 @@ public sealed class JobsModuleOperationTests : TestBase
         {
             FunctionName = JobsModuleNode.Charge,
             JobId = requeued,
-            ClaimOwner = claimed.OwnerId!,
+            ClaimOwner = claimed.Lease.Holder!,
+            ClaimGeneration = claimed.Lease.Generation,
         }.SetProperty(x => x.Status, JobStatus.Failed);
         (await node.Store.UpdateTimeJobAsync(failAgain, AbortToken)).Should().Be(1);
 
@@ -124,7 +125,13 @@ public sealed class JobsModuleOperationTests : TestBase
 
         // The run's marker moves after confirm, as a running job's progress moves it.
         var reporting = claimed[0];
-        (await node.Store.UpdateTimeJobProgressAsync(reporting.Id, reporting.OwnerId!, new(50, "halfway"), AbortToken))
+        (
+            await node.Store.UpdateTimeJobProgressAsync(
+                JobsLeaseTables.TimeJob(reporting.Id, reporting.Lease.Generation),
+                new(50, "halfway"),
+                AbortToken
+            )
+        )
             .Should()
             .BeTrue();
 

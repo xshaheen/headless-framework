@@ -112,7 +112,13 @@ public abstract class JobsDashboardReadsConformanceTests<TFixture>(TFixture fixt
                     .Should()
                     .ContainSingle()
                     .Subject;
-                (await store.UpdateTimeJobProgressAsync(reporting.Id, claimed.OwnerId!, new JobProgress(40), ct))
+                (
+                    await store.UpdateTimeJobProgressAsync(
+                        JobsLeaseTables.TimeJob(reporting.Id, claimed.Lease.Generation),
+                        new JobProgress(40),
+                        ct
+                    )
+                )
                     .Should()
                     .BeTrue();
                 var cron = await _SeedCronAsync(ct);
@@ -264,7 +270,8 @@ public abstract class JobsDashboardReadsConformanceTests<TFixture>(TFixture fixt
                 {
                     FunctionName = _Function,
                     JobId = refailed,
-                    ClaimOwner = claimed.OwnerId!,
+                    ClaimOwner = claimed.Lease.Holder!,
+                    ClaimGeneration = claimed.Lease.Generation,
                 }.SetProperty(x => x.Status, JobStatus.Failed);
                 (await store.UpdateTimeJobAsync(fail, ct)).Should().Be(1);
 
@@ -314,7 +321,13 @@ public abstract class JobsDashboardReadsConformanceTests<TFixture>(TFixture fixt
                     .Subject;
                 var highWater = (await store.GetLatestChangeMarkerAsync(ct))!.Value;
 
-                (await store.UpdateTimeJobProgressAsync(running, claimed.OwnerId!, new JobProgress(40), ct))
+                (
+                    await store.UpdateTimeJobProgressAsync(
+                        JobsLeaseTables.TimeJob(running, claimed.Lease.Generation),
+                        new JobProgress(40),
+                        ct
+                    )
+                )
                     .Should()
                     .BeTrue();
                 var cancel = await store.ReadJobOperationScopeAsync(
@@ -618,7 +631,16 @@ public abstract class JobsDashboardReadsConformanceTests<TFixture>(TFixture fixt
             .Should()
             .ContainSingle()
             .Subject;
-        (await store.OpenTimeJobAttemptAsync(id, claimed.OwnerId!, started, cancellationToken)).Should().BeTrue();
+        (
+            await store.OpenTimeJobAttemptAsync(
+                JobsLeaseTables.TimeJob(id, claimed.Lease.Generation),
+                claimed.Lease.Holder!,
+                started,
+                cancellationToken
+            )
+        )
+            .Should()
+            .BeTrue();
     }
 
     private static async Task<Guid> _AddTimeJobAsync(

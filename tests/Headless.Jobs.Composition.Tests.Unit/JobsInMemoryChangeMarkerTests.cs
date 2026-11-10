@@ -44,7 +44,9 @@ public sealed class JobsInMemoryChangeMarkerTests : TestBase
         (await store.AcquireImmediateTimeJobsAsync([claimed.Id], AbortToken)).Should().ContainSingle();
         await advanced(claimed.Id, "the claim");
 
-        (await store.UpdateTimeJobProgressAsync(claimed.Id, _Owner, new(40, "halfway"), AbortToken)).Should().BeTrue();
+        (await store.UpdateTimeJobProgressAsync(JobsLeaseTables.TimeJob(claimed.Id, 1), new(40, "halfway"), AbortToken))
+            .Should()
+            .BeTrue();
         await advanced(claimed.Id, "the progress write");
 
         (await store.UpdateTimeJobAsync(_State(claimed.Id).SetProperty(x => x.RetryCount, 1), AbortToken))
@@ -273,6 +275,7 @@ public sealed class JobsInMemoryChangeMarkerTests : TestBase
             FunctionName = "marker",
             JobId = id,
             ClaimOwner = _Owner,
+            ClaimGeneration = 1,
         };
     }
 

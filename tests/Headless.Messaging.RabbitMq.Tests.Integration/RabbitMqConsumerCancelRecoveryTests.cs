@@ -141,6 +141,7 @@ public sealed class RabbitMqConsumerCancelRecoveryTests(RabbitMqFixture fixture)
             setup.UseRabbitMq(options =>
             {
                 options.HostName = fixture.HostName;
+                options.VirtualHost = fixture.VirtualHost;
                 options.Port = fixture.Port;
                 options.UserName = fixture.UserName;
                 options.Password = fixture.Password;
@@ -214,6 +215,8 @@ public sealed class RabbitMqConsumerCancelRecoveryTests(RabbitMqFixture fixture)
                 [
                     "rabbitmqctl",
                     "list_consumers",
+                    "-p",
+                    fixture.VirtualHost,
                     "-q",
                     "--no-table-headers",
                     "queue_name",

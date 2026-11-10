@@ -16,30 +16,15 @@ using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
-using Testcontainers.PostgreSql;
 
 namespace Tests;
 
-/// <summary>One PostgreSQL container; each test creates and drops its own database inside it.</summary>
+/// <summary>One PostgreSQL server; each test creates and drops its own database, derived from the fixture's.</summary>
 [UsedImplicitly]
 [CollectionDefinition(DisableParallelization = true)]
 public sealed class PostgreSqlSharedSchemaFixture
     : HeadlessPostgreSqlFixture,
-        ICollectionFixture<PostgreSqlSharedSchemaFixture>
-{
-    public string ConnectionString => Container.GetConnectionString();
-
-    protected override PostgreSqlBuilder Configure()
-    {
-        // Three hosts run every family at once, and several families keep their own pool, so the default
-        // max_connections of 100 would fail startup with 53300 before any initializer race is observed.
-        return base.Configure()
-            .WithDatabase("shared_schema_test")
-            .WithUsername("postgres")
-            .WithPassword("postgres")
-            .WithCommand("-c", "max_connections=500");
-    }
-}
+        ICollectionFixture<PostgreSqlSharedSchemaFixture>;
 
 [Collection<PostgreSqlSharedSchemaFixture>]
 public sealed class PostgreSqlSharedSchemaTests(PostgreSqlSharedSchemaFixture fixture) : SharedSchemaTestsBase
@@ -95,16 +80,10 @@ public sealed class PostgreSqlSharedSchemaTests(PostgreSqlSharedSchemaFixture fi
 
     protected override async Task<string> CreateDatabaseAsync(CancellationToken cancellationToken)
     {
-        var database = $"shared_schema_{Guid.NewGuid():N}";
+        var database = fixture.DerivedDatabaseName($"t_{Guid.NewGuid():N}");
+        await fixture.CreateDatabaseAsync(database, cancellationToken);
 
-        await using (var connection = new NpgsqlConnection(fixture.ConnectionString))
-        {
-            await connection.OpenAsync(cancellationToken);
-            await using var command = new NpgsqlCommand($"""CREATE DATABASE "{database}";""", connection);
-            await command.ExecuteNonQueryAsync(cancellationToken);
-        }
-
-        return new NpgsqlConnectionStringBuilder(fixture.ConnectionString) { Database = database }.ToString();
+        return fixture.ConnectionStringFor(database);
     }
 
     protected override async Task DropDatabaseAsync(string connectionString, CancellationToken cancellationToken)
@@ -112,7 +91,7 @@ public sealed class PostgreSqlSharedSchemaTests(PostgreSqlSharedSchemaFixture fi
         var database = new NpgsqlConnectionStringBuilder(connectionString).Database;
         NpgsqlConnection.ClearAllPools();
 
-        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await using var connection = new NpgsqlConnection(fixture.AdminConnectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new NpgsqlCommand(
             $"""DROP DATABASE IF EXISTS "{database}" WITH (FORCE);""",

@@ -2,6 +2,7 @@
 
 using Testcontainers.Minio;
 using Testcontainers.Xunit;
+using Xunit;
 
 namespace Headless.Testing.Testcontainers;
 
@@ -13,8 +14,27 @@ namespace Headless.Testing.Testcontainers;
 [PublicAPI]
 public class HeadlessMinioFixture() : ContainerFixture<MinioBuilder, MinioContainer>(TestContextMessageSink.Instance)
 {
+    /// <summary>
+    /// Gets the image the fixture runs, <see cref="TestImages.Minio"/> unless overridden. Override it to run another
+    /// version or a variant of the same server.
+    /// </summary>
+    protected virtual string Image => TestImages.Minio;
+
     protected override MinioBuilder Configure()
     {
-        return base.Configure().WithImage(TestImages.Minio);
+        return base.Configure().WithImage(Image);
+    }
+
+    /// <inheritdoc />
+    protected override async ValueTask InitializeAsync()
+    {
+        await base.InitializeAsync().ConfigureAwait(false);
+        await ContainerHostPort
+            .EnsureReachableAsync(
+                Container,
+                MinioBuilder.MinioPort,
+                cancellationToken: TestContext.Current.CancellationToken
+            )
+            .ConfigureAwait(false);
     }
 }

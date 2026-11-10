@@ -33,7 +33,9 @@ public abstract class JobsAttemptHistoryConformanceTests<TFixture>(TFixture fixt
 
                 for (var retry = 1; retry <= 2; retry++)
                 {
-                    (await store.OpenTimeJobAttemptAsync(job, owner, _StartedAt, ct)).Should().BeTrue();
+                    (await store.OpenTimeJobAttemptAsync(JobsLeaseTables.TimeJob(job, 1), owner, _StartedAt, ct))
+                        .Should()
+                        .BeTrue();
                     var retryWrite = _State(job, owner)
                         .SetProperty(x => x.RetryCount, retry)
                         .SetProperty(x => x.FailureFingerprint, _Fingerprint)
@@ -41,7 +43,9 @@ public abstract class JobsAttemptHistoryConformanceTests<TFixture>(TFixture fixt
                     (await store.UpdateTimeJobAsync(retryWrite, ct)).Should().Be(1);
                 }
 
-                (await store.OpenTimeJobAttemptAsync(job, owner, _StartedAt, ct)).Should().BeTrue();
+                (await store.OpenTimeJobAttemptAsync(JobsLeaseTables.TimeJob(job, 1), owner, _StartedAt, ct))
+                    .Should()
+                    .BeTrue();
                 var success = _State(job, owner)
                     .SetProperty(x => x.Status, JobStatus.Succeeded)
                     .SetProperty(x => x.AttemptEnd, _End(JobAttemptOutcome.Succeeded));
@@ -81,8 +85,19 @@ public abstract class JobsAttemptHistoryConformanceTests<TFixture>(TFixture fixt
                 var job = Guid.NewGuid();
                 await _SeedRunningTimeJobAsync(job, dead, lapsed: true, NodeDeathPolicy.MarkFailed, ct);
                 var occurrence = await _SeedRunningOccurrenceAsync(dead, NodeDeathPolicy.MarkFailed, lapsed: true, ct);
-                (await store.OpenTimeJobAttemptAsync(job, dead, _StartedAt, ct)).Should().BeTrue();
-                (await store.OpenCronJobOccurrenceAttemptAsync(occurrence, dead, _StartedAt, ct)).Should().BeTrue();
+                (await store.OpenTimeJobAttemptAsync(JobsLeaseTables.TimeJob(job, 1), dead, _StartedAt, ct))
+                    .Should()
+                    .BeTrue();
+                (
+                    await store.OpenCronJobOccurrenceAttemptAsync(
+                        JobsLeaseTables.CronOccurrence(occurrence, 1),
+                        dead,
+                        _StartedAt,
+                        ct
+                    )
+                )
+                    .Should()
+                    .BeTrue();
 
                 (await store.ReleaseDeadNodeTimeJobResourcesAsync(dead, ct)).Should().Be(1);
                 (await store.ReleaseDeadNodeOccurrenceResourcesAsync(dead, ct)).Should().Be(1);
@@ -115,11 +130,22 @@ public abstract class JobsAttemptHistoryConformanceTests<TFixture>(TFixture fixt
                 const string dead = "attempts-dead-idle@1";
                 var job = Guid.NewGuid();
                 await _SeedRunningTimeJobAsync(job, dead, lapsed: true, NodeDeathPolicy.Retry, ct);
-                (await store.OpenTimeJobAttemptAsync(job, dead, _StartedAt, ct)).Should().BeTrue();
+                (await store.OpenTimeJobAttemptAsync(JobsLeaseTables.TimeJob(job, 1), dead, _StartedAt, ct))
+                    .Should()
+                    .BeTrue();
 
                 (await store.ReleaseDeadNodeTimeJobResourcesAsync(dead, ct)).Should().Be(1);
-                (await store.AcquireImmediateTimeJobsAsync([job], ct)).Should().ContainSingle();
-                (await store.OpenTimeJobAttemptAsync(job, owner, _StartedAt, ct)).Should().BeTrue();
+                var reclaimed = (await store.AcquireImmediateTimeJobsAsync([job], ct)).Should().ContainSingle().Subject;
+                (
+                    await store.OpenTimeJobAttemptAsync(
+                        JobsLeaseTables.TimeJob(job, reclaimed.Lease.Generation),
+                        owner,
+                        _StartedAt,
+                        ct
+                    )
+                )
+                    .Should()
+                    .BeTrue();
 
                 var attempts = await store.GetTimeJobAttemptsAsync(job, ct);
                 attempts.Select(x => x.Number).Should().Equal(1, 2);
@@ -152,17 +178,39 @@ public abstract class JobsAttemptHistoryConformanceTests<TFixture>(TFixture fixt
                     lapsed: true,
                     ct
                 );
-                (await store.OpenTimeJobAttemptAsync(skipped, dead, _StartedAt, ct)).Should().BeTrue();
-                (await store.OpenTimeJobAttemptAsync(stalled, owner, _StartedAt, ct)).Should().BeTrue();
-                (await store.OpenTimeJobAttemptAsync(released, owner, _StartedAt, ct)).Should().BeTrue();
-                (await store.OpenCronJobOccurrenceAttemptAsync(stalledOccurrence, owner, _StartedAt, ct))
+                (await store.OpenTimeJobAttemptAsync(JobsLeaseTables.TimeJob(skipped, 1), dead, _StartedAt, ct))
+                    .Should()
+                    .BeTrue();
+                (await store.OpenTimeJobAttemptAsync(JobsLeaseTables.TimeJob(stalled, 1), owner, _StartedAt, ct))
+                    .Should()
+                    .BeTrue();
+                (await store.OpenTimeJobAttemptAsync(JobsLeaseTables.TimeJob(released, 1), owner, _StartedAt, ct))
+                    .Should()
+                    .BeTrue();
+                (
+                    await store.OpenCronJobOccurrenceAttemptAsync(
+                        JobsLeaseTables.CronOccurrence(stalledOccurrence, 1),
+                        owner,
+                        _StartedAt,
+                        ct
+                    )
+                )
                     .Should()
                     .BeTrue();
 
                 (await store.ReleaseDeadNodeTimeJobResourcesAsync(dead, ct)).Should().Be(1);
                 (await store.ReclaimStalledTimeJobsAsync(ct)).Should().Be(1);
                 (await store.ReclaimStalledCronJobOccurrencesAsync(ct)).Should().Be(1);
-                (await store.SettleInterruptedTimeJobAsync(released, owner, "host stopped", null, ct)).Should().Be(1);
+                (
+                    await store.SettleInterruptedTimeJobAsync(
+                        JobsLeaseTables.TimeJob(released, 1),
+                        "host stopped",
+                        null,
+                        ct
+                    )
+                )
+                    .Should()
+                    .Be(1);
 
                 var skippedAttempt = await _OnlyClosedAttemptAsync(store, skipped, ct);
                 skippedAttempt.Outcome.Should().Be(JobAttemptOutcome.Skipped);
@@ -228,8 +276,8 @@ public abstract class JobsAttemptHistoryConformanceTests<TFixture>(TFixture fixt
                 var job = Guid.NewGuid();
                 await _SeedRunningTimeJobAsync(job, owner, lapsed: false, NodeDeathPolicy.Retry, ct);
 
-                (await store.ReleaseInProgressTimeJobAsync(job, owner, ct)).Should().Be(1);
-                (await store.OpenTimeJobAttemptAsync(job, owner, _StartedAt, ct))
+                (await store.ReleaseInProgressTimeJobAsync(JobsLeaseTables.TimeJob(job, 1), ct)).Should().Be(1);
+                (await store.OpenTimeJobAttemptAsync(JobsLeaseTables.TimeJob(job, 1), owner, _StartedAt, ct))
                     .Should()
                     .BeFalse("a run that left InProgress takes no new attempt");
 
@@ -268,7 +316,16 @@ public abstract class JobsAttemptHistoryConformanceTests<TFixture>(TFixture fixt
             async (store, owner, ct) =>
             {
                 var occurrence = await _SeedRunningOccurrenceAsync(owner, NodeDeathPolicy.Retry, lapsed: false, ct);
-                (await store.OpenCronJobOccurrenceAttemptAsync(occurrence, owner, _StartedAt, ct)).Should().BeTrue();
+                (
+                    await store.OpenCronJobOccurrenceAttemptAsync(
+                        JobsLeaseTables.CronOccurrence(occurrence, 1),
+                        owner,
+                        _StartedAt,
+                        ct
+                    )
+                )
+                    .Should()
+                    .BeTrue();
                 var cronJobId = (await store.GetAllCronJobOccurrencesAsync(x => x.Id == occurrence, ct))
                     .Single()
                     .CronJobId;
@@ -291,7 +348,9 @@ public abstract class JobsAttemptHistoryConformanceTests<TFixture>(TFixture fixt
                 {
                     var job = Guid.NewGuid();
                     await _SeedRunningTimeJobAsync(job, owner, lapsed: true, NodeDeathPolicy.MarkFailed, ct);
-                    (await store.OpenTimeJobAttemptAsync(job, owner, _StartedAt, ct)).Should().BeTrue();
+                    (await store.OpenTimeJobAttemptAsync(JobsLeaseTables.TimeJob(job, 1), owner, _StartedAt, ct))
+                        .Should()
+                        .BeTrue();
                     var success = _State(job, owner)
                         .SetProperty(x => x.Status, JobStatus.Succeeded)
                         .SetProperty(x => x.AttemptEnd, _End(JobAttemptOutcome.Succeeded));
@@ -462,6 +521,7 @@ public abstract class JobsAttemptHistoryConformanceTests<TFixture>(TFixture fixt
             FunctionName = _Function,
             JobId = id,
             ClaimOwner = owner,
+            ClaimGeneration = 1,
         };
     }
 

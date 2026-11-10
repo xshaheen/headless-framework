@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Fencing;
 using Headless.Messaging;
 using Headless.Messaging.Persistence;
 using Headless.Testing.Tests;
@@ -40,8 +41,7 @@ public abstract class InboxStorageConformanceTests : TestBase
 
         var persisted = (await _AdmitAsync(storage, envelope)).Message;
         persisted.IsInboxOrphaned.Should().BeTrue();
-        persisted.Owner.Should().BeNull();
-        persisted.LockedUntil.Should().BeNull();
+        persisted.Lease.State.Should().NotBe(RowLeaseState.Active);
         persisted.NextRetryAt.Should().BeAfter(before);
         persisted.Retries.Should().Be(retries);
     }
@@ -93,8 +93,7 @@ public abstract class InboxStorageConformanceTests : TestBase
             .Should()
             .BeTrue("a previously classified orphan must release every new probe");
         var repeated = (await _AdmitAsync(storage, envelope)).Message;
-        repeated.LockedUntil.Should().BeNull();
-        repeated.Owner.Should().BeNull();
+        repeated.Lease.State.Should().NotBe(RowLeaseState.Active);
         repeated.NextRetryAt.Should().BeOnOrAfter(message.NextRetryAt!.Value);
         attempts = repeated.InlineAttempts++;
         (await storage.LeaseReceiveAndReserveAttemptAsync(repeated, TimeSpan.FromMinutes(5), attempts, AbortToken))
@@ -154,8 +153,7 @@ public abstract class InboxStorageConformanceTests : TestBase
 
             var identity = new MessageLeaseIdentity(
                 message.StorageId,
-                message.Owner,
-                message.LockedUntil!.Value,
+                message.Lease.Generation,
                 lane,
                 message.InboxAttemptFence
             );
@@ -265,7 +263,7 @@ public abstract class InboxStorageConformanceTests : TestBase
             .BeTrue();
         var fence = winner.InboxAttemptFence!;
         fence.Should().NotBeNull();
-        var identity = new MessageLeaseIdentity(winner.StorageId, winner.Owner, winner.LockedUntil!.Value, lane, fence);
+        var identity = new MessageLeaseIdentity(winner.StorageId, winner.Lease.Generation, lane, fence);
         // Longer than the dispatch lease, so a deferred row's due time lands past the lease it replaced.
         var deferDelay = TimeSpan.FromHours(1);
         foreach (var invalidFence in _InvalidFences(fence).Values)
@@ -284,19 +282,17 @@ public abstract class InboxStorageConformanceTests : TestBase
                 .Should()
                 .BeFalse("every field of the inbox fence must match, even when the outer lease matches");
             var unchanged = (await _AdmitAsync(storage, envelope)).Message;
-            unchanged.Owner.Should().Be(winner.Owner);
-            unchanged.LockedUntil.Should().Be(winner.LockedUntil);
+            unchanged.Lease.Should().Be(winner.Lease);
             unchanged.NextRetryAt.Should().Be(winner.NextRetryAt);
             unchanged.InboxAttemptFence.Should().Be(fence);
         }
 
         (await _MutateLeaseAsync(storage, operation, identity, deferDelay)).Should().BeTrue();
         var released = (await _AdmitAsync(storage, envelope)).Message;
-        released.Owner.Should().BeNull();
-        released.LockedUntil.Should().BeNull();
+        released.Lease.State.Should().NotBe(RowLeaseState.Active);
         if (string.Equals(operation, "defer", StringComparison.Ordinal))
         {
-            released.NextRetryAt.Should().NotBeNull().And.BeAfter(winner.LockedUntil.Value);
+            released.NextRetryAt.Should().NotBeNull().And.BeAfter(winner.Lease.ExpiresAt!.Value);
         }
         else
         {
@@ -313,16 +309,14 @@ public abstract class InboxStorageConformanceTests : TestBase
     [InlineData(MessageLane.Bus, "generation")]
     [InlineData(MessageLane.Bus, "incarnation")]
     [InlineData(MessageLane.Bus, "attemptId")]
-    [InlineData(MessageLane.Bus, "owner")]
-    [InlineData(MessageLane.Bus, "lockedUntil")]
+    [InlineData(MessageLane.Bus, "leaseGeneration")]
     [InlineData(MessageLane.Queue, "missing")]
     [InlineData(MessageLane.Queue, "storageId")]
     [InlineData(MessageLane.Queue, "lane")]
     [InlineData(MessageLane.Queue, "generation")]
     [InlineData(MessageLane.Queue, "incarnation")]
     [InlineData(MessageLane.Queue, "attemptId")]
-    [InlineData(MessageLane.Queue, "owner")]
-    [InlineData(MessageLane.Queue, "lockedUntil")]
+    [InlineData(MessageLane.Queue, "leaseGeneration")]
     public async Task should_require_complete_inbox_fence_before_reserving_attempt(MessageLane lane, string field)
     {
         await using var provider = _CreateProvider();
@@ -343,8 +337,7 @@ public abstract class InboxStorageConformanceTests : TestBase
         var unchanged = (await _AdmitAsync(storage, envelope)).Message;
         unchanged.InlineAttempts.Should().Be(originalAttempts);
         unchanged.InboxAttemptFence.Should().Be(fence);
-        unchanged.LockedUntil.Should().Be(message.LockedUntil);
-        unchanged.Owner.Should().Be(message.Owner);
+        unchanged.Lease.Should().Be(message.Lease);
         message.InboxAttemptFence = fence;
         (await storage.ReserveReceiveAttemptAsync(message, originalAttempts, AbortToken)).Should().BeTrue();
         (await _AdmitAsync(storage, envelope)).Message.InlineAttempts.Should().Be(message.InlineAttempts);
@@ -376,12 +369,12 @@ public abstract class InboxStorageConformanceTests : TestBase
             var originalAttempts = message.InlineAttempts++;
             (await storage.ReserveReceiveAttemptAsync(message, originalAttempts, AbortToken)).Should().BeTrue();
 
-            // The reservation re-stamps the lease but keeps the attempt: only the deadline in the fence moves.
-            message.InboxAttemptFence.Should().Be(originalFence with { LockedUntil = message.LockedUntil!.Value });
+            // The reservation renews the lease but keeps the attempt and its lease generation: the fence is unchanged.
+            message.InboxAttemptFence.Should().Be(originalFence);
             var persisted = (await _AdmitAsync(storage, envelope)).Message;
             persisted.InlineAttempts.Should().Be(message.InlineAttempts);
             persisted.InboxAttemptFence.Should().Be(message.InboxAttemptFence);
-            persisted.LockedUntil.Should().Be(message.LockedUntil);
+            persisted.Lease.Should().Be(message.Lease);
             (await storage.ReserveReceiveAttemptAsync(message, originalAttempts, AbortToken))
                 .Should()
                 .BeFalse("a stale counter cannot reserve again, even with the right fence");
@@ -390,8 +383,7 @@ public abstract class InboxStorageConformanceTests : TestBase
         // The identity the attempt holds after its reservations, not the claim-time one, releases or defers the row.
         var heldLease = new MessageLeaseIdentity(
             message.StorageId,
-            message.Owner,
-            message.LockedUntil!.Value,
+            message.Lease.Generation,
             lane,
             message.InboxAttemptFence
         );
@@ -424,7 +416,7 @@ public abstract class InboxStorageConformanceTests : TestBase
         successorFence.AttemptId.Should().NotBe(originalFence.AttemptId);
         var nextAttempt = successor.InlineAttempts++;
         (await storage.ReserveReceiveAttemptAsync(successor, nextAttempt, AbortToken)).Should().BeTrue();
-        successor.InboxAttemptFence.Should().Be(successorFence with { LockedUntil = successor.LockedUntil!.Value });
+        successor.InboxAttemptFence.Should().Be(successorFence);
     }
 
     public static TheoryData<string, string?> InvalidIdentities =>
@@ -615,8 +607,7 @@ public abstract class InboxStorageConformanceTests : TestBase
 
         var identity = new MessageLeaseIdentity(
             message.StorageId,
-            message.Owner,
-            message.LockedUntil!.Value,
+            message.Lease.Generation,
             lane,
             message.InboxAttemptFence
         );
@@ -680,7 +671,6 @@ public abstract class InboxStorageConformanceTests : TestBase
             ["generation"] = fence with { Generation = fence.Generation + 1 },
             ["incarnation"] = fence with { GenerationIncarnationId = Guid.NewGuid() },
             ["attemptId"] = fence with { AttemptId = Guid.NewGuid() },
-            ["owner"] = fence with { Owner = "different-owner" },
-            ["lockedUntil"] = fence with { LockedUntil = fence.LockedUntil.AddSeconds(1) },
+            ["leaseGeneration"] = fence with { LeaseGeneration = fence.LeaseGeneration + 1 },
         };
 }

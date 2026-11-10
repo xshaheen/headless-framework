@@ -36,7 +36,8 @@ internal sealed class ReCaptchaSiteVerifyV3(
     string name,
     IOptionsMonitor<ReCaptchaOptions> optionsMonitor,
     IHttpClientFactory clientFactory,
-    ILogger<ReCaptchaSiteVerifyV3>? logger
+    ILogger<ReCaptchaSiteVerifyV3>? logger,
+    bool logResponseBody
 ) : IReCaptchaV3Verifier
 {
     public async Task<ReCaptchaV3VerifyResult> VerifyAsync(
@@ -56,6 +57,7 @@ internal sealed class ReCaptchaSiteVerifyV3(
                 request,
                 ReCaptchaJsonSerializerContext.Default.ReCaptchaSiteVerifyV3Response,
                 logger,
+                logResponseBody,
                 cancellationToken
             )
             .ConfigureAwait(false);

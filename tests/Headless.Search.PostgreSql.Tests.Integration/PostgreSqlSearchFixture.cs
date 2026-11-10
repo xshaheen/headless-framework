@@ -6,7 +6,6 @@ using Headless.Testing.Testcontainers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Npgsql;
-using Testcontainers.PostgreSql;
 
 namespace Tests;
 
@@ -18,13 +17,6 @@ namespace Tests;
 [CollectionDefinition]
 public sealed class PostgreSqlSearchFixture : HeadlessPostgreSqlFixture, ICollectionFixture<PostgreSqlSearchFixture>
 {
-    public string ConnectionString => Container.GetConnectionString();
-
-    protected override PostgreSqlBuilder Configure()
-    {
-        return base.Configure().WithDatabase("search_test").WithUsername("postgres").WithPassword("postgres");
-    }
-
     protected override async ValueTask InitializeAsync()
     {
         await base.InitializeAsync();
@@ -36,15 +28,27 @@ public sealed class PostgreSqlSearchFixture : HeadlessPostgreSqlFixture, ICollec
     /// <summary>Creates an empty database and returns its connection string.</summary>
     public async Task<string> CreateDatabaseAsync(CancellationToken cancellationToken, string? lcCtype = null)
     {
-        var name = "search_" + Guid.NewGuid().ToString("N")[..12];
-        await using var connection = new NpgsqlConnection(ConnectionString);
+        var name = DerivedDatabaseName($"t_{Guid.NewGuid():N}");
+
+        if (lcCtype is null)
+        {
+            await CreateDatabaseAsync(name, cancellationToken);
+
+            return ConnectionStringFor(name);
+        }
+
+        // The base helper creates a database with the server's default locale; a derived name still lets the
+        // fixture drop this one on dispose.
+        await using var connection = new NpgsqlConnection(AdminConnectionString);
         await connection.OpenAsync(cancellationToken);
 
-        var locale = lcCtype is null ? "" : $" TEMPLATE template0 LC_CTYPE '{lcCtype}' LC_COLLATE '{lcCtype}'";
-        await using var create = new NpgsqlCommand($"""CREATE DATABASE "{name}"{locale};""", connection);
+        await using var create = new NpgsqlCommand(
+            $"""CREATE DATABASE "{name}" TEMPLATE template0 LC_CTYPE '{lcCtype}' LC_COLLATE '{lcCtype}';""",
+            connection
+        );
         await create.ExecuteNonQueryAsync(cancellationToken);
 
-        return new NpgsqlConnectionStringBuilder(ConnectionString) { Database = name }.ToString();
+        return ConnectionStringFor(name);
     }
 
     /// <summary>A host that registers PostgreSQL search on <paramref name="connectionString" />.</summary>

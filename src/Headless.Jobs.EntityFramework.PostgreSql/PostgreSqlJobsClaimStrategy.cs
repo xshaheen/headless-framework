@@ -2,6 +2,7 @@
 
 using System.Data.Common;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using Headless.Jobs.Infrastructure;
 using Headless.Jobs.Internal;
 using Headless.Sql;
@@ -112,19 +113,18 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
 
         // The peek-hydrated tree may include non-idle nodes (and their tails) the claim did not lease; prune to
         // the claimed set (root + leased non-timed descendants) so nothing runs unclaimed — parity with the CAS path.
-        var claimedIds = claim.LeasedIds.ToHashSet();
+        var claimedIds = claim.Generations.Keys.ToHashSet();
         foreach (var timeJob in timeJobs)
         {
-            if (!claim.Roots.TryGetValue(timeJob.Id, out var claimedAt))
+            if (!claim.Roots.TryGetValue(timeJob.Id, out var root))
             {
                 continue;
             }
 
-            timeJob.OwnerId = owner;
-            timeJob.LockedUntil = claimedAt.UtcDateTime.Add(_leaseDuration);
-            timeJob.UpdatedAt = claimedAt;
+            timeJob.UpdatedAt = root.UpdatedAt;
             timeJob.Status = JobStatus.Queued;
             TimeJobSubtreeOperations.PruneToClaimedSet(timeJob, claimedIds);
+            JobsLeaseGrant.StampClaimedTree(timeJob, claim.Generations, root.ExpiresAt, owner);
             yield return timeJob;
         }
     }
@@ -156,10 +156,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                     var filter = $"""
                         {mapping.ExecutionTime} IS NOT NULL
                           AND {mapping.ExecutionTime} <= {SqlDialectTokens.Now} - INTERVAL '1 second'
-                          AND ({mapping.Status} = @idle
-                               OR ({mapping.Status} = @queued
-                                   AND ({mapping.LockedUntil} IS NULL
-                                        OR {mapping.LockedUntil} <= {SqlDialectTokens.Now})))
+                          AND {AcquirePredicateSql.Fallback(mapping.Status, mapping.Lease, reclaimOwn: true)}
                           {TimedChildGateSql.Build(mapping)}
                           {_RunnableClause(_runFilter, mapping.Function)}
                         """;
@@ -207,7 +204,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             var roots = await dbContext
                 .Set<TTimeJob>()
                 .AsNoTracking()
-                .Where(x => rootIds.Contains(x.Id) && x.OwnerId == owner)
+                .Where(x => rootIds.Contains(x.Id) && x.Lease.Holder == owner)
                 .Select(MappingExtensions.ForFlatTimeJob<TTimeJob>())
                 .ToArrayAsync(cancellationToken)
                 .ConfigureAwait(false);
@@ -221,10 +218,11 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                 )
                 .ConfigureAwait(false);
 
-            var claimedIds = claim.LeasedIds.ToHashSet();
+            var claimedIds = claim.Generations.Keys.ToHashSet();
             foreach (var root in roots)
             {
                 TimeJobSubtreeOperations.PruneToClaimedSet(root, claimedIds);
+                JobsLeaseGrant.StampClaimedTree(root, claim.Generations, claim.Roots[root.Id].ExpiresAt, owner);
             }
 
             claimed = roots;
@@ -232,7 +230,6 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
 
         foreach (var timeJob in claimed)
         {
-            timeJob.OwnerId = owner;
             timeJob.Status = JobStatus.Queued;
             yield return timeJob;
         }
@@ -319,8 +316,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                                         item,
                                         definitions[item.Id],
                                         cronJobOccurrences.Key,
-                                        lease ? owner : null,
-                                        _leaseDuration,
+                                        lease,
                                         ct
                                     )
                                     .ConfigureAwait(false)
@@ -332,7 +328,6 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                                         item,
                                         cronJobOccurrences.Key,
                                         owner,
-                                        _leaseDuration,
                                         ct
                                     )
                                     .ConfigureAwait(false)
@@ -357,7 +352,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
 
                     if (claimedIds.Count > 0)
                     {
-                        await _RefreshCronOccurrenceLeasesAsync(
+                        await _GrantCronOccurrenceLeasesAsync(
                                 dbContext,
                                 transaction,
                                 mapping,
@@ -372,7 +367,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                         var occurrences = await dbContext
                             .Set<CronJobOccurrenceEntity<TCronJob>>()
                             .AsNoTracking()
-                            .Where(x => claimedIds.Contains(x.Id) && x.OwnerId == owner)
+                            .Where(x => claimedIds.Contains(x.Id) && x.Lease.Holder == owner)
                             .Include(x => x.CronJob)
                             .ToDictionaryAsync(x => x.Id, ct)
                             .ConfigureAwait(false);
@@ -481,7 +476,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                     var attemptClaimed = await dbContext
                         .Set<CronJobOccurrenceEntity<TCronJob>>()
                         .AsNoTracking()
-                        .Where(x => wonIds.Contains(x.Id) && x.OwnerId == owner)
+                        .Where(x => wonIds.Contains(x.Id) && x.Lease.Holder == owner)
                         .Include(x => x.CronJob)
                         .Select(
                             MappingExtensions.ForQueueCronJobOccurrence<CronJobOccurrenceEntity<TCronJob>, TCronJob>()
@@ -506,7 +501,11 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
     private static string _NextChangedAt(string column, string now = SqlDialectTokens.Now) =>
         $"GREATEST({now}, {column} + INTERVAL '1 microsecond')";
 
-    private static async Task _RefreshCronOccurrenceLeasesAsync(
+    // Grants every occurrence the wave claimed in one statement, after the inserts and token claims, so each row takes
+    // its own generation and the database clock stamps its expiry. The wave holds every row's lock until commit, so
+    // the fence matches each one; the hydrate reads only the rows this owner holds, so a row it did not match is
+    // simply not returned.
+    private static async Task _GrantCronOccurrenceLeasesAsync(
         TDbContext dbContext,
         IDbContextTransaction transaction,
         CronOccurrenceRelationalMapping mapping,
@@ -517,6 +516,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
     )
     {
         var dialect = PostgreSqlDialect.Instance;
+        var scope = JobsLeaseGrant.Scope(JobsLeaseRows.CronOccurrences<TCronJob>(dbContext));
         await using var command = _CreateCommand(dbContext, transaction);
 
 #pragma warning disable CA2100 // SQL structure contains only provider-delimited EF metadata identifiers and fixed clauses;
@@ -524,24 +524,21 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             new SqlClockedStatement(
                 $"""
                 UPDATE {mapping.Table}
-                SET {mapping.LockedUntil} = {dialect.ShiftByDuration(SqlDialectTokens.Now, "lease")},
+                SET {scope.Assignments()},
                     {mapping.UpdatedAt} = {SqlDialectTokens.Now}
                 WHERE {dialect.InList(mapping.Id, "occurrenceIds", SqlColumnType.Guid)}
-                  AND {mapping.OwnerId} = @owner
-                RETURNING {mapping.UpdatedAt};
+                  AND {AcquirePredicateSql.Build(mapping.Status, mapping.Lease)};
                 """
             )
         );
 #pragma warning restore CA2100
 
-        dialect.AddDuration(command, "lease", leaseDuration);
+        scope.Bind(command, leaseDuration, owner);
         dialect.AddListParameter(command, "occurrenceIds", SqlColumnType.Guid, occurrenceIds);
+        command.Parameters.Add(new NpgsqlParameter("idle", nameof(JobStatus.Idle)));
+        command.Parameters.Add(new NpgsqlParameter("queued", nameof(JobStatus.Queued)));
         command.Parameters.Add(new NpgsqlParameter("owner", owner));
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            throw new InvalidOperationException("The database did not return the refreshed claim clock.");
-        }
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<Guid?> _InsertCronOccurrenceAsync(
@@ -551,15 +548,14 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         JobManagerDispatchContext item,
         TCronJob definition,
         DateTime executionTime,
-        string? owner,
-        TimeSpan leaseDuration,
+        bool lease,
         CancellationToken cancellationToken
     )
     {
-        // A null owner materializes the occurrence Idle and unleased, for the fallback sweep to claim later.
+        // The row is inserted unleased: a leased one is granted with the rest of the wave, and an unleased one is
+        // materialized Idle for the fallback sweep to claim later.
         var dialect = PostgreSqlDialect.Instance;
         var id = guidGenerator.Create();
-        var lockedUntil = owner is null ? "NULL" : dialect.ShiftByDuration(SqlDialectTokens.Now, "lease");
         var snapshot = new CronJobOccurrenceEntity<TCronJob> { Id = id };
         snapshot.SnapshotContract(definition);
         await using var command = _CreateCommand(dbContext, transaction);
@@ -570,13 +566,13 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             new SqlClockedStatement(
                 $"""
                 INSERT INTO {mapping.Table}
-                    ({mapping.Id}, {mapping.Status}, {mapping.OwnerId}, {mapping.ExecutionTime}, {mapping.CronJobId},
-                     {mapping.LockedUntil}, {mapping.OnNodeDeath}, {mapping.ElapsedTime}, {mapping.RetryCount},
+                    ({mapping.Id}, {mapping.Status}, {mapping.ExecutionTime}, {mapping.CronJobId},
+                     {mapping.OnNodeDeath}, {mapping.ElapsedTime}, {mapping.RetryCount},
                      {mapping.CreatedAt}, {mapping.UpdatedAt}, {mapping.Disposition},
                      {mapping.Function}, {mapping.ContractVersion}, {mapping.Request}, {mapping.CorrelationId}, {mapping.CausationId})
                 SELECT
-                    @id, @status, @owner, @executionTime, @cronJobId,
-                    {lockedUntil}, @onNodeDeath,
+                    @id, @status, @executionTime, @cronJobId,
+                    @onNodeDeath,
                     @elapsedTime, @retryCount, {SqlDialectTokens.Now}, {SqlDialectTokens.Now}, @disposition,
                     @function, @contractVersion, @request, @correlationId, @causationId
                 WHERE NOT EXISTS (
@@ -619,7 +615,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             }
         );
         command.Parameters.Add(
-            new NpgsqlParameter("status", owner is null ? nameof(JobStatus.Idle) : nameof(JobStatus.Queued))
+            new NpgsqlParameter("status", lease ? nameof(JobStatus.Queued) : nameof(JobStatus.Idle))
         );
         // This is the occupied-instant ACCOUNTING matrix, not the live-only filter this statement used to carry. A
         // terminal row at the instant means the instant ran (or was deliberately retired) and must not fire again;
@@ -635,15 +631,8 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             new NpgsqlParameter("unaccountedDisposition", CronOccurrenceRelationalMapping.UnaccountedDispositionValue)
         );
         command.Parameters.Add(new NpgsqlParameter("disposition", nameof(CronOccurrenceDisposition.Accounted)));
-        command.Parameters.Add(
-            new NpgsqlParameter("owner", NpgsqlDbType.Text) { Value = (object?)owner ?? DBNull.Value }
-        );
         command.Parameters.Add(new NpgsqlParameter("executionTime", executionTime));
         command.Parameters.Add(new NpgsqlParameter("cronJobId", item.Id));
-        if (owner is not null)
-        {
-            dialect.AddDuration(command, "lease", leaseDuration);
-        }
 
         command.Parameters.Add(new NpgsqlParameter("onNodeDeath", item.OnNodeDeath.ToString()));
         command.Parameters.Add(new NpgsqlParameter("elapsedTime", NpgsqlDbType.Bigint) { Value = 0L });
@@ -659,10 +648,10 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         JobManagerDispatchContext item,
         DateTime executionTime,
         string owner,
-        TimeSpan leaseDuration,
         CancellationToken cancellationToken
     )
     {
+        // Locks and marks the occurrence; the wave's grant leases it with the rest.
         var dialect = PostgreSqlDialect.Instance;
         var occurrence = item.NextCronOccurrence!;
         await using var command = _CreateCommand(dbContext, transaction);
@@ -674,13 +663,11 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                 $"""
                 {mapping.Id} = @id
                   AND {mapping.ExecutionTime} = @executionTime
-                  AND {AcquirePredicateSql.Build(mapping.Status, mapping.OwnerId, mapping.LockedUntil)}
+                  AND {AcquirePredicateSql.Build(mapping.Status, mapping.Lease)}
                 """,
                 [mapping.Id],
                 $"""
-                {mapping.OwnerId} = @owner,
-                    {mapping.LockedUntil} = {dialect.ShiftByDuration(SqlDialectTokens.Now, "lease")},
-                    {mapping.UpdatedAt} = {SqlDialectTokens.Now},
+                {mapping.UpdatedAt} = {SqlDialectTokens.Now},
                     {mapping.ChangedAt} = {_NextChangedAt(mapping.ChangedAt)},
                     {mapping.Status} = @queued,
                     {mapping.OnNodeDeath} = @onNodeDeath
@@ -694,7 +681,6 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         command.Parameters.Add(new NpgsqlParameter("idle", nameof(JobStatus.Idle)));
         command.Parameters.Add(new NpgsqlParameter("queued", nameof(JobStatus.Queued)));
         command.Parameters.Add(new NpgsqlParameter("owner", owner));
-        dialect.AddDuration(command, "lease", leaseDuration);
         command.Parameters.Add(new NpgsqlParameter("onNodeDeath", item.OnNodeDeath.ToString()));
         var claimed = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
 
@@ -714,6 +700,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
     )
     {
         var dialect = PostgreSqlDialect.Instance;
+        var scope = JobsLeaseGrant.Scope(JobsLeaseRows.CronOccurrences<TCronJob>(dbContext));
         await using var command = _CreateCommand(dbContext, transaction);
 
         // A paused definition's occurrence stays where it is: an occurrence reclaimed to Idle after the pause would
@@ -725,10 +712,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                 [mapping.Id],
                 $"""
                 {mapping.ExecutionTime} <= {SqlDialectTokens.Now} - INTERVAL '1 second'
-                  AND ({mapping.Status} = @idle
-                       OR ({mapping.Status} = @queued
-                           AND ({mapping.LockedUntil} IS NULL
-                                OR {mapping.LockedUntil} <= {SqlDialectTokens.Now})))
+                  AND {AcquirePredicateSql.Fallback(mapping.Status, mapping.Lease, reclaimOwn: false)}
                   AND {mapping.CronJobId} IN (
                       SELECT {definitionMapping.Id}
                       FROM {definitionMapping.Table}
@@ -737,8 +721,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                 """,
                 [mapping.ExecutionTime, mapping.Id],
                 $"""
-                {mapping.OwnerId} = @owner,
-                    {mapping.LockedUntil} = {dialect.ShiftByDuration(SqlDialectTokens.Now, "lease")},
+                {scope.Assignments()},
                     {mapping.UpdatedAt} = {SqlDialectTokens.Now},
                     {mapping.ChangedAt} = {_NextChangedAt(mapping.ChangedAt)},
                     {mapping.Status} = @queued
@@ -751,8 +734,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
 
         command.Parameters.Add(new NpgsqlParameter("idle", nameof(JobStatus.Idle)));
         command.Parameters.Add(new NpgsqlParameter("queued", nameof(JobStatus.Queued)));
-        command.Parameters.Add(new NpgsqlParameter("owner", owner));
-        dialect.AddDuration(command, "lease", leaseDuration);
+        scope.Bind(command, leaseDuration, owner);
         command.Parameters.Add(_BatchSizeParameter(part.BatchSize));
         command.Parameters.AddRange(_RunnableParameters(runFilter));
         command.Parameters.AddRange(part.Parameters());
@@ -774,7 +756,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
     {
         return PostgreSqlDialect.Instance.InTuples([mapping.Id, mapping.UpdatedAt], "requested", _DirectCandidateTypes)
             + " AND "
-            + AcquirePredicateSql.Build(mapping.Status, mapping.OwnerId, mapping.LockedUntil)
+            + AcquirePredicateSql.Build(mapping.Status, mapping.Lease)
             + $" AND ({mapping.ExecutionTime} IS NULL OR {mapping.ExecutionTime} <= {SqlDialectTokens.Now} + INTERVAL '{_DueSlackSeconds} second')";
     }
 
@@ -821,8 +803,8 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                 cancellationToken
             )
             .ConfigureAwait(false);
-        var roots = new Dictionary<Guid, DateTimeOffset>();
-        var leasedIds = new List<Guid>();
+        var roots = new Dictionary<Guid, ClaimedRoot>();
+        var generations = new Dictionary<Guid, long>();
         foreach (var part in parts)
         {
             var claim = await _ClaimRootsAsync(
@@ -838,31 +820,30 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                     [.. filterParameters(), .. part.Parameters()]
                 )
                 .ConfigureAwait(false);
-            foreach (var id in claim.Ids)
+            foreach (var root in claim)
             {
-                roots[id] = claim.ClaimedAt;
+                roots[root.Id] = root;
+                generations[root.Id] = root.Generation;
             }
 
-            leasedIds.AddRange(
-                await _StampDescendantsAsync(
-                        dbContext,
-                        transaction,
-                        mapping,
-                        claim.Ids,
-                        owner,
-                        claim.ClaimedAt,
-                        _leaseDuration,
-                        _maxChainDepth,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false)
-            );
+            await _StampDescendantsAsync(
+                    dbContext,
+                    transaction,
+                    mapping,
+                    [.. claim.Select(static root => root.Id)],
+                    owner,
+                    _leaseDuration,
+                    _maxChainDepth,
+                    generations,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
         }
 
-        return new TreeClaim(roots, [.. leasedIds]);
+        return new TreeClaim(roots, generations);
     }
 
-    private static async Task<ClaimResult> _ClaimRootsAsync(
+    private static async Task<List<ClaimedRoot>> _ClaimRootsAsync(
         TDbContext dbContext,
         IDbContextTransaction transaction,
         TimeJobRelationalMapping mapping,
@@ -876,10 +857,11 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
     )
     {
         var dialect = PostgreSqlDialect.Instance;
+        var scope = JobsLeaseGrant.Scope(JobsLeaseRows.TimeJobs<TTimeJob>(dbContext));
         await using var command = _CreateCommand(dbContext, transaction);
         // SQL structure contains only provider-delimited EF metadata identifiers and fixed clauses;
-        // every runtime value remains a command parameter. UpdatedAt is returned as the claim instant: the claim sets
-        // it to the statement's clock.
+        // every runtime value remains a command parameter. Each root takes its own generation and a deadline from the
+        // statement's clock; UpdatedAt is returned so the run's CAS starts from the stored stamp.
 #pragma warning disable CA2100
         command.CommandText = dialect.Render(
             new SqlClaimNext(
@@ -888,74 +870,81 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                 filter,
                 orderBy,
                 $"""
-                {mapping.OwnerId} = @owner,
-                    {mapping.LockedUntil} = {dialect.ShiftByDuration(SqlDialectTokens.Now, "lease")},
+                {scope.Assignments()},
                     {mapping.UpdatedAt} = {SqlDialectTokens.Now},
                     {mapping.ChangedAt} = {_NextChangedAt(mapping.ChangedAt)},
                     {mapping.Status} = @queuedStatus
                 """,
-                [mapping.Id, mapping.UpdatedAt],
+                [.. scope.Returning, mapping.UpdatedAt],
                 BatchSizeParameter: "batchSize"
             )
         );
 #pragma warning restore CA2100
+        scope.Bind(command, leaseDuration, owner);
         command.Parameters.Add(new NpgsqlParameter("owner", owner));
-        dialect.AddDuration(command, "lease", leaseDuration);
         command.Parameters.Add(new NpgsqlParameter("queuedStatus", nameof(JobStatus.Queued)));
         command.Parameters.Add(_BatchSizeParameter(batchSize));
         command.Parameters.AddRange(filterParameters);
 
-        var ids = new List<Guid>();
-        DateTimeOffset? claimedAt = null;
+        var roots = new List<ClaimedRoot>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            ids.Add(reader.GetGuid(0));
-            claimedAt ??= await reader.GetFieldValueAsync<DateTimeOffset>(1, cancellationToken).ConfigureAwait(false);
+            roots.Add(
+                new ClaimedRoot(
+                    reader.GetGuid(0),
+                    reader.GetInt64(1),
+                    await reader.GetFieldValueAsync<DateTimeOffset>(2, cancellationToken).ConfigureAwait(false),
+                    await reader.GetFieldValueAsync<DateTimeOffset>(3, cancellationToken).ConfigureAwait(false)
+                )
+            );
         }
 
-        return new ClaimResult([.. ids], claimedAt ?? default);
+        return roots;
     }
 
-    private static async Task<Guid[]> _StampDescendantsAsync(
+    private static async Task _StampDescendantsAsync(
         TDbContext dbContext,
         IDbContextTransaction transaction,
         TimeJobRelationalMapping mapping,
         Guid[] rootIds,
         string owner,
-        DateTimeOffset claimedAt,
         TimeSpan leaseDuration,
         int maxChainDepth,
+        Dictionary<Guid, long> generations,
         CancellationToken cancellationToken
     )
     {
         if (rootIds.Length == 0)
         {
-            return [];
+            return;
         }
 
         var dialect = PostgreSqlDialect.Instance;
+        var scope = JobsLeaseGrant.Scope(JobsLeaseRows.TimeJobs<TTimeJob>(dbContext));
         await using var command = _CreateCommand(dbContext, transaction);
         // Bounded WITH RECURSIVE walk that leases the non-timed idle subtree down to maxChainDepth (root =
         // depth 1, so direct children are depth 2). Mirrors the generic-EF frontier claim: descend only THROUGH idle
         // non-timed nodes, so a subtree below a non-idle node (terminalized/running) or a timed boundary (claimed
-        // independently) is never leased. Descendants stay Idle — only owner/lease/updated-at are stamped, in the
-        // same transacted statement as today. RETURNING the leased ids lets the caller prune the hydrated tree to the
-        // claimed set (frontier discipline). No kit shape walks a tree, so the statement stays hand-written; the
-        // stamp copies the root's claim instant instead of reading a clock. SQL structure contains only
-        // provider-delimited EF metadata identifiers and fixed clauses; every runtime value remains a command
-        // parameter.
+        // independently) is never leased. Descendants stay Idle. Each one takes its own generation, so a write from
+        // an earlier attempt on that node is refused, and expires with the root it was claimed under: the walk
+        // carries the root's id and reads its stored deadline, so no clock is read here. RETURNING the leased ids and
+        // generations lets the caller prune the hydrated tree to the claimed set and fence each node. No kit shape
+        // walks a tree, so the statement stays hand-written. SQL structure contains only provider-delimited EF
+        // metadata identifiers and fixed clauses; every runtime value remains a command parameter.
+        var rootDeadline =
+            $"(SELECT root.{mapping.Lease.ExpiresAt} FROM {mapping.Table} AS root WHERE root.{mapping.Id} = descendants.root_id)";
 #pragma warning disable CA2100
         command.CommandText = $"""
-            WITH RECURSIVE descendants (node_id, depth) AS (
-                SELECT child.{mapping.Id}, 2
+            WITH RECURSIVE descendants (node_id, depth, root_id) AS (
+                SELECT child.{mapping.Id}, 2, child.{mapping.ParentId}
                 FROM {mapping.Table} AS child
                 WHERE {dialect.InList($"child.{mapping.ParentId}", "rootIds", SqlColumnType.Guid)}
                   AND child.{mapping.Status} = @idle
                   AND child.{mapping.ExecutionTime} IS NULL
                   AND @maxDepth >= 2
                 UNION ALL
-                SELECT child.{mapping.Id}, descendants.depth + 1
+                SELECT child.{mapping.Id}, descendants.depth + 1, descendants.root_id
                 FROM {mapping.Table} AS child
                 INNER JOIN descendants ON descendants.node_id = child.{mapping.ParentId}
                 WHERE descendants.depth < @maxDepth
@@ -963,30 +952,24 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                   AND child.{mapping.ExecutionTime} IS NULL
             )
             UPDATE {mapping.Table} AS job
-            SET {mapping.OwnerId} = @owner,
-                {mapping.LockedUntil} = {dialect.ShiftByDuration("@claimedAt", "lease")},
-                {mapping.UpdatedAt} = @claimedAt,
+            SET {scope.Assignments(rootDeadline)},
+                {mapping.UpdatedAt} = (SELECT root.{mapping.UpdatedAt} FROM {mapping.Table} AS root WHERE root.{mapping.Id} = descendants.root_id),
                 {mapping.ChangedAt} = {_NextChangedAt("job." + mapping.ChangedAt, "clock_timestamp()")}
             FROM descendants
             WHERE job.{mapping.Id} = descendants.node_id AND job.{mapping.Status} = @idle
-            RETURNING job.{mapping.Id};
+            RETURNING job.{mapping.Id}, job.{mapping.Lease.Generation};
             """;
 #pragma warning restore CA2100
+        scope.Bind(command, leaseDuration, owner);
         dialect.AddListParameter(command, "rootIds", SqlColumnType.Guid, rootIds);
         command.Parameters.Add(new NpgsqlParameter("idle", nameof(JobStatus.Idle)));
-        command.Parameters.Add(new NpgsqlParameter("owner", owner));
-        command.Parameters.Add(new NpgsqlParameter("claimedAt", NpgsqlDbType.TimestampTz) { Value = claimedAt });
-        dialect.AddDuration(command, "lease", leaseDuration);
         command.Parameters.Add(new NpgsqlParameter("maxDepth", NpgsqlDbType.Integer) { Value = maxChainDepth });
 
-        var leasedIds = new List<Guid>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            leasedIds.Add(reader.GetGuid(0));
+            generations[reader.GetGuid(0)] = reader.GetInt64(1);
         }
-
-        return [.. leasedIds];
     }
 
     private Task<TResult> _ExecuteWithRetryAsync<TResult>(
@@ -998,10 +981,17 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         return JobsClaimRetry.RunAsync(operation, dbContextFactory, action, timeProvider, logger, cancellationToken);
     }
 
-    private readonly record struct ClaimResult(Guid[] Ids, DateTimeOffset ClaimedAt);
+    /// <summary>A root the claim granted: its generation, its lease deadline, and the stamp the claim stored.</summary>
+    [StructLayout(LayoutKind.Auto)]
+    private readonly record struct ClaimedRoot(
+        Guid Id,
+        long Generation,
+        DateTimeOffset ExpiresAt,
+        DateTimeOffset UpdatedAt
+    );
 
-    /// <summary>The claimed roots with each one's claim instant, and every leased id (roots and descendants).</summary>
-    private readonly record struct TreeClaim(Dictionary<Guid, DateTimeOffset> Roots, Guid[] LeasedIds);
+    /// <summary>The claimed roots, and the generation every leased node (roots and descendants) was granted.</summary>
+    private readonly record struct TreeClaim(Dictionary<Guid, ClaimedRoot> Roots, Dictionary<Guid, long> Generations);
 
     private static NpgsqlCommand _CreateCommand(TDbContext dbContext, IDbContextTransaction transaction)
     {

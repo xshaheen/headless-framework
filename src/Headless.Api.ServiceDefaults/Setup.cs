@@ -14,6 +14,7 @@ using Headless.Context;
 using Headless.Hosting;
 using Headless.Http;
 using Headless.IO;
+using Headless.Logging;
 using Headless.MultiTenancy;
 using Headless.OpenApi;
 using Headless.Security;
@@ -137,6 +138,10 @@ public static class SetupApi
                 _ => new StatusCodesRewriterCalledNotifier(startupState)
             );
             builder.Services.AddStartupValidator<HeadlessServiceDefaultsStartupValidator>();
+
+            // Classified values are erased, and declared credential paths replaced, in every log, HTTP logging record,
+            // and request span. A later AddHeadlessRedaction(setup => setup.UseHmac(...)) adds a key without undoing this.
+            builder.Services.AddHeadlessRequestLogRedaction();
 
             // Core API primitives
             builder.Services.AddEndpointsApiExplorer();
@@ -340,7 +345,9 @@ public static class SetupApi
                         .AddProcessor(sp => new TenantActivityProcessor(
                             sp.GetRequiredService<ICurrentTenant>(),
                             sp.GetRequiredService<IOptions<TenantTelemetryOptions>>().Value
-                        ));
+                        ))
+                        // Before the user hook and UseOtlpExporter, so no exporter sees a declared credential path.
+                        .AddHeadlessLogPathRedaction();
 
                     options.OpenTelemetry.ConfigureTracing?.Invoke(tracing);
                 });

@@ -18,6 +18,7 @@ public sealed class RabbitMqConsumerClientConformanceTests(RabbitMqFixture fixtu
         setup.UseRabbitMq(options =>
         {
             options.HostName = fixture.HostName;
+            options.VirtualHost = fixture.VirtualHost;
             options.Port = fixture.Port;
             options.UserName = fixture.UserName;
             options.Password = fixture.Password;

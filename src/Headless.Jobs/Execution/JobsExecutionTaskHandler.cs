@@ -793,11 +793,22 @@ internal sealed class JobsExecutionTaskHandler
                 JobsMetrics.RetryStarted(JobsMetrics.RetryKindRecovery);
             }
 
+            // Only a standalone time job owns its due instant outright, so only it waits out a long retry delay in the
+            // store: an occurrence's execution time identifies it, and a chain node's due time and claim belong to its
+            // tree, which the root's run holds together.
+            var canDefer =
+                context.Type == JobType.TimeJob
+                && !isChild
+                && context.ParentId is null
+                && context.TimeJobChildren.Count == 0;
+            JobsRetryDeferral? deferral;
+
             try
             {
-                await _retryPipeline
+                deferral = await _retryPipeline
                     .ExecuteAsync(
                         context,
+                        canDefer,
                         async (retryCount, attemptToken) =>
                         {
                             plannedRetryDelay = null;
@@ -981,6 +992,7 @@ internal sealed class JobsExecutionTaskHandler
                 }
 
                 lastException = ex;
+                deferral = null;
             }
             catch (TerminateExecutionException ex)
             {
@@ -1042,6 +1054,29 @@ internal sealed class JobsExecutionTaskHandler
             catch (Exception ex)
             {
                 lastException = ex;
+                deferral = null;
+            }
+
+            if (deferral is not null)
+            {
+                var deferredFingerprint = FailureFingerprint.Compute(deferral.Exception);
+
+                await _RescheduleRetryAsync(
+                        context,
+                        deferral,
+                        attemptEnd(
+                            JobAttemptOutcome.Failed,
+                            _timeProvider.GetUtcNow(),
+                            ExceptionDetailClassForSerialization.Serialize(deferral.Exception),
+                            deferredFingerprint
+                        ),
+                        cancellationRegistration,
+                        executionOwnsRegistration,
+                        beginCompletionAsync,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+                return;
             }
 
             if (!executionOwnsRegistration())
@@ -1186,6 +1221,78 @@ internal sealed class JobsExecutionTaskHandler
         finally
         {
             await releaseExecutionAsync().ConfigureAwait(false);
+        }
+    }
+
+    // The retry's wait moves to the store: the row goes back to Idle with the failed attempt charged and comes due after
+    // the delay, and this worker is free at once. The row is not terminal, so the caller processes no children.
+    private async Task _RescheduleRetryAsync(
+        JobExecutionState context,
+        JobsRetryDeferral deferral,
+        JobAttemptEnd failedAttempt,
+        JobsExecutionCancellationRegistration cancellationRegistration,
+        Func<bool> executionOwnsRegistration,
+        Func<Task<bool>> beginCompletionAsync,
+        CancellationToken cancellationToken
+    )
+    {
+        if (!executionOwnsRegistration())
+        {
+            _logger.LogJobLeaseLostCancellation(context.JobId, context.FunctionName);
+            return;
+        }
+
+        if (!await beginCompletionAsync().ConfigureAwait(false))
+        {
+            return;
+        }
+
+        // Leave the registry before the row can come due again. A completing registration makes this node refuse a new
+        // claim of the same job as lease loss, and the write below makes the retry claimable after the delay less the
+        // claim slack, while this run still wakes the scheduler, pushes to the dashboard and awaits the consumer's
+        // exception handler. The row stays InProgress under this run's lease until the write, so nothing can claim it
+        // in between; the identity-checked removal on exit then finds nothing to remove.
+        _cancellationRegistry.TryRemove(cancellationRegistration);
+
+        // A deferred retry skips the in-process retry write, so the failed attempt rides on the reschedule.
+        context
+            .SetProperty(x => x.FailureFingerprint, failedAttempt.FailureFingerprint)
+            .SetProperty(x => x.AttemptEnd, failedAttempt);
+
+        int affected;
+        try
+        {
+            // CancellationToken.None, as the terminal writes: a stop that lands now must not strand a failed attempt
+            // the store never charged.
+            affected = await _internalJobsManager
+                .RescheduleRetryAsync(context, deferral.RetryCount, deferral.Delay, CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        catch (Exception writeException)
+        {
+            // As with the in-process retry-count write: a reschedule the store never confirmed leaves this node unable
+            // to vouch for the row, so the run stops as lease loss and reclaim settles it by its node-death policy.
+            _logger.LogJobRetryCountWriteFailed(writeException, context.JobId, context.FunctionName);
+            affected = 0;
+        }
+        finally
+        {
+            context.ResetUpdateProps();
+        }
+
+        if (affected == 0)
+        {
+            context.LeaseLost = true;
+            return;
+        }
+
+        context.RetryCount = deferral.RetryCount;
+        _logger.LogJobRetryRescheduled(context.JobId, context.FunctionName, deferral.RetryCount, deferral.Delay);
+
+        // #278: observe under the job's tenant so a tenant-aware handler is not system-scoped.
+        using (_EnterTenantScope(context))
+        {
+            await _ObserveJobExceptionAsync(deferral.Exception, context, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -1987,6 +2094,20 @@ internal static partial class JobsExecutionTaskHandlerLog
     internal static partial void LogJobSettledOnShutdown(this ILogger logger, Guid jobId, string function);
 
     [LoggerMessage(
+        EventId = 3128,
+        Level = LogLevel.Information,
+        Message = "Job {JobId} ({Function}) failed attempt {RetryCount} and was rescheduled to retry after {Delay}; "
+            + "its worker is free while the store holds the wait."
+    )]
+    internal static partial void LogJobRetryRescheduled(
+        this ILogger logger,
+        Guid jobId,
+        string function,
+        int retryCount,
+        TimeSpan delay
+    );
+
+    [LoggerMessage(
         EventId = 3124,
         Level = LogLevel.Warning,
         Message = "Job {JobId} ({Function}) could not be handed back during a graceful host stop because another "
@@ -2009,7 +2130,7 @@ internal static partial class JobsExecutionTaskHandlerLog
     );
 
     [LoggerMessage(
-        EventId = 3128,
+        EventId = 3129,
         Level = LogLevel.Warning,
         Message = "Opening an attempt of job {JobId} ({Function}) failed; the run continues, and the write that ends "
             + "the attempt records it closed."

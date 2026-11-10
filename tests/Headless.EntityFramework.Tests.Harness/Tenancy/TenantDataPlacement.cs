@@ -9,7 +9,9 @@ namespace Tests.Tenancy;
 /// <summary>Where a tenancy fixture puts its tables: the database it creates and the contexts' default schema.</summary>
 /// <remarks>
 /// Suites that must hold under non-default placement (a per-tenant schema or database) run the same tests against a
-/// fixture built with another placement instead of copying them.
+/// fixture built with another placement instead of copying them. On PostgreSQL <see cref="Database"/> is the suffix of
+/// a database derived from the fixture's own, so a shared server keeps runs apart; the created name is
+/// <see cref="TenantDatabaseFixture.DatabaseName"/>.
 /// </remarks>
 public sealed record TenantDataPlacement(string Database, string? Schema)
 {

@@ -68,7 +68,7 @@ public partial class PostgreSqlStorageTests
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.ExecuteAsync(
             new CommandDefinition(
-                """UPDATE headless.messaging_published SET "locked_until"=clock_timestamp()+@LiveFor, "owner"='another-node' WHERE "id"=@Id;""",
+                """UPDATE headless.messaging_published SET "lease_generation"="lease_generation"+1, "lease_state"=1, "lease_expires_at"=clock_timestamp()+@LiveFor, "lease_holder"='another-node' WHERE "id"=@Id;""",
                 new { Id = storageId, LiveFor = liveFor },
                 cancellationToken: cancellationToken
             )

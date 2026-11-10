@@ -18,7 +18,12 @@ public sealed class LeaseTakeoverAlertsTests : TestBase
         var context = new FencingTestContext();
         context.Options.TakeoverWarningThreshold = 3;
         context
-            .Store.GrantAsync(_Key, FencingTestContext.Duration, LeaseTakeover.Allowed, AbortToken)
+            .Store.GrantAsync(
+                _Key,
+                FencingTestContext.Duration,
+                FencingTestContext.TakeoverOnly(LeaseTakeover.Allowed),
+                AbortToken
+            )
             .Returns(
                 LeaseGrantResult.Takeover(_Lease, DateTimeOffset.UnixEpoch, previousGeneration: 8, takeoverCount: 3)
             );
@@ -41,7 +46,13 @@ public sealed class LeaseTakeoverAlertsTests : TestBase
         context.Options.TakeoverWarningThreshold = 1;
         var (unit, _) = FencingTestContext.ActiveUnit();
         context
-            .Store.GrantEnlistedAsync(unit, _Key, FencingTestContext.Duration, LeaseTakeover.Allowed, AbortToken)
+            .Store.GrantEnlistedAsync(
+                unit,
+                _Key,
+                FencingTestContext.Duration,
+                FencingTestContext.TakeoverOnly(LeaseTakeover.Allowed),
+                AbortToken
+            )
             .Returns(
                 LeaseGrantResult.Takeover(_Lease, DateTimeOffset.UnixEpoch, previousGeneration: 8, takeoverCount: 1)
             );
@@ -52,7 +63,7 @@ public sealed class LeaseTakeoverAlertsTests : TestBase
             "job",
             "order-1",
             FencingTestContext.Duration,
-            LeaseTakeover.Allowed,
+            new LeaseGrantOptions(),
             AbortToken
         );
 
@@ -66,7 +77,12 @@ public sealed class LeaseTakeoverAlertsTests : TestBase
         // given
         var context = new FencingTestContext();
         context
-            .Store.GrantAsync(_Key, FencingTestContext.Duration, LeaseTakeover.Allowed, AbortToken)
+            .Store.GrantAsync(
+                _Key,
+                FencingTestContext.Duration,
+                FencingTestContext.TakeoverOnly(LeaseTakeover.Allowed),
+                AbortToken
+            )
             .Returns(
                 LeaseGrantResult.Takeover(_Lease, DateTimeOffset.UnixEpoch, previousGeneration: 8, takeoverCount: 2)
             );
@@ -87,7 +103,12 @@ public sealed class LeaseTakeoverAlertsTests : TestBase
         var context = new FencingTestContext();
         context.Options.TakeoverWarningThreshold = 1;
         context
-            .Store.GrantAsync(_Key, FencingTestContext.Duration, LeaseTakeover.Allowed, AbortToken)
+            .Store.GrantAsync(
+                _Key,
+                FencingTestContext.Duration,
+                FencingTestContext.TakeoverOnly(LeaseTakeover.Allowed),
+                AbortToken
+            )
             .Returns(
                 LeaseGrantResult.Granted(_Lease, DateTimeOffset.UnixEpoch, takeoverCount: 4),
                 LeaseGrantResult.Held(9, DateTimeOffset.UnixEpoch, takeoverCount: 4)

@@ -183,16 +183,10 @@ public sealed class PostgreSqlForeignSchemaCreatorTests(PostgreSqlSharedSchemaFi
 
     private async Task<string> _CreateDatabaseAsync()
     {
-        var database = $"foreign_schema_{Guid.NewGuid():N}";
+        var database = fixture.DerivedDatabaseName($"t_{Guid.NewGuid():N}");
+        await fixture.CreateDatabaseAsync(database, AbortToken);
 
-        await using (var connection = new NpgsqlConnection(fixture.ConnectionString))
-        {
-            await connection.OpenAsync(AbortToken);
-            await using var command = new NpgsqlCommand($"""CREATE DATABASE "{database}";""", connection);
-            await command.ExecuteNonQueryAsync(AbortToken);
-        }
-
-        return new NpgsqlConnectionStringBuilder(fixture.ConnectionString) { Database = database }.ToString();
+        return fixture.ConnectionStringFor(database);
     }
 
     private async Task _DropDatabaseAsync(string connectionString)
@@ -200,7 +194,7 @@ public sealed class PostgreSqlForeignSchemaCreatorTests(PostgreSqlSharedSchemaFi
         var database = new NpgsqlConnectionStringBuilder(connectionString).Database;
         NpgsqlConnection.ClearAllPools();
 
-        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await using var connection = new NpgsqlConnection(fixture.AdminConnectionString);
         await connection.OpenAsync(CancellationToken.None);
         await using var command = new NpgsqlCommand(
             $"""DROP DATABASE IF EXISTS "{database}" WITH (FORCE);""",

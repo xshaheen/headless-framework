@@ -1037,7 +1037,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
     private JobExecutionState[] _BuildImmediateContextsFromNonGeneric(IEnumerable<TimeJobEntity> jobs)
     {
-        return [.. jobs.Select(job => _BuildContextFromNonGeneric(job, job.OwnerId))];
+        return [.. jobs.Select(job => _BuildContextFromNonGeneric(job, job.Lease.Holder))];
     }
 
     private JobExecutionState _BuildContextFromNonGeneric(TimeJobEntity job, string? claimOwner)
@@ -1059,6 +1059,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             ExecutionTime = job.ExecutionTime ?? timeProvider.GetUtcNow().UtcDateTime,
             RunCondition = job.RunCondition ?? RunCondition.OnAnyCompletedStatus,
             ClaimOwner = claimOwner,
+            ClaimGeneration = job.Lease.Generation,
         };
 
         context.TimeJobChildren.AddRange(job.Children.Select(child => _BuildContextFromNonGeneric(child, claimOwner)));

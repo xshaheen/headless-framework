@@ -1,0 +1,264 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using System.Globalization;
+using Headless.Fencing;
+using Headless.Sql;
+using Headless.Sql.PostgreSql;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Storage;
+
+namespace Headless.Jobs.Infrastructure;
+
+/// <summary>
+/// Renders the column assignments a lease transition writes alongside the lease, from the entity's EF Core model.
+/// </summary>
+/// <remarks>
+/// Column names come from the model, so a renamed column or a non-default naming convention is honored, and each
+/// value is bound through the property's own type mapping, so its value converter (enum-as-text, UTC instants, the
+/// text form SQLite stores instants in) applies exactly as it does for an EF Core write.
+/// </remarks>
+internal sealed class JobsRowSet
+{
+    // Not "Lease…": FencedRows reserves that prefix, and "now"/"applied", for its own parameters.
+    private const string _ParameterPrefix = "JobsSet";
+
+    private readonly IEntityType _entity;
+    private readonly StoreObjectIdentifier _store;
+    private readonly ISqlGenerationHelper _sql;
+    private readonly ISqlDialect _dialect;
+    private readonly List<string> _assignments = [];
+    private readonly List<(RelationalTypeMapping Mapping, string Name, object? Value)> _parameters = [];
+    private readonly List<(string Name, IReadOnlyCollection<Guid> Values)> _lists = [];
+
+    private JobsRowSet(DbContext context, Type entityType)
+    {
+        _entity =
+            context.Model.FindEntityType(entityType)
+            ?? throw new InvalidOperationException($"{entityType.Name} is not mapped by the Jobs DbContext.");
+        var tableName =
+            _entity.GetTableName()
+            ?? throw new InvalidOperationException($"{entityType.Name} is not mapped to a relational table.");
+        _store = StoreObjectIdentifier.Table(tableName, _entity.GetSchema());
+        _sql = context.GetService<ISqlGenerationHelper>();
+        _dialect = JobsSqlDialects.Resolve(context);
+    }
+
+    /// <summary>Starts an empty set of assignments for rows of <typeparamref name="TEntity"/>.</summary>
+    public static JobsRowSet For<TEntity>(DbContext context)
+        where TEntity : class
+    {
+        return new JobsRowSet(context, typeof(TEntity));
+    }
+
+    /// <summary>Whether no assignment was added.</summary>
+    public bool IsEmpty => _assignments.Count == 0;
+
+    /// <summary>The delimited column of <paramref name="propertyName"/>.</summary>
+    public string Column(string propertyName) => _sql.DelimitIdentifier(_Property(propertyName).Column);
+
+    /// <summary>Binds <paramref name="value"/> as a parameter typed like <paramref name="propertyName"/>, and returns its placeholder.</summary>
+    public string Parameter(string propertyName, object? value)
+    {
+        var name = _ParameterPrefix + _parameters.Count.ToString(CultureInfo.InvariantCulture);
+        _parameters.Add((_Property(propertyName).Mapping, name, value));
+
+        return "@" + name;
+    }
+
+    /// <summary>
+    /// A predicate that <paramref name="propertyName"/> equals one of <paramref name="ids"/>, bound as a single list
+    /// parameter.
+    /// </summary>
+    /// <remarks>
+    /// One parameter per id would put a large batch over SQL Server's limit of 2100 parameters per request; a list
+    /// parameter keeps the count fixed whatever the batch size, as EF Core's own <c>Contains</c> translation does.
+    /// </remarks>
+    public string InIds(string propertyName, IReadOnlyCollection<Guid> ids)
+    {
+        var name = _ParameterPrefix + "List" + _lists.Count.ToString(CultureInfo.InvariantCulture);
+        _lists.Add((name, ids));
+
+        return _dialect.InList(Column(propertyName), name, SqlColumnType.Guid);
+    }
+
+    /// <summary>Binds <paramref name="value"/> as a parameter typed like the lease's <paramref name="propertyName"/>, and returns its placeholder.</summary>
+    public string LeaseParameter(string propertyName, object? value)
+    {
+        var name = _ParameterPrefix + _parameters.Count.ToString(CultureInfo.InvariantCulture);
+        _parameters.Add((_LeaseProperty(propertyName), name, value));
+
+        return "@" + name;
+    }
+
+    /// <summary>Assigns <paramref name="value"/> to <paramref name="propertyName"/>.</summary>
+    public JobsRowSet Value(string propertyName, object? value)
+    {
+        return Expression(propertyName, Parameter(propertyName, value));
+    }
+
+    /// <summary>Assigns the database clock's current instant to a <see cref="DateTime"/> property.</summary>
+    /// <remarks>
+    /// The clock is read per statement, so a write that runs inside a transaction still stamps its own instant, and
+    /// the instant is taken on the database, so a skewed node clock cannot move it.
+    /// </remarks>
+    public JobsRowSet DatabaseNow(string propertyName)
+    {
+        return Expression(propertyName, DatabaseNowSql(propertyName));
+    }
+
+    /// <summary>Assigns the database clock's current instant plus <paramref name="offset"/> to a <see cref="DateTime"/> property.</summary>
+    /// <remarks>The due time is taken on the database, so a skewed node clock cannot move it.</remarks>
+    public JobsRowSet DatabaseNowPlus(string propertyName, TimeSpan offset)
+    {
+        return Expression(propertyName, DatabaseNowSql(propertyName, offset));
+    }
+
+    /// <summary>The database clock's current instant, plus <paramref name="offset"/>, in the store type of <paramref name="propertyName"/>.</summary>
+    public string DatabaseNowSql(string propertyName, TimeSpan offset = default)
+    {
+        var columnType = _Property(propertyName).ColumnType;
+        // Whole milliseconds, rendered invariant: the offset is a computed number, never caller text.
+        var milliseconds = (long)Math.Round(offset.TotalMilliseconds, MidpointRounding.ToEven);
+        var ms = milliseconds.ToString(CultureInfo.InvariantCulture);
+
+        if (JobsSqlDialects.IsSqlite(_dialect))
+        {
+            // EF Core's SQLite provider stores a DateTime as this trimmed text, so the stamp sorts and compares with
+            // the values EF Core writes.
+            var modifier =
+                milliseconds == 0
+                    ? string.Empty
+                    : ", '"
+                        + (milliseconds / 1000m).ToString("+0.###;-0.###", CultureInfo.InvariantCulture)
+                        + " seconds'";
+
+            return $"rtrim(rtrim(strftime('%Y-%m-%d %H:%M:%f', 'now'{modifier}), '0'), '.')";
+        }
+
+        if (_dialect is PostgreSqlDialect)
+        {
+            var now = columnType.StartsWith("timestamp without time zone", StringComparison.OrdinalIgnoreCase)
+                ? "(clock_timestamp() AT TIME ZONE 'UTC')"
+                : "clock_timestamp()";
+
+            return milliseconds == 0 ? now : $"({now} + {ms} * interval '1 millisecond')";
+        }
+
+        // DATEADD takes an int, so a long offset is split into whole seconds and the remaining milliseconds.
+        return milliseconds == 0
+            ? "SYSUTCDATETIME()"
+            : "DATEADD(millisecond, "
+                + (milliseconds % 1000).ToString(CultureInfo.InvariantCulture)
+                + ", DATEADD(second, "
+                + (milliseconds / 1000).ToString(CultureInfo.InvariantCulture)
+                + ", SYSUTCDATETIME()))";
+    }
+
+    /// <summary>Assigns trusted SQL <paramref name="sql"/> to <paramref name="propertyName"/>.</summary>
+    public JobsRowSet Expression(string propertyName, string sql)
+    {
+        _assignments.Add($"{Column(propertyName)} = {sql}");
+
+        return this;
+    }
+
+    /// <summary>The assignments as the write a transition composes into its statement.</summary>
+    /// <param name="condition">An extra predicate over the row, for <c>WriteAsync</c> only.</param>
+    /// <remarks>
+    /// Every write also stamps the row's change marker, unless the caller assigned it, so a change read on any node
+    /// sees each fenced transition (claim, settle, release, revoke) exactly as it sees an EF Core update.
+    /// </remarks>
+    public FencedRowWrite ToWrite(string? condition = null)
+    {
+        var parameters = _parameters.ToArray();
+        var lists = _lists.ToArray();
+        var dialect = _dialect;
+        // Computed per render rather than added to the assignments, so a set rendered twice stamps the marker once.
+        var assignments = _ChangeMarkerAssignment() is { } marker ? [.. _assignments, marker] : _assignments;
+
+        return new FencedRowWrite(
+            Set: assignments.Count == 0 ? null : string.Join(", ", assignments),
+            Condition: condition,
+            Bind: parameters.Length == 0 && lists.Length == 0
+                ? null
+                : command =>
+                {
+                    foreach (var (mapping, name, value) in parameters)
+                    {
+                        command.Parameters.Add(mapping.CreateParameter(command, name, value));
+                    }
+
+                    foreach (var (name, values) in lists)
+                    {
+                        dialect.AddListParameter(command, name, SqlColumnType.Guid, values);
+                    }
+                }
+        );
+    }
+
+    /// <summary>
+    /// The change-marker assignment: the later of the database statement clock and the row's previous marker plus one
+    /// tick of the column's precision, the same value <c>JobsChangeMarker.Next</c> translates to for an EF Core update.
+    /// <see langword="null"/> when the entity has no marker or the caller already assigned it.
+    /// </summary>
+    private string? _ChangeMarkerAssignment()
+    {
+        if (_entity.FindProperty(nameof(BaseJobEntity.ChangedAt)) is null)
+        {
+            return null;
+        }
+
+        var column = Column(nameof(BaseJobEntity.ChangedAt));
+
+        if (_assignments.Exists(assignment => assignment.StartsWith(column + " = ", StringComparison.Ordinal)))
+        {
+            return null;
+        }
+
+        var now = DatabaseNowSql(nameof(BaseJobEntity.ChangedAt));
+
+        if (_dialect is PostgreSqlDialect)
+        {
+            // PostgreSQL timestamps count microseconds, its smallest step.
+            return $"{column} = GREATEST({now}, {column} + INTERVAL '1 microsecond')";
+        }
+
+        if (JobsSqlDialects.IsSqlite(_dialect))
+        {
+            // SQLite stores the marker as text and has no tick arithmetic on it, so the clock alone stamps it, as the
+            // EF Core translation does there.
+            return $"{column} = {now}";
+        }
+
+        // datetime2 counts 100-nanosecond ticks. A CASE rather than GREATEST, which needs SQL Server 2022.
+        return $"{column} = CASE WHEN DATEADD(nanosecond, 100, {column}) > CAST({now} AS datetime2(7)) "
+            + $"THEN DATEADD(nanosecond, 100, {column}) ELSE CAST({now} AS datetime2(7)) END";
+    }
+
+    private RelationalTypeMapping _LeaseProperty(string propertyName)
+    {
+        var property =
+            _entity.FindComplexProperty(nameof(TimeJobEntity.Lease))?.ComplexType.FindProperty(propertyName)
+            ?? throw new InvalidOperationException($"{_entity.ClrType.Name}.Lease.{propertyName} is not mapped.");
+
+        return property.GetRelationalTypeMapping()
+            ?? throw new InvalidOperationException($"{_entity.ClrType.Name}.Lease.{propertyName} has no type mapping.");
+    }
+
+    private (string Column, RelationalTypeMapping Mapping, string ColumnType) _Property(string propertyName)
+    {
+        var property =
+            _entity.FindProperty(propertyName)
+            ?? throw new InvalidOperationException($"{_entity.ClrType.Name}.{propertyName} is not mapped.");
+        var column =
+            property.GetColumnName(_store)
+            ?? throw new InvalidOperationException($"{_entity.ClrType.Name}.{propertyName} has no column mapping.");
+        var mapping =
+            property.GetRelationalTypeMapping()
+            ?? throw new InvalidOperationException($"{_entity.ClrType.Name}.{propertyName} has no type mapping.");
+
+        return (column, mapping, property.GetColumnType(_store) ?? mapping.StoreType);
+    }
+}

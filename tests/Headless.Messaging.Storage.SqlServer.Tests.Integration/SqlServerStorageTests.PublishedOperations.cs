@@ -68,7 +68,7 @@ public partial class SqlServerStorageTests
         await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.ExecuteAsync(
             new CommandDefinition(
-                "UPDATE headless.MessagingPublished SET LockedUntil=TODATETIMEOFFSET(DATEADD(second,@LiveForSeconds,SYSUTCDATETIME()),0), Owner='another-node' WHERE Id=@Id;",
+                "UPDATE headless.MessagingPublished SET LeaseGeneration=LeaseGeneration+1, LeaseState=1, LeaseExpiresAt=TODATETIMEOFFSET(DATEADD(second,@LiveForSeconds,SYSUTCDATETIME()),0), LeaseHolder='another-node' WHERE Id=@Id;",
                 new { Id = storageId, LiveForSeconds = (int)liveFor.TotalSeconds },
                 cancellationToken: cancellationToken
             )

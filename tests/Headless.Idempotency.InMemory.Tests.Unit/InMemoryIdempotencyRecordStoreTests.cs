@@ -75,8 +75,8 @@ public sealed class InMemoryIdempotencyRecordStoreTests : TestBase
             .GetRequiredService<InMemoryIdempotencyStorage>()
             .Table.Read(new IdempotencyRecordKey("", "key-1"));
         clock.Readings.Should().BeGreaterThan(1, "the scenario needs the clock read more than once");
-        record!.LeaseExpiresAt.Should().Be(admitted.LeaseExpiresAt);
-        (record.RetentionUntil - record.LeaseExpiresAt!.Value).Should().Be(_Retention - _Lease);
+        record!.Lease.ExpiresAt.Should().Be(admitted.LeaseExpiresAt);
+        (record.RetentionUntil - record.Lease.ExpiresAt!.Value).Should().Be(_Retention - _Lease);
     }
 
     [Fact]

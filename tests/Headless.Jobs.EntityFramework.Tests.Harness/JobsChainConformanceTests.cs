@@ -3,6 +3,7 @@
 using System.Data;
 using System.Data.Common;
 using Headless;
+using Headless.Fencing;
 using Headless.Jobs;
 using Headless.Jobs.Infrastructure;
 using Headless.Jobs.Internal;
@@ -479,14 +480,15 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
             claimed.Should().Contain(x => x.Id == rootId);
 
             var rootRow = await _ReadNodeAsync(rootId, ct);
-            rootRow.OwnerId.Should().NotBeNullOrWhiteSpace();
-            rootRow.LockedUntil.Should().NotBeNull();
+            rootRow.ActiveHolder.Should().NotBeNullOrWhiteSpace();
+            rootRow.Lease.ExpiresAt.Should().NotBeNull();
 
             foreach (var id in allIds)
             {
                 var row = await _ReadNodeAsync(id, ct);
-                row.OwnerId.Should().Be(rootRow.OwnerId, "descendant {0} must be claimed with the root", id);
-                row.LockedUntil.Should().Be(rootRow.LockedUntil, "descendant {0} must share the root's lease", id);
+                row.ActiveHolder.Should().Be(rootRow.ActiveHolder, "descendant {0} must be claimed with the root", id);
+                row.Lease.ExpiresAt.Should()
+                    .Be(rootRow.Lease.ExpiresAt, "descendant {0} must share the root's lease", id);
             }
         }
         finally
@@ -681,7 +683,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
             var failureId = children.Single(c => c.Condition == RunCondition.OnFailure).Id;
 
             var claimedRoot = await _ClaimRootAsync(persistence, rootId, ct);
-            await _MarkTerminalAsync(persistence, rootId, claimedRoot.OwnerId!, JobStatus.Succeeded, ct);
+            await _MarkTerminalAsync(persistence, rootId, claimedRoot.Lease, JobStatus.Succeeded, ct);
 
             var beforeReconcile = DateTime.UtcNow;
             await persistence.ApplyParentTerminalRunConditionsAsync(rootId, ct);
@@ -689,7 +691,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
             // Matching (OnSuccess) past-due child: released back to Idle, unowned, re-stamped to ~now, and claimable.
             var successRow = await _ReadNodeAsync(successId, ct);
             successRow.Status.Should().Be(JobStatus.Idle);
-            successRow.OwnerId.Should().BeNull();
+            successRow.ActiveHolder.Should().BeNull();
             successRow.SkippedReason.Should().BeNull();
             successRow.ExecutionTime.Should().NotBeNull();
             successRow
@@ -734,7 +736,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
             var childId = (await _ChildrenAsync(rootId, ct)).Single().Id;
 
             var claimedRoot = await _ClaimRootAsync(persistence, rootId, ct);
-            await _MarkTerminalAsync(persistence, rootId, claimedRoot.OwnerId!, JobStatus.Succeeded, ct);
+            await _MarkTerminalAsync(persistence, rootId, claimedRoot.Lease, JobStatus.Succeeded, ct);
             await persistence.ApplyParentTerminalRunConditionsAsync(rootId, ct);
 
             var row = await _ReadNodeAsync(childId, ct);
@@ -792,7 +794,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
             var grandchildId = (await _ChildrenAsync(successId, ct)).Single().Id;
 
             var claimedRoot = await _ClaimRootAsync(persistence, rootId, ct);
-            await _MarkTerminalAsync(persistence, rootId, claimedRoot.OwnerId!, JobStatus.Failed, ct);
+            await _MarkTerminalAsync(persistence, rootId, claimedRoot.Lease, JobStatus.Failed, ct);
 
             // Skip-only safety net over the failed parent's timed children. The return COUNT is deliberately not
             // asserted: BuildHost keeps the dead-node recovery bridge running even with background services disabled
@@ -814,7 +816,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
             await persistence.ApplyParentTerminalRunConditionsAsync(rootId, ct);
             var failureRow = await _ReadNodeAsync(failureId, ct);
             failureRow.Status.Should().Be(JobStatus.Idle);
-            failureRow.OwnerId.Should().BeNull();
+            failureRow.ActiveHolder.Should().BeNull();
             failureRow.ExecutionTime!.Value.Should().BeAfter(pastDue.AddMinutes(1));
             (await persistence.GetEarliestTimeJobsAsync(ct)).Jobs.Should().Contain(x => x.Id == failureId);
         }
@@ -857,7 +859,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
 
             var rootRow = await _ReadNodeAsync(rootId, ct);
             rootRow.Status.Should().Be(JobStatus.Idle);
-            rootRow.OwnerId.Should().BeNull();
+            rootRow.ActiveHolder.Should().BeNull();
 
             // Guard at the provider level: reclaim never terminalizes the still-Idle children.
             (await _ReadNodeAsync(childId, ct))
@@ -887,7 +889,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
     {
         var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
-        using var host = fixture.BuildHost("chain-immediate", fastMembership: true);
+        using var host = fixture.BuildHost("chain-immediate");
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
         await host.StartAsync(ct);
 
@@ -910,17 +912,21 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
 
             var rootRow = await _ReadNodeAsync(rootId, ct);
             rootRow.Status.Should().Be(JobStatus.InProgress);
-            rootRow.OwnerId.Should().NotBeNull();
+            rootRow.ActiveHolder.Should().NotBeNull();
 
             // Both descendants must carry the SAME owner and the root's EXACT deadline: descendants
-            // copy the root's persisted LockedUntil rather than re-reading a per-statement clock.
+            // copy the root's persisted lease expiry rather than re-reading a per-statement clock.
             var childRow = await _ReadNodeAsync(childId, ct);
-            childRow.OwnerId.Should().Be(rootRow.OwnerId, "an unleased child fails the executor's renewal fence");
-            childRow.LockedUntil.Should().Be(rootRow.LockedUntil, "descendants share the root's exact lease deadline");
+            childRow
+                .ActiveHolder.Should()
+                .Be(rootRow.ActiveHolder, "an unleased child fails the executor's renewal fence");
+            childRow
+                .Lease.ExpiresAt.Should()
+                .Be(rootRow.Lease.ExpiresAt, "descendants share the root's exact lease deadline");
 
             var grandchildRow = await _ReadNodeAsync(grandchildId, ct);
-            grandchildRow.OwnerId.Should().Be(rootRow.OwnerId, "the lease walk must reach the whole subtree");
-            grandchildRow.LockedUntil.Should().Be(rootRow.LockedUntil);
+            grandchildRow.ActiveHolder.Should().Be(rootRow.ActiveHolder, "the lease walk must reach the whole subtree");
+            grandchildRow.Lease.ExpiresAt.Should().Be(rootRow.Lease.ExpiresAt);
 
             // Leased descendants stay Idle — the executor transitions each one as it recurses into it.
             childRow.Status.Should().Be(JobStatus.Idle);
@@ -946,7 +952,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
     {
         var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
-        using var host = fixture.BuildHost("chain-immediate-batch", fastMembership: true);
+        using var host = fixture.BuildHost("chain-immediate-batch");
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
         await host.StartAsync(ct);
 
@@ -998,17 +1004,21 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
             rootBRow.Status.Should().Be(JobStatus.InProgress);
 
             var childARow = await _ReadNodeAsync(childAId, ct);
-            childARow.OwnerId.Should().Be(rootARow.OwnerId);
-            childARow.LockedUntil.Should().Be(rootARow.LockedUntil, "a descendant copies its own root's deadline");
+            childARow.ActiveHolder.Should().Be(rootARow.ActiveHolder);
+            childARow
+                .Lease.ExpiresAt.Should()
+                .Be(rootARow.Lease.ExpiresAt, "a descendant copies its own root's deadline");
             childARow.Status.Should().Be(JobStatus.Idle);
 
             var childBRow = await _ReadNodeAsync(childBId, ct);
-            childBRow.OwnerId.Should().Be(rootBRow.OwnerId);
-            childBRow.LockedUntil.Should().Be(rootBRow.LockedUntil);
+            childBRow.ActiveHolder.Should().Be(rootBRow.ActiveHolder);
+            childBRow.Lease.ExpiresAt.Should().Be(rootBRow.Lease.ExpiresAt);
 
             var grandchildBRow = await _ReadNodeAsync(grandchildBId, ct);
-            grandchildBRow.OwnerId.Should().Be(rootBRow.OwnerId, "the batched walk must reach root B's second level");
-            grandchildBRow.LockedUntil.Should().Be(rootBRow.LockedUntil);
+            grandchildBRow
+                .ActiveHolder.Should()
+                .Be(rootBRow.ActiveHolder, "the batched walk must reach root B's second level");
+            grandchildBRow.Lease.ExpiresAt.Should().Be(rootBRow.Lease.ExpiresAt);
             grandchildBRow.Status.Should().Be(JobStatus.Idle);
         }
         finally
@@ -1047,16 +1057,17 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         await persistence.AddTimeJobsAsync([healthyRoot, healthyChild, healthyGrandchild, fencedRoot, fencedChild], ct);
 
         // The walk's precondition: both roots are ALREADY claimed by this owner with a live lease.
-        await _ForceClaimedAsync(healthyRoot.Id, owner, DateTime.UtcNow.AddMinutes(5), ct);
-        await _ForceClaimedAsync(fencedRoot.Id, owner, DateTime.UtcNow.AddMinutes(5), ct);
+        var healthyGrant = await _ForceClaimedAsync(healthyRoot.Id, owner, DateTimeOffset.UtcNow.AddMinutes(5), ct);
+        var fencedGrant = await _ForceClaimedAsync(fencedRoot.Id, owner, DateTimeOffset.UtcNow.AddMinutes(5), ct);
 
         var factory = host.Services.GetRequiredService<IDbContextFactory<JobsDbContext>>();
         await using var dbContext = await factory.CreateDbContextAsync(ct);
 
-        var claimedIdsByRoot = await JobsSubtreeLeaseWalk.LeaseNonTimedDescendantsAsync(
-            dbContext.Set<TimeJobEntity>(),
-            [healthyRoot.Id, fencedRoot.Id],
+        var claimedIdsByRoot = await JobsSubtreeLeaseWalk.LeaseNonTimedDescendantsAsync<TimeJobEntity>(
+            dbContext,
+            [healthyGrant, fencedGrant],
             owner,
+            TimeSpan.FromMinutes(5),
             SchedulerOptionsBuilder.DefaultMaxChainDepth,
             async () =>
             {
@@ -1067,9 +1078,9 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
                 await _SqlAsync(
                     seamConnection,
                     fixture.Sql(
-                        $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"LockedUntil\" = @past WHERE \"Id\" = @id;"
+                        $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"LeaseExpiresAt\" = @past WHERE \"Id\" = @id;"
                     ),
-                    ("@past", DateTime.UtcNow.AddMinutes(-5)),
+                    ("@past", DateTimeOffset.UtcNow.AddMinutes(-5)),
                     ("@id", fencedRoot.Id)
                 );
             },
@@ -1077,13 +1088,13 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         );
 
         claimedIdsByRoot[healthyRoot.Id]
-            .Should()
+            .Keys.Should()
             .BeEquivalentTo(
                 new[] { healthyRoot.Id, healthyChild.Id, healthyGrandchild.Id },
                 "one root losing its lease must not truncate another root's walk"
             );
         claimedIdsByRoot[fencedRoot.Id]
-            .Should()
+            .Keys.Should()
             .BeEquivalentTo(
                 new[] { fencedRoot.Id },
                 "the fenced root's claim is bounded to itself — the caller prunes its hydrated tree to that set"
@@ -1093,16 +1104,18 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         // healthy root's whole subtree carries ITS deadline.
         var fencedChildRow = await _ReadNodeAsync(fencedChild.Id, ct);
         fencedChildRow.Status.Should().Be(JobStatus.Idle);
-        fencedChildRow.OwnerId.Should().BeNull("a descendant must never be leased when its root's fence fails");
+        fencedChildRow.ActiveHolder.Should().BeNull("a descendant must never be leased when its root's fence fails");
 
         var healthyRootRow = await _ReadNodeAsync(healthyRoot.Id, ct);
         var healthyChildRow = await _ReadNodeAsync(healthyChild.Id, ct);
-        healthyChildRow.OwnerId.Should().Be(owner);
-        healthyChildRow.LockedUntil.Should().Be(healthyRootRow.LockedUntil);
+        healthyChildRow.ActiveHolder.Should().Be(owner);
+        healthyChildRow.Lease.ExpiresAt.Should().Be(healthyRootRow.Lease.ExpiresAt);
 
         var healthyGrandchildRow = await _ReadNodeAsync(healthyGrandchild.Id, ct);
-        healthyGrandchildRow.OwnerId.Should().Be(owner, "the healthy root descends past the level the other root died");
-        healthyGrandchildRow.LockedUntil.Should().Be(healthyRootRow.LockedUntil);
+        healthyGrandchildRow
+            .ActiveHolder.Should()
+            .Be(owner, "the healthy root descends past the level the other root died");
+        healthyGrandchildRow.Lease.ExpiresAt.Should().Be(healthyRootRow.Lease.ExpiresAt);
     }
 
     /// <summary>
@@ -1216,13 +1229,13 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         await _RunCasFenceCaseAsync(
             async (fixtureConn, rootId) =>
             {
-                // Case (i): expire the claimed root's lease so EXISTS(... LockedUntil > now) fails.
+                // Case (i): expire the claimed root's lease so EXISTS(... lease unexpired) fails.
                 await _SqlAsync(
                     fixtureConn,
                     fixture.Sql(
-                        $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"LockedUntil\" = @past WHERE \"Id\" = @id;"
+                        $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"LeaseExpiresAt\" = @past WHERE \"Id\" = @id;"
                     ),
-                    ("@past", DateTime.UtcNow.AddMinutes(-5)),
+                    ("@past", DateTimeOffset.UtcNow.AddMinutes(-5)),
                     ("@id", rootId)
                 );
             }
@@ -1235,11 +1248,14 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         await _RunCasFenceCaseAsync(
             async (fixtureConn, rootId) =>
             {
-                // Case (ii): reassign the claimed root to a different owner so EXISTS(... OwnerId = me) fails.
+                // Case (ii): another node takes the claimed root over. A takeover draws the next generation, so
+                // EXISTS(... generation = the root's claim) fails.
                 await _SqlAsync(
                     fixtureConn,
                     fixture.Sql(
-                        $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"OwnerId\" = @thief WHERE \"Id\" = @id;"
+                        $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"LeaseGeneration\" = \"LeaseGeneration\" + 1, "
+                            + "\"LeaseHolder\" = @thief, \"LeaseTakeoverCount\" = \"LeaseTakeoverCount\" + 1 "
+                            + "WHERE \"Id\" = @id;"
                     ),
                     ("@thief", "thief@9"),
                     ("@id", rootId)
@@ -1292,11 +1308,11 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
             // The decisive contract: no descendant was leased. No split ownership.
             var childRow = await _ReadNodeAsync(child.Id, ct);
             childRow.Status.Should().Be(JobStatus.Idle);
-            childRow.OwnerId.Should().BeNull("a descendant must never be leased when the root fence fails");
+            childRow.ActiveHolder.Should().BeNull("a descendant must never be leased when the root fence fails");
 
             var grandchildRow = await _ReadNodeAsync(grandchild.Id, ct);
             grandchildRow.Status.Should().Be(JobStatus.Idle);
-            grandchildRow.OwnerId.Should().BeNull();
+            grandchildRow.ActiveHolder.Should().BeNull();
         }
         finally
         {
@@ -1344,10 +1360,12 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
                 .Be(1, "the root's optimistic UpdatedAt gate lets exactly one owner claim it");
 
             var rootRow = await _ReadNodeAsync(root.Id, ct);
-            rootRow.OwnerId.Should().BeOneOf("owner-a@1", "owner-b@1");
+            rootRow.ActiveHolder.Should().BeOneOf("owner-a@1", "owner-b@1");
 
             var childRow = await _ReadNodeAsync(child.Id, ct);
-            childRow.OwnerId.Should().Be(rootRow.OwnerId, "the child must belong to the same owner that won the root");
+            childRow
+                .ActiveHolder.Should()
+                .Be(rootRow.ActiveHolder, "the child must belong to the same owner that won the root");
         }
         finally
         {
@@ -1367,8 +1385,8 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
     {
         var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
-        using var hostA = fixture.BuildHost("native-a", fastMembership: true);
-        using var hostB = fixture.BuildHost("native-b", fastMembership: true);
+        using var hostA = fixture.BuildHost("native-a");
+        using var hostB = fixture.BuildHost("native-b");
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(hostA, ct);
         await hostA.StartAsync(ct);
         await hostB.StartAsync(ct);
@@ -1399,16 +1417,18 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
                 .Be(1, "the recursive-CTE claim's root CAS lets exactly one node win");
 
             var rootRow = await _ReadNodeAsync(root.Id, ct);
-            rootRow.OwnerId.Should().NotBeNullOrWhiteSpace();
+            rootRow.ActiveHolder.Should().NotBeNullOrWhiteSpace();
 
             // The winner took the WHOLE subtree in one CTE statement — no descendant split across owners.
             var childRow = await _ReadNodeAsync(child.Id, ct);
-            childRow.OwnerId.Should().Be(rootRow.OwnerId, "the child belongs to the node that won the root");
-            childRow.LockedUntil.Should().Be(rootRow.LockedUntil, "descendants carry the root's exact lease deadline");
+            childRow.ActiveHolder.Should().Be(rootRow.ActiveHolder, "the child belongs to the node that won the root");
+            childRow
+                .Lease.ExpiresAt.Should()
+                .Be(rootRow.Lease.ExpiresAt, "descendants carry the root's exact lease deadline");
 
             var grandchildRow = await _ReadNodeAsync(grandchild.Id, ct);
-            grandchildRow.OwnerId.Should().Be(rootRow.OwnerId);
-            grandchildRow.LockedUntil.Should().Be(rootRow.LockedUntil);
+            grandchildRow.ActiveHolder.Should().Be(rootRow.ActiveHolder);
+            grandchildRow.Lease.ExpiresAt.Should().Be(rootRow.Lease.ExpiresAt);
         }
         finally
         {
@@ -1587,18 +1607,19 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
             claimed.Should().Contain(x => x.Id == nodes[0].Id, "the claim completes without a MAXRECURSION error");
 
             var rootRow = await _ReadNodeAsync(nodes[0].Id, ct);
-            rootRow.OwnerId.Should().NotBeNullOrWhiteSpace();
+            rootRow.ActiveHolder.Should().NotBeNullOrWhiteSpace();
 
             for (var depth = 1; depth <= 13; depth++)
             {
                 var row = await _ReadNodeAsync(nodes[depth - 1].Id, ct);
                 if (depth <= maxChainDepth)
                 {
-                    row.OwnerId.Should().Be(rootRow.OwnerId, "node at depth {0} is within the limit and leased", depth);
+                    row.ActiveHolder.Should()
+                        .Be(rootRow.ActiveHolder, "node at depth {0} is within the limit and leased", depth);
                 }
                 else
                 {
-                    row.OwnerId.Should().BeNull("node at depth {0} is beyond the limit and left Idle", depth);
+                    row.ActiveHolder.Should().BeNull("node at depth {0} is beyond the limit and left Idle", depth);
                     row.Status.Should().Be(JobStatus.Idle);
                 }
             }
@@ -1813,7 +1834,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
     private static async Task _MarkTerminalAsync(
         IJobPersistenceProvider<TimeJobEntity, CronJobEntity> persistence,
         Guid id,
-        string claimOwner,
+        RowLeaseSnapshot claim,
         JobStatus status,
         CancellationToken ct
     )
@@ -1822,7 +1843,8 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         {
             FunctionName = "chain",
             JobId = id,
-            ClaimOwner = claimOwner,
+            ClaimOwner = claim.Holder!,
+            ClaimGeneration = claim.Generation,
         }.SetProperty(x => x.Status, status);
         (await persistence.UpdateTimeJobAsync(completion, ct))
             .Should()
@@ -1857,13 +1879,16 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
 
     private sealed record ChainNode(
         JobStatus Status,
-        string? OwnerId,
-        DateTime? LockedUntil,
+        RowLeaseSnapshot Lease,
         DateTime? ExecutionTime,
         Guid? ParentId,
         RunCondition? RunCondition,
         string? SkippedReason
-    );
+    )
+    {
+        // An ended lease keeps its last holder, so ownership is the holder of a lease that is still active.
+        public string? ActiveHolder => JobsCoordinationFixtureExtensions.ActiveHolder(Lease);
+    }
 
     private async Task<ChainNode> _ReadNodeAsync(Guid id, CancellationToken ct)
     {
@@ -1871,8 +1896,8 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         await connection.OpenAsync(ct);
         await using var command = connection.CreateCommand();
         command.CommandText = fixture.Sql(
-            "SELECT \"Status\", \"OwnerId\", \"LockedUntil\", \"ExecutionTime\", \"ParentId\", \"RunCondition\", "
-                + $"\"SkippedReason\" FROM {fixture.QualifiedTimeJobsTable} WHERE \"Id\" = @id;"
+            $"SELECT \"Status\", {JobsCoordinationFixtureExtensions.LeaseColumnList}, \"ExecutionTime\", \"ParentId\", "
+                + $"\"RunCondition\", \"SkippedReason\" FROM {fixture.QualifiedTimeJobsTable} WHERE \"Id\" = @id;"
         );
         JobsCoordinationFixtureExtensions.AddParameter(command, "@id", id);
 
@@ -1883,16 +1908,15 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         }
 
         var status = Enum.Parse<JobStatus>(reader.GetString(0));
-        var ownerId = await reader.IsDBNullAsync(1, ct) ? null : reader.GetString(1);
-        var lockedUntil = await reader.IsDBNullAsync(2, ct) ? (DateTime?)null : reader.GetDateTime(2);
-        var executionTime = await reader.IsDBNullAsync(3, ct) ? (DateTime?)null : reader.GetDateTime(3);
-        var parentId = await reader.IsDBNullAsync(4, ct) ? (Guid?)null : reader.GetGuid(4);
-        var runCondition = await reader.IsDBNullAsync(5, ct)
+        var lease = await JobsCoordinationFixtureExtensions.ReadLeaseAsync(reader, 1, ct);
+        var executionTime = await reader.IsDBNullAsync(6, ct) ? (DateTime?)null : reader.GetDateTime(6);
+        var parentId = await reader.IsDBNullAsync(7, ct) ? (Guid?)null : reader.GetGuid(7);
+        var runCondition = await reader.IsDBNullAsync(8, ct)
             ? (RunCondition?)null
-            : Enum.Parse<RunCondition>(reader.GetString(5));
-        var skippedReason = await reader.IsDBNullAsync(6, ct) ? null : reader.GetString(6);
+            : Enum.Parse<RunCondition>(reader.GetString(8));
+        var skippedReason = await reader.IsDBNullAsync(9, ct) ? null : reader.GetString(9);
 
-        return new ChainNode(status, ownerId, lockedUntil, executionTime, parentId, runCondition, skippedReason);
+        return new ChainNode(status, lease, executionTime, parentId, runCondition, skippedReason);
     }
 
     private async Task<IReadOnlyList<(Guid Id, RunCondition? Condition)>> _ChildrenAsync(
@@ -1927,19 +1951,35 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
     /// Forces a row into the ALREADY-CLAIMED state the subtree lease walk is handed: InProgress, owned by
     /// <paramref name="ownerId" />, with a live lease. Raw SQL because the entity's status/owner setters are internal.
     /// </summary>
-    private async Task _ForceClaimedAsync(Guid id, string ownerId, DateTime lockedUntil, CancellationToken ct)
+    private async Task<JobsGrantedRow> _ForceClaimedAsync(
+        Guid id,
+        string ownerId,
+        DateTimeOffset expiresAt,
+        CancellationToken ct
+    )
+    {
+        await _ForceInProgressAsync(id, ct);
+        await fixture.OverwriteLeaseAsync(
+            fixture.QualifiedTimeJobsTable,
+            id,
+            new RowLeaseSnapshot(1, RowLeaseState.Active, expiresAt, ownerId, 0),
+            ct
+        );
+
+        return new JobsGrantedRow(id, 1, expiresAt, 0);
+    }
+
+    private async Task _ForceInProgressAsync(Guid id, CancellationToken ct)
     {
         await using var connection = fixture.CreateConnection();
         await connection.OpenAsync(ct);
         await _SqlAsync(
             connection,
             fixture.Sql(
-                $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"Status\" = @status, \"OwnerId\" = @ownerId, "
-                    + "\"LockedUntil\" = @lockedUntil, \"UpdatedAt\" = @updatedAt WHERE \"Id\" = @id;"
+                $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"Status\" = @status, \"UpdatedAt\" = @updatedAt "
+                    + "WHERE \"Id\" = @id;"
             ),
             ("@status", nameof(JobStatus.InProgress)),
-            ("@ownerId", ownerId),
-            ("@lockedUntil", lockedUntil),
             ("@updatedAt", DateTime.UtcNow),
             ("@id", id)
         );
@@ -1948,19 +1988,28 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
     /// <summary>Forces a row into InProgress with a lapsed lease under a foreign owner (simulates a dead node's claim).</summary>
     private async Task _ForceInProgressWithLapsedLeaseAsync(Guid id, string ownerId, CancellationToken ct)
     {
-        await using var connection = fixture.CreateConnection();
-        await connection.OpenAsync(ct);
-        await using var command = connection.CreateCommand();
-        command.CommandText = fixture.Sql(
-            $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"Status\" = @status, \"OwnerId\" = @ownerId, "
-                + "\"LockedUntil\" = @lockedUntil, \"UpdatedAt\" = @lockedUntil WHERE \"Id\" = @id;"
-        );
-        JobsCoordinationFixtureExtensions.AddParameter(command, "@status", nameof(JobStatus.InProgress));
-        JobsCoordinationFixtureExtensions.AddParameter(command, "@ownerId", ownerId);
-        JobsCoordinationFixtureExtensions.AddParameter(command, "@lockedUntil", DateTime.UtcNow.AddMinutes(-5));
-        JobsCoordinationFixtureExtensions.AddParameter(command, "@id", id);
+        var lapsed = DateTimeOffset.UtcNow.AddMinutes(-5);
+        await using (var connection = fixture.CreateConnection())
+        {
+            await connection.OpenAsync(ct);
+            await _SqlAsync(
+                connection,
+                fixture.Sql(
+                    $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"Status\" = @status, \"UpdatedAt\" = @updatedAt "
+                        + "WHERE \"Id\" = @id;"
+                ),
+                ("@status", nameof(JobStatus.InProgress)),
+                ("@updatedAt", lapsed),
+                ("@id", id)
+            );
+        }
 
-        await command.ExecuteNonQueryAsync(ct);
+        await fixture.OverwriteLeaseAsync(
+            fixture.QualifiedTimeJobsTable,
+            id,
+            new RowLeaseSnapshot(1, RowLeaseState.Active, lapsed, ownerId, 0),
+            ct
+        );
     }
 }
 

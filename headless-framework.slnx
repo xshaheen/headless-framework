@@ -250,6 +250,7 @@
         <Project Path="src\Headless.Fencing.PostgreSql\Headless.Fencing.PostgreSql.csproj" />
         <Project Path="src\Headless.Fencing.SqlServer\Headless.Fencing.SqlServer.csproj" />
         <Project Path="src\Headless.Fencing.Sqlite\Headless.Fencing.Sqlite.csproj" />
+        <Project Path="src\Headless.Fencing.EntityFramework\Headless.Fencing.EntityFramework.csproj" />
     </Folder>
     <Folder Name="/Fencing/Tests/">
         <Project Path="tests\Headless.Fencing.Tests.Unit\Headless.Fencing.Tests.Unit.csproj" />
@@ -258,6 +259,8 @@
         <Project Path="tests\Headless.Fencing.SqlServer.Tests.Integration\Headless.Fencing.SqlServer.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Fencing.Sqlite.Tests.Integration\Headless.Fencing.Sqlite.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Fencing.Tests.Harness\Headless.Fencing.Tests.Harness.csproj" />
+        <Project Path="tests\Headless.Fencing.EntityFramework.Tests.Unit\Headless.Fencing.EntityFramework.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Fencing.EntityFramework.Tests.Integration\Headless.Fencing.EntityFramework.Tests.Integration.csproj" />
     </Folder>
     <Folder Name="/Generators/">
         <Project Path="src\Headless.Generator.Primitives.Abstractions\Headless.Generator.Primitives.Abstractions.csproj" />
@@ -390,6 +393,7 @@
         <Project Path="tests\Headless.Testing.AspNetCore.Tests.TestHost\Headless.Testing.AspNetCore.Tests.TestHost.csproj" />
         <Project Path="tests\Headless.Testing.AspNetCore.Tests.Unit\Headless.Testing.AspNetCore.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Testing.Tests.Unit\Headless.Testing.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Testing.Testcontainers.Tests.Integration\Headless.Testing.Testcontainers.Tests.Integration.csproj" />
     </Folder>
     <Folder Name="/MediaIndexing/">
         <Project Path="src\Headless.Media.Indexing.Abstractions\Headless.Media.Indexing.Abstractions.csproj" />
@@ -491,9 +495,13 @@
         <Project Path="tests\Headless.MultiTenancy.Tests.Unit\Headless.MultiTenancy.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Observability/">
+        <Project Path="src\Headless.Logging.Redaction\Headless.Logging.Redaction.csproj" />
+        <Project Path="src\Headless.Logging.Redaction.AspNetCore\Headless.Logging.Redaction.AspNetCore.csproj" />
         <Project Path="src\Headless.Logging.Serilog\Headless.Logging.Serilog.csproj" />
     </Folder>
     <Folder Name="/Observability/Tests/">
+        <Project Path="tests\Headless.Logging.Redaction.AspNetCore.Tests.Unit\Headless.Logging.Redaction.AspNetCore.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Logging.Redaction.Tests.Unit\Headless.Logging.Redaction.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Logging.Serilog.Tests.Unit\Headless.Logging.Serilog.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Orms/">

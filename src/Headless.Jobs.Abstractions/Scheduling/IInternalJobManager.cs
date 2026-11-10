@@ -29,9 +29,9 @@ internal interface IInternalJobManager
     Task<int> UpdateTickerAsync(JobExecutionState context, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Opens the run's next attempt under its <see cref="JobExecutionState.ClaimOwner"/> as the executor invokes the
-    /// handler. Returns <see langword="false"/> when nothing was opened (no claim owner, the run left
-    /// <c>InProgress</c>, or the provider keeps no attempt history).
+    /// Opens the run's next attempt under its <see cref="JobExecutionState.ClaimedRow"/> as the executor invokes the
+    /// handler. Returns <see langword="false"/> when nothing was opened (no claim, the run left <c>InProgress</c> or
+    /// its lease, or the provider keeps no attempt history).
     /// </summary>
     Task<bool> OpenAttemptAsync(
         JobExecutionState context,
@@ -40,7 +40,7 @@ internal interface IInternalJobManager
     );
 
     /// <summary>
-    /// Hands a started run back to <c>Idle</c> under its <see cref="JobExecutionState.ClaimOwner"/> without charging
+    /// Hands a started run back to <c>Idle</c> under its <see cref="JobExecutionState.ClaimedRow"/> without charging
     /// its retry budget, because a graceful stop kept it from starting. Returns the affected row count; <c>0</c>
     /// means a peer already owns the row.
     /// </summary>
@@ -59,7 +59,20 @@ internal interface IInternalJobManager
     );
 
     /// <summary>
-    /// Renews the running job's lease (#316) under its <see cref="JobExecutionState.ClaimOwner"/>, dispatching to the
+    /// Hands a failed time job with retries left back to <c>Idle</c> with <paramref name="retryCount"/> spent, due
+    /// after <paramref name="retryAfter"/> on the store's clock, so the retry waits in the store rather than in a
+    /// worker; then wakes the local scheduler so it plans for the new due time. Returns the affected row count;
+    /// <c>0</c> means a peer already owns the row.
+    /// </summary>
+    Task<int> RescheduleRetryAsync(
+        JobExecutionState context,
+        int retryCount,
+        TimeSpan retryAfter,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Renews the running job's lease (#316) under its <see cref="JobExecutionState.ClaimedRow"/>, dispatching to the
     /// time or cron occurrence renew by <see cref="JobExecutionState.Type"/>. Returns the affected row count:
     /// <c>0</c> means the lease was lost — including when the node's live identity is gone or is no longer the claim
     /// owner — and the caller should cancel the job (cancel-on-loss).

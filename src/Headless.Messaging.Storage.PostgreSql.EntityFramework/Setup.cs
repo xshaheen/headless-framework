@@ -98,7 +98,7 @@ public static class SetupMessagingPostgreSqlEntityFramework
                 storageServices =>
                     storageServices.Configure<PostgreSqlOptions, PostgreSqlOptionsValidator>(storageOptions =>
                     {
-                        storageOptions.OwnerColumnMaxLength = options.OwnerColumnMaxLength;
+                        storageOptions.LeaseHolderMaxLength = options.LeaseHolderMaxLength;
                         storageOptions.Version = version;
                     }),
                 // Known at registration, so composing the capability never resolves the storage options, which

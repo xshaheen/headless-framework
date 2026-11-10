@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Data.Common;
 using Headless.Context;
 using Headless.Coordination;
+using Headless.Fencing;
 using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Testing.Tests;
@@ -60,11 +61,11 @@ public abstract class JobsClaimRetryConformanceTests<TFixture>(TFixture fixture)
             fault.AttemptCount.Should().Be(2);
             logs.CountOf(_ClaimRetryEventName).Should().Be(1);
             claimed.Should().ContainSingle().Which.Id.Should().Be(job.Id);
-            claimed[0].OwnerId.Should().NotBeNullOrWhiteSpace();
-            var (status, ownerId, lockedUntil, _, _) = await fixture.ReadTimeJobDetailAsync(job.Id, ct);
+            claimed[0].Lease.Holder.Should().NotBeNullOrWhiteSpace();
+            var (status, lease, _, _) = await fixture.ReadTimeJobDetailAsync(job.Id, ct);
             status.Should().Be((int)JobStatus.Queued);
-            ownerId.Should().Be(claimed[0].OwnerId);
-            lockedUntil.Should().NotBeNull();
+            JobsCoordinationFixtureExtensions.ActiveHolder(lease).Should().Be(claimed[0].Lease.Holder);
+            lease.ExpiresAt.Should().NotBeNull();
         }
         finally
         {
@@ -104,10 +105,10 @@ public abstract class JobsClaimRetryConformanceTests<TFixture>(TFixture fixture)
             // One initial attempt plus the strategy's two retries — the budget is bounded, not infinite.
             fault.InjectedFailureCount.Should().Be(3);
             logs.CountOf(_ClaimRetryEventName).Should().Be(2);
-            var (status, ownerId, lockedUntil, _, _) = await fixture.ReadTimeJobDetailAsync(job.Id, ct);
+            // The claim rolled back, so the row was never leased.
+            var (status, lease, _, _) = await fixture.ReadTimeJobDetailAsync(job.Id, ct);
             status.Should().Be((int)JobStatus.Idle);
-            ownerId.Should().BeNull();
-            lockedUntil.Should().BeNull();
+            lease.Should().Be(default(RowLeaseSnapshot));
         }
         finally
         {
@@ -149,10 +150,10 @@ public abstract class JobsClaimRetryConformanceTests<TFixture>(TFixture fixture)
             fault.InjectedFailureCount.Should().Be(1);
             logs.CountOf(_ClaimRetryEventName).Should().Be(0);
             // The injected fault fires before the real commit, so the claim rolled back.
-            var (status, ownerId, lockedUntil, _, _) = await fixture.ReadTimeJobDetailAsync(job.Id, ct);
+            // The claim rolled back, so the row was never leased.
+            var (status, lease, _, _) = await fixture.ReadTimeJobDetailAsync(job.Id, ct);
             status.Should().Be((int)JobStatus.Idle);
-            ownerId.Should().BeNull();
-            lockedUntil.Should().BeNull();
+            lease.Should().Be(default(RowLeaseSnapshot));
         }
         finally
         {

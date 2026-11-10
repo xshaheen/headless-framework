@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Fencing;
 using Headless.Hosting.Schema;
 using Headless.Sql.Sqlite;
 
@@ -21,8 +22,10 @@ internal static class SqliteIdempotencySchemaContribution
         var dialect = SqliteDialect.Instance;
         var schema = storageOptions.Schema;
         var t = new IdempotencyTable(dialect, schema);
-        var pending = IdempotencyTable.StatusLiteral(IdempotencyRecordStatus.Pending);
-        var completed = IdempotencyTable.StatusLiteral(IdempotencyRecordStatus.Completed);
+        var idle = IdempotencyTable.StateLiteral(RowLeaseState.Idle);
+        var active = IdempotencyTable.StateLiteral(RowLeaseState.Active);
+        var settled = IdempotencyTable.StateLiteral(RowLeaseState.Settled);
+        var released = IdempotencyTable.StateLiteral(RowLeaseState.Released);
 
         string name(string pascal) => dialect.Quote(dialect.Name(pascal));
 
@@ -32,7 +35,7 @@ internal static class SqliteIdempotencySchemaContribution
         // The constraints are PostgreSQL's (see its contribution for why each holds); TEXT compares with SQLite's
         // BINARY collation, so keys and tenant ids match ordinally. SQLite has no sequence objects: the sequence is a
         // one-row table holding the last generation issued, which the dialect's next-value expression reads and these
-        // triggers advance whenever a generation is written, inside the same statement and under the database write
+        // triggers advance whenever a lease generation is written, inside the same statement and under the database write
         // lock. A purge deletes records, never the sequence row, so a key admitted again after its record was purged
         // still gets a generation above every earlier attempt's.
         var sql = $"""
@@ -46,11 +49,13 @@ internal static class SqliteIdempotencySchemaContribution
             CREATE TABLE IF NOT EXISTS {t.Table} (
                 {t.TenantId} TEXT NOT NULL,
                 {t.Key} TEXT NOT NULL,
-                {t.Status} INTEGER NOT NULL,
                 {t.FingerprintAlgorithm} TEXT NOT NULL,
                 {t.Fingerprint} BLOB NOT NULL,
-                {t.Generation} INTEGER NULL,
+                {t.LeaseGeneration} INTEGER NOT NULL DEFAULT 0,
+                {t.LeaseState} INTEGER NOT NULL DEFAULT {idle},
                 {t.LeaseExpiresAt} TEXT NULL,
+                {t.LeaseHolder} TEXT NULL,
+                {t.LeaseTakeoverCount} INTEGER NOT NULL DEFAULT 0,
                 {t.Result} BLOB NULL,
                 {t.ResultContract} TEXT NULL,
                 {t.RetentionUntil} TEXT NOT NULL,
@@ -58,26 +63,26 @@ internal static class SqliteIdempotencySchemaContribution
                 {t.RecoveryState} BLOB NULL,
                 {t.RecoveryContract} TEXT NULL,
                 CONSTRAINT {name("PK_IdempotencyRecords")} PRIMARY KEY ({t.TenantId}, {t.Key}),
-                CONSTRAINT {name("CK_IdempotencyRecords_Status")} CHECK ({t.Status} BETWEEN {pending} AND {completed}),
+                CONSTRAINT {name("CK_IdempotencyRecords_LeaseState")} CHECK ({t.LeaseState} BETWEEN {idle} AND {released}),
+                CONSTRAINT {name("CK_IdempotencyRecords_Lease")} CHECK (
+                    {t.LeaseGeneration} >= 0
+                    AND ({t.LeaseState} = {idle}) = ({t.LeaseGeneration} = 0)
+                    AND ({t.LeaseState} <> {active} OR {t.LeaseExpiresAt} IS NOT NULL)
+                    AND {t.LeaseTakeoverCount} >= 0
+                    AND COALESCE(length({t.LeaseHolder}), 0) <= {FencingFieldLimits.HolderMaxLength}
+                ),
                 CONSTRAINT {name("CK_IdempotencyRecords_Fingerprint")} CHECK (
                     length({t.Fingerprint}) BETWEEN 1 AND {IdempotencyFieldLimits.FingerprintMaxLength}
                 ),
                 CONSTRAINT {name("CK_IdempotencyRecords_Result")} CHECK (
-                    ({t.Status} = {completed}) = ({t.Result} IS NOT NULL AND {t.ResultContract} IS NOT NULL)
+                    ({t.LeaseState} = {settled}) = ({t.Result} IS NOT NULL AND {t.ResultContract} IS NOT NULL)
                     AND ({t.Result} IS NULL) = ({t.ResultContract} IS NULL)
                 ),
                 CONSTRAINT {name("CK_IdempotencyRecords_Recovery")} CHECK (
                     ({t.RecoveryPoint} IS NULL) = ({t.RecoveryState} IS NULL)
                     AND ({t.RecoveryPoint} IS NULL) = ({t.RecoveryContract} IS NULL)
-                    AND ({t.RecoveryPoint} IS NULL OR {t.Status} = {pending})
+                    AND ({t.RecoveryPoint} IS NULL OR {t.LeaseState} <> {settled})
                     AND COALESCE(length({t.RecoveryState}), 0) <= {IdempotencyFieldLimits.RecoveryStateMaxLength}
-                ),
-                CONSTRAINT {name("CK_IdempotencyRecords_Lease")} CHECK (
-                    ({t.Generation} IS NULL OR {t.Generation} > 0)
-                    AND CASE {t.Status}
-                        WHEN {completed} THEN {t.Generation} IS NOT NULL AND {t.LeaseExpiresAt} IS NULL
-                        ELSE ({t.Generation} IS NULL) = ({t.LeaseExpiresAt} IS NULL)
-                    END
                 )
             );
 
@@ -87,16 +92,16 @@ internal static class SqliteIdempotencySchemaContribution
 
             CREATE TRIGGER IF NOT EXISTS {global("TR_IdempotencyRecords_GenerationInserted")}
             AFTER INSERT ON {t.Table}
-            WHEN NEW.{t.Generation} > (SELECT value FROM {t.Sequence})
+            WHEN NEW.{t.LeaseGeneration} > (SELECT value FROM {t.Sequence})
             BEGIN
-                UPDATE {t.Sequence} SET value = NEW.{t.Generation} WHERE id = 1;
+                UPDATE {t.Sequence} SET value = NEW.{t.LeaseGeneration} WHERE id = 1;
             END;
 
             CREATE TRIGGER IF NOT EXISTS {global("TR_IdempotencyRecords_GenerationUpdated")}
-            AFTER UPDATE OF {t.Generation} ON {t.Table}
-            WHEN NEW.{t.Generation} > (SELECT value FROM {t.Sequence})
+            AFTER UPDATE OF {t.LeaseGeneration} ON {t.Table}
+            WHEN NEW.{t.LeaseGeneration} > (SELECT value FROM {t.Sequence})
             BEGIN
-                UPDATE {t.Sequence} SET value = NEW.{t.Generation} WHERE id = 1;
+                UPDATE {t.Sequence} SET value = NEW.{t.LeaseGeneration} WHERE id = 1;
             END;
             """;
 

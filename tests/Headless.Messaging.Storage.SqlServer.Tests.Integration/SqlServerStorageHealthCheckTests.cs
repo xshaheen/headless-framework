@@ -21,15 +21,14 @@ public sealed class SqlServerStorageHealthCheckTests(SqlServerTestFixture fixtur
     public async Task should_report_only_the_outbox_whose_database_stopped_accepting_connections_unhealthy()
     {
         // given
-        var databaseName = "health_" + Guid.NewGuid().ToString("N");
-        await using var admin = new SqlConnection(fixture.ConnectionString);
-        await admin.ExecuteAsync($"CREATE DATABASE [{databaseName}];");
+        var databaseName = fixture.DerivedDatabaseName($"health_{Guid.NewGuid():N}");
+        await using var admin = new SqlConnection(fixture.AdminConnectionString);
+        await fixture.CreateDatabaseAsync(databaseName, AbortToken);
 
         try
         {
-            var outboxConnectionString = new SqlConnectionStringBuilder(fixture.ConnectionString)
+            var outboxConnectionString = new SqlConnectionStringBuilder(fixture.ConnectionStringFor(databaseName))
             {
-                InitialCatalog = databaseName,
                 ConnectTimeout = 5,
             }.ConnectionString;
 

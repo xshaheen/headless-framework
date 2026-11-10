@@ -233,7 +233,8 @@ public sealed class JobsModuleSourcesTests : TestBase
             FunctionName = JobsModuleNode.Charge,
             JobId = job.Id,
             Type = JobType.TimeJob,
-            ClaimOwner = claimed.OwnerId!,
+            ClaimOwner = claimed.Lease.Holder!,
+            ClaimGeneration = claimed.Lease.Generation,
         }
             .SetProperty(x => x.Status, JobStatus.Failed)
             .SetProperty(x => x.ExceptionDetails, "boom");

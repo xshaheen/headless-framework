@@ -3,11 +3,12 @@
 using System.Data.Common;
 using Headless.Fencing;
 using Headless.Hosting;
+using Headless.Sql;
+using Headless.Sql.PostgreSql;
 using Headless.Testing.Testcontainers;
 using Headless.UnitOfWork;
 using Npgsql;
 using NpgsqlTypes;
-using Testcontainers.PostgreSql;
 
 namespace Tests;
 
@@ -21,20 +22,17 @@ namespace Tests;
 public sealed class PostgreSqlFencingFixture
     : HeadlessPostgreSqlFixture,
         ICollectionFixture<PostgreSqlFencingFixture>,
-        ILeasesFixture
+        ILeasesFixture,
+        IFencedRowsFixture
 {
-    private const string _OtherDatabase = "fencing_other";
     private const string _HandoffTable = "fencing_handoffs";
 
-    public string ConnectionString => Container.GetConnectionString();
+    public string OtherDatabaseConnectionString => ConnectionStringFor(DerivedDatabaseName("other"));
 
-    public string OtherDatabaseConnectionString =>
-        new NpgsqlConnectionStringBuilder(ConnectionString) { Database = _OtherDatabase }.ToString();
+    public ISqlDialect Dialect => PostgreSqlDialect.Instance;
 
-    protected override PostgreSqlBuilder Configure()
-    {
-        return base.Configure().WithDatabase("fencing_test").WithUsername("postgres").WithPassword("postgres");
-    }
+    // Not the storage schema, which the lease tests may drop and recreate.
+    public string Schema => "public";
 
     protected override async ValueTask InitializeAsync()
     {
@@ -52,6 +50,19 @@ public sealed class PostgreSqlFencingFixture
                     resource text NOT NULL,
                     generation bigint NOT NULL
                 );
+
+                CREATE TABLE public.work_items (
+                    id uuid NOT NULL PRIMARY KEY,
+                    status text NOT NULL,
+                    parent_id uuid NULL,
+                    lease_generation bigint NOT NULL DEFAULT 0,
+                    lease_state smallint NOT NULL DEFAULT 0,
+                    lease_expires_at timestamptz NULL,
+                    lease_holder varchar(405) NULL,
+                    lease_takeover_count integer NOT NULL DEFAULT 0
+                );
+
+                CREATE SEQUENCE public.work_item_generations AS bigint START WITH 1 INCREMENT BY 1 NO CYCLE;
                 """,
                 connection
             )
@@ -60,14 +71,7 @@ public sealed class PostgreSqlFencingFixture
             await reset.ExecuteNonQueryAsync(CancellationToken.None);
         }
 
-        await using var exists = new NpgsqlCommand("SELECT 1 FROM pg_database WHERE datname = @name", connection);
-        exists.Parameters.AddWithValue("name", _OtherDatabase);
-
-        if (await exists.ExecuteScalarAsync(CancellationToken.None) is null)
-        {
-            await using var create = new NpgsqlCommand($"""CREATE DATABASE "{_OtherDatabase}";""", connection);
-            await create.ExecuteNonQueryAsync(CancellationToken.None);
-        }
+        await CreateDatabaseAsync(DerivedDatabaseName("other"), CancellationToken.None);
     }
 
     public void ConfigureProvider(HeadlessFencingSetupBuilder setup)

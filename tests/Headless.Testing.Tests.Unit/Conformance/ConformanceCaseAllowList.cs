@@ -113,6 +113,16 @@ internal static class ConformanceCaseAllowList
         ),
         new(
             "CacheIdempotencyConformanceTests",
+            "should_refuse_a_store_write_whose_lease_expired_as_a_stale_admission",
+            "Writes the store inside a caller's unit, and the cache provider refuses enlistment."
+        ),
+        new(
+            "CacheIdempotencyConformanceTests",
+            "should_answer_stale_to_an_older_attempt_renewing_after_a_newer_one_released",
+            "The cache entry keeps no lease state per generation: once a newer attempt released the key, an older attempt's renewal finds a released entry and answers Released, not the relational and in-memory providers' Stale."
+        ),
+        new(
+            "CacheIdempotencyConformanceTests",
             "should_refuse_a_recovery_point_from_an_attempt_that_lost_the_key_and_write_nothing",
             "Ends with an enlisted recovery point; the cache provider refuses enlistment. The provider's own tests cover the autonomous refusals."
         ),
@@ -155,6 +165,26 @@ internal static class ConformanceCaseAllowList
             "InMemoryLeasesConformanceTests",
             "should_refuse_a_unit_on_another_database_before_any_statement",
             "The in-memory store has no database, so a unit on another database cannot exist."
+        ),
+        new(
+            "InMemoryLeasesConformanceTests",
+            "should_read_the_status_on_the_callers_connection_and_hand_it_back_as_passed",
+            "The in-memory store has no database, so there is no caller's connection to read on; it ignores the connection argument."
+        ),
+        new(
+            "InMemoryLeasesConformanceTests",
+            "should_read_the_status_inside_the_callers_transaction_and_refuse_a_foreign_one",
+            "The in-memory store has no database, so there is no caller's transaction to read inside; it ignores the transaction argument."
+        ),
+        new(
+            "InMemoryLeasesConformanceTests",
+            "should_refuse_a_callers_connection_to_another_database_before_any_statement",
+            "The in-memory store has no database, so a caller's connection to another database cannot exist."
+        ),
+        new(
+            "InMemoryLeasesConformanceTests",
+            "should_read_the_current_attempt_on_the_callers_connection_and_hand_it_back_as_passed",
+            "The in-memory store has no database, so there is no caller's connection to read on; it ignores the connection argument."
         ),
         new(
             "PostgreSqlDistributedLockConformanceTests",
@@ -237,6 +267,11 @@ internal static class ConformanceCaseAllowList
             "Without read committed snapshot isolation a plain READ COMMITTED read waits on an uncommitted write's exclusive row lock; SqlServerRcsiIdempotencyConformanceTests runs this case on an RCSI database."
         ),
         new(
+            "SqlServerLeasesConformanceTests",
+            "should_read_the_status_without_waiting_on_an_uncommitted_write_to_the_lease",
+            "Without read committed snapshot isolation a plain READ COMMITTED read waits on an uncommitted write's exclusive row lock; SqlServerRcsiLeasesConformanceTests runs this case on an RCSI database."
+        ),
+        new(
             "SqlServerReaderWriterLockConformanceTests",
             "should_auto_extend_write_lock",
             "A SQL Server application lock is session-scoped with no lease, so there is nothing to auto-extend and the renewal count stays zero."
@@ -265,6 +300,11 @@ internal static class ConformanceCaseAllowList
             "SqliteDialectConformanceTests",
             "should_surface_the_deadlock_after_the_attempt_cap_and_apply_nothing",
             "SQLite begins every write transaction IMMEDIATE and admits one writer per database file, so no deadlock can be forced on any attempt; busy waits are covered by the SQLite dialect's own tests."
+        ),
+        new(
+            "SqliteFencedRowsConformanceTests",
+            "should_skip_a_row_another_transaction_claimed_without_waiting_for_it",
+            "SQLite has no row locks: a claim takes the database write lock, so a second claimer waits for the first to commit instead of skipping its rows; should_claim_only_what_an_open_claim_left_once_it_commits covers that serialization."
         ),
         new(
             "SqliteLeasesConformanceTests",

@@ -5,6 +5,7 @@ using System.Data.Common;
 using System.Globalization;
 using System.Reflection;
 using Headless.Coordination;
+using Headless.Fencing;
 using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Jobs.Infrastructure;
@@ -91,8 +92,10 @@ public sealed class SqlServerClaimStrategyTests(SqlServerJobsCoordinationFixture
     public async Task claims_execute_when_read_committed_snapshot_is_enabled()
     {
         var ct = AbortToken;
-        var databaseName = $"jobs_rcsi_{Guid.NewGuid():N}";
-        var masterConnectionString = fixture.ConnectionString;
+        // Derived from the fixture's own database, so a run killed before the drop below leaves a database the next
+        // run's sweep removes.
+        var databaseName = fixture.DerivedDatabaseName($"rcsi_{Guid.NewGuid():N}");
+        var masterConnectionString = fixture.AdminConnectionString;
         var databaseConnectionString = new SqlConnectionStringBuilder(masterConnectionString)
         {
             InitialCatalog = databaseName,
@@ -204,7 +207,7 @@ public sealed class SqlServerClaimStrategyTests(SqlServerJobsCoordinationFixture
             var claimed = await persistence.QueueTimedOutTimeJobsAsync(ct).ToArrayAsync(ct);
 
             claimed.Should().ContainSingle().Which.Id.Should().Be(job.Id);
-            claimed[0].OwnerId.Should().NotBeNullOrWhiteSpace();
+            claimed[0].Lease.Holder.Should().NotBeNullOrWhiteSpace();
 
             var cronId = Guid.NewGuid();
             var fallbackOccurrenceId = Guid.NewGuid();
@@ -306,12 +309,12 @@ public sealed class SqlServerClaimStrategyTests(SqlServerJobsCoordinationFixture
             await connection.OpenAsync(ct);
             await using var command = connection.CreateCommand();
             command.CommandText =
-                $"SELECT [UpdatedAt], [LockedUntil] FROM {fixture.QualifiedTimeJobsTable} WHERE [Id] = @id;";
+                $"SELECT [UpdatedAt], [LeaseExpiresAt] FROM {fixture.QualifiedTimeJobsTable} WHERE [Id] = @id;";
             command.Parameters.Add(new SqlParameter("id", job.Id));
             await using var reader = await command.ExecuteReaderAsync(ct);
             (await reader.ReadAsync(ct)).Should().BeTrue();
             var updatedAt = await reader.GetFieldValueAsync<DateTimeOffset>(0, ct);
-            var persistedLeaseDuration = reader.GetDateTime(1) - updatedAt.UtcDateTime;
+            var persistedLeaseDuration = await reader.GetFieldValueAsync<DateTimeOffset>(1, ct) - updatedAt;
 
             persistedLeaseDuration.Should().BeGreaterThanOrEqualTo(TimeSpan.FromMilliseconds(499));
             persistedLeaseDuration.Should().BeLessThanOrEqualTo(TimeSpan.FromMilliseconds(501));
@@ -335,7 +338,7 @@ public sealed class SqlServerClaimStrategyTests(SqlServerJobsCoordinationFixture
             await using var command = connection.CreateCommand();
             command.CommandText =
                 $"CREATE TRIGGER [headless].[fail_descendant_claim] ON {fixture.QualifiedTimeJobsTable} AFTER UPDATE AS "
-                + "IF EXISTS (SELECT 1 FROM inserted WHERE [Function] = 'fail-child' AND [OwnerId] IS NOT NULL) "
+                + "IF EXISTS (SELECT 1 FROM inserted WHERE [Function] = 'fail-child' AND [LeaseHolder] IS NOT NULL) "
                 + "THROW 51000, 'forced descendant failure', 1;";
             await command.ExecuteNonQueryAsync(ct);
         }
@@ -364,10 +367,10 @@ public sealed class SqlServerClaimStrategyTests(SqlServerJobsCoordinationFixture
 
             foreach (var job in new[] { root, child })
             {
-                var (status, ownerId, lockedUntil, _, _) = await fixture.ReadTimeJobDetailAsync(job.Id, ct);
+                // The claim rolled back, so neither row was ever leased.
+                var (status, lease, _, _) = await fixture.ReadTimeJobDetailAsync(job.Id, ct);
                 status.Should().Be((int)JobStatus.Idle);
-                ownerId.Should().BeNull();
-                lockedUntil.Should().BeNull();
+                lease.Should().Be(default(RowLeaseSnapshot));
             }
         }
         finally
@@ -404,7 +407,7 @@ public sealed class SqlServerClaimStrategyTests(SqlServerJobsCoordinationFixture
                 await using var command = claimTransaction.DbContext.Database.GetDbConnection().CreateCommand();
                 command.Transaction = claimTransaction.Transaction.GetDbTransaction();
                 command.CommandText =
-                    $"UPDATE {fixture.QualifiedTimeJobsTable} SET [OwnerId] = 'partial' WHERE [Id] = @id;";
+                    $"UPDATE {fixture.QualifiedTimeJobsTable} SET [LeaseHolder] = 'partial' WHERE [Id] = @id;";
                 var parameter = command.CreateParameter();
                 parameter.ParameterName = "@id";
                 parameter.Value = job.Id;
@@ -416,7 +419,7 @@ public sealed class SqlServerClaimStrategyTests(SqlServerJobsCoordinationFixture
                 await commit.Should().ThrowAsync<OperationCanceledException>();
             }
 
-            (await fixture.ReadTimeJobDetailAsync(job.Id, ct)).OwnerId.Should().BeNull();
+            (await fixture.ReadTimeJobDetailAsync(job.Id, ct)).Lease.Holder.Should().BeNull();
         }
         finally
         {
@@ -544,6 +547,8 @@ internal sealed class SqlServerNativeClaimsFixture(string connectionString) : IJ
 
     public string EfTranslatedDatabaseClockSql => "GETUTCDATE()";
 
+    public string LeaseDatabaseClockSql => "SYSUTCDATETIME()";
+
     public string ResetSql => string.Empty;
 
     public string CreateProbeTableSql => string.Empty;
@@ -599,8 +604,8 @@ internal sealed class SqlServerMappedJobsDbContext(DbContextOptions<SqlServerMap
             entity.ToTable("native_time_jobs", "mapped_jobs");
             entity.Property(x => x.Id).HasColumnName("job_id");
             entity.Property(x => x.Status).HasColumnName("job_status");
-            entity.Property(x => x.OwnerId).HasColumnName("owner_key");
-            entity.Property(x => x.LockedUntil).HasColumnName("lease_until");
+            entity.ComplexProperty(x => x.Lease).Property(x => x.Holder).HasColumnName("owner_key");
+            entity.ComplexProperty(x => x.Lease).Property(x => x.ExpiresAt).HasColumnName("lease_until");
             entity.Property(x => x.OnNodeDeath).HasColumnName("death_policy");
             entity.Property(x => x.UpdatedAt).HasColumnName("updated_on");
             entity.Property(x => x.ExecutionTime).HasColumnName("run_on");
@@ -616,10 +621,10 @@ internal sealed class SqlServerMappedJobsDbContext(DbContextOptions<SqlServerMap
             entity.Property(x => x.CorrelationId).HasColumnName("correlation_key");
             entity.Property(x => x.CausationId).HasColumnName("causation_key");
             entity.Property(x => x.Status).HasColumnName("occurrence_status");
-            entity.Property(x => x.OwnerId).HasColumnName("occurrence_owner");
+            entity.ComplexProperty(x => x.Lease).Property(x => x.Holder).HasColumnName("occurrence_owner");
             entity.Property(x => x.ExecutionTime).HasColumnName("occurrence_time");
             entity.Property(x => x.CronJobId).HasColumnName("cron_key");
-            entity.Property(x => x.LockedUntil).HasColumnName("occurrence_lease");
+            entity.ComplexProperty(x => x.Lease).Property(x => x.ExpiresAt).HasColumnName("occurrence_lease");
             entity.Property(x => x.OnNodeDeath).HasColumnName("occurrence_policy");
             entity.Property(x => x.ElapsedTime).HasColumnName("elapsed_ms");
             entity.Property(x => x.RetryCount).HasColumnName("retry_count");

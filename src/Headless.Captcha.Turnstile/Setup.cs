@@ -5,6 +5,7 @@ using Headless.Http.Resilience;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -119,7 +120,8 @@ public static class SetupTurnstile
                     (string)key,
                     sp.GetRequiredService<IOptionsMonitor<TurnstileOptions>>(),
                     sp.GetRequiredService<IHttpClientFactory>(),
-                    sp.GetService<ILogger<TurnstileSiteVerify>>()
+                    sp.GetService<ILogger<TurnstileSiteVerify>>(),
+                    sp.GetService<IHostEnvironment>()?.IsDevelopment() == true
                 )
         );
         services.AddKeyedSingleton<ICaptchaVerifier>(

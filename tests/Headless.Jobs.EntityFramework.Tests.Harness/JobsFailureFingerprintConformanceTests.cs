@@ -27,7 +27,14 @@ public abstract class JobsFailureFingerprintConformanceTests<TFixture>(TFixture 
             async (store, owner, ct) =>
             {
                 var job = Guid.NewGuid();
-                await fixture.SeedTimeJobAsync(job, _Function, (int)JobStatus.InProgress, owner, ct);
+                await fixture.SeedTimeJobAsync(
+                    job,
+                    _Function,
+                    (int)JobStatus.InProgress,
+                    owner,
+                    ct,
+                    lockedUntil: DateTime.UtcNow.AddMinutes(10)
+                );
                 var occurrence = await _SeedRunningOccurrenceAsync(owner, NodeDeathPolicy.Retry, lapsed: false, ct);
 
                 var retry = _State(job, owner)
@@ -117,8 +124,16 @@ public abstract class JobsFailureFingerprintConformanceTests<TFixture>(TFixture 
                     ct
                 );
 
-                (await store.SettleInterruptedTimeJobAsync(job, owner, "host stopped", null, ct)).Should().Be(1);
-                (await store.SettleInterruptedCronJobOccurrenceAsync(occurrence, owner, "host stopped", ct))
+                (await store.SettleInterruptedTimeJobAsync(JobsLeaseTables.TimeJob(job, 1), "host stopped", null, ct))
+                    .Should()
+                    .Be(1);
+                (
+                    await store.SettleInterruptedCronJobOccurrenceAsync(
+                        JobsLeaseTables.CronOccurrence(occurrence, 1),
+                        "host stopped",
+                        ct
+                    )
+                )
                     .Should()
                     .Be(1);
 
@@ -250,6 +265,7 @@ public abstract class JobsFailureFingerprintConformanceTests<TFixture>(TFixture 
             FunctionName = _Function,
             JobId = id,
             ClaimOwner = owner,
+            ClaimGeneration = 1,
         };
     }
 

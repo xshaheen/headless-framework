@@ -92,7 +92,7 @@ public static class SetupJobs
             return policies;
         });
 
-        // The pickup lease is stamped as LockedUntil = now + LeaseDuration; a non-positive duration would write a
+        // A claim's lease expires at the database clock plus LeaseDuration; a non-positive duration would write a
         // lease that is already expired, defeating duplicate-suppression entirely.
         Ensure.True(
             schedulerOptionsBuilder.LeaseDuration > TimeSpan.Zero,

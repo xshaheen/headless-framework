@@ -4,6 +4,7 @@ using System.Data.Common;
 using System.Security.Cryptography;
 using System.Text;
 using Headless.Checks;
+using Headless.Fencing;
 using Headless.Messaging.Internal;
 using Headless.Sql;
 
@@ -136,8 +137,6 @@ internal sealed partial class RelationalDataStorage
                     _t.Added,
                     _t.ExpiresAt,
                     _t.NextRetryAt,
-                    _t.LockedUntil,
-                    _t.Owner,
                     _t.StatusName,
                     _t.MessageId,
                     _t.ExceptionInfo,
@@ -168,8 +167,6 @@ internal sealed partial class RelationalDataStorage
                     SqlDialectTokens.Now,
                     "NULL",
                     _dialect.ShiftByDuration(SqlDialectTokens.Now, "Grace"),
-                    "NULL",
-                    "NULL",
                     "@StatusName",
                     "@MessageId",
                     "NULL",
@@ -407,17 +404,21 @@ internal sealed partial class RelationalDataStorage
                     var storedTenant = reader.GetString(12);
                     var storedGeneration = reader.GetInt64(17);
                     var incarnationId = reader.GetGuid(18);
-                    var lockedUntil = reader.IsDBNull(7)
-                        ? (DateTimeOffset?)null
-                        : reader.GetFieldValue<DateTimeOffset>(7);
-                    var owner = reader.IsDBNull(8) ? null : reader.GetString(8);
+                    // The lease's generation and state sit at 7 and 8, its expiry, holder, and takeovers at 21-23.
+                    var lease = new RowLeaseSnapshot(
+                        Convert.ToInt64(reader.GetValue(7), CultureInfo.InvariantCulture),
+                        (RowLeaseState)Convert.ToInt16(reader.GetValue(8), CultureInfo.InvariantCulture),
+                        reader.IsDBNull(21) ? null : reader.GetFieldValue<DateTimeOffset>(21),
+                        reader.IsDBNull(22) ? null : reader.GetString(22),
+                        Convert.ToInt32(reader.GetValue(23), CultureInfo.InvariantCulture)
+                    );
                     var attemptId = reader.IsDBNull(19) ? (Guid?)null : reader.GetGuid(19);
                     var status = Enum.Parse<StatusName>(reader.GetString(9), ignoreCase: false);
                     var isTerminal = status is StatusName.Succeeded or StatusName.Failed && reader.IsDBNull(6);
                     // The winner's row holds exactly the content this admission just wrote in this transaction, so
                     // its envelope is this delivery's. A duplicate's row may hold another delivery's payload, so it is
                     // read back as stored.
-                    var content = admittedContent ?? reader.GetString(21);
+                    var content = admittedContent ?? reader.GetString(24);
                     // Terminal duplicates never execute. Their retained payload may be the poison that
                     // ended the generation; use this delivery's envelope without rewriting stored evidence.
                     var medium = new MediumMessage
@@ -432,8 +433,7 @@ internal sealed partial class RelationalDataStorage
                         Added = reader.GetFieldValue<DateTimeOffset>(4),
                         ExpiresAt = reader.IsDBNull(5) ? null : reader.GetFieldValue<DateTimeOffset>(5),
                         NextRetryAt = reader.IsDBNull(6) ? null : reader.GetFieldValue<DateTimeOffset>(6),
-                        LockedUntil = lockedUntil,
-                        Owner = owner,
+                        Lease = lease,
                         ExceptionInfo = reader.IsDBNull(10) ? null : reader.GetString(10),
                         InboxKey = new InboxKey(
                             storedTenantPresent ? storedTenant : null,
@@ -447,7 +447,7 @@ internal sealed partial class RelationalDataStorage
                         InboxGeneration = new InboxGeneration(storedGeneration, incarnationId),
                         IsInboxOrphaned = reader.GetBoolean(20),
                     };
-                    if (attemptId is { } persistedAttempt && lockedUntil is { } persistedLockedUntil)
+                    if (attemptId is { } persistedAttempt && lease.State == RowLeaseState.Active)
                     {
                         medium.InboxAttemptFence = new InboxAttemptFence(
                             medium.StorageId,
@@ -455,8 +455,7 @@ internal sealed partial class RelationalDataStorage
                             storedGeneration,
                             incarnationId,
                             persistedAttempt,
-                            owner,
-                            persistedLockedUntil
+                            lease.Generation
                         );
                     }
 
@@ -477,7 +476,7 @@ internal sealed partial class RelationalDataStorage
 
         // The hash seeks the root-key index; the column comparisons make the match exact whatever the hash.
         return $"""
-            SELECT {_t.Id},{_t.IntentType},{_t.Retries},{_t.InlineAttempts},{_t.Added},{_t.ExpiresAt},{_t.NextRetryAt},{_t.LockedUntil},{_t.Owner},{_t.StatusName},{_t.ExceptionInfo},{_t.TenantPresent},{_t.TenantId},{_t.MessageId},{_t.ContractIdentity},{_t.ContractVersion},{_t.ConsumerIdentity},{_t.Generation},{_t.GenerationIncarnationId},{_t.AttemptId},{_t.IsInboxOrphaned}{content}
+            SELECT {_t.Id},{_t.IntentType},{_t.Retries},{_t.InlineAttempts},{_t.Added},{_t.ExpiresAt},{_t.NextRetryAt},{_t.LeaseGeneration},{_t.LeaseState},{_t.StatusName},{_t.ExceptionInfo},{_t.TenantPresent},{_t.TenantId},{_t.MessageId},{_t.ContractIdentity},{_t.ContractVersion},{_t.ConsumerIdentity},{_t.Generation},{_t.GenerationIncarnationId},{_t.AttemptId},{_t.IsInboxOrphaned},{_t.LeaseExpiresAt},{_t.LeaseHolder},{_t.LeaseTakeoverCount}{content}
             FROM {_receivedTable}
             WHERE {_t.InboxKeyHash}=@InboxKeyHash
               AND {_t.TenantPresent}=@TenantPresent AND {_t.TenantId}=@TenantId AND {_t.MessageId}=@MessageId

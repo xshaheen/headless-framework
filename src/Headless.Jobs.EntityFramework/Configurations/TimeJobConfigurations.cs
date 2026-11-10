@@ -46,13 +46,14 @@ public class TimeJobConfigurations<TTimeJob>(string schema, StorageNamingStyle s
 
         builder.HasKey(x => x.Id).HasName(HeadlessStorageNaming.PrimaryKeyName(style, table));
 
-        builder.Property(x => x.OwnerId).IsRequired(false);
+        // The lease is a fenced row: claims, renewals, and final writes change it only through FencedRows, which
+        // fences every write on the generation the claim was granted.
+        builder.HasRowLease(x => x.Lease, JobsStorageNaming.LeaseColumns(style));
 
         // SQL Server materializes datetime2 with DateTimeKind.Unspecified, which the manager reads as scheduler-local
         // time; a read-then-update would then shift the instant by the scheduler zone's offset.
         var nullableUtcDateTimeConverter = new NullableNormalizeDateTimeValueConverter();
         builder.Property(x => x.ExecutionTime).IsRequired(false).HasConversion(nullableUtcDateTimeConverter);
-        builder.Property(x => x.LockedUntil).HasConversion(nullableUtcDateTimeConverter);
 
         builder.Property(x => x.TenantId).IsRequired(false).HasMaxLength(JobsTenancyOptions.TenantIdMaxLength);
         builder.Property(x => x.ProgressMessage).HasMaxLength(JobProgress.MessageMaxLength);
@@ -100,17 +101,6 @@ public class TimeJobConfigurations<TTimeJob>(string schema, StorageNamingStyle s
         builder
             .HasIndex("TenantId", "Status", "ExecutionTime")
             .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, "TenantId", "Status", "ExecutionTime"));
-
-        // Sweep/reclaim queries filter on lease deadline (Status + LockedUntil) and on ownership
-        // (OwnerId + non-terminal Status); without these the 30s fallback sweep and dead-node reclaim
-        // scan every InProgress/owned row.
-        builder
-            .HasIndex("Status", "LockedUntil")
-            .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, "Status", "LockedUntil"));
-
-        builder
-            .HasIndex("OwnerId", "Status")
-            .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, "OwnerId", "Status"));
 
         // Failures group by cause per function: the dashboard counts and lists failed runs by this key.
         builder.Property(x => x.FailureFingerprint).HasMaxLength(JobFailureFingerprints.MaxLength);

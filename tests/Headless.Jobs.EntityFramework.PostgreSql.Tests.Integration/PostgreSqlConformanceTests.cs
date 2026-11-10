@@ -246,6 +246,14 @@ public abstract class PostgreSqlConformanceTestsBase<TFixture>(TFixture fixture)
     [InlineData((int)NodeDeathPolicy.Retry)]
     [InlineData((int)NodeDeathPolicy.MarkFailed)]
     [InlineData((int)NodeDeathPolicy.Skip)]
+    public override Task retry_reschedule_charges_the_attempt_and_waits_at_the_store_clock_under_any_policy(
+        int policy
+    ) => base.retry_reschedule_charges_the_attempt_and_waits_at_the_store_clock_under_any_policy(policy);
+
+    [Theory]
+    [InlineData((int)NodeDeathPolicy.Retry)]
+    [InlineData((int)NodeDeathPolicy.MarkFailed)]
+    [InlineData((int)NodeDeathPolicy.Skip)]
     public override Task graceful_settlement_of_a_cron_occurrence_applies_its_policy_without_charging(int policy) =>
         base.graceful_settlement_of_a_cron_occurrence_applies_its_policy_without_charging(policy);
 
@@ -382,6 +390,12 @@ public abstract class PostgreSqlClaimConformanceTestsBase<TFixture>(TFixture fix
     public override Task synchronized_workers_claim_disjoint_time_job_roots_and_complete_descendant_stamps()
     {
         return base.synchronized_workers_claim_disjoint_time_job_roots_and_complete_descendant_stamps();
+    }
+
+    [Fact]
+    public override Task immediate_acquire_takes_a_batch_larger_than_one_statement_can_bind()
+    {
+        return base.immediate_acquire_takes_a_batch_larger_than_one_statement_can_bind();
     }
 
     [Fact]

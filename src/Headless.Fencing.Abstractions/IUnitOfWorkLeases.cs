@@ -24,13 +24,17 @@ public interface IUnitOfWorkLeases : IUnitOfWorkFeature
     /// <param name="kind">The lease kind.</param>
     /// <param name="resource">The leased resource within the kind.</param>
     /// <param name="duration">How long the lease lives unless renewed; bounded by the configured limits.</param>
-    /// <param name="takeover">Whether an expired attempt is taken over at once, or kept until a sweep abandons it.</param>
+    /// <param name="options">The takeover choice, and the holder the grant stores.</param>
     /// <param name="cancellationToken">Token used to cancel the database command.</param>
     /// <returns>The grant's result.</returns>
-    /// <exception cref="ArgumentException">The kind, resource, or current tenant id is invalid.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="options" /> is <see langword="null" />.</exception>
+    /// <exception cref="ArgumentException">
+    /// The kind, resource, or current tenant id is invalid, or the options' holder is whitespace, exceeds its limit, or is not
+    /// portable key text.
+    /// </exception>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="duration" /> is outside the configured bounds.</exception>
     /// <exception cref="System.ComponentModel.InvalidEnumArgumentException">
-    /// <paramref name="takeover" /> is not a defined value.
+    /// The options' takeover is not a defined value.
     /// </exception>
     /// <exception cref="InvalidOperationException">The unit cannot host the write.</exception>
     ValueTask<LeaseGrantResult> GrantAsync(
@@ -38,7 +42,7 @@ public interface IUnitOfWorkLeases : IUnitOfWorkFeature
         string kind,
         string resource,
         TimeSpan duration,
-        LeaseTakeover takeover,
+        LeaseGrantOptions options,
         CancellationToken cancellationToken = default
     );
 

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Fencing;
 using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Jobs.Internal;
@@ -248,8 +249,8 @@ public sealed class InMemoryCronOccurrenceLifecycleTests : TestBase
         var claimed = acquired.Should().ContainSingle().Subject;
         claimed.Id.Should().Be(eligible.Id);
         claimed.Status.Should().Be(JobStatus.InProgress);
-        claimed.OwnerId.Should().Be(_NodeA);
-        claimed.LockedUntil.Should().Be(_Now.Add(_Lease).UtcDateTime);
+        claimed.Lease.Holder.Should().Be(_NodeA);
+        claimed.Lease.ExpiresAt.Should().Be(_Now.Add(_Lease));
         claimed.CronJob.Should().NotBeNull().And.Match<CronJobEntity>(job => job.Id == active.Id);
 
         (await fixture.Provider.AcquireImmediateCronOccurrencesAsync([eligible.Id], AbortToken)).Should().BeEmpty();
@@ -316,23 +317,21 @@ public sealed class InMemoryCronOccurrenceLifecycleTests : TestBase
             .Should()
             .Match<CronJobOccurrenceEntity<CronJobEntity>>(occurrence =>
                 occurrence.Status == JobStatus.Idle
-                && occurrence.OwnerId == null
-                && occurrence.LockedUntil == null
+                && occurrence.Lease.State != RowLeaseState.Active
                 && occurrence.RetryCount == 2
             );
         stored[retry.Id]
             .Should()
             .Match<CronJobOccurrenceEntity<CronJobEntity>>(occurrence =>
                 occurrence.Status == JobStatus.Idle
-                && occurrence.OwnerId == null
-                && occurrence.LockedUntil == null
+                && occurrence.Lease.State != RowLeaseState.Active
                 && occurrence.RetryCount == 3
             );
         stored[markFailed.Id]
             .Should()
             .Match<CronJobOccurrenceEntity<CronJobEntity>>(occurrence =>
                 occurrence.Status == JobStatus.Failed
-                && occurrence.LockedUntil == null
+                && occurrence.Lease.State != RowLeaseState.Active
                 && occurrence.ExceptionMessage == "Node is not alive!"
                 && occurrence.ExecutedAt == _Now
             );
@@ -340,13 +339,13 @@ public sealed class InMemoryCronOccurrenceLifecycleTests : TestBase
             .Should()
             .Match<CronJobOccurrenceEntity<CronJobEntity>>(occurrence =>
                 occurrence.Status == JobStatus.Skipped
-                && occurrence.LockedUntil == null
+                && occurrence.Lease.State != RowLeaseState.Active
                 && occurrence.SkippedReason == "Node is not alive!"
                 && occurrence.ExecutedAt == _Now
             );
         stored[healthy.Id].Status.Should().Be(JobStatus.InProgress);
-        stored[healthy.Id].OwnerId.Should().Be(_NodeA);
-        stored[otherOwner.Id].OwnerId.Should().Be(_NodeB);
+        stored[healthy.Id].Lease.Holder.Should().Be(_NodeA);
+        stored[otherOwner.Id].Lease.Holder.Should().Be(_NodeB);
     }
 
     private sealed class Fixture : IDisposable
@@ -390,8 +389,7 @@ public sealed class InMemoryCronOccurrenceLifecycleTests : TestBase
                 ExecutionTime = _Now.UtcDateTime,
                 Status = status,
                 OnNodeDeath = policy,
-                OwnerId = ownerId,
-                LockedUntil = lockedUntil,
+                Lease = TestLeases.Held(ownerId, lockedUntil),
                 RetryCount = retryCount,
             };
 

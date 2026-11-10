@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using Headless.Fencing;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
@@ -248,7 +249,7 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<System.Data.Common.DbTransaction?>(),
                 Arg.Any<RetryDelay?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             )
@@ -259,7 +260,7 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<RetryDelay?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -330,7 +331,7 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<RetryDelay?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -537,7 +538,7 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<RetryDelay?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -598,7 +599,7 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<System.Data.Common.DbTransaction?>(),
                 Arg.Any<RetryDelay?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             )
@@ -664,7 +665,7 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<System.Data.Common.DbTransaction?>(),
                 Arg.Any<RetryDelay?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             )
@@ -710,7 +711,7 @@ public sealed class MessageSenderTests : TestBase
                 StatusName.Failed,
                 Arg.Any<MessageContentWrite>(),
                 Arg.Is<RetryDelay?>(value => value.HasValue),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 Arg.Is<int>(value => value == 0),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -731,7 +732,7 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<System.Data.Common.DbTransaction?>(),
                 Arg.Any<RetryDelay?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             )
@@ -783,7 +784,7 @@ public sealed class MessageSenderTests : TestBase
                 StatusName.Failed,
                 Arg.Any<MessageContentWrite>(),
                 Arg.Is<RetryDelay?>(v => v == null),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -824,7 +825,7 @@ public sealed class MessageSenderTests : TestBase
                     Arg.Any<StatusName>(),
                     Arg.Any<MessageContentWrite>(),
                     Arg.Any<RetryDelay?>(),
-                    Arg.Any<DateTimeOffset?>(),
+                    Arg.Any<bool>(),
                     Arg.Any<int>(),
                     Arg.Any<int>(),
                     Arg.Any<CancellationToken>()
@@ -971,7 +972,7 @@ public sealed class MessageSenderTests : TestBase
                 StatusName.Failed,
                 Arg.Any<MessageContentWrite>(),
                 Arg.Is<RetryDelay?>(value => value.HasValue),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 Arg.Is<int>(value => value == 0),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -1030,7 +1031,7 @@ public sealed class MessageSenderTests : TestBase
                 StatusName.Failed,
                 Arg.Any<MessageContentWrite>(),
                 Arg.Is<RetryDelay?>(value => value.HasValue),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 Arg.Is<int>(value => value == 0),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -1087,7 +1088,7 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<RetryDelay?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -1109,7 +1110,7 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<System.Data.Common.DbTransaction?>(),
                 Arg.Any<RetryDelay?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             )
@@ -1164,7 +1165,7 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<System.Data.Common.DbTransaction?>(),
                 Arg.Any<RetryDelay?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             );
@@ -1186,7 +1187,7 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<System.Data.Common.DbTransaction?>(),
                 Arg.Any<RetryDelay?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             )
@@ -1229,7 +1230,7 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<RetryDelay?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -1249,7 +1250,7 @@ public sealed class MessageSenderTests : TestBase
                 StatusName.Failed,
                 Arg.Any<MessageContentWrite>(),
                 Arg.Is<RetryDelay?>(v => v == null),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -1287,7 +1288,7 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<System.Data.Common.DbTransaction?>(),
                 Arg.Any<RetryDelay?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             )
@@ -1389,7 +1390,7 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<System.Data.Common.DbTransaction?>(),
                 Arg.Any<RetryDelay?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             )
@@ -1449,7 +1450,7 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<System.Data.Common.DbTransaction?>(),
                 Arg.Any<RetryDelay?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             )
@@ -1508,7 +1509,7 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<RetryDelay?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -1522,8 +1523,13 @@ public sealed class MessageSenderTests : TestBase
 
         var sender = _CreateSenderWithTransports(storage, serializer, new MessagingOptions());
         var message = _CreateMediumMessage((MessageLane)42);
-        message.LockedUntil = DateTimeOffset.UnixEpoch.AddMinutes(1);
-        message.Owner = "store-owner";
+        message.Lease = new RowLeaseSnapshot(
+            1,
+            RowLeaseState.Active,
+            DateTimeOffset.UnixEpoch.AddMinutes(1),
+            "store-owner",
+            0
+        );
 
         // when
         var result = await sender.SendAsync(message);
@@ -1537,7 +1543,7 @@ public sealed class MessageSenderTests : TestBase
                 StatusName.Failed,
                 Arg.Any<MessageContentWrite>(),
                 null,
-                null,
+                false,
                 message.Retries,
                 message.InlineAttempts,
                 Arg.Any<CancellationToken>()
@@ -1555,7 +1561,7 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<RetryDelay?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -1577,8 +1583,13 @@ public sealed class MessageSenderTests : TestBase
             queueTransport: queueTransport
         );
         var message = _CreateMediumMessage(MessageLane.Bus);
-        message.LockedUntil = DateTimeOffset.UnixEpoch.AddMinutes(1);
-        message.Owner = "store-owner";
+        message.Lease = new RowLeaseSnapshot(
+            1,
+            RowLeaseState.Active,
+            DateTimeOffset.UnixEpoch.AddMinutes(1),
+            "store-owner",
+            0
+        );
 
         // when
         var result = await sender.SendAsync(message);
@@ -1592,7 +1603,7 @@ public sealed class MessageSenderTests : TestBase
                 StatusName.Failed,
                 Arg.Any<MessageContentWrite>(),
                 null,
-                null,
+                false,
                 message.Retries,
                 message.InlineAttempts,
                 Arg.Any<CancellationToken>()
@@ -1617,7 +1628,7 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<RetryDelay?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -1634,8 +1645,13 @@ public sealed class MessageSenderTests : TestBase
 
         var sender = _CreateSenderWithTransports(storage, serializer, new MessagingOptions(), busTransport);
         var message = _CreateMediumMessage(MessageLane.Queue);
-        message.LockedUntil = DateTimeOffset.UnixEpoch.AddMinutes(1);
-        message.Owner = "store-owner";
+        message.Lease = new RowLeaseSnapshot(
+            1,
+            RowLeaseState.Active,
+            DateTimeOffset.UnixEpoch.AddMinutes(1),
+            "store-owner",
+            0
+        );
 
         // when
         var result = await sender.SendAsync(message);
@@ -1649,7 +1665,7 @@ public sealed class MessageSenderTests : TestBase
                 StatusName.Failed,
                 Arg.Any<MessageContentWrite>(),
                 null,
-                null,
+                false,
                 message.Retries,
                 message.InlineAttempts,
                 Arg.Any<CancellationToken>()
@@ -1706,7 +1722,7 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<System.Data.Common.DbTransaction?>(),
                 Arg.Any<RetryDelay?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             )
@@ -1738,7 +1754,7 @@ public sealed class MessageSenderTests : TestBase
                 StatusName.Failed,
                 Arg.Any<MessageContentWrite>(),
                 Arg.Is<RetryDelay?>(value => value.HasValue),
-                Arg.Is<DateTimeOffset?>(value => value == null),
+                false,
                 Arg.Is(0),
                 Arg.Is(3),
                 Arg.Any<CancellationToken>()
@@ -1765,8 +1781,13 @@ public sealed class MessageSenderTests : TestBase
         var message = _CreateMediumMessage();
         // Storage already acquired this lease. Its absolute expiry is deliberately behind the
         // application clock: core must reserve under the returned identity without reacquiring.
-        message.LockedUntil = DateTimeOffset.UnixEpoch.AddMinutes(1);
-        message.Owner = "store-owner";
+        message.Lease = new RowLeaseSnapshot(
+            1,
+            RowLeaseState.Active,
+            DateTimeOffset.UnixEpoch.AddMinutes(1),
+            "store-owner",
+            0
+        );
 
         var result = await sender.SendAsync(message);
 
@@ -1833,7 +1854,7 @@ public sealed class MessageSenderTests : TestBase
                 StatusName.Succeeded,
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<RetryDelay?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -1959,7 +1980,7 @@ public sealed class MessageSenderTests : TestBase
                 StatusName.Failed,
                 Arg.Any<MessageContentWrite>(),
                 Arg.Is<RetryDelay?>(value => value == null),
-                Arg.Is<DateTimeOffset?>(value => value == null),
+                false,
                 3,
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -2056,7 +2077,7 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<RetryDelay?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -2068,7 +2089,7 @@ public sealed class MessageSenderTests : TestBase
                 StatusName.Failed,
                 Arg.Any<MessageContentWrite>(),
                 Arg.Is<RetryDelay?>(value => value == null),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 2,
                 0,
                 Arg.Any<CancellationToken>()
@@ -2109,7 +2130,7 @@ public sealed class MessageSenderTests : TestBase
                 StatusName.Succeeded,
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<RetryDelay?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 1,
                 1,
                 Arg.Any<CancellationToken>()
@@ -2144,7 +2165,7 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<RetryDelay?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -2246,7 +2267,7 @@ public sealed class MessageSenderTests : TestBase
                 StatusName.Succeeded,
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<RetryDelay?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -2269,17 +2290,17 @@ public sealed class MessageSenderTests : TestBase
             case "terminal":
                 row.StatusName = StatusName.Failed;
                 row.NextRetryAt = null;
-                row.LockedUntil = null;
+                row.Lease = default;
                 break;
             case "lease-lost":
                 row.StatusName = StatusName.Scheduled;
                 row.NextRetryAt = DateTimeOffset.UtcNow.AddMinutes(1);
-                row.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(5);
+                row.Lease = new RowLeaseSnapshot(1, RowLeaseState.Active, DateTimeOffset.UtcNow.AddMinutes(5), null, 0);
                 break;
             case "queued-lease-lost":
                 row.StatusName = StatusName.Queued;
                 row.NextRetryAt = null;
-                row.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(5);
+                row.Lease = new RowLeaseSnapshot(1, RowLeaseState.Active, DateTimeOffset.UtcNow.AddMinutes(5), null, 0);
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(rowState), rowState, null);
@@ -2371,7 +2392,7 @@ public sealed class MessageSenderTests : TestBase
                 StatusName.Failed,
                 MessageContentWrite.Refresh,
                 null,
-                null,
+                keepLease: false,
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -2405,7 +2426,7 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<RetryDelay?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -2457,7 +2478,7 @@ public sealed class MessageSenderTests : TestBase
         );
         var message = _CreateMediumMessage();
         message.InlineAttempts = 1;
-        message.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(1);
+        message.Lease = new RowLeaseSnapshot(1, RowLeaseState.Active, DateTimeOffset.UtcNow.AddMinutes(1), null, 0);
         message.Origin.Headers[Headers.DeliverBy] = DateTimeOffset
             .UtcNow.AddSeconds(-1)
             .ToString("O", CultureInfo.InvariantCulture);
@@ -2476,7 +2497,7 @@ public sealed class MessageSenderTests : TestBase
                 StatusName.Failed,
                 MessageContentWrite.Refresh,
                 null,
-                null,
+                keepLease: false,
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -2594,7 +2615,7 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<RetryDelay?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
@@ -2730,7 +2751,7 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<RetryDelay?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<bool>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()

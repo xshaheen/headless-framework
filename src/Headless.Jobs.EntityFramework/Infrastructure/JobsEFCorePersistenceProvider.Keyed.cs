@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Fencing;
 using Microsoft.EntityFrameworkCore;
 
 namespace Headless.Jobs.Infrastructure;
@@ -43,8 +44,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         job.Generation = persisted.Generation;
         job.IsCurrentGeneration = persisted.IsCurrentGeneration;
         job.Status = persisted.Status;
-        job.OwnerId = persisted.OwnerId;
-        job.LockedUntil = persisted.LockedUntil;
+        job.Lease = persisted.Lease;
         job.CreatedAt = persisted.CreatedAt;
         job.UpdatedAt = persisted.UpdatedAt;
         return result;
@@ -110,8 +110,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                     && row.IsCurrentGeneration == true
                     && row.Generation == expectedGeneration
                     && row.Status == JobStatus.Idle
-                    && row.OwnerId == null
-                    && row.LockedUntil == null
+                    && row.Lease.State != RowLeaseState.Active
                     && !row.CancelRequested
                 )
                 .ExecuteUpdateAsync(
@@ -141,8 +140,6 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         job.Generation = checked((current?.Generation ?? 0) + 1);
         job.IsCurrentGeneration = true;
         job.Status = JobStatus.Idle;
-        job.OwnerId = null;
-        job.LockedUntil = null;
         job.CreatedAt = job.UpdatedAt = now;
         await context.Set<TTimeJob>().AddAsync(job, cancellationToken).ConfigureAwait(false);
         await context.SaveChangesAndStampAsync<TTimeJob, TCronJob>(cancellationToken).ConfigureAwait(false);
@@ -214,8 +211,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             .Where(row =>
                 row.Generation == expectedGeneration
                 && row.Status == JobStatus.Idle
-                && row.OwnerId == null
-                && row.LockedUntil == null
+                && row.Lease.State != RowLeaseState.Active
             )
             .ExecuteUpdateAsync(
                 setter =>

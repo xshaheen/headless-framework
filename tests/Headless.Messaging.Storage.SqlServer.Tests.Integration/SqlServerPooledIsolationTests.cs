@@ -22,24 +22,17 @@ public sealed class SqlServerPooledIsolationTests(SqlServerTestFixture fixture) 
     [InlineData(true)]
     public async Task should_preserve_readpast_operations_on_a_pooled_session_left_serializable(bool useSnapshot)
     {
-        var databaseName = $"messaging_isolation_{Guid.NewGuid():N}";
-        var masterOptions = new SqlConnectionStringBuilder(fixture.ConnectionString)
+        var databaseName = fixture.DerivedDatabaseName($"isolation_{Guid.NewGuid():N}");
+        var masterOptions = new SqlConnectionStringBuilder(fixture.AdminConnectionString) { Pooling = false };
+        var connectionOptions = new SqlConnectionStringBuilder(fixture.ConnectionStringFor(databaseName))
         {
-            InitialCatalog = "master",
-            Pooling = false,
-        };
-        var connectionOptions = new SqlConnectionStringBuilder(fixture.ConnectionString)
-        {
-            InitialCatalog = databaseName,
             ApplicationName = databaseName,
             Pooling = true,
             MaxPoolSize = 1,
         };
         await using var master = new SqlConnection(masterOptions.ConnectionString);
         await master.OpenAsync(AbortToken);
-        await master.ExecuteAsync(
-            new CommandDefinition($"CREATE DATABASE [{databaseName}];", cancellationToken: AbortToken)
-        );
+        await fixture.CreateDatabaseAsync(databaseName, AbortToken);
 
         try
         {
@@ -237,8 +230,8 @@ public sealed class SqlServerPooledIsolationTests(SqlServerTestFixture fixture) 
             new CommandDefinition(
                 """
                 INSERT INTO headless.MessagingPublished
-                    (Id,Version,Name,Content,IntentType,Retries,Added,ExpiresAt,NextRetryAt,LockedUntil,Owner,StatusName,MessageId)
-                VALUES (@Id,'v1','isolation.message',@Content,0,0,SYSUTCDATETIME(),@ExpiresAt,NULL,NULL,NULL,@StatusName,@MessageId);
+                    (Id,Version,Name,Content,IntentType,Retries,Added,ExpiresAt,NextRetryAt,StatusName,MessageId)
+                VALUES (@Id,'v1','isolation.message',@Content,0,0,SYSUTCDATETIME(),@ExpiresAt,NULL,@StatusName,@MessageId);
                 """,
                 new
                 {

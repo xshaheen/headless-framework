@@ -233,4 +233,82 @@ public sealed class SqlServerRcsiLeasesConformanceTests(SqlServerRcsiFencingFixt
     {
         return base.should_skip_a_lease_another_unit_claimed_when_claiming_inside_a_unit();
     }
+
+    [Fact]
+    public override Task should_read_the_status_without_waiting_on_an_uncommitted_write_to_the_lease()
+    {
+        return base.should_read_the_status_without_waiting_on_an_uncommitted_write_to_the_lease();
+    }
+
+    [Fact]
+    public override Task should_read_the_status_on_the_callers_connection_and_hand_it_back_as_passed()
+    {
+        return base.should_read_the_status_on_the_callers_connection_and_hand_it_back_as_passed();
+    }
+
+    [Fact]
+    public override Task should_read_the_status_inside_the_callers_transaction_and_refuse_a_foreign_one()
+    {
+        return base.should_read_the_status_inside_the_callers_transaction_and_refuse_a_foreign_one();
+    }
+
+    [Fact]
+    public override Task should_refuse_a_callers_connection_to_another_database_before_any_statement()
+    {
+        return base.should_refuse_a_callers_connection_to_another_database_before_any_statement();
+    }
+
+    [Fact]
+    public override Task should_return_the_held_lease_to_its_live_holder_and_hold_it_against_any_other()
+    {
+        return base.should_return_the_held_lease_to_its_live_holder_and_hold_it_against_any_other();
+    }
+
+    [Fact]
+    public override Task should_return_the_held_lease_to_its_live_holder_inside_a_unit()
+    {
+        return base.should_return_the_held_lease_to_its_live_holder_inside_a_unit();
+    }
+
+    [Fact]
+    public override Task should_read_the_current_attempt_with_its_holder_by_the_database_clock()
+    {
+        return base.should_read_the_current_attempt_with_its_holder_by_the_database_clock();
+    }
+
+    [Fact]
+    public override Task should_read_the_current_attempt_on_the_callers_connection_and_hand_it_back_as_passed()
+    {
+        return base.should_read_the_current_attempt_on_the_callers_connection_and_hand_it_back_as_passed();
+    }
+
+    [Fact]
+    public override Task should_revoke_the_active_attempt_live_or_expired_and_nothing_else()
+    {
+        return base.should_revoke_the_active_attempt_live_or_expired_and_nothing_else();
+    }
+
+    [Fact]
+    public override Task should_report_revoked_to_every_verb_of_the_revoked_generation_and_write_nothing()
+    {
+        return base.should_report_revoked_to_every_verb_of_the_revoked_generation_and_write_nothing();
+    }
+
+    [Fact]
+    public override Task should_grant_a_new_generation_with_a_reset_takeover_count_after_a_revoke()
+    {
+        return base.should_grant_a_new_generation_with_a_reset_takeover_count_after_a_revoke();
+    }
+
+    [Fact]
+    public override Task should_read_a_revoked_attempt_as_revoked_and_keep_its_holder()
+    {
+        return base.should_read_a_revoked_attempt_as_revoked_and_keep_its_holder();
+    }
+
+    [Fact]
+    public override Task should_purge_a_revoked_lease_older_than_the_threshold()
+    {
+        return base.should_purge_a_revoked_lease_older_than_the_threshold();
+    }
 }

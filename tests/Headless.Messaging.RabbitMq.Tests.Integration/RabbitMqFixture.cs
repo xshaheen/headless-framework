@@ -22,28 +22,16 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
 {
     private IConnection? _connection;
 
-    /// <summary>Gets the RabbitMQ connection string.</summary>
-    public string ConnectionString => Container.GetConnectionString();
-
-    /// <summary>Gets the RabbitMQ hostname.</summary>
-    public string HostName => Container.Hostname;
-
-    /// <summary>Gets the RabbitMQ port.</summary>
-    public int Port => Container.GetMappedPublicPort(5672);
-
-    /// <summary>Gets the RabbitMQ username.</summary>
-    public string UserName => RabbitMqBuilder.DefaultUsername;
-
-    /// <summary>Gets the RabbitMQ password.</summary>
-    public string Password => RabbitMqBuilder.DefaultPassword;
-
     /// <summary>
     /// Deletes <paramref name="queueName"/> the way an operator does, from the broker node rather than an AMQP
     /// connection, which an exclusive queue would refuse.
     /// </summary>
     public async Task DeleteQueueAsOperatorAsync(string queueName, CancellationToken cancellationToken)
     {
-        var result = await Container.ExecAsync(["rabbitmqctl", "delete_queue", queueName], cancellationToken);
+        var result = await Container.ExecAsync(
+            ["rabbitmqctl", "delete_queue", "-p", VirtualHost, queueName],
+            cancellationToken
+        );
 
         if (result.ExitCode != 0)
         {
@@ -54,13 +42,23 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
     }
 
     /// <summary>
-    /// Lists the default virtual host's queues as the broker node reports them, the way an operator inspects them, so
+    /// Lists the fixture's virtual host's queues as the broker node reports them, the way an operator inspects them, so
     /// a test sees queues that belong to other connections, exclusive ones included.
     /// </summary>
     public async Task<IReadOnlyList<RabbitMqBrokerQueue>> ListQueuesAsOperatorAsync(CancellationToken cancellationToken)
     {
         var result = await Container.ExecAsync(
-            ["rabbitmqctl", "list_queues", "-q", "--no-table-headers", "name", "durable", "exclusive"],
+            [
+                "rabbitmqctl",
+                "list_queues",
+                "-p",
+                VirtualHost,
+                "-q",
+                "--no-table-headers",
+                "name",
+                "durable",
+                "exclusive",
+            ],
             cancellationToken
         );
 
@@ -120,6 +118,7 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
         {
             HostName = HostName,
             Port = Port,
+            VirtualHost = VirtualHost,
             UserName = UserName,
             Password = Password,
         };
@@ -225,17 +224,20 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
 
     /// <summary>
     /// Opens a queue session on the RabbitMQ at <paramref name="hostName"/>:<paramref name="port"/>, for a test that runs
-    /// its own broker rather than the collection's.
+    /// its own broker or reaches the collection's through a proxy. A broker of the test's own keeps its default
+    /// <paramref name="virtualHost"/>.
     /// </summary>
     public static ValueTask<TransportConsumerConformanceSession> CreateConformanceSessionAsync(
         string hostName,
         int port,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        string virtualHost = "/"
     )
     {
         return _CreateConformanceSessionAsync(
             hostName,
             port,
+            virtualHost,
             MessageLane.Queue,
             destination: null,
             group: null,
@@ -261,6 +263,7 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
         return _CreateConformanceSessionAsync(
             HostName,
             Port,
+            VirtualHost,
             lane,
             destination,
             group,
@@ -276,6 +279,7 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
     private static async ValueTask<TransportConsumerConformanceSession> _CreateConformanceSessionAsync(
         string hostName,
         int port,
+        string virtualHost,
         MessageLane lane,
         string? destination,
         string? group,
@@ -297,6 +301,7 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
             {
                 HostName = hostName,
                 Port = port,
+                VirtualHost = virtualHost,
                 UserName = RabbitMqBuilder.DefaultUsername,
                 Password = RabbitMqBuilder.DefaultPassword,
                 ExchangeName = exchangeName ?? $"conf-{Guid.NewGuid():N}",
@@ -365,6 +370,7 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
                         _CreateConformanceSessionAsync(
                             hostName,
                             port,
+                            virtualHost,
                             lane,
                             destination,
                             group,

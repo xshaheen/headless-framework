@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Testing.Testcontainers;
-using Testcontainers.RabbitMq;
 using Tests.Fixtures;
 
 namespace Tests;
@@ -17,9 +16,15 @@ public sealed class RabbitMqPostgreSqlFixture : MessagingStackFixtureBase
         RegisterComponents(_rabbitMq, _postgreSql);
     }
 
-    public string RabbitMqHostName => _rabbitMq.Container.Hostname;
+    public string RabbitMqHostName => _rabbitMq.HostName;
 
-    public int RabbitMqPort => _rabbitMq.Container.GetMappedPublicPort(RabbitMqBuilder.RabbitMqPort);
+    public int RabbitMqPort => _rabbitMq.Port;
+
+    public string RabbitMqUserName => _rabbitMq.UserName;
+
+    public string RabbitMqPassword => _rabbitMq.Password;
+
+    public string RabbitMqVirtualHost => _rabbitMq.VirtualHost;
 
     public string StorageConnectionString => _postgreSql.ConnectionString;
 
@@ -32,7 +37,11 @@ public sealed class RabbitMqPostgreSqlFixture : MessagingStackFixtureBase
     public Task UnpauseBrokerAsync(CancellationToken cancellationToken) =>
         _rabbitMq.Container.UnpauseAsync(cancellationToken);
 
-    private sealed class RabbitMqComponent : HeadlessRabbitMqFixture;
+    private sealed class RabbitMqComponent : HeadlessRabbitMqFixture
+    {
+        // Its tests pause the broker, which would freeze every other fixture on a shared one.
+        protected override bool ShareContainer => false;
+    }
 
     private sealed class PostgreSqlComponent : PostgreSqlStackComponent;
 }

@@ -60,8 +60,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             updated.ExceptionMessage = null;
             updated.FailureFingerprint = null;
             updated.SkippedReason = null;
-            updated.OwnerId = null;
-            updated.LockedUntil = null;
+            updated.Lease = _Revoked(updated.Lease);
             updated.ExecutedAt = null;
             updated.ElapsedTime = 0;
             // A requeue is a new run, so the old run's progress would misreport it.
@@ -170,8 +169,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             updated.ExceptionMessage = null;
             updated.FailureFingerprint = null;
             updated.SkippedReason = null;
-            updated.OwnerId = null;
-            updated.LockedUntil = null;
+            updated.Lease = _Revoked(updated.Lease);
             updated.ExecutedAt = null;
             updated.ElapsedTime = 0;
             // A requeue is a new run, so the old run's progress would misreport it.

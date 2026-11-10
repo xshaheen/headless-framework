@@ -42,8 +42,7 @@ public sealed class ScheduledRevocationTests : TestBase
         {
             // Simulate a queued candidate without a store ownership grant, which takes the
             // sender's combined lease-and-reserve path rather than its claimed-row path.
-            candidate.LockedUntil = null;
-            candidate.Owner = null;
+            candidate.Lease = default;
         }
 
         (await provider.GetRequiredService<IMessageRevoker>().RevokeAsync(receipt.StorageId.Value, AbortToken))

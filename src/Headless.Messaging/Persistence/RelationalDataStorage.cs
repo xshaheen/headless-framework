@@ -3,6 +3,7 @@
 using System.Data.Common;
 using Headless.Checks;
 using Headless.Coordination;
+using Headless.Fencing;
 using Headless.Messaging.Internal;
 using Headless.Sql;
 using Headless.UnitOfWork;
@@ -75,7 +76,6 @@ internal sealed partial class RelationalDataStorage
     private readonly TimeProvider _timeProvider;
     private readonly INodeMembership _nodeMembership;
     private readonly ILogger _logger;
-    private readonly SqlColumnType _ownerType;
     private readonly string _publishedTable;
     private readonly string _receivedTable;
     private readonly bool _holdsReceived;
@@ -86,14 +86,16 @@ internal sealed partial class RelationalDataStorage
     // The hot-path statements depend only on the dialect and table names, so they are rendered once here instead of
     // on every state change, publish, and receive.
     private readonly SqlKeyColumn[] _idKey;
-    private readonly string[] _changeStateSql;
+    private readonly ChangeStateSql[] _changeStateSql;
     private readonly string _storePublishedSql;
     private readonly ReceivedStoreSql[] _storeReceivedSql;
-    private readonly string[] _reserveAttemptSql;
-    private readonly string[] _renewLeaseSql;
+    private readonly string[] _reserveAttemptCondition;
+    private readonly string[] _releaseLeaseCondition;
     private readonly string[] _leaseSql;
-    private readonly string _deferReceivedRetrySql;
-    private readonly string[] _inboxRoutabilitySql;
+    private readonly string _deferReceivedRetrySet;
+    private readonly string[] _inboxRoutabilitySet;
+    private readonly string _inboxRoutabilityCondition;
+    private readonly string[] _inboxRoutabilityReturning;
     private readonly string _admitInboxSql;
     private readonly string[] _readInboxGenerationSql;
 
@@ -112,7 +114,7 @@ internal sealed partial class RelationalDataStorage
     {
         _storage = Argument.IsNotNull(storage);
         _dialect = storage.Dialect;
-        _t = MessagingTables.For(_dialect, Argument.IsNotNull(storageOptions));
+        _t = MessagingTables.For(_dialect, Argument.IsNotNull(storageOptions), storage.LeaseHolderMaxLength);
         _messagingOptions = Argument.IsNotNull(messagingOptions);
         Argument.IsNotNull(tableNames);
         _serializer = Argument.IsNotNull(serializer);
@@ -120,7 +122,6 @@ internal sealed partial class RelationalDataStorage
         _timeProvider = Argument.IsNotNull(timeProvider);
         _nodeMembership = Argument.IsNotNull(nodeMembership);
         _logger = Argument.IsNotNull(logger);
-        _ownerType = SqlColumnType.Text(storage.OwnerColumnMaxLength);
         _publishedTable = tableNames.GetPublishedTableName();
         _receivedTable = tableNames.GetReceivedTableName();
         _holdsReceived = holdsReceived;
@@ -156,8 +157,16 @@ internal sealed partial class RelationalDataStorage
             _RenderStoreReceived(hasExpiry: true, hasDue: false),
             _RenderStoreReceived(hasExpiry: true, hasDue: true),
         ];
-        _reserveAttemptSql = [_RenderReserveAttempt(received: false), _RenderReserveAttempt(received: true)];
-        _renewLeaseSql = [_RenderRenewLease(received: false), _RenderRenewLease(received: true)];
+        _reserveAttemptCondition =
+        [
+            _RenderReserveAttemptCondition(received: false),
+            _RenderReserveAttemptCondition(received: true),
+        ];
+        _releaseLeaseCondition =
+        [
+            _RenderReleaseLeaseCondition(received: false),
+            _RenderReleaseLeaseCondition(received: true),
+        ];
         _leaseSql =
         [
             _RenderLease(received: false, reserve: false),
@@ -165,8 +174,16 @@ internal sealed partial class RelationalDataStorage
             _RenderLease(received: true, reserve: false),
             _RenderLease(received: true, reserve: true),
         ];
-        _deferReceivedRetrySql = _RenderDeferReceivedRetry();
-        _inboxRoutabilitySql = [_RenderInboxRoutability(orphaned: false), _RenderInboxRoutability(orphaned: true)];
+        _deferReceivedRetrySet =
+            $"{_t.NextRetryAt}={_dialect.ShiftByDuration(SqlDialectTokens.Now, "RetryDelay")}, {_t.StampChange}";
+        _inboxRoutabilitySet =
+        [
+            _RenderInboxRoutabilitySet(orphaned: false),
+            _RenderInboxRoutabilitySet(orphaned: true),
+        ];
+        _inboxRoutabilityCondition =
+            $"{_t.IntentType}=@IntentType AND {_t.Generation}=@Generation AND {_t.GenerationIncarnationId}=@GenerationIncarnationId AND {_t.AttemptId}=@AttemptId";
+        _inboxRoutabilityReturning = [.. _t.LeaseColumnNames, _dialect.Name("NextRetryAt")];
         _admitInboxSql = _RenderAdmitInbox();
         _readInboxGenerationSql =
         [
@@ -284,7 +301,7 @@ internal sealed partial class RelationalDataStorage
     {
         var storageId = matchStorageId ? $"{_t.Id}=@InboxStorageId AND " : "";
 
-        return $"({_t.IsInboxRecord} = {_t.False} OR ({storageId}{_t.IntentType}=@InboxIntentType AND {_t.Generation}=@InboxGeneration AND {_t.GenerationIncarnationId}=@InboxGenerationIncarnationId AND {_t.AttemptId}=@InboxAttemptId AND {_Same(_t.Owner, "InboxOwner")} AND {_t.LockedUntil}=@InboxLockedUntil))";
+        return $"({_t.IsInboxRecord} = {_t.False} OR ({storageId}{_t.IntentType}=@InboxIntentType AND {_t.Generation}=@InboxGeneration AND {_t.GenerationIncarnationId}=@InboxGenerationIncarnationId AND {_t.AttemptId}=@InboxAttemptId AND {_t.LeaseGeneration}=@InboxLeaseGeneration))";
     }
 
     /// <summary>Binds the parameters <see cref="_InboxAttemptGuard"/> reads; all null for a non-inbox message.</summary>
@@ -309,8 +326,7 @@ internal sealed partial class RelationalDataStorage
             fence?.GenerationIncarnationId
         );
         _dialect.AddParameter(command, "InboxAttemptId", SqlColumnType.Guid, fence?.AttemptId);
-        _dialect.AddParameter(command, "InboxOwner", _ownerType, fence?.Owner);
-        _dialect.AddParameter(command, "InboxLockedUntil", SqlColumnType.Timestamp, fence?.LockedUntil);
+        _dialect.AddParameter(command, "InboxLeaseGeneration", SqlColumnType.Int64, fence?.LeaseGeneration);
     }
 
     /// <summary>
@@ -322,9 +338,57 @@ internal sealed partial class RelationalDataStorage
         _dialect.AddParameter(command, "Version", SqlColumnType.Text(_VersionMaxLength), Options.Version);
     }
 
-    private void _BindOwner(DbCommand command, string parameter, bool hasLease)
+    /// <summary>The holder this node records on every lease it takes, or <see langword="null" /> without membership.</summary>
+    private string? LeaseHolder => _nodeMembership.GetLeaseHolder();
+
+    /// <summary>The fenced-row view of the published or received table.</summary>
+    private FencedRowTable<Guid> _LeaseTable(string table) => _IsReceived(table) ? _t.ReceivedLease : _t.PublishedLease;
+
+    /// <summary>The token of the lease generation <paramref name="message" /> holds on <paramref name="table" />.</summary>
+    private static FencedRow<Guid> _LeaseRow(FencedRowTable<Guid> table, MediumMessage message)
     {
-        _dialect.AddParameter(command, parameter, _ownerType, hasLease ? _nodeMembership.GetOwnerTag() : null);
+        return new FencedRow<Guid>(table.Name, message.StorageId, message.Lease.Generation);
+    }
+
+    /// <summary>
+    /// A consumer write for a fenced-row verb: the verb sets no command timeout, so the bind applies the storage's.
+    /// </summary>
+    private FencedRowWrite _Write(
+        string? set = null,
+        string? condition = null,
+        IReadOnlyList<string>? returning = null,
+        Action<DbCommand>? bind = null
+    )
+    {
+        var timeout = CommandTimeoutSeconds;
+
+        return new FencedRowWrite(
+            set,
+            condition,
+            returning,
+            command =>
+            {
+                command.CommandTimeout = timeout;
+                bind?.Invoke(command);
+            }
+        );
+    }
+
+    /// <summary>
+    /// Assignments that end whatever attempt holds the row as revoked, for an operator or unfenced write that rewrites a
+    /// row without holding its lease; the fenced-row verbs need the generation, and these writes never had one.
+    /// </summary>
+    /// <param name="unless">A condition under which the held lease survives the write, or <see langword="null"/>.</param>
+    /// <param name="ending">The state the held lease ends in: revoked by default, settled for a row the write ends.</param>
+    private string _RevokeAnyLeaseAssignments(string? unless = null, RowLeaseState ending = RowLeaseState.Revoked)
+    {
+        var revoked = ((short)ending).ToString(CultureInfo.InvariantCulture);
+        var held = unless is null
+            ? $"{_t.LeaseState} = {_t.ActiveLease}"
+            : $"{_t.LeaseState} = {_t.ActiveLease} AND NOT ({unless})";
+
+        return $"{_t.LeaseState}=CASE WHEN {held} THEN {revoked} ELSE {_t.LeaseState} END, "
+            + $"{_t.LeaseTakeoverCount}=CASE WHEN {held} THEN 0 ELSE {_t.LeaseTakeoverCount} END";
     }
 
     /// <summary>Binds the parameters <see cref="_nextRetryAtAssignment"/> reads.</summary>

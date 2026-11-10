@@ -6,6 +6,7 @@ using System.Data.Common;
 using System.Text.RegularExpressions;
 using Headless.Context;
 using Headless.Coordination;
+using Headless.Fencing;
 using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Messaging;
@@ -103,6 +104,13 @@ public interface IJobsCoordinationFixture
     /// </summary>
     string EfTranslatedDatabaseClockSql { get; }
 
+    /// <summary>
+    /// The per-statement server clock the lease SQL compares and stamps with (Postgres: <c>clock_timestamp()</c>;
+    /// SqlServer: <c>SYSUTCDATETIME()</c>). A lease reads the clock at each statement rather than at transaction
+    /// start, so it is not <see cref="EfTranslatedDatabaseClockSql" />.
+    /// </summary>
+    string LeaseDatabaseClockSql { get; }
+
     /// <summary>Provider DDL that drops every Jobs and Coordination table so each test starts empty.</summary>
     string ResetSql { get; }
 
@@ -135,14 +143,14 @@ public interface IJobsCoordinationFixture
 /// <summary>
 /// Shared, provider-neutral behavior over <see cref="IJobsCoordinationFixture" />: host bootstrap (Coordination
 /// before Jobs), Jobs schema creation, database reset, and raw-SQL seed/read of TimeJob rows (raw SQL because
-/// <c>TimeJobEntity.Status/OwnerId</c> have internal setters). Mirrors the Coordination harness's
+/// <c>TimeJobEntity.Status/Lease</c> have internal setters). Mirrors the Coordination harness's
 /// <c>CoordinationFixtureExtensions</c> shape.
 /// </summary>
 public static partial class JobsCoordinationFixtureExtensions
 {
     /// <summary>
-    /// Adapts harness SQL to this backend's naming: every double-quoted PascalCase identifier (<c>"LockedUntil"</c>)
-    /// becomes <c>"locked_until"</c> on a snake_case backend and stays as written otherwise. Shared scenarios write
+    /// Adapts harness SQL to this backend's naming: every double-quoted PascalCase identifier (<c>"LeaseExpiresAt"</c>)
+    /// becomes <c>"lease_expires_at"</c> on a snake_case backend and stays as written otherwise. Shared scenarios write
     /// their seed and probe SQL once, in the PascalCase the property names use, and run it on both backends.
     /// </summary>
     public static string Sql(this IJobsCoordinationFixture fixture, string sql)
@@ -254,10 +262,9 @@ public static partial class JobsCoordinationFixtureExtensions
 
     /// <summary>
     /// Builds a host whose <em>real</em> Jobs DbContext carries <paramref name="interceptor" />, so a test can read
-    /// the SQL the production lease paths actually put on the wire. Native claiming is off: the native strategies
-    /// build raw ADO commands off the underlying connection (bypassing EF's interception pipeline) and spell
-    /// <c>clock_timestamp()</c> / <c>SYSUTCDATETIME()</c> literally in their SQL, so they are not the subject here.
-    /// The EF-translated clock — the one a client-evaluated regression could silently replace — is.
+    /// the SQL the production paths actually put on the wire. It sees only the SQL EF runs: the claims, the lease
+    /// transitions, and every fenced write build raw commands off the underlying connection, which bypass EF's
+    /// interception pipeline. Native claiming is off, so a test that also drives a claim stays on the generic path.
     /// </summary>
     public static IHost BuildInterceptedHost(
         this IJobsCoordinationFixture fixture,
@@ -710,6 +717,10 @@ public static partial class JobsCoordinationFixtureExtensions
     }
 
     /// <summary>Inserts a TimeJob row with an exact status/owner — bypasses the entity's internal setters.</summary>
+    /// <remarks>
+    /// <paramref name="ownerId"/> and <paramref name="lockedUntil"/> map onto the lease as <see cref="SeedLease"/>
+    /// describes; every held row is seeded at generation 1.
+    /// </remarks>
     public static async Task SeedTimeJobAsync(
         this IJobsCoordinationFixture fixture,
         Guid id,
@@ -727,8 +738,8 @@ public static partial class JobsCoordinationFixtureExtensions
         await using var command = connection.CreateCommand();
         command.CommandText = fixture.Sql(
             $"INSERT INTO {fixture.QualifiedTimeJobsTable} ({_InsertColumns}, \"ContractVersion\", \"ExecutionTime\") "
-                + "VALUES (@id, @function, @function, @status, @ownerId, "
-                + $"{fixture.UtcNowSqlExpression}, {fixture.UtcNowSqlExpression}, 0, 0, 0, @onNodeDeath, @lockedUntil, '1', "
+                + "VALUES (@id, @function, @function, @status, "
+                + $"{fixture.UtcNowSqlExpression}, {fixture.UtcNowSqlExpression}, 0, 0, 0, @onNodeDeath, {_LeaseValues}, '1', "
                 + "@executionTime);"
         );
 
@@ -736,9 +747,8 @@ public static partial class JobsCoordinationFixtureExtensions
         AddParameter(command, "@id", id);
         AddParameter(command, "@function", function);
         AddParameter(command, "@status", ((JobStatus)status).ToString());
-        AddParameter(command, "@ownerId", (object?)ownerId ?? DBNull.Value);
         AddParameter(command, "@onNodeDeath", onNodeDeath.ToString());
-        AddParameter(command, "@lockedUntil", (object?)lockedUntil ?? DBNull.Value);
+        _AddLeaseParameters(command, SeedLease((JobStatus)status, ownerId, lockedUntil));
         AddParameter(command, "@executionTime", (object?)executionTime ?? DBNull.Value);
 
         await command.ExecuteNonQueryAsync(cancellationToken);
@@ -839,7 +849,8 @@ public static partial class JobsCoordinationFixtureExtensions
 
     /// <summary>
     /// Inserts a CronJobOccurrence row with an exact status/owner/lease — bypasses the entity's internal setters.
-    /// Requires a parent CronJob (FK <c>CronJobId</c>) to already exist (seed it via <see cref="SeedCronJobAsync" />).
+    /// <paramref name="ownerId"/> and <paramref name="lockedUntil"/> map onto the lease as <see cref="SeedLease"/>
+    /// describes. Requires a parent CronJob (FK <c>CronJobId</c>) to already exist (seed it via <see cref="SeedCronJobAsync" />).
     /// </summary>
     /// <param name="skippedReason">
     /// The retirement reason a <see cref="JobStatus.Skipped" /> row carries. Display text only: two producers write
@@ -888,18 +899,17 @@ public static partial class JobsCoordinationFixtureExtensions
         command.CommandText = fixture.Sql(
             $"INSERT INTO {fixture.QualifiedCronJobOccurrencesTable} ({_CronOccurrenceInsertColumns}, "
                 + "\"SkippedReason\", \"Disposition\", \"Function\", \"ContractVersion\", \"Request\") "
-                + "SELECT @id, @cronJobId, @status, @ownerId, @executionTime, "
-                + $"{createdAtSql}, {createdAtSql}, 0, 0, @onNodeDeath, @lockedUntil, "
+                + "SELECT @id, @cronJobId, @status, @executionTime, "
+                + $"{createdAtSql}, {createdAtSql}, 0, 0, @onNodeDeath, {_LeaseValues}, "
                 + $"@skippedReason, @disposition, \"Function\", \"ContractVersion\", \"Request\" FROM {fixture.QualifiedCronJobsTable} WHERE \"Id\" = @cronJobId;"
         );
 
         AddParameter(command, "@id", id);
         AddParameter(command, "@cronJobId", cronJobId);
         AddParameter(command, "@status", rawStatus ?? ((JobStatus)status).ToString());
-        AddParameter(command, "@ownerId", (object?)ownerId ?? DBNull.Value);
         AddParameter(command, "@executionTime", executionTime);
         AddParameter(command, "@onNodeDeath", onNodeDeath.ToString());
-        AddParameter(command, "@lockedUntil", (object?)lockedUntil ?? DBNull.Value);
+        _AddLeaseParameters(command, SeedLease((JobStatus)status, ownerId, lockedUntil));
         AddParameter(command, "@skippedReason", (object?)skippedReason ?? DBNull.Value);
         AddParameter(command, "@disposition", disposition.ToString());
 
@@ -927,106 +937,70 @@ public static partial class JobsCoordinationFixtureExtensions
         return (reader.GetString(0), reader.GetString(1));
     }
 
-    /// <summary>Reads back a CronJobOccurrence's status + owner for assertions.</summary>
-    public static async Task<(int Status, string? OwnerId)> ReadCronOccurrenceAsync(
+    /// <summary>
+    /// Reads back a CronJobOccurrence's status and the holder of its lease while the lease is Active, for asserting
+    /// who holds the row. An ended lease keeps its holder as a record, so the holder alone no longer says the row is
+    /// held; read <see cref="ReadCronOccurrenceClaimAsync"/> to assert on the ended lease itself.
+    /// </summary>
+    public static async Task<(int Status, string? ActiveHolder)> ReadCronOccurrenceAsync(
         this IJobsCoordinationFixture fixture,
         Guid id,
         CancellationToken cancellationToken
     )
     {
-        await using var connection = fixture.CreateConnection();
-        await connection.OpenAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = fixture.Sql(
-            $"SELECT \"Status\", \"OwnerId\" FROM {fixture.QualifiedCronJobOccurrencesTable} WHERE \"Id\" = @id;"
+        var (status, lease) = await fixture._ReadRowAsync(
+            fixture.QualifiedCronJobOccurrencesTable,
+            id,
+            cancellationToken
         );
-        AddParameter(command, "@id", id);
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-
-        if (!await reader.ReadAsync(cancellationToken))
-        {
-            throw new InvalidOperationException($"CronJobOccurrence {id} not found.");
-        }
-
-        var status = (int)Enum.Parse<JobStatus>(reader.GetString(0));
-        var ownerId = await reader.IsDBNullAsync(1, cancellationToken) ? null : reader.GetString(1);
-
-        return (status, ownerId);
+        return (status, ActiveHolder(lease));
     }
 
-    /// <summary>Reads a CronJobOccurrence's durable owner and lease.</summary>
-    public static async Task<(string? OwnerId, DateTime? LockedUntil)> ReadCronOccurrenceClaimAsync(
+    /// <summary>Reads a CronJobOccurrence's lease.</summary>
+    public static async Task<RowLeaseSnapshot> ReadCronOccurrenceClaimAsync(
         this IJobsCoordinationFixture fixture,
         Guid id,
         CancellationToken cancellationToken
     )
     {
-        await using var connection = fixture.CreateConnection();
-        await connection.OpenAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = fixture.Sql(
-            $"SELECT \"OwnerId\", \"LockedUntil\" FROM {fixture.QualifiedCronJobOccurrencesTable} WHERE \"Id\" = @id;"
-        );
-        AddParameter(command, "@id", id);
+        var (_, lease) = await fixture._ReadRowAsync(fixture.QualifiedCronJobOccurrencesTable, id, cancellationToken);
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken))
-        {
-            throw new InvalidOperationException($"CronJobOccurrence {id} not found.");
-        }
-
-        var ownerId = await reader.IsDBNullAsync(0, cancellationToken) ? null : reader.GetString(0);
-        var lockedUntil = await reader.IsDBNullAsync(1, cancellationToken) ? (DateTime?)null : reader.GetDateTime(1);
-        return (ownerId, lockedUntil);
+        return lease;
     }
 
-    /// <summary>Reads a CronJobOccurrence's database-stamped lease timestamps.</summary>
-    public static async Task<(DateTime? LockedUntil, DateTimeOffset UpdatedAt)> ReadCronOccurrenceClaimTimestampsAsync(
+    /// <summary>Reads a CronJobOccurrence's lease deadline and database-stamped <c>UpdatedAt</c>.</summary>
+    public static Task<(DateTimeOffset? ExpiresAt, DateTimeOffset UpdatedAt)> ReadCronOccurrenceClaimTimestampsAsync(
         this IJobsCoordinationFixture fixture,
         Guid id,
         CancellationToken cancellationToken
     )
     {
-        await using var connection = fixture.CreateConnection();
-        await connection.OpenAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = fixture.Sql(
-            $"SELECT \"LockedUntil\", \"UpdatedAt\" FROM {fixture.QualifiedCronJobOccurrencesTable} WHERE \"Id\" = @id;"
-        );
-        AddParameter(command, "@id", id);
-
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken))
-        {
-            throw new InvalidOperationException($"CronJobOccurrence {id} not found.");
-        }
-
-        var lockedUntil = await reader.IsDBNullAsync(0, cancellationToken) ? (DateTime?)null : reader.GetDateTime(0);
-        var updatedAt = await reader.GetFieldValueAsync<DateTimeOffset>(1, cancellationToken);
-        return (lockedUntil, updatedAt);
-    }
-
-    /// <summary>Reads back a TimeJob's status + owner for assertions.</summary>
-    public static async Task<(int Status, string? OwnerId)> ReadTimeJobAsync(
-        this IJobsCoordinationFixture fixture,
-        Guid id,
-        CancellationToken cancellationToken
-    )
-    {
-        var (status, ownerId, _, _, _) = await fixture.ReadTimeJobDetailAsync(id, cancellationToken);
-        return (status, ownerId);
+        return fixture._ReadClaimTimestampsAsync(fixture.QualifiedCronJobOccurrencesTable, id, cancellationToken);
     }
 
     /// <summary>
-    /// Reads a TimeJob's status, owner, lease deadline, and failure/skip reasons — for asserting dead-node
-    /// sweep hygiene (terminal rows clear <c>LockedUntil</c> but retain <c>OwnerId</c>; MarkFailed sets
-    /// <c>ExceptionMessage</c>, Skip sets <c>SkippedReason</c>).
+    /// Reads back a TimeJob's status and the holder of its lease while the lease is Active (see
+    /// <see cref="ReadCronOccurrenceAsync"/>).
+    /// </summary>
+    public static async Task<(int Status, string? ActiveHolder)> ReadTimeJobAsync(
+        this IJobsCoordinationFixture fixture,
+        Guid id,
+        CancellationToken cancellationToken
+    )
+    {
+        var (status, lease, _, _) = await fixture.ReadTimeJobDetailAsync(id, cancellationToken);
+        return (status, ActiveHolder(lease));
+    }
+
+    /// <summary>
+    /// Reads a TimeJob's status, lease, and failure/skip reasons — for asserting dead-node sweep hygiene (terminal
+    /// rows end the lease but keep its holder; MarkFailed sets <c>ExceptionMessage</c>, Skip sets
+    /// <c>SkippedReason</c>).
     /// </summary>
     public static async Task<(
         int Status,
-        string? OwnerId,
-        DateTime? LockedUntil,
+        RowLeaseSnapshot Lease,
         string? ExceptionMessage,
         string? SkippedReason
     )> ReadTimeJobDetailAsync(this IJobsCoordinationFixture fixture, Guid id, CancellationToken cancellationToken)
@@ -1035,7 +1009,7 @@ public static partial class JobsCoordinationFixtureExtensions
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = fixture.Sql(
-            "SELECT \"Status\", \"OwnerId\", \"LockedUntil\", \"ExceptionMessage\", \"SkippedReason\" "
+            $"SELECT \"Status\", {LeaseColumnList}, \"ExceptionMessage\", \"SkippedReason\" "
                 + $"FROM {fixture.QualifiedTimeJobsTable} WHERE \"Id\" = @id;"
         );
         AddParameter(command, "@id", id);
@@ -1049,12 +1023,11 @@ public static partial class JobsCoordinationFixtureExtensions
 
         // Status persists as its enum name; parse back to the ordinal the callers assert against.
         var status = (int)Enum.Parse<JobStatus>(reader.GetString(0));
-        var ownerId = await reader.IsDBNullAsync(1, cancellationToken) ? null : reader.GetString(1);
-        var lockedUntil = await reader.IsDBNullAsync(2, cancellationToken) ? (DateTime?)null : reader.GetDateTime(2);
-        var exceptionMessage = await reader.IsDBNullAsync(3, cancellationToken) ? null : reader.GetString(3);
-        var skippedReason = await reader.IsDBNullAsync(4, cancellationToken) ? null : reader.GetString(4);
+        var lease = await ReadLeaseAsync(reader, 1, cancellationToken);
+        var exceptionMessage = await reader.IsDBNullAsync(6, cancellationToken) ? null : reader.GetString(6);
+        var skippedReason = await reader.IsDBNullAsync(7, cancellationToken) ? null : reader.GetString(7);
 
-        return (status, ownerId, lockedUntil, exceptionMessage, skippedReason);
+        return (status, lease, exceptionMessage, skippedReason);
     }
 
     /// <summary>Reads a TimeJob's persisted RetryCount — for asserting crash-durable budget consumption.</summary>
@@ -1077,10 +1050,31 @@ public static partial class JobsCoordinationFixtureExtensions
         return Convert.ToInt32(result, CultureInfo.InvariantCulture);
     }
 
-    /// <summary>Reads a TimeJob's database-stamped lease timestamps.</summary>
-    public static async Task<(DateTime? LockedUntil, DateTimeOffset UpdatedAt)> ReadTimeJobClaimTimestampsAsync(
+    /// <summary>Reads a TimeJob's lease deadline and database-stamped <c>UpdatedAt</c>.</summary>
+    public static Task<(DateTimeOffset? ExpiresAt, DateTimeOffset UpdatedAt)> ReadTimeJobClaimTimestampsAsync(
         this IJobsCoordinationFixture fixture,
         Guid id,
+        CancellationToken cancellationToken
+    )
+    {
+        return fixture._ReadClaimTimestampsAsync(fixture.QualifiedTimeJobsTable, id, cancellationToken);
+    }
+
+    /// <summary>The holder of <paramref name="lease"/> while it is Active, else <see langword="null"/>.</summary>
+    public static string? ActiveHolder(RowLeaseSnapshot lease)
+    {
+        return lease.State == RowLeaseState.Active ? lease.Holder : null;
+    }
+
+    /// <summary>
+    /// Overwrites a row's lease columns, so a scenario can stage a takeover (a peer at a later generation) or a lapsed
+    /// lease without going through a claim.
+    /// </summary>
+    public static async Task OverwriteLeaseAsync(
+        this IJobsCoordinationFixture fixture,
+        string table,
+        Guid id,
+        RowLeaseSnapshot lease,
         CancellationToken cancellationToken
     )
     {
@@ -1088,19 +1082,124 @@ public static partial class JobsCoordinationFixtureExtensions
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = fixture.Sql(
-            $"SELECT \"LockedUntil\", \"UpdatedAt\" FROM {fixture.QualifiedTimeJobsTable} WHERE \"Id\" = @id;"
+            $"UPDATE {table} SET \"LeaseGeneration\" = @leaseGeneration, \"LeaseState\" = @leaseState, "
+                + "\"LeaseExpiresAt\" = @leaseExpiresAt, \"LeaseHolder\" = @leaseHolder, "
+                + "\"LeaseTakeoverCount\" = @leaseTakeoverCount WHERE \"Id\" = @id;"
         );
+        _AddLeaseParameters(command, lease);
+        AddParameter(command, "@id", id);
+
+        (await command.ExecuteNonQueryAsync(cancellationToken)).Should().Be(1, $"row {id} exists in {table}");
+    }
+
+    /// <summary>
+    /// The lease a seeded row starts with. An owner with a deadline holds the row Active at generation 1. An owner
+    /// without one stood for a row whose lease had lapsed: an in-flight or Idle row is seeded Active with an expiry
+    /// far in the past, so the sweeps and claims still see a held-but-dead lease, and a terminal row is seeded
+    /// Settled, keeping its holder as the record. No owner seeds a never-granted lease.
+    /// </summary>
+    public static RowLeaseSnapshot SeedLease(JobStatus status, string? ownerId, DateTime? lockedUntil)
+    {
+        if (ownerId is null)
+        {
+            return lockedUntil is { } deadline
+                ? new RowLeaseSnapshot(0, RowLeaseState.Idle, _AsUtcOffset(deadline), null, 0)
+                : default;
+        }
+
+        if (lockedUntil is { } until)
+        {
+            return new RowLeaseSnapshot(1, RowLeaseState.Active, _AsUtcOffset(until), ownerId, 0);
+        }
+
+        return status is JobStatus.Idle or JobStatus.Queued or JobStatus.InProgress
+            ? new RowLeaseSnapshot(1, RowLeaseState.Active, _LapsedLeaseExpiry, ownerId, 0)
+            : new RowLeaseSnapshot(1, RowLeaseState.Settled, null, ownerId, 0);
+    }
+
+    private static readonly DateTimeOffset _LapsedLeaseExpiry = new(2000, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+    private static DateTimeOffset _AsUtcOffset(DateTime value)
+    {
+        return new DateTimeOffset(DateTime.SpecifyKind(value, DateTimeKind.Utc));
+    }
+
+    private static async Task<(int Status, RowLeaseSnapshot Lease)> _ReadRowAsync(
+        this IJobsCoordinationFixture fixture,
+        string table,
+        Guid id,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var connection = fixture.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = fixture.Sql($"SELECT \"Status\", {LeaseColumnList} FROM {table} WHERE \"Id\" = @id;");
+        AddParameter(command, "@id", id);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            throw new InvalidOperationException($"Row {id} not found in {table}.");
+        }
+
+        var status = (int)Enum.Parse<JobStatus>(reader.GetString(0));
+
+        return (status, await ReadLeaseAsync(reader, 1, cancellationToken));
+    }
+
+    private static async Task<(DateTimeOffset? ExpiresAt, DateTimeOffset UpdatedAt)> _ReadClaimTimestampsAsync(
+        this IJobsCoordinationFixture fixture,
+        string table,
+        Guid id,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var connection = fixture.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = fixture.Sql($"SELECT \"LeaseExpiresAt\", \"UpdatedAt\" FROM {table} WHERE \"Id\" = @id;");
         AddParameter(command, "@id", id);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
         {
-            throw new InvalidOperationException($"TimeJob {id} not found.");
+            throw new InvalidOperationException($"Row {id} not found in {table}.");
         }
 
-        var lockedUntil = await reader.IsDBNullAsync(0, cancellationToken) ? (DateTime?)null : reader.GetDateTime(0);
+        var expiresAt = await reader.IsDBNullAsync(0, cancellationToken)
+            ? (DateTimeOffset?)null
+            : await reader.GetFieldValueAsync<DateTimeOffset>(0, cancellationToken);
         var updatedAt = await reader.GetFieldValueAsync<DateTimeOffset>(1, cancellationToken);
-        return (lockedUntil, updatedAt);
+        return (expiresAt, updatedAt);
+    }
+
+    /// <summary>Reads the five lease columns, in <see cref="LeaseColumnList"/> order, starting at <paramref name="ordinal"/>.</summary>
+    internal static async Task<RowLeaseSnapshot> ReadLeaseAsync(
+        DbDataReader reader,
+        int ordinal,
+        CancellationToken cancellationToken
+    )
+    {
+        var generation = Convert.ToInt64(reader.GetValue(ordinal), CultureInfo.InvariantCulture);
+        var state = (RowLeaseState)Convert.ToInt16(reader.GetValue(ordinal + 1), CultureInfo.InvariantCulture);
+        var expiresAt = await reader.IsDBNullAsync(ordinal + 2, cancellationToken)
+            ? (DateTimeOffset?)null
+            : await reader.GetFieldValueAsync<DateTimeOffset>(ordinal + 2, cancellationToken);
+        var holder = await reader.IsDBNullAsync(ordinal + 3, cancellationToken) ? null : reader.GetString(ordinal + 3);
+        var takeovers = Convert.ToInt32(reader.GetValue(ordinal + 4), CultureInfo.InvariantCulture);
+
+        return new RowLeaseSnapshot(generation, state, expiresAt, holder, takeovers);
+    }
+
+    private static void _AddLeaseParameters(DbCommand command, RowLeaseSnapshot lease)
+    {
+        AddParameter(command, "@leaseGeneration", lease.Generation);
+        AddParameter(command, "@leaseState", (short)lease.State);
+        AddParameter(command, "@leaseExpiresAt", (object?)lease.ExpiresAt ?? DBNull.Value);
+        AddParameter(command, "@leaseHolder", (object?)lease.Holder ?? DBNull.Value);
+        AddParameter(command, "@leaseTakeoverCount", lease.TakeoverCount);
     }
 
     /// <summary>Reads a TimeJob's persisted <c>TenantId</c> (system scope reads back as <see langword="null"/>).</summary>
@@ -1126,9 +1225,17 @@ public static partial class JobsCoordinationFixtureExtensions
     // Column identifiers are double-quoted: SQL Server accepts ANSI double quotes for delimited identifiers
     // (QUOTED_IDENTIFIER is ON by default for SqlClient). Statements pass through Sql(), which converts them to the
     // snake_case columns on Postgres.
+    // The lease columns, in the order ReadLeaseAsync reads and _LeaseValues binds them.
+    internal const string LeaseColumnList =
+        "\"LeaseGeneration\", \"LeaseState\", \"LeaseExpiresAt\", \"LeaseHolder\", \"LeaseTakeoverCount\"";
+
+    private const string _LeaseValues =
+        "@leaseGeneration, @leaseState, @leaseExpiresAt, @leaseHolder, @leaseTakeoverCount";
+
     private const string _InsertColumns =
-        "\"Id\", \"Function\", \"Description\", \"Status\", \"OwnerId\", "
-        + "\"CreatedAt\", \"UpdatedAt\", \"ElapsedTime\", \"Retries\", \"RetryCount\", \"OnNodeDeath\", \"LockedUntil\"";
+        "\"Id\", \"Function\", \"Description\", \"Status\", "
+        + "\"CreatedAt\", \"UpdatedAt\", \"ElapsedTime\", \"Retries\", \"RetryCount\", \"OnNodeDeath\", "
+        + LeaseColumnList;
 
     private const string _CronInsertColumns =
         "\"Id\", \"Function\", \"Description\", \"Expression\", \"TimeZoneId\", \"IsPaused\", \"ScheduleRevision\", "
@@ -1136,8 +1243,9 @@ public static partial class JobsCoordinationFixtureExtensions
         + "\"ReconciledThroughUtc\", \"NextDueUtc\", \"MissedRunGraceSeconds\", \"OnMissedRun\"";
 
     private const string _CronOccurrenceInsertColumns =
-        "\"Id\", \"CronJobId\", \"Status\", \"OwnerId\", \"ExecutionTime\", "
-        + "\"CreatedAt\", \"UpdatedAt\", \"ElapsedTime\", \"RetryCount\", \"OnNodeDeath\", \"LockedUntil\"";
+        "\"Id\", \"CronJobId\", \"Status\", \"ExecutionTime\", "
+        + "\"CreatedAt\", \"UpdatedAt\", \"ElapsedTime\", \"RetryCount\", \"OnNodeDeath\", "
+        + LeaseColumnList;
 
     // Both Npgsql and SqlClient accept the "@name" parameter form. Internal so the chain-conformance tests reuse it.
     internal static void AddParameter(DbCommand command, string name, object value)

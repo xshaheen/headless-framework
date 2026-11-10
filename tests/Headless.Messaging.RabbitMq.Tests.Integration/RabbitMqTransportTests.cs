@@ -90,6 +90,7 @@ public sealed class RabbitMqTransportTests(RabbitMqFixture fixture) : TransportT
         new()
         {
             HostName = fixture.HostName,
+            VirtualHost = fixture.VirtualHost,
             Port = fixture.Port,
             UserName = fixture.UserName,
             Password = fixture.Password,

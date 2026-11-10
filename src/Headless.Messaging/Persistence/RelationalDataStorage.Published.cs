@@ -2,6 +2,7 @@
 
 using System.Data.Common;
 using Headless.Checks;
+using Headless.Fencing;
 using Headless.Messaging.Internal;
 using Headless.Sql;
 
@@ -381,14 +382,14 @@ internal sealed partial class RelationalDataStorage : IAdditionalOutboxOperation
     )
     {
         var fence =
-            $"{_t.Id}=@StorageId AND {RelationalMessageFilter.Terminal(_t)} AND ({_t.LockedUntil} IS NULL OR {_t.LockedUntil} <= @Instant)"
+            $"{_t.Id}=@StorageId AND {RelationalMessageFilter.Terminal(_t)} AND ({_t.LeaseState} <> {_t.ActiveLease} OR {_t.LeaseExpiresAt} <= @Instant)"
             + (request.ExpectedChangedAt is null ? "" : $" AND {_t.ChangedAt}=@ExpectedChangedAt");
 
         var sql =
             operationType is MessagingOperationType.Resend
                 ? _dialect.Render(
                     new SqlClockedStatement(
-                        $"UPDATE {_publishedTable} SET {_t.NextRetryAt}=@Instant,{_t.Retries}=0,{_t.InlineAttempts}=0,{_t.ExpiresAt}=NULL,{_t.LockedUntil}=NULL,{_t.Owner}=NULL,{_t.StampChange} WHERE {fence} AND {_t.StatusName}='{nameof(StatusName.Failed)}';"
+                        $"UPDATE {_publishedTable} SET {_t.NextRetryAt}=@Instant,{_t.Retries}=0,{_t.InlineAttempts}=0,{_t.ExpiresAt}=NULL,{_RevokeAnyLeaseAssignments()},{_t.StampChange} WHERE {fence} AND {_t.StatusName}='{nameof(StatusName.Failed)}';"
                     )
                 )
                 : $"DELETE FROM {_publishedTable} WHERE {fence};";
@@ -461,7 +462,16 @@ internal sealed partial class RelationalDataStorage : IAdditionalOutboxOperation
                 new SqlLockedRead(
                     _publishedTable,
                     [new SqlKeyColumn(_t.Id, "Id")],
-                    [_t.StatusName, _t.NextRetryAt, _t.LockedUntil, _t.ChangedAt, _t.Name, _t.MessageId, _t.IntentType]
+                    [
+                        _t.StatusName,
+                        _t.NextRetryAt,
+                        _t.LeaseExpiresAt,
+                        _t.ChangedAt,
+                        _t.Name,
+                        _t.MessageId,
+                        _t.IntentType,
+                        _t.LeaseState,
+                    ]
                 )
             ) + _dialect.Render(new SqlClockedStatement($"SELECT {SqlDialectTokens.Now};"));
 
@@ -489,7 +499,12 @@ internal sealed partial class RelationalDataStorage : IAdditionalOutboxOperation
                             reader.GetString(4),
                             reader.GetString(5),
                             MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(6)),
-                            reader.IsDBNull(2) ? null : reader.GetFieldValue<DateTimeOffset>(2)
+                            // Only an active lease can still be live; an ended one keeps its last expiry as a record.
+                            Convert.ToInt16(reader.GetValue(7), CultureInfo.InvariantCulture)
+                                != (short)RowLeaseState.Active
+                            || reader.IsDBNull(2)
+                                ? null
+                                : reader.GetFieldValue<DateTimeOffset>(2)
                         );
                     }
 

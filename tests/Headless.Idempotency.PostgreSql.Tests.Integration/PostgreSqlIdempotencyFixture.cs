@@ -7,7 +7,6 @@ using Headless.Testing.Testcontainers;
 using Headless.UnitOfWork;
 using Npgsql;
 using NpgsqlTypes;
-using Testcontainers.PostgreSql;
 
 namespace Tests;
 
@@ -25,17 +24,10 @@ public sealed class PostgreSqlIdempotencyFixture
 {
     private const string _Records = $"\"{HeadlessStorageDefaults.Schema}\".idempotency_records";
 
-    public string ConnectionString => Container.GetConnectionString();
-
     // Each host gets its own pool, and the contention tests run several hosts at once; the default pool of 100 per
     // host would let them exceed the container's max_connections and fail with 53300 instead of contending.
     private string PooledConnectionString =>
         new NpgsqlConnectionStringBuilder(ConnectionString) { MaxPoolSize = 30 }.ToString();
-
-    protected override PostgreSqlBuilder Configure()
-    {
-        return base.Configure().WithDatabase("idempotency_test").WithUsername("postgres").WithPassword("postgres");
-    }
 
     protected override async ValueTask InitializeAsync()
     {
@@ -67,7 +59,11 @@ public sealed class PostgreSqlIdempotencyFixture
         await connection.OpenAsync(cancellationToken);
         await using var command = new NpgsqlCommand(
             $"""
-            SELECT status, fingerprint_algorithm, fingerprint, generation, lease_expires_at, result, result_contract,
+            -- The logical record the store reads: a settled lease is a completed record, only an active or settled lease
+            -- names a generation, and only an active one has an expiry.
+            SELECT CASE WHEN lease_state = 2 THEN 1 ELSE 0 END::smallint, fingerprint_algorithm, fingerprint,
+                CASE WHEN lease_state IN (1, 2) THEN lease_generation END,
+                CASE WHEN lease_state = 1 THEN lease_expires_at END, result, result_contract,
                 retention_until, recovery_point, recovery_state, recovery_contract
             FROM {_Records}
             WHERE tenant_id = @tenant AND idempotency_key = @recordKey
@@ -136,7 +132,7 @@ public sealed class PostgreSqlIdempotencyFixture
         await using var command = new NpgsqlCommand(
             $"""
             UPDATE {_Records} SET lease_expires_at = lease_expires_at - @age
-            WHERE tenant_id = @tenant AND idempotency_key = @recordKey AND lease_expires_at IS NOT NULL
+            WHERE tenant_id = @tenant AND idempotency_key = @recordKey AND lease_state = 1
             """,
             connection
         );

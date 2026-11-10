@@ -8,9 +8,10 @@ namespace Headless.Messaging.Storage.PostgreSql.EntityFramework;
 public class PostgreSqlEntityFrameworkMessagingOptions
 {
     /// <summary>
-    /// Gets or sets the maximum length for the Owner column. Default is <see cref="DataStorageConstants.OwnerColumnMaxLength"/>.
+    /// Gets or sets the width of the lease holder column, in characters. Default is
+    /// <see cref="DataStorageConstants.LeaseHolderMaxLength"/>; see <c>PostgreSqlOptions.LeaseHolderMaxLength</c>.
     /// </summary>
-    public int OwnerColumnMaxLength { get; set; } = DataStorageConstants.OwnerColumnMaxLength;
+    public int LeaseHolderMaxLength { get; set; } = DataStorageConstants.LeaseHolderMaxLength;
 
     /// <summary>
     /// Gets or sets whether consumers run on the transactional inbox tier for this EF-context storage path.

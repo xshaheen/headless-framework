@@ -6,13 +6,16 @@ namespace Headless.Messaging.Persistence;
 
 internal static class DataStorageConstants
 {
-    // The longest owner tag coordination can issue: a full-length cluster name and node id plus the incarnation.
-    public const int MinimumOwnerColumnMaxLength = NodeOwnerTag.MaxLength;
+    // The longest owner tag coordination can issue: a full-length cluster name and node id plus the incarnation. The
+    // holder column must store every tag as it is, so the dashboard can group rows by node and an operator can read
+    // which node holds a row.
+    public const int MinimumLeaseHolderMaxLength = NodeOwnerTag.MaxLength;
 
-    public const int OwnerColumnMaxLength = 512;
+    public const int LeaseHolderMaxLength = 512;
 
-    public static object GetOwnerParameterValue(this INodeMembership membership, DateTimeOffset? lockedUntil)
+    /// <summary>The row-lease holder that stands for this node: its owner tag, or null with no membership identity.</summary>
+    public static string? GetLeaseHolder(this INodeMembership membership)
     {
-        return lockedUntil is null ? DBNull.Value : membership.GetOwnerTag() ?? (object)DBNull.Value;
+        return membership.GetOwnerTag();
     }
 }

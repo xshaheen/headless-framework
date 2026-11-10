@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data.Common;
 using Headless.Checks;
 using Headless.UnitOfWork;
 
@@ -19,10 +20,10 @@ internal sealed class FencedLeases(LeaseRequestResolver resolver, ILeaseStore st
         CancellationToken cancellationToken = default
     )
     {
-        return GrantAsync(kind, resource, duration, LeaseTakeover.Allowed, cancellationToken);
+        return GrantAsync(kind, resource, duration, new LeaseGrantOptions(), cancellationToken);
     }
 
-    public async ValueTask<LeaseGrantResult> GrantAsync(
+    public ValueTask<LeaseGrantResult> GrantAsync(
         string kind,
         string resource,
         TimeSpan duration,
@@ -30,14 +31,61 @@ internal sealed class FencedLeases(LeaseRequestResolver resolver, ILeaseStore st
         CancellationToken cancellationToken = default
     )
     {
+        return GrantAsync(kind, resource, duration, new LeaseGrantOptions { Takeover = takeover }, cancellationToken);
+    }
+
+    public async ValueTask<LeaseGrantResult> GrantAsync(
+        string kind,
+        string resource,
+        TimeSpan duration,
+        LeaseGrantOptions options,
+        CancellationToken cancellationToken = default
+    )
+    {
         var key = resolver.Resolve(kind, resource);
         duration = resolver.ValidateDuration(duration);
-        Argument.IsInEnum(takeover);
+        LeaseRequestResolver.ValidateGrantOptions(options);
 
-        var result = await store.GrantAsync(key, duration, takeover, cancellationToken).ConfigureAwait(false);
+        var result = await store.GrantAsync(key, duration, options, cancellationToken).ConfigureAwait(false);
         alerts.OnGranted(result);
 
         return result;
+    }
+
+    public async ValueTask<LeaseSnapshot?> GetCurrentAsync(
+        string kind,
+        string resource,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var key = resolver.Resolve(kind, resource);
+
+        return await store.GetCurrentAsync(key, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async ValueTask<LeaseSnapshot?> GetCurrentAsync(
+        string kind,
+        string resource,
+        DbConnection connection,
+        DbTransaction? transaction = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var key = resolver.Resolve(kind, resource);
+        Argument.IsNotNull(connection);
+
+        return await store.GetCurrentAsync(key, connection, transaction, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async ValueTask<FencedLease?> RevokeAsync(
+        string kind,
+        string resource,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var key = resolver.Resolve(kind, resource);
+
+        return await store.RevokeAsync(key, cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask<LeaseFenceStatus> GetStatusAsync(
@@ -48,6 +96,21 @@ internal sealed class FencedLeases(LeaseRequestResolver resolver, ILeaseStore st
         var key = LeaseRequestResolver.ResolveLease(lease);
 
         return await store.GetStatusAsync(key, lease.Generation, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async ValueTask<LeaseFenceStatus> GetStatusAsync(
+        FencedLease lease,
+        DbConnection connection,
+        DbTransaction? transaction = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var key = LeaseRequestResolver.ResolveLease(lease);
+        Argument.IsNotNull(connection);
+
+        return await store
+            .GetStatusAsync(key, lease.Generation, connection, transaction, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public ValueTask<LeaseRenewalResult> RenewAsync(

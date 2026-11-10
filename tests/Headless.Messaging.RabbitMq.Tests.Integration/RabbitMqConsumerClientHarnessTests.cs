@@ -32,6 +32,7 @@ public sealed class RabbitMqConsumerClientHarnessTests(RabbitMqFixture fixture) 
             new RabbitMqMessagingOptions
             {
                 HostName = fixture.HostName,
+                VirtualHost = fixture.VirtualHost,
                 Port = fixture.Port,
                 UserName = fixture.UserName,
                 Password = fixture.Password,

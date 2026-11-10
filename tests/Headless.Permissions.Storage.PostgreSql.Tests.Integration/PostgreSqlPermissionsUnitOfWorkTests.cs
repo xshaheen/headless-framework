@@ -142,8 +142,9 @@ public sealed class PostgreSqlPermissionsUnitOfWorkTests(PostgreSqlPermissionsFi
         // given
         using var host = await _StartHostAsync();
         var factory = host.Services.GetRequiredService<IUnitOfWorkFactory>();
-        var otherDatabase = new NpgsqlConnectionStringBuilder(fixture.ConnectionString) { Database = "postgres" };
-        await using var connection = new NpgsqlConnection(otherDatabase.ConnectionString);
+        var otherDatabase = fixture.DerivedDatabaseName("other");
+        await fixture.CreateDatabaseAsync(otherDatabase, AbortToken);
+        await using var connection = new NpgsqlConnection(fixture.ConnectionStringFor(otherDatabase));
         await connection.OpenAsync(AbortToken);
         await using var unit = await factory.BeginAsync(connection, AbortToken);
 
@@ -151,7 +152,7 @@ public sealed class PostgreSqlPermissionsUnitOfWorkTests(PostgreSqlPermissionsFi
         var act = () => unit.Permissions.GrantToRoleAsync("Users.Create", "admin", AbortToken);
 
         // then
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*database 'postgres'*");
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage($"*database '{otherDatabase}'*");
         unit.State.Should().Be(UnitOfWorkState.Active);
         (await _CountGrantsAsync()).Should().Be(0);
     }

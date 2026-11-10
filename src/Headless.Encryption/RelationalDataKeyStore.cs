@@ -90,11 +90,11 @@ internal sealed class RelationalDataKeyStore : IDataKeyStore
 
     public Task<StoredDataKey?> GetAsync(Guid keyId, CancellationToken cancellationToken)
     {
-        return _RunAsync(
+        return _RunReadAsync(
             "encryption.get",
-            async (connection, transaction, ct) =>
+            async (connection, ct) =>
             {
-                await using var command = _Command(connection, transaction, _getSql);
+                await using var command = _Command(connection, transaction: null, _getSql);
                 _dialect.AddParameter(command, "KeyId", SqlColumnType.Guid, keyId);
 
                 return await _ReadSingleAsync(command, ct).ConfigureAwait(false);
@@ -105,11 +105,11 @@ internal sealed class RelationalDataKeyStore : IDataKeyStore
 
     public Task<StoredDataKey?> GetActiveAsync(string scope, DataKeyKind kind, CancellationToken cancellationToken)
     {
-        return _RunAsync(
+        return _RunReadAsync(
             "encryption.get_active",
-            async (connection, transaction, ct) =>
+            async (connection, ct) =>
             {
-                await using var command = _Command(connection, transaction, _getActiveSql);
+                await using var command = _Command(connection, transaction: null, _getActiveSql);
                 _AddScope(command, scope);
                 _dialect.AddParameter(command, "Kind", SqlColumnType.Int16, (short)kind);
                 _dialect.AddParameter(command, "Limit", SqlColumnType.Int32, 1);
@@ -122,11 +122,11 @@ internal sealed class RelationalDataKeyStore : IDataKeyStore
 
     public Task<IReadOnlyList<StoredDataKey>> ListScopeAsync(string scope, CancellationToken cancellationToken)
     {
-        return _RunAsync(
+        return _RunReadAsync(
             "encryption.list_scope",
-            async (connection, transaction, ct) =>
+            async (connection, ct) =>
             {
-                await using var command = _Command(connection, transaction, _listScopeSql);
+                await using var command = _Command(connection, transaction: null, _listScopeSql);
                 _AddScope(command, scope);
 
                 return await _ReadAllAsync(command, ct).ConfigureAwait(false);
@@ -143,13 +143,13 @@ internal sealed class RelationalDataKeyStore : IDataKeyStore
     {
         Argument.IsPositive(limit);
 
-        return _RunAsync(
+        return _RunReadAsync(
             "encryption.list",
-            async (connection, transaction, ct) =>
+            async (connection, ct) =>
             {
                 await using var command = _Command(
                     connection,
-                    transaction,
+                    transaction: null,
                     afterKeyId is null ? _listFirstSql : _listAfterSql
                 );
 
@@ -311,6 +311,33 @@ internal sealed class RelationalDataKeyStore : IDataKeyStore
             && !await reader.IsDBNullAsync(0, cancellationToken).ConfigureAwait(false);
     }
 
+    // Every read is one statement, so it runs with no transaction: it reads one consistent view either way, and on
+    // SQLite it then takes no write lock.
+    private async Task<T> _RunReadAsync<T>(
+        string operation,
+        Func<DbConnection, CancellationToken, Task<T>> body,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            return await SqlAutonomousRead
+                .RunAsync(
+                    operation,
+                    () => _dialect.CreateConnection(_options.ConnectionString),
+                    body,
+                    _timeProvider,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+        // SqlClient reports a command it cancelled mid-flight as a provider error; surface the cancellation asked for.
+        catch (DbException ex) when (cancellationToken.IsCancellationRequested)
+        {
+            throw new OperationCanceledException(ex.Message, ex, cancellationToken);
+        }
+    }
+
     private async Task<T> _RunAsync<T>(
         string operation,
         Func<DbConnection, DbTransaction, CancellationToken, Task<T>> body,
@@ -336,7 +363,7 @@ internal sealed class RelationalDataKeyStore : IDataKeyStore
         }
     }
 
-    private DbCommand _Command(DbConnection connection, DbTransaction transaction, string sql)
+    private DbCommand _Command(DbConnection connection, DbTransaction? transaction, string sql)
     {
         var command = connection.CreateCommand();
         command.Transaction = transaction;

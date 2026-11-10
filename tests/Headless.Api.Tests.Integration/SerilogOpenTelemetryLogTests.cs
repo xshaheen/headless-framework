@@ -7,6 +7,8 @@ using Headless.Logging;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Compliance.Classification;
+using Microsoft.Extensions.Compliance.Redaction;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using OpenTelemetry;
@@ -40,7 +42,66 @@ public sealed partial class SerilogOpenTelemetryLogTests : TestBase
         record.Attributes.Should().ContainSingle(a => a.Key == "OrderId").Which.Value.Should().Be(42);
     }
 
-    private async Task<WebApplication> _CreateAppAsync(ConcurrentQueue<CapturedLog> logs)
+    [Fact]
+    public async Task should_export_classified_member_redacted_when_redaction_is_registered()
+    {
+        // given
+        var logs = new ConcurrentQueue<CapturedLog>();
+        await using var app = await _CreateAppAsync(
+            logs,
+            services =>
+                services.AddRedaction(redaction =>
+                    redaction.SetRedactor<StarRedactor>(new DataClassificationSet(_Personal))
+                )
+        );
+        var logger = app.Services.GetRequiredService<ILogger<SerilogOpenTelemetryLogTests>>();
+
+        // when
+#pragma warning disable CA1848, CA1873 // The probe needs a destructured {@Customer} hole, which [LoggerMessage] cannot express.
+        logger.LogInformation(_LogMessage + " for {@Customer}", new Customer("Alice", "Gold"));
+#pragma warning restore CA1848, CA1873
+
+        // then
+        var record = await _WaitForLogAsync(logs, AbortToken);
+        var attribute = record.Attributes.Should().ContainSingle(a => a.Key == "Customer").Subject;
+        var customer = attribute.Value?.ToString();
+        customer.Should().Contain(StarRedactor.Output).And.Contain("Gold").And.NotContain("Alice");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task should_export_classified_logger_message_parameter_redacted_under_serilog(bool serilogFirst)
+    {
+        // given: AddHeadlessSerilog wraps its own factory, so it works before or after AddHeadless
+        var logs = new ConcurrentQueue<CapturedLog>();
+        await using var app = await _CreateAppAsync(
+            logs,
+            services =>
+                services.AddRedaction(redaction =>
+                    redaction.SetRedactor<StarRedactor>(new DataClassificationSet(_Personal))
+                ),
+            serilogFirst
+        );
+        var logger = app.Services.GetRequiredService<ILogger<SerilogOpenTelemetryLogTests>>();
+
+        // when
+        LogClassifiedProbe(logger, "alice@example.com", 42);
+
+        // then: the parameter reaches the exporter redacted, and the rendered text carries it instead of a {Email} hole
+        var record = await _WaitForLogAsync(logs, AbortToken);
+        record.Attributes.Should().Contain(a => a.Key == "Email" && Equals(a.Value, StarRedactor.Output));
+        record.Message.Should().Contain(StarRedactor.Output).And.NotContain("{Email}").And.NotContain("alice");
+        record.Attributes.Select(a => a.Value?.ToString()).Should().NotContain("alice@example.com");
+    }
+
+    private Task<WebApplication> _CreateAppAsync(ConcurrentQueue<CapturedLog> logs) => _CreateAppAsync(logs, _ => { });
+
+    private async Task<WebApplication> _CreateAppAsync(
+        ConcurrentQueue<CapturedLog> logs,
+        Action<IServiceCollection> configureServices,
+        bool serilogFirst = false
+    )
     {
         var builder = WebApplication.CreateBuilder(
             new WebApplicationOptions { EnvironmentName = EnvironmentNames.Test }
@@ -48,8 +109,13 @@ public sealed partial class SerilogOpenTelemetryLogTests : TestBase
         builder.WebHost.UseUrls("http://127.0.0.1:0");
 
         // The documented setup: Serilog owns the console, so the default providers go before AddHeadless adds
-        // the OpenTelemetry provider, and writeToProviders hands every event on to that provider.
+        // the OpenTelemetry provider, and AddHeadlessSerilog hands every event on to that provider.
         builder.Logging.ClearProviders();
+
+        if (serilogFirst)
+        {
+            _AddSerilog(builder);
+        }
 
         builder.AddHeadless(configureServices: options =>
         {
@@ -62,23 +128,22 @@ public sealed partial class SerilogOpenTelemetryLogTests : TestBase
             options.OpenTelemetry.ConfigureLogging = logging => logging.AddProcessor(new LogCaptureProcessor(logs));
         });
 
-        // Files off so the test leaves nothing on disk.
-        builder.Host.UseSerilog(
-            (context, services, configuration) =>
-                configuration.ConfigureReloadableLoggerConfiguration(
-                    services,
-                    context.Configuration,
-                    context.HostingEnvironment,
-                    new SerilogOptions { WriteToFiles = false }
-                ),
-            writeToProviders: true
-        );
+        configureServices(builder.Services);
+
+        if (!serilogFirst)
+        {
+            _AddSerilog(builder);
+        }
 
         var app = builder.Build();
         await app.StartAsync(AbortToken);
 
         return app;
     }
+
+    // Files off so the test leaves nothing on disk.
+    private static void _AddSerilog(WebApplicationBuilder builder) =>
+        builder.AddHeadlessSerilog(new SerilogOptions { WriteToFiles = false });
 
     private static async Task<CapturedLog> _WaitForLogAsync(
         ConcurrentQueue<CapturedLog> logs,
@@ -104,6 +169,28 @@ public sealed partial class SerilogOpenTelemetryLogTests : TestBase
 
     [LoggerMessage(EventId = 1, Level = LogLevel.Information, Message = _LogMessage + " for {OrderId}")]
     private static partial void LogProbe(ILogger logger, int orderId);
+
+    [LoggerMessage(EventId = 2, Level = LogLevel.Information, Message = _LogMessage + " from {Email} for {OrderId}")]
+    private static partial void LogClassifiedProbe(ILogger logger, [PersonalData] string email, int orderId);
+
+    private static DataClassification _Personal => new("Tests", "Personal");
+
+    private sealed class PersonalDataAttribute() : DataClassificationAttribute(_Personal);
+
+    public sealed record Customer([property: PersonalData] string Name, string Tier);
+
+    private sealed class StarRedactor : Redactor
+    {
+        public const string Output = "*****";
+
+        public override int GetRedactedLength(ReadOnlySpan<char> input) => Output.Length;
+
+        public override int Redact(ReadOnlySpan<char> source, Span<char> destination)
+        {
+            Output.AsSpan().CopyTo(destination);
+            return Output.Length;
+        }
+    }
 
     private sealed record CapturedLog(string? Message, IReadOnlyList<KeyValuePair<string, object?>> Attributes);
 

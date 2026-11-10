@@ -16,6 +16,7 @@ internal sealed class FencingTable
     public const short Settled = 1;
     public const short Released = 2;
     public const short Abandoned = 3;
+    public const short Revoked = 4;
 
     public FencingTable(ISqlDialect dialect, string schema)
     {
@@ -38,6 +39,7 @@ internal sealed class FencingTable
         TakeoverCount = column("TakeoverCount");
         Progress = column("Progress");
         ProgressContract = column("ProgressContract");
+        Holder = column("Holder");
 
         Key = [new(TenantId, "TenantId"), new(Kind, "Kind"), new(Resource, "Resource")];
         KeyColumns = [TenantId, Kind, Resource];
@@ -74,6 +76,8 @@ internal sealed class FencingTable
     public string Progress { get; }
 
     public string ProgressContract { get; }
+
+    public string Holder { get; }
 
     public IReadOnlyList<SqlKeyColumn> Key { get; }
 

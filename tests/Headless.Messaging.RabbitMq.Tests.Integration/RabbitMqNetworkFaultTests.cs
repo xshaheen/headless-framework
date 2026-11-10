@@ -24,7 +24,8 @@ public sealed class RabbitMqNetworkFaultTests(RabbitMqFixture fixture) : Network
             var session = await RabbitMqFixture.CreateConformanceSessionAsync(
                 proxy.Host,
                 proxy.Port,
-                cancellationToken
+                cancellationToken,
+                fixture.VirtualHost
             );
 
             return new NetworkFaultSession(session, proxy, toxiproxy.DisposeAsync);

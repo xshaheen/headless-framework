@@ -70,8 +70,7 @@ public sealed class JobsExecutionCancellationRegistryTests : TestBase
                     Id = jobId,
                     Function = "cross-host-cancellation",
                     Status = JobStatus.InProgress,
-                    OwnerId = owner,
-                    LockedUntil = DateTime.UtcNow.AddMinutes(1),
+                    Lease = TestLeases.Held(owner, DateTime.UtcNow.AddMinutes(1)),
                 },
             ],
             AbortToken
@@ -84,6 +83,7 @@ public sealed class JobsExecutionCancellationRegistryTests : TestBase
             Type = JobType.TimeJob,
             Status = JobStatus.InProgress,
             ClaimOwner = owner,
+            ClaimGeneration = 1,
             CachedDelegate = async (_, _, cancellationToken) =>
             {
                 started.TrySetResult();

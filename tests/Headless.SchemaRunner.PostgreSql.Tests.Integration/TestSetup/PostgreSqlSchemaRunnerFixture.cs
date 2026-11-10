@@ -11,7 +11,6 @@ using Headless.Testing.Testcontainers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Npgsql;
-using Testcontainers.PostgreSql;
 
 namespace Tests.TestSetup;
 
@@ -39,13 +38,8 @@ public sealed class PostgreSqlSchemaRunnerFixture
 
     // Each replica gets its own service provider but they share the pool; cap it so five replicas stay far below the
     // container's max_connections.
-    private string ConnectionString =>
-        new NpgsqlConnectionStringBuilder(Container.GetConnectionString()) { MaxPoolSize = 20 }.ToString();
-
-    protected override PostgreSqlBuilder Configure()
-    {
-        return base.Configure().WithDatabase("schema_runner_test").WithUsername("postgres").WithPassword("postgres");
-    }
+    private string PooledConnectionString =>
+        new NpgsqlConnectionStringBuilder(ConnectionString) { MaxPoolSize = 20 }.ToString();
 
     public SchemaRunner CreateRunner(string schema)
     {
@@ -84,8 +78,14 @@ public sealed class PostgreSqlSchemaRunnerFixture
 
     public async Task ExecuteScriptWithPlainClientAsync(string script, CancellationToken cancellationToken)
     {
-        // psql inside the container: the client a DBA would use, with no Headless code on the path.
-        var result = await Container.ExecScriptAsync(script, cancellationToken);
+        // psql inside the container: the client a DBA would use, with no Headless code on the path. It names the
+        // fixture's database itself, because the container's configured database is the server's admin one.
+        var path = $"/tmp/{DatabaseName}-{Guid.NewGuid():N}.sql";
+        await Container.CopyAsync(System.Text.Encoding.UTF8.GetBytes(script), path, ct: cancellationToken);
+        var result = await Container.ExecAsync(
+            ["psql", "--username", "postgres", "--dbname", DatabaseName, "--file", path],
+            cancellationToken
+        );
 
         result.ExitCode.Should().Be(0, result.Stderr);
         result
@@ -96,7 +96,7 @@ public sealed class PostgreSqlSchemaRunnerFixture
     public async Task<IForeignCreator> BeginForeignCreatorAsync(string schema, CancellationToken cancellationToken)
     {
 #pragma warning disable CA2000 // False positive: the returned ForeignCreator owns and disposes the connection.
-        var connection = new NpgsqlConnection(ConnectionString);
+        var connection = new NpgsqlConnection(PooledConnectionString);
 #pragma warning restore CA2000
         await connection.OpenAsync(cancellationToken);
 
@@ -124,7 +124,7 @@ public sealed class PostgreSqlSchemaRunnerFixture
         );
         await create.ExecuteNonQueryAsync(cancellationToken);
 
-        return new ForeignCreator(ConnectionString, connection, transaction, pid);
+        return new ForeignCreator(PooledConnectionString, connection, transaction, pid);
     }
 
     public Task TamperChecksumAsync(string schema, string feature, string version, CancellationToken cancellationToken)
@@ -171,7 +171,7 @@ public sealed class PostgreSqlSchemaRunnerFixture
 
     public async Task<IReadOnlyList<string>> ListObjectsAsync(string schema, CancellationToken cancellationToken)
     {
-        await using var connection = new NpgsqlConnection(ConnectionString);
+        await using var connection = new NpgsqlConnection(PooledConnectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new NpgsqlCommand(
             $"""
@@ -226,7 +226,7 @@ public sealed class PostgreSqlSchemaRunnerFixture
         // feature lock and the schema lock inside its own transaction, and re-ran its whole idempotent DDL batch.
         foreach (var contribution in CreateRunner(schema).Contributions)
         {
-            await using var connection = new NpgsqlConnection(ConnectionString);
+            await using var connection = new NpgsqlConnection(PooledConnectionString);
             await connection.OpenAsync(cancellationToken);
             await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
@@ -245,7 +245,7 @@ public sealed class PostgreSqlSchemaRunnerFixture
 
     private void _AddPilotFeatures(IServiceCollection services, string schema)
     {
-        var connectionString = ConnectionString;
+        var connectionString = PooledConnectionString;
 
         services.AddHeadlessSequences(setup =>
             setup.UsePostgreSql(options =>
@@ -268,7 +268,7 @@ public sealed class PostgreSqlSchemaRunnerFixture
 
     private async Task _ExecuteAsync(string sql, CancellationToken cancellationToken)
     {
-        await using var connection = new NpgsqlConnection(ConnectionString);
+        await using var connection = new NpgsqlConnection(PooledConnectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new NpgsqlCommand(sql, connection);
         await command.ExecuteNonQueryAsync(cancellationToken);
@@ -276,7 +276,7 @@ public sealed class PostgreSqlSchemaRunnerFixture
 
     private async Task<int> _ScalarAsync(string sql, CancellationToken cancellationToken)
     {
-        await using var connection = new NpgsqlConnection(ConnectionString);
+        await using var connection = new NpgsqlConnection(PooledConnectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new NpgsqlCommand(sql, connection);
 
@@ -299,7 +299,7 @@ public sealed class PostgreSqlSchemaRunnerFixture
             await using var probe = new NpgsqlConnection(connectionString);
             await probe.OpenAsync(cancellationToken);
             await using var command = new NpgsqlCommand(
-                "SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE @pid = ANY (pg_blocking_pids(pid)));",
+                "SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND @pid = ANY (pg_blocking_pids(pid)));",
                 probe
             );
             command.Parameters.AddWithValue("pid", pid);

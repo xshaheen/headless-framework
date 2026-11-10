@@ -97,7 +97,7 @@ public abstract class BrokerFaultTestsBase : TransportConsumerConformanceSession
         await session.PublishUntilSucceededAsync(afterRestart, TimeSpan.FromSeconds(60), AbortToken);
 
         var afterDelivery = await session.ReceiveAsync(TimeSpan.FromSeconds(60), AbortToken);
-        afterDelivery.Message.Id.Should().Be(afterRestart.Id);
+        afterDelivery.Message.Id.Should().Be(afterRestart.Id, $"the pre-restart probe {beforeRestart.Id} was settled");
         await session.Consumer.CommitAsync(afterDelivery.SettlementValue, AbortToken);
 
         (await session.RemainsEmptyAsync(session.NoRedeliveryWindow, AbortToken))

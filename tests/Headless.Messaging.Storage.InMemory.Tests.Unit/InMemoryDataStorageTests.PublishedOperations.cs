@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Fencing;
+
 namespace Tests;
 
 public sealed partial class InMemoryDataStorageTests
@@ -64,8 +66,13 @@ public sealed partial class InMemoryDataStorageTests
     {
         _EnsureInitialized();
         var row = _storage!.PublishedMessages[storageId];
-        row.LockedUntil = TimeProvider.GetUtcNow() + liveFor;
-        row.Owner = "another-node";
+        row.Lease = new RowLeaseSnapshot(
+            row.Lease.Generation + 1,
+            RowLeaseState.Active,
+            TimeProvider.GetUtcNow() + liveFor,
+            "another-node",
+            row.Lease.TakeoverCount
+        );
 
         return Task.CompletedTask;
     }

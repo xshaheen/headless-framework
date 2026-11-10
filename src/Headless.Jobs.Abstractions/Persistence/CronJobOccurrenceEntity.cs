@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Fencing;
+
 namespace Headless.Jobs;
 
 /// <summary>
@@ -61,24 +63,19 @@ public class CronJobOccurrenceEntity<TCronJob>
     public virtual JobStatus Status { get; internal set; }
 
     /// <summary>
-    /// The <c>cluster/node@incarnation</c> identifier of the node that claimed and is executing this
-    /// occurrence, or <see langword="null"/> when unleased.
+    /// The row's pickup lease: the generation of the current claim, its state, the database-clock deadline, and the
+    /// <c>cluster/node@incarnation</c> holder that claimed it. Each claim draws a new generation, and every write the
+    /// claim makes (start, renewal, progress, completion, release) is fenced on that generation, so a write from an
+    /// attempt that lost the row is refused even when the same node claims the row again. An ended lease keeps its
+    /// holder and deadline as the record of the last attempt.
     /// </summary>
-    public virtual string? OwnerId { get; internal set; }
+    public virtual RowLeaseSnapshot Lease { get; internal set; }
 
     /// <summary>UTC timestamp when this occurrence was scheduled to run.</summary>
     public virtual DateTime ExecutionTime { get; set; }
 
     /// <summary>Foreign key to the parent <typeparamref name="TCronJob"/> definition row.</summary>
     public virtual Guid CronJobId { get; set; }
-
-    /// <summary>
-    /// UTC lease deadline: the occurrence's pickup lease is held until this instant, after which the
-    /// lease-expiry self-heal arm of the claim predicate may re-claim it. Stamped as <c>now + LeaseDuration</c>
-    /// using the provider's time authority (injected <see cref="TimeProvider"/> for in-memory storage; database UTC
-    /// clock for relational storage). Null means unleased.
-    /// </summary>
-    public virtual DateTime? LockedUntil { get; internal set; }
 
     /// <summary>UTC timestamp when execution completed, or <see langword="null"/> if not yet completed.</summary>
     public virtual DateTimeOffset? ExecutedAt { get; internal set; }

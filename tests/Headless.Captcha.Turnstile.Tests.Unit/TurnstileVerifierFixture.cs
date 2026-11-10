@@ -30,14 +30,23 @@ public sealed class TurnstileVerifierFixture : ICaptchaVerifierFixture, IDisposa
         return _Build(handler).GetRequiredService<ICaptchaVerifier>();
     }
 
+    public ICaptchaVerifier CreateVerifierWithServices(
+        StubSiteVerifyHandler handler,
+        Action<IServiceCollection> configureServices
+    )
+    {
+        return _Build(handler, configureServices).GetRequiredService<ICaptchaVerifier>();
+    }
+
     public ITurnstileVerifier CreateTurnstileVerifier(StubSiteVerifyHandler handler)
     {
         return _Build(handler).GetRequiredService<ITurnstileVerifier>();
     }
 
-    private ServiceProvider _Build(StubSiteVerifyHandler handler)
+    private ServiceProvider _Build(StubSiteVerifyHandler handler, Action<IServiceCollection>? configureServices = null)
     {
         var services = new ServiceCollection();
+        configureServices?.Invoke(services);
 
         services.AddHeadlessCaptcha(builder => builder.UseTurnstile(_Configuration()));
 

@@ -149,7 +149,7 @@ internal static class JobsRules
         return run.Status switch
         {
             JobStatus.Queued => null,
-            JobStatus.Idle => run.OwnerId is null ? null : ClaimedEdit,
+            JobStatus.Idle => run.IsLeased ? ClaimedEdit : null,
             JobStatus.InProgress => RunningEdit,
             _ => FinishedEdit,
         };

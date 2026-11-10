@@ -117,11 +117,11 @@ public sealed class SqlServerInboxAdmissionTests(SqlServerTestFixture fixture, I
             plans
                 .Should()
                 .Contain(
-                    entry => entry.Sql.Contains("[IsInboxOrphaned],[Content]", StringComparison.Ordinal),
+                    entry => entry.Sql.Contains("[LeaseTakeoverCount],[Content]", StringComparison.Ordinal),
                     "the duplicate admissions above compile the read that returns the stored payload"
                 )
                 .And.Contain(
-                    entry => !entry.Sql.Contains("[IsInboxOrphaned],[Content]", StringComparison.Ordinal),
+                    entry => !entry.Sql.Contains("[LeaseTakeoverCount],[Content]", StringComparison.Ordinal),
                     "the winning admissions above compile the read that leaves the payload out"
                 );
             XNamespace showplan = "http://schemas.microsoft.com/sqlserver/2004/07/showplan";

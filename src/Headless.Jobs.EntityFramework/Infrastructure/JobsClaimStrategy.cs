@@ -276,8 +276,6 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        var context = dbContext.Set<TTimeJob>();
-
         // Claimed and yielded ONE root at a time on purpose: a consumer that stops enumerating (cancellation, host
         // stop) must leave the remaining candidates unclaimed for the next sweep rather than stranding rows it will
         // never execute under a lease. Pinned by
@@ -292,8 +290,8 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             // for why a subquery gate is unsound). The acquire predicate closes the same-clock-tick token residue:
             // even if a racing winner's DB-clock UpdatedAt lands on the peeked value, its fresh foreign lease
             // fails the loser's re-evaluated claimability arms.
-            var claimedIds = await _ClaimTimeJobTreeAsync(
-                    context,
+            var claim = await _ClaimTimeJobTreeAsync(
+                    dbContext,
                     q =>
                         q.Where(x => x.UpdatedAt == expectedUpdatedAt)
                             .Where(x =>
@@ -302,13 +300,15 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                             )
                             .WhereRunnable(_runFilter)
                             .WhereCanAcquireUsingDatabaseClock(owner),
+                    set =>
+                        $"({set.Column(nameof(TimeJobEntity.ExecutionTime))} IS NULL OR {set.Column(nameof(TimeJobEntity.ExecutionTime))} <= {set.DatabaseNowSql(nameof(TimeJobEntity.ExecutionTime), TimeSpan.FromSeconds(JobsDueSlack.Seconds))})",
                     rootId,
                     owner,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
 
-            if (claimedIds.Count == 0)
+            if (claim is not { } claimed)
             {
                 // A function the run filter excludes is refused by the gate, not lost to another node.
                 if (_runFilter.Allows(timeJob.Function))
@@ -319,21 +319,13 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                 continue;
             }
 
-            var claimTimestamps = await context
-                .AsNoTracking()
-                .Where(x => x.Id == rootId)
-                .Select(x => new { x.LockedUntil, x.UpdatedAt })
-                .SingleAsync(cancellationToken)
-                .ConfigureAwait(false);
-
-            timeJob.UpdatedAt = claimTimestamps.UpdatedAt;
-            timeJob.OwnerId = owner;
-            timeJob.LockedUntil = claimTimestamps.LockedUntil;
+            timeJob.UpdatedAt = claimed.UpdatedAt;
             timeJob.Status = JobStatus.Queued;
 
             // The peek-hydrated tree may include non-idle nodes (and their tails) the claim did not lease;
             // execute strictly the claimed set so nothing runs unclaimed.
-            TimeJobSubtreeOperations.PruneToClaimedSet(timeJob, claimedIds);
+            TimeJobSubtreeOperations.PruneToClaimedSet(timeJob, [.. claimed.Generations.Keys]);
+            JobsLeaseGrant.StampClaimedTree(timeJob, claimed.Generations, claimed.ExpiresAt, owner);
 
             yield return timeJob;
         }
@@ -396,8 +388,8 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             // Re-assert the parent gate inside the atomic claim, INLINE on the updated row (see
             // _ClaimTimeJobTreeAsync). The parent-terminal gate remains a subquery by nature (it reads the PARENT
             // row) — that residue races only on a parent's one-way terminal transition, not on same-row ownership.
-            var claimedIds = await _ClaimTimeJobTreeAsync(
-                    context,
+            var claim = await _ClaimTimeJobTreeAsync(
+                    dbContext,
                     q =>
                         // An exact token, plus the peek's due-time test on the database clock: a root rescheduled after
                         // the peek, even by a writer whose clock stamped an equal or earlier UpdatedAt, must not run early.
@@ -406,33 +398,27 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                             .WhereRunnable(_runFilter)
                             .WhereCanFallbackClaimUsingDatabaseClock()
                             .WhereClaimableUnderParentTerminalGate(context),
+                    set =>
+                        $"{set.Column(nameof(TimeJobEntity.ExecutionTime))} <= {set.DatabaseNowSql(nameof(TimeJobEntity.ExecutionTime), TimeSpan.FromSeconds(-1))}",
                     rootId,
                     owner,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
 
-            if (claimedIds.Count == 0)
+            if (claim is not { } claimed)
             {
                 // The sweep selected this row as claimable; it is gone because another node claimed it first.
                 JobsMetrics.ClaimConflicts(JobsMetrics.ClaimStrategyCas, 1);
                 continue;
             }
 
-            var claimTimestamps = await context
-                .AsNoTracking()
-                .Where(x => x.Id == rootId)
-                .Select(x => new { x.LockedUntil, x.UpdatedAt })
-                .SingleAsync(cancellationToken)
-                .ConfigureAwait(false);
-
-            timeJob.OwnerId = owner;
-            timeJob.LockedUntil = claimTimestamps.LockedUntil;
-            timeJob.UpdatedAt = claimTimestamps.UpdatedAt;
+            timeJob.UpdatedAt = claimed.UpdatedAt;
             timeJob.Status = JobStatus.Queued;
 
             // Prune the peek-hydrated tree to the claimed set so a node the claim stopped at never executes.
-            TimeJobSubtreeOperations.PruneToClaimedSet(timeJob, claimedIds);
+            TimeJobSubtreeOperations.PruneToClaimedSet(timeJob, [.. claimed.Generations.Keys]);
+            JobsLeaseGrant.StampClaimedTree(timeJob, claimed.Generations, claimed.ExpiresAt, owner);
 
             yield return timeJob;
         }
@@ -473,42 +459,44 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var affected = await context
-                .Where(x => x.Id == cronJobOccurrence.Id && x.UpdatedAt == cronJobOccurrence.UpdatedAt)
-                .WhereRunnable(_runFilter)
-                .WhereCanFallbackClaimUsingDatabaseClock()
-                .ExecuteUpdateAsync(
-                    setter =>
-                        setter
-                            .SetChangedAt()
-                            .SetProperty(x => x.OwnerId, owner)
-                            .SetProperty(
-                                x => x.LockedUntil,
-                                _ => DateTime.UtcNow.AddSeconds(_leaseDuration.TotalSeconds)
-                            )
-                            .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow)
-                            .SetProperty(x => x.Status, JobStatus.Queued),
+            // The peek's version token, checked on the row the grant updates, so an occurrence edited or claimed since
+            // the peek is left alone; the grant's own fence refuses a row another attempt still holds.
+            var set = JobsRowSet.For<CronJobOccurrenceEntity<TCronJob>>(dbContext);
+            var condition =
+                $"{set.Column(nameof(CronJobOccurrenceEntity<>.UpdatedAt))} = {set.Parameter(nameof(CronJobOccurrenceEntity<>.UpdatedAt), cronJobOccurrence.UpdatedAt)}"
+                + $" AND {_StatusIn(set, JobStatus.Idle, JobStatus.Queued)}";
+            set.Value(nameof(CronJobOccurrenceEntity<>.Status), JobStatus.Queued)
+                .DatabaseNow(nameof(CronJobOccurrenceEntity<>.UpdatedAt));
+
+            var granted = await JobsLeaseGrant
+                .GrantAsync<CronJobOccurrenceEntity<TCronJob>>(
+                    JobsLeaseRows.CronOccurrences<TCronJob>(dbContext),
+                    dbContext,
+                    set,
+                    [cronJobOccurrence.Id],
+                    condition,
+                    deadline: null,
+                    _leaseDuration,
+                    owner,
+                    reclaimOwn: false,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
 
-            if (affected <= 0)
+            if (granted.Count == 0)
             {
                 JobsMetrics.ClaimConflicts(JobsMetrics.ClaimStrategyCas, 1);
                 continue;
             }
 
-            var claimTimestamps = await context
+            cronJobOccurrence.UpdatedAt = await context
                 .AsNoTracking()
                 .Where(x => x.Id == cronJobOccurrence.Id)
-                .Select(x => new { x.LockedUntil, x.UpdatedAt })
+                .Select(x => x.UpdatedAt)
                 .SingleAsync(cancellationToken)
                 .ConfigureAwait(false);
-
-            cronJobOccurrence.OwnerId = owner;
-            cronJobOccurrence.LockedUntil = claimTimestamps.LockedUntil;
-            cronJobOccurrence.UpdatedAt = claimTimestamps.UpdatedAt;
             cronJobOccurrence.Status = JobStatus.Queued;
+            _StampLease(cronJobOccurrence, granted[0], owner);
 
             yield return cronJobOccurrence;
         }
@@ -611,10 +599,8 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                             {
                                 Id = guidGenerator.Create(),
                                 Status = JobStatus.Idle,
-                                OwnerId = null,
                                 ExecutionTime = executionTime,
                                 CronJobId = item.Id,
-                                LockedUntil = null,
                                 OnNodeDeath = item.OnNodeDeath,
                                 CreatedAt = now,
                                 UpdatedAt = now,
@@ -643,7 +629,6 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
 
                             dbContext.Entry(itemToAdd).State = EntityState.Detached;
                             itemToAdd.Status = JobStatus.Queued;
-                            itemToAdd.OwnerId = owner;
                             itemToAdd.CronJob = MappingExtensions.ProjectCronJob<TCronJob>(item, owner);
                             claimResults[index] = itemToAdd;
                             claimableOccurrenceIds.Add(itemToAdd.Id);
@@ -691,51 +676,54 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             .ConfigureAwait(false);
         var context = dbContext.Set<CronJobOccurrenceEntity<TCronJob>>();
 
+        // LEASE-DEADLINE WRITE — autocommit, outside the wave's transaction, so the expiry is the statement's database
+        // clock and not a transaction start. Only the rows this grant takes are returned.
+        Dictionary<Guid, JobsGrantedRow> grants = [];
+
         if (claimableOccurrenceIds.Count > 0)
         {
-            await context
-                .Where(x => claimableOccurrenceIds.Contains(x.Id))
-                .WhereCanAcquireUsingDatabaseClock(owner)
-                .ExecuteUpdateAsync(
-                    setter =>
-                        setter
-                            .SetChangedAt()
-                            .SetProperty(x => x.OwnerId, owner)
-                            .SetProperty(
-                                x => x.LockedUntil,
-                                _ => DateTime.UtcNow.AddSeconds(_leaseDuration.TotalSeconds)
-                            )
-                            .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow)
-                            .SetProperty(x => x.Status, JobStatus.Queued),
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
+            var set = JobsRowSet.For<CronJobOccurrenceEntity<TCronJob>>(dbContext);
+            var condition = _StatusIn(set, JobStatus.Idle, JobStatus.Queued);
+            set.Value(nameof(CronJobOccurrenceEntity<>.Status), JobStatus.Queued)
+                .DatabaseNow(nameof(CronJobOccurrenceEntity<>.UpdatedAt));
+
+            grants = (
+                await JobsLeaseGrant
+                    .GrantAsync<CronJobOccurrenceEntity<TCronJob>>(
+                        JobsLeaseRows.CronOccurrences<TCronJob>(dbContext),
+                        dbContext,
+                        set,
+                        claimableOccurrenceIds,
+                        condition,
+                        deadline: null,
+                        _leaseDuration,
+                        owner,
+                        // Mirrors the acquire predicate's owner arm; the new generation fences off the earlier dispatch.
+                        reclaimOwn: true,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false)
+            ).ToDictionary(x => x.Id);
         }
 
-        var claimedIds = claimResults.Where(x => x is not null).Select(x => x!.Id).ToArray();
-        var claimTimestamps = await context
+        var grantedIds = grants.Keys.ToArray();
+        var updatedAts = await context
             .AsNoTracking()
-            .Where(x => claimedIds.Contains(x.Id) && x.OwnerId == owner && x.Status == JobStatus.Queued)
-            .Select(x => new
-            {
-                x.Id,
-                x.LockedUntil,
-                x.UpdatedAt,
-            })
-            .ToDictionaryAsync(x => x.Id, cancellationToken)
+            .Where(x => grantedIds.Contains(x.Id))
+            .Select(x => new { x.Id, x.UpdatedAt })
+            .ToDictionaryAsync(x => x.Id, x => x.UpdatedAt, cancellationToken)
             .ConfigureAwait(false);
 
         foreach (var result in claimResults)
         {
-            if (result is null || !claimTimestamps.TryGetValue(result.Id, out var timestamps))
+            if (result is null || !grants.TryGetValue(result.Id, out var grant))
             {
                 continue;
             }
 
             result.Status = JobStatus.Queued;
-            result.OwnerId = owner;
-            result.LockedUntil = timestamps.LockedUntil;
-            result.UpdatedAt = timestamps.UpdatedAt;
+            result.UpdatedAt = updatedAts[result.Id];
+            _StampLease(result, grant, owner);
             yield return result;
         }
     }
@@ -752,71 +740,114 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         }
     }
 
-    private async Task<HashSet<Guid>> _ClaimTimeJobTreeAsync(
-        DbSet<TTimeJob> context,
+    private async Task<JobsClaimedTree?> _ClaimTimeJobTreeAsync(
+        TDbContext dbContext,
         Func<IQueryable<TTimeJob>, IQueryable<TTimeJob>> rootGate,
+        Func<JobsRowSet, string> inlineDue,
         Guid rootId,
         string owner,
         CancellationToken cancellationToken
     )
     {
-        // Claim the root and its non-timed descendants down to MaxChainDepth, frontier by frontier. Two
-        // DB-clock lease invariants govern this:
+        // Claim the root and its non-timed descendants down to MaxChainDepth, frontier by frontier.
         //
-        //   (1) The root lease-DEADLINE write runs in AUTOCOMMIT with the DB-clock expression — NEVER inside an
-        //       explicit transaction, which would freeze PostgreSQL's now() at transaction-open and silently shorten
-        //       the lease. This single UPDATE is already atomic and, gated on the optimistic root predicate, a
-        //       losing racer sees 0 rows and never touches the descendants — the transaction added no atomicity the
-        //       optimistic gate did not already provide.
+        // The EF gate reads the root's version token; the grant then re-checks that token, the due time, and "no live
+        // attempt holds the row" INLINE on the row it updates, never through a subquery: under READ COMMITTED
+        // PostgreSQL evaluates an uncorrelated subquery once against the statement snapshot and does NOT re-evaluate
+        // it during EvalPlanQual after blocking on a concurrent claimant's row lock, so two racers both matched and
+        // BOTH claimed the same root (reproduced by concurrent_cas_claims_of_one_row_have_exactly_one_winner). Inline
+        // quals are re-checked against the winner's committed row version, so the loser matches nothing.
         //
-        // The gate MUST be inline predicates on the updated row, never a subquery: under READ COMMITTED PostgreSQL
-        // evaluates an uncorrelated subquery once against the statement snapshot and does NOT re-evaluate it during
-        // EvalPlanQual after blocking on a concurrent claimant's row lock — with a `WHERE EXISTS(...)` gate two
-        // racers both matched and BOTH claimed the same root (reproduced by
-        // concurrent_cas_claims_of_one_row_have_exactly_one_winner). Inline quals are re-checked against the
-        // winner's committed row version, so the loser matches 0 rows.
-        //   (2) Every descendant COPIES the root's persisted LockedUntil via a database-evaluated subquery (no clock
-        //       function at all in descendant stamps), so all levels share the root's EXACT deadline on both
-        //       PostgreSQL and SqlServer — a stronger single-claim-instant than a transaction gave (per-statement
-        //       GETUTCDATE() would otherwise diverge descendant leases from the root's by ~10-20ms on SqlServer).
+        // The root grant runs in AUTOCOMMIT: inside a transaction PostgreSQL's now() freezes at transaction start and
+        // silently shortens the lease. Each descendant then copies the root's stored deadline, so the whole tree
+        // expires together.
         //
-        // Crash-mid-claim recovery (this replaces the dropped transaction's atomicity role): a partially stamped tree
-        // is self-healing. PruneToClaimedSet yields only the nodes actually claimed in THIS attempt, so a half-stamped
-        // tail never executes; the claimed-but-unexecuted root is reclaimed once its lease lapses (stalled-lease sweep
-        // / claim predicate), and re-claiming re-stamps every idle descendant fresh.
-        var rootAffected = await rootGate(context.Where(x => x.Id == rootId))
-            .ExecuteUpdateAsync(
-                setter =>
-                    setter
-                        .SetChangedAt()
-                        .SetProperty(x => x.OwnerId, owner)
-                        .SetProperty(x => x.LockedUntil, _ => DateTime.UtcNow.AddSeconds(_leaseDuration.TotalSeconds))
-                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow)
-                        .SetProperty(x => x.Status, JobStatus.Queued),
+        // A crash mid-claim leaves a partially leased tree that heals itself: the caller prunes to the nodes this
+        // attempt claimed, and re-claiming the root after its lease lapses grants every idle descendant afresh.
+        var jobs = dbContext.Set<TTimeJob>();
+        var candidate = await rootGate(jobs.AsNoTracking().Where(x => x.Id == rootId))
+            .Select(x => new { x.UpdatedAt })
+            .FirstOrDefaultAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (candidate is null)
+        {
+            return null;
+        }
+
+        var set = JobsRowSet.For<TTimeJob>(dbContext);
+        var condition =
+            $"{set.Column(nameof(TimeJobEntity.UpdatedAt))} = {set.Parameter(nameof(TimeJobEntity.UpdatedAt), candidate.UpdatedAt)}"
+            + $" AND {_StatusIn(set, JobStatus.Idle, JobStatus.Queued)}"
+            + $" AND {inlineDue(set)}";
+        set.Value(nameof(TimeJobEntity.Status), JobStatus.Queued).DatabaseNow(nameof(TimeJobEntity.UpdatedAt));
+
+        var granted = await JobsLeaseGrant
+            .GrantAsync<TTimeJob>(
+                JobsLeaseRows.TimeJobs<TTimeJob>(dbContext),
+                dbContext,
+                set,
+                [rootId],
+                condition,
+                deadline: null,
+                _leaseDuration,
+                owner,
+                // Mirrors the acquire predicate's owner arm; the new generation fences off the earlier dispatch.
+                reclaimOwn: true,
                 cancellationToken
             )
             .ConfigureAwait(false);
 
-        if (rootAffected <= 0)
+        if (granted.Count == 0)
         {
-            return [];
+            return null;
         }
 
-        // The frontier lease-walk is shared with the immediate-dispatch acquire (JobsSubtreeLeaseWalk) so the
-        // lease-deadline-copy discipline has exactly one relational implementation. This path walks a single root at a
-        // time because it claims and yields incrementally; the walk batches across roots for callers that acquire a
-        // whole set at once.
-        var claimedIdsByRoot = await JobsSubtreeLeaseWalk
-            .LeaseNonTimedDescendantsAsync(
-                context,
-                [rootId],
+        // The frontier walk is shared with the immediate-dispatch acquire, so the deadline-copy discipline has one
+        // relational implementation.
+        var claimedByRoot = await JobsSubtreeLeaseWalk
+            .LeaseNonTimedDescendantsAsync<TTimeJob>(
+                dbContext,
+                granted,
                 owner,
+                _leaseDuration,
                 _maxChainDepth,
                 OnFrontierBeforeLease,
                 cancellationToken
             )
             .ConfigureAwait(false);
 
-        return claimedIdsByRoot[rootId];
+        var updatedAt = await jobs.AsNoTracking()
+            .Where(x => x.Id == rootId)
+            .Select(x => x.UpdatedAt)
+            .SingleAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return new JobsClaimedTree(claimedByRoot[rootId], granted[0].ExpiresAt, updatedAt);
     }
+
+    private static string _StatusIn(JobsRowSet set, JobStatus first, JobStatus second)
+    {
+        var status = set.Column(nameof(TimeJobEntity.Status));
+
+        return $"{status} IN ({set.Parameter(nameof(TimeJobEntity.Status), first)}, {set.Parameter(nameof(TimeJobEntity.Status), second)})";
+    }
+
+    private static void _StampLease(CronJobOccurrenceEntity<TCronJob> occurrence, JobsGrantedRow grant, string owner)
+    {
+        occurrence.Lease = occurrence.Lease with
+        {
+            Generation = grant.Generation,
+            State = Headless.Fencing.RowLeaseState.Active,
+            ExpiresAt = grant.ExpiresAt,
+            Holder = owner,
+            TakeoverCount = grant.TakeoverCount,
+        };
+    }
+
+    private sealed record JobsClaimedTree(
+        Dictionary<Guid, long> Generations,
+        DateTimeOffset ExpiresAt,
+        DateTimeOffset UpdatedAt
+    );
 }

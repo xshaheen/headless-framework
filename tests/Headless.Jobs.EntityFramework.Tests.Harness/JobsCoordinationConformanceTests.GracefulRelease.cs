@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using Headless.Fencing;
 using Headless.Jobs;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -36,13 +37,12 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>
         );
         var before = await persistence.GetTimeJobByIdAsync(id, ct);
 
-        (await persistence.ReleaseInProgressTimeJobAsync(id, _StopOwner, ct)).Should().Be(1);
+        (await persistence.ReleaseInProgressTimeJobAsync(JobsLeaseTables.TimeJob(id, 1), ct)).Should().Be(1);
 
         // The release ignores the policy: the job never ran.
-        var (status, ownerId, lockedUntil, _, _) = await Fixture.ReadTimeJobDetailAsync(id, ct);
+        var (status, lease, _, _) = await Fixture.ReadTimeJobDetailAsync(id, ct);
         status.Should().Be((int)JobStatus.Idle);
-        ownerId.Should().BeNull();
-        lockedUntil.Should().BeNull();
+        lease.State.Should().NotBe(RowLeaseState.Active);
         (await Fixture.ReadTimeJobRetryCountAsync(id, ct)).Should().Be(0);
         (await persistence.GetTimeJobByIdAsync(id, ct))!.ExecutionTime.Should().Be(before!.ExecutionTime);
     }
@@ -52,13 +52,9 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>
         var ct = AbortToken;
         await Fixture.ResetDatabaseAsync(ct);
 
-        // The node lags the database by two minutes, so a due time it computed itself would miss the tolerance below.
-        var capture = new LeaseSqlCapture();
-        using var host = Fixture.BuildHost(
-            "node-a",
-            timeProvider: new SkewedTimeProvider(TimeSpan.FromMinutes(-2)),
-            interceptor: capture
-        );
+        // The node lags the database by two minutes, so a due time it computed itself would miss the tolerance below:
+        // the settle runs as a fenced raw command, so the stored due time is the evidence that the database set it.
+        using var host = Fixture.BuildHost("node-a", timeProvider: new SkewedTimeProvider(TimeSpan.FromMinutes(-2)));
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
         var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
@@ -76,37 +72,21 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>
         var before = await persistence.GetTimeJobByIdAsync(id, ct);
         var remaining = TimeSpan.FromSeconds(20);
 
-        capture.Clear();
         var storeBefore = await _StoreUtcNowAsync(ct);
-        (await persistence.SettleInterruptedTimeJobAsync(id, _StopOwner, _StopReason, remaining, ct)).Should().Be(1);
+        (await persistence.SettleInterruptedTimeJobAsync(JobsLeaseTables.TimeJob(id, 1), _StopReason, remaining, ct))
+            .Should()
+            .Be(1);
         var storeAfter = await _StoreUtcNowAsync(ct);
 
-        // The database computes the due time: the settle binds no instant, only the remaining seconds.
-        var settle = capture
-            .Statements.Should()
-            .ContainSingle(statement =>
-                statement.Sql.TrimStart().StartsWith("UPDATE", StringComparison.OrdinalIgnoreCase)
-            )
-            .Subject;
-        settle.Parameters.Values.Should().NotContain(parameter => parameter.IsTemporal, settle.Sql);
-        settle.Sql.Should().Contain(Fixture.EfTranslatedDatabaseClockSql);
-        // The settle shares a transaction with its attempt close and is that transaction's first statement, so
-        // PostgreSQL's transaction-start now() is the settle's own instant. The due-time bounds below, against a node
-        // clock two minutes behind, prove the store clock decided it.
-
-        var (status, ownerId, lockedUntil, exceptionMessage, skippedReason) = await Fixture.ReadTimeJobDetailAsync(
-            id,
-            ct
-        );
+        var (status, lease, exceptionMessage, skippedReason) = await Fixture.ReadTimeJobDetailAsync(id, ct);
         var stored = (await persistence.GetTimeJobByIdAsync(id, ct))!;
         (await Fixture.ReadTimeJobRetryCountAsync(id, ct)).Should().Be(0);
-        lockedUntil.Should().BeNull();
+        lease.State.Should().NotBe(RowLeaseState.Active);
 
         switch (nodeDeathPolicy)
         {
             case NodeDeathPolicy.Retry:
                 status.Should().Be((int)JobStatus.Idle);
-                ownerId.Should().BeNull();
                 stored
                     .ExecutionTime.Should()
                     .BeOnOrAfter(storeBefore + remaining - TimeSpan.FromSeconds(1))
@@ -114,13 +94,13 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>
                 break;
             case NodeDeathPolicy.MarkFailed:
                 status.Should().Be((int)JobStatus.Failed);
-                ownerId.Should().Be(_StopOwner);
+                lease.Holder.Should().Be(_StopOwner);
                 exceptionMessage.Should().Be(_StopReason);
                 stored.ExecutionTime.Should().Be(before!.ExecutionTime);
                 break;
             default:
                 status.Should().Be((int)JobStatus.Skipped);
-                ownerId.Should().Be(_StopOwner);
+                lease.Holder.Should().Be(_StopOwner);
                 skippedReason.Should().Be(_StopReason);
                 stored.ExecutionTime.Should().Be(before!.ExecutionTime);
                 break;
@@ -147,6 +127,13 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>
             ct,
             lockedUntil: lockedUntil
         );
+        // The peer's takeover drew the next generation, so this node's attempt still holds the earlier one.
+        await Fixture.OverwriteLeaseAsync(
+            Fixture.QualifiedTimeJobsTable,
+            reclaimed,
+            new RowLeaseSnapshot(2, RowLeaseState.Active, new DateTimeOffset(lockedUntil, TimeSpan.Zero), _StopPeer, 1),
+            ct
+        );
         await Fixture.SeedTimeJobAsync(
             notStarted,
             "GracefulFence",
@@ -158,12 +145,85 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>
 
         foreach (var id in new[] { reclaimed, notStarted })
         {
-            (await persistence.ReleaseInProgressTimeJobAsync(id, _StopOwner, ct)).Should().Be(0);
-            (await persistence.SettleInterruptedTimeJobAsync(id, _StopOwner, _StopReason, null, ct)).Should().Be(0);
+            (await persistence.ReleaseInProgressTimeJobAsync(JobsLeaseTables.TimeJob(id, 1), ct)).Should().Be(0);
+            (await persistence.SettleInterruptedTimeJobAsync(JobsLeaseTables.TimeJob(id, 1), _StopReason, null, ct))
+                .Should()
+                .Be(0);
         }
 
         (await Fixture.ReadTimeJobAsync(reclaimed, ct)).Should().Be(((int)JobStatus.InProgress, _StopPeer));
         (await Fixture.ReadTimeJobAsync(notStarted, ct)).Should().Be(((int)JobStatus.Queued, _StopOwner));
+    }
+
+    public virtual async Task retry_reschedule_charges_the_attempt_and_waits_at_the_store_clock_under_any_policy(
+        int policy
+    )
+    {
+        var ct = AbortToken;
+        await Fixture.ResetDatabaseAsync(ct);
+
+        // The node lags the database by two minutes, so a due time it computed itself would miss the tolerance below:
+        // the reschedule runs as a fenced raw command, so the stored due time is the evidence that the database set it.
+        using var host = Fixture.BuildHost("node-a", timeProvider: new SkewedTimeProvider(TimeSpan.FromMinutes(-2)));
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+        var id = Guid.NewGuid();
+        var peerId = Guid.NewGuid();
+        await Fixture.SeedTimeJobAsync(
+            id,
+            "RetryReschedule",
+            (int)JobStatus.InProgress,
+            _StopOwner,
+            ct,
+            (NodeDeathPolicy)policy,
+            lockedUntil: DateTime.UtcNow.AddMinutes(5)
+        );
+        var peerLockedUntil = DateTime.UtcNow.AddMinutes(5);
+        await Fixture.SeedTimeJobAsync(
+            peerId,
+            "RetryReschedule",
+            (int)JobStatus.InProgress,
+            _StopPeer,
+            ct,
+            lockedUntil: peerLockedUntil
+        );
+        // The peer's takeover drew the next generation, so this node's attempt still holds the earlier one.
+        await Fixture.OverwriteLeaseAsync(
+            Fixture.QualifiedTimeJobsTable,
+            peerId,
+            new RowLeaseSnapshot(
+                2,
+                RowLeaseState.Active,
+                new DateTimeOffset(peerLockedUntil, TimeSpan.Zero),
+                _StopPeer,
+                1
+            ),
+            ct
+        );
+        var delay = TimeSpan.FromSeconds(60);
+
+        var storeBefore = await _StoreUtcNowAsync(ct);
+        (await persistence.RescheduleTimeJobRetryAsync(JobsLeaseTables.TimeJob(id, 1), 2, delay, ct)).Should().Be(1);
+        var storeAfter = await _StoreUtcNowAsync(ct);
+
+        // The node-death policy plays no part: the run failed with budget left, it was not interrupted.
+        var (status, lease, _, _) = await Fixture.ReadTimeJobDetailAsync(id, ct);
+        status.Should().Be((int)JobStatus.Idle);
+        lease.State.Should().NotBe(RowLeaseState.Active);
+        (await Fixture.ReadTimeJobRetryCountAsync(id, ct)).Should().Be(2);
+        (await persistence.GetTimeJobByIdAsync(id, ct))!
+            .ExecutionTime.Should()
+            .BeOnOrAfter(storeBefore + delay - TimeSpan.FromSeconds(1))
+            .And.BeOnOrBefore(storeAfter + delay + TimeSpan.FromSeconds(1));
+
+        // A row a peer reclaimed, and a repeat of the landed write, match nothing.
+        (await persistence.RescheduleTimeJobRetryAsync(JobsLeaseTables.TimeJob(peerId, 1), 1, delay, ct))
+            .Should()
+            .Be(0);
+        (await persistence.RescheduleTimeJobRetryAsync(JobsLeaseTables.TimeJob(id, 1), 3, delay, ct)).Should().Be(0);
+        (await Fixture.ReadTimeJobAsync(peerId, ct)).Should().Be(((int)JobStatus.InProgress, _StopPeer));
+        (await Fixture.ReadTimeJobRetryCountAsync(id, ct)).Should().Be(2);
     }
 
     public virtual async Task graceful_settlement_of_a_cron_occurrence_applies_its_policy_without_charging(int policy)
@@ -202,23 +262,42 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>
             executionTime.AddMinutes(-1),
             ct
         );
+        // The peer took the occurrence over at the next generation; this node's attempt held the earlier one.
+        await Fixture.OverwriteLeaseAsync(
+            Fixture.QualifiedCronJobOccurrencesTable,
+            peerOccurrenceId,
+            new RowLeaseSnapshot(2, RowLeaseState.Active, DateTimeOffset.UtcNow.AddMinutes(5), _StopPeer, 1),
+            ct
+        );
 
-        (await persistence.SettleInterruptedCronJobOccurrenceAsync(occurrenceId, _StopOwner, _StopReason, ct))
+        (
+            await persistence.SettleInterruptedCronJobOccurrenceAsync(
+                JobsLeaseTables.CronOccurrence(occurrenceId, 1),
+                _StopReason,
+                ct
+            )
+        )
             .Should()
             .Be(1);
-        (await persistence.ReleaseInProgressCronJobOccurrenceAsync(peerOccurrenceId, _StopOwner, ct)).Should().Be(0);
+        (
+            await persistence.ReleaseInProgressCronJobOccurrenceAsync(
+                JobsLeaseTables.CronOccurrence(peerOccurrenceId, 1),
+                ct
+            )
+        )
+            .Should()
+            .Be(0);
 
         var stored = (await persistence.GetAllCronJobOccurrencesAsync(predicate: null, ct)).Single(x =>
             x.Id == occurrenceId
         );
         stored.RetryCount.Should().Be(0);
-        stored.LockedUntil.Should().BeNull();
+        stored.Lease.State.Should().NotBe(RowLeaseState.Active);
 
         switch (nodeDeathPolicy)
         {
             case NodeDeathPolicy.Retry:
                 stored.Status.Should().Be(JobStatus.Idle);
-                stored.OwnerId.Should().BeNull();
                 break;
             case NodeDeathPolicy.MarkFailed:
                 stored.Status.Should().Be(JobStatus.Failed);
@@ -259,10 +338,12 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>
             ct
         );
 
-        (await persistence.ReleaseInProgressCronJobOccurrenceAsync(occurrenceId, _StopOwner, ct)).Should().Be(1);
+        (await persistence.ReleaseInProgressCronJobOccurrenceAsync(JobsLeaseTables.CronOccurrence(occurrenceId, 1), ct))
+            .Should()
+            .Be(1);
 
         (await Fixture.ReadCronOccurrenceAsync(occurrenceId, ct)).Should().Be(((int)JobStatus.Idle, null));
-        (await Fixture.ReadCronOccurrenceClaimAsync(occurrenceId, ct)).LockedUntil.Should().BeNull();
+        (await Fixture.ReadCronOccurrenceClaimAsync(occurrenceId, ct)).State.Should().NotBe(RowLeaseState.Active);
     }
 
     /// <summary>
@@ -300,7 +381,7 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>
             await first.StopAsync(ct);
         }
 
-        var (releasedStatus, releasedOwnerId, _, _, _) = await Fixture.ReadTimeJobDetailAsync(id, ct);
+        var (releasedStatus, releasedOwnerId) = await Fixture.ReadTimeJobAsync(id, ct);
         releasedStatus.Should().Be((int)JobStatus.Idle);
         releasedOwnerId.Should().BeNull();
         (await Fixture.ReadTimeJobRetryCountAsync(id, ct)).Should().Be(0, "a graceful stop is not a used-up attempt");

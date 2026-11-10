@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Fencing;
 using Headless.Jobs;
+using Headless.Jobs.BackgroundServices;
 using Headless.Jobs.JobsThreadPool;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -42,8 +44,7 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
         var released = await store.GetTimeJobByIdAsync(id, AbortToken);
         released!.Status.Should().Be(JobStatus.Idle);
         released.RetryCount.Should().Be(0, "a graceful stop is not an attempt the job used up");
-        released.OwnerId.Should().BeNull();
-        released.LockedUntil.Should().BeNull();
+        released.Lease.State.Should().NotBe(RowLeaseState.Active);
         probe.Invocations.Should().Be(1);
 
         // and the next host runs it once to completion
@@ -86,53 +87,8 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
         var stored = await _Store(host).GetTimeJobByIdAsync(id, AbortToken);
         stored!.Status.Should().Be(expected);
         stored.RetryCount.Should().Be(0);
-        stored.LockedUntil.Should().BeNull();
+        stored.Lease.State.Should().NotBe(RowLeaseState.Active);
         (expected == JobStatus.Failed ? stored.ExceptionMessage : stored.SkippedReason).Should().Be(_ShutdownReason);
-    }
-
-    [Theory]
-    [InlineData(20, 40)]
-    [InlineData(90, 0)]
-    public async Task should_park_a_job_stopped_in_its_retry_wait_at_the_store_clock_plus_the_delay_it_still_owed(
-        int waitedSeconds,
-        int owedSeconds
-    )
-    {
-        // given: the first attempt fails, and the next one is planned a minute out
-        var clock = new SteppableClock();
-        var retryPlanned = new RetryPlannedSignal();
-        var probe = new StopProbe(StopProbeMode.Fail);
-        // The stop budget runs on the real clock while the test steps its own; the default 2 s budget can run out
-        // before a loaded runner writes the parked row, leaving it InProgress, so give the stop room to finish.
-        using var host = _BuildHost(
-            probe,
-            stopBudget: TimeSpan.FromSeconds(20),
-            hostShutdownTimeout: TimeSpan.FromSeconds(30),
-            timeProvider: clock,
-            exceptionHandler: retryPlanned
-        );
-        await host.StartAsync(AbortToken);
-        var id = await _Scheduler(host).EnqueueAsync<StopJob>(o => o.WithRetries(2).WithRetryIntervals(60), AbortToken);
-        await retryPlanned.Observed.WaitAsync(_WaitBudget, AbortToken);
-
-        // and part of the wait passes while the store's wall clock steps two minutes back, so a due time anchored on
-        // the instant the retry was planned lands two minutes away from one anchored on the store's clock at the stop
-        clock.Pass(TimeSpan.FromSeconds(waitedSeconds));
-        clock.StepWallClock(TimeSpan.FromMinutes(-2));
-        var beforeStop = clock.GetUtcNow().UtcDateTime;
-
-        // when
-        await host.StopAsync(AbortToken);
-        var afterStop = clock.GetUtcNow().UtcDateTime;
-
-        // then: due at the store's instant at the stop plus what the wait still owed, clamped at zero
-        var stored = await _Store(host).GetTimeJobByIdAsync(id, AbortToken);
-        stored!.Status.Should().Be(JobStatus.Idle);
-        stored.RetryCount.Should().Be(1, "only the attempt that actually failed is charged");
-        stored.OwnerId.Should().BeNull();
-        stored.ExecutionTime.Should().BeOnOrAfter(beforeStop.AddSeconds(owedSeconds - 1));
-        stored.ExecutionTime.Should().BeOnOrBefore(afterStop.AddSeconds(owedSeconds));
-        probe.Invocations.Should().Be(1);
     }
 
     [Fact]
@@ -158,7 +114,7 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
             var stored = await store.GetTimeJobByIdAsync(id, AbortToken);
             stored!.Status.Should().Be(JobStatus.Idle);
             stored.RetryCount.Should().Be(0);
-            stored.OwnerId.Should().BeNull();
+            stored.Lease.State.Should().NotBe(RowLeaseState.Active);
         }
     }
 
@@ -194,57 +150,40 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
         var stored = await _Store(host).GetTimeJobByIdAsync(id, AbortToken);
         stored!.Status.Should().Be(JobStatus.Idle);
         stored.RetryCount.Should().Be(0);
-        stored.OwnerId.Should().BeNull();
-        stored.LockedUntil.Should().BeNull();
+        stored.Lease.State.Should().NotBe(RowLeaseState.Active);
     }
 
     [Fact]
     public async Task should_count_the_stop_budget_from_the_host_stop_when_a_later_service_stops_first()
     {
-        // given: a service registered after Jobs stops first under the default sequential stop and spends most of the
-        // four-second budget, so the two-second release window already opened before the scheduler's own stop begins
-        var budget = TimeSpan.FromSeconds(4);
-        var laterServiceStop = TimeSpan.FromSeconds(3);
+        // given: a host stop that began, and spent the scheduler's whole budget, before the scheduler's own stop starts,
+        // which is what a service stopping ahead of Jobs under the default sequential stop produces
+        var budget = TimeSpan.FromMilliseconds(200);
         var probe = new StopProbe(StopProbeMode.BlockUntilCancelled);
-        using var host = _BuildHost(
-            probe,
-            stopBudget: budget,
-            hostShutdownTimeout: TimeSpan.FromSeconds(15),
-            laterServiceStop: laterServiceStop
-        );
+        using var host = _BuildHost(probe, stopBudget: budget, hostShutdownTimeout: TimeSpan.FromSeconds(15));
         await host.StartAsync(AbortToken);
         var id = await _Scheduler(host).EnqueueAsync<StopJob>(o => o.WithRetries(0), AbortToken);
         await probe.Started.WaitAsync(_WaitBudget, AbortToken);
 
-        // when
-        var stopStarted = TimeProvider.System.GetTimestamp();
-        await host.StopAsync(AbortToken);
-        var stopElapsed = TimeProvider.System.GetElapsedTime(stopStarted);
+        // when: ApplicationStopping records the budget origin, the budget then elapses on the real clock the scheduler
+        // measures it on (a loaded runner only lengthens this wait), and the scheduler stop begins
+        host.Services.GetRequiredService<IHostApplicationLifetime>().StopApplication();
+        await Task.Delay(budget + TimeSpan.FromMilliseconds(50), AbortToken);
+        var stop = host.Services.GetRequiredService<JobsSchedulerBackgroundService>().StopAsync(AbortToken);
 
-        // then: the job is cancelled as soon as the scheduler stops, not a further release-window wait later
-        var cancelledAfter = TimeProvider.System.GetElapsedTime(stopStarted, probe.CancelledAt!.Value);
-        cancelledAfter.Should().BeGreaterThan(laterServiceStop - TimeSpan.FromMilliseconds(250));
-        // Counting the budget from the scheduler's own stop would cancel near five seconds (the later service's three,
-        // plus the two left before the release window); one second of slack separates the two and absorbs a loaded
-        // runner, where 750 ms was overrun.
-        cancelledAfter.Should().BeLessThan(laterServiceStop + TimeSpan.FromSeconds(1));
-        // The scheduler bounds only its own stop by the budget; the whole host stop also carries the continuations
-        // that resume after each wait, which a loaded runner delays past the budget by a few hundred milliseconds.
-        // Counting the budget from the scheduler's own stop would end near seven seconds (the later service's three
-        // plus the full four), so 1.5 s of slack still separates the two.
-        stopElapsed
-            .Should()
-            .BeLessThan(
-                budget + TimeSpan.FromSeconds(1.5),
-                "the budget counts from the host's stop, not the scheduler's"
-            );
+        // then: the scheduler cancels before its first yield. Counting the budget from its own stop would first wait
+        // out a fresh finish window, leaving the token live here. Checking the token itself, not when the cancelled
+        // job's continuation runs, keeps a loaded runner from deciding the result.
+        var taskScheduler = host.Services.GetRequiredService<JobsTaskScheduler>();
+        taskScheduler.ExecutionCancellationToken.IsCancellationRequested.Should().BeTrue();
+        await stop.Bounded();
 
-        // and its uncharged release had committed when the stop returned
-        var stored = await _Store(host).GetTimeJobByIdAsync(id, AbortToken);
-        stored!.Status.Should().Be(JobStatus.Idle);
+        // and the cancelled job's uncharged release lands. With the budget already spent the scheduler's stop returns
+        // without waiting for that write, so the row is awaited here instead of read the moment the stop returns.
+        var stored = await _WaitForAsync(_Store(host), id, row => row.Status is not JobStatus.InProgress);
+        stored.Status.Should().Be(JobStatus.Idle);
         stored.RetryCount.Should().Be(0);
-        stored.OwnerId.Should().BeNull();
-        stored.LockedUntil.Should().BeNull();
+        stored.Lease.State.Should().NotBe(RowLeaseState.Active);
     }
 
     [Fact]
@@ -340,8 +279,7 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
         var stored = await store.GetTimeJobByIdAsync(waiting, AbortToken);
         stored!.Status.Should().Be(JobStatus.Idle);
         stored.RetryCount.Should().Be(0, "a graceful stop is not an attempt the job used up");
-        stored.OwnerId.Should().BeNull();
-        stored.LockedUntil.Should().BeNull();
+        stored.Lease.State.Should().NotBe(RowLeaseState.Active);
     }
 
     [Fact]
@@ -376,8 +314,7 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
         var stored = await store.GetTimeJobByIdAsync(enqueued, AbortToken);
         stored!.Status.Should().Be(JobStatus.Idle);
         stored.RetryCount.Should().Be(0);
-        stored.OwnerId.Should().BeNull();
-        stored.LockedUntil.Should().BeNull();
+        stored.Lease.State.Should().NotBe(RowLeaseState.Active);
         stored.ExecutionTime.Should().BeOnOrBefore(DateTime.UtcNow, "the next owner claims it as soon as it polls");
     }
 
@@ -387,25 +324,12 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
         int maxConcurrency = 4,
         TimeSpan? stopBudget = null,
         TimeSpan? hostShutdownTimeout = null,
-        TimeSpan? fallbackInterval = null,
-        TimeSpan? laterServiceStop = null,
-        TimeProvider? timeProvider = null,
-        IJobExceptionHandler? exceptionHandler = null
+        TimeSpan? fallbackInterval = null
     )
     {
         return new HostBuilder()
             .ConfigureServices(services =>
             {
-                if (timeProvider is not null)
-                {
-                    services.AddSingleton(timeProvider);
-                }
-
-                if (exceptionHandler is not null)
-                {
-                    services.AddSingleton(exceptionHandler);
-                }
-
                 services.Configure<HostOptions>(options =>
                     options.ShutdownTimeout = hostShutdownTimeout ?? _ShutdownTimeout
                 );
@@ -428,12 +352,6 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
                 if (store is not null)
                 {
                     services.AddSingleton(store);
-                }
-
-                // Registered after Jobs, so the host stops it first.
-                if (laterServiceStop is { } stopDuration)
-                {
-                    services.AddHostedService(_ => new SlowStopService(stopDuration));
                 }
             })
             .Build();
@@ -479,7 +397,6 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
     {
         BlockUntilCancelled = 0,
         Succeed = 1,
-        Fail = 2,
         BlockUntilReleased = 3,
         BlockIgnoringCancellation = 4,
     }
@@ -509,8 +426,6 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
             {
                 case StopProbeMode.Succeed:
                     return;
-                case StopProbeMode.Fail:
-                    throw new InvalidOperationException("The first attempt fails.");
                 default:
                     try
                     {
@@ -535,63 +450,6 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
                     return;
             }
         }
-    }
-
-    // A wall clock and a monotonic clock the test moves on top of real time: passing time moves both, a wall-clock
-    // step moves only the wall clock, as an NTP correction does. Timers stay on real time.
-    private sealed class SteppableClock : TimeProvider
-    {
-        private long _wallOffsetTicks;
-        private long _timestampOffset;
-
-        public override DateTimeOffset GetUtcNow() =>
-            System.GetUtcNow().AddTicks(Interlocked.Read(ref _wallOffsetTicks));
-
-        public override long GetTimestamp() => System.GetTimestamp() + Interlocked.Read(ref _timestampOffset);
-
-        public void Pass(TimeSpan duration)
-        {
-            StepWallClock(duration);
-            Interlocked.Add(ref _timestampOffset, (long)(duration.TotalSeconds * TimestampFrequency));
-        }
-
-        public void StepWallClock(TimeSpan step) => Interlocked.Add(ref _wallOffsetTicks, step.Ticks);
-    }
-
-    // The executor observes a retryable failure only after it has planned the next attempt, so this signal marks the
-    // point from which the retry wait is running.
-    private sealed class RetryPlannedSignal : IJobExceptionHandler
-    {
-        private readonly TaskCompletionSource _observed = new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        public Task Observed => _observed.Task;
-
-        public Task HandleExceptionAsync(
-            Exception exception,
-            Guid jobId,
-            JobType jobType,
-            CancellationToken cancellationToken = default
-        )
-        {
-            _observed.TrySetResult();
-            return Task.CompletedTask;
-        }
-
-        public Task HandleCanceledExceptionAsync(
-            Exception exception,
-            Guid jobId,
-            JobType jobType,
-            CancellationToken cancellationToken = default
-        ) => Task.CompletedTask;
-    }
-
-    // A service whose own graceful stop takes a fixed time, which is what the scenario models, not a stand-in for
-    // ordering: the host's sequential stop already orders it before Jobs.
-    private sealed class SlowStopService(TimeSpan stopDuration) : IHostedService
-    {
-        public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-
-        public Task StopAsync(CancellationToken cancellationToken) => Task.Delay(stopDuration, cancellationToken);
     }
 
     public sealed class StopJob : IJob

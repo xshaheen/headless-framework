@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Fencing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Query;
 
@@ -23,12 +24,13 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
     private int _occurrenceAttemptsMapping = _MappingUnknown;
 
     public async Task<bool> OpenTimeJobAttemptAsync(
-        Guid timeJobId,
+        FencedRow<Guid> row,
         string claimOwner,
         DateTime startedAt,
         CancellationToken cancellationToken = default
     )
     {
+        Argument.IsNotNull(row);
         Argument.IsNotNullOrEmpty(claimOwner);
 
         if (!_AttemptsMapped<TimeJobAttemptEntity>())
@@ -37,15 +39,18 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
         }
 
         return await _OpenAttemptAsync<TimeJobAttemptEntity>(
-                timeJobId,
+                row.Key,
                 claimOwner,
                 startedAt,
                 // Stamping the change marker shows the open in change reads and locks the run row, so the open waits
-                // for, or blocks, any write that moves the run out of InProgress and closes its attempt.
+                // for, or blocks, any write that moves the run out of InProgress and closes its attempt. It is fenced
+                // on the claim's generation still holding an active lease, so an attempt that lost the row opens
+                // nothing. Expiry alone does not refuse it: the open records history and extends nothing, and the sweep
+                // that ends an expired lease closes the attempt it finds.
                 (dbContext, ct) =>
                     dbContext
                         .Set<TTimeJob>()
-                        .Where(x => x.Id == timeJobId)
+                        .Where(x => x.Id == row.Key && x.Lease.Generation == row.Generation)
                         .WhereRunningBy(claimOwner)
                         .ExecuteUpdateAsync(setter => setter.SetChangedAt(), ct),
                 cancellationToken
@@ -54,12 +59,13 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
     }
 
     public async Task<bool> OpenCronJobOccurrenceAttemptAsync(
-        Guid occurrenceId,
+        FencedRow<Guid> row,
         string claimOwner,
         DateTime startedAt,
         CancellationToken cancellationToken = default
     )
     {
+        Argument.IsNotNull(row);
         Argument.IsNotNullOrEmpty(claimOwner);
 
         if (!_AttemptsMapped<CronJobOccurrenceAttemptEntity>())
@@ -68,13 +74,13 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
         }
 
         return await _OpenAttemptAsync<CronJobOccurrenceAttemptEntity>(
-                occurrenceId,
+                row.Key,
                 claimOwner,
                 startedAt,
                 (dbContext, ct) =>
                     dbContext
                         .Set<CronJobOccurrenceEntity<TCronJob>>()
-                        .Where(x => x.Id == occurrenceId)
+                        .Where(x => x.Id == row.Key && x.Lease.Generation == row.Generation)
                         .WhereRunningBy(claimOwner)
                         .ExecuteUpdateAsync(setter => setter.SetChangedAt(), ct),
                 cancellationToken
@@ -214,10 +220,7 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
             return await rows.ExecuteUpdateAsync(setters, CancellationToken.None).ConfigureAwait(false);
         }
 
-        var candidates = await rows.AsNoTracking()
-            .Select(x => new { Id = EF.Property<Guid>(x, "Id"), OwnerId = EF.Property<string?>(x, "OwnerId") })
-            .ToListAsync(CancellationToken.None)
-            .ConfigureAwait(false);
+        var candidates = await _ReadRunningCandidatesAsync(rows).ConfigureAwait(false);
 
         if (candidates.Count == 0)
         {
@@ -232,13 +235,7 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
         if (affected == candidates.Count)
         {
             await JobsAttemptLedger
-                .CloseAsync<TAttempt>(
-                    dbContext,
-                    candidates.ConvertAll(static candidate => (candidate.Id, candidate.OwnerId)),
-                    end,
-                    insertWhenMissing: true,
-                    CancellationToken.None
-                )
+                .CloseAsync<TAttempt>(dbContext, candidates, end, insertWhenMissing: true, CancellationToken.None)
                 .ConfigureAwait(false);
         }
         else if (affected > 0)
@@ -266,6 +263,25 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
         }
 
         return affected;
+    }
+
+    // The rows a sweep arm would move, with the holder of each one's lease: the owner its attempt ran under. The lease
+    // is a complex property, which EF.Property cannot reach by name, so each run type projects it directly.
+    private static async Task<List<(Guid Id, string? OwnerId)>> _ReadRunningCandidatesAsync<TRun>(IQueryable<TRun> rows)
+        where TRun : class
+    {
+        var read = rows switch
+        {
+            IQueryable<TTimeJob> timeJobs => timeJobs.AsNoTracking().Select(x => new { x.Id, x.Lease.Holder }),
+            IQueryable<CronJobOccurrenceEntity<TCronJob>> occurrences => occurrences
+                .AsNoTracking()
+                .Select(x => new { x.Id, x.Lease.Holder }),
+            _ => throw new InvalidOperationException($"{typeof(TRun).Name} keeps no attempt history."),
+        };
+
+        var candidates = await read.ToListAsync(CancellationToken.None).ConfigureAwait(false);
+
+        return candidates.ConvertAll(static candidate => (candidate.Id, candidate.Holder));
     }
 
     /// <summary>The attempt end an executor write carries, or <see langword="null"/> when the write ends none.</summary>

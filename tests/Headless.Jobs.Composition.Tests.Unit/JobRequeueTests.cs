@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Reflection;
+using Headless.Fencing;
 using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Jobs.Provider;
@@ -91,8 +92,7 @@ public sealed class JobRequeueTests : TestBase
         requeued!.Status.Should().Be(JobStatus.Idle);
         requeued.RetryCount.Should().Be(0);
         requeued.ExceptionMessage.Should().BeNull();
-        requeued.OwnerId.Should().BeNull();
-        requeued.LockedUntil.Should().BeNull();
+        requeued.Lease.State.Should().NotBe(RowLeaseState.Active);
         requeued.ExecutedAt.Should().BeNull();
         requeued.ElapsedTime.Should().Be(0);
         requeued.CancelRequested.Should().BeFalse();
@@ -248,8 +248,7 @@ public sealed class JobRequeueTests : TestBase
         requeued.Status.Should().Be(JobStatus.Idle);
         requeued.RetryCount.Should().Be(0);
         requeued.ExceptionMessage.Should().BeNull();
-        requeued.OwnerId.Should().BeNull();
-        requeued.LockedUntil.Should().BeNull();
+        requeued.Lease.State.Should().NotBe(RowLeaseState.Active);
         requeued.ExecutedAt.Should().BeNull();
         requeued.ElapsedTime.Should().Be(0);
         requeued.ExecutionTime.Should().Be(_FailedAt, "the instant identifies the occurrence");
@@ -456,8 +455,7 @@ public sealed class JobRequeueTests : TestBase
             Id = Guid.NewGuid(),
             Function = "requeue",
             Status = JobStatus.Failed,
-            OwnerId = "node-b@1",
-            LockedUntil = _FailedAt.AddMinutes(5),
+            Lease = TestLeases.Held("node-b@1", _FailedAt.AddMinutes(5)),
             ExecutionTime = _FailedAt,
             ExecutedAt = _Now.AddHours(-1).AddSeconds(3),
             ElapsedTime = 3000,
@@ -523,8 +521,7 @@ public sealed class JobRequeueTests : TestBase
             Function = definition.Function,
             ExecutionTime = executionTime,
             Status = status,
-            OwnerId = claimed ? "node-b@1" : null,
-            LockedUntil = claimed ? _Now.UtcDateTime.AddMinutes(5) : null,
+            Lease = TestLeases.Held(claimed ? "node-b@1" : null, claimed ? _Now.AddMinutes(5) : null),
             ExecutedAt = status is JobStatus.Failed or JobStatus.Succeeded
                 ? new DateTimeOffset(executionTime.AddSeconds(3), TimeSpan.Zero)
                 : null,

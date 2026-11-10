@@ -10,17 +10,18 @@ namespace Tests;
 [Collection<PostgreSqlTestFixture>]
 public sealed class PostgreSqlAdditionalOutboxTests(PostgreSqlTestFixture fixture) : AdditionalOutboxConformanceTests
 {
+    protected override string NewDatabaseName(string role) => fixture.DerivedDatabaseName(base.NewDatabaseName(role));
+
     protected override async Task<string> CreateDatabaseAsync(string name)
     {
-        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await connection.ExecuteAsync($"CREATE DATABASE \"{name}\";");
+        await fixture.CreateDatabaseAsync(name, AbortToken);
 
-        return new NpgsqlConnectionStringBuilder(fixture.ConnectionString) { Database = name }.ConnectionString;
+        return fixture.ConnectionStringFor(name);
     }
 
     protected override async Task DropDatabaseAsync(string name)
     {
-        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await using var connection = new NpgsqlConnection(fixture.AdminConnectionString);
         await connection.ExecuteAsync($"DROP DATABASE IF EXISTS \"{name}\" WITH (FORCE);");
     }
 

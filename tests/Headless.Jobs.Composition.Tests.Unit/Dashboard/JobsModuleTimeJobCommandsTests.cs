@@ -3,6 +3,7 @@
 using System.Net;
 using System.Security.Claims;
 using Headless.Dashboard;
+using Headless.Fencing;
 using Headless.Jobs;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -78,7 +79,7 @@ public sealed class JobsModuleTimeJobCommandsTests : TestBase
     {
         // given: the job is running with cancel requested when the rules read it, and finishes before the delete lands
         IJobPersistenceProvider<TimeJobEntity, CronJobEntity>? store = null;
-        string? owner = null;
+        RowLeaseSnapshot lease = default;
         Guid job = default;
         await using var node = JobsModuleNode.Create(
             _time,
@@ -95,7 +96,7 @@ public sealed class JobsModuleTimeJobCommandsTests : TestBase
                             )
                         )
                         {
-                            _CompleteAsync(store!, job, owner!).GetAwaiter().GetResult();
+                            _CompleteAsync(store!, job, lease).GetAwaiter().GetResult();
                         }
 
                         return proceed();
@@ -103,7 +104,7 @@ public sealed class JobsModuleTimeJobCommandsTests : TestBase
                 )
         );
         store = node.Store;
-        (job, owner) = await _StartAsync(store, cancel: true);
+        (job, lease) = await _StartAsync(store, cancel: true);
         var allowed = await node.Module.GetAllowedCommandsAsync(_Allowed(JobsViews.RunKind, job), AbortToken);
         _Answer(allowed, "jobs.force-delete").Allowed.Should().BeTrue();
 
@@ -455,7 +456,7 @@ public sealed class JobsModuleTimeJobCommandsTests : TestBase
         ];
     }
 
-    private async Task<(Guid Job, string Owner)> _StartAsync(
+    private async Task<(Guid Job, RowLeaseSnapshot Lease)> _StartAsync(
         IJobPersistenceProvider<TimeJobEntity, CronJobEntity> store,
         bool cancel
     )
@@ -474,20 +475,21 @@ public sealed class JobsModuleTimeJobCommandsTests : TestBase
 
         (await store.GetJobRunAsync(job.Id, AbortToken))!.Status.Should().Be(JobStatus.InProgress);
 
-        return (job.Id, claimed.OwnerId!);
+        return (job.Id, claimed.Lease);
     }
 
     private static async Task _CompleteAsync(
         IJobPersistenceProvider<TimeJobEntity, CronJobEntity> store,
         Guid job,
-        string owner
+        RowLeaseSnapshot lease
     )
     {
         var completion = new JobExecutionState
         {
             FunctionName = JobsModuleNode.Charge,
             JobId = job,
-            ClaimOwner = owner,
+            ClaimOwner = lease.Holder,
+            ClaimGeneration = lease.Generation,
         }.SetProperty(x => x.Status, JobStatus.Succeeded);
 
         (await store.UpdateTimeJobAsync(completion, AbortToken)).Should().Be(1);

@@ -87,8 +87,6 @@ internal sealed partial class RelationalDataStorage
                     _t.Added,
                     _t.ExpiresAt,
                     _t.NextRetryAt,
-                    _t.LockedUntil,
-                    _t.Owner,
                     _t.StatusName,
                     _t.MessageId,
                     _t.ChangedAt,
@@ -104,8 +102,6 @@ internal sealed partial class RelationalDataStorage
                     SqlDialectTokens.Now,
                     "@ExpiresAt",
                     $"CASE WHEN @ExpiresAt IS NULL THEN {_dialect.ShiftByDuration(SqlDialectTokens.Now, "Grace")} END",
-                    "NULL",
-                    "NULL",
                     $"CASE WHEN @ExpiresAt IS NULL THEN '{nameof(StatusName.Scheduled)}' WHEN @ExpiresAt <= {_dialect.ShiftByDuration(SqlDialectTokens.Now, "QueueWindow")} THEN '{nameof(StatusName.Queued)}' ELSE '{nameof(StatusName.Delayed)}' END",
                     "@MessageId",
                     SqlDialectTokens.Now,
@@ -130,8 +126,6 @@ internal sealed partial class RelationalDataStorage
             Content = _ContentOf(message),
             Lane = message.Lane,
             ExpiresAt = publishAt,
-            LockedUntil = null,
-            Owner = null,
             Retries = 0,
             InlineAttempts = 0,
         };
@@ -281,8 +275,6 @@ internal sealed partial class RelationalDataStorage
             Added = added,
             ExpiresAt = null,
             NextRetryAt = added.Add(Options.RetryPolicy.InitialDispatchGrace),
-            LockedUntil = null,
-            Owner = null,
             Retries = 0,
             InlineAttempts = 0,
         };
@@ -392,8 +384,6 @@ internal sealed partial class RelationalDataStorage
                     _t.Added,
                     _t.ExpiresAt,
                     _t.NextRetryAt,
-                    _t.LockedUntil,
-                    _t.Owner,
                     _t.StatusName,
                     _t.ExceptionInfo,
                     _t.FailureFingerprint,
@@ -413,8 +403,6 @@ internal sealed partial class RelationalDataStorage
                     SqlDialectTokens.Now,
                     expiresAt,
                     nextRetryAt,
-                    "NULL",
-                    "NULL",
                     "@StatusName",
                     "@ExceptionInfo",
                     "@FailureFingerprint",
@@ -430,8 +418,8 @@ internal sealed partial class RelationalDataStorage
             new SqlFencedTransition(
                 _receivedTable,
                 [new SqlKeyColumn(_t.Id, "Id")],
-                $"{nonInbox} AND {_terminalGuard} AND ({_t.LockedUntil} IS NULL OR {_t.LockedUntil} <= {SqlDialectTokens.Now})",
-                $"{_t.StatusName}=@StatusName, {_t.ExpiresAt}={expiresAt}, {_t.NextRetryAt}={nextRetryAt}, {_t.LockedUntil}=NULL, {_t.Owner}=NULL, {_t.Content}=@Content, {_t.ExceptionInfo}=@ExceptionInfo, {_t.FailureFingerprint}=@FailureFingerprint, {_t.StampChange}",
+                $"{nonInbox} AND {_terminalGuard} AND ({_t.LeaseState} <> {_t.ActiveLease} OR {_t.LeaseExpiresAt} <= {SqlDialectTokens.Now})",
+                $"{_t.StatusName}=@StatusName, {_t.ExpiresAt}={expiresAt}, {_t.NextRetryAt}={nextRetryAt}, {_t.Content}=@Content, {_t.ExceptionInfo}=@ExceptionInfo, {_t.FailureFingerprint}=@FailureFingerprint, {_RevokeAnyLeaseAssignments()}, {_t.StampChange}",
                 [_t.Id, _t.Added, _t.NextRetryAt]
             )
         );
@@ -666,7 +654,7 @@ internal sealed partial class RelationalDataStorage
                     transaction: null,
                     _publishedTable,
                     $"{_t.StatusName}='{nameof(StatusName.Failed)}' AND {_t.NextRetryAt} IS NULL",
-                    $"{_t.NextRetryAt}={SqlDialectTokens.Now}, {_t.Retries}=0, {_t.InlineAttempts}=0, {_t.ExpiresAt}=NULL, {_t.LockedUntil}=NULL, {_t.Owner}=NULL, {_t.StampChange}",
+                    $"{_t.NextRetryAt}={SqlDialectTokens.Now}, {_t.Retries}=0, {_t.InlineAttempts}=0, {_t.ExpiresAt}=NULL, {_RevokeAnyLeaseAssignments()}, {_t.StampChange}",
                     [_t.Id],
                     command => _dialect.AddParameter(command, "Id", SqlColumnType.Guid, id),
                     _ReadAppliedAsync,

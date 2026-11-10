@@ -53,9 +53,9 @@ internal sealed class JobsInitializationHostedService(
         var notificationHubSender = serviceProvider.GetRequiredService<IJobsNotificationHubSender>();
         var schedulerOptions = serviceProvider.GetRequiredService<SchedulerOptionsBuilder>();
 
-        // A pickup lease (LockedUntil = now + LeaseDuration) shorter than the fallback re-queue cadence can expire
-        // between fallback ticks, letting another node speculatively re-claim a still-owned Idle/Queued row. The CAS
-        // on the InProgress transition prevents double execution, but the redundant pickup is wasteful. Warn so the
+        // A pickup lease (expiring LeaseDuration after the claim) shorter than the fallback re-queue cadence can expire
+        // between fallback ticks, letting another node speculatively re-claim a still-owned Idle/Queued row. The new
+        // generation each claim takes fences off the earlier attempt, but the redundant pickup is wasteful. Warn so the
         // operator widens LeaseDuration — the Jobs analog of messaging's DeadThreshold >= DispatchTimeout guard.
         if (schedulerOptions.LeaseDuration < schedulerOptions.FallbackIntervalChecker)
         {

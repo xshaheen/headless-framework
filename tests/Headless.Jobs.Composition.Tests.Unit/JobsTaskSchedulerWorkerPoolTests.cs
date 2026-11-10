@@ -9,7 +9,7 @@ namespace Tests;
 
 public sealed class JobsTaskSchedulerWorkerPoolTests : TestBase
 {
-    private static readonly TimeSpan _Timeout = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan _Timeout = HeadlessTestTaskExtensions.DefaultTimeout;
 
     [Fact]
     public async Task idle_scheduler_arms_no_timers()

@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Fencing;
+
 namespace Headless.Jobs.Provider;
 
 // Attempt history. Each run's attempts live in a list under one lock. A close runs only after the compare-and-swap
@@ -15,7 +17,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
     private readonly Dictionary<Guid, List<CronJobOccurrenceAttemptEntity>> _occurrenceAttempts = [];
 
     public Task<bool> OpenTimeJobAttemptAsync(
-        Guid timeJobId,
+        FencedRow<Guid> row,
         string claimOwner,
         DateTime startedAt,
         CancellationToken cancellationToken = default
@@ -27,15 +29,16 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         {
             // The open shows in change reads like any other write to the run, so it stamps the run's marker.
             while (
-                _timeJobs.TryGetValue(timeJobId, out var current)
-                && _IsOwnedRunning(current.OwnerId, current.Status, claimOwner)
+                _timeJobs.TryGetValue(row.Key, out var current)
+                && string.Equals(current.Lease.Holder, claimOwner, StringComparison.Ordinal)
+                && _IsHeldRun(current.Status, current.Lease, row.Generation)
             )
             {
                 var updated = _CloneTicker(current);
                 updated.ChangedAt = _NextChangeMarker();
-                if (_TryUpdateTimeJob(timeJobId, updated, current))
+                if (_TryUpdateTimeJob(row.Key, updated, current))
                 {
-                    _OpenAttempt(_timeJobAttempts, timeJobId, claimOwner, startedAt);
+                    _OpenAttempt(_timeJobAttempts, row.Key, claimOwner, startedAt);
                     return Task.FromResult(true);
                 }
             }
@@ -45,7 +48,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
     }
 
     public Task<bool> OpenCronJobOccurrenceAttemptAsync(
-        Guid occurrenceId,
+        FencedRow<Guid> row,
         string claimOwner,
         DateTime startedAt,
         CancellationToken cancellationToken = default
@@ -56,15 +59,16 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         lock (_attemptsLock)
         {
             while (
-                _cronOccurrences.TryGetValue(occurrenceId, out var current)
-                && _IsOwnedRunning(current.OwnerId, current.Status, claimOwner)
+                _cronOccurrences.TryGetValue(row.Key, out var current)
+                && string.Equals(current.Lease.Holder, claimOwner, StringComparison.Ordinal)
+                && _IsHeldRun(current.Status, current.Lease, row.Generation)
             )
             {
                 var updated = _CloneCronOccurrence(current);
                 updated.ChangedAt = _NextChangeMarker();
-                if (_cronOccurrences.TryUpdate(occurrenceId, updated, current))
+                if (_cronOccurrences.TryUpdate(row.Key, updated, current))
                 {
-                    _OpenAttempt(_occurrenceAttempts, occurrenceId, claimOwner, startedAt);
+                    _OpenAttempt(_occurrenceAttempts, row.Key, claimOwner, startedAt);
                     return Task.FromResult(true);
                 }
             }
@@ -72,6 +76,11 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
         return Task.FromResult(false);
     }
+
+    // An open fences on the claim's generation still holding an active lease, as the relational store does; expiry alone
+    // does not refuse it, since the open extends nothing and the sweep that ends the lease closes the attempt.
+    private static bool _IsHeldRun(JobStatus status, RowLeaseSnapshot lease, long generation) =>
+        status == JobStatus.InProgress && lease.State == RowLeaseState.Active && lease.Generation == generation;
 
     public Task<IReadOnlyList<TimeJobAttemptEntity>> GetTimeJobAttemptsAsync(
         Guid timeJobId,
@@ -110,7 +119,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
     private void _CloseInterruptedAttempt<TAttempt>(
         Dictionary<Guid, List<TAttempt>> store,
         Guid runId,
-        string claimOwner,
+        string? claimOwner,
         string? reason,
         NodeDeathPolicy? policyOverride,
         NodeDeathPolicy policy,

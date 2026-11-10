@@ -192,7 +192,13 @@ public sealed class JobsInMemoryDashboardReadsTests : TestBase
             .Should()
             .ContainSingle()
             .Subject;
-        (await store.UpdateTimeJobProgressAsync(reporting.Id, claimed.OwnerId!, new JobProgress(40), AbortToken))
+        (
+            await store.UpdateTimeJobProgressAsync(
+                JobsLeaseTables.TimeJob(reporting.Id, claimed.Lease.Generation),
+                new JobProgress(40),
+                AbortToken
+            )
+        )
             .Should()
             .BeTrue();
         var cron = await _AddCronJobAsync(store, "report.build", retries: 2, retryIntervals: [5]);
@@ -333,7 +339,8 @@ public sealed class JobsInMemoryDashboardReadsTests : TestBase
         {
             FunctionName = "billing.charge",
             JobId = refailed,
-            ClaimOwner = claimed.OwnerId!,
+            ClaimOwner = claimed.Lease.Holder!,
+            ClaimGeneration = claimed.Lease.Generation,
         }.SetProperty(x => x.Status, JobStatus.Failed);
         (await store.UpdateTimeJobAsync(fail, AbortToken)).Should().Be(1);
 
@@ -412,7 +419,13 @@ public sealed class JobsInMemoryDashboardReadsTests : TestBase
         var scope = _Scope(JobOperationKind.Cancel, highWater);
 
         // when
-        (await store.UpdateTimeJobProgressAsync(running, claimed.OwnerId!, new JobProgress(40), AbortToken))
+        (
+            await store.UpdateTimeJobProgressAsync(
+                JobsLeaseTables.TimeJob(running, claimed.Lease.Generation),
+                new JobProgress(40),
+                AbortToken
+            )
+        )
             .Should()
             .BeTrue();
         var chunk = await _Store(store).ReadJobOperationScopeAsync(scope, after: null, chunkSize: 10, AbortToken);
@@ -652,7 +665,16 @@ public sealed class JobsInMemoryDashboardReadsTests : TestBase
     {
         var id = await _AddTimeJobAsync(store, JobStatus.Idle, due.UtcDateTime);
         var claimed = (await store.AcquireImmediateTimeJobsAsync([id], AbortToken)).Should().ContainSingle().Subject;
-        (await store.OpenTimeJobAttemptAsync(id, claimed.OwnerId!, started.UtcDateTime, AbortToken)).Should().BeTrue();
+        (
+            await store.OpenTimeJobAttemptAsync(
+                JobsLeaseTables.TimeJob(id, claimed.Lease.Generation),
+                claimed.Lease.Holder!,
+                started.UtcDateTime,
+                AbortToken
+            )
+        )
+            .Should()
+            .BeTrue();
     }
 
     private async Task<Guid> _AddTimeJobAsync(

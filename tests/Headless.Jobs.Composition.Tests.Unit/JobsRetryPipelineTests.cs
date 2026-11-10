@@ -195,6 +195,113 @@ public sealed class JobsRetryPipelineTests : TestBase
         run.Attempts.Should().Equal(0);
     }
 
+    [Fact]
+    public async Task should_hand_back_a_retry_whose_delay_exceeds_the_threshold_when_the_run_can_defer()
+    {
+        var (deferral, attempts, delays) = await _RunDeferrableAsync(retries: 3, retryIntervals: [60], retryCount: 1);
+
+        // The second attempt failed (durable count 1 -> 2 spent), and its 60s wait is the caller's to schedule.
+        attempts.Should().Equal(1);
+        delays.Should().BeEmpty();
+        deferral.Should().NotBeNull();
+        deferral!.RetryCount.Should().Be(2);
+        deferral.Delay.Should().Be(TimeSpan.FromSeconds(60));
+        deferral.Exception.Should().BeOfType<TimeoutException>();
+    }
+
+    [Fact]
+    public async Task should_wait_in_process_for_a_retry_within_the_threshold_even_when_the_run_can_defer()
+    {
+        var (deferral, attempts, delays) = await _RunDeferrableAsync(retries: 2, retryIntervals: [0, 1, 60]);
+
+        // 0s and 1s stay in process; the third interval is never reached because the budget is spent.
+        deferral.Should().BeNull();
+        attempts.Should().Equal(0, 1, 2);
+        delays.Should().Equal(JobsRetryPipeline.DeferThreshold);
+    }
+
+    [Fact]
+    public async Task should_not_defer_when_the_budget_is_spent()
+    {
+        var (deferral, attempts, _) = await _RunDeferrableAsync(retries: 1, retryIntervals: [60], retryCount: 1);
+
+        deferral.Should().BeNull();
+        attempts.Should().Equal(1);
+    }
+
+    [Fact]
+    public async Task should_wait_in_process_for_a_long_delay_when_the_run_cannot_defer()
+    {
+        var run = await _RunToExhaustionAsync(FailurePolicyDefinition.None, retries: 1, retryIntervals: [60]);
+
+        run.Delays.Should().Equal(TimeSpan.FromSeconds(60));
+    }
+
+    // Runs a deferrable job whose attempts all fail. A run that ends in process rethrows, which this records as no
+    // deferral.
+    private static async Task<(
+        JobsRetryDeferral? Deferral,
+        List<int> Attempts,
+        List<TimeSpan> Delays
+    )> _RunDeferrableAsync(int retries, int[] retryIntervals, int retryCount = 0)
+    {
+        var (pipeline, timeProvider) = _CreatePipeline(FailurePolicyDefinition.None);
+        var job = _CreateJob(retries, retryIntervals, retryCount);
+        var attempts = new List<int>();
+        JobsRetryDeferral? deferral = null;
+
+        try
+        {
+            deferral = await pipeline.ExecuteAsync(
+                job,
+                canDefer: true,
+                (attemptRetryCount, _) =>
+                {
+                    attempts.Add(attemptRetryCount);
+                    return ValueTask.FromException(new TimeoutException("transient"));
+                },
+                (nextRetryCount, _, _, _) =>
+                {
+                    job.RetryCount = nextRetryCount;
+                    return ValueTask.CompletedTask;
+                },
+                AbortToken
+            );
+        }
+        catch (TimeoutException)
+        {
+            // The run ended in process on its last failure.
+        }
+
+        return (deferral, attempts, [.. timeProvider.Delays.Where(d => d > TimeSpan.Zero)]);
+    }
+
+    private static (JobsRetryPipeline Pipeline, DelayRecordingTimeProvider TimeProvider) _CreatePipeline(
+        FailurePolicyDefinition policy
+    )
+    {
+        var registry = JobFunctionRegistryBuilder.Build([], [], []) with
+        {
+            FailurePolicies = new Dictionary<string, FailurePolicyDefinition>(StringComparer.Ordinal)
+            {
+                [_FunctionName] = policy,
+            }.ToFrozenDictionary(StringComparer.Ordinal),
+        };
+        var timeProvider = new DelayRecordingTimeProvider();
+        return (new JobsRetryPipeline(registry, timeProvider, NullLogger.Instance), timeProvider);
+    }
+
+    private static JobExecutionState _CreateJob(int retries, int[]? retryIntervals, int retryCount) =>
+        new()
+        {
+            JobId = Guid.NewGuid(),
+            FunctionName = _FunctionName,
+            Type = JobType.TimeJob,
+            Retries = retries,
+            RetryCount = retryCount,
+            RetryIntervals = retryIntervals,
+        };
+
     private static Task<PipelineRun> _RunToExhaustionAsync(
         FailurePolicyDefinition policy,
         int retries,
@@ -221,30 +328,15 @@ public sealed class JobsRetryPipelineTests : TestBase
     )
         where TException : Exception
     {
-        var registry = JobFunctionRegistryBuilder.Build([], [], []) with
-        {
-            FailurePolicies = new Dictionary<string, FailurePolicyDefinition>(StringComparer.Ordinal)
-            {
-                [_FunctionName] = policy,
-            }.ToFrozenDictionary(StringComparer.Ordinal),
-        };
-        var timeProvider = new DelayRecordingTimeProvider();
-        var pipeline = new JobsRetryPipeline(registry, timeProvider, NullLogger.Instance);
-        var job = new JobExecutionState
-        {
-            JobId = Guid.NewGuid(),
-            FunctionName = _FunctionName,
-            Type = JobType.TimeJob,
-            Retries = retries,
-            RetryCount = retryCount,
-            RetryIntervals = retryIntervals,
-        };
+        var (pipeline, timeProvider) = _CreatePipeline(policy);
+        var job = _CreateJob(retries, retryIntervals, retryCount);
         var attempts = new List<int>();
         var retryCounts = new List<int>();
 
         var action = async () =>
             await pipeline.ExecuteAsync(
                 job,
+                canDefer: false,
                 (attemptRetryCount, _) =>
                 {
                     attempts.Add(attemptRetryCount);

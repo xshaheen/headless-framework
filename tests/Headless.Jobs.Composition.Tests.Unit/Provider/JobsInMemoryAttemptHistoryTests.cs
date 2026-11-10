@@ -22,6 +22,7 @@ public sealed class JobsInMemoryAttemptHistoryTests : TestBase
 
     private const string _Owner = "node-a@1";
     private static readonly DateTimeOffset _Now = new(2026, 11, 5, 12, 0, 0, TimeSpan.Zero);
+    private readonly FakeTimeProvider _time = new(_Now);
 
     [Fact]
     public async Task should_close_the_attempt_as_failed_with_the_node_not_alive_fingerprint_when_the_store_fails_a_run_of_a_dead_node()
@@ -29,8 +30,17 @@ public sealed class JobsInMemoryAttemptHistoryTests : TestBase
         var store = _Create();
         var job = await _AddRunningTimeJobAsync(store, lapsed: true, NodeDeathPolicy.MarkFailed);
         var occurrence = await _AddRunningOccurrenceAsync(store, lapsed: true, NodeDeathPolicy.MarkFailed);
-        (await store.OpenTimeJobAttemptAsync(job.Id, _Owner, _Now.UtcDateTime, AbortToken)).Should().BeTrue();
-        (await store.OpenCronJobOccurrenceAttemptAsync(occurrence.Id, _Owner, _Now.UtcDateTime, AbortToken))
+        (await store.OpenTimeJobAttemptAsync(JobsLeaseTables.TimeJob(job.Id, 1), _Owner, _Now.UtcDateTime, AbortToken))
+            .Should()
+            .BeTrue();
+        (
+            await store.OpenCronJobOccurrenceAttemptAsync(
+                JobsLeaseTables.CronOccurrence(occurrence.Id, 1),
+                _Owner,
+                _Now.UtcDateTime,
+                AbortToken
+            )
+        )
             .Should()
             .BeTrue();
 
@@ -59,7 +69,9 @@ public sealed class JobsInMemoryAttemptHistoryTests : TestBase
     {
         var store = _Create();
         var job = await _AddRunningTimeJobAsync(store, lapsed: true, NodeDeathPolicy.Retry);
-        (await store.OpenTimeJobAttemptAsync(job.Id, _Owner, _Now.UtcDateTime, AbortToken)).Should().BeTrue();
+        (await store.OpenTimeJobAttemptAsync(JobsLeaseTables.TimeJob(job.Id, 1), _Owner, _Now.UtcDateTime, AbortToken))
+            .Should()
+            .BeTrue();
 
         (await store.ReleaseDeadNodeTimeJobResourcesAsync(_Owner, AbortToken)).Should().Be(1);
 
@@ -67,7 +79,16 @@ public sealed class JobsInMemoryAttemptHistoryTests : TestBase
             .Should()
             .ContainSingle()
             .Subject;
-        (await store.OpenTimeJobAttemptAsync(job.Id, claimed.OwnerId!, _Now.UtcDateTime, AbortToken)).Should().BeTrue();
+        (
+            await store.OpenTimeJobAttemptAsync(
+                JobsLeaseTables.TimeJob(job.Id, claimed.Lease.Generation),
+                claimed.Lease.Holder!,
+                _Now.UtcDateTime,
+                AbortToken
+            )
+        )
+            .Should()
+            .BeTrue();
 
         var attempts = await store.GetTimeJobAttemptsAsync(job.Id, AbortToken);
         attempts.Select(x => x.Number).Should().Equal(1, 2);
@@ -76,7 +97,7 @@ public sealed class JobsInMemoryAttemptHistoryTests : TestBase
         attempts[0].ExceptionMessage.Should().Be("Node is not alive!");
         attempts[1].Outcome.Should().BeNull("the next claim's attempt is still running");
         attempts[1].EndedAt.Should().BeNull();
-        attempts[1].OwnerId.Should().Be(claimed.OwnerId);
+        attempts[1].OwnerId.Should().Be(claimed.Lease.Holder);
     }
 
     [Fact]
@@ -88,11 +109,20 @@ public sealed class JobsInMemoryAttemptHistoryTests : TestBase
         var released = await _AddRunningTimeJobAsync(store, lapsed: false, NodeDeathPolicy.Retry);
         foreach (var id in new[] { skipped.Id, stalled.Id, released.Id })
         {
-            (await store.OpenTimeJobAttemptAsync(id, _Owner, _Now.UtcDateTime, AbortToken)).Should().BeTrue();
+            (await store.OpenTimeJobAttemptAsync(JobsLeaseTables.TimeJob(id, 1), _Owner, _Now.UtcDateTime, AbortToken))
+                .Should()
+                .BeTrue();
         }
 
         (await store.ReclaimStalledTimeJobsAsync(AbortToken)).Should().Be(2);
-        (await store.SettleInterruptedTimeJobAsync(released.Id, _Owner, "host stopped", null, AbortToken))
+        (
+            await store.SettleInterruptedTimeJobAsync(
+                JobsLeaseTables.TimeJob(released.Id, 1),
+                "host stopped",
+                null,
+                AbortToken
+            )
+        )
             .Should()
             .Be(1);
 
@@ -139,7 +169,7 @@ public sealed class JobsInMemoryAttemptHistoryTests : TestBase
         var store = _Create();
         var job = await _AddRunningTimeJobAsync(store, lapsed: false, NodeDeathPolicy.Retry);
 
-        (await store.ReleaseInProgressTimeJobAsync(job.Id, _Owner, AbortToken)).Should().Be(1);
+        (await store.ReleaseInProgressTimeJobAsync(JobsLeaseTables.TimeJob(job.Id, 1), AbortToken)).Should().Be(1);
 
         (await store.GetTimeJobAttemptsAsync(job.Id, AbortToken)).Should().BeEmpty();
     }
@@ -150,8 +180,10 @@ public sealed class JobsInMemoryAttemptHistoryTests : TestBase
     public async Task should_close_the_attempt_once_when_the_executor_and_a_sweep_race_to_end_a_run(bool executorFirst)
     {
         var store = _Create();
-        var job = await _AddRunningTimeJobAsync(store, lapsed: true, NodeDeathPolicy.MarkFailed);
-        (await store.OpenTimeJobAttemptAsync(job.Id, _Owner, _Now.UtcDateTime, AbortToken)).Should().BeTrue();
+        var job = await _AddRunningTimeJobAsync(store, lapsed: false, NodeDeathPolicy.MarkFailed);
+        (await store.OpenTimeJobAttemptAsync(JobsLeaseTables.TimeJob(job.Id, 1), _Owner, _Now.UtcDateTime, AbortToken))
+            .Should()
+            .BeTrue();
         var success = _State(job.Id)
             .SetProperty(x => x.Status, JobStatus.Succeeded)
             .SetProperty(
@@ -159,13 +191,16 @@ public sealed class JobsInMemoryAttemptHistoryTests : TestBase
                 new JobAttemptEnd { Outcome = JobAttemptOutcome.Succeeded, EndedAt = _Now.UtcDateTime }
             );
 
+        // A completion needs a live lease, so the executor writes before the lease lapses and the sweep runs after.
         if (executorFirst)
         {
             (await store.UpdateTimeJobAsync(success, AbortToken)).Should().Be(1);
+            _time.Advance(TimeSpan.FromMinutes(10));
             (await store.ReclaimStalledTimeJobsAsync(AbortToken)).Should().Be(0);
         }
         else
         {
+            _time.Advance(TimeSpan.FromMinutes(10));
             (await store.ReclaimStalledTimeJobsAsync(AbortToken)).Should().Be(1);
             (await store.UpdateTimeJobAsync(success, AbortToken)).Should().Be(0);
         }
@@ -181,8 +216,13 @@ public sealed class JobsInMemoryAttemptHistoryTests : TestBase
         var store = _Create();
         var job = await _AddRunningTimeJobAsync(store, lapsed: true, NodeDeathPolicy.MarkFailed);
         var occurrence = await _AddRunningOccurrenceAsync(store, lapsed: true, NodeDeathPolicy.MarkFailed);
-        await store.OpenTimeJobAttemptAsync(job.Id, _Owner, _Now.UtcDateTime, AbortToken);
-        await store.OpenCronJobOccurrenceAttemptAsync(occurrence.Id, _Owner, _Now.UtcDateTime, AbortToken);
+        await store.OpenTimeJobAttemptAsync(JobsLeaseTables.TimeJob(job.Id, 1), _Owner, _Now.UtcDateTime, AbortToken);
+        await store.OpenCronJobOccurrenceAttemptAsync(
+            JobsLeaseTables.CronOccurrence(occurrence.Id, 1),
+            _Owner,
+            _Now.UtcDateTime,
+            AbortToken
+        );
         (await store.ReclaimStalledTimeJobsAsync(AbortToken)).Should().Be(1);
         (await store.ReclaimStalledCronJobOccurrencesAsync(AbortToken)).Should().Be(1);
 
@@ -199,9 +239,20 @@ public sealed class JobsInMemoryAttemptHistoryTests : TestBase
         var store = _Create();
         var job = await _AddRunningTimeJobAsync(store, lapsed: false, NodeDeathPolicy.Retry);
 
-        (await store.OpenTimeJobAttemptAsync(job.Id, "node-b@1", _Now.UtcDateTime, AbortToken)).Should().BeFalse();
-        (await store.ReleaseInProgressTimeJobAsync(job.Id, _Owner, AbortToken)).Should().Be(1);
-        (await store.OpenTimeJobAttemptAsync(job.Id, _Owner, _Now.UtcDateTime, AbortToken)).Should().BeFalse();
+        (
+            await store.OpenTimeJobAttemptAsync(
+                JobsLeaseTables.TimeJob(job.Id, 1),
+                "node-b@1",
+                _Now.UtcDateTime,
+                AbortToken
+            )
+        )
+            .Should()
+            .BeFalse();
+        (await store.ReleaseInProgressTimeJobAsync(JobsLeaseTables.TimeJob(job.Id, 1), AbortToken)).Should().Be(1);
+        (await store.OpenTimeJobAttemptAsync(JobsLeaseTables.TimeJob(job.Id, 1), _Owner, _Now.UtcDateTime, AbortToken))
+            .Should()
+            .BeFalse();
 
         (await store.GetTimeJobAttemptsAsync(job.Id, AbortToken)).Should().BeEmpty();
     }
@@ -218,10 +269,10 @@ public sealed class JobsInMemoryAttemptHistoryTests : TestBase
         return attempt;
     }
 
-    private static JobsInMemoryPersistenceProvider<FakeTimeJob, FakeCronJob> _Create()
+    private JobsInMemoryPersistenceProvider<FakeTimeJob, FakeCronJob> _Create()
     {
         var services = new ServiceCollection();
-        services.AddSingleton<TimeProvider>(new FakeTimeProvider(_Now));
+        services.AddSingleton<TimeProvider>(_time);
         services.AddHeadlessGuidGenerator();
         services.AddSingleton(
             new SchedulerOptionsBuilder { NodeId = "node-a", LeaseDuration = TimeSpan.FromMinutes(5) }
@@ -241,8 +292,7 @@ public sealed class JobsInMemoryAttemptHistoryTests : TestBase
             Id = Guid.NewGuid(),
             Function = "fn",
             Status = JobStatus.InProgress,
-            OwnerId = _Owner,
-            LockedUntil = lapsed ? _Now.UtcDateTime.AddMinutes(-1) : _Now.UtcDateTime.AddMinutes(5),
+            Lease = TestLeases.Held(_Owner, lapsed ? _Now.UtcDateTime.AddMinutes(-1) : _Now.UtcDateTime.AddMinutes(5)),
             OnNodeDeath = policy,
             Retries = 3,
             ExecutionTime = _Now.UtcDateTime.AddMinutes(-2),
@@ -268,8 +318,7 @@ public sealed class JobsInMemoryAttemptHistoryTests : TestBase
         {
             Id = Guid.NewGuid(),
             Status = JobStatus.InProgress,
-            OwnerId = _Owner,
-            LockedUntil = lapsed ? _Now.UtcDateTime.AddMinutes(-1) : _Now.UtcDateTime.AddMinutes(5),
+            Lease = TestLeases.Held(_Owner, lapsed ? _Now.UtcDateTime.AddMinutes(-1) : _Now.UtcDateTime.AddMinutes(5)),
             OnNodeDeath = policy,
             ExecutionTime = _Now.UtcDateTime.AddMinutes(-1),
             CronJobId = cronJob.Id,
@@ -288,6 +337,7 @@ public sealed class JobsInMemoryAttemptHistoryTests : TestBase
             FunctionName = "fn",
             JobId = id,
             ClaimOwner = _Owner,
+            ClaimGeneration = 1,
         };
     }
 }

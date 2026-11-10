@@ -34,6 +34,12 @@ public abstract class AdditionalOutboxConformanceTests : TestBase
     /// <summary>Creates an empty database and returns a connection string to it.</summary>
     protected abstract Task<string> CreateDatabaseAsync(string name);
 
+    /// <summary>
+    /// Returns the name of a new database for <paramref name="role"/>. Override it when the fixture owns the names
+    /// of its databases, so a database a test creates is one the fixture also drops.
+    /// </summary>
+    protected virtual string NewDatabaseName(string role) => $"{role}_{Guid.NewGuid():N}"[..24];
+
     /// <summary>Drops a database created by <see cref="CreateDatabaseAsync"/>, closing its open sessions.</summary>
     protected abstract Task DropDatabaseAsync(string name);
 
@@ -517,7 +523,7 @@ public abstract class AdditionalOutboxConformanceTests : TestBase
 
     private async Task<TestDatabase> _CreateDatabaseAsync(string role)
     {
-        var name = $"{role}_{Guid.NewGuid():N}"[..24];
+        var name = NewDatabaseName(role);
         var connectionString = await CreateDatabaseAsync(name);
         _databases.Add(name);
 

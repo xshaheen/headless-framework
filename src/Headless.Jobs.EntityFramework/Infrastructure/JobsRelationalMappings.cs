@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Fencing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
@@ -58,10 +59,9 @@ internal sealed record CronOccurrenceRelationalMapping(
     string Table,
     string Id,
     string Status,
-    string OwnerId,
     string ExecutionTime,
     string CronJobId,
-    string LockedUntil,
+    JobsLeaseColumns Lease,
     string OnNodeDeath,
     string ElapsedTime,
     string RetryCount,
@@ -126,10 +126,9 @@ internal sealed record CronOccurrenceRelationalMapping(
             sql.DelimitIdentifier(tableName, entity.GetSchema()),
             Column(nameof(CronJobOccurrenceEntity<>.Id)),
             Column(nameof(CronJobOccurrenceEntity<>.Status)),
-            Column(nameof(CronJobOccurrenceEntity<>.OwnerId)),
             Column(nameof(CronJobOccurrenceEntity<>.ExecutionTime)),
             Column(nameof(CronJobOccurrenceEntity<>.CronJobId)),
-            Column(nameof(CronJobOccurrenceEntity<>.LockedUntil)),
+            JobsLeaseColumns.Create(entity, store, sql),
             Column(nameof(CronJobOccurrenceEntity<>.OnNodeDeath)),
             Column(nameof(CronJobOccurrenceEntity<>.ElapsedTime)),
             Column(nameof(CronJobOccurrenceEntity<>.RetryCount)),
@@ -154,8 +153,7 @@ internal sealed record TimeJobRelationalMapping(
     string Table,
     string Id,
     string Status,
-    string OwnerId,
-    string LockedUntil,
+    JobsLeaseColumns Lease,
     string OnNodeDeath,
     string UpdatedAt,
     string ExecutionTime,
@@ -194,8 +192,7 @@ internal sealed record TimeJobRelationalMapping(
             sql.DelimitIdentifier(tableName, entity.GetSchema()),
             Column(nameof(TimeJobEntity.Id)),
             Column(nameof(TimeJobEntity.Status)),
-            Column(nameof(TimeJobEntity.OwnerId)),
-            Column(nameof(TimeJobEntity.LockedUntil)),
+            JobsLeaseColumns.Create(entity, store, sql),
             Column(nameof(TimeJobEntity.OnNodeDeath)),
             Column(nameof(TimeJobEntity.UpdatedAt)),
             Column(nameof(TimeJobEntity.ExecutionTime)),
@@ -203,6 +200,41 @@ internal sealed record TimeJobRelationalMapping(
             Column(nameof(TimeJobEntity.RunCondition)),
             Column(nameof(TimeJobEntity.Function)),
             Column(nameof(TimeJobEntity.ChangedAt))
+        );
+    }
+}
+
+/// <summary>The delimited columns of a job row's lease, for native SQL that reads the lease in a filter.</summary>
+internal sealed record JobsLeaseColumns(
+    string Generation,
+    string State,
+    string ExpiresAt,
+    string Holder,
+    string TakeoverCount
+)
+{
+    public static JobsLeaseColumns Create(IEntityType entity, StoreObjectIdentifier store, ISqlGenerationHelper sql)
+    {
+        var lease =
+            entity.FindComplexProperty(nameof(TimeJobEntity.Lease))
+            ?? throw new InvalidOperationException($"{entity.ClrType.Name}.Lease is not mapped.");
+
+        string Column(string propertyName)
+        {
+            var column =
+                lease.ComplexType.FindProperty(propertyName)?.GetColumnName(store)
+                ?? throw new InvalidOperationException(
+                    $"{entity.ClrType.Name}.Lease.{propertyName} has no column mapping."
+                );
+            return sql.DelimitIdentifier(column);
+        }
+
+        return new JobsLeaseColumns(
+            Column(nameof(RowLeaseSnapshot.Generation)),
+            Column(nameof(RowLeaseSnapshot.State)),
+            Column(nameof(RowLeaseSnapshot.ExpiresAt)),
+            Column(nameof(RowLeaseSnapshot.Holder)),
+            Column(nameof(RowLeaseSnapshot.TakeoverCount))
         );
     }
 }

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
+using Headless.Fencing;
 using Headless.Messaging.Internal;
 using Headless.Primitives;
 using Headless.Sql;
@@ -531,13 +532,14 @@ internal sealed partial class RelationalDataStorage
                     _t.IntentType,
                     _t.ConsumerIdentity,
                     _t.IsInboxOrphaned,
-                    _t.LockedUntil,
+                    _t.LeaseExpiresAt,
                     _t.TenantPresent,
                     _t.TenantId,
                     _t.MessageId,
                     _t.ContractIdentity,
                     _t.ContractVersion,
                     _t.LifecycleId,
+                    _t.LeaseState,
                 ],
                 $"{_t.IsInboxRecord} = {_t.True}"
             )
@@ -557,9 +559,14 @@ internal sealed partial class RelationalDataStorage
                         return null;
                     }
 
-                    var lockedUntil = reader.IsDBNull(9)
-                        ? (DateTimeOffset?)null
-                        : reader.GetFieldValue<DateTimeOffset>(9);
+                    // Only an active lease can still be live; an ended one keeps its last expiry as a record.
+                    var leaseActive =
+                        Convert.ToInt16(reader.GetValue(16), CultureInfo.InvariantCulture)
+                        == (short)RowLeaseState.Active;
+                    var lockedUntil =
+                        !leaseActive || reader.IsDBNull(9)
+                            ? (DateTimeOffset?)null
+                            : reader.GetFieldValue<DateTimeOffset>(9);
                     var lane = MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(6));
                     var generation = reader.GetInt64(5);
 
@@ -652,11 +659,11 @@ internal sealed partial class RelationalDataStorage
             )
         );
         var insertChild = $"""
-            INSERT INTO {_receivedTable}({_t.Id},{_t.Version},{_t.Name},{_t.Content},{_t.IntentType},{_t.Retries},{_t.InlineAttempts},{_t.Added},{_t.ExpiresAt},{_t.NextRetryAt},{_t.LockedUntil},{_t.Owner},{_t.StatusName},{_t.MessageId},{_t.ExceptionInfo},{_t.IsInboxRecord},{_t.TenantPresent},{_t.TenantId},{_t.ContractIdentity},{_t.ContractVersion},{_t.ConsumerIdentity},{_t.Generation},{_t.GenerationIncarnationId},{_t.LifecycleId},{_t.AttemptId},{_t.IsInboxOrphaned},{_t.IsCurrentGeneration},{_t.ReplayParentIncarnationId},{_t.ReplayOperationId},{_t.TerminalAt},{_t.EffectiveExpiresAt},{_t.IsHeld},{_t.HeldAt},{_t.HeldBy},{_t.HoldReason},{_t.HoldOperationId},{_t.InboxKeyHash},{_t.InboxRetentionSeconds},{_t.ConsumerKeyHash},{_t.ChangedAt})
+            INSERT INTO {_receivedTable}({_t.Id},{_t.Version},{_t.Name},{_t.Content},{_t.IntentType},{_t.Retries},{_t.InlineAttempts},{_t.Added},{_t.ExpiresAt},{_t.NextRetryAt},{_t.StatusName},{_t.MessageId},{_t.ExceptionInfo},{_t.IsInboxRecord},{_t.TenantPresent},{_t.TenantId},{_t.ContractIdentity},{_t.ContractVersion},{_t.ConsumerIdentity},{_t.Generation},{_t.GenerationIncarnationId},{_t.LifecycleId},{_t.AttemptId},{_t.IsInboxOrphaned},{_t.IsCurrentGeneration},{_t.ReplayParentIncarnationId},{_t.ReplayOperationId},{_t.TerminalAt},{_t.EffectiveExpiresAt},{_t.IsHeld},{_t.HeldAt},{_t.HeldBy},{_t.HoldReason},{_t.HoldOperationId},{_t.InboxKeyHash},{_t.InboxRetentionSeconds},{_t.ConsumerKeyHash},{_t.ChangedAt})
             SELECT @ChildStorageId,{_t.Version},{_t.Name},{_t.Content},{_t.IntentType},0,0,@Instant,NULL,{_dialect.ShiftByDuration(
                 "@Instant",
                 "Grace"
-            )},NULL,NULL,'{nameof(
+            )},'{nameof(
                 StatusName.Scheduled
             )}',{_t.MessageId},NULL,{_t.True},{_t.TenantPresent},{_t.TenantId},{_t.ContractIdentity},{_t.ContractVersion},{_t.ConsumerIdentity},@ChildGeneration,@ChildIncarnationId,{_t.LifecycleId},NULL,{_t.False},{_t.True},{_t.GenerationIncarnationId},@OperationId,NULL,NULL,{_t.False},NULL,NULL,NULL,NULL,@InboxKeyHash,{_t.InboxRetentionSeconds},{_t.ConsumerKeyHash},{SqlDialectTokens.Now}
             FROM {_receivedTable} WHERE {_t.GenerationIncarnationId}=@ParentIncarnationId;

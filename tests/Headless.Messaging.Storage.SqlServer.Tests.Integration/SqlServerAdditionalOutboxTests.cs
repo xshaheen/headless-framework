@@ -11,16 +11,17 @@ namespace Tests;
 [Collection<SqlServerTestFixture>]
 public sealed class SqlServerAdditionalOutboxTests(SqlServerTestFixture fixture) : AdditionalOutboxConformanceTests
 {
+    protected override string NewDatabaseName(string role) => fixture.DerivedDatabaseName(base.NewDatabaseName(role));
+
     protected override async Task<string> CreateDatabaseAsync(string name)
     {
-        await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.ExecuteAsync($"CREATE DATABASE [{name}];");
+        await fixture.CreateDatabaseAsync(name, AbortToken);
 
         // A database recreated under an earlier name must not be refused by a pool still blocking on the login
         // failures of its absence (SqlClient's pool blocking period).
         SqlConnection.ClearAllPools();
 
-        return new SqlConnectionStringBuilder(fixture.ConnectionString) { InitialCatalog = name }.ConnectionString;
+        return fixture.ConnectionStringFor(name);
     }
 
     protected override async Task DropDatabaseAsync(string name)
@@ -32,15 +33,17 @@ public sealed class SqlServerAdditionalOutboxTests(SqlServerTestFixture fixture)
         // sessions. The drop takes deadlock priority, and a rare victim of it retries. A relay whose session the
         // ALTER killed retries at once and can take the one single-user connection before the DROP, which fails the
         // drop as in use and every later ALTER as single-user and occupied; each attempt therefore kills the
-        // database's sessions first.
+        // database's sessions first. A session can end between the SELECT that lists it and its KILL, which fails the
+        // batch as not an active process; the next attempt lists the sessions again.
         const int deadlockVictim = 1205;
         const int databaseInUse = 3702;
         const int singleUserOccupied = 5064;
+        const int sessionAlreadyEnded = 6106;
         for (var attempt = 1; ; attempt++)
         {
             try
             {
-                await using var connection = new SqlConnection(fixture.ConnectionString);
+                await using var connection = new SqlConnection(fixture.AdminConnectionString);
                 await connection.ExecuteAsync(
                     $"""
                     SET DEADLOCK_PRIORITY HIGH;
@@ -61,7 +64,9 @@ public sealed class SqlServerAdditionalOutboxTests(SqlServerTestFixture fixture)
             }
             catch (SqlException ex)
                 when (ex.Errors.Cast<SqlError>()
-                        .Any(e => e.Number is deadlockVictim or databaseInUse or singleUserOccupied)
+                        .Any(e =>
+                            e.Number is deadlockVictim or databaseInUse or singleUserOccupied or sessionAlreadyEnded
+                        )
                     && attempt < 10
                 )
             {

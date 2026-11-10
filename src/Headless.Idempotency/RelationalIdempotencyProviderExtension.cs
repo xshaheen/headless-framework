@@ -83,7 +83,6 @@ internal sealed class RelationalIdempotencyProviderExtension<TOptions, TOptionsV
                 options.CommandTimeoutSeconds,
                 new IdempotencyTable(provider.Dialect, schema),
                 provider.BeginOwnedUnit,
-                provider.BeginReadOnlyTransaction,
                 provider.EnlistedAdmissionRefusal
             );
         });
@@ -109,10 +108,6 @@ internal sealed class RelationalIdempotencyProviderExtension<TOptions, TOptionsV
 /// <param name="SchemaContribution">
 /// Builds the provider's schema contribution (its DDL, in its dialect) for the schema runner from the bound options.
 /// </param>
-/// <param name="BeginReadOnlyTransaction">
-/// Begins the transaction of an autonomous read that must not wait on a writer, or <see langword="null" /> when the
-/// engine's ordinary autonomous transaction already never waits on one to read.
-/// </param>
 /// <param name="EnlistedAdmissionRefusal">
 /// Why the provider refuses an admission inside a caller's unit, or <see langword="null" /> when it accepts one.
 /// </param>
@@ -122,6 +117,5 @@ internal sealed record RelationalIdempotencyProvider(
     Func<IUnitOfWorkFactory, DbConnection, CancellationToken, ValueTask<IUnitOfWork>> BeginOwnedUnit,
     Action<IServiceCollection> AddUnitOfWork,
     Func<RelationalIdempotencyOptions, IdempotencyStorageOptions, SchemaContribution> SchemaContribution,
-    Func<DbConnection, CancellationToken, ValueTask<DbTransaction>>? BeginReadOnlyTransaction = null,
     string? EnlistedAdmissionRefusal = null
 );

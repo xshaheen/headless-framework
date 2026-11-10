@@ -1,0 +1,19 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>Keeps credential paths out of ASP.NET Core HTTP logging and OpenTelemetry spans for Headless Framework applications.</Description>
+    <PackageTags>headless;logging;redaction;aspnetcore;opentelemetry;dotnet</PackageTags>
+    <RootNamespace>Headless.Logging</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Diagnostics.Middleware" />
+    <PackageReference Include="OpenTelemetry" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
+    <ProjectReference Include="..\Headless.Logging.Redaction\Headless.Logging.Redaction.csproj" />
+  </ItemGroup>
+</Project>

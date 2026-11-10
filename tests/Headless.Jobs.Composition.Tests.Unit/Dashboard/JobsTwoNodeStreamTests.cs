@@ -54,7 +54,8 @@ public sealed class JobsTwoNodeStreamTests : TestBase
             FunctionName = JobsModuleNode.Charge,
             JobId = job.Id,
             Type = JobType.TimeJob,
-            ClaimOwner = claimed.OwnerId!,
+            ClaimOwner = claimed.Lease.Holder!,
+            ClaimGeneration = claimed.Lease.Generation,
         }.SetProperty(x => x.Status, JobStatus.Failed);
         (await nodeB.Services.GetRequiredService<IInternalJobManager>().UpdateTickerAsync(failure, AbortToken))
             .Should()

@@ -3,7 +3,6 @@
 using Headless.Testing.Testcontainers;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Npgsql;
-using Testcontainers.PostgreSql;
 
 namespace Tests;
 
@@ -26,9 +25,9 @@ public sealed class PostgreSqlStorageHealthCheckTests(PostgreSqlJobsCoordination
     public async Task storage_check_reports_unhealthy_once_the_server_stops()
     {
         // given
-        await using var container = new PostgreSqlBuilder(TestImages.PostgreSql).Build();
-        await container.StartAsync(AbortToken);
-        var connectionString = new NpgsqlConnectionStringBuilder(container.GetConnectionString())
+        await using var server = new StoppablePostgreSqlFixture();
+        await server.StartAsync();
+        var connectionString = new NpgsqlConnectionStringBuilder(server.ConnectionString)
         {
             Timeout = 5,
         }.ConnectionString;
@@ -41,11 +40,32 @@ public sealed class PostgreSqlStorageHealthCheckTests(PostgreSqlJobsCoordination
         running.Status.Should().Be(HealthStatus.Healthy);
 
         // when the server stops, with the connection the first probe returned still in the pool
-        await container.StopAsync(AbortToken);
+        await server.Container.StopAsync(AbortToken);
         var stopped = await CheckAsync(host);
 
         // then
         stopped.Status.Should().Be(HealthStatus.Unhealthy);
         stopped.Description.Should().Be($"The '{CheckName}' dependency probe failed.");
+    }
+
+    private sealed class StoppablePostgreSqlFixture : HeadlessPostgreSqlFixture
+    {
+        // Its test stops the server, which would cut every other fixture on a shared one.
+        protected override bool ShareContainer => false;
+
+        public ValueTask StartAsync() => InitializeAsync();
+
+        protected override async ValueTask DisposeAsyncCore()
+        {
+            try
+            {
+                await base.DisposeAsyncCore();
+            }
+            catch (NpgsqlException)
+            {
+                // The test left the server stopped, so its database cannot be dropped; removing the container does it.
+                await Container.DisposeAsync();
+            }
+        }
     }
 }

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Fencing;
 
 namespace Headless.Jobs.Provider;
 
@@ -557,7 +558,8 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             ExecutedAt = job.ExecutedAt,
             ElapsedTime = job.ElapsedTime,
             RetryCount = job.RetryCount,
-            OwnerId = job.OwnerId,
+            OwnerId = job.Lease.Holder,
+            IsLeased = job.Lease.State == RowLeaseState.Active,
             ExceptionMessage = job.ExceptionMessage,
             FailureFingerprint = job.FailureFingerprint,
             SkippedReason = job.SkippedReason,
@@ -594,7 +596,8 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             ExecutedAt = occurrence.ExecutedAt,
             ElapsedTime = occurrence.ElapsedTime,
             RetryCount = occurrence.RetryCount,
-            OwnerId = occurrence.OwnerId,
+            OwnerId = occurrence.Lease.Holder,
+            IsLeased = occurrence.Lease.State == RowLeaseState.Active,
             ExceptionMessage = occurrence.ExceptionMessage,
             FailureFingerprint = occurrence.FailureFingerprint,
             SkippedReason = occurrence.SkippedReason,

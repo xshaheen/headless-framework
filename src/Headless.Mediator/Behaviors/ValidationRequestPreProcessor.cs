@@ -18,12 +18,14 @@ namespace Headless.Mediator.Behaviors;
 /// </remarks>
 internal sealed class ValidationRequestPreProcessor<TMessage, TResponse>(
     IEnumerable<IValidator<TMessage>> validators,
-    ILogger<ValidationRequestPreProcessor<TMessage, TResponse>> logger
+    ILogger<ValidationRequestPreProcessor<TMessage, TResponse>> logger,
+    MediatorPayloadLogging payloadLogging
 ) : MessagePreProcessor<TMessage, TResponse>
     where TMessage : IMessage
 {
     private readonly IEnumerable<IValidator<TMessage>> _validators = Argument.IsNotNull(validators);
     private readonly ILogger<ValidationRequestPreProcessor<TMessage, TResponse>> _logger = Argument.IsNotNull(logger);
+    private readonly bool _logPayloads = Argument.IsNotNull(payloadLogging).Enabled;
 
     /// <summary>
     /// Runs all registered validators for <typeparamref name="TMessage"/> and throws when any produce failures.
@@ -94,34 +96,42 @@ internal sealed class ValidationRequestPreProcessor<TMessage, TResponse>(
 
         var failures = validationResults.SelectMany(result => result.Errors).ToList();
 
-        _LogMediatorMessageValidation(
-            _logger,
-            messageName: typeof(TMessage).Name,
-            message: message,
-            failures: failures
-        );
+        if (_logger.IsEnabled(LogLevel.Debug))
+        {
+            // ValidationFailure.ToString() is the message alone, so name the property explicitly.
+            string[] described =
+            [
+                .. failures.Select(static failure => $"{failure.PropertyName}: {failure.ErrorMessage}"),
+            ];
+
+            if (_logPayloads)
+            {
+                _LogWithPayload(_logger, typeof(TMessage).Name, message, described, arg5: null);
+            }
+            else
+            {
+                _Log(_logger, typeof(TMessage).Name, described, arg4: null);
+            }
+        }
 
         throw new ValidationException(failures);
     }
 
     #region Logs
 
-    private static readonly Action<ILogger, string, object, IReadOnlyCollection<ValidationFailure>, Exception?> _Log =
-        LoggerMessage.Define<string, object, IReadOnlyCollection<ValidationFailure>>(
+    // The failures stay in both shapes as "Property: message", which is what a caller needs to see why the message was
+    // rejected. A validator message that embeds {PropertyValue} writes the rejected value here too.
+    private static readonly Action<ILogger, string, IReadOnlyList<string>, Exception?> _Log = LoggerMessage.Define<
+        string,
+        IReadOnlyList<string>
+    >(LogLevel.Debug, new EventId(4, "Mediator:Validation"), "[Mediator:Validation] {MessageName} {Failures}");
+
+    private static readonly Action<ILogger, string, object, IReadOnlyList<string>, Exception?> _LogWithPayload =
+        LoggerMessage.Define<string, object, IReadOnlyList<string>>(
             LogLevel.Debug,
             new EventId(4, "Mediator:Validation"),
             "[Mediator:Validation] {MessageName} {@Message} {Failures}"
         );
-
-    private static void _LogMediatorMessageValidation(
-        ILogger logger,
-        string messageName,
-        object message,
-        IReadOnlyCollection<ValidationFailure> failures
-    )
-    {
-        _Log(logger, messageName, message, failures, arg5: null);
-    }
 
     #endregion
 }

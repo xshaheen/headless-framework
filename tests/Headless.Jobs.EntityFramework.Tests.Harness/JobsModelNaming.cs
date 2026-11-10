@@ -45,5 +45,15 @@ public static class JobsModelNaming
             .FindProperty(property)!
             .GetColumnName(StoreObjectIdentifier.Table(entity.GetTableName()!, entity.GetSchema()));
 
+    /// <summary>
+    /// The column the lease member <paramref name="property" /> maps to in the entity's own table. The lease is a
+    /// complex property, so its members are not properties of the entity itself.
+    /// </summary>
+    public static string? LeaseColumnName(this IEntityType entity, string property) =>
+        entity
+            .FindComplexProperty(nameof(TimeJobEntity.Lease))!
+            .ComplexType.FindProperty(property)!
+            .GetColumnName(StoreObjectIdentifier.Table(entity.GetTableName()!, entity.GetSchema()));
+
     private sealed class NamingProbeDbContext(DbContextOptions<NamingProbeDbContext> options) : DbContext(options);
 }

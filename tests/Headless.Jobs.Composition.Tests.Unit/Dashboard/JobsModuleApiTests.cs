@@ -189,7 +189,14 @@ public sealed class JobsModuleApiTests : TestBase
             .Should()
             .ContainSingle()
             .Subject;
-        (await _Store(app).UpdateTimeJobProgressAsync(reporting.Id, claimed.OwnerId!, new JobProgress(40), AbortToken))
+        (
+            await _Store(app)
+                .UpdateTimeJobProgressAsync(
+                    JobsLeaseTables.TimeJob(reporting.Id, claimed.Lease.Generation),
+                    new JobProgress(40),
+                    AbortToken
+                )
+        )
             .Should()
             .BeTrue();
         using var client = JobsDashboardHttpHost.Client(app);
@@ -788,7 +795,7 @@ public sealed class JobsModuleApiTests : TestBase
     private TimeJobEntity _Running(string owner)
     {
         var job = _Scheduled(JobStatus.InProgress, _time.GetUtcNow().UtcDateTime.AddMinutes(-1));
-        job.OwnerId = owner;
+        job.Lease = TestLeases.Held(owner, _time.GetUtcNow().AddMinutes(5));
 
         return job;
     }

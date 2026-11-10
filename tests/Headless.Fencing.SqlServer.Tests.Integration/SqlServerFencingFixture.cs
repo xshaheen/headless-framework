@@ -4,6 +4,8 @@ using System.Data;
 using System.Data.Common;
 using Headless.Fencing;
 using Headless.Hosting;
+using Headless.Sql;
+using Headless.Sql.SqlServer;
 using Headless.Testing.Testcontainers;
 using Headless.UnitOfWork;
 using Microsoft.Data.SqlClient;
@@ -11,17 +13,15 @@ using Microsoft.Data.SqlClient;
 namespace Tests;
 
 /// <summary>
-/// SQL Server leaf fixture for the fencing conformance suite: one container holding the lease database and a
-/// second, empty database used to prove that a unit on another database is refused. The lease database runs with
-/// read committed snapshot isolation off; <see cref="SqlServerRcsiFencingFixture" /> runs the same storage with it
-/// on. Tests run serially because the blocking scenarios measure how long a call waits.
+/// SQL Server leaf fixture for the fencing conformance suite: the fixture's own database holds the leases, and a
+/// second, empty database derived from it proves that a unit on another database is refused. The lease database runs
+/// with read committed snapshot isolation off; <see cref="SqlServerRcsiFencingFixture" /> runs the same storage with
+/// it on. Tests run serially because the blocking scenarios measure how long a call waits.
 /// </summary>
 [UsedImplicitly]
 [CollectionDefinition(DisableParallelization = true)]
 public sealed class SqlServerFencingFixture : SqlServerFencingFixtureBase, ICollectionFixture<SqlServerFencingFixture>
 {
-    protected override string LeaseDatabase => "fencing_test";
-
     public override bool ReadCommittedSnapshot => false;
 }
 
@@ -35,49 +35,38 @@ public sealed class SqlServerRcsiFencingFixture
     : SqlServerFencingFixtureBase,
         ICollectionFixture<SqlServerRcsiFencingFixture>
 {
-    protected override string LeaseDatabase => "fencing_rcsi_test";
-
     public override bool ReadCommittedSnapshot => true;
 }
 
-public abstract class SqlServerFencingFixtureBase : HeadlessSqlServerFixture, ILeasesFixture
+public abstract class SqlServerFencingFixtureBase : HeadlessSqlServerFixture, ILeasesFixture, IFencedRowsFixture
 {
-    private const string _OtherDatabase = "fencing_other";
     private const string _HandoffTable = "[dbo].[FencingHandoffs]";
 
-    protected abstract string LeaseDatabase { get; }
+    public ISqlDialect Dialect => SqlServerDialect.Instance;
+
+    // Not the storage schema, which the lease tests may drop and recreate.
+    public string Schema => "dbo";
 
     /// <summary>Whether the lease database runs read committed snapshot isolation.</summary>
     public abstract bool ReadCommittedSnapshot { get; }
 
-    /// <summary>Connection string of the database that holds the leases (the base one points at master).</summary>
-    public string LeaseConnectionString =>
-        new SqlConnectionStringBuilder(ConnectionString) { InitialCatalog = LeaseDatabase }.ToString();
+    /// <summary>Connection string of the database that holds the leases: the fixture's own database.</summary>
+    public string LeaseConnectionString => ConnectionString;
 
-    public string OtherDatabaseConnectionString =>
-        new SqlConnectionStringBuilder(ConnectionString) { InitialCatalog = _OtherDatabase }.ToString();
+    public string OtherDatabaseConnectionString => ConnectionStringFor(DerivedDatabaseName("other"));
 
     // The databases can only be created once the container accepts logins.
     protected override async ValueTask InitializeAsync()
     {
         await base.InitializeAsync();
+        await CreateDatabaseAsync(DerivedDatabaseName("other"), CancellationToken.None);
 
-        await using (var master = new SqlConnection(ConnectionString))
+        await using (var master = new SqlConnection(AdminConnectionString))
         {
             await master.OpenAsync(CancellationToken.None);
-
-            foreach (var database in (string[])[LeaseDatabase, _OtherDatabase])
-            {
-                await using var create = new SqlCommand(
-                    $"IF DB_ID(N'{database}') IS NULL CREATE DATABASE [{database}];",
-                    master
-                );
-                await create.ExecuteNonQueryAsync(CancellationToken.None);
-            }
-
             var snapshot = ReadCommittedSnapshot ? "ON" : "OFF";
             await using var alter = new SqlCommand(
-                $"ALTER DATABASE [{LeaseDatabase}] SET READ_COMMITTED_SNAPSHOT {snapshot} WITH ROLLBACK IMMEDIATE;",
+                $"ALTER DATABASE [{DatabaseName}] SET READ_COMMITTED_SNAPSHOT {snapshot} WITH ROLLBACK IMMEDIATE;",
                 master
             );
             await alter.ExecuteNonQueryAsync(CancellationToken.None);
@@ -96,6 +85,24 @@ public abstract class SqlServerFencingFixtureBase : HeadlessSqlServerFixture, IL
             CancellationToken.None
         );
 
+        await ExecuteAsync(
+            """
+            CREATE TABLE [dbo].[work_items] (
+                [id] uniqueidentifier NOT NULL PRIMARY KEY,
+                [status] nvarchar(200) NOT NULL,
+                [parent_id] uniqueidentifier NULL,
+                [lease_generation] bigint NOT NULL DEFAULT 0,
+                [lease_state] smallint NOT NULL DEFAULT 0,
+                [lease_expires_at] datetimeoffset(7) NULL,
+                [lease_holder] nvarchar(405) NULL,
+                [lease_takeover_count] int NOT NULL DEFAULT 0
+            );
+
+            CREATE SEQUENCE [dbo].[work_item_generations] AS bigint START WITH 1 INCREMENT BY 1 NO CYCLE;
+            """,
+            CancellationToken.None
+        );
+
         var probed = await ScalarAsync(
             "SELECT CAST(is_read_committed_snapshot_on AS int) FROM sys.databases WHERE database_id = DB_ID()",
             CancellationToken.None
@@ -104,7 +111,7 @@ public abstract class SqlServerFencingFixtureBase : HeadlessSqlServerFixture, IL
         if (probed != (ReadCommittedSnapshot ? 1 : 0))
         {
             throw new InvalidOperationException(
-                $"The lease database '{LeaseDatabase}' reports is_read_committed_snapshot_on = {probed}."
+                $"The lease database '{DatabaseName}' reports is_read_committed_snapshot_on = {probed}."
             );
         }
     }

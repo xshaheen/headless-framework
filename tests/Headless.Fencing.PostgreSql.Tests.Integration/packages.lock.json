@@ -825,6 +825,7 @@
           "Bogus": "[35.6.5, )",
           "Headless.Fencing": "[1.0.0, )",
           "Headless.Fencing.InMemory": "[1.0.0, )",
+          "Headless.Fencing.Sql": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Testing": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection": "[10.0.13, )",
@@ -927,6 +928,8 @@
         "dependencies": {
           "Headless.Extensions": "[1.0.0, )",
           "Microsoft.Data.SqlClient": "[7.1.1, )",
+          "Npgsql": "[10.0.3, )",
+          "RabbitMQ.Client": "[7.2.2, )",
           "Testcontainers": "[4.16.0, )",
           "Testcontainers.Azurite": "[4.16.0, )",
           "Testcontainers.Kafka": "[4.16.0, )",
@@ -1251,6 +1254,15 @@
         "requested": "[8.8.0, )",
         "resolved": "8.8.0",
         "contentHash": "TewV9uNFsoRFggoFbTAGFwsMYPuckA+wTIpQPyhLL9BANRPQRENz2S4bwATrB3HBOakN5oKLFIllPiDnVecmJg=="
+      },
+      "RabbitMQ.Client": {
+        "type": "CentralTransitive",
+        "requested": "[7.2.2, )",
+        "resolved": "7.2.2",
+        "contentHash": "k4b6RnTXpLbsF96V93ooNYxgPMnoA2tEm24B6AXNJr1mG8wwNYdA1XJtgU66L5xqeGyveS7SJriRzlX3cbqQNA==",
+        "dependencies": {
+          "System.Threading.RateLimiting": "8.0.0"
+        }
       },
       "SSH.NET": {
         "type": "CentralTransitive",

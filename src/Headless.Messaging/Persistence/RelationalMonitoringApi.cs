@@ -2,6 +2,7 @@
 
 using System.Data.Common;
 using Headless.Checks;
+using Headless.Fencing;
 using Headless.Messaging.Internal;
 using Headless.Primitives;
 using Headless.Sql;
@@ -29,6 +30,10 @@ internal sealed class RelationalMonitoringApi(
     private readonly MessagingOptions _messagingOptions = messagingOptions.Value;
     private readonly string _publishedTable = tables.Published;
     private readonly string _receivedTable = tables.Received;
+
+    // A view's lock time is the lease expiry while a lease is held; any other lease state has no live holder.
+    private readonly string _lockedUntil =
+        $"CASE WHEN {tables.LeaseState} = {tables.ActiveLease} THEN {tables.LeaseExpiresAt} END";
 
     private int CommandTimeoutSeconds =>
         (int)Math.Min(Math.Ceiling(_messagingOptions.CommandTimeout.TotalSeconds), int.MaxValue);
@@ -232,7 +237,7 @@ internal sealed class RelationalMonitoringApi(
         // Only received rows belong to a consumer; the published table has no identity column.
         var consumerIdentity = publish ? $"NULL AS {_t.ConsumerIdentity}" : _t.ConsumerIdentity;
         var selectColumns =
-            $"{_t.Id},{_t.MessageId},{_t.Version},{_t.Name},{consumerIdentity},{_t.Content},{_t.IntentType},{_t.Retries},{_t.Added},{_t.ExpiresAt},{_t.StatusName},{_t.NextRetryAt},{_t.LockedUntil}";
+            $"{_t.Id},{_t.MessageId},{_t.Version},{_t.Name},{consumerIdentity},{_t.Content},{_t.IntentType},{_t.Retries},{_t.Added},{_t.ExpiresAt},{_t.StatusName},{_t.NextRetryAt},{_lockedUntil}";
         var where = $"{_t.IntentType} IN (0, 1)";
 
         if (query.StatusName is not null)
@@ -392,7 +397,7 @@ internal sealed class RelationalMonitoringApi(
                 connection,
                 transaction: null,
                 $"""
-                SELECT {_t.Id},{_t.IntentType},{_t.Name},{_t.StatusName},{_t.Added},{_t.NextRetryAt},{_t.LockedUntil}
+                SELECT {_t.Id},{_t.IntentType},{_t.Name},{_t.StatusName},{_t.Added},{_t.NextRetryAt},{_lockedUntil}
                 FROM {tableName}
                 WHERE {_t.IntentType} NOT IN (0, 1)
                 ORDER BY {_t.Added},{_t.Id}
@@ -457,7 +462,7 @@ internal sealed class RelationalMonitoringApi(
             ? $",{_t.ConsumerIdentity},{_t.TenantPresent},{_t.TenantId},{_t.IsHeld},{_t.GenerationIncarnationId}"
             : "";
         var sql = $"""
-            SELECT {_t.Id},{_t.MessageId},{_t.Version},{_t.Name},{_t.IntentType},{_t.Retries},{_t.Added},{_t.ExpiresAt},{_t.StatusName},{_t.NextRetryAt},{_t.LockedUntil},{_t.ChangedAt},{_t.FailureFingerprint}{receivedColumns}
+            SELECT {_t.Id},{_t.MessageId},{_t.Version},{_t.Name},{_t.IntentType},{_t.Retries},{_t.Added},{_t.ExpiresAt},{_t.StatusName},{_t.NextRetryAt},{_lockedUntil},{_t.ChangedAt},{_t.FailureFingerprint}{receivedColumns}
             FROM {table}
             WHERE {where}
             ORDER BY {_t.Added} DESC,{_t.Id} DESC
@@ -855,7 +860,7 @@ internal sealed class RelationalMonitoringApi(
 
         // One list parameter keeps the statement text, and its cached plan, the same whatever the number of ids.
         var sql =
-            $"SELECT {_t.Id},{_t.Content},{_t.IntentType},{_t.Added},{_t.ExpiresAt},{_t.Retries},{_t.ExceptionInfo},{_t.NextRetryAt},{_t.LockedUntil},{_t.StatusName},{_t.FailureFingerprint} FROM {_dialect.ReadWithoutWaiting(tableName)} WHERE {_dialect.InList(_t.Id, "Ids", SqlColumnType.Guid)} AND {_t.IntentType} IN (0, 1);";
+            $"SELECT {_t.Id},{_t.Content},{_t.IntentType},{_t.Added},{_t.ExpiresAt},{_t.Retries},{_t.ExceptionInfo},{_t.NextRetryAt},{string.Join(',', _t.LeaseColumns)},{_t.StatusName},{_t.FailureFingerprint} FROM {_dialect.ReadWithoutWaiting(tableName)} WHERE {_dialect.InList(_t.Id, "Ids", SqlColumnType.Guid)} AND {_t.IntentType} IN (0, 1);";
 
         await using var connection = _storage.CreateConnection();
         return await RelationalCommand
@@ -884,9 +889,10 @@ internal sealed class RelationalMonitoringApi(
                                 Retries = reader.GetInt32(5),
                                 ExceptionInfo = await _StringAsync(reader, 6, token).ConfigureAwait(false),
                                 NextRetryAt = await _InstantAsync(reader, 7, token).ConfigureAwait(false),
-                                LockedUntil = await _InstantAsync(reader, 8, token).ConfigureAwait(false),
-                                StatusName = Enum.Parse<StatusName>(reader.GetString(9)),
-                                FailureFingerprint = await _StringAsync(reader, 10, token).ConfigureAwait(false),
+                                Lease = await RowLeaseReader.ReadAsync(reader, 8, token).ConfigureAwait(false),
+                                StatusName = Enum.Parse<StatusName>(reader.GetString(8 + RowLeaseReader.ColumnCount)),
+                                FailureFingerprint = await _StringAsync(reader, 9 + RowLeaseReader.ColumnCount, token)
+                                    .ConfigureAwait(false),
                             }
                         );
                     }

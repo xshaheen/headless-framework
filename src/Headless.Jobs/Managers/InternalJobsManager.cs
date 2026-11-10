@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using System.Globalization;
 using Headless.Checks;
+using Headless.Fencing;
 using Headless.Jobs.Coordination;
 using Headless.Jobs.Instrumentation;
 using Headless.Jobs.Internal;
@@ -313,7 +314,8 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
             TenantId = timeJob.TenantId,
             ParentId = timeJob.ParentId,
             ExecutionTime = timeJob.ExecutionTime ?? timeProvider.GetUtcNow().UtcDateTime,
-            ClaimOwner = timeJob.OwnerId,
+            ClaimOwner = timeJob.Lease.Holder,
+            ClaimGeneration = timeJob.Lease.Generation,
         };
 
         // The provider already hydrated the tree bounded to MaxChainDepth; recurse the whole thing so a chain
@@ -327,8 +329,8 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         return context;
     }
 
-    // Descendants run under the root's claim, and the providers' flat child projection does not carry OwnerId, so
-    // every descendant settles its writes on the root's claim owner.
+    // Descendants run under the root's claim: the claim stamps every descendant with the root's holder and deadline,
+    // and gives each one its own generation, so each descendant fences its own writes on its own generation.
     private static JobExecutionState _BuildQueuedTimeJobChildContext(TimeJobEntity child, string? claimOwner)
     {
         var childContext = new JobExecutionState
@@ -347,6 +349,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
             ParentId = child.ParentId,
             RunCondition = child.RunCondition ?? RunCondition.OnAnyCompletedStatus,
             ClaimOwner = claimOwner,
+            ClaimGeneration = child.Lease.Generation,
         };
 
         foreach (var grandChild in child.Children)
@@ -1067,8 +1070,16 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         )
         {
             var claimOwner = group.Key;
-            var cronJobIds = group.Where(x => x.Type == JobType.CronJobOccurrence).Select(x => x.JobId).ToArray();
-            var timeJobIds = group.Where(x => x.Type == JobType.TimeJob).Select(x => x.JobId).ToArray();
+            var cronJobIds = group
+                .Where(x => x.Type == JobType.CronJobOccurrence)
+                .Select(x => x.ClaimedRow)
+                .OfType<FencedRow<Guid>>()
+                .ToArray();
+            var timeJobIds = group
+                .Where(x => x.Type == JobType.TimeJob)
+                .Select(x => x.ClaimedRow)
+                .OfType<FencedRow<Guid>>()
+                .ToArray();
 
             await Task.WhenAll(
                     cronJobIds.Length != 0
@@ -1122,17 +1133,17 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
-        if (context.ClaimOwner is not { Length: > 0 } claimOwner)
+        if (context.ClaimedRow is not { } row || context.ClaimOwner is not { Length: > 0 } claimOwner)
         {
             return false;
         }
 
         return context.Type == JobType.CronJobOccurrence
             ? await persistenceProvider
-                .OpenCronJobOccurrenceAttemptAsync(context.JobId, claimOwner, startedAt, cancellationToken)
+                .OpenCronJobOccurrenceAttemptAsync(row, claimOwner, startedAt, cancellationToken)
                 .ConfigureAwait(false)
             : await persistenceProvider
-                .OpenTimeJobAttemptAsync(context.JobId, claimOwner, startedAt, cancellationToken)
+                .OpenTimeJobAttemptAsync(row, claimOwner, startedAt, cancellationToken)
                 .ConfigureAwait(false);
     }
 
@@ -1141,18 +1152,16 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
-        if (context.ClaimOwner is not { Length: > 0 } claimOwner)
+        if (context.ClaimedRow is not { } row)
         {
             return 0;
         }
 
         return context.Type == JobType.CronJobOccurrence
             ? await persistenceProvider
-                .ReleaseInProgressCronJobOccurrenceAsync(context.JobId, claimOwner, cancellationToken)
+                .ReleaseInProgressCronJobOccurrenceAsync(row, cancellationToken)
                 .ConfigureAwait(false)
-            : await persistenceProvider
-                .ReleaseInProgressTimeJobAsync(context.JobId, claimOwner, cancellationToken)
-                .ConfigureAwait(false);
+            : await persistenceProvider.ReleaseInProgressTimeJobAsync(row, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<int> SettleInterruptedAsync(
@@ -1161,29 +1170,53 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
-        if (context.ClaimOwner is not { Length: > 0 } claimOwner)
+        if (context.ClaimedRow is not { } row)
         {
             return 0;
         }
 
         return context.Type == JobType.CronJobOccurrence
             ? await persistenceProvider
-                .SettleInterruptedCronJobOccurrenceAsync(
-                    context.JobId,
-                    claimOwner,
-                    _HostShutdownReason,
-                    cancellationToken
-                )
+                .SettleInterruptedCronJobOccurrenceAsync(row, _HostShutdownReason, cancellationToken)
                 .ConfigureAwait(false)
             : await persistenceProvider
-                .SettleInterruptedTimeJobAsync(
-                    context.JobId,
-                    claimOwner,
-                    _HostShutdownReason,
-                    retryAfter,
-                    cancellationToken
-                )
+                .SettleInterruptedTimeJobAsync(row, _HostShutdownReason, retryAfter, cancellationToken)
                 .ConfigureAwait(false);
+    }
+
+    // The failed attempt the executor recorded on the state for a deferred retry, or null when it recorded none.
+    private static JobAttemptEnd? _FailedAttempt(JobExecutionState context)
+    {
+        return context.PropertiesToUpdate.Contains(nameof(JobExecutionState.AttemptEnd)) ? context.AttemptEnd : null;
+    }
+
+    public async Task<int> RescheduleRetryAsync(
+        JobExecutionState context,
+        int retryCount,
+        TimeSpan retryAfter,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (context.ClaimedRow is not { } row)
+        {
+            return 0;
+        }
+
+        var affected = await persistenceProvider
+            .RescheduleTimeJobRetryAsync(row, retryCount, retryAfter, _FailedAttempt(context), cancellationToken)
+            .ConfigureAwait(false);
+
+        if (affected > 0)
+        {
+            // The store stamped the due time on its own clock, so this node has no store-domain instant to hand
+            // RestartIfNeeded. One unconditional re-poll peeks the row on the store clock and plans the wake from it.
+            serviceProvider.GetService<IJobsHostScheduler>()?.Restart();
+
+            // The row left InProgress and the node stays up, so an open dashboard must refresh now, not after the wait.
+            await notificationHubSender.UpdateTimeJobFromExecutionState<TTimeJob>(context).ConfigureAwait(false);
+        }
+
+        return affected;
     }
 
     public async Task<int> RenewLeaseAsync(
@@ -1191,17 +1224,17 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
-        if (functionContext.ClaimOwner is not { Length: > 0 } claimOwner)
+        if (functionContext.ClaimOwner is not { Length: > 0 } claimOwner || functionContext.ClaimedRow is not { } row)
         {
             return 0;
         }
 
         return functionContext.Type == JobType.CronJobOccurrence
             ? await persistenceProvider
-                .RenewCronJobOccurrenceLeaseAsync(functionContext.JobId, claimOwner, cancellationToken)
+                .RenewCronJobOccurrenceLeaseAsync(row, claimOwner, cancellationToken)
                 .ConfigureAwait(false)
             : await persistenceProvider
-                .RenewTimeJobLeaseAsync(functionContext.JobId, claimOwner, cancellationToken)
+                .RenewTimeJobLeaseAsync(row, claimOwner, cancellationToken)
                 .ConfigureAwait(false);
     }
 
@@ -1211,7 +1244,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
-        if (context.ClaimOwner is not { Length: > 0 } claimOwner)
+        if (context.ClaimedRow is not { } row)
         {
             return false;
         }
@@ -1219,10 +1252,10 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         var written =
             context.Type == JobType.CronJobOccurrence
                 ? await persistenceProvider
-                    .UpdateCronJobOccurrenceProgressAsync(context.JobId, claimOwner, progress, cancellationToken)
+                    .UpdateCronJobOccurrenceProgressAsync(row, progress, cancellationToken)
                     .ConfigureAwait(false)
                 : await persistenceProvider
-                    .UpdateTimeJobProgressAsync(context.JobId, claimOwner, progress, cancellationToken)
+                    .UpdateTimeJobProgressAsync(row, progress, cancellationToken)
                     .ConfigureAwait(false);
 
         if (written)
@@ -1404,8 +1437,9 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
     }
 
     // Applies one shared state to many rows and returns the resources whose rows took it, in input order. The
-    // providers fence the write on the state's claim owner, so rows are written one claim owner at a time, each under
-    // its own state; a batch claimed in one pass normally has exactly one.
+    // providers fence each row's write on the generation its claim holds, and the state carries the claim owner, so
+    // rows are written one claim owner at a time; a batch claimed in one pass normally has exactly one. A context with
+    // no claimed generation names no row a fenced write could reach, so it is never stamped.
     private async Task<JobExecutionState[]> _ApplyUnifiedContextAsync(
         JobExecutionState[] resources,
         Func<string?, JobExecutionState> createUnifiedContext,
@@ -1418,8 +1452,16 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         {
             var unifiedFunctionContext = createUnifiedContext(group.Key);
 
-            var cronJobIds = group.Where(x => x.Type == JobType.CronJobOccurrence).Select(x => x.JobId).ToArray();
-            var timeJobIds = group.Where(x => x.Type == JobType.TimeJob).Select(x => x.JobId).ToArray();
+            var cronJobIds = group
+                .Where(x => x.Type == JobType.CronJobOccurrence)
+                .Select(x => x.ClaimedRow)
+                .OfType<FencedRow<Guid>>()
+                .ToArray();
+            var timeJobIds = group
+                .Where(x => x.Type == JobType.TimeJob)
+                .Select(x => x.ClaimedRow)
+                .OfType<FencedRow<Guid>>()
+                .ToArray();
 
             var cronTask =
                 cronJobIds.Length != 0

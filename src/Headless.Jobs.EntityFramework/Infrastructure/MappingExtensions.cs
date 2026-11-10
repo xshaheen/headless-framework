@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Linq.Expressions;
+using Headless.Fencing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Query;
 
@@ -72,6 +73,9 @@ internal static class MappingExtensions
             ExecutionTime = e.ExecutionTime,
             RunCondition = e.RunCondition,
             OnNodeDeath = e.OnNodeDeath,
+            // The run fences its settling writes on the generation its claim granted each node, so the lease must
+            // survive the reload, children included.
+            Lease = e.Lease,
         };
     }
 
@@ -184,9 +188,9 @@ internal static class MappingExtensions
             RecoveredFromUtc = e.RecoveredFromUtc,
             ExecutionTime = e.ExecutionTime,
             OnNodeDeath = e.OnNodeDeath,
-            // The native claims return this projection, and the run fences its settling writes on the owner that
-            // claimed the occurrence, so the claim owner must survive it.
-            OwnerId = e.OwnerId,
+            // The native claims return this projection, and the run fences its settling writes on the lease the
+            // claim granted, so the generation and holder must survive it.
+            Lease = e.Lease,
             CronJob = new TCronJob
             {
                 Id = e.CronJob.Id,
@@ -286,165 +290,147 @@ internal static class MappingExtensions
             .SetProperty(x => x.FingerprintRetryAfterUtc, (DateTime?)null);
     }
 
-    internal static void UpdateCronJobOccurrence<TCronJob>(
-        this UpdateSettersBuilder<CronJobOccurrenceEntity<TCronJob>> setters,
-        JobExecutionState functionContext
+    /// <summary>
+    /// Ends the row's lease, if one is active, as part of an out-of-band write (a sweep, a cancel, an edit), so the
+    /// attempt that held it is refused at its next renewal or settlement. The holder and expiry stay as they were.
+    /// </summary>
+    /// <remarks>
+    /// Each assignment reads the row's values from before the update, so the state and the takeover count are judged
+    /// against the same lease.
+    /// </remarks>
+    internal static UpdateSettersBuilder<TTimeJob> EndLease<TTimeJob>(
+        this UpdateSettersBuilder<TTimeJob> setters,
+        RowLeaseState state
     )
-        where TCronJob : CronJobEntity, new()
+        where TTimeJob : TimeJobEntity<TTimeJob>
     {
-        var propsToUpdate = functionContext.PropertiesToUpdate;
-
-        // STATUS / SKIPPED
-        if (propsToUpdate.Contains(nameof(JobExecutionState.Status)))
-        {
-            if (functionContext.Status == JobStatus.Skipped)
-            {
-                setters
-                    .SetProperty(x => x.Status, functionContext.Status)
-                    .SetProperty(x => x.SkippedReason, functionContext.ExceptionDetails)
-                    // A user-code skip is the occurrence's own verdict on its instant: it ran and chose not to act.
-                    // Nothing is owed, so the row accounts for the instant.
-                    .SetProperty(x => x.Disposition, CronOccurrenceDisposition.Accounted);
-            }
-            else
-            {
-                setters.SetProperty(x => x.Status, functionContext.Status);
-            }
-        }
-
-        // EXECUTED_AT
-        if (propsToUpdate.Contains(nameof(JobExecutionState.ExecutedAt)))
-        {
-            setters.SetProperty(x => x.ExecutedAt, functionContext.ExecutedAt);
-        }
-
-        // EXCEPTION DETAILS
-        if (
-            propsToUpdate.Contains(nameof(JobExecutionState.ExceptionDetails))
-            && functionContext.Status != JobStatus.Skipped
-        )
-        {
-            setters.SetProperty(x => x.ExceptionMessage, functionContext.ExceptionDetails);
-        }
-
-        // FAILURE FINGERPRINT
-        if (propsToUpdate.Contains(nameof(JobExecutionState.FailureFingerprint)))
-        {
-            setters.SetProperty(x => x.FailureFingerprint, functionContext.FailureFingerprint);
-        }
-
-        // ELAPSED_TIME
-        if (propsToUpdate.Contains(nameof(JobExecutionState.ElapsedTime)))
-        {
-            setters.SetProperty(x => x.ElapsedTime, functionContext.ElapsedTime);
-        }
-
-        // RETRY COUNT
-        if (propsToUpdate.Contains(nameof(JobExecutionState.RetryCount)))
-        {
-            setters.SetProperty(x => x.RetryCount, functionContext.RetryCount);
-        }
-
-        // PROGRESS — the report the throttle had not written yet when the run ended, stamped with the database clock
-        if (propsToUpdate.Contains(nameof(JobExecutionState.Progress)) && functionContext.Progress is { } progress)
-        {
-            setters
-                .SetProperty(x => x.ProgressPercent, progress.Percent)
-                .SetProperty(x => x.ProgressMessage, progress.Message)
-                .SetProperty(x => x.ProgressUpdatedAt, _ => DateTime.UtcNow);
-        }
-
-        // RELEASE LOCK
-        if (propsToUpdate.Contains(nameof(JobExecutionState.ReleaseLock)))
-        {
-            setters.SetProperty(x => x.OwnerId, (string?)null).SetProperty(x => x.LockedUntil, (DateTime?)null);
-        }
-
-        // EXECUTION TIME
-        if (propsToUpdate.Contains(nameof(JobExecutionState.ExecutionTime)))
-        {
-            setters.SetProperty(x => x.ExecutionTime, functionContext.ExecutionTime);
-        }
-
-        // UPDATED_AT ALWAYS — database clock (see UpdateTimeJob). Previously never stamped here, so an
-        // occurrence's UpdatedAt froze at its last claim for the whole execution lifecycle.
-        setters.SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow).SetChangedAt();
+        return setters
+            .SetProperty(x => x.Lease.State, x => x.Lease.State == RowLeaseState.Active ? state : x.Lease.State)
+            .SetProperty(
+                x => x.Lease.TakeoverCount,
+                x => x.Lease.State == RowLeaseState.Active ? 0 : x.Lease.TakeoverCount
+            );
     }
 
-    internal static void UpdateTimeJob<TTimeJob>(
-        this UpdateSettersBuilder<TTimeJob> setters,
-        JobExecutionState functionContext
+    /// <inheritdoc cref="EndLease{TTimeJob}(UpdateSettersBuilder{TTimeJob},RowLeaseState)"/>
+    internal static UpdateSettersBuilder<CronJobOccurrenceEntity<TCronJob>> EndLease<TCronJob>(
+        this UpdateSettersBuilder<CronJobOccurrenceEntity<TCronJob>> setters,
+        RowLeaseState state
     )
-        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity
+    {
+        return setters
+            .SetProperty(x => x.Lease.State, x => x.Lease.State == RowLeaseState.Active ? state : x.Lease.State)
+            .SetProperty(
+                x => x.Lease.TakeoverCount,
+                x => x.Lease.State == RowLeaseState.Active ? 0 : x.Lease.TakeoverCount
+            );
+    }
+
+    /// <summary>
+    /// Renders the columns <paramref name="functionContext"/> updates on a cron occurrence, for the lease transition
+    /// that writes them. Releasing the lock is the transition's job, not an assignment.
+    /// </summary>
+    internal static JobsRowSet CronOccurrenceWrite<TCronJob>(DbContext context, JobExecutionState functionContext)
+        where TCronJob : CronJobEntity
+    {
+        var set = JobsRowSet.For<CronJobOccurrenceEntity<TCronJob>>(context);
+        var propsToUpdate = functionContext.PropertiesToUpdate;
+
+        if (propsToUpdate.Contains(nameof(JobExecutionState.Status)))
+        {
+            set.Value(nameof(CronJobOccurrenceEntity<>.Status), functionContext.Status);
+
+            if (functionContext.Status == JobStatus.Skipped)
+            {
+                // A user-code skip is the occurrence's own verdict on its instant: it ran and chose not to act.
+                // Nothing is owed, so the row accounts for the instant.
+                set.Value(nameof(CronJobOccurrenceEntity<>.SkippedReason), functionContext.ExceptionDetails)
+                    .Value(nameof(CronJobOccurrenceEntity<>.Disposition), CronOccurrenceDisposition.Accounted);
+            }
+        }
+
+        _RenderCommon(set, functionContext);
+
+        if (propsToUpdate.Contains(nameof(JobExecutionState.ExecutionTime)))
+        {
+            set.Value(nameof(CronJobOccurrenceEntity<>.ExecutionTime), functionContext.ExecutionTime);
+        }
+
+        // Every write stamps UpdatedAt from the database clock; an occurrence's UpdatedAt otherwise freezes at its
+        // last claim for the whole run.
+        set.DatabaseNow(nameof(CronJobOccurrenceEntity<>.UpdatedAt));
+
+        return set;
+    }
+
+    /// <summary>
+    /// Renders the columns <paramref name="functionContext"/> updates on a time job, for the lease transition that
+    /// writes them. Releasing the lock is the transition's job, not an assignment.
+    /// </summary>
+    internal static JobsRowSet TimeJobWrite<TTimeJob>(DbContext context, JobExecutionState functionContext)
+        where TTimeJob : TimeJobEntity<TTimeJob>
+    {
+        var set = JobsRowSet.For<TTimeJob>(context);
+
+        if (functionContext.PropertiesToUpdate.Contains(nameof(JobExecutionState.Status)))
+        {
+            set.Value(nameof(TimeJobEntity.Status), functionContext.Status);
+
+            if (functionContext.Status == JobStatus.Skipped)
+            {
+                set.Value(nameof(TimeJobEntity.SkippedReason), functionContext.ExceptionDetails);
+            }
+        }
+
+        _RenderCommon(set, functionContext);
+
+        // UpdatedAt comes from the database clock, not a bound app-clock value, so the column stays monotonic per row
+        // whichever node writes it.
+        set.DatabaseNow(nameof(TimeJobEntity.UpdatedAt));
+
+        return set;
+    }
+
+    // The columns a time job and a cron occurrence share, under the same property names on both entities.
+    private static void _RenderCommon(JobsRowSet set, JobExecutionState functionContext)
     {
         var propsToUpdate = functionContext.PropertiesToUpdate;
 
-        // STATUS / SKIPPED
-        if (propsToUpdate.Contains(nameof(JobExecutionState.Status)))
-        {
-            if (functionContext.Status == JobStatus.Skipped)
-            {
-                setters
-                    .SetProperty(x => x.Status, functionContext.Status)
-                    .SetProperty(x => x.SkippedReason, functionContext.ExceptionDetails);
-            }
-            else
-            {
-                setters.SetProperty(x => x.Status, functionContext.Status);
-            }
-        }
-
-        // EXECUTED_AT
         if (propsToUpdate.Contains(nameof(JobExecutionState.ExecutedAt)))
         {
-            setters.SetProperty(x => x.ExecutedAt, functionContext.ExecutedAt);
+            set.Value(nameof(TimeJobEntity.ExecutedAt), functionContext.ExecutedAt);
         }
 
-        // EXCEPTION DETAILS
         if (
             propsToUpdate.Contains(nameof(JobExecutionState.ExceptionDetails))
             && functionContext.Status != JobStatus.Skipped
         )
         {
-            setters.SetProperty(x => x.ExceptionMessage, functionContext.ExceptionDetails);
+            set.Value(nameof(TimeJobEntity.ExceptionMessage), functionContext.ExceptionDetails);
         }
 
-        // FAILURE FINGERPRINT
         if (propsToUpdate.Contains(nameof(JobExecutionState.FailureFingerprint)))
         {
-            setters.SetProperty(x => x.FailureFingerprint, functionContext.FailureFingerprint);
+            set.Value(nameof(TimeJobEntity.FailureFingerprint), functionContext.FailureFingerprint);
         }
 
-        // ELAPSED_TIME
         if (propsToUpdate.Contains(nameof(JobExecutionState.ElapsedTime)))
         {
-            setters.SetProperty(x => x.ElapsedTime, functionContext.ElapsedTime);
+            set.Value(nameof(TimeJobEntity.ElapsedTime), functionContext.ElapsedTime);
         }
 
-        // RETRY COUNT
         if (propsToUpdate.Contains(nameof(JobExecutionState.RetryCount)))
         {
-            setters.SetProperty(x => x.RetryCount, functionContext.RetryCount);
+            set.Value(nameof(TimeJobEntity.RetryCount), functionContext.RetryCount);
         }
 
-        // PROGRESS — the report the throttle had not written yet when the run ended, stamped with the database clock
+        // The report the throttle had not written yet when the run ended, stamped with the database clock.
         if (propsToUpdate.Contains(nameof(JobExecutionState.Progress)) && functionContext.Progress is { } progress)
         {
-            setters
-                .SetProperty(x => x.ProgressPercent, progress.Percent)
-                .SetProperty(x => x.ProgressMessage, progress.Message)
-                .SetProperty(x => x.ProgressUpdatedAt, _ => DateTime.UtcNow);
+            set.Value(nameof(TimeJobEntity.ProgressPercent), progress.Percent)
+                .Value(nameof(TimeJobEntity.ProgressMessage), progress.Message)
+                .DatabaseNow(nameof(TimeJobEntity.ProgressUpdatedAt));
         }
-
-        // RELEASE LOCK
-        if (propsToUpdate.Contains(nameof(JobExecutionState.ReleaseLock)))
-        {
-            setters.SetProperty(x => x.OwnerId, (string?)null).SetProperty(x => x.LockedUntil, (DateTime?)null);
-        }
-
-        // UPDATED_AT ALWAYS — database clock, not a bound app-clock parameter: claims stamp UpdatedAt from the
-        // DB clock and the CAS claim compares it as an optimistic token, so a completion stamped by a lagging
-        // node's clock would make the column non-monotonic and unsound as a fence.
-        setters.SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow).SetChangedAt();
     }
 }

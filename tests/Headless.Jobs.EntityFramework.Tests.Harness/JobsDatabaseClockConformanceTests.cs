@@ -14,7 +14,7 @@ namespace Tests;
 /// Provider-neutral guard that the Jobs lease paths let the DATABASE own ownership time. It drives the real
 /// production methods (<c>BasePersistenceProvider</c> + the EF claim strategy) against a real container, captures
 /// the SQL they emit through an interceptor on the real Jobs DbContext, and asserts three things about every
-/// statement that touches <c>LockedUntil</c>:
+/// statement that touches the lease expiry column:
 /// <list type="number">
 /// <item>
 /// <b>The negative invariant (primary).</b> No lease predicate and no lease-deadline write may bind a
@@ -23,7 +23,8 @@ namespace Tests;
 /// </item>
 /// <item>
 /// <b>The positive invariant.</b> The clock in those fragments is the provider's own server-clock function,
-/// sourced from <see cref="IJobsCoordinationFixture.EfTranslatedDatabaseClockSql" /> rather than hard-coded.
+/// sourced from <see cref="IJobsCoordinationFixture.LeaseDatabaseClockSql" /> (the schedule advance:
+/// <see cref="IJobsCoordinationFixture.EfTranslatedDatabaseClockSql" />) rather than hard-coded.
 /// </item>
 /// <item>
 /// <b>The transaction-scope invariant.</b> A statement that WRITES a lease deadline must run in autocommit. On
@@ -33,93 +34,43 @@ namespace Tests;
 /// code upholds this by construction; this suite is what enforces it.
 /// </item>
 /// </list>
-/// A skewed-<c>TimeProvider</c> test cannot replace this: inside an <c>ExecuteUpdate</c> expression tree a bare
-/// <c>DateTime.UtcNow</c> is provider-translated, but a regression to a client-evaluated clock ignores
-/// <c>TimeProvider</c> entirely and therefore dodges an injected skew. The SQL on the wire is the only decisive
-/// evidence.
+/// The claims, acquires, and renewals are the exception. They run as fenced raw commands on the context's connection,
+/// which an EF interceptor never sees, and their clock is the dialect's per-statement clock token, so they cannot fall
+/// back to an EF-translated or client-evaluated <c>DateTime.UtcNow</c>. Those tests prove the store owns the clock by
+/// outcome instead: the node runs ten minutes ahead, and every deadline must land one lease duration after the store's
+/// clock.
 /// </summary>
 public abstract class JobsDatabaseClockConformanceTests<TFixture>(TFixture fixture) : TestBase
     where TFixture : class, IJobsCoordinationFixture
 {
     private static readonly TimeSpan _LeaseDuration = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan _Tolerance = TimeSpan.FromSeconds(2);
+    private static readonly TimeProvider _NodeAhead = new SkewedTimeProvider(TimeSpan.FromMinutes(10));
 
+    /// <summary>
+    /// The claims and acquires run as fenced raw commands on the context's connection, which an EF interceptor never
+    /// sees, so this proves the database owns their clock by outcome: the node runs ten minutes ahead of the store,
+    /// every lease it is granted still expires one lease duration after the store's clock, and a row the store does not
+    /// consider due is refused although the node believes it is. Both the native and the generic claim are driven.
+    /// </summary>
     public virtual async Task claim_and_acquire_lease_sql_is_owned_by_the_database_clock()
     {
-        var ct = AbortToken;
-        await fixture.ResetDatabaseAsync(ct);
-        var capture = new LeaseSqlCapture();
-        using var host = fixture.BuildInterceptedHost("clock-claim", capture, _LeaseDuration);
-        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
-        await host.StartAsync(ct);
-
-        try
+        foreach (var useNativeClaims in (bool[])[true, false])
         {
-            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
-
-            // Scheduled claim (CAS claim-tree update) — the primary time-job acquire.
-            var scheduled = new TimeJobEntity
-            {
-                Id = Guid.NewGuid(),
-                Function = "clock-scheduled",
-                ExecutionTime = DateTime.UtcNow,
-            };
-            await persistence.AddTimeJobsAsync([scheduled], ct);
-            var candidates = (await persistence.GetEarliestTimeJobsAsync(ct)).Jobs;
-            var claimed = await persistence.QueueTimeJobsAsync(candidates, ct).ToArrayAsync(ct);
-            claimed.Should().ContainSingle().Which.Id.Should().Be(scheduled.Id);
-            _AssertDatabaseDecidesTheClaimIsDue(capture, scheduled.Id);
-
-            // Fallback claim (timed-out sweep) — same lease stamp, different eligibility predicate.
-            var timedOut = new TimeJobEntity
-            {
-                Id = Guid.NewGuid(),
-                Function = "clock-timed-out",
-                ExecutionTime = DateTime.UtcNow.AddMinutes(-5),
-            };
-            await persistence.AddTimeJobsAsync([timedOut], ct);
-            var reclaimed = await persistence.QueueTimedOutTimeJobsAsync(ct).ToArrayAsync(ct);
-            reclaimed.Should().ContainSingle().Which.Id.Should().Be(timedOut.Id);
-
-            // Immediate acquire (LockedUntil + Status=InProgress in one statement).
-            var immediate = new TimeJobEntity { Id = Guid.NewGuid(), Function = "clock-immediate" };
-            await persistence.AddTimeJobsAsync([immediate], ct);
-            var acquired = await persistence.AcquireImmediateTimeJobsAsync([immediate.Id], ct);
-            acquired.Should().ContainSingle();
-
-            // Cron occurrence claim — create-then-claim, plus the direct claim of a known occurrence.
-            var cronId = Guid.NewGuid();
-            await fixture.SeedCronJobAsync(cronId, "clock-cron", "* * * * *", NodeDeathPolicy.Retry, ct);
-            var occurrences = await persistence
-                .QueueCronJobOccurrencesAsync(
-                    (
-                        DateTime.UtcNow.AddMinutes(1),
-                        [
-                            new JobManagerDispatchContext(cronId)
-                            {
-                                FunctionName = "clock-cron",
-                                Expression = "* * * * *",
-                            },
-                        ]
-                    ),
-                    ct
-                )
-                .ToArrayAsync(ct);
-            occurrences.Should().ContainSingle();
-
-            _AssertDatabaseOwnsTheLeaseClock(capture, expectDeadlineWrites: true, expectPredicates: true);
-        }
-        finally
-        {
-            await host.StopAsync(ct);
+            await _AssertClaimsUseTheDatabaseClockAsync(useNativeClaims, AbortToken);
         }
     }
 
+    /// <summary>
+    /// A renewal slides the lease from the store's clock, not the renewing node's: the node runs ten minutes ahead,
+    /// the lease is cut short first so a renewal that wrote nothing would show, and the renewed expiry must land one
+    /// lease duration after the store's clock.
+    /// </summary>
     public virtual async Task lease_renewal_sql_is_owned_by_the_database_clock()
     {
         var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
-        var capture = new LeaseSqlCapture();
-        using var host = fixture.BuildInterceptedHost("clock-renew", capture, _LeaseDuration);
+        using var host = fixture.BuildHost("clock-renew", timeProvider: _NodeAhead, leaseDuration: _LeaseDuration);
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
         await host.StartAsync(ct);
 
@@ -152,19 +103,229 @@ public abstract class JobsDatabaseClockConformanceTests<TFixture>(TFixture fixtu
                 .ContainSingle()
                 .Subject;
 
-            // The renewals only match because the acquires above really ran and really own the rows — an affected
-            // count of 1 is what proves the captured SQL is the live lease path, not a shape we merely rehearsed.
-            capture.Clear();
-            (await persistence.RenewTimeJobLeaseAsync(timeJob.Id, acquired.OwnerId!, ct)).Should().Be(1);
-            (await persistence.RenewCronJobOccurrenceLeaseAsync(occurrenceId, acquiredOccurrence.OwnerId!, ct))
+            // Still live, but a minute from the end, so only a renewal that really wrote can reach the window below.
+            var shortened = DateTimeOffset.UtcNow.AddMinutes(1);
+            await fixture.OverwriteLeaseAsync(
+                fixture.QualifiedTimeJobsTable,
+                timeJob.Id,
+                acquired.Lease with
+                {
+                    ExpiresAt = shortened,
+                },
+                ct
+            );
+            await fixture.OverwriteLeaseAsync(
+                fixture.QualifiedCronJobOccurrencesTable,
+                occurrenceId,
+                acquiredOccurrence.Lease with
+                {
+                    ExpiresAt = shortened,
+                },
+                ct
+            );
+
+            var storeBefore = await _StoreUtcNowAsync(ct);
+            (
+                await persistence.RenewTimeJobLeaseAsync(
+                    JobsLeaseTables.TimeJob(timeJob.Id, acquired.Lease.Generation),
+                    acquired.Lease.Holder!,
+                    ct
+                )
+            )
                 .Should()
                 .Be(1);
+            (
+                await persistence.RenewCronJobOccurrenceLeaseAsync(
+                    JobsLeaseTables.CronOccurrence(occurrenceId, acquiredOccurrence.Lease.Generation),
+                    acquiredOccurrence.Lease.Holder!,
+                    ct
+                )
+            )
+                .Should()
+                .Be(1);
+            var storeAfter = await _StoreUtcNowAsync(ct);
 
-            _AssertDatabaseOwnsTheLeaseClock(capture, expectDeadlineWrites: true, expectPredicates: false);
+            _AssertExpiresFromTheStoreClock(
+                (await fixture.ReadTimeJobClaimTimestampsAsync(timeJob.Id, ct)).ExpiresAt,
+                storeBefore,
+                storeAfter,
+                "renewed time job"
+            );
+            _AssertExpiresFromTheStoreClock(
+                (await fixture.ReadCronOccurrenceClaimTimestampsAsync(occurrenceId, ct)).ExpiresAt,
+                storeBefore,
+                storeAfter,
+                "renewed cron occurrence"
+            );
         }
         finally
         {
             await host.StopAsync(ct);
+        }
+    }
+
+    private async Task _AssertClaimsUseTheDatabaseClockAsync(bool useNativeClaims, CancellationToken ct)
+    {
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost(
+            useNativeClaims ? "clock-claim-native" : "clock-claim-generic",
+            timeProvider: _NodeAhead,
+            leaseDuration: _LeaseDuration,
+            useNativeClaims: useNativeClaims
+        );
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+        var path = useNativeClaims ? "native" : "generic";
+
+        try
+        {
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+            // Due in five minutes by the store, five minutes overdue by this node: the claim must refuse it.
+            var notDue = new TimeJobEntity
+            {
+                Id = Guid.NewGuid(),
+                Function = "clock-not-due",
+                ExecutionTime = DateTime.UtcNow.AddMinutes(5),
+            };
+            await persistence.AddTimeJobsAsync([notDue], ct);
+            var storedNotDue = (await persistence.GetTimeJobByIdAsync(notDue.Id, ct))!;
+            (await persistence.QueueTimeJobsAsync([storedNotDue], ct).ToArrayAsync(ct))
+                .Should()
+                .BeEmpty("the store decides due-ness, and by its clock the row is not due ({0} claim)", path);
+
+            var scheduled = new TimeJobEntity
+            {
+                Id = Guid.NewGuid(),
+                Function = "clock-scheduled",
+                ExecutionTime = DateTime.UtcNow,
+            };
+            var timedOut = new TimeJobEntity
+            {
+                Id = Guid.NewGuid(),
+                Function = "clock-timed-out",
+                ExecutionTime = DateTime.UtcNow.AddMinutes(-5),
+            };
+            var immediate = new TimeJobEntity { Id = Guid.NewGuid(), Function = "clock-immediate" };
+            var cronId = Guid.NewGuid();
+            await fixture.SeedCronJobAsync(cronId, "clock-cron", "* * * * *", NodeDeathPolicy.Retry, ct);
+
+            var storeBefore = await _StoreUtcNowAsync(ct);
+
+            await persistence.AddTimeJobsAsync([scheduled], ct);
+            var storedScheduled = (await persistence.GetTimeJobByIdAsync(scheduled.Id, ct))!;
+            (await persistence.QueueTimeJobsAsync([storedScheduled], ct).ToArrayAsync(ct))
+                .Should()
+                .ContainSingle()
+                .Which.Id.Should()
+                .Be(scheduled.Id);
+
+            await persistence.AddTimeJobsAsync([timedOut], ct);
+            (await persistence.QueueTimedOutTimeJobsAsync(ct).ToArrayAsync(ct))
+                .Should()
+                .ContainSingle()
+                .Which.Id.Should()
+                .Be(timedOut.Id);
+
+            await persistence.AddTimeJobsAsync([immediate], ct);
+            (await persistence.AcquireImmediateTimeJobsAsync([immediate.Id], ct)).Should().ContainSingle();
+
+            var occurrence = (
+                await persistence
+                    .QueueCronJobOccurrencesAsync(
+                        (
+                            DateTime.UtcNow.AddMinutes(1),
+                            [
+                                new JobManagerDispatchContext(cronId)
+                                {
+                                    FunctionName = "clock-cron",
+                                    Expression = "* * * * *",
+                                },
+                            ]
+                        ),
+                        ct
+                    )
+                    .ToArrayAsync(ct)
+            )
+                .Should()
+                .ContainSingle()
+                .Subject;
+
+            var storeAfter = await _StoreUtcNowAsync(ct);
+
+            (Guid Id, string Name)[] timeJobClaims =
+            [
+                (scheduled.Id, "scheduled claim"),
+                (timedOut.Id, "timed-out claim"),
+                (immediate.Id, "immediate acquire"),
+            ];
+
+            foreach (var (id, name) in timeJobClaims)
+            {
+                _AssertExpiresFromTheStoreClock(
+                    (await fixture.ReadTimeJobClaimTimestampsAsync(id, ct)).ExpiresAt,
+                    storeBefore,
+                    storeAfter,
+                    $"{name} ({path})"
+                );
+            }
+
+            _AssertExpiresFromTheStoreClock(
+                (await fixture.ReadCronOccurrenceClaimTimestampsAsync(occurrence.Id, ct)).ExpiresAt,
+                storeBefore,
+                storeAfter,
+                $"cron occurrence claim ({path})"
+            );
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    // A lease the node stamped from its own clock would land ten minutes past this window.
+    private static void _AssertExpiresFromTheStoreClock(
+        DateTimeOffset? expiresAt,
+        DateTime storeBefore,
+        DateTime storeAfter,
+        string what
+    )
+    {
+        expiresAt.Should().NotBeNull("the {0} must stamp a lease deadline", what);
+        expiresAt!
+            .Value.UtcDateTime.Should()
+            .BeOnOrAfter(
+                storeBefore + _LeaseDuration - _Tolerance,
+                "the {0} deadline comes from the store's clock",
+                what
+            )
+            .And.BeOnOrBefore(
+                storeAfter + _LeaseDuration + _Tolerance,
+                "the {0} deadline comes from the store's clock",
+                what
+            );
+    }
+
+    private async Task<DateTime> _StoreUtcNowAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = fixture.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT {fixture.UtcNowSqlExpression};";
+
+        return await command.ExecuteScalarAsync(cancellationToken) switch
+        {
+            DateTimeOffset instant => instant.UtcDateTime,
+            DateTime instant => DateTime.SpecifyKind(instant, DateTimeKind.Utc),
+            _ => throw new InvalidOperationException("The fixture's server UTC expression did not return an instant."),
+        };
+    }
+
+    private sealed class SkewedTimeProvider(TimeSpan offset) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow()
+        {
+            return DateTimeOffset.UtcNow.Add(offset);
         }
     }
 
@@ -225,14 +386,22 @@ public abstract class JobsDatabaseClockConformanceTests<TFixture>(TFixture fixtu
             capture.Clear();
 
             // The sweeps below are the statements that DO run inside an explicit transaction. They may read the
-            // lease and release it (LockedUntil = NULL); they may never write a deadline. That is the invariant the
+            // lease and end it; they may never write a deadline. That is the invariant the
             // shared assertion enforces — a deadline write here would be anchored to transaction-open.
             await persistence.ReclaimStalledTimeJobsAsync(ct);
             await persistence.ReclaimStalledCronJobOccurrencesAsync(ct);
             await persistence.ReleaseDeadNodeTimeJobResourcesAsync("dead-node@1", ct);
             await persistence.ReleaseDeadNodeOccurrenceResourcesAsync("dead-node@1", ct);
-            await persistence.ReleaseAcquiredTimeJobsAsync([timeJob.Id], acquired.OwnerId!, ct);
-            await persistence.ReleaseAcquiredCronJobOccurrencesAsync([Guid.NewGuid()], acquired.OwnerId!, ct);
+            await persistence.ReleaseAcquiredTimeJobsAsync(
+                [JobsLeaseTables.TimeJob(timeJob.Id, acquired.Lease.Generation)],
+                acquired.Lease.Holder!,
+                ct
+            );
+            await persistence.ReleaseAcquiredCronJobOccurrencesAsync(
+                [JobsLeaseTables.CronOccurrence(Guid.NewGuid(), 1)],
+                acquired.Lease.Holder!,
+                ct
+            );
 
             _AssertDatabaseOwnsTheLeaseClock(capture, expectDeadlineWrites: false, expectPredicates: true);
             capture
@@ -432,7 +601,7 @@ public abstract class JobsDatabaseClockConformanceTests<TFixture>(TFixture fixtu
                 write
                     .Fragment.Should()
                     .Contain(
-                        fixture.EfTranslatedDatabaseClockSql,
+                        fixture.LeaseDatabaseClockSql,
                         "the lease deadline must be stamped from the provider's server clock"
                     );
 
@@ -464,7 +633,7 @@ public abstract class JobsDatabaseClockConformanceTests<TFixture>(TFixture fixtu
                 predicate
                     .Fragment.Should()
                     .Contain(
-                        fixture.EfTranslatedDatabaseClockSql,
+                        fixture.LeaseDatabaseClockSql,
                         "lease expiry must be evaluated against the provider's server clock"
                     );
             }
@@ -478,46 +647,6 @@ public abstract class JobsDatabaseClockConformanceTests<TFixture>(TFixture fixtu
         if (expectPredicates)
         {
             predicates.Should().BePositive("the driven path is supposed to compare a lease deadline");
-        }
-    }
-
-    // The direct claim refuses a row that is not yet due. Which rows are due is an ownership decision, so the
-    // comparison must read the server clock in the claim statement itself, not an instant this node bound.
-    private void _AssertDatabaseDecidesTheClaimIsDue(LeaseSqlCapture capture, Guid claimedId)
-    {
-        var claimStatements = capture
-            .Statements.Where(statement =>
-                statement.Parameters.Values.Any(parameter => parameter.Value is Guid id && id == claimedId)
-                && LeaseSqlAnalysis.LeaseDeadlineWrites(statement).Any()
-            )
-            .ToArray();
-        claimStatements.Should().NotBeEmpty("the direct claim must have leased the scheduled row");
-
-        var duePredicates = claimStatements
-            .SelectMany(statement =>
-                LeaseSqlAnalysis.ExecutionTimeDuePredicates(statement).Select(fragment => (statement, fragment))
-            )
-            .ToArray();
-        duePredicates.Should().NotBeEmpty("the direct claim must test the row's ExecutionTime before it takes the row");
-
-        foreach (var (statement, predicate) in duePredicates)
-        {
-            predicate
-                .TemporalParameters.Should()
-                .BeEmpty(
-                    "the due comparison in '{0}' must be made by the database, but it binds the timestamp "
-                        + "parameter(s) {1}. Statement: {2}",
-                    predicate.Fragment,
-                    string.Join(", ", predicate.TemporalParameters.Select(name => _Describe(statement, name))),
-                    statement.Sql
-                );
-
-            predicate
-                .Fragment.Should()
-                .Contain(
-                    fixture.EfTranslatedDatabaseClockSql,
-                    "the due comparison must be evaluated against the provider's server clock"
-                );
         }
     }
 
@@ -666,12 +795,12 @@ public sealed record CapturedSqlParameter(string Name, DbType DbType, object? Va
         || DbType is DbType.Date or DbType.DateTime or DbType.DateTime2 or DbType.DateTimeOffset or DbType.Time;
 }
 
-/// <summary>A <c>LockedUntil</c> assignment or comparison, isolated from the rest of the statement.</summary>
+/// <summary>A lease-expiry assignment or comparison, isolated from the rest of the statement.</summary>
 public sealed record LeaseSqlFragment(string Fragment, IReadOnlyList<string> TemporalParameters);
 
 /// <summary>
-/// Pulls the <c>LockedUntil</c> clauses out of a captured statement. Deliberately dialect-agnostic: it keys on the
-/// column identifier (<c>locked_until</c> on Postgres, which leaves snake_case identifiers unquoted, and <c>[LockedUntil]</c> or <c>"LockedUntil"</c> on SQL Server) and on which
+/// Pulls the lease-expiry clauses out of a captured statement. Deliberately dialect-agnostic: it keys on the
+/// column identifier (<c>lease_expires_at</c> on Postgres, which leaves snake_case identifiers unquoted, and <c>[LeaseExpiresAt]</c> or <c>"LeaseExpiresAt"</c> on SQL Server) and on which
 /// parameters the clause references, never on how a provider happens to spell its clock.
 /// </summary>
 public static partial class LeaseSqlAnalysis
@@ -709,7 +838,7 @@ public static partial class LeaseSqlAnalysis
         return ProjectionColumn.IsMatch(sql);
     }
 
-    /// <summary>Assignments of a lease deadline: <c>LockedUntil = &lt;expression&gt;</c>, excluding the release to NULL.</summary>
+    /// <summary>Assignments of a lease deadline: <c>LeaseExpiresAt = &lt;expression&gt;</c>, excluding a write of NULL.</summary>
     public static IEnumerable<LeaseSqlFragment> LeaseDeadlineWrites(CapturedSqlStatement statement)
     {
         return _Clauses(statement, LeaseColumn)
@@ -721,7 +850,7 @@ public static partial class LeaseSqlAnalysis
             .Select(fragment => _Describe(fragment, statement));
     }
 
-    /// <summary>Ownership comparisons: <c>LockedUntil &lt;= &lt;clock&gt;</c> and friends. <c>IS NULL</c> tests carry no clock and are skipped.</summary>
+    /// <summary>Ownership comparisons: <c>LeaseExpiresAt &lt;= &lt;clock&gt;</c> and friends. <c>IS NULL</c> tests carry no clock and are skipped.</summary>
     public static IEnumerable<LeaseSqlFragment> LeasePredicates(CapturedSqlStatement statement)
     {
         return _Clauses(statement, LeaseColumn)
@@ -739,15 +868,6 @@ public static partial class LeaseSqlAnalysis
     public static IEnumerable<LeaseSqlFragment> ProjectionDuePredicates(CapturedSqlStatement statement)
     {
         return _Clauses(statement, ProjectionColumn)
-            .Where(clause => !string.Equals(clause.Operator, "=", StringComparison.Ordinal))
-            .Select(clause => clause.Fragment)
-            .Select(fragment => _Describe(fragment, statement));
-    }
-
-    /// <summary>Due comparisons on a time job's schedule: <c>ExecutionTime &lt;= &lt;clock&gt;</c> and friends.</summary>
-    public static IEnumerable<LeaseSqlFragment> ExecutionTimeDuePredicates(CapturedSqlStatement statement)
-    {
-        return _Clauses(statement, ExecutionTimeColumn)
             .Where(clause => !string.Equals(clause.Operator, "=", StringComparison.Ordinal))
             .Select(clause => clause.Fragment)
             .Select(fragment => _Describe(fragment, statement));
@@ -920,7 +1040,7 @@ public static partial class LeaseSqlAnalysis
     // Column reference as each dialect spells it: quoted PascalCase on SQL Server, bare snake_case on Postgres. A bare occurrence in a SELECT list or INSERT column list is
     // matched too, but carries no operator, so it falls out below.
     [GeneratedRegex(
-        """["\[]LockedUntil["\]]|\blocked_until\b""",
+        """["\[]LeaseExpiresAt["\]]|\blease_expires_at\b""",
         RegexOptions.CultureInvariant,
         matchTimeoutMilliseconds: 1000
     )]
@@ -932,11 +1052,4 @@ public static partial class LeaseSqlAnalysis
         matchTimeoutMilliseconds: 1000
     )]
     private static partial Regex ProjectionColumn { get; }
-
-    [GeneratedRegex(
-        """["\[]ExecutionTime["\]]|\bexecution_time\b""",
-        RegexOptions.CultureInvariant,
-        matchTimeoutMilliseconds: 1000
-    )]
-    private static partial Regex ExecutionTimeColumn { get; }
 }

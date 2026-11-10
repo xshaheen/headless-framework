@@ -111,6 +111,63 @@ internal sealed class LeaseRequestResolver(ICurrentTenant currentTenant, IOption
         return progress;
     }
 
+    /// <summary>
+    /// Checks a grant's options (the takeover choice and the holder) before anything is written.
+    /// </summary>
+    /// <exception cref="ArgumentNullException"><paramref name="options" /> is <see langword="null" />.</exception>
+    /// <exception cref="ArgumentException">
+    /// The holder is whitespace, exceeds its limit, or is not portable key text.
+    /// </exception>
+    /// <exception cref="System.ComponentModel.InvalidEnumArgumentException">The takeover is not a defined value.</exception>
+    public static LeaseGrantOptions ValidateGrantOptions(LeaseGrantOptions options)
+    {
+        Argument.IsNotNull(options);
+        Argument.IsInEnum(options.Takeover, paramName: nameof(options));
+
+        if (options.Holder is not null)
+        {
+            // An empty or whitespace holder would match every other blank holder, so a retry could take a lease it
+            // never held; null is the way to store no holder.
+            Argument.IsNotNullOrWhiteSpace(options.Holder, paramName: nameof(options));
+            Argument.HasMaxLength(options.Holder, FencingFieldLimits.HolderMaxLength, paramName: nameof(options));
+
+            // The retry matches the stored holder ordinally, so a holder a provider cannot store unchanged (NUL, an
+            // unpaired surrogate) would make a retried grant answer Held: the same rule as the lease's own key.
+            Argument.IsPortableKey(options.Holder, paramName: nameof(options));
+        }
+
+        return options;
+    }
+
+    /// <summary>
+    /// Checks a grant's options as <see cref="ValidateGrantOptions(LeaseGrantOptions)" /> does, against a holder limit
+    /// the caller's table sets instead of <see cref="FencingFieldLimits.HolderMaxLength" />.
+    /// </summary>
+    /// <param name="options">The grant's options.</param>
+    /// <param name="holderMaxLength">The longest holder the caller's holder column stores.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="options" /> is <see langword="null" />.</exception>
+    /// <exception cref="ArgumentException">
+    /// The holder is whitespace, exceeds <paramref name="holderMaxLength" />, or is not portable key text.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="holderMaxLength" /> is not positive.</exception>
+    /// <exception cref="System.ComponentModel.InvalidEnumArgumentException">The takeover is not a defined value.</exception>
+    public static LeaseGrantOptions ValidateGrantOptions(LeaseGrantOptions options, int holderMaxLength)
+    {
+        Argument.IsNotNull(options);
+        Argument.IsPositive(holderMaxLength);
+        Argument.IsInEnum(options.Takeover, paramName: nameof(options));
+
+        if (options.Holder is not null)
+        {
+            // As in the overload above: a blank holder would match every other blank holder.
+            Argument.IsNotNullOrWhiteSpace(options.Holder, paramName: nameof(options));
+            Argument.HasMaxLength(options.Holder, holderMaxLength, paramName: nameof(options));
+            Argument.IsPortableKey(options.Holder, paramName: nameof(options));
+        }
+
+        return options;
+    }
+
     private static void _ValidateKind(string kind, string paramName)
     {
         Argument.IsNotNullOrWhiteSpace(kind, paramName: paramName);

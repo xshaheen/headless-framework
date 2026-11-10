@@ -136,7 +136,7 @@ public sealed class PostgreSqlInboxOperationPolicyTests(PostgreSqlTestFixture fi
             await using var observer = new NpgsqlConnection(fixture.ConnectionString);
             await observer.OpenAsync(AbortToken);
             await using var waiting = new NpgsqlCommand(
-                "SELECT COUNT(*) FROM pg_stat_activity WHERE @Blocker = ANY(pg_blocking_pids(pid));",
+                "SELECT COUNT(*) FROM pg_stat_activity WHERE datname = current_database() AND @Blocker = ANY(pg_blocking_pids(pid));",
                 observer
             );
             waiting.Parameters.AddWithValue("@Blocker", blocker.ProcessID);
@@ -236,7 +236,7 @@ public sealed class PostgreSqlInboxOperationPolicyTests(PostgreSqlTestFixture fi
         await connection.OpenAsync(AbortToken);
         var table = tableNames.GetReceivedTableName();
         await using var expire = new NpgsqlCommand(
-            $"""UPDATE {table} SET "locked_until"=clock_timestamp()-INTERVAL '1 second', "next_retry_at"=clock_timestamp()-INTERVAL '1 second' WHERE "id"=@Id;""",
+            $"""UPDATE {table} SET "lease_expires_at"=clock_timestamp()-INTERVAL '1 second', "next_retry_at"=clock_timestamp()-INTERVAL '1 second' WHERE "id"=@Id;""",
             connection
         );
         expire.Parameters.AddWithValue("@Id", message.StorageId);
@@ -299,7 +299,7 @@ public sealed class PostgreSqlInboxOperationPolicyTests(PostgreSqlTestFixture fi
             await using var observer = new NpgsqlConnection(fixture.ConnectionString);
             await observer.OpenAsync(AbortToken);
             await using var waiting = new NpgsqlCommand(
-                "SELECT COUNT(*) FROM pg_stat_activity WHERE cardinality(pg_blocking_pids(pid)) > 0 AND POSITION(@Table IN query) > 0;",
+                "SELECT COUNT(*) FROM pg_stat_activity WHERE datname = current_database() AND cardinality(pg_blocking_pids(pid)) > 0 AND POSITION(@Table IN query) > 0;",
                 observer
             );
             waiting.Parameters.AddWithValue("@Table", table);

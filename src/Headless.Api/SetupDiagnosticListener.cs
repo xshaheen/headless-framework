@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
+using Headless.Logging;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -49,7 +50,10 @@ public static class SetupDiagnosticListener
         public IDisposable AddMiddlewareAnalysisDiagnosticListeners()
         {
             var diagnosticListener = app.Services.GetRequiredService<DiagnosticListener>();
-            var middlewareAnalysis = new MiddlewareAnalysisDiagnosticAdapter(app.Logger);
+            var middlewareAnalysis = new MiddlewareAnalysisDiagnosticAdapter(
+                app.Logger,
+                [.. app.Services.GetServices<ILogPathRedactor>()]
+            );
             var middlewareAnalysisSubscription = diagnosticListener.Subscribe(
                 middlewareAnalysis,
                 MiddlewareAnalysisDiagnosticAdapter.IsEnabled

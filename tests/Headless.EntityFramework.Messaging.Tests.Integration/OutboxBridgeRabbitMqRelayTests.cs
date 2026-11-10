@@ -5,7 +5,6 @@ using Headless.Messaging;
 using Headless.Messaging.RabbitMq;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Testcontainers.RabbitMq;
 
 namespace Tests;
 
@@ -20,10 +19,11 @@ public sealed class OutboxBridgeRabbitMqRelayTests(
     {
         setup.UseRabbitMq(options =>
         {
-            options.HostName = rabbitMq.Container.Hostname;
-            options.Port = rabbitMq.Container.GetMappedPublicPort(RabbitMqBuilder.RabbitMqPort);
-            options.UserName = RabbitMqBuilder.DefaultUsername;
-            options.Password = RabbitMqBuilder.DefaultPassword;
+            options.HostName = rabbitMq.HostName;
+            options.Port = rabbitMq.Port;
+            options.VirtualHost = rabbitMq.VirtualHost;
+            options.UserName = rabbitMq.UserName;
+            options.Password = rabbitMq.Password;
         });
     }
 

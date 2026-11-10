@@ -35,5 +35,6 @@ internal sealed class JobsModelCustomizer<TTimeJob, TCronJob>(ModelCustomizerDep
             schema,
             style
         );
+        JobsLeaseModelConfiguration.Configure(builder, context);
     }
 }

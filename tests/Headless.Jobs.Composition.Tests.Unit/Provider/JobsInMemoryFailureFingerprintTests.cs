@@ -24,6 +24,7 @@ public sealed class JobsInMemoryFailureFingerprintTests : TestBase
     private const string _Owner = "node-a@1";
     private const string _Carried = "v1:0123456789abcdef";
     private static readonly DateTimeOffset _Now = new(2026, 11, 5, 12, 0, 0, TimeSpan.Zero);
+    private readonly FakeTimeProvider _time = new(_Now);
 
     [Fact]
     public async Task should_store_the_carried_fingerprint_on_a_failure_write_and_clear_it_on_requeue()
@@ -87,8 +88,23 @@ public sealed class JobsInMemoryFailureFingerprintTests : TestBase
         await store.AddTimeJobsAsync([job], AbortToken);
         var occurrence = await _AddOccurrenceAsync(store, lockedUntil: _Now.UtcDateTime.AddMinutes(5));
 
-        (await store.SettleInterruptedTimeJobAsync(job.Id, _Owner, "host stopped", null, AbortToken)).Should().Be(1);
-        (await store.SettleInterruptedCronJobOccurrenceAsync(occurrence.Id, _Owner, "host stopped", AbortToken))
+        (
+            await store.SettleInterruptedTimeJobAsync(
+                JobsLeaseTables.TimeJob(job.Id, 1),
+                "host stopped",
+                null,
+                AbortToken
+            )
+        )
+            .Should()
+            .Be(1);
+        (
+            await store.SettleInterruptedCronJobOccurrenceAsync(
+                JobsLeaseTables.CronOccurrence(occurrence.Id, 1),
+                "host stopped",
+                AbortToken
+            )
+        )
             .Should()
             .Be(1);
 
@@ -106,21 +122,24 @@ public sealed class JobsInMemoryFailureFingerprintTests : TestBase
     )
     {
         var store = _Create();
-        var job = _TimeJob(lockedUntil: _Now.UtcDateTime.AddMinutes(-1), NodeDeathPolicy.MarkFailed);
+        var job = _TimeJob(lockedUntil: _Now.UtcDateTime.AddMinutes(5), NodeDeathPolicy.MarkFailed);
         await store.AddTimeJobsAsync([job], AbortToken);
         var failure = _State(job.Id)
             .SetProperty(x => x.Status, JobStatus.Failed)
             .SetProperty(x => x.FailureFingerprint, _Carried);
 
+        // A completion needs a live lease, so the executor writes before the lease lapses and the sweep runs after.
         int executorWrote;
         int sweepWrote;
         if (executorFirst)
         {
             executorWrote = await store.UpdateTimeJobAsync(failure, AbortToken);
+            _time.Advance(TimeSpan.FromMinutes(10));
             sweepWrote = await store.ReclaimStalledTimeJobsAsync(AbortToken);
         }
         else
         {
+            _time.Advance(TimeSpan.FromMinutes(10));
             sweepWrote = await store.ReclaimStalledTimeJobsAsync(AbortToken);
             executorWrote = await store.UpdateTimeJobAsync(failure, AbortToken);
         }
@@ -131,10 +150,10 @@ public sealed class JobsInMemoryFailureFingerprintTests : TestBase
             .Be(executorFirst ? _Carried : "v1:lease-lapsed");
     }
 
-    private static JobsInMemoryPersistenceProvider<FakeTimeJob, FakeCronJob> _Create()
+    private JobsInMemoryPersistenceProvider<FakeTimeJob, FakeCronJob> _Create()
     {
         var services = new ServiceCollection();
-        services.AddSingleton<TimeProvider>(new FakeTimeProvider(_Now));
+        services.AddSingleton<TimeProvider>(_time);
         services.AddHeadlessGuidGenerator();
         services.AddSingleton(
             new SchedulerOptionsBuilder { NodeId = "node-a", LeaseDuration = TimeSpan.FromMinutes(5) }
@@ -150,8 +169,7 @@ public sealed class JobsInMemoryFailureFingerprintTests : TestBase
             Id = Guid.NewGuid(),
             Function = "fn",
             Status = JobStatus.InProgress,
-            OwnerId = _Owner,
-            LockedUntil = lockedUntil,
+            Lease = TestLeases.Held(_Owner, lockedUntil),
             OnNodeDeath = policy,
             ExecutionTime = _Now.UtcDateTime.AddMinutes(-2),
         };
@@ -164,6 +182,7 @@ public sealed class JobsInMemoryFailureFingerprintTests : TestBase
             FunctionName = "fn",
             JobId = id,
             ClaimOwner = _Owner,
+            ClaimGeneration = 1,
         };
     }
 
@@ -182,8 +201,7 @@ public sealed class JobsInMemoryFailureFingerprintTests : TestBase
         {
             Id = Guid.NewGuid(),
             Status = JobStatus.InProgress,
-            OwnerId = _Owner,
-            LockedUntil = lockedUntil,
+            Lease = TestLeases.Held(_Owner, lockedUntil),
             OnNodeDeath = NodeDeathPolicy.MarkFailed,
             ExecutionTime = _Now.UtcDateTime.AddMinutes(-1),
             CronJobId = cronJob.Id,

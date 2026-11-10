@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Fencing;
 using Headless.Jobs;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -54,7 +55,7 @@ public abstract class JobsDashboardDeletesConformanceTests<TFixture>(TFixture fi
             "deletes-force-finished",
             async (store, ct) =>
             {
-                var (job, owner) = await _StartAsync(store, cancel: true, ct);
+                var (job, lease) = await _StartAsync(store, cancel: true, ct);
                 var read = await store.GetJobRunAsync(job, ct);
                 read!.Status.Should().Be(JobStatus.InProgress);
                 read.CancelRequested.Should().BeTrue();
@@ -63,7 +64,8 @@ public abstract class JobsDashboardDeletesConformanceTests<TFixture>(TFixture fi
                 {
                     FunctionName = _Function,
                     JobId = job,
-                    ClaimOwner = owner,
+                    ClaimOwner = lease.Holder,
+                    ClaimGeneration = lease.Generation,
                 }.SetProperty(x => x.Status, JobStatus.Succeeded);
                 (await store.UpdateTimeJobAsync(completion, ct)).Should().Be(1);
 
@@ -139,7 +141,7 @@ public abstract class JobsDashboardDeletesConformanceTests<TFixture>(TFixture fi
         }
     }
 
-    private static async Task<(Guid Job, string Owner)> _StartAsync(
+    private static async Task<(Guid Job, RowLeaseSnapshot Lease)> _StartAsync(
         IJobPersistenceProvider<TimeJobEntity, CronJobEntity> store,
         bool cancel,
         CancellationToken cancellationToken
@@ -165,7 +167,7 @@ public abstract class JobsDashboardDeletesConformanceTests<TFixture>(TFixture fi
             (await store.RequestTimeJobCancellationAsync(job.Id, cancellationToken)).Should().BeTrue();
         }
 
-        return (job.Id, claimed.OwnerId!);
+        return (job.Id, claimed.Lease);
     }
 
     private async Task<Guid> _SeedCronAsync(CancellationToken cancellationToken)

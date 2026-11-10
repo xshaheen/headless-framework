@@ -94,6 +94,7 @@ public sealed class RabbitMqRawPayloadTests(RabbitMqFixture fixture) : TestBase
             setup.UseRabbitMq(options =>
             {
                 options.HostName = fixture.HostName;
+                options.VirtualHost = fixture.VirtualHost;
                 options.Port = fixture.Port;
                 options.UserName = fixture.UserName;
                 options.Password = fixture.Password;
@@ -183,7 +184,16 @@ public sealed class RabbitMqRawPayloadTests(RabbitMqFixture fixture) : TestBase
             async () =>
             {
                 var result = await fixture.Container.ExecAsync(
-                    ["rabbitmqctl", "list_queues", "-q", "--no-table-headers", "name", "messages"],
+                    [
+                        "rabbitmqctl",
+                        "list_queues",
+                        "-p",
+                        fixture.VirtualHost,
+                        "-q",
+                        "--no-table-headers",
+                        "name",
+                        "messages",
+                    ],
                     AbortToken
                 );
 

@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Data.Common;
 using Headless.Checks;
 using Headless.Coordination;
+using Headless.Fencing;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
 
@@ -35,31 +36,40 @@ internal sealed partial class InMemoryDataStorage
             }
 
             if (
-                MessageTerminalState.IsTerminal(current.StatusName, current.NextRetryAt)
+                message.Lease.State != RowLeaseState.Active
+                || MessageTerminalState.IsTerminal(current.StatusName, current.NextRetryAt)
                 || current.Retries != message.Retries
                 || current.InlineAttempts != originalInlineAttempts
                 || (current.InboxGeneration is not null && !_MatchesInboxFence(current, message.InboxAttemptFence))
-                || current.LockedUntil != message.LockedUntil
-                || !string.Equals(current.Owner, message.Owner, StringComparison.Ordinal)
-                || current.LockedUntil is null
-                || current.LockedUntil <= timeProvider.GetUtcNow()
             )
             {
                 return ValueTask.FromResult(false);
             }
 
-            current.InlineAttempts = message.InlineAttempts;
+            // The claim leased a whole batch at once and its rows run one after another, so the reservation renews
+            // the held generation: a row reserved late in the batch starts its attempt with a full lease.
+            var renewed = RowLeaseRules.Renew(
+                current.Lease,
+                message.Lease.Generation,
+                timeProvider.GetUtcNow(),
+                leaseDuration
+            );
+            if (renewed.Status != LeaseRenewalStatus.Renewed)
+            {
+                return ValueTask.FromResult(false);
+            }
 
-            // The claim leased a whole batch at once and its rows run one after another, so the reservation re-stamps
-            // the lease: a row reserved late in the batch starts its attempt with a full lease.
-            _SlideLease(current, message, timeProvider.GetUtcNow().Add(leaseDuration));
+            current.Lease = renewed.Next;
+            current.InlineAttempts = message.InlineAttempts;
+            message.Lease = renewed.Next;
             return ValueTask.FromResult(true);
         }
     }
 
     /// <summary>
     /// Slides a held lease forward while its attempt runs: only the exact lease generation the caller holds, and only
-    /// while it is still live.
+    /// while it is still live. Like the relational providers, renewal judges the lease alone; the state write that ends
+    /// the attempt carries the terminal and inbox guards.
     /// </summary>
     private static ValueTask<bool> _RenewLeaseAsync(
         ConcurrentDictionary<Guid, MemoryMessage> messages,
@@ -82,34 +92,25 @@ internal sealed partial class InMemoryDataStorage
                 return ValueTask.FromResult(false);
             }
 
-            var now = timeProvider.GetUtcNow();
-            if (
-                ((current.StatusName is StatusName.Succeeded or StatusName.Failed) && current.NextRetryAt is null)
-                || (current.InboxGeneration is not null && !_MatchesInboxFence(current, message.InboxAttemptFence))
-                || current.LockedUntil is null
-                || current.LockedUntil != message.LockedUntil
-                || !string.Equals(current.Owner, message.Owner, StringComparison.Ordinal)
-                || current.LockedUntil <= now
-            )
+            if (message.Lease.State != RowLeaseState.Active)
             {
                 return ValueTask.FromResult(false);
             }
 
-            _SlideLease(current, message, now.Add(leaseDuration));
-            return ValueTask.FromResult(true);
-        }
-    }
+            var renewed = RowLeaseRules.Renew(
+                current.Lease,
+                message.Lease.Generation,
+                timeProvider.GetUtcNow(),
+                leaseDuration
+            );
+            if (renewed.Status != LeaseRenewalStatus.Renewed)
+            {
+                return ValueTask.FromResult(false);
+            }
 
-    /// <summary>Moves the row's lease, and the caller's copy of it, to <paramref name="lockedUntil"/>.</summary>
-    private static void _SlideLease(MemoryMessage current, MediumMessage message, DateTimeOffset lockedUntil)
-    {
-        current.LockedUntil = lockedUntil;
-        message.LockedUntil = lockedUntil;
-        message.Owner = current.Owner;
-        if (current.InboxAttemptFence is { } fence)
-        {
-            current.InboxAttemptFence = fence with { LockedUntil = lockedUntil };
-            message.InboxAttemptFence = current.InboxAttemptFence;
+            current.Lease = renewed.Next;
+            message.Lease = message.Lease with { ExpiresAt = renewed.Next.ExpiresAt };
+            return ValueTask.FromResult(true);
         }
     }
 
@@ -119,7 +120,7 @@ internal sealed partial class InMemoryDataStorage
         TimeSpan leaseDuration,
         int originalInlineAttempts,
         TimeProvider timeProvider,
-        string? owner,
+        string? holder,
         IGuidGenerator? fenceGenerator,
         CancellationToken cancellationToken
     )
@@ -140,24 +141,19 @@ internal sealed partial class InMemoryDataStorage
 
             // Fresh-dispatch fast path: lease acquisition + attempt reservation in one atomic step.
             // Combines _LeaseAsync's lease-contention guard with _ReserveAttemptAsync's durable
-            // counter CAS; no owner match is required because this path is TAKING the lease.
-            var nowUtc = timeProvider.GetUtcNow();
+            // counter CAS; no holder match is required because this path is TAKING the lease.
             if (
                 MessageTerminalState.IsTerminal(current.StatusName, current.NextRetryAt)
                 || current.Retries != message.Retries
                 || current.InlineAttempts != originalInlineAttempts
-                || (current.LockedUntil is not null && current.LockedUntil > nowUtc)
+                || !_TryGrantLease(current, timeProvider.GetUtcNow(), leaseDuration, holder)
             )
             {
                 return ValueTask.FromResult(false);
             }
 
-            var lockedUntil = nowUtc.Add(leaseDuration);
-            current.LockedUntil = lockedUntil;
-            current.Owner = owner;
             current.InlineAttempts = message.InlineAttempts;
-            message.LockedUntil = lockedUntil;
-            message.Owner = owner;
+            message.Lease = current.Lease;
             _AllocateInboxFence(current, message, fenceGenerator);
             return ValueTask.FromResult(true);
         }
@@ -169,7 +165,7 @@ internal sealed partial class InMemoryDataStorage
         IGuidGenerator? fenceGenerator
     )
     {
-        if (current.InboxGeneration is null || current.LockedUntil is null || fenceGenerator is null)
+        if (current.InboxGeneration is null || current.Lease.State != RowLeaseState.Active || fenceGenerator is null)
         {
             return;
         }
@@ -180,8 +176,7 @@ internal sealed partial class InMemoryDataStorage
             current.InboxGeneration.Number,
             current.InboxGeneration.IncarnationId,
             fenceGenerator.Create(),
-            current.Owner,
-            current.LockedUntil.Value
+            current.Lease.Generation
         );
         current.InboxAttemptFence = fence;
         message.InboxAttemptFence = fence;
@@ -301,8 +296,7 @@ internal sealed partial class InMemoryDataStorage
                 row.Retries = 0;
                 row.InlineAttempts = 0;
                 row.ExpiresAt = null;
-                row.LockedUntil = null;
-                row.Owner = null;
+                row.Lease = RowLeaseRules.Revoke(row.Lease).Next;
                 _StampChange(row);
             }
 
@@ -343,7 +337,7 @@ internal sealed partial class InMemoryDataStorage
         var now = timeProvider.GetUtcNow();
         var delayedBefore = now.AddMinutes(2);
         var queuedBefore = now.AddMinutes(-1);
-        var owner = nodeMembership.GetOwnerTag();
+        var holder = nodeMembership.GetLeaseHolder();
         var version = messagingOptions.Value.Version;
         var batchSize = messagingOptions.Value.SchedulerBatchSize;
         var claimed = new List<MediumMessage>(batchSize);
@@ -384,7 +378,7 @@ internal sealed partial class InMemoryDataStorage
                     !string.Equals(candidate.Version, version, StringComparison.Ordinal)
                     || !_IsSupportedLane(candidate.Lane)
                     || candidate.ExpiresAt is null
-                    || (candidate.LockedUntil is not null && candidate.LockedUntil > now)
+                    || MessageTerminalState.IsTerminal(candidate.StatusName, candidate.NextRetryAt)
                     || (
                         (candidate.StatusName != StatusName.Delayed || candidate.ExpiresAt >= delayedBefore)
                         && (candidate.StatusName != StatusName.Queued || candidate.ExpiresAt >= queuedBefore)
@@ -394,7 +388,15 @@ internal sealed partial class InMemoryDataStorage
                     continue;
                 }
 
+                // The lease runs to the due time plus the dispatch timeout, so a row claimed ahead of its due time
+                // stays held until it is sent.
                 var leaseStart = candidate.ExpiresAt > now ? candidate.ExpiresAt.Value : now;
+                var leaseDuration = leaseStart - now + messagingOptions.Value.RetryPolicy.DispatchTimeout;
+                if (!_TryGrantLease(candidate, now, leaseDuration, holder))
+                {
+                    continue;
+                }
+
                 // A stale Queued row claimed again only changes its lease.
                 if (candidate.StatusName != StatusName.Queued)
                 {
@@ -402,8 +404,6 @@ internal sealed partial class InMemoryDataStorage
                 }
 
                 candidate.StatusName = StatusName.Queued;
-                candidate.LockedUntil = leaseStart.Add(messagingOptions.Value.RetryPolicy.DispatchTimeout);
-                candidate.Owner = owner;
                 claimed.Add(_ToSnapshot(candidate));
             }
         }

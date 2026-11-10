@@ -2,6 +2,7 @@
 
 using Headless.Checks;
 using Headless.IO;
+using Headless.Logging;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -30,9 +31,10 @@ public static class SetupBlobSignedUrl
         /// The token in a URL's path is replaced by <c>***</c> in HTTP logging (<c>UseHttpLogging</c>), in the
         /// request activity's <c>url.path</c>, <c>http.target</c>, and <c>url.full</c> tags, and in ASP.NET Core's own
         /// request scope (<c>RequestPath</c>) and its "Request starting" and "Request finished" lines. The hosting logs
-        /// are rewritten by decorating the registered <see cref="ILoggerFactory"/>, so a logger factory registered
-        /// after this call, such as Serilog's <c>UseSerilog</c>, replaces the decorator; the host then logs a warning
-        /// at startup. Call this after the logger factory is registered.
+        /// are rewritten by the shared log redaction wrapper (<c>AddHeadlessRedaction</c>, which this call
+        /// registers) around the registered <see cref="ILoggerFactory"/>. <c>AddHeadlessSerilog</c> wraps Serilog's
+        /// factory itself; a plain <c>UseSerilog</c> after this call replaces the wrapper, and the host logs a warning at
+        /// startup: call <c>AddHeadlessRedaction()</c> again after it.
         /// </para>
         /// </remarks>
         public HeadlessBlobsSetupBuilder UseSignedUrlEndpoint(Action<BlobSignedUrlOptions> setupAction)
@@ -47,29 +49,16 @@ public static class SetupBlobSignedUrl
                 services.TryAddSingleton<IMimeTypeProvider, MimeTypeProvider>();
                 services.TryAddSingleton<BlobSignedUrlSigner>();
 
-                // The token is a live credential, so its path stays out of HTTP logging and traces whenever the
-                // endpoint exists. Without HTTP logging or an activity listener, neither hook changes anything, and
-                // a request outside the route prefix costs one path comparison.
+                // The token is a live credential, so its path stays out of the request scope and lines, HTTP logging,
+                // and the request span whenever the endpoint exists. A request outside the route prefix costs one path
+                // comparison per stage.
                 services.TryAddSingleton<BlobSignedUrlPathRedactor>();
-                services.AddHttpLoggingInterceptor<BlobSignedUrlHttpLoggingInterceptor>();
-
-                // ASP.NET Core opens its request scope and writes its request lines before any middleware, through a
-                // logger it takes from this factory when the server starts.
-                if (!services.Any(static d => d.ServiceType == typeof(BlobSignedUrlLogRedactionMarker)))
-                {
-                    services.AddSingleton<BlobSignedUrlLogRedactionMarker>();
-                    services.TryDecorateWith<ILoggerFactory>(
-                        static (inner, provider) =>
-                            new BlobSignedUrlRedactingLoggerFactory(
-                                inner,
-                                provider.GetRequiredService<BlobSignedUrlPathRedactor>()
-                            )
-                    );
-                }
-
                 services.TryAddEnumerable(
-                    ServiceDescriptor.Singleton<IStartupFilter, BlobSignedUrlTraceRedactionStartupFilter>()
+                    ServiceDescriptor.Singleton<ILogPathRedactor, BlobSignedUrlPathRedactor>(static provider =>
+                        provider.GetRequiredService<BlobSignedUrlPathRedactor>()
+                    )
                 );
+                services.AddHeadlessRequestLogRedaction();
 
                 // Cross-cutting extensions run after every provider contribution, so every store is registered by now.
                 services.TryDecorateWith<IBlobStorage>((inner, provider) => _Wrap(inner, store: null, provider));
@@ -99,9 +88,6 @@ public static class SetupBlobSignedUrl
             return setup;
         }
     }
-
-    /// <summary>Records that the logger factory was decorated, so a second registration does not wrap it twice.</summary>
-    private sealed class BlobSignedUrlLogRedactionMarker;
 
     private static IBlobStorage _Wrap(IBlobStorage inner, string? store, IServiceProvider provider)
     {

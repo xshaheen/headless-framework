@@ -2,6 +2,7 @@
 
 using Testcontainers.LocalStack;
 using Testcontainers.Xunit;
+using Xunit;
 
 namespace Headless.Testing.Testcontainers;
 
@@ -13,8 +14,27 @@ namespace Headless.Testing.Testcontainers;
 public class HeadlessLocalStackFixture()
     : ContainerFixture<LocalStackBuilder, LocalStackContainer>(TestContextMessageSink.Instance)
 {
+    /// <summary>
+    /// Gets the image the fixture runs, <see cref="TestImages.LocalStack"/> unless overridden. Override it to run
+    /// another version or a variant of the same server.
+    /// </summary>
+    protected virtual string Image => TestImages.LocalStack;
+
     protected override LocalStackBuilder Configure()
     {
-        return base.Configure().WithImage(TestImages.LocalStack);
+        return base.Configure().WithImage(Image);
+    }
+
+    /// <inheritdoc />
+    protected override async ValueTask InitializeAsync()
+    {
+        await base.InitializeAsync().ConfigureAwait(false);
+        await ContainerHostPort
+            .EnsureReachableAsync(
+                Container,
+                LocalStackBuilder.LocalStackPort,
+                cancellationToken: TestContext.Current.CancellationToken
+            )
+            .ConfigureAwait(false);
     }
 }

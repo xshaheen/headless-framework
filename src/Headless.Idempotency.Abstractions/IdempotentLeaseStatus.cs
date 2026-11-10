@@ -21,14 +21,15 @@ public enum IdempotentLeaseStatus
     /// </summary>
     Expired = 1,
 
-    /// <summary>A later admission replaced this attempt, or the record no longer exists.</summary>
+    /// <summary>
+    /// A later admission replaced this attempt, or the record no longer exists. An attempt that a newer one replaced
+    /// reads stale even after that newer attempt completed or released the key.
+    /// </summary>
     Stale = 2,
 
     /// <summary>This attempt already completed the operation; its result is stored.</summary>
     Completed = 3,
 
-    /// <summary>
-    /// The record is pending with no admitted attempt: this attempt, or one that took it over, released the key.
-    /// </summary>
+    /// <summary>The record is pending with no admitted attempt: this attempt released the key.</summary>
     Released = 4,
 }

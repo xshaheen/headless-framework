@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Fencing;
 using Headless.Jobs;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -42,8 +43,8 @@ public abstract class JobsRequeueConformanceTests<TFixture>(TFixture fixture) : 
             requeued!.Status.Should().Be(JobStatus.Idle);
             requeued.RetryCount.Should().Be(0);
             requeued.ExceptionMessage.Should().BeNull();
-            requeued.OwnerId.Should().BeNull();
-            requeued.LockedUntil.Should().BeNull();
+            // The failed run's ended lease cannot write, and the requeue never hands it a live one.
+            requeued.Lease.State.Should().NotBe(RowLeaseState.Active);
             requeued.ExecutedAt.Should().BeNull();
             requeued.ElapsedTime.Should().Be(0);
             requeued.ExecutionTime.Should().BeCloseTo(DateTime.UtcNow, _ClockTolerance);
@@ -216,8 +217,8 @@ public abstract class JobsRequeueConformanceTests<TFixture>(TFixture fixture) : 
             requeued.Status.Should().Be(JobStatus.Idle);
             requeued.RetryCount.Should().Be(0);
             requeued.ExceptionMessage.Should().BeNull();
-            requeued.OwnerId.Should().BeNull();
-            requeued.LockedUntil.Should().BeNull();
+            // The failed run's ended lease cannot write, and the requeue never hands it a live one.
+            requeued.Lease.State.Should().NotBe(RowLeaseState.Active);
             requeued.ExecutedAt.Should().BeNull();
             requeued.ExecutionTime.Should().BeCloseTo(instant, TimeSpan.FromMilliseconds(1), "the instant is kept");
 
@@ -407,8 +408,14 @@ public abstract class JobsRequeueConformanceTests<TFixture>(TFixture fixture) : 
             Id = Guid.NewGuid(),
             Function = "requeue",
             Status = JobStatus.Failed,
-            OwnerId = "node-b@1",
-            LockedUntil = DateTime.UtcNow.AddMinutes(-30),
+            // The failed run settled its lease; the holder stays on the ended lease.
+            Lease = new RowLeaseSnapshot(
+                1,
+                RowLeaseState.Settled,
+                DateTimeOffset.UtcNow.AddMinutes(-30),
+                "node-b@1",
+                0
+            ),
             ExecutionTime = DateTime.UtcNow.AddHours(-1),
             ExecutedAt = DateTimeOffset.UtcNow.AddMinutes(-59),
             ElapsedTime = 3000,
@@ -485,6 +492,14 @@ public abstract class JobsRequeueConformanceTests<TFixture>(TFixture fixture) : 
             );
             JobsCoordinationFixtureExtensions.AddParameter(command, "@id", id);
             await command.ExecuteNonQueryAsync(ct);
+
+            // The failed run settled its lease; the holder stays on the ended lease.
+            await fixture.OverwriteLeaseAsync(
+                fixture.QualifiedCronJobOccurrencesTable,
+                id,
+                new RowLeaseSnapshot(1, RowLeaseState.Settled, DateTimeOffset.UtcNow.AddMinutes(-30), "node-b@1", 0),
+                ct
+            );
         }
 
         return id;

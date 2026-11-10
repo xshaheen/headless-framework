@@ -83,6 +83,7 @@ Headless.Features.Storage.PostgreSql
 Headless.Features.Storage.SqlServer
 Headless.Fencing
 Headless.Fencing.Abstractions
+Headless.Fencing.EntityFramework
 Headless.Fencing.InMemory
 Headless.Fencing.PostgreSql
 Headless.Fencing.Sql
@@ -118,6 +119,8 @@ Headless.Jobs.EntityFramework
 Headless.Jobs.EntityFramework.PostgreSql
 Headless.Jobs.EntityFramework.SqlServer
 Headless.Jobs.SourceGenerator
+Headless.Logging.Redaction
+Headless.Logging.Redaction.AspNetCore
 Headless.Logging.Serilog
 Headless.Media.Indexing
 Headless.Media.Indexing.Abstractions

@@ -14,25 +14,9 @@ public sealed class SqlServerEncryptionFixture
         ICollectionFixture<SqlServerEncryptionFixture>,
         IEncryptionFixture
 {
-    private const string _Database = "encryption_test";
-
-    /// <summary>Connection string of the database that holds the keys (the base one points at master).</summary>
+    /// <summary>Connection string of the fixture's own database, which holds the keys.</summary>
     public string KeysConnectionString =>
-        new SqlConnectionStringBuilder(ConnectionString) { InitialCatalog = _Database, MaxPoolSize = 30 }.ToString();
-
-    // The database can only be created once the container accepts logins.
-    protected override async ValueTask InitializeAsync()
-    {
-        await base.InitializeAsync();
-
-        await using var master = new SqlConnection(ConnectionString);
-        await master.OpenAsync(CancellationToken.None);
-        await using var create = new SqlCommand(
-            $"IF DB_ID(N'{_Database}') IS NULL CREATE DATABASE [{_Database}];",
-            master
-        );
-        await create.ExecuteNonQueryAsync(CancellationToken.None);
-    }
+        new SqlConnectionStringBuilder(ConnectionString) { MaxPoolSize = 30 }.ToString();
 
     public void ConfigureKeyStore(HeadlessEncryptionSetupBuilder setup, string tableName)
     {

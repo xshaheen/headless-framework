@@ -3,7 +3,6 @@
 using Headless.Encryption;
 using Headless.Testing.Testcontainers;
 using Npgsql;
-using Testcontainers.PostgreSql;
 
 namespace Tests;
 
@@ -15,13 +14,6 @@ public sealed class PostgreSqlEncryptionFixture
         ICollectionFixture<PostgreSqlEncryptionFixture>,
         IEncryptionFixture
 {
-    public string ConnectionString => Container.GetConnectionString();
-
-    protected override PostgreSqlBuilder Configure()
-    {
-        return base.Configure().WithDatabase("encryption_test").WithUsername("postgres").WithPassword("postgres");
-    }
-
     public void ConfigureKeyStore(HeadlessEncryptionSetupBuilder setup, string tableName)
     {
         // Each host gets its own pool, and the race tests run several hosts at once.

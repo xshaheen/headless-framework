@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data.Common;
 using System.Globalization;
 using Headless.Checks;
 using Headless.UnitOfWork;
@@ -63,13 +64,13 @@ internal sealed class InMemoryLeaseStore(
     public async ValueTask<LeaseGrantResult> GrantAsync(
         LeaseKey key,
         TimeSpan duration,
-        LeaseTakeover takeover,
+        LeaseGrantOptions options,
         CancellationToken cancellationToken = default
     )
     {
         using var held = await Table.LockAsync(key, cancellationToken).ConfigureAwait(false);
 
-        var (result, row) = _Grant(Table.Read(key), key, duration, takeover, timeProvider.GetUtcNow());
+        var (result, row) = _Grant(Table.Read(key), key, duration, options, timeProvider.GetUtcNow());
 
         if (row is not null)
         {
@@ -83,13 +84,13 @@ internal sealed class InMemoryLeaseStore(
         IUnitOfWork unitOfWork,
         LeaseKey key,
         TimeSpan duration,
-        LeaseTakeover takeover,
+        LeaseGrantOptions options,
         CancellationToken cancellationToken = default
     )
     {
         var transaction = await _LockAsync(unitOfWork, key, cancellationToken).ConfigureAwait(false);
 
-        var (result, row) = _Grant(transaction.Read(key), key, duration, takeover, transaction.Now(timeProvider));
+        var (result, row) = _Grant(transaction.Read(key), key, duration, options, transaction.Now(timeProvider));
 
         if (row is not null)
         {
@@ -103,16 +104,31 @@ internal sealed class InMemoryLeaseStore(
         InMemoryLease? existing,
         LeaseKey key,
         TimeSpan duration,
-        LeaseTakeover takeover,
+        LeaseGrantOptions options,
         DateTimeOffset now
     )
     {
         if (existing is { State: InMemoryLeaseState.Active } live && live.ExpiresAt > now)
         {
+            // The live holder retrying its grant (after a lost response, say) gets its own attempt back unchanged:
+            // same generation, same expiry, nothing written.
+            if (options.Holder is not null && string.Equals(live.Holder, options.Holder, StringComparison.Ordinal))
+            {
+                return (
+                    LeaseGrantResult.Granted(
+                        key.ToLease(live.Generation),
+                        live.ExpiresAt,
+                        live.TakeoverCount,
+                        live.Progress
+                    ),
+                    null
+                );
+            }
+
             return (LeaseGrantResult.Held(live.Generation, live.ExpiresAt, live.TakeoverCount), null);
         }
 
-        if (existing is { State: InMemoryLeaseState.Active } expired && takeover == LeaseTakeover.AfterSweep)
+        if (existing is { State: InMemoryLeaseState.Active } expired && options.Takeover == LeaseTakeover.AfterSweep)
         {
             return (LeaseGrantResult.Expired(expired.Generation, expired.ExpiresAt, expired.TakeoverCount), null);
         }
@@ -122,8 +138,8 @@ internal sealed class InMemoryLeaseStore(
         var generation = storage.NextGeneration();
         var isTakeover = existing is { State: InMemoryLeaseState.Active };
 
-        // A takeover counts one more expired holder; any other grant keeps the count, which a settlement or release
-        // already reset and a sweep's abandonment already raised. Progress is kept either way, so every later
+        // A takeover counts one more expired holder; any other grant keeps the count, which a settlement, release, or
+        // revocation already reset and a sweep's abandonment already raised. Progress is kept either way, so every later
         // attempt resumes from the last one recorded until the work settles.
         var row = new InMemoryLease(
             generation,
@@ -132,7 +148,8 @@ internal sealed class InMemoryLeaseStore(
             _Add(now, duration),
             EndedAt: null,
             TakeoverCount: (existing?.TakeoverCount ?? 0) + (isTakeover ? 1 : 0),
-            Progress: existing?.Progress
+            Progress: existing?.Progress,
+            Holder: options.Holder
         );
         var lease = key.ToLease(generation);
 
@@ -303,6 +320,7 @@ internal sealed class InMemoryLeaseStore(
             LeaseFenceStatus.Settled => (new LeaseRenewalResult(LeaseRenewalStatus.Settled, ExpiresAt: null), null),
             LeaseFenceStatus.Released => (new LeaseRenewalResult(LeaseRenewalStatus.Released, ExpiresAt: null), null),
             LeaseFenceStatus.Abandoned => (new LeaseRenewalResult(LeaseRenewalStatus.Abandoned, ExpiresAt: null), null),
+            LeaseFenceStatus.Revoked => (new LeaseRenewalResult(LeaseRenewalStatus.Revoked, ExpiresAt: null), null),
             _ => (new LeaseRenewalResult(LeaseRenewalStatus.Stale, ExpiresAt: null), null),
         };
     }
@@ -315,7 +333,8 @@ internal sealed class InMemoryLeaseStore(
     )
     {
         // A settled or released row at this generation reports its state whichever verb asked, so a retried
-        // settlement reports success and a release after a settlement reports that the attempt settled.
+        // settlement reports success and a release after a settlement reports that the attempt settled. A revoked
+        // row is never success: the attempt did not end it.
         return _Classify(existing, generation, now) switch
         {
             LeaseFenceStatus.Current => (
@@ -331,6 +350,7 @@ internal sealed class InMemoryLeaseStore(
             LeaseFenceStatus.Settled => (LeaseSettlementStatus.Settled, null),
             LeaseFenceStatus.Released => (LeaseSettlementStatus.Released, null),
             LeaseFenceStatus.Abandoned => (LeaseSettlementStatus.Abandoned, null),
+            LeaseFenceStatus.Revoked => (LeaseSettlementStatus.Revoked, null),
             LeaseFenceStatus.Expired => (LeaseSettlementStatus.Expired, null),
             _ => (LeaseSettlementStatus.Stale, null),
         };
@@ -368,6 +388,78 @@ internal sealed class InMemoryLeaseStore(
 
         // The committed row, read without the key's lock, like the relational providers' lockless status read.
         return ValueTask.FromResult(_Classify(Table.Read(key), generation, timeProvider.GetUtcNow()));
+    }
+
+    public ValueTask<LeaseFenceStatus> GetStatusAsync(
+        LeaseKey key,
+        long generation,
+        DbConnection connection,
+        DbTransaction? transaction,
+        CancellationToken cancellationToken = default
+    )
+    {
+        // The store has no database, so the caller's connection has nothing to read; the answer is the committed row's.
+        return GetStatusAsync(key, generation, cancellationToken);
+    }
+
+    public ValueTask<LeaseSnapshot?> GetCurrentAsync(LeaseKey key, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // The committed row, read without the key's lock, like the status read.
+        if (Table.Read(key) is not { } row)
+        {
+            return ValueTask.FromResult<LeaseSnapshot?>(null);
+        }
+
+        var snapshot = new LeaseSnapshot(
+            key.ToLease(row.Generation),
+            _Classify(row, row.Generation, timeProvider.GetUtcNow()),
+            row.ExpiresAt,
+            row.Holder,
+            row.TakeoverCount
+        );
+
+        return ValueTask.FromResult<LeaseSnapshot?>(snapshot);
+    }
+
+    public ValueTask<LeaseSnapshot?> GetCurrentAsync(
+        LeaseKey key,
+        DbConnection connection,
+        DbTransaction? transaction,
+        CancellationToken cancellationToken = default
+    )
+    {
+        // The store has no database, so the caller's connection has nothing to read; the answer is the committed row's.
+        return GetCurrentAsync(key, cancellationToken);
+    }
+
+    #endregion
+
+    #region Revoke
+
+    public async ValueTask<FencedLease?> RevokeAsync(LeaseKey key, CancellationToken cancellationToken = default)
+    {
+        using var held = await Table.LockAsync(key, cancellationToken).ConfigureAwait(false);
+
+        // Any active attempt ends, live or expired; an ended or missing row has nothing to revoke.
+        if (Table.Read(key) is not { State: InMemoryLeaseState.Active } row)
+        {
+            return null;
+        }
+
+        Table.Write(
+            key,
+            row with
+            {
+                State = InMemoryLeaseState.Revoked,
+                EndedAt = timeProvider.GetUtcNow(),
+                TakeoverCount = 0,
+                Progress = null,
+            }
+        );
+
+        return key.ToLease(row.Generation);
     }
 
     #endregion
@@ -533,6 +625,7 @@ internal sealed class InMemoryLeaseStore(
             InMemoryLeaseState.Settled => LeaseFenceStatus.Settled,
             InMemoryLeaseState.Released => LeaseFenceStatus.Released,
             InMemoryLeaseState.Abandoned => LeaseFenceStatus.Abandoned,
+            InMemoryLeaseState.Revoked => LeaseFenceStatus.Revoked,
             _ when row.ExpiresAt > now => LeaseFenceStatus.Current,
             _ => LeaseFenceStatus.Expired,
         };

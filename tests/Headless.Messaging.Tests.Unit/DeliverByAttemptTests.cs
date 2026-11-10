@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Diagnostics.Metrics;
+using Headless.Fencing;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
@@ -36,7 +37,13 @@ public sealed class DeliverByAttemptTests : TestBase
         var message = _PlainMessage(host, TimeSpan.FromSeconds(5));
         if (persistedPickup)
         {
-            message.LockedUntil = host.Clock.GetUtcNow().AddMinutes(5);
+            message.Lease = new RowLeaseSnapshot(
+                1,
+                RowLeaseState.Active,
+                host.Clock.GetUtcNow().AddMinutes(5),
+                null,
+                0
+            );
         }
 
         host.Clock.Advance(TimeSpan.FromSeconds(6));

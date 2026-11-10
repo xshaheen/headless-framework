@@ -505,7 +505,6 @@ internal sealed class JobsDashboardBackend<TTimeJob, TCronJob>(IServiceProvider 
         {
             Id = _services.GetRequiredService<IGuidGenerator>().Create(),
             Status = JobStatus.Idle,
-            LockedUntil = null,
             CronJobId = id,
             TraceParent = JobTraceParent.Capture(activity),
             CreatedAt = now,
@@ -538,7 +537,8 @@ internal sealed class JobsDashboardBackend<TTimeJob, TCronJob>(IServiceProvider 
                 Retries = claimed.CronJob.Retries,
                 RetryIntervals = claimed.CronJob.RetryIntervals,
                 ExecutionTime = claimed.ExecutionTime,
-                ClaimOwner = claimed.OwnerId,
+                ClaimOwner = claimed.Lease.Holder,
+                ClaimGeneration = claimed.Lease.Generation,
             };
 
             // Canonical hydration: also stamps CachedMaxConcurrency, so an on-demand run acquires the same

@@ -4,6 +4,7 @@ using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using Headless.Checks;
+using Headless.Fencing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Query;
 
@@ -679,7 +680,8 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             ExecutedAt = x.ExecutedAt,
             ElapsedTime = x.ElapsedTime,
             RetryCount = x.RetryCount,
-            OwnerId = x.OwnerId,
+            OwnerId = x.Lease.Holder,
+            IsLeased = x.Lease.State == RowLeaseState.Active,
             ExceptionMessage = x.ExceptionMessage,
             FailureFingerprint = x.FailureFingerprint,
             SkippedReason = x.SkippedReason,
@@ -714,7 +716,8 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             ExecutedAt = x.ExecutedAt,
             ElapsedTime = x.ElapsedTime,
             RetryCount = x.RetryCount,
-            OwnerId = x.OwnerId,
+            OwnerId = x.Lease.Holder,
+            IsLeased = x.Lease.State == RowLeaseState.Active,
             ExceptionMessage = x.ExceptionMessage,
             FailureFingerprint = x.FailureFingerprint,
             SkippedReason = x.SkippedReason,
@@ -807,16 +810,16 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                 ? await dbContext
                     .Set<TTimeJob>()
                     .AsNoTracking()
-                    .Where(x => x.Status == JobStatus.InProgress && x.OwnerId != null)
-                    .GroupBy(x => x.OwnerId!)
+                    .Where(x => x.Status == JobStatus.InProgress && x.Lease.Holder != null)
+                    .GroupBy(x => x.Lease.Holder!)
                     .Select(group => new OwnerCount { Owner = group.Key, Count = group.Count() })
                     .ToArrayAsync(cancellationToken)
                     .ConfigureAwait(false)
                 : await dbContext
                     .Set<CronJobOccurrenceEntity<TCronJob>>()
                     .AsNoTracking()
-                    .Where(x => x.Status == JobStatus.InProgress && x.OwnerId != null)
-                    .GroupBy(x => x.OwnerId!)
+                    .Where(x => x.Status == JobStatus.InProgress && x.Lease.Holder != null)
+                    .GroupBy(x => x.Lease.Holder!)
                     .Select(group => new OwnerCount { Owner = group.Key, Count = group.Count() })
                     .ToArrayAsync(cancellationToken)
                     .ConfigureAwait(false);

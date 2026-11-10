@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data.Common;
 using Headless.UnitOfWork;
 
 namespace Headless.Fencing;
@@ -74,6 +75,43 @@ public interface IFencedLeases
     );
 
     /// <summary>
+    /// Grants the lease on <paramref name="resource" /> for <paramref name="duration" /> with
+    /// <paramref name="options" />: the takeover choice, and the holder the attempt is recorded with.
+    /// </summary>
+    /// <remarks>
+    /// Every grant that acquires the lease stores the options' holder with its generation, or clears it when the
+    /// options carry none. A grant whose holder equals (ordinally) the stored holder of the live attempt
+    /// returns that attempt as <see cref="LeaseGrantStatus.Granted" /> with its generation, expiry, takeover count,
+    /// and progress, and writes nothing: a grant retried after a lost response gets the lease it already holds. The
+    /// expiry is not extended. Any other live holder still answers <see cref="LeaseGrantStatus.Held" />.
+    /// </remarks>
+    /// <param name="kind">The lease kind.</param>
+    /// <param name="resource">The leased resource within the kind.</param>
+    /// <param name="duration">How long the lease lives unless renewed; bounded by the configured limits.</param>
+    /// <param name="options">The takeover choice, and the holder the grant stores.</param>
+    /// <param name="cancellationToken">Token used to cancel the database call.</param>
+    /// <returns>
+    /// The same results as <see cref="GrantAsync(string, string, TimeSpan, LeaseTakeover, CancellationToken)" />, and
+    /// the live attempt itself when the holder matches.
+    /// </returns>
+    /// <exception cref="ArgumentNullException"><paramref name="options" /> is <see langword="null" />.</exception>
+    /// <exception cref="ArgumentException">
+    /// The kind, resource, or current tenant id is invalid, or the options' holder is whitespace, exceeds its limit, or is not
+    /// portable key text.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="duration" /> is outside the configured bounds.</exception>
+    /// <exception cref="System.ComponentModel.InvalidEnumArgumentException">
+    /// The options' takeover is not a defined value.
+    /// </exception>
+    ValueTask<LeaseGrantResult> GrantAsync(
+        string kind,
+        string resource,
+        TimeSpan duration,
+        LeaseGrantOptions options,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
     /// Reads whether <paramref name="lease" /> is still the current, live attempt, by the database clock, without
     /// locking or changing anything.
     /// </summary>
@@ -87,11 +125,121 @@ public interface IFencedLeases
     /// <returns>
     /// <see cref="LeaseFenceStatus.Current" /> while the attempt holds a live lease, otherwise why it no longer does:
     /// <see cref="LeaseFenceStatus.Expired" />, <see cref="LeaseFenceStatus.Stale" /> (a later generation exists or the
-    /// row was purged), <see cref="LeaseFenceStatus.Settled" />, <see cref="LeaseFenceStatus.Released" />, or
-    /// <see cref="LeaseFenceStatus.Abandoned" />.
+    /// row was purged), <see cref="LeaseFenceStatus.Settled" />, <see cref="LeaseFenceStatus.Released" />,
+    /// <see cref="LeaseFenceStatus.Abandoned" />, or <see cref="LeaseFenceStatus.Revoked" />.
     /// </returns>
     /// <exception cref="ArgumentException">The lease's identity or generation is invalid.</exception>
     ValueTask<LeaseFenceStatus> GetStatusAsync(FencedLease lease, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reads, as one statement on <paramref name="connection" />, whether <paramref name="lease" /> is still the
+    /// current, active, and unexpired attempt by the database clock: the same answer as
+    /// <see cref="GetStatusAsync(FencedLease, CancellationToken)" />, without checking a second connection out of the
+    /// pool.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Use it for a per-request liveness check in code that already holds a connection to the lease database, such as
+    /// an EF Core context's <c>Database.GetDbConnection()</c>. A closed connection is opened for the read and closed
+    /// again; an open one is left open. The read takes no row lock and never retries: the caller owns the connection,
+    /// so a fault surfaces unchanged.
+    /// </para>
+    /// <para>
+    /// When the connection carries an open transaction, pass it as <paramref name="transaction" />: SQL Server
+    /// refuses a command on such a connection that does not name it. The read then sees that transaction's own
+    /// uncommitted writes. A provider without a database (the in-memory store) ignores both arguments.
+    /// </para>
+    /// <para>As with the other overload, the answer never guards a write.</para>
+    /// </remarks>
+    /// <param name="lease">The lease to check.</param>
+    /// <param name="connection">A connection to the database the provider is configured for.</param>
+    /// <param name="transaction">The connection's open transaction, or <see langword="null" /> when it has none.</param>
+    /// <param name="cancellationToken">Token used to cancel the database call.</param>
+    /// <returns>The same statuses as <see cref="GetStatusAsync(FencedLease, CancellationToken)" />.</returns>
+    /// <exception cref="ArgumentException">The lease's identity or generation is invalid.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// The connection is not the provider's connection type or reaches another database, or the transaction is not
+    /// bound to the connection.
+    /// </exception>
+    ValueTask<LeaseFenceStatus> GetStatusAsync(
+        FencedLease lease,
+        DbConnection connection,
+        DbTransaction? transaction = null,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Reads the attempt the lease row of <paramref name="resource" /> holds for the current tenant, with its state by
+    /// the database clock and the holder its grant stored, without locking or changing anything.
+    /// </summary>
+    /// <remarks>
+    /// One primary-key read answers whether the attempt is live, which generation it is, and who holds it, so
+    /// per-request code needs no copy of the generation of its own. As with
+    /// <see cref="GetStatusAsync(FencedLease, CancellationToken)" />, the answer can change as soon as it is returned
+    /// and never guards a write.
+    /// </remarks>
+    /// <param name="kind">The lease kind.</param>
+    /// <param name="resource">The leased resource within the kind.</param>
+    /// <param name="cancellationToken">Token used to cancel the database call.</param>
+    /// <returns>The row's attempt, or <see langword="null" /> when the lease has no row (never granted, or purged).</returns>
+    /// <exception cref="ArgumentException">The kind, resource, or current tenant id is invalid.</exception>
+    ValueTask<LeaseSnapshot?> GetCurrentAsync(
+        string kind,
+        string resource,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Reads, as one statement on <paramref name="connection" />, the attempt the lease row of
+    /// <paramref name="resource" /> holds: the same answer as
+    /// <see cref="GetCurrentAsync(string, string, CancellationToken)" />, without checking a second connection out of
+    /// the pool.
+    /// </summary>
+    /// <remarks>
+    /// The connection rules are those of
+    /// <see cref="GetStatusAsync(FencedLease, DbConnection, DbTransaction, CancellationToken)" />: a closed connection is
+    /// opened for the read and closed again, an open one is left open, a connection's open transaction is passed as
+    /// <paramref name="transaction" />, the read never retries, and a provider without a database ignores both
+    /// arguments.
+    /// </remarks>
+    /// <param name="kind">The lease kind.</param>
+    /// <param name="resource">The leased resource within the kind.</param>
+    /// <param name="connection">A connection to the database the provider is configured for.</param>
+    /// <param name="transaction">The connection's open transaction, or <see langword="null" /> when it has none.</param>
+    /// <param name="cancellationToken">Token used to cancel the database call.</param>
+    /// <returns>The row's attempt, or <see langword="null" /> when the lease has no row.</returns>
+    /// <exception cref="ArgumentException">The kind, resource, or current tenant id is invalid.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// The connection is not the provider's connection type or reaches another database, or the transaction is not
+    /// bound to the connection.
+    /// </exception>
+    ValueTask<LeaseSnapshot?> GetCurrentAsync(
+        string kind,
+        string resource,
+        DbConnection connection,
+        DbTransaction? transaction = null,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Ends the active attempt on <paramref name="resource" /> for the current tenant as
+    /// <see cref="LeaseFenceStatus.Revoked" />, whether it is live or already expired, without naming its generation.
+    /// </summary>
+    /// <remarks>
+    /// For cancel or pause from code that never held the attempt's lease. It is one fenced transition on the active
+    /// row, so it ends exactly the attempt that was active when it ran. Fence, renewal, settlement, release, and status
+    /// reads by that generation then answer <c>Revoked</c>; a settlement or release of it is refused and writes
+    /// nothing. The next grant proceeds at once as <see cref="LeaseGrantStatus.Granted" /> with a new generation, and
+    /// the takeover count and progress reset as a release resets them. The holder stays on the row, describing the
+    /// revoked generation, until that grant replaces it. A settled, released, abandoned, or revoked attempt is left as
+    /// it is.
+    /// </remarks>
+    /// <param name="kind">The lease kind.</param>
+    /// <param name="resource">The leased resource within the kind.</param>
+    /// <param name="cancellationToken">Token used to cancel the database call.</param>
+    /// <returns>The attempt it ended, or <see langword="null" /> when no attempt was active.</returns>
+    /// <exception cref="ArgumentException">The kind, resource, or current tenant id is invalid.</exception>
+    ValueTask<FencedLease?> RevokeAsync(string kind, string resource, CancellationToken cancellationToken = default);
 
     /// <summary>Moves a live lease's expiry to <paramref name="duration" /> from now, by the database clock.</summary>
     /// <remarks>Any progress recorded by an earlier renewal is kept.</remarks>
@@ -181,7 +329,7 @@ public interface IFencedLeases
     );
 
     /// <summary>
-    /// Deletes the settled, released, and abandoned leases of <paramref name="kind" /> that ended at least
+    /// Deletes the settled, released, abandoned, and revoked leases of <paramref name="kind" /> that ended at least
     /// <paramref name="olderThan" /> ago, by the database clock. Live and expired-but-active leases are kept.
     /// </summary>
     /// <remarks>

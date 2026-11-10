@@ -31,7 +31,14 @@ public abstract class JobsChangeMarkerConformanceTests<TFixture>(TFixture fixtur
             async (store, owner, ct) =>
             {
                 var id = Guid.NewGuid();
-                await fixture.SeedTimeJobAsync(id, _Function, (int)JobStatus.InProgress, owner, ct);
+                await fixture.SeedTimeJobAsync(
+                    id,
+                    _Function,
+                    (int)JobStatus.InProgress,
+                    owner,
+                    ct,
+                    lockedUntil: DateTime.UtcNow.AddMinutes(10)
+                );
                 var seeded = await _TimeJobMarkerAsync(id, ct);
                 var before = await _ReadStoreClockAsync(ct);
 
@@ -54,7 +61,14 @@ public abstract class JobsChangeMarkerConformanceTests<TFixture>(TFixture fixtur
             async (store, owner, ct) =>
             {
                 var id = Guid.NewGuid();
-                await fixture.SeedTimeJobAsync(id, _Function, (int)JobStatus.InProgress, owner, ct);
+                await fixture.SeedTimeJobAsync(
+                    id,
+                    _Function,
+                    (int)JobStatus.InProgress,
+                    owner,
+                    ct,
+                    lockedUntil: DateTime.UtcNow.AddMinutes(10)
+                );
                 var markers = new List<DateTime> { await _TimeJobMarkerAsync(id, ct) };
 
                 for (var i = 1; i <= 5; i++)
@@ -77,7 +91,14 @@ public abstract class JobsChangeMarkerConformanceTests<TFixture>(TFixture fixtur
             async (store, owner, ct) =>
             {
                 var id = Guid.NewGuid();
-                await fixture.SeedTimeJobAsync(id, _Function, (int)JobStatus.InProgress, owner, ct);
+                await fixture.SeedTimeJobAsync(
+                    id,
+                    _Function,
+                    (int)JobStatus.InProgress,
+                    owner,
+                    ct,
+                    lockedUntil: DateTime.UtcNow.AddMinutes(10)
+                );
                 // A marker an hour ahead of the store clock stands for a clock that stepped back after the last write.
                 await _WriteMarkerAsync(fixture.QualifiedTimeJobsTable, id, DateTime.UtcNow.AddHours(1), ct);
                 var previous = await _TimeJobMarkerAsync(id, ct);
@@ -186,8 +207,16 @@ public abstract class JobsChangeMarkerConformanceTests<TFixture>(TFixture fixtur
                 var timeJobSeeded = await _TimeJobMarkerAsync(timeJob, ct);
                 var occurrenceSeeded = await _OccurrenceMarkerAsync(occurrence, ct);
 
-                (await store.UpdateTimeJobProgressAsync(timeJob, owner, new(40, "halfway"), ct)).Should().BeTrue();
-                (await store.UpdateCronJobOccurrenceProgressAsync(occurrence, owner, new(40, "halfway"), ct))
+                (await store.UpdateTimeJobProgressAsync(JobsLeaseTables.TimeJob(timeJob, 1), new(40, "halfway"), ct))
+                    .Should()
+                    .BeTrue();
+                (
+                    await store.UpdateCronJobOccurrenceProgressAsync(
+                        JobsLeaseTables.CronOccurrence(occurrence, 1),
+                        new(40, "halfway"),
+                        ct
+                    )
+                )
                     .Should()
                     .BeTrue();
 
@@ -206,8 +235,22 @@ public abstract class JobsChangeMarkerConformanceTests<TFixture>(TFixture fixtur
             {
                 var retried = Guid.NewGuid();
                 var succeeded = Guid.NewGuid();
-                await fixture.SeedTimeJobAsync(retried, _Function, (int)JobStatus.InProgress, owner, ct);
-                await fixture.SeedTimeJobAsync(succeeded, _Function, (int)JobStatus.InProgress, owner, ct);
+                await fixture.SeedTimeJobAsync(
+                    retried,
+                    _Function,
+                    (int)JobStatus.InProgress,
+                    owner,
+                    ct,
+                    lockedUntil: DateTime.UtcNow.AddMinutes(10)
+                );
+                await fixture.SeedTimeJobAsync(
+                    succeeded,
+                    _Function,
+                    (int)JobStatus.InProgress,
+                    owner,
+                    ct,
+                    lockedUntil: DateTime.UtcNow.AddMinutes(10)
+                );
                 var (_, failed) = await _SeedRunningOccurrenceAsync(owner, ct);
                 var retriedSeeded = await _TimeJobMarkerAsync(retried, ct);
                 var succeededSeeded = await _TimeJobMarkerAsync(succeeded, ct);
@@ -246,7 +289,14 @@ public abstract class JobsChangeMarkerConformanceTests<TFixture>(TFixture fixtur
                 var running = Guid.NewGuid();
                 var failed = Guid.NewGuid();
                 await fixture.SeedTimeJobAsync(idle, _Function, (int)JobStatus.Idle, ownerId: null, ct);
-                await fixture.SeedTimeJobAsync(running, _Function, (int)JobStatus.InProgress, owner, ct);
+                await fixture.SeedTimeJobAsync(
+                    running,
+                    _Function,
+                    (int)JobStatus.InProgress,
+                    owner,
+                    ct,
+                    lockedUntil: DateTime.UtcNow.AddMinutes(10)
+                );
                 await fixture.SeedTimeJobAsync(failed, _Function, (int)JobStatus.Failed, ownerId: null, ct);
                 var cronId = Guid.NewGuid();
                 await fixture.SeedCronJobAsync(cronId, _Function, "* * * * *", NodeDeathPolicy.Retry, ct);
@@ -421,8 +471,22 @@ public abstract class JobsChangeMarkerConformanceTests<TFixture>(TFixture fixtur
             {
                 var early = _TimeJob(null);
                 var late = _TimeJob(null);
-                await fixture.SeedTimeJobAsync(early.Id, _Function, (int)JobStatus.InProgress, owner, ct);
-                await fixture.SeedTimeJobAsync(late.Id, _Function, (int)JobStatus.InProgress, owner, ct);
+                await fixture.SeedTimeJobAsync(
+                    early.Id,
+                    _Function,
+                    (int)JobStatus.InProgress,
+                    owner,
+                    ct,
+                    lockedUntil: DateTime.UtcNow.AddMinutes(10)
+                );
+                await fixture.SeedTimeJobAsync(
+                    late.Id,
+                    _Function,
+                    (int)JobStatus.InProgress,
+                    owner,
+                    ct,
+                    lockedUntil: DateTime.UtcNow.AddMinutes(10)
+                );
                 var cursor = await store.GetChangeStartCursorAsync(ct);
                 var seen = new HashSet<Guid>();
 
@@ -644,6 +708,7 @@ public abstract class JobsChangeMarkerConformanceTests<TFixture>(TFixture fixtur
             FunctionName = _Function,
             JobId = id,
             ClaimOwner = owner,
+            ClaimGeneration = 1,
         };
     }
 
