@@ -1,5 +1,15 @@
 import { useDashboard } from '@headless/dashboard-sdk'
-import { Banner, LoadError, Mono, PageFrame, PageHeader, SelectField, Skeleton, StatusMark, usePageFrame } from '@headless/dashboard-sdk/components'
+import {
+  Banner,
+  LoadError,
+  Mono,
+  PageFrame,
+  PageHeader,
+  SelectField,
+  Skeleton,
+  StatusMark,
+  usePageFrame,
+} from '@headless/dashboard-sdk/components'
 import { DashboardApiError } from '@headless/dashboard-sdk/data'
 import { useInfiniteQuery } from '@headless/dashboard-sdk/query'
 import { useSearchParams } from '@headless/dashboard-sdk/router'
@@ -28,7 +38,11 @@ interface ReceiptPage {
 }
 
 const targetKinds = ['Inbox', 'ScheduledDelivery', 'Published'] as const
-const targetLabels: Readonly<Record<string, string>> = { Inbox: 'Received', ScheduledDelivery: 'Scheduled delivery', Published: 'Published' }
+const targetLabels: Readonly<Record<string, string>> = {
+  Inbox: 'Received',
+  ScheduledDelivery: 'Scheduled delivery',
+  Published: 'Published',
+}
 
 // The ledger records a storage operation; the log names it as the command an operator chose.
 const operationLabels: Readonly<Record<string, string>> = {
@@ -61,11 +75,17 @@ export default function OperatorLogView() {
       api.request<ReceiptPage>({
         method: 'GET',
         path: 'messaging/receipts',
-        query: { ...(targetKind ? { targetKind } : {}), ...(pageParam ? { after: pageParam } : {}), ...nodeQuery(node) },
+        query: {
+          ...(targetKind ? { targetKind } : {}),
+          ...(pageParam ? { after: pageParam } : {}),
+          ...nodeQuery(node),
+        },
       }),
     getNextPageParam: (page) => page.nextCursor ?? undefined,
   })
-  const rows = (receipts.data?.pages ?? []).flatMap((page) => page.items).map((receipt) => ({ ...receipt, id: receipt.operationId }))
+  const rows = (receipts.data?.pages ?? [])
+    .flatMap((page) => page.items)
+    .map((receipt) => ({ ...receipt, id: receipt.operationId }))
   const frame = usePageFrame({ viewId: 'messaging.operator-log', rows })
   const noLedger = receipts.error instanceof DashboardApiError && receipts.error.status === 501
 
@@ -73,7 +93,10 @@ export default function OperatorLogView() {
     <PageFrame
       frame={frame}
       header={
-        <PageHeader title="Operator log" description="Every intervention an operator made on a stored message, newest first, a refused one included.">
+        <PageHeader
+          title="Operator log"
+          description="Every intervention an operator made on a stored message, newest first, a refused one included."
+        >
           <NodeSwitch />
           <SelectField
             label="Target"
@@ -101,9 +124,7 @@ export default function OperatorLogView() {
       }
     >
       {noLedger ? (
-        <Banner role="status">
-          This store keeps no operator ledger, so no intervention is recorded.
-        </Banner>
+        <Banner role="status">This store keeps no operator ledger, so no intervention is recorded.</Banner>
       ) : receipts.isError ? (
         <LoadError message={receipts.error.message} onRetry={() => void receipts.refetch()} />
       ) : receipts.isPending ? (
@@ -123,7 +144,9 @@ export default function OperatorLogView() {
               id: 'operation',
               header: 'Action',
               cell: (row) => (
-                <CellText title={row.reason ?? undefined}>{`${operationLabels[row.operationType] ?? row.operationType} · ${targetLabels[row.targetKind] ?? row.targetKind}`}</CellText>
+                <CellText
+                  title={row.reason ?? undefined}
+                >{`${operationLabels[row.operationType] ?? row.operationType} · ${targetLabels[row.targetKind] ?? row.targetKind}`}</CellText>
               ),
               isRowHeader: true,
               width: '1fr',
@@ -143,14 +166,32 @@ export default function OperatorLogView() {
               header: 'Message',
               cell: (row) => (
                 <CellText title={row.messageId ?? undefined}>
-                  <Mono>{[row.messageName ?? row.messageId ?? row.storageId, row.outboxName ? `(${row.outboxName})` : undefined].filter(Boolean).join(' ')}</Mono>
+                  <Mono>
+                    {[
+                      row.messageName ?? row.messageId ?? row.storageId,
+                      row.outboxName ? `(${row.outboxName})` : undefined,
+                    ]
+                      .filter(Boolean)
+                      .join(' ')}
+                  </Mono>
                 </CellText>
               ),
               priority: 2,
               width: '2fr',
             },
-            { id: 'actor', header: 'Operator', cell: (row) => <CellText title={row.actor}>{row.actor}</CellText>, width: '1fr' },
-            { id: 'reason', header: 'Reason', cell: (row) => <CellText title={row.reason ?? undefined}>{row.reason ?? ''}</CellText>, priority: 2, width: '2fr' },
+            {
+              id: 'actor',
+              header: 'Operator',
+              cell: (row) => <CellText title={row.actor}>{row.actor}</CellText>,
+              width: '1fr',
+            },
+            {
+              id: 'reason',
+              header: 'Reason',
+              cell: (row) => <CellText title={row.reason ?? undefined}>{row.reason ?? ''}</CellText>,
+              priority: 2,
+              width: '2fr',
+            },
             { id: 'at', header: 'At', cell: (row) => <Time value={row.createdAt} short />, width: 110 },
           ]}
         />

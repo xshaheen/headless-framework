@@ -40,9 +40,15 @@ function staticItems(
         continue
       }
 
-      const label = entry.label === module.displayName ? `Go to ${entry.label}` : `Go to ${module.displayName} ${entry.label}`
+      const label =
+        entry.label === module.displayName ? `Go to ${entry.label}` : `Go to ${module.displayName} ${entry.label}`
       labels.add(label.toLocaleLowerCase())
-      items.push({ id: `nav:${entry.id}`, label, kind: 'View', onAction: () => navigate(modulePath(module.id, entry.route)) })
+      items.push({
+        id: `nav:${entry.id}`,
+        label,
+        kind: 'View',
+        onAction: () => navigate(modulePath(module.id, entry.route)),
+      })
     }
   }
 
@@ -125,7 +131,11 @@ export function ShellPalette({ isOpen, onOpenChange, initialQuery = '', onOpenAt
     kind: 'Selection',
     onAction: command.run,
   }))
-  const items = [...objects, ...selection, ...staticItems(state, (to) => void navigate(to), runCommand, onOpenAttention)]
+  const items = [
+    ...objects,
+    ...selection,
+    ...staticItems(state, (to) => void navigate(to), runCommand, onOpenAttention),
+  ]
 
   function onInput(event: FormEvent<HTMLDivElement>) {
     if (event.target instanceof HTMLInputElement) {

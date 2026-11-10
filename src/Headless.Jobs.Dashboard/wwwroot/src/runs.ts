@@ -8,7 +8,16 @@ import { useState } from 'react'
 
 export type RunKind = 'TimeJob' | 'CronJobOccurrence'
 
-export const runStatuses = ['Idle', 'Queued', 'InProgress', 'Succeeded', 'DueDone', 'Failed', 'Cancelled', 'Skipped'] as const
+export const runStatuses = [
+  'Idle',
+  'Queued',
+  'InProgress',
+  'Succeeded',
+  'DueDone',
+  'Failed',
+  'Cancelled',
+  'Skipped',
+] as const
 
 export type RunStatus = (typeof runStatuses)[number]
 
@@ -84,7 +93,16 @@ export interface RunFilter {
 }
 
 // Typed as the whole filter, so a field added to RunFilter must be listed here, and so in filterNames.
-const emptyFilter: RunFilter = { kind: '', function: '', status: '', cronJobId: '', correlationId: '', fingerprint: '', range: '', from: '' }
+const emptyFilter: RunFilter = {
+  kind: '',
+  function: '',
+  status: '',
+  cronJobId: '',
+  correlationId: '',
+  fingerprint: '',
+  range: '',
+  from: '',
+}
 
 export const filterNames = Object.keys(emptyFilter) as (keyof RunFilter)[]
 
@@ -182,7 +200,10 @@ export function kindLabel(kind: RunKind) {
  * stream moves the row's version; a stored cancel request reads `Cancelling…` until the job stops. Either keeps the
  * stored status's role, because the server has not confirmed a new one.
  */
-export function runStatusMark(run: Pick<Run, 'status' | 'cancelRequested'>, pending?: string): { tone: DashboardStateRole; label: string } {
+export function runStatusMark(
+  run: Pick<Run, 'status' | 'cancelRequested'>,
+  pending?: string,
+): { tone: DashboardStateRole; label: string } {
   const tone = runRoles[run.status] ?? 'off'
 
   if (pending) {
@@ -243,7 +264,11 @@ export async function fetchRuns(
 
   const answer = await api.request<RunListAnswer>({ method: 'GET', path: 'jobs/runs', query })
 
-  return { items: answer.items, count: { value: answer.count, capped: answer.countCapped }, nextCursor: answer.nextCursor ?? null }
+  return {
+    items: answer.items,
+    count: { value: answer.count, capped: answer.countCapped },
+    nextCursor: answer.nextCursor ?? null,
+  }
 }
 
 /**
@@ -257,7 +282,9 @@ export async function fetchRun(api: DashboardApi, id: string): Promise<Run & { c
 }
 
 export async function fetchAttempts(api: DashboardApi, id: string) {
-  return (await api.request<{ items: Attempt[] }>({ method: 'GET', path: `jobs/runs/${encodeURIComponent(id)}/attempts` })).items
+  return (
+    await api.request<{ items: Attempt[] }>({ method: 'GET', path: `jobs/runs/${encodeURIComponent(id)}/attempts` })
+  ).items
 }
 
 export const viewOnlyReason = 'Needs operate permission'
@@ -335,7 +362,11 @@ export function usePending() {
 export type Pending = ReturnType<typeof usePending>
 
 /** A run action's `onDone`: the runs it finished on read its pending label until their change arrives. */
-export function markDone(pending: Pending, versions: ReadonlyMap<string, string>, name: 'requeue' | 'cancel' | 'delete') {
+export function markDone(
+  pending: Pending,
+  versions: ReadonlyMap<string, string>,
+  name: 'requeue' | 'cancel' | 'delete',
+) {
   return (rows: readonly RowResult[]) =>
     pending.mark(
       rows.filter((row) => row.outcome === 'done').map((row) => row.id),

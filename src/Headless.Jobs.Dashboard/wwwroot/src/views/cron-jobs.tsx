@@ -1,5 +1,16 @@
 import { useDashboard, useModule } from '@headless/dashboard-sdk'
-import { Button, DetailPanel, LoadError, Mono, PageFrame, PageHeader, Skeleton, Tag, Text, usePageFrame } from '@headless/dashboard-sdk/components'
+import {
+  Button,
+  DetailPanel,
+  LoadError,
+  Mono,
+  PageFrame,
+  PageHeader,
+  Skeleton,
+  Tag,
+  Text,
+  usePageFrame,
+} from '@headless/dashboard-sdk/components'
 import { DashboardApiError, listKey, useDashboardList } from '@headless/dashboard-sdk/data'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQueryClient } from '@headless/dashboard-sdk/query'
@@ -68,7 +79,11 @@ export default function CronJobsView() {
           count={list.data ? format.number(rows.length) : undefined}
           description="Each runs its function on its cron schedule, in its zone."
           actions={
-            <Button variant="primary" disabledReason={module.canOperate ? null : viewOnlyReason} onPress={() => setCreate(true)}>
+            <Button
+              variant="primary"
+              disabledReason={module.canOperate ? null : viewOnlyReason}
+              onPress={() => setCreate(true)}
+            >
               Add recurring job
             </Button>
           }
@@ -97,7 +112,13 @@ export default function CronJobsView() {
                 isRowHeader: true,
                 width: '1.5fr',
               },
-              { id: 'description', header: 'Description', cell: (row) => <CellText title={row.description}>{row.description}</CellText>, priority: 2, width: '1.5fr' },
+              {
+                id: 'description',
+                header: 'Description',
+                cell: (row) => <CellText title={row.description}>{row.description}</CellText>,
+                priority: 2,
+                width: '1.5fr',
+              },
               {
                 id: 'schedule',
                 header: 'Schedule',

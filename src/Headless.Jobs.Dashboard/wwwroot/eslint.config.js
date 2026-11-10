@@ -18,14 +18,20 @@ export default tseslint.config(
     rules: {
       'no-restricted-syntax': [
         'error',
-        { selector: "JSXAttribute[name.name='style']", message: 'A module view ships no style objects; compose SDK components.' },
+        {
+          selector: "JSXAttribute[name.name='style']",
+          message: 'A module view ships no style objects; compose SDK components.',
+        },
         {
           selector: "JSXAttribute[name.name='className']",
           message:
             'A module view sets no className: Tailwind compiles only SDK sources, so a class here has no CSS, and the hd-* classes are SDK internals. Compose SDK components such as Banner, Text, Fields, or Skeleton.',
         },
       ],
-      'no-restricted-imports': ['error', { patterns: [{ group: ['*.css'], message: 'A module ships no CSS; compose SDK components.' }] }],
+      'no-restricted-imports': [
+        'error',
+        { patterns: [{ group: ['*.css'], message: 'A module ships no CSS; compose SDK components.' }] },
+      ],
     },
   },
 )

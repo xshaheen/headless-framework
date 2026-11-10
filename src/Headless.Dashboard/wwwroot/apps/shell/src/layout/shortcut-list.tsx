@@ -32,7 +32,9 @@ export function ShortcutList({ isOpen, onOpenChange }: { isOpen: boolean; onOpen
           </Fragment>
         ))}
       </dl>
-      <p className="hd-hint">Use Ctrl in place of ⌘ off macOS. Shortcuts wait while a text field has focus, except Esc and ⌘K.</p>
+      <p className="hd-hint">
+        Use Ctrl in place of ⌘ off macOS. Shortcuts wait while a text field has focus, except Esc and ⌘K.
+      </p>
       <div className="hd-actions">
         <Button onPress={() => onOpenChange(false)}>Close</Button>
       </div>

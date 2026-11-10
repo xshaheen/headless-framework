@@ -30,7 +30,11 @@ import {
   type MessagingConsumer,
 } from '../parts.tsx'
 
-const circuitLabels: Readonly<Record<MessagingCircuit['state'], string>> = { Closed: 'Closed', Open: 'Open', HalfOpen: 'Half open' }
+const circuitLabels: Readonly<Record<MessagingCircuit['state'], string>> = {
+  Closed: 'Closed',
+  Open: 'Open',
+  HalfOpen: 'Half open',
+}
 
 /** A consumer's circuits on the node the views read; the breaker keeps its state in memory, so it is polled. */
 function useCircuits() {
@@ -39,7 +43,14 @@ function useCircuits() {
 
   return useQuery({
     queryKey: ['messaging', 'circuits', node],
-    queryFn: async () => (await api.request<{ items: MessagingCircuit[] }>({ method: 'GET', path: 'messaging/circuits', query: nodeQuery(node) })).items,
+    queryFn: async () =>
+      (
+        await api.request<{ items: MessagingCircuit[] }>({
+          method: 'GET',
+          path: 'messaging/circuits',
+          query: nodeQuery(node),
+        })
+      ).items,
     refetchInterval: 5_000,
   })
 }
@@ -83,7 +94,15 @@ export default function ConsumersView() {
           <NodeSwitch />
         </PageHeader>
       }
-      panel={open ? <ConsumerPanel consumer={open} circuit={circuitRows.find((circuit) => circuit.consumer === open.identity)} nodeName={nodeName} /> : undefined}
+      panel={
+        open ? (
+          <ConsumerPanel
+            consumer={open}
+            circuit={circuitRows.find((circuit) => circuit.consumer === open.identity)}
+            nodeName={nodeName}
+          />
+        ) : undefined
+      }
     >
       <StaleNotice what="these consumers" onRefresh={() => void consumers.refetch()} />
       <QueryState query={consumers} label="Loading consumers" rows={4}>
@@ -109,7 +128,11 @@ export default function ConsumersView() {
               {
                 id: 'messages',
                 header: 'Messages',
-                cell: (row) => <CellText title={row.messages.map((message) => message.name).join(', ')}>{row.messages.map((message) => message.name).join(', ')}</CellText>,
+                cell: (row) => (
+                  <CellText title={row.messages.map((message) => message.name).join(', ')}>
+                    {row.messages.map((message) => message.name).join(', ')}
+                  </CellText>
+                ),
                 priority: 2,
                 width: '2fr',
               },
@@ -120,18 +143,30 @@ export default function ConsumersView() {
                 header: 'Runs here',
                 cell: (row) => (
                   <CellText>
-                    <StatusMark tone={row.runState === 'runs-here' ? 'ok' : 'off'} label={row.runState === 'runs-here' ? 'Runs here' : 'Not here'} />
+                    <StatusMark
+                      tone={row.runState === 'runs-here' ? 'ok' : 'off'}
+                      label={row.runState === 'runs-here' ? 'Runs here' : 'Not here'}
+                    />
                   </CellText>
                 ),
                 width: 120,
               },
-              { id: 'concurrency', header: 'Concurrency', cell: (row) => format.number(row.concurrency), align: 'end', priority: 2, width: 110 },
+              {
+                id: 'concurrency',
+                header: 'Concurrency',
+                cell: (row) => format.number(row.concurrency),
+                align: 'end',
+                priority: 2,
+                width: 110,
+              },
             ]}
           />
         )}
       </QueryState>
       <section aria-label="Circuit breakers">
-        <Text as="h2" tone="title">Circuit breakers</Text>
+        <Text as="h2" tone="title">
+          Circuit breakers
+        </Text>
         <QueryState query={circuits} label="Loading circuit breakers" rows={2}>
           {(items) => <CircuitsTable circuits={items} nodeName={nodeName} />}
         </QueryState>
@@ -186,12 +221,20 @@ function CircuitsTable({ circuits, nodeName }: { circuits: readonly MessagingCir
           priority: 2,
           width: 100,
         },
-        { id: 'opened', header: 'Opened', cell: (row) => (row.openedAt ? <Time value={row.openedAt} short /> : ''), priority: 2, width: 110 },
+        {
+          id: 'opened',
+          header: 'Opened',
+          cell: (row) => (row.openedAt ? <Time value={row.openedAt} short /> : ''),
+          priority: 2,
+          width: 110,
+        },
         {
           id: 'remaining',
           header: 'Closes in',
           cell: (row) => {
-            const seconds = row.estimatedRemainingOpenDuration ? spanSeconds(row.estimatedRemainingOpenDuration) : undefined
+            const seconds = row.estimatedRemainingOpenDuration
+              ? spanSeconds(row.estimatedRemainingOpenDuration)
+              : undefined
 
             return seconds === undefined ? '' : formatSeconds(Math.round(seconds), format.number)
           },
@@ -242,7 +285,15 @@ function CircuitActions({ circuit, nodeName }: { circuit: MessagingCircuit; node
   )
 }
 
-function ConsumerPanel({ consumer, circuit, nodeName }: { consumer: MessagingConsumer; circuit?: MessagingCircuit; nodeName: string }) {
+function ConsumerPanel({
+  consumer,
+  circuit,
+  nodeName,
+}: {
+  consumer: MessagingConsumer
+  circuit?: MessagingCircuit
+  nodeName: string
+}) {
   const format = useFormat()
   const rate = consumer.rateLimit
   const breaker = consumer.circuitBreaker
@@ -251,7 +302,11 @@ function ConsumerPanel({ consumer, circuit, nodeName }: { consumer: MessagingCon
     <DetailPanel
       label={`Consumer ${consumer.identity}`}
       name={consumer.identity}
-      status={circuit ? { tone: circuitTones[circuit.state], label: `Circuit ${circuitLabels[circuit.state].toLowerCase()}` } : undefined}
+      status={
+        circuit
+          ? { tone: circuitTones[circuit.state], label: `Circuit ${circuitLabels[circuit.state].toLowerCase()}` }
+          : undefined
+      }
       actions={circuit ? <CircuitActions circuit={circuit} nodeName={nodeName} /> : undefined}
       tabs={[
         {
@@ -263,11 +318,19 @@ function ConsumerPanel({ consumer, circuit, nodeName }: { consumer: MessagingCon
                 <FieldGrid columns={2}>
                   <GridField label="Lane">{consumer.lane}</GridField>
                   <GridField label="Delivery">{deliveryLabel(consumer)}</GridField>
-                  <GridField label="Runs here">{consumer.runState === 'runs-here' ? 'Yes' : 'No, registered only'}</GridField>
+                  <GridField label="Runs here">
+                    {consumer.runState === 'runs-here' ? 'Yes' : 'No, registered only'}
+                  </GridField>
                   <GridField label="Concurrency">{format.number(consumer.concurrency)}</GridField>
-                  {consumer.consumeOnly ? <GridField label="Consume-only list">{consumer.consumeOnly === 'listed' ? 'Listed' : 'Not listed'}</GridField> : null}
+                  {consumer.consumeOnly ? (
+                    <GridField label="Consume-only list">
+                      {consumer.consumeOnly === 'listed' ? 'Listed' : 'Not listed'}
+                    </GridField>
+                  ) : null}
                   {consumer.inboxRetentionSeconds !== undefined ? (
-                    <GridField label="Inbox retention">{formatSeconds(consumer.inboxRetentionSeconds, format.number)}</GridField>
+                    <GridField label="Inbox retention">
+                      {formatSeconds(consumer.inboxRetentionSeconds, format.number)}
+                    </GridField>
                   ) : null}
                   {rate ? (
                     <GridField label="Rate limit" span={2}>
@@ -280,8 +343,12 @@ function ConsumerPanel({ consumer, circuit, nodeName }: { consumer: MessagingCon
                     <GridField label="Circuit breaker" span={2}>
                       {breaker.enabled
                         ? [
-                            breaker.failureThreshold !== undefined ? `opens after ${format.number(breaker.failureThreshold)} failures` : undefined,
-                            breaker.openDurationSeconds !== undefined ? `for ${formatSeconds(breaker.openDurationSeconds, format.number)}` : undefined,
+                            breaker.failureThreshold !== undefined
+                              ? `opens after ${format.number(breaker.failureThreshold)} failures`
+                              : undefined,
+                            breaker.openDurationSeconds !== undefined
+                              ? `for ${formatSeconds(breaker.openDurationSeconds, format.number)}`
+                              : undefined,
                           ]
                             .filter(Boolean)
                             .join(' ') || 'On'
@@ -291,11 +358,15 @@ function ConsumerPanel({ consumer, circuit, nodeName }: { consumer: MessagingCon
                 </FieldGrid>
               </div>
               <section aria-label="Messages it consumes">
-                <Text as="h3" tone="label">Messages it consumes</Text>
+                <Text as="h3" tone="label">
+                  Messages it consumes
+                </Text>
                 <div>
                   {consumer.messages.map((message) => (
                     <Tag key={message.name} variant="square">
-                      <NodeLink to={`received?name=${encodeURIComponent(message.name)}&consumer=${encodeURIComponent(consumer.identity)}`}>
+                      <NodeLink
+                        to={`received?name=${encodeURIComponent(message.name)}&consumer=${encodeURIComponent(consumer.identity)}`}
+                      >
                         {`${message.name} v${message.contractVersion}`}
                       </NodeLink>
                     </Tag>
@@ -304,7 +375,9 @@ function ConsumerPanel({ consumer, circuit, nodeName }: { consumer: MessagingCon
               </section>
               {consumer.middleware && consumer.middleware.length > 0 ? (
                 <section aria-label="Middleware">
-                  <Text as="h3" tone="label">Middleware</Text>
+                  <Text as="h3" tone="label">
+                    Middleware
+                  </Text>
                   <div>
                     {consumer.middleware.map((name) => (
                       <Tag key={name} variant="square">

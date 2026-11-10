@@ -48,7 +48,15 @@ import {
  * A timestamp as relative time, with the exact time, zone, and offset on hover. `short` reads `4 min. ago`, so a list
  * column stays narrow enough for a phone.
  */
-export function Time({ value, short, missing = 'Not yet' }: { value: string | undefined | null; short?: boolean; missing?: string }) {
+export function Time({
+  value,
+  short,
+  missing = 'Not yet',
+}: {
+  value: string | undefined | null
+  short?: boolean
+  missing?: string
+}) {
   const format = useFormat()
 
   if (!value) {
@@ -247,7 +255,10 @@ export function NodeSwitch() {
     return local ? <NodeChip node={local.name} /> : null
   }
 
-  const options = nodes.data.items.map((item) => ({ value: item.name, label: item.isLocal ? `${item.name} (this node)` : item.name }))
+  const options = nodes.data.items.map((item) => ({
+    value: item.name,
+    label: item.isLocal ? `${item.name} (this node)` : item.name,
+  }))
 
   // A switch is a new place to go back from, and the open row belongs to the node left behind.
   function choose(value: string) {
@@ -320,7 +331,14 @@ export function useMessagingCounts() {
       if (node) {
         const read = await Promise.all(
           peerCounts.map(async ({ key, kind, params }) => {
-            const page = await fetchMessages(api, kind, node, readFilter(new URLSearchParams(params), kind), undefined, 1)
+            const page = await fetchMessages(
+              api,
+              kind,
+              node,
+              readFilter(new URLSearchParams(params), kind),
+              undefined,
+              1,
+            )
 
             return [key, page.count] as const
           }),
@@ -341,7 +359,10 @@ export function useMessagingCounts() {
       return {
         counts: Object.fromEntries(
           // A count that leaves sources out is a floor, so it reads `N+` as a capped one does.
-          Object.entries(answer.counts).map(([key, { count, capped, unavailable }]) => [key, { value: count, capped: capped || !!unavailable, unavailable }]),
+          Object.entries(answer.counts).map(([key, { count, capped, unavailable }]) => [
+            key,
+            { value: count, capped: capped || !!unavailable, unavailable },
+          ]),
         ),
         stale: answer.stale,
       }
@@ -378,7 +399,8 @@ export function useMessagingAttention() {
   const { api } = useDashboard()
   const answer = useQuery({
     queryKey: ['shell', 'attention'],
-    queryFn: async () => (await api.request<{ modules: AttentionSection[] }>({ method: 'GET', path: 'needs-you' })).modules,
+    queryFn: async () =>
+      (await api.request<{ modules: AttentionSection[] }>({ method: 'GET', path: 'needs-you' })).modules,
   })
   const section = answer.data?.find((candidate) => candidate.id === 'messaging')
   // No Messaging section in a successful answer means the module did not answer at all.
@@ -395,7 +417,15 @@ export function useMessagingAttention() {
 }
 
 /** Why the Attention answer cannot be trusted as complete: stale with Retry, or the sources it left out. */
-export function AttentionGaps({ stale, unavailable, onRetry }: { stale: boolean; unavailable: string[]; onRetry: () => void }) {
+export function AttentionGaps({
+  stale,
+  unavailable,
+  onRetry,
+}: {
+  stale: boolean
+  unavailable: string[]
+  onRetry: () => void
+}) {
   if (stale) {
     return <LoadError message="Messaging did not answer, so what needs attention is unknown." onRetry={onRetry} />
   }
@@ -437,7 +467,8 @@ export function useRealtime() {
 
   return useQuery({
     queryKey: ['messaging', 'realtime', node],
-    queryFn: () => api.request<RealtimeMetrics>({ method: 'GET', path: 'messaging/metrics/realtime', query: nodeQuery(node) }),
+    queryFn: () =>
+      api.request<RealtimeMetrics>({ method: 'GET', path: 'messaging/metrics/realtime', query: nodeQuery(node) }),
     refetchInterval: 5_000,
   })
 }
@@ -517,7 +548,11 @@ export function MessageFields({ kind, row }: { kind: MessageKind; row: MessageRo
       <Optional label="Expires" span={2} value={row.expiresAt ? <Time value={row.expiresAt} /> : undefined} />
       <Optional label="Changed" span={2} value={row.changedAt ? <Time value={row.changedAt} /> : undefined} />
       <Optional label="Message id" span={2} value={row.messageId ? <Mono>{row.messageId}</Mono> : undefined} />
-      <Optional label="Fingerprint" span={2} value={row.failureFingerprint ? <Mono>{row.failureFingerprint}</Mono> : undefined} />
+      <Optional
+        label="Fingerprint"
+        span={2}
+        value={row.failureFingerprint ? <Mono>{row.failureFingerprint}</Mono> : undefined}
+      />
       <Optional label="Tenant" value={row.tenantId ? <Mono>{row.tenantId}</Mono> : undefined} />
       <GridField label="Storage id" span={2}>
         <Mono>{row.storageId}</Mono>
@@ -536,7 +571,15 @@ export function useMessageDetail(kind: MessageKind, node: string, row: Pick<Mess
   })
 }
 
-function DetailState({ detail, label, children }: { detail: ReturnType<typeof useMessageDetail>; label: string; children: (data: NonNullable<ReturnType<typeof useMessageDetail>['data']>) => ReactNode }) {
+function DetailState({
+  detail,
+  label,
+  children,
+}: {
+  detail: ReturnType<typeof useMessageDetail>
+  label: string
+  children: (data: NonNullable<ReturnType<typeof useMessageDetail>['data']>) => ReactNode
+}) {
   if (detail.isPending) {
     return <Skeleton label={label} />
   }
@@ -601,7 +644,10 @@ function MessageBody({ kind, node, row }: { kind: MessageKind; node: string; row
         {(data) =>
           data.content ? (
             // The server stores the serialized message, so its own content type names the format.
-            <PayloadView content={data.content} contentType={data.headers['headless-content-type'] ?? data.headers['content-type'] ?? 'application/json'} />
+            <PayloadView
+              content={data.content}
+              contentType={data.headers['headless-content-type'] ?? data.headers['content-type'] ?? 'application/json'}
+            />
           ) : (
             <p>This message has no body.</p>
           )
@@ -648,7 +694,11 @@ function MessageGenerations({ node, row }: { node: string; row: MessageRow }) {
       time: <Time value={generation.changedAt ?? generation.added} short />,
       tone: mark.tone,
       state: generation.id === row.id ? `${mark.label} (this row)` : mark.label,
-      note: [generation.consumer, `${generation.retries} retries`, generation.failureFingerprint && `fingerprint ${generation.failureFingerprint}`]
+      note: [
+        generation.consumer,
+        `${generation.retries} retries`,
+        generation.failureFingerprint && `fingerprint ${generation.failureFingerprint}`,
+      ]
         .filter(Boolean)
         .join(' · '),
     }
@@ -658,9 +708,21 @@ function MessageGenerations({ node, row }: { node: string; row: MessageRow }) {
 }
 
 /** The commands each kind's rows offer, in order; the first is the recovery action. */
-export const rowCommands: Readonly<Record<MessageKind, readonly { name: MessageCommandName; variant?: 'primary' | 'danger' }[]>> = {
-  received: [{ name: 're-execute', variant: 'primary' }, { name: 'hold' }, { name: 'release' }, { name: 'purge', variant: 'danger' }],
-  published: [{ name: 're-send', variant: 'primary' }, { name: 'dispatch-now' }, { name: 'revoke' }, { name: 'delete', variant: 'danger' }],
+export const rowCommands: Readonly<
+  Record<MessageKind, readonly { name: MessageCommandName; variant?: 'primary' | 'danger' }[]>
+> = {
+  received: [
+    { name: 're-execute', variant: 'primary' },
+    { name: 'hold' },
+    { name: 'release' },
+    { name: 'purge', variant: 'danger' },
+  ],
+  published: [
+    { name: 're-send', variant: 'primary' },
+    { name: 'dispatch-now' },
+    { name: 'revoke' },
+    { name: 'delete', variant: 'danger' },
+  ],
 }
 
 /** Hold and release undo each other, so a row offers the one that applies to it. */
@@ -705,7 +767,17 @@ export function MessageActions({ kind, row, pending }: { kind: MessageKind; row:
   )
 }
 
-export function MessagePanel({ kind, node, row, pending }: { kind: MessageKind; node: string; row: MessageRow; pending: Pending }) {
+export function MessagePanel({
+  kind,
+  node,
+  row,
+  pending,
+}: {
+  kind: MessageKind
+  node: string
+  row: MessageRow
+  pending: Pending
+}) {
   const name = row.name ?? '(unnamed)'
 
   return (
@@ -718,7 +790,9 @@ export function MessagePanel({ kind, node, row, pending }: { kind: MessageKind; 
       actions={<MessageActions key={row.id} kind={kind} row={row} pending={pending} />}
       tabs={[
         { id: 'overview', label: 'Overview', content: <MessageOverview kind={kind} node={node} row={row} /> },
-        ...(kind === 'received' ? [{ id: 'generations', label: 'Generations', content: <MessageGenerations node={node} row={row} /> }] : []),
+        ...(kind === 'received'
+          ? [{ id: 'generations', label: 'Generations', content: <MessageGenerations node={node} row={row} /> }]
+          : []),
         { id: 'headers', label: 'Headers', content: <MessageHeaders kind={kind} node={node} row={row} /> },
         { id: 'body', label: 'Body', content: <MessageBody kind={kind} node={node} row={row} /> },
       ]}
@@ -739,7 +813,12 @@ export interface MessagingConsumer {
   rateLimit?:
     | { algorithm: 'token-bucket'; tokenLimit: number; tokensPerPeriod: number; replenishmentPeriodSeconds: number }
     | { algorithm: 'fixed-window'; permitLimit: number; windowSeconds: number }
-  circuitBreaker?: { enabled: boolean; failureThreshold?: number; openDurationSeconds?: number; customTransientPredicate?: boolean }
+  circuitBreaker?: {
+    enabled: boolean
+    failureThreshold?: number
+    openDurationSeconds?: number
+    customTransientPredicate?: boolean
+  }
   middleware?: string[]
 }
 
@@ -768,7 +847,14 @@ export function useConsumers() {
 
   return useQuery({
     queryKey: ['messaging', 'consumers', node],
-    queryFn: async () => (await api.request<{ items: MessagingConsumer[] }>({ method: 'GET', path: 'messaging/consumers', query: nodeQuery(node) })).items,
+    queryFn: async () =>
+      (
+        await api.request<{ items: MessagingConsumer[] }>({
+          method: 'GET',
+          path: 'messaging/consumers',
+          query: nodeQuery(node),
+        })
+      ).items,
     staleTime: Infinity,
   })
 }
@@ -780,7 +866,14 @@ export function useContracts() {
 
   return useQuery({
     queryKey: ['messaging', 'contracts', node],
-    queryFn: async () => (await api.request<{ items: MessagingContract[] }>({ method: 'GET', path: 'messaging/contracts', query: nodeQuery(node) })).items,
+    queryFn: async () =>
+      (
+        await api.request<{ items: MessagingContract[] }>({
+          method: 'GET',
+          path: 'messaging/contracts',
+          query: nodeQuery(node),
+        })
+      ).items,
     staleTime: Infinity,
   })
 }

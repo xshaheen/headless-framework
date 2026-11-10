@@ -5,7 +5,14 @@ import { createStreamClient } from '@headless/dashboard-sdk/stream'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { ShellApp, withSessionEnd } from './app.tsx'
-import { isSignedIn, readBootstrapState, safeReturnUrl, settleSession, signInUrl, type BootstrapState } from './bootstrap.ts'
+import {
+  isSignedIn,
+  readBootstrapState,
+  safeReturnUrl,
+  settleSession,
+  signInUrl,
+  type BootstrapState,
+} from './bootstrap.ts'
 import { applyTheme, readTheme } from './layout/theme.tsx'
 import { createModuleLoader } from './module-loader.ts'
 import { buildRoutes } from './router.tsx'
@@ -36,7 +43,12 @@ async function renderSignIn(state: BootstrapState, root: HTMLElement) {
 
   createRoot(root).render(
     <StrictMode>
-      <SignInPage state={state} search={location.search} fetch={fetch.bind(window)} assign={(url) => location.assign(url)} />
+      <SignInPage
+        state={state}
+        search={location.search}
+        fetch={fetch.bind(window)}
+        assign={(url) => location.assign(url)}
+      />
     </StrictMode>,
   )
 }
@@ -49,7 +61,12 @@ function renderShell(state: BootstrapState, root: HTMLElement) {
   }
 
   const toSignIn = (signInState: 'signed-out' | 'session-ended') =>
-    location.assign(signInUrl(state.basePath, { state: signInState, returnUrl: signInState === 'session-ended' ? currentUrl() : undefined }))
+    location.assign(
+      signInUrl(state.basePath, {
+        state: signInState,
+        returnUrl: signInState === 'session-ended' ? currentUrl() : undefined,
+      }),
+    )
 
   const api = withSessionEnd(createDashboardApi({ apiBase: state.apiBase }), () => toSignIn('session-ended'))
   const stream = createStreamClient({
@@ -73,7 +90,15 @@ function renderShell(state: BootstrapState, root: HTMLElement) {
 
   createRoot(root).render(
     <StrictMode>
-      <ShellApp state={state} router={router} client={client} api={api} stream={stream} loader={loader} signOut={signOut} />
+      <ShellApp
+        state={state}
+        router={router}
+        client={client}
+        api={api}
+        stream={stream}
+        loader={loader}
+        signOut={signOut}
+      />
     </StrictMode>,
   )
 }
@@ -88,7 +113,11 @@ async function start() {
   applyTheme(readTheme())
 
   const state = readBootstrapState(document)
-  const settle = settleSession(state, { fetch: fetch.bind(window), storage: sessionStorageOrUndefined(), reload: () => location.reload() })
+  const settle = settleSession(state, {
+    fetch: fetch.bind(window),
+    storage: sessionStorageOrUndefined(),
+    reload: () => location.reload(),
+  })
 
   if (isSignedIn(state)) {
     // Signed in: draw at once from the inlined state; a changed permission still reloads once when the answer lands.

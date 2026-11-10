@@ -22,7 +22,10 @@ describe('module lint rules', () => {
     ['an SDK class string', `export const Probe = () => <div className="hd-banner">Stale</div>\n`],
     ['a Tailwind utility', `export const Probe = () => <div className="ms-auto flex gap-2">Stale</div>\n`],
     ['a class expression', `export const Probe = () => <div className={'hd-hint'}>Stale</div>\n`],
-    ['a class template', 'export const Probe = ({ on }: { on: boolean }) => <div className={`hd-tone-${on}`}>Stale</div>\n'],
+    [
+      'a class template',
+      'export const Probe = ({ on }: { on: boolean }) => <div className={`hd-tone-${on}`}>Stale</div>\n',
+    ],
   ])('refuses a className with %s', async (_, code) => {
     expect(await lintView(code)).toEqual([refusal])
   })

@@ -59,7 +59,16 @@ export interface MessageFilter {
 }
 
 // Typed as the whole filter, so a field added to MessageFilter must be listed here, and so in filterNames.
-const emptyFilter: MessageFilter = { store: '', status: '', terminal: '', retrying: '', consumer: '', name: '', fingerprint: '', held: '' }
+const emptyFilter: MessageFilter = {
+  store: '',
+  status: '',
+  terminal: '',
+  retrying: '',
+  consumer: '',
+  name: '',
+  fingerprint: '',
+  held: '',
+}
 
 export const filterNames = Object.keys(emptyFilter) as (keyof MessageFilter)[]
 
@@ -170,7 +179,10 @@ const statusRoles: Readonly<Record<MessageStatus, DashboardStateRole>> = {
  * command the server finished reads its pending label until the stream moves the row's version, keeping the stored
  * status's role.
  */
-export function rowMark(row: Pick<MessageRow, 'status' | 'terminal' | 'isHeld'>, pending?: string): { tone: DashboardStateRole; label: string } {
+export function rowMark(
+  row: Pick<MessageRow, 'status' | 'terminal' | 'isHeld'>,
+  pending?: string,
+): { tone: DashboardStateRole; label: string } {
   const mark: { tone: DashboardStateRole; label: string } = row.isHeld
     ? { tone: 'off', label: 'Held' }
     : row.status === 'Failed' && !row.terminal
@@ -240,14 +252,19 @@ export async function fetchMessages(
 
 /** One row with its headers, body, and failure, read on its node. */
 export async function fetchMessage(api: DashboardApi, kind: MessageKind, node: string, id: string) {
-  return api.request<MessageDetail>({ method: 'GET', path: `messaging/messages/${kind}/${encodeURIComponent(id)}`, query: nodeQuery(node) })
+  return api.request<MessageDetail>({
+    method: 'GET',
+    path: `messaging/messages/${kind}/${encodeURIComponent(id)}`,
+    query: nodeQuery(node),
+  })
 }
 
 /** The rows of one received message across its consumers and re-executions, oldest first. */
 export async function fetchGenerations(api: DashboardApi, node: string, messageId: string, consumer?: string) {
   const query = { messageId, ...(consumer ? { consumer } : {}), ...nodeQuery(node) }
 
-  return (await api.request<{ items: MessageRow[] }>({ method: 'GET', path: 'messaging/received/generations', query })).items
+  return (await api.request<{ items: MessageRow[] }>({ method: 'GET', path: 'messaging/received/generations', query }))
+    .items
 }
 
 export const viewOnlyReason = 'Needs operate permission'
@@ -429,7 +446,10 @@ const nodeStates: Readonly<Record<string, { tone: DashboardStateRole; label: str
   'insecure-peer': { tone: 'fail', label: 'Insecure peer' },
 }
 
-export function nodeMark(node: { isLocal: boolean; state?: string | null }): { tone: DashboardStateRole; label: string } {
+export function nodeMark(node: { isLocal: boolean; state?: string | null }): {
+  tone: DashboardStateRole
+  label: string
+} {
   if (node.isLocal) {
     return { tone: 'ok', label: 'This node' }
   }

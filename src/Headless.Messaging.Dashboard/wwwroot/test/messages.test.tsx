@@ -49,12 +49,33 @@ describe('messaging lists', () => {
       {
         received: [
           message('received', 'Failed'),
-          message('received', 'Failed', { consumer: 'orders:billing-handler', failureFingerprint: 'v1:deserialization' }),
+          message('received', 'Failed', {
+            consumer: 'orders:billing-handler',
+            failureFingerprint: 'v1:deserialization',
+          }),
         ],
         attention: [
-          { id: 'failed:received:v1:9f2c41:Billing.OrderPlacedConsumer:primary', title: '7 failed', severity: 'critical', count: 7, capped: false },
-          { id: 'failed:received:v1:deserialization:orders:billing-handler:primary', title: '2 failed', severity: 'critical', count: 2, capped: false },
-          { id: 'failed:published:v1:expired::primary', title: '1 failed', severity: 'critical', count: 1, capped: false },
+          {
+            id: 'failed:received:v1:9f2c41:Billing.OrderPlacedConsumer:primary',
+            title: '7 failed',
+            severity: 'critical',
+            count: 7,
+            capped: false,
+          },
+          {
+            id: 'failed:received:v1:deserialization:orders:billing-handler:primary',
+            title: '2 failed',
+            severity: 'critical',
+            count: 2,
+            capped: false,
+          },
+          {
+            id: 'failed:published:v1:expired::primary',
+            title: '1 failed',
+            severity: 'critical',
+            count: 1,
+            capped: false,
+          },
         ],
       },
       'received?status=Failed&terminal=true',
@@ -71,18 +92,26 @@ describe('messaging lists', () => {
 
     await waitFor(() => expect(screen.queryByRole('row', { name: /Billing\.OrderPlacedConsumer/ })).toBeNull())
     const params = new URLSearchParams(view.location().search)
-    expect([params.get('fingerprint'), params.get('consumer')]).toEqual(['v1:deserialization', 'orders:billing-handler'])
+    expect([params.get('fingerprint'), params.get('consumer')]).toEqual([
+      'v1:deserialization',
+      'orders:billing-handler',
+    ])
     expect(
       view.requests.some(
         (request) =>
-          request.path === 'messaging/received' && request.query?.fingerprint === 'v1:deserialization' && request.query?.consumer === 'orders:billing-handler',
+          request.path === 'messaging/received' &&
+          request.query?.fingerprint === 'v1:deserialization' &&
+          request.query?.consumer === 'orders:billing-handler',
       ),
     ).toBe(true)
   })
 
   it('selects every matching row past the loaded page and confirms it as an Operation on the shown store', async () => {
     const actor = user()
-    const failed = [message('published', 'Failed', { store: 'orders' }), message('published', 'Failed', { store: 'orders' })]
+    const failed = [
+      message('published', 'Failed', { store: 'orders' }),
+      message('published', 'Failed', { store: 'orders' }),
+    ]
     const view = list(
       {
         published: failed,
@@ -94,7 +123,15 @@ describe('messaging lists', () => {
           }
 
           if (request.path === 'messaging/commands/messaging.re-send/confirm') {
-            return { operationId: 'op1', count: 240, confirmation: 'typed', sample: [], token: 't', expiresAt: '', chunkSize: 500 }
+            return {
+              operationId: 'op1',
+              count: 240,
+              confirmation: 'typed',
+              sample: [],
+              token: 't',
+              expiresAt: '',
+              chunkSize: 500,
+            }
           }
 
           return undefined
@@ -129,9 +166,16 @@ describe('messaging lists', () => {
     await actor.click(await screen.findByRole('row', { name: /a\.failed/ }))
     const panel = screen.getByRole('region', { name: `Message ${failed.id}` })
 
-    view.stream.push('change', change('received', { ...failed, status: 'Succeeded', terminal: false, retries: 4, version: '2' }))
+    view.stream.push(
+      'change',
+      change('received', { ...failed, status: 'Succeeded', terminal: false, retries: 4, version: '2' }),
+    )
 
-    await waitFor(() => expect(within(screen.getByRole('region', { name: `Message ${failed.id}` })).getAllByText('Succeeded').length).toBeGreaterThan(0))
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole('region', { name: `Message ${failed.id}` })).getAllByText('Succeeded').length,
+      ).toBeGreaterThan(0),
+    )
     expect(panel.isConnected || screen.getByRole('region', { name: `Message ${failed.id}` })).toBeTruthy()
     expect(new URLSearchParams(view.location().search).get('open')).toBe(failed.id)
   })
@@ -155,16 +199,25 @@ describe('messaging lists', () => {
     list({ received: [done] }, 'received')
 
     await user().click(await screen.findByRole('row', { name: /a\.done/ }))
-    const button = await within(screen.getByRole('region', { name: `Message ${done.id}` })).findByRole('button', { name: 'Re-execute' })
+    const button = await within(screen.getByRole('region', { name: `Message ${done.id}` })).findByRole('button', {
+      name: 'Re-execute',
+    })
 
     await waitFor(() => expect(described(button)).toBe('Not failed'))
   })
 
   it('reads another node’s list through node, on that node’s topic', async () => {
-    const view = list({ nodes: twoNodes, received: [message('received', 'Failed', { name: 'a.failed' })] }, 'received?node=node-b')
+    const view = list(
+      { nodes: twoNodes, received: [message('received', 'Failed', { name: 'a.failed' })] },
+      'received?node=node-b',
+    )
 
     await screen.findByRole('row', { name: /a\.failed/ })
-    expect(view.requests.filter((request) => request.path === 'messaging/received').every((request) => request.query?.node === 'node-b')).toBe(true)
+    expect(
+      view.requests
+        .filter((request) => request.path === 'messaging/received')
+        .every((request) => request.query?.node === 'node-b'),
+    ).toBe(true)
     expect(view.stream.topics()).toContain('messaging.received@node-b')
   })
 

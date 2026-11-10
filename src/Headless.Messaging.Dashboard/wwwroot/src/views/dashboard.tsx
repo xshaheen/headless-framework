@@ -1,9 +1,29 @@
 import { useDashboard } from '@headless/dashboard-sdk'
-import { Button, Card, CardRow, Cards, LoadError, Mono, PageFrame, PageHeader, Skeleton, usePageFrame } from '@headless/dashboard-sdk/components'
+import {
+  Button,
+  Card,
+  CardRow,
+  Cards,
+  LoadError,
+  Mono,
+  PageFrame,
+  PageHeader,
+  Skeleton,
+  usePageFrame,
+} from '@headless/dashboard-sdk/components'
 import { listKey, useDashboardKeysetList } from '@headless/dashboard-sdk/data'
 import { useQueryClient } from '@headless/dashboard-sdk/query'
 import { Link } from '@headless/dashboard-sdk/router'
-import { fetchMessages, failureGroupPath, parseFailureGroup, readFilter, rowMark, topicOf, type MessageKind, type MessageRow } from '../messages.ts'
+import {
+  fetchMessages,
+  failureGroupPath,
+  parseFailureGroup,
+  readFilter,
+  rowMark,
+  topicOf,
+  type MessageKind,
+  type MessageRow,
+} from '../messages.ts'
 import {
   AttentionGaps,
   MessagingStats,
@@ -46,7 +66,10 @@ export default function MessagingDashboard() {
         </PageHeader>
       }
     >
-      <StaleNotice what="this dashboard" onRefresh={() => dashboardKeys.forEach((queryKey) => void client.invalidateQueries({ queryKey }))} />
+      <StaleNotice
+        what="this dashboard"
+        onRefresh={() => dashboardKeys.forEach((queryKey) => void client.invalidateQueries({ queryKey }))}
+      />
       <Cards>
         <MessagingAttention />
         <RecentFailures kind="received" />
@@ -71,7 +94,8 @@ function MessagingAttention() {
   const { answer, items, stale, unavailable, complete } = useMessagingAttention()
   const retry = () => void answer.refetch()
   // A source that did not answer is a row of its own, so the card never reads as the whole story without it.
-  const gap = unavailable.length > 0 ? `Not answering: ${unavailable.join(', ')}. Items from these may be missing.` : undefined
+  const gap =
+    unavailable.length > 0 ? `Not answering: ${unavailable.join(', ')}. Items from these may be missing.` : undefined
 
   return (
     <Card
@@ -103,7 +127,20 @@ function MessagingAttention() {
                 />
               )
             }),
-            ...(gap ? [<CardRow key="unavailable" tone="off" name={<span role="status">{gap}</span>} actions={<Button variant="ghost" onPress={retry}>Retry</Button>} />] : []),
+            ...(gap
+              ? [
+                  <CardRow
+                    key="unavailable"
+                    tone="off"
+                    name={<span role="status">{gap}</span>}
+                    actions={
+                      <Button variant="ghost" onPress={retry}>
+                        Retry
+                      </Button>
+                    }
+                  />,
+                ]
+              : []),
           ]
         : null}
     </Card>

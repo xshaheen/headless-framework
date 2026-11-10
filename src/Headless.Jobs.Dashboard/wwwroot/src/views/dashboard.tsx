@@ -1,6 +1,17 @@
 import { useDashboard, useModule } from '@headless/dashboard-sdk'
 import { CommandAction, useAllowedActions } from '@headless/dashboard-sdk/commands'
-import { Button, Card, CardRow, Cards, LoadError, Mono, PageFrame, PageHeader, Skeleton, usePageFrame } from '@headless/dashboard-sdk/components'
+import {
+  Button,
+  Card,
+  CardRow,
+  Cards,
+  LoadError,
+  Mono,
+  PageFrame,
+  PageHeader,
+  Skeleton,
+  usePageFrame,
+} from '@headless/dashboard-sdk/components'
 import { listKey, useDashboardKeysetList, useDashboardList, useNewRows } from '@headless/dashboard-sdk/data'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQueryClient } from '@headless/dashboard-sdk/query'
@@ -9,7 +20,16 @@ import { useStreamEvent } from '@headless/dashboard-sdk/stream'
 import { useEffect, useRef } from 'react'
 import { cronJobsTopic, fetchCronJobs, type CronJob } from '../cron.ts'
 import { JobsStats, RunProgress, StaleNotice, Time, useJobsAttention, type AttentionItem } from '../parts.tsx'
-import { fetchRuns, markDone, readFilter, runsTopic, useJobsCommands, usePending, viewOnlyReason, type Run } from '../runs.ts'
+import {
+  fetchRuns,
+  markDone,
+  readFilter,
+  runsTopic,
+  useJobsCommands,
+  usePending,
+  viewOnlyReason,
+  type Run,
+} from '../runs.ts'
 
 const cardRows = 6
 
@@ -17,7 +37,13 @@ const cardRows = 6
 const processingFilter = { ...readFilter(new URLSearchParams()), status: 'InProgress' as const }
 
 /** Every answer the dashboard reads: its lists, the strip's counts and figures, and the attention items. */
-const dashboardKeys = [listKey(runsTopic), listKey(cronJobsTopic), ['jobs'], ['shell', 'counts', 'jobs'], ['shell', 'attention']]
+const dashboardKeys = [
+  listKey(runsTopic),
+  listKey(cronJobsTopic),
+  ['jobs'],
+  ['shell', 'counts', 'jobs'],
+  ['shell', 'attention'],
+]
 
 export default function JobsDashboard() {
   const module = useModule()
@@ -42,14 +68,21 @@ export default function JobsDashboard() {
             ) : undefined
           }
           actions={
-            <Button variant="primary" disabledReason={module.canOperate ? null : viewOnlyReason} onPress={() => void navigate('/jobs/runs?create=time-job')}>
+            <Button
+              variant="primary"
+              disabledReason={module.canOperate ? null : viewOnlyReason}
+              onPress={() => void navigate('/jobs/runs?create=time-job')}
+            >
               Add time job
             </Button>
           }
         />
       }
     >
-      <StaleNotice what="this dashboard" onRefresh={() => dashboardKeys.forEach((queryKey) => void client.invalidateQueries({ queryKey }))} />
+      <StaleNotice
+        what="this dashboard"
+        onRefresh={() => dashboardKeys.forEach((queryKey) => void client.invalidateQueries({ queryKey }))}
+      />
       <Cards>
         <ProcessingNow />
         <NextRecurringRuns {...cronJobs} />
@@ -69,7 +102,11 @@ function ProcessingNow() {
   const module = useModule()
   const format = useFormat()
   const client = useQueryClient()
-  const runs = useDashboardKeysetList<Run>({ topic: runsTopic, params: processingFilter, fetchPage: (cursor) => fetchRuns(api, processingFilter, cursor) })
+  const runs = useDashboardKeysetList<Run>({
+    topic: runsTopic,
+    params: processingFilter,
+    fetchPage: (cursor) => fetchRuns(api, processingFilter, cursor),
+  })
   const arrived = useNewRows<Run>(runsTopic, (run) => run.status === 'InProgress')
   const refetch = useRef<ReturnType<typeof setTimeout>>(undefined)
 
@@ -81,7 +118,10 @@ function ProcessingNow() {
 
     if (change.topic === runsTopic && change.projection && (change.projection.status === 'InProgress') !== listed) {
       clearTimeout(refetch.current)
-      refetch.current = setTimeout(() => void client.invalidateQueries({ queryKey: listKey(runsTopic, processingFilter) }), 250)
+      refetch.current = setTimeout(
+        () => void client.invalidateQueries({ queryKey: listKey(runsTopic, processingFilter) }),
+        250,
+      )
     }
   })
   useEffect(() => () => clearTimeout(refetch.current), [])
@@ -104,7 +144,11 @@ function ProcessingNow() {
     <Card
       title="Processing now"
       // The served count answers for the last fetch; while every running run is loaded, the shown rows are newer.
-      caption={running.length > 0 ? `${format.count(runs.hasMore && runs.count ? runs.count : { value: running.length, capped: false })} running` : undefined}
+      caption={
+        running.length > 0
+          ? `${format.count(runs.hasMore && runs.count ? runs.count : { value: running.length, capped: false })} running`
+          : undefined
+      }
       action={running.length > 0 ? <Link to="/jobs/runs?status=InProgress">All</Link> : undefined}
       empty={
         runs.query.isError ? (
@@ -136,7 +180,14 @@ function ProcessingNow() {
             ) : undefined
           }
         >
-          {pending.labelOf(run) ?? (run.cancelRequested ? 'Cancelling…' : run.progressPercent !== undefined ? <RunProgress run={run} /> : 'No progress reported')}
+          {pending.labelOf(run) ??
+            (run.cancelRequested ? (
+              'Cancelling…'
+            ) : run.progressPercent !== undefined ? (
+              <RunProgress run={run} />
+            ) : (
+              'No progress reported'
+            ))}
         </CardRow>
       ))}
     </Card>
@@ -147,7 +198,9 @@ function useNextRecurringRuns() {
   const { api } = useDashboard()
   const list = useDashboardList<CronJob>({ topic: cronJobsTopic, fetch: () => fetchCronJobs(api) })
   const all = list.data?.items ?? []
-  const next = all.filter((cronJob) => !cronJob.isPaused).sort((left, right) => Date.parse(left.nextDueUtc) - Date.parse(right.nextDueUtc))
+  const next = all
+    .filter((cronJob) => !cronJob.isPaused)
+    .sort((left, right) => Date.parse(left.nextDueUtc) - Date.parse(right.nextDueUtc))
 
   return { list, total: all.length, next }
 }
@@ -170,7 +223,10 @@ function NextRecurringRuns({ list, total, next }: ReturnType<typeof useNextRecur
         ) : (
           <>
             No recurring jobs yet. A recurring job runs a function on a cron schedule.{' '}
-            <Button disabledReason={module.canOperate ? null : viewOnlyReason} onPress={() => void navigate('/jobs/cron-jobs?create=cron-job')}>
+            <Button
+              disabledReason={module.canOperate ? null : viewOnlyReason}
+              onPress={() => void navigate('/jobs/cron-jobs?create=cron-job')}
+            >
               Add recurring job
             </Button>
           </>
@@ -198,7 +254,9 @@ function attentionPath(item: AttentionItem) {
     return `/jobs/runs?status=Failed&function=${encodeURIComponent(fn)}&fingerprint=${encodeURIComponent(scope.fingerprint)}`
   }
 
-  return item.target?.kind === 'function' ? `/jobs/functions/${encodeURIComponent(item.target.id)}` : '/jobs/runs?status=Failed'
+  return item.target?.kind === 'function'
+    ? `/jobs/functions/${encodeURIComponent(item.target.id)}`
+    : '/jobs/runs?status=Failed'
 }
 
 function JobsAttention() {

@@ -127,11 +127,19 @@ describe('shell keyboard', () => {
     expect(document.activeElement).toBe(field)
 
     await user.paste('job_7f2b')
-    expect(await within(await screen.findByRole('region', { name: 'Matches' })).findByRole('button', { name: 'billing.charge' })).toBeTruthy()
+    expect(
+      await within(await screen.findByRole('region', { name: 'Matches' })).findByRole('button', {
+        name: 'billing.charge',
+      }),
+    ).toBeTruthy()
 
     await user.keyboard('{Enter}')
 
-    await waitFor(() => expect(`${shell.router.state.location.pathname}${shell.router.state.location.search}`).toBe('/jobs/runs?selected=job_7f2b'))
+    await waitFor(() =>
+      expect(`${shell.router.state.location.pathname}${shell.router.state.location.search}`).toBe(
+        '/jobs/runs?selected=job_7f2b',
+      ),
+    )
   })
 
   it('says no object has a pasted id that matches nothing', async () => {
@@ -167,7 +175,9 @@ describe('shell keyboard', () => {
     const user = userEvent.setup()
     renderShell(shellState([]), {
       api: (request) =>
-        request.path === 'resolve' ? { modules: [{ id: 'jobs', displayName: 'Jobs', stale: true, items: [] }] } : emptyAggregates(request),
+        request.path === 'resolve'
+          ? { modules: [{ id: 'jobs', displayName: 'Jobs', stale: true, items: [] }] }
+          : emptyAggregates(request),
     })
 
     await user.keyboard('/')

@@ -11,7 +11,9 @@ import {
 import { moduleManifest, shellState } from './fixtures/modules.tsx'
 
 function fakeFetch(info: AuthInfo) {
-  return vi.fn<typeof fetch>(async () => new Response(JSON.stringify(info), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+  return vi.fn<typeof fetch>(
+    async () => new Response(JSON.stringify(info), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+  )
 }
 
 function memoryStorage() {
@@ -50,7 +52,10 @@ describe('bootstrap', () => {
     expect(readBootstrapState(document).products).toEqual(state.products)
     expect(moduleSidebarEntries(state, 'diag').map((entry) => entry.id)).toEqual(['diag.nav.runs', 'diag.nav.settings'])
 
-    const broken = { ...state, products: [{ ...state.products[0], sections: [{ module: 'diag', entries: [{ id: 'x', label: 'X' }] }] }] }
+    const broken = {
+      ...state,
+      products: [{ ...state.products[0], sections: [{ module: 'diag', entries: [{ id: 'x', label: 'X' }] }] }],
+    }
     document.body.innerHTML = `<script type="application/json" id="${stateElementId}">${JSON.stringify(broken)}</script>`
     expect(() => readBootstrapState(document)).toThrow(/does not hold the dashboard's page state/)
   })
@@ -74,7 +79,9 @@ describe('bootstrap', () => {
     const reload = vi.fn()
     const state = shellState([moduleManifest('diag')])
 
-    expect((await settleSession(state, { fetch: fakeFetch(signedIn), storage: memoryStorage(), reload })).status).toBe('ready')
+    expect((await settleSession(state, { fetch: fakeFetch(signedIn), storage: memoryStorage(), reload })).status).toBe(
+      'ready',
+    )
     expect(reload).not.toHaveBeenCalled()
   })
 

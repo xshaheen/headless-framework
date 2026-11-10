@@ -18,9 +18,15 @@ export default tseslint.config(
     rules: {
       'no-restricted-syntax': [
         'error',
-        { selector: "JSXAttribute[name.name='style']", message: 'A module view ships no style objects; compose SDK components.' },
+        {
+          selector: "JSXAttribute[name.name='style']",
+          message: 'A module view ships no style objects; compose SDK components.',
+        },
       ],
-      'no-restricted-imports': ['error', { patterns: [{ group: ['*.css'], message: 'A module ships no CSS; compose SDK components.' }] }],
+      'no-restricted-imports': [
+        'error',
+        { patterns: [{ group: ['*.css'], message: 'A module ships no CSS; compose SDK components.' }] },
+      ],
     },
   },
 )

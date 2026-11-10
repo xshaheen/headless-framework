@@ -110,7 +110,12 @@ function GoTo({ input, onMany }: { input: RefObject<HTMLInputElement | null>; on
 function initials(name: string | null | undefined) {
   const parts = (name ?? '').split(/[\s._@-]+/).filter(Boolean)
 
-  return parts.length === 0 ? '?' : parts.slice(0, 2).map((part) => part[0]!.toUpperCase()).join('')
+  return parts.length === 0
+    ? '?'
+    : parts
+        .slice(0, 2)
+        .map((part) => part[0]!.toUpperCase())
+        .join('')
 }
 
 /** Pause or Resume: an icon in the bar, a labelled row in the account menu. */
@@ -118,7 +123,12 @@ function PauseButton({ paused, onToggle, labelled }: { paused: boolean; onToggle
   const label = paused ? 'Resume live updates' : 'Pause live updates'
 
   return (
-    <Button variant="ghost" className={labelled ? undefined : 'hd-icon'} aria-label={labelled ? undefined : label} onPress={onToggle}>
+    <Button
+      variant="ghost"
+      className={labelled ? undefined : 'hd-icon'}
+      aria-label={labelled ? undefined : label}
+      onPress={onToggle}
+    >
       <Glyph d={paused ? 'M5 3.5v9l7-4.5z' : 'M4.5 3h2.5v10H4.5zM9 3h2.5v10H9z'} fill />
       {labelled ? label : null}
     </Button>
@@ -179,7 +189,13 @@ export function TopBar({ product, goTo, attention, onMany, menu }: TopBarProps) 
       <ProductTabs current={product} attention={sections} />
       <span className="hd-spacer" />
       <GoTo input={goTo} onMany={onMany} />
-      <Button ref={attention.trigger} variant="ghost" className={`hd-quiet hd-tone-${role}`} aria-expanded={attention.isOpen} onPress={attention.toggle}>
+      <Button
+        ref={attention.trigger}
+        variant="ghost"
+        className={`hd-quiet hd-tone-${role}`}
+        aria-expanded={attention.isOpen}
+        onPress={attention.toggle}
+      >
         <span className="hd-mark" aria-hidden="true" />
         {total.value > 0 ? `Attention ${format.count(total)}` : 'Attention'}
       </Button>
@@ -196,17 +212,34 @@ export function TopBar({ product, goTo, attention, onMany, menu }: TopBarProps) 
       {narrow ? null : (
         <>
           <Clock />
-          <Button ref={zone.trigger} variant="ghost" className="hd-quiet" aria-label={`Display time zone: ${timeZone}`} onPress={zone.toggle}>
+          <Button
+            ref={zone.trigger}
+            variant="ghost"
+            className="hd-quiet"
+            aria-label={`Display time zone: ${timeZone}`}
+            onPress={zone.toggle}
+          >
             {timeZone}
           </Button>
-          <Flyout label="Display time zone" isOpen={zone.isOpen} onClose={() => zone.setOpen(false)} trigger={zone.trigger}>
+          <Flyout
+            label="Display time zone"
+            isOpen={zone.isOpen}
+            onClose={() => zone.setOpen(false)}
+            trigger={zone.trigger}
+          >
             <TimeZoneField />
           </Flyout>
         </>
       )}
       {medium ? null : <PauseButton paused={paused !== null} onToggle={togglePause} />}
       {canOperate ? null : <span className="hd-view-only">View only</span>}
-      <Button ref={account.trigger} className="hd-avatar" aria-label={`Account: ${name ?? 'signed in'}`} aria-expanded={account.isOpen} onPress={account.toggle}>
+      <Button
+        ref={account.trigger}
+        className="hd-avatar"
+        aria-label={`Account: ${name ?? 'signed in'}`}
+        aria-expanded={account.isOpen}
+        onPress={account.toggle}
+      >
         {initials(name)}
       </Button>
       <Flyout label="Account" isOpen={account.isOpen} onClose={() => account.setOpen(false)} trigger={account.trigger}>

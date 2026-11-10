@@ -1,7 +1,15 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
-import { chunkUrl, entryUrl, jobsWithDashboard, moduleFiles, moduleManifest, shellState, twentyModules } from './fixtures/modules.tsx'
+import {
+  chunkUrl,
+  entryUrl,
+  jobsWithDashboard,
+  moduleFiles,
+  moduleManifest,
+  shellState,
+  twentyModules,
+} from './fixtures/modules.tsx'
 import { renderShell } from './harness.tsx'
 
 describe('router', () => {
@@ -46,12 +54,18 @@ describe('router', () => {
 
     await shell.router.navigate('/jobs/runs?status=Failed&open=r1')
     await screen.findByRole('heading', { name: 'Module jobs runs view' })
-    expect(within(sidebar).getByRole('link', { name: /Failed/ }).getAttribute('aria-current')).toBe('page')
+    expect(
+      within(sidebar)
+        .getByRole('link', { name: /Failed/ })
+        .getAttribute('aria-current'),
+    ).toBe('page')
     expect(within(sidebar).getByRole('link', { name: 'Dashboard' }).getAttribute('aria-current')).toBeNull()
     expect(within(sidebar).getByRole('link', { name: 'All runs' }).getAttribute('aria-current')).toBeNull()
 
     await shell.router.navigate('/jobs/runs/r1')
-    await waitFor(() => expect(within(sidebar).getByRole('link', { name: 'All runs' }).getAttribute('aria-current')).toBe('page'))
+    await waitFor(() =>
+      expect(within(sidebar).getByRole('link', { name: 'All runs' }).getAttribute('aria-current')).toBe('page'),
+    )
   })
 
   it('shows why a refused module did not load, marks its product off, and the other modules still work', async () => {

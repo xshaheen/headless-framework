@@ -54,7 +54,17 @@ import {
  * A timestamp as relative time, with the exact time, zone, and offset on hover; in `zone` when one is named. `short`
  * reads `4 min. ago`, so a list column stays narrow enough for a phone.
  */
-export function Time({ value, zone, short, missing = 'Not yet' }: { value: string | undefined; zone?: string; short?: boolean; missing?: string }) {
+export function Time({
+  value,
+  zone,
+  short,
+  missing = 'Not yet',
+}: {
+  value: string | undefined
+  zone?: string
+  short?: boolean
+  missing?: string
+}) {
   const format = useFormat()
 
   if (!value) {
@@ -193,7 +203,8 @@ export function useJobsAttention() {
   const answer = useQuery({
     queryKey: ['shell', 'attention'],
     queryFn: async () =>
-      (await api.request<{ modules: { id: string; items: AttentionItem[] }[] }>({ method: 'GET', path: 'needs-you' })).modules,
+      (await api.request<{ modules: { id: string; items: AttentionItem[] }[] }>({ method: 'GET', path: 'needs-you' }))
+        .modules,
   })
 
   return { answer, items: answer.data?.find((section) => section.id === 'jobs')?.items ?? [] }
@@ -215,9 +226,9 @@ function useJobsFigures() {
   return useQuery({
     queryKey: ['jobs', 'figures'],
     queryFn: async () =>
-      (await api.request<{ modules: { id: string; items: Figure[] }[] }>({ method: 'GET', path: 'overview' })).modules.find(
-        (section) => section.id === 'jobs',
-      )?.items ?? [],
+      (
+        await api.request<{ modules: { id: string; items: Figure[] }[] }>({ method: 'GET', path: 'overview' })
+      ).modules.find((section) => section.id === 'jobs')?.items ?? [],
     staleTime: OVERVIEW_STALE_MS,
   })
 }
@@ -353,7 +364,9 @@ export function RunFields({ run }: { run: Run }) {
         <GridField label="Node">{run.node ? <Mono>{run.node}</Mono> : 'Not recorded'}</GridField>
         <Optional label="Tenant" value={run.tenantId ? <Mono>{run.tenantId}</Mono> : undefined} />
         <GridField label="Status" span={2}>
-          {run.cancelRequested && !isFinished(run.status) ? `${statusLabel(run.status)}, cancel requested` : statusLabel(run.status)}
+          {run.cancelRequested && !isFinished(run.status)
+            ? `${statusLabel(run.status)}, cancel requested`
+            : statusLabel(run.status)}
         </GridField>
         {/* A handler that does not observe its cancellation token finishes on its own terms; the run keeps the status
             it really ended with, and this says the cancel asked for was not honoured. */}
@@ -366,7 +379,9 @@ export function RunFields({ run }: { run: Run }) {
         <GridField label={run.status === 'Failed' ? 'Failed at' : 'Executed'} span={2}>
           <Time value={run.executedAt} missing={running} />
         </GridField>
-        <GridField label="Duration">{run.executedAt ? formatDuration(run.elapsedMilliseconds, format.number) : (running ?? 'Not run yet')}</GridField>
+        <GridField label="Duration">
+          {run.executedAt ? formatDuration(run.elapsedMilliseconds, format.number) : (running ?? 'Not run yet')}
+        </GridField>
         <Optional
           label="Correlation"
           span={2}
@@ -402,13 +417,22 @@ export function RunFields({ run }: { run: Run }) {
         <Optional label="Skipped because" span={2} value={run.skippedReason} />
         <Optional label="Trace id" span={2} value={run.traceId ? <Mono>{run.traceId}</Mono> : undefined} />
         <Optional label="Causation" span={2} value={run.causationId ? <Mono>{run.causationId}</Mono> : undefined} />
-        <Optional label="Contract version" value={run.contractVersion ? <Mono>{run.contractVersion}</Mono> : undefined} />
+        <Optional
+          label="Contract version"
+          value={run.contractVersion ? <Mono>{run.contractVersion}</Mono> : undefined}
+        />
         <Optional label="Business key" span={2} value={run.businessKey ? <Mono>{run.businessKey}</Mono> : undefined} />
         <Optional label="Description" span={2} value={run.description} />
         <Optional
           label="Cron job"
           span={2}
-          value={run.cronJobId ? <Link to={`/jobs/cron-jobs/${encodeURIComponent(run.cronJobId)}`}><Mono>{run.cronJobId}</Mono></Link> : undefined}
+          value={
+            run.cronJobId ? (
+              <Link to={`/jobs/cron-jobs/${encodeURIComponent(run.cronJobId)}`}>
+                <Mono>{run.cronJobId}</Mono>
+              </Link>
+            ) : undefined
+          }
         />
       </FieldGrid>
     </>
@@ -463,7 +487,9 @@ export function AttemptTimeline({ run }: { run: Pick<Run, 'id' | 'version' | 'cr
 
   return (
     <Fields label="Timeline">
-      <Text as="h3" tone="title">Timeline</Text>
+      <Text as="h3" tone="title">
+        Timeline
+      </Text>
       {attempts.data ? (
         <Timeline label="Run timeline" events={attemptEvents(run, attempts.data)} />
       ) : attempts.isError ? (
@@ -515,7 +541,10 @@ export function RunHistory({ run }: { run: Pick<Run, 'id' | 'version' | 'created
   return (
     <HistoryList
       label="History"
-      items={[...items, { key: 'created', time: <Time value={run.createdAt} short />, tone: 'sched', state: 'Created' }]}
+      items={[
+        ...items,
+        { key: 'created', time: <Time value={run.createdAt} short />, tone: 'sched', state: 'Created' },
+      ]}
     />
   )
 }
@@ -532,7 +561,11 @@ export function RunActions({ run, pending }: { run: Run; pending: Pending }) {
   // Captured at render, so the version is the one the operator saw when they ran the command.
   const versions = new Map([[run.id, run.version]])
 
-  const action = (name: 'requeue' | 'cancel' | 'delete', command: CommandDefinition | undefined, variant?: 'primary' | 'danger') =>
+  const action = (
+    name: 'requeue' | 'cancel' | 'delete',
+    command: CommandDefinition | undefined,
+    variant?: 'primary' | 'danger',
+  ) =>
     command ? (
       <CommandAction
         key={name}
@@ -569,7 +602,12 @@ export function RunPayload({ runId }: { runId: string }) {
   const module = useModule()
   const payload = useQuery({
     queryKey: ['payload', module.id, 'run', runId],
-    queryFn: () => api.request<PayloadAnswer>({ method: 'GET', path: 'payload', query: { module: module.id, kind: 'run', id: runId } }),
+    queryFn: () =>
+      api.request<PayloadAnswer>({
+        method: 'GET',
+        path: 'payload',
+        query: { module: module.id, kind: 'run', id: runId },
+      }),
   })
 
   return (
@@ -602,9 +640,17 @@ function RunChain({ run }: { run: Pick<Run, 'id' | 'parentId'> }) {
 
   return (
     <FieldGrid columns={2}>
-      <GridField label="Runs after">{run.parentId ? step(run.parentId) : 'Nothing: this run starts its chain'}</GridField>
+      <GridField label="Runs after">
+        {run.parentId ? step(run.parentId) : 'Nothing: this run starts its chain'}
+      </GridField>
       <GridField label="Steps after this run">
-        {children ? (children.length > 0 ? children.map(step) : 'None') : detail.isError ? 'The chain did not load.' : 'Loading…'}
+        {children
+          ? children.length > 0
+            ? children.map(step)
+            : 'None'
+          : detail.isError
+            ? 'The chain did not load.'
+            : 'Loading…'}
       </GridField>
     </FieldGrid>
   )

@@ -27,7 +27,11 @@ export function attentionRole(sections: readonly ModuleSection<AttentionItem>[] 
 }
 
 /** A product tab's dot and the words behind it: `off` when one of its modules did not load or did not answer. */
-export function productAttention(state: BootstrapState, product: BootstrapProduct, sections: readonly ModuleSection<AttentionItem>[] | undefined) {
+export function productAttention(
+  state: BootstrapState,
+  product: BootstrapProduct,
+  sections: readonly ModuleSection<AttentionItem>[] | undefined,
+) {
   const failed = state.modules.some((module) => module.refusal && product.modules.includes(module.id))
   const own = sections?.filter((section) => product.modules.includes(section.id))
   const total = (own ?? []).reduce((sum, section) => section.items.reduce((count, item) => count + item.count, sum), 0)
@@ -72,7 +76,9 @@ function Item({ item, onOpen }: { item: AttentionItem; onOpen: () => void }) {
         )}
         <span className="hd-hint">
           {`${format.count({ value: item.count, capped: item.capped })} ${item.count === 1 ? 'item' : 'items'}`}
-          {item.since ? <span title={format.exactTime(item.since)}>{` · since ${format.relativeTime(item.since)}`}</span> : null}
+          {item.since ? (
+            <span title={format.exactTime(item.since)}>{` · since ${format.relativeTime(item.since)}`}</span>
+          ) : null}
         </span>
       </span>
     </li>
@@ -101,7 +107,9 @@ export function AttentionPopover({ sections, isPending, isError, onRetry, isOpen
     <Flyout label="Attention" isOpen={isOpen} onClose={onClose} trigger={trigger} className="hd-attn">
       <h2 className="hd-title">Attention</h2>
       {isPending ? (
-        showLoading ? <p className="hd-hint">Loading what needs you…</p> : null
+        showLoading ? (
+          <p className="hd-hint">Loading what needs you…</p>
+        ) : null
       ) : isError ? (
         <p role="alert" className="hd-hint">
           Attention did not load. <Button onPress={onRetry}>Retry</Button>

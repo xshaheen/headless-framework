@@ -111,9 +111,11 @@ describe('command palette', () => {
     await user.keyboard('diag')
 
     const palette = await screen.findByRole('dialog', { name: 'Command palette' })
-    expect(within(palette).getAllByRole('menuitem', { name: /Go to Diagnostics runs/i }).map((item) => item.textContent)).toEqual([
-      expect.stringContaining('Go to Diagnostics Runs'),
-    ])
+    expect(
+      within(palette)
+        .getAllByRole('menuitem', { name: /Go to Diagnostics runs/i })
+        .map((item) => item.textContent),
+    ).toEqual([expect.stringContaining('Go to Diagnostics Runs')])
     expect(within(palette).getByRole('menuitem', { name: /Add diag run/ })).toBeTruthy()
   })
 
@@ -131,7 +133,10 @@ describe('command palette', () => {
                 id: 'diag',
                 displayName: 'Diagnostics',
                 stale: false,
-                items: request.query?.q === 'r-8f31c2' ? [{ target: { module: 'diag', kind: 'run', id: 'r-8f31c2' }, title: 'billing.charge' }] : [],
+                items:
+                  request.query?.q === 'r-8f31c2'
+                    ? [{ target: { module: 'diag', kind: 'run', id: 'r-8f31c2' }, title: 'billing.charge' }]
+                    : [],
               },
             ],
           }

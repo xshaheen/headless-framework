@@ -65,7 +65,9 @@ describe('jobs runs list', () => {
 
     view.stream.push('change', change({ ...queued, status: 'InProgress', version: '2' }))
 
-    await waitFor(() => expect(within(screen.getByRole('row', { name: /a\.queued/ })).getByText('In progress')).toBeTruthy())
+    await waitFor(() =>
+      expect(within(screen.getByRole('row', { name: /a\.queued/ })).getByText('In progress')).toBeTruthy(),
+    )
     expect(view.requests.filter((request) => request.path === 'jobs/runs')).toHaveLength(before)
   })
 
@@ -75,7 +77,9 @@ describe('jobs runs list', () => {
     const title = await screen.findByRole('heading', { level: 1, name: 'Idle' })
     const header = title.closest('header')!
     await waitFor(() => expect(within(header).getByText('2')).toBeTruthy())
-    expect(within(header).getByText('Due later, waiting for a retry, or a chain step waiting for its parent.')).toBeTruthy()
+    expect(
+      within(header).getByText('Due later, waiting for a retry, or a chain step waiting for its parent.'),
+    ).toBeTruthy()
     expect(screen.getAllByRole('row', { name: /billing\.charge/ })).toHaveLength(2)
   })
 
@@ -161,12 +165,22 @@ describe('jobs runs list', () => {
   })
 
   it('opens a run in the docked panel, in the URL as open, with its exception and its attempts newest first', async () => {
-    const failed = run('Failed', { function: 'a.failed', exceptionMessage: 'Gateway timeout', exceptionStack: 'at Billing.Charge()' })
+    const failed = run('Failed', {
+      function: 'a.failed',
+      exceptionMessage: 'Gateway timeout',
+      exceptionStack: 'at Billing.Charge()',
+    })
     const view = list({
       runs: [failed],
       attempts: {
         [failed.id]: [
-          { number: 1, node: 'node-a', startedAt: '2026-11-05T09:51:00Z', endedAt: '2026-11-05T09:52:00Z', outcome: 'Lost' },
+          {
+            number: 1,
+            node: 'node-a',
+            startedAt: '2026-11-05T09:51:00Z',
+            endedAt: '2026-11-05T09:52:00Z',
+            outcome: 'Lost',
+          },
           {
             number: 2,
             node: 'node-b',
@@ -185,10 +199,16 @@ describe('jobs runs list', () => {
     expect(new URLSearchParams(view.location().search).get('open')).toBe(failed.id)
     const opened = panel(failed.id)
     expect(within(opened).getByRole('tab', { name: 'Overview', selected: true })).toBeTruthy()
-    expect(within(opened).getByText('Gateway timeout').closest('pre')?.textContent).toBe('Gateway timeout\n   at Billing.Charge()')
+    expect(within(opened).getByText('Gateway timeout').closest('pre')?.textContent).toBe(
+      'Gateway timeout\n   at Billing.Charge()',
+    )
 
     const history = await within(opened).findByRole('region', { name: 'History' })
-    expect(within(history).getAllByRole('listitem').map((item) => item.textContent)).toEqual([
+    expect(
+      within(history)
+        .getAllByRole('listitem')
+        .map((item) => item.textContent),
+    ).toEqual([
       '4 min. agoFailed try 2 · node-b · Gateway timeout · fingerprint v1:9f2c41',
       '8 min. agoLost try 1 · node-a',
       '10 min. agoCreated',
@@ -218,7 +238,11 @@ describe('jobs runs list', () => {
     await actor.click(within(panel(running.id)).getByRole('button', { name: 'Cancel' }))
 
     const dialog = await screen.findByRole('dialog', { name: 'Cancel run' })
-    expect(within(dialog).getAllByRole('button').map((button) => button.textContent)).toEqual(['Back', 'Cancel run'])
+    expect(
+      within(dialog)
+        .getAllByRole('button')
+        .map((button) => button.textContent),
+    ).toEqual(['Back', 'Cancel run'])
   })
 
   it('reads the arguments when their tab opens, and says a run with none has no payload', async () => {
@@ -246,7 +270,9 @@ describe('jobs runs list', () => {
 
     view.stream.push('change', change({ ...running, status: 'Cancelled', version: '2' }))
 
-    await waitFor(() => expect(within(screen.getByRole('row', { name: /a\.running/ })).getByText('Cancelled')).toBeTruthy())
+    await waitFor(() =>
+      expect(within(screen.getByRole('row', { name: /a\.running/ })).getByText('Cancelled')).toBeTruthy(),
+    )
     expect(screen.queryByText('Cancelling…')).toBeNull()
     expect(screen.queryByText('Not honoured: the handler kept running')).toBeNull()
   })
@@ -268,7 +294,9 @@ describe('jobs runs list', () => {
     const view = list({
       runs: [failed],
       extra: (request) =>
-        request.method === 'POST' && request.path === 'jobs/commands/jobs.requeue' ? { rows: [{ id: failed.id, outcome: 'done' }] } : undefined,
+        request.method === 'POST' && request.path === 'jobs/commands/jobs.requeue'
+          ? { rows: [{ id: failed.id, outcome: 'done' }] }
+          : undefined,
     })
 
     await actor.click(await screen.findByRole('row', { name: /a\.failed/ }))
@@ -280,7 +308,9 @@ describe('jobs runs list', () => {
     await actor.type(within(dialog).getByRole('textbox', { name: /Reason/ }), 'gateway fixed')
     await actor.click(within(dialog).getByRole('button', { name: 'Requeue run' }))
 
-    await waitFor(() => expect(within(screen.getByRole('row', { name: /a\.failed/ })).getByText('Requeuing…')).toBeTruthy())
+    await waitFor(() =>
+      expect(within(screen.getByRole('row', { name: /a\.failed/ })).getByText('Requeuing…')).toBeTruthy(),
+    )
 
     view.stream.push('change', change({ ...failed, status: 'Queued', version: '2' }))
 
@@ -342,9 +372,13 @@ describe('jobs runs list', () => {
     await actor.click(within(dialog).getByRole('button', { name: /^Requeue 2/ }))
 
     const toast = await screen.findByText('Requeue: 2 done · 1 refused')
-    expect(view.requests.find((request) => request.path === 'jobs/commands/jobs.requeue')?.body).toMatchObject({ ids: failed.map((row) => row.id) })
+    expect(view.requests.find((request) => request.path === 'jobs/commands/jobs.requeue')?.body).toMatchObject({
+      ids: failed.map((row) => row.id),
+    })
     expect(within(screen.getByRole('row', { name: /a\.done/ })).getByText('Not failed')).toBeTruthy()
-    expect(within(toast.closest('[role="status"]') ?? toast.parentElement!).getByRole('button', { name: 'View' })).toBeTruthy()
+    expect(
+      within(toast.closest('[role="status"]') ?? toast.parentElement!).getByRole('button', { name: 'View' }),
+    ).toBeTruthy()
   })
 
   it('starts an Operation confirm with the exact count when every matching failed run is checked', async () => {
@@ -361,7 +395,15 @@ describe('jobs runs list', () => {
           }
 
           if (request.path === 'jobs/commands/jobs.requeue/confirm') {
-            return { operationId: 'op1', count: 312, confirmation: 'typed', sample: [], token: 't', expiresAt: '', chunkSize: 500 }
+            return {
+              operationId: 'op1',
+              count: 312,
+              confirmation: 'typed',
+              sample: [],
+              token: 't',
+              expiresAt: '',
+              chunkSize: 500,
+            }
           }
 
           return undefined
@@ -401,7 +443,9 @@ describe('jobs runs list', () => {
     await waitFor(() => expect(screen.queryByRole('row', { name: /mail\.send/ })).toBeNull())
     expect(screen.getByRole('row', { name: /billing\.charge/ })).toBeTruthy()
     expect(view.location().pathname).toBe('/jobs/runs')
-    expect(view.requests.filter((request) => request.path === 'jobs/runs').at(-1)?.query?.correlationId).toBe('corr-7f2')
+    expect(view.requests.filter((request) => request.path === 'jobs/runs').at(-1)?.query?.correlationId).toBe(
+      'corr-7f2',
+    )
     expect(screen.getByText('corr-7f2', { selector: 'b' })).toBeTruthy()
   })
 
@@ -459,7 +503,9 @@ describe('jobs runs list', () => {
     await actor.selectOptions(within(form).getByRole('combobox', { name: 'Function' }), 'billing.charge')
     await actor.click(within(form).getByRole('button', { name: 'Create job' }))
 
-    expect((await within(form).findByRole('alert')).textContent).toBe("The request does not match billing.charge's argument type.")
+    expect((await within(form).findByRole('alert')).textContent).toBe(
+      "The request does not match billing.charge's argument type.",
+    )
     expect(screen.getByRole('region', { name: 'Add time job' })).toBeTruthy()
   })
 
@@ -476,8 +522,12 @@ describe('jobs runs list', () => {
     const chain = await screen.findByRole('region', { name: 'Add chain' })
     expect(view.location().search).toBe('?create=chain')
     expect(within(chain).getByRole('button', { name: 'Chain' }).getAttribute('aria-pressed')).toBe('true')
-    expect((within(chain).getByRole('combobox', { name: 'Function' }) as HTMLSelectElement).value).toBe('billing.charge')
-    expect((within(chain).getByRole('textbox', { name: /Arguments/ }) as HTMLTextAreaElement).value).toBe('{"invoiceId": 7}')
+    expect((within(chain).getByRole('combobox', { name: 'Function' }) as HTMLSelectElement).value).toBe(
+      'billing.charge',
+    )
+    expect((within(chain).getByRole('textbox', { name: /Arguments/ }) as HTMLTextAreaElement).value).toBe(
+      '{"invoiceId": 7}',
+    )
     expect(within(chain).getByRole('region', { name: 'Steps after the first' })).toBeTruthy()
   })
 
@@ -540,7 +590,11 @@ describe('jobs runs list', () => {
     await actor.type(within(dialog).getByRole('textbox', { name: /Reason/ }), 'gateway fixed')
     await actor.click(within(dialog).getByRole('button', { name: /^Requeue/ }))
 
-    await waitFor(() => expect(view.requests.find((request) => request.path === 'jobs/commands/jobs.requeue')?.body).toMatchObject({ ids: [failed[1]!.id] }))
+    await waitFor(() =>
+      expect(view.requests.find((request) => request.path === 'jobs/commands/jobs.requeue')?.body).toMatchObject({
+        ids: [failed[1]!.id],
+      }),
+    )
   })
 
   it('drops the checked runs when the sidebar, a link, or Back changes the list', async () => {
@@ -591,7 +645,10 @@ describe('jobs runs list', () => {
   })
 
   it('reads a status in any case as that status', async () => {
-    const view = list({ runs: [run('Failed', { function: 'a.failed' }), run('Succeeded', { function: 'a.done' })] }, '?status=failed')
+    const view = list(
+      { runs: [run('Failed', { function: 'a.failed' }), run('Succeeded', { function: 'a.done' })] },
+      '?status=failed',
+    )
 
     expect(await screen.findByRole('heading', { level: 1, name: 'Failed' })).toBeTruthy()
     expect(await screen.findByRole('row', { name: /a\.failed/ })).toBeTruthy()
@@ -601,7 +658,10 @@ describe('jobs runs list', () => {
   })
 
   it('reads a status no run has as every status, with every filter offered', async () => {
-    const view = list({ runs: [run('Failed', { function: 'a.failed' }), run('Succeeded', { function: 'a.done' })] }, '?status=Bogus')
+    const view = list(
+      { runs: [run('Failed', { function: 'a.failed' }), run('Succeeded', { function: 'a.done' })] },
+      '?status=Bogus',
+    )
 
     expect(await screen.findByRole('heading', { level: 1, name: 'All runs' })).toBeTruthy()
     expect(await screen.findByRole('row', { name: /a\.done/ })).toBeTruthy()
@@ -611,7 +671,10 @@ describe('jobs runs list', () => {
 
   it('opens a run the loaded page does not hold, reading it once by its id', async () => {
     const elsewhere = run('Succeeded', { function: 'a.elsewhere' })
-    const view = list({ runs: [run('Failed', { function: 'a.failed' }), elsewhere] }, `?status=Failed&open=${elsewhere.id}`)
+    const view = list(
+      { runs: [run('Failed', { function: 'a.failed' }), elsewhere] },
+      `?status=Failed&open=${elsewhere.id}`,
+    )
 
     // The panel loads first, then shows the run it read.
     await waitFor(() => expect(within(panel(elsewhere.id)).getAllByText('a.elsewhere').length).toBeGreaterThan(0))
@@ -639,10 +702,21 @@ describe('jobs failed list', () => {
 
   it('lists the failed runs with their reason, and a cause chip filters by its fingerprint and shows its count', async () => {
     const actor = user()
-    const declined = run('Failed', { function: 'billing.charge', failureFingerprint: 'v1:card', exceptionMessage: 'Card declined' })
-    const timeout = run('Failed', { function: 'export.ledger', failureFingerprint: 'v1:io', exceptionMessage: 'Blob unreachable' })
+    const declined = run('Failed', {
+      function: 'billing.charge',
+      failureFingerprint: 'v1:card',
+      exceptionMessage: 'Card declined',
+    })
+    const timeout = run('Failed', {
+      function: 'export.ledger',
+      failureFingerprint: 'v1:io',
+      exceptionMessage: 'Blob unreachable',
+    })
     const view = list(
-      { runs: [declined, timeout, run('Succeeded', { function: 'a.done' })], attention: [attention('billing.charge', 'v1:card', 1), attention('export.ledger', 'v1:io', 1)] },
+      {
+        runs: [declined, timeout, run('Succeeded', { function: 'a.done' })],
+        attention: [attention('billing.charge', 'v1:card', 1), attention('export.ledger', 'v1:io', 1)],
+      },
       '?status=Failed',
     )
 
@@ -650,7 +724,13 @@ describe('jobs failed list', () => {
     expect(screen.queryByRole('row', { name: /a\.done/ })).toBeNull()
 
     const chips = await screen.findByRole('group', { name: 'Filter by cause' })
-    await waitFor(() => expect(within(chips).getAllByRole('button').map((chip) => chip.textContent)).toEqual(['All2', 'billing.charge1', 'export.ledger1']))
+    await waitFor(() =>
+      expect(
+        within(chips)
+          .getAllByRole('button')
+          .map((chip) => chip.textContent),
+      ).toEqual(['All2', 'billing.charge1', 'export.ledger1']),
+    )
     expect(within(chips).getByRole('button', { name: /^All/ }).getAttribute('aria-pressed')).toBe('true')
 
     await actor.click(within(chips).getByRole('button', { name: /export\.ledger/ }))
@@ -658,7 +738,11 @@ describe('jobs failed list', () => {
     await waitFor(() => expect(screen.queryByRole('row', { name: /billing\.charge/ })).toBeNull())
     expect(screen.getByRole('row', { name: /export\.ledger/ })).toBeTruthy()
     expect(new URLSearchParams(view.location().search).get('fingerprint')).toBe('v1:io')
-    expect(within(chips).getByRole('button', { name: /export\.ledger/ }).getAttribute('aria-pressed')).toBe('true')
+    expect(
+      within(chips)
+        .getByRole('button', { name: /export\.ledger/ })
+        .getAttribute('aria-pressed'),
+    ).toBe('true')
   })
 
   it('presses only the chip of the function and fingerprint set, when two functions fail the same way', async () => {
@@ -666,7 +750,10 @@ describe('jobs failed list', () => {
     const charge = run('Failed', { function: 'billing.charge', failureFingerprint: 'v1:io' })
     const refund = run('Failed', { function: 'billing.refund', failureFingerprint: 'v1:io' })
     const view = list(
-      { runs: [charge, refund], attention: [attention('billing.charge', 'v1:io', 1), attention('billing.refund', 'v1:io', 1)] },
+      {
+        runs: [charge, refund],
+        attention: [attention('billing.charge', 'v1:io', 1), attention('billing.refund', 'v1:io', 1)],
+      },
       '?status=Failed&function=billing.charge&fingerprint=v1%3Aio',
     )
 
@@ -691,18 +778,42 @@ describe('jobs run page', () => {
   })
 
   it('shows the panel’s content as its own page, with nothing to close or detach', async () => {
-    const failed = run('Failed', { function: 'a.failed', exceptionType: 'System.InvalidOperationException', exceptionMessage: 'Card declined', exceptionStack: 'at MoveNext at offset 596 in /src/Sandbox/SandboxJobs.cs:96:13\nTimeoutException: The gateway did not answer.' })
+    const failed = run('Failed', {
+      function: 'a.failed',
+      exceptionType: 'System.InvalidOperationException',
+      exceptionMessage: 'Card declined',
+      exceptionStack:
+        'at MoveNext at offset 596 in /src/Sandbox/SandboxJobs.cs:96:13\nTimeoutException: The gateway did not answer.',
+    })
     open(
       {
         runs: [failed],
-        attempts: { [failed.id]: [{ number: 1, node: 'node-b', startedAt: '2026-11-05T09:55:00Z', outcome: 'Failed', exceptionMessage: 'Card declined' }] },
+        attempts: {
+          [failed.id]: [
+            {
+              number: 1,
+              node: 'node-b',
+              startedAt: '2026-11-05T09:55:00Z',
+              outcome: 'Failed',
+              exceptionMessage: 'Card declined',
+            },
+          ],
+        },
       },
       { path: `runs/${failed.id}` },
     )
 
     const page = await screen.findByRole('region', { name: `Run ${failed.id}` })
-    expect(within(page).getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['Overview', 'Arguments', 'Chain'])
-    expect(within(page).getByText(/MoveNext at offset 596/).closest('pre')?.textContent).toBe(
+    expect(
+      within(page)
+        .getAllByRole('tab')
+        .map((tab) => tab.textContent),
+    ).toEqual(['Overview', 'Arguments', 'Chain'])
+    expect(
+      within(page)
+        .getByText(/MoveNext at offset 596/)
+        .closest('pre')?.textContent,
+    ).toBe(
       'System.InvalidOperationException: Card declined\n   at MoveNext at offset 596 in /src/Sandbox/SandboxJobs.cs:96:13\nTimeoutException: The gateway did not answer.',
     )
     expect(within(page).queryByRole('button', { name: 'Close details' })).toBeNull()

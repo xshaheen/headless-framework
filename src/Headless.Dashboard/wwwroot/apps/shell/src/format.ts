@@ -21,7 +21,7 @@ export function comparisonText(
   const delta = value - comparison.value
   const sign = delta > 0 ? '+' : delta < 0 ? '−' : '±'
   const text = `${sign}${format.number(Math.abs(delta), { maximumFractionDigits: 1 })}${unit ? ` ${unit}` : ''} vs ${comparison.label}`
-  const better: boolean | undefined = delta === 0 ? undefined : (delta > 0) === (comparison.higherIsBetter ?? true)
+  const better: boolean | undefined = delta === 0 ? undefined : delta > 0 === (comparison.higherIsBetter ?? true)
 
   return { text, better }
 }

@@ -9,8 +9,20 @@ export default defineModule({
     {
       label: 'Published',
       entries: [
-        { id: 'messaging.nav.published', label: 'All published', route: 'published', icon: 'runs', countKey: 'published.all' },
-        { id: 'messaging.nav.published-succeeded', label: 'Succeeded', route: 'published?status=Succeeded', state: 'ok', countKey: 'published.succeeded' },
+        {
+          id: 'messaging.nav.published',
+          label: 'All published',
+          route: 'published',
+          icon: 'runs',
+          countKey: 'published.all',
+        },
+        {
+          id: 'messaging.nav.published-succeeded',
+          label: 'Succeeded',
+          route: 'published?status=Succeeded',
+          state: 'ok',
+          countKey: 'published.succeeded',
+        },
         {
           id: 'messaging.nav.published-failed',
           label: 'Failed',
@@ -18,18 +30,54 @@ export default defineModule({
           state: 'fail',
           countKey: 'published.failed',
         },
-        { id: 'messaging.nav.published-retrying', label: 'Retrying', route: 'published?retrying=true', state: 'proc', countKey: 'published.retrying' },
-        { id: 'messaging.nav.published-delayed', label: 'Delayed', route: 'published?status=Delayed', state: 'sched', countKey: 'published.delayed' },
-        { id: 'messaging.nav.published-scheduled', label: 'Scheduled', route: 'published?status=Scheduled', state: 'sched', countKey: 'published.scheduled' },
-        { id: 'messaging.nav.published-queued', label: 'Queued', route: 'published?status=Queued', state: 'enq', countKey: 'published.queued' },
+        {
+          id: 'messaging.nav.published-retrying',
+          label: 'Retrying',
+          route: 'published?retrying=true',
+          state: 'proc',
+          countKey: 'published.retrying',
+        },
+        {
+          id: 'messaging.nav.published-delayed',
+          label: 'Delayed',
+          route: 'published?status=Delayed',
+          state: 'sched',
+          countKey: 'published.delayed',
+        },
+        {
+          id: 'messaging.nav.published-scheduled',
+          label: 'Scheduled',
+          route: 'published?status=Scheduled',
+          state: 'sched',
+          countKey: 'published.scheduled',
+        },
+        {
+          id: 'messaging.nav.published-queued',
+          label: 'Queued',
+          route: 'published?status=Queued',
+          state: 'enq',
+          countKey: 'published.queued',
+        },
         { id: 'messaging.nav.scheduled', label: 'Scheduled deliveries', route: 'scheduled', icon: 'recurring' },
       ],
     },
     {
       label: 'Received',
       entries: [
-        { id: 'messaging.nav.received', label: 'All received', route: 'received', icon: 'runs', countKey: 'received.all' },
-        { id: 'messaging.nav.received-succeeded', label: 'Succeeded', route: 'received?status=Succeeded', state: 'ok', countKey: 'received.succeeded' },
+        {
+          id: 'messaging.nav.received',
+          label: 'All received',
+          route: 'received',
+          icon: 'runs',
+          countKey: 'received.all',
+        },
+        {
+          id: 'messaging.nav.received-succeeded',
+          label: 'Succeeded',
+          route: 'received?status=Succeeded',
+          state: 'ok',
+          countKey: 'received.succeeded',
+        },
         {
           id: 'messaging.nav.received-failed',
           label: 'Failed',
@@ -37,8 +85,20 @@ export default defineModule({
           state: 'fail',
           countKey: 'received.failed',
         },
-        { id: 'messaging.nav.received-retrying', label: 'Retrying', route: 'received?retrying=true', state: 'proc', countKey: 'received.retrying' },
-        { id: 'messaging.nav.received-held', label: 'Held', route: 'received?held=true', state: 'off', countKey: 'received.held' },
+        {
+          id: 'messaging.nav.received-retrying',
+          label: 'Retrying',
+          route: 'received?retrying=true',
+          state: 'proc',
+          countKey: 'received.retrying',
+        },
+        {
+          id: 'messaging.nav.received-held',
+          label: 'Held',
+          route: 'received?held=true',
+          state: 'off',
+          countKey: 'received.held',
+        },
       ],
     },
     {
@@ -52,7 +112,13 @@ export default defineModule({
       label: 'Hosts',
       entries: [
         { id: 'messaging.nav.nodes', label: 'Nodes', route: 'nodes', icon: 'server' },
-        { id: 'messaging.nav.unknown-lanes', label: 'Unknown lanes', route: 'unknown-lanes', state: 'fail', countKey: 'hosts.unknown-lanes' },
+        {
+          id: 'messaging.nav.unknown-lanes',
+          label: 'Unknown lanes',
+          route: 'unknown-lanes',
+          state: 'fail',
+          countKey: 'hosts.unknown-lanes',
+        },
         { id: 'messaging.nav.operator-log', label: 'Operator log', route: 'operator-log', icon: 'runs' },
       ],
     },
@@ -77,9 +143,21 @@ export default defineModule({
     node: { route: (id: string) => `nodes?open=${encodeURIComponent(id)}` },
   },
   commands: [
-    { id: 'messaging.go-received-failed', label: 'Go to failed received messages', run: ({ navigate }) => navigate('received?status=Failed&terminal=true') },
-    { id: 'messaging.go-published-failed', label: 'Go to failed published messages', run: ({ navigate }) => navigate('published?status=Failed&terminal=true') },
-    { id: 'messaging.go-operator-log', label: 'Go to the operator log', run: ({ navigate }) => navigate('operator-log') },
+    {
+      id: 'messaging.go-received-failed',
+      label: 'Go to failed received messages',
+      run: ({ navigate }) => navigate('received?status=Failed&terminal=true'),
+    },
+    {
+      id: 'messaging.go-published-failed',
+      label: 'Go to failed published messages',
+      run: ({ navigate }) => navigate('published?status=Failed&terminal=true'),
+    },
+    {
+      id: 'messaging.go-operator-log',
+      label: 'Go to the operator log',
+      run: ({ navigate }) => navigate('operator-log'),
+    },
   ],
 })
 

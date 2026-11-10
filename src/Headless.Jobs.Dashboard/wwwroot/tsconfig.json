@@ -3,5 +3,11 @@
   "compilerOptions": {
     "types": ["node"]
   },
-  "include": ["../../Headless.Dashboard/wwwroot/packages/sdk/src/css.d.ts", "src/**/*", "test/**/*", "vite.config.ts", "vitest.config.ts"]
+  "include": [
+    "../../Headless.Dashboard/wwwroot/packages/sdk/src/css.d.ts",
+    "src/**/*",
+    "test/**/*",
+    "vite.config.ts",
+    "vitest.config.ts"
+  ]
 }

@@ -6,7 +6,8 @@
   min-block-size: 100vh;
   min-block-size: 100dvh;
   padding: calc(var(--sp-9) + var(--sp-8)) var(--sp-7);
-  background: radial-gradient(var(--line) 1px, transparent 1.2px) 0 0 / var(--sign-in-grid) var(--sign-in-grid) var(--ground);
+  background: radial-gradient(var(--line) 1px, transparent 1.2px) 0 0 / var(--sign-in-grid) var(--sign-in-grid)
+    var(--ground);
 }
 
 .hd-sign-in-card {

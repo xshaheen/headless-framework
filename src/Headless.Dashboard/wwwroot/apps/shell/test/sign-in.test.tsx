@@ -19,7 +19,13 @@ function renderSignIn(mode: AuthMode, search: string, answers: Answers = {}) {
     calls.push({ url, init })
 
     if (url.endsWith('/auth/info')) {
-      return Response.json({ mode, enabled: true, signInAvailable: answers.signInAvailable ?? true, authenticated: false, canOperate: false })
+      return Response.json({
+        mode,
+        enabled: true,
+        signInAvailable: answers.signInAvailable ?? true,
+        authenticated: false,
+        canOperate: false,
+      })
     }
 
     const status = answers.session ?? 401
@@ -80,7 +86,9 @@ describe('sign-in page', () => {
     await user.type(screen.getByLabelText('Password'), 'nope')
     await user.click(screen.getByRole('button', { name: 'Sign in' }))
 
-    expect((await screen.findByRole('alert')).textContent).toBe('The user name or password is wrong. Check them and try again.')
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      'The user name or password is wrong. Check them and try again.',
+    )
   })
 
   it('says when Caps Lock is on in the password, and shows the password on request', async () => {
@@ -111,9 +119,10 @@ describe('sign-in page', () => {
     await user.click(screen.getByRole('button', { name: 'Sign in' }))
 
     await vi.waitFor(() =>
-      expect((calls.find((call) => call.url.endsWith('/auth/session'))?.init?.headers as Record<string, string>).Authorization).toBe(
-        'Bearer k-123',
-      ),
+      expect(
+        (calls.find((call) => call.url.endsWith('/auth/session'))?.init?.headers as Record<string, string>)
+          .Authorization,
+      ).toBe('Bearer k-123'),
     )
   })
 
@@ -135,7 +144,10 @@ describe('sign-in page', () => {
   it("shows the server's 403 reason when no view policy allows the host user", async () => {
     renderSignIn('host', '', {
       session: 403,
-      sessionBody: { title: 'No dashboard view policy allows this user.', detail: 'The user passes none of the dashboard\'s view policies: ops.view.' },
+      sessionBody: {
+        title: 'No dashboard view policy allows this user.',
+        detail: "The user passes none of the dashboard's view policies: ops.view.",
+      },
     })
 
     expect((await screen.findByRole('alert')).textContent).toContain('ops.view')

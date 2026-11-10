@@ -6,7 +6,10 @@ import { CellText, MessagingStats, NodeLink, NodeSwitch, QueryState, StaleNotice
 export default function ContractsView() {
   const format = useFormat()
   const contracts = useContracts()
-  const rows = (contracts.data ?? []).map((contract) => ({ ...contract, id: `${contract.name}@${contract.contractVersion}` }))
+  const rows = (contracts.data ?? []).map((contract) => ({
+    ...contract,
+    id: `${contract.name}@${contract.contractVersion}`,
+  }))
   const frame = usePageFrame({ viewId: 'messaging.contracts', rows })
 
   return (
@@ -54,7 +57,9 @@ export default function ContractsView() {
                   <CellText title={row.lanes.map((lane) => lane.lane).join(', ')}>
                     {row.lanes.map((lane) => (
                       <Tag key={lane.lane} variant="square">
-                        {[lane.lane, lane.deliveryMode, lane.rawPayload ? 'raw payload' : undefined].filter(Boolean).join(' · ')}
+                        {[lane.lane, lane.deliveryMode, lane.rawPayload ? 'raw payload' : undefined]
+                          .filter(Boolean)
+                          .join(' · ')}
                       </Tag>
                     ))}
                   </CellText>

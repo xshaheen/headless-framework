@@ -45,7 +45,11 @@ describe('theme', () => {
 
     render(<ThemeControl />)
     const select = screen.getByRole('combobox', { name: 'Theme' })
-    expect(within(select).getAllByRole('option').map((option) => option.textContent)).toEqual(['Dark', 'Light'])
+    expect(
+      within(select)
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual(['Dark', 'Light'])
     await user.selectOptions(select, 'Dark')
 
     expect(document.documentElement.hasAttribute('data-theme')).toBe(false)

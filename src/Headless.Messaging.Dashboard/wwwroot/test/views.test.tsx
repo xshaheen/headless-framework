@@ -37,7 +37,11 @@ describe('messaging dashboard', () => {
     await actor.selectOptions(await screen.findByRole('combobox', { name: 'Node' }), 'node-b')
 
     await waitFor(() => expect(new URLSearchParams(view.location().search).get('node')).toBe('node-b'))
-    await waitFor(() => expect(view.requests.some((request) => request.path === 'messaging/received' && request.query?.node === 'node-b')).toBe(true))
+    await waitFor(() =>
+      expect(
+        view.requests.some((request) => request.path === 'messaging/received' && request.query?.node === 'node-b'),
+      ).toBe(true),
+    )
   })
 
   it('offers no node switch without forwarding', async () => {
@@ -59,8 +63,14 @@ describe('messaging node persistence', () => {
     void view.navigate('published')
     await waitFor(() => expect(view.location().pathname).toBe('/messaging/published'))
     await waitFor(() => expect(nodeOf(view)).toBe('node-b'))
-    await waitFor(() => expect(view.requests.some((request) => request.path === 'messaging/published' && request.query?.node === 'node-b')).toBe(true))
-    expect(view.requests.some((request) => request.path === 'messaging/published' && request.query?.node !== 'node-b')).toBe(false)
+    await waitFor(() =>
+      expect(
+        view.requests.some((request) => request.path === 'messaging/published' && request.query?.node === 'node-b'),
+      ).toBe(true),
+    )
+    expect(
+      view.requests.some((request) => request.path === 'messaging/published' && request.query?.node !== 'node-b'),
+    ).toBe(false)
 
     const command = messaging.commands!.find((candidate) => candidate.id === 'messaging.go-received-failed')!
     void command.run({ navigate: (to: string) => void view.navigate(to) } as Parameters<typeof command.run>[0])
@@ -84,8 +94,16 @@ describe('messaging node persistence', () => {
 
 describe('messaging attention gaps', () => {
   const answer = (section: Record<string, unknown>) => (request: { path: string }) =>
-    request.path === 'needs-you' ? { modules: [{ id: 'messaging', displayName: 'Messaging', items: [], ...section }] } : undefined
-  const lane = { id: 'unknown-lane:primary:received', title: 'Rows on an unknown lane', severity: 'warning', count: 3, capped: false }
+    request.path === 'needs-you'
+      ? { modules: [{ id: 'messaging', displayName: 'Messaging', items: [], ...section }] }
+      : undefined
+  const lane = {
+    id: 'unknown-lane:primary:received',
+    title: 'Rows on an unknown lane',
+    severity: 'warning',
+    count: 3,
+    capped: false,
+  }
 
   it('shows Retry, never the healthy empty message, when Messaging did not answer', async () => {
     open({ extra: answer({ stale: true }) }, { path: '' })
@@ -118,9 +136,22 @@ describe('messaging attention gaps', () => {
 
 describe('messaging scheduled deliveries', () => {
   it('names a store that cannot list its scheduled deliveries, and why', async () => {
-    open({ scheduled: { store: 'primary', supported: false, reason: 'it keeps no schedule table', items: [], totalCount: 0 } }, { path: 'scheduled' })
+    open(
+      {
+        scheduled: {
+          store: 'primary',
+          supported: false,
+          reason: 'it keeps no schedule table',
+          items: [],
+          totalCount: 0,
+        },
+      },
+      { path: 'scheduled' },
+    )
 
-    expect(await screen.findByText('The primary store cannot list its scheduled deliveries: it keeps no schedule table')).toBeTruthy()
+    expect(
+      await screen.findByText('The primary store cannot list its scheduled deliveries: it keeps no schedule table'),
+    ).toBeTruthy()
   })
 })
 
@@ -133,7 +164,9 @@ describe('messaging consumers', () => {
     await actor.click(await within(table).findByRole('button', { name: 'Reset circuit' }))
 
     expect(await screen.findByText('Reset circuit: 1 done')).toBeTruthy()
-    expect(view.requests.find((request) => request.path === 'messaging/commands/messaging.reset-circuit')?.body).toMatchObject({
+    expect(
+      view.requests.find((request) => request.path === 'messaging/commands/messaging.reset-circuit')?.body,
+    ).toMatchObject({
       ids: ['node-a~Billing.OrderPlacedConsumer'],
     })
 
@@ -148,7 +181,9 @@ describe('messaging nodes', () => {
     open({ nodes: { ...twoNodes, discovery: null } }, { path: 'nodes' })
 
     await actor.click(await screen.findByRole('row', { name: /node-b/ }))
-    const button = within(screen.getByRole('region', { name: 'Node node-b' })).getByRole('button', { name: 'Read this node' })
+    const button = within(screen.getByRole('region', { name: 'Node node-b' })).getByRole('button', {
+      name: 'Read this node',
+    })
 
     expect(button.getAttribute('aria-disabled')).toBe('true')
     expect(described(button)).toBe('Forwarding is not configured')
@@ -159,7 +194,9 @@ describe('messaging nodes', () => {
     const view = open({ nodes: twoNodes }, { path: 'nodes' })
 
     await actor.click(await screen.findByRole('row', { name: /node-b/ }))
-    await actor.click(within(screen.getByRole('region', { name: 'Node node-b' })).getByRole('button', { name: 'Read this node' }))
+    await actor.click(
+      within(screen.getByRole('region', { name: 'Node node-b' })).getByRole('button', { name: 'Read this node' }),
+    )
 
     await waitFor(() => expect(new URLSearchParams(view.location().search).get('node')).toBe('node-b'))
   })
@@ -191,7 +228,11 @@ describe('messaging operator log', () => {
     await actor.selectOptions(screen.getByRole('combobox', { name: 'Target' }), 'Inbox')
 
     await waitFor(() => expect(new URLSearchParams(view.location().search).get('targetKind')).toBe('Inbox'))
-    await waitFor(() => expect(view.requests.some((request) => request.path === 'messaging/receipts' && request.query?.targetKind === 'Inbox')).toBe(true))
+    await waitFor(() =>
+      expect(
+        view.requests.some((request) => request.path === 'messaging/receipts' && request.query?.targetKind === 'Inbox'),
+      ).toBe(true),
+    )
   })
 
   it('names a receipt by the command the operator chose, and by its message id when it has no name', async () => {

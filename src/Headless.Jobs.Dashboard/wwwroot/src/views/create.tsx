@@ -85,7 +85,12 @@ export interface CreateFormProps {
  * Chain` without losing what was typed. A chain's later steps sit beside the first, each naming the step it runs
  * after and its run condition. A refused submit shows the server's message and keeps the form.
  */
-export function TimeJobForm({ chain, onChainChange, onCreated, onCancel }: CreateFormProps & { chain: boolean; onChainChange: (chain: boolean) => void }) {
+export function TimeJobForm({
+  chain,
+  onChainChange,
+  onCreated,
+  onCancel,
+}: CreateFormProps & { chain: boolean; onChainChange: (chain: boolean) => void }) {
   const { api } = useDashboard()
   const stale = useStale()
   const functions = useFunctionOptions()
@@ -100,12 +105,16 @@ export function TimeJobForm({ chain, onChainChange, onCreated, onCancel }: Creat
   const title = chain ? 'Add chain' : 'Add time job'
 
   function update(key: number, change: (step: Step) => Step) {
-    const walk = (step: Step): Step => (step.key === key ? change(step) : { ...step, children: step.children.map(walk) })
+    const walk = (step: Step): Step =>
+      step.key === key ? change(step) : { ...step, children: step.children.map(walk) }
     setRoot((current) => walk(current))
   }
 
   function remove(key: number) {
-    const walk = (step: Step): Step => ({ ...step, children: step.children.filter((child) => child.key !== key).map(walk) })
+    const walk = (step: Step): Step => ({
+      ...step,
+      children: step.children.filter((child) => child.key !== key).map(walk),
+    })
     setRoot((current) => walk(current))
   }
 
@@ -193,8 +202,19 @@ export function TimeJobForm({ chain, onChainChange, onCreated, onCancel }: Creat
       name={title}
       actions={
         <>
-          <SegmentedControl label="Kind" size="form" options={kinds} value={chain ? 'chain' : 'single'} onChange={(value) => onChainChange(value === 'chain')} />
-          <Button variant="primary" isPending={busy} disabledReason={stale ? staleReason : null} onPress={() => void submit()}>
+          <SegmentedControl
+            label="Kind"
+            size="form"
+            options={kinds}
+            value={chain ? 'chain' : 'single'}
+            onChange={(value) => onChainChange(value === 'chain')}
+          />
+          <Button
+            variant="primary"
+            isPending={busy}
+            disabledReason={stale ? staleReason : null}
+            onPress={() => void submit()}
+          >
             {chain ? 'Create chain' : 'Create job'}
           </Button>
           <Button variant="ghost" onPress={onCancel}>
@@ -218,7 +238,12 @@ export function TimeJobForm({ chain, onChainChange, onCreated, onCancel }: Creat
           value={executionTime}
           onChange={setExecutionTime}
         />
-        <TextInputField label="Time zone" description="An IANA zone. Blank uses the scheduler's zone." value={timeZoneId} onChange={setTimeZoneId} />
+        <TextInputField
+          label="Time zone"
+          description="An IANA zone. Blank uses the scheduler's zone."
+          value={timeZoneId}
+          onChange={setTimeZoneId}
+        />
         <TextInputField label="Retries" inputMode="numeric" value={retries} onChange={setRetries} />
         {error ? (
           <Text as="p" tone="error" role="alert">
@@ -228,10 +253,15 @@ export function TimeJobForm({ chain, onChainChange, onCreated, onCancel }: Creat
       </form>
       {chain ? (
         <section aria-label="Steps after the first">
-          <Text as="h3" tone="label">Runs after it</Text>
+          <Text as="h3" tone="label">
+            Runs after it
+          </Text>
           {stepsAfter(root).map(({ step, parent }) => (
             <FieldGroup key={step.key}>
-              <Text as="p" tone="faint">{`After ${parent === root ? 'the first step' : parent.function || 'the step above'}`}</Text>
+              <Text
+                as="p"
+                tone="faint"
+              >{`After ${parent === root ? 'the first step' : parent.function || 'the step above'}`}</Text>
               {stepFields(step)}
               <SelectField
                 label="Runs"
@@ -241,7 +271,13 @@ export function TimeJobForm({ chain, onChainChange, onCreated, onCancel }: Creat
                 options={runConditions}
               />
               <Actions>
-                <Button onPress={() => update(step.key, (current) => ({ ...current, children: [...current.children, newStep()] }))}>Add step after this</Button>
+                <Button
+                  onPress={() =>
+                    update(step.key, (current) => ({ ...current, children: [...current.children, newStep()] }))
+                  }
+                >
+                  Add step after this
+                </Button>
                 <Button variant="ghost" onPress={() => remove(step.key)}>
                   Remove step
                 </Button>
@@ -249,7 +285,13 @@ export function TimeJobForm({ chain, onChainChange, onCreated, onCancel }: Creat
             </FieldGroup>
           ))}
           <span>
-            <Button onPress={() => update(root.key, (current) => ({ ...current, children: [...current.children, newStep()] }))}>Add step</Button>
+            <Button
+              onPress={() =>
+                update(root.key, (current) => ({ ...current, children: [...current.children, newStep()] }))
+              }
+            >
+              Add step
+            </Button>
           </span>
         </section>
       ) : null}
@@ -320,7 +362,12 @@ export function CronJobForm({ onCreated, onCancel }: CreateFormProps) {
       name="Add recurring job"
       actions={
         <>
-          <Button variant="primary" isPending={busy} disabledReason={stale ? staleReason : null} onPress={() => void submit()}>
+          <Button
+            variant="primary"
+            isPending={busy}
+            disabledReason={stale ? staleReason : null}
+            onPress={() => void submit()}
+          >
             Create recurring job
           </Button>
           <Button variant="ghost" onPress={onCancel}>
@@ -336,10 +383,28 @@ export function CronJobForm({ onCreated, onCancel }: CreateFormProps) {
           void submit()
         }}
       >
-        <SelectField label="Function" isRequired value={fn} onChange={setFunction} options={functions} error={fieldErrors.function} />
+        <SelectField
+          label="Function"
+          isRequired
+          value={fn}
+          onChange={setFunction}
+          options={functions}
+          error={fieldErrors.function}
+        />
         <TextInputField label="Description" value={description} onChange={setDescription} />
-        <TextInputField label="Expression" isRequired value={expression} onChange={setExpression} error={answer?.validationMessage} />
-        <TextInputField label="Time zone" description="An IANA zone. Blank uses the scheduler's zone." value={timeZoneId} onChange={setTimeZoneId} />
+        <TextInputField
+          label="Expression"
+          isRequired
+          value={expression}
+          onChange={setExpression}
+          error={answer?.validationMessage}
+        />
+        <TextInputField
+          label="Time zone"
+          description="An IANA zone. Blank uses the scheduler's zone."
+          value={timeZoneId}
+          onChange={setTimeZoneId}
+        />
         <TextInputField
           label="Arguments (JSON)"
           multiline
@@ -355,7 +420,9 @@ export function CronJobForm({ onCreated, onCancel }: CreateFormProps) {
         ) : null}
       </form>
       <section aria-label="Schedule preview">
-        <Text as="h3" tone="label">{answer && !answer.validationMessage ? `Next fires, ${answer.timeZoneId}` : 'Schedule preview'}</Text>
+        <Text as="h3" tone="label">
+          {answer && !answer.validationMessage ? `Next fires, ${answer.timeZoneId}` : 'Schedule preview'}
+        </Text>
         {answer && !answer.validationMessage ? (
           <>
             <p>{answer.reading}</p>
@@ -366,7 +433,9 @@ export function CronJobForm({ onCreated, onCancel }: CreateFormProps) {
             </ol>
           </>
         ) : (
-          <Text as="p" tone="hint">Type an expression to see how the server reads it and when it fires next.</Text>
+          <Text as="p" tone="hint">
+            Type an expression to see how the server reads it and when it fires next.
+          </Text>
         )}
       </section>
     </DetailPanel>

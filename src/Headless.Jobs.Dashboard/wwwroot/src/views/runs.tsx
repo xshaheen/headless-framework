@@ -1,5 +1,10 @@
 import { useDashboard, useModule } from '@headless/dashboard-sdk'
-import { CommandAction, useAllowedActions, useOperations, type CommandDefinition } from '@headless/dashboard-sdk/commands'
+import {
+  CommandAction,
+  useAllowedActions,
+  useOperations,
+  type CommandDefinition,
+} from '@headless/dashboard-sdk/commands'
 import {
   Button,
   DetailPanel,
@@ -14,7 +19,13 @@ import {
   StatusMark,
   usePageFrame,
 } from '@headless/dashboard-sdk/components'
-import { DashboardApiError, listKey, useDashboardKeysetList, useDashboardObject, useNewRows } from '@headless/dashboard-sdk/data'
+import {
+  DashboardApiError,
+  listKey,
+  useDashboardKeysetList,
+  useDashboardObject,
+  useNewRows,
+} from '@headless/dashboard-sdk/data'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQueryClient } from '@headless/dashboard-sdk/query'
 import { useSearchParams } from '@headless/dashboard-sdk/router'
@@ -73,7 +84,10 @@ const states: Readonly<Record<RunStatus, { title: string; description: string }>
   DueDone: { title: 'Due done', description: 'Finished without an exception after starting later than due.' },
   Failed: { title: 'Failed', description: 'Threw on their last try; requeue them once the cause is fixed.' },
   Cancelled: { title: 'Cancelled', description: 'Stopped before they finished, by an operator or by their chain.' },
-  Skipped: { title: 'Skipped', description: 'Not run, because their chain condition or overlap rule passed them over.' },
+  Skipped: {
+    title: 'Skipped',
+    description: 'Not run, because their chain condition or overlap rule passed them over.',
+  },
 }
 
 const CANCELLABLE_STATES: ReadonlySet<RunStatus | ''> = new Set(['', 'Idle', 'Queued', 'InProgress'])
@@ -90,7 +104,11 @@ export default function RunsView() {
   const filter = readFilter(params)
   const filterKey = filterNames.map((name) => filter[name]).join('\n')
   const creating = params.get('create')
-  const runs = useDashboardKeysetList<Run>({ topic: runsTopic, params: filter, fetchPage: (cursor) => fetchRuns(api, filter, cursor) })
+  const runs = useDashboardKeysetList<Run>({
+    topic: runsTopic,
+    params: filter,
+    fetchPage: (cursor) => fetchRuns(api, filter, cursor),
+  })
   const items = runs.rows
   const list = runs.query
   const matches = (run: Run) => runMatches(run, filter)
@@ -175,7 +193,12 @@ export default function RunsView() {
     update((next) => next.delete('operation'))
 
     if (requeue.canRun) {
-      start({ module: module.id, command: requeue, filter: operationScope({ ...filter, status: 'Failed' }), noun: runsNoun({ ...filter, status: 'Failed' }) })
+      start({
+        module: module.id,
+        command: requeue,
+        filter: operationScope({ ...filter, status: 'Failed' }),
+        noun: runsNoun({ ...filter, status: 'Failed' }),
+      })
     }
     // Runs once per palette request; the filter is read as it is now.
   }, [wantsOperation, requeue])
@@ -207,7 +230,11 @@ export default function RunsView() {
       return
     }
 
-    const changed = new Set(items.filter((run) => frame.refused.has(run.id) && refusedAt.current.get(run.id) !== run.version).map((run) => run.id))
+    const changed = new Set(
+      items
+        .filter((run) => frame.refused.has(run.id) && refusedAt.current.get(run.id) !== run.version)
+        .map((run) => run.id),
+    )
 
     if (changed.size > 0) {
       frame.setRefused(new Map([...frame.refused].filter(([id]) => !changed.has(id))))
@@ -236,7 +263,8 @@ export default function RunsView() {
     { name: 'cronJobId', label: 'cron job' },
   ]
   const setFilters = chipped.filter(
-    ({ name }) => filter[name] && !(status === 'Failed' && filter.fingerprint && (name === 'fingerprint' || name === 'function')),
+    ({ name }) =>
+      filter[name] && !(status === 'Failed' && filter.fingerprint && (name === 'fingerprint' || name === 'function')),
   )
 
   let panel
@@ -262,7 +290,11 @@ export default function RunsView() {
   return (
     <PageFrame
       // The form is not a row, so the panel's Close ends the form rather than closing an open row.
-      frame={panel !== undefined && !frame.openId ? { ...frame, close: () => update((next) => next.delete('create')) } : frame}
+      frame={
+        panel !== undefined && !frame.openId
+          ? { ...frame, close: () => update((next) => next.delete('create')) }
+          : frame
+      }
       form={panel !== undefined && !frame.openId}
       stats={<JobsStats />}
       header={
@@ -296,14 +328,34 @@ export default function RunsView() {
             </>
           }
         >
-          {status === 'Failed' ? <FailureChips filter={filter} count={count ? format.count(count) : undefined} onPick={setFilter} /> : null}
+          {status === 'Failed' ? (
+            <FailureChips filter={filter} count={count ? format.count(count) : undefined} onPick={setFilter} />
+          ) : null}
           {/* A state list keeps its header to one row, as the sidebar already chose the state: its other filters
               arrive by link and show as chips to clear. The All runs list offers every filter. */}
           {status ? null : (
             <>
-              <SelectField label="Kind" emptyLabel="Any kind" value={filter.kind} onChange={(value) => setFilter('kind', value)} options={kindOptions} />
-              <SelectField label="Function" emptyLabel="Any function" value={filter.function} onChange={(value) => setFilter('function', value)} options={functionOptions} />
-              <SelectField label="Time range" emptyLabel="Any time" value={filter.range} onChange={(value) => setFilter('range', value)} options={rangeOptions} />
+              <SelectField
+                label="Kind"
+                emptyLabel="Any kind"
+                value={filter.kind}
+                onChange={(value) => setFilter('kind', value)}
+                options={kindOptions}
+              />
+              <SelectField
+                label="Function"
+                emptyLabel="Any function"
+                value={filter.function}
+                onChange={(value) => setFilter('function', value)}
+                options={functionOptions}
+              />
+              <SelectField
+                label="Time range"
+                emptyLabel="Any time"
+                value={filter.range}
+                onChange={(value) => setFilter('range', value)}
+                options={rangeOptions}
+              />
             </>
           )}
           {setFilters.length > 0 ? (
@@ -362,7 +414,16 @@ interface RunsTableProps {
   emptyState: ReactNode
 }
 
-function RunsTable({ frame, runs, matches, newRows, failed, pending, onSelectAllMatching, emptyState }: RunsTableProps) {
+function RunsTable({
+  frame,
+  runs,
+  matches,
+  newRows,
+  failed,
+  pending,
+  onSelectAllMatching,
+  emptyState,
+}: RunsTableProps) {
   const format = useFormat()
   // The Failed list says why each run failed; the server serves the message, not the exception's type.
   const reasonColumn: DataTableColumn<Run> = {
@@ -416,7 +477,14 @@ function RunsTable({ frame, runs, matches, newRows, failed, pending, onSelectAll
         },
         ...(failed ? [reasonColumn] : []),
         { id: 'kind', header: 'Kind', cell: (run) => kindLabel(run.kind), priority: 2, width: 110 },
-        { id: 'retries', header: 'Retries', cell: (run) => format.number(run.retryCount), align: 'end', priority: 2, width: 80 },
+        {
+          id: 'retries',
+          header: 'Retries',
+          cell: (run) => format.number(run.retryCount),
+          align: 'end',
+          priority: 2,
+          width: 80,
+        },
         {
           id: 'duration',
           header: 'Duration',
@@ -430,7 +498,10 @@ function RunsTable({ frame, runs, matches, newRows, failed, pending, onSelectAll
           header: failed ? 'Failed at' : 'Due',
           cell: (run) => (
             <CellText>
-              <Time value={failed ? (run.executedAt ?? run.executionTime) : (run.executionTime ?? run.createdAt)} short />
+              <Time
+                value={failed ? (run.executedAt ?? run.executionTime) : (run.executionTime ?? run.createdAt)}
+                short
+              />
             </CellText>
           ),
           width: 110,
@@ -459,12 +530,19 @@ function FailureChips({
     const fn = scope?.functions?.[0]
 
     // A group stored without a fingerprint has no filter that selects only its runs.
-    return fn && scope.fingerprint ? [{ id: item.id, fn, fingerprint: scope.fingerprint, count: { value: item.count, capped: item.capped } }] : []
+    return fn && scope.fingerprint
+      ? [{ id: item.id, fn, fingerprint: scope.fingerprint, count: { value: item.count, capped: item.capped } }]
+      : []
   })
 
   return (
     <FilterChips label="Filter by cause">
-      <FilterChip label="All" count={count} pressed={!filter.fingerprint} onPress={() => onPick('fingerprint', '', { function: '' })} />
+      <FilterChip
+        label="All"
+        count={count}
+        pressed={!filter.fingerprint}
+        onPress={() => onPick('fingerprint', '', { function: '' })}
+      />
       {groups.map((group) => {
         // Two functions can fail the same way, so a chip is its pair: one function and one fingerprint.
         const pressed = filter.fingerprint === group.fingerprint && filter.function === group.fn
@@ -477,7 +555,9 @@ function FailureChips({
             count={format.count(group.count)}
             failing
             pressed={pressed}
-            onPress={() => onPick('fingerprint', pressed ? '' : group.fingerprint, { function: pressed ? '' : group.fn })}
+            onPress={() =>
+              onPick('fingerprint', pressed ? '' : group.fingerprint, { function: pressed ? '' : group.fn })
+            }
           />
         )
       })}
@@ -505,7 +585,11 @@ function CheckedActions({
   // Captured at render, so the versions are the ones the operator saw when they ran the command.
   const versions = new Map(runs.map((run) => [run.id, run.version]))
 
-  const action = (name: 'requeue' | 'cancel' | 'delete', command: CommandDefinition | undefined, variant?: 'primary' | 'danger') =>
+  const action = (
+    name: 'requeue' | 'cancel' | 'delete',
+    command: CommandDefinition | undefined,
+    variant?: 'primary' | 'danger',
+  ) =>
     command ? (
       <CommandAction
         key={name}

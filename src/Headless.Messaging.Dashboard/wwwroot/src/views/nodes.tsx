@@ -1,6 +1,16 @@
 import { useModule } from '@headless/dashboard-sdk'
 import { CommandAction, useAllowedActions } from '@headless/dashboard-sdk/commands'
-import { Button, DetailPanel, FieldGrid, GridField, Mono, PageFrame, PageHeader, StatusMark, usePageFrame } from '@headless/dashboard-sdk/components'
+import {
+  Button,
+  DetailPanel,
+  FieldGrid,
+  GridField,
+  Mono,
+  PageFrame,
+  PageHeader,
+  StatusMark,
+  usePageFrame,
+} from '@headless/dashboard-sdk/components'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useSearchParams } from '@headless/dashboard-sdk/router'
 import { DataTable } from '@headless/dashboard-sdk/table'
@@ -69,7 +79,13 @@ export default function NodesView() {
                 },
                 width: 150,
               },
-              { id: 'stores', header: 'Stores', cell: (row) => <CellText title={row.stores.join(', ')}>{row.stores.join(', ')}</CellText>, priority: 2, width: '2fr' },
+              {
+                id: 'stores',
+                header: 'Stores',
+                cell: (row) => <CellText title={row.stores.join(', ')}>{row.stores.join(', ')}</CellText>,
+                priority: 2,
+                width: '2fr',
+              },
             ]}
           />
         )}
@@ -108,11 +124,22 @@ function NodePanel({ node, forwarding }: { node: NodeRow; forwarding: boolean })
       status={mark}
       actions={
         <>
-          <Button variant="primary" disabledReason={node.isLocal || forwarding ? null : 'Forwarding is not configured'} onPress={readThisNode}>
+          <Button
+            variant="primary"
+            disabledReason={node.isLocal || forwarding ? null : 'Forwarding is not configured'}
+            onPress={readThisNode}
+          >
             Read this node
           </Button>
           {reset ? (
-            <CommandAction module={module.id} command={reset} ids={[node.id]} noun={`node ${node.name}`} commands={commands.all} disabledReason={refusal(reset.id)} />
+            <CommandAction
+              module={module.id}
+              command={reset}
+              ids={[node.id]}
+              noun={`node ${node.name}`}
+              commands={commands.all}
+              disabledReason={refusal(reset.id)}
+            />
           ) : null}
         </>
       }
