@@ -1100,6 +1100,8 @@ describe('jobs run actions', () => {
 
     // A two-word label already names its effect, so the confirm keeps it as it is.
     const dialog = await screen.findByRole('dialog', { name: 'Force delete' })
+    // The store row goes, but a worker still running the job is not stopped; the confirmation must say so.
+    expect(within(dialog).getByText('Running code is not stopped.')).toBeTruthy()
     const confirm = within(dialog).getByRole('button', { name: 'Force delete' })
     expect(confirm.hasAttribute('disabled')).toBe(true)
 

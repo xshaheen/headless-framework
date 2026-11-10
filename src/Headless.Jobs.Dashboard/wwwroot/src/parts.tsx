@@ -646,6 +646,8 @@ export function RunActions({ run, pending, page }: { run: Run; pending: Pending;
         recovery={name === 'requeue'}
         commands={commands.all}
         disabledReason={refusal(command.id)}
+        // Force delete removes the stored run only; a worker already running it carries on.
+        reach={name === 'force-delete' ? 'Running code is not stopped.' : undefined}
         onDone={done(name)}
       />
     ) : null
