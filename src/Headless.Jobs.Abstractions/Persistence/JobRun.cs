@@ -1,7 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Buffers.Text;
+using System.ComponentModel;
 using System.Globalization;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
+using System.Text;
+using Headless.Checks;
 
 namespace Headless.Jobs;
 
@@ -17,6 +22,20 @@ public enum JobRunKind
     CronJobOccurrence = 2,
 }
 #pragma warning restore CA1008
+
+/// <summary>The value a run list sorts on; runs with one value list in identifier order.</summary>
+[PublicAPI]
+public enum JobRunSortKey
+{
+    /// <summary>When the run is due, a run without an execution time sorting at <see cref="JobRunPosition.Unscheduled"/>.</summary>
+    ExecutionTime = 0,
+
+    /// <summary>The job function, compared in the store's order: its column collation, ordinal in memory.</summary>
+    Function = 1,
+
+    /// <summary>The status, in the order of <see cref="JobStatus"/>'s values: the run's lifecycle order.</summary>
+    Status = 2,
+}
 
 /// <summary>
 /// Which runs a run read covers: time jobs and cron occurrences together, narrowed by each filter that is set. A filter
@@ -61,10 +80,23 @@ public sealed record JobRunQuery
     public bool ActionableFailuresOnly { get; init; }
 
     /// <summary>
-    /// Gets a value indicating whether the run list reads the latest execution time first. A cursor is valid only
-    /// with the order it was read in.
+    /// Gets the text every run read must contain, as a literal, case-insensitive substring of its function,
+    /// identifier, business key, or description; <see langword="null"/> or empty for every run. A cron occurrence has
+    /// no business key or description, so only its function and identifier match. Request payloads are never searched.
     /// </summary>
-    public bool NewestFirst { get; init; }
+    public string? Text { get; init; }
+
+    /// <summary>Gets the value the run list sorts on, then the identifier. The default is the execution time.</summary>
+    public JobRunSortKey SortBy { get; init; }
+
+    /// <summary>
+    /// Gets the direction of the run list's order, applied to the sort key and the identifier alike. The default is
+    /// ascending. A cursor is valid only with the sort and filters it was read with.
+    /// </summary>
+    public ListSortDirection SortDirection { get; init; }
+
+    /// <summary>Gets a value indicating whether the run list reads in descending order.</summary>
+    public bool Descending => SortDirection == ListSortDirection.Descending;
 
     /// <summary>Gets a value indicating whether the query reads time jobs.</summary>
     public bool IncludesTimeJobs => Kind is null or JobRunKind.TimeJob && CronJobId is null;
@@ -131,6 +163,20 @@ public sealed record JobRunSummary
     /// <summary>Gets the last reported progress message.</summary>
     public string? ProgressMessage { get; init; }
 
+    /// <summary>Gets when the run last reported progress, or <see langword="null"/> when it never reported.</summary>
+    public DateTimeOffset? ProgressUpdatedAt { get; init; }
+
+    /// <summary>
+    /// Gets the most retries the run may use: a time job's own setting, or a cron occurrence's cron job's.
+    /// </summary>
+    public int Retries { get; init; }
+
+    /// <summary>
+    /// Gets the delay before each retry in seconds, the last repeating for any further retry, or
+    /// <see langword="null"/> when the function's failure policy paces them. A cron occurrence carries its cron job's.
+    /// </summary>
+    public IReadOnlyList<int>? RetryIntervals { get; init; }
+
     /// <summary>Gets the run's correlation id.</summary>
     public string? CorrelationId { get; init; }
 
@@ -159,41 +205,115 @@ public sealed record JobRunSummary
     public bool CancelRequested { get; init; }
 }
 
-/// <summary>The keyset position of one run in a run read: its execution-time sort key, then its identifier.</summary>
+/// <summary>
+/// The keyset position of one run in a run read: the values it sorts on, then its identifier. A read uses the value
+/// of its query's <see cref="JobRunQuery.SortBy"/> and the identifier, and ignores the others.
+/// </summary>
 /// <remarks>
-/// A run without an execution time sorts at <see cref="Unscheduled"/>. Stores order identifiers differently, so a
-/// position is meaningful only to the store that produced it.
+/// A run without an execution time sorts at <see cref="Unscheduled"/>. Stores order identifiers and text differently,
+/// so a position is meaningful only to the store that produced it.
 /// </remarks>
 /// <param name="ExecutionTime">The run's execution time, or <see cref="Unscheduled"/>.</param>
+/// <param name="Function">The run's job function.</param>
+/// <param name="Status">The run's status.</param>
 /// <param name="Id">The run's identifier.</param>
 [PublicAPI]
 [StructLayout(LayoutKind.Auto)]
-public readonly record struct JobRunPosition(DateTime ExecutionTime, Guid Id)
+public readonly record struct JobRunPosition(DateTime ExecutionTime, string Function, JobStatus Status, Guid Id)
 {
     /// <summary>
     /// The sort key of a run without an execution time: after every scheduled run. A fixed date rather than
     /// <see cref="DateTime.MaxValue"/>, which some stores map to infinity or cannot store.
     /// </summary>
     public static readonly DateTime Unscheduled = new(9999, 12, 31, 0, 0, 0, DateTimeKind.Utc);
+
+    /// <summary>Returns the position of <paramref name="run"/>.</summary>
+    /// <exception cref="ArgumentNullException"><paramref name="run"/> is <see langword="null"/>.</exception>
+    public static JobRunPosition Of(JobRunSummary run)
+    {
+        Argument.IsNotNull(run);
+
+        return new(run.ExecutionTime ?? Unscheduled, run.Function, run.Status, run.Id);
+    }
+
+    /// <summary>
+    /// Compares the sort key <paramref name="sortBy"/> names, ascending, functions ordinally. The identifier is left
+    /// out: it is the store's tie-breaker, and stores order identifiers differently.
+    /// </summary>
+    internal int CompareKey(JobRunSortKey sortBy, JobRunPosition other)
+    {
+        return sortBy switch
+        {
+            JobRunSortKey.ExecutionTime => ExecutionTime.CompareTo(other.ExecutionTime),
+            JobRunSortKey.Function => string.CompareOrdinal(Function, other.Function),
+            JobRunSortKey.Status => ((int)Status).CompareTo((int)other.Status),
+            _ => throw new ArgumentOutOfRangeException(nameof(sortBy), sortBy, "Unknown sort key."),
+        };
+    }
 }
 
 /// <summary>
-/// Where a run list resumes: the last position the list returned in each kind's table. Each table pages forward on its
-/// own keyset, and pages merge by execution time, so no run repeats or goes missing at a page boundary.
+/// Where a run list resumes: the sort and filters it was read with, and the last position the list returned in each
+/// kind's table. Each table pages forward on its own keyset, and pages merge by the sort key, so no run repeats or
+/// goes missing at a page boundary.
 /// </summary>
-/// <remarks>The cursor round-trips through <see cref="ToString"/> and <see cref="TryParse"/>.</remarks>
+/// <remarks>
+/// The cursor round-trips through <see cref="ToString"/> and <see cref="TryParse"/>. It carries a digest of the
+/// query's filters, so a cursor read under one sort, filter, or search is refused by another (see
+/// <see cref="Fits"/>) instead of resuming at a position that means nothing there.
+/// </remarks>
 [PublicAPI]
 public sealed record JobRunCursor
 {
-    private const string _FormatVersion = "r1";
+    private const string _FormatVersion = "r2";
     private const char _Separator = ':';
+    private const char _PositionSeparator = '.';
     private const string _NoPosition = "-";
+    private const string _Ascending = "a";
+    private const string _Descending = "d";
+
+    /// <summary>Gets the sort key the list was read with.</summary>
+    public JobRunSortKey SortBy { get; init; }
+
+    /// <summary>Gets the direction the list was read in.</summary>
+    public ListSortDirection SortDirection { get; init; }
+
+    /// <summary>Gets the digest of the filters the list was read with, empty for a cursor made by hand.</summary>
+    public string Filter { get; init; } = "";
 
     /// <summary>Gets the last time job the list returned, or <see langword="null"/> before the first.</summary>
     public JobRunPosition? TimeJobs { get; init; }
 
     /// <summary>Gets the last cron occurrence the list returned, or <see langword="null"/> before the first.</summary>
     public JobRunPosition? CronJobOccurrences { get; init; }
+
+    /// <summary>Returns the cursor before the first run of <paramref name="query"/>.</summary>
+    /// <exception cref="ArgumentNullException"><paramref name="query"/> is <see langword="null"/>.</exception>
+    public static JobRunCursor Start(JobRunQuery query)
+    {
+        Argument.IsNotNull(query);
+
+        return new JobRunCursor
+        {
+            SortBy = query.SortBy,
+            SortDirection = query.SortDirection,
+            Filter = _FilterOf(query),
+        };
+    }
+
+    /// <summary>
+    /// Returns whether this cursor was read with the sort, direction, and filters of <paramref name="query"/>, so its
+    /// positions mean the same in it.
+    /// </summary>
+    /// <exception cref="ArgumentNullException"><paramref name="query"/> is <see langword="null"/>.</exception>
+    public bool Fits(JobRunQuery query)
+    {
+        Argument.IsNotNull(query);
+
+        return SortBy == query.SortBy
+            && SortDirection == query.SortDirection
+            && string.Equals(Filter, _FilterOf(query), StringComparison.Ordinal);
+    }
 
     /// <summary>Returns the position the list reached in the table of <paramref name="kind"/>.</summary>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="kind"/> is not a defined value.</exception>
@@ -222,7 +342,15 @@ public sealed record JobRunCursor
     /// <summary>Formats the cursor as a string <see cref="TryParse"/> reads back.</summary>
     public override string ToString()
     {
-        return string.Join(_Separator, _FormatVersion, _Format(TimeJobs), _Format(CronJobOccurrences));
+        return string.Join(
+            _Separator,
+            _FormatVersion,
+            ((int)SortBy).ToString(CultureInfo.InvariantCulture),
+            SortDirection == ListSortDirection.Descending ? _Descending : _Ascending,
+            Filter,
+            _Format(TimeJobs),
+            _Format(CronJobOccurrences)
+        );
     }
 
     /// <summary>Reads a cursor <see cref="ToString"/> formatted.</summary>
@@ -235,24 +363,104 @@ public sealed record JobRunCursor
         var parts = value?.Split(_Separator);
 
         if (
-            parts is not { Length: 3 }
+            parts is not { Length: 6 }
             || !string.Equals(parts[0], _FormatVersion, StringComparison.Ordinal)
-            || !_TryParsePosition(parts[1], out var timeJobs)
-            || !_TryParsePosition(parts[2], out var occurrences)
+            || !int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out var sortBy)
+            || !Enum.IsDefined((JobRunSortKey)sortBy)
+            || !_TryParseDirection(parts[2], out var direction)
+            || !_TryParsePosition(parts[4], out var timeJobs)
+            || !_TryParsePosition(parts[5], out var occurrences)
         )
         {
             return false;
         }
 
-        cursor = new JobRunCursor { TimeJobs = timeJobs, CronJobOccurrences = occurrences };
+        cursor = new JobRunCursor
+        {
+            SortBy = (JobRunSortKey)sortBy,
+            SortDirection = direction,
+            Filter = parts[3],
+            TimeJobs = timeJobs,
+            CronJobOccurrences = occurrences,
+        };
 
         return true;
     }
 
+    // A digest rather than the filters themselves keeps the cursor short and the search text out of it. Every value
+    // is written in an invariant, order-free form, so each node of a cluster digests one query alike.
+    private static string _FilterOf(JobRunQuery query)
+    {
+        var builder = new StringBuilder();
+
+        void add(string? value)
+        {
+            // A length prefix, so no value can run into the next.
+            builder
+                .Append(value?.Length.ToString(CultureInfo.InvariantCulture) ?? "n")
+                .Append('|')
+                .Append(value)
+                .Append('|');
+        }
+
+        add(query.Kind?.ToString());
+        add(
+            query.Functions is { Count: > 0 } functions
+                ? string.Join(
+                    ',',
+                    functions
+                        .Distinct(StringComparer.Ordinal)
+                        .Order(StringComparer.Ordinal)
+                        .Select(static f => f.Length.ToString(CultureInfo.InvariantCulture) + "#" + f)
+                )
+                : null
+        );
+        add(
+            query.Statuses is { Count: > 0 } statuses
+                ? string.Join(
+                    ',',
+                    statuses.Distinct().Order().Select(static s => ((int)s).ToString(CultureInfo.InvariantCulture))
+                )
+                : null
+        );
+        add(query.ExecutionFrom?.Ticks.ToString(CultureInfo.InvariantCulture));
+        add(query.ExecutionBefore?.Ticks.ToString(CultureInfo.InvariantCulture));
+        add(query.CorrelationId);
+        add(query.CronJobId?.ToString("N"));
+        add(query.FailureFingerprint);
+        add(query.ActionableFailuresOnly ? "1" : null);
+        add(string.IsNullOrEmpty(query.Text) ? null : query.Text);
+
+        var digest = SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString()));
+
+        return Convert.ToHexStringLower(digest, 0, 8);
+    }
+
+    private static bool _TryParseDirection(string value, out ListSortDirection direction)
+    {
+        direction = ListSortDirection.Ascending;
+
+        if (string.Equals(value, _Ascending, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        direction = ListSortDirection.Descending;
+
+        return string.Equals(value, _Descending, StringComparison.Ordinal);
+    }
+
+    // A function name may hold any character, so it travels base64url-encoded, whose alphabet has no separator.
     private static string _Format(JobRunPosition? position)
     {
         return position is { } value
-            ? value.ExecutionTime.Ticks.ToString(CultureInfo.InvariantCulture) + "_" + value.Id.ToString("N")
+            ? string.Join(
+                _PositionSeparator,
+                value.ExecutionTime.Ticks.ToString(CultureInfo.InvariantCulture),
+                value.Id.ToString("N"),
+                ((int)value.Status).ToString(CultureInfo.InvariantCulture),
+                Base64Url.EncodeToString(Encoding.UTF8.GetBytes(value.Function))
+            )
             : _NoPosition;
     }
 
@@ -265,21 +473,47 @@ public sealed record JobRunCursor
             return true;
         }
 
-        var separator = value.IndexOf('_', StringComparison.Ordinal);
+        var parts = value.Split(_PositionSeparator);
 
         if (
-            separator < 0
-            || !long.TryParse(value[..separator], NumberStyles.None, CultureInfo.InvariantCulture, out var ticks)
+            parts is not { Length: 4 }
+            || !long.TryParse(parts[0], NumberStyles.None, CultureInfo.InvariantCulture, out var ticks)
             || ticks > DateTime.MaxValue.Ticks
-            || !Guid.TryParseExact(value[(separator + 1)..], "N", out var id)
+            || !Guid.TryParseExact(parts[1], "N", out var id)
+            || !int.TryParse(parts[2], NumberStyles.None, CultureInfo.InvariantCulture, out var status)
+            || !Enum.IsDefined((JobStatus)status)
+            || !_TryDecode(parts[3], out var function)
         )
         {
             return false;
         }
 
-        position = new JobRunPosition(new DateTime(ticks, DateTimeKind.Utc), id);
+        position = new JobRunPosition(new DateTime(ticks, DateTimeKind.Utc), function, (JobStatus)status, id);
 
         return true;
+    }
+
+    private static bool _TryDecode(string value, [NotNullWhen(true)] out string? text)
+    {
+        text = null;
+
+        if (!Base64Url.IsValid(value))
+        {
+            return false;
+        }
+
+        try
+        {
+            text = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true).GetString(
+                Base64Url.DecodeFromChars(value)
+            );
+
+            return true;
+        }
+        catch (DecoderFallbackException)
+        {
+            return false;
+        }
     }
 }
 
@@ -288,7 +522,7 @@ public sealed record JobRunCursor
 [PublicAPI]
 public sealed record JobRunPage
 {
-    /// <summary>Gets the runs, in execution-time order.</summary>
+    /// <summary>Gets the runs, in the query's order.</summary>
     public required IReadOnlyList<JobRunSummary> Runs { get; init; }
 
     /// <summary>Gets the cursor of the next page, or <see langword="null"/> when this page is the last.</summary>

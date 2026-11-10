@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.ComponentModel;
 using Headless.Checks;
 using Headless.Dashboard;
 using Microsoft.AspNetCore.Builder;
@@ -52,7 +53,9 @@ internal sealed class JobsModuleApi(IJobsDashboardBackend backend, TimeProvider 
         DateTime? from,
         DateTime? before,
         bool? actionable,
-        bool? newest,
+        string? search,
+        string? sort,
+        string? direction,
         int? limit,
         string? after,
         CancellationToken cancellationToken
@@ -82,6 +85,29 @@ internal sealed class JobsModuleApi(IJobsDashboardBackend backend, TimeProvider 
             statuses.Add(parsed);
         }
 
+        var sortBy = JobRunSortKey.ExecutionTime;
+
+        if (!string.IsNullOrEmpty(sort))
+        {
+            if (!Enum.TryParse(sort, ignoreCase: true, out sortBy) || !Enum.IsDefined(sortBy))
+            {
+                return TypedResults.BadRequest("sort must be executionTime, function, or status.");
+            }
+        }
+
+        // The list opens on the latest runs, so the execution time reads descending unless asked otherwise; a text
+        // sort key reads A to Z.
+        var sortDirection =
+            sortBy == JobRunSortKey.ExecutionTime ? ListSortDirection.Descending : ListSortDirection.Ascending;
+
+        if (!string.IsNullOrEmpty(direction))
+        {
+            if (!Enum.TryParse(direction, ignoreCase: true, out sortDirection) || !Enum.IsDefined(sortDirection))
+            {
+                return TypedResults.BadRequest("direction must be ascending or descending.");
+            }
+        }
+
         JobRunCursor? cursor = null;
 
         if (!string.IsNullOrEmpty(after))
@@ -103,10 +129,19 @@ internal sealed class JobsModuleApi(IJobsDashboardBackend backend, TimeProvider 
             From = from,
             Before = before,
             ActionableOnly = actionable == true,
+            Search = search,
         }.ToQuery() with
         {
-            NewestFirst = newest != false,
+            SortBy = sortBy,
+            SortDirection = sortDirection,
         };
+
+        if (cursor?.Fits(query) == false)
+        {
+            return TypedResults.BadRequest(
+                "after was read with another sort, direction, filter, or search; read the first page again."
+            );
+        }
 
         var take = Math.Clamp(limit ?? _DefaultListLimit, 1, MaxListLimit);
         var page = await _backend.ListRunsAsync(query, cursor, take, cancellationToken).ConfigureAwait(false);

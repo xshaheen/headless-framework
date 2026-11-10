@@ -21,24 +21,35 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         cancellationToken.ThrowIfCancellationRequested();
 
         IEnumerable<JobRunSummary> rows = _RunsOf(kind, query);
+        var sortBy = query.SortBy;
+        var descending = query.Descending;
 
         if (after is { } position)
         {
             rows = rows.Where(run =>
             {
-                var key = _SortKey(run);
-                var order =
-                    key != position.ExecutionTime
-                        ? key.CompareTo(position.ExecutionTime)
-                        : run.Id.CompareTo(position.Id);
+                var current = JobRunPosition.Of(run);
+                var order = current.CompareKey(sortBy, position);
 
-                return query.NewestFirst ? order < 0 : order > 0;
+                if (order == 0)
+                {
+                    order = run.Id.CompareTo(position.Id);
+                }
+
+                return descending ? order < 0 : order > 0;
             });
         }
 
-        var ordered = query.NewestFirst
-            ? rows.OrderByDescending(_SortKey).ThenByDescending(static run => run.Id)
-            : rows.OrderBy(_SortKey).ThenBy(static run => run.Id);
+        int compare(JobRunSummary left, JobRunSummary right)
+        {
+            var order = JobRunPosition.Of(left).CompareKey(sortBy, JobRunPosition.Of(right));
+
+            return order != 0 ? order : left.Id.CompareTo(right.Id);
+        }
+
+        var ordered = descending
+            ? rows.Order(Comparer<JobRunSummary>.Create((left, right) => compare(right, left)))
+            : rows.Order(Comparer<JobRunSummary>.Create(compare));
 
         return Task.FromResult<IReadOnlyList<JobRunSummary>>([.. ordered.Take(maxCount)]);
     }
@@ -302,7 +313,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             [
                 .. _cronOccurrences
                     .Values.Where(occurrence => _MatchesOccurrence(occurrence, query))
-                    .Select(static occurrence => _Summary(occurrence)),
+                    .Select(occurrence => _Summary(occurrence)),
             ],
             _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown run kind."),
         };
@@ -353,6 +364,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 job.FailureFingerprint,
                 query
             )
+            && _MatchesText(query.Text, job.Function, job.Id, job.BusinessKey, job.Description)
             && (
                 !query.ActionableFailuresOnly
                 || JobRequeueRules.IsActionableTimeJobFailure(
@@ -376,6 +388,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 occurrence.FailureFingerprint,
                 query
             )
+            && _MatchesText(query.Text, occurrence.Function, occurrence.Id, businessKey: null, description: null)
             && (
                 !query.ActionableFailuresOnly
                 || JobRequeueRules.IsActionableCronJobOccurrenceFailure(
@@ -410,6 +423,15 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 query.FailureFingerprint is not { } fingerprint
                 || string.Equals(failureFingerprint, fingerprint, StringComparison.Ordinal)
             );
+    }
+
+    private static bool _MatchesText(string? text, string function, Guid id, string? businessKey, string? description)
+    {
+        return string.IsNullOrEmpty(text)
+            || function.Contains(text, StringComparison.OrdinalIgnoreCase)
+            || id.ToString("D").Contains(text, StringComparison.OrdinalIgnoreCase)
+            || businessKey?.Contains(text, StringComparison.OrdinalIgnoreCase) == true
+            || description?.Contains(text, StringComparison.OrdinalIgnoreCase) == true;
     }
 
     private bool _IsChainMember(Guid id, Guid? parentId)
@@ -447,8 +469,6 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         }
     }
 
-    private static DateTime _SortKey(JobRunSummary run) => run.ExecutionTime ?? JobRunPosition.Unscheduled;
-
     private static JobRunSummary _Summary(TTimeJob job)
     {
         return new JobRunSummary
@@ -470,6 +490,9 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             SkippedReason = job.SkippedReason,
             ProgressPercent = job.ProgressPercent,
             ProgressMessage = job.ProgressMessage,
+            ProgressUpdatedAt = job.ProgressUpdatedAt,
+            Retries = job.Retries,
+            RetryIntervals = job.RetryIntervals?.ToArray(),
             CorrelationId = job.CorrelationId,
             CausationId = job.CausationId,
             TraceParent = job.TraceParent,
@@ -481,8 +504,10 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         };
     }
 
-    private static JobRunSummary _Summary(CronJobOccurrenceEntity<TCronJob> occurrence)
+    private JobRunSummary _Summary(CronJobOccurrenceEntity<TCronJob> occurrence)
     {
+        var cronJob = _cronJobs.GetValueOrDefault(occurrence.CronJobId);
+
         return new JobRunSummary
         {
             Kind = JobRunKind.CronJobOccurrence,
@@ -502,6 +527,10 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             SkippedReason = occurrence.SkippedReason,
             ProgressPercent = occurrence.ProgressPercent,
             ProgressMessage = occurrence.ProgressMessage,
+            ProgressUpdatedAt = occurrence.ProgressUpdatedAt,
+            // An occurrence retries on its cron job's settings; it stores none of its own.
+            Retries = cronJob?.Retries ?? 0,
+            RetryIntervals = cronJob?.RetryIntervals?.ToArray(),
             CorrelationId = occurrence.CorrelationId,
             CausationId = occurrence.CausationId,
             TraceParent = occurrence.TraceParent,

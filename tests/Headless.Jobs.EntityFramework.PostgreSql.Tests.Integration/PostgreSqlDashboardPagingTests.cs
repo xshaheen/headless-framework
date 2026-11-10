@@ -18,4 +18,10 @@ public sealed class PostgreSqlDashboardPagingTests(PostgreSqlJobsCoordinationFix
     {
         return base.cron_job_pages_over_one_creation_time_visit_every_definition_once();
     }
+
+    [Fact]
+    public override Task run_list_pages_sorted_by_function_or_status_visit_every_tied_run_once_in_one_order()
+    {
+        return base.run_list_pages_sorted_by_function_or_status_visit_every_tied_run_once_in_one_order();
+    }
 }

@@ -216,6 +216,9 @@ internal sealed record JobsRunView(
     string? SkippedReason,
     double? ProgressPercent,
     string? ProgressMessage,
+    DateTimeOffset? ProgressUpdatedAt,
+    int Retries,
+    IReadOnlyList<int>? RetryIntervals,
     string? CorrelationId,
     string? CausationId,
     string? TraceId,
@@ -251,6 +254,9 @@ internal sealed record JobsRunView(
             run.SkippedReason,
             run.ProgressPercent,
             run.ProgressMessage,
+            run.ProgressUpdatedAt,
+            run.Retries,
+            run.RetryIntervals,
             run.CorrelationId,
             run.CausationId,
             JobsViews.TraceIdOf(run.TraceParent),
@@ -448,6 +454,9 @@ internal sealed record JobsRunScope
     /// <summary>Whether only actionable failures are in scope, as a Needs-you group's filter asks.</summary>
     public bool ActionableOnly { get; init; }
 
+    /// <summary>The Runs list's search text, so an Operation covers the rows the operator sees and no more.</summary>
+    public string? Search { get; init; }
+
     public JobRunQuery ToQuery() =>
         new()
         {
@@ -460,6 +469,7 @@ internal sealed record JobsRunScope
             ExecutionFrom = From is { } from ? DateTime.SpecifyKind(from, DateTimeKind.Utc) : null,
             ExecutionBefore = Before is { } before ? DateTime.SpecifyKind(before, DateTimeKind.Utc) : null,
             ActionableFailuresOnly = ActionableOnly,
+            Text = string.IsNullOrEmpty(Search) ? null : Search,
         };
 }
 

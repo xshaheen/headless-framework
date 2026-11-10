@@ -1,7 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Linq.Expressions;
+using System.Reflection;
+using System.Runtime.CompilerServices;
 using Headless.Checks;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Query;
 
 namespace Headless.Jobs.Infrastructure;
 
@@ -13,6 +17,13 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {
+    private static readonly MethodInfo _GuidCompareTo = typeof(Guid).GetMethod(nameof(Guid.CompareTo), [typeof(Guid)])!;
+
+    private static readonly MethodInfo _StringCompare = typeof(string).GetMethod(
+        nameof(string.Compare),
+        [typeof(string), typeof(string)]
+    )!;
+
     public async Task<IReadOnlyList<JobRunSummary>> ReadJobRunRowsAsync(
         JobRunKind kind,
         JobRunQuery query,
@@ -28,51 +39,30 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        var unscheduled = JobRunPosition.Unscheduled;
-        var hasPosition = after is not null;
-        var positionAt = DateTime.SpecifyKind(after?.ExecutionTime ?? default, DateTimeKind.Utc);
-        var positionId = after?.Id ?? Guid.Empty;
-
         if (kind == JobRunKind.TimeJob)
         {
-            var rows = _TimeJobRuns(dbContext, query);
-
-            if (hasPosition)
-            {
-                rows = query.NewestFirst
-                    ? rows.Where(x =>
-                        (x.ExecutionTime ?? unscheduled) < positionAt
-                        || ((x.ExecutionTime ?? unscheduled) == positionAt && x.Id.CompareTo(positionId) < 0)
-                    )
-                    : rows.Where(x =>
-                        (x.ExecutionTime ?? unscheduled) > positionAt
-                        || ((x.ExecutionTime ?? unscheduled) == positionAt && x.Id.CompareTo(positionId) > 0)
-                    );
-            }
-
-            rows = query.NewestFirst
-                ? rows.OrderByDescending(x => x.ExecutionTime ?? unscheduled).ThenByDescending(x => x.Id)
-                : rows.OrderBy(x => x.ExecutionTime ?? unscheduled).ThenBy(x => x.Id);
+            var rows = _Page(
+                _TimeJobRuns(dbContext, query),
+                query,
+                after,
+                static x => x.ExecutionTime ?? JobRunPosition.Unscheduled,
+                static x => x.Function,
+                static x => x.Status,
+                static x => x.Id
+            );
 
             return await _ProjectTimeJobs(rows.Take(maxCount)).ToArrayAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        var occurrences = _OccurrenceRuns(dbContext, query);
-
-        if (hasPosition)
-        {
-            occurrences = query.NewestFirst
-                ? occurrences.Where(x =>
-                    x.ExecutionTime < positionAt || (x.ExecutionTime == positionAt && x.Id.CompareTo(positionId) < 0)
-                )
-                : occurrences.Where(x =>
-                    x.ExecutionTime > positionAt || (x.ExecutionTime == positionAt && x.Id.CompareTo(positionId) > 0)
-                );
-        }
-
-        occurrences = query.NewestFirst
-            ? occurrences.OrderByDescending(x => x.ExecutionTime).ThenByDescending(x => x.Id)
-            : occurrences.OrderBy(x => x.ExecutionTime).ThenBy(x => x.Id);
+        var occurrences = _Page(
+            _OccurrenceRuns(dbContext, query),
+            query,
+            after,
+            static x => x.ExecutionTime,
+            static x => x.Function,
+            static x => x.Status,
+            static x => x.Id
+        );
 
         return await _ProjectOccurrences(occurrences.Take(maxCount))
             .ToArrayAsync(cancellationToken)
@@ -426,6 +416,24 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             rows = rows.Where(x => x.FailureFingerprint == fingerprint);
         }
 
+        if (_TextPattern(query) is { } pattern)
+        {
+#pragma warning disable MA0011 // False positive: ToLower runs in the store as LOWER, where no .NET culture applies.
+            rows = rows.Where(x =>
+                EF.Functions.Like(x.Function.ToLower(), pattern, SqlLikePattern.EscapeCharacter)
+                || EF.Functions.Like(x.Id.ToString().ToLower(), pattern, SqlLikePattern.EscapeCharacter)
+                || (
+                    x.BusinessKey != null
+                    && EF.Functions.Like(x.BusinessKey.ToLower(), pattern, SqlLikePattern.EscapeCharacter)
+                )
+                || (
+                    x.Description != null
+                    && EF.Functions.Like(x.Description.ToLower(), pattern, SqlLikePattern.EscapeCharacter)
+                )
+            );
+#pragma warning restore MA0011
+        }
+
         if (query.ActionableFailuresOnly)
         {
             rows = rows.Where(JobRequeueRules.ActionableTimeJobFailure(jobs));
@@ -486,6 +494,16 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             rows = rows.Where(x => x.FailureFingerprint == fingerprint);
         }
 
+        if (_TextPattern(query) is { } pattern)
+        {
+#pragma warning disable MA0011 // False positive: ToLower runs in the store as LOWER, where no .NET culture applies.
+            rows = rows.Where(x =>
+                EF.Functions.Like(x.Function.ToLower(), pattern, SqlLikePattern.EscapeCharacter)
+                || EF.Functions.Like(x.Id.ToString().ToLower(), pattern, SqlLikePattern.EscapeCharacter)
+            );
+#pragma warning restore MA0011
+        }
+
         if (query.ActionableFailuresOnly)
         {
             rows = rows.Where(JobRequeueRules.ActionableCronJobOccurrenceFailure(occurrences));
@@ -537,6 +555,115 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         };
     }
 
+    // The search is literal, so its % and _ are escaped, and case-insensitive on every collation, so both sides are
+    // lowered: PostgreSQL's LIKE is case-sensitive, and SQL Server prints identifiers in upper case.
+    private static string? _TextPattern(JobRunQuery query)
+    {
+        return string.IsNullOrEmpty(query.Text) ? null : SqlLikePattern.Contains(query.Text.ToLowerInvariant());
+    }
+
+    // Orders one table by the query's sort key and then the identifier, and starts after the cursor's position. The
+    // keyset predicate compares the same expression the order sorts on, in the store's own collation and identifier
+    // order, so a page boundary never repeats or skips a row. Values reach the store as parameters.
+    private static IQueryable<TRow> _Page<TRow>(
+        IQueryable<TRow> rows,
+        JobRunQuery query,
+        JobRunPosition? after,
+        Expression<Func<TRow, DateTime>> executionTime,
+        Expression<Func<TRow, string>> function,
+        Expression<Func<TRow, JobStatus>> status,
+        Expression<Func<TRow, Guid>> id
+    )
+    {
+        var row = executionTime.Parameters[0];
+        var key = query.SortBy switch
+        {
+            JobRunSortKey.ExecutionTime => executionTime.Body,
+            JobRunSortKey.Function => _Rebind(function, row),
+            JobRunSortKey.Status => _StatusRank(_Rebind(status, row)),
+            _ => throw new ArgumentOutOfRangeException(nameof(query), query.SortBy, "Unknown sort key."),
+        };
+        var idKey = _Rebind(id, row);
+        var descending = query.Descending;
+
+        if (after is { } position)
+        {
+            var value = query.SortBy switch
+            {
+                JobRunSortKey.ExecutionTime => _Parameter(
+                    DateTime.SpecifyKind(position.ExecutionTime, DateTimeKind.Utc)
+                ),
+                JobRunSortKey.Function => _Parameter(position.Function),
+                _ => _Parameter((int)position.Status),
+            };
+            var idOrder = Expression.Call(idKey, _GuidCompareTo, _Parameter(position.Id));
+            var past = Expression.OrElse(
+                _Past(key, value, descending),
+                Expression.AndAlso(Expression.Equal(key, value), _PastZero(idOrder, descending))
+            );
+            rows = rows.Where(Expression.Lambda<Func<TRow, bool>>(past, row));
+        }
+
+        return query.SortBy switch
+        {
+            JobRunSortKey.Function => _Order(rows, Expression.Lambda<Func<TRow, string>>(key, row), id, descending),
+            JobRunSortKey.Status => _Order(rows, Expression.Lambda<Func<TRow, int>>(key, row), id, descending),
+            _ => _Order(rows, Expression.Lambda<Func<TRow, DateTime>>(key, row), id, descending),
+        };
+    }
+
+    private static IQueryable<TRow> _Order<TRow, TKey>(
+        IQueryable<TRow> rows,
+        Expression<Func<TRow, TKey>> key,
+        Expression<Func<TRow, Guid>> id,
+        bool descending
+    )
+    {
+        return descending ? rows.OrderByDescending(key).ThenByDescending(id) : rows.OrderBy(key).ThenBy(id);
+    }
+
+    // Strings have no > operator in an expression tree; string.Compare translates to the store's comparison.
+    private static BinaryExpression _Past(Expression key, Expression value, bool descending)
+    {
+        return key.Type == typeof(string) ? _PastZero(Expression.Call(_StringCompare, key, value), descending)
+            : descending ? Expression.LessThan(key, value)
+            : Expression.GreaterThan(key, value);
+    }
+
+    private static BinaryExpression _PastZero(Expression order, bool descending)
+    {
+        var zero = Expression.Constant(0);
+
+        return descending ? Expression.LessThan(order, zero) : Expression.GreaterThan(order, zero);
+    }
+
+    // Status is stored by name, so the column's own order is alphabetical; a CASE over the values sorts it in the
+    // lifecycle order the in-memory store and the merge use, on every provider alike.
+    private static Expression _StatusRank(Expression status)
+    {
+        var asInt = Expression.Convert(status, typeof(int));
+        Expression rank = Expression.Constant(-1);
+
+        foreach (var value in Enum.GetValues<JobStatus>().Reverse())
+        {
+            var number = Expression.Constant((int)value);
+            rank = Expression.Condition(Expression.Equal(asInt, number), number, rank);
+        }
+
+        return rank;
+    }
+
+    private static Expression _Rebind(LambdaExpression lambda, ParameterExpression row)
+    {
+        return ReplacingExpressionVisitor.Replace(lambda.Parameters[0], row, lambda.Body);
+    }
+
+    // A member of a captured object, which the store sends as a parameter, so one query plan serves every page.
+    private static MemberExpression _Parameter<TValue>(TValue value)
+    {
+        return Expression.Field(Expression.Constant(new StrongBox<TValue>(value)), nameof(StrongBox<>.Value));
+    }
+
     private static IQueryable<JobRunSummary> _ProjectTimeJobs(IQueryable<TTimeJob> rows)
     {
         return rows.Select(x => new JobRunSummary
@@ -558,6 +685,9 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             SkippedReason = x.SkippedReason,
             ProgressPercent = x.ProgressPercent,
             ProgressMessage = x.ProgressMessage,
+            ProgressUpdatedAt = x.ProgressUpdatedAt,
+            Retries = x.Retries,
+            RetryIntervals = x.RetryIntervals,
             CorrelationId = x.CorrelationId,
             CausationId = x.CausationId,
             TraceParent = x.TraceParent,
@@ -590,6 +720,10 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             SkippedReason = x.SkippedReason,
             ProgressPercent = x.ProgressPercent,
             ProgressMessage = x.ProgressMessage,
+            ProgressUpdatedAt = x.ProgressUpdatedAt,
+            // An occurrence retries on its cron job's settings; it stores none of its own.
+            Retries = x.CronJob.Retries,
+            RetryIntervals = x.CronJob.RetryIntervals,
             CorrelationId = x.CorrelationId,
             CausationId = x.CausationId,
             TraceParent = x.TraceParent,

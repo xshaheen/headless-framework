@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.ComponentModel;
 using Headless.Coordination;
 using Headless.Jobs;
 using Headless.Testing.Tests;
@@ -39,7 +40,12 @@ public abstract class JobsDashboardReadsConformanceTests<TFixture>(TFixture fixt
                 var o9 = await _AddOccurrenceAsync(store, cron, JobStatus.Succeeded, at.AddMinutes(9), ct);
 
                 var oldestFirst = await _ReadAllPagesAsync(store, new JobRunQuery(), pageSize: 3, ct);
-                var newestFirst = await _ReadAllPagesAsync(store, new JobRunQuery { NewestFirst = true }, 4, ct);
+                var newestFirst = await _ReadAllPagesAsync(
+                    store,
+                    new JobRunQuery { SortDirection = ListSortDirection.Descending },
+                    4,
+                    ct
+                );
                 var occurrencesOnly = await _ReadAllPagesAsync(
                     store,
                     new JobRunQuery { CronJobId = cron },
@@ -50,6 +56,82 @@ public abstract class JobsDashboardReadsConformanceTests<TFixture>(TFixture fixt
                 oldestFirst.Should().Equal(t0, o1, t2, o3, t4, o4, o5, t8, o9);
                 newestFirst.Should().Equal(o9, t8, o5, t4, o4, o3, t2, o1, t0);
                 occurrencesOnly.Should().Equal(o1, o3, o4, o5, o9);
+            }
+        );
+    }
+
+    public virtual async Task a_search_matches_function_id_business_key_and_description_literally_ignoring_case()
+    {
+        await _RunAsync(
+            "reads-search",
+            async (store, _, ct) =>
+            {
+                var at = _Minute(-60);
+                var cron = await _SeedCronAsync(ct, function: "Reports.Export");
+                var percent = _TimeJob(JobStatus.Succeeded, at);
+                percent.Description = "Charge 50% off";
+                var wildcard = _TimeJob(JobStatus.Succeeded, at.AddMinutes(1));
+                wildcard.Description = "Charge 50x off";
+                await store.AddTimeJobsAsync([percent, wildcard], ct);
+                var occurrence = await _AddOccurrenceAsync(store, cron, JobStatus.Succeeded, at.AddMinutes(2), ct);
+                var keyed = await store.ScheduleKeyedTimeJobAsync(
+                    new JobKey("order-777"),
+                    _KeyedCandidate(),
+                    cancellationToken: ct
+                );
+
+                async Task<List<Guid>> searchAsync(string text) =>
+                    await _ReadAllPagesAsync(store, new JobRunQuery { Text = text }, pageSize: 10, ct);
+
+                (await searchAsync("50%")).Should().Equal(percent.Id);
+                (await searchAsync("50% OFF")).Should().Equal(percent.Id);
+                (await searchAsync("ge_50")).Should().BeEmpty();
+                (await searchAsync("reports.export")).Should().Equal(occurrence);
+                (await searchAsync("ORDER-777")).Should().Equal(keyed.RunId!.Value);
+                (await searchAsync(wildcard.Id.ToString("D")[..13].ToUpperInvariant())).Should().Equal(wildcard.Id);
+                (await store.CountJobRunsAsync(new JobRunQuery { Text = "50%" }, cancellationToken: ct))
+                    .Should()
+                    .Be(new JobRunCount(1, Capped: false));
+            }
+        );
+    }
+
+    public virtual async Task a_run_serves_its_progress_time_only_once_it_reports_and_its_retry_settings()
+    {
+        await _RunAsync(
+            "reads-progress-retries",
+            async (store, _, ct) =>
+            {
+                var at = _Minute(-60);
+                var reporting = _TimeJob(JobStatus.Idle, at);
+                reporting.Retries = 3;
+                reporting.RetryIntervals = [10, 30, 60];
+                var silent = _TimeJob(JobStatus.Succeeded, at);
+                await store.AddTimeJobsAsync([reporting, silent], ct);
+                var claimed = (await store.AcquireImmediateTimeJobsAsync([reporting.Id], ct))
+                    .Should()
+                    .ContainSingle()
+                    .Subject;
+                (await store.UpdateTimeJobProgressAsync(reporting.Id, claimed.OwnerId!, new JobProgress(40), ct))
+                    .Should()
+                    .BeTrue();
+                var cron = await _SeedCronAsync(ct);
+                await _SetCronRetriesAsync(cron, 2, ct);
+                var occurrence = await _AddOccurrenceAsync(store, cron, JobStatus.Succeeded, at, ct);
+
+                var reported = (await store.GetJobRunAsync(reporting.Id, ct))!;
+                var neverReported = (await store.GetJobRunAsync(silent.Id, ct))!;
+                var listed = await store.ListJobRunsAsync(new JobRunQuery { CronJobId = cron }, null, 10, ct);
+
+                reported.ProgressUpdatedAt.Should().NotBeNull();
+                reported.Retries.Should().Be(3);
+                reported.RetryIntervals.Should().Equal(10, 30, 60);
+                neverReported.ProgressUpdatedAt.Should().BeNull();
+                neverReported.Retries.Should().Be(0);
+                neverReported.RetryIntervals.Should().BeNull();
+                var occurrenceRun = listed.Runs.Should().ContainSingle().Subject;
+                occurrenceRun.Id.Should().Be(occurrence);
+                occurrenceRun.Retries.Should().Be(2);
             }
         );
     }
@@ -558,6 +640,19 @@ public abstract class JobsDashboardReadsConformanceTests<TFixture>(TFixture fixt
             ExecutionTime = DateTime.UtcNow.AddHours(1),
             Request = [1, 2, 3],
         };
+
+    private async Task _SetCronRetriesAsync(Guid cronJobId, int retries, CancellationToken cancellationToken)
+    {
+        await using var connection = fixture.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = fixture.Sql(
+            $"UPDATE {fixture.QualifiedCronJobsTable} SET \"Retries\" = @retries WHERE \"Id\" = @id;"
+        );
+        JobsCoordinationFixtureExtensions.AddParameter(command, "@retries", retries);
+        JobsCoordinationFixtureExtensions.AddParameter(command, "@id", cronJobId);
+        (await command.ExecuteNonQueryAsync(cancellationToken)).Should().Be(1);
+    }
 
     // A keyed row reaches Failed only by executing, which a storage test does not drive; set it directly instead.
     private async Task _MarkTimeJobFailedAsync(Guid id, CancellationToken cancellationToken)

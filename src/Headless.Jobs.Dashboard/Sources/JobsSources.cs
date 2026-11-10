@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.ComponentModel;
 using Headless.Checks;
 using Headless.Dashboard;
 
@@ -293,7 +294,7 @@ internal sealed class JobsSources(string moduleId, IJobsDashboardBackend backend
         {
             var page = await _backend
                 .ListRunsAsync(
-                    new JobRunQuery { CorrelationId = correlationId, NewestFirst = true },
+                    new JobRunQuery { CorrelationId = correlationId, SortDirection = ListSortDirection.Descending },
                     after: null,
                     RelatedPageSize + 2,
                     cancellationToken

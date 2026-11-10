@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using System.ComponentModel;
 using System.Reflection;
 using Headless.Hosting;
 using Headless.Jobs;
@@ -40,11 +41,176 @@ public sealed class JobsInMemoryDashboardReadsTests : TestBase
 
         // when
         var oldestFirst = await _ReadAllPagesAsync(store, new JobRunQuery(), pageSize: 3);
-        var newestFirst = await _ReadAllPagesAsync(store, new JobRunQuery { NewestFirst = true }, pageSize: 4);
+        var newestFirst = await _ReadAllPagesAsync(
+            store,
+            new JobRunQuery { SortDirection = ListSortDirection.Descending },
+            pageSize: 4
+        );
 
         // then
         oldestFirst.Should().Equal(t0, o1, t2, o3, t4, o4, o5, t8, o9);
         newestFirst.Should().Equal(o9, t8, o5, t4, o4, o3, t2, o1, t0);
+    }
+
+    [Theory]
+    [InlineData(JobRunSortKey.Function, ListSortDirection.Ascending)]
+    [InlineData(JobRunSortKey.Function, ListSortDirection.Descending)]
+    [InlineData(JobRunSortKey.Status, ListSortDirection.Ascending)]
+    [InlineData(JobRunSortKey.Status, ListSortDirection.Descending)]
+    public async Task should_page_runs_sorted_by_function_or_status_visiting_every_tied_run_once_in_identifier_order(
+        JobRunSortKey sortBy,
+        ListSortDirection direction
+    )
+    {
+        // given
+        var store = _Create();
+        var cron = await _AddCronJobAsync(store, "beta.job");
+        string[] functions = ["alpha.job", "beta.job", "gamma.job"];
+        JobStatus[] statuses = [JobStatus.Succeeded, JobStatus.Failed, JobStatus.Cancelled];
+
+        for (var index = 0; index < 9; index++)
+        {
+            var job = _TimeJob(statuses[index % 3], _Base.AddMinutes(index), functions[index % 3]);
+            await store.AddTimeJobsAsync([job], AbortToken);
+            await _AddOccurrenceAsync(store, cron, statuses[index % 2], _Base.AddHours(index + 1));
+        }
+
+        var query = new JobRunQuery { SortBy = sortBy, SortDirection = direction };
+
+        // when
+        var single = await _Store(store).ListJobRunsAsync(query, after: null, pageSize: 100, AbortToken);
+        var paged = await _ReadAllRunsAsync(store, query, pageSize: 4);
+
+        // then
+        single.Runs.Should().HaveCount(18);
+        paged.Should().Equal(single.Runs, static (actual, expected) => actual.Id == expected.Id);
+        // The sort key, then time jobs before cron occurrences, then the identifier in the list's direction.
+        Func<JobRunSummary, string> key =
+            sortBy == JobRunSortKey.Function
+                ? static run => run.Function
+                : static run => ((int)run.Status).ToString("D2", CultureInfo.InvariantCulture);
+        var expected =
+            direction == ListSortDirection.Ascending
+                ? single
+                    .Runs.OrderBy(key, StringComparer.Ordinal)
+                    .ThenBy(static run => run.Kind)
+                    .ThenBy(static run => run.Id)
+                : single
+                    .Runs.OrderByDescending(key, StringComparer.Ordinal)
+                    .ThenBy(static run => run.Kind)
+                    .ThenByDescending(static run => run.Id);
+        paged.Should().Equal(expected, static (actual, run) => actual.Id == run.Id);
+    }
+
+    [Fact]
+    public async Task should_match_a_search_literally_and_ignoring_case_on_function_id_business_key_and_description()
+    {
+        // given
+        var store = _Create();
+        var cron = await _AddCronJobAsync(store, "Reports.Export");
+        var percent = _TimeJob(JobStatus.Succeeded, _Base);
+        percent.Description = "Charge 50% off";
+        var wildcard = _TimeJob(JobStatus.Succeeded, _Base.AddMinutes(1));
+        wildcard.Description = "Charge 50x off";
+        await store.AddTimeJobsAsync([percent, wildcard], AbortToken);
+        var occurrence = await _AddOccurrenceAsync(store, cron, JobStatus.Succeeded, _Base.AddMinutes(2));
+        var keyed = await store.ScheduleKeyedTimeJobAsync(
+            new JobKey("order-777"),
+            JobsKeyedSchedulingScenarios.Candidate(),
+            cancellationToken: AbortToken
+        );
+
+        // when
+        Task<List<Guid>> searchAsync(string text) =>
+            _ReadAllPagesAsync(store, new JobRunQuery { Text = text }, pageSize: 10);
+
+        // then
+        (await searchAsync("50%"))
+            .Should()
+            .Equal(percent.Id);
+        (await searchAsync("50% OFF")).Should().Equal(percent.Id);
+        (await searchAsync("ge_50")).Should().BeEmpty();
+        (await searchAsync("reports.export")).Should().Equal(occurrence);
+        (await searchAsync("ORDER-777")).Should().Equal(keyed.RunId!.Value);
+        (await searchAsync(wildcard.Id.ToString("D")[..13].ToUpperInvariant())).Should().Equal(wildcard.Id);
+        (await _Store(store).CountJobRunsAsync(new JobRunQuery { Text = "50%" }, cancellationToken: AbortToken))
+            .Should()
+            .Be(new JobRunCount(1, Capped: false));
+    }
+
+    [Fact]
+    public async Task should_refuse_a_cursor_read_with_another_sort_or_filter()
+    {
+        // given
+        var store = _Create();
+
+        for (var index = 0; index < 3; index++)
+        {
+            await _AddTimeJobAsync(store, JobStatus.Succeeded, _Base.AddMinutes(index));
+        }
+
+        var byFunction = new JobRunQuery { SortBy = JobRunSortKey.Function };
+        var first = await _Store(store).ListJobRunsAsync(byFunction, after: null, pageSize: 1, AbortToken);
+        var cursor = first.Next!;
+
+        // when
+        var byStatus = () =>
+            _Store(store).ListJobRunsAsync(byFunction with { SortBy = JobRunSortKey.Status }, cursor, 1, AbortToken);
+        var searched = () => _Store(store).ListJobRunsAsync(byFunction with { Text = "x" }, cursor, 1, AbortToken);
+        var descending = () =>
+            _Store(store)
+                .ListJobRunsAsync(
+                    byFunction with
+                    {
+                        SortDirection = ListSortDirection.Descending,
+                    },
+                    cursor,
+                    1,
+                    AbortToken
+                );
+
+        // then
+        cursor.Fits(byFunction).Should().BeTrue();
+        await byStatus.Should().ThrowAsync<ArgumentException>();
+        await searched.Should().ThrowAsync<ArgumentException>();
+        await descending.Should().ThrowAsync<ArgumentException>();
+        JobRunCursor.TryParse(cursor.ToString(), out var parsed).Should().BeTrue();
+        parsed.Should().Be(cursor);
+    }
+
+    [Fact]
+    public async Task should_serve_the_progress_time_only_once_a_run_reports_and_its_retry_settings()
+    {
+        // given
+        var store = _Create();
+        var reporting = _TimeJob(JobStatus.Idle, _Base);
+        reporting.Retries = 3;
+        reporting.RetryIntervals = [10, 30, 60];
+        var silent = _TimeJob(JobStatus.Succeeded, _Base);
+        await store.AddTimeJobsAsync([reporting, silent], AbortToken);
+        var claimed = (await store.AcquireImmediateTimeJobsAsync([reporting.Id], AbortToken))
+            .Should()
+            .ContainSingle()
+            .Subject;
+        (await store.UpdateTimeJobProgressAsync(reporting.Id, claimed.OwnerId!, new JobProgress(40), AbortToken))
+            .Should()
+            .BeTrue();
+        var cron = await _AddCronJobAsync(store, "report.build", retries: 2, retryIntervals: [5]);
+        var occurrence = await _AddOccurrenceAsync(store, cron, JobStatus.Succeeded, _Base);
+
+        // when
+        var reported = (await _Store(store).GetJobRunAsync(reporting.Id, AbortToken))!;
+        var neverReported = (await _Store(store).GetJobRunAsync(silent.Id, AbortToken))!;
+        var occurrenceRun = (await _Store(store).GetJobRunAsync(occurrence, AbortToken))!;
+
+        // then
+        reported.ProgressUpdatedAt.Should().NotBeNull();
+        reported.Retries.Should().Be(3);
+        reported.RetryIntervals.Should().Equal(10, 30, 60);
+        neverReported.ProgressUpdatedAt.Should().BeNull();
+        neverReported.RetryIntervals.Should().BeNull();
+        occurrenceRun.Retries.Should().Be(2);
+        occurrenceRun.RetryIntervals.Should().Equal(5);
     }
 
     [Fact]
@@ -378,18 +544,27 @@ public sealed class JobsInMemoryDashboardReadsTests : TestBase
         int pageSize
     )
     {
-        var ids = new List<Guid>();
+        return [.. (await _ReadAllRunsAsync(store, query, pageSize)).Select(static x => x.Id)];
+    }
+
+    private async Task<List<JobRunSummary>> _ReadAllRunsAsync(
+        JobsInMemoryPersistenceProvider<TimeJobEntity, CronJobEntity> store,
+        JobRunQuery query,
+        int pageSize
+    )
+    {
+        var runs = new List<JobRunSummary>();
         JobRunCursor? cursor = null;
 
         do
         {
             var page = await _Store(store).ListJobRunsAsync(query, cursor, pageSize, AbortToken);
-            ids.AddRange(page.Runs.Select(x => x.Id));
+            runs.AddRange(page.Runs);
             // The cursor crosses HTTP as text between pages.
             cursor = page.Next is { } next && JobRunCursor.TryParse(next.ToString(), out var parsed) ? parsed : null;
         } while (cursor is not null);
 
-        return ids;
+        return runs;
     }
 
     private async Task<IReadOnlyList<JobFailureGroup>> _GroupsAsync(
@@ -455,13 +630,17 @@ public sealed class JobsInMemoryDashboardReadsTests : TestBase
 
     private async Task<CronJobEntity> _AddCronJobAsync(
         JobsInMemoryPersistenceProvider<TimeJobEntity, CronJobEntity> store,
-        string function
+        string function,
+        int retries = 0,
+        int[]? retryIntervals = null
     )
     {
         var cron = new CronJobEntity
         {
             Id = Guid.NewGuid(),
             Function = function,
+            Retries = retries,
+            RetryIntervals = retryIntervals,
             Expression = "0 0 * * * *",
             ReconciledThroughUtc = _Base,
             NextDueUtc = _Base.AddHours(2),

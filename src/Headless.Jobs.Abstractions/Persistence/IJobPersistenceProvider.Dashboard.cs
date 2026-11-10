@@ -15,8 +15,8 @@ public partial interface IJobPersistenceProvider<TTimeJob, TCronJob>
 
     /// <summary>
     /// Returns at most <paramref name="maxCount"/> runs of one table that <paramref name="query"/> matches, in
-    /// execution-time order and then identifier order (both descending when <see cref="JobRunQuery.NewestFirst"/> is
-    /// set), starting after <paramref name="after"/>.
+    /// <see cref="JobRunQuery.SortBy"/> order and then identifier order (both descending when
+    /// <see cref="JobRunQuery.SortDirection"/> is descending), starting after <paramref name="after"/>.
     /// </summary>
     /// <param name="kind">The table to read.</param>
     /// <param name="query">The runs to read; the kind filter is the caller's to apply.</param>
@@ -25,7 +25,8 @@ public partial interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// <param name="cancellationToken">Token that aborts the query.</param>
     /// <returns>The runs, in keyset order.</returns>
     /// <remarks>
-    /// The sort key of a run without an execution time is <see cref="JobRunPosition.Unscheduled"/>. The member
+    /// The sort key of a run without an execution time is <see cref="JobRunPosition.Unscheduled"/>. The keyset
+    /// predicate compares the sort key exactly as the order does, so a table pages without repeat or gap. The member
     /// <see cref="ListJobRunsAsync"/> is built on. The default throws.
     /// </remarks>
     /// <exception cref="NotSupportedException">The provider does not support dashboard reads.</exception>
@@ -42,21 +43,27 @@ public partial interface IJobPersistenceProvider<TTimeJob, TCronJob>
     }
 
     /// <summary>
-    /// Returns one page of the runs <paramref name="query"/> matches, time jobs and cron occurrences together, in
-    /// execution-time order, and the cursor of the next page.
+    /// Returns one page of the runs <paramref name="query"/> matches, time jobs and cron occurrences together, in the
+    /// query's order, and the cursor of the next page.
     /// </summary>
     /// <param name="query">The runs to read.</param>
-    /// <param name="after">The cursor of the page to read, or <see langword="null"/> for the first page.</param>
+    /// <param name="after">
+    /// The cursor of the page to read, or <see langword="null"/> for the first page. It must
+    /// <see cref="JobRunCursor.Fits"/> <paramref name="query"/>.
+    /// </param>
     /// <param name="pageSize">The most runs to return.</param>
     /// <param name="cancellationToken">Token that aborts the query.</param>
     /// <returns>The page.</returns>
     /// <remarks>
-    /// Each table pages forward on its own keyset and the page takes a prefix of each, merged by execution time, so a
-    /// run never repeats or goes missing at a page boundary. Runs of the two kinds with one execution time list time
-    /// jobs first. Default method built on <see cref="ReadJobRunRowsAsync"/>.
+    /// Each table pages forward on its own keyset and the page takes a prefix of each, merged by the sort key, so a
+    /// run never repeats or goes missing at a page boundary. Runs of the two kinds with one sort key list time jobs
+    /// first. Default method built on <see cref="ReadJobRunRowsAsync"/>.
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="query"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="pageSize"/> is not positive.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="after"/> was read with another sort, direction, filter, or search than <paramref name="query"/>.
+    /// </exception>
     /// <exception cref="NotSupportedException">The provider does not support dashboard reads.</exception>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     async Task<JobRunPage> ListJobRunsAsync(
@@ -69,36 +76,73 @@ public partial interface IJobPersistenceProvider<TTimeJob, TCronJob>
         Argument.IsNotNull(query);
         Argument.IsPositive(pageSize);
 
-        var cursor = after ?? new JobRunCursor();
-        var read = new List<JobRunSummary>();
-        var more = false;
-
-        foreach (var kind in _RunKinds(query))
+        if (after?.Fits(query) == false)
         {
-            var rows = await ReadJobRunRowsAsync(kind, query, cursor.PositionOf(kind), pageSize, cancellationToken)
-                .ConfigureAwait(false);
-
-            more |= rows.Count == pageSize;
-            read.AddRange(rows);
-        }
-
-        // OrderBy is stable, so each table's rows keep the store's keyset order and the page takes a prefix of each
-        // table: the table's position can move to the last row taken from it.
-        var ordered = query.NewestFirst
-            ? read.OrderByDescending(static run => run.ExecutionTime ?? JobRunPosition.Unscheduled)
-            : read.OrderBy(static run => run.ExecutionTime ?? JobRunPosition.Unscheduled);
-        var page = ordered.Take(pageSize).ToArray();
-        var next = cursor;
-
-        foreach (var run in page)
-        {
-            next = next.WithPosition(
-                run.Kind,
-                new JobRunPosition(run.ExecutionTime ?? JobRunPosition.Unscheduled, run.Id)
+            throw new ArgumentException(
+                "The cursor was read with another sort, direction, filter, or search than this query.",
+                nameof(after)
             );
         }
 
-        return new JobRunPage { Runs = page, Next = more || read.Count > pageSize ? next : null };
+        var cursor = after ?? JobRunCursor.Start(query);
+        var timeJobs = query.IncludesTimeJobs
+            ? await ReadJobRunRowsAsync(JobRunKind.TimeJob, query, cursor.TimeJobs, pageSize, cancellationToken)
+                .ConfigureAwait(false)
+            : [];
+        var occurrences = query.IncludesCronJobOccurrences
+            ? await ReadJobRunRowsAsync(
+                    JobRunKind.CronJobOccurrence,
+                    query,
+                    cursor.CronJobOccurrences,
+                    pageSize,
+                    cancellationToken
+                )
+                .ConfigureAwait(false)
+            : [];
+
+        // A two-way merge that never reorders a table's rows: a store's text collation can disagree with any .NET
+        // comparer, so the comparer only interleaves the tables, and each table's position moves to the last row
+        // taken from it. Ties go to the time job, in either direction.
+        var page = new List<JobRunSummary>(Math.Min(pageSize, timeJobs.Count + occurrences.Count));
+        var next = cursor;
+        var nextTimeJob = 0;
+        var nextOccurrence = 0;
+
+        while (page.Count < pageSize && (nextTimeJob < timeJobs.Count || nextOccurrence < occurrences.Count))
+        {
+            JobRunSummary run;
+
+            if (nextOccurrence >= occurrences.Count)
+            {
+                run = timeJobs[nextTimeJob++];
+            }
+            else if (nextTimeJob >= timeJobs.Count)
+            {
+                run = occurrences[nextOccurrence++];
+            }
+            else
+            {
+                var order = JobRunPosition
+                    .Of(timeJobs[nextTimeJob])
+                    .CompareKey(query.SortBy, JobRunPosition.Of(occurrences[nextOccurrence]));
+
+                run =
+                    (query.Descending ? order >= 0 : order <= 0)
+                        ? timeJobs[nextTimeJob++]
+                        : occurrences[nextOccurrence++];
+            }
+
+            page.Add(run);
+            next = next.WithPosition(run.Kind, JobRunPosition.Of(run));
+        }
+
+        var more =
+            timeJobs.Count == pageSize
+            || occurrences.Count == pageSize
+            || nextTimeJob < timeJobs.Count
+            || nextOccurrence < occurrences.Count;
+
+        return new JobRunPage { Runs = page, Next = more ? next : null };
     }
 
     /// <summary>

@@ -52,6 +52,8 @@ public sealed class JobsModuleApiTests : TestBase
     [InlineData("kind=Recurring")]
     [InlineData("status=Exploded")]
     [InlineData("after=not-a-cursor")]
+    [InlineData("sort=payload")]
+    [InlineData("direction=sideways")]
     public async Task should_answer_400_for_a_runs_query_it_cannot_read(string query)
     {
         // given
@@ -97,6 +99,114 @@ public sealed class JobsModuleApiTests : TestBase
         body.GetProperty("items").GetArrayLength().Should().Be(expected);
         body.GetProperty("count").GetInt32().Should().Be(201);
         body.GetProperty("nextCursor").GetString().Should().NotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public async Task should_sort_and_search_the_runs_on_the_server()
+    {
+        // given
+        await using var app = await JobsDashboardHttpHost.StartAsync(_time, _log, AbortToken);
+        var now = _time.GetUtcNow();
+        var alpha = JobsModuleNode.FailedJob(now, function: "alpha.job");
+        var beta = JobsModuleNode.FailedJob(now, function: "beta.job");
+        beta.Description = "Refund 50% of the order";
+        var gamma = JobsModuleNode.FailedJob(now, function: "gamma.job");
+        await _Store(app).AddTimeJobsAsync([beta, gamma, alpha], AbortToken);
+        using var client = JobsDashboardHttpHost.Client(app);
+        var cookie = await JobsDashboardHttpHost.SignInAsync(client, "viewer", AbortToken);
+
+        // when
+        var descending = await _RunIdsAsync(client, cookie, "/runs?sort=function&direction=descending");
+        var ascending = await _RunIdsAsync(client, cookie, "/runs?sort=function");
+        var searched = await _RunIdsAsync(client, cookie, "/runs?search=" + Uri.EscapeDataString("50% OF"));
+
+        // then
+        descending.Should().Equal(gamma.Id, beta.Id, alpha.Id);
+        ascending.Should().Equal(alpha.Id, beta.Id, gamma.Id);
+        searched.Should().Equal(beta.Id);
+    }
+
+    [Fact]
+    public async Task should_answer_400_for_a_cursor_sent_with_another_sort_than_it_was_read_with()
+    {
+        // given
+        await using var app = await JobsDashboardHttpHost.StartAsync(_time, _log, AbortToken);
+        var now = _time.GetUtcNow();
+        await _Store(app)
+            .AddTimeJobsAsync(
+                [
+                    JobsModuleNode.FailedJob(now, function: "alpha.job"),
+                    JobsModuleNode.FailedJob(now, function: "beta.job"),
+                ],
+                AbortToken
+            );
+        using var client = JobsDashboardHttpHost.Client(app);
+        var cookie = await JobsDashboardHttpHost.SignInAsync(client, "viewer", AbortToken);
+        using var first = await JobsDashboardHttpHost.GetAsync(
+            client,
+            JobsDashboardHttpHost.Api + "/runs?sort=function&limit=1",
+            cookie,
+            AbortToken
+        );
+        var cursor = Uri.EscapeDataString(
+            (await JobsDashboardHttpHost.ReadAsync(first, AbortToken)).GetProperty("nextCursor").GetString()!
+        );
+
+        // when
+        using var sameSort = await JobsDashboardHttpHost.GetAsync(
+            client,
+            JobsDashboardHttpHost.Api + "/runs?sort=function&limit=1&after=" + cursor,
+            cookie,
+            AbortToken
+        );
+        using var otherSort = await JobsDashboardHttpHost.GetAsync(
+            client,
+            JobsDashboardHttpHost.Api + "/runs?sort=status&limit=1&after=" + cursor,
+            cookie,
+            AbortToken
+        );
+
+        // then
+        sameSort.StatusCode.Should().Be(HttpStatusCode.OK);
+        otherSort.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task should_serve_a_runs_retry_settings_and_its_progress_time_only_once_it_reports()
+    {
+        // given
+        await using var app = await JobsDashboardHttpHost.StartAsync(_time, _log, AbortToken);
+        var now = _time.GetUtcNow();
+        var reporting = JobsModuleNode.IdleJob(now);
+        var silent = JobsModuleNode.FailedJob(now);
+        silent.Retries = 3;
+        silent.RetryIntervals = [10, 30, 60];
+        await _Store(app).AddTimeJobsAsync([reporting, silent], AbortToken);
+        var claimed = (await _Store(app).AcquireImmediateTimeJobsAsync([reporting.Id], AbortToken))
+            .Should()
+            .ContainSingle()
+            .Subject;
+        (await _Store(app).UpdateTimeJobProgressAsync(reporting.Id, claimed.OwnerId!, new JobProgress(40), AbortToken))
+            .Should()
+            .BeTrue();
+        using var client = JobsDashboardHttpHost.Client(app);
+        var cookie = await JobsDashboardHttpHost.SignInAsync(client, "viewer", AbortToken);
+
+        // when
+        var reported = await _RunAsync(client, cookie, reporting.Id);
+        var neverReported = await _RunAsync(client, cookie, silent.Id);
+
+        // then
+        reported.TryGetProperty("progressUpdatedAt", out var progressAt).Should().BeTrue();
+        progressAt.GetDateTimeOffset().Should().Be(now);
+        neverReported.TryGetProperty("progressUpdatedAt", out _).Should().BeFalse();
+        neverReported.GetProperty("retries").GetInt32().Should().Be(3);
+        neverReported
+            .GetProperty("retryIntervals")
+            .EnumerateArray()
+            .Select(static interval => interval.GetInt32())
+            .Should()
+            .Equal(10, 30, 60);
     }
 
     [Fact]
@@ -314,6 +424,38 @@ public sealed class JobsModuleApiTests : TestBase
             .GetProperty("items")
             .ValueKind.Should()
             .Be(JsonValueKind.Array);
+    }
+
+    private static async Task<List<Guid>> _RunIdsAsync(HttpClient client, string cookie, string path)
+    {
+        using var response = await JobsDashboardHttpHost.GetAsync(
+            client,
+            JobsDashboardHttpHost.Api + path,
+            cookie,
+            AbortToken
+        );
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        return
+        [
+            .. (await JobsDashboardHttpHost.ReadAsync(response, AbortToken))
+                .GetProperty("items")
+                .EnumerateArray()
+                .Select(static item => item.GetProperty("id").GetGuid()),
+        ];
+    }
+
+    private static async Task<JsonElement> _RunAsync(HttpClient client, string cookie, Guid id)
+    {
+        using var response = await JobsDashboardHttpHost.GetAsync(
+            client,
+            JobsDashboardHttpHost.Api + "/runs/" + id,
+            cookie,
+            AbortToken
+        );
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        return (await JobsDashboardHttpHost.ReadAsync(response, AbortToken)).GetProperty("run").Clone();
     }
 
     private static IJobPersistenceProvider<TimeJobEntity, CronJobEntity> _Store(WebApplication app) =>

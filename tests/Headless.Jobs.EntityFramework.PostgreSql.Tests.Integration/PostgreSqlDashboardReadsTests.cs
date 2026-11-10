@@ -66,4 +66,16 @@ public sealed class PostgreSqlDashboardReadsTests(PostgreSqlJobsCoordinationFixt
     {
         return base.per_function_stats_count_both_kinds();
     }
+
+    [Fact]
+    public override Task a_search_matches_function_id_business_key_and_description_literally_ignoring_case()
+    {
+        return base.a_search_matches_function_id_business_key_and_description_literally_ignoring_case();
+    }
+
+    [Fact]
+    public override Task a_run_serves_its_progress_time_only_once_it_reports_and_its_retry_settings()
+    {
+        return base.a_run_serves_its_progress_time_only_once_it_reports_and_its_retry_settings();
+    }
 }
