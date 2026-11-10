@@ -280,6 +280,25 @@ public sealed class JobsModuleTimeJobCommandsTests : TestBase
     }
 
     [Fact]
+    public async Task should_duplicate_a_job_to_run_now_when_no_execution_time_is_given()
+    {
+        // given
+        await using var node = JobsModuleNode.Create(_time);
+        var source = JobsModuleNode.FailedJob(_time.GetUtcNow());
+        await node.Store.AddTimeJobsAsync([source], AbortToken);
+
+        // when
+        var result = await node.Module.ExecuteAsync(_Request("jobs.duplicate", source.Id), AbortToken);
+
+        // then
+        var created = result.Rows.Should().ContainSingle().Subject.Created;
+        created.Should().NotBeNull();
+        var copy = (await node.Store.GetTimeJobByIdAsync(Guid.Parse(created!.Id), AbortToken))!;
+        copy.ExecutionTime.Should().NotBeNull("a run with no due time is never claimed");
+        copy.ExecutionTime!.Value.Should().BeOnOrBefore(_time.GetUtcNow().UtcDateTime);
+    }
+
+    [Fact]
     public async Task should_refuse_duplicating_a_chain_step()
     {
         // given
