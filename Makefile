@@ -766,7 +766,7 @@ dashboard-messaging: _npm-workspace ## Rebuild the Messaging dashboard module (n
 # cli-exclude: script:headless-*-dashboard/preview -- serves a finished bundle; make up drives the dashboards end to end
 # cli-exclude: script:headless-*-dashboard/test:unit:watch -- an interactive watcher; dashboard-<name>-test runs the suite once
 # cli-exclude: script:headless-*-dashboard/lint -- eslint --fix writes files; the gate runs lint:check
-# cli-exclude: script:headless-*-dashboard/format -- prettier --write over src/, which no gate checks
+# cli-exclude: script:headless-framework/format:check -- dashboard_check runs prettier --check on its own SPA only
 # cli-exclude: script:headless-dashboard/test:unit:watch -- an interactive watcher; dashboard-shell-test runs the suite once
 # cli-exclude: script:headless-dashboard/lint -- eslint --fix writes files; the gate runs lint:check
 # cli-exclude: script:@headless/dashboard-module-jobs/lint -- eslint --fix writes files; the gate runs lint:check
@@ -775,7 +775,9 @@ dashboard-messaging: _npm-workspace ## Rebuild the Messaging dashboard module (n
 # shell, the SPA's own otherwise) only when the node_modules beside it is missing or older than it (the rule
 # eng/DashboardSpa.targets uses), then run every gate script so one failure does not hide the next. Scripts
 # run through `npm run`, never npx: a wrapper such as Socket's prints a banner over npx output and once hid an
-# eslint result. Exits 3 when a script failed, 4 when npm is missing, 1 when the install failed.
+# eslint result. Prettier runs from the repository root, where `.prettierrc.json` and `.prettierignore` live,
+# through the installed binary for the same reason. Exits 3 when a script failed, 4 when npm is missing, 1 when
+# the install failed.
 DASHBOARD_CHECK_FN = dashboard_check() { \
 	local name="$$1" dir="$$2" lock_dir="$$2" script failed=""; \
 	command -v $(NPM) >/dev/null 2>&1 || { echo "ERROR: $(NPM) is not on PATH; the dashboard SPAs need Node 22+. Install from https://nodejs.org" >&2; return 4; }; \
@@ -783,12 +785,17 @@ DASHBOARD_CHECK_FN = dashboard_check() { \
 	if [ ! -f "$$lock_dir/node_modules/.package-lock.json" ] || [ "$$lock_dir/package-lock.json" -nt "$$lock_dir/node_modules/.package-lock.json" ]; then \
 		(cd "$$lock_dir" && $(NPM) ci --no-audit --no-fund) || { echo "[dashboard-$$name] npm ci failed" >&2; return 1; }; \
 	fi; \
+	"$$lock_dir/node_modules/.bin/prettier" --check --log-level warn "$$dir" || failed="$$failed format:check"; \
 	(cd "$$dir" && $(NPM) run lint:check) || failed="$$failed lint:check"; \
 	(cd "$$dir" && $(NPM) run type-check) || failed="$$failed type-check"; \
 	(cd "$$dir" && $(NPM) run test:unit) || failed="$$failed test:unit"; \
 	(cd "$$dir" && $(NPM) run build-only) || failed="$$failed build-only"; \
 	if [ -n "$$failed" ]; then echo "[dashboard-$$name] failed:$$failed" >&2; return 3; fi; \
-	echo "[dashboard-$$name] passed: lint:check type-check test:unit build-only"; }
+	echo "[dashboard-$$name] passed: format:check lint:check type-check test:unit build-only"; }
+
+.PHONY: dashboards-format
+dashboards-format: ## Format the dashboard SPAs' sources with Prettier (writes files; each dashboard-<name>-test checks them).
+	$(NPM) run format
 
 .PHONY: dashboard-shell-test
 dashboard-shell-test: ## Lint, type-check, unit-test, and build the dashboard shell's workspace, size budgets included (CI's Shell dashboard job).
