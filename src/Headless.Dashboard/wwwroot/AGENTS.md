@@ -29,6 +29,7 @@ Prettier owns formatting, configured once in the repository-root `.prettierrc.js
 - Treat data from the server as untrusted at the boundary: type it, and narrow `unknown` with checks rather than a cast.
 - Name booleans as questions (`isPending`, `hasMore`, `canOperate`).
 - Keep a file to one concern. Put a helper two views share in the module's own shared file (`parts.tsx` in Jobs); put one two modules share in the SDK.
+- Server data lives in TanStack Query (the SDK's `/data` hooks); never copy it into another store. Keep other state local to the component that owns it. When client state must be shared by components that are not parent and child, hold it in a Zustand store rather than a React context or module-level variables.
 - A comment says why the code is shaped this way. It never restates the code.
 
 ## UI
