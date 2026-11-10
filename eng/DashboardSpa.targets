@@ -45,12 +45,12 @@
     <DashboardSpaInput Include="$(DashboardSpaRoot)/public/**/*" />
     <DashboardSpaInput Include="$(DashboardSpaRoot)/index.html" />
     <DashboardSpaInput Include="$(DashboardSpaRoot)/package.json" />
-    <DashboardSpaInput Include="$(DashboardSpaNpmRoot)/package.json" Condition="'$(DashboardSpaNpmRoot)' != '$(DashboardSpaRoot)'" />
-    <DashboardSpaInput Include="$(DashboardSpaNpmRoot)/package-lock.json" />
     <DashboardSpaInput
-      Include="$(DashboardSpaNpmRoot)/.npmrc"
-      Condition="Exists('$(DashboardSpaNpmRoot)/.npmrc')"
+      Include="$(DashboardSpaNpmRoot)/package.json"
+      Condition="'$(DashboardSpaNpmRoot)' != '$(DashboardSpaRoot)'"
     />
+    <DashboardSpaInput Include="$(DashboardSpaNpmRoot)/package-lock.json" />
+    <DashboardSpaInput Include="$(DashboardSpaNpmRoot)/.npmrc" Condition="Exists('$(DashboardSpaNpmRoot)/.npmrc')" />
     <DashboardSpaInput Include="$(DashboardSpaRoot)/vite.config.*" />
     <DashboardSpaInput Include="$(DashboardSpaRoot)/postcss.config.*" />
     <DashboardSpaInput Include="$(DashboardSpaRoot)/tailwind.config.*" />
@@ -84,7 +84,10 @@
     Inputs="$(DashboardSpaNpmRoot)/package-lock.json"
     Outputs="$(DashboardSpaNpmRoot)/node_modules/.package-lock.json"
   >
-    <Message Importance="high" Text="[$(MSBuildProjectName)] Installing SPA dependencies ($(NpmTool) ci in $(DashboardSpaNpmRoot))..." />
+    <Message
+      Importance="high"
+      Text="[$(MSBuildProjectName)] Installing SPA dependencies ($(NpmTool) ci in $(DashboardSpaNpmRoot))..."
+    />
     <Exec Command="$(NpmTool) ci" WorkingDirectory="$(DashboardSpaNpmRoot)" />
   </Target>
 
