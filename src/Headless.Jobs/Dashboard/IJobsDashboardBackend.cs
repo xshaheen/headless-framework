@@ -116,6 +116,32 @@ internal interface IJobsDashboardBackend
     /// <summary>Deletes a run that is not running, only while its change marker equals <paramref name="expectedChangedAt"/>.</summary>
     Task<bool> DeleteAsync(JobRunKind kind, Guid id, DateTime expectedChangedAt, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Edits an idle or queued time job through the time job manager; a field the edit leaves unset keeps its stored
+    /// value.
+    /// </summary>
+    /// <returns>Why the edit did not apply, or <see langword="null"/> when it did.</returns>
+    Task<string?> EditTimeJobAsync(Guid id, JobsDashboardTimeJobEdit edit, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Adds a new standalone time job carrying a stored time job's function, request, retries, intervals,
+    /// description, and tenant, with no business key, due at <paramref name="executionTime"/> or now.
+    /// </summary>
+    /// <returns>The new job's id, or <see langword="null"/> when the source no longer exists.</returns>
+    Task<Guid?> DuplicateTimeJobAsync(Guid id, DateTime? executionTime, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Deletes a running time job whose cancel was requested, only while it is still running with the request
+    /// standing. The running code is not stopped.
+    /// </summary>
+    Task<bool> ForceDeleteTimeJobAsync(Guid id, CancellationToken cancellationToken);
+
+    /// <summary>Deletes a cron job and its stored occurrences, only while none of them is running.</summary>
+    /// <returns>
+    /// The occurrences removed with it, or <see langword="null"/> when it is gone or an occurrence is running.
+    /// </returns>
+    Task<int?> DeleteCronJobAsync(Guid id, CancellationToken cancellationToken);
+
     Task<bool> PauseCronJobAsync(Guid id, CancellationToken cancellationToken);
 
     Task<bool> ResumeCronJobAsync(Guid id, CancellationToken cancellationToken);
@@ -218,4 +244,20 @@ internal sealed record JobsDashboardCronJobDraft
     public string? RequestJson { get; init; }
 
     public string? Description { get; init; }
+}
+
+/// <summary>The fields of a time job an operator changes; each one left unset keeps its stored value.</summary>
+internal sealed record JobsDashboardTimeJobEdit
+{
+    /// <summary>The new due time (UTC).</summary>
+    public DateTime? ExecutionTime { get; init; }
+
+    /// <summary>Whether <see cref="RequestJson"/> replaces the stored request, so an empty one clears it.</summary>
+    public bool ReplacesRequest { get; init; }
+
+    public string? RequestJson { get; init; }
+
+    public int? Retries { get; init; }
+
+    public int[]? RetryIntervals { get; init; }
 }

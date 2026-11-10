@@ -6,8 +6,9 @@ using Headless.Dashboard;
 namespace Headless.Jobs;
 
 /// <summary>
-/// The Jobs module's commands: Requeue, Cancel, and Delete on a run, which also run over a filter as Operations, and
-/// Run now, Pause, Resume, and Edit schedule on a cron job. Every answer comes from <see cref="JobsRules"/>.
+/// The Jobs module's commands: Requeue, Cancel, and Delete on a run, which also run over a filter as Operations; Edit,
+/// Duplicate, and Force delete on a time job; and Run now, Pause, Resume, Edit schedule, and Delete on a cron job.
+/// Every answer comes from <see cref="JobsRules"/>.
 /// </summary>
 /// <remarks>
 /// The shell enforces each command's permission, confirmation, reason, and argument schema before this class runs, so
@@ -24,8 +25,14 @@ internal sealed class JobsCommands(
 {
     public const string ExpressionArgument = "expression";
     public const string TimeZoneArgument = "timeZoneId";
+    public const string ExecutionTimeArgument = "executionTime";
+    public const string RequestArgument = "request";
+    public const string RetriesArgument = "retries";
+    public const string RetryIntervalsArgument = "retryIntervals";
 
     private const string _MarkSeparator = ":";
+    private const int _MaxRequestLength = 65_536;
+    private const int _MaxRetries = 100;
 
     private readonly string _moduleId = Argument.IsNotNullOrWhiteSpace(moduleId);
     private readonly IJobsDashboardBackend _backend = Argument.IsNotNull(backend);
@@ -45,6 +52,14 @@ internal sealed class JobsCommands(
     public string ResumeId => _moduleId + ".resume";
 
     public string EditCronId => _moduleId + ".edit-cron";
+
+    public string EditId => _moduleId + ".edit";
+
+    public string DuplicateId => _moduleId + ".duplicate";
+
+    public string ForceDeleteId => _moduleId + ".force-delete";
+
+    public string DeleteCronId => _moduleId + ".delete-cron";
 
     public IReadOnlyList<DashboardCommand> Commands =>
         field ??= [
@@ -116,6 +131,82 @@ internal sealed class JobsCommands(
                     },
                 ],
             },
+            // Every argument is optional: one the operator leaves out keeps its stored value. The due time has no
+            // floor, because a form filled from a job already due would refuse its own unchanged value.
+            new()
+            {
+                Id = EditId,
+                Label = "Edit",
+                ObjectKind = JobsViews.RunKind,
+                Confirmation = DashboardConfirmation.Confirm,
+                RequiresReason = true,
+                Arguments =
+                [
+                    new()
+                    {
+                        Name = ExecutionTimeArgument,
+                        Label = "Execution time",
+                        Kind = DashboardArgumentKind.DateTime,
+                    },
+                    new()
+                    {
+                        Name = RequestArgument,
+                        Label = "Request",
+                        Kind = DashboardArgumentKind.Json,
+                        MaxLength = _MaxRequestLength,
+                    },
+                    new()
+                    {
+                        Name = RetriesArgument,
+                        Label = "Retries",
+                        Kind = DashboardArgumentKind.WholeNumber,
+                        Minimum = 0,
+                        Maximum = _MaxRetries,
+                    },
+                    new()
+                    {
+                        Name = RetryIntervalsArgument,
+                        Label = "Retry intervals (seconds)",
+                        Kind = DashboardArgumentKind.Json,
+                        MaxLength = 2000,
+                    },
+                ],
+            },
+            // The server copies the request, so the operator only chooses when the copy runs; none means now.
+            new()
+            {
+                Id = DuplicateId,
+                Label = "Duplicate",
+                ObjectKind = JobsViews.RunKind,
+                Confirmation = DashboardConfirmation.Confirm,
+                RequiresReason = true,
+                Arguments =
+                [
+                    new()
+                    {
+                        Name = ExecutionTimeArgument,
+                        Label = "Execution time",
+                        Kind = DashboardArgumentKind.DateTime,
+                        NotBeforeNow = true,
+                    },
+                ],
+            },
+            new()
+            {
+                Id = ForceDeleteId,
+                Label = "Force delete",
+                ObjectKind = JobsViews.RunKind,
+                Confirmation = DashboardConfirmation.Confirm,
+                RequiresReason = true,
+            },
+            new()
+            {
+                Id = DeleteCronId,
+                Label = "Delete",
+                ObjectKind = JobsViews.CronJobKind,
+                Confirmation = DashboardConfirmation.Confirm,
+                RequiresReason = true,
+            },
         ];
 
     public async Task<IReadOnlyList<DashboardCommandAvailability>> GetAllowedAsync(
@@ -123,7 +214,7 @@ internal sealed class JobsCommands(
         CancellationToken cancellationToken
     )
     {
-        var answers = new List<DashboardCommandAvailability>(targets.Count * 4);
+        var answers = new List<DashboardCommandAvailability>(targets.Count * 6);
 
         foreach (var target in targets)
         {
@@ -134,20 +225,23 @@ internal sealed class JobsCommands(
 
             if (string.Equals(target.Kind, JobsViews.RunKind, StringComparison.Ordinal))
             {
-                var (requeue, cancel, delete) = await _RunRefusalsAsync(target.Id, cancellationToken)
-                    .ConfigureAwait(false);
-                answers.Add(_Answer(target, RequeueId, requeue));
-                answers.Add(_Answer(target, CancelId, cancel));
-                answers.Add(_Answer(target, DeleteId, delete));
+                var refusals = await _RunRefusalsAsync(target.Id, cancellationToken).ConfigureAwait(false);
+                answers.Add(_Answer(target, RequeueId, refusals.Requeue));
+                answers.Add(_Answer(target, CancelId, refusals.Cancel));
+                answers.Add(_Answer(target, DeleteId, refusals.Delete));
+                answers.Add(_Answer(target, EditId, refusals.Edit));
+                answers.Add(_Answer(target, DuplicateId, refusals.Duplicate));
+                answers.Add(_Answer(target, ForceDeleteId, refusals.ForceDelete));
             }
             else if (string.Equals(target.Kind, JobsViews.CronJobKind, StringComparison.Ordinal))
             {
-                var (runNow, pause, resume, edit) = await _CronRefusalsAsync(target.Id, cancellationToken)
+                var (runNow, pause, resume, edit, delete) = await _CronRefusalsAsync(target.Id, cancellationToken)
                     .ConfigureAwait(false);
                 answers.Add(_Answer(target, RunNowId, runNow));
                 answers.Add(_Answer(target, PauseId, pause));
                 answers.Add(_Answer(target, ResumeId, resume));
                 answers.Add(_Answer(target, EditCronId, edit));
+                answers.Add(_Answer(target, DeleteCronId, delete));
             }
         }
 
@@ -337,6 +431,15 @@ internal sealed class JobsCommands(
             return await _ApplyToRunAsync(command, id, cancellationToken).ConfigureAwait(false);
         }
 
+        if (
+            string.Equals(command, EditId, StringComparison.Ordinal)
+            || string.Equals(command, DuplicateId, StringComparison.Ordinal)
+            || string.Equals(command, ForceDeleteId, StringComparison.Ordinal)
+        )
+        {
+            return await _ApplyToTimeJobAsync(request, id, cancellationToken).ConfigureAwait(false);
+        }
+
         return await _ApplyToCronJobAsync(request, id, cancellationToken).ConfigureAwait(false);
     }
 
@@ -501,6 +604,10 @@ internal sealed class JobsCommands(
                 return (_Failed(id, error), true);
             }
         }
+        else if (string.Equals(command, DeleteCronId, StringComparison.Ordinal))
+        {
+            return await _DeleteCronJobAsync(cronJob, id, cancellationToken).ConfigureAwait(false);
+        }
         else
         {
             return (_Failed(id, $"Unknown command '{command}'"), true);
@@ -521,10 +628,7 @@ internal sealed class JobsCommands(
         );
     }
 
-    private async Task<(string? Requeue, string? Cancel, string? Delete)> _RunRefusalsAsync(
-        string id,
-        CancellationToken cancellationToken
-    )
+    private async Task<RunRefusals> _RunRefusalsAsync(string id, CancellationToken cancellationToken)
     {
         var run = Guid.TryParse(id, out var guid)
             ? await _backend.GetRunAsync(guid, cancellationToken).ConfigureAwait(false)
@@ -532,18 +636,36 @@ internal sealed class JobsCommands(
 
         if (run is null)
         {
-            return (JobsRules.RunGone, JobsRules.RunGone, JobsRules.RunGone);
+            return new RunRefusals(
+                JobsRules.RunGone,
+                JobsRules.RunGone,
+                JobsRules.RunGone,
+                JobsRules.RunGone,
+                JobsRules.RunGone,
+                JobsRules.RunGone
+            );
         }
 
         var isChainMember = await _IsChainMemberAsync(run, cancellationToken).ConfigureAwait(false);
+        var inChain = await _IsInChainAsync(run, cancellationToken).ConfigureAwait(false);
 
-        return (JobsRules.Requeue(run, isChainMember), JobsRules.Cancel(run), JobsRules.Delete(run));
+        return new RunRefusals(
+            JobsRules.Requeue(run, isChainMember),
+            JobsRules.Cancel(run),
+            JobsRules.Delete(run),
+            JobsRules.Edit(run),
+            _DuplicateRefusal(run, inChain),
+            JobsRules.ForceDelete(run, inChain)
+        );
     }
 
-    private async Task<(string? RunNow, string? Pause, string? Resume, string? Edit)> _CronRefusalsAsync(
-        string id,
-        CancellationToken cancellationToken
-    )
+    private async Task<(
+        string? RunNow,
+        string? Pause,
+        string? Resume,
+        string? Edit,
+        string? Delete
+    )> _CronRefusalsAsync(string id, CancellationToken cancellationToken)
     {
         var cronJob = Guid.TryParse(id, out var guid)
             ? await _backend.GetCronJobAsync(guid, cancellationToken).ConfigureAwait(false)
@@ -551,16 +673,24 @@ internal sealed class JobsCommands(
 
         if (cronJob is null)
         {
-            return (JobsRules.CronJobGone, JobsRules.CronJobGone, JobsRules.CronJobGone, JobsRules.CronJobGone);
+            return (
+                JobsRules.CronJobGone,
+                JobsRules.CronJobGone,
+                JobsRules.CronJobGone,
+                JobsRules.CronJobGone,
+                JobsRules.CronJobGone
+            );
         }
 
         var running = await _HasRunningOccurrenceAsync(cronJob, cancellationToken).ConfigureAwait(false);
+        var inProgress = await _HasInProgressOccurrenceAsync(cronJob.Id, cancellationToken).ConfigureAwait(false);
 
         return (
             JobsRules.RunNow(cronJob, running),
             JobsRules.Pause(cronJob),
             JobsRules.Resume(cronJob),
-            JobsRules.EditCron(cronJob)
+            JobsRules.EditCron(cronJob),
+            JobsRules.DeleteCron(cronJob, inProgress)
         );
     }
 
@@ -597,6 +727,291 @@ internal sealed class JobsCommands(
             .ConfigureAwait(false);
 
         return running.Count > 0;
+    }
+
+    private async Task<(DashboardRowResult Row, bool Refused)> _ApplyToTimeJobAsync(
+        DashboardCommandRequest request,
+        string id,
+        CancellationToken cancellationToken
+    )
+    {
+        var command = request.CommandId;
+        var run = Guid.TryParse(id, out var guid)
+            ? await _backend.GetRunAsync(guid, cancellationToken).ConfigureAwait(false)
+            : null;
+
+        if (run is null)
+        {
+            return (_Skipped(id, JobsRules.RunGone), true);
+        }
+
+        if (string.Equals(command, EditId, StringComparison.Ordinal))
+        {
+            if (JobsRules.Edit(run) is { } refusal)
+            {
+                return (_Skipped(id, refusal), true);
+            }
+
+            if (!_TryReadEdit(request.Arguments, out var edit, out var invalid))
+            {
+                return (_Failed(id, invalid), true);
+            }
+
+            if (await _backend.EditTimeJobAsync(run.Id, edit, cancellationToken).ConfigureAwait(false) is { } error)
+            {
+                return (_Failed(id, error), true);
+            }
+
+            await _publisher
+                .TryPublishAsync(JobChangeKind.TimeJob, run.Id, affectsAttention: false, cancellationToken)
+                .ConfigureAwait(false);
+
+            return (_Done(id), false);
+        }
+
+        var inChain = await _IsInChainAsync(run, cancellationToken).ConfigureAwait(false);
+
+        if (string.Equals(command, DuplicateId, StringComparison.Ordinal))
+        {
+            if (_DuplicateRefusal(run, inChain) is { } refusal)
+            {
+                return (_Skipped(id, refusal), true);
+            }
+
+            Guid? created;
+
+            try
+            {
+                created = await _backend
+                    .DuplicateTimeJobAsync(
+                        run.Id,
+                        _Instant(request.Arguments, ExecutionTimeArgument),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
+            catch (Exception exception) when (exception is ArgumentException or JobValidatorException)
+            {
+                return (_Failed(id, exception.Message), true);
+            }
+
+            if (created is not { } copy)
+            {
+                return (_Skipped(id, JobsRules.RunGone), true);
+            }
+
+            await _publisher
+                .TryPublishAsync(JobChangeKind.TimeJob, copy, affectsAttention: false, cancellationToken)
+                .ConfigureAwait(false);
+
+            return (
+                new DashboardRowResult
+                {
+                    Id = id,
+                    Outcome = DashboardRowOutcome.Done,
+                    Created = new ObjectRef
+                    {
+                        Module = _moduleId,
+                        Kind = JobsViews.RunKind,
+                        Id = copy.ToString(),
+                    },
+                },
+                false
+            );
+        }
+
+        if (JobsRules.ForceDelete(run, inChain) is { } forceRefusal)
+        {
+            return (_Skipped(id, forceRefusal), true);
+        }
+
+        if (!await _backend.ForceDeleteTimeJobAsync(run.Id, cancellationToken).ConfigureAwait(false))
+        {
+            // The store refused because the run moved since it was read: answer with what it is now.
+            var now = await _backend.GetRunAsync(run.Id, cancellationToken).ConfigureAwait(false);
+            var reason = now is null
+                ? JobsRules.RunGone
+                : JobsRules.ForceDelete(now, isChainMember: false) ?? "Changed while deleting — try again";
+
+            return (_Skipped(id, reason), true);
+        }
+
+        _publisher.PublishRemoved(JobChangeKind.TimeJob, run.Id);
+
+        return (_Done(id), false);
+    }
+
+    private async Task<(DashboardRowResult Row, bool Refused)> _DeleteCronJobAsync(
+        CronJobEntity cronJob,
+        string id,
+        CancellationToken cancellationToken
+    )
+    {
+        var inProgress = await _HasInProgressOccurrenceAsync(cronJob.Id, cancellationToken).ConfigureAwait(false);
+
+        if (JobsRules.DeleteCron(cronJob, inProgress) is { } refusal)
+        {
+            return (_Skipped(id, refusal), true);
+        }
+
+        if (await _backend.DeleteCronJobAsync(cronJob.Id, cancellationToken).ConfigureAwait(false) is not { } removed)
+        {
+            // The store refused because an occurrence started since the check, or the job went meanwhile.
+            var reason = await _backend.GetCronJobAsync(cronJob.Id, cancellationToken).ConfigureAwait(false) is null
+                ? JobsRules.CronJobGone
+                : JobsRules.RunningCronDelete;
+
+            return (_Skipped(id, reason), true);
+        }
+
+        _publisher.PublishRemoved(JobChangeKind.CronJob, cronJob.Id);
+
+        return (
+            new DashboardRowResult
+            {
+                Id = id,
+                Outcome = DashboardRowOutcome.Done,
+                Reason =
+                    removed == 1
+                        ? "1 stored occurrence removed"
+                        : removed.ToString(CultureInfo.InvariantCulture) + " stored occurrences removed",
+            },
+            false
+        );
+    }
+
+    // Unlike the requeue read, membership here does not depend on the run's status: a finished or running step is
+    // still part of its chain.
+    private async Task<bool> _IsInChainAsync(JobRunSummary run, CancellationToken cancellationToken)
+    {
+        if (run.Kind != JobRunKind.TimeJob)
+        {
+            return false;
+        }
+
+        return run.ParentId is not null
+            || (await _backend.GetChildIdsAsync(run.Id, cancellationToken).ConfigureAwait(false)).Count != 0;
+    }
+
+    // Unlike the overlap read, only a started occurrence holds a delete: a claimed one has not run any code yet.
+    private async Task<bool> _HasInProgressOccurrenceAsync(Guid cronJobId, CancellationToken cancellationToken)
+    {
+        var running = await _backend
+            .CountRunsAsync(
+                new JobRunQuery
+                {
+                    Kind = JobRunKind.CronJobOccurrence,
+                    CronJobId = cronJobId,
+                    Statuses = [JobStatus.InProgress],
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return running.Count > 0;
+    }
+
+    // A copy runs on this host, so a function it no longer registers, or a request stored under another contract,
+    // has nothing to run it.
+    private string? _DuplicateRefusal(JobRunSummary run, bool inChain)
+    {
+        if (JobsRules.Duplicate(run, inChain) is { } refusal)
+        {
+            return refusal;
+        }
+
+        var function = _backend.Functions.FirstOrDefault(candidate =>
+            string.Equals(candidate.Name, run.Function, StringComparison.Ordinal)
+        );
+
+        if (function is null)
+        {
+            return JobsRules.FunctionNotRegistered;
+        }
+
+        return
+            run.ContractVersion is { } version
+            && !string.Equals(version, function.ContractVersion, StringComparison.Ordinal)
+            ? JobsRules.UnsupportedContract
+            : null;
+    }
+
+    private static bool _TryReadEdit(
+        IReadOnlyDictionary<string, JsonElement> arguments,
+        out JobsDashboardTimeJobEdit edit,
+        out string invalid
+    )
+    {
+        invalid = string.Empty;
+        int[]? intervals = null;
+
+        if (_Text(arguments, RetryIntervalsArgument) is { } text && !_TryReadIntervals(text, out intervals))
+        {
+            edit = new JobsDashboardTimeJobEdit();
+            invalid = "Retry intervals must be a JSON array of whole seconds, such as [30, 60, 300]";
+
+            return false;
+        }
+
+        var request = _Text(arguments, RequestArgument);
+
+        edit = new JobsDashboardTimeJobEdit
+        {
+            ExecutionTime = _Instant(arguments, ExecutionTimeArgument),
+            ReplacesRequest = request is not null,
+            RequestJson = request,
+            Retries =
+                arguments.TryGetValue(RetriesArgument, out var retries) && retries.ValueKind == JsonValueKind.Number
+                    ? retries.GetInt32()
+                    : null,
+            RetryIntervals = intervals,
+        };
+
+        return true;
+    }
+
+    // The shell checked the text is JSON, not that it is a list of non-negative whole numbers.
+    private static bool _TryReadIntervals(string text, out int[]? intervals)
+    {
+        intervals = null;
+
+        try
+        {
+            using var document = JsonDocument.Parse(text);
+
+            if (document.RootElement.ValueKind != JsonValueKind.Array)
+            {
+                return false;
+            }
+
+            var values = new List<int>(document.RootElement.GetArrayLength());
+
+            foreach (var item in document.RootElement.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Number || !item.TryGetInt32(out var seconds) || seconds < 0)
+                {
+                    return false;
+                }
+
+                values.Add(seconds);
+            }
+
+            intervals = [.. values];
+
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    // The shell accepted only ISO 8601 text with an offset, so the instant is unambiguous.
+    private static DateTime? _Instant(IReadOnlyDictionary<string, JsonElement> arguments, string name)
+    {
+        return arguments.TryGetValue(name, out var value) && value.TryGetDateTimeOffset(out var instant)
+            ? instant.UtcDateTime
+            : null;
     }
 
     private JobOperationKind _OperationKind(string commandId)
@@ -699,4 +1114,13 @@ internal sealed class JobsCommands(
             Allowed = refusal is null,
             DisabledReason = refusal,
         };
+
+    private readonly record struct RunRefusals(
+        string? Requeue,
+        string? Cancel,
+        string? Delete,
+        string? Edit,
+        string? Duplicate,
+        string? ForceDelete
+    );
 }

@@ -568,6 +568,51 @@ public partial interface IJobPersistenceProvider<TTimeJob, TCronJob>
         throw new NotSupportedException($"{GetType().Name} does not support Jobs Operation writes.");
     }
 
+    /// <summary>
+    /// Deletes a running time job whose cancellation was requested, and its chain subtree, only while it is still
+    /// running with the request standing: a standalone, unkeyed root that is <see cref="JobStatus.InProgress"/> with
+    /// <see cref="TimeJobEntity{TTicker}.CancelRequested"/> set.
+    /// </summary>
+    /// <param name="jobId">Identifier of the time job to delete.</param>
+    /// <param name="cancellationToken">Token that aborts the delete.</param>
+    /// <returns>
+    /// <see langword="true"/> when this call deleted the job; <see langword="false"/> when it does not exist, finished,
+    /// was released, carries a business key, or is a chain step.
+    /// </returns>
+    /// <remarks>
+    /// The check and the delete commit together, so a job that finishes after the caller read it is kept rather than
+    /// erased. The delete removes the stored rows only: the code still running on its node is not stopped, and its
+    /// completion write then finds no row. The default throws.
+    /// </remarks>
+    /// <exception cref="NotSupportedException">The provider does not support dashboard writes.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<bool> RemoveCancelRequestedTimeJobAsync(Guid jobId, CancellationToken cancellationToken = default)
+    {
+        throw new NotSupportedException($"{GetType().Name} does not support Jobs dashboard writes.");
+    }
+
+    /// <summary>
+    /// Deletes a cron job and every stored occurrence, only while none of its occurrences is
+    /// <see cref="JobStatus.InProgress"/>.
+    /// </summary>
+    /// <param name="cronJobId">Identifier of the cron job to delete.</param>
+    /// <param name="cancellationToken">Token that aborts the delete.</param>
+    /// <returns>
+    /// The number of stored occurrences the delete removed with the job, or <see langword="null"/> when the job does
+    /// not exist or an occurrence is in progress.
+    /// </returns>
+    /// <remarks>
+    /// The check and the delete commit together, so an occurrence that starts after the caller read the job refuses
+    /// the delete, and the job and its occurrences stay. Unlike <see cref="RemoveCronJobsAsync"/>, it never removes a
+    /// definition with a run in flight. The default throws.
+    /// </remarks>
+    /// <exception cref="NotSupportedException">The provider does not support dashboard writes.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<int?> RemoveIdleCronJobAsync(Guid cronJobId, CancellationToken cancellationToken = default)
+    {
+        throw new NotSupportedException($"{GetType().Name} does not support Jobs dashboard writes.");
+    }
+
     /// <summary>Counts one table's runs that finished or started late in the window [<paramref name="from"/>, <paramref name="to"/>).</summary>
     /// <param name="kind">The table to count.</param>
     /// <param name="from">The window's inclusive start (UTC).</param>

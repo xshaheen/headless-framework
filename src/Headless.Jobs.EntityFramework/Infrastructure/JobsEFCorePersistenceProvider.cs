@@ -694,7 +694,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
 
     public Task<int> RemoveTimeJobsAsync(Guid[] timeJobIds, CancellationToken cancellationToken = default)
     {
-        return _RemoveTimeJobsAsync(timeJobIds, expectedChangedAt: null, cancellationToken);
+        return _RemoveTimeJobsAsync(timeJobIds, rootGuard: null, cancellationToken);
     }
 
     public async Task<bool> RemoveTimeJobIfUnchangedAsync(
@@ -703,7 +703,30 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         CancellationToken cancellationToken = default
     )
     {
-        return await _RemoveTimeJobsAsync([jobId], expectedChangedAt, cancellationToken).ConfigureAwait(false) > 0;
+        var marker = DateTime.SpecifyKind(expectedChangedAt, DateTimeKind.Utc);
+
+        return await _RemoveTimeJobsAsync(
+                    [jobId],
+                    x => x.Id == jobId && x.ChangedAt == marker && x.Status != JobStatus.InProgress,
+                    cancellationToken
+                )
+                .ConfigureAwait(false) > 0;
+    }
+
+    public async Task<bool> RemoveCancelRequestedTimeJobAsync(Guid jobId, CancellationToken cancellationToken = default)
+    {
+        // A chain step or a keyed row fails the guard here, so the keyed retention check below never throws for it.
+        return await _RemoveTimeJobsAsync(
+                    [jobId],
+                    x =>
+                        x.Id == jobId
+                        && x.Status == JobStatus.InProgress
+                        && x.CancelRequested
+                        && x.BusinessKey == null
+                        && x.ParentId == null,
+                    cancellationToken
+                )
+                .ConfigureAwait(false) > 0;
     }
 
     public async Task<bool> RemoveCronJobOccurrenceIfUnchangedAsync(
@@ -726,7 +749,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
 
     private async Task<int> _RemoveTimeJobsAsync(
         Guid[] timeJobIds,
-        DateTime? expectedChangedAt,
+        Expression<Func<TTimeJob, bool>>? rootGuard,
         CancellationToken cancellationToken
     )
     {
@@ -744,10 +767,10 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                 .ExecuteAsync(
                     static async (context, state) =>
                         await state
-                            .Provider._RemoveTimeJobsAttemptAsync(state.Ids, state.Expected, context)
+                            .Provider._RemoveTimeJobsAttemptAsync(state.Ids, state.Guard, context)
                             .ConfigureAwait(false),
                     resilienceContext,
-                    (Provider: this, Ids: timeJobIds, Expected: expectedChangedAt)
+                    (Provider: this, Ids: timeJobIds, Guard: rootGuard)
                 )
                 .ConfigureAwait(false);
         }
@@ -757,11 +780,12 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         }
     }
 
-    // With an expected marker, the call deletes one root only while it is not running and its marker is unchanged: an
-    // Operation's compare-and-set, checked under the row lock the delete then holds through commit.
+    // With a root guard, the call deletes one root only while the guard still matches it: an Operation's
+    // compare-and-set on the change marker, or a force delete's "still running with cancel requested", checked under
+    // the row lock the delete then holds through commit.
     private async ValueTask<int> _RemoveTimeJobsAttemptAsync(
         Guid[] timeJobIds,
-        DateTime? expectedChangedAt,
+        Expression<Func<TTimeJob, bool>>? rootGuard,
         ResilienceContext resilienceContext
     )
     {
@@ -795,16 +819,13 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                     // rather than with a recursive CTE so a single query shape serves every relational provider; the
                     // visited set also terminates a corrupted cycle. The foreign key is the atomicity fence: a
                     // conflicting write rolls this scope back and fresh discovery runs.
-                    if (expectedChangedAt is { } expected)
+                    if (rootGuard is not null)
                     {
-                        var marker = DateTime.SpecifyKind(expected, DateTimeKind.Utc);
-                        var rootId = timeJobIds[0];
-
-                        // A no-op write takes the root's row lock, so no claim or requeue can move the row between
-                        // this check and the delete.
+                        // A no-op write takes the root's row lock, so no claim, requeue, or completion can move the
+                        // row between this check and the delete.
                         var held = await dbContext
                             .Set<TTimeJob>()
-                            .Where(x => x.Id == rootId && x.ChangedAt == marker && x.Status != JobStatus.InProgress)
+                            .Where(rootGuard)
                             .ExecuteUpdateAsync(
                                 setter => setter.SetProperty(x => x.Status, x => x.Status),
                                 cancellationToken
@@ -1595,6 +1616,67 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         await InvalidateCronExpressionsCacheAsync().ConfigureAwait(false);
 
         return result;
+    }
+
+    public async Task<int?> RemoveIdleCronJobAsync(Guid cronJobId, CancellationToken cancellationToken = default)
+    {
+        var removed = await JobsStoreTransaction
+            .ExecuteAsync<TDbContext, int?>(
+                DbContextFactory,
+                async (attempt, ct) =>
+                {
+                    var dbContext = attempt.DbContext;
+
+                    // The same no-op write every occurrence insert takes first, so no occurrence is added to this
+                    // definition until the delete commits or rolls back.
+                    var held = await dbContext
+                        .Set<TCronJob>()
+                        .Where(x => x.Id == cronJobId)
+                        .ExecuteUpdateAsync(
+                            setter => setter.SetProperty(x => x.ScheduleRevision, x => x.ScheduleRevision),
+                            ct
+                        )
+                        .ConfigureAwait(false);
+
+                    if (held == 0)
+                    {
+                        return null;
+                    }
+
+                    // Locking every stored occurrence makes a start that has not committed wait for this delete, and
+                    // the check below sees every start that committed first. The locked count is the cascade's reach.
+                    var occurrences = dbContext
+                        .Set<CronJobOccurrenceEntity<TCronJob>>()
+                        .Where(x => x.CronJobId == cronJobId);
+                    var stored = await occurrences
+                        .ExecuteUpdateAsync(setter => setter.SetProperty(x => x.Status, x => x.Status), ct)
+                        .ConfigureAwait(false);
+
+                    if (await occurrences.AnyAsync(x => x.Status == JobStatus.InProgress, ct).ConfigureAwait(false))
+                    {
+                        return null;
+                    }
+
+                    // The occurrence and attempt keys cascade, so the definition's delete removes its whole history.
+                    await dbContext
+                        .Set<TCronJob>()
+                        .Where(x => x.Id == cronJobId)
+                        .ExecuteDeleteAsync(ct)
+                        .ConfigureAwait(false);
+                    await attempt.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+
+                    return stored;
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (removed is not null)
+        {
+            await InvalidateCronExpressionsCacheAsync().ConfigureAwait(false);
+        }
+
+        return removed;
     }
 
     #endregion

@@ -30,6 +30,22 @@ internal static class JobsRules
     public const string NotPaused = "Not paused";
     public const string Retired = "Removed from code — it can no longer be resumed";
     public const string DefinedInCode = "Defined in code";
+    public const string OccurrenceEdit = "An occurrence follows its cron job — edit the schedule instead";
+    public const string RunningEdit = "Running — it can no longer be edited";
+    public const string FinishedEdit = "Already finished — duplicate it instead";
+    public const string ClaimedEdit = "Claimed with its chain — it can no longer be edited";
+    public const string KeyedEdit = "Keyed runs change through their key";
+    public const string ChainStepEdit = "A chain step runs after its parent — edit the chain's first step";
+    public const string UnsupportedContract = "Stored under another contract version — its request cannot be rewritten";
+    public const string OccurrenceDuplicate = "Only a time job can be duplicated — run its cron job now instead";
+    public const string UnfinishedDuplicate = "Not finished yet";
+    public const string ChainDuplicate = "Part of a chain — chains are not duplicated";
+    public const string FunctionNotRegistered = "Its function is no longer registered on this host";
+    public const string OccurrenceForceDelete = "An occurrence cannot be force deleted — pause its cron job instead";
+    public const string NotRunningForceDelete = "Not running — delete it instead";
+    public const string CancelFirst = "Cancel first";
+    public const string ChainForceDelete = "Part of a chain — chain steps are not deleted one by one";
+    public const string RunningCronDelete = "Running — wait or cancel the occurrence";
 
     public static string? Requeue(JobRunSummary run, bool isChainMember)
     {
@@ -108,6 +124,90 @@ internal static class JobsRules
 
     /// <summary>Whether the cron job is a definition the seed step owns, so its schedule is read-only.</summary>
     public static bool IsDefinedInCode(CronJobEntity cronJob) => JobsSeedId.IsSeedMarker(cronJob.InitIdentifier);
+
+    /// <summary>
+    /// Edit follows <c>TimeJobEditGuard</c>, the rule the store applies: an idle unclaimed or a queued time job. A
+    /// keyed job changes only through its key, and a chain step's due time comes from its parent.
+    /// </summary>
+    public static string? Edit(JobRunSummary run)
+    {
+        if (run.Kind == JobRunKind.CronJobOccurrence)
+        {
+            return OccurrenceEdit;
+        }
+
+        if (run.BusinessKey is not null)
+        {
+            return KeyedEdit;
+        }
+
+        if (run.ParentId is not null)
+        {
+            return ChainStepEdit;
+        }
+
+        return run.Status switch
+        {
+            JobStatus.Queued => null,
+            JobStatus.Idle => run.OwnerId is null ? null : ClaimedEdit,
+            JobStatus.InProgress => RunningEdit,
+            _ => FinishedEdit,
+        };
+    }
+
+    // A chain copied step by step would lose the links between its steps, so only a standalone run is duplicated.
+    public static string? Duplicate(JobRunSummary run, bool isChainMember)
+    {
+        if (run.Kind == JobRunKind.CronJobOccurrence)
+        {
+            return OccurrenceDuplicate;
+        }
+
+        if (run.Status is JobStatus.Idle or JobStatus.Queued or JobStatus.InProgress)
+        {
+            return UnfinishedDuplicate;
+        }
+
+        return isChainMember ? ChainDuplicate : null;
+    }
+
+    // Force delete removes the stored row of a run whose cancel was requested but which has not stopped. It keeps the
+    // protections Delete has, keyed runs included, and adds chains: a running step's tree cannot be removed in part.
+    public static string? ForceDelete(JobRunSummary run, bool isChainMember)
+    {
+        if (run.Kind == JobRunKind.CronJobOccurrence)
+        {
+            return OccurrenceForceDelete;
+        }
+
+        if (run.BusinessKey is not null)
+        {
+            return KeyedDelete;
+        }
+
+        if (isChainMember)
+        {
+            return ChainForceDelete;
+        }
+
+        if (run.Status != JobStatus.InProgress)
+        {
+            return NotRunningForceDelete;
+        }
+
+        return run.CancelRequested ? null : CancelFirst;
+    }
+
+    // A definition removed from code is retired, not defined in code, so an operator can still clean it up.
+    public static string? DeleteCron(CronJobEntity cronJob, bool hasRunningOccurrence)
+    {
+        if (JobsSeedId.IsSeedMarker(cronJob.InitIdentifier) && !JobsSeedId.IsRetiredMarker(cronJob.InitIdentifier))
+        {
+            return DefinedInCode;
+        }
+
+        return hasRunningOccurrence ? RunningCronDelete : null;
+    }
 
     // JobRunSummary carries no generation flag: a keyed run in the run list is assumed current, and the store's own
     // requeue rule decides the rest.

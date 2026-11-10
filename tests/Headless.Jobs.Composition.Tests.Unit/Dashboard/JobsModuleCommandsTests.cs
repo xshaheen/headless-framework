@@ -195,7 +195,7 @@ public sealed class JobsModuleCommandsTests : TestBase
 
         var allowed = await node.Module.GetAllowedCommandsAsync(_Allowed(JobsViews.RunKind, gone), AbortToken);
 
-        allowed.Should().HaveCount(3).And.OnlyContain(answer => answer.DisabledReason == "This run no longer exists");
+        allowed.Should().HaveCount(6).And.OnlyContain(answer => answer.DisabledReason == "This run no longer exists");
     }
 
     [Fact]

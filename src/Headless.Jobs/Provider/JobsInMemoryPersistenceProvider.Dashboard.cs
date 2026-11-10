@@ -236,6 +236,79 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         return Task.FromResult(true);
     }
 
+    public Task<bool> RemoveCancelRequestedTimeJobAsync(Guid jobId, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        lock (_keyedOperations)
+        {
+            if (
+                !_timeJobs.TryGetValue(jobId, out var job)
+                || job.Status != JobStatus.InProgress
+                || !job.CancelRequested
+                || job.BusinessKey is not null
+                || job.ParentId is not null
+            )
+            {
+                return Task.FromResult(false);
+            }
+
+            // Removes only the instance the check read: the executor's completion swaps in a new instance without
+            // this lock, so a job that finished since is kept. Its descendants go after it, as the relational store
+            // removes the whole tree.
+            var children = _GetChildrenIds(jobId);
+
+            if (!_TryRemoveTimeJob(new KeyValuePair<Guid, TTimeJob>(jobId, job)))
+            {
+                return Task.FromResult(false);
+            }
+
+            if (children.Length != 0)
+            {
+                _RemoveTimeJobs(children);
+            }
+
+            return Task.FromResult(true);
+        }
+    }
+
+    public Task<int?> RemoveIdleCronJobAsync(Guid cronJobId, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // Every occurrence insert and every start takes this definition's lock, so none can land between the check
+        // and the removal.
+        lock (_GetCronDefinitionLock(cronJobId))
+        {
+            if (!_cronJobs.ContainsKey(cronJobId))
+            {
+                return Task.FromResult<int?>(null);
+            }
+
+            var occurrences = _cronOccurrences.Values.Where(x => x.CronJobId == cronJobId).ToArray();
+
+            if (occurrences.Any(x => x.Status == JobStatus.InProgress))
+            {
+                return Task.FromResult<int?>(null);
+            }
+
+            lock (_cronJobIdIndexLock)
+            {
+                if (!_TryRemoveCronJob(cronJobId))
+                {
+                    return Task.FromResult<int?>(null);
+                }
+
+                _cronJobIds.Remove(cronJobId);
+            }
+
+            // The relational store cascades occurrences and their attempts; this store removes them itself.
+            var removed = occurrences.Count(occurrence => _TryRemoveOccurrence(occurrence.Id));
+
+            return Task.FromResult<int?>(removed);
+        }
+    }
+
     public Task<JobRunWindowFigures> CountJobRunWindowAsync(
         JobRunKind kind,
         DateTime from,

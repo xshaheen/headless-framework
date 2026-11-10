@@ -348,6 +348,144 @@ internal sealed class JobsDashboardBackend<TTimeJob, TCronJob>(IServiceProvider 
         return deleted;
     }
 
+    public async Task<string?> EditTimeJobAsync(
+        Guid id,
+        JobsDashboardTimeJobEdit edit,
+        CancellationToken cancellationToken
+    )
+    {
+        Argument.IsNotNull(edit);
+
+        var job = await Store.GetTimeJobByIdAsync(id, cancellationToken).ConfigureAwait(false);
+
+        if (job is null)
+        {
+            return "This run no longer exists";
+        }
+
+        if (edit.ExecutionTime is { } at)
+        {
+            job.ExecutionTime = DateTime.SpecifyKind(at, DateTimeKind.Utc);
+        }
+
+        if (edit.ReplacesRequest)
+        {
+            // The request shown was bound to the stored contract; rewriting it under today's type could drop fields.
+            if (
+                Registry.Descriptors.TryGetValue(job.Function, out var descriptor)
+                && !string.Equals(job.ContractVersion, descriptor.ContractVersion, StringComparison.Ordinal)
+            )
+            {
+                return $"Unsupported contract version {job.ContractVersion}";
+            }
+
+            try
+            {
+                job.Request = _Request(job.Function, edit.RequestJson);
+            }
+            catch (ArgumentException exception)
+            {
+                return exception.Message;
+            }
+        }
+
+        if (edit.Retries is { } retries)
+        {
+            job.Retries = retries;
+        }
+
+        if (edit.RetryIntervals is { } intervals)
+        {
+            job.RetryIntervals = intervals;
+        }
+
+        var result = await _services
+            .GetRequiredService<ITimeJobManager<TTimeJob>>()
+            .UpdateAsync(job, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (result.IsSucceeded)
+        {
+            return null;
+        }
+
+        // The edit guard's refusal is written for a developer; a run that a node claimed since it was read is the
+        // case an operator meets.
+        return result.Exception is InvalidOperationException
+            ? "Started since it was read — it can no longer be edited"
+            : result.Exception.Message;
+    }
+
+    public async Task<Guid?> DuplicateTimeJobAsync(
+        Guid id,
+        DateTime? executionTime,
+        CancellationToken cancellationToken
+    )
+    {
+        var source = await Store.GetTimeJobByIdAsync(id, cancellationToken).ConfigureAwait(false);
+
+        if (source is null)
+        {
+            return null;
+        }
+
+        // The stored bytes are copied as they are: the copy runs the same request, never one re-serialized through
+        // today's type. The keyed identity, chain links, and run state stay with the source.
+        var copy = new TTimeJob
+        {
+            Function = _RegisteredFunction(source.Function),
+            ContractVersion = source.ContractVersion,
+            ExecutionTime = executionTime is { } at ? DateTime.SpecifyKind(at, DateTimeKind.Utc) : null,
+            Request = source.Request?.ToArray(),
+            Description = source.Description,
+            Retries = source.Retries,
+            RetryIntervals = source.RetryIntervals?.ToArray(),
+            TenantId = source.TenantId,
+            OnNodeDeath = source.OnNodeDeath,
+        };
+
+        var created = await _services
+            .GetRequiredService<ITimeJobManager<TTimeJob>>()
+            .AddAsync(copy, cancellationToken)
+            .ConfigureAwait(false);
+
+        return created.Id;
+    }
+
+    public async Task<bool> ForceDeleteTimeJobAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var deleted = await Store.RemoveCancelRequestedTimeJobAsync(id, cancellationToken).ConfigureAwait(false);
+
+        // This node may be the one running it, or hold it as its next to fire; a restart drops the stale entry.
+        if (
+            deleted
+            && _services.GetService<JobsExecutionContext>() is { } execution
+            && execution.Functions.Any(function => function.JobId == id)
+        )
+        {
+            HostScheduler.Restart();
+        }
+
+        return deleted;
+    }
+
+    public async Task<int?> DeleteCronJobAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var removed = await Store.RemoveIdleCronJobAsync(id, cancellationToken).ConfigureAwait(false);
+
+        // The scheduler may hold one of its occurrences as its next to fire, as the cron job manager's delete does.
+        if (
+            removed is not null
+            && _services.GetService<JobsExecutionContext>() is { } execution
+            && execution.Functions.Any(function => function.ParentId == id)
+        )
+        {
+            HostScheduler.Restart();
+        }
+
+        return removed;
+    }
+
     public Task<bool> PauseCronJobAsync(Guid id, CancellationToken cancellationToken)
     {
         return Scheduling.PauseCronAsync(id, cancellationToken);
