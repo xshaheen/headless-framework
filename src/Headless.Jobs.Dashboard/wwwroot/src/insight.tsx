@@ -66,11 +66,15 @@ type Preset = 'around' | 'last-30' | 'last-90' | 'custom'
 
 // A finishing chain or a bulk requeue sends many run changes at once; one read after they settle covers them all.
 const SERIES_REREAD_DELAY_MS = 1000
+// A running job reports progress every few seconds, so with several running the changes never settle; the burst's first
+// change bounds how long the series may go unread.
+const SERIES_REREAD_MAX_WAIT_MS = 5000
 
 const presets: readonly { value: Preset; label: string }[] = [
-  { value: 'around', label: 'Last 7 and next 7 days' },
-  { value: 'last-30', label: 'Last 30 days' },
-  { value: 'last-90', label: 'Last 90 days' },
+  // Short enough for the four to sit on one line in a phone-width card; "±" reads as "plus or minus" aloud.
+  { value: 'around', label: '±7 days' },
+  { value: 'last-30', label: '30 days' },
+  { value: 'last-90', label: '90 days' },
   { value: 'custom', label: 'Custom' },
 ]
 
@@ -142,21 +146,36 @@ export function useRunsPerDay({ cronJobId, unit, unitOne }: { cronJobId?: string
     enabled: range !== undefined,
   })
   const client = useQueryClient()
-  const reread = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const settle = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const deadline = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   // A run change can move any day's counts, and the change carries no day to patch, so the series is read again once
-  // a burst of changes settles rather than once per change.
+  // a burst of changes settles rather than once per change, and at the latest a few seconds into a burst that does not.
   useTopics([runsTopic])
   useStreamEvent('change', (change) => {
-    if (change.topic === runsTopic) {
-      clearTimeout(reread.current)
-      reread.current = setTimeout(
-        () => void client.invalidateQueries({ queryKey: ['jobs', 'series', 'daily'] }),
-        SERIES_REREAD_DELAY_MS,
-      )
+    if (change.topic !== runsTopic) {
+      return
     }
+
+    const reread = () => {
+      clearTimeout(settle.current)
+      clearTimeout(deadline.current)
+      settle.current = undefined
+      deadline.current = undefined
+      void client.invalidateQueries({ queryKey: ['jobs', 'series', 'daily'] })
+    }
+
+    clearTimeout(settle.current)
+    settle.current = setTimeout(reread, SERIES_REREAD_DELAY_MS)
+    deadline.current ??= setTimeout(reread, SERIES_REREAD_MAX_WAIT_MS)
   })
-  useEffect(() => () => clearTimeout(reread.current), [])
+  useEffect(
+    () => () => {
+      clearTimeout(settle.current)
+      clearTimeout(deadline.current)
+    },
+    [],
+  )
 
   const control = <SegmentedControl label="Days shown" options={presets} value={preset} onChange={setPreset} />
   const picker =

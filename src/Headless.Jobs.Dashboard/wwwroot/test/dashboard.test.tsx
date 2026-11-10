@@ -1,5 +1,6 @@
 import { act, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { Run } from '../src/runs.ts'
 import { change, cronJob, now, open, run, user } from './fake-server.ts'
 
 beforeEach(() => {
@@ -354,6 +355,27 @@ describe('jobs dashboard', () => {
     await waitFor(() => expect(header.textContent).toContain('reports.nightly'))
   })
 
+  it('reads the next time job again after a run change that carries no projection', async () => {
+    const waiting: Run[] = []
+    const view = open({
+      cronJobs: [cronJob({ function: 'reports.nightly', nextDueUtc: '2026-11-06T01:00:00Z' })],
+      extra: (request) =>
+        request.path === 'jobs/runs' && request.query?.kind === 'TimeJob'
+          ? { items: waiting, count: waiting.length, countCapped: false }
+          : undefined,
+    })
+
+    const header = (await screen.findByRole('heading', { level: 1, name: 'Dashboard' })).closest('header')!
+    await waitFor(() => expect(header.textContent).toContain('reports.nightly'))
+
+    // A projection-less change names no kind or time, so it may be a time job now due before the cron fire.
+    const due = run('Idle', { function: 'export.ledger', executionTime: '2026-11-05T12:00:00Z' })
+    waiting.push(due)
+    act(() => view.stream.push('change', { ...change(due), projection: null }))
+
+    await waitFor(() => expect(header.textContent).toContain('Next execution in 2 hours · export.ledger'))
+  })
+
   it('keeps the next cron fire as the next execution when no time job is due before it', async () => {
     open({
       cronJobs: [cronJob({ function: 'reports.nightly', nextDueUtc: '2026-11-05T11:00:00Z' })],
@@ -480,13 +502,34 @@ describe('jobs dashboard runs per day', () => {
     await waitFor(() => expect(reads()).toBe(before + 1))
   })
 
+  it('reads the days again within a few seconds while run changes keep arriving', async () => {
+    const view = open({ daily: () => ({ Succeeded: 3 }) })
+    const reads = () => view.requests.filter((request) => request.path === 'jobs/series/daily').length
+
+    const card = await screen.findByRole('region', { name: 'Runs per day' })
+    await within(card).findByRole('img', { name: /^Runs per day by status/ })
+    const before = reads()
+
+    // Progress reports from running jobs arrive well inside the settle delay, so the burst never settles on its own.
+    const running = run('InProgress', { version: '2' })
+    for (let at = 0; at < 6; at++) {
+      act(() => view.stream.push('change', change({ ...running, version: String(at + 2) })))
+      await act(() => vi.advanceTimersByTimeAsync(800))
+    }
+    expect(reads()).toBe(before)
+
+    act(() => view.stream.push('change', change({ ...running, version: '9' })))
+    await act(() => vi.advanceTimersByTimeAsync(200))
+    await waitFor(() => expect(reads()).toBe(before + 1))
+  })
+
   it('asks for the chosen preset’s days', async () => {
     const actor = user()
     const view = open({})
 
     const card = await screen.findByRole('region', { name: 'Runs per day' })
     await within(card).findByRole('img', { name: /^Runs per day by status/ })
-    await actor.click(within(card).getByRole('button', { name: 'Last 30 days' }))
+    await actor.click(within(card).getByRole('button', { name: '30 days' }))
 
     await waitFor(() =>
       expect(view.requests.filter((request) => request.path === 'jobs/series/daily').at(-1)?.query).toEqual({

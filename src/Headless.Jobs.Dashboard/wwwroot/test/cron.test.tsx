@@ -1,7 +1,7 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CronJob } from '../src/cron.ts'
-import { cronJob, now, open, run, user } from './fake-server.ts'
+import { change, cronJob, now, open, run, user } from './fake-server.ts'
 
 beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true })
@@ -292,6 +292,47 @@ describe('jobs recurring jobs list', () => {
       ids: [job.id],
       reason: 'Replaced by a new schedule',
     })
+  })
+
+  it('counts the stored occurrences again after a run change that carries no projection', async () => {
+    const actor = user()
+    const job = cronJob()
+    const runs = [run('Succeeded', { kind: 'CronJobOccurrence', cronJobId: job.id })]
+    const view = open({ cronJobs: [job], runs }, { path: `cron-jobs/${job.id}` })
+
+    const remove = await screen.findByRole('button', { name: 'Delete' })
+    await waitFor(() => expect(remove.getAttribute('aria-disabled')).toBeNull())
+    const counted = () =>
+      view.requests.filter((request) => request.path === 'jobs/runs' && request.query?.limit === '1').length
+    const before = counted()
+
+    // The stream drops the projection when the row must be read again, so nothing names the cron job it belongs to.
+    const added = run('Idle', { kind: 'CronJobOccurrence', cronJobId: job.id })
+    runs.push(added)
+    act(() => view.stream.push('change', { ...change(added), projection: null }))
+    await waitFor(() => expect(counted()).toBeGreaterThan(before))
+
+    await actor.click(remove)
+    expect(within(await screen.findByRole('dialog')).getByText('2 stored occurrences go with it')).toBeTruthy()
+  })
+
+  it('does not count the stored occurrences again for another cron job’s run', async () => {
+    const job = cronJob()
+    const view = open({ cronJobs: [job], runs: [] }, { path: `cron-jobs/${job.id}` })
+
+    const remove = await screen.findByRole('button', { name: 'Delete' })
+    await waitFor(() => expect(remove.getAttribute('aria-disabled')).toBeNull())
+    const counted = () =>
+      view.requests.filter(
+        (request) =>
+          request.path === 'jobs/runs' && request.query?.cronJobId === job.id && request.query?.limit === '1',
+      ).length
+    const before = counted()
+
+    act(() => view.stream.push('change', change(run('Idle', { kind: 'CronJobOccurrence', cronJobId: 'another' }))))
+    await act(() => vi.advanceTimersByTimeAsync(50))
+
+    expect(counted()).toBe(before)
   })
 
   it('does not carry an expression typed for one job into the next one opened', async () => {

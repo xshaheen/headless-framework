@@ -7,7 +7,9 @@ import { useQuery } from '@headless/dashboard-sdk/query'
 import { useNavigate } from '@headless/dashboard-sdk/router'
 import { useState } from 'react'
 
-export type RunKind = 'TimeJob' | 'CronJobOccurrence'
+export const runKinds = ['TimeJob', 'CronJobOccurrence'] as const
+
+export type RunKind = (typeof runKinds)[number]
 
 export const runStatuses = [
   'Idle',
@@ -270,6 +272,41 @@ export const attemptTones: Readonly<Record<AttemptOutcome, DashboardStateRole>> 
 }
 
 export const runsTopic = 'jobs.run'
+
+/** The fields of a live change's projection that decide which reads the change makes stale. */
+export interface RunProjectionFacts {
+  cronJobId?: string
+  kind?: RunKind
+  status?: RunStatus
+  executionTime?: string
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function oneOf<T extends string>(values: readonly T[], value: unknown): T | undefined {
+  return values.find((candidate) => candidate === value)
+}
+
+/**
+ * The deciding fields of a change's projection, each kept only when it holds its served type; `undefined` when the
+ * change carries no projection, which the stream sends when the row must be read again or was removed.
+ */
+export function readRunProjection(projection: unknown): RunProjectionFacts | undefined {
+  if (!isRecord(projection)) {
+    return undefined
+  }
+
+  const { cronJobId, kind, status, executionTime } = projection
+
+  return {
+    cronJobId: typeof cronJobId === 'string' ? cronJobId : undefined,
+    kind: oneOf(runKinds, kind),
+    status: oneOf(runStatuses, status),
+    executionTime: typeof executionTime === 'string' ? executionTime : undefined,
+  }
+}
 
 interface RunListAnswer {
   items: Run[]

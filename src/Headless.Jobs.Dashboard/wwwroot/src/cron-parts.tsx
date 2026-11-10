@@ -21,7 +21,16 @@ import { useEffect, useState } from 'react'
 import { cronJobsTopic, cronStatusMark, fetchCronJob, fetchPreview, type CronJob } from './cron.ts'
 import { useRunsPerDay } from './insight.tsx'
 import { firstLine, RunProgress, Time } from './parts.tsx'
-import { fetchRuns, runStatusMark, runsTopic, statusLabel, useJobsCommands, viewOnlyReason, type Run } from './runs.ts'
+import {
+  fetchRuns,
+  readRunProjection,
+  runStatusMark,
+  runsTopic,
+  statusLabel,
+  useJobsCommands,
+  viewOnlyReason,
+  type Run,
+} from './runs.ts'
 
 const hour = 3_600_000
 
@@ -244,9 +253,12 @@ function useStoredOccurrences(cronJobId: string, enabled: boolean) {
     enabled,
   })
 
-  // A new occurrence of this cron job changes the count the delete confirmation states.
+  // A new occurrence of this cron job changes the count the delete confirmation states. A change with no projection
+  // names no cron job, and may be a removed occurrence, so it is read again too.
   useStreamEvent('change', (change) => {
-    if (change.topic === runsTopic && (change.projection as Run | null | undefined)?.cronJobId === cronJobId) {
+    const run = readRunProjection(change.projection)
+
+    if (change.topic === runsTopic && (!run || run.cronJobId === cronJobId)) {
       void client.invalidateQueries({ queryKey: ['jobs', 'stored-occurrences', cronJobId] })
     }
   })

@@ -33,6 +33,7 @@ import {
   fetchRuns,
   markDone,
   readFilter,
+  readRunProjection,
   runsTopic,
   useJobsCommands,
   usePending,
@@ -233,14 +234,16 @@ function useNextTimeJob() {
   })
 
   // Read again when the shown job moves on, or a waiting time job is due sooner; a progress tick of another run is not.
+  // A change with no projection says neither, so it is read again in case it is a time job due sooner.
   useStreamEvent('change', (change) => {
     const shown = next.data
-    const run = change.projection as Run | null | undefined
+    const run = readRunProjection(change.projection)
     const sooner =
-      run?.kind === 'TimeJob' &&
-      (run.status === 'Idle' || run.status === 'Queued') &&
-      run.executionTime !== undefined &&
-      (!shown?.executionTime || Date.parse(run.executionTime) < Date.parse(shown.executionTime))
+      !run ||
+      (run.kind === 'TimeJob' &&
+        (run.status === 'Idle' || run.status === 'Queued') &&
+        run.executionTime !== undefined &&
+        (!shown?.executionTime || Date.parse(run.executionTime) < Date.parse(shown.executionTime)))
 
     if (change.topic === runsTopic && (change.id === shown?.id || sooner)) {
       void client.invalidateQueries({ queryKey: ['jobs', 'next-time-job'] })
