@@ -385,7 +385,8 @@ export function DataTable<T extends { id: string }>({
       onKeyDownCapture={(event: KeyboardEvent) => (moving.current = !event.shiftKey && moveKeys.has(event.key))}
       onKeyDown={() => (moving.current = false)}
     >
-      <div className="flex flex-wrap items-center justify-between gap-2 pt-2 [&>[role=group]]:ms-auto">
+      {/* The table insets its own first column, so its toolbar takes the same gutter rather than meeting the page edge. */}
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-2 [&>[role=group]]:ms-auto">
         {arrived > 0 ? (
           <Button variant="ghost" className="self-center text-primary" onPress={showArrived}>
             {`${arrived} new`}
