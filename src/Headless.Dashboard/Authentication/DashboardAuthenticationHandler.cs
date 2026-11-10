@@ -112,7 +112,7 @@ internal sealed class DashboardAuthenticationHandler(ILogger<DashboardAuthentica
 internal static partial class DashboardAuthenticationHandlerLog
 {
     [LoggerMessage(
-        EventId = 1,
+        EventId = 2231,
         EventName = "AuthenticationFailed",
         Level = LogLevel.Warning,
         Message = "Authentication failed for {Path}: {Error}"

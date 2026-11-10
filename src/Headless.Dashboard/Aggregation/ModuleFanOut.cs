@@ -141,7 +141,7 @@ internal sealed record ModuleAnswer<TResult>(MergedModule Module, TResult? Resul
 internal static partial class ModuleFanOutLog
 {
     [LoggerMessage(
-        EventId = 1,
+        EventId = 2200,
         EventName = "DashboardModuleTimedOut",
         Level = LogLevel.Warning,
         Message = "Dashboard module {ModuleId} did not answer {Capability} within {Timeout}; it is shown as stale"
@@ -154,7 +154,7 @@ internal static partial class ModuleFanOutLog
     );
 
     [LoggerMessage(
-        EventId = 2,
+        EventId = 2201,
         EventName = "DashboardModuleFailed",
         Level = LogLevel.Warning,
         Message = "Dashboard module {ModuleId} failed to answer {Capability}; it is shown as stale"

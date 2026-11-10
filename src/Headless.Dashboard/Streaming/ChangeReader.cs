@@ -149,7 +149,7 @@ internal sealed class ChangeReader : IDisposable
 internal static partial class ChangeReaderLog
 {
     [LoggerMessage(
-        EventId = 10,
+        EventId = 2210,
         EventName = "DashboardChangeReadFailed",
         Level = LogLevel.Warning,
         Message = "Dashboard module {ModuleId} failed to read its changes; its live views show stale, and the read is "

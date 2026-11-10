@@ -173,7 +173,7 @@ public sealed class AuthService(AuthConfig config, ILogger<AuthService> logger) 
 internal static partial class AuthServiceLog
 {
     [LoggerMessage(
-        EventId = 1,
+        EventId = 2230,
         EventName = "AuthenticationError",
         Level = LogLevel.Error,
         Message = "Authentication error"

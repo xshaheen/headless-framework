@@ -372,7 +372,7 @@ internal sealed record StreamStart(long Position, bool Reset);
 internal static partial class StreamConnectionLog
 {
     [LoggerMessage(
-        EventId = 11,
+        EventId = 2211,
         EventName = "DashboardProjectionFormatFailed",
         Level = LogLevel.Warning,
         Message = "Dashboard module {ModuleId} failed to format a {Kind} projection for a live stream; the event "

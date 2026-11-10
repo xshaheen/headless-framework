@@ -274,7 +274,7 @@ internal sealed class ChangeReaderCoordinator(
 internal static partial class ChangeReaderCoordinatorLog
 {
     [LoggerMessage(
-        EventId = 12,
+        EventId = 2212,
         EventName = "DashboardNodeTopicCallbackFailed",
         Level = LogLevel.Warning,
         Message = "Dashboard module {ModuleId} failed to handle a change in who watches {Topic}; the stream goes on"

@@ -42,7 +42,7 @@ internal sealed class LoggerOperatorLog(ILoggerFactory loggerFactory) : IDashboa
 internal static partial class LoggerOperatorLogMessages
 {
     [LoggerMessage(
-        EventId = 1,
+        EventId = 2220,
         EventName = "DashboardOperatorAction",
         Level = LogLevel.Information,
         Message = "Dashboard operator {Actor} ({Channel}) {Action} {CommandId} in module {ModuleId}: {Count} rows, "
