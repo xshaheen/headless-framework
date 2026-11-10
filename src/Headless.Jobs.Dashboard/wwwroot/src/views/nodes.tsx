@@ -12,13 +12,14 @@ import {
   Tag,
   Text,
   usePageFrame,
+  RelativeTime,
 } from '@headless/dashboard-sdk/components'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQuery } from '@headless/dashboard-sdk/query'
 import { Link } from '@headless/dashboard-sdk/router'
 import { DataTable } from '@headless/dashboard-sdk/table'
 import { fetchNodes, nodeStatusMark, type JobNode } from '../cron.ts'
-import { CellText, firstLine, JobsStats, QueryState, StaleNotice, Time } from '../parts.tsx'
+import { CellText, firstLine, JobsStats, QueryState, StaleNotice } from '../parts.tsx'
 
 export default function NodesView() {
   const { api } = useDashboard()
@@ -111,7 +112,7 @@ export default function NodesView() {
                 header: 'Last beat',
                 cell: (row) => (
                   <CellText>
-                    <Time value={row.lastHeartbeatAt ?? undefined} missing="Not tracked" />
+                    <RelativeTime value={row.lastHeartbeatAt ?? undefined} missing="Not tracked" />
                   </CellText>
                 ),
                 priority: 2,
@@ -165,7 +166,7 @@ function HostExceptionAlert({ node }: { node: JobNode }) {
       <Text role="alert" tone="error">
         {`This node's scheduler last failed: ${firstLine(node.lastHostException ?? undefined) ?? ''}`}
       </Text>
-      <Time value={node.lastHostExceptionAt ?? undefined} />
+      <RelativeTime value={node.lastHostExceptionAt ?? undefined} />
     </Banner>
   )
 }
@@ -184,7 +185,7 @@ function HostException({ node }: { node: JobNode }) {
 
   return (
     <>
-      <Time value={node.lastHostExceptionAt ?? undefined} />
+      <RelativeTime value={node.lastHostExceptionAt ?? undefined} />
       <ExceptionBlock message={message} stack={stack.length > 0 ? stack.join('\n') : undefined} />
     </>
   )
@@ -216,7 +217,7 @@ function NodePanel({ node }: { node: JobNode }) {
                     {format.count({ value: node.running, capped: node.runningCapped })}
                   </GridField>
                   <GridField label="Last beat">
-                    <Time value={node.lastHeartbeatAt ?? undefined} missing="Not tracked" />
+                    <RelativeTime value={node.lastHeartbeatAt ?? undefined} missing="Not tracked" />
                   </GridField>
                   <GridField label="Last host exception" span={2}>
                     <HostException node={node} />

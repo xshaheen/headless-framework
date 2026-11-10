@@ -4,6 +4,7 @@ import {
   Banner,
   Button,
   DetailPanel,
+  EmptyState,
   ExceptionBlock,
   FieldGrid,
   GridField,
@@ -20,8 +21,16 @@ import {
   Text,
   useDelayed,
   type HistoryItem,
+  RelativeTime,
 } from '@headless/dashboard-sdk/components'
 import { DashboardApiError, refetchTopics, type CappedCount } from '@headless/dashboard-sdk/data'
+import {
+  AttentionIcon,
+  PublishedIcon,
+  ReceivedIcon,
+  RefreshIcon,
+  type IconComponent,
+} from '@headless/dashboard-sdk/icons'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQuery, useQueryClient } from '@headless/dashboard-sdk/query'
 import { Link, useSearchParams } from '@headless/dashboard-sdk/router'
@@ -43,32 +52,6 @@ import {
   type MessageRow,
   type Pending,
 } from './messages.ts'
-
-/**
- * A timestamp as relative time, with the exact time, zone, and offset on hover. `short` reads `4 min. ago`, so a list
- * column stays narrow enough for a phone.
- */
-export function Time({
-  value,
-  short,
-  missing = 'Not yet',
-}: {
-  value: string | undefined | null
-  short?: boolean
-  missing?: string
-}) {
-  const format = useFormat()
-
-  if (!value) {
-    return <Text tone="hint">{missing}</Text>
-  }
-
-  return (
-    <time dateTime={value} title={format.exactTime(value)}>
-      {format.relativeTime(value, short ? { style: 'short' } : undefined)}
-    </time>
-  )
-}
 
 /**
  * A list cell's content, with `title` giving the full text on hover. The table ends a cell's only child in an
@@ -256,7 +239,16 @@ export function NodeSwitch() {
     })
   }
 
-  return <SelectField label="Node" isRequired value={node || (local?.name ?? '')} onChange={choose} options={options} />
+  return (
+    <SelectField
+      label="Node"
+      isRequired
+      compact
+      value={node || (local?.name ?? '')}
+      onChange={choose}
+      options={options}
+    />
+  )
 }
 
 /**
@@ -451,11 +443,42 @@ export function useRealtime() {
   })
 }
 
-const stripCounts: readonly { key: string; label: string; tone: DashboardStateRole; to: string }[] = [
-  { key: 'received.failed', label: 'Failed received', tone: 'fail', to: 'received?status=Failed&terminal=true' },
-  { key: 'received.retrying', label: 'Retrying received', tone: 'proc', to: 'received?retrying=true' },
-  { key: 'published.failed', label: 'Failed published', tone: 'fail', to: 'published?status=Failed&terminal=true' },
-  { key: 'published.retrying', label: 'Retrying published', tone: 'proc', to: 'published?retrying=true' },
+// What each card is about; its state stays the dot and the label, as the Jobs strip draws them.
+const stripCounts: readonly {
+  key: string
+  label: string
+  tone: DashboardStateRole
+  to: string
+  icon: IconComponent
+}[] = [
+  {
+    key: 'received.failed',
+    label: 'Failed received',
+    tone: 'fail',
+    to: 'received?status=Failed&terminal=true',
+    icon: AttentionIcon,
+  },
+  {
+    key: 'received.retrying',
+    label: 'Retrying received',
+    tone: 'proc',
+    to: 'received?retrying=true',
+    icon: RefreshIcon,
+  },
+  {
+    key: 'published.failed',
+    label: 'Failed published',
+    tone: 'fail',
+    to: 'published?status=Failed&terminal=true',
+    icon: AttentionIcon,
+  },
+  {
+    key: 'published.retrying',
+    label: 'Retrying published',
+    tone: 'proc',
+    to: 'published?retrying=true',
+    icon: RefreshIcon,
+  },
 ]
 
 /** A count or rate still loading, failed, or unmeasured reads as an en dash, never 0. */
@@ -474,7 +497,7 @@ export function MessagingStats() {
 
   return (
     <StatStrip label="Messaging at a glance">
-      {stripCounts.map(({ key, label, tone, to }) => {
+      {stripCounts.map(({ key, label, tone, to, icon }) => {
         const count = counts.data?.counts[key]
 
         return (
@@ -484,11 +507,22 @@ export function MessagingStats() {
             tone={tone}
             value={count ? format.count(count) : '–'}
             to={`/messaging/${to}${nodeSuffix}`}
+            icon={icon}
           />
         )
       })}
-      <StatCard label="Published/s" value={rate(realtime.data?.publishedPerSecond)} caption="Last minute" />
-      <StatCard label="Received/s" value={rate(realtime.data?.consumedPerSecond)} caption="Last minute" />
+      <StatCard
+        label="Published/s"
+        value={rate(realtime.data?.publishedPerSecond)}
+        caption="Last minute"
+        icon={PublishedIcon}
+      />
+      <StatCard
+        label="Received/s"
+        value={rate(realtime.data?.consumedPerSecond)}
+        caption="Last minute"
+        icon={ReceivedIcon}
+      />
     </StatStrip>
   )
 }
@@ -520,11 +554,15 @@ export function MessageFields({ kind, row }: { kind: MessageKind; row: MessageRo
       {kind === 'published' ? <GridField label="Store">{row.store}</GridField> : null}
       <Optional label="Consumer" span={2} value={row.consumer ? <Mono>{row.consumer}</Mono> : undefined} />
       <GridField label="Added" span={2}>
-        <Time value={row.added} />
+        <RelativeTime value={row.added} />
       </GridField>
-      <Optional label="Next retry" span={2} value={row.nextRetryAt ? <Time value={row.nextRetryAt} /> : undefined} />
-      <Optional label="Expires" span={2} value={row.expiresAt ? <Time value={row.expiresAt} /> : undefined} />
-      <Optional label="Changed" span={2} value={row.changedAt ? <Time value={row.changedAt} /> : undefined} />
+      <Optional
+        label="Next retry"
+        span={2}
+        value={row.nextRetryAt ? <RelativeTime value={row.nextRetryAt} /> : undefined}
+      />
+      <Optional label="Expires" span={2} value={row.expiresAt ? <RelativeTime value={row.expiresAt} /> : undefined} />
+      <Optional label="Changed" span={2} value={row.changedAt ? <RelativeTime value={row.changedAt} /> : undefined} />
       <Optional label="Message id" span={2} value={row.messageId ? <Mono>{row.messageId}</Mono> : undefined} />
       <Optional
         label="Fingerprint"
@@ -559,12 +597,12 @@ function DetailState({
   children: (data: NonNullable<ReturnType<typeof useMessageDetail>['data']>) => ReactNode
 }) {
   if (detail.isPending) {
-    return <Skeleton label={label} />
+    return <Skeleton label={label} shape="lines" rows={4} />
   }
 
   if (detail.isError) {
     return detail.error instanceof DashboardApiError && detail.error.status === 404 ? (
-      <p role="alert">This message no longer exists.</p>
+      <EmptyState role="alert" title="This message no longer exists." />
     ) : (
       <LoadError message={detail.error.message} onRetry={() => void detail.refetch()} />
     )
@@ -605,7 +643,7 @@ function MessageHeaders({ kind, node, row }: { kind: MessageKind; node: string; 
               ))}
             </FieldGrid>
           ) : (
-            <p>This message has no headers.</p>
+            <EmptyState>This message has no headers.</EmptyState>
           )
         }}
       </DetailState>
@@ -627,7 +665,7 @@ function MessageBody({ kind, node, row }: { kind: MessageKind; node: string; row
               contentType={data.headers['headless-content-type'] ?? data.headers['content-type'] ?? 'application/json'}
             />
           ) : (
-            <p>This message has no body.</p>
+            <EmptyState>This message has no body.</EmptyState>
           )
         }
       </DetailState>
@@ -649,7 +687,7 @@ function MessageGenerations({ node, row }: { node: string; row: MessageRow }) {
   })
 
   if (!messageId) {
-    return <p>This row has no message id, so its generations cannot be read.</p>
+    return <EmptyState>This row has no message id, so its generations cannot be read.</EmptyState>
   }
 
   if (!generations.data) {
@@ -658,7 +696,7 @@ function MessageGenerations({ node, row }: { node: string; row: MessageRow }) {
         {generations.isError ? (
           <LoadError message={generations.error.message} onRetry={() => void generations.refetch()} />
         ) : (
-          <Skeleton label="Loading the generations" />
+          <Skeleton label="Loading the generations" shape="rows" />
         )}
       </section>
     )
@@ -669,7 +707,7 @@ function MessageGenerations({ node, row }: { node: string; row: MessageRow }) {
 
     return {
       key: generation.id,
-      time: <Time value={generation.changedAt ?? generation.added} short />,
+      time: <RelativeTime value={generation.changedAt ?? generation.added} />,
       tone: mark.tone,
       state: generation.id === row.id ? `${mark.label} (this row)` : mark.label,
       note: [

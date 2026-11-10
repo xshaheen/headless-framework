@@ -12,6 +12,7 @@ import {
   Skeleton,
   Text,
   usePageFrame,
+  RelativeTime,
 } from '@headless/dashboard-sdk/components'
 import { listKey, useDashboardKeysetList, useDashboardList, useNewRows } from '@headless/dashboard-sdk/data'
 import { useFormat } from '@headless/dashboard-sdk/locale'
@@ -21,15 +22,7 @@ import { useStreamEvent } from '@headless/dashboard-sdk/stream'
 import { useEffect, useRef } from 'react'
 import { StatusDistribution, useRunsPerDay } from '../insight.tsx'
 import { cronJobsTopic, fetchCronJobs, type CronJob } from '../cron.ts'
-import {
-  JobsStats,
-  RunProgress,
-  StaleNotice,
-  Time,
-  useJobsAttention,
-  useJobsCounts,
-  type AttentionItem,
-} from '../parts.tsx'
+import { JobsStats, RunProgress, StaleNotice, useJobsAttention, useJobsCounts, type AttentionItem } from '../parts.tsx'
 import {
   fetchRuns,
   markDone,
@@ -74,7 +67,7 @@ export default function JobsDashboard() {
           description={
             next ? (
               <>
-                Next execution <Mono>{next.function}</Mono>, <Time value={next.at} scheduled />
+                Next execution <Mono>{next.function}</Mono>, <RelativeTime value={next.at} scheduled />
               </>
             ) : undefined
           }
@@ -278,7 +271,7 @@ function RunsByStatus() {
         counts.isError ? (
           <LoadError message={counts.error.message} onRetry={() => void counts.refetch()} />
         ) : (
-          <Skeleton label="Loading the runs by status" rows={2} />
+          <Skeleton label="Loading the runs by status" shape="chart" />
         )
       }
     >
@@ -329,7 +322,8 @@ function NextRecurringRuns({ list, total, next }: ReturnType<typeof useNextRecur
   return (
     <Card
       title="Next recurring runs"
-      action={total > 0 ? <Link to="/jobs/cron-jobs">{`All ${total}`}</Link> : undefined}
+      caption={next.length > 0 ? `${next.length} scheduled` : undefined}
+      action={total > 0 ? <Link to="/jobs/cron-jobs">All</Link> : undefined}
       empty={
         list.isError ? (
           <LoadError message={list.error.message} onRetry={() => void list.refetch()} />
@@ -356,12 +350,15 @@ function NextRecurringRuns({ list, total, next }: ReturnType<typeof useNextRecur
           tone="sched"
           name={<Link to={`/jobs/cron-jobs/${encodeURIComponent(cronJob.id)}`}>{cronJob.function}</Link>}
           meta={cronJob.expression}
-          value={<Time value={cronJob.nextDueUtc} scheduled />}
+          value={<RelativeTime value={cronJob.nextDueUtc} scheduled />}
         />
       ))}
     </Card>
   )
 }
+
+/** `37 failed runs of billing.charge`, as the server titles a failure group, split into its function and its count. */
+const failedRunsTitle = /^(\d[\d,]*\+? failed runs?) of (\S+)$/
 
 function attentionPath(item: AttentionItem) {
   const scope = item.recommended?.filter
@@ -382,7 +379,8 @@ function JobsAttention() {
   return (
     <Card
       title="Needs attention"
-      caption={items.length > 0 ? String(items.length) : undefined}
+      caption={items.length > 0 ? `${items.length} ${items.length === 1 ? 'item' : 'items'}` : undefined}
+      action={items.length > 0 ? <Link to="/jobs/runs?status=Failed">All</Link> : undefined}
       empty={
         answer.isError ? (
           <LoadError message={answer.error.message} onRetry={() => void answer.refetch()} />
@@ -393,14 +391,26 @@ function JobsAttention() {
         )
       }
     >
-      {items.map((item) => (
-        <CardRow
-          key={item.id}
-          tone={item.severity === 'critical' ? 'fail' : 'proc'}
-          name={<Link to={attentionPath(item)}>{item.title}</Link>}
-          value={item.lastSeenAt ? <Time value={item.lastSeenAt} /> : undefined}
-        />
-      ))}
+      {items.map((item) => {
+        // The function is the identifier, so it leads the row in mono and the count follows as its fact; the link
+        // still answers to the whole title. A title in another shape reads as the prose it is.
+        const parts = failedRunsTitle.exec(item.title)
+
+        return (
+          <CardRow
+            key={item.id}
+            tone={item.severity === 'critical' ? 'fail' : 'proc'}
+            prose={!parts}
+            name={
+              <Link to={attentionPath(item)} aria-label={item.title}>
+                {parts ? <Mono>{parts[2]}</Mono> : item.title}
+              </Link>
+            }
+            meta={parts ? parts[1] : undefined}
+            value={item.lastSeenAt ? <RelativeTime value={item.lastSeenAt} /> : undefined}
+          />
+        )
+      })}
     </Card>
   )
 }

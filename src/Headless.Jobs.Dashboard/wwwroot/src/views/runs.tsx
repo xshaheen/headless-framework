@@ -8,6 +8,7 @@ import {
 import {
   Button,
   DetailPanel,
+  EmptyState,
   FilterChip,
   FilterChips,
   LoadError,
@@ -18,6 +19,7 @@ import {
   Skeleton,
   StatusMark,
   usePageFrame,
+  RelativeTime,
 } from '@headless/dashboard-sdk/components'
 import {
   DashboardApiError,
@@ -45,7 +47,6 @@ import {
   QueryState,
   RunPanel,
   StaleNotice,
-  Time,
   useFunctions,
   useJobsAttention,
 } from '../parts.tsx'
@@ -381,6 +382,7 @@ export default function RunsView() {
             key={`search-${scopeReset}`}
             label="Search runs"
             placeholder="Function, id, key, description"
+            compact
             defaultValue={search}
             onSearch={setSearch}
           />
@@ -391,6 +393,7 @@ export default function RunsView() {
               <SelectField
                 label="Kind"
                 emptyLabel="Any kind"
+                compact
                 value={filter.kind}
                 onChange={(value) => setFilter('kind', value)}
                 options={kindOptions}
@@ -398,6 +401,7 @@ export default function RunsView() {
               <SelectField
                 label="Function"
                 emptyLabel="Any function"
+                compact
                 value={filter.function}
                 onChange={(value) => setFilter('function', value)}
                 options={functionOptions}
@@ -405,11 +409,12 @@ export default function RunsView() {
               <SelectField
                 label="Time range"
                 emptyLabel="Any time"
+                compact
                 value={filter.range}
                 onChange={(value) => setFilter('range', value)}
                 options={rangeOptions}
               />
-              <DateRangeField key={`range-${scopeReset}`} label="Due between" onChange={pickRange} />
+              <DateRangeField key={`range-${scopeReset}`} label="Due between" onChange={pickRange} compact />
             </>
           )}
           {setFilters.length > 0 ? (
@@ -578,7 +583,9 @@ function RunsTable({
           header: failed ? 'Failed at' : 'Due',
           cell: (run) => (
             <CellText>
-              <Time value={failed ? (run.executedAt ?? run.executionTime) : (run.executionTime ?? run.createdAt)} />
+              <RelativeTime
+                value={failed ? (run.executedAt ?? run.executionTime) : (run.executionTime ?? run.createdAt)}
+              />
             </CellText>
           ),
           width: 110,
@@ -746,12 +753,12 @@ function LookedUpRun({ id, pending }: { id: string; pending: Pending }) {
     <DetailPanel label={`Run ${id}`} name="Run" id={id}>
       {detail.isError ? (
         detail.error instanceof DashboardApiError && detail.error.status === 404 ? (
-          <p role="alert">This run no longer exists.</p>
+          <EmptyState role="alert" title="This run no longer exists." />
         ) : (
           <LoadError message={detail.error.message} onRetry={() => void detail.refetch()} />
         )
       ) : (
-        <Skeleton label="Loading the run" />
+        <Skeleton label="Loading the run" shape="fields" rows={4} />
       )}
     </DetailPanel>
   )

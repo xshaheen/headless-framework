@@ -9,6 +9,7 @@ import {
   Skeleton,
   StatusMark,
   usePageFrame,
+  RelativeTime,
 } from '@headless/dashboard-sdk/components'
 import { DashboardApiError } from '@headless/dashboard-sdk/data'
 import { useInfiniteQuery } from '@headless/dashboard-sdk/query'
@@ -16,7 +17,7 @@ import { useSearchParams } from '@headless/dashboard-sdk/router'
 import { DataTable } from '@headless/dashboard-sdk/table'
 import type { DashboardStateRole } from '@headless/dashboard-sdk'
 import { nodeQuery } from '../messages.ts'
-import { CellText, NodeSwitch, Time, useNode } from '../parts.tsx'
+import { CellText, NodeSwitch, useNode } from '../parts.tsx'
 
 export interface OperatorReceipt {
   operationId: string
@@ -101,6 +102,7 @@ export default function OperatorLogView() {
           <SelectField
             label="Target"
             emptyLabel="All targets"
+            compact
             value={targetKind}
             onChange={(value) =>
               setParams(
@@ -192,7 +194,7 @@ export default function OperatorLogView() {
               priority: 2,
               width: '2fr',
             },
-            { id: 'at', header: 'At', cell: (row) => <Time value={row.createdAt} short />, width: 110 },
+            { id: 'at', header: 'At', cell: (row) => <RelativeTime value={row.createdAt} />, width: 110 },
           ]}
         />
       )}

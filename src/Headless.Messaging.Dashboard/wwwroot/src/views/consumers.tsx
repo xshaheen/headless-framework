@@ -7,10 +7,12 @@ import {
   Mono,
   PageFrame,
   PageHeader,
+  Section,
   StatusMark,
   Tag,
   Text,
   usePageFrame,
+  RelativeTime,
 } from '@headless/dashboard-sdk/components'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQuery, useQueryClient } from '@headless/dashboard-sdk/query'
@@ -23,7 +25,6 @@ import {
   NodeSwitch,
   QueryState,
   StaleNotice,
-  Time,
   useConsumers,
   useNode,
   type MessagingCircuit,
@@ -163,14 +164,11 @@ export default function ConsumersView() {
           />
         )}
       </QueryState>
-      <section aria-label="Circuit breakers">
-        <Text as="h2" tone="title">
-          Circuit breakers
-        </Text>
+      <Section label="Circuit breakers">
         <QueryState query={circuits} label="Loading circuit breakers" rows={2}>
           {(items) => <CircuitsTable circuits={items} nodeName={nodeName} />}
         </QueryState>
-      </section>
+      </Section>
     </PageFrame>
   )
 }
@@ -185,7 +183,6 @@ function CircuitsTable({ circuits, nodeName }: { circuits: readonly MessagingCir
   return (
     <DataTable
       label="Circuit breakers"
-      viewId="messaging.circuits"
       rows={circuits}
       emptyState="No consumer has a circuit breaker that has seen a failure on this node."
       rowActions={(circuit) => <CircuitActions circuit={circuit} nodeName={nodeName} />}
@@ -224,7 +221,7 @@ function CircuitsTable({ circuits, nodeName }: { circuits: readonly MessagingCir
         {
           id: 'opened',
           header: 'Opened',
-          cell: (row) => (row.openedAt ? <Time value={row.openedAt} short /> : ''),
+          cell: (row) => (row.openedAt ? <RelativeTime value={row.openedAt} /> : ''),
           priority: 2,
           width: 110,
         },

@@ -783,7 +783,7 @@ describe('jobs run page', () => {
   it('says the run no longer exists on 404', async () => {
     open({}, { path: 'runs/00000000-0000-0000-0000-00000000dead' })
 
-    expect((await screen.findByRole('alert')).textContent).toBe('This run no longer exists.')
+    expect((await screen.findByRole('alert')).textContent).toContain('This run no longer exists.')
     expect(screen.getByRole('link', { name: 'Back to runs' }).getAttribute('href')).toBe('/jobs/runs')
   })
 

@@ -2,6 +2,7 @@ import { useDashboard, useModule } from '@headless/dashboard-sdk'
 import {
   Button,
   DetailPanel,
+  EmptyState,
   LoadError,
   Mono,
   PageFrame,
@@ -10,6 +11,7 @@ import {
   Tag,
   Text,
   usePageFrame,
+  RelativeTime,
 } from '@headless/dashboard-sdk/components'
 import { DashboardApiError, listKey, useDashboardList } from '@headless/dashboard-sdk/data'
 import { useFormat } from '@headless/dashboard-sdk/locale'
@@ -18,7 +20,7 @@ import { useSearchParams } from '@headless/dashboard-sdk/router'
 import { DataTable } from '@headless/dashboard-sdk/table'
 import { CronPanel, useCronJob } from '../cron-parts.tsx'
 import { cronJobsTopic, fetchCronJobs, type CronJob } from '../cron.ts'
-import { CellText, JobsStats, QueryState, StaleNotice, Time } from '../parts.tsx'
+import { CellText, JobsStats, QueryState, StaleNotice } from '../parts.tsx'
 import { viewOnlyReason } from '../runs.ts'
 import { CronJobForm } from './create.tsx'
 
@@ -139,7 +141,7 @@ export default function CronJobsView() {
                     </Tag>
                   ) : (
                     <CellText>
-                      <Time value={row.nextDueUtc} scheduled />
+                      <RelativeTime value={row.nextDueUtc} scheduled />
                     </CellText>
                   ),
                 align: 'end',
@@ -165,12 +167,12 @@ function OpenCronJob({ id, row }: { id: string; row: CronJob | undefined }) {
     <DetailPanel label={`Cron job ${id}`} name="Recurring job" id={id}>
       {detail.isError ? (
         detail.error instanceof DashboardApiError && detail.error.status === 404 ? (
-          <p role="alert">This recurring job no longer exists.</p>
+          <EmptyState role="alert" title="This recurring job no longer exists." />
         ) : (
           <LoadError message={detail.error.message} onRetry={() => void detail.refetch()} />
         )
       ) : (
-        <Skeleton label="Loading the recurring job" />
+        <Skeleton label="Loading the recurring job" shape="fields" rows={3} />
       )}
     </DetailPanel>
   )

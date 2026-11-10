@@ -8,13 +8,14 @@ import {
   SelectField,
   StatusMark,
   usePageFrame,
+  RelativeTime,
 } from '@headless/dashboard-sdk/components'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQuery } from '@headless/dashboard-sdk/query'
 import { Link, useSearchParams } from '@headless/dashboard-sdk/router'
 import { DataTable } from '@headless/dashboard-sdk/table'
 import { nodeQuery } from '../messages.ts'
-import { CellText, MessagingStats, NodeSwitch, QueryState, StaleNotice, Time, useNode } from '../parts.tsx'
+import { CellText, MessagingStats, NodeSwitch, QueryState, StaleNotice, useNode } from '../parts.tsx'
 
 export interface ScheduledDelivery {
   storageId: string
@@ -99,6 +100,7 @@ export default function ScheduledView() {
           <SelectField
             label="Store"
             emptyLabel="Main store"
+            compact
             value={store}
             onChange={(value) =>
               update((next) => {
@@ -181,7 +183,7 @@ export default function ScheduledView() {
                     header: 'Due',
                     cell: (row) => (
                       <CellText>
-                        <Time value={row.expectedDueAt} short />
+                        <RelativeTime value={row.expectedDueAt} />
                       </CellText>
                     ),
                     width: 110,

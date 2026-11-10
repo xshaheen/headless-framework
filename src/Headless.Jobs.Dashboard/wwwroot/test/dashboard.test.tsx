@@ -254,7 +254,8 @@ describe('jobs dashboard', () => {
           .map((item) => item.querySelector('a')?.textContent),
       ).toEqual(['sandbox.progress', 'reports.daily']),
     )
-    expect(within(card).getByRole('link', { name: 'All 3' }).getAttribute('href')).toBe('/jobs/cron-jobs')
+    expect(within(card).getByRole('link', { name: 'All' }).getAttribute('href')).toBe('/jobs/cron-jobs')
+    expect(within(card).getByText('2 scheduled')).toBeTruthy()
     expect(screen.getByRole('heading', { level: 1, name: 'Dashboard' }).closest('header')?.textContent).toContain(
       'Next execution sandbox.progress, in 6 sec.',
     )
@@ -324,6 +325,8 @@ describe('jobs dashboard', () => {
     expect(
       (await within(card).findByRole('link', { name: '3 failed runs of billing.charge' })).getAttribute('href'),
     ).toBe('/jobs/runs?status=Failed&function=billing.charge&fingerprint=v1%3Acard')
+    // The function leads the row as its identifier and the count follows as its fact.
+    expect(within(card).getAllByRole('listitem')[0]!.textContent).toBe('billing.charge3 failed runs')
     expect(within(card).getByRole('link', { name: 'No live node runs mail.send' }).getAttribute('href')).toBe(
       '/jobs/functions/mail.send',
     )

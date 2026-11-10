@@ -9,6 +9,7 @@ import {
   Banner,
   Button,
   DetailPanel,
+  EmptyState,
   FilterChip,
   FilterChips,
   LoadError,
@@ -19,6 +20,7 @@ import {
   Skeleton,
   StatusMark,
   usePageFrame,
+  RelativeTime,
 } from '@headless/dashboard-sdk/components'
 import { DashboardApiError, useDashboardKeysetList, useDashboardObject, useNewRows } from '@headless/dashboard-sdk/data'
 import { useFormat } from '@headless/dashboard-sdk/locale'
@@ -32,7 +34,6 @@ import {
   NodeSwitch,
   QueryState,
   StaleNotice,
-  Time,
   offers,
   rowCommands,
   useConsumers,
@@ -381,6 +382,7 @@ function ListFilters({
         <SelectField
           label="Store"
           emptyLabel="Any store"
+          compact
           value={filter.store}
           onChange={(value) => onPick({ store: value })}
           options={optionsOf(served?.stores ?? [], filter.store)}
@@ -389,6 +391,7 @@ function ListFilters({
         <SelectField
           label="Consumer"
           emptyLabel="Any consumer"
+          compact
           value={filter.consumer}
           onChange={(value) => onPick({ consumer: value })}
           options={optionsOf(
@@ -400,6 +403,7 @@ function ListFilters({
       <SelectField
         label="Message"
         emptyLabel="Any message"
+        compact
         value={filter.name}
         onChange={(value) => onPick({ name: value })}
         // Contracts list only the messages the node declares to publish, so a consume-only message name comes from its consumer.
@@ -524,7 +528,7 @@ function MessagesTable({
           header: failed ? 'Failed at' : 'Added',
           cell: (row) => (
             <CellText>
-              <Time value={failed ? (row.changedAt ?? row.added) : row.added} short />
+              <RelativeTime value={failed ? (row.changedAt ?? row.added) : row.added} />
             </CellText>
           ),
           width: 110,
@@ -713,12 +717,12 @@ function LookedUp({ kind, node, id, pending }: { kind: MessageKind; node: string
     <DetailPanel label={`Message ${id}`} name="Message" id={id}>
       {detail.isError ? (
         detail.error instanceof DashboardApiError && detail.error.status === 404 ? (
-          <p role="alert">This message no longer exists.</p>
+          <EmptyState role="alert" title="This message no longer exists." />
         ) : (
           <LoadError message={detail.error.message} onRetry={() => void detail.refetch()} />
         )
       ) : (
-        <Skeleton label="Loading the message" />
+        <Skeleton label="Loading the message" shape="fields" rows={4} />
       )}
     </DetailPanel>
   )

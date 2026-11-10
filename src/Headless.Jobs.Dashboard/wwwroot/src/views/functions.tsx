@@ -2,6 +2,7 @@ import { useDashboard, useModule } from '@headless/dashboard-sdk'
 import {
   Button,
   DetailPanel,
+  EmptyState,
   FieldGrid,
   Fields,
   GridField,
@@ -14,13 +15,15 @@ import {
   Tag,
   Text,
   usePageFrame,
+  RelativeTime,
 } from '@headless/dashboard-sdk/components'
 import { useDashboardKeysetList, useDashboardList } from '@headless/dashboard-sdk/data'
+import { RunsIcon } from '@headless/dashboard-sdk/icons'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { Link, useNavigate } from '@headless/dashboard-sdk/router'
 import { DataTable } from '@headless/dashboard-sdk/table'
 import { cronJobsTopic, cronStatusMark, fetchCronJobs, type CronJob, type JobFunction } from '../cron.ts'
-import { CellText, JobsStats, QueryState, StaleNotice, Time, useFunctions } from '../parts.tsx'
+import { CellText, JobsStats, QueryState, StaleNotice, useFunctions } from '../parts.tsx'
 import { fetchRuns, runStatusMark, runsTopic, statusLabel, viewOnlyReason, type Run } from '../runs.ts'
 
 /** A function declared with a cron expression is fired by its schedule; any other is added as a time job. */
@@ -186,7 +189,7 @@ function FunctionFields({ item }: { item: JobFunction }) {
         {item.requestType ? <Mono>{item.requestType}</Mono> : 'None'}
       </GridField>
       <GridField label="Last run" span={2}>
-        <Time value={item.lastExecutedAt} />
+        <RelativeTime value={item.lastExecutedAt} />
       </GridField>
       <GridField label="Succeeded, 24 h">{format.number(item.succeeded)}</GridField>
       <GridField label="Failed, 24 h">{format.number(item.failed)}</GridField>
@@ -271,13 +274,13 @@ function FunctionRuns({ name }: { name: string }) {
   return (
     <div>
       {runs.rows.length === 0 ? (
-        <p>No runs of this function yet.</p>
+        <EmptyState icon={RunsIcon}>No runs of this function yet.</EmptyState>
       ) : (
         <HistoryList
           label="Latest runs"
           items={runs.rows.map((run) => ({
             key: run.id,
-            time: <Time value={run.executionTime ?? run.createdAt} />,
+            time: <RelativeTime value={run.executionTime ?? run.createdAt} />,
             tone: runStatusMark(run).tone,
             state: statusLabel(run.status),
             note: run.node,

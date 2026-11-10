@@ -1,6 +1,7 @@
 import { DashboardApiError } from '@headless/dashboard-sdk/data'
 import { Link, useParams } from '@headless/dashboard-sdk/router'
-import { Text } from '@headless/dashboard-sdk/components'
+import { EmptyState } from '@headless/dashboard-sdk/components'
+import { RecurringIcon } from '@headless/dashboard-sdk/icons'
 import { useState } from 'react'
 import { CronPanel, deletedText, useCronJob } from '../cron-parts.tsx'
 import { QueryState, StaleNotice } from '../parts.tsx'
@@ -15,13 +16,15 @@ export default function CronJobPage() {
   if (cronJob.error instanceof DashboardApiError && cronJob.error.status === 404) {
     return (
       <section aria-label="Recurring job not found">
-        <p role="alert">This recurring job no longer exists.</p>
-        {deleted !== undefined ? (
-          <Text as="p" role="status" tone="hint">
-            {deletedText(deleted)}
-          </Text>
-        ) : null}
-        <Link to="/jobs/cron-jobs">Back to recurring jobs</Link>
+        <EmptyState
+          role="alert"
+          placement="page"
+          icon={RecurringIcon}
+          title="This recurring job no longer exists."
+          action={<Link to="/jobs/cron-jobs">Back to recurring jobs</Link>}
+        >
+          {deleted !== undefined ? deletedText(deleted) : 'It was deleted, or its storage no longer holds it.'}
+        </EmptyState>
       </section>
     )
   }

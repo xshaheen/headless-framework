@@ -8,6 +8,7 @@ import {
 import {
   Button,
   DetailPanel,
+  EmptyState,
   ExceptionBlock,
   FieldGrid,
   Fields,
@@ -26,6 +27,7 @@ import {
   useViewKeys,
   type HistoryItem,
   type TimelineEvent,
+  RelativeTime,
 } from '@headless/dashboard-sdk/components'
 import { DashboardApiError, useDashboardObject, type CappedCount } from '@headless/dashboard-sdk/data'
 import {
@@ -37,7 +39,7 @@ import {
   ScheduledIcon,
   type IconComponent,
 } from '@headless/dashboard-sdk/icons'
-import { relativeTickOf, useFormat, useNow } from '@headless/dashboard-sdk/locale'
+import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQuery } from '@headless/dashboard-sdk/query'
 import { Link, useSearchParams } from '@headless/dashboard-sdk/router'
 import { useModuleStale, useStreamStatus } from '@headless/dashboard-sdk/stream'
@@ -65,41 +67,6 @@ import {
 } from './runs.ts'
 
 export { RunProgress }
-
-/**
- * A timestamp as relative time, with the exact time, zone, and offset on hover; in `zone` when one is named. Every
- * time in the module reads in the short style, `4 min. ago`, so one page never mixes `in 2 hours` with `in 7 hr.`, and
- * a list column stays narrow enough for a phone. A `scheduled` time, such as a next fire, that has already passed reads
- * `due 42 sec. ago`, because it has not run yet: a bare `42 sec. ago` would say it did.
- */
-export function Time({
-  value,
-  zone,
-  scheduled = false,
-  missing = 'Not yet',
-}: {
-  value: string | undefined
-  zone?: string
-  scheduled?: boolean
-  missing?: string
-}) {
-  const format = useFormat()
-  const at = value ? Date.parse(value) : Number.NaN
-  // The text moves on as time passes, so a next fire reads `in 3 sec.`, then `due 2 sec. ago`, with no new data.
-  const now = useNow(Number.isNaN(at) ? null : relativeTickOf(at))
-
-  if (!value) {
-    return <Text tone="hint">{missing}</Text>
-  }
-
-  const relative = format.relativeTime(value, { style: 'short', now })
-
-  return (
-    <time dateTime={value} title={zone ? format.zonedTime(value, zone) : format.exactTime(value)}>
-      {scheduled && at <= now ? `due ${relative}` : relative}
-    </time>
-  )
-}
 
 /**
  * A list cell's content, with `title` giving the full text on hover. The table ends a cell's only child in an
@@ -405,7 +372,7 @@ export function RunFields({ run }: { run: Run }) {
         ) : null}
         {run.status === 'DueDone' ? <GridField label="Note">Started late</GridField> : null}
         <GridField label={run.status === 'Failed' ? 'Failed at' : 'Executed'} span={2}>
-          <Time value={run.executedAt} missing={running} />
+          <RelativeTime value={run.executedAt} missing={running} />
         </GridField>
         <GridField label="Duration">
           {run.executedAt ? formatDuration(run.elapsedMilliseconds, format.number) : (running ?? 'Not run yet')}
@@ -432,10 +399,10 @@ export function RunFields({ run }: { run: Run }) {
         ) : null}
         <GridField label="Due" span={2}>
           {/* A chain step has no due time of its own: it runs once its parent ends. */}
-          <Time value={run.executionTime} missing={run.parentId ? 'After its chain parent' : undefined} />
+          <RelativeTime value={run.executionTime} missing={run.parentId ? 'After its chain parent' : undefined} />
         </GridField>
         <GridField label="Created" span={2}>
-          <Time value={run.createdAt} />
+          <RelativeTime value={run.createdAt} />
         </GridField>
         <GridField label="Function" span={2}>
           <Link to={`/jobs/functions/${encodeURIComponent(run.function)}`}>
@@ -561,7 +528,7 @@ export function RunHistory({ run }: { run: Pick<Run, 'id' | 'version' | 'created
         {attempts.isError ? (
           <LoadError message={attempts.error.message} onRetry={() => void attempts.refetch()} />
         ) : (
-          <Skeleton label="Loading the history" />
+          <Skeleton label="Loading the history" shape="rows" />
         )}
       </section>
     )
@@ -569,7 +536,7 @@ export function RunHistory({ run }: { run: Pick<Run, 'id' | 'version' | 'created
 
   const items: HistoryItem[] = [...attempts.data].reverse().map((attempt) => ({
     key: String(attempt.number),
-    time: <Time value={attempt.endedAt ?? attempt.startedAt} />,
+    time: <RelativeTime value={attempt.endedAt ?? attempt.startedAt} />,
     tone: attempt.outcome ? attemptTones[attempt.outcome] : 'proc',
     state: attempt.outcome ?? 'Running',
     note: attemptNote(attempt),
@@ -578,7 +545,10 @@ export function RunHistory({ run }: { run: Pick<Run, 'id' | 'version' | 'created
   return (
     <HistoryList
       label="History"
-      items={[...items, { key: 'created', time: <Time value={run.createdAt} />, tone: 'sched', state: 'Created' }]}
+      items={[
+        ...items,
+        { key: 'created', time: <RelativeTime value={run.createdAt} />, tone: 'sched', state: 'Created' },
+      ]}
     />
   )
 }
@@ -685,11 +655,11 @@ export function RunPayload({ runId }: { runId: string }) {
   return (
     <section aria-label="Arguments">
       {payload.isPending ? (
-        <Skeleton label="Loading the arguments" />
+        <Skeleton label="Loading the arguments" shape="lines" rows={4} />
       ) : payload.isError ? (
         // The server answers 404 for a run that stored no arguments: that is the run's payload, not a failed load.
         payload.error instanceof DashboardApiError && payload.error.status === 404 ? (
-          <p>This run has no payload.</p>
+          <EmptyState>This run has no payload.</EmptyState>
         ) : (
           <LoadError message={payload.error.message} onRetry={() => void payload.refetch()} />
         )
