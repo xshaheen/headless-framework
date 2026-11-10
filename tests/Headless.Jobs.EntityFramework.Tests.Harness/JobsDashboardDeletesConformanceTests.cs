@@ -75,6 +75,70 @@ public abstract class JobsDashboardDeletesConformanceTests<TFixture>(TFixture fi
         );
     }
 
+    public virtual async Task a_force_delete_keeps_a_running_keyed_job_with_cancel_requested()
+    {
+        await _RunAsync(
+            "deletes-force-keyed",
+            async (store, ct) =>
+            {
+                var scheduled = await store.ScheduleKeyedTimeJobAsync(
+                    new JobKey("invoice-42"),
+                    _Job(),
+                    cancellationToken: ct
+                );
+                var job = scheduled.RunId!.Value;
+                await _ClaimAndCancelAsync(store, job, ct);
+
+                (await store.RemoveCancelRequestedTimeJobAsync(job, ct)).Should().BeFalse();
+                (await store.GetTimeJobByIdAsync(job, ct)).Should().NotBeNull();
+            }
+        );
+    }
+
+    public virtual async Task a_force_delete_keeps_a_running_chain_step_with_cancel_requested()
+    {
+        await _RunAsync(
+            "deletes-force-step",
+            async (store, ct) =>
+            {
+                // The root finished, so its step was claimed and is running.
+                var root = _Job();
+                root.Status = JobStatus.Succeeded;
+                root.ExecutedAt = DateTimeOffset.UtcNow.AddMinutes(-1);
+                var step = _Job();
+                step.RunCondition = RunCondition.OnSuccess;
+                root.Children.Add(step);
+                await store.AddTimeJobsAsync([root], ct);
+                await _ClaimAndCancelAsync(store, step.Id, ct);
+
+                (await store.RemoveCancelRequestedTimeJobAsync(step.Id, ct)).Should().BeFalse();
+                (await store.GetTimeJobByIdAsync(step.Id, ct)).Should().NotBeNull();
+                (await store.GetTimeJobByIdAsync(root.Id, ct)).Should().NotBeNull();
+            }
+        );
+    }
+
+    public virtual async Task a_force_delete_keeps_a_running_root_with_cancel_requested_while_it_has_a_chain_step()
+    {
+        await _RunAsync(
+            "deletes-force-root",
+            async (store, ct) =>
+            {
+                var root = _Job();
+                var step = _Job();
+                step.ExecutionTime = null;
+                step.RunCondition = RunCondition.OnSuccess;
+                root.Children.Add(step);
+                await store.AddTimeJobsAsync([root], ct);
+                await _ClaimAndCancelAsync(store, root.Id, ct);
+
+                (await store.RemoveCancelRequestedTimeJobAsync(root.Id, ct)).Should().BeFalse();
+                (await store.GetTimeJobByIdAsync(root.Id, ct)).Should().NotBeNull();
+                (await store.GetTimeJobByIdAsync(step.Id, ct)).Should().NotBeNull();
+            }
+        );
+    }
+
     public virtual async Task a_cron_delete_removes_the_job_with_its_twelve_stored_occurrences()
     {
         await _RunAsync(
@@ -168,6 +232,30 @@ public abstract class JobsDashboardDeletesConformanceTests<TFixture>(TFixture fi
         }
 
         return (job.Id, claimed.Lease);
+    }
+
+    private static TimeJobEntity _Job() =>
+        new()
+        {
+            Id = Guid.NewGuid(),
+            Function = _Function,
+            Status = JobStatus.Idle,
+            ExecutionTime = DateTime.UtcNow.AddMinutes(-1),
+            CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-2),
+            UpdatedAt = DateTimeOffset.UtcNow.AddMinutes(-2),
+        };
+
+    private static async Task _ClaimAndCancelAsync(
+        IJobPersistenceProvider<TimeJobEntity, CronJobEntity> store,
+        Guid job,
+        CancellationToken cancellationToken
+    )
+    {
+        (await store.AcquireImmediateTimeJobsAsync([job], cancellationToken)).Should().ContainSingle();
+        (await store.RequestTimeJobCancellationAsync(job, cancellationToken)).Should().BeTrue();
+        var running = (await store.GetJobRunAsync(job, cancellationToken))!;
+        running.Status.Should().Be(JobStatus.InProgress);
+        running.CancelRequested.Should().BeTrue();
     }
 
     private async Task<Guid> _SeedCronAsync(CancellationToken cancellationToken)

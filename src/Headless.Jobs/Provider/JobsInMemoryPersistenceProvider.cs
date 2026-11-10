@@ -4397,29 +4397,36 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (!_cronOccurrences.TryGetValue(id, out var occurrence))
+            if (!_cronOccurrences.TryGetValue(id, out var observed))
             {
                 continue;
             }
 
-            if (
-                !_CanAcquireCronOccurrence(occurrence)
-                || _clusterConcurrency.IsLimited(occurrence.Function)
-                || !_TryGrant(occurrence.Lease, now, out var granted)
-            )
+            // The dashboard's cron delete checks that no occurrence runs and removes them under this definition's
+            // lock, so a start must take it too, and read the row again inside it: the definition and the row may
+            // both be gone by then.
+            lock (_GetCronDefinitionLock(observed.CronJobId))
             {
-                continue;
-            }
+                if (
+                    !_cronOccurrences.TryGetValue(id, out var occurrence)
+                    || !_CanAcquireCronOccurrence(occurrence)
+                    || _clusterConcurrency.IsLimited(occurrence.Function)
+                    || !_TryGrant(occurrence.Lease, now, out var granted)
+                )
+                {
+                    continue;
+                }
 
-            var updated = _CloneCronOccurrence(occurrence);
-            updated.Lease = granted;
-            updated.Status = JobStatus.InProgress;
-            updated.UpdatedAt = now;
-            updated.ChangedAt = _NextChangeMarker();
+                var updated = _CloneCronOccurrence(occurrence);
+                updated.Lease = granted;
+                updated.Status = JobStatus.InProgress;
+                updated.UpdatedAt = now;
+                updated.ChangedAt = _NextChangeMarker();
 
-            if (_cronOccurrences.TryUpdate(id, updated, occurrence))
-            {
-                acquired.Add(_CloneCronOccurrence(updated));
+                if (_cronOccurrences.TryUpdate(id, updated, occurrence))
+                {
+                    acquired.Add(_CloneCronOccurrence(updated));
+                }
             }
         }
 

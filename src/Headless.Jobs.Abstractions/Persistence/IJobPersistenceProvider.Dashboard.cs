@@ -569,15 +569,16 @@ public partial interface IJobPersistenceProvider<TTimeJob, TCronJob>
     }
 
     /// <summary>
-    /// Deletes a running time job whose cancellation was requested, and its chain subtree, only while it is still
-    /// running with the request standing: a standalone, unkeyed root that is <see cref="JobStatus.InProgress"/> with
-    /// <see cref="TimeJobEntity{TTicker}.CancelRequested"/> set.
+    /// Deletes a running time job whose cancellation was requested, only while it is still running with the request
+    /// standing: a standalone, unkeyed, childless root that is <see cref="JobStatus.InProgress"/> with
+    /// <see cref="TimeJobEntity{TTicker}.CancelRequested"/> set. A chain is never removed in part, so a chain step and a
+    /// root with steps are refused.
     /// </summary>
     /// <param name="jobId">Identifier of the time job to delete.</param>
     /// <param name="cancellationToken">Token that aborts the delete.</param>
     /// <returns>
     /// <see langword="true"/> when this call deleted the job; <see langword="false"/> when it does not exist, finished,
-    /// was released, carries a business key, or is a chain step.
+    /// was released, carries a business key, is a chain step, or has chain steps.
     /// </returns>
     /// <remarks>
     /// The check and the delete commit together, so a job that finishes after the caller read it is kept rather than

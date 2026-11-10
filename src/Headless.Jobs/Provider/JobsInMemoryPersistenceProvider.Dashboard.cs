@@ -249,14 +249,15 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 || !job.CancelRequested
                 || job.BusinessKey is not null
                 || job.ParentId is not null
+                || _GetChildrenIds(jobId).Length != 0
             )
             {
                 return Task.FromResult(false);
             }
 
             // Removes only the instance the check read: the executor's completion swaps in a new instance without
-            // this lock, so a job that finished since is kept. Its descendants go after it, as the relational store
-            // removes the whole tree.
+            // this lock, so a job that finished since is kept. A step attached after the check goes with it, as the
+            // relational store's tree walk removes it.
             var children = _GetChildrenIds(jobId);
 
             if (!_TryRemoveTimeJob(new KeyValuePair<Guid, TTimeJob>(jobId, job)))

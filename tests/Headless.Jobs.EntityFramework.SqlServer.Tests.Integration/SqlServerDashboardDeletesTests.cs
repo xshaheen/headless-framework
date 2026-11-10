@@ -26,6 +26,24 @@ public sealed class SqlServerDashboardDeletesTests(SqlServerJobsCoordinationFixt
     }
 
     [Fact]
+    public override Task a_force_delete_keeps_a_running_keyed_job_with_cancel_requested()
+    {
+        return base.a_force_delete_keeps_a_running_keyed_job_with_cancel_requested();
+    }
+
+    [Fact]
+    public override Task a_force_delete_keeps_a_running_chain_step_with_cancel_requested()
+    {
+        return base.a_force_delete_keeps_a_running_chain_step_with_cancel_requested();
+    }
+
+    [Fact]
+    public override Task a_force_delete_keeps_a_running_root_with_cancel_requested_while_it_has_a_chain_step()
+    {
+        return base.a_force_delete_keeps_a_running_root_with_cancel_requested_while_it_has_a_chain_step();
+    }
+
+    [Fact]
     public override Task a_cron_delete_removes_the_job_with_its_twelve_stored_occurrences()
     {
         return base.a_cron_delete_removes_the_job_with_its_twelve_stored_occurrences();

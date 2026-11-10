@@ -734,7 +734,8 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
 
     public async Task<bool> RemoveCancelRequestedTimeJobAsync(Guid jobId, CancellationToken cancellationToken = default)
     {
-        // A chain step or a keyed row fails the guard here, so the keyed retention check below never throws for it.
+        // A chain member or a keyed row fails the guard here, so the keyed retention check below never throws for it,
+        // and the guard's row lock and its child check commit with the delete.
         return await _RemoveTimeJobsAsync(
                     [jobId],
                     x =>
@@ -742,7 +743,8 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                         && x.Status == JobStatus.InProgress
                         && x.CancelRequested
                         && x.BusinessKey == null
-                        && x.ParentId == null,
+                        && x.ParentId == null
+                        && !x.Children.Any(),
                     cancellationToken
                 )
                 .ConfigureAwait(false) > 0;
