@@ -1,11 +1,15 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Frozen;
 using System.Security.Claims;
 using Headless.Checks;
 using Headless.Dashboard;
 using Headless.Messaging.Persistence;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using CircuitRefusals = (string? Reset, string? ForceOpen);
+using ReceivedRefusals = (string? ReExecute, string? Purge, string? Hold, string? Release);
+using ScheduledRefusals = (string? DispatchNow, string? Revoke);
 
 namespace Headless.Messaging.Dashboard;
 
@@ -154,6 +158,70 @@ internal sealed class MessagingCommands(MessagingStores stores, MessagingSources
             ObjectKind = MessagingViews.NodeKind,
         },
     ];
+
+    // Each command id resolves to its apply path once, so adding a command is one entry here, not another branch in
+    // each method that switches on the id.
+    private static readonly FrozenDictionary<string, CommandHandler> _Handlers = new Dictionary<string, CommandHandler>(
+        StringComparer.Ordinal
+    )
+    {
+        [ReExecuteId] = _Received(
+            static rules => rules.ReExecute,
+            static (inbox, write, token) => inbox.ForceReprocessAsync(write, token),
+            keepsRow: true,
+            (MessageType.Subscribe, MessageOperationKind.ReExecute)
+        ),
+        [PurgeId] = _Received(
+            static rules => rules.Purge,
+            static (inbox, write, token) => inbox.PurgeAsync(write, token),
+            keepsRow: false,
+            (MessageType.Subscribe, MessageOperationKind.Delete)
+        ),
+        [HoldId] = _Received(
+            static rules => rules.Hold,
+            static (inbox, write, token) => inbox.HoldAsync(write, token),
+            keepsRow: true
+        ),
+        [ReleaseId] = _Received(
+            static rules => rules.Release,
+            static (inbox, write, token) => inbox.ReleaseHoldAsync(write, token),
+            keepsRow: true
+        ),
+        [ResendId] = new(
+            NeedsOperator: true,
+            static (self, request, authorization, id, token) =>
+                self._ApplyToPublishedAsync(request, authorization!, id, isResend: true, token),
+            (MessageType.Publish, MessageOperationKind.Resend)
+        ),
+        [DeleteId] = new(
+            NeedsOperator: true,
+            static (self, request, authorization, id, token) =>
+                self._ApplyToPublishedAsync(request, authorization!, id, isResend: false, token),
+            (MessageType.Publish, MessageOperationKind.Delete)
+        ),
+        [DispatchNowId] = _Scheduled(
+            static rules => rules.DispatchNow,
+            static (operations, write, token) => operations.DispatchNowAsync(write, token)
+        ),
+        [RevokeId] = _Scheduled(
+            static rules => rules.Revoke,
+            static (operations, write, token) => operations.RevokeAsync(write, token)
+        ),
+        [ResetCircuitId] = _Circuit(
+            static rules => rules.Reset,
+            static (monitor, key, token) => monitor.ResetAsync(key, token),
+            AlreadyClosed
+        ),
+        [ForceOpenCircuitId] = _Circuit(
+            static rules => rules.ForceOpen,
+            static (monitor, key, token) => monitor.ForceOpenAsync(key, token),
+            AlreadyOpen
+        ),
+        [ResetBackpressureId] = new(
+            NeedsOperator: false,
+            static (self, _, _, id, token) => self._ApplyToNodeAsync(id, token)
+        ),
+    }.ToFrozenDictionary(StringComparer.Ordinal);
 
     public async Task<IReadOnlyList<DashboardCommandAvailability>> GetAllowedAsync(
         IReadOnlyList<ObjectRef> targets,
@@ -439,13 +507,18 @@ internal sealed class MessagingCommands(MessagingStores stores, MessagingSources
         CancellationToken cancellationToken
     )
     {
-        switch (request.CommandId)
+        if (!_Handlers.TryGetValue(request.CommandId, out var handler))
         {
-            case ResetCircuitId:
-            case ForceOpenCircuitId:
-                return await _ApplyToCircuitAsync(request.CommandId, id, cancellationToken).ConfigureAwait(false);
-            case ResetBackpressureId:
-                return await _ApplyToNodeAsync(id, cancellationToken).ConfigureAwait(false);
+            return authority.IsSuccess
+                ? (_Failed(id, $"Unknown command '{request.CommandId}'"), true)
+                : (_Skipped(id, NeedsNamedOperator), true);
+        }
+
+        // A circuit or a node's back-pressure lives in this node's memory and writes no receipt, so its command needs
+        // no named operator, and its failure reaches the shell as it is.
+        if (!handler.NeedsOperator)
+        {
+            return await handler.ApplyAsync(this, request, null, id, cancellationToken).ConfigureAwait(false);
         }
 
         if (!authority.IsSuccess)
@@ -455,31 +528,9 @@ internal sealed class MessagingCommands(MessagingStores stores, MessagingSources
 
         try
         {
-            return request.CommandId switch
-            {
-                ReExecuteId or PurgeId or HoldId or ReleaseId => await _ApplyToReceivedAsync(
-                        request,
-                        authority.Authorization,
-                        id,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false),
-                ResendId or DeleteId => await _ApplyToPublishedAsync(
-                        request,
-                        authority.Authorization,
-                        id,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false),
-                DispatchNowId or RevokeId => await _ApplyToScheduledAsync(
-                        request,
-                        authority.Authorization,
-                        id,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false),
-                _ => (_Failed(id, $"Unknown command '{request.CommandId}'"), true),
-            };
+            return await handler
+                .ApplyAsync(this, request, authority.Authorization, id, cancellationToken)
+                .ConfigureAwait(false);
         }
         catch (NotSupportedException)
         {
@@ -499,23 +550,14 @@ internal sealed class MessagingCommands(MessagingStores stores, MessagingSources
         DashboardCommandRequest request,
         OperatorAuthorizationContext authorization,
         string id,
+        Func<ReceivedRefusals, string?> rule,
+        Func<IInboxOperationsApi, InboxOperationRequest, CancellationToken, ValueTask<InboxOperationResult>> writeAsync,
+        bool keepsRow,
         CancellationToken cancellationToken
     )
     {
         var (found, view, refusal) = await _ReadReceivedAsync(id, cancellationToken).ConfigureAwait(false);
-        var command = request.CommandId;
-
-        if (refusal is null)
-        {
-            var (reExecute, purge, hold, release) = _ReceivedRules(view!);
-            refusal = command switch
-            {
-                ReExecuteId => reExecute,
-                PurgeId => purge,
-                HoldId => hold,
-                _ => release,
-            };
-        }
+        refusal ??= rule(_ReceivedRules(view!));
 
         if (refusal is not null)
         {
@@ -531,13 +573,7 @@ internal sealed class MessagingCommands(MessagingStores stores, MessagingSources
             request.Reason,
             authorization
         );
-        var result = command switch
-        {
-            ReExecuteId => await inbox.ForceReprocessAsync(write, cancellationToken).ConfigureAwait(false),
-            PurgeId => await inbox.PurgeAsync(write, cancellationToken).ConfigureAwait(false),
-            HoldId => await inbox.HoldAsync(write, cancellationToken).ConfigureAwait(false),
-            _ => await inbox.ReleaseHoldAsync(write, cancellationToken).ConfigureAwait(false),
-        };
+        var result = await writeAsync(inbox, write, cancellationToken).ConfigureAwait(false);
 
         if (result.Outcome != InboxOperationOutcome.Applied)
         {
@@ -545,7 +581,7 @@ internal sealed class MessagingCommands(MessagingStores stores, MessagingSources
         }
 
         // A purged row is gone; the change reader tells the views so.
-        if (!string.Equals(command, PurgeId, StringComparison.Ordinal))
+        if (keepsRow)
         {
             _Publish(MessageType.Subscribe, objectId.StorageId, view.MessageId, store);
         }
@@ -562,16 +598,16 @@ internal sealed class MessagingCommands(MessagingStores stores, MessagingSources
         DashboardCommandRequest request,
         OperatorAuthorizationContext authorization,
         string id,
+        bool isResend,
         CancellationToken cancellationToken
     )
     {
         var (found, view, refusal) = await _ReadPublishedAsync(id, cancellationToken).ConfigureAwait(false);
-        var command = request.CommandId;
 
         if (refusal is null)
         {
             var (resend, delete) = _PublishedRules(view!);
-            refusal = string.Equals(command, ResendId, StringComparison.Ordinal) ? resend : delete;
+            refusal = isResend ? resend : delete;
         }
 
         if (refusal is not null)
@@ -580,7 +616,6 @@ internal sealed class MessagingCommands(MessagingStores stores, MessagingSources
         }
 
         var (_, objectId, store, _) = found!.Value;
-        var isResend = string.Equals(command, ResendId, StringComparison.Ordinal);
         var write = new PublishedOperationRequest(
             Guid.CreateVersion7(),
             objectId.StorageId,
@@ -680,18 +715,19 @@ internal sealed class MessagingCommands(MessagingStores stores, MessagingSources
         DashboardCommandRequest request,
         OperatorAuthorizationContext authorization,
         string id,
+        Func<ScheduledRefusals, string?> rule,
+        Func<
+            IScheduledDeliveryOperationsApi,
+            ScheduledDeliveryOperationRequest,
+            CancellationToken,
+            ValueTask<ScheduledDeliveryOperationResult>
+        > writeAsync,
         CancellationToken cancellationToken
     )
     {
         var (found, scheduled, refusal) = await _ReadScheduledAsync(id, request.User, cancellationToken)
             .ConfigureAwait(false);
-        var command = request.CommandId;
-
-        if (refusal is null)
-        {
-            var (dispatchNow, revoke) = _ScheduledRules(scheduled!);
-            refusal = string.Equals(command, DispatchNowId, StringComparison.Ordinal) ? dispatchNow : revoke;
-        }
+        refusal ??= rule(_ScheduledRules(scheduled!));
 
         if (refusal is not null)
         {
@@ -707,9 +743,7 @@ internal sealed class MessagingCommands(MessagingStores stores, MessagingSources
             request.Reason,
             authorization
         );
-        var result = string.Equals(command, DispatchNowId, StringComparison.Ordinal)
-            ? await operations.DispatchNowAsync(write, cancellationToken).ConfigureAwait(false)
-            : await operations.RevokeAsync(write, cancellationToken).ConfigureAwait(false);
+        var result = await writeAsync(operations, write, cancellationToken).ConfigureAwait(false);
 
         if (result.Outcome != InboxOperationOutcome.Applied)
         {
@@ -722,14 +756,14 @@ internal sealed class MessagingCommands(MessagingStores stores, MessagingSources
     }
 
     private async Task<(DashboardRowResult Row, bool Refused)> _ApplyToCircuitAsync(
-        string command,
         string id,
+        Func<CircuitRefusals, string?> rule,
+        Func<ICircuitBreakerMonitor, string, CancellationToken, ValueTask<bool>> changeAsync,
+        string unchanged,
         CancellationToken cancellationToken
     )
     {
-        var isReset = string.Equals(command, ResetCircuitId, StringComparison.Ordinal);
-        var (reset, forceOpen) = _CircuitRefusals(id);
-        var refusal = isReset ? reset : forceOpen;
+        var refusal = rule(_CircuitRefusals(id));
 
         if (refusal is not null || !MessagingViews.TryParseCircuitId(id, out _, out var key))
         {
@@ -737,12 +771,10 @@ internal sealed class MessagingCommands(MessagingStores stores, MessagingSources
         }
 
         var monitor = _services.GetRequiredService<ICircuitBreakerMonitor>();
-        var changed = isReset
-            ? await monitor.ResetAsync(key, cancellationToken).ConfigureAwait(false)
-            : await monitor.ForceOpenAsync(key, cancellationToken).ConfigureAwait(false);
+        var changed = await changeAsync(monitor, key, cancellationToken).ConfigureAwait(false);
 
         // The circuit moved between the rule check and the call, such as a half-open probe that closed it.
-        return changed ? (_Done(id), false) : (_Skipped(id, isReset ? AlreadyClosed : AlreadyOpen), true);
+        return changed ? (_Done(id), false) : (_Skipped(id, unchanged), true);
     }
 
     private async Task<(DashboardRowResult Row, bool Refused)> _ApplyToNodeAsync(
@@ -763,10 +795,7 @@ internal sealed class MessagingCommands(MessagingStores stores, MessagingSources
         return (_Done(id), false);
     }
 
-    private async Task<(string? ReExecute, string? Purge, string? Hold, string? Release)> _ReceivedRefusalsAsync(
-        ObjectRef target,
-        CancellationToken cancellationToken
-    )
+    private async Task<ReceivedRefusals> _ReceivedRefusalsAsync(ObjectRef target, CancellationToken cancellationToken)
     {
         var (_, view, refusal) = await _ReadReceivedAsync(target.Id, cancellationToken).ConfigureAwait(false);
 
@@ -935,7 +964,7 @@ internal sealed class MessagingCommands(MessagingStores stores, MessagingSources
             cancellationToken
         );
 
-    private (string? Reset, string? ForceOpen) _CircuitRefusals(string id)
+    private CircuitRefusals _CircuitRefusals(string id)
     {
         if (_onKubernetes.Value)
         {
@@ -999,7 +1028,7 @@ internal sealed class MessagingCommands(MessagingStores stores, MessagingSources
     private static bool _IsTerminal(MessageView view) =>
         view.StatusName is StatusName.Succeeded or StatusName.Failed && view.NextRetryAt is null;
 
-    private static (string? ReExecute, string? Purge, string? Hold, string? Release) _ReceivedRules(MessageView view)
+    private static ReceivedRefusals _ReceivedRules(MessageView view)
     {
         if (!_IsTerminal(view))
         {
@@ -1019,7 +1048,7 @@ internal sealed class MessagingCommands(MessagingStores stores, MessagingSources
         return (view.StatusName == StatusName.Failed ? null : NotFailed, null);
     }
 
-    private static (string? DispatchNow, string? Revoke) _ScheduledRules(ScheduledDeliveryView view)
+    private static ScheduledRefusals _ScheduledRules(ScheduledDeliveryView view)
     {
         // A delivery attempt already ran inline, so the row is a retry in progress, not a waiting delivery.
         if (view.InlineAttempts > 0)
@@ -1032,14 +1061,47 @@ internal sealed class MessagingCommands(MessagingStores stores, MessagingSources
     }
 
     private static (MessageType Type, MessageOperationKind Kind) _OperationKind(string commandId) =>
-        commandId switch
-        {
-            ReExecuteId => (MessageType.Subscribe, MessageOperationKind.ReExecute),
-            PurgeId => (MessageType.Subscribe, MessageOperationKind.Delete),
-            ResendId => (MessageType.Publish, MessageOperationKind.Resend),
-            DeleteId => (MessageType.Publish, MessageOperationKind.Delete),
-            _ => throw new ArgumentException($"Command '{commandId}' does not run over a filter.", nameof(commandId)),
-        };
+        _Handlers.TryGetValue(commandId, out var handler) && handler.Operation is { } operation
+            ? operation
+            : throw new ArgumentException($"Command '{commandId}' does not run over a filter.", nameof(commandId));
+
+    private static CommandHandler _Received(
+        Func<ReceivedRefusals, string?> rule,
+        Func<IInboxOperationsApi, InboxOperationRequest, CancellationToken, ValueTask<InboxOperationResult>> writeAsync,
+        bool keepsRow,
+        (MessageType Type, MessageOperationKind Kind)? operation = null
+    ) =>
+        new(
+            NeedsOperator: true,
+            (self, request, authorization, id, token) =>
+                self._ApplyToReceivedAsync(request, authorization!, id, rule, writeAsync, keepsRow, token),
+            operation
+        );
+
+    private static CommandHandler _Scheduled(
+        Func<ScheduledRefusals, string?> rule,
+        Func<
+            IScheduledDeliveryOperationsApi,
+            ScheduledDeliveryOperationRequest,
+            CancellationToken,
+            ValueTask<ScheduledDeliveryOperationResult>
+        > writeAsync
+    ) =>
+        new(
+            NeedsOperator: true,
+            (self, request, authorization, id, token) =>
+                self._ApplyToScheduledAsync(request, authorization!, id, rule, writeAsync, token)
+        );
+
+    private static CommandHandler _Circuit(
+        Func<CircuitRefusals, string?> rule,
+        Func<ICircuitBreakerMonitor, string, CancellationToken, ValueTask<bool>> changeAsync,
+        string unchanged
+    ) =>
+        new(
+            NeedsOperator: false,
+            (self, _, _, id, token) => self._ApplyToCircuitAsync(id, rule, changeAsync, unchanged, token)
+        );
 
     private (MessagingStore Store, MessagingListScope Filter) _ParseFilter(MessageType type, JsonElement filter)
     {
@@ -1165,6 +1227,24 @@ internal sealed class MessagingCommands(MessagingStores stores, MessagingSources
             Allowed = refusal is null,
             DisabledReason = refusal,
         };
+
+    /// <summary>
+    /// One command's apply path. A row command runs only for a named operator, whom its store write records; a
+    /// circuit or back-pressure command acts on this node's memory. <see cref="Operation"/> is set for a command that
+    /// also runs over a filter.
+    /// </summary>
+    private sealed record CommandHandler(
+        bool NeedsOperator,
+        Func<
+            MessagingCommands,
+            DashboardCommandRequest,
+            OperatorAuthorizationContext?,
+            string,
+            CancellationToken,
+            Task<(DashboardRowResult Row, bool Refused)>
+        > ApplyAsync,
+        (MessageType Type, MessageOperationKind Kind)? Operation = null
+    );
 
     private readonly record struct Found(
         MessageType Type,
