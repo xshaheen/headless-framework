@@ -55,6 +55,59 @@ public sealed partial class SetupLoggingSerilogTests : TestBase
     }
 
     [Fact]
+    public void should_keep_each_hosts_events_in_its_own_sinks_when_preserving_the_static_logger()
+    {
+        // given: two hosts side by side in one process, as test hosts are
+        var firstSink = new CollectingSink();
+        var secondSink = new CollectingSink();
+        using var firstConfiguration = new ConfigurationManager();
+        using var secondConfiguration = new ConfigurationManager();
+        var first = _BuildPreservingHost(firstConfiguration, firstSink);
+        using var second = _BuildPreservingHost(secondConfiguration, secondSink);
+        var firstFactory = first.GetRequiredService<ILoggerFactory>();
+        var secondFactory = second.GetRequiredService<ILoggerFactory>();
+
+        // when: loggers are created after both hosts started, as a request creates them
+        firstFactory.CreateLogger("First").LogInformation("from first");
+        secondFactory.CreateLogger("Second").LogInformation("from second");
+        first.Dispose();
+        secondFactory.CreateLogger("Second").LogInformation("after first disposed");
+
+        // then: no host hears the other, and disposing one leaves the other logging
+        firstSink.Events.Select(e => e.RenderMessage()).Should().Equal("from first");
+        secondSink.Events.Select(e => e.RenderMessage()).Should().Equal("from second", "after first disposed");
+    }
+
+    [Fact]
+    public void should_make_the_host_logger_the_static_logger_by_default()
+    {
+        // given
+        var sink = new CollectingSink();
+        using var configuration = new ConfigurationManager();
+        var builder = _CreateBuilder(configuration);
+        builder.AddHeadlessSerilog(
+            new SerilogOptions { WriteToFiles = false },
+            (_, loggerConfiguration) => loggerConfiguration.WriteTo.Sink(sink)
+        );
+
+        try
+        {
+            using var provider = builder.Services.BuildServiceProvider();
+            _ = provider.GetRequiredService<ILoggerFactory>();
+
+            // when
+            Serilog.Log.Information("through the static logger");
+
+            // then
+            sink.Events.Select(e => e.RenderMessage()).Should().Equal("through the static logger");
+        }
+        finally
+        {
+            Serilog.Log.Logger = Serilog.Core.Logger.None;
+        }
+    }
+
+    [Fact]
     public void should_throw_when_the_builder_is_null()
     {
         var call = () => ((IHostApplicationBuilder)null!).AddHeadlessSerilog();
@@ -81,6 +134,18 @@ public sealed partial class SetupLoggingSerilogTests : TestBase
         builder.Environment.Returns(environment);
 
         return builder;
+    }
+
+    private static ServiceProvider _BuildPreservingHost(IConfigurationManager configuration, CollectingSink sink)
+    {
+        var builder = _CreateBuilder(configuration);
+        builder.AddHeadlessSerilog(
+            new SerilogOptions { WriteToFiles = false },
+            (_, loggerConfiguration) => loggerConfiguration.WriteTo.Sink(sink),
+            preserveStaticLogger: true
+        );
+
+        return builder.Services.BuildServiceProvider();
     }
 
     private sealed class StarRedactor : Redactor

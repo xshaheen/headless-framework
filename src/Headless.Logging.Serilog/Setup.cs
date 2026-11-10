@@ -36,14 +36,27 @@ public static class SetupLoggingSerilog
         /// before adding OpenTelemetry (<c>AddHeadless</c>) when the default Console, Debug, and EventSource providers
         /// should not print each event a second time.
         /// </para>
+        /// <para>
+        /// By default the host's logger becomes the process-wide <c>Log.Logger</c>, so static <c>Log.*</c> calls write
+        /// through the full pipeline. Each <c>ILogger</c> the host creates then binds to whichever logger
+        /// <c>Log.Logger</c> holds at that moment, and disposing the host calls <c>Log.CloseAndFlush()</c>. Pass <paramref name="preserveStaticLogger"/> as
+        /// <see langword="true"/> when one process builds several hosts, such as test hosts built by
+        /// <c>WebApplicationFactory</c>: each host then keeps its own logger and sinks, and disposing one does not
+        /// silence the others.
+        /// </para>
         /// </remarks>
         /// <param name="options">The console format and file output; the defaults when omitted.</param>
         /// <param name="configure">Runs after the Headless profile, to add sinks or enrichers.</param>
+        /// <param name="preserveStaticLogger">
+        /// <see langword="true"/> to leave <c>Log.Logger</c> untouched and give the host its own logger;
+        /// <see langword="false"/> (the default) to make the host's logger the static one, reloading a bootstrap logger.
+        /// </param>
         /// <returns>The same builder.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="builder"/> is <see langword="null"/>.</exception>
         public IHostApplicationBuilder AddHeadlessSerilog(
             SerilogOptions? options = null,
-            Action<IServiceProvider, LoggerConfiguration>? configure = null
+            Action<IServiceProvider, LoggerConfiguration>? configure = null,
+            bool preserveStaticLogger = false
         )
         {
             Argument.IsNotNull(builder);
@@ -62,6 +75,7 @@ public static class SetupLoggingSerilog
                     );
                     configure?.Invoke(services, loggerConfiguration);
                 },
+                preserveStaticLogger: preserveStaticLogger,
                 writeToProviders: true
             );
 
