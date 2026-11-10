@@ -1,5 +1,10 @@
 import { useDashboard, useModule, type DashboardStateRole } from '@headless/dashboard-sdk'
-import { CommandAction, useAllowedActions, type CommandDefinition } from '@headless/dashboard-sdk/commands'
+import {
+  CommandAction,
+  useAllowedActions,
+  type CommandDefinition,
+  type RowResult,
+} from '@headless/dashboard-sdk/commands'
 import {
   Button,
   DetailPanel,
@@ -11,7 +16,6 @@ import {
   LoadError,
   Mono,
   PayloadView,
-  ProgressBar,
   Skeleton,
   StaleNotice as SdkStaleNotice,
   StatCard,
@@ -26,10 +30,11 @@ import {
 import { DashboardApiError, useDashboardObject, type CappedCount } from '@headless/dashboard-sdk/data'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQuery } from '@headless/dashboard-sdk/query'
-import { Link } from '@headless/dashboard-sdk/router'
+import { Link, useSearchParams } from '@headless/dashboard-sdk/router'
 import { useStreamEvent, useStreamStatus } from '@headless/dashboard-sdk/stream'
 import { useState, type ReactNode } from 'react'
 import { fetchFunctions } from './cron.ts'
+import { RunProgress } from './progress.tsx'
 import {
   attemptTones,
   fetchAttempts,
@@ -49,6 +54,8 @@ import {
   type Run,
   type RunStatus,
 } from './runs.ts'
+
+export { RunProgress }
 
 /**
  * A timestamp as relative time, with the exact time, zone, and offset on hover; in `zone` when one is named. `short`
@@ -360,7 +367,7 @@ export function RunFields({ run }: { run: Run }) {
       ) : null}
       <FieldGrid>
         <GridField label="Kind">{kindLabel(run.kind)}</GridField>
-        <GridField label="Retries">{format.number(run.retryCount)}</GridField>
+        <GridField label="Attempt">{attemptText(run, format.number)}</GridField>
         <GridField label="Node">{run.node ? <Mono>{run.node}</Mono> : 'Not recorded'}</GridField>
         <Optional label="Tenant" value={run.tenantId ? <Mono>{run.tenantId}</Mono> : undefined} />
         <GridField label="Status" span={2}>
@@ -414,6 +421,15 @@ export function RunFields({ run }: { run: Run }) {
             <Mono>{run.function}</Mono>
           </Link>
         </GridField>
+        <Optional
+          label="Retry intervals"
+          span={2}
+          value={
+            run.retryIntervals && run.retryIntervals.length > 0
+              ? run.retryIntervals.map((seconds) => `${format.number(seconds)} s`).join(', ')
+              : undefined
+          }
+        />
         <Optional label="Skipped because" span={2} value={run.skippedReason} />
         <Optional label="Trace id" span={2} value={run.traceId ? <Mono>{run.traceId}</Mono> : undefined} />
         <Optional label="Causation" span={2} value={run.causationId ? <Mono>{run.causationId}</Mono> : undefined} />
@@ -439,18 +455,18 @@ export function RunFields({ run }: { run: Run }) {
   )
 }
 
-export function RunProgress({ run }: { run: Pick<Run, 'function' | 'progressPercent' | 'progressMessage'> }) {
-  const format = useFormat()
-  const percent = run.progressPercent ?? 0
+/**
+ * `Attempt 2 of 4`: the store counts the retries a run consumed, so the attempt running or last run is one past that,
+ * out of the first attempt and its retries. A run no node has picked up yet has made no attempt.
+ */
+function attemptText(run: Pick<Run, 'status' | 'retryCount' | 'retries'>, number: (value: number) => string) {
+  const max = number(run.retries + 1)
 
-  return (
-    <ProgressBar
-      label={`Progress of ${run.function}`}
-      value={percent}
-      max={100}
-      valueText={`${format.number(percent, { maximumFractionDigits: 1 })} %${run.progressMessage ? ` · ${run.progressMessage}` : ''}`}
-    />
-  )
+  if (run.retryCount === 0 && (run.status === 'Idle' || run.status === 'Queued')) {
+    return `Not run yet, up to ${max}`
+  }
+
+  return `Attempt ${number(run.retryCount + 1)} of ${max}`
 }
 
 /** A run's attempts, read again whenever the run's version moves, since a live change carries no attempts. */
@@ -549,23 +565,56 @@ export function RunHistory({ run }: { run: Pick<Run, 'id' | 'version' | 'created
   )
 }
 
+type RunActionName = 'requeue' | 'edit' | 'duplicate' | 'cancel' | 'delete' | 'force-delete'
+
+/** Opens a run: on its own page from a run page, else docked in the list, the way the list opens a row. */
+function useOpenRun(page: boolean | undefined) {
+  const open = useModuleNavigate()
+  const [, setParams] = useSearchParams()
+
+  return (id: string) =>
+    page
+      ? open(`runs/${encodeURIComponent(id)}`)
+      : setParams(
+          (current) => {
+            const next = new URLSearchParams(current)
+            next.set('open', id)
+
+            return next
+          },
+          { replace: true },
+        )
+}
+
 /**
- * The actions the server allows now on one run: `Requeue` (the recovery action `R` runs), `Cancel`, and `Delete`. A
- * refused action renders disabled with the server's reason, and a finished one marks the run pending until its change
- * arrives.
+ * The actions the server allows now on one run: `Requeue` (the recovery action `R` runs), `Edit`, `Duplicate`,
+ * `Cancel`, `Delete`, and `Force delete`. A refused action renders disabled with the server's reason, and a finished
+ * one marks the run pending until its change arrives. A duplicate opens the run the server made.
  */
-export function RunActions({ run, pending }: { run: Run; pending: Pending }) {
+export function RunActions({ run, pending, page }: { run: Run; pending: Pending; page?: boolean }) {
   const module = useModule()
   const commands = useJobsCommands()
   const refusal = useAllowedActions('run', [run])
+  const openRun = useOpenRun(page)
   // Captured at render, so the version is the one the operator saw when they ran the command.
   const versions = new Map([[run.id, run.version]])
 
-  const action = (
-    name: 'requeue' | 'cancel' | 'delete',
-    command: CommandDefinition | undefined,
-    variant?: 'primary' | 'danger',
-  ) =>
+  function done(name: RunActionName) {
+    if (name === 'duplicate') {
+      return (rows: readonly RowResult[]) => {
+        const created = rows.find((row) => row.outcome === 'done')?.created
+
+        if (created) {
+          openRun(created.id)
+        }
+      }
+    }
+
+    // An edit keeps the run's status, so it has no pending word; its change arrives on the stream like any other.
+    return name === 'edit' ? undefined : markDone(pending, versions, name)
+  }
+
+  const action = (name: RunActionName, command: CommandDefinition | undefined, variant?: 'primary' | 'danger') =>
     command ? (
       <CommandAction
         key={name}
@@ -577,15 +626,18 @@ export function RunActions({ run, pending }: { run: Run; pending: Pending }) {
         recovery={name === 'requeue'}
         commands={commands.all}
         disabledReason={refusal(command.id)}
-        onDone={markDone(pending, versions, name)}
+        onDone={done(name)}
       />
     ) : null
 
   return (
     <>
       {action('requeue', commands.requeue, 'primary')}
+      {action('edit', commands.edit)}
+      {action('duplicate', commands.duplicate)}
       {action('cancel', commands.cancel)}
       {action('delete', commands.delete, 'danger')}
+      {action('force-delete', commands.forceDelete, 'danger')}
     </>
   )
 }
@@ -667,7 +719,7 @@ export function RunPanel({ run, pending, page }: { run: Run; pending: Pending; p
       status={runStatusMark(run, pending.labelOf(run))}
       detachTo={page ? undefined : `/jobs/runs/${encodeURIComponent(run.id)}`}
       // Keyed by run, so a command still busy or failed for one run does not show on the next one J/K opens.
-      actions={<RunActions key={run.id} run={run} pending={pending} />}
+      actions={<RunActions key={run.id} run={run} pending={pending} page={page} />}
       tabs={[
         {
           id: 'overview',

@@ -340,7 +340,7 @@ describe('jobs runs list', () => {
       expect(described(button)).toBe('Needs operate permission')
     }
 
-    for (const name of ['Requeue', 'Cancel', 'Delete']) {
+    for (const name of ['Requeue', 'Edit', 'Duplicate', 'Cancel', 'Delete', 'Force delete']) {
       const button = await within(panel(failed.id)).findByRole('button', { name })
       expect(button.getAttribute('aria-disabled')).toBe('true')
       expect(described(button)).toBe('Needs operate permission')
@@ -819,5 +819,349 @@ describe('jobs run page', () => {
     expect(within(page).queryByRole('button', { name: 'Close details' })).toBeNull()
     expect(within(page).queryByRole('link', { name: 'Open in its own page' })).toBeNull()
     expect(await within(page).findByText('try 1 · node-b · Card declined', { exact: false })).toBeTruthy()
+  })
+})
+
+describe('jobs runs list reads', () => {
+  /** The last runs list request the view sent. */
+  function lastList(view: ReturnType<typeof list>) {
+    return view.requests.filter((request) => request.path === 'jobs/runs').at(-1)?.query ?? {}
+  }
+
+  it('keeps a running run’s last progress through a stream drop, ages it live, and shows the stale notice', async () => {
+    const running = run('InProgress', { function: 'export.ledger' })
+    const view = list({ runs: [running] })
+    await screen.findByRole('row', { name: /export\.ledger/ })
+
+    await act(() => vi.advanceTimersByTimeAsync(5_000))
+    view.stream.push(
+      'change',
+      change({
+        ...running,
+        progressPercent: 62.5,
+        progressMessage: 'step 25 of 40',
+        progressUpdatedAt: '2026-11-05T10:00:05Z',
+        version: '2',
+      }),
+    )
+    const row = () => screen.getByRole('row', { name: /export\.ledger/ })
+    await waitFor(() =>
+      expect(within(row()).getByRole('progressbar', { name: 'Progress of export.ledger' })).toBeTruthy(),
+    )
+
+    act(() => view.stream.setStatus('stale'))
+    await act(() => vi.advanceTimersByTimeAsync(5_000))
+
+    expect(within(row()).getByText('62.5 % · step 25 of 40')).toBeTruthy()
+    expect(within(row()).getByText('updated 5 sec. ago')).toBeTruthy()
+    expect(screen.getByText('Stale. Live updates stopped, so these runs may be out of date.')).toBeTruthy()
+
+    await act(() => vi.advanceTimersByTimeAsync(10_000))
+    expect(within(row()).getByText('updated 15 sec. ago')).toBeTruthy()
+  })
+
+  it('keeps a finished run’s last progress as text, with no bar and no age', async () => {
+    list({
+      runs: [
+        run('Succeeded', {
+          function: 'export.ledger',
+          progressPercent: 100,
+          progressUpdatedAt: '2026-11-05T09:56:00Z',
+        }),
+      ],
+    })
+
+    const row = await screen.findByRole('row', { name: /export\.ledger/ })
+    expect(within(row).getByText('100 %')).toBeTruthy()
+    expect(within(row).queryByRole('progressbar')).toBeNull()
+    expect(within(row).queryByText(/updated/)).toBeNull()
+  })
+
+  it('asks the server to sort by function on a header press and shows its first page in place of the loaded rows', async () => {
+    const actor = user()
+    const loaded = [run('Failed', { function: 'z.last' }), run('Failed', { function: 'm.middle' })]
+    const sorted = [run('Failed', { function: 'a.first' })]
+    const view = list({
+      extra: (request) =>
+        request.path === 'jobs/runs'
+          ? request.query?.sort === 'function'
+            ? { items: sorted, count: 3, countCapped: false, nextCursor: null }
+            : { items: loaded, count: 3, countCapped: false, nextCursor: 'cursor-of-m' }
+          : undefined,
+    })
+    await screen.findByRole('row', { name: /z\.last/ })
+
+    const header = screen.getByRole('columnheader', { name: 'Function' })
+    await actor.click(within(header).getByRole('button', { name: 'Function' }))
+
+    await waitFor(() => expect(screen.queryByRole('row', { name: /z\.last/ })).toBeNull())
+    expect(screen.getByRole('row', { name: /a\.first/ })).toBeTruthy()
+    expect(header.getAttribute('aria-sort')).toBe('ascending')
+    expect(lastList(view)).toMatchObject({ sort: 'function', direction: 'ascending' })
+    // A cursor belongs to the order it was read in, so the sorted list starts again from its first page.
+    expect(lastList(view).after).toBeUndefined()
+  })
+
+  it('offers no sort on the Failed list’s failed-at column, which the server cannot order by', async () => {
+    list({ runs: [run('Failed', { function: 'a.failed' })] }, '?status=Failed')
+    await screen.findByRole('row', { name: /a\.failed/ })
+
+    expect(within(screen.getByRole('columnheader', { name: 'Failed at' })).queryByRole('button')).toBeNull()
+    expect(
+      within(screen.getByRole('columnheader', { name: 'Status' })).getByRole('button', { name: 'Status' }),
+    ).toBeTruthy()
+  })
+
+  it('sends the search text once typing pauses, and scopes an Operation over every match to it', async () => {
+    const actor = user()
+    const failed = [run('Failed', { function: 'billing.refund' }), run('Failed', { function: 'billing.refund' })]
+    const view = list(
+      {
+        runs: failed,
+        extra: (request) => {
+          if (request.path === 'jobs/runs') {
+            return { items: failed, count: 40, countCapped: false, nextCursor: request.query?.after ? null : 'next' }
+          }
+
+          return request.path === 'jobs/commands/jobs.delete/confirm'
+            ? {
+                operationId: 'op1',
+                count: 40,
+                confirmation: 'confirm',
+                sample: [],
+                token: 't',
+                expiresAt: '',
+                chunkSize: 500,
+              }
+            : undefined
+        },
+      },
+      '?status=Failed',
+    )
+    await screen.findAllByRole('row', { name: /billing\.refund/ })
+
+    await actor.type(screen.getByRole('searchbox', { name: 'Search runs' }), 'refund')
+    await act(() => vi.advanceTimersByTimeAsync(300))
+    await waitFor(() => expect(lastList(view).search).toBe('refund'))
+    expect(
+      view.requests.filter((request) => request.path === 'jobs/runs' && request.query?.search === 'refun'),
+    ).toHaveLength(0)
+
+    await actor.click(screen.getByRole('checkbox', { name: 'Select all loaded' }))
+    await actor.click(await screen.findByRole('button', { name: 'Select all 40 matching' }))
+    await actor.click(screen.getByRole('button', { name: 'Delete 40' }))
+    await actor.type(await screen.findByRole('textbox', { name: /Reason/ }), 'cleanup')
+    await actor.click(screen.getByRole('button', { name: 'Count rows' }))
+
+    await waitFor(() =>
+      expect(view.requests.find((request) => request.path.endsWith('/confirm'))?.body).toMatchObject({
+        filter: { statuses: ['Failed'], search: 'refund' },
+      }),
+    )
+  })
+
+  it('sends a picked day range as the due bounds in place of the time-range preset', async () => {
+    localStorage.setItem('headless-dashboard:time-zone', 'UTC')
+    const actor = user()
+    const view = list(
+      { runs: [run('Succeeded', { function: 'a.done' })] },
+      '?range=24h&from=2026-11-04T10%3A00%3A00.000Z',
+    )
+    await screen.findByRole('row', { name: /a\.done/ })
+
+    const picker = screen.getByRole('group', { name: 'Due between' })
+    await actor.click(within(picker).getAllByRole('spinbutton', { name: /month/i })[0]!)
+    await actor.keyboard('11012026')
+    await actor.keyboard('11042026')
+
+    await waitFor(() =>
+      expect(lastList(view)).toMatchObject({ from: '2026-11-01T00:00:00.000Z', before: '2026-11-05T00:00:00.000Z' }),
+    )
+    expect(new URLSearchParams(view.location().search).get('range')).toBeNull()
+  })
+
+  it('reads a run’s attempt out of its first try and retries, and its retry intervals', async () => {
+    const failed = run('Failed', { function: 'a.failed', retryCount: 2, retries: 3, retryIntervals: [30, 60] })
+    const queued = run('Queued', { function: 'a.queued', retries: 1 })
+    list({ runs: [failed, queued] })
+
+    await user().click(await screen.findByRole('row', { name: /a\.failed/ }))
+    expect(field(panel(failed.id), 'Attempt')).toBe('Attempt 3 of 4')
+    expect(field(panel(failed.id), 'Retry intervals')).toBe('30 s, 60 s')
+
+    await user().click(screen.getByRole('row', { name: /a\.queued/ }))
+    expect(field(panel(queued.id), 'Attempt')).toBe('Not run yet, up to 2')
+    expect(within(panel(queued.id)).queryByText('Retry intervals', { selector: 'dt' })).toBeNull()
+  })
+})
+
+describe('jobs run actions', () => {
+  it('duplicates a finished run at the execution time chosen and opens the new run', async () => {
+    localStorage.setItem('headless-dashboard:time-zone', 'UTC')
+    const actor = user()
+    const failed = run('Failed', { function: 'a.failed' })
+    const copy = run('Idle', {
+      id: 'd0000000-0000-0000-0000-0000000000d1',
+      function: 'a.failed',
+      executionTime: '2026-11-06T10:00:00Z',
+    })
+    const rows = [failed]
+    const view = list({
+      runs: rows,
+      extra: (request) => {
+        if (request.method === 'POST' && request.path === 'jobs/commands/jobs.duplicate') {
+          rows.push(copy)
+
+          return { rows: [{ id: failed.id, outcome: 'done', created: { module: 'jobs', kind: 'run', id: copy.id } }] }
+        }
+
+        return undefined
+      },
+    })
+
+    await actor.click(await screen.findByRole('row', { name: /a\.failed/ }))
+    const duplicate = await within(panel(failed.id)).findByRole('button', { name: 'Duplicate' })
+    await waitFor(() => expect(duplicate.getAttribute('aria-disabled')).toBeNull())
+    await actor.click(duplicate)
+
+    const dialog = await screen.findByRole('dialog', { name: 'Duplicate run' })
+    await actor.click(await within(dialog).findByRole('spinbutton', { name: /month/i }))
+    await actor.keyboard('11062026')
+    await actor.keyboard('1000')
+    await actor.type(within(dialog).getByRole('textbox', { name: /Reason/ }), 'retry with the fixed gateway')
+    await actor.click(within(dialog).getByRole('button', { name: 'Duplicate run' }))
+
+    expect(await screen.findByRole('region', { name: `Run ${copy.id}` })).toBeTruthy()
+    expect(new URLSearchParams(view.location().search).get('open')).toBe(copy.id)
+    expect(view.requests.find((request) => request.path === 'jobs/commands/jobs.duplicate')?.body).toMatchObject({
+      ids: [failed.id],
+      arguments: { executionTime: '2026-11-06T10:00:00.000Z' },
+      reason: 'retry with the fixed gateway',
+    })
+  })
+
+  it('shows the server’s refusal of a duplicate in place, keeping the run open', async () => {
+    const actor = user()
+    const failed = run('Failed', { function: 'a.failed' })
+    list({
+      runs: [failed],
+      extra: (request) =>
+        request.method === 'POST' && request.path === 'jobs/commands/jobs.duplicate'
+          ? {
+              rows: [
+                { id: failed.id, outcome: 'skipped', reason: 'Its function is no longer registered on this host' },
+              ],
+            }
+          : undefined,
+    })
+
+    await actor.click(await screen.findByRole('row', { name: /a\.failed/ }))
+    const duplicate = await within(panel(failed.id)).findByRole('button', { name: 'Duplicate' })
+    await waitFor(() => expect(duplicate.getAttribute('aria-disabled')).toBeNull())
+    await actor.click(duplicate)
+    const dialog = await screen.findByRole('dialog', { name: 'Duplicate run' })
+    await actor.type(within(dialog).getByRole('textbox', { name: /Reason/ }), 'retry')
+    await actor.click(within(dialog).getByRole('button', { name: 'Duplicate run' }))
+
+    expect(await within(panel(failed.id)).findByText('Its function is no longer registered on this host')).toBeTruthy()
+  })
+
+  it('force deletes a running run whose cancel was requested only once a reason is given', async () => {
+    const actor = user()
+    const stuck = run('InProgress', { function: 'a.stuck', cancelRequested: true })
+    const view = list({
+      runs: [stuck],
+      extra: (request) =>
+        request.method === 'POST' && request.path === 'jobs/commands/jobs.force-delete'
+          ? { rows: [{ id: stuck.id, outcome: 'done' }] }
+          : undefined,
+    })
+
+    await actor.click(await screen.findByRole('row', { name: /a\.stuck/ }))
+    const forceDelete = await within(panel(stuck.id)).findByRole('button', { name: 'Force delete' })
+    await waitFor(() => expect(forceDelete.getAttribute('aria-disabled')).toBeNull())
+    await actor.click(forceDelete)
+
+    // A two-word label already names its effect, so the confirm keeps it as it is.
+    const dialog = await screen.findByRole('dialog', { name: 'Force delete' })
+    const confirm = within(dialog).getByRole('button', { name: 'Force delete' })
+    expect(confirm.hasAttribute('disabled')).toBe(true)
+
+    await actor.type(within(dialog).getByRole('textbox', { name: /Reason/ }), 'host lost, row stuck')
+    expect(confirm.hasAttribute('disabled')).toBe(false)
+    await actor.click(confirm)
+
+    await waitFor(() =>
+      expect(within(screen.getByRole('row', { name: /a\.stuck/ })).getByText('Deleting…')).toBeTruthy(),
+    )
+    expect(view.requests.find((request) => request.path === 'jobs/commands/jobs.force-delete')?.body).toMatchObject({
+      ids: [stuck.id],
+      reason: 'host lost, row stuck',
+    })
+  })
+
+  it('disables Force delete on a run whose cancel was not asked for, with the server’s reason', async () => {
+    const running = run('InProgress', { function: 'a.running' })
+    list({ runs: [running] })
+
+    await user().click(await screen.findByRole('row', { name: /a\.running/ }))
+    const forceDelete = await within(panel(running.id)).findByRole('button', { name: 'Force delete' })
+
+    await waitFor(() => expect(described(forceDelete)).toBe('Cancel first'))
+  })
+})
+
+describe('jobs create form', () => {
+  it('offers every run condition for a chain step and sends the one chosen with the retry intervals', async () => {
+    const actor = user()
+    const view = list({
+      extra: (request) =>
+        request.method === 'POST' && request.path === 'jobs/time-jobs'
+          ? { id: 'a0000000-0000-0000-0000-0000000000aa' }
+          : undefined,
+    })
+
+    await actor.click(await screen.findByRole('button', { name: 'Add chain' }))
+    const form = await screen.findByRole('region', { name: 'Add chain' })
+    await actor.selectOptions(within(form).getAllByRole('combobox', { name: 'Function' })[0]!, 'billing.charge')
+    await actor.type(within(form).getByRole('textbox', { name: 'Retries' }), '{backspace}3')
+    await actor.type(within(form).getByRole('textbox', { name: /Retry intervals/ }), '30, 60 300')
+    await actor.click(within(form).getByRole('button', { name: 'Add step' }))
+    await actor.selectOptions(within(form).getAllByRole('combobox', { name: 'Function' })[1]!, 'billing.refund')
+
+    const condition = within(form).getByRole('combobox', { name: 'Runs' }) as HTMLSelectElement
+    expect([...condition.options].map((option) => option.value)).toEqual([
+      'OnSuccess',
+      'OnFailure',
+      'OnCancelled',
+      'OnFailureOrCancelled',
+      'OnAnyCompletedStatus',
+      'InProgress',
+    ])
+    await actor.selectOptions(condition, 'On failure or cancel')
+    await actor.click(within(form).getByRole('button', { name: 'Create chain' }))
+
+    await waitFor(() =>
+      expect(view.requests.find((request) => request.path === 'jobs/time-jobs')?.body).toEqual({
+        function: 'billing.charge',
+        children: [{ function: 'billing.refund', runCondition: 'OnFailureOrCancelled' }],
+        retries: 3,
+        retryIntervals: [30, 60, 300],
+      }),
+    )
+  })
+
+  it('refuses retry intervals that are not whole seconds, without sending the form', async () => {
+    const actor = user()
+    const view = list({})
+
+    await actor.click(await screen.findByRole('button', { name: 'Add time job' }))
+    const form = await screen.findByRole('region', { name: 'Add time job' })
+    await actor.selectOptions(within(form).getByRole('combobox', { name: 'Function' }), 'billing.charge')
+    await actor.type(within(form).getByRole('textbox', { name: /Retry intervals/ }), '30, soon')
+    await actor.click(within(form).getByRole('button', { name: 'Create job' }))
+
+    expect(await within(form).findByText('Retry intervals must be whole seconds, such as 30, 60, 300.')).toBeTruthy()
+    expect(view.requests.some((request) => request.path === 'jobs/time-jobs')).toBe(false)
   })
 })

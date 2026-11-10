@@ -29,7 +29,14 @@ import {
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQueryClient } from '@headless/dashboard-sdk/query'
 import { useSearchParams } from '@headless/dashboard-sdk/router'
-import { DataTable, type DataTableColumn } from '@headless/dashboard-sdk/table'
+import { DateRangeField } from '@headless/dashboard-sdk/date-range'
+import {
+  DataTable,
+  SearchField,
+  type DataTableColumn,
+  type ListRange,
+  type ListSort,
+} from '@headless/dashboard-sdk/table'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   CellText,
@@ -62,8 +69,10 @@ import {
   type Pending,
   type Run,
   type RunFilter,
+  type RunScope,
   type RunStatus,
 } from '../runs.ts'
+import { RunProgress } from '../progress.tsx'
 import { TimeJobForm } from './create.tsx'
 
 const kindOptions = [
@@ -102,16 +111,27 @@ export default function RunsView() {
   const { start } = useOperations()
   const [params, setParams] = useSearchParams()
   const filter = readFilter(params)
-  const filterKey = filterNames.map((name) => filter[name]).join('\n')
+  // The search, the custom day range, and the sort are typed here and not kept in the URL: the day picker cannot
+  // show a range it did not pick, so a restored one would filter while the field read empty.
+  const [search, setSearch] = useState('')
+  const [range, setRange] = useState<ListRange>()
+  const [sort, setSort] = useState<ListSort>()
+  // Bumped to empty the search box and the day picker, which keep their own text.
+  const [scopeReset, setScopeReset] = useState(0)
+  const scope: RunScope = { search, range }
+  const filterKey = [...filterNames.map((name) => filter[name]), search, range?.start, range?.end].join('\n')
   const creating = params.get('create')
   const runs = useDashboardKeysetList<Run>({
     topic: runsTopic,
     params: filter,
-    fetchPage: (cursor) => fetchRuns(api, filter, cursor),
+    sort,
+    search,
+    range,
+    fetchPage: (cursor, request) => fetchRuns(api, filter, cursor, request),
   })
   const items = runs.rows
   const list = runs.query
-  const matches = (run: Run) => runMatches(run, filter)
+  const matches = (run: Run) => runMatches(run, filter, scope)
   const frame = usePageFrame({ viewId: 'jobs.runs', rows: items, matches })
   const newRows = useNewRows<Run>(runsTopic, matches)
   const functions = useFunctions()
@@ -149,6 +169,9 @@ export default function RunsView() {
       }
 
       if (name === 'range') {
+        // A preset and a custom range would name two starts; the one chosen last wins.
+        setRange(undefined)
+        setScopeReset((count) => count + 1)
         const span = rangeSpans[value]
 
         if (span) {
@@ -162,7 +185,21 @@ export default function RunsView() {
 
   // The status is the list itself, chosen in the sidebar; clearing the filters keeps it.
   function clearFilters() {
+    setSearch('')
+    setRange(undefined)
+    setScopeReset((count) => count + 1)
     update((next) => filterNames.filter((name) => name !== 'status').forEach((name) => next.delete(name)))
+  }
+
+  function pickRange(picked: ListRange | undefined) {
+    setRange(picked)
+
+    if (picked) {
+      update((next) => {
+        next.delete('range')
+        next.delete('from')
+      })
+    }
   }
 
   function openCreate(kind: CreateKind) {
@@ -196,7 +233,7 @@ export default function RunsView() {
       start({
         module: module.id,
         command: requeue,
-        filter: operationScope({ ...filter, status: 'Failed' }),
+        filter: operationScope({ ...filter, status: 'Failed' }, scope),
         noun: runsNoun({ ...filter, status: 'Failed' }),
       })
     }
@@ -242,7 +279,8 @@ export default function RunsView() {
   }, [items])
 
   const count = runs.count
-  const narrowed = filterNames.some((name) => name !== 'status' && filter[name] !== '')
+  const narrowed =
+    filterNames.some((name) => name !== 'status' && filter[name] !== '') || search !== '' || range !== undefined
   const addReason = module.canOperate ? null : viewOnlyReason
   const functionOptions = [
     ...new Set([...(functions.data ?? []).map((item) => item.name), ...(filter.function ? [filter.function] : [])]),
@@ -306,7 +344,12 @@ export default function RunsView() {
           actions={
             <>
               {allMatching && count ? (
-                <MatchingActions filter={filter} count={format.count(count)} cancel={CANCELLABLE_STATES.has(status)} />
+                <MatchingActions
+                  filter={filter}
+                  scope={scope}
+                  count={format.count(count)}
+                  cancel={CANCELLABLE_STATES.has(status)}
+                />
               ) : checkedRuns.length > 0 ? (
                 <CheckedActions
                   runs={checkedRuns}
@@ -331,6 +374,12 @@ export default function RunsView() {
           {status === 'Failed' ? (
             <FailureChips filter={filter} count={count ? format.count(count) : undefined} onPick={setFilter} />
           ) : null}
+          <SearchField
+            key={`search-${scopeReset}`}
+            label="Search runs"
+            placeholder="Function, id, business key, or description"
+            onSearch={setSearch}
+          />
           {/* A state list keeps its header to one row, as the sidebar already chose the state: its other filters
               arrive by link and show as chips to clear. The All runs list offers every filter. */}
           {status ? null : (
@@ -356,6 +405,7 @@ export default function RunsView() {
                 onChange={(value) => setFilter('range', value)}
                 options={rangeOptions}
               />
+              <DateRangeField key={`range-${scopeReset}`} label="Due between" onChange={pickRange} />
             </>
           )}
           {setFilters.length > 0 ? (
@@ -381,6 +431,8 @@ export default function RunsView() {
             newRows={newRows}
             failed={status === 'Failed'}
             pending={pending}
+            sort={sort}
+            onSortChange={setSort}
             onSelectAllMatching={() => setAllMatching(true)}
             emptyState={
               narrowed ? (
@@ -410,6 +462,8 @@ interface RunsTableProps {
   newRows: ReturnType<typeof useNewRows<Run>>
   failed: boolean
   pending: Pending
+  sort: ListSort | undefined
+  onSortChange: (sort: ListSort) => void
   onSelectAllMatching: () => void
   emptyState: ReactNode
 }
@@ -421,6 +475,8 @@ function RunsTable({
   newRows,
   failed,
   pending,
+  sort,
+  onSortChange,
   onSelectAllMatching,
   emptyState,
 }: RunsTableProps) {
@@ -451,6 +507,8 @@ function RunsTable({
       newRows={newRows}
       selectionMode="multiple"
       matchingCount={runs.count?.value}
+      sort={sort}
+      onSortChange={onSortChange}
       onSelectAllMatching={onSelectAllMatching}
       emptyState={emptyState}
       columns={[
@@ -464,6 +522,7 @@ function RunsTable({
           ),
           isRowHeader: true,
           width: '2fr',
+          sortKey: 'function',
         },
         {
           id: 'status',
@@ -474,8 +533,16 @@ function RunsTable({
             </CellText>
           ),
           width: 130,
+          sortKey: 'status',
         },
         ...(failed ? [reasonColumn] : []),
+        {
+          id: 'progress',
+          header: 'Progress',
+          cell: (run) => (run.progressPercent !== undefined ? <RunProgress run={run} /> : ''),
+          priority: 2,
+          width: 160,
+        },
         { id: 'kind', header: 'Kind', cell: (run) => kindLabel(run.kind), priority: 2, width: 110 },
         {
           id: 'retries',
@@ -505,6 +572,8 @@ function RunsTable({
             </CellText>
           ),
           width: 110,
+          // The Failed list shows when each run failed, while the server sorts by when it was due.
+          ...(failed ? {} : { sortKey: 'executionTime' }),
         },
       ]}
     />
@@ -617,7 +686,17 @@ function CheckedActions({
 }
 
 /** Every run the filter matches, past the loaded page: each action runs over them as an Operation. */
-function MatchingActions({ filter, count, cancel }: { filter: RunFilter; count: string; cancel: boolean }) {
+function MatchingActions({
+  filter,
+  scope,
+  count,
+  cancel,
+}: {
+  filter: RunFilter
+  scope: RunScope
+  count: string
+  cancel: boolean
+}) {
   const module = useModule()
   const { start } = useOperations()
   const commands = useJobsCommands()
@@ -629,7 +708,7 @@ function MatchingActions({ filter, count, cancel }: { filter: RunFilter; count: 
         key={command.id}
         variant={variant}
         disabledReason={command.canRun ? null : (command.disabledReason ?? viewOnlyReason)}
-        onPress={() => start({ module: module.id, command, filter: operationScope(filter), noun })}
+        onPress={() => start({ module: module.id, command, filter: operationScope(filter, scope), noun })}
       >
         {`${command.label} ${count}`}
       </Button>

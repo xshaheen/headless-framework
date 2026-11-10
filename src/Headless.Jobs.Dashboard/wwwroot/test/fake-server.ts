@@ -24,6 +24,7 @@ export function run(status: Run['status'], overrides: Partial<Run> = {}): Run {
     executedAt: status === 'Idle' || status === 'Queued' ? undefined : '2026-11-05T09:56:00Z',
     elapsedMilliseconds: 340,
     retryCount: status === 'Failed' ? 2 : 0,
+    retries: status === 'Failed' ? 2 : 0,
     exceptionMessage: status === 'Failed' ? 'Gateway timeout' : undefined,
     version: '1',
     ...overrides,
@@ -157,6 +158,56 @@ export const commands: CommandDefinition[] = [
       },
     },
   },
+  // The run commands below carry the argument schema the shell projects from the module's declaration.
+  {
+    ...base,
+    id: 'jobs.edit',
+    label: 'Edit',
+    objectKind: 'run',
+    confirmation: 'confirm',
+    requiresReason: true,
+    supportsFilter: false,
+    arguments: {
+      type: 'object',
+      required: [],
+      properties: {
+        executionTime: { type: 'string', title: 'Execution time', format: 'date-time' },
+        request: { type: 'string', title: 'Request', contentMediaType: 'application/json', maxLength: 65_536 },
+        retries: { type: 'integer', title: 'Retries', minimum: 0, maximum: 100 },
+        retryIntervals: {
+          type: 'string',
+          title: 'Retry intervals (seconds)',
+          contentMediaType: 'application/json',
+          maxLength: 2000,
+        },
+      },
+    },
+  },
+  {
+    ...base,
+    id: 'jobs.duplicate',
+    label: 'Duplicate',
+    objectKind: 'run',
+    confirmation: 'confirm',
+    requiresReason: true,
+    supportsFilter: false,
+    arguments: {
+      type: 'object',
+      required: [],
+      properties: {
+        executionTime: { type: 'string', title: 'Execution time', format: 'date-time', notBeforeNow: true },
+      },
+    },
+  },
+  {
+    ...base,
+    id: 'jobs.force-delete',
+    label: 'Force delete',
+    objectKind: 'run',
+    confirmation: 'confirm',
+    requiresReason: true,
+    supportsFilter: false,
+  },
 ]
 
 /** Why the fake server refuses `commandId` on `row` now, as the module's rules would. */
@@ -183,6 +234,22 @@ function refusal(row: Run | CronJob, commandId: string): string | undefined {
 
   if (commandId === 'jobs.cancel') {
     return row.status === 'InProgress' || row.status === 'Queued' ? undefined : 'Not running'
+  }
+
+  if (commandId === 'jobs.edit') {
+    return row.status === 'Idle' || row.status === 'Queued' ? undefined : 'Already finished — duplicate it instead'
+  }
+
+  if (commandId === 'jobs.duplicate') {
+    return ['Idle', 'Queued', 'InProgress'].includes(row.status) ? 'Not finished yet' : undefined
+  }
+
+  if (commandId === 'jobs.force-delete') {
+    return row.status !== 'InProgress'
+      ? 'Not running — delete it instead'
+      : row.cancelRequested
+        ? undefined
+        : 'Cancel first'
   }
 
   return undefined
