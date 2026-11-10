@@ -9,6 +9,7 @@ import {
   Ban,
   Calendar,
   CalendarClock,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   ChartLine,
@@ -96,6 +97,8 @@ export const CloseIcon = curate(X)
 export const PreviousIcon = curate(ChevronLeft)
 /** Forward one step, such as the next month; a right-to-left page mirrors it with `rtl:rotate-180`. */
 export const NextIcon = curate(ChevronRight)
+/** Opens a list of choices under a chip or a menu button. */
+export const DropdownIcon = curate(ChevronDown)
 export const DeleteIcon = curate(Trash2)
 /** Retry a run, or requeue a message. */
 export const RetryIcon = curate(RotateCcw)

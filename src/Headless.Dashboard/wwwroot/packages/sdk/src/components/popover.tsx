@@ -2,6 +2,7 @@
 
 import type { ReactNode } from 'react'
 import { Dialog as AriaDialog, DialogTrigger, Popover as AriaPopover } from 'react-aria-components'
+import type { IconComponent } from '../icons/index.ts'
 import { Button, type ButtonVariant } from './button.tsx'
 import { cn, floatingSurface } from './cn.ts'
 
@@ -12,6 +13,8 @@ export interface PopoverProps {
   trigger: ReactNode
   /** The opening button's look; secondary by default. */
   variant?: ButtonVariant
+  /** An icon on the opening button, from `@headless/dashboard-sdk/icons`. */
+  icon?: IconComponent
   children: ReactNode
 }
 
@@ -19,10 +22,12 @@ export interface PopoverProps {
  * shadcn's popover: a button that opens a small floating dialog beside it, such as a panel's further actions. Focus
  * moves in on open, `Esc` closes it and returns focus to the button, and it opens without motion.
  */
-export function Popover({ label, trigger, variant, children }: PopoverProps) {
+export function Popover({ label, trigger, variant, icon, children }: PopoverProps) {
   return (
     <DialogTrigger>
-      <Button variant={variant}>{trigger}</Button>
+      <Button variant={variant} icon={icon}>
+        {trigger}
+      </Button>
       <AriaPopover className={cn('z-(--z-popover) w-(--popover-width) rounded-lg', floatingSurface)}>
         <AriaDialog aria-label={label} className="flex flex-col gap-2.5 p-2.5 outline-none">
           {children}

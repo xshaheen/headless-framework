@@ -33,11 +33,12 @@ export interface CardProps {
 export function Card({ title, caption, action, icon: Icon, empty, emptyIcon, children, wide = false }: CardProps) {
   const rows = Array.isArray(children) ? children.length > 0 : children != null && children !== false
 
-  // The card fills its grid cell, so cards that share a row end at one line however many rows each holds; the rows
-  // stay at the top and the card's surface takes the rest. Two columns of `Cards` need 2 × 22rem and the gap.
+  // Cards that share a row and hold rows end at one line, however many rows each holds: the rows stay at the top and
+  // the surface takes the rest. A card with no row is only its heading and its empty state, so it never stretches
+  // into a tall box around one sentence. Two columns of `Cards` need 2 × 22rem and the gap.
   return (
     <section
-      className={`flex min-w-0 flex-col rounded-lg border border-border bg-card text-card-foreground${wide ? ' @min-[44.75rem]:col-span-2' : ''}`}
+      className={`flex min-w-0 flex-col rounded-lg border border-border bg-card text-card-foreground${rows ? '' : ' self-start'}${wide ? ' @min-[44.75rem]:col-span-2' : ''}`}
       aria-label={title}
     >
       {/* The heading row is prose and controls in sans; its caption is a served count, so it stays mono. */}
@@ -60,8 +61,8 @@ export interface CardRowProps {
   /** The state role whose dot leads the row. */
   tone?: DashboardStateRole
   /**
-   * What the row is: a function, a cron job, an attention item; it ellipsizes. Without one (and without `tone`,
-   * `meta`, `value`, and `actions`) the row is only its second line, such as a chart that fills the card.
+   * What the row is: a function, a cron job, an attention item. Without one (and without `tone`, `meta`, `value`, and
+   * `actions`) the row is only its second line, such as a chart that fills the card.
    */
   name?: ReactNode
   /**
@@ -69,12 +70,17 @@ export interface CardRowProps {
    * a name and a count: it reads in the sans face; an identifier inside it still sets its own with `Mono`.
    */
   prose?: boolean
-  /** Faint facts after the name: `node-a · 24 s`, a cron expression. */
+  /** Faint facts after the name: `node-a · 24 s`, a cron expression, `37 failed runs`. */
   meta?: ReactNode
-  /** The row's value at the inline end: `in 6 s`. */
+  /** The row's value at the inline end, in a column every row shares: `in 6 s`. */
   value?: ReactNode
   /** Row actions, such as Cancel. */
   actions?: ReactNode
+  /**
+   * The row's first line as plain text, `billing.charge 37 failed runs`, shown on hover of the name when the name or
+   * its facts had to shorten. Leave it out when the name can never be wider than the card.
+   */
+  title?: string
   /**
    * A second line under the name, such as a progress bar and its caption. It is prose in sans; an identifier or a
    * number in it sets its own face.
@@ -82,29 +88,42 @@ export interface CardRowProps {
   children?: ReactNode
 }
 
-// The name keeps its letters while it fits in most of the line, so a fact beside it gives way first; only a name wider
-// than that ellipsizes. A prose name sets its own face and weight, since the line's mono shorthand would cover it.
-const monoName = 'min-w-0 max-w-[70%] shrink-0 overflow-hidden font-medium text-ellipsis'
-const proseName = 'min-w-0 max-w-[70%] shrink-0 overflow-hidden text-ellipsis type-small-medium text-foreground'
+// A prose name sets its own face and weight, since the line's mono shorthand would otherwise cover it.
+const monoName = 'max-w-full truncate font-medium'
+const proseName = 'max-w-full truncate type-small-medium text-foreground'
 
 /**
- * One row of a `Card`: dot, name, faint meta, value, and actions on one line, where only the name gives way, with an
- * optional second line.
+ * One row of a `Card`: dot, name and faint meta, value, and actions, with an optional second line. The name keeps
+ * its letters: it is sized to its content, and the facts beside it move under it when the card is too narrow for
+ * both on one line. Only a name or a fact wider than the card itself ends in an ellipsis, with the full text in
+ * `title`. The value column is one width on every row, so the times line up down the card.
  */
-export function CardRow({ tone, name, prose = false, meta, value, actions, children }: CardRowProps) {
+export function CardRow({ tone, name, prose = false, meta, value, actions, title, children }: CardRowProps) {
   const first = tone != null || name != null || meta != null || value != null || actions != null
+  // A row that leads somewhere lights up under the pointer and around keyboard focus, as a table row does; a row
+  // with only a value or a button gives no such cue, since there is nothing to open.
+  const interactive = 'transition-fast has-[a]:hover:bg-accent has-[a:focus-visible]:bg-accent'
 
   return (
-    <li className={tone ? `hd-tone-${tone} ${row}` : row}>
-      {/* The first line never wraps: only the name gives way, in an ellipsis, so a value or Cancel stays beside it. Its
-          name, meta, and value are identifiers, counts, and times, so the line is mono; a control keeps its own sans. */}
+    <li className={`${tone ? `hd-tone-${tone} ` : ''}${row} ${interactive}`}>
+      {/* The first line is a grid: the dot where there is one, the name cell that takes the width, then the value
+          and the actions at their own widths. A missing part leaves no column behind (a hidden grid item would shift
+          the rest into its column). Names, counts, and times are mono; a control inside keeps its own sans. */}
       {first ? (
-        <div className="flex min-w-0 basis-full items-center gap-2.5 type-mono whitespace-nowrap [&>b+*]:ms-auto">
+        <div
+          className={`grid min-w-0 basis-full items-center gap-x-2.5 type-mono ${tone ? 'grid-cols-[auto_minmax(0,1fr)_auto_auto]' : 'grid-cols-[minmax(0,1fr)_auto_auto]'}`}
+        >
           {tone ? <i className="hd-mark" aria-hidden="true" /> : null}
-          <b className={prose ? proseName : monoName}>{name}</b>
-          {meta != null ? <span className="hd-faint min-w-0 overflow-hidden text-ellipsis">{meta}</span> : null}
-          {value}
-          {actions}
+          {/* The name and its facts wrap as a row: while both fit they share the line, and a fact that does not fit
+              drops under the name with the whole width to itself. */}
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-2.5 gap-y-0" title={title}>
+            {name != null ? <b className={prose ? proseName : monoName}>{name}</b> : null}
+            {meta != null ? <span className="hd-faint max-w-full truncate">{meta}</span> : null}
+          </div>
+          {value != null ? (
+            <span className="min-w-(--card-value-width) text-end whitespace-nowrap tabular-nums">{value}</span>
+          ) : null}
+          {actions != null ? <span className="flex items-center gap-1">{actions}</span> : null}
         </div>
       ) : null}
       {/* `min-w-0` lets a wide table inside scroll in its own box instead of widening the card. */}
@@ -116,8 +135,9 @@ export function CardRow({ tone, name, prose = false, meta, value, actions, child
 }
 
 /**
- * The dashboard's cards in columns that wrap to one at narrow widths. Cards in one row share its height. The grid is
- * the query container a `wide` card measures, so it spans two columns only when two fit.
+ * The dashboard's cards in columns that wrap to one at narrow widths. Cards in one row share its height while they
+ * hold rows; an empty card stays as tall as its empty state. The grid is the query container a `wide` card measures,
+ * so it spans two columns only when two fit.
  */
 export function Cards({ children }: { children: ReactNode }) {
   return (

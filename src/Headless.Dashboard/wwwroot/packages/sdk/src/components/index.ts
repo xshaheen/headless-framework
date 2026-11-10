@@ -14,6 +14,8 @@ export { Card, CardRow, Cards, type CardProps, type CardRowProps } from './displ
 export { Actions, Fields, type FieldsProps } from './display/fields.tsx'
 export { EmptyState, type EmptyStateProps } from './display/empty-state.tsx'
 export { FilterChip, FilterChips, type FilterChipProps } from './display/filter-chips.tsx'
+export { FilterSelect, type FilterSelectProps } from './display/filter-select.tsx'
+export { FilterToolbar, type FilterToolbarProps } from './display/filter-toolbar.tsx'
 export { PageHeader, type PageHeaderProps } from './display/page-header.tsx'
 export { RelativeTime, type RelativeTimeProps } from './display/relative-time.tsx'
 export { Section, type SectionProps } from './display/section.tsx'
@@ -39,6 +41,7 @@ export {
   SelectField,
   TextInputField,
   type CheckboxFieldProps,
+  type FieldWidth,
   type SelectFieldProps,
   type TextInputFieldProps,
 } from './form.tsx'

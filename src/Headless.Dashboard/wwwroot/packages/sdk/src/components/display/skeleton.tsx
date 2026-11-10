@@ -1,10 +1,11 @@
 'use no memo'
 
 /**
- * `rows` draws row-height bars for a list; `fields` a grid of label and value pairs for a field grid; `lines` short
+ * `rows` draws row-height bars for a list of rows inside a card or a panel; `table` a header line and row-height bars
+ * on the page gutter, for a list region; `fields` a grid of label and value pairs for a field grid; `lines` short
  * text lines for prose or a payload; `chart` one chart-height block under a legend line.
  */
-export type SkeletonShape = 'rows' | 'fields' | 'lines' | 'chart'
+export type SkeletonShape = 'rows' | 'table' | 'fields' | 'lines' | 'chart'
 
 export interface SkeletonProps {
   /** What is loading, read out in place of the bars: `Loading the runs`. */
@@ -53,6 +54,16 @@ export function Skeleton({ label, rows = 3, shape = 'rows' }: SkeletonProps) {
       <div className="flex flex-col gap-2">
         <div className={`${bar} h-3 w-2/5`} />
         <div className={`${bar} h-(--chart-height) w-full`} />
+      </div>
+    )
+  } else if (shape === 'table') {
+    // The same inset as the table it stands in for, so the rows land where the list's rows will.
+    body = (
+      <div className="flex flex-col gap-2 px-4 pt-3">
+        <div className={`${bar} h-3 w-1/3`} />
+        {Array.from({ length: count }, (_, index) => (
+          <div key={index} className={`${bar} h-(--row-height)`} />
+        ))}
       </div>
     )
   } else {

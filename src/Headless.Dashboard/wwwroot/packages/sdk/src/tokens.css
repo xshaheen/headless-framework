@@ -119,6 +119,11 @@
   --row-height: 34px;
   --row-height-compact: 28px;
   --card-row-height: 40px;
+  /* A card row's value column: wide enough for `due 42 sec. ago`, so every row's time ends on the same edge. */
+  --card-value-width: 7rem;
+  /* A page header's search field and a filter chip's longest reading, so a toolbar lays out the same in every view. */
+  --search-width: 14rem;
+  --filter-max-width: 16rem;
   /* A segment inside the 28 px control track, which the track's 2 px padding fills out to --control-height. */
   --seg-height: 24px;
   --tag-height: 18px;

@@ -177,8 +177,9 @@ export function DetailPanel({ label, name, id, status, tabs, children, actions, 
       </div>
       {stale ? <p className="mx-4 mt-2 type-small text-muted-foreground">No longer matches the filter</p> : null}
       <div
-        // A form's fields stop at a readable measure instead of stretching across a wide panel.
-        className={`mt-2 grid min-h-0 flex-1 grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] border-t border-border *:flex *:flex-col *:gap-3.5 *:overflow-auto *:px-4 *:py-3.5 *:only:col-span-full [&>:first-child:not(:only-child)]:border-e max-md:grid-cols-1 max-md:overflow-auto max-md:*:overflow-visible max-md:[&>:first-child:not(:only-child)]:border-e-0 max-md:[&>:first-child:not(:only-child)]:border-b${form ? ' [&_form]:max-w-[64ch] [&_.hd-field]:max-w-[64ch]' : ''}`}
+        // A form's fields stop at a readable measure instead of stretching across a wide panel; each field then
+        // sizes itself to what it holds through its `width`.
+        className={`mt-2 grid min-h-0 flex-1 grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] border-t border-border *:flex *:flex-col *:gap-3.5 *:overflow-auto *:px-4 *:py-3.5 *:only:col-span-full [&>:first-child:not(:only-child)]:border-e max-md:grid-cols-1 max-md:overflow-auto max-md:*:overflow-visible max-md:[&>:first-child:not(:only-child)]:border-e-0 max-md:[&>:first-child:not(:only-child)]:border-b${form ? ' [&_form]:max-w-[64ch] [&_section]:max-w-[64ch]' : ''}`}
         id={tab ? `${base}p` : undefined}
         role={tab ? 'tabpanel' : undefined}
         aria-labelledby={tab ? `${base}${index}` : undefined}

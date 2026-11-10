@@ -14,24 +14,33 @@ export interface PageHeaderProps {
   count?: ReactNode
   /** One sentence on what the page holds or what comes next. */
   description?: ReactNode
-  /** Filter chips or a filter field, after the description. */
+  /** Anything else on the title row after the description; filter chips go in the toolbar's `chips`, so the actions keep the title's line. */
   children?: ReactNode
-  /** The selection cluster and the page's primary action, at the inline end. */
+  /** The selection cluster and the page's primary action, at the title row's inline end. */
   actions?: ReactNode
+  /** The row of filters under the title: a `FilterToolbar`, or a node switch. */
+  toolbar?: ReactNode
 }
 
-/** The row above a list: title and count, a description, the filters, and the actions at the end. */
-export function PageHeader({ title, tone, count, description, children, actions }: PageHeaderProps) {
+/**
+ * The rows above a list. The title row holds the title and count, the description, and the actions at its end, so
+ * the primary action lines up with the title in every view; the toolbar row under it holds the chips, the search, and
+ * the filters, so they never push the action down or wrap between the title and the list.
+ */
+export function PageHeader({ title, tone, count, description, children, actions, toolbar }: PageHeaderProps) {
   return (
-    <header className="flex flex-none flex-wrap items-center gap-2 border-b border-border px-4 py-2.5">
-      <h1 className={`flex items-center gap-2 type-title ${tone ? `hd-tone-${tone}` : ''}`}>
-        {tone ? <i className="hd-mark" aria-hidden="true" /> : null}
-        {title}
-      </h1>
-      {count != null ? <span className="type-mono text-faint tabular-nums">{count}</span> : null}
-      {description ? <p className="hd-hint">{description}</p> : null}
-      {children}
-      {actions ? <div className="ms-auto flex flex-wrap items-center gap-2">{actions}</div> : null}
+    <header className="flex flex-none flex-col gap-2 border-b border-border px-4 py-2.5">
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <h1 className={`flex items-center gap-2 type-title ${tone ? `hd-tone-${tone}` : ''}`}>
+          {tone ? <i className="hd-mark" aria-hidden="true" /> : null}
+          {title}
+        </h1>
+        {count != null ? <span className="type-mono text-faint tabular-nums">{count}</span> : null}
+        {description ? <p className="hd-hint">{description}</p> : null}
+        {children}
+        {actions ? <div className="ms-auto flex flex-wrap items-center gap-2">{actions}</div> : null}
+      </div>
+      {toolbar}
     </header>
   )
 }

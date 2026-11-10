@@ -216,6 +216,31 @@ describe('data table', () => {
     expect(screen.getByText('No runs yet.')).toBeTruthy()
   })
 
+  it('sets each cell’s face and alignment by its column kind', () => {
+    render(
+      <DataTable
+        label="Runs"
+        rows={[rows[0]!]}
+        columns={[
+          { id: 'title', header: 'Run', cell: (row) => row.title, kind: 'id' },
+          { id: 'retries', header: 'Retries', cell: () => '3', kind: 'number' },
+          { id: 'reason', header: 'Reason', cell: () => 'Card declined', kind: 'prose' },
+          { id: 'count', header: 'Count', cell: () => '7', align: 'end' },
+        ]}
+        emptyState="No runs yet."
+      />,
+    )
+
+    const cells = [...screen.getByRole('row', { name: /billing\.charge #1/ }).querySelectorAll('[role="rowheader"], [role="gridcell"]')]
+    const [title, retries, reason, count] = cells.map((cell) => cell.className)
+    expect(title).toContain('type-mono')
+    expect(retries).toContain('type-mono')
+    expect(retries).toContain('justify-end')
+    expect(reason).toContain('type-small')
+    expect(reason).not.toContain('justify-end')
+    expect(count).toContain('justify-end')
+  })
+
   it('offers select all matching once every loaded row is selected', () => {
     render(
       <DataTable
@@ -739,6 +764,39 @@ describe('virtualized keyset table', () => {
     // is sent, never one whose end year is still being typed.
     await waitFor(() => expect(asked(fetchPage).at(-1)?.range).toEqual({ start: '2026-10-31T22:00:00.000Z', end: '2026-11-10T22:00:00.000Z' }))
     expect(asked(fetchPage).filter((request) => request.range !== undefined)).toHaveLength(1)
+  })
+})
+
+describe('DateRangeField compact', () => {
+  it('is a chip that reads its label, opens the calendar, and reads the picked days once set', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    vi.setSystemTime(new Date('2026-11-10T10:00:00Z'))
+    const user = userEvent.setup()
+    const onChange = vi.fn()
+    render(withDashboard(<DateRangeField label="Due between" compact onChange={onChange} />))
+
+    const chip = screen.getByRole('button', { name: /Due between/ })
+    expect(chip.textContent).toBe('Due between')
+    expect(chip.hasAttribute('data-set')).toBe(false)
+    await user.click(chip)
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).queryByRole('spinbutton')).toBeNull()
+
+    await user.click(within(dialog).getByRole('button', { name: /November 1, 2026/ }))
+    await user.click(within(dialog).getByRole('button', { name: /November 4, 2026/ }))
+
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith({ start: '2026-11-01T00:00:00.000Z', end: '2026-11-05T00:00:00.000Z' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Clear days' }))
+    await waitFor(() => expect(onChange).toHaveBeenLastCalledWith(undefined))
+
+    // The popover hides the page from assistive technology while open, so the chip reads again once it closes.
+    await user.click(within(dialog).getByRole('button', { name: /November 1, 2026/ }))
+    await user.click(within(dialog).getByRole('button', { name: /November 4, 2026/ }))
+    await user.keyboard('{Escape}')
+    const set = await screen.findByRole('button', { name: /Due between/ })
+    expect(set.hasAttribute('data-set')).toBe(true)
+    expect(set.textContent).toBe('Due betweenNov 1 – Nov 4')
+    vi.useRealTimers()
   })
 })
 

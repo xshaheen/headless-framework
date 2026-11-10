@@ -66,8 +66,9 @@ export function SearchField({ label, onSearch, mode = 'debounce', delay = defaul
   useEffect(() => cancel, [])
 
   // The `Search` button sits outside React Aria's field: inside it, the field's button slot would make it a clear button.
+  // `hd-search` lets a toolbar give the compact field the whole row on a phone.
   return (
-    <div className="flex min-w-0 items-center gap-1.5">
+    <div className={compact ? 'hd-search flex w-(--search-width) min-w-0 items-center gap-1.5 max-md:w-auto' : 'flex min-w-0 items-center gap-1.5'}>
       <AriaSearchField className="relative flex min-w-0 flex-1 items-center" value={text} onChange={change} onSubmit={send} onClear={() => send('')}>
         <Label className="sr-only">{label}</Label>
         <Input className={`${compact ? `${compactInputClass} w-full` : inputClass} pe-7 [&::-webkit-search-cancel-button]:hidden`} placeholder={placeholder} />

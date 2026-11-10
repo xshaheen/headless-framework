@@ -14,16 +14,30 @@ export const inputClass =
   'h-(--field-height) w-full min-w-0 rounded-md border border-input bg-deep px-2 text-foreground transition-fast outline-none placeholder:text-faint focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30 data-focused:border-ring aria-invalid:border-destructive aria-invalid:ring-destructive/20 data-invalid:border-destructive disabled:cursor-not-allowed disabled:opacity-50'
 
 /**
- * The same input at the control height, for a filter in a page header or a toolbar: it lines up with the buttons,
- * chips, and segmented controls beside it, and its label is read, not shown, because its empty choice names it.
+ * The same input at the control height, for the search in a page header's toolbar: it lines up with the chips and
+ * buttons beside it, and its label is read, not shown, because its placeholder names it.
  */
-export const compactInputClass = `${inputClass} h-(--control-height) w-auto type-small`
+export const compactInputClass = `${inputClass} h-(--control-height) type-small`
+
+/**
+ * How wide a field is in a form, by what it holds: `short` for a number or a few characters (`12ch`), `medium` for a
+ * name, a zone, or a time (`32ch`), and `full`, the default, for a sentence or JSON (the form's measure).
+ */
+export type FieldWidth = 'short' | 'medium' | 'full'
+
+const widthClasses: Readonly<Record<FieldWidth, string>> = {
+  short: 'hd-field max-w-[12ch]',
+  medium: 'hd-field max-w-[32ch]',
+  full: 'hd-field',
+}
 
 interface FieldBase {
   label: string
   description?: string
   error?: string
   isRequired?: boolean
+  /** How wide the field is, by what it holds; see `FieldWidth`. */
+  width?: FieldWidth
 }
 
 export interface TextInputFieldProps extends FieldBase {
@@ -39,10 +53,10 @@ export interface TextInputFieldProps extends FieldBase {
 }
 
 /** A labelled text field with its hint and inline error. */
-export function TextInputField({ label, description, error, isRequired, value, onChange, inputMode, maxLength, multiline, code, name }: TextInputFieldProps) {
+export function TextInputField({ label, description, error, isRequired, width = 'full', value, onChange, inputMode, maxLength, multiline, code, name }: TextInputFieldProps) {
   return (
     <TextField
-      className="hd-field"
+      className={widthClasses[width]}
       value={value}
       onChange={onChange}
       isInvalid={Boolean(error)}
@@ -74,27 +88,25 @@ export interface SelectFieldProps extends FieldBase {
   value: string
   onChange: (value: string) => void
   options: readonly { value: string; label: string }[]
-  /** What an optional field's empty choice reads: `None` by default, `Any status` for a filter. */
+  /** What an optional field's empty choice reads: `None` by default. */
   emptyLabel?: string
-  /**
-   * A filter in a header or toolbar: one control high, its label visually hidden, so `emptyLabel` or the chosen value
-   * must say what it filters (`Any kind`).
-   */
-  compact?: boolean
 }
 
-/** A labelled choice from a short list, as the platform's own select, which every device handles well. */
-export function SelectField({ label, description, error, isRequired, value, onChange, options, emptyLabel = 'None', compact }: SelectFieldProps) {
+/**
+ * A labelled choice from a short list in a form, as the platform's own select, which every device handles well. A
+ * list's filter is a `FilterSelect`, a chip in the page header's toolbar.
+ */
+export function SelectField({ label, description, error, isRequired, width = 'full', value, onChange, options, emptyLabel = 'None' }: SelectFieldProps) {
   const id = useId()
 
   return (
-    <div className={compact ? 'inline-flex min-w-0' : 'hd-field'}>
-      <label className={compact ? 'sr-only' : 'hd-label'} htmlFor={`${id}-input`}>
+    <div className={widthClasses[width]}>
+      <label className="hd-label" htmlFor={`${id}-input`}>
         {label}
       </label>
       <select
         id={`${id}-input`}
-        className={compact ? compactInputClass : inputClass}
+        className={inputClass}
         value={value}
         required={isRequired}
         aria-invalid={error ? true : undefined}

@@ -31,7 +31,13 @@ export interface DataTableColumn<T> {
   id: string
   header: string
   cell: (row: T) => ReactNode
-  /** `end` for numbers, which also read in tabular figures. */
+  /**
+   * What the cells hold, which sets their face and alignment: `time` (a `RelativeTime`), `number`, and `duration`
+   * read in mono with tabular figures, the last two at the inline end; `id` is a mono identifier kept left to right;
+   * `status` is a dot and a word; `prose`, the default, is sans text such as a reason or a kind.
+   */
+  kind?: DataTableCellKind
+  /** `end` for a value read against the others, such as a count; a `number` or `duration` column ends by default. */
   align?: 'start' | 'end'
   /** The column that names the row for assistive technology; the first column when none says so. */
   isRowHeader?: boolean
@@ -47,6 +53,24 @@ export interface DataTableColumn<T> {
    * order, ascending first and descending on the next press, when the table has `onSortChange`.
    */
   sortKey?: string
+}
+
+/** What a column's cells hold; see `DataTableColumn.kind`. */
+export type DataTableCellKind = 'time' | 'number' | 'duration' | 'id' | 'status' | 'prose'
+
+// Times, numbers, durations, and ids are mono, with tabular figures where digits line up down a column, as every
+// figure on the dashboard is; a `Mono` inside an id cell keeps it left to right. A status and prose keep the sans face.
+const kindClasses: Readonly<Record<DataTableCellKind, string>> = {
+  time: 'type-mono tabular-nums',
+  number: 'type-mono tabular-nums',
+  duration: 'type-mono tabular-nums',
+  id: 'type-mono',
+  status: 'type-small',
+  prose: 'type-small',
+}
+
+function ends(column: { kind?: DataTableCellKind; align?: 'start' | 'end' }) {
+  return column.align ? column.align === 'end' : column.kind === 'number' || column.kind === 'duration'
 }
 
 /**
@@ -82,8 +106,9 @@ const headClass = 'flex h-full items-center border-b border-border bg-card px-2.
 // The sort button fills its header, so the whole header is its target; the sorted column reads in the foreground.
 const sortClass =
   '-mx-1 inline-flex h-full cursor-pointer items-center gap-1 rounded-sm px-1 text-inherit outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring group-data-sort-direction:text-foreground'
+// The face comes from the column's kind (one `type-*` utility per cell, since each is a `font` shorthand).
 const cellClass =
-  'flex h-full items-center gap-2 overflow-hidden px-2.5 type-small text-ellipsis whitespace-nowrap [&>span:only-child]:min-w-0 [&>span:only-child]:overflow-hidden [&>span:only-child]:text-ellipsis'
+  'flex h-full items-center gap-2 overflow-hidden px-2.5 text-ellipsis whitespace-nowrap [&>span:only-child]:min-w-0 [&>span:only-child]:overflow-hidden [&>span:only-child]:text-ellipsis'
 const endClass = 'justify-end text-end tabular-nums'
 // Checked state lives on the checkbox alone, never on the row's fill; the margin makes a 24 px target.
 const checkClass = 'flex h-full items-center ps-4 [&_input]:m-1 [&_input]:size-4 [&_input]:accent-primary'
@@ -464,7 +489,7 @@ export function DataTable<T extends { id: string }>({
                     minWidth={96}
                     data-pinned={at <= lastPinned || undefined}
                     allowsSorting={sortable}
-                    className={`group ${column.align === 'end' ? `${headClass} ${endClass}` : headClass}`}
+                    className={`group ${ends(column) ? `${headClass} ${endClass}` : headClass}`}
                   >
                     {/* React Aria's header owns the press and `aria-sort`; the button only names the control for assistive
                         technology, so it takes no tab stop and no handler of its own. */}
@@ -523,7 +548,7 @@ export function DataTable<T extends { id: string }>({
                     {shown.map((column, at) => (
                       <Cell
                         key={column.id}
-                        className={column.align === 'end' ? `${cellClass} ${endClass}` : cellClass}
+                        className={`${cellClass} ${kindClasses[column.kind ?? 'prose']}${ends(column) ? ` ${endClass}` : ''}`}
                         data-pinned={at <= lastPinned || undefined}
                       >
                         {column.cell(row)}

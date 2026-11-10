@@ -22,7 +22,7 @@ export interface StatCardProps {
   icon?: IconComponent
 }
 
-const stat = 'flex flex-col gap-0.5 border-e border-border px-4 pt-2.5 pb-1.5 text-foreground no-underline'
+const stat = 'flex min-h-(--statstrip-height) flex-col gap-0.5 border-e border-border px-4 pt-2.5 pb-2 text-foreground no-underline'
 
 /**
  * One served value with its label and state dot. It draws no sparkline and no empty chart frame: a trend appears
@@ -33,12 +33,23 @@ export function StatCard({ label, value, tone, caption, to, icon: Icon }: StatCa
     <>
       <span className={`flex items-center gap-2 type-small text-muted-foreground ${tone ? `hd-tone-${tone}` : ''}`}>
         {tone ? <i className="hd-mark" aria-hidden="true" /> : null}
-        {label}
+        <span className="truncate" title={label}>
+          {label}
+        </span>
         {Icon ? <Icon className="ms-auto" /> : null}
       </span>
       {/* The spaces keep the link's name `Failed 23`, not `Failed23`; the flex column drops them from the layout. */}{' '}
       <span className="type-stat tabular-nums">{value}</span>
-      {caption ? <> <span className="hd-label">{caption}</span></> : null}
+      {/* A served sentence can run past the cell: it keeps to two lines and shows whole on hover, so the strip stays
+          one height at every width. */}
+      {caption ? (
+        <>
+          {' '}
+          <span className="hd-label line-clamp-2 text-pretty" title={typeof caption === 'string' ? caption : undefined}>
+            {caption}
+          </span>
+        </>
+      ) : null}
     </>
   )
 
