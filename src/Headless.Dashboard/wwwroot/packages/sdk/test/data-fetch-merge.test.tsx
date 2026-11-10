@@ -15,7 +15,7 @@ interface Run {
   status: string
 }
 
-function change(id: string, version: string, projection: Record<string, unknown>) {
+function change(id: string, version: string, projection: Record<string, unknown> | null) {
   return { module: 'diag', kind: 'run', id, topic: 'diag.run', version, projection }
 }
 
@@ -151,5 +151,68 @@ describe('fetch results against newer stream changes', () => {
     answer.resolve({ id: 'r1', version: '5', status: 'Running' })
 
     await waitFor(() => expect(result.current.data).toEqual({ id: 'r1', version: '6', status: 'Succeeded' }))
+  })
+
+  it('refetches a list whose first fetch landed older than a change that carried no projection', async () => {
+    const answers = [deferred<DashboardListPage<Run>>(), deferred<DashboardListPage<Run>>()]
+    let call = 0
+    const { result } = renderHook(
+      () => ({
+        list: useDashboardList<Run>({ topic: 'diag.run', fetch: () => answers[call++]!.promise }),
+        newRows: useNewRows('diag.run').count,
+      }),
+      { wrapper },
+    )
+
+    stream.push('change', change('r1', '6', null))
+    await waitFor(() => expect(result.current.newRows).toBe(1))
+    answers[0]!.resolve({ items: [{ id: 'r1', version: '5', status: 'Running' }] })
+
+    await waitFor(() => expect(call).toBe(2))
+    expect(result.current.newRows).toBe(1)
+    answers[1]!.resolve({ items: [{ id: 'r1', version: '6', status: 'Succeeded' }] })
+
+    await waitFor(() => expect(result.current.list.data?.items).toEqual([{ id: 'r1', version: '6', status: 'Succeeded' }]))
+    expect(result.current.newRows).toBe(0)
+  })
+
+  it('refetches an object whose first fetch landed older than a change that carried no projection', async () => {
+    const answers = [deferred<Run>(), deferred<Run>()]
+    let call = 0
+    const { result } = renderHook(
+      () => useDashboardObject<Run>({ topic: 'diag.run', id: 'r1', fetch: () => answers[call++]!.promise }),
+      { wrapper },
+    )
+
+    stream.push('change', change('r1', '6', null))
+    answers[0]!.resolve({ id: 'r1', version: '5', status: 'Running' })
+
+    await waitFor(() => expect(call).toBe(2))
+    answers[1]!.resolve({ id: 'r1', version: '6', status: 'Succeeded' })
+
+    await waitFor(() => expect(result.current.data).toEqual({ id: 'r1', version: '6', status: 'Succeeded' }))
+  })
+
+  it('asks once, not in a loop, when the refetch still answers the older row', async () => {
+    let call = 0
+    const { result } = renderHook(
+      () =>
+        useDashboardObject<Run>({
+          topic: 'diag.run',
+          id: 'r1',
+          fetch: async () => {
+            call++
+            return { id: 'r1', version: '5', status: 'Running' }
+          },
+        }),
+      { wrapper },
+    )
+
+    stream.push('change', change('r1', '6', null))
+
+    await waitFor(() => expect(call).toBe(2))
+    await waitFor(() => expect(result.current.isFetching).toBe(false))
+    await new Promise((done) => setTimeout(done, 20))
+    expect(call).toBe(2)
   })
 })

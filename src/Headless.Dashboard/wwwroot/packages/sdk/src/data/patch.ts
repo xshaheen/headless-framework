@@ -96,6 +96,8 @@ function isNewer(change: StreamChange, held: string | undefined) {
 interface ArrivedRow {
   version: string
   projection: Record<string, unknown> | null
+  /** Whether a fetch that landed older than this change already asked its holders to refetch. */
+  hasRefetched?: boolean
 }
 
 /** Per topic, each arrived object by id. */
@@ -223,6 +225,18 @@ function newerRow<T>(fetched: T, cached: unknown): T {
     : fetched
 }
 
+/** Whether an arrived change is newer than the fetched row and carries no projection to apply to it. */
+function needsRefetch(fetched: unknown, arrived: ArrivedRow | undefined) {
+  const version = versionOf(fetched)
+
+  return (
+    arrived !== undefined &&
+    !arrived.projection &&
+    version !== undefined &&
+    compareVersions(arrived.version, version) > 0
+  )
+}
+
 /** The fetched row with an arrived change applied, when the change is newer than the row. */
 function withArrived<T>(fetched: T, arrived: ArrivedRow | undefined): T {
   if (!arrived?.projection || typeof fetched !== 'object' || fetched === null) {
@@ -237,19 +251,58 @@ function withArrived<T>(fetched: T, arrived: ArrivedRow | undefined): T {
 }
 
 /**
+ * Refetches the object and the lists of `topic` that hold `id` older than `version`, once the fetch now landing has
+ * settled into the cache: invalidating while it is still in flight would cancel it. The arrived change is marked, so
+ * a server that still answers the older row is asked once, not in a loop; its new rows notice stays until a fetch or
+ * a later change catches up.
+ */
+function refetchOlderHolders(client: QueryClient, topic: string, id: string, arrived: ArrivedRow) {
+  if (arrived.hasRefetched) {
+    return
+  }
+
+  newRows.get(client)?.get(topic)?.set(id, { ...arrived, hasRefetched: true })
+  const isOlder = (held: unknown) => {
+    const version = versionOf(held)
+
+    return version === undefined || compareVersions(arrived.version, version) > 0
+  }
+
+  setTimeout(() => {
+    void client.invalidateQueries({
+      queryKey: objectKey(topic, id),
+      predicate: (query) => query.state.data !== undefined && isOlder(query.state.data),
+    })
+    void client.invalidateQueries({
+      queryKey: listKey(topic),
+      predicate: (query) => rowsOf(query.state.data).some((row) => row.id === id && isOlder(row)),
+    })
+  }, 0)
+}
+
+/**
  * Settles a fetched object against what the cache learned while the request was in flight. A stream change can patch
  * the cached object after the server read it, so a fetch that lands later must not put the older version back; and a
- * change that arrived before the object's first fetch resolved still applies to it.
+ * change that arrived before the object's first fetch resolved still applies to it, or refetches the object when it
+ * carried no projection.
  */
 export function mergeFetchedObject<T>(client: QueryClient, topic: string, id: string, fetched: T): T {
-  return withArrived(newerRow(fetched, client.getQueryData(objectKey(topic, id))), newRows.get(client)?.get(topic)?.get(id))
+  const arrived = newRows.get(client)?.get(topic)?.get(id)
+  const merged = withArrived(newerRow(fetched, client.getQueryData(objectKey(topic, id))), arrived)
+
+  if (arrived && needsRefetch(merged, arrived)) {
+    refetchOlderHolders(client, topic, id, arrived)
+  }
+
+  return merged
 }
 
 /**
  * Settles a fetched list page against what the cache learned while the request was in flight: each row keeps the
  * newest version any list of its topic holds, so a fetch that lands after a newer stream patch never puts the older
  * row back. A row that changed before the list first loaded takes that change, and leaves the new rows notice
- * because the list now shows it.
+ * because the list now shows it. A change with no projection cannot be applied, so it stays in the notice and the
+ * lists holding the older row refetch.
  */
 export function mergeFetchedPage<T extends ListItem>(
   client: QueryClient,
@@ -266,12 +319,21 @@ export function mergeFetchedPage<T extends ListItem>(
 
   const arrived = newRows.get(client)?.get(topic)
   const items = page.items.map((item) => withArrived(newerRow(item, held.get(item.id)), arrived?.get(item.id)))
+  const settled = items.filter((item) => arrived?.has(item.id) && !needsRefetch(item, arrived.get(item.id)))
 
-  if (arrived && page.items.some((item) => arrived.has(item.id))) {
+  if (arrived && settled.length > 0) {
     const remaining = new Map(arrived)
-    page.items.forEach((item) => remaining.delete(item.id))
+    settled.forEach((item) => remaining.delete(item.id))
     newRows.get(client)?.set(topic, remaining)
     notifyNewRows(client)
+  }
+
+  for (const item of items) {
+    const row = newRows.get(client)?.get(topic)?.get(item.id)
+
+    if (row && needsRefetch(item, row)) {
+      refetchOlderHolders(client, topic, item.id, row)
+    }
   }
 
   return items.every((item, index) => item === page.items[index]) ? page : { ...page, items }
