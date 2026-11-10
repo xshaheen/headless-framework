@@ -211,8 +211,8 @@ function ProcessingNow() {
  */
 function useNextTimeJob() {
   const { api } = useDashboard()
-
-  return useQuery({
+  const client = useQueryClient()
+  const next = useQuery({
     queryKey: ['jobs', 'next-time-job'],
     queryFn: async () => {
       const answer = await api.request<{ items: Run[] }>({
@@ -231,6 +231,23 @@ function useNextTimeJob() {
       return answer.items[0] ?? null
     },
   })
+
+  // Read again when the shown job moves on, or a waiting time job is due sooner; a progress tick of another run is not.
+  useStreamEvent('change', (change) => {
+    const shown = next.data
+    const run = change.projection as Run | null | undefined
+    const sooner =
+      run?.kind === 'TimeJob' &&
+      (run.status === 'Idle' || run.status === 'Queued') &&
+      run.executionTime !== undefined &&
+      (!shown?.executionTime || Date.parse(run.executionTime) < Date.parse(shown.executionTime))
+
+    if (change.topic === runsTopic && (change.id === shown?.id || sooner)) {
+      void client.invalidateQueries({ queryKey: ['jobs', 'next-time-job'] })
+    }
+  })
+
+  return next
 }
 
 /** The next execution of either kind: the next cron fire or the next scheduled time job, whichever is sooner. */

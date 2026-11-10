@@ -14,7 +14,7 @@ import {
 } from '@headless/dashboard-sdk/components'
 import { useDashboardKeysetList, useDashboardObject } from '@headless/dashboard-sdk/data'
 import { useFormat } from '@headless/dashboard-sdk/locale'
-import { useQuery } from '@headless/dashboard-sdk/query'
+import { useQuery, useQueryClient } from '@headless/dashboard-sdk/query'
 import { Link } from '@headless/dashboard-sdk/router'
 import { useStreamEvent } from '@headless/dashboard-sdk/stream'
 import { useEffect, useState } from 'react'
@@ -221,9 +221,15 @@ export function CronFields({ cronJob }: { cronJob: CronJob }) {
   )
 }
 
+/** What a done delete says: the server's count of the stored occurrences that went with the cron job. */
+export function deletedText(outcome: string) {
+  return outcome ? `Deleted: ${outcome}` : 'Deleted'
+}
+
 /** How many occurrences the store holds for a cron job, which a delete removes with it: one row read for its count. */
 function useStoredOccurrences(cronJobId: string, enabled: boolean) {
   const { api } = useDashboard()
+  const client = useQueryClient()
   const answer = useQuery({
     queryKey: ['jobs', 'stored-occurrences', cronJobId],
     queryFn: async () => {
@@ -238,6 +244,13 @@ function useStoredOccurrences(cronJobId: string, enabled: boolean) {
     enabled,
   })
 
+  // A new occurrence of this cron job changes the count the delete confirmation states.
+  useStreamEvent('change', (change) => {
+    if (change.topic === runsTopic && (change.projection as Run | null | undefined)?.cronJobId === cronJobId) {
+      void client.invalidateQueries({ queryKey: ['jobs', 'stored-occurrences', cronJobId] })
+    }
+  })
+
   return answer.data
 }
 
@@ -245,7 +258,7 @@ function useStoredOccurrences(cronJobId: string, enabled: boolean) {
  * The actions the server allows now on a cron job: `Run now`, which returns the new occurrence, `Pause` or `Resume`,
  * each the other's Undo, and `Delete`. A refused one renders disabled with the server's reason.
  */
-export function CronActions({ cronJob }: { cronJob: CronJob }) {
+export function CronActions({ cronJob, onDeleted }: { cronJob: CronJob; onDeleted?: (outcome: string) => void }) {
   const module = useModule()
   const format = useFormat()
   const commands = useJobsCommands()
@@ -301,10 +314,21 @@ export function CronActions({ cronJob }: { cronJob: CronJob }) {
               : undefined
           }
           // The server says how many stored occurrences went with it; the cron job itself leaves the list on its change.
-          onDone={(rows) => setDeleted(rows.find((row) => row.outcome === 'done')?.reason ?? undefined)}
+          onDone={(rows) => {
+            const done = rows.find((row) => row.outcome === 'done')
+
+            if (done) {
+              setDeleted(done.reason ?? '')
+              onDeleted?.(done.reason ?? '')
+            }
+          }}
         />
       ) : null}
-      {deleted ? <Text role="status" tone="hint">{`Deleted: ${deleted}`}</Text> : null}
+      {deleted !== undefined ? (
+        <Text role="status" tone="hint">
+          {deletedText(deleted)}
+        </Text>
+      ) : null}
     </>
   )
 }
@@ -384,10 +408,12 @@ export function CronPanel({
   cronJob,
   fires,
   page,
+  onDeleted,
 }: {
   cronJob: CronJob
   fires: readonly string[] | undefined
   page?: boolean
+  onDeleted?: (outcome: string) => void
 }) {
   const zone = useCronZone(cronJob)
 
@@ -398,7 +424,7 @@ export function CronPanel({
       id={cronJob.id}
       status={cronStatusMark(cronJob)}
       detachTo={page ? undefined : `/jobs/cron-jobs/${encodeURIComponent(cronJob.id)}`}
-      actions={<CronActions cronJob={cronJob} />}
+      actions={<CronActions cronJob={cronJob} onDeleted={onDeleted} />}
       tabs={[
         {
           id: 'schedule',

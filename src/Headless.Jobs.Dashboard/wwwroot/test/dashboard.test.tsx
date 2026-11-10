@@ -334,6 +334,26 @@ describe('jobs dashboard', () => {
     })
   })
 
+  it('reads the next time job again once the shown one starts', async () => {
+    const due = run('Idle', { function: 'export.ledger', executionTime: '2026-11-05T12:00:00Z' })
+    const waiting = [due]
+    const view = open({
+      cronJobs: [cronJob({ function: 'reports.nightly', nextDueUtc: '2026-11-06T01:00:00Z' })],
+      extra: (request) =>
+        request.path === 'jobs/runs' && request.query?.kind === 'TimeJob'
+          ? { items: waiting, count: waiting.length, countCapped: false }
+          : undefined,
+    })
+
+    const header = (await screen.findByRole('heading', { level: 1, name: 'Dashboard' })).closest('header')!
+    await waitFor(() => expect(header.textContent).toContain('export.ledger'))
+
+    waiting.splice(0)
+    view.stream.push('change', change({ ...due, status: 'InProgress' }))
+
+    await waitFor(() => expect(header.textContent).toContain('reports.nightly'))
+  })
+
   it('keeps the next cron fire as the next execution when no time job is due before it', async () => {
     open({
       cronJobs: [cronJob({ function: 'reports.nightly', nextDueUtc: '2026-11-05T11:00:00Z' })],

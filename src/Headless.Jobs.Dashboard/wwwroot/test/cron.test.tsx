@@ -251,16 +251,17 @@ describe('jobs recurring jobs list', () => {
   it('confirms a delete with the stored occurrence count, and shows how many went with it', async () => {
     const actor = user()
     const job = cronJob()
+    const cronJobs = [job]
     const view = open(
       {
-        cronJobs: [job],
+        cronJobs,
         runs: [
           run('Succeeded', { kind: 'CronJobOccurrence', cronJobId: job.id }),
           run('Idle', { kind: 'CronJobOccurrence', cronJobId: job.id }),
         ],
         extra: (request) =>
           request.method === 'POST' && request.path === 'jobs/commands/jobs.delete-cron'
-            ? { rows: [{ id: job.id, outcome: 'done', reason: '12 stored occurrences removed' }] }
+            ? (cronJobs.splice(0), { rows: [{ id: job.id, outcome: 'done', reason: '12 stored occurrences removed' }] })
             : undefined,
       },
       { path: `cron-jobs/${job.id}` },
@@ -275,6 +276,18 @@ describe('jobs recurring jobs list', () => {
     await actor.click(within(dialog).getByRole('button', { name: 'Delete cron job' }))
 
     expect(await screen.findByText('Deleted: 12 stored occurrences removed')).toBeTruthy()
+
+    // The server announces the removal; the page then finds the job gone and still says what went with it.
+    view.stream.push('change', {
+      module: 'jobs',
+      kind: 'cron-job',
+      id: job.id,
+      topic: 'jobs.cron-job',
+      version: '9223372036854775807',
+      projection: null,
+    })
+    expect(await screen.findByText('This recurring job no longer exists.')).toBeTruthy()
+    expect(screen.getByText('Deleted: 12 stored occurrences removed')).toBeTruthy()
     expect(view.requests.find((request) => request.path === 'jobs/commands/jobs.delete-cron')?.body).toMatchObject({
       ids: [job.id],
       reason: 'Replaced by a new schedule',
