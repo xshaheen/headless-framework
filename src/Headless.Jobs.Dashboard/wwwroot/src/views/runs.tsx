@@ -121,10 +121,12 @@ export default function RunsView() {
   const scope: RunScope = { search, range }
   const filterKey = [...filterNames.map((name) => filter[name]), search, range?.start, range?.end].join('\n')
   const creating = params.get('create')
+  // The Failed list's date column shows when a run failed, so a due-time order chosen on another list does not apply.
+  const listSort = filter.status === 'Failed' && sort?.key === 'executionTime' ? undefined : sort
   const runs = useDashboardKeysetList<Run>({
     topic: runsTopic,
     params: filter,
-    sort,
+    sort: listSort,
     search,
     range,
     fetchPage: (cursor, request) => fetchRuns(api, filter, cursor, request),
@@ -374,10 +376,12 @@ export default function RunsView() {
           {status === 'Failed' ? (
             <FailureChips filter={filter} count={count ? format.count(count) : undefined} onPick={setFilter} />
           ) : null}
+          {/* Restarted with the current text, so emptying the day picker never empties a search still applied. */}
           <SearchField
             key={`search-${scopeReset}`}
             label="Search runs"
             placeholder="Function, id, business key, or description"
+            defaultValue={search}
             onSearch={setSearch}
           />
           {/* A state list keeps its header to one row, as the sidebar already chose the state: its other filters
@@ -431,7 +435,7 @@ export default function RunsView() {
             newRows={newRows}
             failed={status === 'Failed'}
             pending={pending}
-            sort={sort}
+            sort={listSort}
             onSortChange={setSort}
             onSelectAllMatching={() => setAllMatching(true)}
             emptyState={

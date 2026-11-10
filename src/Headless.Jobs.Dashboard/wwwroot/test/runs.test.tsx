@@ -836,11 +836,12 @@ describe('jobs runs list reads', () => {
     await act(() => vi.advanceTimersByTimeAsync(5_000))
     view.stream.push(
       'change',
+      // Stamped with the clock as it is now: real time also moves the fake clock, so a fixed instant would age by it.
       change({
         ...running,
         progressPercent: 62.5,
         progressMessage: 'step 25 of 40',
-        progressUpdatedAt: '2026-11-05T10:00:05Z',
+        progressUpdatedAt: new Date().toISOString(),
         version: '2',
       }),
     )
@@ -978,6 +979,21 @@ describe('jobs runs list reads', () => {
       expect(lastList(view)).toMatchObject({ from: '2026-11-01T00:00:00.000Z', before: '2026-11-05T00:00:00.000Z' }),
     )
     expect(new URLSearchParams(view.location().search).get('range')).toBeNull()
+  })
+
+  it('keeps the search applied and shown when a time-range preset empties the day picker', async () => {
+    const actor = user()
+    const view = list({ runs: [run('Failed', { function: 'billing.refund' })] })
+    await screen.findByRole('row', { name: /billing\.refund/ })
+
+    await actor.type(screen.getByRole('searchbox', { name: 'Search runs' }), 'refund')
+    await act(() => vi.advanceTimersByTimeAsync(300))
+    await waitFor(() => expect(lastList(view).search).toBe('refund'))
+    await actor.selectOptions(screen.getByRole('combobox', { name: 'Time range' }), 'Last 24 h')
+
+    await waitFor(() => expect(lastList(view).from).toBeDefined())
+    expect(lastList(view).search).toBe('refund')
+    expect((screen.getByRole('searchbox', { name: 'Search runs' }) as HTMLInputElement).value).toBe('refund')
   })
 
   it('reads a run’s attempt out of its first try and retries, and its retry intervals', async () => {
