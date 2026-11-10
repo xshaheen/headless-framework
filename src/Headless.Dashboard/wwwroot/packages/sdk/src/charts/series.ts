@@ -133,6 +133,8 @@ export interface BucketRow {
   future: boolean
   /** One text per series, in the series' order: the exact value with its unit, or that it was not measured. */
   values: string[]
+  /** The same values as numbers alone, for the list, whose caption states the unit once; `null` where not measured. */
+  numbers: (string | null)[]
 }
 
 /** A bucket's name with its mark, as the list and the tooltip show it: `Nov 12 · scheduled`. */
@@ -163,6 +165,11 @@ export function bucketRows(props: TimeSeriesChartProps, format: Formatters): Buc
     mark: present?.index === index ? present.label : present && index > present.index ? 'scheduled' : undefined,
     future: present !== undefined && index > present.index,
     values: props.series.map((item) => valueText(format, item.points[index] ?? null, props)),
+    numbers: props.series.map((item) => {
+      const value = item.points[index] ?? null
+
+      return value === null ? null : format.number(value)
+    }),
   }))
 }
 
@@ -187,7 +194,10 @@ export function timeSeriesSentence(props: TimeSeriesChartProps, rows: readonly B
 
 export interface PartRow {
   name: string
+  /** The count with its unit, as the tooltip and the spoken sentence say it: `10,000+ runs`. */
   count: string
+  /** The count alone, for the list, whose caption states the unit once: `10,000+`. */
+  number: string
   /** `42.1 %` when every count is exact and complete, otherwise `null`. */
   share: string | null
 }
@@ -200,6 +210,7 @@ export function partRows(props: DonutChartProps, format: Formatters): PartRow[] 
   return props.parts.map((part) => ({
     name: part.name,
     count: `${format.count(part.count)} ${part.count.capped ? props.unit : unitFor(part.count.value, props)}`,
+    number: format.count(part.count),
     share: shares ? format.number(part.count.value / total, { style: 'percent', maximumFractionDigits: 1 }) : null,
   }))
 }

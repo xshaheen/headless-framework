@@ -96,13 +96,15 @@ describe('Chart', () => {
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Show chart' }))
     expect(screen.queryByRole('img')).toBeNull()
 
+    // The unit is said once, in the caption; each cell holds the number alone, and an unmeasured bucket says so.
     const table = screen.getByRole('table', { name: 'Throughput' })
+    expect(within(table).getByText('Values in messages/s')).toBeTruthy()
     const rows = cells(table)
     expect(rows[0]).toEqual(['Time', 'Published'])
-    expect(rows[1]).toEqual(['12:00:00', '4 messages/s'])
+    expect(rows[1]).toEqual(['12:00:00', '4'])
     expect(rows[13]).toEqual(['12:02:00', 'not measured'])
     expect(rows[14]).toEqual(['12:02:10', 'not measured'])
-    expect(rows[15]).toEqual(['12:02:20', '5 messages/s'])
+    expect(rows[15]).toEqual(['12:02:20', '5'])
     expect(rows).toHaveLength(19)
 
     await user.keyboard('{Enter}')
@@ -133,6 +135,50 @@ describe('Chart', () => {
     )
   })
 
+  it('lists the parts with numbers alone and the shares, under one caption that names the unit', async () => {
+    const user = userEvent.setup()
+    renderChart(outcomes)
+
+    await user.click(screen.getByRole('button', { name: 'Show list' }))
+
+    const table = screen.getByRole('table', { name: 'Runs by outcome' })
+    expect(within(table).getByText('Counts in runs')).toBeTruthy()
+    expect(cells(table)).toEqual([
+      ['Part', 'Count', 'Share'],
+      ['Succeeded', '300', '75%'],
+      ['Failed', '100', '25%'],
+    ])
+  })
+
+  it('gives a time series and a donut the same toggle, and draws its focus ring only for the keyboard', async () => {
+    const user = userEvent.setup()
+    render(
+      <LocaleProvider>
+        <Chart {...rate} />
+        <Chart {...outcomes} />
+      </LocaleProvider>,
+    )
+
+    const [series, donut] = screen.getAllByRole('button', { name: 'Show list' })
+    expect(series!.className).toBe(donut!.className)
+
+    // A pointer press leaves no keyboard-focus mark, which the stylesheet reads to hide the ring; Tab sets it.
+    await user.click(series!)
+    const pressed = screen.getByRole('button', { name: 'Show chart' })
+    expect(document.activeElement).toBe(pressed)
+    expect(pressed.hasAttribute('data-focus-visible')).toBe(false)
+    await user.tab()
+    expect(document.activeElement).toBe(donut)
+    expect(donut!.hasAttribute('data-focus-visible')).toBe(true)
+
+    await user.keyboard('{Enter}')
+    expect(screen.getAllByRole('button', { name: 'Show chart' })).toHaveLength(2)
+    expect(screen.getAllByRole('table').map((table) => table.getAttribute('aria-label'))).toEqual([
+      'Throughput',
+      'Runs by outcome',
+    ])
+  })
+
   it('shows the hovered part with its exact count and share in the tooltip', async () => {
     const { container } = renderChart(outcomes)
 
@@ -148,11 +194,12 @@ describe('Chart', () => {
 
     expect(screen.queryByRole('img')).toBeNull()
     const table = screen.getByRole('table', { name: 'Runs by outcome' })
+    expect(within(table).getByText('Counts in runs')).toBeTruthy()
     const rows = cells(table)
     expect(rows).toEqual([
       ['Part', 'Count'],
-      ['Succeeded', '300 runs'],
-      ['Failed', '100 runs'],
+      ['Succeeded', '300'],
+      ['Failed', '100'],
     ])
     expect(document.body.textContent).not.toMatch(/%/)
   })
@@ -161,7 +208,11 @@ describe('Chart', () => {
     renderChart({ ...outcomes, parts: [outcomes.parts[0]!, { ...outcomes.parts[1]!, count: { value: 10_000, capped: true } }] })
 
     expect(screen.queryByRole('img')).toBeNull()
-    expect(screen.getByText('10,000+ runs')).toBeTruthy()
+    const rows = cells(screen.getByRole('table', { name: 'Runs by outcome' }))
+    expect(rows.slice(1)).toEqual([
+      ['Succeeded', '300'],
+      ['Failed', '10,000+'],
+    ])
     expect(document.body.textContent).not.toMatch(/%/)
   })
 
