@@ -420,11 +420,15 @@ describe('shell layout', () => {
 
     shell.stream.setStatus('stale')
 
-    const announced = screen
-      .getAllByRole('status')
-      .map((region) => region.textContent)
-      .filter((text) => text === 'Live updates stopped. What you see may be out of date.')
-    expect(announced).toHaveLength(1)
+    // The live indicator can mount after the top bar under load, and then reads the stale status on its own render,
+    // so the announcement is awaited rather than read once.
+    await waitFor(() => {
+      const announced = screen
+        .getAllByRole('status')
+        .map((region) => region.textContent)
+        .filter((text) => text === 'Live updates stopped. What you see may be out of date.')
+      expect(announced).toHaveLength(1)
+    })
   })
 
   it('folds the zone and clock into the account menu at 1024 px', async () => {
