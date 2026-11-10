@@ -34,7 +34,7 @@ const emptyKey = '\u0000any'
 // One control height, the chip's border and radius, and the set state of a pressed filter chip, so a chosen filter
 // reads as on beside the chips that toggle.
 const chipClass =
-  'inline-flex h-(--control-height) max-w-(--filter-max-width) cursor-pointer items-center gap-1.5 rounded-md border border-border bg-transparent px-2 type-small whitespace-nowrap text-muted-foreground transition-fast outline-none hover:border-edge hover:text-foreground data-focus-visible:outline-2 data-focus-visible:outline-offset-2 data-focus-visible:outline-ring data-[set]:border-primary data-[set]:bg-primary-soft data-[set]:text-foreground'
+  'inline-flex h-(--control-height) max-w-(--filter-max-width) cursor-pointer items-center gap-1.5 rounded-md border border-border bg-transparent px-2 type-small whitespace-nowrap text-muted-foreground transition-fast outline-none hover:border-edge hover:text-foreground data-focus-visible:outline-solid data-focus-visible:outline-2 data-focus-visible:outline-offset-2 data-focus-visible:outline-ring data-[set]:border-primary data-[set]:bg-primary-soft data-[set]:text-foreground'
 const optionClass =
   'flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 type-small text-foreground outline-none data-focused:bg-accent data-selected:font-medium'
 

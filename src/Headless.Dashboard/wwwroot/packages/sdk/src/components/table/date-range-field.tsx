@@ -48,7 +48,7 @@ const cellClass =
   'grid size-8 cursor-pointer place-content-center rounded-md type-small tabular-nums outline-none data-hovered:bg-accent data-outside-month:text-faint data-selected:rounded-none data-selected:bg-primary-soft data-selection-start:rounded-s-md data-selection-start:bg-primary data-selection-start:text-primary-foreground data-selection-end:rounded-e-md data-selection-end:bg-primary data-selection-end:text-primary-foreground data-focus-visible:ring-2 data-focus-visible:ring-ring data-disabled:opacity-50'
 // The chip matches `FilterSelect`: off it reads its label, set it takes the pressed state and reads the days.
 const chipClass =
-  'inline-flex h-(--control-height) cursor-pointer items-center gap-1.5 rounded-md border border-border bg-transparent px-2 type-small whitespace-nowrap text-muted-foreground transition-fast outline-none hover:border-edge hover:text-foreground data-focus-visible:outline-2 data-focus-visible:outline-offset-2 data-focus-visible:outline-ring data-[set]:border-primary data-[set]:bg-primary-soft data-[set]:text-foreground'
+  'inline-flex h-(--control-height) cursor-pointer items-center gap-1.5 rounded-md border border-border bg-transparent px-2 type-small whitespace-nowrap text-muted-foreground transition-fast outline-none hover:border-edge hover:text-foreground data-focus-visible:outline-solid data-focus-visible:outline-2 data-focus-visible:outline-offset-2 data-focus-visible:outline-ring data-[set]:border-primary data-[set]:bg-primary-soft data-[set]:text-foreground'
 
 /**
  * A list's day range, typed or picked on a calendar, read in the dashboard's display time zone. A list passes the

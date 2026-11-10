@@ -88,6 +88,8 @@
 
 @utility type-mono {
   font: var(--text-mono);
+  /* The font shorthand resets the numeric variant, so mono data keeps its aligned figures here, not in a sibling class. */
+  font-variant-numeric: tabular-nums;
 }
 
 @utility type-label {
@@ -126,6 +128,7 @@
 
 @utility type-stat {
   font: var(--text-stat);
+  font-variant-numeric: tabular-nums;
 }
 
 @utility type-tag {
@@ -146,10 +149,13 @@
 
 @utility type-axis {
   font: var(--text-axis);
+  font-variant-numeric: tabular-nums;
 }
 
 @utility type-mono-small {
   font: var(--text-mono-small);
+  /* The font shorthand resets the numeric variant, so mono data keeps its aligned figures here, not in a sibling class. */
+  font-variant-numeric: tabular-nums;
 }
 
 @utility type-nav {
