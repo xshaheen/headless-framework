@@ -370,15 +370,6 @@ internal sealed class JobsDashboardBackend<TTimeJob, TCronJob>(IServiceProvider 
 
         if (edit.ReplacesRequest)
         {
-            // The request shown was bound to the stored contract; rewriting it under today's type could drop fields.
-            if (
-                Registry.Descriptors.TryGetValue(job.Function, out var descriptor)
-                && !string.Equals(job.ContractVersion, descriptor.ContractVersion, StringComparison.Ordinal)
-            )
-            {
-                return $"Unsupported contract version {job.ContractVersion}";
-            }
-
             try
             {
                 job.Request = _Request(job.Function, edit.RequestJson);

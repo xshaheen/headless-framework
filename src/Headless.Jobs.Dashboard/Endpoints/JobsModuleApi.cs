@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.ComponentModel;
+using System.Globalization;
 using Headless.Checks;
 using Headless.Dashboard;
 using Microsoft.AspNetCore.Builder;
@@ -27,6 +28,9 @@ internal sealed class JobsModuleApi(
 
     /// <summary>The most days one series covers.</summary>
     internal const int MaxSeriesDays = 92;
+
+    private static readonly DateOnly _FirstSeriesDay = DateOnly.MinValue.AddDays(1);
+    private static readonly DateOnly _LastSeriesDay = DateOnly.MaxValue.AddDays(-1);
 
     private const int _DefaultListLimit = 50;
     private const int _DefaultFires = 5;
@@ -567,6 +571,18 @@ internal sealed class JobsModuleApi(
         if (last < first)
         {
             return TypedResults.BadRequest("to must not be before from.");
+        }
+
+        // The edges run from the first day's midnight to the day after the last, converted to UTC, so a day at either
+        // end of the calendar has no edge to stand on.
+        if (first < _FirstSeriesDay || last > _LastSeriesDay)
+        {
+            return TypedResults.BadRequest(
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"from and to must be between {_FirstSeriesDay:yyyy-MM-dd} and {_LastSeriesDay:yyyy-MM-dd}."
+                )
+            );
         }
 
         if (last.DayNumber - first.DayNumber + 1 > MaxSeriesDays)

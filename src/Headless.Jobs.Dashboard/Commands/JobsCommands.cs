@@ -757,6 +757,11 @@ internal sealed class JobsCommands(
                 return (_Failed(id, invalid), true);
             }
 
+            if (edit.ReplacesRequest && _RewritesForeignContract(run))
+            {
+                return (_Failed(id, JobsRules.UnsupportedContractEdit), true);
+            }
+
             if (await _backend.EditTimeJobAsync(run.Id, edit, cancellationToken).ConfigureAwait(false) is { } error)
             {
                 return (_Failed(id, error), true);
@@ -932,8 +937,20 @@ internal sealed class JobsCommands(
         return
             run.ContractVersion is { } version
             && !string.Equals(version, function.ContractVersion, StringComparison.Ordinal)
-            ? JobsRules.UnsupportedContract
+            ? JobsRules.UnsupportedContractDuplicate
             : null;
+    }
+
+    // The request shown was bound to the stored contract; rewriting it under today's type could drop fields. A row
+    // with no stored version predates versioning, so it differs from any registered one.
+    private bool _RewritesForeignContract(JobRunSummary run)
+    {
+        var function = _backend.Functions.FirstOrDefault(candidate =>
+            string.Equals(candidate.Name, run.Function, StringComparison.Ordinal)
+        );
+
+        return function is not null
+            && !string.Equals(run.ContractVersion, function.ContractVersion, StringComparison.Ordinal);
     }
 
     private static bool _TryReadEdit(
@@ -960,9 +977,11 @@ internal sealed class JobsCommands(
             ExecutionTime = _Instant(arguments, ExecutionTimeArgument),
             ReplacesRequest = request is not null,
             RequestJson = request,
+            // The shell's whole-number check accepts 5.0 and bounds the value, but GetInt32 refuses any token with a
+            // fraction part, so the value is read as a decimal.
             Retries =
-                arguments.TryGetValue(RetriesArgument, out var retries) && retries.ValueKind == JsonValueKind.Number
-                    ? retries.GetInt32()
+                arguments.TryGetValue(RetriesArgument, out var retries) && retries.TryGetDecimal(out var count)
+                    ? (int)count
                     : null,
             RetryIntervals = intervals,
         };

@@ -36,7 +36,13 @@ internal static class JobsRules
     public const string ClaimedEdit = "Claimed with its chain — it can no longer be edited";
     public const string KeyedEdit = "Keyed runs change through their key";
     public const string ChainStepEdit = "A chain step runs after its parent — edit the chain's first step";
-    public const string UnsupportedContract = "Stored under another contract version — its request cannot be rewritten";
+
+    public const string UnsupportedContractEdit =
+        "Stored under another contract version — its request cannot be rewritten";
+
+    public const string UnsupportedContractDuplicate =
+        "Stored under another contract version — this host cannot run a copy";
+
     public const string OccurrenceDuplicate = "Only a time job can be duplicated — run its cron job now instead";
     public const string UnfinishedDuplicate = "Not finished yet";
     public const string ChainDuplicate = "Part of a chain — chains are not duplicated";

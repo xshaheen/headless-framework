@@ -619,6 +619,8 @@ public sealed class JobsModuleApiTests : TestBase
     [InlineData("from=2026-01-01&to=2026-12-31")]
     [InlineData("from=2026-11-01&to=2026-11-02&zone=Mars/Olympus")]
     [InlineData("from=2026-11-01&to=2026-11-02&kind=Recurring")]
+    [InlineData("from=9999-12-01&to=9999-12-31")]
+    [InlineData("from=0001-01-01&to=0001-01-02&zone=Pacific/Kiritimati")]
     public async Task should_answer_400_for_a_series_query_it_cannot_read(string query)
     {
         // given

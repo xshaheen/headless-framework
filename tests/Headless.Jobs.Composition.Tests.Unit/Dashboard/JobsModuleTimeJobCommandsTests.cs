@@ -397,6 +397,105 @@ public sealed class JobsModuleTimeJobCommandsTests : TestBase
         result.Refusal.Should().StartWith("Retry intervals must be a JSON array of whole seconds");
     }
 
+    [Theory]
+    [InlineData("keyed", "jobs.edit", "Keyed runs change through their key")]
+    [InlineData("keyed", "jobs.force-delete", "Keyed runs are kept — cancel the key instead")]
+    [InlineData("chain-step", "jobs.edit", "A chain step runs after its parent — edit the chain's first step")]
+    [InlineData("chain-step", "jobs.force-delete", "Part of a chain — chain steps are not deleted one by one")]
+    [InlineData("claimed-idle", "jobs.edit", "Claimed with its chain — it can no longer be edited")]
+    [InlineData("occurrence", "jobs.edit", "An occurrence follows its cron job — edit the schedule instead")]
+    [InlineData("occurrence", "jobs.duplicate", "Only a time job can be duplicated — run its cron job now instead")]
+    [InlineData(
+        "occurrence",
+        "jobs.force-delete",
+        "An occurrence cannot be force deleted — pause its cron job instead"
+    )]
+    [InlineData("idle", "jobs.duplicate", "Not finished yet")]
+    [InlineData("queued", "jobs.duplicate", "Not finished yet")]
+    [InlineData("running", "jobs.duplicate", "Not finished yet")]
+    [InlineData(
+        "foreign-contract",
+        "jobs.duplicate",
+        "Stored under another contract version — this host cannot run a copy"
+    )]
+    public async Task should_refuse_a_command_a_run_does_not_allow_with_its_reason(
+        string shape,
+        string commandId,
+        string refusal
+    )
+    {
+        // given
+        await using var node = JobsModuleNode.Create(_time);
+        var run = await _SeedAsync(node.Store, shape);
+
+        // when
+        var allowed = await node.Module.GetAllowedCommandsAsync(_Allowed(JobsViews.RunKind, run), AbortToken);
+
+        // then
+        var answer = _Answer(allowed, commandId);
+        answer.Allowed.Should().BeFalse();
+        answer.DisabledReason.Should().Be(refusal);
+    }
+
+    [Fact]
+    public async Task should_fail_an_edit_that_rewrites_a_request_stored_under_another_contract_version()
+    {
+        // given
+        await using var node = JobsModuleNode.Create(_time);
+        var job = JobsModuleNode.IdleJob(_time.GetUtcNow());
+        job.ExecutionTime = _time.GetUtcNow().UtcDateTime.AddHours(1);
+        job.ContractVersion = "0";
+        job.Request = [1, 2, 3];
+        await node.Store.AddTimeJobsAsync([job], AbortToken);
+
+        // when
+        var result = await node.Module.ExecuteAsync(
+            _Request(
+                "jobs.edit",
+                job.Id,
+                new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+                {
+                    ["request"] = JsonSerializer.SerializeToElement("{}"),
+                }
+            ),
+            AbortToken
+        );
+
+        // then
+        result.Rows.Should().ContainSingle().Which.Outcome.Should().Be(DashboardRowOutcome.Failed);
+        result.Refusal.Should().Be("Stored under another contract version — its request cannot be rewritten");
+        (await node.Store.GetTimeJobByIdAsync(job.Id, AbortToken))!.Request.Should().Equal(1, 2, 3);
+    }
+
+    [Fact]
+    public async Task should_edit_retries_sent_as_a_whole_number_with_a_fraction_part()
+    {
+        // given
+        await using var node = JobsModuleNode.Create(_time);
+        var job = JobsModuleNode.IdleJob(_time.GetUtcNow());
+        job.ExecutionTime = _time.GetUtcNow().UtcDateTime.AddHours(1);
+        await node.Store.AddTimeJobsAsync([job], AbortToken);
+        using var retries = JsonDocument.Parse("5.0");
+
+        // when
+        var result = await node.Module.ExecuteAsync(
+            _Request(
+                "jobs.edit",
+                job.Id,
+                new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+                {
+                    ["retries"] = retries.RootElement.Clone(),
+                }
+            ),
+            AbortToken
+        );
+
+        // then
+        result.Refusal.Should().BeNull();
+        result.Rows.Should().ContainSingle().Which.Outcome.Should().Be(DashboardRowOutcome.Done);
+        (await node.Store.GetTimeJobByIdAsync(job.Id, AbortToken))!.Retries.Should().Be(5);
+    }
+
     [Fact]
     public async Task should_show_a_viewer_all_four_actions_disabled_with_needs_operate_permission()
     {
@@ -476,6 +575,80 @@ public sealed class JobsModuleTimeJobCommandsTests : TestBase
         (await store.GetJobRunAsync(job.Id, AbortToken))!.Status.Should().Be(JobStatus.InProgress);
 
         return (job.Id, claimed.Lease);
+    }
+
+    private async Task<Guid> _SeedAsync(IJobPersistenceProvider<TimeJobEntity, CronJobEntity> store, string shape)
+    {
+        var now = _time.GetUtcNow();
+
+        switch (shape)
+        {
+            case "keyed":
+            {
+                var scheduled = await store.ScheduleKeyedTimeJobAsync(
+                    new JobKey("invoice-42"),
+                    JobsModuleNode.IdleJob(now),
+                    cancellationToken: AbortToken
+                );
+
+                return scheduled.RunId!.Value;
+            }
+            case "chain-step":
+            {
+                var root = JobsModuleNode.IdleJob(now);
+                var step = JobsModuleNode.IdleJob(now);
+                step.ExecutionTime = null;
+                step.RunCondition = RunCondition.OnSuccess;
+                root.Children.Add(step);
+                await store.AddTimeJobsAsync([root], AbortToken);
+
+                return step.Id;
+            }
+            case "claimed-idle":
+            {
+                var job = JobsModuleNode.IdleJob(now);
+                job.Lease = TestLeases.Held("node-b@1", now.AddMinutes(5));
+                await store.AddTimeJobsAsync([job], AbortToken);
+                var read = (await store.GetJobRunAsync(job.Id, AbortToken))!;
+                read.Status.Should().Be(JobStatus.Idle);
+                read.IsLeased.Should().BeTrue();
+
+                return job.Id;
+            }
+            case "occurrence":
+            {
+                var cronJob = JobsModuleNode.CronJob();
+                await store.InsertCronJobsAsync([cronJob], AbortToken);
+                await _AddOccurrencesAsync(store, cronJob.Id, JobStatus.Failed, 1);
+
+                return (await store.GetAllCronJobOccurrencesAsync(x => x.CronJobId == cronJob.Id, AbortToken))
+                    .Single()
+                    .Id;
+            }
+            case "idle":
+            case "queued":
+            {
+                var job = JobsModuleNode.IdleJob(now);
+                job.Status = string.Equals(shape, "queued", StringComparison.Ordinal)
+                    ? JobStatus.Queued
+                    : JobStatus.Idle;
+                await store.AddTimeJobsAsync([job], AbortToken);
+
+                return job.Id;
+            }
+            case "running":
+                return (await _StartAsync(store, cancel: false)).Job;
+            case "foreign-contract":
+            {
+                var job = JobsModuleNode.FailedJob(now);
+                job.ContractVersion = "0";
+                await store.AddTimeJobsAsync([job], AbortToken);
+
+                return job.Id;
+            }
+            default:
+                throw new ArgumentOutOfRangeException(nameof(shape), shape, "Unknown run shape.");
+        }
     }
 
     private static async Task _CompleteAsync(
