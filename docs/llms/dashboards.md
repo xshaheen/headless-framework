@@ -452,7 +452,7 @@ app.MapHeadlessDashboard();
 
 **Object kinds and topics.** `run` (a time job or a cron occurrence, by its id), `cron-job`, `function` (by name), and `node`. Stream topics are `jobs.run` and `jobs.cron-job`; a change's projection is the run or cron job as its list row shows it, and its version is the row's change marker in ticks. A deleted row goes out with no projection, so open views refetch it and show `This run no longer exists`.
 
-**Commands.** Requeue, Cancel, and Delete need a reason and a confirmation (typed past 100 rows) and run over a filter as Operations. A call on one object the rules refuse changes nothing and answers `409` with the reason, such as `Paused — resume first`.
+**Commands.** Requeue, Cancel, and Delete need a reason and a confirmation (typed past 100 rows) and run over a filter as Operations. Edit, Duplicate, Force delete, and the cron job's Delete need a reason and a confirmation and run on one object at a time. A call on one object the rules refuse changes nothing and answers `409` with the reason, such as `Paused — resume first`.
 
 | Command | On | Allowed when |
 | --- | --- | --- |
@@ -462,6 +462,10 @@ app.MapHeadlessDashboard();
 | `jobs.run-now` | `cron-job` | not paused, and not running when the cron job forbids overlap; the done row's `reason` is the new run's id |
 | `jobs.pause` / `jobs.resume` | `cron-job` | active / paused and not removed from code; each is the other's inverse |
 | `jobs.edit-cron` | `cron-job` | not defined in code; arguments `expression` (required) and `timeZoneId` |
+| `jobs.edit` | `run` | an idle unclaimed or queued time job that is not keyed and not a chain step; optional `executionTime` (ISO 8601 with offset), `request` (JSON, bound to the function's request type, refused when the stored contract version differs), `retries` (0–100), `retryIntervals` (JSON array of whole seconds); an argument left out keeps its stored value |
+| `jobs.duplicate` | `run` | a finished standalone time job whose function this host registers under the stored contract version; the server copies the stored request, retries, and intervals into a new run with no business key; optional `executionTime`, not in the past, absent means now; the done row's `created` is the new run |
+| `jobs.force-delete` | `run` | a running time job with cancel requested, not keyed and not in a chain; it removes the stored rows only, and the running code is not stopped; a job that finished after the read is refused |
+| `jobs.delete-cron` | `cron-job` | not defined in code (a definition removed from code may be deleted) and no occurrence running; it removes the cron job with every stored occurrence, and the done row's `reason` is `N stored occurrences removed`; an occurrence started after the read refuses it |
 
 An Operation's filter is `{ kind, functions, statuses, cronJobId, correlationId, fingerprint, from, before, actionableOnly }`. Requeue and Delete freeze on the store's latest change marker at confirm and write each row only while its marker is unchanged, so a run requeued by one chunk that fails again is not touched again; Cancel freezes on creation at confirm and needs no marker, because a running job advances its marker as it reports progress.
 
