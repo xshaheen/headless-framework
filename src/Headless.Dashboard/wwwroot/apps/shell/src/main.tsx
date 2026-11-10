@@ -75,6 +75,16 @@ function renderShell(state: BootstrapState, root: HTMLElement) {
     // Another tab signed out: this one follows, to the same page.
     onSignedOut: () => toSignIn('signed-out'),
   })
+  // A closed tab must leave the stream: its topics stay subscribed, and keep their readers polling, until the leader
+  // hears `bye`. `pagehide` fires on every way a tab goes away, where `visibilitychange` also fires for a tab that is
+  // only in the background. A page kept in the back-forward cache comes back with its stream closed, so it reloads.
+  window.addEventListener('pagehide', () => stream.close())
+  window.addEventListener('pageshow', (event) => {
+    if (event.persisted) {
+      location.reload()
+    }
+  })
+
   const client = createDashboardClient()
   const loader = createModuleLoader()
   const router = createBrowserRouter(buildRoutes(state, loader), { basename: state.basePath || '/' })
